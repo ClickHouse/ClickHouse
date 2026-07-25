@@ -42,6 +42,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"allow_experimental_queue_table_engine", false, false, "New setting to enable the experimental Queue table engine."},
+            {"queue_consumer_group", "", "", "New setting to select a consumer group for the experimental Queue table engine."},
+            {"queue_commit_on_select", false, false, "New setting to acknowledge a Queue batch after a successful direct SELECT."},
+            {"queue_max_batch_size", 0, 0, "New setting to limit the batch read by a direct committing SELECT from Queue."},
+            {"queue_consumer_offset", "earliest", "earliest", "New setting to choose the initial Queue consumer-group offset."},
+            {"queue_reset_consumer_offset", false, false, "New setting to reset a Queue consumer group to its configured offset."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},

@@ -1,9345 +1,1844 @@
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
-#include <Core/BaseSettings.h>
-#include <Core/BaseSettingsFwdMacrosImpl.h>
-#include <Core/BaseSettingsProgramOptions.h>
-#if ENABLE_DISTRIBUTED_CACHE
-#include <Core/DistributedCacheDefines.h>
-#endif
-#include <Core/FormatFactorySettings.h>
-#include <Core/Settings.h>
-#include <Core/SettingsChangesHistory.h>
-#include <Core/SettingsEnums.h>
-#include <Core/SettingsFields.h>
-#include <Core/SettingsObsoleteMacros.h>
-#include <Core/SettingsTierType.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/S3Defines.h>
-#include <Storages/System/MutableColumnsAndConstraints.h>
-#include <base/types.h>
-#include <Common/NamePrompter.h>
-#include <Common/typeid_cast.h>
-
-#include <boost/program_options.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/Application.h>
-
-#include <cstring>
-
-namespace
-{
-#if !CLICKHOUSE_CLOUD
-constexpr UInt64 default_max_size_to_drop = 50000000000lu;
-#else
-constexpr UInt64 default_max_size_to_drop = 0lu;
-#endif
-
-#if ENABLE_DISTRIBUTED_CACHE
-constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
-constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
-constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
-constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
-constexpr UInt64 default_distributed_cache_connect_timeout_ms = DistributedCache::DEFAULT_CONNECT_TIMEOUTS_MS;
-constexpr UInt64 default_distributed_cache_send_timeout_ms = DistributedCache::DEFAULT_SEND_TIMEOUT_MS;
-constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache::DEFAULT_RECEIVE_TIMEOUT_MS;
-constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
-constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = DistributedCache::MAX_UNACKED_INFLIGHT_PACKETS;
-constexpr UInt64 default_distributed_cache_data_packet_ack_window = DistributedCache::ACK_DATA_PACKET_WINDOW;
-#else
-constexpr UInt64 default_distributed_cache_connect_max_tries = 5lu;
-constexpr UInt64 default_distributed_cache_read_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_write_request_max_tries = 10lu;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = 5;
-constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = 0;
-constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = 50;
-constexpr UInt64 default_distributed_cache_connect_timeout_ms = 50;
-constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
-constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_max_unacked_inflight_packets = 10lu;
-constexpr UInt64 default_distributed_cache_data_packet_ack_window = 5lu;
-#endif
-}
-
-namespace DB
-{
-
-namespace ErrorCodes
-{
-    extern const int THERE_IS_NO_PROFILE;
-    extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int BAD_ARGUMENTS;
-}
-
-/** List of settings: type, name, default value, description, flags
-  *
-  * This looks rather inconvenient. It is done that way to avoid repeating settings in different places.
-  * Note: as an alternative, we could implement settings to be completely dynamic in the form of the map: String -> Field,
-  *  but we are not going to do it, because settings are used everywhere as static struct fields.
-  *
-  * `flags` can include a Tier (BETA | EXPERIMENTAL) and an optional bitwise AND with IMPORTANT.
-  * The default (0) means a PRODUCTION ready setting
-  *
-  * A setting is "IMPORTANT" if it affects the results of queries and can't be ignored by older versions.
-  * Tiers:
-  * EXPERIMENTAL: The feature is in active development stage. Mostly for developers or for ClickHouse enthusiasts.
-  * BETA: There are no known bugs problems in the functionality, but the outcome of using it together with other
-  * features/components is unknown and correctness is not guaranteed.
-  * PRODUCTION (Default): The feature is safe to use along with other features from the PRODUCTION tier.
-  *
-  * When adding new or changing existing settings add them to the settings changes history in SettingsChangesHistory.cpp
-  * for tracking settings changes in different versions and for special `compatibility` settings to work correctly.
-  *
-  * The settings in this list are used to autogenerate the markdown documentation. You can find the script which
-  * generates the markdown from source here: https://github.com/ClickHouse/clickhouse-docs/blob/main/scripts/settings/autogenerate-settings.sh
-  *
-  * If a setting has an effect only in ClickHouse Cloud, then please include in the description: "Only has an effect in ClickHouse Cloud."
-  */
-
-// clang-format off
-#if defined(__CLION_IDE__)
-/// CLion freezes for a minute every time it processes this
-#define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS)
-#define OBSOLETE_SETTINGS(DECLARE, DECLARE_WITH_ALIAS)
-#else
-#define COMMON_SETTINGS(DECLARE, DECLARE_WITH_ALIAS) \
-    DECLARE(Dialect, dialect, Dialect::clickhouse, R"(
-Which dialect will be used to parse query
-)", 0)\
-    DECLARE(UInt64, min_compress_block_size, 65536, R"(
-For [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least `min_compress_block_size`. By default, 65,536.
-
-The actual size of the block, if the uncompressed data is less than `max_compress_block_size`, is no less than this value and no less than the volume of data for one mark.
-
-Let's look at an example. Assume that `index_granularity` was set to 8192 during table creation.
-
-We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since min_compress_block_size = 65,536, a compressed block will be formed for every two marks.
-
-We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won't be decompressed.
-
-:::note
-This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
-:::
-)", 0) \
-    DECLARE(UInt64, max_compress_block_size, 1048576, R"(
-The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). Specifying a smaller block size generally leads to slightly reduced compression ratio, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced.
-
-:::note
-This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
-:::
-
-Don't confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
-)", 0) \
-    DECLARE(NonZeroUInt64, max_block_size, DEFAULT_BLOCK_SIZE, R"(
-In ClickHouse, data is processed by blocks, which are sets of column parts. The internal processing cycles for a single block are efficient but there are noticeable costs when processing each block.
-
-The `max_block_size` setting indicates the recommended maximum number of rows to include in a single block when loading data from tables. Blocks the size of `max_block_size` are not always loaded from the table: if ClickHouse determines that less data needs to be retrieved, a smaller block is processed.
-
-The block size should not be too small to avoid noticeable costs when processing each block. It should also not be too large to ensure that queries with a LIMIT clause execute quickly after processing the first block. When setting `max_block_size`, the goal should be to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
-)", 0) \
-    DECLARE(Bool, use_strict_insert_block_limits, false, R"(
-When enabled, strictly enforces both minimum and maximum insert block size limits.
-
-A block is emitted when:
-- Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached.
-- Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached.
-
-When disabled, a block is emitted when:
-- Min thresholds (OR):  min_insert_block_size_rows OR min_insert_block_size_bytes is reached.
-
-**Note**: If max settings are smaller than min settings, the max limits take precedence and blocks will be emitted before min thresholds are reached.
-
-**Note**: This setting is automatically disabled for async inserts, because async inserts attach per-entry deduplication tokens that are incompatible with block splitting that is needed for enforcement of strict limits.
-
-Disabled by default.
-)", 0) \
-    DECLARE_WITH_ALIAS(NonZeroUInt64, max_insert_block_size, DEFAULT_INSERT_BLOCK_SIZE, R"(
-The maximum size of blocks (in a count of rows) to form for insertion into a table.
-
-This setting controls block formation in two contexts:
-
-1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), blocks are emitted when:
-   - Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached, OR
-   - Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
-
-   Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
-
-2. INSERT operations: During INSERT queries and when data flows through materialized views, this setting's behavior depends on `use_strict_insert_block_limits`:
-
-    - When enabled: Blocks are emitted when:
-        - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
-        - Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
-
-    - When disabled: Blocks are emitted when min_insert_block_size_rows OR min_insert_block_size_bytes is reached. The max_insert_block_size settings are not enforced.
-
-Possible values:
-- Positive integer.
-)", 0, max_insert_block_size_rows) \
-DECLARE(UInt64, max_insert_block_size_bytes, 0, R"(
-The maximum size of blocks (in bytes) to form for insertion into a table.
-
-This setting works together with max_insert_block_size_rows and controls block formation in the same context. See max_insert_block_size_rows for detailed information about when and how these settings are applied.
-
-Possible values:
-- Positive integer.
-- 0 â€” setting does not participate in block formation.
-)", 0) \
-DECLARE(UInt64, min_insert_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
-The minimum size of blocks (in rows) to form for insertion into a table.
-
-This setting controls block formation in two contexts:
-
-1. Format parsing: When the server parses row-based input formats (CSV, TSV, JSONEachRow, etc.) from any interface (HTTP, clickhouse-client with inline data, gRPC, PostgreSQL wire protocol), blocks are emitted when:
-   - Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached, OR
-   - Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
-
-   Note: When using clickhouse-client or clickhouse-local to read from a file, the client itself parses the data and this setting applies on the client side.
-
-2. INSERT operations: During INSERT queries and when data flows through materialized views, this setting's behavior depends on `use_strict_insert_block_limits`:
-
-    - When enabled: Blocks are emitted when:
-        - Min thresholds (AND): Both min_insert_block_size_rows AND min_insert_block_size_bytes are reached
-        - Max thresholds (OR): Either max_insert_block_size_rows OR max_insert_block_size_bytes is reached
-
-    - When disabled (default): Blocks are emitted when min_insert_block_size_rows OR min_insert_block_size_bytes is reached. The max_insert_block_size settings are not enforced.
-
-Possible values:
-- Positive integer.
-- 0 â€” setting does not participate in block formation.
-)", 0) \
-    DECLARE(UInt64, min_insert_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), R"(
-The minimum size of blocks (in bytes) to form for insertion into a table.
-
-This setting works together with min_insert_block_size_rows and controls block formation in the same contexts (format parsing and INSERT operations). See min_insert_block_size_rows for detailed information about when and how these settings are applied.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” setting does not participate in block formation.
-)", 0) \
-    DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, R"(
-Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
-
-Possible values:
-
-- Any positive integer.
-- 0 â€” Squashing disabled.
-
-**See Also**
-
-- [min_insert_block_size_rows](#min_insert_block_size_rows)
-)", 0) \
-    DECLARE(UInt64, min_insert_block_size_bytes_for_materialized_views, 0, R"(
-Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](../../sql-reference/statements/create/view.md). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
-
-Possible values:
-
-- Any positive integer.
-- 0 â€” Squashing disabled.
-
-**See also**
-
-- [min_insert_block_size_bytes](#min_insert_block_size_bytes)
-)", 0) \
-    DECLARE(UInt64, min_external_table_block_size_rows, DEFAULT_INSERT_BLOCK_SIZE, R"(
-Squash blocks passed to external table to specified size in rows, if blocks are not big enough.
-)", 0) \
-    DECLARE(UInt64, min_external_table_block_size_bytes, (DEFAULT_INSERT_BLOCK_SIZE * 256), R"(
-Squash blocks passed to the external table to a specified size in bytes, if blocks are not big enough.
-)", 0) \
-    DECLARE(UInt64, max_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Maximum block size for JOIN result (if join algorithm supports it). 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, max_joined_block_size_bytes, 4_MiB, R"(
-Maximum block size in bytes for JOIN result (if join algorithm supports it). 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, min_joined_block_size_rows, DEFAULT_BLOCK_SIZE, R"(
-Minimum block size in rows for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, min_joined_block_size_bytes, 512 * 1024, R"(
-Minimum block size in bytes for JOIN input and output blocks (if join algorithm supports it). Small blocks will be squashed. 0 means unlimited.
-)", 0) \
-    DECLARE(Bool, joined_block_split_single_row, false, R"(
-Allow to chunk hash join result by rows corresponding to single row from left table.
-This may reduce memory usage in case of row with many matches in right table, but may increase CPU usage.
-Note that `max_joined_block_size_rows != 0` is mandatory for this setting to have effect.
-The `max_joined_block_size_bytes` combined with this setting is helpful to avoid excessive memory usage in case of skewed data with some large rows having many matches in right table.
-)", 0) \
-    DECLARE(Bool, parallel_non_joined_rows_processing, true, R"(
-Allow multiple threads to process non-joined rows from the right table in parallel during RIGHT and FULL JOINs.
-This can speed up the non-joined phase when using the `parallel_hash` join algorithm with large tables.
-When disabled, non-joined rows are processed by a single thread.
-)", 0) \
-    DECLARE(UInt64, max_insert_threads, 0, R"(
-The maximum number of threads to execute the `INSERT SELECT` query.
-
-Possible values:
-
-- 0 (or 1) â€” `INSERT SELECT` no parallel execution.
-- Positive integer. Bigger than 1.
-
-Cloud default value:
-- `1` for nodes with 8 GiB memory
-- `2` for nodes with 16 GiB memory
-- `4` for larger nodes
-
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [`max_threads`](#max_threads) setting.
-Higher values will lead to higher memory usage.
-)", 0) \
-    DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
-The maximum number of streams (columns) to delay final part flush. Default - auto (100 in case of underlying storage supports parallel write, for example S3 and disabled otherwise)
-
-Cloud default value: `50`.
-)", 0) \
-    DECLARE(Bool, finalize_projection_parts_synchronously, false, R"(
-When enabled, projection parts are finalized synchronously during INSERT, reducing peak memory usage at the cost of reduced S3 upload parallelism. By default, each projection's output stream is kept alive until the entire part (including all projections) is finalized, which allows overlapping S3 uploads but increases peak memory proportional to the number of projections. This setting only affects the INSERT path; merge and mutation already finalize projections synchronously.
-)", 0) \
-    DECLARE(MaxThreads, max_final_threads, 0, R"(
-Sets the maximum number of parallel threads for the `SELECT` query data read phase with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
-
-Possible values:
-
-- Positive integer.
-- 0 or 1 â€” Disabled. `SELECT` queries are executed in a single thread.
-)", 0) \
-    DECLARE(UInt64, max_threads_for_indexes, 0, R"(
-The maximum number of threads process indices.
-)", 0) \
-    DECLARE(MaxThreads, max_threads, 0, R"(
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ['max_distributed_connections'](/operations/settings/settings#max_distributed_connections) parameter).
-
-This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
-For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with `WHERE` and pre-aggregate for `GROUP BY` in parallel using at least 'max_threads' number of threads, then 'max_threads' are used.
-
-For queries that are completed quickly because of a LIMIT, you can set a lower 'max_threads'.
-For example, if the necessary number of entries are located in every block and max_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
-The smaller the `max_threads` value, the less memory is consumed.
-
-The `max_threads` setting by default matches the number of hardware threads (number of CPU cores) available to ClickHouse.
-As a special case, for x86 processors with less than 32 CPU cores and SMT (e.g. Intel HyperThreading), ClickHouse uses the number of logical cores (= 2 x physical core count) by default.
-
-Without SMT (e.g. Intel HyperThreading), this corresponds to the number of CPU cores.
-
-For ClickHouse Cloud users, the default value will display as `auto(N)` where N matches the vCPU size of your service e.g. 2vCPU/8GiB, 4vCPU/16GiB etc.
-See the settings tab in the Cloud console for a list of all service sizes.
-)", 0) \
-    DECLARE(UInt64, max_threads_min_free_memory_per_thread, 1_GiB, R"(
-Lowers `max_threads` when the server is under memory pressure, to avoid starting highly-parallel queries that are likely to hit the memory limit.
-
-Free memory is computed as the server's `max_server_memory_usage` minus the memory currently tracked by the global memory tracker. If that free memory is less than `max_threads` multiplied by this value, `max_threads` is reduced to the largest N such that `N * value <= free_memory`, with a minimum of `1`.
-
-Set to `0` to disable this limit.
-
-For example, with the default of 1 GiB and 32 GiB of free memory, `max_threads` is capped at 32; with 1 GiB of free memory it falls back to 1.
-
-This setting applies to read-side parallelism (`SELECT`, `UNION`, `INTERSECT`/`EXCEPT`, and the `SELECT` side of `INSERT ... SELECT`). For the write side, see `max_insert_threads_min_free_memory_per_thread`.
-)", 0) \
-    DECLARE(UInt64, max_insert_threads_min_free_memory_per_thread, 4_GiB, R"(
-Same as `max_threads_min_free_memory_per_thread`, but applied to `max_insert_threads` instead of `max_threads`. The default is higher because insert pipelines typically hold larger per-thread buffers (merge tree parts, compression blocks) than read pipelines.
-
-If the amount of free memory is less than `max_insert_threads` multiplied by this value, `max_insert_threads` is reduced to fit, down to a minimum of `1`.
-
-Set to `0` to disable this limit.
-)", 0) \
-    DECLARE(Bool, use_concurrency_control, true, R"(
-Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
-)", 0) \
-    DECLARE(MaxThreads, max_download_threads, 4, R"(
-The maximum number of threads to download data (e.g. for URL engine).
-)", 0) \
-    DECLARE(MaxThreads, max_parsing_threads, 0, R"(
-The maximum number of threads to parse data in input formats that support parallel parsing. By default, it is determined automatically.
-)", 0) \
-    DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
-The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
-)", 0) \
-    DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
-)", 0) \
-    DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
-The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
-)", 0) \
-    DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
-The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
-)", 0) \
-    DECLARE(UInt64, max_distributed_connections, 1024, R"(
-The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
-
-The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
-)", 0) \
-    DECLARE(UInt64, max_query_size, DBMS_DEFAULT_MAX_QUERY_SIZE, R"(
-The maximum number of bytes of a query string parsed by the SQL parser.
-Data in the VALUES clause of INSERT queries is processed by a separate stream parser (that consumes O(1) RAM) and not affected by this restriction.
-
-:::note
-`max_query_size` cannot be set within an SQL query (e.g., `SELECT now() SETTINGS max_query_size=10000`) because ClickHouse needs to allocate a buffer to parse the query, and this buffer size is determined by the `max_query_size` setting, which must be configured before the query is executed.
-:::
-)", 0) \
-    DECLARE(UInt64, interactive_delay, 100000, R"(
-The interval in microseconds for checking whether request execution has been canceled and sending the progress.
-)", 0) \
-    DECLARE(Seconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, R"(
-Connection timeout if there are no replicas.
-)", 0) \
-    DECLARE(Milliseconds, handshake_timeout_ms, 10000, R"(
-Timeout in milliseconds for receiving Hello packet from replicas during handshake.
-)", 0) \
-    DECLARE(Milliseconds, connect_timeout_with_failover_ms, 1000, R"(
-The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the 'shard' and 'replica' sections are used in the cluster definition.
-If unsuccessful, several attempts are made to connect to various replicas.
-)", 0) \
-    DECLARE(Milliseconds, connect_timeout_with_failover_secure_ms, 1000, R"(
-Connection timeout for selecting first healthy replica (for secure connections).
-)", 0) \
-    DECLARE(Seconds, receive_timeout, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
-Timeout for receiving data from the network, in seconds. If no bytes were received in this interval, the exception is thrown. If you set this setting on the client, the 'send_timeout' for the socket will also be set on the corresponding connection end on the server.
-)", 0) \
-    DECLARE(Seconds, send_timeout, DBMS_DEFAULT_SEND_TIMEOUT_SEC, R"(
-Timeout for sending data to the network, in seconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown. If you set this setting on the client, the 'receive_timeout' for the socket will also be set on the corresponding connection end on the server.
-)", 0) \
-    DECLARE(Seconds, tcp_keep_alive_timeout, DEFAULT_TCP_KEEP_ALIVE_TIMEOUT /* less than DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC */, R"(
-The time in seconds the connection needs to remain idle before TCP starts sending keepalive probes
-)", 0) \
-    DECLARE(Milliseconds, hedged_connection_timeout_ms, 50, R"(
-Connection timeout for establishing connection with replica for Hedged requests
-)", 0) \
-    DECLARE(Milliseconds, receive_data_timeout_ms, 2000, R"(
-Connection timeout for receiving first packet of data or packet with positive progress from replica
-)", 0) \
-    DECLARE(Bool, use_hedged_requests, true, R"(
-Enables hedged requests logic for remote queries. It allows to establish many connections with different replicas for query.
-New connection is enabled in case existent connection(s) with replica(s) were not established within `hedged_connection_timeout`
-or no data was received within `receive_data_timeout`. Query uses the first connection which send non empty progress packet (or data packet, if `allow_changing_replica_until_first_data_packet`);
-other connections are cancelled. Queries with `max_parallel_replicas > 1` are supported.
-
-Enabled by default.
-
-Cloud default value: `0`.
-)", 0) \
-    DECLARE(Bool, allow_changing_replica_until_first_data_packet, false, R"(
-If it's enabled, in hedged requests we can start new connection until receiving first data packet even if we have already made some progress
-(but progress haven't updated for `receive_data_timeout` timeout), otherwise we disable changing replica after the first time we made progress.
-)", 0) \
-    DECLARE(Milliseconds, queue_max_wait_ms, 0, R"(
-The wait time in the request queue, if the number of concurrent requests exceeds the maximum.
-)", 0) \
-    DECLARE(Milliseconds, connection_pool_max_wait_ms, 0, R"(
-The wait time in milliseconds for a connection when the connection pool is full.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Infinite timeout.
-)", 0) \
-    DECLARE(Milliseconds, replace_running_query_max_wait_ms, 5000, R"(
-The wait time for running the query with the same `query_id` to finish, when the [replace_running_query](#replace_running_query) setting is active.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Throwing an exception that does not allow to run a new query if the server already executes a query with the same `query_id`.
-)", 0) \
-    DECLARE(Milliseconds, kafka_max_wait_ms, 5000, R"(
-The wait time in milliseconds for reading messages from [Kafka](/engines/table-engines/integrations/kafka) before retry.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Infinite timeout.
-
-See also:
-
-- [Apache Kafka](https://kafka.apache.org/)
-)", 0) \
-    DECLARE(Milliseconds, rabbitmq_max_wait_ms, 5000, R"(
-The wait time for reading from RabbitMQ before retry.
-)", 0) \
-    DECLARE(UInt64, poll_interval, DBMS_DEFAULT_POLL_INTERVAL, R"(
-Block at the query wait loop on the server for the specified number of seconds.
-)", 0) \
-    DECLARE(UInt64, idle_connection_timeout, 3600, R"(
-Timeout to close idle TCP connections after specified number of seconds.
-
-Possible values:
-
-- Positive integer (0 - close immediately, after 0 seconds).
-)", 0) \
-    DECLARE(UInt64, distributed_connections_pool_size, 1024, R"(
-The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
-)", 0) \
-    DECLARE(UInt64, connections_with_failover_max_tries, 3, R"(
-The maximum number of connection attempts with each replica for the Distributed table engine.
-)", 0) \
-    DECLARE(UInt64, s3_strict_upload_part_size, S3::DEFAULT_STRICT_UPLOAD_PART_SIZE, R"(
-The exact size of part to upload during multipart upload to S3 (some implementations does not supports variable size parts).
-)", 0) \
-    DECLARE(UInt64, azure_strict_upload_part_size, 0, R"(
-The exact size of part to upload during multipart upload to Azure blob storage.
-)", 0) \
-    DECLARE(UInt64, azure_max_blocks_in_multipart_upload, 50000, R"(
-Maximum number of blocks in multipart upload for Azure.
-)", 0) \
-    DECLARE(UInt64, s3_min_upload_part_size, S3::DEFAULT_MIN_UPLOAD_PART_SIZE, R"(
-The minimum size of part to upload during multipart upload to S3.
-)", 0) \
-    DECLARE(UInt64, s3_max_upload_part_size, S3::DEFAULT_MAX_UPLOAD_PART_SIZE, R"(
-The maximum size of part to upload during multipart upload to S3.
-)", 0) \
-    DECLARE(UInt64, azure_min_upload_part_size, 16*1024*1024, R"(
-The minimum size of part to upload during multipart upload to Azure blob storage.
-)", 0) \
-    DECLARE(UInt64, azure_max_upload_part_size, 5ull*1024*1024*1024, R"(
-The maximum size of part to upload during multipart upload to Azure blob storage.
-)", 0) \
-    DECLARE(UInt64, s3_upload_part_size_multiply_factor, S3::DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_FACTOR, R"(
-Multiply s3_min_upload_part_size by this factor each time s3_multiply_parts_count_threshold parts were uploaded from a single write to S3.
-)", 0) \
-    DECLARE(UInt64, s3_upload_part_size_multiply_parts_count_threshold, S3::DEFAULT_UPLOAD_PART_SIZE_MULTIPLY_PARTS_COUNT_THRESHOLD, R"(
-Each time this number of parts was uploaded to S3, s3_min_upload_part_size is multiplied by s3_upload_part_size_multiply_factor.
-)", 0) \
-    DECLARE(UInt64, s3_max_part_number, S3::DEFAULT_MAX_PART_NUMBER, R"(
-Maximum part number number for s3 upload part.
-)", 0) \
-    DECLARE(Bool, s3_allow_multipart_copy, true, R"(
-Allow multipart copy in S3.
-)", 0) \
-    DECLARE(UInt64, s3_max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, R"(
-Maximum size for single-operation copy in s3. This setting is used only if s3_allow_multipart_copy is true.
-)", 0) \
-    DECLARE(UInt64, azure_upload_part_size_multiply_factor, 2, R"(
-Multiply azure_min_upload_part_size by this factor each time azure_multiply_parts_count_threshold parts were uploaded from a single write to Azure blob storage.
-)", 0) \
-    DECLARE(UInt64, azure_upload_part_size_multiply_parts_count_threshold, 500, R"(
-Each time this number of parts was uploaded to Azure blob storage, azure_min_upload_part_size is multiplied by azure_upload_part_size_multiply_factor.
-)", 0) \
-    DECLARE(UInt64, s3_max_inflight_parts_for_one_file, S3::DEFAULT_MAX_INFLIGHT_PARTS_FOR_ONE_FILE, R"(
-The maximum number of a concurrent loaded parts in multipart upload request. 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, azure_max_inflight_parts_for_one_file, 20, R"(
-The maximum number of a concurrent loaded parts in multipart upload request. 0 means unlimited.
-)", 0) \
-    DECLARE(UInt64, s3_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
-The maximum size of object to upload using singlepart upload to S3.
-)", 0) \
-    DECLARE(UInt64, azure_max_single_part_upload_size, S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, R"(
-The maximum size of object to upload using singlepart upload to Azure blob storage.
-)", 0)                                                                             \
-    DECLARE(UInt64, azure_max_single_part_copy_size, 256*1024*1024, R"(
-The maximum size of object to copy using single part copy to Azure blob storage.
-)", 0) \
-    DECLARE(UInt64, s3_max_single_read_retries, S3::DEFAULT_MAX_SINGLE_READ_TRIES, R"(
-The maximum number of retries during single S3 read.
-)", 0) \
-    DECLARE(UInt64, azure_max_single_read_retries, 4, R"(
-The maximum number of retries during single Azure blob storage read.
-)", 0) \
-    DECLARE(UInt64, azure_max_unexpected_write_error_retries, 4, R"(
-The maximum number of retries in case of unexpected errors during Azure blob storage write
-)", 0) \
-    DECLARE(UInt64, s3_max_unexpected_write_error_retries, S3::DEFAULT_MAX_UNEXPECTED_WRITE_ERROR_RETRIES, R"(
-The maximum number of retries in case of unexpected errors during S3 write.
-)", 0) \
-    DECLARE(UInt64, azure_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(
-Max number of azure redirects hops allowed.
-)", 0) \
-    DECLARE(UInt64, azure_max_get_rps, 0, R"(
-Limit on Azure GET request per second rate before throttling. Zero means unlimited.
-)", 0) \
-    DECLARE(UInt64, azure_max_get_burst, 0, R"(
-Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_get_rps`
-)", 0) \
-    DECLARE(UInt64, azure_max_put_rps, 0, R"(
-Limit on Azure PUT request per second rate before throttling. Zero means unlimited.
-)", 0) \
-    DECLARE(UInt64, azure_max_put_burst, 0, R"(
-Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `azure_max_put_rps`
-)", 0) \
-    DECLARE(UInt64, s3_max_connections, S3::DEFAULT_MAX_CONNECTIONS, R"(
-The maximum number of connections per server.
-)", 0) \
-    DECLARE(UInt64, s3_max_get_rps, 0, R"(
-Limit on S3 GET request per second rate before throttling. Zero means unlimited.
-)", 0) \
-    DECLARE(UInt64, s3_max_get_burst, 0, R"(
-Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `s3_max_get_rps`
-)", 0) \
-    DECLARE(UInt64, s3_max_put_rps, 0, R"(
-Limit on S3 PUT request per second rate before throttling. Zero means unlimited.
-)", 0) \
-    DECLARE(UInt64, s3_max_put_burst, 0, R"(
-Max number of requests that can be issued simultaneously before hitting request per second limit. By default (0) equals to `s3_max_put_rps`
-)", 0) \
-    DECLARE(UInt64, s3_list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, R"(
-Maximum number of files that could be returned in batch by ListObject request
-)", 0) \
-    DECLARE(Bool, s3_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
-When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
-When set to `false` than all attempts are made with identical timeouts.
-)", 0) \
-    DECLARE(Bool, azure_use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, R"(
-When set to `true` than for all azure requests first two attempts are made with low send and receive timeouts.
-When set to `false` than all attempts are made with identical timeouts.
-)", 0) \
-    DECLARE(Bool, s3_slow_all_threads_after_network_error, true, R"(
-When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
-after any single s3 request encounters a retryable network error, such as socket timeout.
-When set to `false`, each thread handles S3 request backoff independently of the others.
-)", 0) \
-    DECLARE(Bool, backup_slow_all_threads_after_retryable_s3_error, false, R"(
-When set to `true`, all threads executing S3 requests to the same backup endpoint are slowed down
-after any single S3 request encounters a retryable S3 error, such as 'Slow Down'.
-When set to `false`, each thread handles s3 request backoff independently of the others.
-)", 0) \
-    DECLARE(UInt64, azure_list_object_keys_size, 1000, R"(
-Maximum number of files that could be returned in batch by ListObject request
-)", 0) \
-    DECLARE(Bool, s3_truncate_on_insert, false, R"(
-Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
-
-Possible values:
-- 0 â€” `INSERT` query creates a new file or fail if file exists and s3_create_new_file_on_insert is not set.
-- 1 â€” `INSERT` query replaces existing content of the file with the new data.
-
-See more details [here](/integrations/s3#inserting-data).
-)", 0) \
-    DECLARE(Bool, azure_truncate_on_insert, false, R"(
-Enables or disables truncate before insert in azure engine tables.
-)", 0) \
-    DECLARE(Bool, s3_create_new_file_on_insert, false, R"(
-Enables or disables creating a new file on each insert in s3 engine tables. If enabled, on each insert a new S3 object will be created with the key, similar to this pattern:
-
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
-
-Possible values:
-- 0 â€” `INSERT` query creates a new file or fail if file exists and s3_truncate_on_insert is not set.
-- 1 â€” `INSERT` query creates a new file on each insert using suffix (from the second one) if s3_truncate_on_insert is not set.
-
-See more details [here](/integrations/s3#inserting-data).
-)", 0) \
-    DECLARE(Bool, s3_skip_empty_files, true, R"(
-Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
-
-Possible values:
-- 0 â€” `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 â€” `SELECT` returns empty result for empty file.
-)", 0) \
-    DECLARE(Bool, azure_create_new_file_on_insert, false, R"(
-Enables or disables creating a new file on each insert in azure engine tables
-)", 0) \
-    DECLARE(Bool, s3_check_objects_after_upload, false, R"(
-Check each uploaded object to s3 with head request to be sure that upload was successful
-)", 0) \
-    DECLARE(Bool, s3_validate_etag_on_read, true, R"(
-When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
-)", 0) \
-    DECLARE(Bool, azure_check_objects_after_upload, false, R"(
-Check each uploaded object in azure blob storage to be sure that upload was successful
-)", 0) \
-    DECLARE(Bool, s3_allow_parallel_part_upload, true, R"(
-Use multiple threads for s3 multipart upload. It may lead to slightly higher memory usage
-)", 0) \
-    DECLARE(Bool, azure_allow_parallel_part_upload, true, R"(
-Use multiple threads for azure multipart upload.
-)", 0) \
-    DECLARE(Bool, s3_throw_on_zero_files_match, false, R"(
-Throw an error, when ListObjects request cannot match any files
-)", 0) \
-    DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(
-Throw an error if matched zero files according to glob expansion rules.
-
-Possible values:
-- 1 â€” `SELECT` throws an exception.
-- 0 â€” `SELECT` returns empty result.
-)", 0) \
-    DECLARE(Bool, azure_throw_on_zero_files_match, false, R"(
-Throw an error if matched zero files according to glob expansion rules.
-
-Possible values:
-- 1 â€” `SELECT` throws an exception.
-- 0 â€” `SELECT` returns empty result.
-)", 0) \
-    DECLARE(Bool, s3_ignore_file_doesnt_exist, false, R"(
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 â€” `SELECT` returns empty result.
-- 0 â€” `SELECT` throws an exception.
-)", 0) \
-    DECLARE(Bool, hdfs_ignore_file_doesnt_exist, false, R"(
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 â€” `SELECT` returns empty result.
-- 0 â€” `SELECT` throws an exception.
-)", 0) \
-    DECLARE(Bool, azure_ignore_file_doesnt_exist, false, R"(
-Ignore absence of file if it does not exist when reading certain keys.
-
-Possible values:
-- 1 â€” `SELECT` returns empty result.
-- 0 â€” `SELECT` throws an exception.
-)", 0) \
-    DECLARE(UInt64, azure_sdk_max_retries, 10, R"(
-Maximum number of retries in azure sdk
-)", 0) \
-    DECLARE(UInt64, azure_sdk_retry_initial_backoff_ms, 10, R"(
-Minimal backoff between retries in azure sdk
-)", 0) \
-    DECLARE(UInt64, azure_sdk_retry_max_backoff_ms, 1000, R"(
-Maximal backoff between retries in azure sdk
-)", 0) \
-    DECLARE(UInt64, azure_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
-Idleness timeout for sending and receiving data to/from azure. Fail if a single TCP read or write call blocks for this long.
-)", 0) \
-    DECLARE(UInt64, azure_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
-Connection timeout for host from azure disks.
-)", 0) \
-    DECLARE(Bool, s3_validate_request_settings, true, R"(
-Enables s3 request settings validation.
-Possible values:
-- 1 â€” validate settings.
-- 0 â€” do not validate settings.
-)", 0) \
-    DECLARE(Bool, compatibility_s3_presigned_url_query_in_path, false, R"(
-Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*) into the S3 key (legacy behavior),
-so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
-to avoid interpreting '?' as a wildcard.
-)", 0) \
-    DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
-Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
-)", 0) \
-    DECLARE(UInt64, s3_request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, R"(
-Idleness timeout for sending and receiving data to/from S3. Fail if a single TCP read or write call blocks for this long.
-)", 0) \
-    DECLARE(UInt64, s3_connect_timeout_ms, S3::DEFAULT_CONNECT_TIMEOUT_MS, R"(
-Connection timeout for host from s3 disks.
-)", 0) \
-    DECLARE(Bool, enable_s3_requests_logging, false, R"(
-Enable very explicit logging of S3 requests. Makes sense for debug only.
-)", 0) \
-    DECLARE(String, s3queue_default_zookeeper_path, "/clickhouse/s3queue/", R"(
-Default zookeeper path prefix for S3Queue engine
-)", 0) \
-    DECLARE(Bool, s3queue_migrate_old_metadata_to_buckets, false, R"(
-Migrate old metadata structure of S3Queue table to a new one
-)", 0) \
-    DECLARE(Bool, s3queue_enable_logging_to_s3queue_log, false, R"(
-Enable writing to system.s3queue_log. The value can be overwritten per table with table settings
-)", 0) \
-    DECLARE(Float, s3queue_keeper_fault_injection_probability, 0.0, R"(
-Keeper fault injection probability for S3Queue.
-)", 0) \
-    DECLARE(UInt64, hdfs_replication, 0, R"(
-The actual number of replications can be specified when the hdfs file is created.
-)", 0) \
-    DECLARE(Bool, hdfs_truncate_on_insert, false, R"(
-Enables or disables truncation before an insert in hdfs engine tables. If disabled, an exception will be thrown on an attempt to insert if a file in HDFS already exists.
-
-Possible values:
-- 0 â€” `INSERT` query appends new data to the end of the file.
-- 1 â€” `INSERT` query replaces existing content of the file with the new data.
-)", 0) \
-    DECLARE(Bool, hdfs_create_new_file_on_insert, false, R"(
-Enables or disables creating a new file on each insert in HDFS engine tables. If enabled, on each insert a new HDFS file will be created with the name, similar to this pattern:
-
-initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
-
-Possible values:
-- 0 â€” `INSERT` query appends new data to the end of the file.
-- 1 â€” `INSERT` query creates a new file.
-)", 0) \
-    DECLARE(Bool, hdfs_skip_empty_files, false, R"(
-Enables or disables skipping empty files in [HDFS](../../engines/table-engines/integrations/hdfs.md) engine tables.
-
-Possible values:
-- 0 â€” `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 â€” `SELECT` returns empty result for empty file.
-)", 0) \
-    DECLARE(Bool, enable_hdfs_pread, true, R"(
-Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
-    DECLARE(Bool, use_reader_executor, false, R"(
-Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
-    DECLARE(Bool, reader_executor_use_long_connections, false, R"(
-Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
-Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
-Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
-    DECLARE(Bool, azure_skip_empty_files, false, R"(
-Enables or disables skipping empty files in S3 engine.
-
-Possible values:
-- 0 â€” `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 â€” `SELECT` returns empty result for empty file.
-)", 0) \
-    DECLARE(ArrowFlightDescriptorType, arrow_flight_request_descriptor_type, ArrowFlightDescriptorType::Path, R"(
-Type of descriptor to use for Arrow Flight requests. 'path' sends the dataset name as a path descriptor. 'command' sends a SQL query as a command descriptor (required for Dremio).
-
-Possible values:
-- 'path' â€” Use FlightDescriptor::Path (default, works with most Arrow Flight servers)
-- 'command' â€” Use FlightDescriptor::Command with a SELECT query (required for Dremio)
-)", 0) \
-    DECLARE(UInt64, hsts_max_age, 0, R"(
-Expired time for HSTS. 0 means disable HSTS.
-)", 0) \
-    DECLARE(Bool, extremes, false, R"(
-Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
-For more information, see the section "Extreme values".
-)", IMPORTANT) \
-    DECLARE(Bool, use_uncompressed_cache, false, R"(
-Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) configuration parameter (only set in the config file) â€“ the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
-
-For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the 'use_uncompressed_cache' setting always set to 1.
-)", 0) \
-    DECLARE(Bool, replace_running_query, false, R"(
-When using the HTTP interface, the 'query_id' parameter can be passed. This is any string that serves as the query identifier.
-If a query from the same user with the same 'query_id' already exists at this time, the behaviour depends on the 'replace_running_query' parameter.
-
-`0` (default) â€“ Throw an exception (do not allow the query to run if a query with the same 'query_id' is already running).
-
-`1` â€“ Cancel the old query and start running the new one.
-
-Set this parameter to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn't finished yet, it should be cancelled.
-)", 0) \
-    DECLARE(UInt64, max_remote_read_network_bandwidth, 0, R"(
-The maximum speed of data exchange over the network in bytes per second for read.
-)", 0) \
-    DECLARE(UInt64, max_remote_write_network_bandwidth, 0, R"(
-The maximum speed of data exchange over the network in bytes per second for write.
-)", 0) \
-    DECLARE(UInt64, max_local_read_bandwidth, 0, R"(
-The maximum speed of local reads in bytes per second.
-)", 0) \
-    DECLARE(UInt64, max_local_write_bandwidth, 0, R"(
-The maximum speed of local writes in bytes per second.
-)", 0) \
-    DECLARE(Bool, stream_like_engine_allow_direct_select, false, R"(
-Allow direct SELECT query for Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue and NATS engines. In case there are attached materialized views, SELECT query is not allowed even if this setting is enabled.
-If there are no attached materialized views, enabling this setting allows to read data. Be aware that usually the read data is removed from the queue. In order to avoid removing read data the related engine settings should be configured properly.
-)", 0) \
-    DECLARE(String, stream_like_engine_insert_queue, "", R"(
-When stream-like engine reads from multiple queues, the user will need to select one queue to insert into when writing. Used by Redis Streams and NATS.
-)", 0) \
-    DECLARE(Bool, dictionary_validate_primary_key_type, false, R"(
-Validate primary key type for dictionaries. By default id type for simple layouts will be implicitly converted to UInt64.
-)", 0) \
-    DECLARE(Bool, distributed_insert_skip_read_only_replicas, false, R"(
-Enables skipping read-only replicas for INSERT queries into Distributed.
-
-Possible values:
-
-- 0 â€” INSERT was as usual, if it will go to read-only replica it will fail
-- 1 â€” Initiator will skip read-only replicas before sending data to shards.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, distributed_foreground_insert, false, R"(
-Enables or disables synchronous data insertion into a [Distributed](/engines/table-engines/special/distributed) table.
-
-By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
-
-Possible values:
-
-- `0` â€” Data is inserted in background mode.
-- `1` â€” Data is inserted in synchronous mode.
-
-Cloud default value: `1`.
-
-**See Also**
-
-- [Distributed Table Engine](/engines/table-engines/special/distributed)
-- [Managing Distributed Tables](/sql-reference/statements/system#managing-distributed-tables)
-)", 0, insert_distributed_sync) \
-    DECLARE_WITH_ALIAS(UInt64, distributed_background_insert_timeout, 0, R"(
-Timeout for insert query into distributed. Setting is used only with insert_distributed_sync enabled. Zero value means no timeout.
-)", 0, insert_distributed_timeout) \
-    DECLARE_WITH_ALIAS(Milliseconds, distributed_background_insert_sleep_time_ms, 100, R"(
-Base interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
-
-Possible values:
-
-- A positive integer number of milliseconds.
-)", 0, distributed_directory_monitor_sleep_time_ms) \
-    DECLARE_WITH_ALIAS(Milliseconds, distributed_background_insert_max_sleep_time_ms, 30000, R"(
-Maximum interval for the [Distributed](../../engines/table-engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed_background_insert_sleep_time_ms](#distributed_background_insert_sleep_time_ms) setting.
-
-Possible values:
-
-- A positive integer number of milliseconds.
-)", 0, distributed_directory_monitor_max_sleep_time_ms) \
-    DECLARE_WITH_ALIAS(Bool, distributed_background_insert_batch, false, R"(
-Enables/disables inserted data sending in batches.
-
-When batch sending is enabled, the [Distributed](../../engines/table-engines/special/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
-
-Possible values:
-
-- 1 â€” Enabled.
-- 0 â€” Disabled.
-)", 0, distributed_directory_monitor_batch_inserts) \
-    DECLARE_WITH_ALIAS(Bool, distributed_background_insert_split_batch_on_failure, false, R"(
-Enables/disables splitting batches on failures.
-
-Sometimes sending particular batch to the remote shard may fail, because of some complex pipeline after (i.e. `MATERIALIZED VIEW` with `GROUP BY`) due to `Memory limit exceeded` or similar errors. In this case, retrying will not help (and this will stuck distributed sends for the table) but sending files from that batch one by one may succeed INSERT.
-
-So installing this setting to `1` will disable batching for such batches (i.e. temporary disables `distributed_background_insert_batch` for failed batches).
-
-Possible values:
-
-- 1 â€” Enabled.
-- 0 â€” Disabled.
-
-:::note
-This setting also affects broken batches (that may appears because of abnormal server (machine) termination and no `fsync_after_insert`/`fsync_directories` for [Distributed](../../engines/table-engines/special/distributed.md) table engine).
-:::
-
-:::note
-You should not rely on automatic batch splitting, since this may hurt performance.
-:::
-)", 0, distributed_directory_monitor_split_batch_on_failure) \
-    \
-    DECLARE(Bool, optimize_move_to_prewhere, true, R"(
-Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
-
-Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
-
-Possible values:
-
-- 0 â€” Automatic `PREWHERE` optimization is disabled.
-- 1 â€” Automatic `PREWHERE` optimization is enabled.
-)", 0) \
-    DECLARE(Bool, optimize_move_to_prewhere_if_final, false, R"(
-Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
-
-Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
-
-Possible values:
-
-- 0 â€” Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is disabled.
-- 1 â€” Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is enabled.
-
-**See Also**
-
-- [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
-)", 0) \
-    DECLARE(Bool, move_all_conditions_to_prewhere, true, R"(
-Move all viable conditions from WHERE to PREWHERE
-)", 0) \
-    DECLARE(Bool, enable_multiple_prewhere_read_steps, true, R"(
-Move more conditions from WHERE to PREWHERE and do reads from disk and filtering in multiple steps if there are multiple conditions combined with AND
-)", 0) \
-    DECLARE(Bool, move_primary_key_columns_to_end_of_prewhere, true, R"(
-Move PREWHERE conditions containing primary key columns to the end of AND chain. It is likely that these conditions are taken into account during primary key analysis and thus will not contribute a lot to PREWHERE filtering.
-)", 0) \
-    DECLARE(Bool, allow_reorder_prewhere_conditions, true, R"(
-When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
-)", 0) \
-    \
-    DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
-Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
-
-Possible values:
-
-- `0` â€” Do not wait.
-- `1` â€” Wait for own execution.
-- `2` â€” Wait for everyone.
-- `3` - Only wait for active replicas.
-
-Cloud default value: `0`.
-
-:::note
-`alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
-:::
-)", 0, replication_alter_partitions_sync) \
-    DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
-Specifies how long (in seconds) to wait for inactive replicas to execute [`ALTER`](../../sql-reference/statements/alter/index.md), [`OPTIMIZE`](../../sql-reference/statements/optimize.md) or [`TRUNCATE`](../../sql-reference/statements/truncate.md) queries.
-
-Possible values:
-
-- `0` â€” Do not wait.
-- Negative integer â€” Wait for unlimited time.
-- Positive integer â€” The number of seconds to wait.
-)", 0) \
-    DECLARE(Bool, alter_move_to_space_execute_async, false, R"(
-Execute ALTER TABLE MOVE ... TO [DISK|VOLUME] asynchronously
-)", 0) \
-    \
-    DECLARE(LoadBalancing, load_balancing, LoadBalancing::RANDOM, R"(
-Specifies the algorithm of replicas selection that is used for distributed query processing.
-
-ClickHouse supports the following algorithms of choosing replicas:
-
-- [Random](#load_balancing-random) (by default)
-- [Nearest hostname](#load_balancing-nearest_hostname)
-- [Hostname levenshtein distance](#load_balancing-hostname_levenshtein_distance)
-- [Hostname longest common prefix](#load_balancing-hostname_longest_common_prefix)
-- [Hostname longest common suffix](#load_balancing-hostname_longest_common_suffix)
-- [In order](#load_balancing-in_order)
-- [First or random](#load_balancing-first_or_random)
-- [Round robin](#load_balancing-round_robin)
-
-See also:
-
-- [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
-
-### Random (by Default) {#load_balancing-random}
-
-```sql
-load_balancing = random
-```
-
-The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to anyone of them.
-Disadvantages: Server proximity is not accounted for; if the replicas have different data, you will also get different data.
-
-### Nearest Hostname {#load_balancing-nearest_hostname}
-
-```sql
-load_balancing = nearest_hostname
-```
-
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e.Â errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
-
-For instance, example01-01-1 and example01-01-2 are different in one position, while example01-01-1 and example01-02-2 differ in two places.
-This method might seem primitive, but it does not require external data about network topology, and it does not compare IP addresses, which would be complicated for our IPv6 addresses.
-
-Thus, if there are equivalent replicas, the closest one by name is preferred.
-We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
-
-### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
-
-```sql
-load_balancing = hostname_levenshtein_distance
-```
-
-Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
-
-```text
-example-clickhouse-0-0 ample-clickhouse-0-0
-1
-
-example-clickhouse-0-0 example-clickhouse-1-10
-2
-
-example-clickhouse-0-0 example-clickhouse-12-0
-3
-```
-
-### Hostname longest common prefix {#load_balancing-hostname_longest_common_prefix}
-
-```sql
-load_balancing = hostname_longest_common_prefix
-```
-
-Just like `nearest_hostname`, but the replica whose hostname shares the longest common prefix with the local hostname is preferred (the longer the common prefix, the higher the priority). Unlike `nearest_hostname`, which counts differing characters position by position, this strategy is not confused by hostnames whose numeric segments have different lengths. For example, for the local hostname `sfe301`:
-
-```text
-sfe301 sde301
-1
-
-sfe301 sfe10101
-3
-
-sfe301 sde505
-1
-```
-
-Here `sfe10101` is preferred because it shares the longest common prefix (`sfe`, length 3) with `sfe301`.
-
-Replicas with equal common prefix length are chosen at random. In particular, when no replica shares any prefix with the local hostname (all common prefix lengths are zero), this strategy behaves exactly like `random`.
-
-### Hostname longest common suffix {#load_balancing-hostname_longest_common_suffix}
-
-```sql
-load_balancing = hostname_longest_common_suffix
-```
-
-Just like `hostname_longest_common_prefix`, but the longest common *suffix* is compared instead of the prefix. This is useful when the data center identity is encoded as a suffix of the hostname. For example, for the local hostname `et46gtghn.qc.localdomain`:
-
-```text
-et46gtghn.qc.localdomain tr676ddgh.td.localdomain
-12
-
-et46gtghn.qc.localdomain ab999.qc.localdomain
-15
-```
-
-Here `ab999.qc.localdomain` is preferred because it shares the longest common suffix (`.qc.localdomain`, length 15) with `et46gtghn.qc.localdomain`.
-
-Replicas with equal common suffix length are chosen at random. In particular, when no replica shares any suffix with the local hostname (all common suffix lengths are zero), this strategy behaves exactly like `random`.
-
-### In Order {#load_balancing-in_order}
-
-```sql
-load_balancing = in_order
-```
-
-Replicas with the same number of errors are accessed in the same order as they are specified in the configuration.
-This method is appropriate when you know exactly which replica is preferable.
-
-### First or Random {#load_balancing-first_or_random}
-
-```sql
-load_balancing = first_or_random
-```
-
-This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It's effective in cross-replication topology setups, but useless in other configurations.
-
-The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
-
-It's possible to explicitly define what the first replica is by using the setting `load_balancing_first_offset`. This gives more control to rebalance query workloads among replicas.
-
-### Round Robin {#load_balancing-round_robin}
-
-```sql
-load_balancing = round_robin
-```
-
-This algorithm uses a round-robin policy across replicas with the same number of errors (only the queries with `round_robin` policy is accounted).
-)", 0) \
-    DECLARE(UInt64, load_balancing_first_offset, 0, R"(
-Which replica to preferably send a query when FIRST_OR_RANDOM load balancing strategy is used.
-)", 0) \
-    \
-    DECLARE(TotalsMode, totals_mode, TotalsMode::AFTER_HAVING_EXCLUSIVE, R"(
-How to calculate TOTALS when HAVING is present, as well as when max_rows_to_group_by and group_by_overflow_mode = 'any' are present.
-See the section "WITH TOTALS modifier".
-)", IMPORTANT) \
-    DECLARE(Float, totals_auto_threshold, 0.5, R"(
-The threshold for `totals_mode = 'auto'`.
-See the section "WITH TOTALS modifier".
-)", 0) \
-    \
-    DECLARE(Bool, allow_suspicious_low_cardinality_types, false, R"(
-Allows or restricts using [LowCardinality](../../sql-reference/data-types/lowcardinality.md) with data types with fixed size of 8 bytes or less: numeric data types and `FixedString(8_bytes_or_less)`.
-
-For small fixed values using of `LowCardinality` is usually inefficient, because ClickHouse stores a numeric index for each row. As a result:
-
-- Disk space usage can rise.
-- RAM consumption can be higher, depending on a dictionary size.
-- Some functions can work slower due to extra coding/encoding operations.
-
-Merge times in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine tables can grow due to all the reasons described above.
-
-Possible values:
-
-- 1 â€” Usage of `LowCardinality` is not restricted.
-- 0 â€” Usage of `LowCardinality` is restricted.
-)", 0) \
-    DECLARE(Bool, allow_suspicious_fixed_string_types, false, R"(
-In CREATE TABLE statement allows creating columns of type FixedString(n) with n > 256. FixedString with length >= 256 is suspicious and most likely indicates a misuse
-)", 0) \
-    DECLARE(Bool, allow_suspicious_indices, false, R"(
-Reject primary/secondary indexes and sorting keys with identical expressions
-)", 0) \
-    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
-Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
-index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
-)", 0) \
-    DECLARE(Bool, allow_suspicious_ttl_expressions, false, R"(
-Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
-)", 0) \
-    DECLARE(Bool, allow_suspicious_variant_types, false, R"(
-In CREATE TABLE statement allows specifying Variant type with similar variant types (for example, with different numeric or date types). Enabling this setting may introduce some ambiguity when working with values with similar types.
-)", 0) \
-    DECLARE(Bool, allow_suspicious_primary_key, false, R"(
-Allow suspicious `PRIMARY KEY`/`ORDER BY` for MergeTree (i.e. SimpleAggregateFunction).
-)", 0) \
-    DECLARE(Bool, allow_suspicious_types_in_group_by, false, R"(
-Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in GROUP BY keys.
-)", 0) \
-    DECLARE(Bool, allow_suspicious_types_in_order_by, false, R"(
-Allows or restricts using [Variant](../../sql-reference/data-types/variant.md) and [Dynamic](../../sql-reference/data-types/dynamic.md) types in ORDER BY keys.
-)", 0) \
-    DECLARE(Bool, use_variant_default_implementation_for_comparisons, true, R"(
-Enables or disables default implementation for Variant type in comparison functions.
-)", 0) \
-    DECLARE(Bool, variant_throw_on_type_mismatch, true, R"(
-When applying a function to a [Variant](../../sql-reference/data-types/variant.md) column using the default implementation,
-controls what happens for rows whose actual type is incompatible with the function:
-- `true` (default) â€” throw an exception.
-- `false` â€” return `NULL` for those rows instead.
-)", 0) \
-    DECLARE(Bool, dynamic_throw_on_type_mismatch, true, R"(
-When applying a function to a [Dynamic](../../sql-reference/data-types/dynamic.md) column using the default implementation,
-controls what happens for rows whose actual type is incompatible with the function:
-- `true` (default) â€” throw an exception.
-- `false` â€” return `NULL` for those rows instead.
-)", 0) \
-    DECLARE(Bool, compile_expressions, true, R"(
-Compile some scalar functions and operators to native code.
-)", 0) \
-    DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
-Minimum count of executing same expression before it is get compiled.
-)", 0) \
-    DECLARE(Bool, compile_regular_expressions, true, R"(
-Compile simple regular expressions used in functions like `match` and `extract` to native code. Patterns outside the supported subset transparently fall back to the general engine.
-)", 0) \
-    DECLARE(UInt64, min_count_to_compile_regular_expression, 3, R"(
-Minimum count of executing same regular expression before it is get compiled.
-)", 0) \
-    DECLARE(Bool, compile_aggregate_expressions, true, R"(
-Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
-
-Possible values:
-
-- 0 â€” Aggregation is done without JIT compilation.
-- 1 â€” Aggregation is done using JIT compilation.
-
-**See Also**
-
-- [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
-)", 0) \
-    DECLARE(UInt64, min_count_to_compile_aggregate_expression, 3, R"(
-The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Identical aggregate expressions are always JIT-compiled.
-)", 0) \
-    DECLARE(Bool, compile_sort_description, true, R"(
-Compile sort description to native code.
-)", 0) \
-    DECLARE(UInt64, min_count_to_compile_sort_description, 3, R"(
-The number of identical sort descriptions before they are JIT-compiled
-)", 0) \
-    DECLARE(UInt64, group_by_two_level_threshold, 100000, R"(
-From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.
-)", 0) \
-    DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, R"(
-From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
-)", 0) \
-    DECLARE(Bool, distributed_aggregation_memory_efficient, true, R"(
-Is the memory-saving mode of distributed aggregation enabled.
-)", 0) \
-    DECLARE(UInt64, aggregation_memory_efficient_merge_threads, 0, R"(
-Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.
-)", 0) \
-    DECLARE(Bool, enable_memory_bound_merging_of_aggregation_results, true, R"(
-Enable memory bound merging strategy for aggregation.
-)", 0) \
-    DECLARE(Bool, enable_positional_arguments, true, R"(
-Enables or disables supporting positional arguments for [GROUP BY](/sql-reference/statements/select/group-by), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements.
-
-Possible values:
-
-- 0 â€” Positional arguments aren't supported.
-- 1 â€” Positional arguments are supported: column numbers can use instead of column names.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
-
-INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM positional_arguments ORDER BY 2,3;
-```
-
-Result:
-
-```text
-â”Œâ”€oneâ”€â”¬â”€twoâ”€â”¬â”€threeâ”€â”
-â”‚  30 â”‚  10 â”‚   20  â”‚
-â”‚  20 â”‚  20 â”‚   10  â”‚
-â”‚  10 â”‚  20 â”‚   30  â”‚
-â””â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, enable_positional_arguments_for_projections, false, R"(
-Enables or disables supporting positional arguments in PROJECTION definitions. See also [enable_positional_arguments](#enable_positional_arguments) setting.
-
-:::note
-This is an expert-level setting, and you shouldn't change it if you're just getting started with ClickHouse.
-:::
-
-Possible values:
-
-- 0 â€” Positional arguments aren't supported.
-- 1 â€” Positional arguments are supported: column numbers can use instead of column names.
-)", 0) \
-    DECLARE(Bool, enable_extended_results_for_datetime_functions, false, R"(
-Enables or disables returning results of type `Date32` with extended range (compared to type `Date`)
-or `DateTime64` with extended range (compared to type `DateTime`).
-
-Possible values:
-
-- `0` â€” Functions return `Date` or `DateTime` for all types of arguments.
-- `1` â€” Functions return `Date32` or `DateTime64` for `Date32` or `DateTime64` arguments and `Date` or `DateTime` otherwise.
-
-The table below shows the behavior of this setting for various date-time functions.
-
-| Function | `enable_extended_results_for_datetime_functions = 0` | `enable_extended_results_for_datetime_functions = 1` |
-|----------|---------------------------------------------------|---------------------------------------------------|
-| `toStartOfYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfISOYear` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfQuarter` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toLastDayOfWeek` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toLastDayOfMonth` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toMonday` | Returns `Date` or `DateTime` | Returns `Date`/`DateTime` for `Date`/`DateTime` input<br/>Returns `Date32`/`DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfDay` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfHour` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfFifteenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfTenMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfFiveMinutes` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `toStartOfMinute` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-| `timeSlot` | Returns `DateTime`<br/>*Note: Wrong results for values outside 1970-2149 range* | Returns `DateTime` for `Date`/`DateTime` input<br/>Returns `DateTime64` for `Date32`/`DateTime64` input |
-)", 0) \
-    DECLARE(Bool, allow_nonconst_timezone_arguments, false, R"(
-Allow non-const timezone arguments in certain time-related functions like toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*().
-This setting exists only for compatibility reasons. In ClickHouse, the time zone is a property of the data type, respectively of the column.
-Enabling this setting gives the wrong impression that different values within a column can have different timezones.
-Therefore, please do not enable this setting.
-)", 0) \
-    DECLARE(Bool, use_legacy_to_time, false, R"(
-When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
-Otherwise, uses a new toTime function, that converts different type of data into the Time type.
-The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_time_time64_type, true, R"(
-Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
-)", 0, allow_experimental_time_time64_type) \
-    DECLARE(Bool, function_locate_has_mysql_compatible_argument_order, true, R"(
-Controls the order of arguments in function [locate](../../sql-reference/functions/string-search-functions.md/#locate).
-
-Possible values:
-
-- 0 â€” Function `locate` accepts arguments `(haystack, needle[, start_pos])`.
-- 1 â€” Function `locate` accepts arguments `(needle, haystack, [, start_pos])` (MySQL-compatible behavior)
-)", 0) \
-    \
-    DECLARE(Bool, group_by_use_nulls, false, R"(
-Changes the way the [GROUP BY clause](/sql-reference/statements/select/group-by) treats the types of aggregation keys.
-When the `ROLLUP`, `CUBE`, or `GROUPING SETS` specifiers are used, some aggregation keys may not be used to produce some result rows.
-Columns for these keys are filled with either default value or `NULL` in corresponding rows depending on this setting.
-
-Possible values:
-
-- 0 â€” The default value for the aggregation key type is used to produce missing values.
-- 1 â€” ClickHouse executes `GROUP BY` the same way as the SQL standard says. The types of aggregation keys are converted to [Nullable](/sql-reference/data-types/nullable). Columns for corresponding aggregation keys are filled with [NULL](/sql-reference/syntax#null) for rows that didn't use it.
-
-See also:
-
-- [GROUP BY clause](/sql-reference/statements/select/group-by)
-)", 0) \
-    \
-    DECLARE(Bool, skip_unavailable_shards, false, R"(
-Enables or disables silently skipping of unavailable shards.
-
-The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.
-
-Possible values:
-
-- 1 â€” skipping enabled.
-
-    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues.
-
-- 0 â€” skipping disabled.
-
-    If a shard is unavailable, ClickHouse throws an exception.
-)", 0) \
-    \
-    DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING, R"(
-Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled. The setting has no effect when `skip_unavailable_shards = 0`.
-
-Possible values:
-
-- `unavailable` â€” Only connection-related errors are ignored. A shard is considered unavailable when ClickHouse cannot connect to any of its replicas, or when a replica's hostname cannot be resolved through DNS.
-
-- `unavailable_or_table_missing` â€” In addition to `unavailable`, errors caused by a missing table or database on the shard are ignored. This is useful while a table is being created or dropped across a cluster. This is the default and matches the historical behavior of `skip_unavailable_shards`, which also treated a shard whose table does not exist as unavailable.
-
-- `unavailable_or_exception_before_processing` â€” In addition to `unavailable`, any exception received from a shard before it returned any data block to the initiator is ignored. An exception that arrives after the shard already returned some data is always rethrown. Note that "before it returned any data" is checked at the initiator: a shard that performs a blocking computation (for example an aggregation, sort, or `LIMIT BY`) may process rows and fail before emitting any block, in which case its partial work is silently discarded and the query returns a result built from the remaining shards. This is therefore the most permissive mode and should be used with care.
-)", 0) \
-    \
-    DECLARE(UInt64, max_skip_unavailable_shards_num, 0, R"(
-When `skip_unavailable_shards` is enabled, limits the maximum number of shards that can be silently skipped.
-If the number of unavailable shards exceeds this value, an exception is thrown instead of silently skipping.
-
-A value of 0 means no limit (default behavior â€” all unavailable shards can be skipped).
-)", 0) \
-    \
-    DECLARE(Float, max_skip_unavailable_shards_ratio, 0, R"(
-When `skip_unavailable_shards` is enabled, limits the maximum ratio (0 to 1) of shards that can be silently skipped.
-If the ratio of unavailable shards to total shards exceeds this value, an exception is thrown instead of silently skipping.
-
-A value of 0 means no limit (default behavior â€” all unavailable shards can be skipped).
-)", 0) \
-    \
-    DECLARE(UInt64, parallel_distributed_insert_select, 2, R"(
-Enables parallel distributed `INSERT ... SELECT` query.
-
-If we execute `INSERT INTO distributed_table_a SELECT ... FROM distributed_table_b` queries and both tables use the same cluster, and both tables are either [replicated](../../engines/table-engines/mergetree-family/replication.md) or non-replicated, then this query is processed locally on every shard.
-
-Possible values:
-
-- `0` â€” Disabled.
-- `1` â€” `SELECT` will be executed on each shard from the underlying table of the distributed engine.
-- `2` â€” `SELECT` and `INSERT` will be executed on each shard from/to the underlying table of the distributed engine.
-
-Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTree` source can also be parallelized across replicas. To enable it:
-- `parallel_distributed_insert_select = 2`
-- `enable_parallel_replicas = 1`
-)", 0) \
-    DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
-Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
-
-Possible values:
-
-- `0` â€” Disabled (final query processing is done on the initiator node).
-- `1` - Do not merge aggregation states from different servers for distributed query processing (query completely processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
-- `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completely on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
-
-**Example**
-
-```sql
-SELECT *
-FROM remote('127.0.0.{2,3}', system.one)
-GROUP BY dummy
-LIMIT 1
-SETTINGS distributed_group_by_no_merge = 1
-FORMAT PrettyCompactMonoBlock
-
-â”Œâ”€dummyâ”€â”
-â”‚     0 â”‚
-â”‚     0 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-```sql
-SELECT *
-FROM remote('127.0.0.{2,3}', system.one)
-GROUP BY dummy
-LIMIT 1
-SETTINGS distributed_group_by_no_merge = 2
-FORMAT PrettyCompactMonoBlock
-
-â”Œâ”€dummyâ”€â”
-â”‚     0 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(UInt64, distributed_push_down_limit, 1, R"(
-Enables or disables [LIMIT](#limit) applying on each shard separately.
-
-This will allow to avoid:
-- Sending extra rows over network;
-- Processing rows behind the limit on the initiator.
-
-Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
-- [distributed_group_by_no_merge](#distributed_group_by_no_merge) > 0.
-- Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
-- Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
-    - [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled.
-    - [optimize_distributed_group_by_sharding_key](#optimize_distributed_group_by_sharding_key) is enabled.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-See also:
-
-- [distributed_group_by_no_merge](#distributed_group_by_no_merge)
-- [optimize_skip_unused_shards](#optimize_skip_unused_shards)
-- [optimize_distributed_group_by_sharding_key](#optimize_distributed_group_by_sharding_key)
-)", 0) \
-    DECLARE(Bool, optimize_distributed_group_by_sharding_key, true, R"(
-Optimize `GROUP BY sharding_key` queries, by avoiding costly aggregation on the initiator server (which will reduce memory usage for the query on the initiator server).
-
-The following types of queries are supported (and all combinations of them):
-
-- `SELECT DISTINCT [..., ]sharding_key[, ...] FROM dist`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...]`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...] ORDER BY x`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1`
-- `SELECT ... FROM dist GROUP BY sharding_key[, ...] LIMIT 1 BY x`
-
-The following types of queries are not supported (support for some of them may be added later):
-
-- `SELECT ... GROUP BY sharding_key[, ...] WITH TOTALS`
-- `SELECT ... GROUP BY sharding_key[, ...] WITH ROLLUP`
-- `SELECT ... GROUP BY sharding_key[, ...] WITH CUBE`
-- `SELECT ... GROUP BY sharding_key[, ...] SETTINGS extremes=1`
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-See also:
-
-- [distributed_group_by_no_merge](#distributed_group_by_no_merge)
-- [distributed_push_down_limit](#distributed_push_down_limit)
-- [optimize_skip_unused_shards](#optimize_skip_unused_shards)
-
-:::note
-Right now it requires `optimize_skip_unused_shards` (the reason behind this is that one day it may be enabled by default, and it will work correctly only if data was inserted via Distributed table, i.e. data is distributed according to sharding_key).
-:::
-)", 0) \
-    DECLARE(UInt64, optimize_skip_unused_shards_limit, 1000, R"(
-Limit for number of sharding key values, turns off `optimize_skip_unused_shards` if the limit is reached.
-
-Too many values may require significant amount for processing, while the benefit is doubtful, since if you have huge number of values in `IN (...)`, then most likely the query will be sent to all shards anyway.
-)", 0) \
-    DECLARE(Bool, optimize_skip_unused_shards, false, R"(
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE`, and activates related optimizations for distributed queries (e.g. aggregation by sharding key).
-
-:::note
-Assumes that the data is distributed by sharding key, otherwise a query yields incorrect result.
-:::
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, optimize_skip_unused_shards_rewrite_in, true, R"(
-Rewrite IN in query for remote shards to exclude values that does not belong to the shard (requires optimize_skip_unused_shards).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, allow_nondeterministic_optimize_skip_unused_shards, false, R"(
-Allow nondeterministic (like `rand` or `dictGet`, since later has some caveats with updates) functions in sharding key.
-
-Possible values:
-
-- 0 â€” Disallowed.
-- 1 â€” Allowed.
-)", 0) \
-    DECLARE(UInt64, force_optimize_skip_unused_shards, 0, R"(
-Enables or disables query execution if [optimize_skip_unused_shards](#optimize_skip_unused_shards) is enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled, an exception will be thrown.
-
-Possible values:
-
-- 0 â€” Disabled. ClickHouse does not throw an exception.
-- 1 â€” Enabled. Query execution is disabled only if the table has a sharding key.
-- 2 â€” Enabled. Query execution is disabled regardless of whether a sharding key is defined for the table.
-)", 0) \
-    DECLARE(UInt64, optimize_skip_unused_shards_nesting, 0, R"(
-Controls [`optimize_skip_unused_shards`](#optimize_skip_unused_shards) (hence still requires [`optimize_skip_unused_shards`](#optimize_skip_unused_shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
-
-Possible values:
-
-- 0 â€” Disabled, `optimize_skip_unused_shards` works always.
-- 1 â€” Enables `optimize_skip_unused_shards` only for the first level.
-- 2 â€” Enables `optimize_skip_unused_shards` up to the second level.
-)", 0) \
-    DECLARE(UInt64, force_optimize_skip_unused_shards_nesting, 0, R"(
-Controls [`force_optimize_skip_unused_shards`](#force_optimize_skip_unused_shards) (hence still requires [`force_optimize_skip_unused_shards`](#force_optimize_skip_unused_shards)) depends on the nesting level of the distributed query (case when you have `Distributed` table that look into another `Distributed` table).
-
-Possible values:
-
-- 0 - Disabled, `force_optimize_skip_unused_shards` works always.
-- 1 â€” Enables `force_optimize_skip_unused_shards` only for the first level.
-- 2 â€” Enables `force_optimize_skip_unused_shards` up to the second level.
-)", 0) \
-    \
-    DECLARE(NonZeroUInt64, min_chunk_bytes_for_parallel_parsing, (10 * 1024 * 1024), R"(
-- Type: unsigned int
-- Default value: 1 MiB
-
-The minimum chunk size in bytes, which each thread will parse in parallel.
-)", 0) \
-    DECLARE(Bool, allow_special_serialization_kinds_in_output_formats, true, R"(
-Allows to output columns with special serialization kinds like Sparse and Replicated without converting them to full column representation.
-It helps to avoid unnecessary data copy during formatting.
-)", 0) \
-    DECLARE(Bool, enable_parsing_to_custom_serialization, true, R"(
-If true then data can be parsed directly to columns with custom serialization (e.g. Sparse) according to hints for serialization got from the table.
-)", 0) \
-    DECLARE(Bool, ignore_format_null_for_explain, true, R"(
-If enabled, `FORMAT Null` will be ignored for `EXPLAIN` queries and default output format will be used instead.
-When disabled, `EXPLAIN` queries with `FORMAT Null` will produce no output (backward compatible behavior).
-)", 0) \
-    \
-    DECLARE(Bool, merge_tree_use_v1_object_and_dynamic_serialization, false, R"(
-When enabled, V1 serialization version of JSON and Dynamic types will be used in MergeTree instead of V2. Changing this setting takes affect only after server restart.
-)", 0) \
-    DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read, (20 * 8192), R"(
-If the number of rows to be read from a file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_min_bytes_for_concurrent_read, (24 * 10 * 1024 * 1024), R"(
-If the number of bytes to read from one file of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
-
-Possible value:
-
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_min_rows_for_seek, 0, R"(
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file but reads the data sequentially.
-
-Possible values:
-
-- Any positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_min_bytes_for_seek, 0, R"(
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads a range of file that contains both blocks, thus avoiding extra seek.
-
-Possible values:
-
-- Any positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_coarse_index_granularity, 8, R"(
-When searching for data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
-
-Possible values:
-
-- Any positive even integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_generic_exclusion_search_max_steps, 0, R"(
-When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. The same algorithm is used for the analysis of the text index. This setting limits the number of steps (index checks) the algorithm spends on each data part.
-
-The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
-
-The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` and `TextIndexGenericExclusionSearchStepLimitReached` profile events count how many times the budget was exhausted.
-
-The (default) value 0 means unlimited steps.
-
-Possible values:
-
-- 0 for unlimited steps, or any positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
-
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
-
-Possible values:
-
-- Any positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_max_bytes_to_use_cache, (192 * 10 * 1024 * 1024), R"(
-If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks.
-
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
-
-Possible values:
-
-- Any positive integer.
-)", 0) \
-DECLARE(Bool, merge_tree_use_deserialization_prefixes_cache, true, R"(
-Enables caching of columns metadata from the file prefixes during reading from remote disks in MergeTree.
-)", 0) \
-DECLARE(Bool, merge_tree_use_prefixes_deserialization_thread_pool, true, R"(
-Enables usage of the thread pool for parallel prefixes reading in Wide parts in MergeTree. Size of that thread pool is controlled by server setting `max_prefixes_deserialization_thread_pool_size`.
-)", 0) \
-    DECLARE(Bool, do_not_merge_across_partitions_select_final, false, R"(
-Improve FINAL queries by avoiding merges across different partitions.
-
-When enabled, during SELECT FINAL queries, parts from different partitions will not be merged together. Instead, merging will only occur within each partition separately. This can significantly improve query performance when working with partitioned tables.
-)", 0) \
-    DECLARE(Bool, enable_automatic_decision_for_merging_across_partitions_for_final, true, R"(
-If set, ClickHouse will automatically enable this optimization when the partition key expression is deterministic and all columns used in the partition key expression are included in the primary key.
-This automatic derivation ensures that rows with the same primary key values will always belong to the same partition, making it safe to avoid cross-partition merges.
-)", 0) \
-    DECLARE(Bool, split_parts_ranges_into_intersecting_and_non_intersecting_final, true, R"(
-Split parts ranges into intersecting and non intersecting during FINAL optimization
-)", 0) \
-    DECLARE(Bool, split_intersecting_parts_ranges_into_layers_final, true, R"(
-Split intersecting parts ranges into layers during FINAL optimization
-)", 0) \
-    DECLARE(Bool, apply_row_policy_after_final, true, R"(
-When enabled, row policies and PREWHERE are applied after FINAL processing for *MergeTree tables. (Especially for ReplacingMergeTree)
-When disabled, row policies are applied before FINAL, which can cause different results when the policy
-filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
-
-If the row policy expression depends only on columns in ORDER BY, it will still be applied before FINAL as an optimization,
-since such filtering cannot affect the deduplication result.
-
-Possible values:
-
-- 0 â€” Row policy and PREWHERE are applied before FINAL (default).
-- 1 â€” Row policy and PREWHERE are applied after FINAL.
-)", 0) \
-    DECLARE(Bool, apply_prewhere_after_final, false, R"(
-When enabled, PREWHERE conditions are applied after FINAL processing for ReplacingMergeTree and similar engines.
-This can be useful when PREWHERE references columns that may have different values across duplicate rows,
-and you want FINAL to select the winning row before filtering. When disabled, PREWHERE is applied during reading.
-Note: If apply_row_level_security_after_final is enabled and row policy uses non-sorting-key columns, PREWHERE will also
-be deferred to maintain correct execution order (row policy must be applied before PREWHERE).
-)", 0) \
-    DECLARE(Bool, defer_partition_pruning_after_final, true, R"(
-When enabled (default), partition pruning is skipped for `FINAL` queries on tables whose
-partition-key columns are not part of the sorting key. This is the correctness-safe behavior
-introduced in 26.3: `FINAL` may need to deduplicate rows that share a primary key but live
-in different partitions, and partition pruning would silently exclude such rows from the
-deduplication input.
-
-When disabled, partition pruning is applied even with `FINAL`, restoring the pre-26.3
-behavior. This can be substantially faster for queries with `WHERE` predicates on the
-partition column, but is only correct when rows with the same primary key cannot exist
-in different partitions â€” e.g. event-log tables whose partition column is set at insert
-time and never changes.
-
-This setting only affects partitioned tables whose partition-key columns are not contained
-in the sorting key; for other tables partition pruning is always applied.
-
-Possible values:
-
-- 0 â€” Apply partition pruning before `FINAL` (pre-26.3 behavior, faster but unsafe in the general case).
-- 1 â€” Defer partition pruning to after `FINAL` (default, correctness-safe).
-)", 0) \
-    \
-    DECLARE(UInt64, mysql_max_rows_to_insert, 65536, R"(
-The maximum number of rows in MySQL batch insertion of the MySQL storage engine
-)", 0) \
-    DECLARE(Bool, mysql_map_string_to_text_in_show_columns, true, R"(
-When enabled, [String](../../sql-reference/data-types/string.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md/#show_columns).
-
-Has an effect only when the connection is made through the MySQL wire protocol.
-
-- 0 - Use `BLOB`.
-- 1 - Use `TEXT`.
-)", 0) \
-    DECLARE(Bool, mysql_map_fixed_string_to_text_in_show_columns, true, R"(
-When enabled, [FixedString](../../sql-reference/data-types/fixedstring.md) ClickHouse data type will be displayed as `TEXT` in [SHOW COLUMNS](../../sql-reference/statements/show.md/#show_columns).
-
-Has an effect only when the connection is made through the MySQL wire protocol.
-
-- 0 - Use `BLOB`.
-- 1 - Use `TEXT`.
-)", 0) \
-    \
-    DECLARE(UInt64, optimize_min_equality_disjunction_chain_length, 3, R"(
-The minimum length of the expression `expr = x1 OR ... expr = xN` for optimization
-)", 0) \
-    DECLARE(UInt64, optimize_min_inequality_conjunction_chain_length, 3, R"(
-The minimum length of the expression `expr <> x1 AND ... expr <> xN` for optimization
-)", 0) \
-    \
-    DECLARE(UInt64, min_bytes_to_use_direct_io, 0, R"(
-The minimum data volume required for using direct I/O access to the storage disk.
-
-ClickHouse uses this setting when reading data from tables. If the total storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with the `O_DIRECT` option.
-
-Possible values:
-
-- 0 â€” Direct I/O is disabled.
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, min_bytes_to_use_mmap_io, 0, R"(
-This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Big files read with only copying data from kernel to userspace.
-)", 0) \
-    DECLARE(Bool, checksum_on_read, true, R"(
-Validate checksums on reading. It is enabled by default and should be always enabled in production. Please do not expect any benefits in disabling this setting. It may only be used for experiments and benchmarks. The setting is only applicable for tables of MergeTree family. Checksums are always validated for other table engines and when receiving data over the network.
-)", 0) \
-    \
-    DECLARE(Bool, use_lightweight_primary_key_index_analysis, true, R"(
-Optimize primary key index analysis for `MergeTree` tables with long primary keys.
-
-When enabled, the run time of index analysis mainly depends on the complexity of the query's filter (the key columns it actually uses), not on the length of the primary key â€” so extending the sorting key has negligible extra overhead on index analysis for queries that filter on only a few of its columns.
-
-Possible values:
-
-- 0 â€” Disabled. All primary key columns are processed during index analysis.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, use_partition_pruning, true, R"(
-Use partition key to prune partitions during query execution for MergeTree tables.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0, use_partition_key) \
-    DECLARE(Bool, force_index_by_date, false, R"(
-Disables query execution if the index can't be used by date.
-
-Works with tables in the MergeTree family.
-
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
-)", 0) \
-    DECLARE(Bool, use_primary_key, true, R"(
-Use the primary key to prune granules during query execution for MergeTree tables.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
-Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
-
-When the partition key appears in the filter together with primary-key or skip-index columns, this lets index analysis fold the partition value separately within each part. It is most useful for disjunctive filters whose branches target different partitions. For example, with `PARTITION BY a` and `ORDER BY b`:
-
-```sql
-SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b > 10)
-```
-
-For the part in partition `a = 1` the condition folds to `b >= 1`, while for partitions `a = 2` and `a = 3` it folds to `b > 10`, so each part is analyzed with the predicate that actually applies to it.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_partition_minmax_for_primary_key_pruning, true, R"(
-Use partition minmax index bounds to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key.
-
-For example, in a `MergeTree` table with `ORDER BY (id, event_time)` and `PARTITION BY toYYYYMM(event_time)`, ClickHouse will use the partition minmax index on `event_time` during primary key index analysis to make more informed granule-pruning decisions.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, force_primary_key, false, R"(
-Disables query execution if indexing by the primary key is not possible.
-
-Works with tables in the MergeTree family.
-
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
-)", 0) \
-    DECLARE(Bool, use_skip_indexes, true, R"(
-Use data skipping indexes during query execution.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_skip_indexes_if_final, true, R"(
-Controls whether skipping indexes are used when executing a query with the FINAL modifier.
-
-Skip indexes may exclude rows (granules) containing the latest data, which could lead to incorrect results from a query with the FINAL modifier. When this setting is enabled, skipping indexes are applied even with the FINAL modifier, potentially improving performance but with the risk of missing recent updates. This setting should be enabled in sync with the setting use_skip_indexes_if_final_exact_mode (default is enabled).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_skip_indexes_if_final_exact_mode, true, R"(
-Controls whether granules returned by a skipping index are expanded in newer parts to return correct results when executing a query with the FINAL modifier.
-
-Using skip indexes may exclude rows (granules) containing the latest data which could lead to incorrect results. This setting can ensure that correct results are returned by scanning newer parts that have overlap with the ranges returned by the skip index. This setting should be disabled only if approximate results based on looking up the skip index are okay for an application.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_skip_indexes_on_data_read, true, R"(
-Enable using data skipping indexes during data reading.
-
-When enabled, skip indexes are evaluated dynamically at the time each data granule is being read, rather than being analyzed in advance before query execution begins. This can reduce query startup latency.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_skip_indexes_for_disjunctions, true, R"(
-Evaluate WHERE filters with mixed AND and OR conditions using skip indexes. Example: WHERE A = 5 AND (B = 5 OR C = 5).
-If disabled, skip indexes are still used to evaluate WHERE conditions but they must only contain AND-ed clauses.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_skip_indexes_for_top_k, true, R"(
-Enable using data skipping indexes for TopK filtering.
-
-When enabled, if a minmax skip index exists on the column in `ORDER BY <column> LIMIT n` query, optimizer will attempt to use the minmax index to skip granules that are not relevant for the final result . This can reduce query latency.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_statistics_for_part_pruning, true, R"(
-Use statistics to filter out parts during query execution.
-
-When enabled, pruning in SELECT queries will use column statistics (e.g. MinMax statistics) to eliminate parts that cannot contain matching data before reading any data.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
-Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
-
-When enabled, the query executor will try to skip granules and rows that will not be part of the final `top N` rows in the resultset. This optimization is dynamic in nature and latency improvements depends on data distribution and presence of other predicates in the query.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Bool, use_top_k_dynamic_filtering_for_variable_length_types, false, R"(
-Allow `use_top_k_dynamic_filtering` to apply when the sort column has a variable-length data type (e.g. `String`, `Array`, `Map`, `Tuple` containing variable-length elements).
-
-For such types, the per-row threshold comparison performed by the dynamic filter can outweigh its savings when the column's lexicographic minimum dominates (e.g. mostly empty strings) and few granules can be skipped. In that case the dynamic filter degrades query latency rather than improving it.
-
-When this setting is `0`, dynamic filtering is restricted to columns whose values have a fixed maximum size in memory (numbers, `Date`, `DateTime`, `FixedString`, `Enum`, `Nullable` of such types, `Tuple` of such types). When set to `1`, dynamic filtering applies to variable-length types as well.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
-)", 0) \
-    DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
-
-See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
-)", 0) \
-    DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
-Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit
-[MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query.
-
-Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
-
-Example:
-
-```sql
-CREATE TABLE tab
-(
-    a UInt64,
-    b UInt64,
-    INDEX idx_a a TYPE minmax,
-    INDEX idx_b b TYPE set(3)
-)
-ENGINE = MergeTree ORDER BY tuple();
-
-SET exclude_materialize_skip_indexes_on_insert='idx_a'; -- idx_a will be not be updated upon insert
---SET exclude_materialize_skip_indexes_on_insert='idx_a, idx_b'; -- neither index would be updated on insert
-
-INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- only idx_b is updated
-
--- since it is a session setting it can be set on a per-query level
-INSERT INTO tab SELECT number, number / 50 FROM numbers(100, 100) SETTINGS exclude_materialize_skip_indexes_on_insert='idx_b';
-
-ALTER TABLE tab MATERIALIZE INDEX idx_a; -- this query can be used to explicitly materialize the index
-
-SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to default
-```
-)", 0) \
-    DECLARE(Bool, per_part_index_stats, false, R"(
-Logs index statistics per part
-)", 0) \
-    DECLARE(Bool, materialize_statistics_on_insert, false, R"(
-If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
-)", 0) \
-    DECLARE(String, ignore_data_skipping_indices, "", R"(
-Ignores the skipping indexes specified if used by the query.
-
-Consider the following example:
-
-```sql
-CREATE TABLE data
-(
-    key Int,
-    x Int,
-    y Int,
-    INDEX x_idx x TYPE minmax GRANULARITY 1,
-    INDEX y_idx y TYPE minmax GRANULARITY 1,
-    INDEX xy_idx (x,y) TYPE minmax GRANULARITY 1
-)
-Engine=MergeTree()
-ORDER BY key;
-
-INSERT INTO data VALUES (1, 2, 3);
-
-SELECT * FROM data;
-SELECT * FROM data SETTINGS ignore_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
-SELECT * FROM data SETTINGS ignore_data_skipping_indices='x_idx'; -- Ok.
-SELECT * FROM data SETTINGS ignore_data_skipping_indices='na_idx'; -- Ok.
-
-SELECT * FROM data WHERE x = 1 AND y = 1 SETTINGS ignore_data_skipping_indices='xy_idx',force_data_skipping_indices='xy_idx' ; -- query will produce INDEX_NOT_USED error, since xy_idx is explicitly ignored.
-SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
-```
-
-The query without ignoring any indexes:
-```sql
-EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2;
-
-Expression ((Projection + Before ORDER BY))
-  Filter (WHERE)
-    ReadFromMergeTree (default.data)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 1/1
-      Skip
-        Name: x_idx
-        Description: minmax GRANULARITY 1
-        Parts: 0/1
-        Granules: 0/1
-      Skip
-        Name: y_idx
-        Description: minmax GRANULARITY 1
-        Parts: 0/0
-        Granules: 0/0
-      Skip
-        Name: xy_idx
-        Description: minmax GRANULARITY 1
-        Parts: 0/0
-        Granules: 0/0
-```
-
-Ignoring the `xy_idx` index:
-```sql
-EXPLAIN indexes = 1 SELECT * FROM data WHERE x = 1 AND y = 2 SETTINGS ignore_data_skipping_indices='xy_idx';
-
-Expression ((Projection + Before ORDER BY))
-  Filter (WHERE)
-    ReadFromMergeTree (default.data)
-    Indexes:
-      PrimaryKey
-        Condition: true
-        Parts: 1/1
-        Granules: 1/1
-      Skip
-        Name: x_idx
-        Description: minmax GRANULARITY 1
-        Parts: 0/1
-        Granules: 0/1
-      Skip
-        Name: y_idx
-        Description: minmax GRANULARITY 1
-        Parts: 0/0
-        Granules: 0/0
-```
-
-Works with tables in the MergeTree family.
-)", 0) \
-    \
-    DECLARE(String, force_data_skipping_indices, "", R"(
-Disables query execution if passed data skipping indices wasn't used.
-
-Consider the following example:
-
-```sql
-CREATE TABLE data
-(
-    key Int,
-    d1 Int,
-    d1_null Nullable(Int),
-    INDEX d1_idx d1 TYPE minmax GRANULARITY 1,
-    INDEX d1_null_idx assumeNotNull(d1_null) TYPE minmax GRANULARITY 1
-)
-Engine=MergeTree()
-ORDER BY key;
-
-SELECT * FROM data_01515;
-SELECT * FROM data_01515 SETTINGS force_data_skipping_indices=''; -- query will produce CANNOT_PARSE_TEXT error.
-SELECT * FROM data_01515 SETTINGS force_data_skipping_indices='d1_idx'; -- query will produce INDEX_NOT_USED error.
-SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='d1_idx'; -- Ok.
-SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`'; -- Ok (example of full featured parser).
-SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- query will produce INDEX_NOT_USED error, since d1_null_idx is not used.
-SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
-```
-)", 0) \
-    DECLARE(Bool, secondary_indices_enable_bulk_filtering, true, R"(
-Enable the bulk filtering algorithm for indices. It is expected to be always better, but we have this setting for compatibility and control.
-)", 0) \
-    DECLARE(Float, max_streams_to_max_threads_ratio, 1, R"(
-Allows you to use more sources than the number of threads - to more evenly distribute work across threads. It is assumed that this is a temporary solution since it will be possible in the future to make the number of sources equal to the number of threads, but for each source to dynamically select available work for itself.
-)", 0) \
-    DECLARE(Float, max_streams_multiplier_for_merge_tables, 5, R"(
-Ask more streams when reading from Merge table. Streams will be spread across tables that Merge table will use. This allows more even distribution of work across threads and is especially helpful when merged tables differ in size.
-)", 0) \
-    \
-    DECLARE(String, network_compression_method, "LZ4", R"(
-The codec for compressing the client/server and server/server communication.
-
-Possible values:
-
-- `NONE` â€” no compression.
-- `LZ4` â€” use the LZ4 codec.
-- `LZ4HC` â€” use the LZ4HC codec.
-- `ZSTD` â€” use the ZSTD codec.
-
-**See Also**
-
-- [network_zstd_compression_level](#network_zstd_compression_level)
-)", 0) \
-    \
-    DECLARE(Int64, network_zstd_compression_level, 1, R"(
-Adjusts the level of ZSTD compression. Used only when [network_compression_method](#network_compression_method) is set to `ZSTD`.
-
-Possible values:
-
-- Positive integer from 1 to 15.
-)", 0) \
-    \
-    DECLARE(Int64, zstd_window_log_max, 0, R"(
-Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
-)", 0) \
-    \
-    DECLARE(UInt64, priority, 0, R"(
-Priority of the query. 1 - the highest, higher value - lower priority; 0 - do not use priorities.
-)", 0) \
-    DECLARE(Bool, log_queries, true, R"(
-Setting up query logging.
-
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../operations/server-configuration-parameters/settings.md/#query_log) server configuration parameter.
-
-Example:
-
-```text
-log_queries=1
-```
-)", 0) \
-    DECLARE(Bool, log_formatted_queries, false, R"(
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table (populates `formatted_query` column in the [system.query_log](../../operations/system-tables/query_log.md)).
-
-Possible values:
-
-- 0 â€” Formatted queries are not logged in the system table.
-- 1 â€” Formatted queries are logged in the system table.
-)", 0) \
-    DECLARE(LogQueriesType, log_queries_min_type, QueryLogElementType::QUERY_START, R"(
-`query_log` minimal type to log.
-
-Possible values:
-- `QUERY_START` (`=1`)
-- `QUERY_FINISH` (`=2`)
-- `EXCEPTION_BEFORE_START` (`=3`)
-- `EXCEPTION_WHILE_PROCESSING` (`=4`)
-
-Can be used to limit which entities will go to `query_log`, say you are interested only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
-
-```text
-log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
-```
-)", 0) \
-    DECLARE(Milliseconds, log_queries_min_query_duration_ms, 0, R"(
-If enabled (non-zero), queries faster than the value of this setting will not be logged (you can think about this as a `long_query_time` for [MySQL Slow Query Log](https://dev.mysql.com/doc/refman/5.7/slow-query-log.html)), and this basically means that you will not find them in the following tables:
-
-- `system.query_log`
-- `system.query_thread_log`
-
-Only the queries with the following type will get to the log:
-
-- `QUERY_FINISH`
-- `EXCEPTION_WHILE_PROCESSING`
-
-- Type: milliseconds
-- Default value: 0 (any query)
-)", 0) \
-    DECLARE(UInt64, log_queries_cut_to_length, 100000, R"(
-If query length is greater than a specified threshold (in bytes), then cut query when writing to query log. Also limit the length of printed query in ordinary text log.
-)", 0) \
-    DECLARE(Float, log_queries_probability, 1., R"(
-Allows a user to write to [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md), and [query_views_log](../../operations/system-tables/query_views_log.md) system tables only a sample of queries selected randomly with the specified probability. It helps to reduce the load with a large volume of queries in a second.
-
-Possible values:
-
-- 0 â€” Queries are not logged in the system tables.
-- Positive floating-point number in the range [0..1]. For example, if the setting value is `0.5`, about half of the queries are logged in the system tables.
-- 1 â€” All queries are logged in the system tables.
-)", 0) \
-    \
-    DECLARE(Bool, log_processors_profiles, true, R"(
-Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
-
-See also:
-
-- [`system.processors_profile_log`](../../operations/system-tables/processors_profile_log.md)
-- [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md/#explain-pipeline)
-)", 0) \
-    DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
-Changes the behaviour of [distributed subqueries](../../sql-reference/operators/in.md).
-
-ClickHouse applies this setting when the query contains the product of distributed tables, i.e.Â when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
-
-Restrictions:
-
-- Only applied for IN and JOIN subqueries.
-- Only if the FROM section uses a distributed table containing more than one shard.
-- If the subquery concerns a distributed table containing more than one shard.
-- Not used for a table-valued [remote](../../sql-reference/table-functions/remote.md) function.
-
-Possible values:
-
-- `deny` â€” Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
-- `local` â€” Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
-- `global` â€” Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
-- `allow` â€” Allows the use of these types of subqueries.
-)", IMPORTANT) \
-    \
-    DECLARE(UInt64, max_concurrent_queries_for_all_users, 0, R"(
-Throw exception if the value of this setting is less or equal than the current number of simultaneously processed queries.
-
-Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users and database administrator can set it to 100 for itself to run queries for investigation even when the server is overloaded.
-
-Modifying the setting for one query or user does not affect other queries.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” No limit.
-
-**Example**
-
-```xml
-<max_concurrent_queries_for_all_users>99</max_concurrent_queries_for_all_users>
-```
-
-**See Also**
-
-- [max_concurrent_queries](/operations/server-configuration-parameters/settings#max_concurrent_queries)
-
-Cloud default value: `1000`.
-)", 0) \
-    DECLARE(UInt64, max_concurrent_queries_for_user, 0, R"(
-The maximum number of simultaneously processed queries per user.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” No limit.
-
-**Example**
-
-```xml
-<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
-```
-)", 0) \
-\
-    DECLARE(DeduplicateInsertMode, deduplicate_insert, DeduplicateInsertMode::ENABLE, R"(
-Enables or disables block deduplication of  `INSERT INTO` (for Replicated\* tables).
-The setting overrides `insert_deduplicate` and `async_insert_deduplicate` settings.
-That setting has three possible values:
-- disable â€” Deduplication is disabled for `INSERT INTO` query.
-- enable â€” Deduplication is enabled for `INSERT INTO` query.
-- backward_compatible_choice â€” Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
-)", 0) \
-\
-    DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
-Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
-That setting has four possible values:
-- disable â€” Deduplication is disabled for `INSERT SELECT` query.
-- force_enable â€” Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
-- enable_when_possible â€” Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
-- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
-)", 0) \
-\
-    DECLARE(Bool, insert_deduplicate, true, R"(
-Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](../../engines/table-engines/mergetree-family/replication.md)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
-)", 0) \
-    DECLARE(Bool, async_insert_deduplicate, false, R"(
-For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
-)", 0) \
-    \
-    DECLARE(UInt64Auto, insert_quorum, 0, R"(
-:::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
-:::
-
-Enables the quorum writes.
-
-- If `insert_quorum < 2`, the quorum writes are disabled.
-- If `insert_quorum >= 2`, the quorum writes are enabled.
-- If `insert_quorum = 'auto'`, use majority number (`number_of_replicas / 2 + 1`) as quorum number.
-
-Quorum writes
-
-`INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
-
-When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#select_sequential_consistency).
-
-ClickHouse generates an exception:
-
-- If the number of available replicas at the time of the query is less than the `insert_quorum`.
-- When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform another `INSERT` query to the same table before the previous one with `insert_quorum` is completed.
-
-See also:
-
-- [insert_quorum_timeout](#insert_quorum_timeout)
-- [insert_quorum_parallel](#insert_quorum_parallel)
-- [select_sequential_consistency](#select_sequential_consistency)
-)", 0) \
-    DECLARE(Milliseconds, insert_quorum_timeout, 600000, R"(
-Write to a quorum timeout in milliseconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
-
-See also:
-
-- [insert_quorum](#insert_quorum)
-- [insert_quorum_parallel](#insert_quorum_parallel)
-- [select_sequential_consistency](#select_sequential_consistency)
-)", 0) \
-    DECLARE(Bool, insert_quorum_parallel, true, R"(
-:::note
-This setting is not applicable to SharedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information.
-:::
-
-Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-See also:
-
-- [insert_quorum](#insert_quorum)
-- [insert_quorum_timeout](#insert_quorum_timeout)
-- [select_sequential_consistency](#select_sequential_consistency)
-)", 0) \
-    DECLARE(UInt64, select_sequential_consistency, 0, R"(
-:::note
-This setting differ in behavior between SharedMergeTree and ReplicatedMergeTree, see [SharedMergeTree consistency](/cloud/reference/shared-merge-tree#consistency) for more information about the behavior of `select_sequential_consistency` in SharedMergeTree.
-:::
-
-Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-Usage
-
-When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
-
-When `insert_quorum_parallel` is enabled (the default), then `select_sequential_consistency` does not work. This is because parallel `INSERT` queries can be written to different sets of quorum replicas so there is no guarantee a single replica will have received all writes.
-
-See also:
-
-- [insert_quorum](#insert_quorum)
-- [insert_quorum_timeout](#insert_quorum_timeout)
-- [insert_quorum_parallel](#insert_quorum_parallel)
-)", 0) \
-    DECLARE(Bool, update_sequential_consistency, true, R"(
-If true set of parts is updated to the latest version before execution of update.
-)", 0) \
-    DECLARE(UpdateParallelMode, update_parallel_mode, UpdateParallelMode::AUTO, R"(
-Determines the behavior of concurrent update queries.
-
-Possible values:
-- `sync` - run sequentially all `UPDATE` queries.
-- `auto` - run sequentially only `UPDATE` queries with dependencies between columns updated in one query and columns used in expressions of another query.
-- `async` - do not synchronize update queries.
-)", 0) \
-    DECLARE(UInt64, table_function_remote_max_addresses, 1000, R"(
-Sets the maximum number of addresses generated from patterns for the [remote](../../sql-reference/table-functions/remote.md) function.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    DECLARE(Milliseconds, read_backoff_min_latency_ms, 1000, R"(
-Setting to reduce the number of threads in case of slow reads. Pay attention only to reads that took at least that much time.
-)", 0) \
-    DECLARE(UInt64, read_backoff_max_throughput, 1048576, R"(
-Settings to reduce the number of threads in case of slow reads. Count events when the read bandwidth is less than that many bytes per second.
-)", 0) \
-    DECLARE(Milliseconds, read_backoff_min_interval_between_events_ms, 1000, R"(
-Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time.
-)", 0) \
-    DECLARE(UInt64, read_backoff_min_events, 2, R"(
-Settings to reduce the number of threads in case of slow reads. The number of events after which the number of threads will be reduced.
-)", 0) \
-    \
-    DECLARE(UInt64, read_backoff_min_concurrency, 1, R"(
-Settings to try keeping the minimal number of threads in case of slow reads.
-)", 0) \
-    \
-    DECLARE(Float, memory_tracker_fault_probability, 0., R"(
-For testing of `exception safety` - throw an exception every time you allocate memory with the specified probability.
-)", 0) \
-    DECLARE(Float, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability, 0.0, R"(
-For testing of `PartsSplitter` - split read ranges into intersecting and non intersecting every time you read from MergeTree with the specified probability.
-)", 0) \
-    \
-    DECLARE(Bool, enable_http_compression, true, R"(
-Enables or disables data compression in the response to an HTTP request.
-
-For more information, read the [HTTP interface description](/interfaces/http).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Int64, http_zlib_compression_level, 3, R"(
-Sets the level of data compression in the response to an HTTP request if [enable_http_compression = 1](#enable_http_compression).
-
-Possible values: Numbers from 1 to 12. Levels above `9` require the default build with `libdeflate`; a build without `libdeflate` supports levels 1 to 9.
-)", 0) \
-    DECLARE(SnappyMode, snappy_mode, SnappyMode::Basic, R"(
-Controls the wire format used for snappy compression for generic file I/O paths such as `file` and `url`. HTTP `Content-Encoding: snappy` always uses the framing format and ignores this setting.
-
-Note that the raw snappy block format produced by a single `snappy::Compress` call (for example, the Prometheus remote protocol payloads handled by `SnappyBasicReadBuffer`) is a separate, protocol-specific wire format and is not controlled by this setting.
-
-Possible values:
-
-- `basic` â€” Hadoop snappy block format. Compatible with files read and written by Hadoop. Supports both reading and writing.
-- `framed` â€” Snappy framing format, the standard streaming format defined by Google. Supports both reading and writing.
-)", 0) \
-    \
-    DECLARE(Bool, http_native_compression_disable_checksumming_on_decompress, false, R"(
-Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
-
-For more information, read the [HTTP interface description](/interfaces/http).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    DECLARE(Map, http_response_headers, "", R"(
-Allows to add or override HTTP headers which the server will return in the response with a successful query result.
-This only affects the HTTP interface.
-
-If the header is already set by default, the provided value will override it.
-If the header was not set by default, it will be added to the list of headers.
-Headers that are set by the server by default and not overridden by this setting, will remain.
-
-The setting allows you to set a header to a constant value. Currently there is no way to set a header to a dynamically calculated value.
-
-Neither names nor values can contain ASCII control characters.
-
-If you implement a UI application which allows users to modify settings but at the same time makes decisions based on the returned headers, it is recommended to restrict this setting to readonly.
-
-Example: `SET http_response_headers = $${'Content-Type': 'image/png'}$$`
-)", 0) \
-    \
-    DECLARE(String, count_distinct_implementation, "uniqExact", R"(
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](/sql-reference/aggregate-functions/reference/count) construction.
-
-Possible values:
-
-- [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
-- [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64)
-- [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
-- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
-)", 0) \
-    \
-    DECLARE(Bool, add_http_cors_header, false, R"(
-Write add http CORS header.
-)", 0) \
-    \
-    DECLARE(UInt64, max_http_get_redirects, 0, R"(
-Max number of HTTP GET redirects hops allowed. Ensures additional security measures are in place to prevent a malicious server from redirecting your requests to unexpected services.\n\nIt is the case when an external server redirects to another address, but that address appears to be internal to the company's infrastructure, and by sending an HTTP request to an internal server, you could request an internal API from the internal network, bypassing the auth, or even query other services, such as Redis or Memcached. When you don't have an internal infrastructure (including something running on your localhost), or you trust the server, it is safe to allow redirects. Although keep in mind, that if the URL uses HTTP instead of HTTPS, and you will have to trust not only the remote server but also your ISP and every network in the middle.
-
-Cloud default value: `10`.
-)", 0) \
-    \
-    DECLARE(Bool, use_client_time_zone, false, R"(
-Use client timezone for interpreting DateTime string values, instead of adopting server timezone.
-)", 0) \
-    \
-    DECLARE(Bool, send_profile_events, true, R"(
-Enables or disables sending of [ProfileEvents](/native-protocol/server.md#profile-events) packets to the client.
-
-This can be disabled to reduce network traffic for clients that do not require profile events.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    \
-    DECLARE(Bool, send_progress_in_http_headers, false, R"(
-Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
-
-For more information, read the [HTTP interface description](/interfaces/http).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-)", 0) \
-    \
-    DECLARE(UInt64, http_headers_progress_interval_ms, 100, R"(
-Do not send HTTP headers X-ClickHouse-Progress more frequently than at each specified interval.
-)", 0) \
-    DECLARE(Bool, http_wait_end_of_query, false, R"(
-Enable HTTP response buffering on the server-side.
-)", 0) \
-    DECLARE(Bool, http_write_exception_in_output_format, false, R"(
-Write exception in output format to produce valid output. Works with JSON and XML formats.
-)", 0) \
-    DECLARE(UInt64, http_response_buffer_size, 0, R"(
-The number of bytes to buffer in the server memory before sending a HTTP response to the client or flushing to disk (when http_wait_end_of_query is enabled).
-)", 0) \
-    \
-    DECLARE(Bool, fsync_metadata, true, R"(
-Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
-
-It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
-)", 0)    \
-    \
-    DECLARE(Bool, join_use_nulls, false, R"(
-Sets the type of [JOIN](../../sql-reference/statements/select/join.md) behaviour. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
-
-Possible values:
-
-- 0 â€” The empty cells are filled with the default value of the corresponding field type.
-- 1 â€” `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](/sql-reference/data-types/nullable), and empty cells are filled with [NULL](/sql-reference/syntax).
-)", IMPORTANT) \
-    \
-    DECLARE(UInt64, join_output_by_rowlist_perkey_rows_threshold, 5, R"(
-The lower limit of per-key average rows in the right table to determine whether to output by row list in hash join.
-)", 0) \
-    DECLARE(JoinStrictness, join_default_strictness, JoinStrictness::All, R"(
-Sets default strictness for [JOIN clauses](/sql-reference/statements/select/join).
-
-Possible values:
-
-- `ALL` â€” If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behaviour from standard SQL.
-- `ANY` â€” If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
-- `ASOF` â€” For joining sequences with an uncertain match.
-- `Empty string` â€” If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
-)", 0) \
-    DECLARE(Bool, any_join_distinct_right_table_keys, false, R"(
-Enables legacy ClickHouse server behaviour in `ANY INNER|LEFT JOIN` operations.
-
-:::note
-Use this setting only for backward compatibility if your use cases depend on legacy `JOIN` behaviour.
-:::
-
-When the legacy behaviour is enabled:
-
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are not equal because ClickHouse uses the logic with many-to-one left-to-right table keys mapping.
-- Results of `ANY INNER JOIN` operations contain all rows from the left table like the `SEMI LEFT JOIN` operations do.
-
-When the legacy behaviour is disabled:
-
-- Results of `t1 ANY LEFT JOIN t2` and `t2 ANY RIGHT JOIN t1` operations are equal because ClickHouse uses the logic which provides one-to-many keys mapping in `ANY RIGHT JOIN` operations.
-- Results of `ANY INNER JOIN` operations contain one row per key from both the left and right tables.
-
-Possible values:
-
-- 0 â€” Legacy behaviour is disabled.
-- 1 â€” Legacy behaviour is enabled.
-
-See also:
-
-- [JOIN strictness](/sql-reference/statements/select/join#settings)
-)", IMPORTANT) \
-    DECLARE(Bool, single_join_prefer_left_table, true, R"(
-For single JOIN in case of identifier ambiguity prefer left table
-)", IMPORTANT) \
-    \
-DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
-Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
-- 'auto': Let the planner decide which table to use as the build table.
-- 'false': Never swap tables (the right table is the build table).
-- 'true': Always swap tables (the left table is the build table).
-)", 0) \
-DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
-Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
-Value is the maximum number of tables to optimize.
-)", 0) \
-DECLARE(UInt64, query_plan_optimize_join_order_max_searched_plans, 100000, R"(
-Maximum number of partial plans the join order optimizer may enumerate before giving up and falling back to the next algorithm in `query_plan_optimize_join_order_algorithm`.
-This bounds optimization time deterministically (independent of wall-clock) on dense join graphs such as cliques or stars, where the search space grows exponentially.
-Set to 0 to disable the limit. Has no effect on the default `query_plan_optimize_join_order_limit`, where the search always stays well below this bound.
-)", EXPERIMENTAL) \
-DECLARE(UInt64, query_plan_optimize_join_order_randomize, 0, R"(
-When non-zero, the join order optimizer uses randomly generated cardinalities and NDVs instead of real statistics.
-When set to 1, a random seed is generated, when set to a value > 1, that value is used as the seed directly.
-This is intended for testing to find errors caused by different join orderings.
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, enable_join_transitive_predicates, true, R"(
-Infer transitive equi-join predicates from existing join conditions.
-For example, given `A.x = B.x` and `B.x = C.x`, a synthetic `A.x = C.x` predicate
-is added so the join order optimizer can consider direct (A JOIN C) plans.
-)", BETA) \
-    \
-    DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
-Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
-)", 0) \
-    \
-    DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
-Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
-)", 0) \
-    \
-    DECLARE(ExplainQueryPlanDefault, explain_query_plan_default, ExplainQueryPlanDefault::PRETTY, R"(
-Default format used by `EXPLAIN PLAN`.
-
-Possible values:
-- `pretty` (default since 26.7) â€” `actions`, `compact`, and `pretty` default to `true`, producing a compact, pretty, action-annotated plan.
-- `legacy` â€” pre-26.7 output.
-
-Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPLAIN` statement (for example, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) always overrides this setting.
-
-`EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
-)", 0) \
-    \
-    DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
-Maximum length of step description in EXPLAIN PLAN.
-)", 0) \
-    \
-    DECLARE(UInt64, preferred_block_size_bytes, 1000000, R"(
-This setting adjusts the data block size for query processing and represents additional fine-tuning to the more rough 'max_block_size' setting. If the columns are large and with 'max_block_size' rows the block size is likely to be larger than the specified amount of bytes, its size will be lowered for better CPU cache locality.
-)", 0) \
-    \
-    DECLARE(UInt64, max_replica_delay_for_distributed_queries, 300, R"(
-Disables lagging replicas for distributed queries. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
-
-Sets the time in seconds. If a replica's lag is greater than or equal to the set value, this replica is not used.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Replica lags are not checked.
-
-To prevent the use of any replica with a non-zero lag, set this parameter to 1.
-
-Used when performing `SELECT` from a distributed table that points to replicated tables.
-)", 0) \
-    DECLARE(Bool, fallback_to_stale_replicas_for_distributed_queries, true, R"(
-Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../engines/table-engines/mergetree-family/replication.md).
-
-ClickHouse selects the most relevant from the outdated replicas of the table.
-
-Used when performing `SELECT` from a distributed table that points to replicated tables.
-
-By default, 1 (enabled).
-)", 0) \
-    DECLARE(UInt64, preferred_max_column_in_block_size_bytes, 0, R"(
-Limit on max column size in block while reading. Helps to decrease cache misses count. Should be close to L2 cache size.
-)", 0) \
-    \
-    DECLARE(UInt64, parts_to_delay_insert, 0, R"(
-If the destination table contains at least that many active parts in a single partition, artificially slow down insert into table.
-)", 0) \
-    DECLARE(UInt64, parts_to_throw_insert, 0, R"(
-If more than this number active parts in a single partition of the destination table, throw 'Too many parts ...' exception.
-)", 0) \
-    DECLARE(UInt64, dead_blobs_to_delay_insert, 0, R"(
-If the dead blobs queues of the destination table's disks contain at least that many blobs pending removal, artificially slow down insert into table. 0 - use the table setting.
-)", 0) \
-    DECLARE(UInt64, dead_blobs_to_throw_insert, 0, R"(
-If the dead blobs queues of the destination table's disks contain more than this number of blobs pending removal, throw 'Too many dead blobs ...' exception. 0 - use the table setting.
-)", 0) \
-    DECLARE(UInt64, number_of_mutations_to_delay, 0, R"(
-If the mutated table contains at least that many unfinished mutations, artificially slow down mutations of table. 0 - disabled
-)", 0) \
-    DECLARE(UInt64, number_of_mutations_to_throw, 0, R"(
-If the mutated table contains at least that many unfinished mutations, throw 'Too many mutations ...' exception. 0 - disabled
-)", 0) \
-    DECLARE(Int64, distributed_ddl_task_timeout, 180, R"(
-Sets timeout for DDL query responses from all hosts in cluster. If a DDL request has not been performed on all hosts, a response will contain a timeout error and a request will be executed in an async mode. Negative value means infinite.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Async mode.
-- Negative integer â€” infinite timeout.
-)", 0) \
-    DECLARE(Milliseconds, stream_flush_interval_ms, 7500, R"(
-Works for tables with streaming in the case of a timeout, or when a thread generates [max_insert_block_size](#max_insert_block_size) rows.
-
-The default value is 7500.
-
-The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
-)", 0) \
-    DECLARE(Milliseconds, stream_poll_timeout_ms, 500, R"(
-Timeout for polling data from/to streaming storages.
-)", 0) \
-    DECLARE(UInt64, min_free_disk_bytes_to_perform_insert, 0, R"(
-Minimum free disk space bytes to perform an insert.
-)", 0) \
-    DECLARE(Float, min_free_disk_ratio_to_perform_insert, 0.0, R"(
-Minimum free disk space ratio to perform an insert.
-)", 0) \
-    \
-    DECLARE(Bool, final, false, R"(
-Automatically applies [FINAL](../../sql-reference/statements/select/from.md/#final-modifier) modifier to all tables in a query, to tables where [FINAL](../../sql-reference/statements/select/from.md/#final-modifier) is applicable, including joined tables and tables in sub-queries, and
-distributed tables.
-
-Possible values:
-
-- 0 - disabled
-- 1 - enabled
-
-Example:
-
-```sql
-CREATE TABLE test
-(
-    key Int64,
-    some String
-)
-ENGINE = ReplacingMergeTree
-ORDER BY key;
-
-INSERT INTO test FORMAT Values (1, 'first');
-INSERT INTO test FORMAT Values (1, 'second');
-
-SELECT * FROM test;
-â”Œâ”€keyâ”€â”¬â”€someâ”€â”€â”€â”
-â”‚   1 â”‚ second â”‚
-â””â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-â”Œâ”€keyâ”€â”¬â”€someâ”€â”€â”
-â”‚   1 â”‚ first â”‚
-â””â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”˜
-
-SELECT * FROM test SETTINGS final = 1;
-â”Œâ”€keyâ”€â”¬â”€someâ”€â”€â”€â”
-â”‚   1 â”‚ second â”‚
-â””â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-SET final = 1;
-SELECT * FROM test;
-â”Œâ”€keyâ”€â”¬â”€someâ”€â”€â”€â”
-â”‚   1 â”‚ second â”‚
-â””â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    \
-    DECLARE(Bool, partial_result_on_first_cancel, false, R"(
-Allows query to return a partial result after cancel.
-)", 0) \
-    \
-    DECLARE(Bool, discard_query_data, false, R"(
-If enabled, the server skips sending query result rows to the client. The query is still executed and logged fully on the server, and the client still receives the remaining packets.
-
-Used for shadow traffic, benchmarks, and fuzzing.
-
-Has no effect for secondary queries.
-
-Affects only the native TCP protocol.
-)", 0) \
-    \
-    DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
-Ignore ON CLUSTER clause for replicated UDF management queries.
-)", 0) \
-    DECLARE(Bool, ignore_on_cluster_for_replicated_access_entities_queries, false, R"(
-Ignore ON CLUSTER clause for replicated access entities management queries.
-)", 0) \
-    DECLARE(Bool, ignore_on_cluster_for_replicated_named_collections_queries, false, R"(
-Ignore ON CLUSTER clause for replicated named collections management queries.
-)", 0) \
-    /** Settings for testing hedged requests */ \
-    DECLARE(Milliseconds, sleep_in_send_tables_status_ms, 0, R"(
-Time to sleep in sending tables status response in TCPHandler
-)", 0) \
-    DECLARE(Milliseconds, sleep_in_send_data_ms, 0, R"(
-Time to sleep in sending data in TCPHandler
-)", 0) \
-    DECLARE(Milliseconds, sleep_after_receiving_query_ms, 0, R"(
-Time to sleep after receiving query in TCPHandler
-)", 0) \
-    DECLARE(UInt64, unknown_packet_in_send_data, 0, R"(
-Send unknown packet instead of data Nth data packet
-)", 0) \
-    \
-    DECLARE(Bool, insert_allow_materialized_columns, false, R"(
-If setting is enabled, Allow materialized columns in INSERT.
-)", 0) \
-    DECLARE(Seconds, http_connection_timeout, DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT, R"(
-HTTP connection timeout (in seconds).
-
-Possible values:
-
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
-)", 0) \
-    DECLARE(Seconds, http_send_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, R"(
-HTTP send timeout (in seconds).
-
-Possible values:
-
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
-
-:::note
-It's applicable only to the default profile. A server reboot is required for the changes to take effect.
-:::
-)", 0) \
-    DECLARE(Seconds, http_receive_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, R"(
-HTTP receive timeout (in seconds).
-
-Possible values:
-
-- Any positive integer.
-- 0 - Disabled (infinite timeout).
-)", 0) \
-    DECLARE(UInt64, http_max_uri_size, 1048576, R"(
-Sets the maximum URI length of an HTTP request.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, http_max_fields, 1000, R"(
-Maximum number of fields in HTTP request headers, query parameters, and form data.
-)", 0) \
-    DECLARE(UInt64, http_max_field_name_size, 4 * 1024, R"(
-Maximum length of a field name in HTTP request headers, query parameters, and form data.
-)", 0) \
-    DECLARE(UInt64, http_max_field_value_size, 128 * 1024, R"(
-Maximum length of a field value in HTTP request headers, query parameters, and form data.
-)", 0) \
-    DECLARE(UInt64, http_max_request_header_size, 10 * 1024 * 1024, R"(
-Maximum total size of all HTTP request headers (names and values combined) in bytes.
-)", 0) \
-    DECLARE(Seconds, http_headers_read_timeout, 30, R"(
-Maximum time in seconds to read all HTTP request headers. This is a total deadline for the entire header parsing phase, not a per-read timeout. Protects against slowloris-style attacks where a client trickles header data slowly to hold connections open.
-)", 0) \
-    DECLARE(Bool, http_skip_not_found_url_for_globs, true, R"(
-Skip URLs for globs with HTTP_NOT_FOUND error
-)", 0) \
-    DECLARE(Bool, http_make_head_request, true, R"(
-The `http_make_head_request` setting allows the execution of a `HEAD` request while reading data from HTTP to retrieve information about the file to be read, such as its size. Since it's enabled by default, it may be desirable to disable this setting in cases where the server does not support `HEAD` requests.
-)", 0) \
-    DECLARE(Bool, optimize_throw_if_noop, false, R"(
-Enables or disables throwing an exception if an [OPTIMIZE](../../sql-reference/statements/optimize.md) query didn't perform a merge.
-
-By default, `OPTIMIZE` returns successfully even if it didn't do anything. This setting lets you differentiate these situations and get the reason in an exception message.
-
-Possible values:
-
-- 1 â€” Throwing an exception is enabled.
-- 0 â€” Throwing an exception is disabled.
-)", 0) \
-    DECLARE(Bool, optimize_dry_run_check_part, true, R"(
-When enabled, `OPTIMIZE ... DRY RUN` validates the resulting merged part using `checkDataPart`. If the check fails, an exception is thrown.
-)", 0) \
-    DECLARE(Bool, use_index_for_in_with_subqueries, true, R"(
-Try using an index if there is a subquery or a table expression on the right side of the IN operator.
-)", 0) \
-    DECLARE(UInt64, use_index_for_in_with_subqueries_max_values, 0, R"(
-The maximum size of the set in the right-hand side of the IN operator to use table index for filtering. It allows to avoid performance degradation and higher memory usage due to the preparation of additional data structures for large queries. Zero means no limit.
-)", 0) \
-    DECLARE(Bool, analyze_index_with_space_filling_curves, true, R"(
-If a table has a space-filling curve in its index, e.g. `ORDER BY mortonEncode(x, y)` or `ORDER BY hilbertEncode(x, y)`, and the query has conditions on its arguments, e.g. `x >= 10 AND x <= 20 AND y >= 20 AND y <= 30`, use the space-filling curve for index analysis.
-)", 0) \
-    DECLARE(Bool, allow_key_condition_coalesce_rewrite, true, R"(
-Allow the MergeTree primary key and skip indexes to prune granules for `WHERE`/`PREWHERE` predicates that involve `coalesce` or `ifNull`. Without this setting, such predicates are opaque to index analysis and do not prune, so granules that cannot match are still read. This affects only which granules are read; query results are unchanged, because rows are still filtered by the original predicate.
-
-Two predicate shapes are rewritten before index analysis:
-
-- A comparison against a `coalesce`/`ifNull`, such as `coalesce(a, b) = 5`, becomes a disjunction so an index on each argument can prune: `a = 5 OR (a IS NULL AND b = 5)`, extended for more arguments.
-- A `coalesce`/`ifNull` with a falsy (zero) constant default used directly as a condition, such as `ifNull(a = 5, 0)` or `coalesce(a = 5, 0)`, is unwrapped to its inner predicate `a = 5`. Such wrappers collapse the inner predicate's three-valued result into a definite boolean (mapping `NULL` to `false`).
-)", 0) \
-    DECLARE(Bool, joined_subquery_requires_alias, true, R"(
-Force joined subqueries and table functions to have aliases for correct name qualification.
-)", 0) \
-    DECLARE(Bool, empty_result_for_aggregation_by_empty_set, false, R"(
-Return empty result when aggregating without keys on empty set.
-)", 0) \
-    DECLARE(Bool, empty_result_for_aggregation_by_constant_keys_on_empty_set, true, R"(
-Return empty result when aggregating by constant keys on empty set.
-)", 0) \
-    DECLARE(Bool, allow_distributed_ddl, true, R"(
-If it is set to true, then a user is allowed to executed distributed DDL queries.
-)", 0) \
-    DECLARE(Bool, allow_suspicious_codecs, false, R"(
-If it is set to true, allow to specify meaningless compression codecs.
-)", 0) \
-    DECLARE(UInt64, query_profiler_real_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
-Sets the period for a real clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). Real clock timer counts wall-clock time.
-
-Possible values:
-
-- Positive integer number, in nanoseconds.
-
-  Recommended values:
-
-  - 10000000 (100 times a second) nanoseconds and less for single queries.
-  - 1000000000 (once a second) for cluster-wide profiling.
-
-- 0 for turning off the timer.
-
-See also:
-
-- System table [trace_log](/operations/system-tables/trace_log)
-
-Cloud default value: `3000000000`.
-)", 0) \
-    DECLARE(UInt64, query_profiler_cpu_time_period_ns, QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS, R"(
-Sets the period for a CPU clock timer of the [query profiler](../../operations/optimizing-performance/sampling-query-profiler.md). This timer counts only CPU time.
-
-Possible values:
-
-- A positive integer number of nanoseconds.
-
-  Recommended values:
-
-  - 10000000 (100 times a second) nanoseconds and more for single queries.
-  - 1000000000 (once a second) for cluster-wide profiling.
-
-- 0 for turning off the timer.
-
-See also:
-
-- System table [trace_log](/operations/system-tables/trace_log)
-)", 0) \
-    DECLARE(Bool, metrics_perf_events_enabled, false, R"(
-If enabled, some of the perf events will be measured throughout queries' execution.
-)", 0) \
-    DECLARE(String, metrics_perf_events_list, "", R"(
-Comma separated list of perf metrics that will be measured throughout queries' execution. Empty means all events. See PerfEventInfo in sources for the available events.
-)", 0) \
-    DECLARE(Float, opentelemetry_start_trace_probability, 0., R"(
-Sets the probability that the ClickHouse can start a trace for executed queries (if no parent [trace context](https://www.w3.org/TR/trace-context/) is supplied).
-
-Possible values:
-
-- 0 â€” The trace for all executed queries is disabled (if no parent trace context is supplied).
-- Positive floating-point number in the range [0..1]. For example, if the setting value is `0,5`, ClickHouse can start a trace on average for half of the queries.
-- 1 â€” The trace for all executed queries is enabled.
-)", 0) \
-    DECLARE(FloatAuto, opentelemetry_start_keeper_trace_probability, Field("auto"), R"(
-Probability to start a trace for ZooKeeper request - whether there is a parent trace or not.
-
-Possible values:
-- 'auto' - Equals the opentelemetry_start_trace_probability setting
-- 0 â€” Tracing is disabled
-- 0 to 1 â€” Probability (e.g., 1.0 = always enable)
-
-)", 0) \
-    DECLARE(Bool, opentelemetry_trace_processors, false, R"(
-Collect OpenTelemetry spans for processors.
-)", 0) \
-    DECLARE(Bool, opentelemetry_trace_cpu_scheduling, false, R"(
-Collect OpenTelemetry spans for workload preemptive CPU scheduling.
-)", 0) \
-    DECLARE(Bool, prefer_column_name_to_alias, false, R"(
-Enables or disables using the original column names instead of aliases in query expressions and clauses. It especially matters when alias is the same as the column name, see [Expression Aliases](/sql-reference/syntax#notes-on-usage). Enable this setting to make aliases syntax rules in ClickHouse more compatible with most other database engines.
-
-Possible values:
-
-- 0 â€” The column name is substituted with the alias.
-- 1 â€” The column name is not substituted with the alias.
-
-**Example**
-
-The difference between enabled and disabled:
-
-Query:
-
-```sql
-SET prefer_column_name_to_alias = 0;
-SELECT avg(number) AS number, max(number) FROM numbers(10);
-```
-
-Result:
-
-```text
-Received exception from server (version 21.5.1):
-Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function avg(number) is found inside another aggregate function in query: While processing avg(number) AS number.
-```
-
-Query:
-
-```sql
-SET prefer_column_name_to_alias = 1;
-SELECT avg(number) AS number, max(number) FROM numbers(10);
-```
-
-Result:
-
-```text
-â”Œâ”€numberâ”€â”¬â”€max(number)â”€â”
-â”‚    4.5 â”‚           9 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    \
-    DECLARE(Bool, skip_redundant_aliases_in_udf, false, R"(
-Redundant aliases are not used (substituted) in user-defined functions in order to simplify it's usage.
-
-Possible values:
-
-- 1 â€” The aliases are skipped (substituted) in UDFs.
-- 0 â€” The aliases are not skipped (substituted) in UDFs.
-
-**Example**
-
-The difference between enabled and disabled:
-
-Query:
-
-```sql
-SET skip_redundant_aliases_in_udf = 0;
-CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
-
-EXPLAIN SYNTAX SELECT test_03274(4 + 2);
-```
-
-Result:
-
-```text
-SELECT ((4 + 2) + 1 AS y, y + 2)
-```
-
-Query:
-
-```sql
-SET skip_redundant_aliases_in_udf = 1;
-CREATE FUNCTION IF NOT EXISTS test_03274 AS ( x ) -> ((x + 1 as y, y + 2));
-
-EXPLAIN SYNTAX SELECT test_03274(4 + 2);
-```
-
-Result:
-
-```text
-SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
-```
-)", 0) \
-    DECLARE(Bool, prefer_global_in_and_join, false, R"(
-Enables the replacement of `IN`/`JOIN` operators with `GLOBAL IN`/`GLOBAL JOIN`.
-
-Possible values:
-
-- 0 â€” Disabled. `IN`/`JOIN` operators are not replaced with `GLOBAL IN`/`GLOBAL JOIN`.
-- 1 â€” Enabled. `IN`/`JOIN` operators are replaced with `GLOBAL IN`/`GLOBAL JOIN`.
-
-**Usage**
-
-Although `SET distributed_product_mode=global`Â can change the queries behavior for the distributed tables, it's not suitable for local tables or tables from external resources. Here is when the `prefer_global_in_and_join` setting comes into play.
-
-For example, we have query serving nodes that contain local tables, which are not suitable for distribution. We need to scatter their data on the fly during distributed processing with the `GLOBAL` keyword â€” `GLOBAL IN`/`GLOBAL JOIN`.
-
-Another use case of `prefer_global_in_and_join`Â is accessing tables created by external engines. This setting helps to reduce the number of calls to external sources while joining such tables: only one call per query.
-
-**See also:**
-
-- [Distributed subqueries](/sql-reference/operators/in#distributed-subqueries) for more information on how to use `GLOBAL IN`/`GLOBAL JOIN`
-)", 0) \
-    DECLARE(Bool, enable_vertical_final, true, R"(
-If enable, remove duplicated rows during FINAL by marking rows as deleted and filtering them later instead of merging rows
-)", 0) \
-    \
-    \
-    /** Limits during query execution are part of the settings. \
-      * Used to provide a more safe execution of queries from the user interface. \
-      * Basically, limits are checked for each block (not every row). That is, the limits can be slightly violated. \
-      * Almost all limits apply only to SELECTs. \
-      * Almost all limits apply to each stream individually. \
-      */ \
-    \
-    DECLARE(UInt64, max_rows_to_read, 0, R"(
-The maximum number of rows that can be read from a table when running a query.
-The restriction is checked for each processed chunk of data, applied only to the
-deepest table expression and when reading from a remote server, checked only on
-the remote server.
-)", 0) \
-    DECLARE(UInt64, max_bytes_to_read, 0, R"(
-The maximum number of bytes (of uncompressed data) that can be read from a table when running a query.
-The restriction is checked for each processed chunk of data, applied only to the
-deepest table expression and when reading from a remote server, checked only on
-the remote server.
-)", 0) \
-    DECLARE(OverflowMode, read_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_to_read_leaf, 0, R"(
-The maximum number of rows that can be read from a local table on a leaf node when
-running a distributed query. While distributed queries can issue multiple sub-queries
-to each shard (leaf) - this limit will be checked only on the read stage on the
-leaf nodes and ignored on the merging of results stage on the root node.
-
-For example, a cluster consists of 2 shards and each shard contains a table with
-100 rows. The distributed query which is supposed to read all the data from both
-tables with setting `max_rows_to_read=150` will fail, as in total there will be
-200 rows. A query with `max_rows_to_read_leaf=150` will succeed, since leaf nodes
-will read at max 100 rows.
-
-The restriction is checked for each processed chunk of data.
-
-:::note
-This setting is unstable with `prefer_localhost_replica=1`.
-:::
-)", 0) \
-    DECLARE(UInt64, max_bytes_to_read_leaf, 0, R"(
-The maximum number of bytes (of uncompressed data) that can be read from a local
-table on a leaf node when running a distributed query. While distributed queries
-can issue a multiple sub-queries to each shard (leaf) - this limit will
-be checked only on the read stage on the leaf nodes and will be ignored on the
-merging of results stage on the root node.
-
-For example, a cluster consists of 2 shards and each shard contains a table with
-100 bytes of data. A distributed query which is supposed to read all the data
-from both tables with setting `max_bytes_to_read=150` will fail as in total it
-will be 200 bytes. A query with `max_bytes_to_read_leaf=150` will succeed since
-leaf nodes will read 100 bytes at max.
-
-The restriction is checked for each processed chunk of data.
-
-:::note
-This setting is unstable with `prefer_localhost_replica=1`.
-:::
-)", 0) \
-    DECLARE(OverflowMode, read_overflow_mode_leaf, OverflowMode::THROW, R"(
-Sets what happens when the volume of data read exceeds one of the leaf limits.
-
-Possible options:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_to_group_by, 0, R"(
-The maximum number of unique keys received from aggregation. This setting lets
-you limit memory consumption when aggregating.
-
-If aggregation during GROUP BY is generating more than the specified number of
-rows (unique GROUP BY keys), the behavior will be determined by the
-'group_by_overflow_mode' which by default is `throw`, but can be also switched
-to an approximate GROUP BY mode.
-)", 0) \
-    DECLARE(OverflowModeGroupBy, group_by_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens when the number of unique keys for aggregation exceeds the limit:
-- `throw`: throw an exception
-- `break`: stop executing the query and return the partial result
-- `any`: continue aggregation for the keys that got into the set, but do not add new keys to the set.
-
-Using the 'any' value lets you run an approximation of GROUP BY. The quality of
-this approximation depends on the statistical nature of the data.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_external_group_by, 0, R"(
-Cloud default value: half the memory amount per replica.
-
-Enables or disables execution of `GROUP BY` clauses in external memory.
-(See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory))
-
-Possible values:
-
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
-- `0` â€” `GROUP BY` in external memory disabled.
-
-:::note
-If memory usage during GROUP BY operations is exceeding this threshold in bytes,
-activate the 'external aggregation' mode (spill data to disk).
-
-The recommended value is half of the available system memory.
-:::
-)", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_group_by, 0.5, R"(
-The ratio of available memory that is allowed for `GROUP BY`. Once reached,
-external memory is used for aggregation.
-
-For example, if set to `0.6`, `GROUP BY` will allow using 60% of the available memory
-(to server/user/merges) at the beginning of the execution, after that, it will
-start using external aggregation.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_to_sort, 0, R"(
-The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
-If more than the specified amount of records have to be processed for the ORDER BY operation,
-the behavior will be determined by the `sort_overflow_mode` which by default is set to `throw`.
-)", 0) \
-    DECLARE(UInt64, max_bytes_to_sort, 0, R"(
-The maximum number of bytes before sorting. If more than the specified amount of
-uncompressed bytes have to be processed for ORDER BY operation, the behavior will
-be determined by the `sort_overflow_mode` which by default is set to `throw`.
-)", 0) \
-    DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens if the number of rows received before sorting exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception.
-- `break`: stop executing the query and return the partial result.
-)", 0) \
-    DECLARE(UInt64, prefer_external_sort_block_bytes, DEFAULT_BLOCK_SIZE * 256, R"(
-Prefer maximum block bytes for external sort, reduce the memory usage during merging.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
-Cloud default value: half the memory amount per replica.
-
-Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
-If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
-
-Possible values:
-
-- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation.
-  The recommended value is half of available system memory
-- `0` â€” `ORDER BY` in external memory disabled.
-)", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
-The ratio of available memory that is allowed for `ORDER BY`. Once reached, external sort is used.
-
-For example, if set to `0.6`, `ORDER BY` will allow using `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external sort.
-
-Note, that `max_bytes_before_external_sort` is still respected, spilling to disk will be done only if the sorting block is bigger then `max_bytes_before_external_sort`.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_remerge_sort, 1000000000, R"(
-In case of ORDER BY with LIMIT, when memory usage is higher than specified threshold, perform additional steps of merging blocks before final merge to keep just top LIMIT rows.
-)", 0) \
-    DECLARE(Float, remerge_sort_lowered_memory_bytes_ratio, 2., R"(
-If memory usage after remerge does not reduced by this ratio, remerge will be disabled.
-)", 0) \
-    \
-    DECLARE(UInt64, max_result_rows, 0, R"(
-Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
-No limit is applied when the value is `0`.
-
-The query will stop after processing a block of data if the threshold is met, but
-it will not cut the last block of the result, therefore the result size can be
-larger than the threshold.
-)", 0) \
-    DECLARE(UInt64, max_result_bytes, 0, R"(
-Limits the result size in bytes (uncompressed). The query will stop after processing a block of data if the threshold is met,
-but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
-
-**Caveats**
-
-The result size in memory is taken into account for this threshold.
-Even if the result size is small, it can reference larger data structures in memory,
-representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns,
-so the threshold can be exceeded despite the small result size.
-
-:::warning
-The setting is fairly low level and should be used with caution
-:::
-)", 0) \
-    DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
-Sets what to do if the volume of the result exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-           source data ran out.
-
-Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the
-block level. This means that amount of returned rows is greater than
-[`max_result_rows`](/operations/settings/settings#max_result_rows), multiple of [`max_block_size`](/operations/settings/settings#max_block_size)
-and depends on [`max_threads`](/operations/settings/settings#max_threads).
-
-**Example**
-
-```sql title="Query"
-SET max_threads = 3, max_block_size = 3333;
-SET max_result_rows = 3334, result_overflow_mode = 'break';
-
-SELECT *
-FROM numbers_mt(100000)
-FORMAT Null;
-```
-
-```text title="Result"
-6666 rows in set. ...
-```
-)", 0) \
-    \
-    /* TODO: Check also when merging and finalizing aggregate functions. */ \
-    DECLARE(Seconds, max_execution_time, 0, R"(
-The maximum query execution time in seconds.
-
-The `max_execution_time` parameter can be a bit tricky to understand.
-It operates based on interpolation relative to the current query execution speed
-(this behaviour is controlled by [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)).
-
-ClickHouse will interrupt a query if the projected execution time exceeds the
-specified `max_execution_time`. By default, the `timeout_before_checking_execution_speed`
-is set to 10 seconds. This means that after 10 seconds of query execution, ClickHouse
-will begin estimating the total execution time. If, for example, `max_execution_time`
-is set to 3600 seconds (1 hour), ClickHouse will terminate the query if the estimated
-time exceeds this 3600-second limit. If you set `timeout_before_checking_execution_speed`
-to 0, ClickHouse will use the clock time as the basis for `max_execution_time`.
-
-If query runtime exceeds the specified number of seconds, the behavior will be
-determined by the 'timeout_overflow_mode', which by default is set to `throw`.
-
-:::note
-The timeout is checked and the query can stop only in designated places during data processing.
-It currently cannot stop during merging of aggregation states or during query analysis,
-and the actual run time will be higher than the value of this setting.
-:::
-)", 0) \
-    DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
-Sets what to do if the query is run longer than the `max_execution_time` or the
-estimated running time is longer than `max_estimated_execution_time`.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-source data ran out.
-)", 0) \
-    DECLARE(Seconds, max_execution_time_leaf, 0, R"(
-Similar semantically to [`max_execution_time`](#max_execution_time) but only
-applied on leaf nodes for distributed or remote queries.
-
-For example, if we want to limit the execution time on a leaf node to `10s` but
-have no limit on the initial node, instead of having `max_execution_time` in the
-nested subquery settings:
-
-```sql
-SELECT count()
-FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
-```
-
-We can use `max_execution_time_leaf` as the query settings:
-
-```sql
-SELECT count()
-FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
-```
-)", 0) \
-    DECLARE(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, R"(
-Sets what happens when the query in leaf node run longer than `max_execution_time_leaf`.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-source data ran out.
-)", 0) \
-    \
-    DECLARE(UInt64, min_execution_speed, 0, R"(
-Minimal execution speed in rows per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
-expires. If the execution speed is lower, an exception is thrown.
-)", 0) \
-    DECLARE(UInt64, max_execution_speed, 0, R"(
-The maximum number of execution rows per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
-expires. If the execution speed is high, the execution speed will be reduced.
-)", 0) \
-    DECLARE(UInt64, min_execution_speed_bytes, 0, R"(
-The minimum number of execution bytes per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
-expires. If the execution speed is lower, an exception is thrown.
-)", 0) \
-    DECLARE(UInt64, max_execution_speed_bytes, 0, R"(
-The maximum number of execution bytes per second. Checked on every data block when
-[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
-expires. If the execution speed is high, the execution speed will be reduced.
-)", 0) \
-    DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
-Checks that execution speed is not too slow (no less than `min_execution_speed`),
-after the specified time in seconds has expired.
-)", 0) \
-    DECLARE(Seconds, max_estimated_execution_time, 0, R"(
-Maximum query estimate execution time in seconds. Checked on every data block
-when [`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
-expires.
-)", 0) \
-    \
-    DECLARE(UInt64, max_columns_to_read, 0, R"(
-The maximum number of columns that can be read from a table in a single query.
-If a query requires reading more than the specified number of columns, an exception
-is thrown.
-
-:::tip
-This setting is useful for preventing overly complex queries.
-:::
-
-`0` value means unlimited.
-)", 0) \
-    DECLARE(UInt64, max_temporary_columns, 0, R"(
-The maximum number of temporary columns that must be kept in RAM simultaneously
-when running a query, including constant columns. If a query generates more than
-the specified number of temporary columns in memory as a result of intermediate
-calculation, then an exception is thrown.
-
-:::tip
-This setting is useful for preventing overly complex queries.
-:::
-
-`0` value means unlimited.
-)", 0) \
-    DECLARE(UInt64, max_temporary_non_const_columns, 0, R"(
-Like `max_temporary_columns`, the maximum number of temporary columns that must
-be kept in RAM simultaneously when running a query, but without counting constant
-columns.
-
-:::note
-Constant columns are formed fairly often when running a query, but they require
-approximately zero computing resources.
-:::
-)", 0) \
-    \
-    DECLARE(UInt64, max_sessions_for_user, 0, R"(
-Maximum number of simultaneous sessions per authenticated user to the ClickHouse server.
-
-Example:
-
-```xml
-<profiles>
-    <single_session_profile>
-        <max_sessions_for_user>1</max_sessions_for_user>
-    </single_session_profile>
-    <two_sessions_profile>
-        <max_sessions_for_user>2</max_sessions_for_user>
-    </two_sessions_profile>
-    <unlimited_sessions_profile>
-        <max_sessions_for_user>0</max_sessions_for_user>
-    </unlimited_sessions_profile>
-</profiles>
-<users>
-    <!-- User Alice can connect to a ClickHouse server no more than once at a time. -->
-    <Alice>
-        <profile>single_session_user</profile>
-    </Alice>
-    <!-- User Bob can use 2 simultaneous sessions. -->
-    <Bob>
-        <profile>two_sessions_profile</profile>
-    </Bob>
-    <!-- User Charles can use arbitrarily many of simultaneous sessions. -->
-    <Charles>
-        <profile>unlimited_sessions_profile</profile>
-    </Charles>
-</users>
-```
-
-Possible values:
-- Positive integer
-- `0` - infinite count of simultaneous sessions (default)
-)", 0) \
-    \
-    DECLARE(UInt64, max_subquery_depth, 100, R"(
-If a query has more than the specified number of nested subqueries, throws an
-exception.
-
-:::tip
-This allows you to have a sanity check to protect against the users of your
-cluster from writing overly complex queries.
-:::
-)", 0) \
-    DECLARE(UInt64, max_analyze_depth, 5000, R"(
-Maximum number of analyses performed by interpreter.
-)", 0) \
-    DECLARE(UInt64, max_ast_depth, 1000, R"(
-The maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
-
-:::note
-At this time, it isn't checked during parsing, but only after parsing the query.
-This means that a syntactic tree that is too deep can be created during parsing,
-but the query will fail.
-:::
-)", 0) \
-    DECLARE(UInt64, max_ast_elements, 50000, R"(
-The maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
-
-:::note
-At this time, it isn't checked during parsing, but only after parsing the query.
-This means that a syntactic tree that is too deep can be created during parsing,
-but the query will fail.
-:::
-)", 0) \
-    DECLARE(UInt64, max_expanded_ast_elements, 500000, R"(
-Maximum size of query syntax tree in number of nodes after expansion of aliases and the asterisk.
-)", 0) \
-    \
-    DECLARE(Float, ast_fuzzer_runs, 0, R"(
-Enables the server-side AST fuzzer that runs randomized queries after each normal query, discarding their results.
-- 0: disabled (default).
-- A value between 0 and 1 (exclusive): probability of running a single fuzzed query.
-- A value >= 1: the number of fuzzed queries to run per normal query.
-
-The fuzzer accumulates AST fragments from all queries across all sessions, producing increasingly interesting mutations over time. Fuzzed queries that fail are silently discarded; results are never returned to the client.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, ast_fuzzer_any_query, false, R"(
-When false (default), the server-side AST fuzzer (controlled by `ast_fuzzer_runs`) only fuzzes read-only queries (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). When true, all query types including DDL and INSERT are fuzzed.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_fuzz_query_functions, false, R"(
-Enables the `fuzzQuery` function that applies random AST mutations to a query string.
-)", EXPERIMENTAL) \
-    \
-    DECLARE(UInt64, readonly, 0, R"(
-0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_in_set, 0, R"(
-The maximum number of rows for a data set in the IN clause created from a subquery.
-)", 0) \
-    DECLARE(UInt64, max_bytes_in_set, 0, R"(
-The maximum number of bytes (of uncompressed data) used by a set in the IN clause
-created from a subquery.
-)", 0) \
-    DECLARE(OverflowMode, set_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens when the amount of data exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-source data ran out.
-)", 0) \
-    \
-    DECLARE(Bool, exact_rows_before_limit, false, R"(
-When enabled, ClickHouse will provide exact value for rows_before_limit_at_least statistic, but with the cost that the data before limit will have to be read completely
-)", 0) \
-    DECLARE(Bool, rows_before_aggregation, false, R"(
-When enabled, ClickHouse will provide exact value for rows_before_aggregation statistic, represents the number of rows read before aggregation
-)", 0) \
-    DECLARE(UInt64, max_rows_in_join, 0, R"(
-Limits the number of rows in the right-side data structure (typically a hash
-table) used when joining tables.
-
-This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
-operations and the [Join](/engines/table-engines/special/join) table engine.
-
-If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) â€” see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
-
-Possible values:
-
-- Positive integer.
-- `0` â€” Unlimited number of rows.
-)", 0) \
-    DECLARE(UInt64, max_bytes_in_join, 0, R"(
-The maximum size in bytes of the right-side data structure (typically a hash
-table) used when joining tables.
-
-This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join)
-operations and the [Join table engine](/engines/table-engines/special/join).
-
-If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. When the limit is reached, the action depends on the
-chosen [`join_algorithm`](/operations/settings/settings#join_algorithm) â€” see
-that setting for the per-algorithm behavior (spill, re-partition, switch, or
-throw/break per [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode)).
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Memory control is disabled.
-)", 0) \
-    DECLARE(OverflowMode, join_overflow_mode, OverflowMode::THROW, R"(
-Defines what action ClickHouse performs when a join reaches any of the following limits:
-
-- [max_bytes_in_join](/operations/settings/settings#max_bytes_in_join)
-- [max_rows_in_join](/operations/settings/settings#max_rows_in_join)
-
-This setting is honored only by the `hash` and `parallel_hash`
-[`join_algorithm`](/operations/settings/settings#join_algorithm) values. Other
-algorithms (for example, `partial_merge`, `grace_hash`, `auto`) handle the
-limits differently â€” by spilling to disk, re-partitioning, or switching
-strategy â€” see
-[`join_algorithm`](/operations/settings/settings#join_algorithm).
-
-Possible values:
-
-- `THROW` â€” ClickHouse throws an exception and stops the query.
-- `BREAK` â€” ClickHouse stops the query and does not throw an exception.
-
-Default value: `THROW`.
-
-**See Also**
-
-- [JOIN clause](/sql-reference/statements/select/join)
-- [Join table engine](/engines/table-engines/special/join)
-)", 0) \
-    DECLARE(Bool, join_any_take_last_row, false, R"(
-Changes the behaviour of join operations with `ANY` strictness when the right table has more than one matching row for a key.
-
-:::note
-This setting applies to [`Join`](../../engines/table-engines/special/join.md) engine tables and hash-based join algorithms.
-
-If a join is built in parallel, the order of rows can be non-deterministic. This means that `join_any_take_last_row = 1` can return a non-deterministic row for `ANY JOIN` queries.
-:::
-
-Possible values:
-
-- 0 â€” If the right table has more than one matching row, only the first one found is joined.
-- 1 â€” If the right table has more than one matching row, only the last one found is joined.
-
-See also:
-
-- [JOIN clause](/sql-reference/statements/select/join)
-- [Join table engine](../../engines/table-engines/special/join.md)
-- [join_default_strictness](#join_default_strictness)
-)", IMPORTANT) \
-    DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", R"(
-Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm is used.
-
-Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
-
-Possible values:
-
-- grace_hash
-
- [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
-
- The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the memory limit (e.g., as set by [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join), the number of buckets is increased and the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
-
- Supports `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`.
-
-- hash
-
- [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join) is used. The most generic implementation that supports all combinations of kind and strictness and multiple join keys that are combined with `OR` in the `JOIN ON` section.
-
- When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
-
-- parallel_hash
-
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
-
- When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
-
-- partial_merge
-
- A variation of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join), where only the right table is fully sorted.
-
- The `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
-
- When using the `partial_merge` algorithm, ClickHouse sorts the data and dumps it to the disk. The `partial_merge` algorithm in ClickHouse differs slightly from the classic realization. First, ClickHouse sorts the right table by joining keys in blocks and creates a min-max index for sorted blocks. Then it sorts parts of the left table by the `join key` and joins them over the right table. The min-max index is also used to skip unneeded right table blocks.
-
-- direct
-
- The `direct` (also known as nested loop) algorithm performs a lookup in the right table using rows from the left table as keys.
- It's supported by special storages such as [Dictionary](/engines/table-engines/special/dictionary), [EmbeddedRocksDB](../../engines/table-engines/integrations/embedded-rocksdb.md), and [MergeTree](/engines/table-engines/mergetree-family/mergetree) tables.
-
- For MergeTree tables, the algorithm pushes join key filters directly to the storage layer. This can be more efficient when the key can use the table's primary key index for lookups, otherwise it performs full scans of the right table for each left table block.
-
- Supports `INNER` and `LEFT` joins and only single-column equality join keys without other conditions.
-
-- auto
-
- When set to `auto`, `hash` join is tried first, and the algorithm is switched on the fly to another algorithm if the memory limit is violated.
-
-- full_sorting_merge
-
- [Sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) with full sorting of joined tables before joining.
-
-- prefer_partial_merge
-
- ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
-
-- default (deprecated)
-
- Legacy value, please don't use anymore.
- Same as `direct,hash`, i.e. try to use direct join and hash join (in this order).
-
-)", 0) \
-    DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
-Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
-)", 0) \
-    DECLARE(UInt64, cross_join_min_rows_to_compress, 10000000, R"(
-Minimal count of rows to compress block in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
-)", 0) \
-    DECLARE(UInt64, cross_join_min_bytes_to_compress, 1_GiB, R"(
-Minimal size of block to compress in CROSS JOIN. Zero value means - disable this threshold. This block is compressed when any of the two thresholds (by rows or by bytes) are reached.
-)", 0) \
-    DECLARE(UInt64, default_max_bytes_in_join, 1000000000, R"(
-Maximum size of right-side table if limit is required but `max_bytes_in_join` is not set.
-)", 0) \
-    DECLARE(UInt64, partial_merge_join_left_table_buffer_bytes, 0, R"(
-If not 0 group left table blocks in bigger ones for left-side table in partial merge join. It uses up to 2x of specified memory per joining thread.
-)", 0) \
-    DECLARE(UInt64, partial_merge_join_rows_in_right_blocks, 65536, R"(
-Limits sizes of right-hand join data blocks in partial merge join algorithm for [JOIN](../../sql-reference/statements/select/join.md) queries.
-
-ClickHouse server:
-
-1.  Splits right-hand join data into blocks with up to the specified number of rows.
-2.  Indexes each block with its minimum and maximum values.
-3.  Unloads prepared blocks to disk if it is possible.
-
-Possible values:
-
-- Any positive integer. Recommended range of values: \[1000, 100000\].
-)", 0) \
-    DECLARE(UInt64, join_on_disk_max_files_to_merge, 64, R"(
-Limits the number of files allowed for parallel sorting in MergeJoin operations when they are executed on disk.
-
-The bigger the value of the setting, the more RAM is used and the less disk I/O is needed.
-
-Possible values:
-
-- Any positive integer, starting from 2.
-)", 0) \
-    DECLARE(UInt64, max_rows_in_set_to_optimize_join, 0, R"(
-Maximal size of the set to filter joined tables by each other's row sets before joining.
-
-Possible values:
-
-- 0 â€” Disable.
-- Any positive integer.
-)", 0) \
-    \
-    DECLARE(Bool, compatibility_ignore_collation_in_create_table, true, R"(
-Compatibility ignore collation in create table
-)", 0) \
-    \
-    DECLARE(String, temporary_files_codec, "LZ4", R"(
-Sets compression codec for temporary files used in sorting and joining operations on disk.
-
-Possible values:
-
-- LZ4 â€” [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression is applied.
-- NONE â€” No compression is applied.
-)", 0) \
-    \
-    DECLARE(NonZeroUInt64, temporary_files_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "Size of the buffer for temporary files writers. Larger buffer size means less system calls, but more memory consumption.", 0) \
-    DECLARE(UInt64, max_rows_to_transfer, 0, R"(
-Maximum size (in rows) that can be passed to a remote server or saved in a
-temporary table when the GLOBAL IN/JOIN section is executed.
-)", 0) \
-    DECLARE(UInt64, max_bytes_to_transfer, 0, R"(
-The maximum number of bytes (uncompressed data) that can be passed to a remote
-server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
-)", 0) \
-    DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens when the amount of data exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-source data ran out.
-)", 0) \
-    \
-    DECLARE(UInt64, max_rows_in_distinct, 0, R"(
-The maximum number of different rows when using DISTINCT.
-)", 0) \
-    DECLARE(UInt64, max_bytes_in_distinct, 0, R"(
-The maximum number of bytes of the state (in uncompressed bytes) in memory, which
-is used by a hash table when using DISTINCT.
-)", 0) \
-    DECLARE(OverflowMode, distinct_overflow_mode, OverflowMode::THROW, R"(
-Sets what happens when the amount of data exceeds one of the limits.
-
-Possible values:
-- `throw`: throw an exception (default).
-- `break`: stop executing the query and return the partial result, as if the
-source data ran out.
-)", 0) \
-    \
-    DECLARE(UInt64, max_memory_usage, 0, R"(
-Cloud default value: depends on the amount of RAM on the replica.
-
-The maximum amount of RAM to use for running a query on a single server.
-A value of `0` means unlimited.
-
-This setting does not consider the volume of available memory or the total volume
-of memory on the machine. The restriction applies to a single query within a
-single server.
-
-You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
-Peak memory consumption is tracked for each query and written to the log.
-
-Memory usage is not fully tracked for states of the following aggregate functions
-from `String` and `Array` arguments:
-- `min`
-- `max`
-- `any`
-- `anyLast`
-- `argMin`
-- `argMax`
-
-Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
-and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
-)", 0) \
-    DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
-It represents the soft memory limit when the hard limit is reached on the global level.
-This value is used to compute the overcommit ratio for the query.
-Zero means skip the query.
-Read more about [memory overcommit](/operations/settings/memory-overcommit).
-)", 0) \
-    DECLARE(UInt64, max_memory_usage_for_user, 0, R"(
-The maximum amount of RAM to use for running a user's queries on a single server. Zero means unlimited.
-
-By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
-
-Also see the description of [`max_memory_usage`](/operations/settings/settings#max_memory_usage).
-
-For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
-
-```sql
-ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
-```
-
-You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
-
-```sql
-SELECT getSetting('max_memory_usage_for_user');
-```
-)", 0) \
-    DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 1_GiB, R"(
-It represents the soft memory limit when the hard limit is reached on the user level.
-This value is used to compute the overcommit ratio for the query.
-Zero means skip the query.
-Read more about [memory overcommit](/operations/settings/memory-overcommit).
-)", 0) \
-    DECLARE(UInt64, max_untracked_memory, (4 * 1024 * 1024), R"(
-Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
-)", 0) \
-    DECLARE(UInt64, max_reverse_dictionary_lookup_cache_size_bytes, (100 * 1024 * 1024), R"(
-Maximum size in bytes of the per-query reverse dictionary lookup cache used by the function `dictGetKeys`. The cache stores serialized key tuples per attribute value to avoid re-scanning the dictionary within the same query. When the limit is reached, entries are evicted using LRU. Set to 0 to disable caching.
-)", 0) \
-    DECLARE(UInt64, memory_profiler_step, (4 * 1024 * 1024), R"(
-Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](/operations/system-tables/trace_log).
-
-Possible values:
-
-- A positive integer number of bytes.
-
-- 0 for turning off the memory profiler.
-)", 0) \
-    DECLARE(Float, memory_profiler_sample_probability, 0., R"(
-Collect random allocations and deallocations and write them into system.trace_log with 'MemorySample' trace_type. The probability is for every alloc/free regardless of the size of the allocation (can be changed with `memory_profiler_sample_min_allocation_size` and `memory_profiler_sample_max_allocation_size`). Note that sampling happens only when the amount of untracked memory exceeds 'max_untracked_memory'. You may want to set 'max_untracked_memory' to 0 for extra fine-grained sampling.
-)", 0) \
-    DECLARE(UInt64, memory_profiler_sample_min_allocation_size, 0, R"(
-Collect random allocations of size greater or equal than the specified value with probability equal to `memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold work as expected.
-)", 0) \
-    DECLARE(UInt64, memory_profiler_sample_max_allocation_size, 0, R"(
-Collect random allocations of size less or equal than the specified value with probability equal to `memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold work as expected.
-)", 0) \
-    DECLARE(Bool, trace_profile_events, false, R"(
-Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](/operations/system-tables/trace_log).
-
-Possible values:
-
-- 1 â€” Tracing of profile events enabled.
-- 0 â€” Tracing of profile events disabled.
-)", 0) \
-    DECLARE(String, trace_profile_events_list, "", R"(
-When the setting `trace_profile_events` is enabled, limit the traced events to the specified list of comma-separated names.
-If the `trace_profile_events_list` is an empty string (by default), trace all profile events.
-
-Example value: 'DiskS3ReadMicroseconds,DiskS3ReadRequestsCount,SelectQueryTimeMicroseconds,ReadBufferFromS3Bytes'
-
-Using this setting allows more precise collection of data for a large number of queries, because otherwise the vast amount of events can overflow the internal system log queue and some portion of them will be dropped.
-)", 0) \
-    \
-    DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
-Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
-If the timeout is reached and memory is not freed, an exception is thrown.
-Read more about [memory overcommit](/operations/settings/memory-overcommit).
-)", 0) \
-    \
-    DECLARE(UInt64, reserve_memory, 0, R"(
-Used in workload scheduling. The minimum amount of RAM reserved to be used for running a query on a single server. Reservation is made through the WORKLOAD hierarchy using the value of a `workload` query setting.
-If not enough memory is available to the workload, a query is prevented from starting and waits in pending state until the reservation can be fulfilled.
-A value of `0` means no reservation.
-This setting takes effect only if MEMORY RESERVATION resource is created.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, max_network_bandwidth, 0, R"(
-Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Bandwidth control is disabled.
-)", 0) \
-    DECLARE(UInt64, max_network_bytes, 0, R"(
-Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Data volume control is disabled.
-)", 0) \
-    DECLARE(UInt64, max_network_bandwidth_for_user, 0, R"(
-Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Control of the data speed is disabled.
-)", 0)\
-    DECLARE(UInt64, max_network_bandwidth_for_all_users, 0, R"(
-Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Control of the data speed is disabled.
-)", 0) \
-    \
-    DECLARE(UInt64, max_temporary_data_on_disk_size_for_user, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all
-concurrently running user queries.
-
-Possible values:
-
-- Positive integer.
-- `0` â€” unlimited (default)
-)", 0)\
-    DECLARE(UInt64, max_temporary_data_on_disk_size_for_query, 0, R"(
-The maximum amount of data consumed by temporary files on disk in bytes for all
-concurrently running queries.
-
-Possible values:
-
-- Positive integer.
-- `0` â€” unlimited (default)
-)", 0)\
-    \
-    DECLARE(UInt64, backup_restore_keeper_max_retries, 1000, R"(
-Max retries for [Zoo]Keeper operations in the middle of a BACKUP or RESTORE operation.
-Should be big enough so the whole operation won't fail because of a temporary [Zoo]Keeper failure.
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_retry_initial_backoff_ms, 100, R"(
-Initial backoff timeout for [Zoo]Keeper operations during backup or restore
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_retry_max_backoff_ms, 5000, R"(
-Max backoff timeout for [Zoo]Keeper operations during backup or restore
-
-Cloud default value: `60000`.
-)", 0) \
-    DECLARE(UInt64, backup_restore_failure_after_host_disconnected_for_seconds, 3600, R"(
-If a host during a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation doesn't recreate its ephemeral 'alive' node in ZooKeeper for this amount of time then the whole backup or restore is considered as failed.
-This value should be bigger than any reasonable time for a host to reconnect to ZooKeeper after a failure.
-Zero means unlimited.
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_max_retries_while_initializing, 20, R"(
-Max retries for [Zoo]Keeper operations during the initialization of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_max_retries_while_handling_error, 20, R"(
-Max retries for [Zoo]Keeper operations while handling an error of a BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
-)", 0) \
-    DECLARE(UInt64, backup_restore_finish_timeout_after_error_sec, 180, R"(
-How long the initiator should wait for other host to react to the 'error' node and stop their work on the current BACKUP ON CLUSTER or RESTORE ON CLUSTER operation.
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_value_max_size, 1048576, R"(
-Maximum size of data of a [Zoo]Keeper's node during backup
-)", 0) \
-    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multi, 1000, R"(
-Maximum size of batch for multi request to [Zoo]Keeper during backup or restore
-)", 0) \
-    DECLARE(UInt64, backup_restore_batch_size_for_keeper_multiread, 10000, R"(
-Maximum size of batch for multiread request to [Zoo]Keeper during backup or restore
-)", 0) \
-    DECLARE(Float, backup_restore_keeper_fault_injection_probability, 0.0f, R"(
-Approximate probability of failure for a keeper request during backup or restore. Valid value is in interval [0.0f, 1.0f]
-)", 0) \
-    DECLARE(UInt64, backup_restore_keeper_fault_injection_seed, 0, R"(
-0 - random seed, otherwise the setting value
-)", 0) \
-    DECLARE(UInt64, backup_restore_s3_retry_attempts, 1000, R"(
-Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
-)", 0) \
-    DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
-Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
-)", 0) \
-    DECLARE(UInt64, backup_restore_s3_retry_max_backoff_ms, 5000, R"(
-Maximum delay in milliseconds between retries during backup and restore operations.
-)", 0) \
-    DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
-Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
-)", 0) \
-    DECLARE(UInt64, max_backup_bandwidth, 0, R"(
-The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
-)", 0) \
-    DECLARE(Bool, restore_replicated_merge_tree_to_shared_merge_tree, false, R"(
-Replace table engine from Replicated*MergeTree -> Shared*MergeTree during RESTORE.
-
-Cloud default value: `1`.
-)", 0) \
-    \
-    DECLARE(Bool, log_profile_events, true, R"(
-Log query performance statistics into the query_log, query_thread_log and query_views_log.
-)", 0) \
-    DECLARE(Bool, log_query_settings, true, R"(
-Log query settings into the query_log and OpenTelemetry span log.
-)", 0) \
-    DECLARE(Bool, log_query_threads, false, R"(
-Setting up query threads logging.
-
-Query threads log into the [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting has effect only when [log_queries](#log_queries) is true. Queries' threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server configuration parameter.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-**Example**
-
-```text
-log_query_threads=1
-```
-)", 0) \
-    DECLARE(Bool, log_query_views, true, R"(
-Setting up query views logging.
-
-When a query run by ClickHouse with this setting enabled has associated views (materialized or live views), they are logged in the [query_views_log](/operations/server-configuration-parameters/settings#query_views_log) server configuration parameter.
-
-Example:
-
-```text
-log_query_views=1
-```
-)", 0) \
-    DECLARE(String, log_comment, "", R"(
-Specifies the value for the `log_comment` field of the [system.query_log](../system-tables/query_log.md) table and comment text for the server log.
-
-It can be used to improve the readability of server logs. Additionally, it helps to select queries related to the test from the `system.query_log` after running [clickhouse-test](../../development/tests.md).
-
-Possible values:
-
-- Any string no longer than [max_query_size](#max_query_size). If the max_query_size is exceeded, the server throws an exception.
-
-**Example**
-
-Query:
-
-```sql
-SET log_comment = 'log_comment test', log_queries = 1;
-SELECT 1;
-SYSTEM FLUSH LOGS;
-SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' AND event_date >= yesterday() ORDER BY event_time DESC LIMIT 2;
-```
-
-Result:
-
-```text
-â”Œâ”€typeâ”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€queryâ”€â”€â”€â”€â”€â”
-â”‚ QueryStart  â”‚ SELECT 1; â”‚
-â”‚ QueryFinish â”‚ SELECT 1; â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Int64, query_metric_log_interval, -1, R"(
-The interval in milliseconds at which the [query_metric_log](../../operations/system-tables/query_metric_log.md) for individual queries is collected.
-
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/operations/server-configuration-parameters/settings#query_metric_log) or default to 1000 if not present.
-
-To disable the collection of a single query, set `query_metric_log_interval` to 0.
-
-Default value: -1
-)", 0) \
-    DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
-Allow regexp_tree dictionary using Hyperscan library.
-)", 0) \
-    DECLARE(Bool, regexp_dict_flag_case_insensitive, false, R"(
-Use case-insensitive matching for a regexp_tree dictionary. Can be overridden in individual expressions with (?i) and (?-i).
-)", 0) \
-    DECLARE(Bool, regexp_dict_flag_dotall, false, R"(
-Allow '.' to match newline characters for a regexp_tree dictionary.
-)", 0) \
-    DECLARE(Bool, dictionary_use_async_executor, false, R"(
-Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
-)", 0) \
-    DECLARE(BoolAuto, dictionary_lazy_load, Field("auto"), R"(
-Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
-)", 0) \
-    DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
-Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
-)", 0) \
-    DECLARE(String, send_logs_source_regexp, "", R"(
-Send server text logs with specified regexp to match log source name. Empty means all sources.
-)", 0) \
-    DECLARE(Bool, enable_optimize_predicate_expression, true, R"(
-Turns on predicate pushdown in `SELECT` queries.
-
-Predicate pushdown may significantly reduce network traffic for distributed queries.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-Usage
-
-Consider the following queries:
-
-1.  `SELECT count() FROM test_table WHERE date = '2018-10-10'`
-2.  `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
-
-If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal because ClickHouse applies `WHERE` to the subquery when processing it.
-
-If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer because the `WHERE` clause applies to all the data after the subquery finishes.
-)", 0) \
-    DECLARE(Bool, enable_optimize_predicate_expression_to_final_subquery, true, R"(
-Allow push predicate to final subquery.
-)", 0) \
-    DECLARE(Bool, allow_push_predicate_when_subquery_contains_with, true, R"(
-Allows push predicate when subquery contains WITH clause
-)", 0) \
-    DECLARE(Bool, allow_push_predicate_ast_for_distributed_subqueries, true, R"(
-Allows push predicate on AST level for distributed subqueries with enabled anlyzer
-)", 0) \
-    \
-    DECLARE(UInt64, low_cardinality_max_dictionary_size, 8192, R"(
-Sets a maximum size in rows of a shared global dictionary for the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type that can be written to a storage file system. This setting prevents issues with RAM in case of unlimited dictionary growth. All the data that can't be encoded due to maximum dictionary size limitation ClickHouse writes in an ordinary method.
-
-Possible values:
-
-- Any positive integer.
-)", 0) \
-    DECLARE(Bool, low_cardinality_use_single_dictionary_for_part, false, R"(
-Turns on or turns off using of single dictionary for the data part.
-
-By default, the ClickHouse server monitors the size of dictionaries and if a dictionary overflows then the server starts to write the next one. To prohibit creating several dictionaries set `low_cardinality_use_single_dictionary_for_part = 1`.
-
-Possible values:
-
-- 1 â€” Creating several dictionaries for the data part is prohibited.
-- 0 â€” Creating several dictionaries for the data part is not prohibited.
-)", 0) \
-    DECLARE(Bool, decimal_check_overflow, true, R"(
-Check overflow of decimal arithmetic/comparison operations
-)", 0) \
-    DECLARE(Bool, allow_custom_error_code_in_throwif, false, R"(
-Enable custom error code in function throwIf(). If true, thrown exceptions may have unexpected error codes.
-)", 0) \
-    \
-    DECLARE(Bool, prefer_localhost_replica, true, R"(
-Enables/disables preferable using the localhost replica when processing distributed queries.
-
-Possible values:
-
-- 1 â€” ClickHouse always sends a query to the localhost replica if it exists.
-- 0 â€” ClickHouse uses the balancing strategy specified by the [load_balancing](#load_balancing) setting.
-
-:::note
-Disable this setting if you use [max_parallel_replicas](#max_parallel_replicas) without [parallel_replicas_custom_key](#parallel_replicas_custom_key).
-If [parallel_replicas_custom_key](#parallel_replicas_custom_key) is set, disable this setting only if it's used on a cluster with multiple shards containing multiple replicas.
-If it's used on a cluster with a single shard and multiple replicas, disabling this setting will have negative effects.
-:::
-)", 0) \
-    DECLARE(UInt64, max_fetch_partition_retries_count, 5, R"(
-Amount of retries while fetching partition from another host.
-)", 0) \
-    DECLARE(UInt64, http_max_multipart_form_data_size, 1024 * 1024 * 1024, R"(
-Limit on size of multipart/form-data content. This setting cannot be parsed from URL parameters and should be set in a user profile. Note that content is parsed and external tables are created in memory before the start of query execution. And this is the only limit that has an effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).
-)", 0) \
-    DECLARE(Bool, calculate_text_stack_trace, true, R"(
-Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when a huge amount of wrong queries are executed. In normal cases, you should not disable this option.
-)", 0) \
-    DECLARE(Bool, enable_job_stack_trace, false, R"(
-Output stack trace of a job creator when job results in exception. Disabled by default to avoid performance overhead.
-)", 0) \
-    DECLARE(Bool, allow_ddl, true, R"(
-If it is set to true, then a user is allowed to executed DDL queries.
-)", 0) \
-    DECLARE(Bool, parallel_view_processing, false, R"(
-Enables pushing to attached views concurrently instead of sequentially.
-)", 0) \
-    DECLARE(Bool, enable_unaligned_array_join, false, R"(
-Allow ARRAY JOIN with multiple arrays that have different sizes. When this settings is enabled, arrays will be resized to the longest one.
-)", 0) \
-    DECLARE(Bool, optimize_read_in_order, true, R"(
-Enables [ORDER BY](/sql-reference/statements/select/order-by#optimization-of-data-reading) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for reading data from [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-
-Possible values:
-
-- 0 â€” `ORDER BY` optimization is disabled.
-- 1 â€” `ORDER BY` optimization is enabled.
-
-**See Also**
-
-- [ORDER BY Clause](/sql-reference/statements/select/order-by#optimization-of-data-reading)
-)", 0) \
-    DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
-Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
-)", 0) \
-    DECLARE(Bool, read_in_order_use_virtual_row_per_block, false, R"(
-When enabled together with `read_in_order_use_virtual_row`, emit a virtual row after each block read (not only at the beginning of each part).
-This allows `MergingSortedTransform` to reprioritize sources more frequently, which is useful when downstream filters discard many rows and data is distributed unevenly across parts.
-Note that it disables `read_in_order_use_buffering` optimization and preliminary merge (`read_in_order_two_level_merge_threshold`) for reading.
-)", 0) \
-    DECLARE(Bool, optimize_aggregation_in_order, false, R"(
-Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
-
-Possible values:
-
-- 0 â€” `GROUP BY` optimization is disabled.
-- 1 â€” `GROUP BY` optimization is enabled.
-
-**See Also**
-
-- [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
-)", 0) \
-    DECLARE(Bool, optimize_aggregation_in_order_limit, true, R"(
-When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
-)", 0) \
-    DECLARE(Bool, enable_sharding_aggregator, false, R"(
-Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
-
-This is efficient for high-cardinality keys with evenly distributed data, but may suffer from highly skewed key distributions or queries with very few distinct keys.
-
-Possible values:
-
-- 0 â€” Sharded aggregation optimization is disabled.
-- 1 â€” Sharded aggregation optimization is enabled.
-)", 0) \
-    DECLARE(Bool, read_in_order_use_buffering, true, R"(
-Use buffering before merging while reading in order of primary key. It increases the parallelism of query execution
-)", 0) \
-    DECLARE(UInt64, aggregation_in_order_max_block_bytes, 50000000, R"(
-Maximal size of block in bytes accumulated during aggregation in order of primary key. Lower block size allows to parallelize more final merge stage of aggregation.
-)", 0) \
-    DECLARE(UInt64, read_in_order_two_level_merge_threshold, 100, R"(
-Minimal number of parts to read to run preliminary merge step during multithread reading in order of primary key.
-)", 0) \
-    DECLARE(Bool, low_cardinality_allow_in_native_format, true, R"(
-Allows or restricts using the [LowCardinality](../../sql-reference/data-types/lowcardinality.md) data type with the [Native](/interfaces/formats/Native) format.
-
-If usage of `LowCardinality` is restricted, ClickHouse server converts `LowCardinality`-columns to ordinary ones for `SELECT` queries, and convert ordinary columns to `LowCardinality`-columns for `INSERT` queries.
-
-This setting is required mainly for third-party clients which do not support `LowCardinality` data type.
-
-Possible values:
-
-- 1 â€” Usage of `LowCardinality` is not restricted.
-- 0 â€” Usage of `LowCardinality` is restricted.
-)", 0) \
-    DECLARE(Bool, cancel_http_readonly_queries_on_client_close, false, R"(
-Cancels HTTP read-only queries (e.g.Â SELECT) when a client closes the connection without waiting for the response.
-
-Cloud default value: `1`.
-)", 0) \
-    DECLARE(Bool, external_table_functions_use_nulls, true, R"(
-Defines how [mysql](../../sql-reference/table-functions/mysql.md), [postgresql](../../sql-reference/table-functions/postgresql.md) and [odbc](../../sql-reference/table-functions/odbc.md) table functions use Nullable columns.
-
-Possible values:
-
-- 0 â€” The table function explicitly uses Nullable columns.
-- 1 â€” The table function implicitly uses Nullable columns.
-
-**Usage**
-
-If the setting is set to `0`, the table function does not make Nullable columns and inserts default values instead of NULL. This is also applicable for NULL values inside arrays.
-)", 0) \
-    DECLARE(Bool, external_table_strict_query, false, R"(
-If it is set to true, transforming expression to local filter is forbidden for queries to external tables.
-)", 0) \
-    \
-    DECLARE(Bool, allow_hyperscan, true, R"(
-Allow functions that use Hyperscan library. Disable to avoid potentially long compilation times and excessive resource usage.
-)", 0) \
-    DECLARE(UInt64, max_hyperscan_regexp_length, 0, R"(
-Defines the maximum length for each regular expression in the [hyperscan multi-match functions](/sql-reference/functions/string-search-functions#multiMatchAny).
-
-Possible values:
-
-- Positive integer.
-- 0 - The length is not limited.
-
-**Example**
-
-Query:
-
-```sql
-SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 3;
-```
-
-Result:
-
-```text
-â”Œâ”€multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])â”€â”
-â”‚                                              1 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Query:
-
-```sql
-SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp_length = 2;
-```
-
-Result:
-
-```text
-Exception: Regexp length too large.
-```
-
-**See Also**
-
-- [max_hyperscan_regexp_total_length](#max_hyperscan_regexp_total_length)
-)", 0) \
-    DECLARE(UInt64, max_hyperscan_regexp_total_length, 0, R"(
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](/sql-reference/functions/string-search-functions#multiMatchAny).
-
-Possible values:
-
-- Positive integer.
-- 0 - The length is not limited.
-
-**Example**
-
-Query:
-
-```sql
-SELECT multiMatchAny('abcd', ['a','b','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
-```
-
-Result:
-
-```text
-â”Œâ”€multiMatchAny('abcd', ['a', 'b', 'c', 'd'])â”€â”
-â”‚                                           1 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Query:
-
-```sql
-SELECT multiMatchAny('abcd', ['ab','bc','c','d']) SETTINGS max_hyperscan_regexp_total_length = 5;
-```
-
-Result:
-
-```text
-Exception: Total regexp lengths too large.
-```
-
-**See Also**
-
-- [max_hyperscan_regexp_length](#max_hyperscan_regexp_length)
-)", 0) \
-    DECLARE(Bool, reject_expensive_hyperscan_regexps, true, R"(
-Reject patterns which will likely be expensive to evaluate with hyperscan (due to NFA state explosion)
-)", 0) \
-    DECLARE(Bool, allow_simdjson, true, R"(
-Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
-)", 0) \
-    DECLARE(Bool, allow_introspection_functions, false, R"(
-Enables or disables [introspection functions](../../sql-reference/functions/introspection.md) for query profiling.
-
-Possible values:
-
-- 1 â€” Introspection functions enabled.
-- 0 â€” Introspection functions disabled.
-
-**See Also**
-
-- [Sampling Query Profiler](../../operations/optimizing-performance/sampling-query-profiler.md)
-- System table [trace_log](/operations/system-tables/trace_log)
-)", 0) \
-    DECLARE(Bool, splitby_max_substrings_includes_remaining_string, false, R"(
-Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
-
-Possible values:
-
-- `0` - The remaining string will not be included in the last element of the result array.
-- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
-)", 0) \
-    \
-    DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
-Allow execute multiIf function columnar
-)", 0) \
-    DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
-Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
-)", 0) \
-    DECLARE(Bool, formatdatetime_f_prints_scale_number_of_digits, false, R"(
-Formatter '%f' in function 'formatDateTime' prints only the scale amount of digits for a DateTime64 instead of fixed 6 digits.
-)", 0) \
-    DECLARE(Bool, formatdatetime_parsedatetime_m_is_month_name, true, R"(
-Formatter '%M' in functions 'formatDateTime' and 'parseDateTime' print/parse the month name instead of minutes.
-)", 0) \
-    DECLARE(Bool, parsedatetime_parse_without_leading_zeros, true, R"(
-Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hours without leading zeros.
-)", 0) \
-    DECLARE(Bool, parsedatetime_e_requires_space_padding, false, R"(
-Formatter '%e' in function 'parseDateTime' expects that single-digit days are space-padded, e.g., ' 2' is accepted but '2' raises an error.
-)", 0) \
-    DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
-Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
-)", 0) \
-    DECLARE(Bool, formatdatetime_e_with_space_padding, false, R"(
-Formatter '%e' in function 'formatDateTime' prints single-digit days with a leading space, e.g. ' 2' instead of '2'.
-)", 0) \
-    DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
-If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
-)", 0) \
-    DECLARE(Bool, h3togeo_lon_lat_result_order, false, R"(
-Function 'h3ToGeo' returns (lon, lat) if true, otherwise (lat, lon).
-)", 0) \
-    DECLARE(GeoToH3ArgumentOrder, geotoh3_argument_order, GeoToH3ArgumentOrder::LAT_LON, R"(
-Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set to 'lat_lon'.
-)", BETA) \
-    DECLARE(Bool, functions_h3_default_if_invalid, false, "If false, h3 functions, e.g. h3CellAreaM2, throw an exception if input is invalid. If true, they return 0 or default value.", 0) \
-    DECLARE(UInt64, max_wkb_geometry_elements, 1'000'000, R"(
-Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
-)", 0) \
-    DECLARE(UInt64, max_rand_distribution_trials, 1'000'000'000, R"(
-Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts.
-)", 0) \
-    DECLARE(Float, max_rand_distribution_parameter, 1e6, R"(
-Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values.
-)", 0) \
-    DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
-Limits the maximum number of partitions in a single inserted block
-and an exception is thrown if the block contains too many partitions.
-
-- Positive integer.
-- `0` â€” Unlimited number of partitions.
-
-**Details**
-
-When inserting data, ClickHouse calculates the number of partitions in the
-inserted block. If the number of partitions is more than
-`max_partitions_per_insert_block`, ClickHouse either logs a warning or throws an
-exception based on `throw_on_max_partitions_per_insert_block`. Exceptions have
-the following text:
-
-> "Too many partitions for a single INSERT block (`partitions_count` partitions, limit is " + toString(max_partitions) + ").
-  The limit is controlled by the 'max_partitions_per_insert_block' setting.
-  A large number of partitions is a common misconception. It will lead to severe
-  negative performance impact, including slow server startup, slow INSERT queries
-  and slow SELECT queries. Recommended total number of partitions for a table is
-  under 1000..10000. Please note, that partitioning is not intended to speed up
-  SELECT queries (ORDER BY key is sufficient to make range queries fast).
-  Partitions are intended for data manipulation (DROP PARTITION, etc)."
-
-:::note
-This setting is a safety threshold because using a large number of partitions is a common misconception.
-:::
-)", 0) \
-    DECLARE(Bool, throw_on_max_partitions_per_insert_block, true, R"(
-Allows you to control the behaviour when `max_partitions_per_insert_block` is reached.
-
-Possible values:
-- `true`  - When an insert block reaches `max_partitions_per_insert_block`, an exception is raised.
-- `false` - Logs a warning when `max_partitions_per_insert_block` is reached.
-
-:::tip
-This can be useful if you're trying to understand the impact on users when changing [`max_partitions_per_insert_block`](/operations/settings/settings#max_partitions_per_insert_block).
-:::
-)", 0) \
-    DECLARE(Int64, max_partitions_to_read, -1, R"(
-Limits the maximum number of partitions that can be accessed in a single query.
-
-The setting value specified when the table is created can be overridden via query-level setting.
-
-Possible values:
-
-- Positive integer
-- `-1` - unlimited (default)
-
-:::note
-You can also specify the MergeTree setting [`max_partitions_to_read`](/operations/settings/settings#max_partitions_to_read) in tables' setting.
-:::
-)", 0) \
-    DECLARE(Bool, check_query_single_value_result, false, R"(
-Defines the level of detail for the [CHECK TABLE](/sql-reference/statements/check-table) query result for `MergeTree` family engines .
-
-Possible values:
-
-- 0 â€” the query shows a check status for every individual data part of a table.
-- 1 â€” the query shows the general table check status.
-)", 0) \
-    DECLARE(Bool, allow_drop_detached, false, R"(
-Allow ALTER TABLE ... DROP DETACHED PART[ITION] ... queries
-)", 0) \
-    DECLARE(Bool, allow_replace_partition_from_empty_source, false, R"(
-Allow `ALTER TABLE ... REPLACE PARTITION ... FROM ...` to silently drop the destination partition when the source has no parts in that partition.
-
-By default this is disallowed: `REPLACE PARTITION` from a source that has no data in the requested partition raises an exception, because in this case the operation effectively becomes a silent `DROP PARTITION` on the destination (the destination's data is removed and nothing replaces it), a common cause of accidental data loss (see [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
-
-Enable this setting to restore the previous behavior, for example when you intentionally use an empty source partition to clear data in the destination. For an unconditional drop, prefer `ALTER TABLE ... DROP PARTITION ...` instead.
-)", 0) \
-    DECLARE(Bool, dynamic_disk_allow_from_env, false, R"(
-Allow using `from_env` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
-Disabled by default to prevent users from reading arbitrary environment variables when defining table storage.
-)", 0) \
-    DECLARE(Bool, dynamic_disk_allow_include, false, R"(
-Allow using `include` in the dynamic disk configuration (i.e. in the `disk()` function arguments).
-Disabled by default.
-)", 0) \
-    DECLARE(Bool, dynamic_disk_allow_from_zk, false, R"(
-Allow using `from_zk` substitutions in the dynamic disk configuration (i.e. in the `disk()` function arguments).
-Disabled by default.
-)", 0) \
-    DECLARE(Bool, s3_allow_server_credentials_in_user_queries, false, R"(
-Allow S3 access that originates from user SQL to use server-managed credentials.
-
-When disabled (the default), the `s3`/`s3Cluster` table functions, the `S3`/`S3Queue` engines, S3 named collections, dynamic `disk(type=s3, ...)` definitions, `BACKUP`/`RESTORE TO S3`, DataLake table-data reads, and `DataLakeCatalog` databases (Glue, BigLake) may not resolve credentials from the environment, instance metadata (IMDS), IRSA, ECS, instance profile, SSO, AWS config/credentials files, `role_arn`-based STS assume-role, or the GCP OAuth metadata service. A request that asks for one of those server-managed sources (for example `use_environment_credentials = 1`, a `role_arn`, or `http_client = gcp_oauth`) without supplying usable explicit credentials is rejected with `ACCESS_DENIED`. A request that asks for none of them is sent unsigned (anonymous), the same as if `NOSIGN` had been given.
-
-Whether a credential-less request asks for environment credentials is decided by `use_environment_credentials`. Named collections default it to `0`, so a collection that only specifies a URL reads anonymously. The `s3`/`s3Cluster` table functions and `S3`/`S3Queue` engines use the built-in default (`1`) unless the server `<s3>` config sets it otherwise; set `<s3><use_environment_credentials>0</use_environment_credentials></s3>` to make their credential-less reads anonymous by default too (otherwise such a request is refused and must use `NOSIGN`). Disks defined in the server configuration are unaffected and keep using environment credentials by default; user-created dynamic `disk(type = s3, ...)` definitions are covered by the restriction (see above) and are rejected when they rely on default/environment credentials.
-
-This prevents an authenticated user from making the server access S3 with its own (ambient) credentials. Credentials supplied explicitly are not affected: keys passed in the query, static keys in a named collection (created via SQL or defined in config), and keys in the server `<s3>` config all keep working.
-
-The recommended way to give user queries S3 access is a named collection with explicit credentials (or `NOSIGN` for public buckets): the keys stay out of the query text, and use of each collection is controlled with RBAC (`GRANT NAMED COLLECTION ON <name> TO <user>`), so you grant specific users specific buckets instead of exposing the server's own identity.
-
-Scope (out of scope on purpose): this setting blocks only the server's ambient credential sources listed above. It does not block operator-provisioned static `access_key_id`/`secret_access_key` from the server `<s3>` config or from a config-defined named collection: those are treated as explicit credentials and keep working. Note, however, that config request material such as `access_header` or server-side-encryption keys is not by itself treated as a credential here: a request that carries only such material but no explicit key pair (and the default `use_environment_credentials = 1`) is still refused, because it would otherwise fall back to the server's ambient credentials. Such an endpoint must also provide explicit keys, `NOSIGN`, `use_environment_credentials = 0`, or the escape hatch below.
-
-A trusted administrative client may need server-managed credentials for legitimate operations (for example, attaching system tables on an `s3_plain_rewritable` disk via SQL). Enable this setting in that client's session or settings profile to permit it.
-
-For `BACKUP`/`RESTORE ... ON CLUSTER` the initiator's value of this setting is propagated to the other hosts and used there as-is. Those hosts run the per-host continuation of the operation through the distributed DDL queue, by default without the initiator's user, so they would otherwise evaluate the restriction against their own default profile; the initiator's value is preserved instead, because it has already opened the same backup destination under its own, constrained, settings. A `readonly` constraint on the initiator still applies (an untrusted initiator cannot enable the setting for its own on-cluster backup), so this does not weaken the restriction.
-
-Durability for persistent `S3` and `S3Queue` tables: enabling this only per session or profile is not durable across a restart. When the server reloads such a table from its stored definition (startup or `RESTORE`) it rebuilds the S3 client and re-applies the restriction with the startup context, so a table that relied on server-managed credentials and was created only under a session/profile `s3_allow_server_credentials_in_user_queries = 1` is created successfully but becomes inaccessible after a restart (the table is left in place; queries against it fail until its credentials resolve to a permitted source again). The server itself still starts. Give such tables explicit credentials for durable access; alternatively, enabling the setting server-wide keeps them loading across restarts, at the cost of relaxing the restriction for all reloads.
-
-To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0` and marking it `readonly`:
-
-```xml
-<profiles>
-    <untrusted>
-        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
-             but `compatibility` with a version before this setting was introduced would otherwise
-             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
-        <s3_allow_server_credentials_in_user_queries>0</s3_allow_server_credentials_in_user_queries>
-        <constraints>
-            <s3_allow_server_credentials_in_user_queries>
-                <readonly/>
-            </s3_allow_server_credentials_in_user_queries>
-        </constraints>
-    </untrusted>
-</profiles>
-```
-
-This setting has no effect in `clickhouse-local`, where the user is the operator.
-
-`DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
-)", 0) \
-    DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
-    \
-    DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(
-Restriction on deleting tables in query time. The value `0` means that you can delete all tables without any restrictions.
-
-Cloud default value: 1 TB.
-
-:::note
-This query setting overwrites its server setting equivalent, see [max_table_size_to_drop](/operations/server-configuration-parameters/settings#max_table_size_to_drop)
-:::
-)", 0) \
-    DECLARE(UInt64, max_partition_size_to_drop, default_max_size_to_drop, R"(
-Restriction on dropping partitions in query time. The value `0` means that you can drop partitions without any restrictions.
-
-Cloud default value: 1 TB.
-
-:::note
-This query setting overwrites its server setting equivalent, see [max_partition_size_to_drop](/operations/server-configuration-parameters/settings#max_partition_size_to_drop)
-:::
-)", 0) \
-    \
-    DECLARE(UInt64, postgresql_connection_pool_size, 16, R"(
-Connection pool size for PostgreSQL table engine and database engine.
-)", 0) \
-    DECLARE(UInt64, postgresql_connection_attempt_timeout, 2, R"(
-Connection timeout in seconds of a single attempt to connect PostgreSQL end-point.
-The value is passed as a `connect_timeout` parameter of the connection URL.
-)", 0) \
-    DECLARE(UInt64, postgresql_connection_pool_wait_timeout, 5000, R"(
-Connection pool push/pop timeout on empty pool for PostgreSQL table engine and database engine. By default it will block on empty pool.
-)", 0) \
-    DECLARE(UInt64, postgresql_connection_pool_retries, 2, R"(
-Connection pool push/pop retries number for PostgreSQL table engine and database engine.
-)", 0) \
-    DECLARE(Bool, postgresql_connection_pool_auto_close_connection, false, R"(
-Close connection before returning connection to the pool.
-)", 0) \
-    DECLARE(Float, postgresql_fault_injection_probability, 0.0f, R"(
-Approximate probability of failing internal (for replication) PostgreSQL queries. Valid value is in interval [0.0f, 1.0f]
-)", 0) \
-    DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
-Maximum number of allowed addresses (For external storages, table functions, etc).
-)", 0) \
-    DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
-Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
-Maximum number of directories that can be traversed while expanding URL wildcards from index pages.
-)", 0) \
-    DECLARE(UInt64, odbc_bridge_connection_pool_size, 16, R"(
-Connection pool size for each connection settings string in ODBC bridge.
-)", 0) \
-    DECLARE(Bool, odbc_bridge_use_connection_pooling, true, R"(
-Use connection pooling in ODBC bridge. If set to false, a new connection is created every time.
-)", 0) \
-    \
-    DECLARE(Seconds, distributed_replica_error_half_life, DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD, R"(
-- Type: seconds
-- Default value: 60 seconds
-
-Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed_replica_error_half_life is set to 1 second, then the replica is considered normal 3 seconds after the last error.
-
-See also:
-
-- [load_balancing](#load_balancing-round_robin)
-- [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap](#distributed_replica_error_cap)
-- [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
-)", 0) \
-    DECLARE(UInt64, distributed_replica_error_cap, DBMS_CONNECTION_POOL_WITH_FAILOVER_MAX_ERROR_COUNT, R"(
-- Type: unsigned int
-- Default value: 1000
-
-The error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
-
-See also:
-
-- [load_balancing](#load_balancing-round_robin)
-- [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
-- [distributed_replica_max_ignored_errors](#distributed_replica_max_ignored_errors)
-)", 0) \
-    DECLARE(UInt64, distributed_replica_max_ignored_errors, 0, R"(
-- Type: unsigned int
-- Default value: 0
-
-The number of errors that will be ignored while choosing replicas (according to `load_balancing` algorithm).
-
-See also:
-
-- [load_balancing](#load_balancing-round_robin)
-- [Table engine Distributed](../../engines/table-engines/special/distributed.md)
-- [distributed_replica_error_cap](#distributed_replica_error_cap)
-- [distributed_replica_error_half_life](#distributed_replica_error_half_life)
-)", 0) \
-    \
-    DECLARE(UInt64, min_free_disk_space_for_temporary_data, 0, R"(
-The minimum disk space to keep while writing temporary data used in external sorting and aggregation.
-)", 0) \
-    \
-    DECLARE(DefaultTableEngine, default_temporary_table_engine, DefaultTableEngine::Memory, R"(
-Same as [default_table_engine](#default_table_engine) but for temporary tables.
-
-In this example, any new temporary table that does not specify an `Engine` will use the `Log` table engine:
-
-Query:
-
-```sql
-SET default_temporary_table_engine = 'Log';
-
-CREATE TEMPORARY TABLE my_table (
-    x UInt32,
-    y UInt32
-);
-
-SHOW CREATE TEMPORARY TABLE my_table;
-```
-
-Result:
-
-```response
-â”Œâ”€statementâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ CREATE TEMPORARY TABLE default.my_table
-(
-    `x` UInt32,
-    `y` UInt32
-)
-ENGINE = Log
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(DefaultTableEngine, default_table_engine, DefaultTableEngine::MergeTree, R"(
-Default table engine to use when `ENGINE` is not set in a `CREATE` statement.
-
-Possible values:
-
-- a string representing any valid table engine name
-
-Cloud default value: `SharedMergeTree`.
-
-**Example**
-
-Query:
-
-```sql
-SET default_table_engine = 'Log';
-
-SELECT name, value, changed FROM system.settings WHERE name = 'default_table_engine';
-```
-
-Result:
-
-```response
-â”Œâ”€nameâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€valueâ”€â”¬â”€changedâ”€â”
-â”‚ default_table_engine â”‚ Log   â”‚       1 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-In this example, any new table that does not specify an `Engine` will use the `Log` table engine:
-
-Query:
-
-```sql
-CREATE TABLE my_table (
-    x UInt32,
-    y UInt32
-);
-
-SHOW CREATE TABLE my_table;
-```
-
-Result:
-
-```response
-â”Œâ”€statementâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ CREATE TABLE default.my_table
-(
-    `x` UInt32,
-    `y` UInt32
-)
-ENGINE = Log
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, show_table_uuid_in_table_create_query_if_not_nil, false, R"(
-Sets the `SHOW TABLE` query display.
-
-Possible values:
-
-- 0 â€” The query will be displayed without table UUID.
-- 1 â€” The query will be displayed with table UUID.
-)", 0) \
-    DECLARE(Bool, database_atomic_wait_for_drop_and_detach_synchronously, false, R"(
-Adds a modifier `SYNC` to all `DROP` and `DETACH` queries.
-
-Possible values:
-
-- 0 â€” Queries will be executed with delay.
-- 1 â€” Queries will be executed without delay.
-)", 0) \
-    DECLARE(Bool, enable_scalar_subquery_optimization, true, R"(
-If it is set to true, prevent scalar subqueries from (de)serializing large scalar values and possibly avoid running the same subquery more than once.
-)", 0) \
-    DECLARE(Bool, optimize_trivial_count_query, true, R"(
-Enables or disables the optimization to trivial query `SELECT count() FROM table` using metadata from MergeTree. If you need to use row-level security, disable this setting.
-
-Possible values:
-
-   - 0 â€” Optimization disabled.
-   - 1 â€” Optimization enabled.
-
-See also:
-
-- [optimize_functions_to_subcolumns](#optimize_functions_to_subcolumns)
-)", 0) \
-    DECLARE(Bool, optimize_trivial_approximate_count_query, false, R"(
-Use an approximate value for trivial count optimization of storages that support such estimation, for example, EmbeddedRocksDB.
-
-Possible values:
-
-   - 0 â€” Optimization disabled.
-   - 1 â€” Optimization enabled.
-)", 0) \
-    DECLARE(Bool, optimize_trivial_group_by_limit_query, true, R"(
-Enables or disables the optimization of a trivial query `SELECT key_expr FROM table GROUP BY key_expr LIMIT n` (with no aggregate functions in the projection, no `HAVING`/`ORDER BY`/`LIMIT BY`/window clauses, and no `GROUP BY` modifiers) by setting `max_rows_to_group_by = n + offset` with `group_by_overflow_mode = 'any'`. The aggregation stops once `n + offset` distinct keys are produced.
-
-The optimization is suppressed when the user has explicitly set `group_by_overflow_mode` to a non-`any` value (to preserve their explicit `throw`/`break` contract), and when the user has already set a tighter `max_rows_to_group_by` (the optimization would be a no-op).
-
-Possible values:
-
-- 0 â€” Optimization disabled.
-- 1 â€” Optimization enabled.
-)", 0) \
-    DECLARE(Bool, optimize_trivial_count_with_sparsity_filter, false, R"(
-Extends the [optimize_trivial_count_query](#optimize_trivial_count_query) optimization to
-queries of the form `SELECT count() FROM t WHERE col <op> const`, where `<op> const`
-exactly partitions rows into defaults and non-defaults of `col`. The count is then
-served from the per-column `num_defaults` / `num_rows` counters that MergeTree already
-keeps in `serialization.json`, with no data scan.
-
-Patterns recognised:
-
-- `col = default(col)` / `col != default(col)` for `Int*` / `UInt*`, `String` /
-  `FixedString`, `Date` / `DateTime` / `DateTime64`, `Decimal*`, `UUID`, `IPv4` / `IPv6`.
-- `IS NULL` / `IS NOT NULL` on `Nullable` columns.
-- `empty(col)` / `notEmpty(col)` on `String` columns.
-- `col = true` / `col != true` on `Bool` columns.
-- `col > 0`, `col >= 1`, `col < 1`, `col <= 0` on unsigned integer columns.
-- Bare `col` / `NOT col` on `Int*`, `UInt*`, `Bool` columns (truthy test).
-
-The equality patterns are not applied to `Float*`, `Enum*`, `Nullable`, `LowCardinality`,
-or composite types (`Tuple`, `Array`, `Map`, ...) â€” for these the count is served from the
-regular scan path.
-
-To take effect, the per-part `num_defaults` counter must be exact. Enable the MergeTree
-table setting `compute_exact_num_defaults_for_sparse_columns` on the target table before
-inserts and merges. Parts written without it are silently opted out of the rewrite, so
-enabling `optimize_trivial_count_with_sparsity_filter` alone is not enough.
-
-For the `IS NULL` / `IS NOT NULL` patterns on `Nullable` columns, the column must also
-have a `num_defaults` entry in `serialization.json`, which only happens when the MergeTree
-table setting `nullable_serialization_version` is set to `allow_sparse` at insert /
-merge time. With the default value `basic` `Nullable` columns get no per-column entry, so
-the optimization silently does not apply.
-
-Possible values:
-
-   - 0 â€” Optimization disabled.
-   - 1 â€” Optimization enabled.
-
-See also:
-
-- [optimize_trivial_count_query](#optimize_trivial_count_query)
-)", EXPERIMENTAL) \
-    DECLARE(Bool, optimize_count_from_files, true, R"(
-Enables or disables the optimization of counting number of rows from files in different input formats. It applies to table functions/engines `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
-
-Possible values:
-
-- 0 â€” Optimization disabled.
-- 1 â€” Optimization enabled.
-)", 0) \
-    DECLARE(Bool, use_cache_for_count_from_files, true, R"(
-Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
-
-Enabled by default.
-)", 0) \
-    DECLARE(Bool, optimize_respect_aliases, true, R"(
-If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that will help with partition pruning/secondary indexes/optimize_aggregation_in_order/optimize_read_in_order/optimize_trivial_count
-)", 0) \
-    DECLARE(UInt64, mutations_sync, 0, R"(
-Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN|MATERIALIZE STATISTICS` queries ([mutations](../../sql-reference/statements/alter/index.md/#mutations)) synchronously.
-
-Possible values:
-
-| Value | Description                                                                                                                                           |
-|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`   | Mutations execute asynchronously.                                                                                                                     |
-| `1`   | The query waits for all mutations to complete on the current server.                                                                                  |
-| `2`   | The query waits for all mutations to complete on all replicas (if they exist).                                                                        |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_lightweight_delete, true, R"(
-Enable lightweight DELETE mutations for mergetree tables.
-)", 0, allow_experimental_lightweight_delete) \
-    DECLARE(LightweightDeleteMode, lightweight_delete_mode, LightweightDeleteMode::ALTER_UPDATE, R"(
-A mode of internal update query that is executed as a part of lightweight delete.
-
-Possible values:
-- `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
-- `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
-- `lightweight_update_force` - run lightweight update if possible, throw otherwise.
-)", 0) \
-    DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
-The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
-
-Possible values:
-
-| Value | Description                                                                                                                                           |
-|-------|-------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `0`   | Mutations execute asynchronously.                                                                                                                     |
-| `1`   | The query waits for the lightweight deletes to complete on the current server.                                                                        |
-| `2`   | The query waits for the lightweight deletes to complete on all replicas (if they exist).                                                              |
-| `3`   | The query waits only for active replicas. Supported only for `SharedMergeTree`. For `ReplicatedMergeTree` it behaves the same as `mutations_sync = 2`.|
-
-**See Also**
-
-- [Synchronicity of ALTER Queries](../../sql-reference/statements/alter/index.md/#synchronicity-of-alter-queries)
-- [Mutations](../../sql-reference/statements/alter/index.md/#mutations)
-
-Cloud default value: `1`.
-)", 0) \
-    DECLARE(Bool, apply_deleted_mask, true, R"(
-Enables filtering out rows deleted with lightweight DELETE. If disabled, a query will be able to read those rows. This is useful for debugging and \"undelete\" scenarios
-)", 0) \
-    DECLARE(Bool, optimize_normalize_count_variants, true, R"(
-Rewrite aggregate functions that semantically equals to count() as count().
-)", 0) \
-    DECLARE(Bool, optimize_injective_functions_inside_uniq, true, R"(
-Delete injective functions of one argument inside uniq*() functions.
-)", 0) \
-    DECLARE(Bool, count_matches_stop_at_empty_match, false, R"(
-Stop counting once a pattern matches zero-length in the `countMatches` function.
-)", 0) \
-    DECLARE(Bool, rewrite_count_distinct_if_with_count_distinct_implementation, false, R"(
-Allows you to rewrite `countDistcintIf` with [count_distinct_implementation](#count_distinct_implementation) setting.
-
-Possible values:
-
-- true â€” Allow.
-- false â€” Disallow.
-)", 0) \
-    DECLARE(Bool, convert_query_to_cnf, false, R"(
-When set to `true`, a `SELECT` query will be converted to conjuctive normal form (CNF). There are scenarios where rewriting a query in CNF may execute faster (view this [Github issue](https://github.com/ClickHouse/ClickHouse/issues/11749) for an explanation).
-
-For example, notice how the following `SELECT` query is not modified (the default behavior):
-
-```sql
-EXPLAIN SYNTAX
-SELECT *
-FROM
-(
-    SELECT number AS x
-    FROM numbers(20)
-) AS a
-WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
-SETTINGS convert_query_to_cnf = false;
-```
-
-The result is:
-
-```response
-â”Œâ”€explainâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ SELECT x                                                       â”‚
-â”‚ FROM                                                           â”‚
-â”‚ (                                                              â”‚
-â”‚     SELECT number AS x                                         â”‚
-â”‚     FROM numbers(20)                                           â”‚
-â”‚     WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15)) â”‚
-â”‚ ) AS a                                                         â”‚
-â”‚ WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))     â”‚
-â”‚ SETTINGS convert_query_to_cnf = 0                              â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Let's set `convert_query_to_cnf` to `true` and see what changes:
-
-```sql
-EXPLAIN SYNTAX
-SELECT *
-FROM
-(
-    SELECT number AS x
-    FROM numbers(20)
-) AS a
-WHERE ((x >= 1) AND (x <= 5)) OR ((x >= 10) AND (x <= 15))
-SETTINGS convert_query_to_cnf = true;
-```
-
-Notice the `WHERE` clause is rewritten in CNF, but the result set is the identical - the Boolean logic is unchanged:
-
-```response
-â”Œâ”€explainâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ SELECT x                                                                                                              â”‚
-â”‚ FROM                                                                                                                  â”‚
-â”‚ (                                                                                                                     â”‚
-â”‚     SELECT number AS x                                                                                                â”‚
-â”‚     FROM numbers(20)                                                                                                  â”‚
-â”‚     WHERE ((x <= 15) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x >= 10) OR (x >= 1)) â”‚
-â”‚ ) AS a                                                                                                                â”‚
-â”‚ WHERE ((x >= 10) OR (x >= 1)) AND ((x >= 10) OR (x <= 5)) AND ((x <= 15) OR (x >= 1)) AND ((x <= 15) OR (x <= 5))     â”‚
-â”‚ SETTINGS convert_query_to_cnf = 1                                                                                     â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Possible values: true, false
-)", 0) \
-    DECLARE(Bool, optimize_or_like_chain, true, R"(
-Optimize multiple `OR LIKE/ILIKE/match` predicates on the same expression into a single `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8` (for pure-substring `%needle%` patterns) or `multiMatchAny` (for other patterns, when Hyperscan/Vectorscan is permitted). When neither fast path is applicable â€” for example when Hyperscan is disabled or unavailable, or the patterns are raw `match` regexps, not valid UTF-8, contain an embedded NUL, or the haystack is `FixedString`/`Enum` â€” the original `OR` chain is kept unchanged, because a combined `match` alternation over RE2 is consistently slower than the original short-circuit `OR`.
-
-The optimization is applied only with the analyzer (`enable_analyzer = 1`, the default); with the old analyzer (`enable_analyzer = 0`) the `OR` chain is left unchanged. For pure `LIKE`/`ILIKE`/`match` `OR` chains the original expressions are preserved in `indexHint()` to allow index analysis; mixed `OR` chains that include non-`LIKE` branches intentionally skip `indexHint()` wrapping so that ranges matching only the non-`LIKE` branch are not pruned. The `multiMatchAny` rewrite honors `allow_hyperscan`, `max_hyperscan_regexp_length`, `max_hyperscan_regexp_total_length` and `reject_expensive_hyperscan_regexps`.
-
-A chain is rewritten only when it has enough branches sharing the same left-hand-side expression to make the rewrite reliably faster than short-circuit `OR` evaluation: at least `optimize_or_like_chain_min_substrings` branches for the `multiSearchAny` path, and at least `optimize_or_like_chain_min_patterns` branches for the `multiMatchAny` path.
-)", 0) \
-    DECLARE(UInt64, optimize_or_like_chain_min_patterns, 10, R"(
-Minimum number of non-pure-substring `LIKE`/`ILIKE`/`match` branches (prefix/suffix/regexp patterns), sharing the same left-hand-side expression, required for `optimize_or_like_chain` to rewrite a chain into `multiMatchAny`. Calibrated on the `hits` dataset (see `tests/performance/optimize_or_like_chain_hits.xml`): a `multiMatchAny` (Hyperscan) rewrite of prefix/regexp `LIKE` chains only becomes faster than short-circuit `OR` evaluation from about nine branches, so shorter chains are kept as-is to avoid regressing them. A value of 0 or 1 disables the threshold. Has no effect when `optimize_or_like_chain` is disabled. See also `optimize_or_like_chain_min_substrings` for the pure-substring (`multiSearchAny`) path.
-)", 0) \
-    DECLARE(UInt64, optimize_or_like_chain_min_substrings, 4, R"(
-Minimum number of pure-substring (`%needle%`) `LIKE`/`ILIKE` branches, sharing the same left-hand-side expression, required for `optimize_or_like_chain` to rewrite a chain into `multiSearchAny`/`multiSearchAnyCaseInsensitiveUTF8`. Calibrated on the `hits` dataset (see `tests/performance/optimize_or_like_chain_hits.xml`): the `multiSearchAny` rewrite becomes faster than short-circuit `OR` evaluation from about four branches. A value of 0 or 1 disables the threshold. Has no effect when `optimize_or_like_chain` is disabled. See also `optimize_or_like_chain_min_patterns` for the regexp (`multiMatchAny`) path.
-)", 0) \
-    DECLARE(Bool, optimize_arithmetic_operations_in_aggregate_functions, true, R"(
-Move arithmetic operations out of aggregation functions
-)", 0) \
-    DECLARE(Bool, optimize_redundant_functions_in_order_by, true, R"(
-Remove functions from ORDER BY if its argument is also in ORDER BY
-)", 0) \
-    DECLARE(Bool, optimize_truncate_order_by_after_group_by_keys, true, R"(
-Remove trailing ORDER BY elements once all GROUP BY keys are covered in the ORDER BY prefix.
-)", 0) \
-    DECLARE(Bool, optimize_if_chain_to_multiif, false, R"(
-Replace if(cond1, then1, if(cond2, ...)) chains to multiIf. Currently it's not beneficial for numeric types.
-)", 0) \
-    DECLARE(Bool, optimize_multiif_to_if, true, R"(
-Replace 'multiIf' with only one condition to 'if'.
-)", 0) \
-    DECLARE(Bool, optimize_if_transform_strings_to_enum, false, R"(
-Replaces string-type arguments in If and Transform to enum. Disabled by default cause it could make inconsistent change in distributed query that would lead to its fail.
-)", 0) \
-    DECLARE(Bool, optimize_functions_to_subcolumns, true, R"(
-Enables or disables optimization by transforming some functions to reading subcolumns. This reduces the amount of data to read.
-
-These functions can be transformed:
-
-- [length](/sql-reference/functions/array-functions#length) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [empty](/sql-reference/functions/array-functions#empty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [notEmpty](/sql-reference/functions/array-functions#notEmpty) to read the [size0](../../sql-reference/data-types/array.md/#array-size) subcolumn.
-- [isNull](/sql-reference/functions/functions-for-nulls#isNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [isNotNull](/sql-reference/functions/functions-for-nulls#isNotNull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [mapKeys](/sql-reference/functions/tuple-map-functions#mapKeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
-- [mapValues](/sql-reference/functions/tuple-map-functions#mapValues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
-
-Possible values:
-
-- 0 â€” Optimization disabled.
-- 1 â€” Optimization enabled.
-)", 0) \
-    DECLARE(Bool, optimize_using_constraints, false, R"(
-Use [constraints](../../sql-reference/statements/create/table.md/#constraints) for query optimization. The default is `false`.
-
-Possible values:
-
-- true, false
-)", 0)                                                                                                                                           \
-    DECLARE(Bool, optimize_substitute_columns, false, R"(
-Use [constraints](../../sql-reference/statements/create/table.md/#constraints) for column substitution. The default is `false`.
-
-Possible values:
-
-- true, false
-)", 0)                                                                                                                                         \
-    DECLARE(Bool, optimize_append_index, false, R"(
-Use [constraints](../../sql-reference/statements/create/table.md/#constraints) in order to append index condition. The default is `false`.
-
-Possible values:
-
-- true, false
-)", 0) \
-    DECLARE(Bool, optimize_time_filter_with_preimage, true, R"(
-Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. `toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31'`)
-)", 0) \
-    DECLARE(Bool, normalize_function_names, true, R"(
-Normalize function names to their canonical names
-)", 0) \
-    DECLARE(Bool, enable_early_constant_folding, true, R"(
-Enable query optimization where we analyze function and subqueries results and rewrite query if there are constants there
-)", 0) \
-    DECLARE(Bool, deduplicate_blocks_in_dependent_materialized_views, true, R"(
-Enables or disables the deduplication check for materialized views that receive data from Replicated\* tables.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
-This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.
-
-**See Also**
-
-- [NULL Processing in IN Operators](/guides/developer/deduplicating-inserts-on-retries#insert-deduplication-with-materialized-views)
-)", 0) \
-    DECLARE(Bool, wait_for_part_commit_in_dependent_materialized_views, false, R"(
-Controls whether each sink commits its just-written part before its own dependent materialized view cascade runs, so a cascade that reads back from the source via `JOIN` observes the part written by that sink.
-
-The guarantee is per sink instance â€” parts written by other sink threads of the same `INSERT` may not yet be visible. The setting does not provide cross-thread commit ordering.
-
-Has no effect on inserts into tables with no dependent materialized views.
-)", 0) \
-    DECLARE(Bool, materialized_views_ignore_errors, false, R"(
-If enabled, exceptions thrown while pushing data to a dependent materialized view (in its `SELECT` or in the inner table sink) are logged as a warning and the `INSERT` statement succeeds. If disabled (default), such an exception propagates and the `INSERT` statement fails.
-
-This setting controls only error reporting. It does not roll back a write to the source table, and it does not guarantee whether the original block has already been committed to the source table when an error occurs in a dependent view's pipeline. When disabled (default), the `INSERT` fails on a view error â€” retry it with insert deduplication (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) for exactly-once delivery to the source table and all dependent views. When enabled, the `INSERT` reports success despite partial delivery to failing views and their downstream chains; use this only when source-table writes must not be blocked by view-side problems (for example, `system.*_log` tables). See the `CREATE VIEW` docs for full semantics.
-)", 0) \
-    DECLARE(Bool, ignore_materialized_views_with_dropped_target_table, false, R"(
-Ignore MVs with dropped target table during pushing to views
-)", 0) \
-    DECLARE(Bool, allow_materialized_view_with_bad_select, false, R"(
-Allow CREATE MATERIALIZED VIEW with SELECT query that references nonexistent tables or columns. It must still be syntactically valid. Doesn't apply to refreshable MVs. Doesn't apply if the MV schema needs to be inferred from the SELECT query (i.e. if the CREATE has no column list and no TO table). Can be used for creating MV before its source table.
-)", 0) \
-    DECLARE(Bool, materialized_views_squash_parallel_inserts, true, R"(Squash inserts to materialized views destination table of a single INSERT query from parallel inserts to reduce amount of generated parts.
-If set to false and `parallel_view_processing` is enabled, INSERT query will generate part in the destination table for each `max_insert_thread`.
-)", 0) \
-    DECLARE(Bool, use_compact_format_in_distributed_parts_names, true, R"(
-Uses compact format for storing blocks for background (`distributed_foreground_insert`) INSERT into tables with `Distributed` engine.
-
-Possible values:
-
-- 0 â€” Uses `user[:password]@host:port#default_database` directory format.
-- 1 â€” Uses `[shard{shard_index}[_replica{replica_index}]]` directory format.
-
-:::note
-- with `use_compact_format_in_distributed_parts_names=0` changes from cluster definition will not be applied for background INSERT.
-- with `use_compact_format_in_distributed_parts_names=1` changing the order of the nodes in the cluster definition, will change the `shard_index`/`replica_index` so be aware.
-:::
-)", 0) \
-    DECLARE(Bool, validate_polygons, true, R"(
-Enables or disables throwing an exception in the [pointInPolygon](/sql-reference/functions/geo/coordinates#pointinpolygon) function, if the polygon is self-intersecting or self-tangent.
-
-Possible values:
-
-- 0 â€” Throwing an exception is disabled. `pointInPolygon` accepts invalid polygons and returns possibly incorrect results for them.
-- 1 â€” Throwing an exception is enabled.
-)", 0) \
-    DECLARE(UInt64, max_parser_depth, DBMS_DEFAULT_MAX_PARSER_DEPTH, R"(
-Limits maximum recursion depth in the recursive descent parser. Allows controlling the stack size.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Recursion depth is unlimited.
-)", 0) \
-    DECLARE(UInt64, max_parser_backtracks, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS, R"(
-Maximum parser backtracking (how many times it tries different alternatives in the recursive descend parsing process).
-)", 0) \
-    DECLARE(UInt64, max_recursive_cte_evaluation_depth, DBMS_RECURSIVE_CTE_MAX_EVALUATION_DEPTH, R"(
-Maximum limit on recursive CTE evaluation depth
-)", 0) \
-    DECLARE(UInt64, recursive_cte_max_steps_in_type_inference, 10, R"(
-Maximum number of iterations for inferring column types in recursive CTEs. Column types are determined by iteratively applying `getLeastSupertype` across the non-recursive and recursive sides of the UNION ALL until convergence. Set to 0 to disable type widening and use the types from the non-recursive part only.
-)", 0) \
-    DECLARE(Bool, allow_settings_after_format_in_insert, false, R"(
-Control whether `SETTINGS` after `FORMAT` in `INSERT` queries is allowed or not. It is not recommended to use this, since this may interpret part of `SETTINGS` as values.
-
-Example:
-
-```sql
-INSERT INTO FUNCTION null('foo String') SETTINGS max_threads=1 VALUES ('bar');
-```
-
-But the following query will work only with `allow_settings_after_format_in_insert`:
-
-```sql
-SET allow_settings_after_format_in_insert=1;
-INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
-```
-
-Possible values:
-
-- 0 â€” Disallow.
-- 1 â€” Allow.
-
-:::note
-Use this setting only for backward compatibility if your use cases depend on old syntax.
-:::
-)", 0) \
-    DECLARE(Bool, transform_null_in, false, R"(
-Enables equality of [NULL](/sql-reference/syntax#null) values for [IN](../../sql-reference/operators/in.md) operator.
-
-By default, `NULL` values can't be compared because `NULL` means undefined value. Thus, comparison `expr = NULL` must always return `false`. With this setting `NULL = NULL` returns `true` for `IN` operator.
-
-Possible values:
-
-- 0 â€” Comparison of `NULL` values in `IN` operator returns `false`.
-- 1 â€” Comparison of `NULL` values in `IN` operator returns `true`.
-
-**Example**
-
-Consider the `null_in` table:
-
-```text
-â”Œâ”€â”€idxâ”€â”¬â”€â”€â”€â”€â”€iâ”€â”
-â”‚    1 â”‚     1 â”‚
-â”‚    2 â”‚  NULL â”‚
-â”‚    3 â”‚     3 â”‚
-â””â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Query:
-
-```sql
-SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
-```
-
-Result:
-
-```text
-â”Œâ”€â”€idxâ”€â”¬â”€â”€â”€â”€iâ”€â”
-â”‚    1 â”‚    1 â”‚
-â””â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Query:
-
-```sql
-SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
-```
-
-Result:
-
-```text
-â”Œâ”€â”€idxâ”€â”¬â”€â”€â”€â”€â”€iâ”€â”
-â”‚    1 â”‚     1 â”‚
-â”‚    2 â”‚  NULL â”‚
-â””â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-**See Also**
-
-- [NULL Processing in IN Operators](/sql-reference/operators/in#null-processing)
-)", 0) \
-    DECLARE(Bool, allow_nondeterministic_mutations, false, R"(
-User-level setting that allows mutations on replicated tables to make use of non-deterministic functions such as `dictGet`.
-
-Given that, for example, dictionaries, can be out of sync across nodes, mutations that pull values from them are disallowed on replicated tables by default. Enabling this setting allows this behavior, making it the user's responsibility to ensure that the data used is in sync across all nodes.
-
-**Example**
-
-```xml
-<profiles>
-    <default>
-        <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
-
-        <!-- ... -->
-    </default>
-
-    <!-- ... -->
-
-</profiles>
-```
-)", 0) \
- DECLARE(Bool, validate_mutation_query, true, R"(
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query will cause mutations to get stuck, requiring manual intervention.
-
-Only change this setting if you encounter a backward-incompatible bug.
-)", 0) \
-    DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
-Defines how many seconds a locking request waits before failing.
-
-Locking timeout is used to protect from deadlocks while executing read/write operations with tables. When the timeout expires and the locking request fails, the ClickHouse server throws an exception "Locking attempt timed out! Possible deadlock avoided. Client should retry." with error code `DEADLOCK_AVOIDED`.
-
-Possible values:
-
-- Positive integer (in seconds).
-- 0 â€” No locking timeout.
-)", 0) \
-    DECLARE(Bool, materialize_ttl_after_modify, true, R"(
-Apply TTL for old data, after ALTER MODIFY TTL query
-)", 0) \
-    DECLARE(String, function_implementation, "", R"(
-Choose function implementation for specific target or variant (experimental). If empty enable all of them.
-)", 0) \
-    DECLARE(Bool, data_type_default_nullable, false, R"(
-Allows data types without explicit modifiers [NULL or NOT NULL](/sql-reference/statements/create/table#null-or-not-null-modifiers) in column definition will be [Nullable](/sql-reference/data-types/nullable).
-
-Possible values:
-
-- 1 â€” The data types in column definitions are set to `Nullable` by default.
-- 0 â€” The data types in column definitions are set to not `Nullable` by default.
-)", 0) \
-    DECLARE(Bool, cast_keep_nullable, false, R"(
-Enables or disables keeping of the `Nullable` data type in [CAST](/sql-reference/functions/type-conversion-functions#CAST) operations.
-
-When the setting is enabled and the argument of `CAST` function is `Nullable`, the result is also transformed to `Nullable` type. When the setting is disabled, the result always has the destination type exactly.
-
-Possible values:
-
-- 0 â€” The `CAST` result has exactly the destination type specified.
-- 1 â€” If the argument type is `Nullable`, the `CAST` result is transformed to `Nullable(DestinationDataType)`.
-
-**Examples**
-
-The following query results in the destination data type exactly:
-
-```sql
-SET cast_keep_nullable = 0;
-SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
-```
-
-Result:
-
-```text
-â”Œâ”€xâ”€â”¬â”€toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))â”€â”
-â”‚ 0 â”‚ Int32                                             â”‚
-â””â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-The following query results in the `Nullable` modification on the destination data type:
-
-```sql
-SET cast_keep_nullable = 1;
-SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
-```
-
-Result:
-
-```text
-â”Œâ”€xâ”€â”¬â”€toTypeName(CAST(toNullable(toInt32(0)), 'Int32'))â”€â”
-â”‚ 0 â”‚ Nullable(Int32)                                   â”‚
-â””â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-**See Also**
-
-- [CAST](/sql-reference/functions/type-conversion-functions#CAST) function
-)", 0) \
-    DECLARE(Bool, cast_ipv4_ipv6_default_on_conversion_error, false, R"(
-CAST operator into IPv4, CAST operator into IPV6 type, toIPv4, toIPv6 functions will return default value instead of throwing exception on conversion error.
-)", 0) \
-    DECLARE(Bool, alter_partition_verbose_result, false, R"(
-Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied.
-Applicable to [ATTACH PARTITION|PART](/sql-reference/statements/alter/partition#attach-partitionpart) and to [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
-
-Possible values:
-
-- 0 â€” disable verbosity.
-- 1 â€” enable verbosity.
-
-**Example**
-
-```sql
-CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMDECLARE(d) ORDER BY a;
-INSERT INTO test VALUES(1, '2021-01-01', '');
-INSERT INTO test VALUES(1, '2021-01-01', '');
-ALTER TABLE test DETACH PARTITION ID '202101';
-
-ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
-
-â”Œâ”€command_typeâ”€â”€â”€â”€â”€â”¬â”€partition_idâ”€â”¬â”€part_nameâ”€â”€â”€â”€â”¬â”€old_part_nameâ”€â”
-â”‚ ATTACH PARTITION â”‚ 202101       â”‚ 202101_7_7_0 â”‚ 202101_5_5_0  â”‚
-â”‚ ATTACH PARTITION â”‚ 202101       â”‚ 202101_8_8_0 â”‚ 202101_6_6_0  â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
-
-â”Œâ”€command_typeâ”€â”¬â”€partition_idâ”€â”¬â”€part_nameâ”€â”€â”€â”€â”¬â”€backup_nameâ”€â”¬â”€backup_pathâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€part_backup_pathâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ FREEZE ALL   â”‚ 202101       â”‚ 202101_7_7_0 â”‚ 8           â”‚ /var/lib/clickhouse/shadow/8/ â”‚ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 â”‚
-â”‚ FREEZE ALL   â”‚ 202101       â”‚ 202101_8_8_0 â”‚ 8           â”‚ /var/lib/clickhouse/shadow/8/ â”‚ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, system_events_show_zero_values, false, R"(
-Allows to select zero-valued events from [`system.events`](../../operations/system-tables/events.md).
-
-Some monitoring systems require passing all the metrics values to them for each checkpoint, even if the metric value is zero.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-**Examples**
-
-Query
-
-```sql
-SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
-```
-
-Result
-
-```text
-Ok.
-```
-
-Query
-```sql
-SET system_events_show_zero_values = 1;
-SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
-```
-
-Result
-
-```text
-â”Œâ”€eventâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€valueâ”€â”¬â”€descriptionâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ QueryMemoryLimitExceeded â”‚     0 â”‚ Number of times when memory limit exceeded for query. â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, system_metric_log_show_zero_values_in_histograms, false, R"(
-Controls whether zero-valued histogram data is written to the `histograms` nested column of `system.metric_log`.
-
-By default, histograms whose total observation `count` is zero are skipped, and within each emitted histogram, bucket entries with no observations are also omitted from the `histogram` map. Enable this to write every histogram and every bucket regardless of count â€” useful for monitoring systems that require every metric to appear at every checkpoint.
-
-Possible values:
-
-- 0 â€” Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
-- 1 â€” Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
-)", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", R"(
-Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32`, `date2String` or `geometry`. All modern mappings (`decimal`, `datetime64`, `date2Date32`, `geometry`) are enabled by default.
-- `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
-- `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
-- `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
-- `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
-- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`MULTIPOINT`, `GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `MULTIPOINT` or `GEOMETRYCOLLECTION` map to `String`.
-)", 0) \
-    DECLARE(Bool, optimize_trivial_insert_select, false, R"(
-Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
-)", 0) \
-    DECLARE(Bool, allow_non_metadata_alters, true, R"(
-Allow to execute alters which affects not only tables metadata, but also data on disk
-)", 0) \
-    DECLARE(Bool, enable_global_with_statement, true, R"(
-Propagate WITH statements to UNION queries and all subqueries
-)", 0) \
-    DECLARE(Bool, enable_materialized_cte, false, R"(
-Enable materialized common table expressions, it will be preferred over enable_global_with_statement
-)", EXPERIMENTAL) \
-    DECLARE(Bool, analyzer_inline_views, false, R"(
-When enabled, the analyzer substitutes ordinary (non-materialized, non-parameterized) views with their defining subqueries, enabling cross-boundary optimizations such as predicate pushdown and column pruning.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_scopes_for_with_statement, true, R"(
-If disabled, declarations in parent WITH cluases will behave the same scope as they declared in the current scope.
-
-Note that this is a compatibility setting for the analyzer to allow running some invalid queries that old analyzer could execute.
-)", 0) \
-    DECLARE(Bool, aggregate_functions_null_for_empty, false, R"(
-Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull) suffix to them. Enable it for SQL standard compatibility.
-It is implemented via query rewrite (similar to [count_distinct_implementation](#count_distinct_implementation) setting) to get consistent results for distributed queries.
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-**Example**
-
-Consider the following query with aggregate functions:
-```sql
-SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
-```
-
-With `aggregate_functions_null_for_empty = 0` it would produce:
-```text
-â”Œâ”€SUM(-1)â”€â”¬â”€MAX(0)â”€â”
-â”‚       0 â”‚      0 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-With `aggregate_functions_null_for_empty = 1` the result would be:
-```text
-â”Œâ”€SUMOrNull(-1)â”€â”¬â”€MAXOrNull(0)â”€â”
-â”‚          NULL â”‚         NULL â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
-Format for AggregateFunction input during INSERT operations.
-
-Possible values:
-
-- `state` â€” Binary string with the serialized state (the default). This is the default behavior where AggregateFunction values are expected as binary data.
-- `value` â€” The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
-- `array` â€” The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
-
-**Examples**
-
-For a table with structure:
-```sql
-CREATE TABLE example (
-    user_id UInt64,
-    avg_session_length AggregateFunction(avg, UInt32)
-);
-```
-
-
-With `aggregate_function_input_format = 'value'`:
-```sql
-INSERT INTO example FORMAT CSV
-123,456
-```
-
-
-With `aggregate_function_input_format = 'array'`:
-```sql
-INSERT INTO example FORMAT CSV
-123,"[456,789,101]"
-```
-
-Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
-)", 0) \
-    DECLARE(Bool, optimize_syntax_fuse_functions, true, R"(
-Enables to fuse aggregate functions with identical argument. It rewrites query contains at least two aggregate functions from [sum](/sql-reference/aggregate-functions/reference/sum), [count](/sql-reference/aggregate-functions/reference/count) or [avg](/sql-reference/aggregate-functions/reference/avg) with identical argument to [sumCount](/sql-reference/aggregate-functions/reference/sumcount).
-
-Possible values:
-
-- 0 â€” Functions with identical argument are not fused.
-- 1 â€” Functions with identical argument are fused.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
-```
-
-Result:
-
-```text
-SELECT
-    sum(__table1.a) AS `sum(a)`,
-    tupleElement(sumCount(__table1.b), 1) AS `sum(b)`,
-    tupleElement(sumCount(__table1.b), 2) AS `count(b)`,
-    divide(tupleElement(sumCount(__table1.b), 1), toFloat64(tupleElement(sumCount(__table1.b), 2))) AS `avg(b)`
-FROM default.fuse_tbl AS __table1
-```
-)", 0) \
-    DECLARE(Bool, flatten_nested, true, R"(
-Sets the data format of a [nested](../../sql-reference/data-types/nested-data-structures/index.md) columns.
-
-Possible values:
-
-- 1 â€” Nested column is flattened to separate arrays.
-- 0 â€” Nested column stays a single array of tuples.
-
-**Usage**
-
-If the setting is set to `0`, it is possible to use an arbitrary level of nesting.
-
-**Examples**
-
-Query:
-
-```sql
-SET flatten_nested = 1;
-CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
-
-SHOW CREATE TABLE t_nest;
-```
-
-Result:
-
-```text
-â”Œâ”€statementâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ CREATE TABLE default.t_nest
-(
-    `n.a` Array(UInt32),
-    `n.b` Array(UInt32)
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS index_granularity = 8192 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Query:
-
-```sql
-SET flatten_nested = 0;
-
-CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
-
-SHOW CREATE TABLE t_nest;
-```
-
-Result:
-
-```text
-â”Œâ”€statementâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ CREATE TABLE default.t_nest
-(
-    `n` Nested(a UInt32, b UInt32)
-)
-ENGINE = MergeTree
-ORDER BY tuple()
-SETTINGS index_granularity = 8192 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, asterisk_include_materialized_columns, false, R"(
-Include [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) columns for wildcard query (`SELECT *`).
-
-Possible values:
-
-- 0 - disabled
-- 1 - enabled
-)", 0) \
-    DECLARE(Bool, asterisk_include_alias_columns, false, R"(
-Include [ALIAS](../../sql-reference/statements/create/table.md/#alias) columns for wildcard query (`SELECT *`).
-
-Possible values:
-
-- 0 - disabled
-- 1 - enabled
-)", 0) \
-    DECLARE(Bool, asterisk_include_virtual_columns, false, R"(
-Include virtual columns for wildcard query (`SELECT *`).
-
-Possible values:
-
-- 0 - disabled
-- 1 - enabled
-)", 0) \
-    DECLARE(Bool, optimize_skip_merged_partitions, false, R"(
-Enables or disables optimization for [OPTIMIZE TABLE ... FINAL](../../sql-reference/statements/optimize.md) query if there is only one part with level > 0 and it doesn't have expired TTL.
-
-- `OPTIMIZE TABLE ... FINAL SETTINGS optimize_skip_merged_partitions=1`
-
-By default, `OPTIMIZE TABLE ... FINAL` query rewrites the one part even if there is only a single part.
-
-Possible values:
-
-- 1 - Enable optimization.
-- 0 - Disable optimization.
-)", 0) \
-    DECLARE(Bool, optimize_on_insert, true, R"(
-Enables or disables data transformation before the insertion, as if merge was done on this block (according to table engine).
-
-Possible values:
-
-- 0 â€” Disabled.
-- 1 â€” Enabled.
-
-**Example**
-
-The difference between enabled and disabled:
-
-Query:
-
-```sql
-SET optimize_on_insert = 1;
-
-CREATE TABLE test1 (`FirstTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY FirstTable;
-
-INSERT INTO test1 SELECT number % 2 FROM numbers(5);
-
-SELECT * FROM test1;
-
-SET optimize_on_insert = 0;
-
-CREATE TABLE test2 (`SecondTable` UInt32) ENGINE = ReplacingMergeTree ORDER BY SecondTable;
-
-INSERT INTO test2 SELECT number % 2 FROM numbers(5);
-
-SELECT * FROM test2;
-```
-
-Result:
-
-```text
-â”Œâ”€FirstTableâ”€â”
-â”‚          0 â”‚
-â”‚          1 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-â”Œâ”€SecondTableâ”€â”
-â”‚           0 â”‚
-â”‚           0 â”‚
-â”‚           0 â”‚
-â”‚           1 â”‚
-â”‚           1 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-Note that this setting influences [Materialized view](/sql-reference/statements/create/view#materialized-view) behaviour.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, optimize_use_projections, true, R"(
-Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
-
-Possible values:
-
-- 0 â€” Projection optimization disabled.
-- 1 â€” Projection optimization enabled.
-)", 0, allow_experimental_projection_optimization) \
-    DECLARE(Bool, optimize_use_implicit_projections, true, R"(
-Automatically choose implicit projections to perform SELECT query
-)", 0) \
-    DECLARE(Bool, optimize_use_projection_filtering, true, R"(
-Enables using projections to filter part ranges even when projections are not selected to perform SELECT query.
-)", 0) \
-    DECLARE(Bool, force_optimize_projection, false, R"(
-Enables or disables the obligatory use of [projections](../../engines/table-engines/mergetree-family/mergetree.md/#projections) in `SELECT` queries, when projection optimization is enabled (see [optimize_use_projections](#optimize_use_projections) setting).
-
-Possible values:
-
-- 0 â€” Projection optimization is not obligatory.
-- 1 â€” Projection optimization is obligatory.
-)", 0) \
-    DECLARE(String, force_optimize_projection_name, "", R"(
-If it is set to a non-empty string, check that this projection is used in the query at least once.
-
-Possible values:
-
-- string: name of projection that used in a query
-)", 0) \
-    DECLARE(String, preferred_optimize_projection_name, "", R"(
-If it is set to a non-empty string, ClickHouse will try to apply specified projection in query.
-
-
-Possible values:
-
-- string: name of preferred projection
-)", 0) \
-    DECLARE(UInt64, max_projection_rows_to_use_projection_index, 1'000'000, R"(
-If the number of rows to read from the projection index is less than or equal to this threshold, ClickHouse will try to apply the projection index during query execution.
-)", 0) \
-    DECLARE(UInt64, min_table_rows_to_use_projection_index, 1'000'000, R"(
-If the estimated number of rows to read from the table is greater than or equal to this threshold, ClickHouse will try to use the projection index during query execution.
-)", 0) \
-    DECLARE(Bool, async_socket_for_remote, true, R"(
-Enables asynchronous read from socket while executing remote query.
-
-Enabled by default.
-)", 0) \
-    DECLARE(Bool, async_query_sending_for_remote, true, R"(
-Enables asynchronous connection creation and query sending while executing remote query.
-
-Enabled by default.
-)", 0) \
-    DECLARE(Bool, insert_null_as_default, true, R"(
-Enables or disables the insertion of [default values](/sql-reference/statements/create/table#default_values) instead of [NULL](/sql-reference/syntax#null) into columns with not [nullable](/sql-reference/data-types/nullable) data type.
-If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
-
-This setting is applicable to [INSERT ... SELECT](../../sql-reference/statements/insert-into.md/#inserting-the-results-of-select) queries. Note that `SELECT` subqueries may be concatenated with `UNION ALL` clause.
-
-Possible values:
-
-- 0 â€” Inserting `NULL` into a not nullable column causes an exception.
-- 1 â€” Default column value is inserted instead of `NULL`.
-)", 0) \
-    DECLARE(Bool, describe_include_subcolumns, false, R"(
-Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](/sql-reference/data-types/map#reading-subcolumns-of-map), [Nullable](../../sql-reference/data-types/nullable.md/#finding-null) or an [Array](../../sql-reference/data-types/array.md/#array-size) data type.
-
-Possible values:
-
-- 0 â€” Subcolumns are not included in `DESCRIBE` queries.
-- 1 â€” Subcolumns are included in `DESCRIBE` queries.
-
-**Example**
-
-See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.md) statement.
-)", 0) \
-    DECLARE(Bool, describe_include_virtual_columns, false, R"(
-If true, virtual columns of table will be included into result of DESCRIBE query
-)", 0) \
-    DECLARE(Bool, describe_compact_output, false, R"(
-If true, include only column names and types into result of DESCRIBE query
-)", 0) \
-    DECLARE(Bool, apply_mutations_on_fly, false, R"(
-If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
-Allow to use lightweight updates.
-)", BETA, allow_experimental_lightweight_update) \
-    DECLARE(Bool, apply_patch_parts, true, R"(
-If true, patch parts (that represent lightweight updates) are applied on SELECTs.
-)", 0) \
-    DECLARE(NonZeroUInt64, apply_patch_parts_join_cache_buckets, 8, R"(
-The number of buckets in the temporary cache for applying patch parts in Join mode.
-)", 0) \
-    DECLARE(AlterUpdateMode, alter_update_mode, AlterUpdateMode::HEAVY, R"(
-A mode for `ALTER` queries that have the `UPDATE` commands.
-
-Possible values:
-- `heavy` - run regular mutation.
-- `lightweight` - run lightweight update if possible, run regular mutation otherwise.
-- `lightweight_force` - run lightweight update if possible, throw otherwise.
-)", 0) \
-    DECLARE(Bool, mutations_execute_nondeterministic_on_initiator, false, R"(
-If true constant nondeterministic functions (e.g. function `now()`) are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. It helps to keep data in sync on replicas while executing mutations with constant nondeterministic functions. Default value: `false`.
-)", 0) \
-    DECLARE(Bool, mutations_execute_subqueries_on_initiator, false, R"(
-If true scalar subqueries are executed on initiator and replaced to literals in `UPDATE` and `DELETE` queries. Default value: `false`.
-)", 0) \
-    DECLARE(UInt64, mutations_max_literal_size_to_replace, 16384, R"(
-The maximum size of serialized literal in bytes to replace in `UPDATE` and `DELETE` queries. Takes effect only if at least one the two settings above is enabled. Default value: 16384 (16 KiB).
-)", 0) \
-    \
-    DECLARE(Float, create_replicated_merge_tree_fault_injection_probability, 0.0f, R"(
-The probability of a fault injection during table creation after creating metadata in ZooKeeper
-)", 0) \
-    DECLARE(Bool, delta_lake_log_metadata, false, R"(
-Enables logging delta lake metadata files into system table.
-)", 0) \
-    DECLARE(Bool, delta_lake_reload_schema_for_consistency, false, R"(
-If enabled, schema is reloaded from the DeltaLake metadata before each query execution to ensure
-consistency between the schema used during query analysis and the schema used during execution.
-)", 0) \
-    DECLARE(IcebergMetadataLogLevel, iceberg_metadata_log_level, IcebergMetadataLogLevel::None, R"(
-Controls the level of metadata logging for Iceberg tables to system.iceberg_metadata_log.
-Usually this setting can be modified for debugging purposes.
-
-Possible values:
-- none - No metadata log.
-- metadata - Root metadata.json file.
-- manifest_list_metadata - Everything above + metadata from avro manifest list which corresponds to a snapshot.
-- manifest_list_entry - Everything above + avro manifest list entries.
-- manifest_file_metadata - Everything above + metadata from traversed avro manifest files.
-- manifest_file_entry - Everything above + traversed avro manifest files entries.
-)", 0) \
-    \
-    DECLARE(Bool, iceberg_delete_data_on_drop, false, R"(
-Whether to delete all iceberg files on drop or not.
-)", 0) \
-    DECLARE(Int64, iceberg_expire_default_min_snapshots_to_keep, 1, R"(
-Default value for Iceberg table property `history.expire.min-snapshots-to-keep` used by `expire_snapshots` when that property is absent.
-)", 0) \
-    DECLARE(Int64, iceberg_expire_default_max_snapshot_age_ms, 432000000, R"(
-Default value for Iceberg table property `history.expire.max-snapshot-age-ms` used by `expire_snapshots` when that property is absent.
-)", 0) \
-    DECLARE(Int64, iceberg_expire_default_max_ref_age_ms, std::numeric_limits<Int64>::max(), R"(
-Default value for Iceberg table property `history.expire.max-ref-age-ms` used by `expire_snapshots` when that property is absent.
-)", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
-Threshold for compaction data files in iceberg.
-)", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
-Threshold for compaction data files in iceberg.
-)", 0) \
-    DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
-Threshold for compaction data files in iceberg.
-)", 0) \
-    DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
-If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, use_paimon_metadata_files_cache, false, R"(
-If turned on, paimon table function and paimon storage may utilize the paimon metadata files cache.
-
-Paimon table functions evaluate this setting per query, while persistent Paimon table engines latch it at metadata initialization: to change the decision for an already-created table, it must be dropped and recreated.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(UInt64, iceberg_metadata_staleness_ms, 0, R"(
-If non-zero, skip fetching iceberg metadata from remote catalog if there is a cached metadata snapshot, more recent than the given staleness window. Zero means to always fetch the latest metadata version from the remote catalog. Setting this a non-zero trades staleness to a lower latency of read operations.
-)", 0) \
-    DECLARE(Bool, use_parquet_metadata_cache, true, R"(
-If turned on, parquet format may utilize the parquet metadata cache.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Seconds, iceberg_compaction_delay_bias, 60 * 60 * 3, R"(
-Minimum time of delay between 2 background compaction operations.
-)", 0) \
-    DECLARE(Seconds, iceberg_compaction_data_cleanup, 60 * 60 * 3, R"(
-The time after which the data will be deleted.
-)", 0) \
-    DECLARE(Bool, use_query_cache, false, R"(
-If turned on, `SELECT` queries may utilize the [query cache](../query-cache.md). Parameters [enable_reads_from_query_cache](#enable_reads_from_query_cache)
-and [enable_writes_to_query_cache](#enable_writes_to_query_cache) control in more detail how the cache is used.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, enable_writes_to_query_cache, true, R"(
-If turned on, results of `SELECT` queries are stored in the [query cache](../query-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, enable_reads_from_query_cache, true, R"(
-If turned on, results of `SELECT` queries are retrieved from the [query cache](../query-cache.md).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, query_cache_for_subqueries, false, R"(
-If turned on, subquery results may be written to and read from the [query cache](../query-cache.md). This enables propagation of `use_query_cache` into all subqueries.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
-Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
-
-Possible values:
-
-- `'throw'` - Throw an exception and don't cache the query result.
-- `'save'` - Cache the query result.
-- `'ignore'` - Don't cache the query result and don't throw an exception.
-)", 0) \
-    DECLARE(QueryResultCacheSystemTableHandling, query_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
-Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
-
-Possible values:
-
-- `'throw'` - Throw an exception and don't cache the query result.
-- `'save'` - Cache the query result.
-- `'ignore'` - Don't cache the query result and don't throw an exception.
-)", 0) \
-    DECLARE(UInt64, query_cache_max_size_in_bytes, 0, R"(
-The maximum amount of memory (in bytes) the current user may allocate in the [query cache](../query-cache.md). 0 means unlimited.
-
-Possible values:
-
-- Positive integer >= 0.
-)", 0) \
-    DECLARE(UInt64, query_cache_max_entries, 0, R"(
-The maximum number of query results the current user may store in the [query cache](../query-cache.md). 0 means unlimited.
-
-Possible values:
-
-- Positive integer >= 0.
-)", 0) \
-    DECLARE(UInt64, query_cache_min_query_runs, 0, R"(
-Minimum number of times a `SELECT` query must run before its result is stored in the [query cache](../query-cache.md).
-
-Possible values:
-
-- Positive integer >= 0.
-)", 0) \
-    DECLARE(Milliseconds, query_cache_min_query_duration, 0, R"(
-Minimum duration in milliseconds a query needs to run for its result to be stored in the [query cache](../query-cache.md).
-
-Possible values:
-
-- Positive integer >= 0.
-)", 0) \
-    DECLARE(Bool, query_cache_compress_entries, true, R"(
-Compress entries in the [query cache](../query-cache.md). Lessens the memory consumption of the query cache at the cost of slower inserts into / reads from it.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, query_cache_squash_partial_results, true, R"(
-Squash partial result blocks to blocks of size [max_block_size](#max_block_size). Reduces performance of inserts into the [query cache](../query-cache.md) but improves the compressability of cache entries (see [query_cache_compress-entries](#query_cache_compress_entries)).
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Seconds, query_cache_ttl, 60, R"(
-After this time in seconds entries in the [query cache](../query-cache.md) become stale.
-
-Possible values:
-
-- Positive integer >= 0.
-)", 0) \
-    DECLARE(Bool, query_cache_share_between_users, false, R"(
-If turned on, the result of `SELECT` queries cached in the [query cache](../query-cache.md) can be read by other users.
-It is not recommended to enable this setting due to security reasons.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(String, query_cache_tag, "", R"(
-A string which acts as a label for [query cache](../query-cache.md) entries.
-The same queries with different tags are considered different by the query cache.
-
-Possible values:
-
-- Any string
-)", 0) \
-    DECLARE(Bool, enable_sharing_sets_for_mutations, true, R"(
-Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
-)", 0) \
-    DECLARE(Bool, use_query_condition_cache, true, R"(
-Enable the [query condition cache](/operations/query-condition-cache). The cache stores ranges of granules in data parts which do not satisfy the condition in the `WHERE` clause,
-and reuse this information as an ephemeral index for subsequent queries.
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(Bool, enable_shared_storage_snapshot_in_query, true, R"(
-If enabled, all subqueries within a single query will share the same StorageSnapshot for each table.
-This ensures a consistent view of the data across the entire query, even if the same table is accessed multiple times.
-
-This is required for queries where internal consistency of data parts is important. Example:
-
-```sql
-SELECT
-    count()
-FROM events
-WHERE (_part, _part_offset) IN (
-    SELECT _part, _part_offset
-    FROM events
-    WHERE user_id = 42
-)
-```
-
-Without this setting, the outer and inner queries may operate on different data snapshots, leading to incorrect results.
-
-:::note
-Enabling this setting disables the optimization which removes unnecessary data parts from snapshots once the planning stage is complete.
-As a result, long-running queries may hold onto obsolete parts for their entire duration, delaying part cleanup and increasing storage pressure.
-
-This setting currently applies only to tables from the MergeTree family.
-:::
-
-Possible values:
-
-- 0 - Disabled
-- 1 - Enabled
-)", 0) \
-    DECLARE(UInt64, merge_tree_storage_snapshot_sleep_ms, 0, R"(
-Inject artificial delay (in milliseconds) when creating a storage snapshot for MergeTree tables.
-Used for testing and debugging purposes only.
-
-Possible values:
-- 0 - No delay (default)
-- N - Delay in milliseconds
-)", 0) \
-    DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
-Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
-)", 0) \
-    DECLARE(Bool, optimize_empty_string_comparisons, true, R"(
-Convert expressions like col = '' or '' = col into empty(col), and col != '' or '' != col into notEmpty(col),
-only when col is of String or FixedString type.
-)", 0) \
-    DECLARE(Bool, optimize_rewrite_aggregate_function_with_if, true, R"(
-Rewrite aggregate functions with if expression as argument when logically equivalent.
-For example, `avg(if(cond, col, null))` can be rewritten to `avgOrNullIf(cond, col)`. It may improve performance.
-
-:::note
-Supported only with the analyzer (`enable_analyzer = 1`).
-:::
-)", 0) \
-    DECLARE(Bool, optimize_rewrite_array_exists_to_has, true, R"(
-Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
-)", 0) \
-    DECLARE(Bool, optimize_rewrite_has_to_in, true, R"(
-Rewrite `has` functions to `IN` when the first argument is a constant array. For example, `has([1, 2, 3], x)` can be rewritten to `x IN [1, 2, 3]` for better performance with constant arrays
-)", 0) \
-    DECLARE(Bool, optimize_dictget_tuple_element, true, R"(
-Rewrite `tupleElement(dictGet('dict', ('a', 'b', 'c'), key), 2)` into `dictGet('dict', 'b', key)` to avoid fetching unnecessary dictionary attributes. Supports positional (`.1`, `.2`, ...) and named (`.b`) access, and also applies to `dictGetOrDefault` when the default argument is a constant tuple or a `tuple(...)` of constants.
-)", 0) \
-    DECLARE(Bool, optimize_rewrite_like_perfect_affix, true, R"(
-Rewrite LIKE expressions with perfect prefix or suffix (e.g. `col LIKE 'ClickHouse%'`) to startsWith or endsWith functions (e.g. `startsWith(col, 'ClickHouse')`).
-)", 0) \
-DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
-Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
-
-Cloud default value: `0`.
-)", 0) \
-    DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
-Rewrite regular expression related functions into simpler and more efficient forms
-)", 0) \
-    DECLARE(UInt64, insert_shard_id, 0, R"(
-If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
-
-If `insert_shard_id` value is incorrect, the server will throw an exception.
-
-To get the number of shards on `requested_cluster`, you can check server config or use this query:
-
-```sql
-SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
-```
-
-Possible values:
-
-- 0 â€” Disabled.
-- Any number from `1` to `shards_num` of corresponding [Distributed](/engines/table-engines/special/distributed) table.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE x AS system.numbers ENGINE = MergeTree ORDER BY number;
-CREATE TABLE x_dist AS x ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), x);
-INSERT INTO x_dist SELECT * FROM numbers(5) SETTINGS insert_shard_id = 1;
-SELECT * FROM x_dist ORDER BY number ASC;
-```
-
-Result:
-
-```text
-â”Œâ”€numberâ”€â”
-â”‚      0 â”‚
-â”‚      0 â”‚
-â”‚      1 â”‚
-â”‚      1 â”‚
-â”‚      2 â”‚
-â”‚      2 â”‚
-â”‚      3 â”‚
-â”‚      3 â”‚
-â”‚      4 â”‚
-â”‚      4 â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    \
-    DECLARE(Bool, collect_hash_table_stats_during_aggregation, true, R"(
-Enable collecting hash table statistics to optimize memory allocation
-)", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_aggregation, 1'000'000'000'000, R"(
-For how many elements it is allowed to preallocate space in all hash tables in total before aggregation
-)", 0) \
-    \
-    DECLARE(Bool, collect_hash_table_stats_during_joins, true, R"(
-Enable collecting hash table statistics to optimize memory allocation
-)", 0) \
-    DECLARE(Bool, use_hash_table_stats_for_join_reordering, true, R"(
-Enable using collected hash table statistics for cardinality estimation during join reordering
-)", 0) \
-    DECLARE(UInt64, max_size_to_preallocate_for_joins, 1'000'000'000'000, R"(
-For how many elements it is allowed to preallocate space in all hash tables in total before join
-)", 0) \
-    \
-    DECLARE(Bool, kafka_disable_num_consumers_limit, false, R"(
-Disable limit on kafka_num_consumers that depends on the number of available CPU cores.
-)", 0) \
-    DECLARE(Bool, allow_experimental_kafka_offsets_storage_in_keeper, false, R"(
-Allow experimental feature to store Kafka related offsets in ClickHouse Keeper. When enabled a ClickHouse Keeper path and replica name can be specified to the Kafka table engine. As a result instead of the regular Kafka engine, a new type of storage engine will be used that stores the committed offsets primarily in ClickHouse Keeper
-)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_software_prefetch_in_aggregation, true, R"(
-Enable use of software prefetch in aggregation
-)", 0) \
-    DECLARE(Bool, allow_aggregate_partitions_independently, true, R"(
-Enable independent aggregation of partitions on separate threads when partition key suits group by key. Beneficial when number of partitions close to number of cores and partitions have roughly the same size. Heuristics in `ReadFromMergeTree` automatically disable the optimization for unfavorable layouts (too few partitions, too many partitions, or significantly skewed partition sizes); see `force_aggregate_partitions_independently` to bypass those checks.
-)", 0) \
-    DECLARE(Bool, force_aggregate_partitions_independently, false, R"(
-Force the use of optimization when it is applicable, but heuristics decided not to use it
-)", 0) \
-    DECLARE(Bool, allow_limit_by_partitions_independently, true, R"(
-Enable independent `LIMIT BY` evaluation per partition on separate threads when the partition expression is a deterministic function of the `LIMIT BY` columns.
-)", 0) \
-    DECLARE(UInt64, max_number_of_partitions_for_independent_aggregation, 128, R"(
-Maximal number of partitions in table to apply optimization
-)", 0) \
-    DECLARE(Float, min_hit_rate_to_use_consecutive_keys_optimization, 0.5, R"(
-Minimal hit rate of a cache which is used for consecutive keys optimization in aggregation to keep it enabled
-)", 0) \
-    \
-    DECLARE(Bool, engine_file_empty_if_not_exists, false, R"(
-Allows to select data from a file engine table without file.
-
-Possible values:
-- 0 â€” `SELECT` throws exception.
-- 1 â€” `SELECT` returns empty result.
-)", 0) \
-    DECLARE(Bool, engine_file_truncate_on_insert, false, R"(
-Enables or disables truncate before insert in [File](../../engines/table-engines/special/file.md) engine tables.
-
-Possible values:
-- 0 â€” `INSERT` query appends new data to the end of the file.
-- 1 â€” `INSERT` query replaces existing content of the file with the new data.
-)", 0) \
-    DECLARE(Bool, engine_file_allow_create_multiple_files, false, R"(
-Enables or disables creating a new file on each insert in file engine tables if the format has the suffix (`JSON`, `ORC`, `Parquet`, etc.). If enabled, on each insert a new file will be created with a name following this pattern:
-
-`data.Parquet` -> `data.1.Parquet` -> `data.2.Parquet`, etc.
-
-Possible values:
-- 0 â€” `INSERT` query appends new data to the end of the file.
-- 1 â€” `INSERT` query creates a new file.
-)", 0) \
-    DECLARE(Bool, engine_file_skip_empty_files, false, R"(
-Enables or disables skipping empty files in [File](../../engines/table-engines/special/file.md) engine tables.
-
-Possible values:
-- 0 â€” `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 â€” `SELECT` returns empty result for empty file.
-)", 0) \
-    DECLARE(Bool, engine_url_skip_empty_files, false, R"(
-Enables or disables skipping empty files in [URL](../../engines/table-engines/special/url.md) engine tables.
-
-Possible values:
-- 0 â€” `SELECT` throws an exception if empty file is not compatible with requested format.
-- 1 â€” `SELECT` returns empty result for empty file.
-)", 0) \
-    DECLARE(Bool, enable_url_encoding, false, R"(
-Allows to enable/disable decoding/encoding path in uri in [URL](../../engines/table-engines/special/url.md) engine tables.
-
-Disabled by default.
-)", 0) \
-    DECLARE(String, url_base, "", R"(
-The base URL used to resolve relative URLs in the [url](../../sql-reference/table-functions/url.md) table function and the [URL](../../engines/table-engines/special/url.md) table engine.
-
-When set, relative URLs are resolved as follows:
-- Path-relative URL (e.g. `data.csv`): merged with the base URL path per RFC 3986. Everything after the last `/` in the base path is replaced by the relative URL, so a trailing slash matters: `https://example.com/dir/` + `data.csv` = `https://example.com/dir/data.csv`, but `https://example.com/dir` + `data.csv` = `https://example.com/data.csv`. If the base has no path (e.g. `https://example.com`), a `/` is inserted: `https://example.com/data.csv`. Dot segments (`./` and `../`) in the relative URL are normalized: `https://example.com/dir/` + `../a.csv` = `https://example.com/a.csv`.
-- Host-relative URL (e.g. `/test/data.csv`): resolved against the base URL's scheme and host.
-- Scheme-relative URL (e.g. `//other.com/test/data.csv`): resolved using the base URL's scheme.
-- Query-only reference (e.g. `?x=1`): appended to the base URL path (replacing any existing query/fragment).
-- Fragment-only reference (e.g. `#frag`): appended to the base URL, preserving any query string (replacing any existing fragment).
-- Empty reference: returns the base URL without fragment.
-
-For example, if `url_base` is `https://example.com/def/`, then:
-- `data.csv` resolves to `https://example.com/def/data.csv`
-- `/test/data.csv` resolves to `https://example.com/test/data.csv`
-- `//other.com/test/data.csv` resolves to `https://other.com/test/data.csv`
-)", 0) \
-    DECLARE(UInt64, database_replicated_initial_query_timeout_sec, 300, R"(
-Sets how long initial DDL query should wait for Replicated database to process previous DDL queue entries in seconds.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Unlimited.
-)", 0) \
-    DECLARE(Bool, database_replicated_enforce_synchronous_settings, false, R"(
-Enforces synchronous waiting for some queries (see also database_atomic_wait_for_drop_and_detach_synchronously, mutations_sync, alter_sync). Not recommended to enable these settings.
-)", 0) \
-    DECLARE(UInt64, max_distributed_depth, 5, R"(
-Limits the maximum depth of recursive queries for [Distributed](../../engines/table-engines/special/distributed.md) tables.
-
-If the value is exceeded, the server throws an exception.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Unlimited depth.
-)", 0) \
-    DECLARE(Bool, database_replicated_always_detach_permanently, false, R"(
-Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
-)", 0) \
-    DECLARE(Bool, database_replicated_allow_only_replicated_engine, false, R"(
-Allow to create only Replicated tables in database with engine Replicated
-
-Cloud default value: `1`.
-)", 0) \
-    DECLARE(UInt64, database_replicated_allow_replicated_engine_arguments, 0, R"(
-0 - Don't allow to explicitly specify ZooKeeper path and replica name for *MergeTree tables in Replicated databases. 1 - Allow. 2 - Allow, but ignore the specified path and use default one instead. 3 - Allow and don't log a warning.
-)", 0) \
-    DECLARE(UInt64, database_replicated_allow_explicit_uuid, 0, R"(
-0 - Don't allow to explicitly specify UUIDs for tables in Replicated databases. 1 - Allow. 2 - Allow, but ignore the specified UUID and generate a random one instead.
-)", 0) \
-    DECLARE(Bool, database_replicated_allow_heavy_create, false, R"(
-Allow long-running DDL queries (CREATE AS SELECT and POPULATE) in Replicated database engine. Note that it can block DDL queue for a long time.
-)", 0) \
-    DECLARE(UInt64, database_shared_drop_table_delay_seconds, 8 * 60 * 60, R"(
-The delay in seconds before a dropped table is actually removed from a Shared database. This allows to recover the table within this time using `UNDROP TABLE` statement.
-)", 0) \
-    DECLARE(Bool, cloud_mode, false, R"(
-Cloud mode
-
-Cloud default value: `1`.
-)", 0) \
-    DECLARE(UInt64, cloud_mode_engine, 1, R"(
-The engine family allowed in Cloud.
-
-- 0 - allow everything
-- 1 - rewrite DDLs to use *ReplicatedMergeTree
-- 2 - rewrite DDLs to use SharedMergeTree
-- 3 - rewrite DDLs to use SharedMergeTree except when explicitly passed remote disk is specified
-- 4 - same as 3, plus additionally use Alias instead of Distributed (the Alias table will point to the destination table of the Distributed table, so it will use the corresponding local table)
-
-UInt64 to minimize public part
-
-Cloud default value: `2`.
-)", 0) \
-    DECLARE(DistributedDDLOutputMode, distributed_ddl_output_mode, DistributedDDLOutputMode::THROW, R"(
-Sets format of distributed DDL query result.
-
-Possible values:
-
-- `throw` â€” Returns result set with query execution status for all hosts where query is finished. If query has failed on some hosts, then it will rethrow the first exception. If query is not finished yet on some hosts and [distributed_ddl_task_timeout](#distributed_ddl_task_timeout) exceeded, then it throws `TIMEOUT_EXCEEDED` exception.
-- `none` â€” Is similar to throw, but distributed DDL query returns no result set.
-- `null_status_on_timeout` â€” Returns `NULL` as execution status in some rows of result set instead of throwing `TIMEOUT_EXCEEDED` if query is not finished on the corresponding hosts.
-- `never_throw` â€” Do not throw `TIMEOUT_EXCEEDED` and do not rethrow exceptions if query has failed on some hosts.
-- `none_only_active` - similar to `none`, but doesn't wait for inactive replicas of the `Replicated` database. Note: with this mode it's impossible to figure out that the query was not executed on some replica and will be executed in background.
-- `null_status_on_timeout_only_active` â€” similar to `null_status_on_timeout`, but doesn't wait for inactive replicas of the `Replicated` database
-- `throw_only_active` â€” similar to `throw`, but doesn't wait for inactive replicas of the `Replicated` database
-
-Cloud default value: `none_only_active`.
-)", 0) \
-    DECLARE(UInt64, distributed_ddl_entry_format_version, 5, R"(
-Compatibility version of distributed DDL (ON CLUSTER) queries
-
-Cloud default value: `6`.
-)", 0) \
-    \
-    DECLARE(UInt64, external_storage_max_read_rows, 0, R"(
-Limit maximum number of rows when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
-)", 0) \
-    DECLARE(UInt64, external_storage_max_read_bytes, 0, R"(
-Limit maximum number of bytes when table with external engine should flush history data. Now supported only for MySQL table engine, database engine, and dictionary. If equal to 0, this setting is disabled
-)", 0)  \
-    DECLARE(UInt64, external_storage_connect_timeout_sec, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC, R"(
-Connect timeout in seconds. Now supported only for MySQL
-)", 0)  \
-    DECLARE(UInt64, external_storage_rw_timeout_sec, DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC, R"(
-Read/write timeout in seconds. Now supported only for MySQL
-)", 0)  \
-    \
-    DECLARE(Bool, allow_experimental_correlated_subqueries, true, R"(
-Allow to execute correlated subqueries.
-)", BETA) \
-    \
-    DECLARE(SetOperationMode, union_default_mode, SetOperationMode::Unspecified, R"(
-Sets a mode for combining `SELECT` query results. The setting is only used when shared with [UNION](../../sql-reference/statements/select/union.md) without explicitly specifying the `UNION ALL` or `UNION DISTINCT`.
-
-Possible values:
-
-- `'DISTINCT'` â€” ClickHouse outputs rows as a result of combining queries removing duplicate rows.
-- `'ALL'` â€” ClickHouse outputs all rows as a result of combining queries including duplicate rows.
-- `''` â€” ClickHouse generates an exception when used with `UNION`.
-
-See examples in [UNION](../../sql-reference/statements/select/union.md).
-)", 0) \
-    DECLARE(SetOperationMode, intersect_default_mode, SetOperationMode::ALL, R"(
-Set default mode in INTERSECT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
-)", 0) \
-    DECLARE(SetOperationMode, except_default_mode, SetOperationMode::ALL, R"(
-Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINCT'. If empty, query without mode will throw exception.
-)", 0) \
-    DECLARE(UInt64, max_streams_for_union_step, 0, R"(
-Limits the number of simultaneously active data streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`, because `UNION DISTINCT` is implemented via a `UNION ALL` step followed by a `DISTINCT` step). When a `UNION` query has many subqueries, all of them open their read buffers at the same time, leading to memory usage proportional to the number of subqueries. This setting inserts `Concat` processors to narrow the pipeline so that at most this many streams are active at once, drastically reducing peak memory. The actual limit is the minimum of this value and `max_threads * max_streams_for_union_step_to_max_threads_ratio` (either one being 0 means it is ignored). When both are 0, no narrowing is applied. The limit is also not applied when the query plan requires each output stream of the `UNION` to stay individually sorted (for example, when the read-in-order optimization is applied across the `UNION`); in that case correctness of the ordering takes precedence and narrowing is skipped.
-)", 0) \
-    DECLARE(Float, max_streams_for_union_step_to_max_threads_ratio, 8, R"(
-This ratio multiplied by `max_threads` determines a limit on simultaneously active streams in a `UNION` step (applies to both `UNION ALL` and `UNION DISTINCT`). The actual limit is the minimum of this computed value and `max_streams_for_union_step` (either one being 0 means it is ignored). For example, with `max_threads = 8` and this ratio set to 1, at most 8 streams will be active. Set to 0 to disable this ratio-based limit. Like `max_streams_for_union_step`, the limit is not applied when the query plan requires each output stream of the `UNION` to stay individually sorted.
-)", 0) \
-    DECLARE(Bool, optimize_aggregators_of_group_by_keys, true, R"(
-Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
-)", 0) \
-    DECLARE(Bool, optimize_injective_functions_in_group_by, true, R"(
-Replaces injective functions by it's arguments in GROUP BY section
-)", 0) \
-    DECLARE(Bool, optimize_group_by_function_keys, true, R"(
-Eliminates functions of other keys in GROUP BY section
-)", 0) \
-    DECLARE(Bool, optimize_limit_by_function_keys, true, R"(
-Eliminates functions of other keys in LIMIT BY section.
-
-Example: `LIMIT 5 BY x, f(x)` becomes `LIMIT 5 BY x`.
-)", 0) \
-    DECLARE(Bool, optimize_injective_functions_in_limit_by, true, R"(
-Replaces injective functions by their arguments in LIMIT BY section.
-
-Example: `LIMIT 5 BY toString(x)` becomes `LIMIT 5 BY x`.
-)", 0) \
-    DECLARE(Bool, optimize_group_by_constant_keys, true, R"(
-Optimize GROUP BY when all keys in block are constant
-)", 0) \
-    DECLARE(Bool, legacy_column_name_of_tuple_literal, false, R"(
-List all names of element of large tuple literals in their column names instead of hash. This settings exists only for compatibility reasons. It makes sense to set to 'true', while doing rolling update of cluster from version lower than 21.7 to higher.
-)", 0) \
-    DECLARE(Bool, enable_named_columns_in_function_tuple, false, R"(
-Generate named tuples in function tuple() when all names are unique and can be treated as unquoted identifiers.
-)", 0) \
-    \
-    DECLARE(Bool, query_plan_enable_optimizations, true, R"(
-Toggles query optimization at the query plan level.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable all optimizations at the query plan level
-- 1 - Enable optimizations at the query plan level (but individual optimizations may still be disabled via their individual settings)
-)", 0) \
-    DECLARE(UInt64, query_plan_max_optimizations_to_apply, 10'000, R"(
-Limits the total number of optimizations applied to query plan, see setting [query_plan_enable_optimizations](#query_plan_enable_optimizations).
-Useful to avoid long optimization times for complex queries.
-In the EXPLAIN PLAN query, stop applying optimizations after this limit is reached and return the plan as is.
-For regular query execution if the actual number of optimizations exceeds this setting, an exception is thrown.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-)", 0) \
-    DECLARE(Bool, query_plan_lift_up_array_join, true, R"(
-Toggles a query-plan-level optimization which moves ARRAY JOINs up in the execution plan.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_push_down_limit, true, R"(
-Toggles a query-plan-level optimization which moves LIMITs down in the execution plan.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_top_k_through_join, true, R"(
-Toggles a query-plan-level optimization which pushes `ORDER BY ... LIMIT n` down through a join when the sort key only references columns from the side preserved by the join (LEFT/RIGHT). Restricts how many rows the preserved-side input must produce before joining.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_split_filter, true, R"(
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Toggles a query-plan-level optimization which splits filters into expressions.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_merge_expressions, true, R"(
-Toggles a query-plan-level optimization which merges consecutive filters.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_merge_filters, true, R"(
-Allow to merge filters in the query plan.
-)", 0) \
-    DECLARE(Bool, query_plan_push_limit_by_into_sort, true, R"(
-Toggles a query-plan-level optimization for `ORDER BY ... LIMIT BY` queries. When `LIMIT BY` columns are a prefix of the `ORDER BY` clause, each parallel sorted stream applies `LIMIT BY` before the streams are merged into one, reducing rows processed by the final merge and later pipeline stages. Speeds up queries where `LIMIT BY` discards a large fraction of rows.
-
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_filter_push_down, true, R"(
-Toggles a query-plan-level optimization which moves filters down in the execution plan.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
-Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
-)", 0) \
-    DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
-Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
-)", 0) \
-    DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
-Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
-)", 0) \
-    DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
-Allow to merge expressions into JOIN step during join reordering optimization.
-)", 0) \
-    DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
-Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
-)", 0) \
-    DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
-Allow to push down filter to PREWHERE expression for supported storages
-)", 0) \
-    DECLARE(Bool, optimize_prewhere_after_pushdown, false, R"(
-Run a second `PREWHERE` promotion pass after later query plan optimizations may have
-deposited additional filters above a `MergeTree` read step (e.g. predicate pushdown through
-`JOIN`, projection rewrites). When an existing `PREWHERE` is already present, the new
-filter is `AND`-merged into it instead of staying as a separate filter step.
-)", 0) \
-    DECLARE(Bool, query_plan_execute_functions_after_sorting, true, R"(
-Toggles a query-plan-level optimization which moves expressions after sorting steps.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, query_plan_reuse_storage_ordering_for_window_functions, false, R"(
-Toggles a query-plan-level optimization which uses storage sorting when sorting for window functions.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0, optimize_read_in_window_order) \
-    DECLARE(Bool, query_plan_lift_up_union, true, R"(
-Toggles a query-plan-level optimization which moves larger subtrees of the query plan into union to enable further optimizations.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_read_in_order, true, R"(
-Toggles the read in-order optimization query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0) \
-    DECLARE(Bool, query_plan_aggregation_in_order, true, R"(
-Toggles the aggregation in-order query-plan-level optimization.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
-Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_remove_redundant_distinct, true, R"(
-Toggles a query-plan-level optimization which removes redundant DISTINCT steps.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_try_use_vector_search, true, R"(
-Toggles a query-plan-level optimization which tries to use the vector similarity index.
-Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, query_plan_enable_multithreading_after_window_functions, true, R"(
-Enable multithreading after evaluating window functions to allow parallel stream processing
-)", 0) \
-    DECLARE(Bool, query_plan_optimize_lazy_materialization, true, R"(
-Use query plan for lazy materialization optimization.
-)", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_lazy_materialization, 10000, R"(Control maximum limit value that allows to use query plan for lazy materialization optimization. If zero, there is no limit.
-)", 0) \
-    DECLARE(Bool, query_plan_optimize_lazy_final, false, R"(
-Optimize reading with FINAL from ReplacingMergeTree by building a set of primary keys and using it for index analysis.
-)", 0) \
-    DECLARE(UInt64, max_rows_for_lazy_final, 10000000, R"(
-Maximum number of rows in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
-)", 0) \
-    DECLARE(UInt64, max_bytes_for_lazy_final, 256000000, R"(
-Maximum number of bytes in the set for lazy FINAL optimization. If exceeded, falls back to normal FINAL.
-)", 0) \
-    DECLARE(Float, min_filtered_ratio_for_lazy_final, 0.5, R"(
-Minimum ratio of marks filtered by index analysis for lazy FINAL optimization. If less than this fraction of marks is filtered, falls back to normal FINAL. Value 0 disables this check.
-)", 0) \
-    DECLARE(Bool, enable_lazy_columns_replication, true, R"(
-Enables lazy columns replication in JOIN and ARRAY JOIN, it allows to avoid unnecessary copy of the same rows multiple times in memory.
-)", 0) \
-    DECLARE(UInt64, query_plan_max_set_size_for_projection_match, 10000, R"(
-Maximum number of rows in an `IN`-clause set for which the projection matcher computes and compares content hashes when deciding whether two sets are equal. Sets larger than this are treated as non-matching and skip the projection. Zero disables content-hash comparison entirely: a projection match never succeeds for nodes containing `IN`-clause sets.
-
-Used by the aggregate projection matcher (and any future projection matcher that needs to compare `IN`-clause sets). Computing the content hash is `O(N log N)` in the number of set elements; this setting bounds the cost paid during planning when many `IN`-clauses appear in the query or the projection.
-)", 0) \
-    DECLARE(Bool, enable_software_prefetch_in_join, true, R"(
-Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
-)", 0) \
-    DECLARE(Bool, serialize_query_plan, false, R"(
-Serialize query plan for distributed processing
-)", 0) \
-    DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
-Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
-)", 0) \
-    DECLARE(DecorrelationJoinKind, correlated_subqueries_default_join_kind, DecorrelationJoinKind::RIGHT, R"(
-Controls the kind of joins in the decorrelated query plan. The default value is `right`, which means that decorrelated plan will contain RIGHT JOINs with subquery input on the right side.
-
-Possible values:
-
-- `left` - Decorrelation process will produce LEFT JOINs and input table will appear on the left side.
-- `right` - Decorrelation process will produce RIGHT JOINs and input table will appear on the right side.
-)", 0) \
-    DECLARE(Bool, correlated_subqueries_use_in_memory_buffer, true, R"(
-Use in-memory buffer for correlated subquery input to avoid its repeated evaluation.
-)", 0) \
-    DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
-Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
-)", 0) \
-    \
-    DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
-Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    \
-    DECLARE(UInt64, highlight_max_matches_per_row, 10000, R"(
-Sets the maximum number of highlight matches per row in the [highlight](/sql-reference/functions/string-search-functions#highlight) function. Use it to protect against excessive memory usage when highlighting highly repetitive patterns in large texts.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    \
-    DECLARE(UInt64, limit, 0, R"(
-Sets the maximum number of rows to get from the query result. It adjusts the value set by the [LIMIT](/sql-reference/statements/select/limit) clause, so that the limit, specified in the query, cannot exceed the limit, set by this setting.
-
-Possible values:
-
-- 0 â€” The number of rows is not limited.
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, offset, 0, R"(
-Sets the number of rows to skip before starting to return rows from the query. It adjusts the offset set by the [OFFSET](/sql-reference/statements/select/offset) clause, so that these two values are summarized.
-
-Possible values:
-
-- 0 â€” No rows are skipped .
-- Positive integer.
-
-**Example**
-
-Input table:
-
-```sql
-CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
-INSERT INTO test SELECT number FROM numbers(500);
-```
-
-Query:
-
-```sql
-SET limit = 5;
-SET offset = 7;
-SELECT * FROM test LIMIT 10 OFFSET 100;
-```
-Result:
-
-```text
-â”Œâ”€â”€â”€iâ”€â”
-â”‚ 107 â”‚
-â”‚ 108 â”‚
-â”‚ 109 â”‚
-â””â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    \
-    DECLARE(UInt64, function_range_max_elements_in_block, 500000000, R"(
-Sets the safety threshold for data volume generated by function [range](/sql-reference/functions/array-functions#range). Defines the maximum number of values generated by function per block of data (sum of array sizes for every row in a block).
-
-Possible values:
-
-- Positive integer.
-
-**See Also**
-
-- [`max_block_size`](#max_block_size)
-- [`min_insert_block_size_rows`](#min_insert_block_size_rows)
-)", 0) \
-    DECLARE(UInt64, function_sleep_max_microseconds_per_block, 3000000, R"(
-Maximum number of microseconds the function `sleep` is allowed to sleep for each block. If a user called it with a larger value, it throws an exception. It is a safety threshold.
-)", 0) \
-    DECLARE(UInt64, function_base58_max_input_size, 10000, R"(
-Maximum size, in bytes, of a single input value for the functions `base58Encode`, `base58Decode` and `tryBase58Decode`. The generic `base58` conversion is quadratic in the input length, so a single large value can run for a very long time. `base58` is meant for short data (keys, hashes, addresses), so the default of 10 KB is a generous safety threshold. `base58Encode` and `base58Decode` throw `TOO_LARGE_STRING_SIZE` for larger inputs, while `tryBase58Decode` returns an empty string. A value of `0` disables the limit (the behavior before this setting was introduced). The linear `base32` and `base64` functions are unaffected.
-)", 0) \
-    DECLARE(UInt64, function_visible_width_behavior, 1, R"(
-The version of `visibleWidth` behavior. 0 - only count the number of code points; 1 - correctly count zero-width and combining characters, count full-width characters as two, estimate the tab width, count delete characters.
-)", 0) \
-    DECLARE(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, R"(
-Allows calculating the [if](../../sql-reference/functions/conditional-functions.md/#if), [multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf), [and](/sql-reference/functions/logical-functions#and), and [or](/sql-reference/functions/logical-functions#or) functions according to a [short scheme](https://en.wikipedia.org/wiki/Short-circuit_evaluation). This helps optimize the execution of complex expressions in these functions and prevent possible exceptions (such as division by zero when it is not expected).
-
-Possible values:
-
-- `enable` â€” Enables short-circuit function evaluation for functions that are suitable for it (can throw an exception or computationally heavy).
-- `force_enable` â€” Enables short-circuit function evaluation for all functions.
-- `disable` â€” Disables short-circuit function evaluation.
-)", 0) \
-    \
-    DECLARE(LocalFSReadMethod, storage_file_read_method, LocalFSReadMethod::pread, R"(
-Method of reading data from storage file, one of: `read`, `pread`, `mmap`. The mmap method does not apply to clickhouse-server (it's intended for clickhouse-local).
-)", 0) \
-    DECLARE(String, local_filesystem_read_method, "pread_threadpool", R"(
-Method of reading data from local filesystem, one of: read, pread, mmap, io_uring, pread_threadpool.
-
-The 'io_uring' method is experimental and does not work for Log, TinyLog, StripeLog, File, Set and Join, and other tables with append-able files in presence of concurrent reads and writes.
-If you read various articles about 'io_uring' on the Internet, don't be blinded by them. It is not a better method of reading files, unless the case of a large amount of small IO requests, which is not the case in ClickHouse. There are no reasons to enable 'io_uring'.
-)", 0) \
-    DECLARE(String, remote_filesystem_read_method, "threadpool", R"(
-Method of reading data from remote filesystem, one of: read, threadpool.
-)", 0) \
-    DECLARE(Bool, local_filesystem_read_prefetch, false, R"(
-Should use prefetching when reading data from local filesystem.
-)", 0) \
-    DECLARE(Bool, remote_filesystem_read_prefetch, true, R"(
-Should use prefetching when reading data from remote filesystem.
-)", 0) \
-    DECLARE(Int64, read_priority, 0, R"(
-Priority to read data from local filesystem or remote filesystem. Only supported for 'pread_threadpool' method for local filesystem and for `threadpool` method for remote filesystem.
-)", 0) \
-    DECLARE(UInt64, merge_tree_min_rows_for_concurrent_read_for_remote_filesystem, 0, R"(
-The minimum number of lines to read from one file before the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem. We do not recommend using this setting.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem, 0, R"(
-The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem. We do not recommend using this setting.
-
-Possible values:
-
-- Positive integer.
-)", 0) \
-    DECLARE(UInt64, remote_read_min_bytes_for_seek, 4 * DBMS_DEFAULT_BUFFER_SIZE, R"(
-Min bytes required for remote read (url, s3) to do seek, instead of read with ignore.
-)", 0) \
-    DECLARE_WITH_ALIAS(UInt64, merge_tree_min_bytes_per_task_for_remote_reading, 2 * DBMS_DEFAULT_BUFFER_SIZE, R"(
-Min bytes to read per task.
-)", 0, filesystem_prefetch_min_bytes_for_single_read_task) \
-    DECLARE(Bool, merge_tree_use_const_size_tasks_for_remote_reading, true, R"(
-Whether to use constant size tasks for reading from a remote table.
-)", 0) \
-    DECLARE(Bool, merge_tree_determine_task_size_by_prewhere_columns, true, R"(
-Whether to use only prewhere columns size to determine reading task size.
-)", 0) \
-    DECLARE(NonZeroUInt64, merge_tree_min_read_task_size, 8, R"(
-Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
-)", 0) \
-    DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
-)", 0) \
-    \
-    DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
-If disabled and the INSERT query contains inline data, the server will not send the table structure and column defaults back to the client over the native protocol. Instead, the server will parse the inline data itself. This can improve performance for many small inserts over the native protocol.
-)", 0) \
-    \
-    DECLARE(Bool, async_insert, true, R"(
-If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table
-)", 0) \
-    DECLARE(Bool, wait_for_async_insert, true, R"(
-If true wait for processing of asynchronous insertion
-)", 0) \
-    DECLARE(Seconds, wait_for_async_insert_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
-Timeout for waiting for processing asynchronous insertion
-)", 0) \
-    DECLARE(UInt64, async_insert_max_data_size, 10485760, R"(
-Maximum size in bytes of unparsed data collected per query before being inserted
-
-Cloud default value: `104857600` (100 MiB).
-)", 0) \
-    DECLARE(UInt64, async_insert_max_query_number, 450, R"(
-Maximum number of insert queries before being inserted.
-Only takes effect if setting [`async_insert_deduplicate`](#async_insert_deduplicate) is 1.
-)", 0) \
-    DECLARE(Milliseconds, async_insert_poll_timeout_ms, 10, R"(
-Timeout for polling data from asynchronous insert queue
-)", 0) \
-    DECLARE(Bool, async_insert_use_adaptive_busy_timeout, true, R"(
-If it is set to true, use adaptive busy timeout for asynchronous inserts
-)", 0) \
-    DECLARE(Milliseconds, async_insert_busy_timeout_min_ms, 50, R"(
-If auto-adjusting is enabled through async_insert_use_adaptive_busy_timeout, minimum time to wait before dumping collected data per query since the first data appeared. It also serves as the initial value for the adaptive algorithm
-)", 0) \
-    DECLARE_WITH_ALIAS(Milliseconds, async_insert_busy_timeout_max_ms, 200, R"(
-Maximum time to wait before dumping collected data per query since the first data appeared.
-
-Cloud default value: `1000` (1s).
-)", 0, async_insert_busy_timeout_ms) \
-    DECLARE(Double, async_insert_busy_timeout_increase_rate, 0.2, R"(
-The exponential growth rate at which the adaptive asynchronous insert timeout increases
-)", 0) \
-    DECLARE(Double, async_insert_busy_timeout_decrease_rate, 0.2, R"(
-The exponential growth rate at which the adaptive asynchronous insert timeout decreases
-)", 0) \
-    \
-    DECLARE(UInt64, remote_fs_read_max_backoff_ms, 10000, R"(
-Max wait time when trying to read data for remote disk
-)", 0) \
-    DECLARE(UInt64, remote_fs_read_backoff_max_tries, 5, R"(
-Max attempts to read with backoff
-)", 0) \
-    DECLARE(Bool, cluster_function_process_archive_on_multiple_nodes, true, R"(
-If set to `true`, increases performance of processing archives in cluster functions. Should be set to `false` for compatibility and to avoid errors during upgrade to 25.7+ if using cluster functions with archives on earlier versions.
-)", 0) \
-    DECLARE(UInt64, max_streams_for_files_processing_in_cluster_functions, 0, R"(
-If is not zero, limit the number of threads reading data from files in *Cluster table functions.
-)", 0) \
-    DECLARE(Bool, enable_filesystem_cache, true, R"(
-Use cache for remote filesystem. This setting does not turn on/off cache for disks (must be done via disk config), but allows to bypass cache for some queries if intended
-)", 0) \
-    DECLARE(String, filesystem_cache_name, "", R"(
-Filesystem cache name to use for stateless table engines or data lakes
-)", 0) \
-    DECLARE(Bool, enable_filesystem_cache_on_write_operations, false, R"(
-Enables or disables `write-through` cache. If set to `false`, the `write-through` cache is disabled for write operations. If set to `true`, `write-through` cache is enabled as long as `cache_on_write_operations` is turned on in the server config's cache disk configuration section.
-See ["Using local cache"](/operations/storing-data#using-local-cache) for more details.
-
-Cloud default value: `1`.
-)", 0) \
-    DECLARE(Bool, enable_filesystem_cache_log, false, R"(
-Allows to record the filesystem caching log for each query
-)", 0) \
-    DECLARE(Bool, read_from_filesystem_cache_if_exists_otherwise_bypass_cache, false, R"(
-Allow to use the filesystem cache in passive mode - benefit from the existing cache entries, but don't put more entries into the cache. If you set this setting for heavy ad-hoc queries and leave it disabled for short real-time queries, this will allows to avoid cache threshing by too heavy queries and to improve the overall system efficiency.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit, true, R"(
-Skip download from remote filesystem if exceeds query cache size
-)", 0, skip_download_if_exceeds_query_cache) \
-    DECLARE(UInt64, filesystem_cache_max_download_size, (128UL * 1024 * 1024 * 1024), R"(
-Max remote filesystem cache size that can be downloaded by a single query
-)", 0) \
-    DECLARE(Bool, throw_on_error_from_cache_on_write_operations, false, R"(
-Ignore error from cache when caching on write operations (INSERT, merges)
-)", 0) \
-    DECLARE(UInt64, filesystem_cache_segments_batch_size, 20, R"(
-Limit on size of a single batch of file segments that a read buffer can request from cache. Too low value will lead to excessive requests to cache, too large may slow down eviction from cache
-)", 0) \
-    DECLARE(UInt64, filesystem_cache_reserve_space_wait_lock_timeout_milliseconds, 1000, R"(
-Wait time to lock cache for space reservation in filesystem cache
-)", 0) \
-    DECLARE(Bool, filesystem_cache_prefer_bigger_buffer_size, true, R"(
-Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
-)", 0) \
-    DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
-Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
-)", 0) \
-    DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
-Wait time to lock cache for space reservation for temporary data in filesystem cache
-)", 0) \
-    \
-    DECLARE(Bool, use_page_cache_for_disks_without_file_cache, false, R"(
-Use userspace page cache for remote disks that don't have filesystem cache enabled.
-)", 0) \
-    DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
-Use userspace page cache when distributed cache is used.
-)", 0) \
-    DECLARE(Bool, use_page_cache_for_local_disks, false, R"(
-Use userspace page cache when reading from local disks. Used for testing, unlikely to improve performance in practice. Requires local_filesystem_read_method = 'pread' or 'read'. Doesn't disable the OS page cache; min_bytes_to_use_direct_io can be used for that. Only affects regular tables, not file() table function or File() table engine.
-)", 0) \
-    DECLARE(Bool, use_page_cache_for_object_storage, false, R"(
-Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
-)", 0) \
-    DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
-Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
-)", 0) \
-    DECLARE(Bool, page_cache_inject_eviction, false, R"(
-Userspace page cache will sometimes invalidate some pages at random. Intended for testing.
-)", 0) \
-    DECLARE(UInt64, page_cache_block_size, 1048576, R"(
-Size of file chunks to store in the userspace page cache, in bytes. All reads that go through the cache will be rounded up to a multiple of this size.
-
-This setting can be adjusted on a per-query level basis, but cache entries with different block sizes cannot be reused. Changing this setting effectively invalidates existing entries in the cache.
-
-A higher value, like 1 MiB is good for high-throughput queries, and a lower value, like 64 KiB is good for low-latency point queries.
-)", 0) \
-    DECLARE(UInt64, page_cache_lookahead_blocks, 16, R"(
-On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.
-
-A higher value is good for high-throughput queries, while low-latency point queries will work better without readahead.
-)", 0) \
-    DECLARE(UInt64, page_cache_max_coalesced_bytes, 16777216, R"(
-When `readBigAt` populates the userspace page cache, consecutive cache misses are coalesced into a single read from the underlying storage. This setting bounds the size of one coalesced read in bytes; longer miss runs are split into multiple reads. It limits transient memory usage of the temporary buffer under parallel cold reads.
-
-A higher value reduces the number of HTTP requests for cold scans on object storage; a lower value reduces peak transient memory.
-)", 0) \
-    \
-    DECLARE(Bool, load_marks_asynchronously, false, R"(
-Load MergeTree marks asynchronously
-
-Cloud default value: `1`.
-)", 0) \
-    DECLARE(Bool, use_streaming_marks_compression, false, R"(
-When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
-)", 0) \
-    DECLARE(Bool, enable_filesystem_read_prefetches_log, false, R"(
-Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default
-)", 0) \
-    DECLARE(Bool, allow_prefetched_read_pool_for_remote_filesystem, true, R"(
-Prefer prefetched threadpool if all parts are on remote filesystem
-)", 0) \
-    DECLARE(Bool, allow_prefetched_read_pool_for_local_filesystem, false, R"(
-Prefer prefetched threadpool if all parts are on local filesystem
-)", 0) \
-    \
-    DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the prefetch buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
-)", 0) \
-    DECLARE(UInt64, filesystem_prefetch_step_bytes, 0, R"(
-Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
-)", 0) \
-    DECLARE(UInt64, filesystem_prefetch_step_marks, 0, R"(
-Prefetch step in marks. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
-)", 0) \
-    DECLARE(NonZeroUInt64, filesystem_prefetch_max_memory_usage, "1Gi", R"(
-Maximum memory usage for prefetches.
-
-Cloud default value: 10% of total memory.
-)", 0) \
-    DECLARE(UInt64, filesystem_prefetches_limit, 200, R"(
-Maximum number of prefetches. Zero means unlimited. A setting `filesystem_prefetches_max_memory_usage` is more recommended if you want to limit the number of prefetches
-)", 0) \
-    \
-    DECLARE(Bool, allow_calculating_subcolumns_sizes_for_merge_tree_reading, true, R"(
-When enabled, ClickHouse will calculate the size of files required for each subcolumn reading for better task and block sizes calculation.
-)", 0) \
-\
-    DECLARE(UInt64, use_structure_from_insertion_table_in_table_functions, 2, R"(
-Use structure from insertion table instead of schema inference from data. Possible values: 0 - disabled, 1 - enabled, 2 - auto
-)", 0) \
-    \
-    DECLARE(UInt64, http_max_tries, 10, R"(
-Max attempts to read via http.
-)", 0) \
-    DECLARE(UInt64, http_retry_initial_backoff_ms, 100, R"(
-Min milliseconds for backoff, when retrying read via http
-)", 0) \
-    DECLARE(UInt64, http_retry_max_backoff_ms, 10000, R"(
-Max milliseconds for backoff, when retrying read via http
-)", 0) \
-    \
-    DECLARE(Bool, force_remove_data_recursively_on_drop, false, R"(
-Recursively remove data on DROP query. Avoids 'Directory not empty' error, but may silently remove detached data
-)", 0) \
-    DECLARE(Bool, check_table_dependencies, true, R"(
-Check that DDL query (such as DROP TABLE or RENAME) will not break dependencies
-)", 0) \
-    DECLARE(Bool, check_referential_table_dependencies, false, R"(
-Check that DDL query (such as DROP TABLE or RENAME) will not break referential dependencies
-)", 0) \
-    DECLARE(Bool, check_named_collection_dependencies, true, R"(
-Check that DROP NAMED COLLECTION will not break tables that depend on it
-)", 0) \
-    \
-    DECLARE(Bool, allow_unrestricted_reads_from_keeper, false, R"(
-Allow unrestricted (without condition on path) reads from system.zookeeper table, can be handy, but is not safe for zookeeper
-)", 0) \
-    DECLARE(Bool, allow_deprecated_database_ordinary, false, R"(
-Allow to create databases with deprecated Ordinary engine
-)", 0) \
-    DECLARE(Bool, allow_deprecated_syntax_for_merge_tree, false, R"(
-Allow to create *MergeTree tables with deprecated engine definition syntax
-)", 0) \
-    DECLARE(Bool, allow_asynchronous_read_from_io_pool_for_merge_tree, false, R"(
-Use background I/O pool to read from MergeTree tables. This setting may increase performance for I/O bound queries
-)", 0) \
-    DECLARE(UInt64, max_streams_for_merge_tree_reading, 0, R"(
-If is not zero, limit the number of reading streams for MergeTree table.
-)", 0) \
-    \
-    DECLARE(Bool, force_grouping_standard_compatibility, true, R"(
-Make GROUPING function to return 1 when argument is not used as an aggregation key
-)", 0) \
-    \
-    DECLARE(Bool, allow_rank_dense_rank_arguments, false, R"(
-Allow passing arguments to the `RANK` and `DENSE_RANK` window functions for backward compatibility.
-
-Per SQL standard, `RANK` and `DENSE_RANK` take zero arguments â€” they rank rows based on the
-`OVER (ORDER BY ...)` window only. In ClickHouse versions before 26.5, queries such as
-`RANK(x) OVER (...)` silently accepted and ignored the argument, which led to user confusion
-(the visible argument suggested it influenced the ranking, but it did not).
-
-When this setting is `false` (the default), `RANK` and `DENSE_RANK` reject any arguments and
-throw `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. When set to `true`, the legacy lenient behavior is
-restored â€” arguments are silently ignored, matching the pre-26.5 behavior.
-)", 0) \
-    \
-    DECLARE(Bool, schema_inference_use_cache_for_file, true, R"(
-Use cache in schema inference while using file table function
-)", 0) \
-    DECLARE(Bool, schema_inference_use_cache_for_s3, true, R"(
-Use cache in schema inference while using s3 table function
-)", 0) \
-    DECLARE(Bool, schema_inference_use_cache_for_azure, true, R"(
-Use cache in schema inference while using azure table function
-)", 0) \
-    DECLARE(Bool, schema_inference_use_cache_for_hdfs, true, R"(
-Use cache in schema inference while using hdfs table function
-)", 0) \
-    DECLARE(Bool, schema_inference_use_cache_for_url, true, R"(
-Use cache in schema inference while using url table function
-)", 0) \
-    DECLARE(Bool, schema_inference_cache_require_modification_time_for_url, true, R"(
-Use schema from cache for URL with last modification time validation (for URLs with Last-Modified header)
-)", 0) \
-    \
-    DECLARE(String, compatibility, "", R"(
-The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
-
-If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
-
-This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
-
-Disabled by default.
-
-:::note
-In ClickHouse Cloud, the service-level default compatibility setting must be set by ClickHouse Cloud support. Please [open a case](https://clickhouse.cloud/support) to have it set.
-However, the compatibility setting can be overridden at the user, role, profile, query, or session level using standard ClickHouse setting mechanisms such as `SET compatibility = '22.3'` in a session or `SETTINGS compatibility = '22.3'` in a query.
-:::
-)", 0) \
-    \
-    DECLARE(Map, additional_table_filters, "", R"(
-An additional filter expression that is applied after reading
-from the specified table.
-
-**Example**
-
-```sql
-INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
-SELECT * FROM table_1;
-```
-```response
-â”Œâ”€xâ”€â”¬â”€yâ”€â”€â”€â”€â”
-â”‚ 1 â”‚ a    â”‚
-â”‚ 2 â”‚ bb   â”‚
-â”‚ 3 â”‚ ccc  â”‚
-â”‚ 4 â”‚ dddd â”‚
-â””â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”˜
-```
-```sql
-SELECT *
-FROM table_1
-SETTINGS additional_table_filters = {'table_1': 'x != 2'}
-```
-```response
-â”Œâ”€xâ”€â”¬â”€yâ”€â”€â”€â”€â”
-â”‚ 1 â”‚ a    â”‚
-â”‚ 3 â”‚ ccc  â”‚
-â”‚ 4 â”‚ dddd â”‚
-â””â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(String, additional_result_filter, "", R"(
-An additional filter expression to apply to the result of `SELECT` query.
-This setting is not applied to any subquery.
-
-**Example**
-
-```sql
-INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
-SElECT * FROM table_1;
-```
-```response
-â”Œâ”€xâ”€â”¬â”€yâ”€â”€â”€â”€â”
-â”‚ 1 â”‚ a    â”‚
-â”‚ 2 â”‚ bb   â”‚
-â”‚ 3 â”‚ ccc  â”‚
-â”‚ 4 â”‚ dddd â”‚
-â””â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”˜
-```
-```sql
-SELECT *
-FROM table_1
-SETTINGS additional_result_filter = 'x != 2'
-```
-```response
-â”Œâ”€xâ”€â”¬â”€yâ”€â”€â”€â”€â”
-â”‚ 1 â”‚ a    â”‚
-â”‚ 3 â”‚ ccc  â”‚
-â”‚ 4 â”‚ dddd â”‚
-â””â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    \
-    DECLARE(String, workload, "default", R"(
-Name of workload to be used to access resources
-)", 0) \
-    DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
-Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.
-)", 0) \
-    \
-    DECLARE(String, rename_files_after_processing, "", R"(
-- **Type:** String
-
-- **Default value:** Empty string
-
-This setting allows to specify renaming pattern for files processed by `file` table function. When option is set, all files read by `file` table function will be renamed according to specified pattern with placeholders, only if files processing was successful.
-
-### Placeholders
-
-- `%a` â€” Full original filename (e.g., "sample.csv").
-- `%f` â€” Original filename without extension (e.g., "sample").
-- `%e` â€” Original file extension with dot (e.g., ".csv").
-- `%t` â€” Timestamp (in microseconds).
-- `%%` â€” Percentage sign ("%").
-
-### Example
-- Option: `--rename_files_after_processing="processed_%f_%t%e"`
-
-- Query: `SELECT * FROM file('sample.csv')`
-
-
-If reading `sample.csv` is successful, file will be renamed to `processed_sample_1683473210851438.csv`
-)", 0) \
-    \
-    /* CLOUD ONLY */ \
-    DECLARE(Bool, read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache
-)", 0) \
-    DECLARE(Bool, write_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
-)", 0) \
-    DECLARE(Bool, distributed_cache_throw_on_error, false, R"(
-Only has an effect in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
-)", 0) \
-    DECLARE(DistributedCacheLogMode, distributed_cache_log_mode, DistributedCacheLogMode::LOG_ON_ERROR, R"(
-Only has an effect in ClickHouse Cloud. Mode for writing to system.distributed_cache_log
-)", 0) \
-    DECLARE(Bool, distributed_cache_fetch_metrics_only_from_current_az, true, R"(
-Only has an effect in ClickHouse Cloud. Fetch metrics only from current availability zone in system.distributed_cache_metrics, system.distributed_cache_events
-)", 0) \
-    DECLARE(UInt64, distributed_cache_connect_max_tries, default_distributed_cache_connect_max_tries, R"(
-Only has an effect in ClickHouse Cloud. Number of tries to connect to distributed cache if unsuccessful
-)", 0) \
-    DECLARE(UInt64, distributed_cache_read_request_max_tries, default_distributed_cache_read_request_max_tries, R"(
-Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache read request if unsuccessful
-)", 0) \
-    DECLARE(UInt64, distributed_cache_write_request_max_tries, default_distributed_cache_write_request_max_tries, R"(
-Only has an effect in ClickHouse Cloud. Number of tries to do distributed cache write request if unsuccessful
-)", 0) \
-    DECLARE(UInt64, distributed_cache_receive_response_wait_milliseconds, 60000, R"(
-Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive data for request from distributed cache
-)", 0) \
-    DECLARE(UInt64, distributed_cache_receive_timeout_milliseconds, 10000, R"(
-Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive any kind of response from distributed cache
-
-Cloud default value: `20000`.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_wait_connection_from_pool_milliseconds, 100, R"(
-Only has an effect in ClickHouse Cloud. Wait time in milliseconds to receive connection from connection pool if distributed_cache_pool_behaviour_on_limit is wait
-)", 0) \
-    DECLARE(Bool, distributed_cache_bypass_connection_pool, false, R"(
-Only has an effect in ClickHouse Cloud. Allow to bypass distributed cache connection pool
-)", 0) \
-    DECLARE(DistributedCachePoolBehaviourOnLimit, distributed_cache_pool_behaviour_on_limit, DistributedCachePoolBehaviourOnLimit::WAIT, R"(
-Only has an effect in ClickHouse Cloud. Identifies behaviour of distributed cache connection on pool limit reached
-)", 0) \
-    DECLARE(UInt64, distributed_cache_alignment, 0, R"(
-Only has an effect in ClickHouse Cloud. A setting for testing purposes, do not change it
-)", 0) \
-    DECLARE(UInt64, distributed_cache_max_unacked_inflight_packets, default_distributed_cache_max_unacked_inflight_packets, R"(
-Only has an effect in ClickHouse Cloud. A maximum number of unacknowledged in-flight packets in a single distributed cache read request
-)", 0) \
-    DECLARE(UInt64, distributed_cache_data_packet_ack_window, default_distributed_cache_data_packet_ack_window, R"(
-Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket sequence in a single distributed cache read request
-)", 0) \
-    DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
-Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
-Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_credentials_refresh_period_seconds, default_distributed_cache_credentials_refresh_period_seconds, R"(
-Only has an effect in ClickHouse Cloud. A period of credentials refresh.
-)", 0) \
-    DECLARE(Bool, distributed_cache_read_only_from_current_az, true, R"(
-Only has an effect in ClickHouse Cloud. Allow to read only from current availability zone. If disabled, will read from all cache servers in all availability zones.
-)", 0) \
-    DECLARE(UInt64, write_through_distributed_cache_buffer_size, 0, R"(
-Only has an effect in ClickHouse Cloud. Set buffer size for write-through distributed cache. If 0, will use buffer size which would have been used if there was not distributed cache.
-)", 0) \
-    DECLARE(Bool, table_engine_read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache via table engines / table functions (s3, azure, etc)
-)", 0) \
-    DECLARE(UInt64, distributed_cache_connect_backoff_min_ms, default_distributed_cache_connect_backoff_min_ms, R"(
-Only has an effect in ClickHouse Cloud. Minimum backoff milliseconds for distributed cache connection creation.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_connect_backoff_max_ms, default_distributed_cache_connect_backoff_max_ms, R"(
-Only has an effect in ClickHouse Cloud. Maximum backoff milliseconds for distributed cache connection creation.
-)", 0) \
-    DECLARE(Bool, distributed_cache_prefer_bigger_buffer_size, false, R"(
-Only has an effect in ClickHouse Cloud. Same as filesystem_cache_prefer_bigger_buffer_size, but for distributed cache.
-)", 0) \
-    DECLARE(Bool, read_from_distributed_cache_if_exists_otherwise_bypass_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Same as read_from_filesystem_cache_if_exists_otherwise_bypass_cache, but for distributed cache.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_connect_timeout_ms, default_distributed_cache_connect_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. Connection timeout when connecting to distributed cache server.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_receive_timeout_ms, default_distributed_cache_receive_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. Timeout for receiving data from distributed cache server, in milliseconds. If no bytes were received in this interval, the exception is thrown.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_send_timeout_ms, default_distributed_cache_send_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed cache server, in milliseconds. If a client needs to send some data but is not able to send any bytes in this interval, the exception is thrown.
-)", 0) \
-    DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
-Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
-)", 0) \
-    DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
-Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
-)", 0) \
-    DECLARE(String, distributed_cache_file_cache_name, "", R"(
-Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
-)", 0) \
-    DECLARE(Bool, distributed_cache_registry_show_certificate_and_signature, false, R"(
-Only has an effect in ClickHouse Cloud. Show the `certificate` and `signature` columns in the `system.distributed_cache_registry` table. By default these columns are empty to keep the output compact; enable this setting to inspect them.
-)", 0) \
-    DECLARE(Bool, filesystem_cache_allow_background_download, true, R"(
-Allow filesystem cache to enqueue background downloads for data read from remote storage. Disable to keep downloads in the foreground for the current query/session.
-)", 0) \
-    DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
-Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
-)", 0) \
-    DECLARE(Bool, filesystem_cache_enable_background_download_during_fetch, true, R"(
-Only has an effect in ClickHouse Cloud. Wait time to lock cache for space reservation in filesystem cache
-)", 0) \
-    \
-    DECLARE(Bool, parallelize_output_from_storages, true, R"(
-Parallelize output for reading step from storage. It allows parallelization of query processing right after reading from storage if possible
-)", 0) \
-    DECLARE(String, insert_deduplication_token, "", R"(
-The setting allows a user to provide own deduplication semantic in MergeTree/ReplicatedMergeTree
-For example, by providing a unique value for the setting in each INSERT statement,
-user can avoid the same inserted data being deduplicated.
-
-
-Possible values:
-
-- Any string
-
-`insert_deduplication_token` is used for deduplication _only_ when not empty.
-
-For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
-
-:::note
-`insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
-:::
-
-Example:
-
-```sql
-CREATE TABLE test_table
-( A Int64 )
-ENGINE = MergeTree
-ORDER BY A
-SETTINGS non_replicated_deduplication_window = 100;
-
-INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (1);
-
--- the next insert won't be deduplicated because insert_deduplication_token is different
-INSERT INTO test_table SETTINGS insert_deduplication_token = 'test1' VALUES (1);
-
--- the next insert will be deduplicated because insert_deduplication_token
--- is the same as one of the previous
-INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (2);
-
-SELECT * FROM test_table
-
-â”Œâ”€Aâ”€â”
-â”‚ 1 â”‚
-â””â”€â”€â”€â”˜
-â”Œâ”€Aâ”€â”
-â”‚ 1 â”‚
-â””â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, count_distinct_optimization, false, R"(
-Rewrite count distinct to subquery of group by
-)", 0) \
-    DECLARE(Bool, optimize_inverse_dictionary_lookup, true, R"(
-Avoid repeated inverse dictionary lookup by doing faster lookups into a precomputed set of possible key values.
-)", 0) \
-    DECLARE(Bool, throw_if_no_data_to_insert, true, R"(
-Allows or forbids empty INSERTs, enabled by default (throws an error on an empty insert). Only applies to INSERTs using [`clickhouse-client`](/interfaces/cli) or using the [gRPC interface](/interfaces/grpc).
-)", 0) \
-    DECLARE(Bool, compatibility_ignore_auto_increment_in_create_table, false, R"(
-Ignore AUTO_INCREMENT keyword in column declaration if true, otherwise return error. It simplifies migration from MySQL
-)", 0) \
-    DECLARE(Bool, multiple_joins_try_to_keep_original_names, false, R"(
-Do not add aliases to top level expression list on multiple joins rewrite
-)", 0) \
-    DECLARE(Bool, optimize_sorting_by_input_stream_properties, true, R"(
-Optimize sorting by sorting properties of input stream
-)", 0) \
-    DECLARE(UInt64, keeper_max_retries, 10, R"(
-Max retries for general keeper operations
-)", 0) \
-    DECLARE(UInt64, keeper_retry_initial_backoff_ms, 100, R"(
-Initial backoff timeout for general keeper operations
-)", 0) \
-    DECLARE(UInt64, keeper_retry_max_backoff_ms, 5000, R"(
-Max backoff timeout for general keeper operations
-)", 0) \
-    DECLARE(UInt64, insert_keeper_max_retries, 20, R"(
-The setting sets the maximum number of retries for ClickHouse Keeper (or ZooKeeper) requests during insert into replicated MergeTree. Only Keeper requests which failed due to network error, Keeper session timeout, or request timeout are considered for retries.
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Retries are disabled
-
-Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
-The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
-```
-timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
-```
-
-For example, if `insert_keeper_retry_initial_backoff_ms=100`, `insert_keeper_retry_max_backoff_ms=10000` and `insert_keeper_max_retries=8` then timeouts will be `100, 200, 400, 800, 1600, 3200, 6400, 10000`.
-
-Apart from fault tolerance, the retries aim to provide a better user experience - they allow to avoid returning an error during INSERT execution if Keeper is restarted, for example, due to an upgrade.
-)", 0) \
-    DECLARE(UInt64, insert_keeper_retry_initial_backoff_ms, 100, R"(
-Initial timeout(in milliseconds) to retry a failed Keeper request during INSERT query execution
-
-Possible values:
-
-- Positive integer.
-- 0 â€” No timeout
-)", 0) \
-    DECLARE(UInt64, insert_keeper_retry_max_backoff_ms, 10000, R"(
-Maximum timeout (in milliseconds) to retry a failed Keeper request during INSERT query execution
-
-Possible values:
-
-- Positive integer.
-- 0 â€” Maximum timeout is not limited
-)", 0) \
-    DECLARE(Float, insert_keeper_fault_injection_probability, 0.0f, R"(
-Approximate probability of failure for a keeper request during insert. Valid value is in interval [0.0f, 1.0f]
-)", 0) \
-    DECLARE(UInt64, insert_keeper_fault_injection_seed, 0, R"(
-0 - random seed, otherwise the setting value
-)", 0) \
-    DECLARE(Bool, force_aggregation_in_order, false, R"(
-The setting is used by the server itself to support distributed queries. Do not change it manually, because it will break normal operations. (Forces use of aggregation in order on remote nodes during distributed aggregation).
-)", IMPORTANT) \
-    DECLARE(UInt64, http_max_request_param_data_size, 10_MiB, R"(
-Limit on size of request data used as a query parameter in predefined HTTP requests.
-)", 0) \
-    DECLARE(Bool, function_json_value_return_type_allow_nullable, false, R"(
-Control whether allow to return `NULL` when value is not exist for JSON_VALUE function.
-
-```sql
-SELECT JSON_VALUE('{"hello":"world"}', '$.b') settings function_json_value_return_type_allow_nullable=true;
-
-â”Œâ”€JSON_VALUE('{"hello":"world"}', '$.b')â”€â”
-â”‚ á´ºáµá´¸á´¸                                   â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-1 row in set. Elapsed: 0.001 sec.
-```
-
-Possible values:
-
-- true â€” Allow.
-- false â€” Disallow.
-)", 0) \
-    DECLARE(Bool, function_json_value_return_type_allow_complex, false, R"(
-Control whether allow to return complex type (such as: struct, array, map) for json_value function.
-
-```sql
-SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello') settings function_json_value_return_type_allow_complex=true
-
-â”Œâ”€JSON_VALUE('{"hello":{"world":"!"}}', '$.hello')â”€â”
-â”‚ {"world":"!"}                                    â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-1 row in set. Elapsed: 0.001 sec.
-```
-
-Possible values:
-
-- true â€” Allow.
-- false â€” Disallow.
-)", 0) \
-    DECLARE(Bool, use_with_fill_by_sorting_prefix, true, R"(
-Columns preceding WITH FILL columns in ORDER BY clause form sorting prefix. Rows with different values in sorting prefix are filled independently
-)", 0) \
-    DECLARE(Bool, optimize_uniq_to_count, true, R"(
-Rewrite uniq and its variants(except uniqUpTo) to count if subquery has distinct or group by clause.
-)", 0) \
-    DECLARE(Bool, use_variant_as_common_type, true, R"(
-Allows to use `Variant` type as a result type for [if](../../sql-reference/functions/conditional-functions.md/#if)/[multiIf](../../sql-reference/functions/conditional-functions.md/#multiIf)/[array](../../sql-reference/functions/array-functions.md)/[map](../../sql-reference/functions/tuple-map-functions.md) functions when there is no common type for argument types.
-
-Example:
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(if(number % 2, number, range(number))) as variant_type FROM numbers(1);
-SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
-```
-
-```text
-â”Œâ”€variant_typeâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ Variant(Array(UInt64), UInt64) â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-â”Œâ”€variantâ”€â”€â”€â”
-â”‚ []        â”‚
-â”‚ 1         â”‚
-â”‚ [0,1]     â”‚
-â”‚ 3         â”‚
-â”‚ [0,1,2,3] â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL)) AS variant_type FROM numbers(1);
-SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
-```
-
-```text
-â”€variant_typeâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ Variant(Array(UInt8), String, UInt8) â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-â”Œâ”€variantâ”€â”€â”€â”€â”€â”€â”€â”
-â”‚ 42            â”‚
-â”‚ [1,2,3]       â”‚
-â”‚ Hello, World! â”‚
-â”‚ á´ºáµá´¸á´¸          â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(array(range(number), number, 'str_' || toString(number))) as array_of_variants_type from numbers(1);
-SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
-```
-
-```text
-â”Œâ”€array_of_variants_typeâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ Array(Variant(Array(UInt64), String, UInt64)) â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-â”Œâ”€array_of_variantsâ”€â”
-â”‚ [[],0,'str_0']    â”‚
-â”‚ [[0],1,'str_1']   â”‚
-â”‚ [[0,1],2,'str_2'] â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-```sql
-SET use_variant_as_common_type = 1;
-SELECT toTypeName(map('a', range(number), 'b', number, 'c', 'str_' || toString(number))) as map_of_variants_type from numbers(1);
-SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
-```
-
-```text
-â”Œâ”€map_of_variants_typeâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ Map(String, Variant(Array(UInt64), String, UInt64)) â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-
-â”Œâ”€map_of_variantsâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ {'a':[],'b':0,'c':'str_0'}    â”‚
-â”‚ {'a':[0],'b':1,'c':'str_1'}   â”‚
-â”‚ {'a':[0,1],'b':2,'c':'str_2'} â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Bool, allow_lossy_numeric_supertype, false, R"(
-When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of numeric arguments that has no lossless common type (for example a `Decimal` and a `Float64`, or an `Int64` and a `Float64`) resolve to a numeric supertype (`Float64`) instead of failing, with possible precision loss. This allows the result to be used directly with value-combining aggregate functions like `sum`, `avg`, `min` and `max`. This is independent of `use_variant_as_common_type`: the numeric supertype is produced whether or not `use_variant_as_common_type` is enabled. When disabled (the default), such argument sets have no common type, so they either become a `Variant` (if `use_variant_as_common_type` is enabled) or raise `NO_COMMON_TYPE`.
-)", 0) \
-    DECLARE(Bool, enable_order_by_all, true, R"(
-Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
-
-Possible values:
-
-- 0 â€” Disable ORDER BY ALL.
-- 1 â€” Enable ORDER BY ALL.
-
-**Example**
-
-Query:
-
-```sql
-CREATE TABLE TAB(C1 Int, C2 Int, ALL Int) ENGINE=Memory();
-
-INSERT INTO TAB VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
-
-SELECT * FROM TAB ORDER BY ALL; -- returns an error that ALL is ambiguous
-
-SELECT * FROM TAB ORDER BY ALL SETTINGS enable_order_by_all = 0;
-```
-
-Result:
-
-```text
-â”Œâ”€C1â”€â”¬â”€C2â”€â”¬â”€ALLâ”€â”
-â”‚ 20 â”‚ 20 â”‚  10 â”‚
-â”‚ 30 â”‚ 10 â”‚  20 â”‚
-â”‚ 10 â”‚ 20 â”‚  30 â”‚
-â””â”€â”€â”€â”€â”´â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”˜
-```
-)", 0) \
-    DECLARE(Float, ignore_drop_queries_probability, 0, R"(
-If enabled, server will ignore all DROP table queries with specified probability (for Memory and JOIN engines it will replace DROP to TRUNCATE). Used for testing purposes
-)", 0) \
-    DECLARE(Bool, traverse_shadow_remote_data_paths, false, R"(
-Traverse frozen data (shadow directory) in addition to actual table data when query system.remote_data_paths
-)", 0) \
-    DECLARE(Bool, geo_distance_returns_float64_on_float64_arguments, true, R"(
-If all four arguments to `geoDistance`, `greatCircleDistance`, `greatCircleAngle` functions are Float64, return Float64 and use double precision for internal calculations. In previous ClickHouse versions, the functions always returned Float32.
-)", 0) \
-    DECLARE(Bool, allow_get_client_http_header, false, R"(
-Allow to use the function `getClientHTTPHeader` which lets to obtain a value of the current HTTP request's header. It is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info. Note that the `X-ClickHouse-*`, `Authentication` and `Authorization` headers are always restricted and cannot be obtained with this function.
-)", 0) \
-    DECLARE(Bool, cast_string_to_dynamic_use_inference, false, R"(
-Use types inference during String to Dynamic conversion
-)", 0) \
-    DECLARE(Bool, allow_dynamic_type_in_join_keys, false, R"(
-Allows using Dynamic type in JOIN keys. Added for compatibility. It's not recommended to use Dynamic type in JOIN keys because comparison with other types may lead to unexpected results.
-)", 0) \
-    DECLARE(Bool, cast_string_to_variant_use_inference, true, R"(
-Use types inference during String to Variant conversion.
-)", 0) \
-    DECLARE(DateTimeInputFormat, cast_string_to_date_time_mode, "best_effort", R"(
-Allows choosing a parser of the text representation of date and time during cast from String.
-
-Possible values:
-
-- `'best_effort'` â€” Enables extended parsing.
-
-    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
-
-- `'best_effort_us'` â€” Similar to `best_effort` (see the difference in [parseDateTimeBestEffortUS](../../sql-reference/functions/type-conversion-functions#parseDateTimeBestEffortUS)
-
-- `'basic'` â€” Use basic parser.
-
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DD` format. For example, `2019-08-20 10:18:56` or `2019-08-20`.
-
-See also:
-
-- [DateTime data type.](../../sql-reference/data-types/datetime.md)
-- [Functions for working with dates and times.](../../sql-reference/functions/date-time-functions.md)
-)", 0) \
-    DECLARE(Bool, enable_blob_storage_log, true, R"(
-Write information about blob storage operations to system.blob_storage_log table
-)", 0) \
-    DECLARE(Bool, enable_blob_storage_log_for_read_operations, false, R"(
-Write information about blob storage read operations to system.blob_storage_log table.
-Requires `enable_blob_storage_log` to be enabled as well.
-)", 0) \
-    DECLARE(UInt64, predicate_statistics_sample_rate, 0, R"(
-Collect predicate selectivity statistics into `system.predicate_statistics_log`. When set to N > 0, approximately 1/N of queries are sampled (by the query ID). 0 means disabled.
-)", 0) \
-    DECLARE(Bool, allow_create_index_without_type, false, R"(
-Allow CREATE INDEX query without TYPE. Query will be ignored. Made for SQL compatibility tests.
-)", 0) \
-    DECLARE(Bool, create_index_ignore_unique, false, R"(
-Ignore UNIQUE keyword in CREATE UNIQUE INDEX. Made for SQL compatibility tests.
-)", 0) \
-    DECLARE(Bool, print_pretty_type_names, true, R"(
-Allows to print deep-nested type names in a pretty way with indents in `DESCRIBE` query and in `toTypeName()` function.
-
-Example:
-
-```sql
-CREATE TABLE test (a Tuple(b String, c Tuple(d Nullable(UInt64), e Array(UInt32), f Array(Tuple(g String, h Map(String, Array(Tuple(i String, j UInt64))))), k Date), l Nullable(String))) ENGINE=Memory;
-DESCRIBE TABLE test FORMAT TSVRaw SETTINGS print_pretty_type_names=1;
-```
-
-```
-a   Tuple(
-    b String,
-    c Tuple(
-        d Nullable(UInt64),
-        e Array(UInt32),
-        f Array(Tuple(
-            g String,
-            h Map(
-                String,
-                Array(Tuple(
-                    i String,
-                    j UInt64
-                ))
-            )
-        )),
-        k Date
-    ),
-    l Nullable(String)
-)
-```
-)", 0) \
-    DECLARE(Bool, create_table_empty_primary_key_by_default, true, R"(
-Allow to create *MergeTree tables with empty primary key when ORDER BY and PRIMARY KEY not specified
-)", 0) \
-    DECLARE(Bool, allow_named_collection_override_by_default, true, R"(
-Allow named collections' fields override by default.
-)", 0) \
-    DECLARE(SQLSecurityType, default_normal_view_sql_security, SQLSecurityType::INVOKER, R"(
-Allows to set default `SQL SECURITY` option while creating a normal view. [More about SQL security](../../sql-reference/statements/create/view.md/#sql_security).
-
-The default value is `INVOKER`.
-)", 0) \
-    DECLARE(SQLSecurityType, default_materialized_view_sql_security, SQLSecurityType::DEFINER, R"(
-Allows to set a default value for SQL SECURITY option when creating a materialized view. [More about SQL security](../../sql-reference/statements/create/view.md/#sql_security).
-
-The default value is `DEFINER`.
-)", 0) \
-    DECLARE(String, default_view_definer, "CURRENT_USER", R"(
-Allows to set default `DEFINER` option while creating a view. [More about SQL security](../../sql-reference/statements/create/view.md/#sql_security).
-
-The default value is `CURRENT_USER`.
-)", 0) \
-    DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
-)", 0) \
-    DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
-Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
-    DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
-Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
-)", 0) \
-    DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
-Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
-)", 0) \
-    DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
-Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
-When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
-)", 0) \
-    DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
-Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
-)", 0) \
-    DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
-Query Iceberg table using the snapshot that was current at a specific timestamp.
-)", 0) \
-    DECLARE(Int64, iceberg_snapshot_id, 0, R"(
-Query Iceberg table using the specific snapshot id.
-)", 0) \
-    DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
-Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
-)", 0) \
-    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
-Enables showing data lake catalogs in system tables.
-)", 0) \
-    DECLARE(Bool, show_remote_databases_in_system_tables, true, R"(
-Enables showing `MySQL` and `PostgreSQL` databases in system tables.
-)", 0) \
-    DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
-Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
-)", 0) \
-    DECLARE(Int64, delta_lake_snapshot_version, -1, R"(
-Version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
-)", 0) \
-    DECLARE(Int64, delta_lake_snapshot_start_version, -1, R"(
-Start version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
-)", 0) \
-    DECLARE(Int64, delta_lake_snapshot_end_version, -1, R"(
-End version of delta lake snapshot to read. Value -1 means to read latest version (value 0 is a valid snapshot version).
-)", 0) \
-    DECLARE(Bool, delta_lake_throw_on_engine_predicate_error, false, R"(
-Enables throwing an exception if there was an error when analyzing scan predicate in delta-kernel.
-)", 0) \
-    DECLARE(Bool, delta_lake_enable_engine_predicate, true, R"(
-Enables delta-kernel internal data pruning.
-)", 0) \
-    DECLARE(NonZeroUInt64, delta_lake_insert_max_rows_in_data_file, 1000000, R"(
-Defines a rows limit for a single inserted data file in delta lake.
-)", 0) \
-    DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
-Defines a bytes limit for a single inserted data file in delta lake.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_delta_lake_writes, false, R"(
-Enables delta-kernel writes feature.
-)", BETA, allow_delta_lake_writes) \
-    DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
-Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
-)", 0) \
-    DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
-Default partition strategy for file like engines.
-)", 0) \
-    DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
-Use Iceberg partition pruning for Iceberg tables
-)", 0) \
-    DECLARE(Bool, optimize_distinct_in_order, true, R"(
-Enable DISTINCT optimization if some columns in DISTINCT form a prefix of sorting. For example, prefix of sorting key in merge tree or ORDER BY statement
-)", 0) \
-    DECLARE(Bool, optimize_limit_by_in_order, true, R"(
-Optimize `SELECT ... LIMIT N BY <cols>` queries when `<cols>` (in any order) form a prefix of the table's sorting key, or become one after `WHERE col = const` fixes leading columns. With this enabled the source reads data in primary-key order, so rows with equal values of the `BY` columns arrive adjacent to each other within each stream. When the data arrives in a single sorted stream, `LIMIT BY` filters it in streaming mode with O(1) memory, instead of building a hash table of every distinct combination of `BY` columns seen. When the sorted data arrives in multiple streams and the same `BY` values can appear in more than one of them, each stream is first prefiltered in streaming mode down to at most `LIMIT + OFFSET` rows per group, then the streams are combined and a final hash-based `LIMIT BY` deduplicates groups that span several streams. That final pass still keeps an entry for every distinct combination of `BY` columns, but it only processes the prefiltered rows.
-)", 0) \
-    DECLARE(Bool, keeper_map_strict_mode, false, R"(
-Enforce additional checks during operations on KeeperMap. E.g. throw an exception on an insert for already existing key
-)", 0) \
-    DECLARE_WITH_ALIAS(UInt64, extract_key_value_pairs_max_pairs_per_row, 1000, R"(
-Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory.
-)", 0, extract_kvp_max_pairs_per_row) \
-    DECLARE(Bool, restore_replace_external_engines_to_null, false, R"(
-For testing purposes. Replaces all external engines to Null to not initiate external connections.
-)", 0) \
-    DECLARE(Bool, restore_replace_external_table_functions_to_null, false, R"(
-For testing purposes. Replaces all external table functions to Null to not initiate external connections.
-)", 0) \
-    DECLARE(Bool, restore_replace_external_dictionary_source_to_null, false, R"(
-Replace external dictionary sources to Null on restore. Useful for testing purposes
-)", 0) \
-        /* Parallel replicas */ \
-    DECLARE_WITH_ALIAS(UInt64, allow_experimental_parallel_reading_from_replicas, 0, R"(
-Use up to `max_parallel_replicas` the number of replicas from each shard for SELECT query execution. Reading is parallelized and coordinated dynamically. 0 - disabled, 1 - enabled, silently disable them in case of failure, 2 - enabled, throw an exception in case of failure
-)", 0, enable_parallel_replicas) \
-    DECLARE(UInt64, automatic_parallel_replicas_mode, 0, R"(
-Enable automatic switching to execution with parallel replicas based on collected statistics. Requires `enable_analyzer = 1`, `enable_parallel_replicas != 0`, `parallel_replicas_local_plan = 1` and providing `cluster_for_parallel_replicas`.
-0 - disabled, 1 - enabled, 2 - only statistics collection is enabled (switching to execution with parallel replicas is disabled).
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, automatic_parallel_replicas_min_bytes_per_replica, 1_MiB, R"(
-Threshold of bytes to read per replica to enable parallel replicas automatically (applies only when `automatic_parallel_replicas_mode`=1). 0 means no threshold.
-The total number of bytes to read is estimated based on the collected statistics.
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, max_parallel_replicas, 1000, R"(
-The maximum number of replicas for each shard when executing a query.
-
-Possible values:
-
-- Positive integer.
-
-**Additional Info**
-
-This options will produce different results depending on the settings used.
-
-### Parallel processing using `SAMPLE` key
-
-A query may be processed faster if it is executed on several servers in parallel. But the query performance may degrade in the following cases:
-
-- The position of the sampling key in the partitioning key does not allow efficient range scans.
-- Adding a sampling key to the table makes filtering by other columns less efficient.
-- The sampling key is an expression that is expensive to calculate.
-- The cluster latency distribution has a long tail, so that querying more servers increases the query overall latency.
-
-### Parallel processing using [parallel_replicas_custom_key](#parallel_replicas_custom_key)
-
-This setting is useful for any replicated table.
-)", 0) \
-    DECLARE(ParallelReplicasMode, parallel_replicas_mode, ParallelReplicasMode::READ_TASKS, R"(
-Type of filter to use with custom key for parallel replicas. default - use modulo operation on the custom key, range - use range filter on custom key using all possible values for the value type of custom key.
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_count, 0, R"(
-This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the number of parallel replicas participating in query processing.
-)", BETA) \
-    DECLARE(UInt64, parallel_replica_offset, 0, R"(
-This is internal setting that should not be used directly and represents an implementation detail of the 'parallel replicas' mode. This setting will be automatically set up by the initiator server for distributed queries to the index of the replica participating in query processing among parallel replicas.
-)", BETA) \
-    DECLARE(String, parallel_replicas_custom_key, "", R"(
-An arbitrary integer expression that can be used to split work between replicas for a specific table.
-The value can be any integer expression.
-
-Simple expressions using primary keys are preferred.
-
-If the setting is used on a cluster that consists of a single shard with multiple replicas, those replicas will be converted into virtual shards.
-Otherwise, it will behave same as for `SAMPLE` key, it will use multiple replicas of each shard.
-)", BETA) \
-    DECLARE(UInt64, parallel_replicas_custom_key_range_lower, 0, R"(
-Allows the filter type `range` to split the work evenly between replicas based on the custom range `[parallel_replicas_custom_key_range_lower, INT_MAX]`.
-
-When used in conjunction with [parallel_replicas_custom_key_range_upper](#parallel_replicas_custom_key_range_upper), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
-
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing.
-)", BETA) \
-    DECLARE(UInt64, parallel_replicas_custom_key_range_upper, 0, R"(
-Allows the filter type `range` to split the work evenly between replicas based on the custom range `[0, parallel_replicas_custom_key_range_upper]`. A value of 0 disables the upper bound, setting it the max value of the custom key expression.
-
-When used in conjunction with [parallel_replicas_custom_key_range_lower](#parallel_replicas_custom_key_range_lower), it lets the filter evenly split the work over replicas for the range `[parallel_replicas_custom_key_range_lower, parallel_replicas_custom_key_range_upper]`.
-
-Note: This setting will not cause any additional data to be filtered during query processing, rather it changes the points at which the range filter breaks up the range `[0, INT_MAX]` for parallel processing
-)", BETA) \
-    DECLARE(String, cluster_for_parallel_replicas, "", R"(
-Cluster for a shard in which current server is located
-
-Cloud default value: `default`.
-)", 0) \
-    DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
-If true, subquery for IN will be executed on every follower replica.
-)", 0) \
-    DECLARE(Bool, parallel_replicas_for_non_replicated_merge_tree, false, R"(
-If true, ClickHouse will use parallel replicas algorithm also for non-replicated MergeTree tables
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_min_number_of_rows_per_replica, 0, R"(
-Limit the number of replicas used in a query to (estimated rows to read / min_number_of_rows_per_replica). The max is still limited by 'max_parallel_replicas'
-)", 0) \
-    DECLARE(Bool, parallel_replicas_prefer_local_join, true, R"(
-If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN.
-)", 0) \
-    DECLARE(UInt64, parallel_replicas_mark_segment_size, 0, R"(
-Parts virtually divided into segments to be distributed between replicas for parallel reading. This setting controls the size of these segments. Not recommended to change until you're absolutely sure in what you're doing. Value should be in range [128; 16384]
-)", 0) \
-    DECLARE(Bool, parallel_replicas_local_plan, true, R"(
-Build local plan for local replica
-)", 0) \
-    DECLARE(Bool, parallel_replicas_plan_based, false, R"(
-Express the parallel replicas local/remote boundary as a plan transformation. The planner builds a plain local plan; a split step is then inserted above the reading step and replaced with a `UNION` of a local read and a remote read of the part of the plan below the split step, so that fragment runs on the replicas while the rest runs on the coordinator. Experimental, takes precedence over `parallel_replicas_local_plan`.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
-When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
-When disabled, the local replica is not given any preference and replicas are selected purely by the load balancing algorithm.
-This allows queries with `max_parallel_replicas = 1` to be directed to another host, which can improve cache locality when many short queries are distributed across a cluster.
-)", 0) \
-    DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
-Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
-)", 0) \
-    DECLARE(Bool, parallel_replicas_support_projection, true, R"(
-Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
-)", 0) \
-    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
-The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
-)", 0) \
-    DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
-Use local pipeline during distributed INSERT SELECT with parallel replicas
-)", 0) \
-    DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
-The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
-)", 0) \
-    DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
-Replace table function engines with their -Cluster alternatives
-)", 0) \
-    DECLARE(Bool, parallel_replicas_allow_materialized_views, true, R"(
-Allow usage of materialized views with parallel replicas
-)", 0) \
-    DECLARE(Bool, parallel_replicas_filter_pushdown, false, R"(
-Allow pushing down filters to part of query which parallel replicas choose to execute
-)", BETA) \
-    DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
-Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
-)", BETA) \
-    DECLARE(Bool, distributed_index_analysis, false, R"(
-Index analysis will be distributed across replicas.
-Beneficial for shared storage and huge amount of data in cluster.
-Uses replicas from cluster_for_parallel_replicas.
-
-**See also**
-
-- [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
-- [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
-- [distributed_index_analysis_min_indexes_bytes_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_bytes_to_activate)
-)", EXPERIMENTAL) \
-    DECLARE(Bool, distributed_index_analysis_only_on_coordinator, false, R"(
-If enabled, distributed index analysis runs only on the coordinator.
-This prevents O(N^2) spawned queries when the predicate contains subqueries (e.g., `IN (SELECT ...)`),
-because each follower replica would otherwise independently trigger its own distributed index analysis,
-but makes distributed index analysis less efficient if large tables are used in the subqueries.
-)", 0) \
-    DECLARE(Bool, distributed_index_analysis_for_non_shared_merge_tree, false, R"(
-Enable distributed index analysis even for non SharedMergeTree (cloud only engine).
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
-
-Cloud default value: `1`.
-)", BETA, allow_database_iceberg) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_unity_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
-
-Cloud default value: `1`.
-)", BETA, allow_database_unity_catalog) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_database_glue_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
-
-Cloud default value: `1`.
-)", BETA, allow_database_glue_catalog) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
-Allow the analyzer.
-)", IMPORTANT, enable_analyzer) \
-    DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
-Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`).
-)", 0) \
-    DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
-Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
-    )", 0) \
-    DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
-When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the old analyzer (`enable_analyzer = 0`). Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
-)", 0) \
-    DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
-When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
-)", 0) \
-    DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
-Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
-)", 0) \
-    \
-    DECLARE(Timezone, session_timezone, "", R"(
-Sets the implicit time zone of the current session or query.
-The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
-The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](../server-configuration-parameters/settings.md/#timezone).
-
-You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
-
-Possible values:
-
--    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
-
-Examples:
-
-```sql
-SELECT timeZone(), serverTimeZone() FORMAT CSV
-
-"Europe/Berlin","Europe/Berlin"
-```
-
-```sql
-SELECT timeZone(), serverTimeZone() SETTINGS session_timezone = 'Asia/Novosibirsk' FORMAT CSV
-
-"Asia/Novosibirsk","Europe/Berlin"
-```
-
-Assign session time zone 'America/Denver' to the inner DateTime without explicitly specified time zone:
-
-```sql
-SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zurich') SETTINGS session_timezone = 'America/Denver' FORMAT TSV
-
-1999-12-13 07:23:23.123
-```
-
-:::warning
-Not all functions that parse DateTime/DateTime64 respect `session_timezone`. This can lead to subtle errors.
-See the following example and explanation.
-:::
-
-```sql
-CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
-
-SELECT *, timeZone() FROM test_tz WHERE d = toDateTime('2000-01-01 00:00:00') SETTINGS session_timezone = 'Asia/Novosibirsk'
-0 rows in set.
-
-SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS session_timezone = 'Asia/Novosibirsk'
-â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€dâ”€â”¬â”€timeZone()â”€â”€â”€â”€â”€â”€â”€â”
-â”‚ 2000-01-01 00:00:00 â”‚ Asia/Novosibirsk â”‚
-â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
-```
-
-This happens due to different parsing pipelines:
-
-- `toDateTime()` without explicitly given time zone used in the first `SELECT` query honors setting `session_timezone` and the global time zone.
-- In the second query, a DateTime is parsed from a String, and inherits the type and time zone of the existing column`d`. Thus, setting `session_timezone` and the global time zone are not honored.
-
-**See also**
-
-- [timezone](../server-configuration-parameters/settings.md/#timezone)
-)", BETA) \
-DECLARE(Bool, create_if_not_exists, false, R"(
-Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting or `IF NOT EXISTS` is specified and a table with the provided name already exists, no exception will be thrown.
-)", 0) \
-    DECLARE(Bool, enforce_strict_identifier_format, false, R"(
-If enabled, only allow identifiers containing alphanumeric characters and underscores.
-)", 0) \
-    DECLARE(UInt64, max_limit_for_vector_search_queries, 1'000, R"(
-SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
-)", 0) \
-    DECLARE(UInt64, hnsw_candidate_list_size_for_search, 256, R"(
-The size of the dynamic candidate list when searching the vector similarity index, also known as 'ef_search'.
-)", 0) \
-    DECLARE(Bool, vector_search_with_rescoring, false, R"(
-If ClickHouse performs rescoring for queries that use the vector similarity index.
-Without rescoring, the vector similarity index returns the rows containing the best matches directly.
-With rescoring, the vector similarity index fetches candidate rows and ClickHouse computes the exact distance
-for these rows from the original full-precision vectors in the regular SQL pipeline.
-When possible, ClickHouse filters the scan to candidate rows before the final distance computation.
-Increase `vector_search_index_fetch_multiplier` if more candidate rows are needed for better recall, especially
-with additional filters or quantized vector indexes.
-Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
-)", 0) \
-    DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
-If a vector search query has a WHERE clause, this setting determines if it is evaluated first (pre-filtering) OR if the vector similarity index is checked first (post-filtering). Possible values:
-- 'auto' - Postfiltering (the exact semantics may change in future).
-- 'postfilter' - Use vector similarity index to identify the nearest neighbours, then apply other filters
-- 'prefilter' - Evaluate other filters first, then perform brute-force search to identify neighbours.
-)", 0) \
-    DECLARE_WITH_ALIAS(Float, vector_search_index_fetch_multiplier, 1.0, R"(
-Multiply the number of fetched nearest neighbors from the vector similarity index by this number. Only applied for post-filtering with other predicates or if setting 'vector_search_with_rescoring = 1'. Valid range: [1.0, 1000.0]. Values outside this range are rejected.
-)", 0, vector_search_postfilter_multiplier) \
-    DECLARE(Bool, vector_search_use_quantized_codes, false, R"(
-Enables a two-stage approximate vector search without index (brute force scan) over a `Quantized`-compressed column. When enabled, `ORDER BY L2Distance|cosineDistance(vec, reference) LIMIT k` against a column encoded with a `Quantized(...)` codec will
-1. scan and filter the quantized vectors (this step produces `k * vector_search_index_fetch_multiplier` results), and
-2. rescore the found vectors against original, full-precision vectors.
-)", 0) \
-    DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
-)", 0) \
-    DECLARE(Bool, implicit_select, false, R"(
-Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
-
-In `clickhouse-local` it is enabled by default and can be explicitly disabled.
-)", 0) \
-    DECLARE(Bool, optimize_extract_common_expressions, true, R"(
-Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
-- indices in simple filtering expressions
-- cross to inner join optimization
-)", 0) \
-    DECLARE(Bool, optimize_and_compare_chain, true, R"(
-Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
-)", 0) \
-    DECLARE(Bool, optimize_redundant_comparisons, true, R"(
-Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
-)", 0) \
-    DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
-Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
-)", 0) \
-    DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
-Enable pushing user roles from originator to other nodes while performing a query.
-)", 0) \
-    DECLARE(Bool, use_join_disjunctions_push_down, true, R"(
-Enable pushing OR-connected parts of JOIN conditions down to the corresponding input sides ("partial pushdown").
-This allows storage engines to filter earlier, which can reduce data read.
-The optimization is semantics-preserving and is applied only when each top-level OR branch contributes at least one deterministic
-predicate for the target side.
-)", 0) \
-    DECLARE(Bool, shared_merge_tree_sync_parts_on_partition_operations, true, R"(
-Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
-)", 0) \
-    DECLARE(String, implicit_table_at_top_level, "", R"(
-If not empty, queries without FROM at the top level will read from this table instead of system.one.
-
-This is used in clickhouse-local for input data processing.
-The setting could be set explicitly by a user but is not intended for this type of usage.
-
-Subqueries are not affected by this setting (neither scalar, FROM, or IN subqueries).
-SELECTs at the top level of UNION, INTERSECT, EXCEPT chains are treated uniformly and affected by this setting, regardless of their grouping in parentheses.
-It is unspecified how this setting affects views and distributed queries.
-
-The setting accepts a table name (then the table is resolved from the current database) or a qualified name in the form of 'database.table'.
-Both database and table names have to be unquoted - only simple identifiers are allowed.
-)", 0) \
-    DECLARE(Bool, allow_general_join_planning, true, R"(
-Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
-)", 0) \
-    DECLARE(ObjectStorageGranularityLevel, cluster_table_function_split_granularity, ObjectStorageGranularityLevel::FILE, R"(
-Controls how data is split into tasks when executing a CLUSTER TABLE FUNCTION.
-
-This setting defines the granularity of work distribution across the cluster:
-- `file` â€” each task processes an entire file.
-- `bucket` â€” tasks are created per internal data block within a file (for example, Parquet row groups).
-
-Choosing finer granularity (like `bucket`) can improve parallelism when working with a small number of large files.
-For instance, if a Parquet file contains multiple row groups, enabling `bucket` granularity allows each group to be processed independently by different workers.
-)", 0) \
-    DECLARE(UInt64, cluster_table_function_buckets_batch_size, 0, R"(
-Defines the approximate size of a batch (in bytes) used in distributed processing of tasks in cluster table functions with `bucket` split granularity. The system accumulates data until at least this amount is reached. The actual size may be slightly larger to align with data boundaries.
-)", 0) \
-    DECLARE(UInt64, merge_table_max_tables_to_look_for_schema_inference, 1000, R"(
-When creating a `Merge` table without an explicit schema or when using the `merge` table function, infer schema as a union of not more than the specified number of matching tables.
-If there is a larger number of tables, the schema will be inferred from the first specified number of tables.
-)", 0) \
-    DECLARE(Bool, validate_enum_literals_in_operators, false, R"(
-If enabled, validate enum literals in operators like `IN`, `NOT IN`, `==`, `!=` against the enum type and throw an exception if the literal is not a valid enum value.
-)", 0) \
-    \
-    DECLARE(UInt64, max_autoincrement_series, 1000, R"(
-The limit on the number of series created by the `generateSerialID` function.
-
-As each series represents a node in Keeper, it is recommended to have no more than a couple of millions of them.
-)", 0) \
-    DECLARE(Bool, use_hive_partitioning, true, R"(
-When enabled, ClickHouse will detect Hive-style partitioning in path (`/name=value/`) in file-like table engines [File](/sql-reference/table-functions/file#hive-style-partitioning)/[S3](/sql-reference/table-functions/s3#hive-style-partitioning)/[URL](/sql-reference/table-functions/url#hive-style-partitioning)/[HDFS](/sql-reference/table-functions/hdfs#hive-style-partitioning)/[AzureBlobStorage](/sql-reference/table-functions/azureBlobStorage#hive-style-partitioning) and will allow to use partition columns as virtual columns in the query. These virtual columns will have the same names as in the partitioned path, but starting with `_`.
-)", 0) \
-    DECLARE(UInt64, parallel_hash_join_threshold, 100'000, R"(
-When hash-based join algorithm is applied, this threshold helps to decide between using `hash` and `parallel_hash` (only if estimation of the right table size is available).
-The former is used when we know that the right table size is below the threshold.
-)", 0) \
-    DECLARE(Bool, apply_settings_from_server, true, R"(
-Whether the client should accept settings from server.
-
-This only affects operations performed on the client side, in particular parsing the INSERT input data and formatting the query result. Most of query execution happens on the server and is not affected by this setting.
-
-Normally this setting should be set in user profile (users.xml or queries like `ALTER USER`), not through the client (client command line arguments, `SET` query, or `SETTINGS` section of `SELECT` query). Through the client it can be changed to false, but can't be changed to true (because the server won't send the settings if user profile has `apply_settings_from_server = false`).
-
-Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
-)", 0) \
-    DECLARE(Bool, allow_archive_path_syntax, true, R"(
-File/S3 engines/table function will parse paths with '::' as `<archive> :: <file>` if the archive has correct extension.
-)", 0) \
-    DECLARE(S3UriStyle, s3_uri_style, S3UriStyle::AUTO, R"(
-Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.
-)", 0) \
-    DECLARE(Milliseconds, low_priority_query_wait_time_ms, 1000, R"(
-When the query prioritization mechanism is employed (see setting `priority`), low-priority queries wait for higher-priority queries to finish. This setting specifies the duration of waiting.
-)", BETA) \
-    DECLARE(UInt64, iceberg_insert_max_rows_in_data_file, 1000000, R"(
-Max rows of iceberg parquet data file on insert operation.
-)", 0) \
-    DECLARE(UInt64, iceberg_insert_max_bytes_in_data_file, 1_GiB, R"(
-Max bytes of iceberg parquet data file on insert operation.
-)", 0) \
-    DECLARE(UInt64, iceberg_insert_max_partitions, 100, R"(
-Max allowed partitions count per one insert operation for Iceberg table engine.
-)", 0) \
-    DECLARE(Bool, database_datalake_require_metadata_access, true, R"(
-Either to throw error or not if we don't have rights to get table's metadata in database engine DataLakeCatalog.
-)", 0) \
-    DECLARE(Float, min_os_cpu_wait_time_ratio_to_throw, 0.0, "Min ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 0 at this point.", 0) \
-    DECLARE(Float, max_os_cpu_wait_time_ratio_to_throw, 0.0, "Max ratio between OS CPU wait (OSCPUWaitMicroseconds metric) and busy (OSCPUVirtualTimeMicroseconds metric) times to consider rejecting queries. Linear interpolation between min and max ratio is used to calculate the probability, the probability is 1 at this point.", 0) \
-    DECLARE(Bool, enable_producing_buckets_out_of_order_in_aggregation, true, R"(
-Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
-It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
-The downside is potentially higher memory usage.
-)", 0) \
-    DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
-    DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
-Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
-
-### What is a Resize Node
-A `Resize` node is a processor in the query pipeline that adjusts the number of data streams flowing through the pipeline. It can either increase or decrease the number of streams to balance the workload across multiple threads or processors. For example, if a query requires more parallelism, the `Resize` node can split a single stream into multiple streams. Conversely, it can merge multiple streams into fewer streams to consolidate data processing.
-
-The `Resize` node ensures that data is evenly distributed across streams, maintaining the structure of the data blocks. This helps optimize resource utilization and improve query performance.
-
-### Why the Resize Node Needs to Be Split
-During pipeline execution, ExecutingGraph::Node::status_mutex of the centrally-hubbed `Resize` node is heavily contended especially in high-core-count environments, and this contention leads to:
-1. Increased latency for ExecutingGraph::updateNode, directly impacting query performance.
-2. Excessive CPU cycles are wasted in spin-lock contention (native_queued_spin_lock_slowpath), degrading efficiency.
-3. Reduced CPU utilization, limiting parallelism and throughput.
-
-### How the Resize Node Gets Split
-1. The number of output streams is checked to ensure the split could be performed: the output streams of each split processor meet or exceed the `min_outstreams_per_resize_after_split` threshold.
-2. The `Resize` node is divided into smaller `Resize` nodes with equal count of ports, each handling a subset of input and output streams.
-3. Each group is processed independently, reducing the lock contention.
-
-### Splitting Resize Node with Arbitrary Inputs/Outputs
-In some cases, where the inputs/outputs are indivisible by the number of split `Resize` nodes, some inputs are connected to `NullSource`s and some outputs are connected to `NullSink`s. This allows the split to occur without affecting the overall data flow.
-
-### Purpose of the Setting
-The `min_outstreams_per_resize_after_split` setting ensures that the splitting of `Resize` nodes is meaningful and avoids creating too few streams, which could lead to inefficient parallel processing. By enforcing a minimum number of output streams, this setting helps maintain a balance between parallelism and overhead, optimizing query execution in scenarios involving stream splitting and merging.
-
-### Disabling the Setting
-To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
-)", 0) \
-    DECLARE(Bool, enable_add_distinct_to_in_subqueries, false, R"(
-Enable `DISTINCT` in `IN` subqueries. This is a trade-off setting: enabling it can greatly reduce the size of temporary tables transferred for distributed IN subqueries and significantly speed up data transfer between shards, by ensuring only unique values are sent.
-However, enabling this setting adds extra merging effort on each node, as deduplication (DISTINCT) must be performed. Use this setting when network transfer is a bottleneck and the additional merging cost is acceptable.
-)", 0) \
-    DECLARE(UInt64, function_date_trunc_return_type_behavior, 0, R"(
-Allows to change the behaviour of the result type of `dateTrunc` function.
-
-Possible values:
-
-- 0 - When the second argument is `DateTime64/Date32` the return type will be `DateTime64/Date32` regardless of the time unit in the first argument.
-- 1 - For `Date32` the result is always `Date`. For `DateTime64` the result is `DateTime` for time units `second` and higher.
-)", 0) \
-    DECLARE(Bool, query_plan_remove_unused_columns, true, R"(
-Toggles a query-plan-level optimization which tries to remove unused columns (both input and output columns) from query plan steps.
-Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
-
-:::note
-This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
-:::
-
-Possible values:
-
-- 0 - Disable
-- 1 - Enable
-)", 0) \
-    DECLARE(Bool, jemalloc_enable_profiler, false, R"(
-Enable jemalloc profiler for the query. Jemalloc will sample allocations and all deallocations for sampled allocations.
-Profiles can be flushed using SYSTEM JEMALLOC FLUSH PROFILE which can be used for allocation analysis.
-Samples can also be stored in system.trace_log using config jemalloc_collect_global_profile_samples_in_trace_log or with query setting jemalloc_collect_profile_samples_in_trace_log.
-See [Allocation Profiling](/operations/allocation-profiling))", 0) \
-    DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
-Collect jemalloc allocation and deallocation samples in trace log.
-)", 0) \
-    DECLARE(JemallocProfileFormat, jemalloc_profile_text_output_format, JemallocProfileFormat::Collapsed, R"(
-Output format for jemalloc heap profile in system.jemalloc_profile_text table. Can be: 'raw' (raw profile), 'symbolized' (jeprof format with symbols), or 'collapsed' (FlameGraph format).
-)", 0) \
-    DECLARE(Bool, jemalloc_profile_text_symbolize_with_inline, true, R"(
-Whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included which can slow down symbolization process drastically; when disabled, they are skipped. Only affects 'symbolized' and 'collapsed' output formats.
-)", 0) \
-    DECLARE(Bool, jemalloc_profile_text_collapsed_use_count, false, R"(
-When using the 'collapsed' output format for jemalloc heap profile, aggregate by allocation count instead of bytes. When false (default), each stack is weighted by live bytes; when true, by live allocation count.
-)", 0) \
-    DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
-Linux nice value for query processing threads. Lower values mean higher CPU priority.
-
-Requires CAP_SYS_NICE capability, otherwise no-op.
-
-Possible values: -20 to 19.
-)", 0, os_thread_priority) \
-    DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
-Linux nice value for materialized view threads. Lower values mean higher CPU priority.
-
-Requires CAP_SYS_NICE capability, otherwise no-op.
-
-Possible values: -20 to 19.
-)", 0) \
-    DECLARE(Bool, show_processlist_include_internal, 1, R"(
-Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
-
-Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
-)", 0) \
-    DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
-Use roaring bitmap for iceberg positional deletes.
-)", 0) \
-    DECLARE(Bool, inject_random_order_for_select_without_order_by, false, R"(
-If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY clause.
-Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
-If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
-Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
-)", 0) \
-    DECLARE(Int64, optimize_const_name_size, 256, R"(
-Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
-
-Possible values:
-
-- positive integer - max length of the name,
-- 0 â€” always,
-- negative integer - never.
-)", 0) \
-    DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, R"(
-Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.
-)", 0) \
-    DECLARE(UInt64, s3_path_filter_limit, 1000, R"(
-Maximum number of `_path` values that can be extracted from query filters to use for file iteration
-instead of glob listing. 0 means disabled.
-)", 0) \
-    DECLARE(Bool, ignore_on_cluster_for_replicated_database, false, R"(
-Always ignore ON CLUSTER clause for DDL queries with replicated databases.
-)", 0) \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_nullable_tuple_type, false, R"(
-Allows creation of [Nullable](../../sql-reference/data-types/nullable) [Tuple](../../sql-reference/data-types/tuple.md) columns in tables.
-
-This setting does not control whether extracted tuple subcolumns can be `Nullable` (for example, from Dynamic, Variant, JSON, or Tuple columns).
-Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted tuple subcolumns can be `Nullable`.
-)", BETA, enable_nullable_tuple_type) \
-    DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
-Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \
-    DECLARE(UInt64, shared_merge_tree_sequential_consistency_initial_parts_update_backoff_ms, 50, R"(
-Initial backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
-)", 0) \
-    DECLARE(UInt64, shared_merge_tree_sequential_consistency_max_parts_update_backoff_ms, 1000, R"(
-Max backoff in milliseconds for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
-)", 0) \
-    DECLARE(UInt64, shared_merge_tree_sequential_consistency_parts_update_max_retries, 10, R"(
-Max retries for parts update when using `select_sequential_consistency` with `SharedMergeTree`. Only available in ClickHouse Cloud.
-)", 0) \
-    DECLARE(UInt64, max_bytes_before_external_join, 0, R"(
-If set to a non-zero value and `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto`, the hash join will automatically be converted to grace hash join to enable spilling to disk when the right-side data exceeds this many bytes. When set to 0 (default), this absolute byte threshold is disabled, but automatic spilling may still occur via `max_bytes_ratio_before_external_join` (which defaults to `0.5`); set both to `0` to fully disable automatic spilling. It prevents read in order through join optimization.
-)", 0) \
-    DECLARE(Double, max_bytes_ratio_before_external_join, 0.5, R"(
-The ratio of available memory that is allowed for `JOIN`. Once reached, the hash join will be converted to grace hash join to spill the right-side data to disk.
-
-For example, if set to `0.6`, `JOIN` will allow using `60%` of the available memory (to server/user/merges) for the right-side hash table at the beginning of the execution; after that, it starts spilling to disk.
-
-If both `max_bytes_before_external_join` and `max_bytes_ratio_before_external_join` are set, the smaller resulting threshold is used. If the ratio is `0`, only the absolute setting applies.
-
-Has effect only when `join_algorithm` is `hash`, `parallel_hash`, `default`, or `auto` and a temporary data path is configured.
-)", 0) \
-    DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(
-Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range.
-)", 0) \
-    DECLARE(UInt64, query_plan_max_limit_for_join_lazy_indexing, 1000, R"(Control maximum limit value that allows to use query plan for lazy indexing optimization in JOIN. If zero, there is no limit.
-)", 0) \
-    DECLARE(UInt64, query_plan_min_columns_for_join_lazy_indexing, 3, R"(
-Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN. 0 means the optimization is disabled.
-)", 0) \
-    \
-    /* ####################################################### */ \
-    /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
-    /* ## ADD PRODUCTION / BETA FEATURES BEFORE THIS BLOCK  ## */ \
-    /* ####################################################### */ \
-    \
-    DECLARE(Bool, allow_experimental_materialized_postgresql_table, false, R"(
-Allows to use the MaterializedPostgreSQL table engine. Disabled by default, because this feature is experimental
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_funnel_functions, false, R"(
-Enable experimental functions for funnel analysis.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_nlp_functions, false, R"(
-Enable experimental functions for natural language processing.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_hash_functions, false, R"(
-Enable experimental hash functions
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_time_series_table, false, R"(
-Allows creation of tables with the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine. Possible values:
-- 0 â€” the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is disabled.
-- 1 â€” the [TimeSeries](../../engines/table-engines/integrations/time-series.md) table engine is enabled.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_queue_table_engine, false, R"(
-Allows creation of tables with the experimental `Queue` table engine.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
-Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
-)", EXPERIMENTAL) \
-    DECLARE(UniqueKeyProbeImplementation, unique_key_probe_implementation, UniqueKeyProbeImplementation::Auto, R"(
-Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
-baseline exists, so `auto` and `simple` both resolve to it.
-
-Reserved: this setting has no effect yet â€” the value is not read until the UNIQUE KEY INSERT
-write path that constructs the probe is wired up. Declared now so the lever ships with the
-implementation.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_unique_key, false, R"(
-Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_codecs, false, R"(
-If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, throw_on_unsupported_query_inside_transaction, true, R"(
-Throw exception if unsupported query is used inside transaction
-)", EXPERIMENTAL) \
-    DECLARE(TransactionsWaitCSNMode, wait_changes_become_visible_after_commit_mode, TransactionsWaitCSNMode::WAIT_UNKNOWN, R"(
-Wait for committed changes to become actually visible in the latest snapshot
-)", EXPERIMENTAL) \
-    DECLARE(Bool, implicit_transaction, false, R"(
-If enabled and not already inside a transaction, wraps the query inside a full transaction (begin + commit or rollback)
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_initial_buckets, 1, R"(
-Initial number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, grace_hash_join_max_buckets, 1024, R"(
-Limit on the number of grace hash join buckets
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_to_sort_minimum_perkey_rows, 40, R"(
-The lower limit of per-key average rows in the right table to determine whether to rerange the right table by key in left or inner join. This setting ensures that the optimization is not applied for sparse table keys
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_to_sort_maximum_table_rows, 10000, R"(
-The maximum number of rows in the right table to determine whether to rerange the right table by key in left or inner join.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_join_right_table_sorting, false, R"(
-If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_json_lazy_type_hints, false, R"(
-Enable experimental lazy type hints for JSON type. This feature allows optimizing JSON type conversions by deferring type hint evaluation.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_streaming_queries, false, R"(
-Allow `SELECT ... FROM t STREAM [CURSOR '{...}']` continuous queries.
-When off, any table expression using the `STREAM` modifier is rejected
-at plan-build time. This is the umbrella gate for the streaming-queries
-feature; additional capabilities may be gated by their own settings.
-)", EXPERIMENTAL) \
-     \
-    DECLARE_WITH_ALIAS(Bool, allow_statistics_optimize, true, R"(
-Allows using statistics to optimize queries
-)", 0, allow_statistic_optimize) \
-    DECLARE_WITH_ALIAS(Bool, use_statistics, true, R"( /// preferred over 'allow_statistics_optimize' because of consistency with 'use_primary_key' and 'use_skip_indexes'
-Allows using statistics to optimize queries
-)", 0, allow_statistic_optimize) \
-    DECLARE_WITH_ALIAS(Bool, allow_statistics, true, R"(
-Allows defining columns with [statistics](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-creating-a-table) and [manipulate statistics](../../engines/table-engines/mergetree-family/mergetree.md/#column-statistics).
-)", 0, allow_experimental_statistics) \
-    DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0) \
-    \
-    DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
-If set to true, allow using the text index.
-)", 0, allow_experimental_full_text_index) \
-    DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
-Allow to perform full text search filtering using only the inverted text index in query plan.
-)", 0) \
-    DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
-Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
-)", 0) \
-    DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
-Maximal selectivity of the filter to use the hint built from the inverted text index.
-)", 0) \
-    DECLARE(Bool, use_text_index_like_evaluation_by_dictionary_scan, true, R"(
-Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
-)", 0) \
-    DECLARE(UInt64, text_index_like_min_pattern_length, 4, R"(
-Minimum length of the alphanumeric needle in a LIKE/ILIKE pattern required to use the text index LIKE evaluation by the dictionary scan.
-Patterns shorter than this threshold match too many dictionary tokens and are skipped to avoid expensive scans.
-
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
-)", 0) \
-    DECLARE(UInt64, text_index_like_max_postings_to_read, 50, R"(
-Maximum number of large postings to read when text index LIKE evaluation by the dictionary scan is enabled.
-
-Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
-)", 0) \
-    DECLARE(Bool, use_text_index_tokens_cache, true, R"(
-Whether to cache deserialized text index token infos in memory.
-Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
-)", 0) \
-    DECLARE(Bool, use_text_index_header_cache, true, R"(
-Whether to cache deserialized text index headers in memory.
-Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
-)", 0) \
-    DECLARE(Bool, use_text_index_postings_cache, false, R"(
-Whether to cache deserialized text index deserialized posting lists in memory.
-Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
-)", 0) \
-    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
-Controls how posting lists are applied during text index queries.
-'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
-'lazy' uses cursor-based on-demand decoding (requires an index format with a serialized codec).
-)", 0) \
-    DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
-Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
-Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
-)", 0, text_index_density_threshold) \
-    DECLARE(Bool, allow_experimental_window_view, false, R"(
-Enable WINDOW VIEW. Not mature enough.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_clean_interval, 60, R"(
-The clean interval of window view in seconds to free outdated data.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, window_view_heartbeat_interval, 15, R"(
-The heartbeat interval in seconds to indicate watch query is alive.
-)", EXPERIMENTAL) \
-    DECLARE(Seconds, wait_for_window_view_fire_signal_timeout, 10, R"(
-Timeout for waiting for window view fire signal in event time processing
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
-On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, allow_experimental_database_materialized_postgresql, false, R"(
-Allow to create database with Engine=MaterializedPostgreSQL(...).
-)", EXPERIMENTAL) \
-    \
-    DECLARE(Bool, allow_nullable_tuple_in_extracted_subcolumns, false, R"(
-Controls whether extracted subcolumns of type `Tuple(...)` can be typed as `Nullable(Tuple(...))`.
-
-- `false`: Return `Tuple(...)` and use default tuple values for rows where the subcolumn is missing.
-- `true`: Return `Nullable(Tuple(...))` and use `NULL` for rows where the subcolumn is missing.
-
-This setting controls extracted subcolumn behavior only.
-It does not control whether `Nullable(Tuple(...))` columns can be created in tables; that is controlled by `enable_nullable_tuple_type`.
-
-ClickHouse uses the value for this setting loaded at server startup.
-Changes made with `SET` or query-level `SETTINGS` do not change extracted subcolumn behavior.
-To change extracted subcolumn behavior, update `allow_nullable_tuple_in_extracted_subcolumns` in startup profile configuration (for example, users.xml) and restart the server.
-)", 0) \
-    \
-    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
-Enable Kusto Query Language (KQL) - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
-Enable PRQL - an alternative to SQL.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
-Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
-)", EXPERIMENTAL) \
-    DECLARE(String, polyglot_dialect, "", R"(
-Source SQL dialect for the polyglot transpiler (e.g. 'sqlite', 'mysql', 'postgresql', 'snowflake', 'duckdb').
-)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Trigger processor to spill data into external storage adpatively. grace join is supported at present.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_delta_kernel_rs, true, R"(
-Allow experimental delta-kernel-rs implementation.
-)", BETA) \
-    DECLARE_WITH_ALIAS(Bool, allow_insert_into_iceberg, false, R"(
-Allow to execute `insert` queries into iceberg.
-)", BETA, allow_experimental_insert_into_iceberg) \
-    DECLARE(Bool, allow_experimental_cleanup_old_data_files_compaction, false, R"(
-Allow to clean up old data files during Iceberg compaction.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_iceberg_compaction, false, R"(
-Allow to explicitly use 'OPTIMIZE' for iceberg tables.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, iceberg_manifest_min_count_to_compact, 30, R"(
-Minimum number of manifest files required to trigger manifest-only compaction via OPTIMIZE TABLE ... MANIFEST.
-If the current number of manifest files is less than or equal to this threshold, compaction is skipped.
-Requires allow_experimental_iceberg_compaction to be enabled.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_iceberg_remove_orphan_files, false, R"(
-Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, iceberg_orphan_files_older_than_seconds, 259200, R"(
-Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
-Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, write_full_path_in_iceberg_metadata, false, R"(
-Write full paths (including s3://) into iceberg metadata files.
-)", EXPERIMENTAL) \
-    DECLARE(String, iceberg_metadata_compression_method, "", R"(
-Method to compress `.metadata.json` file.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, make_distributed_plan, false, R"(
-Make distributed query plan.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, distributed_plan_execute_locally, false, R"(
-Run all tasks of a distributed query plan locally. Useful for testing and debugging.
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, distributed_plan_default_shuffle_join_bucket_count, 8, R"(
-Default number of buckets for distributed shuffle-hash-join.
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, distributed_plan_default_reader_bucket_count, 8, R"(
-Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, distributed_plan_optimize_exchanges, true, R"(
-Removes unnecessary exchanges in distributed query plan. Disable it for debugging.
-)", 0) \
-    DECLARE(UInt64, distributed_plan_workers_num, 0, R"(
-How many stateless workers will be used to execute this query. Zero disables stateless-worker leasing for distributed plans.
-)", EXPERIMENTAL) \
-    DECLARE(String, distributed_plan_force_exchange_kind, "", R"(
-Force specified kind of Exchange operators between distributed query stages.
-
-Possible values:
-
- - '' - do not force any kind of Exchange operators, let the optimizer choose,
- - 'Persisted' - use temporary files in object storage,
- - 'Streaming' - stream exchange data over network.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, distributed_plan_max_rows_to_broadcast, 20000, R"(
-Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
-Serialize the distributed query plan for execution at replicas.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
-Experimental table engine for integration with YTsaurus.
-)", EXPERIMENTAL) \
-DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
-Experimental dictionary source for integration with YTsaurus.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
-Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, enable_join_runtime_filters, true, R"(
-Filter left side by set of JOIN keys collected from the right side at runtime.
-)", BETA) \
-    DECLARE(UInt64, join_runtime_filter_exact_values_limit, 10000, R"(
-Maximum number of elements in runtime filter that are stored as is in a set, when this threshold is exceeded it switches to bloom filter.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_bloom_filter_bytes, 512_KiB, R"(
-Size in bytes of a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_bloom_filter_hash_functions, 3, R"(
-Number of hash functions in a bloom filter used as JOIN runtime filter (see enable_join_runtime_filters setting).
-)", EXPERIMENTAL) \
-    DECLARE(Double, join_runtime_filter_pass_ratio_threshold_for_disabling, 0.7, R"(
-If ratio of passed rows to checked rows is greater than this threshold the runtime filter is considered as poorly performing and is disabled for the next `join_runtime_filter_blocks_to_skip_before_reenabling` blocks to reduce the overhead.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_filter_blocks_to_skip_before_reenabling, 30, R"(
-Number of blocks that are skipped before trying to dynamically re-enable a runtime filter that previously was disabled due to poor filtering ratio.
-)", EXPERIMENTAL) \
-    DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
-If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
-If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
-When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
-)", 0) \
-    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
-Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
-Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
-)", 0) \
-    DECLARE(Bool, rewrite_in_to_join, false, R"(
-Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.
-)", EXPERIMENTAL) \
-    \
-    /** Experimental timeSeries* aggregate functions. */ \
-    DECLARE_WITH_ALIAS(Bool, allow_experimental_time_series_aggregate_functions, false, R"(
-Experimental timeSeries* aggregate functions for Prometheus-like timeseries resampling, rate, delta calculation.
-)", EXPERIMENTAL, allow_experimental_ts_to_grid_aggregate_function) \
-    \
-    DECLARE(String, promql_database, "", R"(
-Specifies the database name used by the 'promql' dialect. Empty string means the current database.
-)", EXPERIMENTAL) \
-    \
-    DECLARE(String, promql_table, "", R"(
-Specifies the name of a TimeSeries table used by the 'promql' dialect.
-)", EXPERIMENTAL) \
-    \
-    DECLARE_WITH_ALIAS(FloatAuto, promql_evaluation_time, Field("auto"), R"(
-Sets the evaluation time to be used with promql dialect. 'auto' means the current time.
-)", EXPERIMENTAL, evaluation_time) \
-    DECLARE(Bool, allow_experimental_paimon_storage_engine, false, R"(
-Allow to create tables with Paimon* table engines.
-)", EXPERIMENTAL) \
-    DECLARE(Int64, paimon_target_snapshot_id, -1, R"(
-Query-level targeted snapshot read for Paimon incremental mode. When >0, the reader will only fetch the delta
-for the specified snapshot_id without advancing the committed watermark.
-Default: -1 (disabled)
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, max_consume_snapshots, 0, R"(
-Maximum number of Paimon snapshots to consume per incremental read. 0 means no limit.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, use_paimon_partition_pruning, false, R"(
-Use Paimon partition pruning for Paimon table functions
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
-Allow to use hive partitioning with S3Queue/AzureQueue engines
-)", EXPERIMENTAL) \
-DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
-Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
- - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
- - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
- - 'dpsub' - implements DPsub algorithm which supports both inner and non-inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
- - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
-Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
-Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, webassembly_udf_max_fuel, 100'000, R"(
-Fuel limit per WebAssembly UDF instance execution. Each WebAssembly instruction consumes some amount of fuel. The value is scaled by 1024 before being passed to the runtime, so `webassembly_udf_max_fuel = 1` corresponds to approximately 1024 fuel units. Set to 0 for no finite limit. Applies only to functions whose per-function setting `webassembly_udf_enable_fuel` is true, which is the default.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, webassembly_udf_max_memory, 128_MiB, R"(
-Memory limit in bytes per WebAssembly UDF instance.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, webassembly_udf_max_input_block_size, 0, R"(
-Maximum number of rows passed to a WebAssembly UDF in a single block. Set to 0 to process all rows at once.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, webassembly_udf_max_instances, 32, R"(
-Maximum number of WebAssembly UDF instances that can run in parallel per function.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
-Enable experimental table function `eval`.
-)", EXPERIMENTAL) \
-    \
-    /* ####################################################### */ \
-    /* AI function settings */ \
-    DECLARE(Bool, allow_experimental_ai_functions, false, R"(
-Enable experimental AI functions (e.g. `aiGenerateContent`). These functions make external HTTP calls to AI providers.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_request_timeout_sec, 60, R"(
-Timeout in seconds for individual HTTP requests made by AI functions (AI chat completions and embedding API calls). If a request does not complete within this time, it is considered failed and may be retried according to `ai_function_max_retries`.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_max_retries, 0, R"(
-Maximum number of retry attempts for transient errors per individual API request. Each retry uses exponential backoff starting from `ai_function_retry_initial_delay_ms`.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_retry_initial_delay_ms, 1000, R"(
-Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, ai_function_throw_on_error, true, R"(
-If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
-
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 â€” use `ai_function_max_api_calls_per_query` instead to bound such calls.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
-
-This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to embedding functions (notably aiEmbed), which never produce output tokens.
-)", EXPERIMENTAL) \
-    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
-)", EXPERIMENTAL) \
-    DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
-)", EXPERIMENTAL) \
-    DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
-Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
-)", EXPERIMENTAL) \
-    DECLARE(String, ai_function_text_default_credentials, "", R"(
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
-)", EXPERIMENTAL) \
-    DECLARE(String, ai_function_embedding_default_credentials, "", R"(
-Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
-)", EXPERIMENTAL) \
-    /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
-    /* ####################################################### */ \
-
-// End of COMMON_SETTINGS
-// Please add settings related to formats in Core/FormatFactorySettings.h, move obsolete settings to OBSOLETE_SETTINGS and obsolete format settings to OBSOLETE_FORMAT_SETTINGS.
-
-#define OBSOLETE_SETTINGS(M, ALIAS) \
-    /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
-    MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
-    MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
-    MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \
-    MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
-    MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
-    MAKE_OBSOLETE(M, Bool, enable_debug_queries, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_database_atomic, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_bigint_types, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_window_functions, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_geo_types, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_query_cache, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_alter_materialized_view_structure, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_shared_merge_tree, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_database_replicated, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_refreshable_materialized_view, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_text_index_lazy_apply, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_statistic, false) \
-    MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \
-    MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
-    MAKE_OBSOLETE(M, Bool, allow_deprecated_snowflake_conversion_functions, false) \
-    \
-    MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
-    MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
-    MAKE_OBSOLETE(M, Bool, database_replicated_ddl_output, true) \
-    MAKE_OBSOLETE(M, UInt64, replication_alter_columns_timeout, 60) \
-    MAKE_OBSOLETE(M, UInt64, odbc_max_field_size, 0) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_map_type, true) \
-    MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60) \
-    MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_parts_interval_seconds, 1) \
-    MAKE_OBSOLETE(M, UInt64, partial_merge_join_optimizations, 0) \
-    MAKE_OBSOLETE(M, MaxThreads, max_alter_threads, 0) \
-    MAKE_OBSOLETE(M, Bool, use_mysql_types_in_show_columns, false) \
-    MAKE_OBSOLETE(M, Bool, s3queue_allow_experimental_sharded_mode, false) \
-    MAKE_OBSOLETE(M, LightweightMutationProjectionMode, lightweight_mutation_projection_mode, LightweightMutationProjectionMode::THROW) \
-    MAKE_OBSOLETE(M, Bool, use_local_cache_for_remote_storage, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_join_condition, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_variant_type, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_dynamic_type, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_json_type, true) \
-    MAKE_OBSOLETE(M, Bool, enable_variant_type, true) \
-    MAKE_OBSOLETE(M, Bool, enable_dynamic_type, true) \
-    MAKE_OBSOLETE(M, Bool, enable_json_type, true) \
-    MAKE_OBSOLETE(M, Bool, s3_slow_all_threads_after_retryable_error, false) \
-    MAKE_OBSOLETE(M, Bool, azure_sdk_use_native_client, true) \
-    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_order_by, false) \
-    MAKE_OBSOLETE(M, Bool, allow_not_comparable_types_in_comparison_functions, false) \
-    MAKE_OBSOLETE(M, Bool, enable_zstd_qat_codec, false) \
-    MAKE_OBSOLETE(M, Bool, enable_deflate_qpl_codec, false) \
-    MAKE_OBSOLETE(M, Bool, throw_if_deduplication_in_dependent_materialized_views_enabled_with_async_insert, false) \
-\
-    /* moved to config.xml: see also src/Core/ServerSettings.h */ \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_buffer_flush_schedule_pool_size, 16) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_pool_size, 16) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, Float, background_merges_mutations_concurrency_ratio, 2) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_move_pool_size, 8) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_fetches_pool_size, 8) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_common_pool_size, 8) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_schedule_pool_size, 128) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_message_broker_schedule_pool_size, 16) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_distributed_schedule_pool_size, 16) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_read_network_bandwidth_for_server, 0) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_write_network_bandwidth_for_server, 0) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, async_insert_threads, 16) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_fetches_network_bandwidth_for_server, 0) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_sends_network_bandwidth_for_server, 0) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_entries_for_hash_table_stats, 10'000) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS) \
-    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS) \
-    /* ---- */ \
-    MAKE_OBSOLETE(M, DefaultDatabaseEngine, default_database_engine, DefaultDatabaseEngine::Atomic) \
-    MAKE_OBSOLETE(M, UInt64, max_pipeline_depth, 0) \
-    MAKE_OBSOLETE(M, Seconds, temporary_live_view_timeout, 1) \
-    MAKE_OBSOLETE(M, Seconds, periodic_live_view_refresh, 60) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_live_view, false) \
-    MAKE_OBSOLETE(M, Seconds, live_view_heartbeat_interval, 15) \
-    MAKE_OBSOLETE(M, UInt64, max_live_view_insert_blocks_before_refresh, 64) \
-    MAKE_OBSOLETE(M, Milliseconds, async_insert_cleanup_timeout_ms, 1000) \
-    MAKE_OBSOLETE(M, Bool, optimize_fuse_sum_count_avg, 0) \
-    MAKE_OBSOLETE(M, Seconds, drain_timeout, 3) \
-    MAKE_OBSOLETE(M, UInt64, backup_threads, 16) \
-    MAKE_OBSOLETE(M, UInt64, restore_threads, 16) \
-    MAKE_OBSOLETE(M, Bool, optimize_duplicate_order_by_and_distinct, false) \
-    MAKE_OBSOLETE(M, UInt64, parallel_replicas_min_number_of_granules_to_enable, 0) \
-    MAKE_OBSOLETE(M, ParallelReplicasCustomKeyFilterType, parallel_replicas_custom_key_filter_type, ParallelReplicasCustomKeyFilterType::DEFAULT) \
-    MAKE_OBSOLETE(M, Bool, query_plan_optimize_projection, true) \
-    MAKE_OBSOLETE(M, Bool, query_cache_store_results_of_queries_with_nondeterministic_functions, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_annoy_index, false) \
-    MAKE_OBSOLETE(M, UInt64, max_threads_for_annoy_index_creation, 4) \
-    MAKE_OBSOLETE(M, Int64, annoy_index_search_k_nodes, -1) \
-    MAKE_OBSOLETE(M, Int64, max_limit_for_ann_queries, -1) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_usearch_index, false) \
-    MAKE_OBSOLETE(M, Bool, optimize_move_functions_out_of_any, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_undrop_table_query, true) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_s3queue, true) \
-    MAKE_OBSOLETE(M, Bool, text_index_use_bloom_filter, true) \
-    MAKE_OBSOLETE(M, Bool, query_plan_optimize_primary_key, true) \
-    MAKE_OBSOLETE(M, Bool, optimize_monotonous_functions_in_order_by, false) \
-    MAKE_OBSOLETE(M, UInt64, http_max_chunk_size, 100_GiB) \
-    MAKE_OBSOLETE(M, Bool, iceberg_engine_ignore_schema_evolution, false) \
-    MAKE_OBSOLETE(M, Float, parallel_replicas_single_task_marks_count_multiplier, 2) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_database_materialized_mysql, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_shared_set_join, true) \
-    MAKE_OBSOLETE(M, UInt64, min_external_sort_block_bytes, 100_MiB) \
-    MAKE_OBSOLETE(M, UInt64, distributed_cache_read_alignment, 0) \
-    MAKE_OBSOLETE(M, Bool, use_json_alias_for_old_object_type, false) \
-    MAKE_OBSOLETE(M, Bool, describe_extend_object_types, false) \
-    MAKE_OBSOLETE(M, Bool, allow_experimental_object_type, false) \
-    MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
-    MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
-    MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
-    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
-    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
-    /** The section above is for obsolete settings. Do not add anything there. */
-#endif /// __CLION_IDE__
-
-
-#define LIST_OF_SETTINGS(M, ALIAS)     \
-    COMMON_SETTINGS(M, ALIAS)          \
-    OBSOLETE_SETTINGS(M, ALIAS)        \
-    FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
-
-// clang-format on
-
-DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS, COMMON_SETTINGS_SUPPORTED_TYPES)
-
-/** Settings of query execution.
-  * These settings go to users.xml.
-  */
-struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
-{
-    SettingsImpl() = default;
-
-    /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
-        * The profile can also be set using the `set` functions, like the profile setting.
-        */
-    void setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config);
-
-    /// Load settings from configuration file, at "path" prefix in configuration.
-    void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);
-
-    /// Dumps profile events to column of type Map(String, String)
-    void dumpToMapColumn(IColumn * column, bool changed_only = true);
-
-    /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
-    std::map<String, String> changedToMap() const;
-
-    /// Check that there is no user-level settings at the top level in config.
-    /// This is a common source of mistake (user don't know where to write user-level setting).
-    static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
-
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
-
-    void set(std::string_view name, const Field & value) override;
-
-    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
-    void resetSettingsChangedByCompatibility();
-
-private:
-    void applyCompatibilitySetting(const String & compatibility);
-
-    UnorderedSetWithMemoryTracking<std::string_view> settings_changed_by_compatibility_setting;
-};
-
-/** Set the settings from the profile (in the server configuration, many settings can be listed in one profile).
-    * The profile can also be set using the `set` functions, like the `profile` setting.
-    */
-void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config)
-{
-    String elem = "profiles." + profile_name;
-
-    if (!config.has(elem))
-        throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "There is no profile '{}' in configuration file.", profile_name);
-
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(elem, config_keys);
-
-    for (const std::string & key : config_keys)
-    {
-        if (key == "constraints")
-            continue;
-        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
-            setProfile(config.getString(elem + "." + key), config);
-        else
-            set(key, config.getString(elem + "." + key));
-    }
-}
-
-void SettingsImpl::loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config)
-{
-    if (!config.has(path))
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no path '{}' in configuration file.", path);
-
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(path, config_keys);
-
-    for (const std::string & key : config_keys)
-    {
-        set(key, config.getString(path + "." + key));
-    }
-}
-
-void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
-{
-    if (!column)
-        return;
-
-    auto & column_map = typeid_cast<ColumnMap &>(*column);
-    auto & offsets = column_map.getNestedColumn().getOffsets();
-
-    auto & tuple_column = column_map.getNestedData();
-    auto & key_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(0));
-    auto & value_column = typeid_cast<ColumnLowCardinality &>(tuple_column.getColumn(1));
-
-    size_t size = 0;
-
-    /// Iterate over standard settings
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); i++)
-    {
-        if (changed_only && !accessor.isValueChanged(*this, i))
-            continue;
-
-        const auto & name = accessor.getName(i);
-        auto value = accessor.getValueString(*this, i);
-        key_column.insertData(name.data(), name.size());
-        value_column.insertData(value.data(), value.size());
-        ++size;
-    }
-
-    /// Iterate over the custom settings
-    for (const auto & custom : custom_settings_map)
-    {
-        const auto & setting_field = custom.second;
-        if (changed_only && !setting_field.changed)
-            continue;
-
-        const auto & name = custom.first;
-        auto value = setting_field.toString();
-        key_column.insertData(name.data(), name.size());
-        value_column.insertData(value.data(), value.size());
-        ++size;
-    }
-
-    offsets.push_back(offsets.back() + size);
-}
-
-std::map<String, String> SettingsImpl::changedToMap() const
-{
-    std::map<String, String> result;
-
-    const auto & accessor = Traits::Accessor::instance();
-    for (size_t i = 0; i < accessor.size(); ++i)
-        if (accessor.isValueChanged(*this, i))
-            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
-
-    for (const auto & custom : custom_settings_map)
-        if (custom.second.changed)
-            result.emplace(custom.first, custom.second.toString());
-
-    return result;
-}
-
-void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
-{
-    if (config.getBool("skip_check_for_incorrect_settings", false))
-        return;
-
-    SettingsImpl settings;
-    for (const auto & setting : settings.all())
-    {
-        const auto & name = setting.getName();
-        bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop";
-        if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
-        {
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
-                " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
-                " You can add it to <profiles><default> if you want to change default value of this setting."
-                " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
-                " in the main configuration file.",
-                name, config_path);
-        }
-    }
-}
-
-VectorWithMemoryTracking<String> SettingsImpl::getAllRegisteredNames() const
-{
-    VectorWithMemoryTracking<String> all_settings;
-    for (const auto & setting_field : all())
-        all_settings.push_back(setting_field.getName());
-    return all_settings;
-}
-
-void SettingsImpl::set(std::string_view name, const Field & value)
-{
-    if (name == "compatibility")
-    {
-        if (value.getType() != Field::Types::Which::String)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
-        applyCompatibilitySetting(value.safeGet<String>());
-    }
-    /// If we change setting that was changed by compatibility setting before
-    /// we should remove it from settings_changed_by_compatibility_setting,
-    /// otherwise the next time we will change compatibility setting
-    /// this setting will be changed too (and we don't want it).
-    /// Resolve aliases so the lookup matches the canonical names stored in the set.
-    else if (auto final_name = SettingsTraits::resolveName(name); settings_changed_by_compatibility_setting.contains(final_name))
-        settings_changed_by_compatibility_setting.erase(final_name);
-
-    BaseSettings::set(name, value);
-}
-
-void SettingsImpl::resetSettingsChangedByCompatibility()
-{
-    for (const auto & setting_name : settings_changed_by_compatibility_setting)
-        resetToDefault(setting_name);
-
-    settings_changed_by_compatibility_setting.clear();
-}
-
-void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
-{
-    /// First, revert all changes applied by previous compatibility setting
-    resetSettingsChangedByCompatibility();
-
-    /// If setting value is empty, we don't need to change settings
-    if (compatibility_value.empty())
-        return;
-
-    ClickHouseVersion version(compatibility_value);
-    const auto & settings_changes_history = getSettingsChangesHistory();
-    /// Iterate through ClickHouse version in descending order and apply reversed
-    /// changes for each version that is higher that version from compatibility setting
-    for (auto it = settings_changes_history.rbegin(); it != settings_changes_history.rend(); ++it)
-    {
-        if (version >= it->first)
-            break;
-
-        /// Apply reversed changes from this version.
-        for (const auto & change : it->second)
-        {
-            /// In case the alias is being used (e.g. use enable_analyzer) we must change the original setting
-            auto final_name = SettingsTraits::resolveName(change.name);
-
-            if (getTier(final_name) == SettingsTierType::OBSOLETE)
-                continue;
-
-            /// If this setting was changed manually, we don't change it
-            if (isChanged(final_name) && !settings_changed_by_compatibility_setting.contains(final_name))
-                continue;
-
-            /// Don't mark as changed if the value isn't really changed
-            if (get(final_name) == change.previous_value)
-                continue;
-
-            BaseSettings::set(final_name, change.previous_value);
-            settings_changed_by_compatibility_setting.insert(final_name);
-        }
-    }
-}
-
-IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SettingsTraits, LIST_OF_SETTINGS, Settings, Setting)
-
-Settings::Settings()
-    : impl(std::make_unique<SettingsImpl>())
-{}
-
-Settings::Settings(const Settings & settings)
-    : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{}
-
-Settings::Settings(Settings && settings) noexcept = default;
-
-Settings::~Settings() = default;
-
-Settings & Settings::operator=(const Settings & other)
-{
-    if (&other == this)
-        return *this;
-    *impl = *other.impl;
-    return *this;
-}
-
-bool Settings::operator==(const Settings & other) const
-{
-    return *impl == *other.impl;
-}
-
-COMMON_SETTINGS_SUPPORTED_TYPES(Settings, IMPLEMENT_SETTING_SUBSCRIPT_OPERATOR)
-
-bool Settings::has(std::string_view name) const
-{
-    return impl->has(name);
-}
-
-bool Settings::isChanged(std::string_view name) const
-{
-    return impl->isChanged(name);
-}
-
-SettingsTierType Settings::getTier(std::string_view name) const
-{
-    return impl->getTier(name);
-}
-
-std::string_view Settings::getDescription(std::string_view name) const
-{
-    return impl->getDescription(name);
-}
-
-std::string_view Settings::getTypeName(std::string_view name) const
-{
-    return impl->getTypeName(name);
-}
-
-String Settings::getDefaultValueString(std::string_view name) const
-{
-    return impl->getDefaultValueString(name);
-}
-
-bool Settings::tryGet(std::string_view name, Field & value) const
-{
-    return impl->tryGet(name, value);
-}
-
-Field Settings::get(std::string_view name) const
-{
-    return impl->get(name);
-}
-
-void Settings::set(std::string_view name, const Field & value)
-{
-    impl->set(name, value);
-}
-
-void Settings::setDefaultValue(std::string_view name)
-{
-    impl->resetToDefault(name);
-}
-
-bool Settings::hasSettingsChangedByCompatibility() const
-{
-    return impl->hasSettingsChangedByCompatibility();
-}
-
-void Settings::resetSettingsChangedByCompatibility()
-{
-    impl->resetSettingsChangedByCompatibility();
-}
-
-VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
-{
-    return impl->getHints(name);
-}
-
-String Settings::toString() const
-{
-    return impl->toString();
-}
-
-SettingsChanges Settings::changes() const
-{
-    return impl->changes();
-}
-
-void Settings::applyChanges(const SettingsChanges & changes)
-{
-    impl->applyChanges(changes);
-}
-
-VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
-{
-    VectorWithMemoryTracking<std::string_view> setting_names;
-    for (const auto & setting : impl->all())
-    {
-        setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-VectorWithMemoryTracking<std::string_view> Settings::getAllAliasNames() const
-{
-    VectorWithMemoryTracking<std::string_view> alias_names;
-    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
-    for (const auto & [_, aliases] : settings_to_aliases)
-    {
-        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
-    }
-    return alias_names;
-}
-
-VectorWithMemoryTracking<std::string_view> Settings::getChangedAndObsoleteNames() const
-{
-    VectorWithMemoryTracking<std::string_view> setting_names;
-    for (const auto & setting : impl->allChanged())
-    {
-        if (setting.getTier() == SettingsTierType::OBSOLETE)
-            setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-VectorWithMemoryTracking<std::string_view> Settings::getUnchangedNames() const
-{
-    VectorWithMemoryTracking<std::string_view> setting_names;
-    for (const auto & setting : impl->allUnchanged())
-    {
-        setting_names.emplace_back(setting.getName());
-    }
-    return setting_names;
-}
-
-void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const
-{
-    MutableColumns & res_columns = params.res_columns;
-
-    const auto fill_data_for_setting = [&](std::string_view setting_name, const auto & setting)
-    {
-        res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-
-        /// Trim starting/ending newline.
-        std::string_view doc = setting.getDescription();
-        if (!doc.empty() && doc[0] == '\n')
-            doc = doc.substr(1);
-        if (!doc.empty() && doc[doc.length() - 1] == '\n')
-            doc = doc.substr(0, doc.length() - 1);
-
-        res_columns[3]->insert(doc);
-
-        Field min;
-        Field max;
-        std::vector<Field> disallowed_values;
-        SettingConstraintWritability writability = SettingConstraintWritability::WRITABLE;
-        params.constraints.get(*this, setting_name, min, max, disallowed_values, writability);
-
-        /// These two columns can accept strings only.
-        if (!min.isNull())
-            min = Settings::valueToStringUtil(setting_name, min);
-        if (!max.isNull())
-            max = Settings::valueToStringUtil(setting_name, max);
-
-        Array disallowed_array;
-        for (const auto & value : disallowed_values)
-            disallowed_array.emplace_back(Settings::valueToStringUtil(setting_name, value));
-
-        res_columns[4]->insert(min);
-        res_columns[5]->insert(max);
-        res_columns[6]->insert(disallowed_array);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getDefaultValueString());
-        res_columns[11]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[12]->insert(setting.getTier());
-    };
-
-    const auto & settings_to_aliases = SettingsImpl::Traits::settingsToAliases();
-    for (const auto & setting : impl->all())
-    {
-        const auto & setting_name = setting.getName();
-        res_columns[0]->insert(setting_name);
-
-        fill_data_for_setting(setting_name, setting);
-        res_columns[10]->insert("");
-
-        if (auto it = settings_to_aliases.find(setting_name); it != settings_to_aliases.end())
-        {
-            for (const auto alias : it->second)
-            {
-                res_columns[0]->insert(alias);
-                fill_data_for_setting(alias, setting);
-                res_columns[10]->insert(setting_name);
-            }
-        }
-    }
-}
-
-void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
-{
-    impl->dumpToMapColumn(column, changed_only);
-}
-
-std::map<String, String> Settings::changedToMap() const
-{
-    return impl->changedToMap();
-}
-
-void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
-{
-    for (const auto & [name, value] : parameters)
-    {
-        BaseSettingsHelpers::writeString(name, out);
-        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
-        BaseSettingsHelpers::writeString(SettingFieldCustom(Field(value)).toString(), out);
-    }
-    BaseSettingsHelpers::writeString(std::string_view{}, out);
-}
-
-NameToNameMap readQueryParameters(ReadBuffer & in)
-{
-    NameToNameMap parameters;
-    while (true)
-    {
-        String name = BaseSettingsHelpers::readString(in);
-        if (name.empty())
-            break;
-        std::ignore = BaseSettingsHelpers::readFlags(in);
-        String value;
-        ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
-        readQuoted(value, buf);
-        parameters.insert_or_assign(std::move(name), std::move(value));
-    }
-    return parameters;
-}
-
-void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
-{
-    impl->write(out, format);
-}
-
-void Settings::read(ReadBuffer & in, SettingsWriteFormat format)
-{
-    impl->read(in, format);
-}
-
-void Settings::writeEmpty(WriteBuffer & out)
-{
-    BaseSettingsHelpers::writeString("", out);
-}
-
-void Settings::addToProgramOptions(boost::program_options::options_description & options)
-{
-    addProgramOptions(*impl, options);
-}
-
-void Settings::addToProgramOptions(std::string_view setting_name, boost::program_options::options_description & options)
-{
-    const auto & accessor = SettingsImpl::Traits::Accessor::instance();
-    size_t index = accessor.find(setting_name);
-    chassert(index != static_cast<size_t>(-1));
-    auto on_program_option = boost::function1<void, const std::string &>(
-            [this, setting_name](const std::string & value)
-            {
-                this->set(setting_name, value);
-            });
-    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index).data()))); // NOLINT
-}
-
-void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const
-{
-    addProgramOptionsAsMultitokens(*impl, options);
-}
-
-void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, const boost::program_options::variables_map &options, bool repeated_settings) const
-{
-    for (const auto & setting : impl->all())
-    {
-        const auto & name = setting.getName();
-        if (options.contains(name))
-        {
-            if (repeated_settings)
-                config.setString(name, options[name].as<Strings>().back());
-            else
-                config.setString(name, options[name].as<String>());
-        }
-    }
-}
-
-Field Settings::castValueUtil(std::string_view name, const Field & value)
-{
-    return SettingsImpl::castValueUtil(name, value);
-}
-
-String Settings::valueToStringUtil(std::string_view name, const Field & value)
-{
-    return SettingsImpl::valueToStringUtil(name, value);
-}
-
-Field Settings::stringToValueUtil(std::string_view name, const String & str)
-{
-    return SettingsImpl::stringToValueUtil(name, str);
-}
-
-bool Settings::hasBuiltin(std::string_view name)
-{
-    return SettingsImpl::hasBuiltin(name);
-}
-
-std::string_view Settings::resolveName(std::string_view name)
-{
-    return SettingsImpl::Traits::resolveName(name);
-}
-
-void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
-{
-    SettingsImpl::checkNoSettingNamesAtTopLevel(config, config_path);
-}
-
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×½:çTèµ©hºÚn¶X§zÍHÚ[˜ÛYHÛÛ[[œËÐÛÛ[[\œ˜^Kš‚ˆÚ[˜ÛYHÛÛ[[œËÐÛÛ[[“ÝÐØ\™[˜[]Kš‚ˆÚ[˜ÛYHÛÛ[[œËÐÛÛ[[“X\š‚ˆÚ[˜ÛYHÛÛ[[œËÐÛÛ[[•\Kš‚ˆÚ[˜ÛYHÛÜ™KÐ˜\ÙTÙ][™ÜËš‚ˆÚ[˜ÛYHÛÜ™KÐ˜\ÙTÙ][™ÜÑÙXXÜ›ÜÒ[\š‚ˆÚ[˜ÛYHÛÜ™KÐ˜\ÙTÙ][™ÜÔ›ÙÜ˜[SÜ[ÛœËš‚ˆÚYˆSP“WÑTÕ’P•UQÐÐPÒBˆÚ[˜ÛYHÛÜ™KÑ\ÝšX]YØXÚQYš[™\Ëš‚ˆÙ[™Y‚ˆÚ[˜ÛYHÛÜ™KÑ›Ü›X]˜XÝÜžTÙ][™ÜËš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜËš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜÐÚ[™Ù\Ò\ÝÜžKš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜÑ[[\Ëš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜÑšY[Ëš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜÓØœÛÛ]SXXÜ›ÜËš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜÕY\•\Kš‚ˆÚ[˜ÛYHSËÔ™XYY™™\‘œ›ÛTÝš[™Ëš‚ˆÚ[˜ÛYHSËÔÌÑYš[™\Ëš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÔÞ\Ý[KÓ]]X›PÛÛ[[œÐ[™ÛÛœÝ˜Z[Ëš‚ˆÚ[˜ÛYH˜\ÙKÝ\\Ëš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ó˜[YT›Û\\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹Ý\ZYØØ\Ýš‚‚ˆÚ[˜ÛYH›ÛÜÝÜ›ÙÜ˜[WÛÜ[ÛœËš‚ˆÚ[˜ÛYHØÛËÕ][ÐXœÝ˜XÝÛÛ™šYÝ\˜][Û‹š‚ˆÚ[˜ÛYHØÛËÕ][Ð\XØ][Û‹š‚‚ˆÚ[˜ÛYHÜÝš[™Ï‚‚›˜[Y\ÜXÙBžÂˆÚYˆPÓPÒÒÕTÑWÐÓÕQ˜ÛÛœÝ^ˆR[Y˜][ÛX^ÜÚ^™WÝ×Ù›ÜHLNÂˆÙ[ÙB˜ÛÛœÝ^ˆR[Y˜][ÛX^ÜÚ^™WÝ×Ù›ÜHNÂˆÙ[™Y‚‚ˆÚYˆSP“WÑTÕ’P•UQÐÐPÒB˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝÛX^ÝšY\ÈH\ÝšX]YØXÚNŽ‘QUSÐÓÓ“‘PÕÓPVÕ’QTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÜ™XYÜ™\]Y\ÝÛX^ÝšY\ÈH\ÝšX]YØXÚNŽ‘QUSÔ‘PQÔ‘TUQTÕÓPVÕ’QTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÝÜš]WÜ™\]Y\ÝÛX^ÝšY\ÈH\ÝšX]YØXÚNŽ‘QUSÕÔ’UWÔ‘TUQTÕÓPVÕ’QTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÜ™Y[X[×Ü™Yœ™\ÚÜ\š[ÙÜÙXÛÛ™ÈH\ÝšX]YØXÚNŽ‘QUSÐÔ‘QS•PS×Ô‘Q”‘TÒÔT’SÑÔÑPÓÓ‘ÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛZ[—Û\ÈH\ÝšX]YØXÚNŽ‘QUSÐÓÓ“‘PÕÐPÒÓÑ‘—ÓRS—ÓTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛX^Û\ÈH\ÝšX]YØXÚNŽ‘QUSÐÓÓ“‘PÕÐPÒÓÑ‘—ÓPVÓTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝÝ[Y[Ý]Û\ÈH\ÝšX]YØXÚNŽ‘QUSÐÓÓ“‘PÕÕSQSÕU×ÓTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÜÙ[™Ý[Y[Ý]Û\ÈH\ÝšX]YØXÚNŽ‘QUSÔÑS‘ÕSQSÕUÓTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÜ™XÙZ]™WÝ[Y[Ý]Û\ÈH\ÝšX]YØXÚNŽ‘QUSÔ‘PÑRU‘WÕSQSÕUÓTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÝÜÚÙY\Ø[]™WÝ[Y[Ý]Û\ÈH\ÝšX]YØXÚNŽ‘QUSÕÔÒÑQTÐSU‘WÕSQSÕUÓTÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÝ\ÙWØÛY[×ØØXÚWÙ›Ü—Ü™XYH\ÝšX]YØXÚNŽ‘QUSÕTÑWÐÓQS•×ÐÐPÒWÑ“Ô—Ô‘PQÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÛX^Ý[˜XÚÙYÚ[™›YÚÜXÚÙ]ÈH\ÝšX]YØXÚNŽ“PVÕSPÒÑQÒS‘“QÒÔPÒÑUÎÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÙ]WÜXÚÙ]ØXÚ×ÝÚ[™ÝÈH\ÝšX]YØXÚNŽPÒ×ÑUWÔPÒÑUÕÒS‘ÕÎÂˆÙ[ÙB˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝÛX^ÝšY\ÈH[NÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÜ™XYÜ™\]Y\ÝÛX^ÝšY\ÈHLNÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÝÜš]WÜ™\]Y\ÝÛX^ÝšY\ÈHLNÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÜ™Y[X[×Ü™Yœ™\ÚÜ\š[ÙÜÙXÛÛ™ÈHNÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛZ[—Û\ÈHÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛX^Û\ÈHLÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝÝ[Y[Ý]Û\ÈHLÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÜÙ[™Ý[Y[Ý]Û\ÈHÌÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÜ™XÙZ]™WÝ[Y[Ý]Û\ÈHÌÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÝÜÚÙY\Ø[]™WÝ[Y[Ý]Û\ÈHŽLÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÝ\ÙWØÛY[×ØØXÚWÙ›Ü—Ü™XYHYNÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÛX^Ý[˜XÚÙYÚ[™›YÚÜXÚÙ]ÈHLNÂ˜ÛÛœÝ^ˆR[Y˜][Ù\ÝšX]YØØXÚWÙ]WÜXÚÙ]ØXÚ×ÝÚ[™ÝÈH[NÂˆÙ[™Y‚ŸB‚›˜[Y\ÜXÙH‚žÂ‚›˜[Y\ÜXÙH\œ›ÜÛÙ\ÂžÂˆ^\›ˆÛÛœÝ[T‘WÒT×Ó“×Ô“Ñ’SNÂˆ^\›ˆÛÛœÝ[“×ÑSSQS•×ÒS—ÐÓÓ‘’QÎÂˆ^\›ˆÛÛœÝ[S’Ó“ÕÓ—ÑSSQS•ÒS—ÐÓÓ‘’QÎÂˆ^\›ˆÛÛœÝ[QÐT‘ÕSQS•ÎÂŸB‚‹ÊŠˆ\ÝÙˆÙ][™ÜÎˆ\K˜[YKY˜][˜[YK\ØÜš\[Û‹›YÜÂˆ
+‚ˆ
+ˆ\ÈÛÚÜÈ˜]\ˆ[˜ÛÛ™[šY[ˆ]\ÈÛ™H]Ø^HÈ]›ÚY™\X][™ÈÙ][™ÜÈ[ˆY™™\™[XÙ\Ë‚ˆ
+ˆ›ÝNˆ\È[ˆ[\›˜]]™KÙHÛÝ[[\[Y[Ù][™ÜÈÈ™HÛÛ\][H[˜[ZXÈ[ˆH›Ü›HÙˆHX\ˆÝš[™ÈOˆšY[ˆ
+ˆ]ÙH\™H›ÝÛÚ[™ÈÈÈ]™XØ]\ÙHÙ][™ÜÈ\™H\ÙY]™\ž]Ú\™H\ÈÝ]XÈÝXÝšY[Ë‚ˆ
+‚ˆ
+ˆ›YÜØØ[ˆ[˜ÛYHHY\ˆ
+‘UHVT’SQS•S
+H[™[ˆÜ[Û˜[š]Ú\ÙHS‘Ú]STÔ•S•‚ˆ
+ˆHY˜][
+
+HYX[œÈH“ÑPÕSÓˆ™XYHÙ][™Âˆ
+‚ˆ
+ˆHÙ][™È\È’STÔ•S•ˆYˆ]Y™™XÝÈH™\Ý[ÈÙˆ]Y\šY\È[™Ø[‰Ý™HYÛ›Ü™YžHÛ\ˆ™\œÚ[ÛœË‚ˆ
+ˆY\œÎ‚ˆ
+ˆVT’SQS•SˆH™X]\™H\È[ˆXÝ]™H]™[ÜY[ÝYÙKˆ[ÜÝH›Üˆ]™[Ü\œÈÜˆ›ÜˆÛXÚÒÝ\ÙH[\ÚX\ÝË‚ˆ
+ˆ‘UNˆ\™H\™H›ÈÛ›ÝÛˆYÜÈ›Ø›[\È[ˆH[˜Ý[Û˜[]K]HÝ]ÛÛYHÙˆ\Ú[™È]ÙÙ]\ˆÚ]Ý\‚ˆ
+ˆ™X]\™\ËØÛÛ\Û™[È\È[šÛ›ÝÛˆ[™ÛÜœ™XÝ™\ÜÈ\È›ÝÝX\˜[YY‚ˆ
+ˆ“ÑPÕSÓˆ
+Y˜][
+NˆH™X]\™H\ÈØY™HÈ\ÙH[Û™ÈÚ]Ý\ˆ™X]\™\Èœ›ÛHH“ÑPÕSÓˆY\‹‚ˆ
+‚ˆ
+ˆÚ[ˆY[™È™]ÈÜˆÚ[™Ú[™È^\Ý[™ÈÙ][™ÜÈY[HÈHÙ][™ÜÈÚ[™Ù\È\ÝÜžH[ˆÙ][™ÜÐÚ[™Ù\Ò\ÝÜžK˜Üˆ
+ˆ›Üˆ˜XÚÚ[™ÈÙ][™ÜÈÚ[™Ù\È[ˆY™™\™[™\œÚ[ÛœÈ[™›ÜˆÜXÚX[ÛÛ\]Xš[]XÙ][™ÜÈÈÛÜšÈÛÜœ™XÝK‚ˆ
+‚ˆ
+ˆHÙ][™ÜÈ[ˆ\È\Ý\™H\ÙYÈ]]ÙÙ[™\˜]HHX\šÙÝÛˆØÝ[Y[][Û‹ˆ[ÝHØ[ˆš[™HØÜš\ÚXÚˆ
+ˆÙ[™\˜]\ÈHX\šÙÝÛˆœ›ÛHÛÝ\˜ÙH\™NˆÎ‹ËÙÚ]X‹˜ÛÛKÐÛXÚÒÝ\ÙKØÛXÚÚÝ\ÙKYØÜËØ›Ø‹ÛXZ[‹ÜØÜš\ËÜÙ][™ÜËØ]]ÙÙ[™\˜]K\Ù][™ÜËœÚˆ
+‚ˆ
+ˆYˆHÙ][™È\È[ˆY™™XÝÛ›H[ˆÛXÚÒÝ\ÙHÛÝY[ˆX\ÙH[˜ÛYH[ˆH\ØÜš\[ÛŽˆ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ‚ˆ
+‹Â‚‹ËÈÛ[™ËY›Ü›X]Ù™‚ˆÚYˆYš[™Y
+×ÐÓSÓ—ÒQW×ÊB‹ËËÈÓ[Ûˆœ™Y^™\È›ÜˆHZ[]H]™\žH[YH]›ØÙ\ÜÙ\È\ÂˆÙYš[™HÓÓSSÓ—ÔÑUS‘ÔÊPÓT‘KPÓT‘WÕÒUÐSPTÊBˆÙYš[™HÐ”ÓÓUWÔÑUS‘ÔÊPÓT‘KPÓT‘WÕÒUÐSPTÊBˆÙ[ÙBˆÙYš[™HÓÓSSÓ—ÔÑUS‘ÔÊPÓT‘KPÓT‘WÕÒUÐSPTÊHˆPÓT‘JX[XÝX[XÝX[XÝŽ˜ÛXÚÚÝ\ÙKˆŠ•ÚXÚX[XÝÚ[™H\ÙYÈ\œÙH]Y\žBŠH‹
+WˆPÓT‘JR[Z[—ØÛÛ\™\Ü×Ø›ØÚ×ÜÚ^™KMLÍ‹ˆŠ‘›ÜˆÓY\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›Y
+HX›\Ëˆ[ˆÜ™\ˆÈ™YXÙH][˜ÞHÚ[ˆ›ØÙ\ÜÚ[™È]Y\šY\ËH›ØÚÈ\ÈÛÛ\™\ÜÙYÚ[ˆÜš][™ÈH™^X\šÈYˆ]ÈÚ^™H\È]X\ÝZ[—ØÛÛ\™\Ü×Ø›ØÚ×ÜÚ^™XˆžHY˜][KLÍ‹‚‚•HXÝX[Ú^™HÙˆH›ØÚËYˆH[˜ÛÛ\™\ÜÙY]H\È\ÜÈ[ˆX^ØÛÛ\™\Ü×Ø›ØÚ×ÜÚ^™X\È›È\ÜÈ[ˆ\È˜[YH[™›È\ÜÈ[ˆH›Û[YHÙˆ]H›ÜˆÛ™HX\šË‚‚“]	ÜÈÛÚÈ][ˆ^[\Kˆ\ÜÝ[YH][™^ÙÜ˜[[\š]XØ\ÈÙ]ÈNLˆ\š[™ÈX›HÜ™X][Û‹‚‚•ÙH\™HÜš][™ÈHR[Ì‹]\HÛÛ[[ˆ
+ž]\È\ˆ˜[YJKˆÚ[ˆÜš][™ÈNLˆ›ÝÜËHÝ[Ú[™HÌˆÐˆÙˆ]KˆÚ[˜ÙHZ[—ØÛÛ\™\Ü×Ø›ØÚ×ÜÚ^™HHKLÍ‹HÛÛ\™\ÜÙY›ØÚÈÚ[™H›Ü›YY›Üˆ]™\žHÛÈX\šÜË‚‚•ÙH\™HÜš][™ÈHT“ÛÛ[[ˆÚ]HÝš[™È\H
+]™\˜YÙHÚ^™HÙˆŒž]\È\ˆ˜[YJKˆÚ[ˆÜš][™ÈNLˆ›ÝÜËH]™\˜YÙHÚ[™HÛYÚH\ÜÈ[ˆLÐˆÙˆ]KˆÚ[˜ÙH\È\È[Ü™H[ˆKLÍ‹HÛÛ\™\ÜÙY›ØÚÈÚ[™H›Ü›YY›ÜˆXXÚX\šËˆ[ˆ\ÈØ\ÙKÚ[ˆ™XY[™È]Hœ›ÛHH\ÚÈ[ˆH˜[™ÙHÙˆHÚ[™ÛHX\šË^˜H]HÛÛ‰Ý™HXÛÛ\™\ÜÙY‚‚ŽŽŽ››ÝB•\È\È[ˆ^\[]™[Ù][™Ë[™[ÝHÚÝ[‰ÝÚ[™ÙH]Yˆ[ÝIÜ™H\ÝÙ][™ÈÝ\YÚ]ÛXÚÒÝ\ÙK‚ŽŽŽ‚ŠH‹
+HˆPÓT‘JR[X^ØÛÛ\™\Ü×Ø›ØÚ×ÜÚ^™KLMÍ‹ˆŠ•HX^[][HÚ^™HÙˆ›ØÚÜÈÙˆ[˜ÛÛ\™\ÜÙY]H™Y›Ü™HÛÛ\™\ÜÚ[™È›ÜˆÜš][™ÈÈHX›KˆžHY˜][KMÍˆ
+HZPŠKˆÜXÚYžZ[™ÈHÛX[\ˆ›ØÚÈÚ^™HÙ[™\˜[HXYÈÈÛYÚH™YXÙYÛÛ\™\ÜÚ[Ûˆ˜][ËHÛÛ\™\ÜÚ[Ûˆ[™XÛÛ\™\ÜÚ[ÛˆÜYY[˜Ü™X\Ù\ÈÛYÚHYHÈØXÚHØØ[]K[™Y[[ÜžHÛÛœÝ[\[Ûˆ\È™YXÙY‚‚ŽŽŽ››ÝB•\È\È[ˆ^\[]™[Ù][™Ë[™[ÝHÚÝ[‰ÝÚ[™ÙH]Yˆ[ÝIÜ™H\ÝÙ][™ÈÝ\YÚ]ÛXÚÒÝ\ÙK‚ŽŽŽ‚‚‘Û‰ÝÛÛ™\ÙH›ØÚÜÈ›ÜˆÛÛ\™\ÜÚ[Ûˆ
+HÚ[šÈÙˆY[[ÜžHÛÛœÚ\Ý[™ÈÙˆž]\ÊHÚ]›ØÚÜÈ›Üˆ]Y\žH›ØÙ\ÜÚ[™È
+HÙ]Ùˆ›ÝÜÈœ›ÛHHX›JK‚ŠH‹
+HˆPÓT‘J›Û–™\›ÕR[X^Ø›ØÚ×ÜÚ^™KQUSÐ“ÐÒ×ÔÒV‘KˆŠ’[ˆÛXÚÒÝ\ÙK]H\È›ØÙ\ÜÙYžH›ØÚÜËÚXÚ\™HÙ]ÈÙˆÛÛ[[ˆ\ËˆH[\›˜[›ØÙ\ÜÚ[™ÈÞXÛ\È›ÜˆHÚ[™ÛH›ØÚÈ\™HY™šXÚY[]\™H\™H›ÝXÙXX›HÛÜÝÈÚ[ˆ›ØÙ\ÜÚ[™ÈXXÚ›ØÚË‚‚•HX^Ø›ØÚ×ÜÚ^™XÙ][™È[™XØ]\ÈH™XÛÛ[Y[™YX^[][H[X™\ˆÙˆ›ÝÜÈÈ[˜ÛYH[ˆHÚ[™ÛH›ØÚÈÚ[ˆØY[™È]Hœ›ÛHX›\Ëˆ›ØÚÜÈHÚ^™HÙˆX^Ø›ØÚ×ÜÚ^™X\™H›Ý[Ø^\ÈØYYœ›ÛHHX›NˆYˆÛXÚÒÝ\ÙH]\›Z[™\È]\ÜÈ]H™YYÈÈ™H™]šY]™YHÛX[\ˆ›ØÚÈ\È›ØÙ\ÜÙY‚‚•H›ØÚÈÚ^™HÚÝ[›Ý™HÛÈÛX[È]›ÚY›ÝXÙXX›HÛÜÝÈÚ[ˆ›ØÙ\ÜÚ[™ÈXXÚ›ØÚËˆ]ÚÝ[[ÛÈ›Ý™HÛÈ\™ÙHÈ[œÝ\™H]]Y\šY\ÈÚ]HSRUÛ]\ÙH^XÝ]H]ZXÚÛHY\ˆ›ØÙ\ÜÚ[™ÈHš\œÝ›ØÚËˆÚ[ˆÙ][™ÈX^Ø›ØÚ×ÜÚ^™XHÛØ[ÚÝ[™HÈ]›ÚYÛÛœÝ[Z[™ÈÛÈ]XÚY[[ÜžHÚ[ˆ^˜XÝ[™ÈH\™ÙH[X™\ˆÙˆÛÛ[[œÈ[ˆ][\H™XYÈ[™È™\Ù\™H]X\ÝÛÛYHØXÚHØØ[]K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÝšXÝÚ[œÙ\Ø›ØÚ×Û[Z]Ë˜[ÙKˆŠ•Ú[ˆ[˜X›YÝšXÝH[™›Ü˜Ù\È›ÝZ[š[][H[™X^[][H[œÙ\›ØÚÈÚ^™H[Z]Ë‚‚H›ØÚÈ\È[Z]YÚ[Ž‚‹HZ[ˆ™\ÚÛÈ
+S‘
+Nˆ›ÝZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈS‘Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\™H™XXÚY‚‹HX^™\ÚÛÈ
+ÔŠNˆZ]\ˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚY‚‚•Ú[ˆ\ØX›YH›ØÚÈ\È[Z]YÚ[Ž‚‹HZ[ˆ™\ÚÛÈ
+ÔŠNˆZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚY‚‚ŠŠ“›ÝJŠŽˆYˆX^Ù][™ÜÈ\™HÛX[\ˆ[ˆZ[ˆÙ][™ÜËHX^[Z]ÈZÙH™XÙY[˜ÙH[™›ØÚÜÈÚ[™H[Z]Y™Y›Ü™HZ[ˆ™\ÚÛÈ\™H™XXÚY‚‚ŠŠ“›ÝJŠŽˆ\ÈÙ][™È\È]]ÛX]XØ[H\ØX›Y›Üˆ\Þ[˜È[œÙ\Ë™XØ]\ÙH\Þ[˜È[œÙ\È]XÚ\‹Y[žHY\XØ][ÛˆÚÙ[œÈ]\™H[˜ÛÛ\]X›HÚ]›ØÚÈÜ][™È]\È™YYY›Üˆ[™›Ü˜Ù[Y[ÙˆÝšXÝ[Z]Ë‚‚‘\ØX›YžHY˜][‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›Û–™\›ÕR[X^Ú[œÙ\Ø›ØÚ×ÜÚ^™KQUSÒS”ÑT•Ð“ÐÒ×ÔÒV‘KˆŠ•HX^[][HÚ^™HÙˆ›ØÚÜÈ
+[ˆHÛÝ[Ùˆ›ÝÜÊHÈ›Ü›H›Üˆ[œÙ\[Ûˆ[ÈHX›K‚‚•\ÈÙ][™ÈÛÛ›ÛÈ›ØÚÈ›Ü›X][Ûˆ[ˆÛÈÛÛ^Î‚‚ŒKˆ›Ü›X]\œÚ[™ÎˆÚ[ˆHÙ\™\ˆ\œÙ\È›ÝËX˜\ÙY[œ]›Ü›X]È
+ÔÕ‹Õ‹”ÓÓ‘XXÚ›ÝË]ËŠHœ›ÛH[žH[\™˜XÙH
+ÛXÚÚÝ\ÙKXÛY[Ú][›[™H]KÔ”ËÜÝÜ™TÔSÚ\™H›ÝØÛÛ
+K›ØÚÜÈ\™H[Z]YÚ[Ž‚ˆH›ÝZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈS‘Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\™H™XXÚYÔ‚ˆHZ]\ˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚY‚ˆ›ÝNˆÚ[ˆ\Ú[™ÈÛXÚÚÝ\ÙKXÛY[ÜˆÛXÚÚÝ\ÙK[ØØ[È™XYœ›ÛHHš[KHÛY[]Ù[ˆ\œÙ\ÈH]H[™\ÈÙ][™È\Y\ÈÛˆHÛY[ÚYK‚‚Œ‹ˆS”ÑT•Ü\˜][ÛœÎˆ\š[™ÈS”ÑT•]Y\šY\È[™Ú[ˆ]H›ÝÜÈ›ÝYÚX]\šX[^™YšY]ÜË\ÈÙ][™ÉÜÈ™Z]š[Üˆ\[™ÈÛˆ\ÙWÜÝšXÝÚ[œÙ\Ø›ØÚ×Û[Z]Ø‚‚ˆHÚ[ˆ[˜X›Yˆ›ØÚÜÈ\™H[Z]YÚ[Ž‚ˆHZ[ˆ™\ÚÛÈ
+S‘
+Nˆ›ÝZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈS‘Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\™H™XXÚYˆHX^™\ÚÛÈ
+ÔŠNˆZ]\ˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚY‚ˆHÚ[ˆ\ØX›Yˆ›ØÚÜÈ\™H[Z]YÚ[ˆZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚYˆHX^Ú[œÙ\Ø›ØÚ×ÜÚ^™HÙ][™ÜÈ\™H›Ý[™›Ü˜ÙY‚‚”ÜÜÚX›H˜[Y\Î‚‹HÜÚ]]™H[YÙ\‹‚ŠH‹X^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÊH‘PÓT‘JR[X^Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\ËˆŠ•HX^[][HÚ^™HÙˆ›ØÚÜÈ
+[ˆž]\ÊHÈ›Ü›H›Üˆ[œÙ\[Ûˆ[ÈHX›K‚‚•\ÈÙ][™ÈÛÜšÜÈÙÙ]\ˆÚ]X^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈ[™ÛÛ›ÛÈ›ØÚÈ›Ü›X][Ûˆ[ˆHØ[YHÛÛ^ˆÙYHX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈ›Üˆ]Z[Y[™›Ü›X][ÛˆX›Ý]Ú[ˆ[™ÝÈ\ÙHÙ][™ÜÈ\™H\YY‚‚”ÜÜÚX›H˜[Y\Î‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %Ù][™ÈÙ\È›Ý\XÚ\]H[ˆ›ØÚÈ›Ü›X][Û‹‚ŠH‹
+H‘PÓT‘JR[Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜËQUSÒS”ÑT•Ð“ÐÒ×ÔÒV‘KˆŠ•HZ[š[][HÚ^™HÙˆ›ØÚÜÈ
+[ˆ›ÝÜÊHÈ›Ü›H›Üˆ[œÙ\[Ûˆ[ÈHX›K‚‚•\ÈÙ][™ÈÛÛ›ÛÈ›ØÚÈ›Ü›X][Ûˆ[ˆÛÈÛÛ^Î‚‚ŒKˆ›Ü›X]\œÚ[™ÎˆÚ[ˆHÙ\™\ˆ\œÙ\È›ÝËX˜\ÙY[œ]›Ü›X]È
+ÔÕ‹Õ‹”ÓÓ‘XXÚ›ÝË]ËŠHœ›ÛH[žH[\™˜XÙH
+ÛXÚÚÝ\ÙKXÛY[Ú][›[™H]KÔ”ËÜÝÜ™TÔSÚ\™H›ÝØÛÛ
+K›ØÚÜÈ\™H[Z]YÚ[Ž‚ˆH›ÝZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈS‘Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\™H™XXÚYÔ‚ˆHZ]\ˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚY‚ˆ›ÝNˆÚ[ˆ\Ú[™ÈÛXÚÚÝ\ÙKXÛY[ÜˆÛXÚÚÝ\ÙK[ØØ[È™XYœ›ÛHHš[KHÛY[]Ù[ˆ\œÙ\ÈH]H[™\ÈÙ][™È\Y\ÈÛˆHÛY[ÚYK‚‚Œ‹ˆS”ÑT•Ü\˜][ÛœÎˆ\š[™ÈS”ÑT•]Y\šY\È[™Ú[ˆ]H›ÝÜÈ›ÝYÚX]\šX[^™YšY]ÜË\ÈÙ][™ÉÜÈ™Z]š[Üˆ\[™ÈÛˆ\ÙWÜÝšXÝÚ[œÙ\Ø›ØÚ×Û[Z]Ø‚‚ˆHÚ[ˆ[˜X›Yˆ›ØÚÜÈ\™H[Z]YÚ[Ž‚ˆHZ[ˆ™\ÚÛÈ
+S‘
+Nˆ›ÝZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈS‘Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\™H™XXÚYˆHX^™\ÚÛÈ
+ÔŠNˆZ]\ˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚY‚ˆHÚ[ˆ\ØX›Y
+Y˜][
+Nˆ›ØÚÜÈ\™H[Z]YÚ[ˆZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈÔˆZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\È\È™XXÚYˆHX^Ú[œÙ\Ø›ØÚ×ÜÚ^™HÙ][™ÜÈ\™H›Ý[™›Ü˜ÙY‚‚”ÜÜÚX›H˜[Y\Î‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %Ù][™ÈÙ\È›Ý\XÚ\]H[ˆ›ØÚÈ›Ü›X][Û‹‚ŠH‹
+HˆPÓT‘JR[Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\Ë
+QUSÒS”ÑT•Ð“ÐÒ×ÔÒV‘H
+ˆMŠKˆŠ•HZ[š[][HÚ^™HÙˆ›ØÚÜÈ
+[ˆž]\ÊHÈ›Ü›H›Üˆ[œÙ\[Ûˆ[ÈHX›K‚‚•\ÈÙ][™ÈÛÜšÜÈÙÙ]\ˆÚ]Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈ[™ÛÛ›ÛÈ›ØÚÈ›Ü›X][Ûˆ[ˆHØ[YHÛÛ^È
+›Ü›X]\œÚ[™È[™S”ÑT•Ü\˜][ÛœÊKˆÙYHZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÈ›Üˆ]Z[Y[™›Ü›X][ÛˆX›Ý]Ú[ˆ[™ÝÈ\ÙHÙ][™ÜÈ\™H\YY‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %Ù][™ÈÙ\È›Ý\XÚ\]H[ˆ›ØÚÈ›Ü›X][Û‹‚ŠH‹
+HˆPÓT‘JR[Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜ×Ù›Ü—ÛX]\šX[^™YÝšY]ÜËˆŠ”Ù]ÈHZ[š[][H[X™\ˆÙˆ›ÝÜÈ[ˆH›ØÚÈÚXÚØ[ˆ™H[œÙ\Y[ÈHX›HžH[ˆS”ÑT•]Y\žKˆÛX[\‹\Ú^™Y›ØÚÜÈ\™HÜ]X\ÚY[ÈšYÙÙ\ˆÛ™\Ëˆ\ÈÙ][™È\È\YYÛ›H›Üˆ›ØÚÜÈ[œÙ\Y[ÈÛX]\šX[^™YšY]×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØÜ™X]KÝšY]Ë›Y
+KˆžHY\Ý[™È\ÈÙ][™Ë[ÝHÛÛ›Û›ØÚÜÈÜ]X\Ú[™ÈÚ[H\Ú[™ÈÈX]\šX[^™YšY]È[™]›ÚY^Ù\ÜÚ]™HY[[ÜžH\ØYÙK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H[YÙ\‹‚‹H8 %Ü]X\Ú[™È\ØX›Y‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÛZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜ×JÛZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WÜ›ÝÜÊBŠH‹
+HˆPÓT‘JR[Z[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\×Ù›Ü—ÛX]\šX[^™YÝšY]ÜËˆŠ”Ù]ÈHZ[š[][H[X™\ˆÙˆž]\È[ˆH›ØÚÈÚXÚØ[ˆ™H[œÙ\Y[ÈHX›HžH[ˆS”ÑT•]Y\žKˆÛX[\‹\Ú^™Y›ØÚÜÈ\™HÜ]X\ÚY[ÈšYÙÙ\ˆÛ™\Ëˆ\ÈÙ][™È\È\YYÛ›H›Üˆ›ØÚÜÈ[œÙ\Y[ÈÛX]\šX[^™YšY]×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØÜ™X]KÝšY]Ë›Y
+KˆžHY\Ý[™È\ÈÙ][™Ë[ÝHÛÛ›Û›ØÚÜÈÜ]X\Ú[™ÈÚ[H\Ú[™ÈÈX]\šX[^™YšY]È[™]›ÚY^Ù\ÜÚ]™HY[[ÜžH\ØYÙK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H[YÙ\‹‚‹H8 %Ü]X\Ú[™È\ØX›Y‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÛZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\×JÛZ[—Ú[œÙ\Ø›ØÚ×ÜÚ^™WØž]\ÊBŠH‹
+HˆPÓT‘JR[Z[—Ù^\›˜[ÝX›WØ›ØÚ×ÜÚ^™WÜ›ÝÜËQUSÒS”ÑT•Ð“ÐÒ×ÔÒV‘KˆŠ”Ü]X\Ú›ØÚÜÈ\ÜÙYÈ^\›˜[X›HÈÜXÚYšYYÚ^™H[ˆ›ÝÜËYˆ›ØÚÜÈ\™H›ÝšYÈ[›ÝYÚ‚ŠH‹
+HˆPÓT‘JR[Z[—Ù^\›˜[ÝX›WØ›ØÚ×ÜÚ^™WØž]\Ë
+QUSÒS”ÑT•Ð“ÐÒ×ÔÒV‘H
+ˆMŠKˆŠ”Ü]X\Ú›ØÚÜÈ\ÜÙYÈH^\›˜[X›HÈHÜXÚYšYYÚ^™H[ˆž]\ËYˆ›ØÚÜÈ\™H›ÝšYÈ[›ÝYÚ‚ŠH‹
+HˆPÓT‘JR[X^Ú›Ú[™YØ›ØÚ×ÜÚ^™WÜ›ÝÜËQUSÐ“ÐÒ×ÔÒV‘KˆŠ“X^[][H›ØÚÈÚ^™H›Üˆ“ÒSˆ™\Ý[
+Yˆ›Ú[ˆ[ÛÜš]HÝ\ÜÈ]
+KˆYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[X^Ú›Ú[™YØ›ØÚ×ÜÚ^™WØž]\ËÓZP‹ˆŠ“X^[][H›ØÚÈÚ^™H[ˆž]\È›Üˆ“ÒSˆ™\Ý[
+Yˆ›Ú[ˆ[ÛÜš]HÝ\ÜÈ]
+KˆYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[Z[—Ú›Ú[™YØ›ØÚ×ÜÚ^™WÜ›ÝÜËQUSÐ“ÐÒ×ÔÒV‘KˆŠ“Z[š[][H›ØÚÈÚ^™H[ˆ›ÝÜÈ›Üˆ“ÒSˆ[œ][™Ý]]›ØÚÜÈ
+Yˆ›Ú[ˆ[ÛÜš]HÝ\ÜÈ]
+KˆÛX[›ØÚÜÈÚ[™HÜ]X\ÚYˆYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[Z[—Ú›Ú[™YØ›ØÚ×ÜÚ^™WØž]\ËLLˆ
+ˆLˆŠ“Z[š[][H›ØÚÈÚ^™H[ˆž]\È›Üˆ“ÒSˆ[œ][™Ý]]›ØÚÜÈ
+Yˆ›Ú[ˆ[ÛÜš]HÝ\ÜÈ]
+KˆÛX[›ØÚÜÈÚ[™HÜ]X\ÚYˆYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘J›ÛÛ›Ú[™YØ›ØÚ×ÜÜ]ÜÚ[™ÛWÜ›ÝË˜[ÙKˆŠ[ÝÈÈÚ[šÈ\Ú›Ú[ˆ™\Ý[žH›ÝÜÈÛÜœ™\ÜÛ™[™ÈÈÚ[™ÛH›ÝÈœ›ÛHYX›K‚•\ÈX^H™YXÙHY[[ÜžH\ØYÙH[ˆØ\ÙHÙˆ›ÝÈÚ]X[žHX]Ú\È[ˆšYÚX›K]X^H[˜Ü™X\ÙHÔH\ØYÙK‚“›ÝH]X^Ú›Ú[™YØ›ØÚ×ÜÚ^™WÜ›ÝÜÈOH\ÈX[™]ÜžH›Üˆ\ÈÙ][™ÈÈ]™HY™™XÝ‚•HX^Ú›Ú[™YØ›ØÚ×ÜÚ^™WØž]\ØÛÛXš[™YÚ]\ÈÙ][™È\È[[È]›ÚY^Ù\ÜÚ]™HY[[ÜžH\ØYÙH[ˆØ\ÙHÙˆÚÙ]ÙY]HÚ]ÛÛYH\™ÙH›ÝÜÈ]š[™ÈX[žHX]Ú\È[ˆšYÚX›K‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Û›Û—Ú›Ú[™YÜ›ÝÜ×Ü›ØÙ\ÜÚ[™ËYKˆŠ[ÝÈ][\H™XYÈÈ›ØÙ\ÜÈ›Û‹Z›Ú[™Y›ÝÜÈœ›ÛHHšYÚX›H[ˆ\˜[[\š[™È’QÒ[™•S“ÒSœË‚•\ÈØ[ˆÜYY\H›Û‹Z›Ú[™Y\ÙHÚ[ˆ\Ú[™ÈH\˜[[Ú\Ú›Ú[ˆ[ÛÜš]HÚ]\™ÙHX›\Ë‚•Ú[ˆ\ØX›Y›Û‹Z›Ú[™Y›ÝÜÈ\™H›ØÙ\ÜÙYžHHÚ[™ÛH™XY‚ŠH‹
+HˆPÓT‘JR[X^Ú[œÙ\Ý™XYËˆŠ•HX^[][H[X™\ˆÙˆ™XYÈÈ^XÝ]HHS”ÑT•ÑSPÕ]Y\žK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H
+ÜˆJH8 %S”ÑT•ÑSPÕ›È\˜[[^XÝ][Û‹‚‹HÜÚ]]™H[YÙ\‹ˆšYÙÙ\ˆ[ˆK‚‚ÛÝYY˜][˜[YN‚‹HX›Üˆ›Ù\ÈÚ]ÚPˆY[[ÜžB‹H˜›Üˆ›Ù\ÈÚ]MˆÚPˆY[[ÜžB‹H›Üˆ\™Ù\ˆ›Ù\Â‚”\˜[[S”ÑT•ÑSPÕ\ÈY™™XÝÛ›HYˆHÑSPÕ\\È^XÝ]Y[ˆ\˜[[ÙYHØX^Ý™XYØJÛX^Ý™XYÊHÙ][™Ë‚’YÚ\ˆ˜[Y\ÈÚ[XYÈYÚ\ˆY[[ÜžH\ØYÙK‚ŠH‹
+HˆPÓT‘JR[X^Ú[œÙ\Ù[^YYÜÝ™X[\×Ù›Ü—Ü\˜[[ÝÜš]KˆŠ•HX^[][H[X™\ˆÙˆÝ™X[\È
+ÛÛ[[œÊHÈ[^Hš[˜[\›\ÚˆY˜][H]]È
+L[ˆØ\ÙHÙˆ[™\›Z[™ÈÝÜ˜YÙHÝ\ÜÈ\˜[[Üš]K›Üˆ^[\HÌÈ[™\ØX›YÝ\Ú\ÙJB‚ÛÝYY˜][˜[YNˆL‚ŠH‹
+HˆPÓT‘J›ÛÛš[˜[^™WÜ›Ú™XÝ[Û—Ü\×ÜÞ[˜Ú›Û›Ý\ÛK˜[ÙKˆŠ•Ú[ˆ[˜X›Y›Ú™XÝ[Ûˆ\È\™Hš[˜[^™YÞ[˜Ú›Û›Ý\ÛH\š[™ÈS”ÑT•™YXÚ[™ÈXZÈY[[ÜžH\ØYÙH]HÛÜÝÙˆ™YXÙYÌÈ\ØY\˜[[\ÛKˆžHY˜][XXÚ›Ú™XÝ[Û‰ÜÈÝ]]Ý™X[H\ÈÙ\[]™H[[H[\™H\
+[˜ÛY[™È[›Ú™XÝ[ÛœÊH\Èš[˜[^™YÚXÚ[ÝÜÈÝ™\›\[™ÈÌÈ\ØYÈ][˜Ü™X\Ù\ÈXZÈY[[ÜžH›ÜÜ[Û˜[ÈH[X™\ˆÙˆ›Ú™XÝ[ÛœËˆ\ÈÙ][™ÈÛ›HY™™XÝÈHS”ÑT•]ÈY\™ÙH[™]]][Ûˆ[™XYHš[˜[^™H›Ú™XÝ[ÛœÈÞ[˜Ú›Û›Ý\ÛK‚ŠH‹
+HˆPÓT‘JX^™XYËX^Ùš[˜[Ý™XYËˆŠ”Ù]ÈHX^[][H[X™\ˆÙˆ\˜[[™XYÈ›ÜˆHÑSPÕ]Y\žH]H™XY\ÙHÚ]HÑ’SSJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÙœ›ÛHÙš[˜[[[ÙYšY\ŠH[ÙYšY\‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹HÜˆH8 %\ØX›YˆÑSPÕ]Y\šY\È\™H^XÝ]Y[ˆHÚ[™ÛH™XY‚ŠH‹
+HˆPÓT‘JR[X^Ý™XY×Ù›Ü—Ú[™^\ËˆŠ•HX^[][H[X™\ˆÙˆ™XYÈ›ØÙ\ÜÈ[™XÙ\Ë‚ŠH‹
+HˆPÓT‘JX^™XYËX^Ý™XYËˆŠ•HX^[][H[X™\ˆÙˆ]Y\žH›ØÙ\ÜÚ[™È™XYË^ÛY[™È™XYÈ›Üˆ™]šY]š[™È]Hœ›ÛH™[[ÝHÙ\™\œÈ
+ÙYHHÉÛX^Ù\ÝšX]YØÛÛ›™XÝ[ÛœÉ×JÛÜ\˜][ÛœËÜÙ][™ÜËÜÙ][™ÜÈÛX^Ù\ÝšX]YØÛÛ›™XÝ[ÛœÊH\˜[Y]\ŠK‚‚•\È\˜[Y]\ˆ\Y\ÈÈ™XYÈ]\™›Ü›HHØ[YHÝYÙ\ÈÙˆH]Y\žH›ØÙ\ÜÚ[™È\[[™H[ˆ\˜[[‚‘›Üˆ^[\KÚ[ˆ™XY[™Èœ›ÛHHX›KYˆ]\ÈÜÜÚX›HÈ]˜[X]H^™\ÜÚ[ÛœÈÚ][˜Ý[ÛœËš[\ˆÚ]ÒT‘X[™™KXYÙÜ™YØ]H›ÜˆÔ“ÕT–X[ˆ\˜[[\Ú[™È]X\Ý	ÛX^Ý™XYÉÈ[X™\ˆÙˆ™XYË[ˆ	ÛX^Ý™XYÉÈ\™H\ÙY‚‚‘›Üˆ]Y\šY\È]\™HÛÛ\]Y]ZXÚÛH™XØ]\ÙHÙˆHSRU[ÝHØ[ˆÙ]HÝÙ\ˆ	ÛX^Ý™XYÉË‚‘›Üˆ^[\KYˆH™XÙ\ÜØ\žH[X™\ˆÙˆ[šY\È\™HØØ]Y[ˆ]™\žH›ØÚÈ[™X^Ý™XYÈH[ˆ›ØÚÜÈ\™H™]šY]™Y[ÝYÚ]ÛÝ[]™H™Y[ˆ[›ÝYÚÈ™XY\ÝÛ™K‚•HÛX[\ˆHX^Ý™XYØ˜[YKH\ÜÈY[[ÜžH\ÈÛÛœÝ[YY‚‚•HX^Ý™XYØÙ][™ÈžHY˜][X]Ú\ÈH[X™\ˆÙˆ\™Ø\™H™XYÈ
+[X™\ˆÙˆÔHÛÜ™\ÊH]˜Z[X›HÈÛXÚÒÝ\ÙK‚\ÈHÜXÚX[Ø\ÙK›Üˆˆ›ØÙ\ÜÛÜœÈÚ]\ÜÈ[ˆÌˆÔHÛÜ™\È[™ÓU
+K™Ëˆ[[\\•™XY[™ÊKÛXÚÒÝ\ÙH\Ù\ÈH[X™\ˆÙˆÙÚXØ[ÛÜ™\È
+Hˆ\ÚXØ[ÛÜ™HÛÝ[
+HžHY˜][‚‚•Ú]Ý]ÓU
+K™Ëˆ[[\\•™XY[™ÊK\ÈÛÜœ™\ÜÛ™ÈÈH[X™\ˆÙˆÔHÛÜ™\Ë‚‚‘›ÜˆÛXÚÒÝ\ÙHÛÝY\Ù\œËHY˜][˜[YHÚ[\Ü^H\È]]ÊŠXÚ\™HˆX]Ú\ÈHÔHÚ^™HÙˆ[Ý\ˆÙ\šXÙHK™ËˆÔKÎÚP‹ÔKÌM‘ÚPˆ]Ë‚”ÙYHHÙ][™ÜÈXˆ[ˆHÛÝYÛÛœÛÛH›ÜˆH\ÝÙˆ[Ù\šXÙHÚ^™\Ë‚ŠH‹
+HˆPÓT‘JR[X^Ý™XY×ÛZ[—Ùœ™YWÛY[[ÜžWÜ\—Ý™XYWÑÚP‹ˆŠ“ÝÙ\œÈX^Ý™XYØÚ[ˆHÙ\™\ˆ\È[™\ˆY[[ÜžH™\ÜÝ\™KÈ]›ÚYÝ\[™ÈYÚK\\˜[[]Y\šY\È]\™HZÙ[HÈ]HY[[ÜžH[Z]‚‚‘œ™YHY[[ÜžH\ÈÛÛ\]Y\ÈHÙ\™\‰ÜÈX^ÜÙ\™\—ÛY[[ÜžWÝ\ØYÙXZ[\ÈHY[[ÜžHÝ\œ™[H˜XÚÙYžHHÛØ˜[Y[[ÜžH˜XÚÙ\‹ˆYˆ]œ™YHY[[ÜžH\È\ÜÈ[ˆX^Ý™XYØ][\YYžH\È˜[YKX^Ý™XYØ\È™YXÙYÈH\™Ù\ÝˆÝXÚ]ˆ
+ˆ˜[YHHœ™YWÛY[[ÜžXÚ]HZ[š[][HÙˆX‚‚”Ù]ÈÈ\ØX›H\È[Z]‚‚‘›Üˆ^[\KÚ]HY˜][ÙˆHÚPˆ[™ÌˆÚPˆÙˆœ™YHY[[ÜžKX^Ý™XYØ\ÈØ\Y]ÌŽÈÚ]HÚPˆÙˆœ™YHY[[ÜžH]˜[È˜XÚÈÈK‚‚•\ÈÙ][™È\Y\ÈÈ™XY\ÚYH\˜[[\ÛH
+ÑSPÕS’SÓ˜S•T”ÑPÕØVÑT[™HÑSPÕÚYHÙˆS”ÑT•‹‹ˆÑSPÕ
+Kˆ›ÜˆHÜš]HÚYKÙYHX^Ú[œÙ\Ý™XY×ÛZ[—Ùœ™YWÛY[[ÜžWÜ\—Ý™XY‚ŠH‹
+HˆPÓT‘JR[X^Ú[œÙ\Ý™XY×ÛZ[—Ùœ™YWÛY[[ÜžWÜ\—Ý™XYÑÚP‹ˆŠ”Ø[YH\ÈX^Ý™XY×ÛZ[—Ùœ™YWÛY[[ÜžWÜ\—Ý™XY]\YYÈX^Ú[œÙ\Ý™XYØ[œÝXYÙˆX^Ý™XYØˆHY˜][\ÈYÚ\ˆ™XØ]\ÙH[œÙ\\[[™\È\XØ[HÛ\™Ù\ˆ\‹]™XYY™™\œÈ
+Y\™ÙH™YH\ËÛÛ\™\ÜÚ[Ûˆ›ØÚÜÊH[ˆ™XY\[[™\Ë‚‚’YˆH[[Ý[Ùˆœ™YHY[[ÜžH\È\ÜÈ[ˆX^Ú[œÙ\Ý™XYØ][\YYžH\È˜[YKX^Ú[œÙ\Ý™XYØ\È™YXÙYÈš]ÝÛˆÈHZ[š[][HÙˆX‚‚”Ù]ÈÈ\ØX›H\È[Z]‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWØÛÛ˜Ý\œ™[˜ÞWØÛÛ›ÛYKˆŠ”™\ÜXÝHÙ\™\‰ÜÈÛÛ˜Ý\œ™[˜ÞHÛÛ›Û
+ÙYHHÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Û[X[™ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Ü˜][×Ý×ØÛÜ™\ØÛØ˜[Ù\™\ˆÙ][™ÜÊKˆYˆ\ØX›Y][ÝÜÈ\Ú[™ÈH\™Ù\ˆ[X™\ˆÙˆ™XYÈ]™[ˆYˆHÙ\™\ˆ\ÈÝ™\›ØYY
+›Ý™XÛÛ[Y[™Y›Üˆ›Ü›X[\ØYÙK[™™YYY[ÜÝH›Üˆ\ÝÊK‚ŠH‹
+HˆPÓT‘JX^™XYËX^ÙÝÛ›ØYÝ™XYËˆŠ•HX^[][H[X™\ˆÙˆ™XYÈÈÝÛ›ØY]H
+K™Ëˆ›ÜˆT“[™Ú[™JK‚ŠH‹
+HˆPÓT‘JX^™XYËX^Ü\œÚ[™×Ý™XYËˆŠ•HX^[][H[X™\ˆÙˆ™XYÈÈ\œÙH]H[ˆ[œ]›Ü›X]È]Ý\Ü\˜[[\œÚ[™ËˆžHY˜][]\È]\›Z[™Y]]ÛX]XØ[K‚ŠH‹
+HˆPÓT‘JR[X^ÙÝÛ›ØYØY™™\—ÜÚ^™KL
+ŒL
+ŒLˆŠ•HX^[X[Ú^™HÙˆY™™\ˆ›Üˆ\˜[[ÝÛ›ØY[™È
+K™Ëˆ›ÜˆT“[™Ú[™JH\ˆXXÚ™XY‚ŠH‹
+HˆPÓT‘J›Û–™\›ÕR[X^Ü™XYØY™™\—ÜÚ^™K“T×ÑQUSÐ•Q‘‘T—ÔÒV‘KˆŠ•HX^[][HÚ^™HÙˆHY™™\ˆÈ™XYœ›ÛHHš[\Þ\Ý[Kˆ˜[Y\ÈX›Ý™HMˆZPˆ\™HÛ[\YÈMˆZP‹\ÈH™XYY™™\ˆ™]™\ˆ™YYÈÈ™H\™Ù\‹‚ŠH‹
+HˆPÓT‘JR[X^Ü™XYØY™™\—ÜÚ^™WÛØØ[ÙœËLŽ
+ŒLˆŠ•HX^[][HÚ^™HÙˆHY™™\ˆÈ™XYœ›ÛHØØ[š[\Þ\Ý[KˆYˆÙ]È[ˆX^Ü™XYØY™™\—ÜÚ^™HÚ[™H\ÙYˆ˜[Y\ÈX›Ý™HMˆZPˆ\™HÛ[\YÈMˆZP‹\ÈH™XYY™™\ˆ™]™\ˆ™YYÈÈ™H\™Ù\‹‚ŠH‹
+HˆPÓT‘JR[X^Ü™XYØY™™\—ÜÚ^™WÜ™[[ÝWÙœËˆŠ•HX^[][HÚ^™HÙˆHY™™\ˆÈ™XYœ›ÛH™[[ÝHš[\Þ\Ý[KˆYˆÙ]È[ˆX^Ü™XYØY™™\—ÜÚ^™HÚ[™H\ÙYˆ˜[Y\ÈX›Ý™HMˆZPˆ\™HÛ[\YÈMˆZP‹\ÈH™XYY™™\ˆ™]™\ˆ™YYÈÈ™H\™Ù\‹‚ŠH‹
+HˆPÓT‘JR[X^Ù\ÝšX]YØÛÛ›™XÝ[ÛœËLˆŠ•HX^[][H[X™\ˆÙˆÚ[][[™[Ý\ÈÛÛ›™XÝ[ÛœÈÚ]™[[ÝHÙ\™\œÈ›Üˆ\ÝšX]Y›ØÙ\ÜÚ[™ÈÙˆHÚ[™ÛH]Y\žHÈHÚ[™ÛH\ÝšX]YX›KˆÙH™XÛÛ[Y[™Ù][™ÈH˜[YH›È\ÜÈ[ˆH[X™\ˆÙˆÙ\™\œÈ[ˆHÛ\Ý\‹‚‚•H›ÛÝÚ[™È\˜[Y]\œÈ\™HÛ›H\ÙYÚ[ˆÜ™X][™È\ÝšX]YX›\È
+[™Ú[ˆ][˜Ú[™ÈHÙ\™\ŠKÛÈ\™H\È›È™X\ÛÛˆÈÚ[™ÙH[H][[YK‚ŠH‹
+HˆPÓT‘JR[X^Ü]Y\žWÜÚ^™K“T×ÑQUSÓPVÔUQT–WÔÒV‘KˆŠ•HX^[][H[X™\ˆÙˆž]\ÈÙˆH]Y\žHÝš[™È\œÙYžHHÔS\œÙ\‹‚‘]H[ˆHSQTÈÛ]\ÙHÙˆS”ÑT•]Y\šY\È\È›ØÙ\ÜÙYžHHÙ\\˜]HÝ™X[H\œÙ\ˆ
+]ÛÛœÝ[Y\ÈÊJHSJH[™›ÝY™™XÝYžH\È™\ÝšXÝ[Û‹‚‚ŽŽŽ››ÝB˜X^Ü]Y\žWÜÚ^™XØ[››Ý™HÙ]Ú][ˆ[ˆÔS]Y\žH
+K™Ë‹ÑSPÕ›ÝÊ
+HÑUS‘ÔÈX^Ü]Y\žWÜÚ^™OLL
+H™XØ]\ÙHÛXÚÒÝ\ÙH™YYÈÈ[ØØ]HHY™™\ˆÈ\œÙHH]Y\žK[™\ÈY™™\ˆÚ^™H\È]\›Z[™YžHHX^Ü]Y\žWÜÚ^™XÙ][™ËÚXÚ]\Ý™HÛÛ™šYÝ\™Y™Y›Ü™HH]Y\žH\È^XÝ]Y‚ŽŽŽ‚ŠH‹
+HˆPÓT‘JR[[\˜XÝ]™WÙ[^KLˆŠ•H[\˜[[ˆZXÜ›ÜÙXÛÛ™È›ÜˆÚXÚÚ[™ÈÚ]\ˆ™\]Y\Ý^XÝ][Ûˆ\È™Y[ˆØ[˜Ù[Y[™Ù[™[™ÈH›ÙÜ™\ÜË‚ŠH‹
+HˆPÓT‘JÙXÛÛ™ËÛÛ›™XÝÝ[Y[Ý]“T×ÑQUSÐÓÓ“‘PÕÕSQSÕUÔÑPËˆŠÛÛ›™XÝ[Ûˆ[Y[Ý]Yˆ\™H\™H›È™\XØ\Ë‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë[™ÚZÙWÝ[Y[Ý]Û\ËLˆŠ•[Y[Ý][ˆZ[\ÙXÛÛ™È›Üˆ™XÙZ]š[™È[ÈXÚÙ]œ›ÛH™\XØ\È\š[™È[™ÚZÙK‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÛÛ›™XÝÝ[Y[Ý]ÝÚ]Ù˜Z[Ý™\—Û\ËLˆŠ•H[Y[Ý][ˆZ[\ÙXÛÛ™È›ÜˆÛÛ›™XÝ[™ÈÈH™[[ÝHÙ\™\ˆ›ÜˆH\ÝšX]YX›H[™Ú[™KYˆH	ÜÚ\™	È[™	Ü™\XØIÈÙXÝ[ÛœÈ\™H\ÙY[ˆHÛ\Ý\ˆYš[š][Û‹‚’Yˆ[œÝXØÙ\ÜÙ[Ù]™\˜[][\È\™HXYHÈÛÛ›™XÝÈ˜\š[Ý\È™\XØ\Ë‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÛÛ›™XÝÝ[Y[Ý]ÝÚ]Ù˜Z[Ý™\—ÜÙXÝ\™WÛ\ËLˆŠÛÛ›™XÝ[Ûˆ[Y[Ý]›ÜˆÙ[XÝ[™Èš\œÝX[H™\XØH
+›ÜˆÙXÝ\™HÛÛ›™XÝ[ÛœÊK‚ŠH‹
+HˆPÓT‘JÙXÛÛ™Ë™XÙZ]™WÝ[Y[Ý]“T×ÑQUSÔ‘PÑRU‘WÕSQSÕUÔÑPËˆŠ•[Y[Ý]›Üˆ™XÙZ]š[™È]Hœ›ÛHH™]ÛÜšË[ˆÙXÛÛ™ËˆYˆ›Èž]\ÈÙ\™H™XÙZ]™Y[ˆ\È[\˜[H^Ù\[Ûˆ\È›ÝÛ‹ˆYˆ[ÝHÙ]\ÈÙ][™ÈÛˆHÛY[H	ÜÙ[™Ý[Y[Ý]	È›ÜˆHÛØÚÙ]Ú[[ÛÈ™HÙ]ÛˆHÛÜœ™\ÜÛ™[™ÈÛÛ›™XÝ[Ûˆ[™ÛˆHÙ\™\‹‚ŠH‹
+HˆPÓT‘JÙXÛÛ™ËÙ[™Ý[Y[Ý]“T×ÑQUSÔÑS‘ÕSQSÕUÔÑPËˆŠ•[Y[Ý]›ÜˆÙ[™[™È]HÈH™]ÛÜšË[ˆÙXÛÛ™ËˆYˆHÛY[™YYÈÈÙ[™ÛÛYH]H]\È›ÝX›HÈÙ[™[žHž]\È[ˆ\È[\˜[H^Ù\[Ûˆ\È›ÝÛ‹ˆYˆ[ÝHÙ]\ÈÙ][™ÈÛˆHÛY[H	Ü™XÙZ]™WÝ[Y[Ý]	È›ÜˆHÛØÚÙ]Ú[[ÛÈ™HÙ]ÛˆHÛÜœ™\ÜÛ™[™ÈÛÛ›™XÝ[Ûˆ[™ÛˆHÙ\™\‹‚ŠH‹
+HˆPÓT‘JÙXÛÛ™ËÜÚÙY\Ø[]™WÝ[Y[Ý]QUSÕÔÒÑQTÐSU‘WÕSQSÕUÊˆ\ÜÈ[ˆ“T×ÑQUSÔ‘PÑRU‘WÕSQSÕUÔÑPÈ
+‹ËˆŠ•H[YH[ˆÙXÛÛ™ÈHÛÛ›™XÝ[Ûˆ™YYÈÈ™[XZ[ˆYH™Y›Ü™HÔÝ\ÈÙ[™[™ÈÙY\[]™H›Ø™\ÂŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËYÙYØÛÛ›™XÝ[Û—Ý[Y[Ý]Û\ËLˆŠÛÛ›™XÝ[Ûˆ[Y[Ý]›Üˆ\ÝX›\Ú[™ÈÛÛ›™XÝ[ÛˆÚ]™\XØH›ÜˆYÙY™\]Y\ÝÂŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë™XÙZ]™WÙ]WÝ[Y[Ý]Û\ËŒˆŠÛÛ›™XÝ[Ûˆ[Y[Ý]›Üˆ™XÙZ]š[™Èš\œÝXÚÙ]Ùˆ]HÜˆXÚÙ]Ú]ÜÚ]]™H›ÙÜ™\ÜÈœ›ÛH™\XØBŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÚYÙYÜ™\]Y\ÝËYKˆŠ‘[˜X›\ÈYÙY™\]Y\ÝÈÙÚXÈ›Üˆ™[[ÝH]Y\šY\Ëˆ][ÝÜÈÈ\ÝX›\ÚX[žHÛÛ›™XÝ[ÛœÈÚ]Y™™\™[™\XØ\È›Üˆ]Y\žK‚“™]ÈÛÛ›™XÝ[Ûˆ\È[˜X›Y[ˆØ\ÙH^\Ý[ÛÛ›™XÝ[ÛŠÊHÚ]™\XØJÊHÙ\™H›Ý\ÝX›\ÚYÚ][ˆYÙYØÛÛ›™XÝ[Û—Ý[Y[Ý]›Üˆ›È]HØ\È™XÙZ]™YÚ][ˆ™XÙZ]™WÙ]WÝ[Y[Ý]ˆ]Y\žH\Ù\ÈHš\œÝÛÛ›™XÝ[ÛˆÚXÚÙ[™›Ûˆ[\H›ÙÜ™\ÜÈXÚÙ]
+Üˆ]HXÚÙ]Yˆ[Ý×ØÚ[™Ú[™×Ü™\XØWÝ[[Ùš\œÝÙ]WÜXÚÙ]
+NÂ›Ý\ˆÛÛ›™XÝ[ÛœÈ\™HØ[˜Ù[Yˆ]Y\šY\ÈÚ]X^Ü\˜[[Ü™\XØ\ÈˆX\™HÝ\ÜY‚‚‘[˜X›YžHY˜][‚‚ÛÝYY˜][˜[YNˆ‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ØÚ[™Ú[™×Ü™\XØWÝ[[Ùš\œÝÙ]WÜXÚÙ]˜[ÙKˆŠ’Yˆ]	ÜÈ[˜X›Y[ˆYÙY™\]Y\ÝÈÙHØ[ˆÝ\™]ÈÛÛ›™XÝ[Ûˆ[[™XÙZ]š[™Èš\œÝ]HXÚÙ]]™[ˆYˆÙH]™H[™XYHXYHÛÛYH›ÙÜ™\ÜÂŠ]›ÙÜ™\ÜÈ]™[‰Ý\]Y›Üˆ™XÙZ]™WÙ]WÝ[Y[Ý][Y[Ý]
+KÝ\Ú\ÙHÙH\ØX›HÚ[™Ú[™È™\XØHY\ˆHš\œÝ[YHÙHXYH›ÙÜ™\ÜË‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë]Y]YWÛX^ÝØZ]Û\ËˆŠ•HØZ][YH[ˆH™\]Y\Ý]Y]YKYˆH[X™\ˆÙˆÛÛ˜Ý\œ™[™\]Y\ÝÈ^ÙYYÈHX^[][K‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÛÛ›™XÝ[Û—ÜÛÛÛX^ÝØZ]Û\ËˆŠ•HØZ][YH[ˆZ[\ÙXÛÛ™È›ÜˆHÛÛ›™XÝ[ÛˆÚ[ˆHÛÛ›™XÝ[ÛˆÛÛ\È[‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %[™š[š]H[Y[Ý]‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë™\XÙWÜ[›š[™×Ü]Y\žWÛX^ÝØZ]Û\ËLˆŠ•HØZ][YH›Üˆ[›š[™ÈH]Y\žHÚ]HØ[YH]Y\žWÚYÈš[š\ÚÚ[ˆHÜ™\XÙWÜ[›š[™×Ü]Y\žWJÜ™\XÙWÜ[›š[™×Ü]Y\žJHÙ][™È\ÈXÝ]™K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %›ÝÚ[™È[ˆ^Ù\[Ûˆ]Ù\È›Ý[ÝÈÈ[ˆH™]È]Y\žHYˆHÙ\™\ˆ[™XYH^XÝ]\ÈH]Y\žHÚ]HØ[YH]Y\žWÚY‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËØYšØWÛX^ÝØZ]Û\ËLˆŠ•HØZ][YH[ˆZ[\ÙXÛÛ™È›Üˆ™XY[™ÈY\ÜØYÙ\Èœ›ÛHÒØYšØWJÙ[™Ú[™\ËÝX›KY[™Ú[™\ËÚ[YÜ˜][ÛœËÚØYšØJH™Y›Ü™H™]žK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %[™š[š]H[Y[Ý]‚‚”ÙYH[ÛÎ‚‚‹HÐ\XÚHØYšØWJÎ‹ËÚØYšØK˜\XÚK›Ü™ËÊBŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë˜X˜š]\WÛX^ÝØZ]Û\ËLˆŠ•HØZ][YH›Üˆ™XY[™Èœ›ÛH˜X˜š]TH™Y›Ü™H™]žK‚ŠH‹
+HˆPÓT‘JR[ÛÚ[\˜[“T×ÑQUSÔÓÒS•T•SˆŠ›ØÚÈ]H]Y\žHØZ]ÛÜÛˆHÙ\™\ˆ›ÜˆHÜXÚYšYY[X™\ˆÙˆÙXÛÛ™Ë‚ŠH‹
+HˆPÓT‘JR[YWØÛÛ›™XÝ[Û—Ý[Y[Ý]ÍŒˆŠ•[Y[Ý]ÈÛÜÙHYHÔÛÛ›™XÝ[ÛœÈY\ˆÜXÚYšYY[X™\ˆÙˆÙXÛÛ™Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\ˆ
+HÛÜÙH[[YYX][KY\ˆÙXÛÛ™ÊK‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØÛÛ›™XÝ[Ûœ×ÜÛÛÜÚ^™KLˆŠ•HX^[][H[X™\ˆÙˆÚ[][[™[Ý\ÈÛÛ›™XÝ[ÛœÈÚ]™[[ÝHÙ\™\œÈ›Üˆ\ÝšX]Y›ØÙ\ÜÚ[™ÈÙˆ[]Y\šY\ÈÈHÚ[™ÛH\ÝšX]YX›KˆÙH™XÛÛ[Y[™Ù][™ÈH˜[YH›È\ÜÈ[ˆH[X™\ˆÙˆÙ\™\œÈ[ˆHÛ\Ý\‹‚ŠH‹
+HˆPÓT‘JR[ÛÛ›™XÝ[Ûœ×ÝÚ]Ù˜Z[Ý™\—ÛX^ÝšY\ËËˆŠ•HX^[][H[X™\ˆÙˆÛÛ›™XÝ[Ûˆ][\ÈÚ]XXÚ™\XØH›ÜˆH\ÝšX]YX›H[™Ú[™K‚ŠH‹
+HˆPÓT‘JR[Ì×ÜÝšXÝÝ\ØYÜ\ÜÚ^™KÌÎŽ‘QUSÔÕ’PÕÕTÐQÔT•ÔÒV‘KˆŠ•H^XÝÚ^™HÙˆ\È\ØY\š[™È][\\\ØYÈÌÈ
+ÛÛYH[\[Y[][ÛœÈÙ\È›ÝÝ\ÜÈ˜\šXX›HÚ^™H\ÊK‚ŠH‹
+HˆPÓT‘JR[^\™WÜÝšXÝÝ\ØYÜ\ÜÚ^™KˆŠ•H^XÝÚ^™HÙˆ\È\ØY\š[™È][\\\ØYÈ^\™H›ØˆÝÜ˜YÙK‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^Ø›ØÚÜ×Ú[—Û][\\Ý\ØYLˆŠ“X^[][H[X™\ˆÙˆ›ØÚÜÈ[ˆ][\\\ØY›Üˆ^\™K‚ŠH‹
+HˆPÓT‘JR[Ì×ÛZ[—Ý\ØYÜ\ÜÚ^™KÌÎŽ‘QUSÓRS—ÕTÐQÔT•ÔÒV‘KˆŠ•HZ[š[][HÚ^™HÙˆ\È\ØY\š[™È][\\\ØYÈÌË‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^Ý\ØYÜ\ÜÚ^™KÌÎŽ‘QUSÓPVÕTÐQÔT•ÔÒV‘KˆŠ•HX^[][HÚ^™HÙˆ\È\ØY\š[™È][\\\ØYÈÌË‚ŠH‹
+HˆPÓT‘JR[^\™WÛZ[—Ý\ØYÜ\ÜÚ^™KMŠŒL
+ŒLˆŠ•HZ[š[][HÚ^™HÙˆ\È\ØY\š[™È][\\\ØYÈ^\™H›ØˆÝÜ˜YÙK‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^Ý\ØYÜ\ÜÚ^™K][
+ŒL
+ŒL
+ŒLˆŠ•HX^[][HÚ^™HÙˆ\È\ØY\š[™È][\\\ØYÈ^\™H›ØˆÝÜ˜YÙK‚ŠH‹
+HˆPÓT‘JR[Ì×Ý\ØYÜ\ÜÚ^™WÛ][\WÙ˜XÝÜ‹ÌÎŽ‘QUSÕTÐQÔT•ÔÒV‘WÓUSTWÑPÕÔ‹ˆŠ“][\HÌ×ÛZ[—Ý\ØYÜ\ÜÚ^™HžH\È˜XÝÜˆXXÚ[YHÌ×Û][\WÜ\×ØÛÝ[Ý™\ÚÛ\ÈÙ\™H\ØYYœ›ÛHHÚ[™ÛHÜš]HÈÌË‚ŠH‹
+HˆPÓT‘JR[Ì×Ý\ØYÜ\ÜÚ^™WÛ][\WÜ\×ØÛÝ[Ý™\ÚÛÌÎŽ‘QUSÕTÐQÔT•ÔÒV‘WÓUSTWÔT•×ÐÓÕS•Õ‘TÒÓˆŠ‘XXÚ[YH\È[X™\ˆÙˆ\ÈØ\È\ØYYÈÌËÌ×ÛZ[—Ý\ØYÜ\ÜÚ^™H\È][\YYžHÌ×Ý\ØYÜ\ÜÚ^™WÛ][\WÙ˜XÝÜ‹‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^Ü\Û[X™\‹ÌÎŽ‘QUSÓPVÔT•Ó•SP‘T‹ˆŠ“X^[][H\[X™\ˆ[X™\ˆ›ÜˆÌÈ\ØY\‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×Ø[Ý×Û][\\ØÛÜKYKˆŠ[ÝÈ][\\ÛÜH[ˆÌË‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^ÜÚ[™ÛWÛÜ\˜][Û—ØÛÜWÜÚ^™KÌÎŽ‘QUSÓPVÔÒS‘ÓWÓÔTUSÓ—ÐÓÔWÔÒV‘KˆŠ“X^[][HÚ^™H›ÜˆÚ[™ÛK[Ü\˜][ÛˆÛÜH[ˆÌËˆ\ÈÙ][™È\È\ÙYÛ›HYˆÌ×Ø[Ý×Û][\\ØÛÜH\ÈYK‚ŠH‹
+HˆPÓT‘JR[^\™WÝ\ØYÜ\ÜÚ^™WÛ][\WÙ˜XÝÜ‹‹ˆŠ“][\H^\™WÛZ[—Ý\ØYÜ\ÜÚ^™HžH\È˜XÝÜˆXXÚ[YH^\™WÛ][\WÜ\×ØÛÝ[Ý™\ÚÛ\ÈÙ\™H\ØYYœ›ÛHHÚ[™ÛHÜš]HÈ^\™H›ØˆÝÜ˜YÙK‚ŠH‹
+HˆPÓT‘JR[^\™WÝ\ØYÜ\ÜÚ^™WÛ][\WÜ\×ØÛÝ[Ý™\ÚÛLˆŠ‘XXÚ[YH\È[X™\ˆÙˆ\ÈØ\È\ØYYÈ^\™H›ØˆÝÜ˜YÙK^\™WÛZ[—Ý\ØYÜ\ÜÚ^™H\È][\YYžH^\™WÝ\ØYÜ\ÜÚ^™WÛ][\WÙ˜XÝÜ‹‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^Ú[™›YÚÜ\×Ù›Ü—ÛÛ™WÙš[KÌÎŽ‘QUSÓPVÒS‘“QÒÔT•×Ñ“Ô—ÓÓ‘WÑ’SKˆŠ•HX^[][H[X™\ˆÙˆHÛÛ˜Ý\œ™[ØYY\È[ˆ][\\\ØY™\]Y\ÝˆYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^Ú[™›YÚÜ\×Ù›Ü—ÛÛ™WÙš[KŒˆŠ•HX^[][H[X™\ˆÙˆHÛÛ˜Ý\œ™[ØYY\È[ˆ][\\\ØY™\]Y\ÝˆYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^ÜÚ[™ÛWÜ\Ý\ØYÜÚ^™KÌÎŽ‘QUSÓPVÔÒS‘ÓWÔT•ÕTÐQÔÒV‘KˆŠ•HX^[][HÚ^™HÙˆØš™XÝÈ\ØY\Ú[™ÈÚ[™Û\\\ØYÈÌË‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^ÜÚ[™ÛWÜ\Ý\ØYÜÚ^™KÌÎŽ‘QUSÓPVÔÒS‘ÓWÔT•ÕTÐQÔÒV‘KˆŠ•HX^[][HÚ^™HÙˆØš™XÝÈ\ØY\Ú[™ÈÚ[™Û\\\ØYÈ^\™H›ØˆÝÜ˜YÙK‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^ÜÚ[™ÛWÜ\ØÛÜWÜÚ^™KMŠŒL
+ŒLˆŠ•HX^[][HÚ^™HÙˆØš™XÝÈÛÜH\Ú[™ÈÚ[™ÛH\ÛÜHÈ^\™H›ØˆÝÜ˜YÙK‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^ÜÚ[™ÛWÜ™XYÜ™]šY\ËÌÎŽ‘QUSÓPVÔÒS‘ÓWÔ‘PQÕ’QTËˆŠ•HX^[][H[X™\ˆÙˆ™]šY\È\š[™ÈÚ[™ÛHÌÈ™XY‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^ÜÚ[™ÛWÜ™XYÜ™]šY\ËˆŠ•HX^[][H[X™\ˆÙˆ™]šY\È\š[™ÈÚ[™ÛH^\™H›ØˆÝÜ˜YÙH™XY‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^Ý[™^XÝYÝÜš]WÙ\œ›Ü—Ü™]šY\ËˆŠ•HX^[][H[X™\ˆÙˆ™]šY\È[ˆØ\ÙHÙˆ[™^XÝY\œ›ÜœÈ\š[™È^\™H›ØˆÝÜ˜YÙHÜš]BŠH‹
+HˆPÓT‘JR[Ì×ÛX^Ý[™^XÝYÝÜš]WÙ\œ›Ü—Ü™]šY\ËÌÎŽ‘QUSÓPVÕS‘VPÕQÕÔ’UWÑT”“Ô—Ô‘U’QTËˆŠ•HX^[][H[X™\ˆÙˆ™]šY\È[ˆØ\ÙHÙˆ[™^XÝY\œ›ÜœÈ\š[™ÈÌÈÜš]K‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^Ü™Y\™XÝËÌÎŽ‘QUSÓPVÔ‘QT‘PÕËˆŠ“X^[X™\ˆÙˆ^\™H™Y\™XÝÈÜÈ[ÝÙY‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^ÙÙ]ÜœËˆŠ“[Z]Ûˆ^\™HÑU™\]Y\Ý\ˆÙXÛÛ™˜]H™Y›Ü™H›Ý[™Ëˆ™\›ÈYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^ÙÙ]Ø\œÝˆŠ“X^[X™\ˆÙˆ™\]Y\ÝÈ]Ø[ˆ™H\ÜÝYYÚ[][[™[Ý\ÛH™Y›Ü™H][™È™\]Y\Ý\ˆÙXÛÛ™[Z]ˆžHY˜][
+
+H\]X[ÈÈ^\™WÛX^ÙÙ]ÜœØŠH‹
+HˆPÓT‘JR[^\™WÛX^Ü]ÜœËˆŠ“[Z]Ûˆ^\™HU™\]Y\Ý\ˆÙXÛÛ™˜]H™Y›Ü™H›Ý[™Ëˆ™\›ÈYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[^\™WÛX^Ü]Ø\œÝˆŠ“X^[X™\ˆÙˆ™\]Y\ÝÈ]Ø[ˆ™H\ÜÝYYÚ[][[™[Ý\ÛH™Y›Ü™H][™È™\]Y\Ý\ˆÙXÛÛ™[Z]ˆžHY˜][
+
+H\]X[ÈÈ^\™WÛX^Ü]ÜœØŠH‹
+HˆPÓT‘JR[Ì×ÛX^ØÛÛ›™XÝ[ÛœËÌÎŽ‘QUSÓPVÐÓÓ“‘PÕSÓ”ËˆŠ•HX^[][H[X™\ˆÙˆÛÛ›™XÝ[ÛœÈ\ˆÙ\™\‹‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^ÙÙ]ÜœËˆŠ“[Z]ÛˆÌÈÑU™\]Y\Ý\ˆÙXÛÛ™˜]H™Y›Ü™H›Ý[™Ëˆ™\›ÈYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^ÙÙ]Ø\œÝˆŠ“X^[X™\ˆÙˆ™\]Y\ÝÈ]Ø[ˆ™H\ÜÝYYÚ[][[™[Ý\ÛH™Y›Ü™H][™È™\]Y\Ý\ˆÙXÛÛ™[Z]ˆžHY˜][
+
+H\]X[ÈÈÌ×ÛX^ÙÙ]ÜœØŠH‹
+HˆPÓT‘JR[Ì×ÛX^Ü]ÜœËˆŠ“[Z]ÛˆÌÈU™\]Y\Ý\ˆÙXÛÛ™˜]H™Y›Ü™H›Ý[™Ëˆ™\›ÈYX[œÈ[›[Z]Y‚ŠH‹
+HˆPÓT‘JR[Ì×ÛX^Ü]Ø\œÝˆŠ“X^[X™\ˆÙˆ™\]Y\ÝÈ]Ø[ˆ™H\ÜÝYYÚ[][[™[Ý\ÛH™Y›Ü™H][™È™\]Y\Ý\ˆÙXÛÛ™[Z]ˆžHY˜][
+
+H\]X[ÈÈÌ×ÛX^Ü]ÜœØŠH‹
+HˆPÓT‘JR[Ì×Û\ÝÛØš™XÝÚÙ^\×ÜÚ^™KÌÎŽ‘QUSÓTÕÓÐ’‘PÕÒÑVT×ÔÒV‘KˆŠ“X^[][H[X™\ˆÙˆš[\È]ÛÝ[™H™]\›™Y[ˆ˜]ÚžH\ÝØš™XÝ™\]Y\ÝŠH‹
+HˆPÓT‘J›ÛÛÌ×Ý\ÙWØY\]™WÝ[Y[Ý]ËÌÎŽ‘QUSÕTÑWÐQTU‘WÕSQSÕUËˆŠ•Ú[ˆÙ]ÈYX[ˆ›Üˆ[ÌÈ™\]Y\ÝÈš\œÝÛÈ][\È\™HXYHÚ]ÝÈÙ[™[™™XÙZ]™H[Y[Ý]Ë‚•Ú[ˆÙ]È˜[ÙX[ˆ[][\È\™HXYHÚ]Y[XØ[[Y[Ý]Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ^\™WÝ\ÙWØY\]™WÝ[Y[Ý]ËÌÎŽ‘QUSÕTÑWÐQTU‘WÕSQSÕUËˆŠ•Ú[ˆÙ]ÈYX[ˆ›Üˆ[^\™H™\]Y\ÝÈš\œÝÛÈ][\È\™HXYHÚ]ÝÈÙ[™[™™XÙZ]™H[Y[Ý]Ë‚•Ú[ˆÙ]È˜[ÙX[ˆ[][\È\™HXYHÚ]Y[XØ[[Y[Ý]Ë‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×ÜÛÝ×Ø[Ý™XY×ØY\—Û™]ÛÜš×Ù\œ›Ü‹YKˆŠ•Ú[ˆÙ]ÈYX[™XYÈ^XÝ][™ÈÌÈ™\]Y\ÝÈÈHØ[YH˜XÚÝ\[™Ú[\™HÛÝÙYÝÛ‚˜Y\ˆ[žHÚ[™ÛHÌÈ™\]Y\Ý[˜ÛÝ[\œÈH™]žXX›H™]ÛÜšÈ\œ›Ü‹ÝXÚ\ÈÛØÚÙ][Y[Ý]‚•Ú[ˆÙ]È˜[ÙXXXÚ™XY[™\ÈÌÈ™\]Y\Ý˜XÚÛÙ™ˆ[™\[™[HÙˆHÝ\œË‚ŠH‹
+HˆPÓT‘J›ÛÛ˜XÚÝ\ÜÛÝ×Ø[Ý™XY×ØY\—Ü™]žXX›WÜÌ×Ù\œ›Ü‹˜[ÙKˆŠ•Ú[ˆÙ]ÈYX[™XYÈ^XÝ][™ÈÌÈ™\]Y\ÝÈÈHØ[YH˜XÚÝ\[™Ú[\™HÛÝÙYÝÛ‚˜Y\ˆ[žHÚ[™ÛHÌÈ™\]Y\Ý[˜ÛÝ[\œÈH™]žXX›HÌÈ\œ›Ü‹ÝXÚ\È	ÔÛÝÈÝÛ‰Ë‚•Ú[ˆÙ]È˜[ÙXXXÚ™XY[™\ÈÌÈ™\]Y\Ý˜XÚÛÙ™ˆ[™\[™[HÙˆHÝ\œË‚ŠH‹
+HˆPÓT‘JR[^\™WÛ\ÝÛØš™XÝÚÙ^\×ÜÚ^™KLˆŠ“X^[][H[X™\ˆÙˆš[\È]ÛÝ[™H™]\›™Y[ˆ˜]ÚžH\ÝØš™XÝ™\]Y\ÝŠH‹
+HˆPÓT‘J›ÛÛÌ×Ý[˜Ø]WÛÛ—Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\È[˜Ø]H™Y›Ü™H[œÙ\È[ˆÌÈ[™Ú[™HX›\ËˆYˆ\ØX›Y[ˆ^Ù\[ÛˆÚ[™H›ÝÛˆÛˆ[œÙ\][\ÈYˆ[ˆÌÈØš™XÝ[™XYH^\ÝË‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %S”ÑT•]Y\žHÜ™X]\ÈH™]Èš[HÜˆ˜Z[Yˆš[H^\ÝÈ[™Ì×ØÜ™X]WÛ™]×Ùš[WÛÛ—Ú[œÙ\\È›ÝÙ]‚‹HH8 %S”ÑT•]Y\žH™\XÙ\È^\Ý[™ÈÛÛ[ÙˆHš[HÚ]H™]È]K‚‚”ÙYH[Ü™H]Z[ÈÚ\™WJÚ[YÜ˜][ÛœËÜÌÈÚ[œÙ\[™ËY]JK‚ŠH‹
+HˆPÓT‘J›ÛÛ^\™WÝ[˜Ø]WÛÛ—Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\È[˜Ø]H™Y›Ü™H[œÙ\[ˆ^\™H[™Ú[™HX›\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×ØÜ™X]WÛ™]×Ùš[WÛÛ—Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÜ™X][™ÈH™]Èš[HÛˆXXÚ[œÙ\[ˆÌÈ[™Ú[™HX›\ËˆYˆ[˜X›YÛˆXXÚ[œÙ\H™]ÈÌÈØš™XÝÚ[™HÜ™X]YÚ]HÙ^KÚ[Z[\ˆÈ\È]\›Ž‚‚š[š]X[ˆ]K”\œ]Y]™Þ˜Oˆ]KŒK”\œ]Y]™Þ˜Oˆ]KŒ‹”\œ]Y]™Þ˜]Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %S”ÑT•]Y\žHÜ™X]\ÈH™]Èš[HÜˆ˜Z[Yˆš[H^\ÝÈ[™Ì×Ý[˜Ø]WÛÛ—Ú[œÙ\\È›ÝÙ]‚‹HH8 %S”ÑT•]Y\žHÜ™X]\ÈH™]Èš[HÛˆXXÚ[œÙ\\Ú[™ÈÝY™š^
+œ›ÛHHÙXÛÛ™Û™JHYˆÌ×Ý[˜Ø]WÛÛ—Ú[œÙ\\È›ÝÙ]‚‚”ÙYH[Ü™H]Z[ÈÚ\™WJÚ[YÜ˜][ÛœËÜÌÈÚ[œÙ\[™ËY]JK‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×ÜÚÚ\Ù[\WÙš[\ËYKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÚÚ\[™È[\Hš[\È[ˆÔÌ×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÚ[YÜ˜][ÛœËÜÌË›Y
+H[™Ú[™HX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[ÛˆYˆ[\Hš[H\È›ÝÛÛ\]X›HÚ]™\]Y\ÝY›Ü›X]‚‹HH8 %ÑSPÕ™]\›œÈ[\H™\Ý[›Üˆ[\Hš[K‚ŠH‹
+HˆPÓT‘J›ÛÛ^\™WØÜ™X]WÛ™]×Ùš[WÛÛ—Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÜ™X][™ÈH™]Èš[HÛˆXXÚ[œÙ\[ˆ^\™H[™Ú[™HX›\ÂŠH‹
+HˆPÓT‘J›ÛÛÌ×ØÚXÚ×ÛØš™XÝ×ØY\—Ý\ØY˜[ÙKˆŠÚXÚÈXXÚ\ØYYØš™XÝÈÌÈÚ]XY™\]Y\ÝÈ™HÝ\™H]\ØYØ\ÈÝXØÙ\ÜÙ[ŠH‹
+HˆPÓT‘J›ÛÛÌ×Ý˜[Y]WÙ]Y×ÛÛ—Ü™XYYKˆŠ•Ú[ˆ™XY[™È[ˆØš™XÝœ›ÛHÌÈ
+Üˆ[ˆÌËXÛÛ\]X›HÝÜ™HÝXÚ\ÈÐÔÊKÚXÚÈ]]™\žHÑU™\]Y\Ý™]\›œÈHØ[YHUYÈ]Ø\ÈØœÙ\™YÚ[ˆHØš™XÝØ\È\ÝYˆHÚ[™ÛHš[H™XY\ÜÝY\ÈX[žH˜[™ÙYÑU™\]Y\ÝÎÈYˆHØš™XÝ\ÈÝ™\Üš][ˆ[ˆXÙH™]ÙY[ˆ[H
+›Üˆ^[\HžH[ˆ^\›˜[Üš]\ˆ™]Üš][™ÈHš^YÙ^JKH™XYÈØ[ˆÝ\Ú\ÙH™HÝ]ÚYÙÙ]\ˆœ›ÛHÛÈY™™\™[Øš™XÝÙ[™\˜][ÛœÈ[™Ý\™˜XÙH\ÈHÛÜœ\YÚXÚÜÝ[HÜˆ\œÙH\œ›Ü‹ˆÚ[ˆHZ\ÛX]Ú\È]XÝYH™XY˜Z[ÈÚ]Ì×ÓÐ’‘PÕÐÒS‘ÑQÑT’S‘×Ô‘PQ[œÝXYÙˆ™]\›š[™È[˜ÛÛœÚ\Ý[]Kˆ\ØX›HÛ›H›ÜˆÛÜšÛØYÈ][[[Û˜[H™XYØš™XÝÈ]\™H™Z[™ÈÝ™\Üš][ˆ[™Ø[ˆÛ\˜]H[˜ÛÛœÚ\Ý[™XYË‚ŠH‹
+HˆPÓT‘J›ÛÛ^\™WØÚXÚ×ÛØš™XÝ×ØY\—Ý\ØY˜[ÙKˆŠÚXÚÈXXÚ\ØYYØš™XÝ[ˆ^\™H›ØˆÝÜ˜YÙHÈ™HÝ\™H]\ØYØ\ÈÝXØÙ\ÜÙ[ŠH‹
+HˆPÓT‘J›ÛÛÌ×Ø[Ý×Ü\˜[[Ü\Ý\ØYYKˆŠ•\ÙH][\H™XYÈ›ÜˆÌÈ][\\\ØYˆ]X^HXYÈÛYÚHYÚ\ˆY[[ÜžH\ØYÙBŠH‹
+HˆPÓT‘J›ÛÛ^\™WØ[Ý×Ü\˜[[Ü\Ý\ØYYKˆŠ•\ÙH][\H™XYÈ›Üˆ^\™H][\\\ØY‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×Ý›Ý×ÛÛ—Þ™\›×Ùš[\×ÛX]Ú˜[ÙKˆŠ•›ÝÈ[ˆ\œ›Ü‹Ú[ˆ\ÝØš™XÝÈ™\]Y\ÝØ[››ÝX]Ú[žHš[\ÂŠH‹
+HˆPÓT‘J›ÛÛœ×Ý›Ý×ÛÛ—Þ™\›×Ùš[\×ÛX]Ú˜[ÙKˆŠ•›ÝÈ[ˆ\œ›ÜˆYˆX]ÚY™\›Èš[\ÈXØÛÜ™[™ÈÈÛØˆ^[œÚ[Ûˆ[\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹HH8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[Û‹‚‹H8 %ÑSPÕ™]\›œÈ[\H™\Ý[‚ŠH‹
+HˆPÓT‘J›ÛÛ^\™WÝ›Ý×ÛÛ—Þ™\›×Ùš[\×ÛX]Ú˜[ÙKˆŠ•›ÝÈ[ˆ\œ›ÜˆYˆX]ÚY™\›Èš[\ÈXØÛÜ™[™ÈÈÛØˆ^[œÚ[Ûˆ[\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹HH8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[Û‹‚‹H8 %ÑSPÕ™]\›œÈ[\H™\Ý[‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×ÚYÛ›Ü™WÙš[WÙÙ\ÛÙ^\Ý˜[ÙKˆŠ’YÛ›Ü™HXœÙ[˜ÙHÙˆš[HYˆ]Ù\È›Ý^\ÝÚ[ˆ™XY[™ÈÙ\Z[ˆÙ^\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹HH8 %ÑSPÕ™]\›œÈ[\H™\Ý[‚‹H8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛœ×ÚYÛ›Ü™WÙš[WÙÙ\ÛÙ^\Ý˜[ÙKˆŠ’YÛ›Ü™HXœÙ[˜ÙHÙˆš[HYˆ]Ù\È›Ý^\ÝÚ[ˆ™XY[™ÈÙ\Z[ˆÙ^\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹HH8 %ÑSPÕ™]\›œÈ[\H™\Ý[‚‹H8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛ^\™WÚYÛ›Ü™WÙš[WÙÙ\ÛÙ^\Ý˜[ÙKˆŠ’YÛ›Ü™HXœÙ[˜ÙHÙˆš[HYˆ]Ù\È›Ý^\ÝÚ[ˆ™XY[™ÈÙ\Z[ˆÙ^\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹HH8 %ÑSPÕ™]\›œÈ[\H™\Ý[‚‹H8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[Û‹‚ŠH‹
+HˆPÓT‘JR[^\™WÜÙ×ÛX^Ü™]šY\ËLˆŠ“X^[][H[X™\ˆÙˆ™]šY\È[ˆ^\™HÙÂŠH‹
+HˆPÓT‘JR[^\™WÜÙ×Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ËLˆŠ“Z[š[X[˜XÚÛÙ™ˆ™]ÙY[ˆ™]šY\È[ˆ^\™HÙÂŠH‹
+HˆPÓT‘JR[^\™WÜÙ×Ü™]žWÛX^Ø˜XÚÛÙ™—Û\ËLˆŠ“X^[X[˜XÚÛÙ™ˆ™]ÙY[ˆ™]šY\È[ˆ^\™HÙÂŠH‹
+HˆPÓT‘JR[^\™WÜ™\]Y\ÝÝ[Y[Ý]Û\ËÌÎŽ‘QUSÔ‘TUQTÕÕSQSÕUÓTËˆŠ’Y[™\ÜÈ[Y[Ý]›ÜˆÙ[™[™È[™™XÙZ]š[™È]HËÙœ›ÛH^\™Kˆ˜Z[YˆHÚ[™ÛHÔ™XYÜˆÜš]HØ[›ØÚÜÈ›Üˆ\ÈÛ™Ë‚ŠH‹
+HˆPÓT‘JR[^\™WØÛÛ›™XÝÝ[Y[Ý]Û\ËÌÎŽ‘QUSÐÓÓ“‘PÕÕSQSÕUÓTËˆŠÛÛ›™XÝ[Ûˆ[Y[Ý]›ÜˆÜÝœ›ÛH^\™H\ÚÜË‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×Ý˜[Y]WÜ™\]Y\ÝÜÙ][™ÜËYKˆŠ‘[˜X›\ÈÌÈ™\]Y\ÝÙ][™ÜÈ˜[Y][Û‹‚”ÜÜÚX›H˜[Y\Î‚‹HH8 %˜[Y]HÙ][™ÜË‚‹H8 %È›Ý˜[Y]HÙ][™ÜË‚ŠH‹
+HˆPÓT‘J›ÛÛÛÛ\]Xš[]WÜÌ×Ü™\ÚYÛ™YÝ\›Ü]Y\žWÚ[—Ü]˜[ÙKˆŠÛÛ\]Xš[]NˆÚ[ˆ[˜X›Y›ÛÈ™K\ÚYÛ™YT“]Y\žH\˜[Y]\œÈ
+K™ËˆP[^‹JŠH[ÈHÌÈÙ^H
+YØXÞH™Z]š[ÜŠKœÛÈ	ÏÉÈXÝÈ\ÈHÚ[Ø\™[ˆH]ˆÚ[ˆ\ØX›Y
+Y˜][
+K™K\ÚYÛ™YT“]Y\žH\˜[Y]\œÈ\™HÙ\[ˆHT“]Y\žBÈ]›ÚY[\œ™][™È	ÏÉÈ\ÈHÚ[Ø\™‚ŠH‹
+HˆPÓT‘J›ÛÛÌ×Ù\ØX›WØÚXÚÜÝ[KÌÎŽ‘QUSÑTÐP“WÐÒPÒÔÕSKˆŠ‘È›ÝØ[Ý[]HHÚXÚÜÝ[HÚ[ˆÙ[™[™ÈHš[HÈÌËˆ\ÈÜYYÈ\Üš]\ÈžH]›ÚY[™È^Ù\ÜÚ]™H›ØÙ\ÜÚ[™È\ÜÙ\ÈÛˆHš[Kˆ]\È[ÜÝHØY™H\ÈH]HÙˆY\™ÙU™YHX›\È\ÈÚXÚÜÝ[[YYžHÛXÚÒÝ\ÙH[ž]Ø^K[™Ú[ˆÌÈ\ÈXØÙ\ÜÙYÚ]ËHÈ^Y\ˆ[™XYH›ÝšY\È[YÜš]HÚ[H˜[œÙ™\œš[™È›ÝYÚH™]ÛÜšËˆÚ[HY][Û˜[ÚXÚÜÝ[\ÈÛˆÌÈÚ]™HY™[œÙH[ˆ\‚ŠH‹
+HˆPÓT‘JR[Ì×Ü™\]Y\ÝÝ[Y[Ý]Û\ËÌÎŽ‘QUSÔ‘TUQTÕÕSQSÕUÓTËˆŠ’Y[™\ÜÈ[Y[Ý]›ÜˆÙ[™[™È[™™XÙZ]š[™È]HËÙœ›ÛHÌËˆ˜Z[YˆHÚ[™ÛHÔ™XYÜˆÜš]HØ[›ØÚÜÈ›Üˆ\ÈÛ™Ë‚ŠH‹
+HˆPÓT‘JR[Ì×ØÛÛ›™XÝÝ[Y[Ý]Û\ËÌÎŽ‘QUSÐÓÓ“‘PÕÕSQSÕUÓTËˆŠÛÛ›™XÝ[Ûˆ[Y[Ý]›ÜˆÜÝœ›ÛHÌÈ\ÚÜË‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÜÌ×Ü™\]Y\Ý×ÛÙÙÚ[™Ë˜[ÙKˆŠ‘[˜X›H™\žH^XÚ]ÙÙÚ[™ÈÙˆÌÈ™\]Y\ÝËˆXZÙ\ÈÙ[œÙH›ÜˆXYÈÛ›K‚ŠH‹
+HˆPÓT‘JÝš[™ËÌÜ]Y]YWÙY˜][Þ›ÛÚÙY\\—Ü]‹ØÛXÚÚÝ\ÙKÜÌÜ]Y]YKÈ‹ˆŠ‘Y˜][›ÛÚÙY\\ˆ]™Yš^›ÜˆÌÔ]Y]YH[™Ú[™BŠH‹
+HˆPÓT‘J›ÛÛÌÜ]Y]YWÛZYÜ˜]WÛÛÛY]Y]WÝ×ØXÚÙ]Ë˜[ÙKˆŠ“ZYÜ˜]HÛY]Y]HÝXÝ\™HÙˆÌÔ]Y]YHX›HÈH™]ÈÛ™BŠH‹
+HˆPÓT‘J›ÛÛÌÜ]Y]YWÙ[˜X›WÛÙÙÚ[™×Ý×ÜÌÜ]Y]YWÛÙË˜[ÙKˆŠ‘[˜X›HÜš][™ÈÈÞ\Ý[KœÌÜ]Y]YWÛÙËˆH˜[YHØ[ˆ™HÝ™\Üš][ˆ\ˆX›HÚ]X›HÙ][™ÜÂŠH‹
+HˆPÓT‘J›Ø]ÌÜ]Y]YWÚÙY\\—Ù˜][Ú[š™XÝ[Û—Ü›Ø˜Xš[]KŒˆŠ’ÙY\\ˆ˜][[š™XÝ[Ûˆ›Ø˜Xš[]H›ÜˆÌÔ]Y]YK‚ŠH‹
+HˆPÓT‘JR[œ×Ü™\XØ][Û‹ˆŠ•HXÝX[[X™\ˆÙˆ™\XØ][ÛœÈØ[ˆ™HÜXÚYšYYÚ[ˆHœÈš[H\ÈÜ™X]Y‚ŠH‹
+HˆPÓT‘J›ÛÛœ×Ý[˜Ø]WÛÛ—Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\È[˜Ø][Ûˆ™Y›Ü™H[ˆ[œÙ\[ˆœÈ[™Ú[™HX›\ËˆYˆ\ØX›Y[ˆ^Ù\[ÛˆÚ[™H›ÝÛˆÛˆ[ˆ][\È[œÙ\YˆHš[H[ˆ”È[™XYH^\ÝË‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %S”ÑT•]Y\žH\[™È™]È]HÈH[™ÙˆHš[K‚‹HH8 %S”ÑT•]Y\žH™\XÙ\È^\Ý[™ÈÛÛ[ÙˆHš[HÚ]H™]È]K‚ŠH‹
+HˆPÓT‘J›ÛÛœ×ØÜ™X]WÛ™]×Ùš[WÛÛ—Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÜ™X][™ÈH™]Èš[HÛˆXXÚ[œÙ\[ˆ”È[™Ú[™HX›\ËˆYˆ[˜X›YÛˆXXÚ[œÙ\H™]È”Èš[HÚ[™HÜ™X]YÚ]H˜[YKÚ[Z[\ˆÈ\È]\›Ž‚‚š[š]X[ˆ]K”\œ]Y]™Þ˜Oˆ]KŒK”\œ]Y]™Þ˜Oˆ]KŒ‹”\œ]Y]™Þ˜]Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %S”ÑT•]Y\žH\[™È™]È]HÈH[™ÙˆHš[K‚‹HH8 %S”ÑT•]Y\žHÜ™X]\ÈH™]Èš[K‚ŠH‹
+HˆPÓT‘J›ÛÛœ×ÜÚÚ\Ù[\WÙš[\Ë˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÚÚ\[™È[\Hš[\È[ˆÒ”×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÚ[YÜ˜][ÛœËÚœË›Y
+H[™Ú[™HX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[ÛˆYˆ[\Hš[H\È›ÝÛÛ\]X›HÚ]™\]Y\ÝY›Ü›X]‚‹HH8 %ÑSPÕ™]\›œÈ[\H™\Ý[›Üˆ[\Hš[K‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÚœ×Ü™XYYKˆŠ‘[˜X›HÜˆ\ØX›\È™XY›Üˆ”Èš[\ËˆžHY˜][œÔ™XY\È\ÙYˆYˆ\ØX›YœÔ™XY[™œÔÙYZØÚ[™H\ÙYÈ™XYœÈš[\ËŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜ™XY\—Ù^XÝ]Ü‹˜[ÙKˆŠ‘^\š[Y[[ˆ›Ý]H™XYÈ›ÝYÚH™]È\[[™H™XY\‘^XÝ]Ü˜[œÝXYÙˆHYØXÞHX]ž[ÜÚØHÙˆ™XYY™™\œËˆ˜[È˜XÚÈÈHYØXÞH]›ÜˆÛÛ™šYÝ\˜][ÛœÈH^XÝ]ÜˆÙ\È›ÝY]Ý\ÜŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ™XY\—Ù^XÝ]Ü—Ý\ÙWÛÛ™×ØÛÛ›™XÝ[ÛœË˜[ÙKˆŠ”™]\ÙHH›Ý[™YÛ™ÈÛÝ\˜ÙHÛÛ›™XÝ[ÛˆXÜ›ÜÜÈÚ[™ÝÜÈ[ˆH^\š[Y[[™XY\‘^XÝ]Ü˜ˆHÛ™ÈÛÛ›™XÝ[Ûˆ\ÈÛ™HÚÜÙH˜[™ÙH^ÙYYÈHÝ\œ™[™XYÚ[™ÝÎÈÚ[ˆ\ØX›YH^XÝ]ÜˆZÙ\È›ÈÛÛ›™XÝ[Û‹\ÛÛYÙ][™]™\žHÚ[™ÝÈÜ[œÈHÚÜ[]™YÛ™K\ÚÝÛÛ›™XÝ[Ûˆ
+HÝ][\ÜÈ]
+KŠH‹VT’SQS•S
+HˆPÓT‘JR[™XY\—Ù^XÝ]Ü—ÛZ[—Øž]\×Ù›Ü—ÜÙYZËŒMÌML‹ˆŠ‘›ÜØ\™YØ\›Ý[™›ÜˆH^\š[Y[[™XY\‘^XÝ]Ü˜ˆHØ\\È\È\ÈÚÚ\YÛˆHÜ[ˆÛÝ\˜ÙHÛÛ›™XÝ[Ûˆ
+œšYÙYÈ™XY›ÝYÚ
+H[œÝXYÙˆ\ÜÝZ[™ÈHÙ\\˜]HÛÝ\˜ÙH™XYÜˆ™[Ü[š[™ËˆÙ]™X\ˆH˜[™ÚYÜ™\]Y\ÝÛÜÝœ™XZÙ]™[ˆÛÈœšYÚ[™ÈÝ^\ÈÛÜÝ\ÜÚ]]™KŠH‹VT’SQS•S
+HˆPÓT‘JR[™XY\—Ù^XÝ]Ü—ÛX^ÝZ[Ù›Ü—Ù˜Z[‹LMÍ‹ˆŠ‘˜Z[ˆ›Ý[™›ÜˆH^\š[Y[[™XY\‘^XÝ]Ü˜ˆHÛ™ÈÛÝ\˜ÙHÛÛ›™XÝ[Ûˆ›ÜYÚ][ˆ\ÈX[žHž]\ÈÙˆ]ÈšYÚ›Ý[™\È™XYÝ]ÈH›Ý[™š\œÝÛÈ]ÛÛ\]\È[™™]\›œÈÈHÛÛ›™XÝ[ÛˆÛÛ™]\ØX›H[œÝXYÙˆÛÝ[[™È\È[ˆ[˜ÛÛ\]HÛÛ›™XÝ[Û‹ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ^\™WÜÚÚ\Ù[\WÙš[\Ë˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÚÚ\[™È[\Hš[\È[ˆÌÈ[™Ú[™K‚‚”ÜÜÚX›H˜[Y\Î‚‹H8 %ÑSPÕ›ÝÜÈ[ˆ^Ù\[ÛˆYˆ[\Hš[H\È›ÝÛÛ\]X›HÚ]™\]Y\ÝY›Ü›X]‚‹HH8 %ÑSPÕ™]\›œÈ[\H™\Ý[›Üˆ[\Hš[K‚ŠH‹
+HˆPÓT‘J\œ›ÝÑ›YÚ\ØÜš\Ü•\K\œ›Ý×Ù›YÚÜ™\]Y\ÝÙ\ØÜš\Ü—Ý\K\œ›ÝÑ›YÚ\ØÜš\Ü•\NŽ”]ˆŠ•\HÙˆ\ØÜš\ÜˆÈ\ÙH›Üˆ\œ›ÝÈ›YÚ™\]Y\ÝËˆ	Ü]	ÈÙ[™ÈH]\Ù]˜[YH\ÈH]\ØÜš\Ü‹ˆ	ØÛÛ[X[™	ÈÙ[™ÈHÔS]Y\žH\ÈHÛÛ[X[™\ØÜš\Üˆ
+™\]Z\™Y›Üˆ™[Z[ÊK‚‚”ÜÜÚX›H˜[Y\Î‚‹H	Ü]	È8 %\ÙH›YÚ\ØÜš\ÜŽŽ”]
+Y˜][ÛÜšÜÈÚ][ÜÝ\œ›ÝÈ›YÚÙ\™\œÊB‹H	ØÛÛ[X[™	È8 %\ÙH›YÚ\ØÜš\ÜŽŽÛÛ[X[™Ú]HÑSPÕ]Y\žH
+™\]Z\™Y›Üˆ™[Z[ÊBŠH‹
+HˆPÓT‘JR[Ý×ÛX^ØYÙKˆŠ‘^\™Y[YH›ÜˆÕËˆYX[œÈ\ØX›HÕË‚ŠH‹
+HˆPÓT‘J›ÛÛ^™[Y\Ë˜[ÙKˆŠ•Ú]\ˆÈÛÝ[^™[YH˜[Y\È
+HZ[š[][\È[™X^[][\È[ˆÛÛ[[œÈÙˆH]Y\žH™\Ý[
+KˆXØÙ\ÈÜˆKˆžHY˜][
+\ØX›Y
+K‚‘›Üˆ[Ü™H[™›Ü›X][Û‹ÙYHHÙXÝ[Ûˆ‘^™[YH˜[Y\È‹‚ŠH‹STÔ•S•
+HˆPÓT‘J›ÛÛ\ÙWÝ[˜ÛÛ\™\ÜÙYØØXÚK˜[ÙKˆŠ•Ú]\ˆÈ\ÙHHØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜËˆXØÙ\ÈÜˆKˆžHY˜][
+\ØX›Y
+K‚•\Ú[™ÈH[˜ÛÛ\™\ÜÙYØXÚH
+Û›H›ÜˆX›\È[ˆHY\™ÙU™YH˜[Z[JHØ[ˆÚYÛšYšXØ[H™YXÙH][˜ÞH[™[˜Ü™X\ÙH›ÝYÚ]Ú[ˆÛÜšÚ[™ÈÚ]H\™ÙH[X™\ˆÙˆÚÜ]Y\šY\Ëˆ[˜X›H\ÈÙ][™È›Üˆ\Ù\œÈÚÈÙ[™œ™\]Y[ÚÜ™\]Y\ÝËˆ[ÛÈ^H][[ÛˆÈHÝ[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™WJÛÜ\˜][ÛœËÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜÈÝ[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™JHÛÛ™šYÝ\˜][Ûˆ\˜[Y]\ˆ
+Û›HÙ][ˆHÛÛ™šYÈš[JH8 $ÈHÚ^™HÙˆ[˜ÛÛ\™\ÜÙYØXÚH›ØÚÜËˆžHY˜][]\ÈÚP‹ˆH[˜ÛÛ\™\ÜÙYØXÚH\Èš[Y[ˆ\È™YYY[™HX\Ý]\ÙY]H\È]]ÛX]XØ[H[]Y‚‚‘›Üˆ]Y\šY\È]™XY]X\ÝHÛÛY]Ú]\™ÙH›Û[YHÙˆ]H
+Û™HZ[[Ûˆ›ÝÜÈÜˆ[Ü™JKH[˜ÛÛ\™\ÜÙYØXÚH\È\ØX›Y]]ÛX]XØ[HÈØ]™HÜXÙH›Üˆ[HÛX[]Y\šY\Ëˆ\ÈYX[œÈ][ÝHØ[ˆÙY\H	Ý\ÙWÝ[˜ÛÛ\™\ÜÙYØØXÚIÈÙ][™È[Ø^\ÈÙ]ÈK‚ŠH‹
+HˆPÓT‘J›ÛÛ™\XÙWÜ[›š[™×Ü]Y\žK˜[ÙKˆŠ•Ú[ˆ\Ú[™ÈH[\™˜XÙKH	Ü]Y\žWÚY	È\˜[Y]\ˆØ[ˆ™H\ÜÙYˆ\È\È[žHÝš[™È]Ù\™\È\ÈH]Y\žHY[YšY\‹‚’YˆH]Y\žHœ›ÛHHØ[YH\Ù\ˆÚ]HØ[YH	Ü]Y\žWÚY	È[™XYH^\ÝÈ]\È[YKH™Z]š[Ý\ˆ\[™ÈÛˆH	Ü™\XÙWÜ[›š[™×Ü]Y\žIÈ\˜[Y]\‹‚‚˜
+Y˜][
+H8 $È›ÝÈ[ˆ^Ù\[Ûˆ
+È›Ý[ÝÈH]Y\žHÈ[ˆYˆH]Y\žHÚ]HØ[YH	Ü]Y\žWÚY	È\È[™XYH[›š[™ÊK‚‚˜X8 $ÈØ[˜Ù[HÛ]Y\žH[™Ý\[›š[™ÈH™]ÈÛ™K‚‚”Ù]\È\˜[Y]\ˆÈH›Üˆ[\[Y[[™ÈÝYÙÙ\Ý[ÛœÈ›ÜˆÙYÛY[][ÛˆÛÛ™][ÛœËˆY\ˆ[\š[™ÈH™^Ú\˜XÝ\‹YˆHÛ]Y\žH\Û‰Ýš[š\ÚYY]]ÚÝ[™HØ[˜Ù[Y‚ŠH‹
+HˆPÓT‘JR[X^Ü™[[ÝWÜ™XYÛ™]ÛÜš×Ø˜[™ÚYˆŠ•HX^[][HÜYYÙˆ]H^Ú[™ÙHÝ™\ˆH™]ÛÜšÈ[ˆž]\È\ˆÙXÛÛ™›Üˆ™XY‚ŠH‹
+HˆPÓT‘JR[X^Ü™[[ÝWÝÜš]WÛ™]ÛÜš×Ø˜[™ÚYˆŠ•HX^[][HÜYYÙˆ]H^Ú[™ÙHÝ™\ˆH™]ÛÜšÈ[ˆž]\È\ˆÙXÛÛ™›ÜˆÜš]K‚ŠH‹
+HˆPÓT‘JR[X^ÛØØ[Ü™XYØ˜[™ÚYˆŠ•HX^[][HÜYYÙˆØØ[™XYÈ[ˆž]\È\ˆÙXÛÛ™‚ŠH‹
+HˆPÓT‘JR[X^ÛØØ[ÝÜš]WØ˜[™ÚYˆŠ•HX^[][HÜYYÙˆØØ[Üš]\È[ˆž]\È\ˆÙXÛÛ™‚ŠH‹
+HˆPÓT‘J›ÛÛÝ™X[WÛZÙWÙ[™Ú[™WØ[Ý×Ù\™XÝÜÙ[XÝ˜[ÙKˆŠ[ÝÈ\™XÝÑSPÕ]Y\žH›ÜˆØYšØK˜X˜š]TKš[SÙË™Y\ÈÝ™X[\ËÌÔ]Y]YK^\™T]Y]YH[™UÈ[™Ú[™\Ëˆ[ˆØ\ÙH\™H\™H]XÚYX]\šX[^™YšY]ÜËÑSPÕ]Y\žH\È›Ý[ÝÙY]™[ˆYˆ\ÈÙ][™È\È[˜X›Y‚’Yˆ\™H\™H›È]XÚYX]\šX[^™YšY]ÜË[˜X›[™È\ÈÙ][™È[ÝÜÈÈ™XY]Kˆ™H]Ø\™H]\ÝX[HH™XY]H\È™[[Ý™Yœ›ÛHH]Y]YKˆ[ˆÜ™\ˆÈ]›ÚY™[[Ýš[™È™XY]HH™[]Y[™Ú[™HÙ][™ÜÈÚÝ[™HÛÛ™šYÝ\™Y›Ü\›K‚ŠH‹
+HˆPÓT‘JÝš[™ËÝ™X[WÛZÙWÙ[™Ú[™WÚ[œÙ\Ü]Y]YKˆ‹ˆŠ•Ú[ˆÝ™X[K[ZÙH[™Ú[™H™XYÈœ›ÛH][\H]Y]Y\ËH\Ù\ˆÚ[™YYÈÙ[XÝÛ™H]Y]YHÈ[œÙ\[ÈÚ[ˆÜš][™Ëˆ\ÙYžH™Y\ÈÝ™X[\È[™UË‚ŠH‹
+HˆPÓT‘J›ÛÛXÝ[Û˜\žWÝ˜[Y]WÜš[X\žWÚÙ^WÝ\K˜[ÙKˆŠ•˜[Y]Hš[X\žHÙ^H\H›ÜˆXÝ[Û˜\šY\ËˆžHY˜][Y\H›ÜˆÚ[\H^[Ý]ÈÚ[™H[\XÚ]HÛÛ™\YÈR[‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YÚ[œÙ\ÜÚÚ\Ü™XYÛÛ›WÜ™\XØ\Ë˜[ÙKˆŠ‘[˜X›\ÈÚÚ\[™È™XY[Û›H™\XØ\È›ÜˆS”ÑT•]Y\šY\È[È\ÝšX]Y‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %S”ÑT•Ø\È\È\ÝX[Yˆ]Ú[ÛÈÈ™XY[Û›H™\XØH]Ú[˜Z[‹HH8 %[š]X]ÜˆÚ[ÚÚ\™XY[Û›H™\XØ\È™Y›Ü™HÙ[™[™È]HÈÚ\™Ë‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛ\ÝšX]YÙ›Ü™YÜ›Ý[™Ú[œÙ\˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÞ[˜Ú›Û›Ý\È]H[œÙ\[Ûˆ[ÈHÑ\ÝšX]YJÙ[™Ú[™\ËÝX›KY[™Ú[™\ËÜÜXÚX[Ù\ÝšX]Y
+HX›K‚‚žHY˜][Ú[ˆ[œÙ\[™È]H[ÈH\ÝšX]YX›KHÛXÚÒÝ\ÙHÙ\™\ˆÙ[™È]HÈÛ\Ý\ˆ›Ù\È[ˆ˜XÚÙÜ›Ý[™[ÙKˆÚ[ˆ\ÝšX]YÙ›Ü™YÜ›Ý[™Ú[œÙ\LXH]H\È›ØÙ\ÜÙYÞ[˜Ú›Û›Ý\ÛK[™HS”ÑT•Ü\˜][ÛˆÝXØÙYYÈÛ›HY\ˆ[H]H\ÈØ]™YÛˆ[Ú\™È
+]X\ÝÛ™H™\XØH›ÜˆXXÚÚ\™Yˆ[\›˜[Ü™\XØ][Û˜\ÈYJK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %]H\È[œÙ\Y[ˆ˜XÚÙÜ›Ý[™[ÙK‚‹HX8 %]H\È[œÙ\Y[ˆÞ[˜Ú›Û›Ý\È[ÙK‚‚ÛÝYY˜][˜[YNˆX‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÑ\ÝšX]YX›H[™Ú[™WJÙ[™Ú[™\ËÝX›KY[™Ú[™\ËÜÜXÚX[Ù\ÝšX]Y
+B‹HÓX[˜YÚ[™È\ÝšX]YX›\×JÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÞ\Ý[HÛX[˜YÚ[™ËY\ÝšX]Y]X›\ÊBŠH‹[œÙ\Ù\ÝšX]YÜÞ[˜ÊHˆPÓT‘WÕÒUÐSPTÊR[\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\Ý[Y[Ý]ˆŠ•[Y[Ý]›Üˆ[œÙ\]Y\žH[È\ÝšX]YˆÙ][™È\È\ÙYÛ›HÚ][œÙ\Ù\ÝšX]YÜÞ[˜È[˜X›Yˆ™\›È˜[YHYX[œÈ›È[Y[Ý]‚ŠH‹[œÙ\Ù\ÝšX]YÝ[Y[Ý]
+HˆPÓT‘WÕÒUÐSPTÊZ[\ÙXÛÛ™Ë\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\ÜÛY\Ý[YWÛ\ËLˆŠ˜\ÙH[\˜[›ÜˆHÑ\ÝšX]YJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÜÜXÚX[Ù\ÝšX]Y›Y
+HX›H[™Ú[™HÈÙ[™]KˆHXÝX[[\˜[Ü›ÝÜÈ^Û™[X[H[ˆH]™[Ùˆ\œ›ÜœË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HHÜÚ]]™H[YÙ\ˆ[X™\ˆÙˆZ[\ÙXÛÛ™Ë‚ŠH‹\ÝšX]YÙ\™XÝÜžWÛ[Ûš]Ü—ÜÛY\Ý[YWÛ\ÊHˆPÓT‘WÕÒUÐSPTÊZ[\ÙXÛÛ™Ë\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\ÛX^ÜÛY\Ý[YWÛ\ËÌˆŠ“X^[][H[\˜[›ÜˆHÑ\ÝšX]YJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÜÜXÚX[Ù\ÝšX]Y›Y
+HX›H[™Ú[™HÈÙ[™]Kˆ[Z]È^Û™[X[Ü›ÝÝÙˆH[\˜[Ù][ˆHÙ\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\ÜÛY\Ý[YWÛ\×JÙ\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\ÜÛY\Ý[YWÛ\ÊHÙ][™Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HHÜÚ]]™H[YÙ\ˆ[X™\ˆÙˆZ[\ÙXÛÛ™Ë‚ŠH‹\ÝšX]YÙ\™XÝÜžWÛ[Ûš]Ü—ÛX^ÜÛY\Ý[YWÛ\ÊHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\Ø˜]Ú˜[ÙKˆŠ‘[˜X›\ËÙ\ØX›\È[œÙ\Y]HÙ[™[™È[ˆ˜]Ú\Ë‚‚•Ú[ˆ˜]ÚÙ[™[™È\È[˜X›YHÑ\ÝšX]YJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÜÜXÚX[Ù\ÝšX]Y›Y
+HX›H[™Ú[™HšY\ÈÈÙ[™][\Hš[\ÈÙˆ[œÙ\Y]H[ˆÛ™HÜ\˜][Ûˆ[œÝXYÙˆÙ[™[™È[HÙ\\˜][Kˆ˜]ÚÙ[™[™È[\›Ý™\ÈÛ\Ý\ˆ\™›Ü›X[˜ÙHžH™]\‹]][^š[™ÈÙ\™\ˆ[™™]ÛÜšÈ™\ÛÝ\˜Ù\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HH8 %[˜X›Y‚‹H8 %\ØX›Y‚ŠH‹\ÝšX]YÙ\™XÝÜžWÛ[Ûš]Ü—Ø˜]ÚÚ[œÙ\ÊHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\ÜÜ]Ø˜]ÚÛÛ—Ù˜Z[\™K˜[ÙKˆŠ‘[˜X›\ËÙ\ØX›\ÈÜ][™È˜]Ú\ÈÛˆ˜Z[\™\Ë‚‚”ÛÛY][Y\ÈÙ[™[™È\XÝ[\ˆ˜]ÚÈH™[[ÝHÚ\™X^H˜Z[™XØ]\ÙHÙˆÛÛYHÛÛ\^\[[™HY\ˆ
+K™KˆPUT’PSV‘Q’QUØÚ]Ô“ÕT–X
+HYHÈY[[ÜžH[Z]^ÙYYYÜˆÚ[Z[\ˆ\œ›ÜœËˆ[ˆ\ÈØ\ÙK™]žZ[™ÈÚ[›Ý[
+[™\ÈÚ[ÝXÚÈ\ÝšX]YÙ[™È›ÜˆHX›JH]Ù[™[™Èš[\Èœ›ÛH]˜]ÚÛ™HžHÛ™HX^HÝXØÙYYS”ÑT•‚‚”ÛÈ[œÝ[[™È\ÈÙ][™ÈÈXÚ[\ØX›H˜]Ú[™È›ÜˆÝXÚ˜]Ú\È
+K™Kˆ[\Ü˜\žH\ØX›\È\ÝšX]YØ˜XÚÙÜ›Ý[™Ú[œÙ\Ø˜]Ú›Üˆ˜Z[Y˜]Ú\ÊK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HH8 %[˜X›Y‚‹H8 %\ØX›Y‚‚ŽŽŽ››ÝB•\ÈÙ][™È[ÛÈY™™XÝÈœ›ÚÙ[ˆ˜]Ú\È
+]X^H\X\œÈ™XØ]\ÙHÙˆX››Ü›X[Ù\™\ˆ
+XXÚ[™JH\›Z[˜][Ûˆ[™›ÈœÞ[˜×ØY\—Ú[œÙ\ØœÞ[˜×Ù\™XÝÜšY\Ø›ÜˆÑ\ÝšX]YJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÜÜXÚX[Ù\ÝšX]Y›Y
+HX›H[™Ú[™JK‚ŽŽŽ‚‚ŽŽŽ››ÝB–[ÝHÚÝ[›Ý™[HÛˆ]]ÛX]XÈ˜]ÚÜ][™ËÚ[˜ÙH\ÈX^H\\™›Ü›X[˜ÙK‚ŽŽŽ‚ŠH‹\ÝšX]YÙ\™XÝÜžWÛ[Ûš]Ü—ÜÜ]Ø˜]ÚÛÛ—Ù˜Z[\™JHˆˆPÓT‘J›ÛÛÜ[Z^™WÛ[Ý™WÝ×Ü™]Ú\™KYKˆŠ‘[˜X›\ÈÜˆ\ØX›\È]]ÛX]XÈÔ‘UÒT‘WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÜ™]Ú\™K›Y
+HÜ[Z^˜][Ûˆ[ˆÔÑSPÕJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÚ[™^›Y
+H]Y\šY\Ë‚‚•ÛÜšÜÈÛ›H›ÜˆÊ“Y\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÚ[™^›Y
+HX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %]]ÛX]XÈ‘UÒT‘XÜ[Z^˜][Ûˆ\È\ØX›Y‚‹HH8 %]]ÛX]XÈ‘UÒT‘XÜ[Z^˜][Ûˆ\È[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÛ[Ý™WÝ×Ü™]Ú\™WÚY—Ùš[˜[˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\È]]ÛX]XÈÔ‘UÒT‘WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÜ™]Ú\™K›Y
+HÜ[Z^˜][Ûˆ[ˆÔÑSPÕJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÚ[™^›Y
+H]Y\šY\ÈÚ]Ñ’SSJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÙœ›ÛHÙš[˜[[[ÙYšY\ŠH[ÙYšY\‹‚‚•ÛÜšÜÈÛ›H›ÜˆÊ“Y\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÚ[™^›Y
+HX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %]]ÛX]XÈ‘UÒT‘XÜ[Z^˜][Ûˆ[ˆÑSPÕ]Y\šY\ÈÚ]’SS[ÙYšY\ˆ\È\ØX›Y‚‹HH8 %]]ÛX]XÈ‘UÒT‘XÜ[Z^˜][Ûˆ[ˆÑSPÕ]Y\šY\ÈÚ]’SS[ÙYšY\ˆ\È[˜X›Y‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÛÜ[Z^™WÛ[Ý™WÝ×Ü™]Ú\™WJÛÜ[Z^™WÛ[Ý™WÝ×Ü™]Ú\™JHÙ][™ÂŠH‹
+HˆPÓT‘J›ÛÛ[Ý™WØ[ØÛÛ™][Ûœ×Ý×Ü™]Ú\™KYKˆŠ“[Ý™H[šXX›HÛÛ™][ÛœÈœ›ÛHÒT‘HÈ‘UÒT‘BŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÛ][\WÜ™]Ú\™WÜ™XYÜÝ\ËYKˆŠ“[Ý™H[Ü™HÛÛ™][ÛœÈœ›ÛHÒT‘HÈ‘UÒT‘H[™È™XYÈœ›ÛH\ÚÈ[™š[\š[™È[ˆ][\HÝ\ÈYˆ\™H\™H][\HÛÛ™][ÛœÈÛÛXš[™YÚ]S‘ŠH‹
+HˆPÓT‘J›ÛÛ[Ý™WÜš[X\žWÚÙ^WØÛÛ[[œ×Ý×Ù[™ÛÙ—Ü™]Ú\™KYKˆŠ“[Ý™H‘UÒT‘HÛÛ™][ÛœÈÛÛZ[š[™Èš[X\žHÙ^HÛÛ[[œÈÈH[™ÙˆS‘ÚZ[‹ˆ]\ÈZÙ[H]\ÙHÛÛ™][ÛœÈ\™HZÙ[ˆ[ÈXØÛÝ[\š[™Èš[X\žHÙ^H[˜[\Ú\È[™\ÈÚ[›ÝÛÛšX]HHÝÈ‘UÒT‘Hš[\š[™Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ü™[Ü™\—Ü™]Ú\™WØÛÛ™][ÛœËYKˆŠ•Ú[ˆ[Ýš[™ÈÛÛ™][ÛœÈœ›ÛHÒT‘HÈ‘UÒT‘K[ÝÈ™[Ü™\š[™È[HÈÜ[Z^™Hš[\š[™ÂŠH‹
+HˆˆPÓT‘WÕÒUÐSPTÊR[[\—ÜÞ[˜ËKˆŠ[ÝÜÈ[ÝHÈÜXÚYžHHØZ]™Z]š[Üˆ›ÜˆXÝ[ÛœÈ]\™HÈ™H^XÝ]YÛˆ™\XØ\ÈžHØST˜J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØ[\‹Ú[™^›Y
+KØÔSRV‘XJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÛÜ[Z^™K›Y
+HÜˆØ•SÐUXJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÝ[˜Ø]K›Y
+H]Y\šY\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %È›ÝØZ]‚‹HX8 %ØZ]›ÜˆÝÛˆ^XÝ][Û‹‚‹H˜8 %ØZ]›Üˆ]™\ž[Û™K‚‹HØHÛ›HØZ]›ÜˆXÝ]™H™\XØ\Ë‚‚ÛÝYY˜][˜[YNˆ‚‚ŽŽŽ››ÝB˜[\—ÜÞ[˜Ø\È\XØX›HÈ™\XØ]Y[™Ú\™YY\™ÙU™YXX›\ÈÛ›K]Ù\È›Ý[™ÈÈ[\ˆ›Ûˆ™\XØ]YÜˆÚ\™YX›\Ë‚ŽŽŽ‚ŠH‹™\XØ][Û—Ø[\—Ü\][Ûœ×ÜÞ[˜ÊHˆPÓT‘J[™\XØ][Û—ÝØZ]Ù›Ü—Ú[˜XÝ]™WÜ™\XØWÝ[Y[Ý]LŒˆŠ”ÜXÚYšY\ÈÝÈÛ™È
+[ˆÙXÛÛ™ÊHÈØZ]›Üˆ[˜XÝ]™H™\XØ\ÈÈ^XÝ]HØST˜J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØ[\‹Ú[™^›Y
+KØÔSRV‘XJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÛÜ[Z^™K›Y
+HÜˆØ•SÐUXJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÝ[˜Ø]K›Y
+H]Y\šY\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %È›ÝØZ]‚‹H™YØ]]™H[YÙ\ˆ8 %ØZ]›Üˆ[›[Z]Y[YK‚‹HÜÚ]]™H[YÙ\ˆ8 %H[X™\ˆÙˆÙXÛÛ™ÈÈØZ]‚ŠH‹
+HˆPÓT‘J›ÛÛ[\—Û[Ý™WÝ×ÜÜXÙWÙ^XÝ]WØ\Þ[˜Ë˜[ÙKˆŠ‘^XÝ]HSTˆP“HSÕ‘H‹‹ˆÈÑTÒß“ÓSQWH\Þ[˜Ú›Û›Ý\ÛBŠH‹
+HˆˆPÓT‘JØY˜[[˜Ú[™ËØYØ˜[[˜Ú[™ËØY˜[[˜Ú[™ÎŽ”S‘ÓKˆŠ”ÜXÚYšY\ÈH[ÛÜš]HÙˆ™\XØ\ÈÙ[XÝ[Ûˆ]\È\ÙY›Üˆ\ÝšX]Y]Y\žH›ØÙ\ÜÚ[™Ë‚‚ÛXÚÒÝ\ÙHÝ\ÜÈH›ÛÝÚ[™È[ÛÜš]\ÈÙˆÚÛÜÚ[™È™\XØ\Î‚‚‹HÔ˜[™ÛWJÛØYØ˜[[˜Ú[™Ë\˜[™ÛJH
+žHY˜][
+B‹HÓ™X\™\ÝÜÝ˜[YWJÛØYØ˜[[˜Ú[™Ë[™X\™\ÝÚÜÝ˜[YJB‹HÒÜÝ˜[YH]™[œÚZ[ˆ\Ý[˜ÙWJÛØYØ˜[[˜Ú[™ËZÜÝ˜[YWÛ]™[œÚZ[—Ù\Ý[˜ÙJB‹HÒÜÝ˜[YHÛ™Ù\ÝÛÛ[[Ûˆ™Yš^JÛØYØ˜[[˜Ú[™ËZÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—Ü™Yš^
+B‹HÒÜÝ˜[YHÛ™Ù\ÝÛÛ[[ÛˆÝY™š^JÛØYØ˜[[˜Ú[™ËZÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—ÜÝY™š^
+B‹HÒ[ˆÜ™\—JÛØYØ˜[[˜Ú[™ËZ[—ÛÜ™\ŠB‹HÑš\œÝÜˆ˜[™ÛWJÛØYØ˜[[˜Ú[™ËYš\œÝÛÜ—Ü˜[™ÛJB‹HÔ›Ý[™›Øš[—JÛØYØ˜[[˜Ú[™Ë\›Ý[™Ü›Øš[ŠB‚”ÙYH[ÛÎ‚‚‹HÙ\ÝšX]YÜ™\XØWÛX^ÚYÛ›Ü™YÙ\œ›Üœ×JÙ\ÝšX]YÜ™\XØWÛX^ÚYÛ›Ü™YÙ\œ›ÜœÊB‚ˆÈÈÈ˜[™ÛH
+žHY˜][
+HÈÛØYØ˜[[˜Ú[™Ë\˜[™Û_B‚˜Ü[›ØYØ˜[[˜Ú[™ÈH˜[™ÛB˜‚•H[X™\ˆÙˆ\œ›ÜœÈ\ÈÛÝ[Y›ÜˆXXÚ™\XØKˆH]Y\žH\ÈÙ[ÈH™\XØHÚ]H™]Ù\Ý\œ›ÜœË[™Yˆ\™H\™HÙ]™\˜[Ùˆ\ÙKÈ[ž[Û™HÙˆ[K‚‘\ØY˜[YÙ\ÎˆÙ\™\ˆ›Þ[Z]H\È›ÝXØÛÝ[Y›ÜŽÈYˆH™\XØ\È]™HY™™\™[]K[ÝHÚ[[ÛÈÙ]Y™™\™[]K‚‚ˆÈÈÈ™X\™\ÝÜÝ˜[YHÈÛØYØ˜[[˜Ú[™Ë[™X\™\ÝÚÜÝ˜[Y_B‚˜Ü[›ØYØ˜[[˜Ú[™ÈH™X\™\ÝÚÜÝ˜[YB˜‚•H[X™\ˆÙˆ\œ›ÜœÈ\ÈÛÝ[Y›ÜˆXXÚ™\XØKˆ]™\žHHZ[]\ËH[X™\ˆÙˆ\œ›ÜœÈ\È[YÜ˜[H]šYYžH‹ˆ\ËH[X™\ˆÙˆ\œ›ÜœÈ\ÈØ[Ý[]Y›ÜˆH™XÙ[[YHÚ]^Û™[X[Û[ÛÝ[™ËˆYˆ\™H\ÈÛ™H™\XØHÚ]HZ[š[X[[X™\ˆÙˆ\œ›ÜœÈ
+K™K°¨\œ›ÜœÈØØÝ\œ™Y™XÙ[HÛˆHÝ\ˆ™\XØ\ÊKH]Y\žH\ÈÙ[È]ˆYˆ\™H\™H][\H™\XØ\ÈÚ]HØ[YHZ[š[X[[X™\ˆÙˆ\œ›ÜœËH]Y\žH\ÈÙ[ÈH™\XØHÚ]HÜÝ˜[YH]\È[ÜÝÚ[Z[\ˆÈHÙ\™\‰ÜÈÜÝ˜[YH[ˆHÛÛ™šYÈš[H
+›ÜˆH[X™\ˆÙˆY™™\™[Ú\˜XÝ\œÈ[ˆY[XØ[ÜÚ][ÛœË\ÈHZ[š[][H[™ÝÙˆ›ÝÜÝ˜[Y\ÊK‚‚‘›Üˆ[œÝ[˜ÙK^[\LKLKLH[™^[\LKLKLˆ\™HY™™\™[[ˆÛ™HÜÚ][Û‹Ú[H^[\LKLKLH[™^[\LKL‹LˆY™™\ˆ[ˆÛÈXÙ\Ë‚•\ÈY]ÙZYÚÙY[Hš[Z]]™K]]Ù\È›Ý™\]Z\™H^\›˜[]HX›Ý]™]ÛÜšÈÜÛÙÞK[™]Ù\È›ÝÛÛ\\™HTY™\ÜÙ\ËÚXÚÛÝ[™HÛÛ\XØ]Y›ÜˆÝ\ˆTˆY™\ÜÙ\Ë‚‚•\ËYˆ\™H\™H\]Z]˜[[™\XØ\ËHÛÜÙ\ÝÛ™HžH˜[YH\È™Y™\œ™Y‚•ÙHØ[ˆ[ÛÈ\ÜÝ[YH]Ú[ˆÙ[™[™ÈH]Y\žHÈHØ[YHÙ\™\‹[ˆHXœÙ[˜ÙHÙˆ˜Z[\™\ËH\ÝšX]Y]Y\žHÚ[[ÛÈÛÈÈHØ[YHÙ\™\œËˆÛÈ]™[ˆYˆY™™\™[]H\ÈXÙYÛˆH™\XØ\ËH]Y\žHÚ[™]\›ˆ[ÜÝHHØ[YH™\Ý[Ë‚‚ˆÈÈÈÜÝ˜[YH]™[œÚZ[ˆ\Ý[˜ÙHÈÛØYØ˜[[˜Ú[™ËZÜÝ˜[YWÛ]™[œÚZ[—Ù\Ý[˜Ù_B‚˜Ü[›ØYØ˜[[˜Ú[™ÈHÜÝ˜[YWÛ]™[œÚZ[—Ù\Ý[˜ÙB˜‚’\ÝZÙH™X\™\ÝÚÜÝ˜[YX]]ÛÛ\\™\ÈÜÝ˜[YH[ˆHÛ]™[œÚZ[ˆ\Ý[˜ÙWJÎ‹ËÙ[‹ÚZÚ\YXK›Ü™ËÝÚZÚKÓ]™[œÚZ[—Ù\Ý[˜ÙJHX[›™\‹ˆ›Üˆ^[\N‚‚˜^™^[\KXÛXÚÚÝ\ÙKLL[\KXÛXÚÚÝ\ÙKLLŒB‚™^[\KXÛXÚÚÝ\ÙKLL^[\KXÛXÚÚÝ\ÙKLKLLŒ‚‚™^[\KXÛXÚÚÝ\ÙKLL^[\KXÛXÚÚÝ\ÙKLL‹LŒÂ˜‚ˆÈÈÈÜÝ˜[YHÛ™Ù\ÝÛÛ[[Ûˆ™Yš^ÈÛØYØ˜[[˜Ú[™ËZÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—Ü™Yš^B‚˜Ü[›ØYØ˜[[˜Ú[™ÈHÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—Ü™Yš^˜‚’\ÝZÙH™X\™\ÝÚÜÝ˜[YX]H™\XØHÚÜÙHÜÝ˜[YHÚ\™\ÈHÛ™Ù\ÝÛÛ[[Ûˆ™Yš^Ú]HØØ[ÜÝ˜[YH\È™Y™\œ™Y
+HÛ™Ù\ˆHÛÛ[[Ûˆ™Yš^HYÚ\ˆHš[Üš]JKˆ[›ZÙH™X\™\ÝÚÜÝ˜[YXÚXÚÛÝ[ÈY™™\š[™ÈÚ\˜XÝ\œÈÜÚ][ÛˆžHÜÚ][Û‹\ÈÝ˜]YÞH\È›ÝÛÛ™\ÙYžHÜÝ˜[Y\ÈÚÜÙH[Y\šXÈÙYÛY[È]™HY™™\™[[™ÝËˆ›Üˆ^[\K›ÜˆHØØ[ÜÝ˜[YHÙ™LÌX‚‚˜^œÙ™LÌHÙLÌBŒB‚œÙ™LÌHÙ™LLLBŒÂ‚œÙ™LÌHÙMLBŒB˜‚’\™HÙ™LLLX\È™Y™\œ™Y™XØ]\ÙH]Ú\™\ÈHÛ™Ù\ÝÛÛ[[Ûˆ™Yš^
+Ù™X[™ÝÊHÚ]Ù™LÌX‚‚”™\XØ\ÈÚ]\]X[ÛÛ[[Ûˆ™Yš^[™Ý\™HÚÜÙ[ˆ]˜[™ÛKˆ[ˆ\XÝ[\‹Ú[ˆ›È™\XØHÚ\™\È[žH™Yš^Ú]HØØ[ÜÝ˜[YH
+[ÛÛ[[Ûˆ™Yš^[™ÝÈ\™H™\›ÊK\ÈÝ˜]YÞH™Z]™\È^XÝHZÙH˜[™ÛX‚‚ˆÈÈÈÜÝ˜[YHÛ™Ù\ÝÛÛ[[ÛˆÝY™š^ÈÛØYØ˜[[˜Ú[™ËZÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—ÜÝY™š^B‚˜Ü[›ØYØ˜[[˜Ú[™ÈHÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—ÜÝY™š^˜‚’\ÝZÙHÜÝ˜[YWÛÛ™Ù\ÝØÛÛ[[Û—Ü™Yš^]HÛ™Ù\ÝÛÛ[[Ûˆ
+œÝY™š^
+ˆ\ÈÛÛ\\™Y[œÝXYÙˆH™Yš^ˆ\È\È\ÙY[Ú[ˆH]HÙ[\ˆY[]H\È[˜ÛÙY\ÈHÝY™š^ÙˆHÜÝ˜[YKˆ›Üˆ^[\K›ÜˆHØØ[ÜÝ˜[YH]™ÝÚ‹œXË›ØØ[ÛXZ[˜‚‚˜^™]™ÝÚ‹œXË›ØØ[ÛXZ[ˆÍ™Ú›ØØ[ÛXZ[‚ŒL‚‚™]™ÝÚ‹œXË›ØØ[ÛXZ[ˆXŽNNKœXË›ØØ[ÛXZ[‚ŒMB˜‚’\™HXŽNNKœXË›ØØ[ÛXZ[˜\È™Y™\œ™Y™XØ]\ÙH]Ú\™\ÈHÛ™Ù\ÝÛÛ[[ÛˆÝY™š^
+œXË›ØØ[ÛXZ[˜[™ÝMJHÚ]]™ÝÚ‹œXË›ØØ[ÛXZ[˜‚‚”™\XØ\ÈÚ]\]X[ÛÛ[[ÛˆÝY™š^[™Ý\™HÚÜÙ[ˆ]˜[™ÛKˆ[ˆ\XÝ[\‹Ú[ˆ›È™\XØHÚ\™\È[žHÝY™š^Ú]HØØ[ÜÝ˜[YH
+[ÛÛ[[ÛˆÝY™š^[™ÝÈ\™H™\›ÊK\ÈÝ˜]YÞH™Z]™\È^XÝHZÙH˜[™ÛX‚‚ˆÈÈÈ[ˆÜ™\ˆÈÛØYØ˜[[˜Ú[™ËZ[—ÛÜ™\ŸB‚˜Ü[›ØYØ˜[[˜Ú[™ÈH[—ÛÜ™\‚˜‚”™\XØ\ÈÚ]HØ[YH[X™\ˆÙˆ\œ›ÜœÈ\™HXØÙ\ÜÙY[ˆHØ[YHÜ™\ˆ\È^H\™HÜXÚYšYY[ˆHÛÛ™šYÝ\˜][Û‹‚•\ÈY]Ù\È\›ÜšX]HÚ[ˆ[ÝHÛ›ÝÈ^XÝHÚXÚ™\XØH\È™Y™\˜X›K‚‚ˆÈÈÈš\œÝÜˆ˜[™ÛHÈÛØYØ˜[[˜Ú[™ËYš\œÝÛÜ—Ü˜[™Û_B‚˜Ü[›ØYØ˜[[˜Ú[™ÈHš\œÝÛÜ—Ü˜[™ÛB˜‚•\È[ÛÜš]HÚÛÜÙ\ÈHš\œÝ™\XØH[ˆHÙ]ÜˆH˜[™ÛH™\XØHYˆHš\œÝ\È[˜]˜Z[X›Kˆ]	ÜÈY™™XÝ]™H[ˆÜ›ÜÜË\™\XØ][ÛˆÜÛÙÞHÙ]\Ë]\Ù[\ÜÈ[ˆÝ\ˆÛÛ™šYÝ\˜][ÛœË‚‚•Hš\œÝÛÜ—Ü˜[™ÛX[ÛÜš]HÛÛ™\ÈH›Ø›[HÙˆH[—ÛÜ™\˜[ÛÜš]KˆÚ][—ÛÜ™\˜YˆÛ™H™\XØHÛÙ\ÈÝÛ‹H™^Û™HÙ]ÈHÝX›HØYÚ[HH™[XZ[š[™È™\XØ\È[™HH\ÝX[[[Ý[Ùˆ˜Y™šXËˆÚ[ˆ\Ú[™ÈHš\œÝÛÜ—Ü˜[™ÛX[ÛÜš]KHØY\È]™[›H\ÝšX]Y[[Û™È™\XØ\È]\™HÝ[]˜Z[X›K‚‚’]	ÜÈÜÜÚX›HÈ^XÚ]HYš[™HÚ]Hš\œÝ™\XØH\ÈžH\Ú[™ÈHÙ][™ÈØYØ˜[[˜Ú[™×Ùš\œÝÛÙ™œÙ]ˆ\ÈÚ]™\È[Ü™HÛÛ›ÛÈ™X˜[[˜ÙH]Y\žHÛÜšÛØYÈ[[Û™È™\XØ\Ë‚‚ˆÈÈÈ›Ý[™›Øš[ˆÈÛØYØ˜[[˜Ú[™Ë\›Ý[™Ü›Øš[ŸB‚˜Ü[›ØYØ˜[[˜Ú[™ÈH›Ý[™Ü›Øš[‚˜‚•\È[ÛÜš]H\Ù\ÈH›Ý[™\›Øš[ˆÛXÞHXÜ›ÜÜÈ™\XØ\ÈÚ]HØ[YH[X™\ˆÙˆ\œ›ÜœÈ
+Û›HH]Y\šY\ÈÚ]›Ý[™Ü›Øš[˜ÛXÞH\ÈXØÛÝ[Y
+K‚ŠH‹
+HˆPÓT‘JR[ØYØ˜[[˜Ú[™×Ùš\œÝÛÙ™œÙ]ˆŠ•ÚXÚ™\XØHÈ™Y™\˜X›HÙ[™H]Y\žHÚ[ˆ’T”ÕÓÔ—ÔS‘ÓHØY˜[[˜Ú[™ÈÝ˜]YÞH\È\ÙY‚ŠH‹
+HˆˆPÓT‘JÝ[Ó[ÙKÝ[×Û[ÙKÝ[Ó[ÙNŽQ•T—ÒU’S‘×ÑVÓTÒU‘KˆŠ’ÝÈÈØ[Ý[]HÕSÈÚ[ˆU’S‘È\È™\Ù[\ÈÙ[\ÈÚ[ˆX^Ü›ÝÜ×Ý×ÙÜ›Ý\ØžH[™Ü›Ý\ØžWÛÝ™\™›Ý×Û[ÙHH	Ø[žIÈ\™H™\Ù[‚”ÙYHHÙXÝ[Ûˆ•ÒUÕSÈ[ÙYšY\ˆ‹‚ŠH‹STÔ•S•
+HˆPÓT‘J›Ø]Ý[×Ø]]×Ý™\ÚÛKˆŠ•H™\ÚÛ›ÜˆÝ[×Û[ÙHH	Ø]]ÉØ‚”ÙYHHÙXÝ[Ûˆ•ÒUÕSÈ[ÙYšY\ˆ‹‚ŠH‹
+HˆˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×ÛÝ×ØØ\™[˜[]WÝ\\Ë˜[ÙKˆŠ[ÝÜÈÜˆ™\ÝšXÝÈ\Ú[™ÈÓÝÐØ\™[˜[]WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÛÝØØ\™[˜[]K›Y
+HÚ]]H\\ÈÚ]š^YÚ^™HÙˆž]\ÈÜˆ\ÜÎˆ[Y\šXÈ]H\\È[™š^YÝš[™ÊØž]\×ÛÜ—Û\ÜÊX‚‚‘›ÜˆÛX[š^Y˜[Y\È\Ú[™ÈÙˆÝÐØ\™[˜[]X\È\ÝX[H[™Y™šXÚY[™XØ]\ÙHÛXÚÒÝ\ÙHÝÜ™\ÈH[Y\šXÈ[™^›ÜˆXXÚ›ÝËˆ\ÈH™\Ý[‚‚‹H\ÚÈÜXÙH\ØYÙHØ[ˆš\ÙK‚‹HSHÛÛœÝ[\[ÛˆØ[ˆ™HYÚ\‹\[™[™ÈÛˆHXÝ[Û˜\žHÚ^™K‚‹HÛÛYH[˜Ý[ÛœÈØ[ˆÛÜšÈÛÝÙ\ˆYHÈ^˜HÛÙ[™ËÙ[˜ÛÙ[™ÈÜ\˜][ÛœË‚‚“Y\™ÙH[Y\È[ˆÓY\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›Y
+KY[™Ú[™HX›\ÈØ[ˆÜ›ÝÈYHÈ[H™X\ÛÛœÈ\ØÜšX™YX›Ý™K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HH8 %\ØYÙHÙˆÝÐØ\™[˜[]X\È›Ý™\ÝšXÝY‚‹H8 %\ØYÙHÙˆÝÐØ\™[˜[]X\È™\ÝšXÝY‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×Ùš^YÜÝš[™×Ý\\Ë˜[ÙKˆŠ’[ˆÔ‘PUHP“HÝ][Y[[ÝÜÈÜ™X][™ÈÛÛ[[œÈÙˆ\Hš^YÝš[™ÊŠHÚ]ˆˆM‹ˆš^YÝš[™ÈÚ][™ÝHMˆ\ÈÝ\ÜXÚ[Ý\È[™[ÜÝZÙ[H[™XØ]\ÈHZ\Ý\ÙBŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×Ú[™XÙ\Ë˜[ÙKˆŠ”™Z™XÝš[X\žKÜÙXÛÛ™\žH[™^\È[™ÛÜ[™ÈÙ^\ÈÚ]Y[XØ[^™\ÜÚ[ÛœÂŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÛZ[›X^Ú[™^Ù›Ü—ÚœÛÛ‹˜[ÙKˆŠ[ÝÈÜ™X][™ÈZ[›X^ÚÚ\[™^\ÈÛˆ”ÓÓˆ
+Øš™XÝ
+HÛÛ[[œËˆ\ØX›YžHY˜][™XØ]\ÙHHZ[›X^š[™^Ù\šX[^˜][Ûˆ]Ø[››Ý[™H]\›ÙÙ[™[Ý\ÈšY[˜[Y\È]”ÓÓˆÛÛ[[œÈX^HÛÛZ[‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×ÝÙ^™\ÜÚ[ÛœË˜[ÙKˆŠ”™Z™XÝ^™\ÜÚ[ÛœÈ]Û‰Ý\[™Ûˆ[žHÙˆX›IÜÈÛÛ[[œËˆ][™XØ]\ÈH\Ù\ˆ\œ›Üˆ[ÜÝÙˆH[YK‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×Ý˜\šX[Ý\\Ë˜[ÙKˆŠ’[ˆÔ‘PUHP“HÝ][Y[[ÝÜÈÜXÚYžZ[™È˜\šX[\HÚ]Ú[Z[\ˆ˜\šX[\\È
+›Üˆ^[\KÚ]Y™™\™[[Y\šXÈÜˆ]H\\ÊKˆ[˜X›[™È\ÈÙ][™ÈX^H[›ÙXÙHÛÛYH[XšYÝZ]HÚ[ˆÛÜšÚ[™ÈÚ]˜[Y\ÈÚ]Ú[Z[\ˆ\\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×Üš[X\žWÚÙ^K˜[ÙKˆŠ[ÝÈÝ\ÜXÚ[Ý\È’SPT–HÑVXØÔ‘Tˆ–X›ÜˆY\™ÙU™YH
+K™KˆÚ[\PYÙÜ™YØ]Q[˜Ý[ÛŠK‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×Ý\\×Ú[—ÙÜ›Ý\ØžK˜[ÙKˆŠ[ÝÜÈÜˆ™\ÝšXÝÈ\Ú[™ÈÕ˜\šX[J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÝ˜\šX[›Y
+H[™Ñ[˜[ZX×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÙ[˜[ZXË›Y
+H\\È[ˆÔ“ÕT–HÙ^\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÝ\ÜXÚ[Ý\×Ý\\×Ú[—ÛÜ™\—ØžK˜[ÙKˆŠ[ÝÜÈÜˆ™\ÝšXÝÈ\Ú[™ÈÕ˜\šX[J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÝ˜\šX[›Y
+H[™Ñ[˜[ZX×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÙ[˜[ZXË›Y
+H\\È[ˆÔ‘Tˆ–HÙ^\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝ˜\šX[ÙY˜][Ú[\[Y[][Û—Ù›Ü—ØÛÛ\\š\ÛÛœËYKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈY˜][[\[Y[][Ûˆ›Üˆ˜\šX[\H[ˆÛÛ\\š\ÛÛˆ[˜Ý[ÛœË‚ŠH‹
+HˆPÓT‘J›ÛÛ˜\šX[Ý›Ý×ÛÛ—Ý\WÛZ\ÛX]ÚYKˆŠ•Ú[ˆ\Z[™ÈH[˜Ý[ÛˆÈHÕ˜\šX[J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÝ˜\šX[›Y
+HÛÛ[[ˆ\Ú[™ÈHY˜][[\[Y[][Û‹˜ÛÛ›ÛÈÚ]\[œÈ›Üˆ›ÝÜÈÚÜÙHXÝX[\H\È[˜ÛÛ\]X›HÚ]H[˜Ý[ÛŽ‚‹HYX
+Y˜][
+H8 %›ÝÈ[ˆ^Ù\[Û‹‚‹H˜[ÙX8 %™]\›ˆ•S›ÜˆÜÙH›ÝÜÈ[œÝXY‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜[ZX×Ý›Ý×ÛÛ—Ý\WÛZ\ÛX]ÚYKˆŠ•Ú[ˆ\Z[™ÈH[˜Ý[ÛˆÈHÑ[˜[ZX×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÙ[˜[ZXË›Y
+HÛÛ[[ˆ\Ú[™ÈHY˜][[\[Y[][Û‹˜ÛÛ›ÛÈÚ]\[œÈ›Üˆ›ÝÜÈÚÜÙHXÝX[\H\È[˜ÛÛ\]X›HÚ]H[˜Ý[ÛŽ‚‹HYX
+Y˜][
+H8 %›ÝÈ[ˆ^Ù\[Û‹‚‹H˜[ÙX8 %™]\›ˆ•S›ÜˆÜÙH›ÝÜÈ[œÝXY‚ŠH‹
+HˆPÓT‘J›ÛÛÛÛ\[WÙ^™\ÜÚ[ÛœËYKˆŠÛÛ\[HÛÛYHØØ[\ˆ[˜Ý[ÛœÈ[™Ü\˜]ÜœÈÈ˜]]™HÛÙK‚ŠH‹
+HˆPÓT‘JR[Z[—ØÛÝ[Ý×ØÛÛ\[WÙ^™\ÜÚ[Û‹ËˆŠ“Z[š[][HÛÝ[Ùˆ^XÝ][™ÈØ[YH^™\ÜÚ[Ûˆ™Y›Ü™H]\ÈÙ]ÛÛ\[Y‚ŠH‹
+HˆPÓT‘J›ÛÛÛÛ\[WÜ™YÝ[\—Ù^™\ÜÚ[ÛœËYKˆŠÛÛ\[HÚ[\H™YÝ[\ˆ^™\ÜÚ[ÛœÈ\ÙY[ˆ[˜Ý[ÛœÈZÙHX]Ú[™^˜XÝÈ˜]]™HÛÙKˆ]\›œÈÝ]ÚYHHÝ\ÜYÝXœÙ]˜[œÜ\™[H˜[˜XÚÈÈHÙ[™\˜[[™Ú[™K‚ŠH‹
+HˆPÓT‘JR[Z[—ØÛÝ[Ý×ØÛÛ\[WÜ™YÝ[\—Ù^™\ÜÚ[Û‹ËˆŠ“Z[š[][HÛÝ[Ùˆ^XÝ][™ÈØ[YH™YÝ[\ˆ^™\ÜÚ[Ûˆ™Y›Ü™H]\ÈÙ]ÛÛ\[Y‚ŠH‹
+HˆPÓT‘J›ÛÛÛÛ\[WØYÙÜ™YØ]WÙ^™\ÜÚ[ÛœËYKˆŠ‘[˜X›\ÈÜˆ\ØX›\È’UXÛÛ\[][ÛˆÙˆYÙÜ™YØ]H[˜Ý[ÛœÈÈ˜]]™HÛÙKˆ[˜X›[™È\ÈÙ][™ÈØ[ˆ[\›Ý™HH\™›Ü›X[˜ÙK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %YÙÜ™YØ][Ûˆ\ÈÛ™HÚ]Ý]’UÛÛ\[][Û‹‚‹HH8 %YÙÜ™YØ][Ûˆ\ÈÛ™H\Ú[™È’UÛÛ\[][Û‹‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÛZ[—ØÛÝ[Ý×ØÛÛ\[WØYÙÜ™YØ]WÙ^™\ÜÚ[Û—JÛZ[—ØÛÝ[Ý×ØÛÛ\[WØYÙÜ™YØ]WÙ^™\ÜÚ[ÛŠBŠH‹
+HˆPÓT‘JR[Z[—ØÛÝ[Ý×ØÛÛ\[WØYÙÜ™YØ]WÙ^™\ÜÚ[Û‹ËˆŠ•HZ[š[][H[X™\ˆÙˆY[XØ[YÙÜ™YØ]H^™\ÜÚ[ÛœÈÈÝ\’UXÛÛ\[][Û‹ˆÛÜšÜÈÛ›HYˆHØÛÛ\[WØYÙÜ™YØ]WÙ^™\ÜÚ[Ûœ×JØÛÛ\[WØYÙÜ™YØ]WÙ^™\ÜÚ[ÛœÊHÙ][™È\È[˜X›Y‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %Y[XØ[YÙÜ™YØ]H^™\ÜÚ[ÛœÈ\™H[Ø^\È’UXÛÛ\[Y‚ŠH‹
+HˆPÓT‘J›ÛÛÛÛ\[WÜÛÜÙ\ØÜš\[Û‹YKˆŠÛÛ\[HÛÜ\ØÜš\[ÛˆÈ˜]]™HÛÙK‚ŠH‹
+HˆPÓT‘JR[Z[—ØÛÝ[Ý×ØÛÛ\[WÜÛÜÙ\ØÜš\[Û‹ËˆŠ•H[X™\ˆÙˆY[XØ[ÛÜ\ØÜš\[ÛœÈ™Y›Ü™H^H\™H’UXÛÛ\[YŠH‹
+HˆPÓT‘JR[Ü›Ý\ØžWÝÛ×Û]™[Ý™\ÚÛLˆŠ‘œ›ÛHÚ][X™\ˆÙˆÙ^\ËHÛË[]™[YÙÜ™YØ][ÛˆÝ\ËˆHH™\ÚÛ\È›ÝÙ]‚ŠH‹
+HˆPÓT‘JR[Ü›Ý\ØžWÝÛ×Û]™[Ý™\ÚÛØž]\ËLˆŠ‘œ›ÛHÚ]Ú^™HÙˆHYÙÜ™YØ][ÛˆÝ]H[ˆž]\ËHÛË[]™[YÙÜ™YØ][Ûˆ™YÚ[œÈÈ™H\ÙYˆHH™\ÚÛ\È›ÝÙ]ˆÛË[]™[YÙÜ™YØ][Ûˆ\È\ÙYÚ[ˆ]X\ÝÛ™HÙˆH™\ÚÛÈ\ÈšYÙÙ\™Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØYÙÜ™YØ][Û—ÛY[[ÜžWÙY™šXÚY[YKˆŠ’\ÈHY[[ÜžK\Ø]š[™È[ÙHÙˆ\ÝšX]YYÙÜ™YØ][Ûˆ[˜X›Y‚ŠH‹
+HˆPÓT‘JR[YÙÜ™YØ][Û—ÛY[[ÜžWÙY™šXÚY[ÛY\™ÙWÝ™XYËˆŠ“[X™\ˆÙˆ™XYÈÈ\ÙH›ÜˆY\™ÙH[\›YYX]HYÙÜ™YØ][Ûˆ™\Ý[È[ˆY[[ÜžHY™šXÚY[[ÙKˆÚ[ˆšYÙÙ\‹[ˆ[Ü™HY[[ÜžH\ÈÛÛœÝ[YYˆYX[œÈHØ[YH\È	ÛX^Ý™XYÉË‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÛY[[ÜžWØ›Ý[™ÛY\™Ú[™×ÛÙ—ØYÙÜ™YØ][Û—Ü™\Ý[ËYKˆŠ‘[˜X›HY[[ÜžH›Ý[™Y\™Ú[™ÈÝ˜]YÞH›ÜˆYÙÜ™YØ][Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÜÜÚ][Û˜[Ø\™Ý[Y[ËYKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÝ\Ü[™ÈÜÚ][Û˜[\™Ý[Y[È›ÜˆÑÔ“ÕT–WJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÙÜ›Ý\XžJKÓSRU–WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÛ[Z]XžK›Y
+KÓÔ‘Tˆ–WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÛÜ™\‹XžK›Y
+HÝ][Y[Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %ÜÚ][Û˜[\™Ý[Y[È\™[‰ÝÝ\ÜY‚‹HH8 %ÜÚ][Û˜[\™Ý[Y[È\™HÝ\ÜYˆÛÛ[[ˆ[X™\œÈØ[ˆ\ÙH[œÝXYÙˆÛÛ[[ˆ˜[Y\Ë‚‚ŠŠ‘^[\JŠ‚‚”]Y\žN‚‚˜Ü[Ô‘PUHP“HÜÚ][Û˜[Ø\™Ý[Y[ÊÛ™H[ÛÈ[™YH[
+HS‘ÒS‘OSY[[ÜžJ
+NÂ‚’S”ÑT•S•ÈÜÚ][Û˜[Ø\™Ý[Y[ÈSQTÈ
+LŒÌ
+K
+ŒŒL
+K
+ÌLŒ
+NÂ‚”ÑSPÕ
+ˆ”“ÓHÜÚ][Û˜[Ø\™Ý[Y[ÈÔ‘Tˆ–H‹ÎÂ˜‚”™\Ý[‚‚˜^¸¥#8¥ Û™x¥ 8¥+8¥ Ûø¥ 8¥+8¥ ™Yx¥ 8¥$¸¥ ˆÌ8¥ ˆL8¥ ˆŒ8¥ ‚¸¥ ˆŒ8¥ ˆŒ8¥ ˆL8¥ ‚¸¥ ˆL8¥ ˆŒ8¥ ˆÌ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÜÜÚ][Û˜[Ø\™Ý[Y[×Ù›Ü—Ü›Ú™XÝ[ÛœË˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÝ\Ü[™ÈÜÚ][Û˜[\™Ý[Y[È[ˆ“Ò‘PÕSÓˆYš[š][ÛœËˆÙYH[ÛÈÙ[˜X›WÜÜÚ][Û˜[Ø\™Ý[Y[×JÙ[˜X›WÜÜÚ][Û˜[Ø\™Ý[Y[ÊHÙ][™Ë‚‚ŽŽŽ››ÝB•\È\È[ˆ^\[]™[Ù][™Ë[™[ÝHÚÝ[‰ÝÚ[™ÙH]Yˆ[ÝIÜ™H\ÝÙ][™ÈÝ\YÚ]ÛXÚÒÝ\ÙK‚ŽŽŽ‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %ÜÚ][Û˜[\™Ý[Y[È\™[‰ÝÝ\ÜY‚‹HH8 %ÜÚ][Û˜[\™Ý[Y[È\™HÝ\ÜYˆÛÛ[[ˆ[X™\œÈØ[ˆ\ÙH[œÝXYÙˆÛÛ[[ˆ˜[Y\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÙ^[™YÜ™\Ý[×Ù›Ü—Ù]][YWÙ[˜Ý[ÛœË˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\È™]\›š[™È™\Ý[ÈÙˆ\H]LÌ˜Ú]^[™Y˜[™ÙH
+ÛÛ\\™YÈ\H]X
+B›Üˆ]U[YMÚ]^[™Y˜[™ÙH
+ÛÛ\\™YÈ\H]U[YX
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %[˜Ý[ÛœÈ™]\›ˆ]XÜˆ]U[YX›Üˆ[\\ÈÙˆ\™Ý[Y[Ë‚‹HX8 %[˜Ý[ÛœÈ™]\›ˆ]LÌ˜Üˆ]U[YM›Üˆ]LÌ˜Üˆ]U[YM\™Ý[Y[È[™]XÜˆ]U[YXÝ\Ú\ÙK‚‚•HX›H™[ÝÈÚÝÜÈH™Z]š[ÜˆÙˆ\ÈÙ][™È›Üˆ˜\š[Ý\È]K][YH[˜Ý[ÛœË‚‚Ÿ[˜Ý[Ûˆ[˜X›WÙ^[™YÜ™\Ý[×Ù›Ü—Ù]][YWÙ[˜Ý[ÛœÈH[˜X›WÙ^[™YÜ™\Ý[×Ù›Ü—Ù]][YWÙ[˜Ý[ÛœÈHXŸKKKKKKKKK_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK_KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK_ŸÔÝ\Ù–YX\˜™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù’TÓÖYX\˜™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù”]X\\˜™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù“[Û™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù•ÙYZØ™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÓ\Ý^SÙ•ÙYZØ™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÓ\Ý^SÙ“[Û™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÓ[Û™^X™]\›œÈ]XÜˆ]U[YX™]\›œÈ]XØ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]LÌ˜Ø]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù‘^X™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù’Ý\˜™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù‘šYY[“Z[]\Ø™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù•[“Z[]\Ø™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù‘š]™SZ[]\Ø™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŸÔÝ\Ù“Z[]X™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]Ÿ[YTÛÝ™]\›œÈ]U[YXœ‹ÏŠ“›ÝNˆÜ›Û™È™\Ý[È›Üˆ˜[Y\ÈÝ]ÚYHNMÌLŒMH˜[™ÙJˆ™]\›œÈ]U[YX›Üˆ]XØ]U[YX[œ]œ‹Ï”™]\›œÈ]U[YM›Üˆ]LÌ˜Ø]U[YM[œ]ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Û›Û˜ÛÛœÝÝ[Y^›Û™WØ\™Ý[Y[Ë˜[ÙKˆŠ[ÝÈ›Û‹XÛÛœÝ[Y^›Û™H\™Ý[Y[È[ˆÙ\Z[ˆ[YK\™[]Y[˜Ý[ÛœÈZÙHÕ[YV›Û™J
+Kœ›ÛU[š^[Y\Ý[\
+Š
+KÛ›ÝÙ›ZÙRQÑ]U[YJŠ
+K‚•\ÈÙ][™È^\ÝÈÛ›H›ÜˆÛÛ\]Xš[]H™X\ÛÛœËˆ[ˆÛXÚÒÝ\ÙKH[YH›Û™H\ÈH›Ü\HÙˆH]H\K™\ÜXÝ]™[HÙˆHÛÛ[[‹‚‘[˜X›[™È\ÈÙ][™ÈÚ]™\ÈHÜ›Û™È[\™\ÜÚ[Ûˆ]Y™™\™[˜[Y\ÈÚ][ˆHÛÛ[[ˆØ[ˆ]™HY™™\™[[Y^›Û™\Ë‚•\™Y›Ü™KX\ÙHÈ›Ý[˜X›H\ÈÙ][™Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÛYØXÞWÝ×Ý[YK˜[ÙKˆŠ•Ú[ˆ[˜X›Y[ÝÜÈÈ\ÙHYØXÞHÕ[YH[˜Ý[Û‹ÚXÚÛÛ™\ÈH]HÚ][YHÈHÙ\Z[ˆš^Y]KÚ[H™\Ù\š[™ÈH[YK‚“Ý\Ú\ÙK\Ù\ÈH™]ÈÕ[YH[˜Ý[Û‹]ÛÛ™\ÈY™™\™[\HÙˆ]H[ÈH[YH\K‚•HÛYØXÞH[˜Ý[Ûˆ\È[ÛÈ[˜ÛÛ™][Û˜[HXØÙ\ÜÚX›H\ÈÕ[YUÚ]š^Y]K‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[˜X›WÝ[YWÝ[YMÝ\KYKˆŠ[ÝÜÈÜ™X][ÛˆÙˆÕ[YWJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÝ[YK›Y
+H[™Õ[YMJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÝ[YM›Y
+H]H\\Ë‚ŠH‹[Ý×Ù^\š[Y[[Ý[YWÝ[YMÝ\JHˆPÓT‘J›ÛÛ[˜Ý[Û—ÛØØ]WÚ\×Û^\Ü[ØÛÛ\]X›WØ\™Ý[Y[ÛÜ™\‹YKˆŠÛÛ›ÛÈHÜ™\ˆÙˆ\™Ý[Y[È[ˆ[˜Ý[ÛˆÛØØ]WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËÜÝš[™Ë\ÙX\˜ÚY[˜Ý[ÛœË›YÈÛØØ]JK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %[˜Ý[ÛˆØØ]XXØÙ\È\™Ý[Y[È
+^\ÝXÚË™YYVËÝ\ÜÜ×JX‚‹HH8 %[˜Ý[ÛˆØØ]XXØÙ\È\™Ý[Y[È
+™YYK^\ÝXÚËËÝ\ÜÜ×JX
+^TÔSXÛÛ\]X›H™Z]š[ÜŠBŠH‹
+HˆˆPÓT‘J›ÛÛÜ›Ý\ØžWÝ\ÙWÛ[Ë˜[ÙKˆŠÚ[™Ù\ÈHØ^HHÑÔ“ÕT–HÛ]\ÙWJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÙÜ›Ý\XžJH™X]ÈH\\ÈÙˆYÙÜ™YØ][ÛˆÙ^\Ë‚•Ú[ˆH“ÓTÕP‘XÜˆÔ“ÕTS‘ÈÑUØÜXÚYšY\œÈ\™H\ÙYÛÛYHYÙÜ™YØ][ÛˆÙ^\ÈX^H›Ý™H\ÙYÈ›ÙXÙHÛÛYH™\Ý[›ÝÜË‚ÛÛ[[œÈ›Üˆ\ÙHÙ^\È\™Hš[YÚ]Z]\ˆY˜][˜[YHÜˆ•S[ˆÛÜœ™\ÜÛ™[™È›ÝÜÈ\[™[™ÈÛˆ\ÈÙ][™Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %HY˜][˜[YH›ÜˆHYÙÜ™YØ][ÛˆÙ^H\H\È\ÙYÈ›ÙXÙHZ\ÜÚ[™È˜[Y\Ë‚‹HH8 %ÛXÚÒÝ\ÙH^XÝ]\ÈÔ“ÕT–XHØ[YHØ^H\ÈHÔSÝ[™\™Ø^\ËˆH\\ÈÙˆYÙÜ™YØ][ÛˆÙ^\È\™HÛÛ™\YÈÓ[X›WJÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÛ[X›JKˆÛÛ[[œÈ›ÜˆÛÜœ™\ÜÛ™[™ÈYÙÜ™YØ][ÛˆÙ^\È\™Hš[YÚ]Ó•SJÜÜ[\™Y™\™[˜ÙKÜÞ[^Û[
+H›Üˆ›ÝÜÈ]Y‰Ý\ÙH]‚‚”ÙYH[ÛÎ‚‚‹HÑÔ“ÕT–HÛ]\ÙWJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÙÜ›Ý\XžJBŠH‹
+HˆˆPÓT‘J›ÛÛÚÚ\Ý[˜]˜Z[X›WÜÚ\™Ë˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÚ[[HÚÚ\[™ÈÙˆ[˜]˜Z[X›HÚ\™Ë‚‚•H™Z]š[ÜˆÙˆ\ÈÙ][™È\ÈÛÛ›ÛYžHHÚÚ\Ý[˜]˜Z[X›WÜÚ\™×Û[ÙX\˜[Y]\‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HH8 %ÚÚ\[™È[˜X›Y‚‚ˆYˆHÚ\™\È[˜]˜Z[X›KÛXÚÒÝ\ÙH™]\›œÈH™\Ý[˜\ÙYÛˆ\X[]H[™Ù\È›Ý™\Ü›ÙH]˜Z[Xš[]H\ÜÝY\Ë‚‚‹H8 %ÚÚ\[™È\ØX›Y‚‚ˆYˆHÚ\™\È[˜]˜Z[X›KÛXÚÒÝ\ÙH›ÝÜÈ[ˆ^Ù\[Û‹‚ŠH‹
+HˆˆPÓT‘JÚÚ\[˜]˜Z[X›TÚ\™Ó[ÙKÚÚ\Ý[˜]˜Z[X›WÜÚ\™×Û[ÙKÚÚ\[˜]˜Z[X›TÚ\™Ó[ÙNŽ•SURSP“WÓÔ—ÕP“WÓRTÔÒS‘ËˆŠÛÛ›ÛÈÚXÚ^Ù\[ÛœÈœ›ÛHH™[[ÝHÚ\™\™HÚ[[HYÛ›Ü™YÚ[ˆÚÚ\Ý[˜]˜Z[X›WÜÚ\™Ø\È[˜X›YˆHÙ][™È\È›ÈY™™XÝÚ[ˆÚÚ\Ý[˜]˜Z[X›WÜÚ\™ÈH‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[˜]˜Z[X›X8 %Û›HÛÛ›™XÝ[Û‹\™[]Y\œ›ÜœÈ\™HYÛ›Ü™YˆHÚ\™\ÈÛÛœÚY\™Y[˜]˜Z[X›HÚ[ˆÛXÚÒÝ\ÙHØ[››ÝÛÛ›™XÝÈ[žHÙˆ]È™\XØ\ËÜˆÚ[ˆH™\XØIÜÈÜÝ˜[YHØ[››Ý™H™\ÛÛ™Y›ÝYÚ”Ë‚‚‹H[˜]˜Z[X›WÛÜ—ÝX›WÛZ\ÜÚ[™Ø8 %[ˆY][ÛˆÈ[˜]˜Z[X›X\œ›ÜœÈØ]\ÙYžHHZ\ÜÚ[™ÈX›HÜˆ]X˜\ÙHÛˆHÚ\™\™HYÛ›Ü™Yˆ\È\È\ÙY[Ú[HHX›H\È™Z[™ÈÜ™X]YÜˆ›ÜYXÜ›ÜÜÈHÛ\Ý\‹ˆ\È\ÈHY˜][[™X]Ú\ÈH\ÝÜšXØ[™Z]š[ÜˆÙˆÚÚ\Ý[˜]˜Z[X›WÜÚ\™ØÚXÚ[ÛÈ™X]YHÚ\™ÚÜÙHX›HÙ\È›Ý^\Ý\È[˜]˜Z[X›K‚‚‹H[˜]˜Z[X›WÛÜ—Ù^Ù\[Û—Ø™Y›Ü™WÜ›ØÙ\ÜÚ[™Ø8 %[ˆY][ÛˆÈ[˜]˜Z[X›X[žH^Ù\[Ûˆ™XÙZ]™Yœ›ÛHHÚ\™™Y›Ü™H]™]\›™Y[žH]H›ØÚÈÈH[š]X]Üˆ\ÈYÛ›Ü™Yˆ[ˆ^Ù\[Ûˆ]\œš]™\ÈY\ˆHÚ\™[™XYH™]\›™YÛÛYH]H\È[Ø^\È™]›ÝÛ‹ˆ›ÝH]˜™Y›Ü™H]™]\›™Y[žH]Hˆ\ÈÚXÚÙY]H[š]X]ÜŽˆHÚ\™]\™›Ü›\ÈH›ØÚÚ[™ÈÛÛ\]][Ûˆ
+›Üˆ^[\H[ˆYÙÜ™YØ][Û‹ÛÜÜˆSRU–X
+HX^H›ØÙ\ÜÈ›ÝÜÈ[™˜Z[™Y›Ü™H[Z][™È[žH›ØÚË[ˆÚXÚØ\ÙH]È\X[ÛÜšÈ\ÈÚ[[H\ØØ\™Y[™H]Y\žH™]\›œÈH™\Ý[Z[œ›ÛHH™[XZ[š[™ÈÚ\™Ëˆ\È\È\™Y›Ü™HH[ÜÝ\›Z\ÜÚ]™H[ÙH[™ÚÝ[™H\ÙYÚ]Ø\™K‚ŠH‹
+HˆˆPÓT‘JR[X^ÜÚÚ\Ý[˜]˜Z[X›WÜÚ\™×Û[KˆŠ•Ú[ˆÚÚ\Ý[˜]˜Z[X›WÜÚ\™Ø\È[˜X›Y[Z]ÈHX^[][H[X™\ˆÙˆÚ\™È]Ø[ˆ™HÚ[[HÚÚ\Y‚’YˆH[X™\ˆÙˆ[˜]˜Z[X›HÚ\™È^ÙYYÈ\È˜[YK[ˆ^Ù\[Ûˆ\È›ÝÛˆ[œÝXYÙˆÚ[[HÚÚ\[™Ë‚‚H˜[YHÙˆYX[œÈ›È[Z]
+Y˜][™Z]š[Üˆ8 %[[˜]˜Z[X›HÚ\™ÈØ[ˆ™HÚÚ\Y
+K‚ŠH‹
+HˆˆPÓT‘J›Ø]X^ÜÚÚ\Ý[˜]˜Z[X›WÜÚ\™×Ü˜][ËˆŠ•Ú[ˆÚÚ\Ý[˜]˜Z[X›WÜÚ\™Ø\È[˜X›Y[Z]ÈHX^[][H˜][È
+ÈJHÙˆÚ\™È]Ø[ˆ™HÚ[[HÚÚ\Y‚’YˆH˜][ÈÙˆ[˜]˜Z[X›HÚ\™ÈÈÝ[Ú\™È^ÙYYÈ\È˜[YK[ˆ^Ù\[Ûˆ\È›ÝÛˆ[œÝXYÙˆÚ[[HÚÚ\[™Ë‚‚H˜[YHÙˆYX[œÈ›È[Z]
+Y˜][™Z]š[Üˆ8 %[[˜]˜Z[X›HÚ\™ÈØ[ˆ™HÚÚ\Y
+K‚ŠH‹
+HˆˆPÓT‘JR[\˜[[Ù\ÝšX]YÚ[œÙ\ÜÙ[XÝ‹ˆŠ‘[˜X›\È\˜[[\ÝšX]YS”ÑT•‹‹ˆÑSPÕ]Y\žK‚‚’YˆÙH^XÝ]HS”ÑT•S•È\ÝšX]YÝX›WØHÑSPÕ‹‹ˆ”“ÓH\ÝšX]YÝX›WØ˜]Y\šY\È[™›ÝX›\È\ÙHHØ[YHÛ\Ý\‹[™›ÝX›\È\™HZ]\ˆÜ™\XØ]YJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÜ™\XØ][Û‹›Y
+HÜˆ›Û‹\™\XØ]Y[ˆ\È]Y\žH\È›ØÙ\ÜÙYØØ[HÛˆ]™\žHÚ\™‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HX8 %ÑSPÕÚ[™H^XÝ]YÛˆXXÚÚ\™œ›ÛHH[™\›Z[™ÈX›HÙˆH\ÝšX]Y[™Ú[™K‚‹H˜8 %ÑSPÕ[™S”ÑT•Ú[™H^XÝ]YÛˆXXÚÚ\™œ›ÛKÝÈH[™\›Z[™ÈX›HÙˆH\ÝšX]Y[™Ú[™K‚‚”Ú[˜ÙHŒKS”ÑT•‹‹ˆÑSPÕœ›ÛHH™\XØ]YY\™ÙU™YXÜˆÚ\™YY\™ÙU™YXÛÝ\˜ÙHØ[ˆ[ÛÈ™H\˜[[^™YXÜ›ÜÜÈ™\XØ\ËˆÈ[˜X›H]‚‹H\˜[[Ù\ÝšX]YÚ[œÙ\ÜÙ[XÝH˜‹H[˜X›WÜ\˜[[Ü™\XØ\ÈHXŠH‹
+HˆPÓT‘JR[\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙKˆŠ‘È›ÝY\™ÙHYÙÜ™YØ][ÛˆÝ]\Èœ›ÛHY™™\™[Ù\™\œÈ›Üˆ\ÝšX]Y]Y\žH›ØÙ\ÜÚ[™Ë[ÝHØ[ˆ\ÙH\È[ˆØ\ÙH]\È›ÜˆÙ\Z[ˆ]\™H\™HY™™\™[Ù^\ÈÛˆY™™\™[Ú\™Â‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y
+š[˜[]Y\žH›ØÙ\ÜÚ[™È\ÈÛ™HÛˆH[š]X]Üˆ›ÙJK‚‹HXHÈ›ÝY\™ÙHYÙÜ™YØ][ÛˆÝ]\Èœ›ÛHY™™\™[Ù\™\œÈ›Üˆ\ÝšX]Y]Y\žH›ØÙ\ÜÚ[™È
+]Y\žHÛÛ\][H›ØÙ\ÜÙYÛˆHÚ\™[š]X]ÜˆÛ›H›ÞHH]JKØ[ˆ™H\ÙY[ˆØ\ÙH]\È›ÜˆÙ\Z[ˆ]\™H\™HY™™\™[Ù^\ÈÛˆY™™\™[Ú\™Ë‚‹H˜HØ[YH\ÈX]\Y\ÈÔ‘Tˆ–X[™SRU
+]\È›ÝÜÜÚX›HÚ[ˆH]Y\žH›ØÙ\ÜÙYÛÛ\][HÛˆH™[[ÝH›ÙKZÙH›Üˆ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙOLX
+HÛˆH[š]X]Üˆ
+Ø[ˆ™H\ÙY›Üˆ]Y\šY\ÈÚ]Ô‘Tˆ–X[™ÛÜˆSRU
+K‚‚ŠŠ‘^[\JŠ‚‚˜Ü[”ÑSPÕ
+‚‘”“ÓH™[[ÝJ	ÌLËŒŒžÌ‹ßIËÞ\Ý[K›Û™JB‘Ô“ÕT–H[[^B“SRUB”ÑUS‘ÔÈ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙHHB‘“Ô“PU™]PÛÛ\XÝ[Û›Ð›ØÚÂ‚¸¥#8¥ [[^x¥ 8¥$¸¥ ˆ8¥ ‚¸¥ ˆ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜‚˜Ü[”ÑSPÕ
+‚‘”“ÓH™[[ÝJ	ÌLËŒŒžÌ‹ßIËÞ\Ý[K›Û™JB‘Ô“ÕT–H[[^B“SRUB”ÑUS‘ÔÈ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙHH‚‘“Ô“PU™]PÛÛ\XÝ[Û›Ð›ØÚÂ‚¸¥#8¥ [[^x¥ 8¥$¸¥ ˆ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆPÓT‘JR[\ÝšX]YÜ\ÚÙÝÛ—Û[Z]KˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÓSRUJÛ[Z]
+H\Z[™ÈÛˆXXÚÚ\™Ù\\˜][K‚‚•\ÈÚ[[ÝÈÈ]›ÚY‚‹HÙ[™[™È^˜H›ÝÜÈÝ™\ˆ™]ÛÜšÎÂ‹H›ØÙ\ÜÚ[™È›ÝÜÈ™Z[™H[Z]ÛˆH[š]X]Ü‹‚‚”Ý\[™Èœ›ÛHŒKŽH™\œÚ[Ûˆ[ÝHØ[››ÝÙ][˜XØÝ\˜]H™\Ý[È[ž[[Ü™KÚ[˜ÙH\ÝšX]YÜ\ÚÙÝÛ—Û[Z]Ú[™Ù\È]Y\žH^XÝ][ÛˆÛ›HYˆ]X\ÝÛ™HÙˆHÛÛ™][ÛœÈY]‚‹HÙ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙWJÙ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙJHˆ‚‹H]Y\žH
+Š™Ù\È›Ý]™JŠˆÔ“ÕT–XØTÕSÕØSRU–X]]\ÈÔ‘Tˆ–XØSRU‚‹H]Y\žH
+Šš\ÊŠˆÔ“ÕT–XØTÕSÕØSRU–XÚ]Ô‘Tˆ–XØSRU[™‚ˆHÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×JÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊH\È[˜X›Y‚ˆHÛÜ[Z^™WÙ\ÝšX]YÙÜ›Ý\ØžWÜÚ\™[™×ÚÙ^WJÛÜ[Z^™WÙ\ÝšX]YÙÜ›Ý\ØžWÜÚ\™[™×ÚÙ^JH\È[˜X›Y‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚‚”ÙYH[ÛÎ‚‚‹HÙ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙWJÙ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙJB‹HÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×JÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊB‹HÛÜ[Z^™WÙ\ÝšX]YÙÜ›Ý\ØžWÜÚ\™[™×ÚÙ^WJÛÜ[Z^™WÙ\ÝšX]YÙÜ›Ý\ØžWÜÚ\™[™×ÚÙ^JBŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÙ\ÝšX]YÙÜ›Ý\ØžWÜÚ\™[™×ÚÙ^KYKˆŠ“Ü[Z^™HÔ“ÕT–HÚ\™[™×ÚÙ^X]Y\šY\ËžH]›ÚY[™ÈÛÜÝHYÙÜ™YØ][ÛˆÛˆH[š]X]ÜˆÙ\™\ˆ
+ÚXÚÚ[™YXÙHY[[ÜžH\ØYÙH›ÜˆH]Y\žHÛˆH[š]X]ÜˆÙ\™\ŠK‚‚•H›ÛÝÚ[™È\\ÈÙˆ]Y\šY\È\™HÝ\ÜY
+[™[ÛÛXš[˜][ÛœÈÙˆ[JN‚‚‹HÑSPÕTÕSÕË‹‹‹\Ú\™[™×ÚÙ^VË‹‹—H”“ÓH\Ý‹HÑSPÕ‹‹ˆ”“ÓH\ÝÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—X‹HÑSPÕ‹‹ˆ”“ÓH\ÝÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HÔ‘Tˆ–H‹HÑSPÕ‹‹ˆ”“ÓH\ÝÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HSRUX‹HÑSPÕ‹‹ˆ”“ÓH\ÝÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HSRUH–H‚•H›ÛÝÚ[™È\\ÈÙˆ]Y\šY\È\™H›ÝÝ\ÜY
+Ý\Ü›ÜˆÛÛYHÙˆ[HX^H™HYY]\ŠN‚‚‹HÑSPÕ‹‹ˆÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HÒUÕSØ‹HÑSPÕ‹‹ˆÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HÒU“ÓT‹HÑSPÕ‹‹ˆÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HÒUÕP‘X‹HÑSPÕ‹‹ˆÔ“ÕT–HÚ\™[™×ÚÙ^VË‹‹—HÑUS‘ÔÈ^™[Y\ÏLX‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚‚”ÙYH[ÛÎ‚‚‹HÙ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙWJÙ\ÝšX]YÙÜ›Ý\ØžWÛ›×ÛY\™ÙJB‹HÙ\ÝšX]YÜ\ÚÙÝÛ—Û[Z]JÙ\ÝšX]YÜ\ÚÙÝÛ—Û[Z]
+B‹HÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×JÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊB‚ŽŽŽ››ÝB”šYÚ›ÝÈ]™\]Z\™\ÈÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™Ø
+H™X\ÛÛˆ™Z[™\È\È]Û™H^H]X^H™H[˜X›YžHY˜][[™]Ú[ÛÜšÈÛÜœ™XÝHÛ›HYˆ]HØ\È[œÙ\YšXH\ÝšX]YX›KK™Kˆ]H\È\ÝšX]YXØÛÜ™[™ÈÈÚ\™[™×ÚÙ^JK‚ŽŽŽ‚ŠH‹
+HˆPÓT‘JR[Ü[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×Û[Z]LˆŠ“[Z]›Üˆ[X™\ˆÙˆÚ\™[™ÈÙ^H˜[Y\Ë\›œÈÙ™ˆÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØYˆH[Z]\È™XXÚY‚‚•ÛÈX[žH˜[Y\ÈX^H™\]Z\™HÚYÛšYšXØ[[[Ý[›Üˆ›ØÙ\ÜÚ[™ËÚ[HH™[™Yš]\ÈÝX[Ú[˜ÙHYˆ[ÝH]™HYÙH[X™\ˆÙˆ˜[Y\È[ˆSˆ
+‹‹ŠX[ˆ[ÜÝZÙ[HH]Y\žHÚ[™HÙ[È[Ú\™È[ž]Ø^K‚ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™Ë˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÚÚ\[™ÈÙˆ[\ÙYÚ\™È›ÜˆÔÑSPÕJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÚ[™^›Y
+H]Y\šY\È]]™HÚ\™[™ÈÙ^HÛÛ™][Ûˆ[ˆÒT‘KÔ‘UÒT‘X[™XÝ]˜]\È™[]YÜ[Z^˜][ÛœÈ›Üˆ\ÝšX]Y]Y\šY\È
+K™ËˆYÙÜ™YØ][ÛˆžHÚ\™[™ÈÙ^JK‚‚ŽŽŽ››ÝB\ÜÝ[Y\È]H]H\È\ÝšX]YžHÚ\™[™ÈÙ^KÝ\Ú\ÙHH]Y\žHZY[È[˜ÛÜœ™XÝ™\Ý[‚ŽŽŽ‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×Ü™]Üš]WÚ[‹YKˆŠ”™]Üš]HSˆ[ˆ]Y\žH›Üˆ™[[ÝHÚ\™ÈÈ^ÛYH˜[Y\È]Ù\È›Ý™[Û™ÈÈHÚ\™
+™\]Z\™\ÈÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Û›Û™]\›Z[š\ÝX×ÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™Ë˜[ÙKˆŠ[ÝÈ›Û™]\›Z[š\ÝXÈ
+ZÙH˜[™ÜˆXÝÙ]Ú[˜ÙH]\ˆ\ÈÛÛYHØ]™X]ÈÚ]\]\ÊH[˜Ý[ÛœÈ[ˆÚ\™[™ÈÙ^K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\Ø[ÝÙY‚‹HH8 %[ÝÙY‚ŠH‹
+HˆPÓT‘JR[›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ËˆŠ‘[˜X›\ÈÜˆ\ØX›\È]Y\žH^XÝ][ÛˆYˆÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×JÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊH\È[˜X›Y[™ÚÚ\[™ÈÙˆ[\ÙYÚ\™È\È›ÝÜÜÚX›KˆYˆHÚÚ\[™È\È›ÝÜÜÚX›H[™HÙ][™È\È[˜X›Y[ˆ^Ù\[ÛˆÚ[™H›ÝÛ‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›YˆÛXÚÒÝ\ÙHÙ\È›Ý›ÝÈ[ˆ^Ù\[Û‹‚‹HH8 %[˜X›Yˆ]Y\žH^XÝ][Ûˆ\È\ØX›YÛ›HYˆHX›H\ÈHÚ\™[™ÈÙ^K‚‹Hˆ8 %[˜X›Yˆ]Y\žH^XÝ][Ûˆ\È\ØX›Y™YØ\™\ÜÈÙˆÚ]\ˆHÚ\™[™ÈÙ^H\ÈYš[™Y›ÜˆHX›K‚ŠH‹
+HˆPÓT‘JR[Ü[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×Û™\Ý[™ËˆŠÛÛ›ÛÈØÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØJÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊH
+[˜ÙHÝ[™\]Z\™\ÈØÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØJÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊJH\[™ÈÛˆH™\Ý[™È]™[ÙˆH\ÝšX]Y]Y\žH
+Ø\ÙHÚ[ˆ[ÝH]™H\ÝšX]YX›H]ÛÚÈ[È[›Ý\ˆ\ÝšX]YX›JK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›YÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØÛÜšÜÈ[Ø^\Ë‚‹HH8 %[˜X›\ÈÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØÛ›H›ÜˆHš\œÝ]™[‚‹Hˆ8 %[˜X›\ÈÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™Ø\ÈHÙXÛÛ™]™[‚ŠH‹
+HˆPÓT‘JR[›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™×Û™\Ý[™ËˆŠÛÛ›ÛÈØ›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØJÙ›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊH
+[˜ÙHÝ[™\]Z\™\ÈØ›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØJÙ›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ÊJH\[™ÈÛˆH™\Ý[™È]™[ÙˆH\ÝšX]Y]Y\žH
+Ø\ÙHÚ[ˆ[ÝH]™H\ÝšX]YX›H]ÛÚÈ[È[›Ý\ˆ\ÝšX]YX›JK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HH\ØX›Y›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØÛÜšÜÈ[Ø^\Ë‚‹HH8 %[˜X›\È›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™ØÛ›H›ÜˆHš\œÝ]™[‚‹Hˆ8 %[˜X›\È›Ü˜ÙWÛÜ[Z^™WÜÚÚ\Ý[\ÙYÜÚ\™Ø\ÈHÙXÛÛ™]™[‚ŠH‹
+HˆˆPÓT‘J›Û–™\›ÕR[Z[—ØÚ[š×Øž]\×Ù›Ü—Ü\˜[[Ü\œÚ[™Ë
+L
+ˆL
+ˆL
+KˆŠ‹H\Nˆ[œÚYÛ™Y[‹HY˜][˜[YNˆHZP‚‚•HZ[š[][HÚ[šÈÚ^™H[ˆž]\ËÚXÚXXÚ™XYÚ[\œÙH[ˆ\˜[[‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÜÜXÚX[ÜÙ\šX[^˜][Û—ÚÚ[™×Ú[—ÛÝ]]Ù›Ü›X]ËYKˆŠ[ÝÜÈÈÝ]]ÛÛ[[œÈÚ]ÜXÚX[Ù\šX[^˜][ÛˆÚ[™ÈZÙHÜ\œÙH[™™\XØ]YÚ]Ý]ÛÛ™\[™È[HÈ[ÛÛ[[ˆ™\™\Ù[][Û‹‚’][ÈÈ]›ÚY[›™XÙ\ÜØ\žH]HÛÜH\š[™È›Ü›X][™Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÜ\œÚ[™×Ý×ØÝ\ÝÛWÜÙ\šX[^˜][Û‹YKˆŠ’YˆYH[ˆ]HØ[ˆ™H\œÙY\™XÝHÈÛÛ[[œÈÚ]Ý\ÝÛHÙ\šX[^˜][Ûˆ
+K™ËˆÜ\œÙJHXØÛÜ™[™ÈÈ[È›ÜˆÙ\šX[^˜][ÛˆÛÝœ›ÛHHX›K‚ŠH‹
+HˆPÓT‘J›ÛÛYÛ›Ü™WÙ›Ü›X]Û[Ù›Ü—Ù^Z[‹YKˆŠ’Yˆ[˜X›Y“Ô“PU[Ú[™HYÛ›Ü™Y›ÜˆVRS˜]Y\šY\È[™Y˜][Ý]]›Ü›X]Ú[™H\ÙY[œÝXY‚•Ú[ˆ\ØX›YVRS˜]Y\šY\ÈÚ]“Ô“PU[Ú[›ÙXÙH›ÈÝ]]
+˜XÚÝØ\™ÛÛ\]X›H™Z]š[ÜŠK‚ŠH‹
+HˆˆPÓT‘J›ÛÛY\™ÙWÝ™YWÝ\ÙWÝŒWÛØš™XÝØ[™Ù[˜[ZX×ÜÙ\šX[^˜][Û‹˜[ÙKˆŠ•Ú[ˆ[˜X›YŒHÙ\šX[^˜][Ûˆ™\œÚ[ÛˆÙˆ”ÓÓˆ[™[˜[ZXÈ\\ÈÚ[™H\ÙY[ˆY\™ÙU™YH[œÝXYÙˆŒ‹ˆÚ[™Ú[™È\ÈÙ][™ÈZÙ\ÈY™™XÝÛ›HY\ˆÙ\™\ˆ™\Ý\‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÛZ[—Ü›ÝÜ×Ù›Ü—ØÛÛ˜Ý\œ™[Ü™XY
+Œ
+ˆNLŠKˆŠ’YˆH[X™\ˆÙˆ›ÝÜÈÈ™H™XYœ›ÛHHš[HÙˆHÓY\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›Y
+HX›H^ÙYYÈY\™ÙWÝ™YWÛZ[—Ü›ÝÜ×Ù›Ü—ØÛÛ˜Ý\œ™[Ü™XY[ˆÛXÚÒÝ\ÙHšY\ÈÈ\™›Ü›HHÛÛ˜Ý\œ™[™XY[™Èœ›ÛH\Èš[HÛˆÙ]™\˜[™XYË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÛZ[—Øž]\×Ù›Ü—ØÛÛ˜Ý\œ™[Ü™XY
+
+ˆL
+ˆL
+ˆL
+KˆŠ’YˆH[X™\ˆÙˆž]\ÈÈ™XYœ›ÛHÛ™Hš[HÙˆHÓY\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›Y
+KY[™Ú[™HX›H^ÙYYÈY\™ÙWÝ™YWÛZ[—Øž]\×Ù›Ü—ØÛÛ˜Ý\œ™[Ü™XY[ˆÛXÚÒÝ\ÙHšY\ÈÈÛÛ˜Ý\œ™[H™XYœ›ÛH\Èš[H[ˆÙ]™\˜[™XYË‚‚”ÜÜÚX›H˜[YN‚‚‹HÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÛZ[—Ü›ÝÜ×Ù›Ü—ÜÙYZËˆŠ’YˆH\Ý[˜ÙH™]ÙY[ˆÛÈ]H›ØÚÜÈÈ™H™XY[ˆÛ™Hš[H\È\ÜÈ[ˆY\™ÙWÝ™YWÛZ[—Ü›ÝÜ×Ù›Ü—ÜÙYZØ›ÝÜË[ˆÛXÚÒÝ\ÙHÙ\È›ÝÙYZÈ›ÝYÚHš[H]™XYÈH]HÙ\]Y[X[K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÛZ[—Øž]\×Ù›Ü—ÜÙYZËˆŠ’YˆH\Ý[˜ÙH™]ÙY[ˆÛÈ]H›ØÚÜÈÈ™H™XY[ˆÛ™Hš[H\È\ÜÈ[ˆY\™ÙWÝ™YWÛZ[—Øž]\×Ù›Ü—ÜÙYZØž]\Ë[ˆÛXÚÒÝ\ÙHÙ\]Y[X[H™XYÈH˜[™ÙHÙˆš[H]ÛÛZ[œÈ›Ý›ØÚÜË\È]›ÚY[™È^˜HÙYZË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWØÛØ\œÙWÚ[™^ÙÜ˜[[\š]KˆŠ•Ú[ˆÙX\˜Ú[™È›Üˆ]KÛXÚÒÝ\ÙHÚXÚÜÈH]HX\šÜÈ[ˆH[™^š[KˆYˆÛXÚÒÝ\ÙHš[™È]™\]Z\™YÙ^\È\™H[ˆÛÛYH˜[™ÙK]]šY\È\È˜[™ÙH[ÈY\™ÙWÝ™YWØÛØ\œÙWÚ[™^ÙÜ˜[[\š]XÝXœ˜[™Ù\È[™ÙX\˜Ú\ÈH™\]Z\™YÙ^\È\™H™XÝ\œÚ]™[K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H]™[ˆ[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÙÙ[™\šX×Ù^Û\Ú[Û—ÜÙX\˜ÚÛX^ÜÝ\ËˆŠ•Ú[ˆHš[\ˆØ[››Ý™H]˜[X]Y\ÈHÚ[™ÛHÛÛ[[Ý\È˜[™ÙHÙˆHš[X\žHÙ^K›Üˆ^[\HÚ[ˆ]\Ù\ÈÙ^HÛÛ[[œÈÝ\ˆ[ˆHš\œÝÛ™KÛXÚÒÝ\ÙH[œÈ[ˆ]\˜]]™HÙ[™\šXÈ^Û\Ú[ÛˆÙX\˜Ú[ÛÜš]HÝ™\ˆH[™^X\šÜËˆHØ[YH[ÛÜš]H\È\ÙY›ÜˆH[˜[\Ú\ÈÙˆH^[™^ˆ\ÈÙ][™È[Z]ÈH[X™\ˆÙˆÝ\È
+[™^ÚXÚÜÊHH[ÛÜš]HÜ[™ÈÛˆXXÚ]H\‚‚•HYÙ]\ÈÜ[ÛˆH\™Ù\Ý™[XZ[š[™ÈX\šÈ˜[™Ù\Èš\œÝˆÚ[ˆ]\È^]\ÝYH˜[™Ù\È]Ù\™H›Ý[H[˜[^™Y\™HXØÙ\Y\ÈHÚÛKÛÈH]Y\žHÝ^\ÈÛÜœ™XÝ]X^H™XY[Ü™HÜ˜[[\È[ˆ[ˆ[›[Z]YÙX\˜ÚÛÝ[Ù[XÝˆHÝÙ\ˆYÙ]ÜYYÈ\[™^[˜[\Ú\È]HÛÜÝÙˆ™XY[™È[Ü™H]KˆH[Z]\È\›Þ[X]H˜]\ˆ[ˆHÝšXÝØ\ÛˆH[˜[\Ú\ÈÛÜÝˆHÙX\˜ÚØ[ˆ^ÙYY]žH›ÝYÚHÛ™H›Ý[™ÙˆÜ][™Ë[™Ú[ˆH\\È[™XYH]šYY[ÈX[žH˜[™Ù\È
+›Üˆ^[\KžHH]Y\žHÛÛ™][ÛˆØXÚJKXXÚÙˆ[H\ÈÚXÚÙY]X\ÝÛ˜ÙH™YØ\™\ÜÈÙˆH[Z]‚‚•H[X™\ˆÙˆÝ\ÈHÙX\˜ÚXYH›ÜˆXXÚ]H\\È™\ÜY[ˆH˜XÙH]™[ÙÈY\ÜØYÙ\ÈÙˆH]Y\žK[™H[™^Ù[™\šXÑ^Û\Ú[Û”ÙX\˜ÚÝ\[Z]™XXÚY[™^[™^Ù[™\šXÑ^Û\Ú[Û”ÙX\˜ÚÝ\[Z]™XXÚY›Ùš[H]™[ÈÛÝ[ÝÈX[žH[Y\ÈHYÙ]Ø\È^]\ÝY‚‚•H
+Y˜][
+H˜[YHYX[œÈ[›[Z]YÝ\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H›Üˆ[›[Z]YÝ\ËÜˆ[žHÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÛX^Ü›ÝÜ×Ý×Ý\ÙWØØXÚK
+LŽ
+ˆNLŠKˆŠ’YˆÛXÚÒÝ\ÙHÚÝ[™XY[Ü™H[ˆY\™ÙWÝ™YWÛX^Ü›ÝÜ×Ý×Ý\ÙWØØXÚX›ÝÜÈ[ˆÛ™H]Y\žK]Ù\È›Ý\ÙHHØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜË‚‚•HØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜÈÝÜ™\È]H^˜XÝY›Üˆ]Y\šY\ËˆÛXÚÒÝ\ÙH\Ù\È\ÈØXÚHÈÜYY\™\ÜÛœÙ\ÈÈ™\X]YÛX[]Y\šY\Ëˆ\ÈÙ][™È›ÝXÝÈHØXÚHœ›ÛH˜\Ú[™ÈžH]Y\šY\È]™XYH\™ÙH[[Ý[Ùˆ]KˆHÝ[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™WJÛÜ\˜][ÛœËÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜÈÝ[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™JHÙ\™\ˆÙ][™ÈYš[™\ÈHÚ^™HÙˆHØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝ™YWÛX^Øž]\×Ý×Ý\ÙWØØXÚK
+NLˆ
+ˆL
+ˆL
+ˆL
+KˆŠ’YˆÛXÚÒÝ\ÙHÚÝ[™XY[Ü™H[ˆY\™ÙWÝ™YWÛX^Øž]\×Ý×Ý\ÙWØØXÚXž]\È[ˆÛ™H]Y\žK]Ù\È›Ý\ÙHHØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜË‚‚•HØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜÈÝÜ™\È]H^˜XÝY›Üˆ]Y\šY\ËˆÛXÚÒÝ\ÙH\Ù\È\ÈØXÚHÈÜYY\™\ÜÛœÙ\ÈÈ™\X]YÛX[]Y\šY\Ëˆ\ÈÙ][™È›ÝXÝÈHØXÚHœ›ÛH˜\Ú[™ÈžH]Y\šY\È]™XYH\™ÙH[[Ý[Ùˆ]KˆHÝ[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™WJÛÜ\˜][ÛœËÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜÈÝ[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™JHÙ\™\ˆÙ][™ÈYš[™\ÈHÚ^™HÙˆHØXÚHÙˆ[˜ÛÛ\™\ÜÙY›ØÚÜË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÜÚ]]™H[YÙ\‹‚ŠH‹
+H‘PÓT‘J›ÛÛY\™ÙWÝ™YWÝ\ÙWÙ\Ù\šX[^˜][Û—Ü™Yš^\×ØØXÚKYKˆŠ‘[˜X›\ÈØXÚ[™ÈÙˆÛÛ[[œÈY]Y]Hœ›ÛHHš[H™Yš^\È\š[™È™XY[™Èœ›ÛH™[[ÝH\ÚÜÈ[ˆY\™ÙU™YK‚ŠH‹
+H‘PÓT‘J›ÛÛY\™ÙWÝ™YWÝ\ÙWÜ™Yš^\×Ù\Ù\šX[^˜][Û—Ý™XYÜÛÛYKˆŠ‘[˜X›\È\ØYÙHÙˆH™XYÛÛ›Üˆ\˜[[™Yš^\È™XY[™È[ˆÚYH\È[ˆY\™ÙU™YKˆÚ^™HÙˆ]™XYÛÛ\ÈÛÛ›ÛYžHÙ\™\ˆÙ][™ÈX^Ü™Yš^\×Ù\Ù\šX[^˜][Û—Ý™XYÜÛÛÜÚ^™X‚ŠH‹
+HˆPÓT‘J›ÛÛ×Û›ÝÛY\™ÙWØXÜ›ÜÜ×Ü\][Ûœ×ÜÙ[XÝÙš[˜[˜[ÙKˆŠ’[\›Ý™H’SS]Y\šY\ÈžH]›ÚY[™ÈY\™Ù\ÈXÜ›ÜÜÈY™™\™[\][ÛœË‚‚•Ú[ˆ[˜X›Y\š[™ÈÑSPÕ’SS]Y\šY\Ë\Èœ›ÛHY™™\™[\][ÛœÈÚ[›Ý™HY\™ÙYÙÙ]\‹ˆ[œÝXYY\™Ú[™ÈÚ[Û›HØØÝ\ˆÚ][ˆXXÚ\][ÛˆÙ\\˜][Kˆ\ÈØ[ˆÚYÛšYšXØ[H[\›Ý™H]Y\žH\™›Ü›X[˜ÙHÚ[ˆÛÜšÚ[™ÈÚ]\][Û™YX›\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WØ]]ÛX]X×ÙXÚ\Ú[Û—Ù›Ü—ÛY\™Ú[™×ØXÜ›ÜÜ×Ü\][Ûœ×Ù›Ü—Ùš[˜[YKˆŠ’YˆÙ]ÛXÚÒÝ\ÙHÚ[]]ÛX]XØ[H[˜X›H\ÈÜ[Z^˜][ÛˆÚ[ˆH\][ÛˆÙ^H^™\ÜÚ[Ûˆ\È]\›Z[š\ÝXÈ[™[ÛÛ[[œÈ\ÙY[ˆH\][ÛˆÙ^H^™\ÜÚ[Ûˆ\™H[˜ÛYY[ˆHš[X\žHÙ^K‚•\È]]ÛX]XÈ\š]˜][Ûˆ[œÝ\™\È]›ÝÜÈÚ]HØ[YHš[X\žHÙ^H˜[Y\ÈÚ[[Ø^\È™[Û™ÈÈHØ[YH\][Û‹XZÚ[™È]ØY™HÈ]›ÚYÜ›ÜÜË\\][ÛˆY\™Ù\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛÜ]Ü\×Ü˜[™Ù\×Ú[×Ú[\œÙXÝ[™×Ø[™Û›Û—Ú[\œÙXÝ[™×Ùš[˜[YKˆŠ”Ü]\È˜[™Ù\È[È[\œÙXÝ[™È[™›Ûˆ[\œÙXÝ[™È\š[™È’SSÜ[Z^˜][Û‚ŠH‹
+HˆPÓT‘J›ÛÛÜ]Ú[\œÙXÝ[™×Ü\×Ü˜[™Ù\×Ú[×Û^Y\œ×Ùš[˜[YKˆŠ”Ü][\œÙXÝ[™È\È˜[™Ù\È[È^Y\œÈ\š[™È’SSÜ[Z^˜][Û‚ŠH‹
+HˆPÓT‘J›ÛÛ\WÜ›Ý×ÜÛXÞWØY\—Ùš[˜[YKˆŠ•Ú[ˆ[˜X›Y›ÝÈÛXÚY\È[™‘UÒT‘H\™H\YYY\ˆ’SS›ØÙ\ÜÚ[™È›Üˆ
+“Y\™ÙU™YHX›\Ëˆ
+\ÜXÚX[H›Üˆ™\XÚ[™ÓY\™ÙU™YJB•Ú[ˆ\ØX›Y›ÝÈÛXÚY\È\™H\YY™Y›Ü™H’SSÚXÚØ[ˆØ]\ÙHY™™\™[™\Ý[ÈÚ[ˆHÛXÞB™š[\œÈÝ]›ÝÜÈ]ÚÝ[™H\ÙY›ÜˆY\XØ][Ûˆ[ˆ™\XÚ[™ÓY\™ÙU™YHÜˆÚ[Z[\ˆ[™Ú[™\Ë‚‚’YˆH›ÝÈÛXÞH^™\ÜÚ[Ûˆ\[™ÈÛ›HÛˆÛÛ[[œÈ[ˆÔ‘Tˆ–K]Ú[Ý[™H\YY™Y›Ü™H’SS\È[ˆÜ[Z^˜][Û‹œÚ[˜ÙHÝXÚš[\š[™ÈØ[››ÝY™™XÝHY\XØ][Ûˆ™\Ý[‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %›ÝÈÛXÞH[™‘UÒT‘H\™H\YY™Y›Ü™H’SS
+Y˜][
+K‚‹HH8 %›ÝÈÛXÞH[™‘UÒT‘H\™H\YYY\ˆ’SS‚ŠH‹
+HˆPÓT‘J›ÛÛ\WÜ™]Ú\™WØY\—Ùš[˜[˜[ÙKˆŠ•Ú[ˆ[˜X›Y‘UÒT‘HÛÛ™][ÛœÈ\™H\YYY\ˆ’SS›ØÙ\ÜÚ[™È›Üˆ™\XÚ[™ÓY\™ÙU™YH[™Ú[Z[\ˆ[™Ú[™\Ë‚•\ÈØ[ˆ™H\ÙY[Ú[ˆ‘UÒT‘H™Y™\™[˜Ù\ÈÛÛ[[œÈ]X^H]™HY™™\™[˜[Y\ÈXÜ›ÜÜÈ\XØ]H›ÝÜË˜[™[ÝHØ[’SSÈÙ[XÝHÚ[›š[™È›ÝÈ™Y›Ü™Hš[\š[™ËˆÚ[ˆ\ØX›Y‘UÒT‘H\È\YY\š[™È™XY[™Ë‚“›ÝNˆYˆ\WÜ›Ý×Û]™[ÜÙXÝ\š]WØY\—Ùš[˜[\È[˜X›Y[™›ÝÈÛXÞH\Ù\È›Û‹\ÛÜ[™ËZÙ^HÛÛ[[œË‘UÒT‘HÚ[[ÛÂ˜™HY™\œ™YÈXZ[Z[ˆÛÜœ™XÝ^XÝ][ÛˆÜ™\ˆ
+›ÝÈÛXÞH]\Ý™H\YY™Y›Ü™H‘UÒT‘JK‚ŠH‹
+HˆPÓT‘J›ÛÛY™\—Ü\][Û—Ü[š[™×ØY\—Ùš[˜[YKˆŠ•Ú[ˆ[˜X›Y
+Y˜][
+K\][Ûˆ[š[™È\ÈÚÚ\Y›Üˆ’SS]Y\šY\ÈÛˆX›\ÈÚÜÙBœ\][Û‹ZÙ^HÛÛ[[œÈ\™H›Ý\ÙˆHÛÜ[™ÈÙ^Kˆ\È\ÈHÛÜœ™XÝ™\ÜË\ØY™H™Z]š[Ü‚š[›ÙXÙY[ˆ‹ŒÎˆ’SSX^H™YYÈY\XØ]H›ÝÜÈ]Ú\™HHš[X\žHÙ^H]]™Bš[ˆY™™\™[\][ÛœË[™\][Ûˆ[š[™ÈÛÝ[Ú[[H^ÛYHÝXÚ›ÝÜÈœ›ÛHB™Y\XØ][Ûˆ[œ]‚‚•Ú[ˆ\ØX›Y\][Ûˆ[š[™È\È\YY]™[ˆÚ]’SS™\ÝÜš[™ÈH™KL‹ŒÂ˜™Z]š[Ü‹ˆ\ÈØ[ˆ™HÝXœÝ[X[H˜\Ý\ˆ›Üˆ]Y\šY\ÈÚ]ÒT‘X™YXØ]\ÈÛˆBœ\][ÛˆÛÛ[[‹]\ÈÛ›HÛÜœ™XÝÚ[ˆ›ÝÜÈÚ]HØ[YHš[X\žHÙ^HØ[››Ý^\Ýš[ˆY™™\™[\][ÛœÈ8 %K™Ëˆ]™[[ÙÈX›\ÈÚÜÙH\][ÛˆÛÛ[[ˆ\ÈÙ]][œÙ\[YH[™™]™\ˆÚ[™Ù\Ë‚‚•\ÈÙ][™ÈÛ›HY™™XÝÈ\][Û™YX›\ÈÚÜÙH\][Û‹ZÙ^HÛÛ[[œÈ\™H›ÝÛÛZ[™Yš[ˆHÛÜ[™ÈÙ^NÈ›ÜˆÝ\ˆX›\È\][Ûˆ[š[™È\È[Ø^\È\YY‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\H\][Ûˆ[š[™È™Y›Ü™H’SS
+™KL‹ŒÈ™Z]š[Ü‹˜\Ý\ˆ][œØY™H[ˆHÙ[™\˜[Ø\ÙJK‚‹HH8 %Y™\ˆ\][Ûˆ[š[™ÈÈY\ˆ’SS
+Y˜][ÛÜœ™XÝ™\ÜË\ØY™JK‚ŠH‹
+HˆˆPÓT‘JR[^\Ü[ÛX^Ü›ÝÜ×Ý×Ú[œÙ\MLÍ‹ˆŠ•HX^[][H[X™\ˆÙˆ›ÝÜÈ[ˆ^TÔS˜]Ú[œÙ\[ÛˆÙˆH^TÔSÝÜ˜YÙH[™Ú[™BŠH‹
+HˆPÓT‘J›ÛÛ^\Ü[ÛX\ÜÝš[™×Ý×Ý^Ú[—ÜÚÝ×ØÛÛ[[œËYKˆŠ•Ú[ˆ[˜X›YÔÝš[™×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÜÝš[™Ë›Y
+HÛXÚÒÝ\ÙH]H\HÚ[™H\Ü^YY\ÈV[ˆÔÒÕÈÓÓSS”×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÚÝË›YÈÜÚÝ×ØÛÛ[[œÊK‚‚’\È[ˆY™™XÝÛ›HÚ[ˆHÛÛ›™XÝ[Ûˆ\ÈXYH›ÝYÚH^TÔSÚ\™H›ÝØÛÛ‚‚‹HH\ÙH“Ð˜‚‹HHH\ÙHV‚ŠH‹
+HˆPÓT‘J›ÛÛ^\Ü[ÛX\Ùš^YÜÝš[™×Ý×Ý^Ú[—ÜÚÝ×ØÛÛ[[œËYKˆŠ•Ú[ˆ[˜X›YÑš^YÝš[™×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÙš^YÝš[™Ë›Y
+HÛXÚÒÝ\ÙH]H\HÚ[™H\Ü^YY\ÈV[ˆÔÒÕÈÓÓSS”×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÚÝË›YÈÜÚÝ×ØÛÛ[[œÊK‚‚’\È[ˆY™™XÝÛ›HÚ[ˆHÛÛ›™XÝ[Ûˆ\ÈXYH›ÝYÚH^TÔSÚ\™H›ÝØÛÛ‚‚‹HH\ÙH“Ð˜‚‹HHH\ÙHV‚ŠH‹
+HˆˆPÓT‘JR[Ü[Z^™WÛZ[—Ù\]X[]WÙ\Ú[˜Ý[Û—ØÚZ[—Û[™ÝËˆŠ•HZ[š[][H[™ÝÙˆH^™\ÜÚ[Ûˆ^ˆHHÔˆ‹‹ˆ^ˆH˜›ÜˆÜ[Z^˜][Û‚ŠH‹
+HˆPÓT‘JR[Ü[Z^™WÛZ[—Ú[™\]X[]WØÛÛš[˜Ý[Û—ØÚZ[—Û[™ÝËˆŠ•HZ[š[][H[™ÝÙˆH^™\ÜÚ[Ûˆ^ˆˆHS‘‹‹ˆ^ˆˆ˜›ÜˆÜ[Z^˜][Û‚ŠH‹
+HˆˆPÓT‘JR[Z[—Øž]\×Ý×Ý\ÙWÙ\™XÝÚ[ËˆŠ•HZ[š[][H]H›Û[YH™\]Z\™Y›Üˆ\Ú[™È\™XÝKÓÈXØÙ\ÜÈÈHÝÜ˜YÙH\ÚË‚‚ÛXÚÒÝ\ÙH\Ù\È\ÈÙ][™ÈÚ[ˆ™XY[™È]Hœ›ÛHX›\ËˆYˆHÝ[ÝÜ˜YÙH›Û[YHÙˆ[H]HÈ™H™XY^ÙYYÈZ[—Øž]\×Ý×Ý\ÙWÙ\™XÝÚ[Øž]\Ë[ˆÛXÚÒÝ\ÙH™XYÈH]Hœ›ÛHHÝÜ˜YÙH\ÚÈÚ]H×ÑT‘PÕÜ[Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\™XÝKÓÈ\È\ØX›Y‚‹HÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JR[Z[—Øž]\×Ý×Ý\ÙWÛ[X\Ú[ËˆŠ•\È\È[ˆ^\š[Y[[Ù][™ËˆÙ]ÈHZ[š[][H[[Ý[ÙˆY[[ÜžH›Üˆ™XY[™È\™ÙHš[\ÈÚ]Ý]ÛÜZ[™È]Hœ›ÛHHÙ\›™[È\Ù\œÜXÙKˆ™XÛÛ[Y[™Y™\ÚÛ\ÈX›Ý]P‹™XØ]\ÙHÛ[X\Û][›X\JÎ‹ËÙ[‹ÚZÚ\YXK›Ü™ËÝÚZÚKÓ[X\
+H\ÈÛÝËˆ]XZÙ\ÈÙ[œÙHÛ›H›Üˆ\™ÙHš[\È[™[ÈÛ›HYˆ]H™\ÚYH[ˆHYÙHØXÚK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %šYÈš[\È™XYÚ]Û›HÛÜZ[™È]Hœ›ÛHÙ\›™[È\Ù\œÜXÙK‚ŠH‹
+HˆPÓT‘J›ÛÛÚXÚÜÝ[WÛÛ—Ü™XYYKˆŠ•˜[Y]HÚXÚÜÝ[\ÈÛˆ™XY[™Ëˆ]\È[˜X›YžHY˜][[™ÚÝ[™H[Ø^\È[˜X›Y[ˆ›ÙXÝ[Û‹ˆX\ÙHÈ›Ý^XÝ[žH™[™Yš]È[ˆ\ØX›[™È\ÈÙ][™Ëˆ]X^HÛ›H™H\ÙY›Üˆ^\š[Y[È[™™[˜ÚX\šÜËˆHÙ][™È\ÈÛ›H\XØX›H›ÜˆX›\ÈÙˆY\™ÙU™YH˜[Z[KˆÚXÚÜÝ[\È\™H[Ø^\È˜[Y]Y›ÜˆÝ\ˆX›H[™Ú[™\È[™Ú[ˆ™XÙZ]š[™È]HÝ™\ˆH™]ÛÜšË‚ŠH‹
+HˆˆPÓT‘J›ÛÛ\ÙWÛYÚÙZYÚÜš[X\žWÚÙ^WÚ[™^Ø[˜[\Ú\ËYKˆŠ“Ü[Z^™Hš[X\žHÙ^H[™^[˜[\Ú\È›ÜˆY\™ÙU™YXX›\ÈÚ]Û™Èš[X\žHÙ^\Ë‚‚•Ú[ˆ[˜X›YH[ˆ[YHÙˆ[™^[˜[\Ú\ÈXZ[›H\[™ÈÛˆHÛÛ\^]HÙˆH]Y\žIÜÈš[\ˆ
+HÙ^HÛÛ[[œÈ]XÝX[H\Ù\ÊK›ÝÛˆH[™ÝÙˆHš[X\žHÙ^H8 %ÛÈ^[™[™ÈHÛÜ[™ÈÙ^H\È™YÛYÚX›H^˜HÝ™\šXYÛˆ[™^[˜[\Ú\È›Üˆ]Y\šY\È]š[\ˆÛˆÛ›HH™]ÈÙˆ]ÈÛÛ[[œË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Yˆ[š[X\žHÙ^HÛÛ[[œÈ\™H›ØÙ\ÜÙY\š[™È[™^[˜[\Ú\Ë‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛ\ÙWÜ\][Û—Ü[š[™ËYKˆŠ•\ÙH\][ÛˆÙ^HÈ[™H\][ÛœÈ\š[™È]Y\žH^XÝ][Ûˆ›ÜˆY\™ÙU™YHX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹\ÙWÜ\][Û—ÚÙ^JHˆPÓT‘J›ÛÛ›Ü˜ÙWÚ[™^ØžWÙ]K˜[ÙKˆŠ‘\ØX›\È]Y\žH^XÝ][ÛˆYˆH[™^Ø[‰Ý™H\ÙYžH]K‚‚•ÛÜšÜÈÚ]X›\È[ˆHY\™ÙU™YH˜[Z[K‚‚’Yˆ›Ü˜ÙWÚ[™^ØžWÙ]OLXÛXÚÒÝ\ÙHÚXÚÜÈÚ]\ˆH]Y\žH\ÈH]HÙ^HÛÛ™][Ûˆ]Ø[ˆ™H\ÙY›Üˆ™\ÝšXÝ[™È]H˜[™Ù\ËˆYˆ\™H\È›ÈÝZ]X›HÛÛ™][Û‹]›ÝÜÈ[ˆ^Ù\[Û‹ˆÝÙ]™\‹]Ù\È›ÝÚXÚÈÚ]\ˆHÛÛ™][Ûˆ™YXÙ\ÈH[[Ý[Ùˆ]HÈ™XYˆ›Üˆ^[\KHÛÛ™][Ûˆ]HOH	ÈŒLKLH	Ø\ÈXØÙ\X›H]™[ˆÚ[ˆ]X]Ú\È[H]H[ˆHX›H
+K™K‹[›š[™ÈH]Y\žH™\]Z\™\ÈH[ØØ[ŠKˆ›Üˆ[Ü™H[™›Ü›X][ÛˆX›Ý]˜[™Ù\ÈÙˆ]H[ˆY\™ÙU™YHX›\ËÙYHÓY\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›Y
+K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜš[X\žWÚÙ^KYKˆŠ•\ÙHHš[X\žHÙ^HÈ[™HÜ˜[[\È\š[™È]Y\žH^XÝ][Ûˆ›ÜˆY\™ÙU™YHX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWØÛÛœÝ[Ù›Û[™×Ú[—Ú[™^Ø[˜[\Ú\Ë˜[ÙKˆŠ”ÝXœÝ]]H\][Û‹[]™[ÛÛœÝ[È[ÈHš[\ˆ™YXØ]HÚ[ˆ[˜[^š[™È\‹\\š[X\žHÙ^H[™ÚÚ\[™^\Ë‚‚•Ú[ˆH\][ÛˆÙ^H\X\œÈ[ˆHš[\ˆÙÙ]\ˆÚ]š[X\žKZÙ^HÜˆÚÚ\Z[™^ÛÛ[[œË\È]È[™^[˜[\Ú\È›ÛH\][Ûˆ˜[YHÙ\\˜][HÚ][ˆXXÚ\ˆ]\È[ÜÝ\ÙY[›Üˆ\Ú[˜Ý]™Hš[\œÈÚÜÙHœ˜[˜Ú\È\™Ù]Y™™\™[\][ÛœËˆ›Üˆ^[\KÚ]T•USÓˆ–HX[™Ô‘Tˆ–H˜‚‚˜Ü[”ÑSPÕ
+ˆ”“ÓHÒT‘H
+HHHS‘ˆHJHÔˆ
+HHˆS‘ˆˆL
+HÔˆ
+HHÈS‘ˆˆL
+B˜‚‘›ÜˆH\[ˆ\][ÛˆHHXHÛÛ™][Ûˆ›ÛÈÈˆHXÚ[H›Üˆ\][ÛœÈHH˜[™HHØ]›ÛÈÈˆˆLÛÈXXÚ\\È[˜[^™YÚ]H™YXØ]H]XÝX[H\Y\ÈÈ]‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜ\][Û—ÛZ[›X^Ù›Ü—Üš[X\žWÚÙ^WÜ[š[™ËYKˆŠ•\ÙH\][ÛˆZ[›X^[™^›Ý[™ÈÈ[™H[Ü™HÜ˜[[\È\š[™Èš[X\žHÙ^H[˜[\Ú\È›ÜˆY\™ÙU™YXX›\ËÚ[ˆHš[X\žHÙ^HÛÛ[[ˆ\È[ÛÈ[ˆ[œ]ÛÛ[[ˆÙˆH\][ÛˆÙ^K‚‚‘›Üˆ^[\K[ˆHY\™ÙU™YXX›HÚ]Ô‘Tˆ–H
+Y]™[Ý[YJX[™T•USÓˆ–HÖVVVSSJ]™[Ý[YJXÛXÚÒÝ\ÙHÚ[\ÙHH\][ÛˆZ[›X^[™^Ûˆ]™[Ý[YX\š[™Èš[X\žHÙ^H[™^[˜[\Ú\ÈÈXZÙH[Ü™H[™›Ü›YYÜ˜[[K\[š[™ÈXÚ\Ú[ÛœË‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ›Ü˜ÙWÜš[X\žWÚÙ^K˜[ÙKˆŠ‘\ØX›\È]Y\žH^XÝ][ÛˆYˆ[™^[™ÈžHHš[X\žHÙ^H\È›ÝÜÜÚX›K‚‚•ÛÜšÜÈÚ]X›\È[ˆHY\™ÙU™YH˜[Z[K‚‚’Yˆ›Ü˜ÙWÜš[X\žWÚÙ^OLXÛXÚÒÝ\ÙHÚXÚÜÈÈÙYHYˆH]Y\žH\ÈHš[X\žHÙ^HÛÛ™][Ûˆ]Ø[ˆ™H\ÙY›Üˆ™\ÝšXÝ[™È]H˜[™Ù\ËˆYˆ\™H\È›ÈÝZ]X›HÛÛ™][Û‹]›ÝÜÈ[ˆ^Ù\[Û‹ˆÝÙ]™\‹]Ù\È›ÝÚXÚÈÚ]\ˆHÛÛ™][Ûˆ™YXÙ\ÈH[[Ý[Ùˆ]HÈ™XYˆ›Üˆ[Ü™H[™›Ü›X][ÛˆX›Ý]]H˜[™Ù\È[ˆY\™ÙU™YHX›\ËÙYHÓY\™ÙU™YWJ‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›Y
+K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÚÚ\Ú[™^\ËYKˆŠ•\ÙH]HÚÚ\[™È[™^\È\š[™È]Y\žH^XÝ][Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÚÚ\Ú[™^\×ÚY—Ùš[˜[YKˆŠÛÛ›ÛÈÚ]\ˆÚÚ\[™È[™^\È\™H\ÙYÚ[ˆ^XÝ][™ÈH]Y\žHÚ]H’SS[ÙYšY\‹‚‚”ÚÚ\[™^\ÈX^H^ÛYH›ÝÜÈ
+Ü˜[[\ÊHÛÛZ[š[™ÈH]\Ý]KÚXÚÛÝ[XYÈ[˜ÛÜœ™XÝ™\Ý[Èœ›ÛHH]Y\žHÚ]H’SS[ÙYšY\‹ˆÚ[ˆ\ÈÙ][™È\È[˜X›YÚÚ\[™È[™^\È\™H\YY]™[ˆÚ]H’SS[ÙYšY\‹Ý[X[H[\›Ýš[™È\™›Ü›X[˜ÙH]Ú]Hš\ÚÈÙˆZ\ÜÚ[™È™XÙ[\]\Ëˆ\ÈÙ][™ÈÚÝ[™H[˜X›Y[ˆÞ[˜ÈÚ]HÙ][™È\ÙWÜÚÚ\Ú[™^\×ÚY—Ùš[˜[Ù^XÝÛ[ÙH
+Y˜][\È[˜X›Y
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÚÚ\Ú[™^\×ÚY—Ùš[˜[Ù^XÝÛ[ÙKYKˆŠÛÛ›ÛÈÚ]\ˆÜ˜[[\È™]\›™YžHHÚÚ\[™È[™^\™H^[™Y[ˆ™]Ù\ˆ\ÈÈ™]\›ˆÛÜœ™XÝ™\Ý[ÈÚ[ˆ^XÝ][™ÈH]Y\žHÚ]H’SS[ÙYšY\‹‚‚•\Ú[™ÈÚÚ\[™^\ÈX^H^ÛYH›ÝÜÈ
+Ü˜[[\ÊHÛÛZ[š[™ÈH]\Ý]HÚXÚÛÝ[XYÈ[˜ÛÜœ™XÝ™\Ý[Ëˆ\ÈÙ][™ÈØ[ˆ[œÝ\™H]ÛÜœ™XÝ™\Ý[È\™H™]\›™YžHØØ[›š[™È™]Ù\ˆ\È]]™HÝ™\›\Ú]H˜[™Ù\È™]\›™YžHHÚÚ\[™^ˆ\ÈÙ][™ÈÚÝ[™H\ØX›YÛ›HYˆ\›Þ[X]H™\Ý[È˜\ÙYÛˆÛÚÚ[™È\HÚÚ\[™^\™HÚØ^H›Üˆ[ˆ\XØ][Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÚÚ\Ú[™^\×ÛÛ—Ù]WÜ™XYYKˆŠ‘[˜X›H\Ú[™È]HÚÚ\[™È[™^\È\š[™È]H™XY[™Ë‚‚•Ú[ˆ[˜X›YÚÚ\[™^\È\™H]˜[X]Y[˜[ZXØ[H]H[YHXXÚ]HÜ˜[[H\È™Z[™È™XY˜]\ˆ[ˆ™Z[™È[˜[^™Y[ˆY˜[˜ÙH™Y›Ü™H]Y\žH^XÝ][Ûˆ™YÚ[œËˆ\ÈØ[ˆ™YXÙH]Y\žHÝ\\][˜ÞK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÚÚ\Ú[™^\×Ù›Ü—Ù\Ú[˜Ý[ÛœËYKˆŠ‘]˜[X]HÒT‘Hš[\œÈÚ]Z^YS‘[™ÔˆÛÛ™][ÛœÈ\Ú[™ÈÚÚ\[™^\Ëˆ^[\NˆÒT‘HHHHS‘
+ˆHHÔˆÈHJK‚’Yˆ\ØX›YÚÚ\[™^\È\™HÝ[\ÙYÈ]˜[X]HÒT‘HÛÛ™][ÛœÈ]^H]\ÝÛ›HÛÛZ[ˆS‘YYÛ]\Ù\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÚÚ\Ú[™^\×Ù›Ü—ÝÜÚËYKˆŠ‘[˜X›H\Ú[™È]HÚÚ\[™È[™^\È›ÜˆÜÈš[\š[™Ë‚‚•Ú[ˆ[˜X›YYˆHZ[›X^ÚÚ\[™^^\ÝÈÛˆHÛÛ[[ˆ[ˆÔ‘Tˆ–HÛÛ[[ˆSRU˜]Y\žKÜ[Z^™\ˆÚ[][\È\ÙHHZ[›X^[™^ÈÚÚ\Ü˜[[\È]\™H›Ý™[]˜[›ÜˆHš[˜[™\Ý[ˆ\ÈØ[ˆ™YXÙH]Y\žH][˜ÞK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÝ]\ÝXÜ×Ù›Ü—Ü\Ü[š[™ËYKˆŠ•\ÙHÝ]\ÝXÜÈÈš[\ˆÝ]\È\š[™È]Y\žH^XÝ][Û‹‚‚•Ú[ˆ[˜X›Y[š[™È[ˆÑSPÕ]Y\šY\ÈÚ[\ÙHÛÛ[[ˆÝ]\ÝXÜÈ
+K™ËˆZ[“X^Ý]\ÝXÜÊHÈ[[Z[˜]H\È]Ø[››ÝÛÛZ[ˆX]Ú[™È]H™Y›Ü™H™XY[™È[žH]K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝÜÚ×Ù[˜[ZX×Ùš[\š[™ËYKˆŠ‘[˜X›H[˜[ZXÈš[\š[™ÈÜ[Z^˜][ÛˆÚ[ˆ^XÝ][™ÈHÔ‘Tˆ–HÛÛ[[ˆSRU˜]Y\žK‚‚•Ú[ˆ[˜X›YH]Y\žH^XÝ]ÜˆÚ[žHÈÚÚ\Ü˜[[\È[™›ÝÜÈ]Ú[›Ý™H\ÙˆHš[˜[Ü˜›ÝÜÈ[ˆH™\Ý[Ù]ˆ\ÈÜ[Z^˜][Ûˆ\È[˜[ZXÈ[ˆ˜]\™H[™][˜ÞH[\›Ý™[Y[È\[™ÈÛˆ]H\ÝšX][Ûˆ[™™\Ù[˜ÙHÙˆÝ\ˆ™YXØ]\È[ˆH]Y\žK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝÜÚ×Ù[˜[ZX×Ùš[\š[™×Ù›Ü—Ý˜\šXX›WÛ[™ÝÝ\\Ë˜[ÙKˆŠ[ÝÈ\ÙWÝÜÚ×Ù[˜[ZX×Ùš[\š[™ØÈ\HÚ[ˆHÛÜÛÛ[[ˆ\ÈH˜\šXX›K[[™Ý]H\H
+K™ËˆÝš[™Ø\œ˜^XX\\XÛÛZ[š[™È˜\šXX›K[[™Ý[[Y[ÊK‚‚‘›ÜˆÝXÚ\\ËH\‹\›ÝÈ™\ÚÛÛÛ\\š\ÛÛˆ\™›Ü›YYžHH[˜[ZXÈš[\ˆØ[ˆÝ]ÙZYÚ]ÈØ]š[™ÜÈÚ[ˆHÛÛ[[‰ÜÈ^XÛÙÜ˜\XÈZ[š[][HÛZ[˜]\È
+K™Ëˆ[ÜÝH[\HÝš[™ÜÊH[™™]ÈÜ˜[[\ÈØ[ˆ™HÚÚ\Yˆ[ˆ]Ø\ÙHH[˜[ZXÈš[\ˆYÜ˜Y\È]Y\žH][˜ÞH˜]\ˆ[ˆ[\›Ýš[™È]‚‚•Ú[ˆ\ÈÙ][™È\È[˜[ZXÈš[\š[™È\È™\ÝšXÝYÈÛÛ[[œÈÚÜÙH˜[Y\È]™HHš^YX^[][HÚ^™H[ˆY[[ÜžH
+[X™\œË]X]U[YXš^YÝš[™Ø[[X[X›XÙˆÝXÚ\\Ë\XÙˆÝXÚ\\ÊKˆÚ[ˆÙ]ÈX[˜[ZXÈš[\š[™È\Y\ÈÈ˜\šXX›K[[™Ý\\È\ÈÙ[‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘JR[]Y\žWÜ[—ÛX^Û[Z]Ù›Ü—ÝÜÚ×ÛÜ[Z^˜][Û‹LˆŠÛÛ›ÛX^[][H[Z]˜[YH][ÝÜÈÈ]˜[X]H]Y\žH[ˆ›ÜˆÜÈÜ[Z^˜][ÛˆžH\Ú[™ÈZ[›X^ÚÚ\[™^[™[˜[ZXÈ™\ÚÛš[\š[™ËˆYˆ™\›Ë\™H\È›È[Z]‚ŠH‹
+HˆPÓT‘J›ÛÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\YKˆŠ’YˆS”ÑT•ÈZ[[™ÝÜ™HÚÚ\[™^\ËˆYˆ\ØX›YÚÚ\[™^\ÈÚ[Û›H™HZ[[™ÝÜ™YÙ\š[™ÈY\™Ù\×JY\™ÙK]™YK\Ù][™ÜË›YÈÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—ÛY\™ÙJHÜˆžH^XÚ]ÓPUT’PSV‘HS‘VJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØ[\‹ÜÚÚ\[™ËZ[™^›YÈÛX]\šX[^™KZ[™^
+K‚‚”ÙYH[ÛÈÙ^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\JÙ^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\
+K‚ŠH‹
+HˆPÓT‘JÝš[™Ë^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\ˆ‹ˆŠ‘^ÛY\ÈÜXÚYšYYÚÚ\[™^\Èœ›ÛH™Z[™ÈZ[[™ÝÜ™Y\š[™ÈS”ÑT•ËˆH^ÛYYÚÚ\[™^\ÈÚ[Ý[™HZ[[™ÝÜ™YÙ\š[™ÈY\™Ù\×JY\™ÙK]™YK\Ù][™ÜË›YÈÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—ÛY\™ÙJHÜˆžH[ˆ^XÚ]–ÓPUT’PSV‘HS‘VJÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØ[\‹ÜÚÚ\[™ËZ[™^›YÈÛX]\šX[^™KZ[™^
+H]Y\žK‚‚’\È›ÈY™™XÝYˆÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\JÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\
+H\È˜[ÙK‚‚‘^[\N‚‚˜Ü[Ô‘PUHP“HX‚ŠˆHR[ˆˆR[ˆS‘VYØHHTHZ[›X^ˆS‘VYØˆˆTHÙ]
+ÊBŠB‘S‘ÒS‘HHY\™ÙU™YHÔ‘Tˆ–H\J
+NÂ‚”ÑU^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\IÚYØIÎÈKHYØHÚ[™H›Ý™H\]Y\Ûˆ[œÙ\‹KTÑU^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\IÚYØKYØ‰ÎÈKH™Z]\ˆ[™^ÛÝ[™H\]YÛˆ[œÙ\‚’S”ÑT•S•ÈXˆÑSPÕ[X™\‹[X™\ˆÈL”“ÓH[X™\œÊL
+NÈKHÛ›HYØˆ\È\]Y‚‹KHÚ[˜ÙH]\ÈHÙ\ÜÚ[ÛˆÙ][™È]Ø[ˆ™HÙ]ÛˆH\‹\]Y\žH]™[’S”ÑT•S•ÈXˆÑSPÕ[X™\‹[X™\ˆÈL”“ÓH[X™\œÊLL
+HÑUS‘ÔÈ^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\IÚYØ‰ÎÂ‚STˆP“HXˆPUT’PSV‘HS‘VYØNÈKH\È]Y\žHØ[ˆ™H\ÙYÈ^XÚ]HX]\šX[^™HH[™^‚”ÑU^ÛYWÛX]\šX[^™WÜÚÚ\Ú[™^\×ÛÛ—Ú[œÙ\HQUSÈKH™\Ù]Ù][™ÈÈY˜][˜ŠH‹
+HˆPÓT‘J›ÛÛ\—Ü\Ú[™^ÜÝ]Ë˜[ÙKˆŠ“ÙÜÈ[™^Ý]\ÝXÜÈ\ˆ\ŠH‹
+HˆPÓT‘J›ÛÛX]\šX[^™WÜÝ]\ÝXÜ×ÛÛ—Ú[œÙ\˜[ÙKˆŠ’YˆS”ÑT•ÈZ[[™[œÙ\Ý]\ÝXÜËˆYˆ\ØX›YÝ]\ÝXÜÈÚ[™HZ[[™ÝÜ™Y\š[™ÈY\™Ù\ÈÜˆžH^XÚ]PUT’PSV‘HÕUTÕPÔÂŠH‹
+HˆPÓT‘JÝš[™ËYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\Ëˆ‹ˆŠ’YÛ›Ü™\ÈHÚÚ\[™È[™^\ÈÜXÚYšYYYˆ\ÙYžHH]Y\žK‚‚ÛÛœÚY\ˆH›ÛÝÚ[™È^[\N‚‚˜Ü[Ô‘PUHP“H]BŠˆÙ^H[ˆ[ˆH[ˆS‘VÚYTHZ[›X^ÔS•ST’UHKˆS‘VWÚYHTHZ[›X^ÔS•ST’UHKˆS‘VWÚY
+JHTHZ[›X^ÔS•ST’UHBŠB‘[™Ú[™OSY\™ÙU™YJ
+B“Ô‘Tˆ–HÙ^NÂ‚’S”ÑT•S•È]HSQTÈ
+K‹ÊNÂ‚”ÑSPÕ
+ˆ”“ÓH]NÂ”ÑSPÕ
+ˆ”“ÓH]HÑUS‘ÔÈYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÉÎÈKH]Y\žHÚ[›ÙXÙHÐS““ÕÔT”ÑWÕV\œ›Ü‹‚”ÑSPÕ
+ˆ”“ÓH]HÑUS‘ÔÈYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÞÚY	ÎÈKHÚË‚”ÑSPÕ
+ˆ”“ÓH]HÑUS‘ÔÈYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÛ˜WÚY	ÎÈKHÚË‚‚”ÑSPÕ
+ˆ”“ÓH]HÒT‘HHHS‘HHHÑUS‘ÔÈYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÞWÚY	Ë›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÞWÚY	ÈÈKH]Y\žHÚ[›ÙXÙHS‘VÓ“ÕÕTÑQ\œ›Ü‹Ú[˜ÙHWÚY\È^XÚ]HYÛ›Ü™Y‚”ÑSPÕ
+ˆ”“ÓH]HÒT‘HHHS‘HHˆÑUS‘ÔÈYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÞWÚY	ÎÂ˜‚•H]Y\žHÚ]Ý]YÛ›Üš[™È[žH[™^\Î‚˜Ü[‘VRSˆ[™^\ÈHHÑSPÕ
+ˆ”“ÓH]HÒT‘HHHS‘HHŽÂ‚‘^™\ÜÚ[Ûˆ
+
+›Ú™XÝ[Ûˆ
+È™Y›Ü™HÔ‘Tˆ–JJBˆš[\ˆ
+ÒT‘JBˆ™XYœ›ÛSY\™ÙU™YH
+Y˜][™]JBˆ[™^\Î‚ˆš[X\žRÙ^BˆÛÛ™][ÛŽˆYBˆ\ÎˆKÌBˆÜ˜[[\ÎˆKÌBˆÚÚ\ˆ˜[YNˆÚYˆ\ØÜš\[ÛŽˆZ[›X^ÔS•ST’UHBˆ\ÎˆÌBˆÜ˜[[\ÎˆÌBˆÚÚ\ˆ˜[YNˆWÚYˆ\ØÜš\[ÛŽˆZ[›X^ÔS•ST’UHBˆ\ÎˆÌˆÜ˜[[\ÎˆÌˆÚÚ\ˆ˜[YNˆWÚYˆ\ØÜš\[ÛŽˆZ[›X^ÔS•ST’UHBˆ\ÎˆÌˆÜ˜[[\ÎˆÌ˜‚’YÛ›Üš[™ÈHWÚY[™^‚˜Ü[‘VRSˆ[™^\ÈHHÑSPÕ
+ˆ”“ÓH]HÒT‘HHHS‘HHˆÑUS‘ÔÈYÛ›Ü™WÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÞWÚY	ÎÂ‚‘^™\ÜÚ[Ûˆ
+
+›Ú™XÝ[Ûˆ
+È™Y›Ü™HÔ‘Tˆ–JJBˆš[\ˆ
+ÒT‘JBˆ™XYœ›ÛSY\™ÙU™YH
+Y˜][™]JBˆ[™^\Î‚ˆš[X\žRÙ^BˆÛÛ™][ÛŽˆYBˆ\ÎˆKÌBˆÜ˜[[\ÎˆKÌBˆÚÚ\ˆ˜[YNˆÚYˆ\ØÜš\[ÛŽˆZ[›X^ÔS•ST’UHBˆ\ÎˆÌBˆÜ˜[[\ÎˆÌBˆÚÚ\ˆ˜[YNˆWÚYˆ\ØÜš\[ÛŽˆZ[›X^ÔS•ST’UHBˆ\ÎˆÌˆÜ˜[[\ÎˆÌ˜‚•ÛÜšÜÈÚ]X›\È[ˆHY\™ÙU™YH˜[Z[K‚ŠH‹
+HˆˆPÓT‘JÝš[™Ë›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\Ëˆ‹ˆŠ‘\ØX›\È]Y\žH^XÝ][ÛˆYˆ\ÜÙY]HÚÚ\[™È[™XÙ\ÈØ\Û‰Ý\ÙY‚‚ÛÛœÚY\ˆH›ÛÝÚ[™È^[\N‚‚˜Ü[Ô‘PUHP“H]BŠˆÙ^H[ˆH[ˆWÛ[[X›J[
+KˆS‘VWÚYHTHZ[›X^ÔS•ST’UHKˆS‘VWÛ[ÚY\ÜÝ[YS›Ý[
+WÛ[
+HTHZ[›X^ÔS•ST’UHBŠB‘[™Ú[™OSY\™ÙU™YJ
+B“Ô‘Tˆ–HÙ^NÂ‚”ÑSPÕ
+ˆ”“ÓH]WÌMLMNÂ”ÑSPÕ
+ˆ”“ÓH]WÌMLMHÑUS‘ÔÈ›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÉÎÈKH]Y\žHÚ[›ÙXÙHÐS““ÕÔT”ÑWÕV\œ›Ü‹‚”ÑSPÕ
+ˆ”“ÓH]WÌMLMHÑUS‘ÔÈ›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÙWÚY	ÎÈKH]Y\žHÚ[›ÙXÙHS‘VÓ“ÕÕTÑQ\œ›Ü‹‚”ÑSPÕ
+ˆ”“ÓH]WÌMLMHÒT‘HHHÑUS‘ÔÈ›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIÙWÚY	ÎÈKHÚË‚”ÑSPÕ
+ˆ”“ÓH]WÌMLMHÒT‘HHHÑUS‘ÔÈ›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIØWÚY	ÎÈKHÚÈ
+^[\HÙˆ[™X]\™Y\œÙ\ŠK‚”ÑSPÕ
+ˆ”“ÓH]WÌMLMHÒT‘HHHÑUS‘ÔÈ›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIØWÚYWÛ[ÚY	ÎÈKH]Y\žHÚ[›ÙXÙHS‘VÓ“ÕÕTÑQ\œ›Ü‹Ú[˜ÙHWÛ[ÚY\È›Ý\ÙY‚”ÑSPÕ
+ˆ”“ÓH]WÌMLMHÒT‘HHHS‘\ÜÝ[YS›Ý[
+WÛ[
+HHÑUS‘ÔÈ›Ü˜ÙWÙ]WÜÚÚ\[™×Ú[™XÙ\ÏIØWÚYWÛ[ÚY	ÎÈKHÚË‚˜ŠH‹
+HˆPÓT‘J›ÛÛÙXÛÛ™\žWÚ[™XÙ\×Ù[˜X›WØ[×Ùš[\š[™ËYKˆŠ‘[˜X›HH[Èš[\š[™È[ÛÜš]H›Üˆ[™XÙ\Ëˆ]\È^XÝYÈ™H[Ø^\È™]\‹]ÙH]™H\ÈÙ][™È›ÜˆÛÛ\]Xš[]H[™ÛÛ›Û‚ŠH‹
+HˆPÓT‘J›Ø]X^ÜÝ™X[\×Ý×ÛX^Ý™XY×Ü˜][ËKˆŠ[ÝÜÈ[ÝHÈ\ÙH[Ü™HÛÝ\˜Ù\È[ˆH[X™\ˆÙˆ™XYÈHÈ[Ü™H]™[›H\ÝšX]HÛÜšÈXÜ›ÜÜÈ™XYËˆ]\È\ÜÝ[YY]\È\ÈH[\Ü˜\žHÛÛ][ÛˆÚ[˜ÙH]Ú[™HÜÜÚX›H[ˆH]\™HÈXZÙHH[X™\ˆÙˆÛÝ\˜Ù\È\]X[ÈH[X™\ˆÙˆ™XYË]›ÜˆXXÚÛÝ\˜ÙHÈ[˜[ZXØ[HÙ[XÝ]˜Z[X›HÛÜšÈ›Üˆ]Ù[‹‚ŠH‹
+HˆPÓT‘J›Ø]X^ÜÝ™X[\×Û][\Y\—Ù›Ü—ÛY\™ÙWÝX›\ËKˆŠ\ÚÈ[Ü™HÝ™X[\ÈÚ[ˆ™XY[™Èœ›ÛHY\™ÙHX›KˆÝ™X[\ÈÚ[™HÜ™XYXÜ›ÜÜÈX›\È]Y\™ÙHX›HÚ[\ÙKˆ\È[ÝÜÈ[Ü™H]™[ˆ\ÝšX][ÛˆÙˆÛÜšÈXÜ›ÜÜÈ™XYÈ[™\È\ÜXÚX[H[[Ú[ˆY\™ÙYX›\ÈY™™\ˆ[ˆÚ^™K‚ŠH‹
+HˆˆPÓT‘JÝš[™Ë™]ÛÜš×ØÛÛ\™\ÜÚ[Û—ÛY]Ù“‹ˆŠ•HÛÙXÈ›ÜˆÛÛ\™\ÜÚ[™ÈHÛY[ÜÙ\™\ˆ[™Ù\™\‹ÜÙ\™\ˆÛÛ[][šXØ][Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H“Ó‘X8 %›ÈÛÛ\™\ÜÚ[Û‹‚‹H8 %\ÙHHÛÙXË‚‹HØ8 %\ÙHHÈÛÙXË‚‹H”Õ8 %\ÙHH”ÕÛÙXË‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÛ™]ÛÜš×ÞœÝØÛÛ\™\ÜÚ[Û—Û]™[JÛ™]ÛÜš×ÞœÝØÛÛ\™\ÜÚ[Û—Û]™[
+BŠH‹
+HˆˆPÓT‘J[™]ÛÜš×ÞœÝØÛÛ\™\ÜÚ[Û—Û]™[KˆŠY\ÝÈH]™[Ùˆ”ÕÛÛ\™\ÜÚ[Û‹ˆ\ÙYÛ›HÚ[ˆÛ™]ÛÜš×ØÛÛ\™\ÜÚ[Û—ÛY]ÙJÛ™]ÛÜš×ØÛÛ\™\ÜÚ[Û—ÛY]Ù
+H\ÈÙ]È”Õ‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\ˆœ›ÛHHÈMK‚ŠH‹
+HˆˆPÓT‘J[œÝÝÚ[™Ý×ÛÙ×ÛX^ˆŠ[ÝÜÈ[ÝHÈÙ[XÝHX^Ú[™ÝÈÙÈÙˆ”Õ
+]Ú[›Ý™H\ÙY›ÜˆY\™ÙU™YH˜[Z[JBŠH‹
+HˆˆPÓT‘JR[š[Üš]KˆŠ”š[Üš]HÙˆH]Y\žKˆHHHYÚ\ÝYÚ\ˆ˜[YHHÝÙ\ˆš[Üš]NÈHÈ›Ý\ÙHš[Üš]Y\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛÙ×Ü]Y\šY\ËYKˆŠ”Ù][™È\]Y\žHÙÙÚ[™Ë‚‚”]Y\šY\ÈÙ[ÈÛXÚÒÝ\ÙHÚ]\ÈÙ]\\™HÙÙÙYXØÛÜ™[™ÈÈH[\È[ˆHÜ]Y\žWÛÙ×J‹‹Ë‹‹ÛÜ\˜][ÛœËÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜË›YÈÜ]Y\žWÛÙÊHÙ\™\ˆÛÛ™šYÝ\˜][Ûˆ\˜[Y]\‹‚‚‘^[\N‚‚˜^›Ù×Ü]Y\šY\ÏLB˜ŠH‹
+HˆPÓT‘J›ÛÛÙ×Ù›Ü›X]YÜ]Y\šY\Ë˜[ÙKˆŠ[ÝÜÈÈÙÈ›Ü›X]Y]Y\šY\ÈÈHÜÞ\Ý[Kœ]Y\žWÛÙ×J‹‹Ë‹‹ÛÜ\˜][ÛœËÜÞ\Ý[K]X›\ËÜ]Y\žWÛÙË›Y
+HÞ\Ý[HX›H
+Ü[]\È›Ü›X]YÜ]Y\žXÛÛ[[ˆ[ˆHÜÞ\Ý[Kœ]Y\žWÛÙ×J‹‹Ë‹‹ÛÜ\˜][ÛœËÜÞ\Ý[K]X›\ËÜ]Y\žWÛÙË›Y
+JK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %›Ü›X]Y]Y\šY\È\™H›ÝÙÙÙY[ˆHÞ\Ý[HX›K‚‹HH8 %›Ü›X]Y]Y\šY\È\™HÙÙÙY[ˆHÞ\Ý[HX›K‚ŠH‹
+HˆPÓT‘JÙÔ]Y\šY\Õ\KÙ×Ü]Y\šY\×ÛZ[—Ý\K]Y\žSÙÑ[[Y[\NŽ”UQT–WÔÕT•ˆŠ˜]Y\žWÛÙØZ[š[X[\HÈÙË‚‚”ÜÜÚX›H˜[Y\Î‚‹HUQT–WÔÕT•
+LX
+B‹HUQT–WÑ’S’TÒ
+L˜
+B‹HVÑTSÓ—Ð‘Q“Ô‘WÔÕT•
+LØ
+B‹HVÑTSÓ—ÕÒSWÔ“ÐÑTÔÒS‘Ø
+M
+B‚Ø[ˆ™H\ÙYÈ[Z]ÚXÚ[]Y\ÈÚ[ÛÈÈ]Y\žWÛÙØØ^H[ÝH\™H[\™\ÝYÛ›H[ˆ\œ›ÜœË[ˆ[ÝHØ[ˆ\ÙHVÑTSÓ—ÕÒSWÔ“ÐÑTÔÒS‘Ø‚‚˜^›Ù×Ü]Y\šY\×ÛZ[—Ý\OIÑVÑTSÓ—ÕÒSWÔ“ÐÑTÔÒS‘ÉÂ˜ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÙ×Ü]Y\šY\×ÛZ[—Ü]Y\žWÙ\˜][Û—Û\ËˆŠ’Yˆ[˜X›Y
+›Û‹^™\›ÊK]Y\šY\È˜\Ý\ˆ[ˆH˜[YHÙˆ\ÈÙ][™ÈÚ[›Ý™HÙÙÙY
+[ÝHØ[ˆ[šÈX›Ý]\È\ÈHÛ™×Ü]Y\žWÝ[YX›ÜˆÓ^TÔSÛÝÈ]Y\žHÙ×JÎ‹ËÙ]‹›^\Ü[˜ÛÛKÙØËÜ™Y›X[‹ÍKËÜÛÝË\]Y\žK[ÙËš[
+JK[™\È˜\ÚXØ[HYX[œÈ][ÝHÚ[›Ýš[™[H[ˆH›ÛÝÚ[™ÈX›\Î‚‚‹HÞ\Ý[Kœ]Y\žWÛÙØ‹HÞ\Ý[Kœ]Y\žWÝ™XYÛÙØ‚“Û›HH]Y\šY\ÈÚ]H›ÛÝÚ[™È\HÚ[Ù]ÈHÙÎ‚‚‹HUQT–WÑ’S’TÒ‹HVÑTSÓ—ÕÒSWÔ“ÐÑTÔÒS‘Ø‚‹H\NˆZ[\ÙXÛÛ™Â‹HY˜][˜[YNˆ
+[žH]Y\žJBŠH‹
+HˆPÓT‘JR[Ù×Ü]Y\šY\×ØÝ]Ý×Û[™ÝLˆŠ’Yˆ]Y\žH[™Ý\ÈÜ™X]\ˆ[ˆHÜXÚYšYY™\ÚÛ
+[ˆž]\ÊK[ˆÝ]]Y\žHÚ[ˆÜš][™ÈÈ]Y\žHÙËˆ[ÛÈ[Z]H[™ÝÙˆš[Y]Y\žH[ˆÜ™[˜\žH^ÙË‚ŠH‹
+HˆPÓT‘J›Ø]Ù×Ü]Y\šY\×Ü›Ø˜Xš[]KK‹ˆŠ[ÝÜÈH\Ù\ˆÈÜš]HÈÜ]Y\žWÛÙ×J‹‹Ë‹‹ÛÜ\˜][ÛœËÜÞ\Ý[K]X›\ËÜ]Y\žWÛÙË›Y
+KÜ]Y\žWÝ™XYÛÙ×J‹‹Ë‹‹ÛÜ\˜][ÛœËÜÞ\Ý[K]X›\ËÜ]Y\žWÝ™XYÛÙË›Y
+K[™Ü]Y\žWÝšY]Ü×ÛÙ×J‹‹Ë‹‹ÛÜ\˜][ÛœËÜÞ\Ý[K]X›\ËÜ]Y\žWÝšY]Ü×ÛÙË›Y
+HÞ\Ý[HX›\ÈÛ›HHØ[\HÙˆ]Y\šY\ÈÙ[XÝY˜[™Û[HÚ]HÜXÚYšYY›Ø˜Xš[]Kˆ][ÈÈ™YXÙHHØYÚ]H\™ÙH›Û[YHÙˆ]Y\šY\È[ˆHÙXÛÛ™‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %]Y\šY\È\™H›ÝÙÙÙY[ˆHÞ\Ý[HX›\Ë‚‹HÜÚ]]™H›Ø][™Ë\Ú[[X™\ˆ[ˆH˜[™ÙHÌ‹ŒWKˆ›Üˆ^[\KYˆHÙ][™È˜[YH\ÈXX›Ý][ˆÙˆH]Y\šY\È\™HÙÙÙY[ˆHÞ\Ý[HX›\Ë‚‹HH8 %[]Y\šY\È\™HÙÙÙY[ˆHÞ\Ý[HX›\Ë‚ŠH‹
+HˆˆPÓT‘J›ÛÛÙ×Ü›ØÙ\ÜÛÜœ×Ü›Ùš[\ËYKˆŠ•Üš]H[YH]›ØÙ\ÜÛÜˆÜ[\š[™È^XÝ][Û‹ÝØZ][™È›Üˆ]HÈÞ\Ý[Kœ›ØÙ\ÜÛÜœ×Ü›Ùš[WÛÙØX›K‚‚”ÙYH[ÛÎ‚‚‹HØÞ\Ý[Kœ›ØÙ\ÜÛÜœ×Ü›Ùš[WÛÙØJ‹‹Ë‹‹ÛÜ\˜][ÛœËÜÞ\Ý[K]X›\ËÜ›ØÙ\ÜÛÜœ×Ü›Ùš[WÛÙË›Y
+B‹HØVRSˆTSS‘XJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÙ^Z[‹›YÈÙ^Z[‹\\[[™JBŠH‹
+HˆPÓT‘J\ÝšX]Y›ÙXÝ[ÙK\ÝšX]YÜ›ÙXÝÛ[ÙK\ÝšX]Y›ÙXÝ[ÙNŽ‘S–KˆŠÚ[™Ù\ÈH™Z]š[Ý\ˆÙˆÙ\ÝšX]YÝXœ]Y\šY\×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÛÜ\˜]ÜœËÚ[‹›Y
+K‚‚ÛXÚÒÝ\ÙH\Y\È\ÈÙ][™ÈÚ[ˆH]Y\žHÛÛZ[œÈH›ÙXÝÙˆ\ÝšX]YX›\ËK™K°¨Ú[ˆH]Y\žH›ÜˆH\ÝšX]YX›HÛÛZ[œÈH›Û‹QÓÐSÝXœ]Y\žH›ÜˆH\ÝšX]YX›K‚‚”™\ÝšXÝ[ÛœÎ‚‚‹HÛ›H\YY›ÜˆSˆ[™“ÒSˆÝXœ]Y\šY\Ë‚‹HÛ›HYˆH”“ÓHÙXÝ[Ûˆ\Ù\ÈH\ÝšX]YX›HÛÛZ[š[™È[Ü™H[ˆÛ™HÚ\™‚‹HYˆHÝXœ]Y\žHÛÛ˜Ù\›œÈH\ÝšX]YX›HÛÛZ[š[™È[Ü™H[ˆÛ™HÚ\™‚‹H›Ý\ÙY›ÜˆHX›K]˜[YYÜ™[[ÝWJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËÜ™[[ÝK›Y
+H[˜Ý[Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žX8 %Y˜][˜[YKˆ›ÚXš]È\Ú[™È\ÙH\\ÈÙˆÝXœ]Y\šY\È
+™]\›œÈH‘ÝX›KY\ÝšX]Y[‹Ò“ÒSˆÝXœ]Y\šY\È\È[šYYˆ^Ù\[ÛŠK‚‹HØØ[8 %™\XÙ\ÈH]X˜\ÙH[™X›H[ˆHÝXœ]Y\žHÚ]ØØ[Û™\È›ÜˆH\Ý[˜][ÛˆÙ\™\ˆ
+Ú\™
+KX]š[™ÈH›Ü›X[S˜Ø“ÒS‹˜‹HÛØ˜[8 %™\XÙ\ÈHS˜Ø“ÒS˜]Y\žHÚ]ÓÐSS˜ØÓÐS“ÒS‹˜‹H[ÝØ8 %[ÝÜÈH\ÙHÙˆ\ÙH\\ÈÙˆÝXœ]Y\šY\Ë‚ŠH‹STÔ•S•
+HˆˆPÓT‘JR[X^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ø[Ý\Ù\œËˆŠ•›ÝÈ^Ù\[ÛˆYˆH˜[YHÙˆ\ÈÙ][™È\È\ÜÈÜˆ\]X[[ˆHÝ\œ™[[X™\ˆÙˆÚ[][[™[Ý\ÛH›ØÙ\ÜÙY]Y\šY\Ë‚‚‘^[\NˆX^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ø[Ý\Ù\œØØ[ˆ™HÙ]ÈNH›Üˆ[\Ù\œÈ[™]X˜\ÙHYZ[š\Ý˜]ÜˆØ[ˆÙ]]ÈL›Üˆ]Ù[ˆÈ[ˆ]Y\šY\È›Üˆ[™\ÝYØ][Ûˆ]™[ˆÚ[ˆHÙ\™\ˆ\ÈÝ™\›ØYY‚‚“[ÙYžZ[™ÈHÙ][™È›ÜˆÛ™H]Y\žHÜˆ\Ù\ˆÙ\È›ÝY™™XÝÝ\ˆ]Y\šY\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %›È[Z]‚‚ŠŠ‘^[\JŠ‚‚˜[X^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ø[Ý\Ù\œÏŽNOÛX^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ø[Ý\Ù\œÏ‚˜‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÛX^ØÛÛ˜Ý\œ™[Ü]Y\šY\×JÛÜ\˜][ÛœËÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜÈÛX^ØÛÛ˜Ý\œ™[Ü]Y\šY\ÊB‚ÛÝYY˜][˜[YNˆL‚ŠH‹
+HˆPÓT‘JR[X^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ý\Ù\‹ˆŠ•HX^[][H[X™\ˆÙˆÚ[][[™[Ý\ÛH›ØÙ\ÜÙY]Y\šY\È\ˆ\Ù\‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %›È[Z]‚‚ŠŠ‘^[\JŠ‚‚˜[X^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ý\Ù\OÛX^ØÛÛ˜Ý\œ™[Ü]Y\šY\×Ù›Ü—Ý\Ù\‚˜ŠH‹
+H—ˆPÓT‘JY\XØ]R[œÙ\[ÙKY\XØ]WÚ[œÙ\Y\XØ]R[œÙ\[ÙNŽ‘SP“KˆŠ‘[˜X›\ÈÜˆ\ØX›\È›ØÚÈY\XØ][ÛˆÙˆS”ÑT•S•Ø
+›Üˆ™\XØ]Y
+ˆX›\ÊK‚•HÙ][™ÈÝ™\œšY\È[œÙ\ÙY\XØ]X[™\Þ[˜×Ú[œÙ\ÙY\XØ]XÙ][™ÜË‚•]Ù][™È\È™YHÜÜÚX›H˜[Y\Î‚‹H\ØX›H8 %Y\XØ][Ûˆ\È\ØX›Y›ÜˆS”ÑT•S•Ø]Y\žK‚‹H[˜X›H8 %Y\XØ][Ûˆ\È[˜X›Y›ÜˆS”ÑT•S•Ø]Y\žK‚‹H˜XÚÝØ\™ØÛÛ\]X›WØÚÚXÙH8 %Y\XØ][Ûˆ\È[˜X›YYˆ[œÙ\ÙY\XØ]XÜˆ\Þ[˜×Ú[œÙ\ÙY\XØ]X\™H[˜X›Y›ÜˆÜXÚYšXÈ[œÙ\\K‚ŠH‹
+H—ˆPÓT‘JY\XØ]R[œÙ\Ù[XÝ[ÙKY\XØ]WÚ[œÙ\ÜÙ[XÝY\XØ]R[œÙ\Ù[XÝ[ÙNŽ‘SP“WÕÒS—ÔÔÔÒP“KˆŠ‘[˜X›\ÈÜˆ\ØX›\È›ØÚÈY\XØ][ÛˆÙˆS”ÑT•ÑSPÕ
+›Üˆ™\XØ]Y
+ˆX›\ÊK‚•HÙ][™ÈÝ™\œšYÈ[œÙ\ÙY\XØ]X[™Y\XØ]WÚ[œÙ\›ÜˆS”ÑT•ÑSPÕ]Y\šY\Ë‚•]Ù][™È\È›Ý\ˆÜÜÚX›H˜[Y\Î‚‹H\ØX›H8 %Y\XØ][Ûˆ\È\ØX›Y›ÜˆS”ÑT•ÑSPÕ]Y\žK‚‹H›Ü˜ÙWÙ[˜X›H8 %Y\XØ][Ûˆ\È[˜X›Y›ÜˆS”ÑT•ÑSPÕ]Y\žKˆYˆÙ[XÝ™\Ý[\È›ÝÝX›K^Ù\[Ûˆ\È›ÝÛ‹‚‹H[˜X›WÝÚ[—ÜÜÜÚX›H8 %Y\XØ][Ûˆ\È[˜X›YYˆ[œÙ\ÙY\XØ]X\È[˜X›H[™Ù[XÝ™\Ý[\ÈÝX›KÝ\Ú\ÙH\ØX›Y‚‹H[˜X›WÙ]™[—Ù›Ü—Ø˜YÜ]Y\šY\ÈHY\XØ][Ûˆ\È[˜X›YYˆ[œÙ\ÙY\XØ]X\È[˜X›KˆYˆÙ[XÝ™\Ý[\È›ÝÝX›KØ\›š[™È\ÈÙÙÙY]]Y\žH\È^XÝ]YÚ]Y\XØ][Û‹ˆ\ÈÜ[Ûˆ\È›Üˆ˜XÚÝØ\™ÛÛ\]Xš[]KˆÛÛœÚY\ˆÈ\ÙHÝ\ˆÜ[ÛœÈ[œÝXY\È]X^HXYÈ[™^XÝY™\Ý[Ë‚ŠH‹
+H—ˆPÓT‘J›ÛÛ[œÙ\ÙY\XØ]KYKˆŠ‘[˜X›\ÈÜˆ\ØX›\È›ØÚÈY\XØ][ÛˆÙˆS”ÑT•
+›Üˆ™\XØ]Y
+ˆX›\ÊK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚‚žHY˜][›ØÚÜÈ[œÙ\Y[È™\XØ]YX›\ÈžHHS”ÑT•Ý][Y[\™HY\XØ]Y
+ÙYHÑ]H™\XØ][Û—J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÜ™\XØ][Û‹›Y
+JK‚‘›ÜˆH™\XØ]YX›\ÈžHY˜][HÛ›HLÙˆH[ÜÝ™XÙ[›ØÚÜÈ›ÜˆXXÚ\][Ûˆ\™HY\XØ]Y
+ÙYHÜ™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×JY\™ÙK]™YK\Ù][™ÜË›YÈÜ™\XØ]YÙY\XØ][Û—ÝÚ[™ÝÊKÜ™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×ÜÙXÛÛ™×JY\™ÙK]™YK\Ù][™ÜË›YÈÜ™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×ÜÙXÛÛ™ÊJK‚‘›Üˆ›Ý™\XØ]YX›\ÈÙYHÛ›Û—Ü™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×JY\™ÙK]™YK\Ù][™ÜË›YÈÛ›Û—Ü™\XØ]YÙY\XØ][Û—ÝÚ[™ÝÊK‚ŠH‹
+HˆPÓT‘J›ÛÛ\Þ[˜×Ú[œÙ\ÙY\XØ]K˜[ÙKˆŠ‘›Üˆ\Þ[˜ÈS”ÑT•]Y\šY\È[ˆH™\XØ]YX›KÜXÚYšY\È]Y\XØ][ÛˆÙˆ[œÙ\[™È›ØÚÜÈÚÝ[™H\™›Ü›YYŠH‹
+HˆˆPÓT‘JR[]]Ë[œÙ\Ü][Ü[KˆŠŽŽŽ››ÝB•\ÈÙ][™È\È›Ý\XØX›HÈÚ\™YY\™ÙU™YKÙYHÔÚ\™YY\™ÙU™YHÛÛœÚ\Ý[˜ÞWJØÛÝYÜ™Y™\™[˜ÙKÜÚ\™Y[Y\™ÙK]™YHØÛÛœÚ\Ý[˜ÞJH›Üˆ[Ü™H[™›Ü›X][Û‹‚ŽŽŽ‚‚‘[˜X›\ÈH][Ü[HÜš]\Ë‚‚‹HYˆ[œÙ\Ü][Ü[H˜H][Ü[HÜš]\È\™H\ØX›Y‚‹HYˆ[œÙ\Ü][Ü[HH˜H][Ü[HÜš]\È\™H[˜X›Y‚‹HYˆ[œÙ\Ü][Ü[HH	Ø]]ÉØ\ÙHXZ›Üš]H[X™\ˆ
+[X™\—ÛÙ—Ü™\XØ\ÈÈˆ
+ÈX
+H\È][Ü[H[X™\‹‚‚”][Ü[HÜš]\Â‚˜S”ÑT•ÝXØÙYYÈÛ›HÚ[ˆÛXÚÒÝ\ÙHX[˜YÙ\ÈÈÛÜœ™XÝHÜš]H]HÈH[œÙ\Ü][Ü[XÙˆ™\XØ\È\š[™ÈH[œÙ\Ü][Ü[WÝ[Y[Ý]ˆYˆ›Üˆ[žH™X\ÛÛˆH[X™\ˆÙˆ™\XØ\ÈÚ]ÝXØÙ\ÜÙ[Üš]\ÈÙ\È›Ý™XXÚH[œÙ\Ü][Ü[XHÜš]H\ÈÛÛœÚY\™Y˜Z[Y[™ÛXÚÒÝ\ÙHÚ[[]HH[œÙ\Y›ØÚÈœ›ÛH[H™\XØ\ÈÚ\™H]H\È[™XYH™Y[ˆÜš][‹‚‚•Ú[ˆ[œÙ\Ü][Ü[WÜ\˜[[\È\ØX›Y[™\XØ\È[ˆH][Ü[H\™HÛÛœÚ\Ý[K™Kˆ^HÛÛZ[ˆ]Hœ›ÛH[™]š[Ý\ÈS”ÑT•]Y\šY\È
+HS”ÑT•Ù\]Y[˜ÙH\È[™X\š^™Y
+KˆÚ[ˆ™XY[™È]HÜš][ˆ\Ú[™È[œÙ\Ü][Ü[X[™[œÙ\Ü][Ü[WÜ\˜[[\È\ØX›Y[ÝHØ[ˆ\›ˆÛˆÙ\]Y[X[ÛÛœÚ\Ý[˜ÞH›ÜˆÑSPÕ]Y\šY\È\Ú[™ÈÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWJÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞJK‚‚ÛXÚÒÝ\ÙHÙ[™\˜]\È[ˆ^Ù\[ÛŽ‚‚‹HYˆH[X™\ˆÙˆ]˜Z[X›H™\XØ\È]H[YHÙˆH]Y\žH\È\ÜÈ[ˆH[œÙ\Ü][Ü[X‚‹HÚ[ˆ[œÙ\Ü][Ü[WÜ\˜[[\È\ØX›Y[™[ˆ][\ÈÜš]H]H\ÈXYHÚ[ˆH™]š[Ý\È›ØÚÈ\È›ÝY]™Y[ˆ[œÙ\Y[ˆ[œÙ\Ü][Ü[XÙˆ™\XØ\Ëˆ\ÈÚ]X][ÛˆX^HØØÝ\ˆYˆH\Ù\ˆšY\ÈÈ\™›Ü›H[›Ý\ˆS”ÑT•]Y\žHÈHØ[YHX›H™Y›Ü™HH™]š[Ý\ÈÛ™HÚ][œÙ\Ü][Ü[X\ÈÛÛ\]Y‚‚”ÙYH[ÛÎ‚‚‹HÚ[œÙ\Ü][Ü[WÝ[Y[Ý]JÚ[œÙ\Ü][Ü[WÝ[Y[Ý]
+B‹HÚ[œÙ\Ü][Ü[WÜ\˜[[JÚ[œÙ\Ü][Ü[WÜ\˜[[
+B‹HÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWJÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞJBŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë[œÙ\Ü][Ü[WÝ[Y[Ý]ŒˆŠ•Üš]HÈH][Ü[H[Y[Ý][ˆZ[\ÙXÛÛ™ËˆYˆH[Y[Ý]\È\ÜÙY[™›ÈÜš]H\ÈZÙ[ˆXÙHY]ÛXÚÒÝ\ÙHÚ[Ù[™\˜]H[ˆ^Ù\[Ûˆ[™HÛY[]\Ý™\X]H]Y\žHÈÜš]HHØ[YH›ØÚÈÈHØ[YHÜˆ[žHÝ\ˆ™\XØK‚‚”ÙYH[ÛÎ‚‚‹HÚ[œÙ\Ü][Ü[WJÚ[œÙ\Ü][Ü[JB‹HÚ[œÙ\Ü][Ü[WÜ\˜[[JÚ[œÙ\Ü][Ü[WÜ\˜[[
+B‹HÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWJÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞJBŠH‹
+HˆPÓT‘J›ÛÛ[œÙ\Ü][Ü[WÜ\˜[[YKˆŠŽŽŽ››ÝB•\ÈÙ][™È\È›Ý\XØX›HÈÚ\™YY\™ÙU™YKÙYHÔÚ\™YY\™ÙU™YHÛÛœÚ\Ý[˜ÞWJØÛÝYÜ™Y™\™[˜ÙKÜÚ\™Y[Y\™ÙK]™YHØÛÛœÚ\Ý[˜ÞJH›Üˆ[Ü™H[™›Ü›X][Û‹‚ŽŽŽ‚‚‘[˜X›\ÈÜˆ\ØX›\È\˜[[\ÛH›Üˆ][Ü[HS”ÑT•]Y\šY\ËˆYˆ[˜X›YY][Û˜[S”ÑT•]Y\šY\ÈØ[ˆ™HÙ[Ú[H™]š[Ý\È]Y\šY\È]™H›ÝY]š[š\ÚYˆYˆ\ØX›YY][Û˜[Üš]\ÈÈHØ[YHX›HÚ[™H™Z™XÝY‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚‚”ÙYH[ÛÎ‚‚‹HÚ[œÙ\Ü][Ü[WJÚ[œÙ\Ü][Ü[JB‹HÚ[œÙ\Ü][Ü[WÝ[Y[Ý]JÚ[œÙ\Ü][Ü[WÝ[Y[Ý]
+B‹HÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWJÜÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞJBŠH‹
+HˆPÓT‘JR[Ù[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞKˆŠŽŽŽ››ÝB•\ÈÙ][™ÈY™™\ˆ[ˆ™Z]š[Üˆ™]ÙY[ˆÚ\™YY\™ÙU™YH[™™\XØ]YY\™ÙU™YKÙYHÔÚ\™YY\™ÙU™YHÛÛœÚ\Ý[˜ÞWJØÛÝYÜ™Y™\™[˜ÙKÜÚ\™Y[Y\™ÙK]™YHØÛÛœÚ\Ý[˜ÞJH›Üˆ[Ü™H[™›Ü›X][ÛˆX›Ý]H™Z]š[ÜˆÙˆÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞX[ˆÚ\™YY\™ÙU™YK‚ŽŽŽ‚‚‘[˜X›\ÈÜˆ\ØX›\ÈÙ\]Y[X[ÛÛœÚ\Ý[˜ÞH›ÜˆÑSPÕ]Y\šY\Ëˆ™\]Z\™\È[œÙ\Ü][Ü[WÜ\˜[[È™H\ØX›Y
+[˜X›YžHY˜][
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚‚•\ØYÙB‚•Ú[ˆÙ\]Y[X[ÛÛœÚ\Ý[˜ÞH\È[˜X›YÛXÚÒÝ\ÙH[ÝÜÈHÛY[È^XÝ]HHÑSPÕ]Y\žHÛ›H›ÜˆÜÙH™\XØ\È]ÛÛZ[ˆ]Hœ›ÛH[™]š[Ý\ÈS”ÑT•]Y\šY\È^XÝ]YÚ][œÙ\Ü][Ü[XˆYˆHÛY[™Y™\œÈÈH\X[™\XØKÛXÚÒÝ\ÙHÚ[Ù[™\˜]H[ˆ^Ù\[Û‹ˆHÑSPÕ]Y\žHÚ[›Ý[˜ÛYH]H]\È›ÝY]™Y[ˆÜš][ˆÈH][Ü[HÙˆ™\XØ\Ë‚‚•Ú[ˆ[œÙ\Ü][Ü[WÜ\˜[[\È[˜X›Y
+HY˜][
+K[ˆÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞXÙ\È›ÝÛÜšËˆ\È\È™XØ]\ÙH\˜[[S”ÑT•]Y\šY\ÈØ[ˆ™HÜš][ˆÈY™™\™[Ù]ÈÙˆ][Ü[H™\XØ\ÈÛÈ\™H\È›ÈÝX\˜[YHHÚ[™ÛH™\XØHÚ[]™H™XÙZ]™Y[Üš]\Ë‚‚”ÙYH[ÛÎ‚‚‹HÚ[œÙ\Ü][Ü[WJÚ[œÙ\Ü][Ü[JB‹HÚ[œÙ\Ü][Ü[WÝ[Y[Ý]JÚ[œÙ\Ü][Ü[WÝ[Y[Ý]
+B‹HÚ[œÙ\Ü][Ü[WÜ\˜[[JÚ[œÙ\Ü][Ü[WÜ\˜[[
+BŠH‹
+HˆPÓT‘J›ÛÛ\]WÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞKYKˆŠ’YˆYHÙ]Ùˆ\È\È\]YÈH]\Ý™\œÚ[Ûˆ™Y›Ü™H^XÝ][ÛˆÙˆ\]K‚ŠH‹
+HˆPÓT‘J\]T\˜[[[ÙK\]WÜ\˜[[Û[ÙK\]T\˜[[[ÙNŽUUËˆŠ‘]\›Z[™\ÈH™Z]š[ÜˆÙˆÛÛ˜Ý\œ™[\]H]Y\šY\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‹HÞ[˜ØH[ˆÙ\]Y[X[H[TUX]Y\šY\Ë‚‹H]]ØH[ˆÙ\]Y[X[HÛ›HTUX]Y\šY\ÈÚ]\[™[˜ÚY\È™]ÙY[ˆÛÛ[[œÈ\]Y[ˆÛ™H]Y\žH[™ÛÛ[[œÈ\ÙY[ˆ^™\ÜÚ[ÛœÈÙˆ[›Ý\ˆ]Y\žK‚‹H\Þ[˜ØHÈ›ÝÞ[˜Ú›Ûš^™H\]H]Y\šY\Ë‚ŠH‹
+HˆPÓT‘JR[X›WÙ[˜Ý[Û—Ü™[[ÝWÛX^ØY™\ÜÙ\ËLˆŠ”Ù]ÈHX^[][H[X™\ˆÙˆY™\ÜÙ\ÈÙ[™\˜]Yœ›ÛH]\›œÈ›ÜˆHÜ™[[ÝWJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËÜ™[[ÝK›Y
+H[˜Ý[Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë™XYØ˜XÚÛÙ™—ÛZ[—Û][˜ÞWÛ\ËLˆŠ”Ù][™ÈÈ™YXÙHH[X™\ˆÙˆ™XYÈ[ˆØ\ÙHÙˆÛÝÈ™XYËˆ^H][[ÛˆÛ›HÈ™XYÈ]ÛÚÈ]X\Ý]]XÚ[YK‚ŠH‹
+HˆPÓT‘JR[™XYØ˜XÚÛÙ™—ÛX^Ý›ÝYÚ]LMÍ‹ˆŠ”Ù][™ÜÈÈ™YXÙHH[X™\ˆÙˆ™XYÈ[ˆØ\ÙHÙˆÛÝÈ™XYËˆÛÝ[]™[ÈÚ[ˆH™XY˜[™ÚY\È\ÜÈ[ˆ]X[žHž]\È\ˆÙXÛÛ™‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë™XYØ˜XÚÛÙ™—ÛZ[—Ú[\˜[Ø™]ÙY[—Ù]™[×Û\ËLˆŠ”Ù][™ÜÈÈ™YXÙHH[X™\ˆÙˆ™XYÈ[ˆØ\ÙHÙˆÛÝÈ™XYËˆÈ›Ý^H][[ÛˆÈH]™[YˆH™]š[Ý\ÈÛ™H\È\ÜÙY\ÜÈ[ˆHÙ\Z[ˆ[[Ý[Ùˆ[YK‚ŠH‹
+HˆPÓT‘JR[™XYØ˜XÚÛÙ™—ÛZ[—Ù]™[Ë‹ˆŠ”Ù][™ÜÈÈ™YXÙHH[X™\ˆÙˆ™XYÈ[ˆØ\ÙHÙˆÛÝÈ™XYËˆH[X™\ˆÙˆ]™[ÈY\ˆÚXÚH[X™\ˆÙˆ™XYÈÚ[™H™YXÙY‚ŠH‹
+HˆˆPÓT‘JR[™XYØ˜XÚÛÙ™—ÛZ[—ØÛÛ˜Ý\œ™[˜ÞKKˆŠ”Ù][™ÜÈÈžHÙY\[™ÈHZ[š[X[[X™\ˆÙˆ™XYÈ[ˆØ\ÙHÙˆÛÝÈ™XYË‚ŠH‹
+HˆˆPÓT‘J›Ø]Y[[ÜžWÝ˜XÚÙ\—Ù˜][Ü›Ø˜Xš[]K‹ˆŠ‘›Üˆ\Ý[™ÈÙˆ^Ù\[ÛˆØY™]XH›ÝÈ[ˆ^Ù\[Ûˆ]™\žH[YH[ÝH[ØØ]HY[[ÜžHÚ]HÜXÚYšYY›Ø˜Xš[]K‚ŠH‹
+HˆPÓT‘J›Ø]Y\™ÙWÝ™YWÜ™XYÜÜ]Ü˜[™Ù\×Ú[×Ú[\œÙXÝ[™×Ø[™Û›Û—Ú[\œÙXÝ[™×Ú[š™XÝ[Û—Ü›Ø˜Xš[]KŒˆŠ‘›Üˆ\Ý[™ÈÙˆ\ÔÜ]\˜HÜ]™XY˜[™Ù\È[È[\œÙXÝ[™È[™›Ûˆ[\œÙXÝ[™È]™\žH[YH[ÝH™XYœ›ÛHY\™ÙU™YHÚ]HÜXÚYšYY›Ø˜Xš[]K‚ŠH‹
+HˆˆPÓT‘J›ÛÛ[˜X›WÚØÛÛ\™\ÜÚ[Û‹YKˆŠ‘[˜X›\ÈÜˆ\ØX›\È]HÛÛ\™\ÜÚ[Ûˆ[ˆH™\ÜÛœÙHÈ[ˆ™\]Y\Ý‚‚‘›Üˆ[Ü™H[™›Ü›X][Û‹™XYHÒ[\™˜XÙH\ØÜš\[Û—JÚ[\™˜XÙ\ËÚ
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘J[Þ›X—ØÛÛ\™\ÜÚ[Û—Û]™[ËˆŠ”Ù]ÈH]™[Ùˆ]HÛÛ\™\ÜÚ[Ûˆ[ˆH™\ÜÛœÙHÈ[ˆ™\]Y\ÝYˆÙ[˜X›WÚØÛÛ\™\ÜÚ[ÛˆHWJÙ[˜X›WÚØÛÛ\™\ÜÚ[ÛŠK‚‚”ÜÜÚX›H˜[Y\Îˆ[X™\œÈœ›ÛHHÈL‹ˆ]™[ÈX›Ý™HX™\]Z\™HHY˜][Z[Ú]X™Y›]XÈHZ[Ú]Ý]X™Y›]XÝ\ÜÈ]™[ÈHÈK‚ŠH‹
+HˆPÓT‘JÛ˜\S[ÙKÛ˜\WÛ[ÙKÛ˜\S[ÙNŽ˜\ÚXËˆŠÛÛ›ÛÈHÚ\™H›Ü›X]\ÙY›ÜˆÛ˜\HÛÛ\™\ÜÚ[Ûˆ›ÜˆÙ[™\šXÈš[HKÓÈ]ÈÝXÚ\Èš[X[™\›ˆÛÛ[Q[˜ÛÙ[™ÎˆÛ˜\X[Ø^\È\Ù\ÈHœ˜[Z[™È›Ü›X][™YÛ›Ü™\È\ÈÙ][™Ë‚‚“›ÝH]H˜]ÈÛ˜\H›ØÚÈ›Ü›X]›ÙXÙYžHHÚ[™ÛHÛ˜\NŽÛÛ\™\ÜØØ[
+›Üˆ^[\KH›ÛY]]\È™[[ÝH›ÝØÛÛ^[ØYÈ[™YžHÛ˜\P˜\ÚXÔ™XYY™™\˜
+H\ÈHÙ\\˜]K›ÝØÛÛ\ÜXÚYšXÈÚ\™H›Ü›X][™\È›ÝÛÛ›ÛYžH\ÈÙ][™Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H˜\ÚXØ8 %YÛÜÛ˜\H›ØÚÈ›Ü›X]ˆÛÛ\]X›HÚ]š[\È™XY[™Üš][ˆžHYÛÜˆÝ\ÜÈ›Ý™XY[™È[™Üš][™Ë‚‹Hœ˜[YY8 %Û˜\Hœ˜[Z[™È›Ü›X]HÝ[™\™Ý™X[Z[™È›Ü›X]Yš[™YžHÛÛÙÛKˆÝ\ÜÈ›Ý™XY[™È[™Üš][™Ë‚ŠH‹
+HˆˆPÓT‘J›ÛÛÛ˜]]™WØÛÛ\™\ÜÚ[Û—Ù\ØX›WØÚXÚÜÝ[[Z[™×ÛÛ—ÙXÛÛ\™\ÜË˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÚXÚÜÝ[H™\šYšXØ][ÛˆÚ[ˆXÛÛ\™\ÜÚ[™ÈHÔÕ]Hœ›ÛHHÛY[ˆ\ÙYÛ›H›ÜˆÛXÚÒÝ\ÙH˜]]™HÛÛ\™\ÜÚ[Ûˆ›Ü›X]
+›Ý\ÙYÚ]Þš\ÜˆY›]X
+K‚‚‘›Üˆ[Ü™H[™›Ü›X][Û‹™XYHÒ[\™˜XÙH\ØÜš\[Û—JÚ[\™˜XÙ\ËÚ
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆPÓT‘JX\Ü™\ÜÛœÙWÚXY\œËˆ‹ˆŠ[ÝÜÈÈYÜˆÝ™\œšYHXY\œÈÚXÚHÙ\™\ˆÚ[™]\›ˆ[ˆH™\ÜÛœÙHÚ]HÝXØÙ\ÜÙ[]Y\žH™\Ý[‚•\ÈÛ›HY™™XÝÈH[\™˜XÙK‚‚’YˆHXY\ˆ\È[™XYHÙ]žHY˜][H›ÝšYY˜[YHÚ[Ý™\œšYH]‚’YˆHXY\ˆØ\È›ÝÙ]žHY˜][]Ú[™HYYÈH\ÝÙˆXY\œË‚’XY\œÈ]\™HÙ]žHHÙ\™\ˆžHY˜][[™›ÝÝ™\œšY[ˆžH\ÈÙ][™ËÚ[™[XZ[‹‚‚•HÙ][™È[ÝÜÈ[ÝHÈÙ]HXY\ˆÈHÛÛœÝ[˜[YKˆÝ\œ™[H\™H\È›ÈØ^HÈÙ]HXY\ˆÈH[˜[ZXØ[HØ[Ý[]Y˜[YK‚‚“™Z]\ˆ˜[Y\È›Üˆ˜[Y\ÈØ[ˆÛÛZ[ˆTÐÒRHÛÛ›ÛÚ\˜XÝ\œË‚‚’Yˆ[ÝH[\[Y[HRH\XØ][ÛˆÚXÚ[ÝÜÈ\Ù\œÈÈ[ÙYžHÙ][™ÜÈ]]HØ[YH[YHXZÙ\ÈXÚ\Ú[ÛœÈ˜\ÙYÛˆH™]\›™YXY\œË]\È™XÛÛ[Y[™YÈ™\ÝšXÝ\ÈÙ][™ÈÈ™XYÛ›K‚‚‘^[\NˆÑUÜ™\ÜÛœÙWÚXY\œÈH		ÉÐÛÛ[U\IÎˆ	Ú[XYÙKÜ™ÉßI	ŠH‹
+HˆˆPÓT‘JÝš[™ËÛÝ[Ù\Ý[˜ÝÚ[\[Y[][Û‹[š\Q^XÝ‹ˆŠ”ÜXÚYšY\ÈÚXÚÙˆH[š\J˜[˜Ý[ÛœÈÚÝ[™H\ÙYÈ\™›Ü›HHÐÓÕS•
+TÕSÕ‹‹ŠWJÜÜ[\™Y™\™[˜ÙKØYÙÜ™YØ]KY[˜Ý[ÛœËÜ™Y™\™[˜ÙKØÛÝ[
+HÛÛœÝXÝ[Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÝ[š\WJÜÜ[\™Y™\™[˜ÙKØYÙÜ™YØ]KY[˜Ý[ÛœËÜ™Y™\™[˜ÙKÝ[š\JB‹HÝ[š\PÛÛXš[™YJÜÜ[\™Y™\™[˜ÙKØYÙÜ™YØ]KY[˜Ý[ÛœËÜ™Y™\™[˜ÙKÝ[š\XÛÛXš[™Y
+B‹HÝ[š\PÛÛXš[™YJÜÜ[\™Y™\™[˜ÙKØYÙÜ™YØ]KY[˜Ý[ÛœËÜ™Y™\™[˜ÙKÝ[š\XÛÛXš[™Y
+B‹HÝ[š\RL—JÜÜ[\™Y™\™[˜ÙKØYÙÜ™YØ]KY[˜Ý[ÛœËÜ™Y™\™[˜ÙKÝ[š\ZLŠB‹HÝ[š\Q^XÝJÜÜ[\™Y™\™[˜ÙKØYÙÜ™YØ]KY[˜Ý[ÛœËÜ™Y™\™[˜ÙKÝ[š\Y^XÝ
+BŠH‹
+HˆˆPÓT‘J›ÛÛYÚØÛÜœ×ÚXY\‹˜[ÙKˆŠ•Üš]HYÓÔ”ÈXY\‹‚ŠH‹
+HˆˆPÓT‘JR[X^ÚÙÙ]Ü™Y\™XÝËˆŠ“X^[X™\ˆÙˆÑU™Y\™XÝÈÜÈ[ÝÙYˆ[œÝ\™\ÈY][Û˜[ÙXÝ\š]HYX\Ý\™\È\™H[ˆXÙHÈ™]™[HX[XÚ[Ý\ÈÙ\™\ˆœ›ÛH™Y\™XÝ[™È[Ý\ˆ™\]Y\ÝÈÈ[™^XÝYÙ\šXÙ\Ë——’]\ÈHØ\ÙHÚ[ˆ[ˆ^\›˜[Ù\™\ˆ™Y\™XÝÈÈ[›Ý\ˆY™\ÜË]]Y™\ÜÈ\X\œÈÈ™H[\›˜[ÈHÛÛ\[žIÜÈ[™œ˜\ÝXÝ\™K[™žHÙ[™[™È[ˆ™\]Y\ÝÈ[ˆ[\›˜[Ù\™\‹[ÝHÛÝ[™\]Y\Ý[ˆ[\›˜[THœ›ÛHH[\›˜[™]ÛÜšËž\\ÜÚ[™ÈH]]Üˆ]™[ˆ]Y\žHÝ\ˆÙ\šXÙ\ËÝXÚ\È™Y\ÈÜˆY[XØXÚYˆÚ[ˆ[ÝHÛ‰Ý]™H[ˆ[\›˜[[™œ˜\ÝXÝ\™H
+[˜ÛY[™ÈÛÛY][™È[›š[™ÈÛˆ[Ý\ˆØØ[ÜÝ
+KÜˆ[ÝH\ÝHÙ\™\‹]\ÈØY™HÈ[ÝÈ™Y\™XÝËˆ[ÝYÚÙY\[ˆZ[™]YˆHT“\Ù\È[œÝXYÙˆË[™[ÝHÚ[]™HÈ\Ý›ÝÛ›HH™[[ÝHÙ\™\ˆ][ÛÈ[Ý\ˆTÔ[™]™\žH™]ÛÜšÈ[ˆHZYK‚‚ÛÝYY˜][˜[YNˆL‚ŠH‹
+HˆˆPÓT‘J›ÛÛ\ÙWØÛY[Ý[YWÞ›Û™K˜[ÙKˆŠ•\ÙHÛY[[Y^›Û™H›Üˆ[\œ™][™È]U[YHÝš[™È˜[Y\Ë[œÝXYÙˆYÜ[™ÈÙ\™\ˆ[Y^›Û™K‚ŠH‹
+HˆˆPÓT‘J›ÛÛÙ[™Ü›Ùš[WÙ]™[ËYKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÙ[™[™ÈÙˆÔ›Ùš[Q]™[×JÛ˜]]™K\›ÝØÛÛÜÙ\™\‹›YÜ›Ùš[KY]™[ÊHXÚÙ]ÈÈHÛY[‚‚•\ÈØ[ˆ™H\ØX›YÈ™YXÙH™]ÛÜšÈ˜Y™šXÈ›ÜˆÛY[È]È›Ý™\]Z\™H›Ùš[H]™[Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆˆPÓT‘J›ÛÛÙ[™Ü›ÙÜ™\Ü×Ú[—ÚÚXY\œË˜[ÙKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈPÛXÚÒÝ\ÙKT›ÙÜ™\ÜØ™\ÜÛœÙHXY\œÈ[ˆÛXÚÚÝ\ÙK\Ù\™\˜™\ÜÛœÙ\Ë‚‚‘›Üˆ[Ü™H[™›Ü›X][Û‹™XYHÒ[\™˜XÙH\ØÜš\[Û—JÚ[\™˜XÙ\ËÚ
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›Y‚‹HH8 %[˜X›Y‚ŠH‹
+HˆˆPÓT‘JR[ÚXY\œ×Ü›ÙÜ™\Ü×Ú[\˜[Û\ËLˆŠ‘È›ÝÙ[™XY\œÈPÛXÚÒÝ\ÙKT›ÙÜ™\ÜÈ[Ü™Hœ™\]Y[H[ˆ]XXÚÜXÚYšYY[\˜[‚ŠH‹
+HˆPÓT‘J›ÛÛÝØZ]Ù[™ÛÙ—Ü]Y\žK˜[ÙKˆŠ‘[˜X›H™\ÜÛœÙHY™™\š[™ÈÛˆHÙ\™\‹\ÚYK‚ŠH‹
+HˆPÓT‘J›ÛÛÝÜš]WÙ^Ù\[Û—Ú[—ÛÝ]]Ù›Ü›X]˜[ÙKˆŠ•Üš]H^Ù\[Ûˆ[ˆÝ]]›Ü›X]È›ÙXÙH˜[YÝ]]ˆÛÜšÜÈÚ]”ÓÓˆ[™S›Ü›X]Ë‚ŠH‹
+HˆPÓT‘JR[Ü™\ÜÛœÙWØY™™\—ÜÚ^™KˆŠ•H[X™\ˆÙˆž]\ÈÈY™™\ˆ[ˆHÙ\™\ˆY[[ÜžH™Y›Ü™HÙ[™[™ÈH™\ÜÛœÙHÈHÛY[Üˆ›\Ú[™ÈÈ\ÚÈ
+Ú[ˆÝØZ]Ù[™ÛÙ—Ü]Y\žH\È[˜X›Y
+K‚ŠH‹
+HˆˆPÓT‘J›ÛÛœÞ[˜×ÛY]Y]KYKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÙœÞ[˜×J‹ËÜXœË›Ü[™Ü›Ý\›Ü™ËÛÛ›[™\XœËÎMŽNNLNMÎNKÙ[˜Ý[ÛœËÙœÞ[˜Ëš[
+HÚ[ˆÜš][™ÈœÜ[š[\Ëˆ[˜X›YžHY˜][‚‚’]XZÙ\ÈÙ[œÙHÈ\ØX›H]YˆHÙ\™\ˆ\ÈZ[[ÛœÈÙˆ[žHX›\È]\™HÛÛœÝ[H™Z[™ÈÜ™X]Y[™\Ý›ÞYY‚ŠH‹
+HˆˆPÓT‘J›ÛÛ›Ú[—Ý\ÙWÛ[Ë˜[ÙKˆŠ”Ù]ÈH\HÙˆÒ“ÒS—J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÚ›Ú[‹›Y
+H™Z]š[Ý\‹ˆÚ[ˆY\™Ú[™ÈX›\Ë[\HÙ[ÈX^H\X\‹ˆÛXÚÒÝ\ÙHš[È[HY™™\™[H˜\ÙYÛˆ\ÈÙ][™Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %H[\HÙ[È\™Hš[YÚ]HY˜][˜[YHÙˆHÛÜœ™\ÜÛ™[™ÈšY[\K‚‹HH8 %“ÒS˜™Z]™\ÈHØ[YHØ^H\È[ˆÝ[™\™ÔSˆH\HÙˆHÛÜœ™\ÜÛ™[™ÈšY[\ÈÛÛ™\YÈÓ[X›WJÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÛ[X›JK[™[\HÙ[È\™Hš[YÚ]Ó•SJÜÜ[\™Y™\™[˜ÙKÜÞ[^
+K‚ŠH‹STÔ•S•
+HˆˆPÓT‘JR[›Ú[—ÛÝ]]ØžWÜ›ÝÛ\ÝÜ\šÙ^WÜ›ÝÜ×Ý™\ÚÛKˆŠ•HÝÙ\ˆ[Z]Ùˆ\‹ZÙ^H]™\˜YÙH›ÝÜÈ[ˆHšYÚX›HÈ]\›Z[™HÚ]\ˆÈÝ]]žH›ÝÈ\Ý[ˆ\Ú›Ú[‹‚ŠH‹
+HˆPÓT‘J›Ú[”ÝšXÝ™\ÜË›Ú[—ÙY˜][ÜÝšXÝ™\ÜË›Ú[”ÝšXÝ™\ÜÎŽ[ˆŠ”Ù]ÈY˜][ÝšXÝ™\ÜÈ›ÜˆÒ“ÒSˆÛ]\Ù\×JÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÚ›Ú[ŠK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HS8 %YˆHšYÚX›H\ÈÙ]™\˜[X]Ú[™È›ÝÜËÛXÚÒÝ\ÙHÜ™X]\ÈHÐØ\\ÚX[ˆ›ÙXÝJÎ‹ËÙ[‹ÚZÚ\YXK›Ü™ËÝÚZÚKÐØ\\ÚX[—Ü›ÙXÝ
+Hœ›ÛHX]Ú[™È›ÝÜËˆ\È\ÈH›Ü›X[“ÒS˜™Z]š[Ý\ˆœ›ÛHÝ[™\™ÔS‚‹HS–X8 %YˆHšYÚX›H\ÈÙ]™\˜[X]Ú[™È›ÝÜËÛ›HHš\œÝÛ™H›Ý[™\È›Ú[™YˆYˆHšYÚX›H\ÈÛ›HÛ™HX]Ú[™È›ÝËH™\Ý[ÈÙˆS–X[™S\™HHØ[YK‚‹HTÓÑ˜8 %›Üˆ›Ú[š[™ÈÙ\]Y[˜Ù\ÈÚ][ˆ[˜Ù\Z[ˆX]Ú‚‹H[\HÝš[™Ø8 %YˆSÜˆS–X\È›ÝÜXÚYšYY[ˆH]Y\žKÛXÚÒÝ\ÙH›ÝÜÈ[ˆ^Ù\[Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[žWÚ›Ú[—Ù\Ý[˜ÝÜšYÚÝX›WÚÙ^\Ë˜[ÙKˆŠ‘[˜X›\ÈYØXÞHÛXÚÒÝ\ÙHÙ\™\ˆ™Z]š[Ý\ˆ[ˆS–HS“‘TŸQ•“ÒS˜Ü\˜][ÛœË‚‚ŽŽŽ››ÝB•\ÙH\ÈÙ][™ÈÛ›H›Üˆ˜XÚÝØ\™ÛÛ\]Xš[]HYˆ[Ý\ˆ\ÙHØ\Ù\È\[™ÛˆYØXÞH“ÒS˜™Z]š[Ý\‹‚ŽŽŽ‚‚•Ú[ˆHYØXÞH™Z]š[Ý\ˆ\È[˜X›Y‚‚‹H™\Ý[ÈÙˆHS–HQ•“ÒSˆ˜[™ˆS–H’QÒ“ÒSˆXÜ\˜][ÛœÈ\™H›Ý\]X[™XØ]\ÙHÛXÚÒÝ\ÙH\Ù\ÈHÙÚXÈÚ]X[žK]Ë[Û™HY]Ë\šYÚX›HÙ^\ÈX\[™Ë‚‹H™\Ý[ÈÙˆS–HS“‘Tˆ“ÒS˜Ü\˜][ÛœÈÛÛZ[ˆ[›ÝÜÈœ›ÛHHYX›HZÙHHÑSRHQ•“ÒS˜Ü\˜][ÛœÈË‚‚•Ú[ˆHYØXÞH™Z]š[Ý\ˆ\È\ØX›Y‚‚‹H™\Ý[ÈÙˆHS–HQ•“ÒSˆ˜[™ˆS–H’QÒ“ÒSˆXÜ\˜][ÛœÈ\™H\]X[™XØ]\ÙHÛXÚÒÝ\ÙH\Ù\ÈHÙÚXÈÚXÚ›ÝšY\ÈÛ™K]Ë[X[žHÙ^\ÈX\[™È[ˆS–H’QÒ“ÒS˜Ü\˜][ÛœË‚‹H™\Ý[ÈÙˆS–HS“‘Tˆ“ÒS˜Ü\˜][ÛœÈÛÛZ[ˆÛ™H›ÝÈ\ˆÙ^Hœ›ÛH›ÝHY[™šYÚX›\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %YØXÞH™Z]š[Ý\ˆ\È\ØX›Y‚‹HH8 %YØXÞH™Z]š[Ý\ˆ\È[˜X›Y‚‚”ÙYH[ÛÎ‚‚‹HÒ“ÒSˆÝšXÝ™\Ü×JÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÚ›Ú[ˆÜÙ][™ÜÊBŠH‹STÔ•S•
+HˆPÓT‘J›ÛÛÚ[™ÛWÚ›Ú[—Ü™Y™\—ÛYÝX›KYKˆŠ‘›ÜˆÚ[™ÛH“ÒSˆ[ˆØ\ÙHÙˆY[YšY\ˆ[XšYÝZ]H™Y™\ˆYX›BŠH‹STÔ•S•
+Hˆ‘PÓT‘J›ÛÛ]]Ë]Y\žWÜ[—Ú›Ú[—ÜÝØ\ÝX›KšY[
+˜]]ÈŠKˆŠ‘]\›Z[™HÚXÚÚYHÙˆH›Ú[ˆÚÝ[™HHZ[X›H
+[ÛÈØ[Y[›™\‹HÛ™H[œÙ\Y[ÈH\ÚX›H›ÜˆH\Ú›Ú[ŠH[ˆH]Y\žH[‹ˆ\ÈÙ][™È\ÈÝ\ÜYÛ›H›ÜˆS›Ú[ˆÝšXÝ™\ÜÈÚ]H“ÒSˆÓ˜Û]\ÙKˆÜÜÚX›H˜[Y\È\™N‚‹H	Ø]]ÉÎˆ]H[›™\ˆXÚYHÚXÚX›HÈ\ÙH\ÈHZ[X›K‚‹H	Ù˜[ÙIÎˆ™]™\ˆÝØ\X›\È
+HšYÚX›H\ÈHZ[X›JK‚‹H	ÝYIÎˆ[Ø^\ÈÝØ\X›\È
+HYX›H\ÈHZ[X›JK‚ŠH‹
+H‘PÓT‘JR[]Y\žWÜ[—ÛÜ[Z^™WÚ›Ú[—ÛÜ™\—Û[Z]LˆŠ“Ü[Z^™HHÜ™\ˆÙˆ›Ú[œÈÚ][ˆHØ[YHÝXœ]Y\žKˆÝ\œ™[HÛ›HÝ\ÜY›Üˆ™\žH[Z]YØ\Ù\Ë‚•˜[YH\ÈHX^[][H[X™\ˆÙˆX›\ÈÈÜ[Z^™K‚ŠH‹
+H‘PÓT‘JR[]Y\žWÜ[—ÛÜ[Z^™WÚ›Ú[—ÛÜ™\—ÛX^ÜÙX\˜ÚYÜ[œËLˆŠ“X^[][H[X™\ˆÙˆ\X[[œÈH›Ú[ˆÜ™\ˆÜ[Z^™\ˆX^H[[Y\˜]H™Y›Ü™HÚ]š[™È\[™˜[[™È˜XÚÈÈH™^[ÛÜš]H[ˆ]Y\žWÜ[—ÛÜ[Z^™WÚ›Ú[—ÛÜ™\—Ø[ÛÜš]X‚•\È›Ý[™ÈÜ[Z^˜][Ûˆ[YH]\›Z[š\ÝXØ[H
+[™\[™[ÙˆØ[XÛØÚÊHÛˆ[œÙH›Ú[ˆÜ˜\ÈÝXÚ\ÈÛ\]Y\ÈÜˆÝ\œËÚ\™HHÙX\˜ÚÜXÙHÜ›ÝÜÈ^Û™[X[K‚”Ù]ÈÈ\ØX›HH[Z]ˆ\È›ÈY™™XÝÛˆHY˜][]Y\žWÜ[—ÛÜ[Z^™WÚ›Ú[—ÛÜ™\—Û[Z]Ú\™HHÙX\˜Ú[Ø^\ÈÝ^\ÈÙ[™[ÝÈ\È›Ý[™‚ŠH‹VT’SQS•S
+H‘PÓT‘JR[]Y\žWÜ[—ÛÜ[Z^™WÚ›Ú[—ÛÜ™\—Ü˜[™ÛZ^™KˆŠ•Ú[ˆ›Û‹^™\›ËH›Ú[ˆÜ™\ˆÜ[Z^™\ˆ\Ù\È˜[™Û[HÙ[™\˜]YØ\™[˜[]Y\È[™‘œÈ[œÝXYÙˆ™X[Ý]\ÝXÜË‚•Ú[ˆÙ]ÈKH˜[™ÛHÙYY\ÈÙ[™\˜]YÚ[ˆÙ]ÈH˜[YHˆK]˜[YH\È\ÙY\ÈHÙYY\™XÝK‚•\È\È[[™Y›Üˆ\Ý[™ÈÈš[™\œ›ÜœÈØ]\ÙYžHY™™\™[›Ú[ˆÜ™\š[™ÜË‚ŠH‹VT’SQS•S
+HˆˆPÓT‘J›ÛÛ[˜X›WÚ›Ú[—Ý˜[œÚ]]™WÜ™YXØ]\ËYKˆŠ’[™™\ˆ˜[œÚ]]™H\]ZKZ›Ú[ˆ™YXØ]\Èœ›ÛH^\Ý[™È›Ú[ˆÛÛ™][ÛœË‚‘›Üˆ^[\KÚ]™[ˆKžH‹ž[™‹žHËžHÞ[]XÈKžHËž™YXØ]Bš\ÈYYÛÈH›Ú[ˆÜ™\ˆÜ[Z^™\ˆØ[ˆÛÛœÚY\ˆ\™XÝ
+H“ÒSˆÊH[œË‚ŠH‹‘UJHˆˆPÓT‘J›ÛÛ]Y\žWÜ[—Ú›Ú[—ÜÚ\™ØžWÜ×Ü˜[™Ù\Ë˜[ÙKˆŠ\HÚ\™[™È›Üˆ“ÒSˆYˆ›Ú[ˆÙ^\ÈÛÛZ[ˆH™Yš^Ùˆ’SPT–HÑVH›Üˆ›ÝX›\ËˆÝ\ÜY›Üˆ\Ú\˜[[Ú\Ú[™[ÜÛÜ[™×ÛY\™ÙH[ÛÜš]\Ëˆ\ÝX[HÙ\È›ÝÜYY\]Y\šY\È]X^HÝÙ\ˆY[[ÜžHÛÛœÝ[\[Û‹‚ŠH‹
+HˆˆPÓT‘J›ÛÛ]Y\žWÜ[—Ù\Ü^WÚ[\›˜[Ø[X\Ù\Ë˜[ÙKˆŠ”ÚÝÈ[\›˜[[X\Ù\È
+ÝXÚ\È×ÝX›LJH[ˆVRSˆSˆ[œÝXYÙˆÜÙHÜXÚYšYY[ˆHÜšYÚ[˜[]Y\žK‚ŠH‹
+HˆˆPÓT‘J^Z[”]Y\žT[‘Y˜][^Z[—Ü]Y\žWÜ[—ÙY˜][^Z[”]Y\žT[‘Y˜][Ž”‘UKˆŠ‘Y˜][›Ü›X]\ÙYžHVRSˆS˜‚‚”ÜÜÚX›H˜[Y\Î‚‹H™]X
+Y˜][Ú[˜ÙH‹ÊH8 %XÝ[ÛœØÛÛ\XÝ[™™]XY˜][ÈYX›ÙXÚ[™ÈHÛÛ\XÝ™]KXÝ[Û‹X[››Ý]Y[‹‚‹HYØXÞX8 %™KL‹ÈÝ]]‚‚”ÜXÚYžZ[™ÈHXÝ[ÛœØÛÛ\XÝÜˆ™]XÜ[ÛœÈ^XÚ]H[ˆHVRS˜Ý][Y[
+›Üˆ^[\KVRSˆXÝ[ÛœÈHÛÛ\XÝH™]HHÑSPÕ‹‹˜
+H[Ø^\ÈÝ™\œšY\È\ÈÙ][™Ë‚‚˜VRSˆS˜Ú]œÛÛˆHXÜˆ\ÝšX]YHXÙY\ÈHYØXÞH
+™KL‹ÊHY˜][È™YØ\™\ÜÈÙˆ\ÈÙ][™Ë[›\ÜÈXÝ[ÛœØÛÛ\XÝÜˆ™]X\™HÙ]^XÚ]KˆH™]HÝ]]Ø[››Ý™\™\Ù[”ÓÓˆ™\Ý[ÈÜˆ\‹\Ú\™\ÝšX]Y[œËÛÈÜÙH[Ù\È\™HÛ›H™[™\™YÛÜœ™XÝH[ˆYØXÞH›Ü›K‚ŠH‹
+HˆˆPÓT‘JR[]Y\žWÜ[—ÛX^ÜÝ\Ù\ØÜš\[Û—Û[™ÝLˆŠ“X^[][H[™ÝÙˆÝ\\ØÜš\[Ûˆ[ˆVRSˆS‹‚ŠH‹
+HˆˆPÓT‘JR[™Y™\œ™YØ›ØÚ×ÜÚ^™WØž]\ËLˆŠ•\ÈÙ][™ÈY\ÝÈH]H›ØÚÈÚ^™H›Üˆ]Y\žH›ØÙ\ÜÚ[™È[™™\™\Ù[ÈY][Û˜[š[™K][š[™ÈÈH[Ü™H›ÝYÚ	ÛX^Ø›ØÚ×ÜÚ^™IÈÙ][™ËˆYˆHÛÛ[[œÈ\™H\™ÙH[™Ú]	ÛX^Ø›ØÚ×ÜÚ^™IÈ›ÝÜÈH›ØÚÈÚ^™H\ÈZÙ[HÈ™H\™Ù\ˆ[ˆHÜXÚYšYY[[Ý[Ùˆž]\Ë]ÈÚ^™HÚ[™HÝÙ\™Y›Üˆ™]\ˆÔHØXÚHØØ[]K‚ŠH‹
+HˆˆPÓT‘JR[X^Ü™\XØWÙ[^WÙ›Ü—Ù\ÝšX]YÜ]Y\šY\ËÌˆŠ‘\ØX›\ÈYÙÚ[™È™\XØ\È›Üˆ\ÝšX]Y]Y\šY\ËˆÙYHÔ™\XØ][Û—J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÜ™\XØ][Û‹›Y
+K‚‚”Ù]ÈH[YH[ˆÙXÛÛ™ËˆYˆH™\XØIÜÈYÈ\ÈÜ™X]\ˆ[ˆÜˆ\]X[ÈHÙ]˜[YK\È™\XØH\È›Ý\ÙY‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %™\XØHYÜÈ\™H›ÝÚXÚÙY‚‚•È™]™[H\ÙHÙˆ[žH™\XØHÚ]H›Û‹^™\›ÈYËÙ]\È\˜[Y]\ˆÈK‚‚•\ÙYÚ[ˆ\™›Ü›Z[™ÈÑSPÕœ›ÛHH\ÝšX]YX›H]Ú[ÈÈ™\XØ]YX›\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ˜[˜XÚ×Ý×ÜÝ[WÜ™\XØ\×Ù›Ü—Ù\ÝšX]YÜ]Y\šY\ËYKˆŠ‘›Ü˜Ù\ÈH]Y\žHÈ[ˆÝ][Ù‹Y]H™\XØHYˆ\]Y]H\È›Ý]˜Z[X›KˆÙYHÔ™\XØ][Û—J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÜ™\XØ][Û‹›Y
+K‚‚ÛXÚÒÝ\ÙHÙ[XÝÈH[ÜÝ™[]˜[œ›ÛHHÝ]]Y™\XØ\ÈÙˆHX›K‚‚•\ÙYÚ[ˆ\™›Ü›Z[™ÈÑSPÕœ›ÛHH\ÝšX]YX›H]Ú[ÈÈ™\XØ]YX›\Ë‚‚žHY˜][H
+[˜X›Y
+K‚ŠH‹
+HˆPÓT‘JR[™Y™\œ™YÛX^ØÛÛ[[—Ú[—Ø›ØÚ×ÜÚ^™WØž]\ËˆŠ“[Z]ÛˆX^ÛÛ[[ˆÚ^™H[ˆ›ØÚÈÚ[H™XY[™Ëˆ[ÈÈXÜ™X\ÙHØXÚHZ\ÜÙ\ÈÛÝ[ˆÚÝ[™HÛÜÙHÈˆØXÚHÚ^™K‚ŠH‹
+HˆˆPÓT‘JR[\×Ý×Ù[^WÚ[œÙ\ˆŠ’YˆH\Ý[˜][ÛˆX›HÛÛZ[œÈ]X\Ý]X[žHXÝ]™H\È[ˆHÚ[™ÛH\][Û‹\YšXÚX[HÛÝÈÝÛˆ[œÙ\[ÈX›K‚ŠH‹
+HˆPÓT‘JR[\×Ý×Ý›Ý×Ú[œÙ\ˆŠ’Yˆ[Ü™H[ˆ\È[X™\ˆXÝ]™H\È[ˆHÚ[™ÛH\][ÛˆÙˆH\Ý[˜][ÛˆX›K›ÝÈ	ÕÛÈX[žH\È‹‹‰È^Ù\[Û‹‚ŠH‹
+HˆPÓT‘JR[XYØ›Øœ×Ý×Ù[^WÚ[œÙ\ˆŠ’YˆHXY›ØœÈ]Y]Y\ÈÙˆH\Ý[˜][ÛˆX›IÜÈ\ÚÜÈÛÛZ[ˆ]X\Ý]X[žH›ØœÈ[™[™È™[[Ý˜[\YšXÚX[HÛÝÈÝÛˆ[œÙ\[ÈX›KˆH\ÙHHX›HÙ][™Ë‚ŠH‹
+HˆPÓT‘JR[XYØ›Øœ×Ý×Ý›Ý×Ú[œÙ\ˆŠ’YˆHXY›ØœÈ]Y]Y\ÈÙˆH\Ý[˜][ÛˆX›IÜÈ\ÚÜÈÛÛZ[ˆ[Ü™H[ˆ\È[X™\ˆÙˆ›ØœÈ[™[™È™[[Ý˜[›ÝÈ	ÕÛÈX[žHXY›ØœÈ‹‹‰È^Ù\[Û‹ˆH\ÙHHX›HÙ][™Ë‚ŠH‹
+HˆPÓT‘JR[[X™\—ÛÙ—Û]]][Ûœ×Ý×Ù[^KˆŠ’YˆH]]]YX›HÛÛZ[œÈ]X\Ý]X[žH[™š[š\ÚY]]][ÛœË\YšXÚX[HÛÝÈÝÛˆ]]][ÛœÈÙˆX›KˆH\ØX›YŠH‹
+HˆPÓT‘JR[[X™\—ÛÙ—Û]]][Ûœ×Ý×Ý›ÝËˆŠ’YˆH]]]YX›HÛÛZ[œÈ]X\Ý]X[žH[™š[š\ÚY]]][ÛœË›ÝÈ	ÕÛÈX[žH]]][ÛœÈ‹‹‰È^Ù\[Û‹ˆH\ØX›YŠH‹
+HˆPÓT‘J[\ÝšX]YÙÝ\Ú×Ý[Y[Ý]NˆŠ”Ù]È[Y[Ý]›Üˆ]Y\žH™\ÜÛœÙ\Èœ›ÛH[ÜÝÈ[ˆÛ\Ý\‹ˆYˆH™\]Y\Ý\È›Ý™Y[ˆ\™›Ü›YYÛˆ[ÜÝËH™\ÜÛœÙHÚ[ÛÛZ[ˆH[Y[Ý]\œ›Üˆ[™H™\]Y\ÝÚ[™H^XÝ]Y[ˆ[ˆ\Þ[˜È[ÙKˆ™YØ]]™H˜[YHYX[œÈ[™š[š]K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %\Þ[˜È[ÙK‚‹H™YØ]]™H[YÙ\ˆ8 %[™š[š]H[Y[Ý]‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÝ™X[WÙ›\ÚÚ[\˜[Û\ËÍLˆŠ•ÛÜšÜÈ›ÜˆX›\ÈÚ]Ý™X[Z[™È[ˆHØ\ÙHÙˆH[Y[Ý]ÜˆÚ[ˆH™XYÙ[™\˜]\ÈÛX^Ú[œÙ\Ø›ØÚ×ÜÚ^™WJÛX^Ú[œÙ\Ø›ØÚ×ÜÚ^™JH›ÝÜË‚‚•HY˜]{Ó®u¶‰žËkºwµçYHHÝ™\˜[Þ\Ý[HY™šXÚY[˜ÞK‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛš[\Þ\Ý[WØØXÚWÜÚÚ\ÙÝÛ›ØYÚY—Ù^ÙYY×Ü\—Ü]Y\žWØØXÚWÝÜš]WÛ[Z]YKˆŠ”ÚÚ\ÝÛ›ØYœ›ÛH™[[ÝHš[\Þ\Ý[HYˆ^ÙYYÈ]Y\žHØXÚHÚ^™BŠH‹ÚÚ\ÙÝÛ›ØYÚY—Ù^ÙYY×Ü]Y\žWØØXÚJHˆPÓT‘JR[š[\Þ\Ý[WØØXÚWÛX^ÙÝÛ›ØYÜÚ^™K
+LŽS
+ˆL
+ˆL
+ˆL
+KˆŠ“X^™[[ÝHš[\Þ\Ý[HØXÚHÚ^™H]Ø[ˆ™HÝÛ›ØYYžHHÚ[™ÛH]Y\žBŠH‹
+HˆPÓT‘J›ÛÛ›Ý×ÛÛ—Ù\œ›Ü—Ùœ›ÛWØØXÚWÛÛ—ÝÜš]WÛÜ\˜][ÛœË˜[ÙKˆŠ’YÛ›Ü™H\œ›Üˆœ›ÛHØXÚHÚ[ˆØXÚ[™ÈÛˆÜš]HÜ\˜][ÛœÈ
+S”ÑT•Y\™Ù\ÊBŠH‹
+HˆPÓT‘JR[š[\Þ\Ý[WØØXÚWÜÙYÛY[×Ø˜]ÚÜÚ^™KŒˆŠ“[Z]ÛˆÚ^™HÙˆHÚ[™ÛH˜]ÚÙˆš[HÙYÛY[È]H™XYY™™\ˆØ[ˆ™\]Y\Ýœ›ÛHØXÚKˆÛÈÝÈ˜[YHÚ[XYÈ^Ù\ÜÚ]™H™\]Y\ÝÈÈØXÚKÛÈ\™ÙHX^HÛÝÈÝÛˆ]šXÝ[Ûˆœ›ÛHØXÚBŠH‹
+HˆPÓT‘JR[š[\Þ\Ý[WØØXÚWÜ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™ËLˆŠ•ØZ][YHÈØÚÈØXÚH›ÜˆÜXÙH™\Ù\˜][Ûˆ[ˆš[\Þ\Ý[HØXÚBŠH‹
+HˆPÓT‘J›ÛÛš[\Þ\Ý[WØØXÚWÜ™Y™\—ØšYÙÙ\—ØY™™\—ÜÚ^™KYKˆŠ”™Y™\ˆšYÙÙ\ˆY™™\ˆÚ^™HYˆš[\Þ\Ý[HØXÚH\È[˜X›YÈ]›ÚYÜš][™ÈÛX[š[HÙYÛY[ÈÚXÚ]\š[Ü˜]HØXÚH\™›Ü›X[˜ÙKˆÛˆHÝ\ˆ[™[˜X›[™È\ÈÙ][™ÈZYÚ[˜Ü™X\ÙHY[[ÜžH\ØYÙK‚ŠH‹
+HˆPÓT‘JR[š[\Þ\Ý[WØØXÚWØ›Ý[™\žWØ[YÛ›Y[ˆŠ‘š[\Þ\Ý[HØXÚH›Ý[™\žH[YÛ›Y[ˆ\ÈÙ][™È\È\YYÛ›H›Üˆ›Û‹Y\ÚÈ™XY
+K™Ëˆ›ÜˆØXÚHÙˆ™[[ÝHX›H[™Ú[™\ÈÈX›H[˜Ý[ÛœË]›Ý›ÜˆÝÜ˜YÙHÛÛ™šYÝ\˜][ÛˆÙˆY\™ÙU™YHX›\ÊKˆ˜[YHYX[œÈ›È[YÛ›Y[‚ŠH‹
+HˆPÓT‘JR[[\Ü˜\žWÙ]WÚ[—ØØXÚWÜ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™Ë
+L
+ˆŒ
+ˆL
+KˆŠ•ØZ][YHÈØÚÈØXÚH›ÜˆÜXÙH™\Ù\˜][Ûˆ›Üˆ[\Ü˜\žH]H[ˆš[\Þ\Ý[HØXÚBŠH‹
+HˆˆPÓT‘J›ÛÛ\ÙWÜYÙWØØXÚWÙ›Ü—Ù\ÚÜ×ÝÚ]Ý]Ùš[WØØXÚK˜[ÙKˆŠ•\ÙH\Ù\œÜXÙHYÙHØXÚH›Üˆ™[[ÝH\ÚÜÈ]Û‰Ý]™Hš[\Þ\Ý[HØXÚH[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜYÙWØØXÚWÝÚ]Ù\ÝšX]YØØXÚK˜[ÙKˆŠ•\ÙH\Ù\œÜXÙHYÙHØXÚHÚ[ˆ\ÝšX]YØXÚH\È\ÙY‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜYÙWØØXÚWÙ›Ü—ÛØØ[Ù\ÚÜË˜[ÙKˆŠ•\ÙH\Ù\œÜXÙHYÙHØXÚHÚ[ˆ™XY[™Èœ›ÛHØØ[\ÚÜËˆ\ÙY›Üˆ\Ý[™Ë[›ZÙ[HÈ[\›Ý™H\™›Ü›X[˜ÙH[ˆ˜XÝXÙKˆ™\]Z\™\ÈØØ[Ùš[\Þ\Ý[WÜ™XYÛY]ÙH	Ü™XY	ÈÜˆ	Ü™XY	ËˆÙ\Û‰Ý\ØX›HHÔÈYÙHØXÚNÈZ[—Øž]\×Ý×Ý\ÙWÙ\™XÝÚ[ÈØ[ˆ™H\ÙY›Üˆ]ˆÛ›HY™™XÝÈ™YÝ[\ˆX›\Ë›Ýš[J
+HX›H[˜Ý[ÛˆÜˆš[J
+HX›H[™Ú[™K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜYÙWØØXÚWÙ›Ü—ÛØš™XÝÜÝÜ˜YÙK˜[ÙKˆŠ•\ÙH\Ù\œÜXÙHYÙHØXÚHÚ[ˆ™XY[™Èœ›ÛHØš™XÝÝÜ˜YÙHX›H[˜Ý[ÛœÈ
+ÌË^\™KœÊH[™X›H[™Ú[™\È
+ÌË^\™K”ÊK‚ŠH‹
+HˆPÓT‘J›ÛÛ™XYÙœ›ÛWÜYÙWØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚK˜[ÙKˆŠ•\ÙH\Ù\œÜXÙHYÙHØXÚH[ˆ\ÜÚ]™H[ÙKÚ[Z[\ˆÈ™XYÙœ›ÛWÙš[\Þ\Ý[WØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚK‚ŠH‹
+HˆPÓT‘J›ÛÛYÙWØØXÚWÚ[š™XÝÙ]šXÝ[Û‹˜[ÙKˆŠ•\Ù\œÜXÙHYÙHØXÚHÚ[ÛÛY][Y\È[˜[Y]HÛÛYHYÙ\È]˜[™ÛKˆ[[™Y›Üˆ\Ý[™Ë‚ŠH‹
+HˆPÓT‘JR[YÙWØØXÚWØ›ØÚ×ÜÚ^™KLMÍ‹ˆŠ”Ú^™HÙˆš[HÚ[šÜÈÈÝÜ™H[ˆH\Ù\œÜXÙHYÙHØXÚK[ˆž]\Ëˆ[™XYÈ]ÛÈ›ÝYÚHØXÚHÚ[™H›Ý[™Y\ÈH][\HÙˆ\ÈÚ^™K‚‚•\ÈÙ][™ÈØ[ˆ™HY\ÝYÛˆH\‹\]Y\žH]™[˜\Ú\Ë]ØXÚH[šY\ÈÚ]Y™™\™[›ØÚÈÚ^™\ÈØ[››Ý™H™]\ÙYˆÚ[™Ú[™È\ÈÙ][™ÈY™™XÝ]™[H[˜[Y]\È^\Ý[™È[šY\È[ˆHØXÚK‚‚HYÚ\ˆ˜[YKZÙHHZPˆ\ÈÛÛÙ›ÜˆYÚ]›ÝYÚ]]Y\šY\Ë[™HÝÙ\ˆ˜[YKZÙHÚPˆ\ÈÛÛÙ›ÜˆÝË[][˜ÞHÚ[]Y\šY\Ë‚ŠH‹
+HˆPÓT‘JR[YÙWØØXÚWÛÛÚØZXYØ›ØÚÜËM‹ˆŠ“Ûˆ\Ù\œÜXÙHYÙHØXÚHZ\ÜË™XY\È\ÈX[žHÛÛœÙXÝ]]™H›ØÚÜÈ]Û˜ÙHœ›ÛHH[™\›Z[™ÈÝÜ˜YÙKYˆ^IÜ™H[ÛÈ›Ý[ˆHØXÚKˆXXÚ›ØÚÈ\ÈYÙWØØXÚWØ›ØÚ×ÜÚ^™Hž]\Ë‚‚HYÚ\ˆ˜[YH\ÈÛÛÙ›ÜˆYÚ]›ÝYÚ]]Y\šY\ËÚ[HÝË[][˜ÞHÚ[]Y\šY\ÈÚ[ÛÜšÈ™]\ˆÚ]Ý]™XYZXY‚ŠH‹
+HˆPÓT‘JR[YÙWØØXÚWÛX^ØÛØ[\ØÙYØž]\ËMÍÍÌŒM‹ˆŠ•Ú[ˆ™XYšYÐ]Ü[]\ÈH\Ù\œÜXÙHYÙHØXÚKÛÛœÙXÝ]]™HØXÚHZ\ÜÙ\È\™HÛØ[\ØÙY[ÈHÚ[™ÛH™XYœ›ÛHH[™\›Z[™ÈÝÜ˜YÙKˆ\ÈÙ][™È›Ý[™ÈHÚ^™HÙˆÛ™HÛØ[\ØÙY™XY[ˆž]\ÎÈÛ™Ù\ˆZ\ÜÈ[œÈ\™HÜ][È][\H™XYËˆ][Z]È˜[œÚY[Y[[ÜžH\ØYÙHÙˆH[\Ü˜\žHY™™\ˆ[™\ˆ\˜[[ÛÛ™XYË‚‚HYÚ\ˆ˜[YH™YXÙ\ÈH[X™\ˆÙˆ™\]Y\ÝÈ›ÜˆÛÛØØ[œÈÛˆØš™XÝÝÜ˜YÙNÈHÝÙ\ˆ˜[YH™YXÙ\ÈXZÈ˜[œÚY[Y[[ÜžK‚ŠH‹
+HˆˆPÓT‘J›ÛÛØYÛX\šÜ×Ø\Þ[˜Ú›Û›Ý\ÛK˜[ÙKˆŠ“ØYY\™ÙU™YHX\šÜÈ\Þ[˜Ú›Û›Ý\ÛB‚ÛÝYY˜][˜[YNˆX‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜÝ™X[Z[™×ÛX\šÜ×ØÛÛ\™\ÜÚ[Û‹˜[ÙKˆŠ•Ú[ˆØY[™ÈX\šÜÈ›ÜˆY\™ÙU™YH\ËÛÛ\™\ÜÈ[H[ÈH[‹[Y[[ÜžH™\™\Ù[][ÛˆÛ™H›ØÚÈ]H[YH
+Ý™X[Z[™ÊH[œÝXYÙˆX]\šX[^š[™ÈH[Z[ˆX\šÜÈ\œ˜^Hš\œÝˆ\ÈÚYÛšYšXØ[H™YXÙ\ÈXZÈY[[ÜžH\ØYÙH\š[™ÈX\šÜÈØY[™È›ÜˆÛÛ\XÝ\ÈÚ]X[žHÝXœÝ™X[\È
+K™ËˆX›\ÈÚ]”ÓÓˆÛÛ[[œÈ[™Üš]WÛX\šÜ×Ù›Ü—ÜÝXœÝ™X[\×Ú[—ØÛÛ\XÝÜ\È[˜X›Y
+K‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÙš[\Þ\Ý[WÜ™XYÜ™Y™]Ú\×ÛÙË˜[ÙKˆŠ“ÙÈÈÞ\Ý[K™š[\Þ\Ý[H™Y™]ÚÛÙÈ\š[™È]Y\žKˆÚÝ[™H\ÙYÛ›H›Üˆ\Ý[™ÈÜˆXYÙÚ[™Ë›Ý™XÛÛ[Y[™YÈ™H\›™YÛˆžHY˜][ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ü™Y™]ÚYÜ™XYÜÛÛÙ›Ü—Ü™[[ÝWÙš[\Þ\Ý[KYKˆŠ”™Y™\ˆ™Y™]ÚY™XYÛÛYˆ[\È\™HÛˆ™[[ÝHš[\Þ\Ý[BŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ü™Y™]ÚYÜ™XYÜÛÛÙ›Ü—ÛØØ[Ùš[\Þ\Ý[K˜[ÙKˆŠ”™Y™\ˆ™Y™]ÚY™XYÛÛYˆ[\È\™HÛˆØØ[š[\Þ\Ý[BŠH‹
+HˆˆPÓT‘JR[™Y™]ÚØY™™\—ÜÚ^™K“T×ÑQUSÐ•Q‘‘T—ÔÒV‘KˆŠ•HX^[][HÚ^™HÙˆH™Y™]ÚY™™\ˆÈ™XYœ›ÛHHš[\Þ\Ý[Kˆ˜[Y\ÈX›Ý™HMˆZPˆ\™HÛ[\YÈMˆZP‹\ÈH™XYY™™\ˆ™]™\ˆ™YYÈÈ™H\™Ù\‹‚ŠH‹
+HˆPÓT‘JR[š[\Þ\Ý[WÜ™Y™]ÚÜÝ\Øž]\ËˆŠ”™Y™]ÚÝ\[ˆž]\Ëˆ™\›ÈYX[œÈ]]ØH\›Þ[X][HH™\Ý™Y™]ÚÝ\Ú[™H]]ÈYXÙY]ZYÚ›Ý™HL	HH™\ÝˆHXÝX[˜[YHZYÚ™HY™™\™[™XØ]\ÙHÙˆÙ][™Èš[\Þ\Ý[WÜ™Y™]ÚÛZ[—Øž]\×Ù›Ü—ÜÚ[™ÛWÜ™XYÝ\ÚÂŠH‹
+HˆPÓT‘JR[š[\Þ\Ý[WÜ™Y™]ÚÜÝ\ÛX\šÜËˆŠ”™Y™]ÚÝ\[ˆX\šÜËˆ™\›ÈYX[œÈ]]ØH\›Þ[X][HH™\Ý™Y™]ÚÝ\Ú[™H]]ÈYXÙY]ZYÚ›Ý™HL	HH™\ÝˆHXÝX[˜[YHZYÚ™HY™™\™[™XØ]\ÙHÙˆÙ][™Èš[\Þ\Ý[WÜ™Y™]ÚÛZ[—Øž]\×Ù›Ü—ÜÚ[™ÛWÜ™XYÝ\ÚÂŠH‹
+HˆPÓT‘J›Û–™\›ÕR[š[\Þ\Ý[WÜ™Y™]ÚÛX^ÛY[[ÜžWÝ\ØYÙKŒQÚH‹ˆŠ“X^[][HY[[ÜžH\ØYÙH›Üˆ™Y™]Ú\Ë‚‚ÛÝYY˜][˜[YNˆL	HÙˆÝ[Y[[ÜžK‚ŠH‹
+HˆPÓT‘JR[š[\Þ\Ý[WÜ™Y™]Ú\×Û[Z]ŒˆŠ“X^[][H[X™\ˆÙˆ™Y™]Ú\Ëˆ™\›ÈYX[œÈ[›[Z]YˆHÙ][™Èš[\Þ\Ý[WÜ™Y™]Ú\×ÛX^ÛY[[ÜžWÝ\ØYÙX\È[Ü™H™XÛÛ[Y[™YYˆ[ÝHØ[È[Z]H[X™\ˆÙˆ™Y™]Ú\ÂŠH‹
+HˆˆPÓT‘J›ÛÛ[Ý×ØØ[Ý[][™×ÜÝX˜ÛÛ[[œ×ÜÚ^™\×Ù›Ü—ÛY\™ÙWÝ™YWÜ™XY[™ËYKˆŠ•Ú[ˆ[˜X›YÛXÚÒÝ\ÙHÚ[Ø[Ý[]HHÚ^™HÙˆš[\È™\]Z\™Y›ÜˆXXÚÝX˜ÛÛ[[ˆ™XY[™È›Üˆ™]\ˆ\ÚÈ[™›ØÚÈÚ^™\ÈØ[Ý[][Û‹‚ŠH‹
+H—ˆPÓT‘JR[\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœË‹ˆŠ•\ÙHÝXÝ\™Hœ›ÛH[œÙ\[ÛˆX›H[œÝXYÙˆØÚ[XH[™™\™[˜ÙHœ›ÛH]KˆÜÜÚX›H˜[Y\ÎˆH\ØX›YHH[˜X›YˆH]]ÂŠH‹
+HˆˆPÓT‘JR[ÛX^ÝšY\ËLˆŠ“X^][\ÈÈ™XYšXH‚ŠH‹
+HˆPÓT‘JR[Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ËLˆŠ“Z[ˆZ[\ÙXÛÛ™È›Üˆ˜XÚÛÙ™‹Ú[ˆ™]žZ[™È™XYšXHŠH‹
+HˆPÓT‘JR[Ü™]žWÛX^Ø˜XÚÛÙ™—Û\ËLˆŠ“X^Z[\ÙXÛÛ™È›Üˆ˜XÚÛÙ™‹Ú[ˆ™]žZ[™È™XYšXHŠH‹
+HˆˆPÓT‘J›ÛÛ›Ü˜ÙWÜ™[[Ý™WÙ]WÜ™XÝ\œÚ]™[WÛÛ—Ù›Ü˜[ÙKˆŠ”™XÝ\œÚ]™[H™[[Ý™H]HÛˆ“Ô]Y\žKˆ]›ÚYÈ	Ñ\™XÝÜžH›Ý[\IÈ\œ›Ü‹]X^HÚ[[H™[[Ý™H]XÚY]BŠH‹
+HˆPÓT‘J›ÛÛÚXÚ×ÝX›WÙ\[™[˜ÚY\ËYKˆŠÚXÚÈ]]Y\žH
+ÝXÚ\È“ÔP“HÜˆ‘SSQJHÚ[›Ýœ™XZÈ\[™[˜ÚY\ÂŠH‹
+HˆPÓT‘J›ÛÛÚXÚ×Ü™Y™\™[X[ÝX›WÙ\[™[˜ÚY\Ë˜[ÙKˆŠÚXÚÈ]]Y\žH
+ÝXÚ\È“ÔP“HÜˆ‘SSQJHÚ[›Ýœ™XZÈ™Y™\™[X[\[™[˜ÚY\ÂŠH‹
+HˆPÓT‘J›ÛÛÚXÚ×Û˜[YYØÛÛXÝ[Û—Ù\[™[˜ÚY\ËYKˆŠÚXÚÈ]“ÔSQQÓÓPÕSÓˆÚ[›Ýœ™XZÈX›\È]\[™Ûˆ]ŠH‹
+HˆˆPÓT‘J›ÛÛ[Ý×Ý[œ™\ÝšXÝYÜ™XY×Ùœ›ÛWÚÙY\\‹˜[ÙKˆŠ[ÝÈ[œ™\ÝšXÝY
+Ú]Ý]ÛÛ™][ÛˆÛˆ]
+H™XYÈœ›ÛHÞ\Ý[Kž›ÛÚÙY\\ˆX›KØ[ˆ™H[™K]\È›ÝØY™H›Üˆ›ÛÚÙY\\‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ù\™XØ]YÙ]X˜\ÙWÛÜ™[˜\žK˜[ÙKˆŠ[ÝÈÈÜ™X]H]X˜\Ù\ÈÚ]\™XØ]YÜ™[˜\žH[™Ú[™BŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ù\™XØ]YÜÞ[^Ù›Ü—ÛY\™ÙWÝ™YK˜[ÙKˆŠ[ÝÈÈÜ™X]H
+“Y\™ÙU™YHX›\ÈÚ]\™XØ]Y[™Ú[™HYš[š][ÛˆÞ[^ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ø\Þ[˜Ú›Û›Ý\×Ü™XYÙœ›ÛWÚ[×ÜÛÛÙ›Ü—ÛY\™ÙWÝ™YK˜[ÙKˆŠ•\ÙH˜XÚÙÜ›Ý[™KÓÈÛÛÈ™XYœ›ÛHY\™ÙU™YHX›\Ëˆ\ÈÙ][™ÈX^H[˜Ü™X\ÙH\™›Ü›X[˜ÙH›ÜˆKÓÈ›Ý[™]Y\šY\ÂŠH‹
+HˆPÓT‘JR[X^ÜÝ™X[\×Ù›Ü—ÛY\™ÙWÝ™YWÜ™XY[™ËˆŠ’Yˆ\È›Ý™\›Ë[Z]H[X™\ˆÙˆ™XY[™ÈÝ™X[\È›ÜˆY\™ÙU™YHX›K‚ŠH‹
+HˆˆPÓT‘J›ÛÛ›Ü˜ÙWÙÜ›Ý\[™×ÜÝ[™\™ØÛÛ\]Xš[]KYKˆŠ“XZÙHÔ“ÕTS‘È[˜Ý[ÛˆÈ™]\›ˆHÚ[ˆ\™Ý[Y[\È›Ý\ÙY\È[ˆYÙÜ™YØ][ÛˆÙ^BŠH‹
+HˆˆPÓT‘J›ÛÛ[Ý×Ü˜[š×Ù[œÙWÜ˜[š×Ø\™Ý[Y[Ë˜[ÙKˆŠ[ÝÈ\ÜÚ[™È\™Ý[Y[ÈÈHS’Ø[™S”ÑWÔS’ØÚ[™ÝÈ[˜Ý[ÛœÈ›Üˆ˜XÚÝØ\™ÛÛ\]Xš[]K‚‚”\ˆÔSÝ[™\™S’Ø[™S”ÑWÔS’ØZÙH™\›È\™Ý[Y[È8 %^H˜[šÈ›ÝÜÈ˜\ÙYÛˆB˜Õ‘Tˆ
+Ô‘Tˆ–H‹‹ŠXÚ[™ÝÈÛ›Kˆ[ˆÛXÚÒÝ\ÙH™\œÚ[ÛœÈ™Y›Ü™H‹K]Y\šY\ÈÝXÚ\Â˜S’Ê
+HÕ‘Tˆ
+‹‹ŠXÚ[[HXØÙ\Y[™YÛ›Ü™YH\™Ý[Y[ÚXÚYÈ\Ù\ˆÛÛ™\Ú[Û‚ŠHš\ÚX›H\™Ý[Y[ÝYÙÙ\ÝY][™›Y[˜ÙYH˜[šÚ[™Ë]]Y›Ý
+K‚‚•Ú[ˆ\ÈÙ][™È\È˜[ÙX
+HY˜][
+KS’Ø[™S”ÑWÔS’Ø™Z™XÝ[žH\™Ý[Y[È[™›ÝÈ•SP‘T—ÓÑ—ÐT‘ÕSQS•×ÑÑTÓ•ÓPUÒˆÚ[ˆÙ]ÈYXHYØXÞH[šY[™Z]š[Üˆ\Âœ™\ÝÜ™Y8 %\™Ý[Y[È\™HÚ[[HYÛ›Ü™YX]Ú[™ÈH™KL‹H™Z]š[Ü‹‚ŠH‹
+HˆˆPÓT‘J›ÛÛØÚ[XWÚ[™™\™[˜ÙWÝ\ÙWØØXÚWÙ›Ü—Ùš[KYKˆŠ•\ÙHØXÚH[ˆØÚ[XH[™™\™[˜ÙHÚ[H\Ú[™Èš[HX›H[˜Ý[Û‚ŠH‹
+HˆPÓT‘J›ÛÛØÚ[XWÚ[™™\™[˜ÙWÝ\ÙWØØXÚWÙ›Ü—ÜÌËYKˆŠ•\ÙHØXÚH[ˆØÚ[XH[™™\™[˜ÙHÚ[H\Ú[™ÈÌÈX›H[˜Ý[Û‚ŠH‹
+HˆPÓT‘J›ÛÛØÚ[XWÚ[™™\™[˜ÙWÝ\ÙWØØXÚWÙ›Ü—Ø^\™KYKˆŠ•\ÙHØXÚH[ˆØÚ[XH[™™\™[˜ÙHÚ[H\Ú[™È^\™HX›H[˜Ý[Û‚ŠH‹
+HˆPÓT‘J›ÛÛØÚ[XWÚ[™™\™[˜ÙWÝ\ÙWØØXÚWÙ›Ü—ÚœËYKˆŠ•\ÙHØXÚH[ˆØÚ[XH[™™\™[˜ÙHÚ[H\Ú[™ÈœÈX›H[˜Ý[Û‚ŠH‹
+HˆPÓT‘J›ÛÛØÚ[XWÚ[™™\™[˜ÙWÝ\ÙWØØXÚWÙ›Ü—Ý\›YKˆŠ•\ÙHØXÚH[ˆØÚ[XH[™™\™[˜ÙHÚ[H\Ú[™È\›X›H[˜Ý[Û‚ŠH‹
+HˆPÓT‘J›ÛÛØÚ[XWÚ[™™\™[˜ÙWØØXÚWÜ™\]Z\™WÛ[ÙYšXØ][Û—Ý[YWÙ›Ü—Ý\›YKˆŠ•\ÙHØÚ[XHœ›ÛHØXÚH›ÜˆT“Ú]\Ý[ÙYšXØ][Ûˆ[YH˜[Y][Ûˆ
+›ÜˆT“ÈÚ]\ÝS[ÙYšYYXY\ŠBŠH‹
+HˆˆPÓT‘JÝš[™ËÛÛ\]Xš[]Kˆ‹ˆŠ•HÛÛ\]Xš[]XÙ][™ÈØ]\Ù\ÈÛXÚÒÝ\ÙHÈ\ÙHHY˜][Ù][™ÜÈÙˆH™]š[Ý\È™\œÚ[ÛˆÙˆÛXÚÒÝ\ÙKÚ\™HH™]š[Ý\È™\œÚ[Ûˆ\È›ÝšYY\ÈHÙ][™Ë‚‚’YˆÙ][™ÜÈ\™HÙ]È›Û‹YY˜][˜[Y\Ë[ˆÜÙHÙ][™ÜÈ\™HÛ›Ü™Y
+Û›HÙ][™ÜÈ]]™H›Ý™Y[ˆ[ÙYšYY\™HY™™XÝYžHHÛÛ\]Xš[]XÙ][™ÊK‚‚•\ÈÙ][™ÈZÙ\ÈHÛXÚÒÝ\ÙH™\œÚ[Ûˆ[X™\ˆ\ÈHÝš[™ËZÙHŒ‹ŒØŒ‹Žˆ[ˆ[\H˜[YHYX[œÈ]\ÈÙ][™È\È\ØX›Y‚‚‘\ØX›YžHY˜][‚‚ŽŽŽ››ÝB’[ˆÛXÚÒÝ\ÙHÛÝYHÙ\šXÙK[]™[Y˜][ÛÛ\]Xš[]HÙ][™È]\Ý™HÙ]žHÛXÚÒÝ\ÙHÛÝYÝ\ÜˆX\ÙHÛÜ[ˆHØ\ÙWJÎ‹ËØÛXÚÚÝ\ÙK˜ÛÝYÜÝ\Ü
+HÈ]™H]Ù]‚’ÝÙ]™\‹HÛÛ\]Xš[]HÙ][™ÈØ[ˆ™HÝ™\œšY[ˆ]H\Ù\‹›ÛK›Ùš[K]Y\žKÜˆÙ\ÜÚ[Ûˆ]™[\Ú[™ÈÝ[™\™ÛXÚÒÝ\ÙHÙ][™ÈYXÚ[š\Û\ÈÝXÚ\ÈÑUÛÛ\]Xš[]HH	ÌŒ‹ŒÉØ[ˆHÙ\ÜÚ[ÛˆÜˆÑUS‘ÔÈÛÛ\]Xš[]HH	ÌŒ‹ŒÉØ[ˆH]Y\žK‚ŽŽŽ‚ŠH‹
+HˆˆPÓT‘JX\Y][Û˜[ÝX›WÙš[\œËˆ‹ˆŠ[ˆY][Û˜[š[\ˆ^™\ÜÚ[Ûˆ]\È\YYY\ˆ™XY[™Â™œ›ÛHHÜXÚYšYYX›K‚‚ŠŠ‘^[\JŠ‚‚˜Ü[’S”ÑT•S•ÈX›WÌHSQTÈ
+K	ØIÊK
+‹	Ø˜‰ÊK
+Ë	ØØØÉÊK
+	Ù	ÊNÂ”ÑSPÕ
+ˆ”“ÓHX›WÌNÂ˜˜™\ÜÛœÙB¸¥#8¥ 8¥ 8¥+8¥ x¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆH8¥ ˆH8¥ ‚¸¥ ˆˆ8¥ ˆ˜ˆ8¥ ‚¸¥ ˆÈ8¥ ˆØØÈ8¥ ‚¸¥ ˆ8¥ ˆ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜˜Ü[”ÑSPÕ
+‚‘”“ÓHX›WÌB”ÑUS‘ÔÈY][Û˜[ÝX›WÙš[\œÈHÉÝX›WÌIÎˆ	ÞOH‰ßB˜˜™\ÜÛœÙB¸¥#8¥ 8¥ 8¥+8¥ x¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆH8¥ ˆH8¥ ‚¸¥ ˆÈ8¥ ˆØØÈ8¥ ‚¸¥ ˆ8¥ ˆ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆPÓT‘JÝš[™ËY][Û˜[Ü™\Ý[Ùš[\‹ˆ‹ˆŠ[ˆY][Û˜[š[\ˆ^™\ÜÚ[ÛˆÈ\HÈH™\Ý[ÙˆÑSPÕ]Y\žK‚•\ÈÙ][™È\È›Ý\YYÈ[žHÝXœ]Y\žK‚‚ŠŠ‘^[\JŠ‚‚˜Ü[’S”ÑT•S•ÈX›WÌHSQTÈ
+K	ØIÊK
+‹	Ø˜‰ÊK
+Ë	ØØØÉÊK
+	Ù	ÊNÂ”Ñ[PÕ
+ˆ”“ÓHX›WÌNÂ˜˜™\ÜÛœÙB¸¥#8¥ 8¥ 8¥+8¥ x¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆH8¥ ˆH8¥ ‚¸¥ ˆˆ8¥ ˆ˜ˆ8¥ ‚¸¥ ˆÈ8¥ ˆØØÈ8¥ ‚¸¥ ˆ8¥ ˆ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜˜Ü[”ÑSPÕ
+‚‘”“ÓHX›WÌB”ÑUS‘ÔÈY][Û˜[Ü™\Ý[Ùš[\ˆH	ÞOH‰Â˜˜™\ÜÛœÙB¸¥#8¥ 8¥ 8¥+8¥ x¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆH8¥ ˆH8¥ ‚¸¥ ˆÈ8¥ ˆØØÈ8¥ ‚¸¥ ˆ8¥ ˆ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆˆPÓT‘JÝš[™ËÛÜšÛØY™Y˜][‹ˆŠ“˜[YHÙˆÛÜšÛØYÈ™H\ÙYÈXØÙ\ÜÈ™\ÛÝ\˜Ù\ÂŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÝÜ˜YÙWÜÞ\Ý[WÜÝXÚ×Ý˜XÙWÜ\WÜ™XYÝ[Y[Ý]Û\ËLˆŠ“X^[][H[YHÈ™XYœ›ÛHH\H›Üˆ™XÙZ]š[™È[™›Ü›X][Ûˆœ›ÛHH™XYÈÚ[ˆ]Y\žZ[™ÈHÞ\Ý[KœÝXÚ×Ý˜XÙXX›Kˆ\ÈÙ][™È\È\ÙY›Üˆ\Ý[™È\œÜÙ\È[™›ÝYX[È™HÚ[™ÙYžH\Ù\œË‚ŠH‹
+HˆˆPÓT‘JÝš[™Ë™[˜[YWÙš[\×ØY\—Ü›ØÙ\ÜÚ[™Ëˆ‹ˆŠ‹H
+Š•\NŠŠˆÝš[™Â‚‹H
+Š‘Y˜][˜[YNŠŠˆ[\HÝš[™Â‚•\ÈÙ][™È[ÝÜÈÈÜXÚYžH™[˜[Z[™È]\›ˆ›Üˆš[\È›ØÙ\ÜÙYžHš[XX›H[˜Ý[Û‹ˆÚ[ˆÜ[Ûˆ\ÈÙ][š[\È™XYžHš[XX›H[˜Ý[ÛˆÚ[™H™[˜[YYXØÛÜ™[™ÈÈÜXÚYšYY]\›ˆÚ]XÙZÛ\œËÛ›HYˆš[\È›ØÙ\ÜÚ[™ÈØ\ÈÝXØÙ\ÜÙ[‚‚ˆÈÈÈXÙZÛ\œÂ‚‹H	XX8 %[ÜšYÚ[˜[š[[˜[YH
+K™Ë‹œØ[\K˜ÜÝˆŠK‚‹H	Y˜8 %ÜšYÚ[˜[š[[˜[YHÚ]Ý]^[œÚ[Ûˆ
+K™Ë‹œØ[\HŠK‚‹H	YX8 %ÜšYÚ[˜[š[H^[œÚ[ÛˆÚ]Ý
+K™Ë‹‹˜ÜÝˆŠK‚‹H	]8 %[Y\Ý[\
+[ˆZXÜ›ÜÙXÛÛ™ÊK‚‹H	IX8 %\˜Ù[YÙHÚYÛˆ
+‰HŠK‚‚ˆÈÈÈ^[\B‹HÜ[ÛŽˆK\™[˜[YWÙš[\×ØY\—Ü›ØÙ\ÜÚ[™ÏHœ›ØÙ\ÜÙYÉY—É]	YH˜‚‹H]Y\žNˆÑSPÕ
+ˆ”“ÓHš[J	ÜØ[\K˜ÜÝ‰ÊX‚‚’Yˆ™XY[™ÈØ[\K˜ÜÝ˜\ÈÝXØÙ\ÜÙ[š[HÚ[™H™[˜[YYÈ›ØÙ\ÜÙYÜØ[\WÌMŽÍÌÌŒLLMÎ˜ÜÝ˜ŠH‹
+HˆˆÊˆÓÕQÓ“H
+‹ÈˆPÓT‘J›ÛÛ™XYÝ›ÝYÚÙ\ÝšX]YØØXÚK˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[ÝÈ™XY[™Èœ›ÛH\ÝšX]YØXÚBŠH‹
+HˆPÓT‘J›ÛÛÜš]WÝ›ÝYÚÙ\ÝšX]YØØXÚK˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[ÝÈÜš][™ÈÈ\ÝšX]YØXÚH
+Üš][™ÈÈÌÈÚ[[ÛÈ™HÛ™HžH\ÝšX]YØXÚJBŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÝ›Ý×ÛÛ—Ù\œ›Ü‹˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ™]›ÝÈ^Ù\[Ûˆ\[™Y\š[™ÈÛÛ[][šXØ][ÛˆÚ]\ÝšX]YØXÚHÜˆ^Ù\[Ûˆ™XÙZ]™Yœ›ÛH\ÝšX]YØXÚKˆÝ\Ú\ÙH˜[˜XÚÈÈÚÚ\[™È\ÝšX]YØXÚHÛˆ\œ›Ü‚ŠH‹
+HˆPÓT‘J\ÝšX]YØXÚSÙÓ[ÙK\ÝšX]YØØXÚWÛÙ×Û[ÙK\ÝšX]YØXÚSÙÓ[ÙNŽ“Ñ×ÓÓ—ÑT”“Ô‹ˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[ÙH›ÜˆÜš][™ÈÈÞ\Ý[K™\ÝšX]YØØXÚWÛÙÂŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÙ™]ÚÛY]šXÜ×ÛÛ›WÙœ›ÛWØÝ\œ™[Ø^‹YKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ™]ÚY]šXÜÈÛ›Hœ›ÛHÝ\œ™[]˜Z[Xš[]H›Û™H[ˆÞ\Ý[K™\ÝšX]YØØXÚWÛY]šXÜËÞ\Ý[K™\ÝšX]YØØXÚWÙ]™[ÂŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWØÛÛ›™XÝÛX^ÝšY\ËY˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝÛX^ÝšY\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[X™\ˆÙˆšY\ÈÈÛÛ›™XÝÈ\ÝšX]YØXÚHYˆ[œÝXØÙ\ÜÙ[ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÜ™XYÜ™\]Y\ÝÛX^ÝšY\ËY˜][Ù\ÝšX]YØØXÚWÜ™XYÜ™\]Y\ÝÛX^ÝšY\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[X™\ˆÙˆšY\ÈÈÈ\ÝšX]YØXÚH™XY™\]Y\ÝYˆ[œÝXØÙ\ÜÙ[ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÝÜš]WÜ™\]Y\ÝÛX^ÝšY\ËY˜][Ù\ÝšX]YØØXÚWÝÜš]WÜ™\]Y\ÝÛX^ÝšY\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[X™\ˆÙˆšY\ÈÈÈ\ÝšX]YØXÚHÜš]H™\]Y\ÝYˆ[œÝXØÙ\ÜÙ[ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÜ™XÙZ]™WÜ™\ÜÛœÙWÝØZ]ÛZ[\ÙXÛÛ™ËŒˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØZ][YH[ˆZ[\ÙXÛÛ™ÈÈ™XÙZ]™H]H›Üˆ™\]Y\Ýœ›ÛH\ÝšX]YØXÚBŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÜ™XÙZ]™WÝ[Y[Ý]ÛZ[\ÙXÛÛ™ËLˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØZ][YH[ˆZ[\ÙXÛÛ™ÈÈ™XÙZ]™H[žHÚ[™Ùˆ™\ÜÛœÙHœ›ÛH\ÝšX]YØXÚB‚ÛÝYY˜][˜[YNˆŒ‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÝØZ]ØÛÛ›™XÝ[Û—Ùœ›ÛWÜÛÛÛZ[\ÙXÛÛ™ËLˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØZ][YH[ˆZ[\ÙXÛÛ™ÈÈ™XÙZ]™HÛÛ›™XÝ[Ûˆœ›ÛHÛÛ›™XÝ[ÛˆÛÛYˆ\ÝšX]YØØXÚWÜÛÛØ™Z]š[Ý\—ÛÛ—Û[Z]\ÈØZ]ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWØž\\Ü×ØÛÛ›™XÝ[Û—ÜÛÛ˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[ÝÈÈž\\ÜÈ\ÝšX]YØXÚHÛÛ›™XÝ[ÛˆÛÛŠH‹
+HˆPÓT‘J\ÝšX]YØXÚTÛÛ™Z]š[Ý\“Û“[Z]\ÝšX]YØØXÚWÜÛÛØ™Z]š[Ý\—ÛÛ—Û[Z]\ÝšX]YØXÚTÛÛ™Z]š[Ý\“Û“[Z]Ž•ÐRUˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆY[YšY\È™Z]š[Ý\ˆÙˆ\ÝšX]YØXÚHÛÛ›™XÝ[ÛˆÛˆÛÛ[Z]™XXÚYŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWØ[YÛ›Y[ˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆHÙ][™È›Üˆ\Ý[™È\œÜÙ\ËÈ›ÝÚ[™ÙH]ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÛX^Ý[˜XÚÙYÚ[™›YÚÜXÚÙ]ËY˜][Ù\ÝšX]YØØXÚWÛX^Ý[˜XÚÙYÚ[™›YÚÜXÚÙ]ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆHX^[][H[X™\ˆÙˆ[˜XÚÛ›ÝÛYÙY[‹Y›YÚXÚÙ]È[ˆHÚ[™ÛH\ÝšX]YØXÚH™XY™\]Y\ÝŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÙ]WÜXÚÙ]ØXÚ×ÝÚ[™ÝËY˜][Ù\ÝšX]YØØXÚWÙ]WÜXÚÙ]ØXÚ×ÝÚ[™ÝËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆHÚ[™ÝÈ›ÜˆÙ[™[™ÈPÒÈ›Üˆ]TXÚÙ]Ù\]Y[˜ÙH[ˆHÚ[™ÛH\ÝšX]YØXÚH™XY™\]Y\ÝŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÙ\ØØ\™ØÛÛ›™XÝ[Û—ÚY—Ý[œ™XYÙ]KYKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ\ØØ\™ÛÛ›™XÝ[ÛˆYˆÛÛYH]H\È[œ™XY‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÛZ[—Øž]\×Ù›Ü—ÜÙYZËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆZ[š[][H[X™\ˆÙˆž]\ÈÈÈÙYZÈ[ˆ\ÝšX]YØXÚK‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWØÜ™Y[X[×Ü™Yœ™\ÚÜ\š[ÙÜÙXÛÛ™ËY˜][Ù\ÝšX]YØØXÚWØÜ™Y[X[×Ü™Yœ™\ÚÜ\š[ÙÜÙXÛÛ™ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆH\š[ÙÙˆÜ™Y[X[È™Yœ™\Ú‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÜ™XYÛÛ›WÙœ›ÛWØÝ\œ™[Ø^‹YKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[ÝÈÈ™XYÛ›Hœ›ÛHÝ\œ™[]˜Z[Xš[]H›Û™KˆYˆ\ØX›YÚ[™XYœ›ÛH[ØXÚHÙ\™\œÈ[ˆ[]˜Z[Xš[]H›Û™\Ë‚ŠH‹
+HˆPÓT‘JR[Üš]WÝ›ÝYÚÙ\ÝšX]YØØXÚWØY™™\—ÜÚ^™KˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆÙ]Y™™\ˆÚ^™H›ÜˆÜš]K]›ÝYÚ\ÝšX]YØXÚKˆYˆÚ[\ÙHY™™\ˆÚ^™HÚXÚÛÝ[]™H™Y[ˆ\ÙYYˆ\™HØ\È›Ý\ÝšX]YØXÚK‚ŠH‹
+HˆPÓT‘J›ÛÛX›WÙ[™Ú[™WÜ™XYÝ›ÝYÚÙ\ÝšX]YØØXÚK˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[ÝÈ™XY[™Èœ›ÛH\ÝšX]YØXÚHšXHX›H[™Ú[™\ÈÈX›H[˜Ý[ÛœÈ
+ÌË^\™K]ÊBŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛZ[—Û\ËY˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛZ[—Û\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆZ[š[][H˜XÚÛÙ™ˆZ[\ÙXÛÛ™È›Üˆ\ÝšX]YØXÚHÛÛ›™XÝ[ÛˆÜ™X][Û‹‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛX^Û\ËY˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝØ˜XÚÛÙ™—ÛX^Û\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆX^[][H˜XÚÛÙ™ˆZ[\ÙXÛÛ™È›Üˆ\ÝšX]YØXÚHÛÛ›™XÝ[ÛˆÜ™X][Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÜ™Y™\—ØšYÙÙ\—ØY™™\—ÜÚ^™K˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØ[YH\Èš[\Þ\Ý[WØØXÚWÜ™Y™\—ØšYÙÙ\—ØY™™\—ÜÚ^™K]›Üˆ\ÝšX]YØXÚK‚ŠH‹
+HˆPÓT‘J›ÛÛ™XYÙœ›ÛWÙ\ÝšX]YØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚK˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØ[YH\È™XYÙœ›ÛWÙš[\Þ\Ý[WØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚK]›Üˆ\ÝšX]YØXÚK‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWØÛÛ›™XÝÝ[Y[Ý]Û\ËY˜][Ù\ÝšX]YØØXÚWØÛÛ›™XÝÝ[Y[Ý]Û\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆÛÛ›™XÝ[Ûˆ[Y[Ý]Ú[ˆÛÛ›™XÝ[™ÈÈ\ÝšX]YØXÚHÙ\™\‹‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÜ™XÙZ]™WÝ[Y[Ý]Û\ËY˜][Ù\ÝšX]YØØXÚWÜ™XÙZ]™WÝ[Y[Ý]Û\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[Y[Ý]›Üˆ™XÙZ]š[™È]Hœ›ÛH\ÝšX]YØXÚHÙ\™\‹[ˆZ[\ÙXÛÛ™ËˆYˆ›Èž]\ÈÙ\™H™XÙZ]™Y[ˆ\È[\˜[H^Ù\[Ûˆ\È›ÝÛ‹‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÜÙ[™Ý[Y[Ý]Û\ËY˜][Ù\ÝšX]YØØXÚWÜÙ[™Ý[Y[Ý]Û\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[Y[Ý]›ÜˆÙ[™[™È]HÈ\ÝšX]YØXÚHÙ\™\‹[ˆZ[\ÙXÛÛ™ËˆYˆHÛY[™YYÈÈÙ[™ÛÛYH]H]\È›ÝX›HÈÙ[™[žHž]\È[ˆ\È[\˜[H^Ù\[Ûˆ\È›ÝÛ‹‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YØØXÚWÝÜÚÙY\Ø[]™WÝ[Y[Ý]Û\ËY˜][Ù\ÝšX]YØØXÚWÝÜÚÙY\Ø[]™WÝ[Y[Ý]Û\ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆH[YH[ˆZ[\ÙXÛÛ™ÈHÛÛ›™XÝ[ÛˆÈ\ÝšX]YØXÚHÙ\™\ˆ™YYÈÈ™[XZ[ˆYH™Y›Ü™HÔÝ\ÈÙ[™[™ÈÙY\[]™H›Ø™\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÝ\ÙWØÛY[×ØØXÚWÙ›Ü—Ü™XYY˜][Ù\ÝšX]YØØXÚWÝ\ÙWØÛY[×ØØXÚWÙ›Ü—Ü™XYˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ\ÙHÛY[ÈØXÚH›Üˆ™XY™\]Y\ÝË‚ŠH‹
+HˆPÓT‘JÝš[™Ë\ÝšX]YØØXÚWÙš[WØØXÚWÛ˜[YKˆ‹ˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆHÙ][™È\ÙYÛ›H›ÜˆÒH\ÝÈHš[\Þ\Ý[HØXÚH˜[YHÈ\ÙHÛˆ\ÝšX]YØXÚK‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YØØXÚWÜ™YÚ\ÝžWÜÚÝ×ØÙ\YšXØ]WØ[™ÜÚYÛ˜]\™K˜[ÙKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆÚÝÈHÙ\YšXØ]X[™ÚYÛ˜]\™XÛÛ[[œÈ[ˆHÞ\Ý[K™\ÝšX]YØØXÚWÜ™YÚ\ÝžXX›KˆžHY˜][\ÙHÛÛ[[œÈ\™H[\HÈÙY\HÝ]]ÛÛ\XÝÈ[˜X›H\ÈÙ][™ÈÈ[œÜXÝ[K‚ŠH‹
+HˆPÓT‘J›ÛÛš[\Þ\Ý[WØØXÚWØ[Ý×Ø˜XÚÙÜ›Ý[™ÙÝÛ›ØYYKˆŠ[ÝÈš[\Þ\Ý[HØXÚHÈ[œ]Y]YH˜XÚÙÜ›Ý[™ÝÛ›ØYÈ›Üˆ]H™XYœ›ÛH™[[ÝHÝÜ˜YÙKˆ\ØX›HÈÙY\ÝÛ›ØYÈ[ˆH›Ü™YÜ›Ý[™›ÜˆHÝ\œ™[]Y\žKÜÙ\ÜÚ[Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛš[\Þ\Ý[WØØXÚWÙ[˜X›WØ˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ›Ü—ÛY]Y]WÙš[\×Ú[—ÜXÚÙYÜÝÜ˜YÙKYKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØZ][YHÈØÚÈØXÚH›ÜˆÜXÙH™\Ù\˜][Ûˆ[ˆš[\Þ\Ý[HØXÚBŠH‹
+HˆPÓT‘J›ÛÛš[\Þ\Ý[WØØXÚWÙ[˜X›WØ˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ\š[™×Ù™]ÚYKˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆØZ][YHÈØÚÈØXÚH›ÜˆÜXÙH™\Ù\˜][Ûˆ[ˆš[\Þ\Ý[HØXÚBŠH‹
+HˆˆPÓT‘J›ÛÛ\˜[[^™WÛÝ]]Ùœ›ÛWÜÝÜ˜YÙ\ËYKˆŠ”\˜[[^™HÝ]]›Üˆ™XY[™ÈÝ\œ›ÛHÝÜ˜YÙKˆ][ÝÜÈ\˜[[^˜][ÛˆÙˆ]Y\žH›ØÙ\ÜÚ[™ÈšYÚY\ˆ™XY[™Èœ›ÛHÝÜ˜YÙHYˆÜÜÚX›BŠH‹
+HˆPÓT‘JÝš[™Ë[œÙ\ÙY\XØ][Û—ÝÚÙ[‹ˆ‹ˆŠ•HÙ][™È[ÝÜÈH\Ù\ˆÈ›ÝšYHÝÛˆY\XØ][ÛˆÙ[X[XÈ[ˆY\™ÙU™YKÔ™\XØ]YY\™ÙU™YB‘›Üˆ^[\KžH›ÝšY[™ÈH[š\]YH˜[YH›ÜˆHÙ][™È[ˆXXÚS”ÑT•Ý][Y[\Ù\ˆØ[ˆ]›ÚYHØ[YH[œÙ\Y]H™Z[™ÈY\XØ]Y‚‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žHÝš[™Â‚˜[œÙ\ÙY\XØ][Û—ÝÚÙ[˜\È\ÙY›ÜˆY\XØ][ÛˆÛÛ›WÈÚ[ˆ›Ý[\K‚‚‘›ÜˆH™\XØ]YX›\ÈžHY˜][HÛ›HLÙˆH[ÜÝ™XÙ[[œÙ\È›ÜˆXXÚ\][Ûˆ\™HY\XØ]Y
+ÙYHÜ™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×JY\™ÙK]™YK\Ù][™ÜË›YÈÜ™\XØ]YÙY\XØ][Û—ÝÚ[™ÝÊKÜ™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×ÜÙXÛÛ™×JY\™ÙK]™YK\Ù][™ÜË›YÈÜ™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×ÜÙXÛÛ™ÊJK‚‘›Üˆ›Ý™\XØ]YX›\ÈÙYHÛ›Û—Ü™\XØ]YÙY\XØ][Û—ÝÚ[™Ý×JY\™ÙK]™YK\Ù][™ÜË›YÈÛ›Û—Ü™\XØ]YÙY\XØ][Û—ÝÚ[™ÝÊK‚‚ŽŽŽ››ÝB˜[œÙ\ÙY\XØ][Û—ÝÚÙ[˜\È˜XÚÙY\ˆ\][Û‹ÛÈ][\H\][ÛœÈÜš][ˆžHÛ™H[œÙ\Ø[ˆØ\œžHHØ[YHÚÙ[‹ˆÚ]Ý]HÚÙ[‹HY˜][ÛÛ[ÚXÚÜÝ[H\ÈÛÛ\]YÝ™\ˆHÚÛH[œÙ\Y›ØÚËÛÈ[ˆ[œÙ\\ÈY\XØ]YÛ›HÚ[ˆ]È[\™H]HX]Ú\ÈH™]š[Ý\È[œÙ\
+H™]žJK›ÝÚ[ˆHÚ[™ÛH\][Û‰ÜÈ›ÝÜÈ\[ˆÈÛÚ[˜ÚYHÚ]HY™™\™[[œÙ\‚ŽŽŽ‚‚‘^[\N‚‚˜Ü[Ô‘PUHP“H\ÝÝX›BŠH[
+B‘S‘ÒS‘HHY\™ÙU™YB“Ô‘Tˆ–HB”ÑUS‘ÔÈ›Û—Ü™\XØ]YÙY\XØ][Û—ÝÚ[™ÝÈHLÂ‚’S”ÑT•S•È\ÝÝX›HÑUS‘ÔÈ[œÙ\ÙY\XØ][Û—ÝÚÙ[ˆH	Ý\Ý	ÈSQTÈ
+JNÂ‚‹KHH™^[œÙ\ÛÛ‰Ý™HY\XØ]Y™XØ]\ÙH[œÙ\ÙY\XØ][Û—ÝÚÙ[ˆ\ÈY™™\™[’S”ÑT•S•È\ÝÝX›HÑUS‘ÔÈ[œÙ\ÙY\XØ][Û—ÝÚÙ[ˆH	Ý\ÝIÈSQTÈ
+JNÂ‚‹KHH™^[œÙ\Ú[™HY\XØ]Y™XØ]\ÙH[œÙ\ÙY\XØ][Û—ÝÚÙ[‚‹KH\ÈHØ[YH\ÈÛ™HÙˆH™]š[Ý\Â’S”ÑT•S•È\ÝÝX›HÑUS‘ÔÈ[œÙ\ÙY\XØ][Û—ÝÚÙ[ˆH	Ý\Ý	ÈSQTÈ
+ŠNÂ‚”ÑSPÕ
+ˆ”“ÓH\ÝÝX›B‚¸¥#8¥ x¥ 8¥$¸¥ ˆH8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥&¸¥#8¥ x¥ 8¥$¸¥ ˆH8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆPÓT‘J›ÛÛÛÝ[Ù\Ý[˜ÝÛÜ[Z^˜][Û‹˜[ÙKˆŠ”™]Üš]HÛÝ[\Ý[˜ÝÈÝXœ]Y\žHÙˆÜ›Ý\žBŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÚ[™\œÙWÙXÝ[Û˜\žWÛÛÚÝ\YKˆŠ]›ÚY™\X]Y[™\œÙHXÝ[Û˜\žHÛÚÝ\žHÚ[™È˜\Ý\ˆÛÚÝ\È[ÈH™XÛÛ\]YÙ]ÙˆÜÜÚX›HÙ^H˜[Y\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ›Ý×ÚY—Û›×Ù]WÝ×Ú[œÙ\YKˆŠ[ÝÜÈÜˆ›Ü˜šYÈ[\HS”ÑT•Ë[˜X›YžHY˜][
+›ÝÜÈ[ˆ\œ›ÜˆÛˆ[ˆ[\H[œÙ\
+KˆÛ›H\Y\ÈÈS”ÑT•È\Ú[™ÈØÛXÚÚÝ\ÙKXÛY[JÚ[\™˜XÙ\ËØÛJHÜˆ\Ú[™ÈHÙÔ”È[\™˜XÙWJÚ[\™˜XÙ\ËÙÜœÊK‚ŠH‹
+HˆPÓT‘J›ÛÛÛÛ\]Xš[]WÚYÛ›Ü™WØ]]×Ú[˜Ü™[Y[Ú[—ØÜ™X]WÝX›K˜[ÙKˆŠ’YÛ›Ü™HUU×ÒSÔ‘SQS•Ù^]ÛÜ™[ˆÛÛ[[ˆXÛ\˜][ÛˆYˆYKÝ\Ú\ÙH™]\›ˆ\œ›Ü‹ˆ]Ú[\YšY\ÈZYÜ˜][Ûˆœ›ÛH^TÔSŠH‹
+HˆPÓT‘J›ÛÛ][\WÚ›Ú[œ×ÝžWÝ×ÚÙY\ÛÜšYÚ[˜[Û˜[Y\Ë˜[ÙKˆŠ‘È›ÝY[X\Ù\ÈÈÜ]™[^™\ÜÚ[Ûˆ\ÝÛˆ][\H›Ú[œÈ™]Üš]BŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÜÛÜ[™×ØžWÚ[œ]ÜÝ™X[WÜ›Ü\Y\ËYKˆŠ“Ü[Z^™HÛÜ[™ÈžHÛÜ[™È›Ü\Y\ÈÙˆ[œ]Ý™X[BŠH‹
+HˆPÓT‘JR[ÙY\\—ÛX^Ü™]šY\ËLˆŠ“X^™]šY\È›ÜˆÙ[™\˜[ÙY\\ˆÜ\˜][ÛœÂŠH‹
+HˆPÓT‘JR[ÙY\\—Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ËLˆŠ’[š]X[˜XÚÛÙ™ˆ[Y[Ý]›ÜˆÙ[™\˜[ÙY\\ˆÜ\˜][ÛœÂŠH‹
+HˆPÓT‘JR[ÙY\\—Ü™]žWÛX^Ø˜XÚÛÙ™—Û\ËLˆŠ“X^˜XÚÛÙ™ˆ[Y[Ý]›ÜˆÙ[™\˜[ÙY\\ˆÜ\˜][ÛœÂŠH‹
+HˆPÓT‘JR[[œÙ\ÚÙY\\—ÛX^Ü™]šY\ËŒˆŠ•HÙ][™ÈÙ]ÈHX^[][H[X™\ˆÙˆ™]šY\È›ÜˆÛXÚÒÝ\ÙHÙY\\ˆ
+Üˆ›ÛÒÙY\\ŠH™\]Y\ÝÈ\š[™È[œÙ\[È™\XØ]YY\™ÙU™YKˆÛ›HÙY\\ˆ™\]Y\ÝÈÚXÚ˜Z[YYHÈ™]ÛÜšÈ\œ›Ü‹ÙY\\ˆÙ\ÜÚ[Ûˆ[Y[Ý]Üˆ™\]Y\Ý[Y[Ý]\™HÛÛœÚY\™Y›Üˆ™]šY\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %™]šY\È\™H\ØX›Y‚’ÙY\\ˆ™\]Y\Ý™]šY\È\™HÛ™HY\ˆÛÛYH[Y[Ý]ˆH[Y[Ý]\ÈÛÛ›ÛYžHH›ÛÝÚ[™ÈÙ][™ÜÎˆ[œÙ\ÚÙY\\—Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\Ø[œÙ\ÚÙY\\—Ü™]žWÛX^Ø˜XÚÛÙ™—Û\Ø‚•Hš\œÝ™]žH\ÈÛ™HY\ˆ[œÙ\ÚÙY\\—Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\Ø[Y[Ý]ˆHÛÛœÙ\]Y[[Y[Ý]ÈÚ[™HØ[Ý[]Y\È›ÛÝÜÎ‚˜[Y[Ý]HZ[Š[œÙ\ÚÙY\\—Ü™]žWÛX^Ø˜XÚÛÙ™—Û\Ë]\ÝÝ[Y[Ý]
+ˆŠB˜‚‘›Üˆ^[\KYˆ[œÙ\ÚÙY\\—Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ÏLL[œÙ\ÚÙY\\—Ü™]žWÛX^Ø˜XÚÛÙ™—Û\ÏLL[™[œÙ\ÚÙY\\—ÛX^Ü™]šY\ÏN[ˆ[Y[Ý]ÈÚ[™HLŒMŒÌŒL‚‚\\œ›ÛH˜][Û\˜[˜ÙKH™]šY\ÈZ[HÈ›ÝšYHH™]\ˆ\Ù\ˆ^\šY[˜ÙHH^H[ÝÈÈ]›ÚY™]\›š[™È[ˆ\œ›Üˆ\š[™ÈS”ÑT•^XÝ][ÛˆYˆÙY\\ˆ\È™\Ý\Y›Üˆ^[\KYHÈ[ˆ\Ü˜YK‚ŠH‹
+HˆPÓT‘JR[[œÙ\ÚÙY\\—Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ËLˆŠ’[š]X[[Y[Ý]
+[ˆZ[\ÙXÛÛ™ÊHÈ™]žHH˜Z[YÙY\\ˆ™\]Y\Ý\š[™ÈS”ÑT•]Y\žH^XÝ][Û‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %›È[Y[Ý]ŠH‹
+HˆPÓT‘JR[[œÙ\ÚÙY\\—Ü™]žWÛX^Ø˜XÚÛÙ™—Û\ËLˆŠ“X^[][H[Y[Ý]
+[ˆZ[\ÙXÛÛ™ÊHÈ™]žHH˜Z[YÙY\\ˆ™\]Y\Ý\š[™ÈS”ÑT•]Y\žH^XÝ][Û‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‹H8 %X^[][H[Y[Ý]\È›Ý[Z]YŠH‹
+HˆPÓT‘J›Ø][œÙ\ÚÙY\\—Ù˜][Ú[š™XÝ[Û—Ü›Ø˜Xš[]KŒ‹ˆŠ\›Þ[X]H›Ø˜Xš[]HÙˆ˜Z[\™H›ÜˆHÙY\\ˆ™\]Y\Ý\š[™È[œÙ\ˆ˜[Y˜[YH\È[ˆ[\˜[ÌŒ‹KŒ—BŠH‹
+HˆPÓT‘JR[[œÙ\ÚÙY\\—Ù˜][Ú[š™XÝ[Û—ÜÙYYˆŠŒH˜[™ÛHÙYYÝ\Ú\ÙHHÙ][™È˜[YBŠH‹
+HˆPÓT‘J›ÛÛ›Ü˜ÙWØYÙÜ™YØ][Û—Ú[—ÛÜ™\‹˜[ÙKˆŠ•HÙ][™È\È\ÙYžHHÙ\™\ˆ]Ù[ˆÈÝ\Ü\ÝšX]Y]Y\šY\ËˆÈ›ÝÚ[™ÙH]X[X[K™XØ]\ÙH]Ú[œ™XZÈ›Ü›X[Ü\˜][ÛœËˆ
+›Ü˜Ù\È\ÙHÙˆYÙÜ™YØ][Ûˆ[ˆÜ™\ˆÛˆ™[[ÝH›Ù\È\š[™È\ÝšX]YYÙÜ™YØ][ÛŠK‚ŠH‹STÔ•S•
+HˆPÓT‘JR[ÛX^Ü™\]Y\ÝÜ\˜[WÙ]WÜÚ^™KLÓZP‹ˆŠ“[Z]ÛˆÚ^™HÙˆ™\]Y\Ý]H\ÙY\ÈH]Y\žH\˜[Y]\ˆ[ˆ™YYš[™Y™\]Y\ÝË‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜Ý[Û—ÚœÛÛ—Ý˜[YWÜ™]\›—Ý\WØ[Ý×Û[X›K˜[ÙKˆŠÛÛ›ÛÚ]\ˆ[ÝÈÈ™]\›ˆ•SÚ[ˆ˜[YH\È›Ý^\Ý›Üˆ”ÓÓ—ÕSQH[˜Ý[Û‹‚‚˜Ü[”ÑSPÕ”ÓÓ—ÕSQJ	ÞÈš[ÈŽˆÛÜ›ŸIË	É˜‰ÊHÙ][™ÜÈ[˜Ý[Û—ÚœÛÛ—Ý˜[YWÜ™]\›—Ý\WØ[Ý×Û[X›O]YNÂ‚¸¥#8¥ ”ÓÓ—ÕSQJ	ÞÈš[ÈŽˆÛÜ›ŸIË	É˜‰Êx¥ 8¥$¸¥ ˆ8m.¸m`xm.8m.8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&‚ŒH›ÝÈ[ˆÙ]ˆ[\ÙYˆŒHÙXË‚˜‚”ÜÜÚX›H˜[Y\Î‚‚‹HYH8 %[ÝË‚‹H˜[ÙH8 %\Ø[ÝË‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜Ý[Û—ÚœÛÛ—Ý˜[YWÜ™]\›—Ý\WØ[Ý×ØÛÛ\^˜[ÙKˆŠÛÛ›ÛÚ]\ˆ[ÝÈÈ™]\›ˆÛÛ\^\H
+ÝXÚ\ÎˆÝXÝ\œ˜^KX\
+H›ÜˆœÛÛ—Ý˜[YH[˜Ý[Û‹‚‚˜Ü[”ÑSPÕ”ÓÓ—ÕSQJ	ÞÈš[ÈŽžÈÛÜ›ŽˆˆHŸ_IË	Éš[ÉÊHÙ][™ÜÈ[˜Ý[Û—ÚœÛÛ—Ý˜[YWÜ™]\›—Ý\WØ[Ý×ØÛÛ\^]YB‚¸¥#8¥ ”ÓÓ—ÕSQJ	ÞÈš[ÈŽžÈÛÜ›ŽˆˆHŸ_IË	Éš[ÉÊx¥ 8¥$¸¥ ˆÈÛÜ›ŽˆˆHŸH8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&‚ŒH›ÝÈ[ˆÙ]ˆ[\ÙYˆŒHÙXË‚˜‚”ÜÜÚX›H˜[Y\Î‚‚‹HYH8 %[ÝË‚‹H˜[ÙH8 %\Ø[ÝË‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝÚ]Ùš[ØžWÜÛÜ[™×Ü™Yš^YKˆŠÛÛ[[œÈ™XÙY[™ÈÒU’SÛÛ[[œÈ[ˆÔ‘Tˆ–HÛ]\ÙH›Ü›HÛÜ[™È™Yš^ˆ›ÝÜÈÚ]Y™™\™[˜[Y\È[ˆÛÜ[™È™Yš^\™Hš[Y[™\[™[BŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÝ[š\WÝ×ØÛÝ[YKˆŠ”™]Üš]H[š\H[™]È˜\šX[Ê^Ù\[š\U\ÊHÈÛÝ[YˆÝXœ]Y\žH\È\Ý[˜ÝÜˆÜ›Ý\žHÛ]\ÙK‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\KYKˆŠ[ÝÜÈÈ\ÙH˜\šX[\H\ÈH™\Ý[\H›ÜˆÚY—J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËØÛÛ™][Û˜[Y[˜Ý[ÛœË›YÈÚYŠKÖÛ][RY—J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËØÛÛ™][Û˜[Y[˜Ý[ÛœË›YÈÛ][RYŠKÖØ\œ˜^WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËØ\œ˜^KY[˜Ý[ÛœË›Y
+KÖÛX\J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËÝ\K[X\Y[˜Ý[ÛœË›Y
+H[˜Ý[ÛœÈÚ[ˆ\™H\È›ÈÛÛ[[Ûˆ\H›Üˆ\™Ý[Y[\\Ë‚‚‘^[\N‚‚˜Ü[”ÑU\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\HHNÂ”ÑSPÕÕ\S˜[YJYŠ[X™\ˆ	H‹[X™\‹˜[™ÙJ[X™\ŠJJH\È˜\šX[Ý\H”“ÓH[X™\œÊJNÂ”ÑSPÕYŠ[X™\ˆ	H‹[X™\‹˜[™ÙJ[X™\ŠJH\È˜\šX[”“ÓH[X™\œÊJNÂ˜‚˜^¸¥#8¥ ˜\šX[Ý\x¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆ˜\šX[
+\œ˜^JR[
+KR[
+H8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&¸¥#8¥ ˜\šX[8¥ 8¥ 8¥ 8¥$¸¥ ˆ×H8¥ ‚¸¥ ˆH8¥ ‚¸¥ ˆÌWH8¥ ‚¸¥ ˆÈ8¥ ‚¸¥ ˆÌK‹×H8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜‚˜Ü[”ÑU\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\HHNÂ”ÑSPÕÕ\S˜[YJ][RYŠ
+[X™\ˆ	H
+HH‹
+[X™\ˆ	H
+HHKÌK‹×K
+[X™\ˆ	H
+HH‹	Ò[ËÛÜ›IË•S
+JHTÈ˜\šX[Ý\H”“ÓH[X™\œÊJNÂ”ÑSPÕ][RYŠ
+[X™\ˆ	H
+HH‹
+[X™\ˆ	H
+HHKÌK‹×K
+[X™\ˆ	H
+HH‹	Ò[ËÛÜ›IË•S
+HTÈ˜\šX[”“ÓH[X™\œÊ
+NÂ˜‚˜^¸¥ ˜\šX[Ý\x¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆ˜\šX[
+\œ˜^JR[
+KÝš[™ËR[
+H8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&‚¸¥#8¥ ˜\šX[8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆˆ8¥ ‚¸¥ ˆÌK‹×H8¥ ‚¸¥ ˆ[ËÛÜ›H8¥ ‚¸¥ ˆ8m.¸m`xm.8m.8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜‚˜Ü[”ÑU\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\HHNÂ”ÑSPÕÕ\S˜[YJ\œ˜^J˜[™ÙJ[X™\ŠK[X™\‹	ÜÝ—ÉÈÔÝš[™Ê[X™\ŠJJH\È\œ˜^WÛÙ—Ý˜\šX[×Ý\Hœ›ÛH[X™\œÊJNÂ”ÑSPÕ\œ˜^J˜[™ÙJ[X™\ŠK[X™\‹	ÜÝ—ÉÈÔÝš[™Ê[X™\ŠJH\È\œ˜^WÛÙ—Ý˜\šX[È”“ÓH[X™\œÊÊNÂ˜‚˜^¸¥#8¥ \œ˜^WÛÙ—Ý˜\šX[×Ý\x¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆ\œ˜^J˜\šX[
+\œ˜^JR[
+KÝš[™ËR[
+JH8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&‚¸¥#8¥ \œ˜^WÛÙ—Ý˜\šX[ø¥ 8¥$¸¥ ˆÖ×K	ÜÝ—Ì	×H8¥ ‚¸¥ ˆÖÌKK	ÜÝ—ÌI×H8¥ ‚¸¥ ˆÖÌWK‹	ÜÝ—Ì‰×H8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜‚˜Ü[”ÑU\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\HHNÂ”ÑSPÕÕ\S˜[YJX\
+	ØIË˜[™ÙJ[X™\ŠK	Ø‰Ë[X™\‹	ØÉË	ÜÝ—ÉÈÔÝš[™Ê[X™\ŠJJH\ÈX\ÛÙ—Ý˜\šX[×Ý\Hœ›ÛH[X™\œÊJNÂ”ÑSPÕX\
+	ØIË˜[™ÙJ[X™\ŠK	Ø‰Ë[X™\‹	ØÉË	ÜÝ—ÉÈÔÝš[™Ê[X™\ŠJH\ÈX\ÛÙ—Ý˜\šX[È”“ÓH[X™\œÊÊNÂ˜‚˜^¸¥#8¥ X\ÛÙ—Ý˜\šX[×Ý\x¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆX\
+Ýš[™Ë˜\šX[
+\œ˜^JR[
+KÝš[™ËR[
+JH8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&‚¸¥#8¥ X\ÛÙ—Ý˜\šX[ø¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆÉØIÎ–×K	Ø‰ÎŒ	ØÉÎ‰ÜÝ—Ì	ßH8¥ ‚¸¥ ˆÉØIÎ–ÌK	Ø‰ÎŒK	ØÉÎ‰ÜÝ—ÌIßH8¥ ‚¸¥ ˆÉØIÎ–ÌWK	Ø‰ÎŒ‹	ØÉÎ‰ÜÝ—Ì‰ßH8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÛÜÜÞWÛ[Y\šX×ÜÝ\\\K˜[ÙKˆŠ•Ú[ˆ[˜X›YY˜Ø][RY˜ØÛØ[\ØÙXØY“[Ø\œ˜^XØX\Ý™\ˆHÙ]Ùˆ[Y\šXÈ\™Ý[Y[È]\È›ÈÜÜÛ\ÜÈÛÛ[[Ûˆ\H
+›Üˆ^[\HHXÚ[X[[™H›Ø]Üˆ[ˆ[[™H›Ø]
+H™\ÛÛ™HÈH[Y\šXÈÝ\\\H
+›Ø]
+H[œÝXYÙˆ˜Z[[™ËÚ]ÜÜÚX›H™XÚ\Ú[ÛˆÜÜËˆ\È[ÝÜÈH™\Ý[È™H\ÙY\™XÝHÚ]˜[YKXÛÛXš[š[™ÈYÙÜ™YØ]H[˜Ý[ÛœÈZÙHÝ[X]™ØZ[˜[™X^ˆ\È\È[™\[™[Ùˆ\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\XˆH[Y\šXÈÝ\\\H\È›ÙXÙYÚ]\ˆÜˆ›Ý\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\X\È[˜X›YˆÚ[ˆ\ØX›Y
+HY˜][
+KÝXÚ\™Ý[Y[Ù]È]™H›ÈÛÛ[[Ûˆ\KÛÈ^HZ]\ˆ™XÛÛYHH˜\šX[
+Yˆ\ÙWÝ˜\šX[Ø\×ØÛÛ[[Û—Ý\X\È[˜X›Y
+HÜˆ˜Z\ÙH“×ÐÓÓSSÓ—ÕTX‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÛÜ™\—ØžWØ[YKˆŠ‘[˜X›\ÈÜˆ\ØX›\ÈÛÜ[™ÈÚ]Ô‘Tˆ–HSÞ[^ÙYHÓÔ‘Tˆ–WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËÜÙ[XÝÛÜ™\‹XžK›Y
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H8 %\ØX›HÔ‘Tˆ–HS‚‹HH8 %[˜X›HÔ‘Tˆ–HS‚‚ŠŠ‘^[\JŠ‚‚”]Y\žN‚‚˜Ü[Ô‘PUHP“HPŠÌH[Ìˆ[S[
+HS‘ÒS‘OSY[[ÜžJ
+NÂ‚’S”ÑT•S•ÈPˆSQTÈ
+LŒÌ
+K
+ŒŒL
+K
+ÌLŒ
+NÂ‚”ÑSPÕ
+ˆ”“ÓHPˆÔ‘Tˆ–HSÈKH™]\›œÈ[ˆ\œ›Üˆ]S\È[XšYÝ[Ý\Â‚”ÑSPÕ
+ˆ”“ÓHPˆÔ‘Tˆ–HSÑUS‘ÔÈ[˜X›WÛÜ™\—ØžWØ[HÂ˜‚”™\Ý[‚‚˜^¸¥#8¥ Ìx¥ 8¥+8¥ Ì¸¥ 8¥+8¥ S8¥ 8¥$¸¥ ˆŒ8¥ ˆŒ8¥ ˆL8¥ ‚¸¥ ˆÌ8¥ ˆL8¥ ˆŒ8¥ ‚¸¥ ˆL8¥ ˆŒ8¥ ˆÌ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜ŠH‹
+HˆPÓT‘J›Ø]YÛ›Ü™WÙ›ÜÜ]Y\šY\×Ü›Ø˜Xš[]KˆŠ’Yˆ[˜X›YÙ\™\ˆÚ[YÛ›Ü™H[“ÔX›H]Y\šY\ÈÚ]ÜXÚYšYY›Ø˜Xš[]H
+›ÜˆY[[ÜžH[™“ÒSˆ[™Ú[™\È]Ú[™\XÙH“ÔÈ•SÐUJKˆ\ÙY›Üˆ\Ý[™È\œÜÙ\ÂŠH‹
+HˆPÓT‘J›ÛÛ˜]™\œÙWÜÚYÝ×Ü™[[ÝWÙ]WÜ]Ë˜[ÙKˆŠ•˜]™\œÙHœ›Þ™[ˆ]H
+ÚYÝÈ\™XÝÜžJH[ˆY][ÛˆÈXÝX[X›H]HÚ[ˆ]Y\žHÞ\Ý[Kœ™[[ÝWÙ]WÜ]ÂŠH‹
+HˆPÓT‘J›ÛÛÙ[×Ù\Ý[˜ÙWÜ™]\›œ×Ù›Ø]ÛÛ—Ù›Ø]Ø\™Ý[Y[ËYKˆŠ’Yˆ[›Ý\ˆ\™Ý[Y[ÈÈÙ[Ñ\Ý[˜ÙXÜ™X]Ú\˜ÛQ\Ý[˜ÙXÜ™X]Ú\˜ÛP[™ÛX[˜Ý[ÛœÈ\™H›Ø]™]\›ˆ›Ø][™\ÙHÝX›H™XÚ\Ú[Ûˆ›Üˆ[\›˜[Ø[Ý[][ÛœËˆ[ˆ™]š[Ý\ÈÛXÚÒÝ\ÙH™\œÚ[ÛœËH[˜Ý[ÛœÈ[Ø^\È™]\›™Y›Ø]Ì‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÙÙ]ØÛY[ÚÚXY\‹˜[ÙKˆŠ[ÝÈÈ\ÙHH[˜Ý[ÛˆÙ]ÛY[XY\˜ÚXÚ]ÈÈØZ[ˆH˜[YHÙˆHÝ\œ™[™\]Y\Ý	ÜÈXY\‹ˆ]\È›Ý[˜X›YžHY˜][›ÜˆÙXÝ\š]H™X\ÛÛœË™XØ]\ÙHÛÛYHXY\œËÝXÚ\ÈÛÛÚÚYXÛÝ[ÛÛZ[ˆÙ[œÚ]]™H[™›Ëˆ›ÝH]HPÛXÚÒÝ\ÙKJ˜]][XØ][Û˜[™]]Üš^˜][Û˜XY\œÈ\™H[Ø^\È™\ÝšXÝY[™Ø[››Ý™HØZ[™YÚ]\È[˜Ý[Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛØ\ÝÜÝš[™×Ý×Ù[˜[ZX×Ý\ÙWÚ[™™\™[˜ÙK˜[ÙKˆŠ•\ÙH\\È[™™\™[˜ÙH\š[™ÈÝš[™ÈÈ[˜[ZXÈÛÛ™\œÚ[Û‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ù[˜[ZX×Ý\WÚ[—Ú›Ú[—ÚÙ^\Ë˜[ÙKˆŠ[ÝÜÈ\Ú[™È[˜[ZXÈ\H[ˆ“ÒSˆÙ^\ËˆYY›ÜˆÛÛ\]Xš[]Kˆ]	ÜÈ›Ý™XÛÛ[Y[™YÈ\ÙH[˜[ZXÈ\H[ˆ“ÒSˆÙ^\È™XØ]\ÙHÛÛ\\š\ÛÛˆÚ]Ý\ˆ\\ÈX^HXYÈ[™^XÝY™\Ý[Ë‚ŠH‹
+HˆPÓT‘J›ÛÛØ\ÝÜÝš[™×Ý×Ý˜\šX[Ý\ÙWÚ[™™\™[˜ÙKYKˆŠ•\ÙH\\È[™™\™[˜ÙH\š[™ÈÝš[™ÈÈ˜\šX[ÛÛ™\œÚ[Û‹‚ŠH‹
+HˆPÓT‘J]U[YR[œ]›Ü›X]Ø\ÝÜÝš[™×Ý×Ù]WÝ[YWÛ[ÙK˜™\ÝÙY™›Ü‹ˆŠ[ÝÜÈÚÛÜÚ[™ÈH\œÙ\ˆÙˆH^™\™\Ù[][ÛˆÙˆ]H[™[YH\š[™ÈØ\Ýœ›ÛHÝš[™Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H	Ø™\ÝÙY™›Ü	Ø8 %[˜X›\È^[™Y\œÚ[™Ë‚‚ˆÛXÚÒÝ\ÙHØ[ˆ\œÙHH˜\ÚXÈVVVKSSKQ“SN”ÔØ›Ü›X][™[ÒTÓÈŒWJÎ‹ËÙ[‹ÚZÚ\YXK›Ü™ËÝÚZÚKÒTÓ×ÎŒJH]H[™[YH›Ü›X]Ëˆ›Üˆ^[\K	ÌŒNL‹LNŒŽŒËŒ‰Ø‚‚‹H	Ø™\ÝÙY™›ÜÝ\ÉØ8 %Ú[Z[\ˆÈ™\ÝÙY™›Ü
+ÙYHHY™™\™[˜ÙH[ˆÜ\œÙQ]U[YP™\ÝY™›ÜT×J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËÝ\KXÛÛ™\œÚ[Û‹Y[˜Ý[ÛœÈÜ\œÙQ]U[YP™\ÝY™›ÜTÊB‚‹H	Ø˜\ÚXÉØ8 %\ÙH˜\ÚXÈ\œÙ\‹‚‚ˆÛXÚÒÝ\ÙHØ[ˆ\œÙHÛ›HH˜\ÚXÈVVVKSSKQ“SN”ÔØÜˆVVVKSSKQ›Ü›X]ˆ›Üˆ^[\KŒNKLLŒLŒNM˜ÜˆŒNKLLŒ‚‚”ÙYH[ÛÎ‚‚‹HÑ]U[YH]H\K—J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÙ]][YK›Y
+B‹HÑ[˜Ý[ÛœÈ›ÜˆÛÜšÚ[™ÈÚ]]\È[™[Y\Ë—J‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ[˜Ý[ÛœËÙ]K][YKY[˜Ý[ÛœË›Y
+BŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙËYKˆŠ•Üš]H[™›Ü›X][ÛˆX›Ý]›ØˆÝÜ˜YÙHÜ\˜][ÛœÈÈÞ\Ý[K˜›Ø—ÜÝÜ˜YÙWÛÙÈX›BŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙ×Ù›Ü—Ü™XYÛÜ\˜][ÛœË˜[ÙKˆŠ•Üš]H[™›Ü›X][ÛˆX›Ý]›ØˆÝÜ˜YÙH™XYÜ\˜][ÛœÈÈÞ\Ý[K˜›Ø—ÜÝÜ˜YÙWÛÙÈX›K‚”™\]Z\™\È[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙØÈ™H[˜X›Y\ÈÙ[‚ŠH‹
+HˆPÓT‘JR[™YXØ]WÜÝ]\ÝXÜ×ÜØ[\WÜ˜]KˆŠÛÛXÝ™YXØ]HÙ[XÝ]š]HÝ]\ÝXÜÈ[ÈÞ\Ý[Kœ™YXØ]WÜÝ]\ÝXÜ×ÛÙØˆÚ[ˆÙ]Èˆˆ\›Þ[X][HKÓˆÙˆ]Y\šY\È\™HØ[\Y
+žHH]Y\žHQ
+KˆYX[œÈ\ØX›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ØÜ™X]WÚ[™^ÝÚ]Ý]Ý\K˜[ÙKˆŠ[ÝÈÔ‘PUHS‘V]Y\žHÚ]Ý]TKˆ]Y\žHÚ[™HYÛ›Ü™YˆXYH›ÜˆÔSÛÛ\]Xš[]H\ÝË‚ŠH‹
+HˆPÓT‘J›ÛÛÜ™X]WÚ[™^ÚYÛ›Ü™WÝ[š\]YK˜[ÙKˆŠ’YÛ›Ü™HS’TUQHÙ^]ÛÜ™[ˆÔ‘PUHS’TUQHS‘VˆXYH›ÜˆÔSÛÛ\]Xš[]H\ÝË‚ŠH‹
+HˆPÓT‘J›ÛÛš[Ü™]WÝ\WÛ˜[Y\ËYKˆŠ[ÝÜÈÈš[Y\[™\ÝY\H˜[Y\È[ˆH™]HØ^HÚ][™[È[ˆTÐÔ’P‘X]Y\žH[™[ˆÕ\S˜[YJ
+X[˜Ý[Û‹‚‚‘^[\N‚‚˜Ü[Ô‘PUHP“H\Ý
+H\JˆÝš[™ËÈ\J[X›JR[
+KH\œ˜^JR[ÌŠKˆ\œ˜^J\JÈÝš[™ËX\
+Ýš[™Ë\œ˜^J\JHÝš[™ËˆR[
+JJJJKÈ]JK[X›JÝš[™ÊJJHS‘ÒS‘OSY[[ÜžNÂ‘TÐÔ’P‘HP“H\Ý“Ô“PUÕ”˜]ÈÑUS‘ÔÈš[Ü™]WÝ\WÛ˜[Y\ÏLNÂ˜‚˜˜H\JˆˆÝš[™ËˆÈ\Jˆ[X›JR[
+KˆH\œ˜^JR[ÌŠKˆˆ\œ˜^J\JˆÈÝš[™ËˆX\
+ˆÝš[™Ëˆ\œ˜^J\JˆHÝš[™ËˆˆR[ˆ
+JBˆ
+Bˆ
+JKˆÈ]Bˆ
+Kˆ[X›JÝš[™ÊBŠB˜ŠH‹
+HˆPÓT‘J›ÛÛÜ™X]WÝX›WÙ[\WÜš[X\žWÚÙ^WØžWÙY˜][YKˆŠ[ÝÈÈÜ™X]H
+“Y\™ÙU™YHX›\ÈÚ][\Hš[X\žHÙ^HÚ[ˆÔ‘Tˆ–H[™’SPT–HÑVH›ÝÜXÚYšYYŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Û˜[YYØÛÛXÝ[Û—ÛÝ™\œšYWØžWÙY˜][YKˆŠ[ÝÈ˜[YYÛÛXÝ[ÛœÉÈšY[ÈÝ™\œšYHžHY˜][‚ŠH‹
+HˆPÓT‘JÔSÙXÝ\š]U\KY˜][Û›Ü›X[ÝšY]×ÜÜ[ÜÙXÝ\š]KÔSÙXÝ\š]U\NŽ’S•“ÒÑT‹ˆŠ[ÝÜÈÈÙ]Y˜][ÔSÑPÕT’UXÜ[ÛˆÚ[HÜ™X][™ÈH›Ü›X[šY]ËˆÓ[Ü™HX›Ý]ÔSÙXÝ\š]WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØÜ™X]KÝšY]Ë›YÈÜÜ[ÜÙXÝ\š]JK‚‚•HY˜][˜[YH\ÈS•“ÒÑT˜‚ŠH‹
+HˆPÓT‘JÔSÙXÝ\š]U\KY˜][ÛX]\šX[^™YÝšY]×ÜÜ[ÜÙXÝ\š]KÔSÙXÝ\š]U\NŽ‘Q’S‘T‹ˆŠ[ÝÜÈÈÙ]HY˜][˜[YH›ÜˆÔSÑPÕT’UHÜ[ÛˆÚ[ˆÜ™X][™ÈHX]\šX[^™YšY]ËˆÓ[Ü™HX›Ý]ÔSÙXÝ\š]WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØÜ™X]KÝšY]Ë›YÈÜÜ[ÜÙXÝ\š]JK‚‚•HY˜][˜[YH\ÈQ’S‘T˜‚ŠH‹
+HˆPÓT‘JÝš[™ËY˜][ÝšY]×ÙYš[™\‹ÕT”‘S•ÕTÑTˆ‹ˆŠ[ÝÜÈÈÙ]Y˜][Q’S‘T˜Ü[ÛˆÚ[HÜ™X][™ÈHšY]ËˆÓ[Ü™HX›Ý]ÔSÙXÝ\š]WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÜÝ][Y[ËØÜ™X]KÝšY]Ë›YÈÜÜ[ÜÙXÝ\š]JK‚‚•HY˜][˜[YH\ÈÕT”‘S•ÕTÑT˜‚ŠH‹
+HˆPÓT‘JR[ØXÚWÝØ\›Y\—Ý™XYËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ[X™\ˆÙˆ˜XÚÙÜ›Ý[™™XYÈ›ÜˆÜXÝ[]]™[HÝÛ›ØY[™È™]È]H\È[ÈHš[\Þ\Ý[HØXÚKÚ[ˆØØXÚWÜÜ[]YØžWÙ™]ÚJY\™ÙK]™YK\Ù][™ÜË›YÈØØXÚWÜÜ[]YØžWÙ™]Ú
+H\È[˜X›Yˆ™\›ÈÈ\ØX›K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWØ\Þ[˜×Ù^XÝ]Ü—Ù›Ü—ÛX]\šX[^™YÝšY]ÜË˜[ÙKˆŠ•\ÙH\Þ[˜È[™Ý[X[H][]™XYY^XÝ][ÛˆÙˆX]\šX[^™YšY]È]Y\žKØ[ˆÜYY\šY]ÜÈ›ØÙ\ÜÚ[™È\š[™ÈS”ÑT•][ÛÈÛÛœÝ[YH[Ü™HY[[ÜžKŠH‹
+HˆPÓT‘J[YÛ›Ü™WØÛÛÜ\×ÜÙXÛÛ™ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆ^ÛYH™]È]H\Èœ›ÛHÑSPÕ]Y\šY\È[[^IÜ™HZ]\ˆ™K]Ø\›YY
+ÙYHØØXÚWÜÜ[]YØžWÙ™]ÚJY\™ÙK]™YK\Ù][™ÜË›YÈØØXÚWÜÜ[]YØžWÙ™]Ú
+JHÜˆ\ÈX[žHÙXÛÛ™ÈÛˆÛ›H›Üˆ™\XØ]YKÔÚ\™YY\™ÙU™YK‚ŠH‹
+HˆPÓT‘J›ÛÛÚÜØÚ\˜ÝZ]Ù[˜Ý[Û—Ù]˜[X][Û—Ù›Ü—Û[ËYKˆŠ“Ü[Z^™\È]˜[X][ÛˆÙˆ[˜Ý[ÛœÈ]™]\›ˆ•SÚ[ˆ[žH\™Ý[Y[\È•SˆÚ[ˆH\˜Ù[YÙHÙˆ•S˜[Y\È[ˆH[˜Ý[Û‰ÜÈ\™Ý[Y[È^ÙYYÈHÚÜØÚ\˜ÝZ]Ù[˜Ý[Û—Ù]˜[X][Û—Ù›Ü—Û[×Ý™\ÚÛHÞ\Ý[HÚÚ\È]˜[X][™ÈH[˜Ý[Ûˆ›ÝËXžK\›ÝËˆ[œÝXY][[YYX][H™]\›œÈ•S›Üˆ[›ÝÜË]›ÚY[™È[›™XÙ\ÜØ\žHÛÛ\]][Û‹‚ŠH‹
+HˆPÓT‘JÝX›KÚÜØÚ\˜ÝZ]Ù[˜Ý[Û—Ù]˜[X][Û—Ù›Ü—Û[×Ý™\ÚÛKŒˆŠ”˜][È™\ÚÛÙˆ•S˜[Y\ÈÈ^XÝ]H[˜Ý[ÛœÈÚ][X›H\™Ý[Y[ÈÛ›HÛˆ›ÝÜÈÚ]›Û‹S•S˜[Y\È[ˆ[\™Ý[Y[Ëˆ\Y\ÈÚ[ˆÙ][™ÈÚÜØÚ\˜ÝZ]Ù[˜Ý[Û—Ù]˜[X][Û—Ù›Ü—Û[È\È[˜X›Y‚•Ú[ˆH˜][ÈÙˆ›ÝÜÈÛÛZ[š[™È•S˜[Y\ÈÈHÝ[[X™\ˆÙˆ›ÝÜÈ^ÙYYÈ\È™\ÚÛ\ÙH›ÝÜÈÛÛZ[š[™È•S˜[Y\ÈÚ[›Ý™H]˜[X]Y‚ŠH‹
+HˆPÓT‘J[™Y™\—ÝØ\›YYÝ[›Y\™ÙYÜ\×ÜÙXÛÛ™ËˆŠ“Û›H\È[ˆY™™XÝ[ˆÛXÚÒÝ\ÙHÛÝYˆYˆHY\™ÙY\\È\ÜÈ[ˆ\ÈX[žHÙXÛÛ™ÈÛ[™\È›Ý™K]Ø\›YY
+ÙYHØØXÚWÜÜ[]YØžWÙ™]ÚJY\™ÙK]™YK\Ù][™ÜË›YÈØØXÚWÜÜ[]YØžWÙ™]Ú
+JK][]ÈÛÝ\˜ÙH\È\™H]˜Z[X›H[™™K]Ø\›YYÑSPÕ]Y\šY\ÈÚ[™XYœ›ÛHÜÙH\È[œÝXYˆÛ›H›Üˆ™\XØ]YKÔÚ\™YY\™ÙU™YKˆ›ÝH]\ÈÛ›HÚXÚÜÈÚ]\ˆØXÚUØ\›Y\ˆ›ØÙ\ÜÙYH\ÈYˆH\Ø\È™]ÚY[ÈØXÚHžHÛÛY][™È[ÙK]	ÛÝ[™HÛÛœÚY\™YÛÛ[[ØXÚUØ\›Y\ˆÙ]ÈÈ]ÈYˆ]Ø\ÈØ\›YY[ˆ]šXÝYœ›ÛHØXÚK]	ÛÝ[™HÛÛœÚY\™YØ\›K‚ŠH‹
+HˆPÓT‘J[XÙX™\™×Ý[Y\Ý[\Û\ËˆŠ”]Y\žHXÙX™\™ÈX›H\Ú[™ÈHÛ˜\ÚÝ]Ø\ÈÝ\œ™[]HÜXÚYšXÈ[Y\Ý[\‚ŠH‹
+HˆPÓT‘J[XÙX™\™×ÜÛ˜\ÚÝÚYˆŠ”]Y\žHXÙX™\™ÈX›H\Ú[™ÈHÜXÚYšXÈÛ˜\ÚÝY‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÙÙ[×Ý\\×Ú[—ÚXÙX™\™Ë˜[ÙKˆŠ[ÝÈ\œÚ[™ÈXÙX™\™ÈÙ[ÛY]žX[™Ù[ÙÜ˜\XšY[\\È\ÈÛXÚÒÝ\ÙHÙ[ÛY]žX
+˜\šX[
+H\K‚ŠH‹
+HˆPÓT‘J›ÛÛÚÝ×Ù]WÛZÙWØØ][ÙÜ×Ú[—ÜÞ\Ý[WÝX›\Ë˜[ÙKˆŠ‘[˜X›\ÈÚÝÚ[™È]HZÙHØ][ÙÜÈ[ˆÞ\Ý[HX›\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛÚÝ×Ü™[[ÝWÙ]X˜\Ù\×Ú[—ÜÞ\Ý[WÝX›\ËYKˆŠ‘[˜X›\ÈÚÝÚ[™È^TÔS[™ÜÝÜ™TÔS]X˜\Ù\È[ˆÞ\Ý[HX›\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[WÛZÙWÙ[˜X›WÙ^™\ÜÚ[Û—Ýš\Ú]Ü—ÛÙÙÚ[™Ë˜[ÙKˆŠ‘[˜X›\È\Ý]™[ÙÜÈÙˆ[SZÙH^™\ÜÚ[Ûˆš\Ú]Ü‹ˆ\ÙHÙÜÈØ[ˆ™HÛÈ™\˜›ÜÙH]™[ˆ›Üˆ\ÝÙÙÚ[™Ë‚ŠH‹
+HˆPÓT‘J[[WÛZÙWÜÛ˜\ÚÝÝ™\œÚ[Û‹LKˆŠ•™\œÚ[ÛˆÙˆ[HZÙHÛ˜\ÚÝÈ™XYˆ˜[YHLHYX[œÈÈ™XY]\Ý™\œÚ[Ûˆ
+˜[YH\ÈH˜[YÛ˜\ÚÝ™\œÚ[ÛŠK‚ŠH‹
+HˆPÓT‘J[[WÛZÙWÜÛ˜\ÚÝÜÝ\Ý™\œÚ[Û‹LKˆŠ”Ý\™\œÚ[ÛˆÙˆ[HZÙHÛ˜\ÚÝÈ™XYˆ˜[YHLHYX[œÈÈ™XY]\Ý™\œÚ[Ûˆ
+˜[YH\ÈH˜[YÛ˜\ÚÝ™\œÚ[ÛŠK‚ŠH‹
+HˆPÓT‘J[[WÛZÙWÜÛ˜\ÚÝÙ[™Ý™\œÚ[Û‹LKˆŠ‘[™™\œÚ[ÛˆÙˆ[HZÙHÛ˜\ÚÝÈ™XYˆ˜[YHLHYX[œÈÈ™XY]\Ý™\œÚ[Ûˆ
+˜[YH\ÈH˜[YÛ˜\ÚÝ™\œÚ[ÛŠK‚ŠH‹
+HˆPÓT‘J›ÛÛ[WÛZÙWÝ›Ý×ÛÛ—Ù[™Ú[™WÜ™YXØ]WÙ\œ›Ü‹˜[ÙKˆŠ‘[˜X›\È›ÝÚ[™È[ˆ^Ù\[ÛˆYˆ\™HØ\È[ˆ\œ›ÜˆÚ[ˆ[˜[^š[™ÈØØ[ˆ™YXØ]H[ˆ[KZÙ\›™[‚ŠH‹
+HˆPÓT‘J›ÛÛ[WÛZÙWÙ[˜X›WÙ[™Ú[™WÜ™YXØ]KYKˆŠ‘[˜X›\È[KZÙ\›™[[\›˜[]H[š[™Ë‚ŠH‹
+HˆPÓT‘J›Û–™\›ÕR[[WÛZÙWÚ[œÙ\ÛX^Ü›ÝÜ×Ú[—Ù]WÙš[KLˆŠ‘Yš[™\ÈH›ÝÜÈ[Z]›ÜˆHÚ[™ÛH[œÙ\Y]Hš[H[ˆ[HZÙK‚ŠH‹
+HˆPÓT‘J›Û–™\›ÕR[[WÛZÙWÚ[œÙ\ÛX^Øž]\×Ú[—Ù]WÙš[KWÑÚP‹ˆŠ‘Yš[™\ÈHž]\È[Z]›ÜˆHÚ[™ÛH[œÙ\Y]Hš[H[ˆ[HZÙK‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Ù[WÛZÙWÝÜš]\Ë˜[ÙKˆŠ‘[˜X›\È[KZÙ\›™[Üš]\È™X]\™K‚ŠH‹‘UK[Ý×Ù[WÛZÙWÝÜš]\ÊHˆPÓT‘J›ÛÛ[Ý×Ù\™XØ]YÙ\œ›Ü—Ü›Û™WÝÚ[™Ý×Ù[˜Ý[ÛœË˜[ÙKˆŠ[ÝÈ\ØYÙHÙˆ\™XØ]Y\œ›Üˆ›Û™HÚ[™ÝÈ[˜Ý[ÛœÈ
+™ZYÚ›Ü‹[›š[™ÐXØÝ[][]K[›š[™ÑY™™\™[˜ÙTÝ\[™ÕÚ]š\œÝ˜[YK[›š[™ÑY™™\™[˜ÙJBŠH‹
+HˆPÓT‘Jš[SZÙQ[™Ú[™QY˜][\][Û”Ý˜]YÞKš[WÛZÙWÙ[™Ú[™WÙY˜][Ü\][Û—ÜÝ˜]YÞKš[SZÙQ[™Ú[™QY˜][\][Û”Ý˜]YÞNŽ’U‘KˆŠ‘Y˜][\][ÛˆÝ˜]YÞH›Üˆš[HZÙH[™Ú[™\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÚXÙX™\™×Ü\][Û—Ü[š[™ËYKˆŠ•\ÙHXÙX™\™È\][Ûˆ[š[™È›ÜˆXÙX™\™ÈX›\ÂŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÙ\Ý[˜ÝÚ[—ÛÜ™\‹YKˆŠ‘[˜X›HTÕSÕÜ[Z^˜][ÛˆYˆÛÛYHÛÛ[[œÈ[ˆTÕSÕ›Ü›HH™Yš^ÙˆÛÜ[™Ëˆ›Üˆ^[\K™Yš^ÙˆÛÜ[™ÈÙ^H[ˆY\™ÙH™YHÜˆÔ‘Tˆ–HÝ][Y[ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÛ[Z]ØžWÚ[—ÛÜ™\‹YKˆŠ“Ü[Z^™HÑSPÕ‹‹ˆSRUˆ–HÛÛÏ˜]Y\šY\ÈÚ[ˆÛÛÏ˜
+[ˆ[žHÜ™\ŠH›Ü›HH™Yš^ÙˆHX›IÜÈÛÜ[™ÈÙ^KÜˆ™XÛÛYHÛ™HY\ˆÒT‘HÛÛHÛÛœÝš^\ÈXY[™ÈÛÛ[[œËˆÚ]\È[˜X›YHÛÝ\˜ÙH™XYÈ]H[ˆš[X\žKZÙ^HÜ™\‹ÛÈ›ÝÜÈÚ]\]X[˜[Y\ÈÙˆH–XÛÛ[[œÈ\œš]™HY˜XÙ[ÈXXÚÝ\ˆÚ][ˆXXÚÝ™X[KˆÚ[ˆH]H\œš]™\È[ˆHÚ[™ÛHÛÜYÝ™X[KSRU–Xš[\œÈ][ˆÝ™X[Z[™È[ÙHÚ]ÊJHY[[ÜžK[œÝXYÙˆZ[[™ÈH\ÚX›HÙˆ]™\žH\Ý[˜ÝÛÛXš[˜][ÛˆÙˆ–XÛÛ[[œÈÙY[‹ˆÚ[ˆHÛÜY]H\œš]™\È[ˆ][\HÝ™X[\È[™HØ[YH–X˜[Y\ÈØ[ˆ\X\ˆ[ˆ[Ü™H[ˆÛ™HÙˆ[KXXÚÝ™X[H\Èš\œÝ™Yš[\™Y[ˆÝ™X[Z[™È[ÙHÝÛˆÈ][ÜÝSRU
+ÈÑ‘”ÑU›ÝÜÈ\ˆÜ›Ý\[ˆHÝ™X[\È\™HÛÛXš[™Y[™Hš[˜[\ÚX˜\ÙYSRU–XY\XØ]\ÈÜ›Ý\È]Ü[ˆÙ]™\˜[Ý™X[\Ëˆ]š[˜[\ÜÈÝ[ÙY\È[ˆ[žH›Üˆ]™\žH\Ý[˜ÝÛÛXš[˜][ÛˆÙˆ–XÛÛ[[œË]]Û›H›ØÙ\ÜÙ\ÈH™Yš[\™Y›ÝÜË‚ŠH‹
+HˆPÓT‘J›ÛÛÙY\\—ÛX\ÜÝšXÝÛ[ÙK˜[ÙKˆŠ‘[™›Ü˜ÙHY][Û˜[ÚXÚÜÈ\š[™ÈÜ\˜][ÛœÈÛˆÙY\\“X\ˆK™Ëˆ›ÝÈ[ˆ^Ù\[ÛˆÛˆ[ˆ[œÙ\›Üˆ[™XYH^\Ý[™ÈÙ^BŠH‹
+HˆPÓT‘WÕÒUÐSPTÊR[^˜XÝÚÙ^WÝ˜[YWÜZ\œ×ÛX^ÜZ\œ×Ü\—Ü›ÝËLˆŠ“X^[X™\ˆÙˆZ\œÈ]Ø[ˆ™H›ÙXÙYžHH^˜XÝÙ^U˜[YTZ\œØ[˜Ý[Û‹ˆ\ÙY\ÈHØY™YÝX\™YØZ[œÝÛÛœÝ[Z[™ÈÛÈ]XÚY[[ÜžK‚ŠH‹^˜XÝÚÝœÛX^ÜZ\œ×Ü\—Ü›ÝÊHˆPÓT‘J›ÛÛ™\ÝÜ™WÜ™\XÙWÙ^\›˜[Ù[™Ú[™\×Ý×Û[˜[ÙKˆŠ‘›Üˆ\Ý[™È\œÜÙ\Ëˆ™\XÙ\È[^\›˜[[™Ú[™\ÈÈ[È›Ý[š]X]H^\›˜[ÛÛ›™XÝ[ÛœË‚ŠH‹
+HˆPÓT‘J›ÛÛ™\ÝÜ™WÜ™\XÙWÙ^\›˜[ÝX›WÙ[˜Ý[Ûœ×Ý×Û[˜[ÙKˆŠ‘›Üˆ\Ý[™È\œÜÙ\Ëˆ™\XÙ\È[^\›˜[X›H[˜Ý[ÛœÈÈ[È›Ý[š]X]H^\›˜[ÛÛ›™XÝ[ÛœË‚ŠH‹
+HˆPÓT‘J›ÛÛ™\ÝÜ™WÜ™\XÙWÙ^\›˜[ÙXÝ[Û˜\žWÜÛÝ\˜ÙWÝ×Û[˜[ÙKˆŠ”™\XÙH^\›˜[XÝ[Û˜\žHÛÝ\˜Ù\ÈÈ[Ûˆ™\ÝÜ™Kˆ\ÙY[›Üˆ\Ý[™È\œÜÙ\ÂŠH‹
+HˆÊˆ\˜[[™\XØ\È
+‹ÈˆPÓT‘WÕÒUÐSPTÊR[[Ý×Ù^\š[Y[[Ü\˜[[Ü™XY[™×Ùœ›ÛWÜ™\XØ\ËˆŠ•\ÙH\ÈX^Ü\˜[[Ü™\XØ\ØH[X™\ˆÙˆ™\XØ\Èœ›ÛHXXÚÚ\™›ÜˆÑSPÕ]Y\žH^XÝ][Û‹ˆ™XY[™È\È\˜[[^™Y[™ÛÛÜ™[˜]Y[˜[ZXØ[KˆH\ØX›YHH[˜X›YÚ[[H\ØX›H[H[ˆØ\ÙHÙˆ˜Z[\™KˆH[˜X›Y›ÝÈ[ˆ^Ù\[Ûˆ[ˆØ\ÙHÙˆ˜Z[\™BŠH‹[˜X›WÜ\˜[[Ü™\XØ\ÊHˆPÓT‘JR[]]ÛX]X×Ü\˜[[Ü™\XØ\×Û[ÙKˆŠ‘[˜X›H]]ÛX]XÈÝÚ]Ú[™ÈÈ^XÝ][ÛˆÚ]\˜[[™\XØ\È˜\ÙYÛˆÛÛXÝYÝ]\ÝXÜËˆ™\]Z\™\È[˜X›WØ[˜[^™\ˆHX[˜X›WÜ\˜[[Ü™\XØ\ÈOH\˜[[Ü™\XØ\×ÛØØ[Ü[ˆHX[™›ÝšY[™ÈÛ\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\Ø‚ŒH\ØX›YHH[˜X›YˆHÛ›HÝ]\ÝXÜÈÛÛXÝ[Ûˆ\È[˜X›Y
+ÝÚ]Ú[™ÈÈ^XÝ][ÛˆÚ]\˜[[™\XØ\È\È\ØX›Y
+K‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[]]ÛX]X×Ü\˜[[Ü™\XØ\×ÛZ[—Øž]\×Ü\—Ü™\XØKWÓZP‹ˆŠ•™\ÚÛÙˆž]\ÈÈ™XY\ˆ™\XØHÈ[˜X›H\˜[[™\XØ\È]]ÛX]XØ[H
+\Y\ÈÛ›HÚ[ˆ]]ÛX]X×Ü\˜[[Ü™\XØ\×Û[ÙXLJKˆYX[œÈ›È™\ÚÛ‚•HÝ[[X™\ˆÙˆž]\ÈÈ™XY\È\Ý[X]Y˜\ÙYÛˆHÛÛXÝYÝ]\ÝXÜË‚ŠH‹VT’SQS•S
+HˆPÓT‘J›Û–™\›ÕR[X^Ü\˜[[Ü™\XØ\ËLˆŠ•HX^[][H[X™\ˆÙˆ™\XØ\È›ÜˆXXÚÚ\™Ú[ˆ^XÝ][™ÈH]Y\žK‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\‹‚‚ŠŠY][Û˜[[™›ÊŠ‚‚•\ÈÜ[ÛœÈÚ[›ÙXÙHY™™\™[™\Ý[È\[™[™ÈÛˆHÙ][™ÜÈ\ÙY‚‚ˆÈÈÈ\˜[[›ØÙ\ÜÚ[™È\Ú[™ÈÐSTXÙ^B‚H]Y\žHX^H™H›ØÙ\ÜÙY˜\Ý\ˆYˆ]\È^XÝ]YÛˆÙ]™\˜[Ù\™\œÈ[ˆ\˜[[ˆ]H]Y\žH\™›Ü›X[˜ÙHX^HYÜ˜YH[ˆH›ÛÝÚ[™ÈØ\Ù\Î‚‚‹HHÜÚ][ÛˆÙˆHØ[\[™ÈÙ^H[ˆH\][Ûš[™ÈÙ^HÙ\È›Ý[ÝÈY™šXÚY[˜[™ÙHØØ[œË‚‹HY[™ÈHØ[\[™ÈÙ^HÈHX›HXZÙ\Èš[\š[™ÈžHÝ\ˆÛÛ[[œÈ\ÜÈY™šXÚY[‚‹HHØ[\[™ÈÙ^H\È[ˆ^™\ÜÚ[Ûˆ]\È^[œÚ]™HÈØ[Ý[]K‚‹HHÛ\Ý\ˆ][˜ÞH\ÝšX][Ûˆ\ÈHÛ™ÈZ[ÛÈ]]Y\žZ[™È[Ü™HÙ\™\œÈ[˜Ü™X\Ù\ÈH]Y\žHÝ™\˜[][˜ÞK‚‚ˆÈÈÈ\˜[[›ØÙ\ÜÚ[™È\Ú[™ÈÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WJÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^JB‚•\ÈÙ][™È\È\ÙY[›Üˆ[žH™\XØ]YX›K‚ŠH‹
+HˆPÓT‘J\˜[[™\XØ\Ó[ÙK\˜[[Ü™\XØ\×Û[ÙK\˜[[™\XØ\Ó[ÙNŽ”‘PQÕTÒÔËˆŠ•\HÙˆš[\ˆÈ\ÙHÚ]Ý\ÝÛHÙ^H›Üˆ\˜[[™\XØ\ËˆY˜][H\ÙH[Ù[ÈÜ\˜][ÛˆÛˆHÝ\ÝÛHÙ^K˜[™ÙHH\ÙH˜[™ÙHš[\ˆÛˆÝ\ÝÛHÙ^H\Ú[™È[ÜÜÚX›H˜[Y\È›ÜˆH˜[YH\HÙˆÝ\ÝÛHÙ^K‚ŠH‹
+HˆPÓT‘JR[\˜[[Ü™\XØ\×ØÛÝ[ˆŠ•\È\È[\›˜[Ù][™È]ÚÝ[›Ý™H\ÙY\™XÝH[™™\™\Ù[È[ˆ[\[Y[][Ûˆ]Z[ÙˆH	Ü\˜[[™\XØ\ÉÈ[ÙKˆ\ÈÙ][™ÈÚ[™H]]ÛX]XØ[HÙ]\žHH[š]X]ÜˆÙ\™\ˆ›Üˆ\ÝšX]Y]Y\šY\ÈÈH[X™\ˆÙˆ\˜[[™\XØ\È\XÚ\][™È[ˆ]Y\žH›ØÙ\ÜÚ[™Ë‚ŠH‹‘UJHˆPÓT‘JR[\˜[[Ü™\XØWÛÙ™œÙ]ˆŠ•\È\È[\›˜[Ù][™È]ÚÝ[›Ý™H\ÙY\™XÝH[™™\™\Ù[È[ˆ[\[Y[][Ûˆ]Z[ÙˆH	Ü\˜[[™\XØ\ÉÈ[ÙKˆ\ÈÙ][™ÈÚ[™H]]ÛX]XØ[HÙ]\žHH[š]X]ÜˆÙ\™\ˆ›Üˆ\ÝšX]Y]Y\šY\ÈÈH[™^ÙˆH™\XØH\XÚ\][™È[ˆ]Y\žH›ØÙ\ÜÚ[™È[[Û™È\˜[[™\XØ\Ë‚ŠH‹‘UJHˆPÓT‘JÝš[™Ë\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^Kˆ‹ˆŠ[ˆ\˜š]˜\žH[YÙ\ˆ^™\ÜÚ[Ûˆ]Ø[ˆ™H\ÙYÈÜ]ÛÜšÈ™]ÙY[ˆ™\XØ\È›ÜˆHÜXÚYšXÈX›K‚•H˜[YHØ[ˆ™H[žH[YÙ\ˆ^™\ÜÚ[Û‹‚‚”Ú[\H^™\ÜÚ[ÛœÈ\Ú[™Èš[X\žHÙ^\È\™H™Y™\œ™Y‚‚’YˆHÙ][™È\È\ÙYÛˆHÛ\Ý\ˆ]ÛÛœÚ\ÝÈÙˆHÚ[™ÛHÚ\™Ú]][\H™\XØ\ËÜÙH™\XØ\ÈÚ[™HÛÛ™\Y[Èš\X[Ú\™Ë‚“Ý\Ú\ÙK]Ú[™Z]™HØ[YH\È›ÜˆÐSTXÙ^K]Ú[\ÙH][\H™\XØ\ÈÙˆXXÚÚ\™‚ŠH‹‘UJHˆPÓT‘JR[\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÛÝÙ\‹ˆŠ[ÝÜÈHš[\ˆ\H˜[™ÙXÈÜ]HÛÜšÈ]™[›H™]ÙY[ˆ™\XØ\È˜\ÙYÛˆHÝ\ÝÛH˜[™ÙHÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÛÝÙ\‹S•ÓPVX‚‚•Ú[ˆ\ÙY[ˆÛÛš[˜Ý[ÛˆÚ]Ü\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÝ\\—JÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÝ\\ŠK]]ÈHš[\ˆ]™[›HÜ]HÛÜšÈÝ™\ˆ™\XØ\È›ÜˆH˜[™ÙHÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÛÝÙ\‹\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÝ\\—X‚‚“›ÝNˆ\ÈÙ][™ÈÚ[›ÝØ]\ÙH[žHY][Û˜[]HÈ™Hš[\™Y\š[™È]Y\žH›ØÙ\ÜÚ[™Ë˜]\ˆ]Ú[™Ù\ÈHÚ[È]ÚXÚH˜[™ÙHš[\ˆœ™XZÜÈ\H˜[™ÙHÌS•ÓPVX›Üˆ\˜[[›ØÙ\ÜÚ[™Ë‚ŠH‹‘UJHˆPÓT‘JR[\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÝ\\‹ˆŠ[ÝÜÈHš[\ˆ\H˜[™ÙXÈÜ]HÛÜšÈ]™[›H™]ÙY[ˆ™\XØ\È˜\ÙYÛˆHÝ\ÝÛH˜[™ÙHÌ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÝ\\—XˆH˜[YHÙˆ\ØX›\ÈH\\ˆ›Ý[™Ù][™È]HX^˜[YHÙˆHÝ\ÝÛHÙ^H^™\ÜÚ[Û‹‚‚•Ú[ˆ\ÙY[ˆÛÛš[˜Ý[ÛˆÚ]Ü\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÛÝÙ\—JÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÛÝÙ\ŠK]]ÈHš[\ˆ]™[›HÜ]HÛÜšÈÝ™\ˆ™\XØ\È›ÜˆH˜[™ÙHÜ\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÛÝÙ\‹\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÜ˜[™ÙWÝ\\—X‚‚“›ÝNˆ\ÈÙ][™ÈÚ[›ÝØ]\ÙH[žHY][Û˜[]HÈ™Hš[\™Y\š[™È]Y\žH›ØÙ\ÜÚ[™Ë˜]\ˆ]Ú[™Ù\ÈHÚ[È]ÚXÚH˜[™ÙHš[\ˆœ™XZÜÈ\H˜[™ÙHÌS•ÓPVX›Üˆ\˜[[›ØÙ\ÜÚ[™ÂŠH‹‘UJHˆPÓT‘JÝš[™ËÛ\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\Ëˆ‹ˆŠÛ\Ý\ˆ›ÜˆHÚ\™[ˆÚXÚÝ\œ™[Ù\™\ˆ\ÈØØ]Y‚ÛÝYY˜][˜[YNˆY˜][‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ø[Ý×Ú[—ÝÚ]ÜÝXœ]Y\žKYKˆŠ’YˆYKÝXœ]Y\žH›ÜˆSˆÚ[™H^XÝ]YÛˆ]™\žH›ÛÝÙ\ˆ™\XØK‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ù›Ü—Û›Û—Ü™\XØ]YÛY\™ÙWÝ™YK˜[ÙKˆŠ’YˆYKÛXÚÒÝ\ÙHÚ[\ÙH\˜[[™\XØ\È[ÛÜš]H[ÛÈ›Üˆ›Û‹\™\XØ]YY\™ÙU™YHX›\ÂŠH‹
+HˆPÓT‘JR[\˜[[Ü™\XØ\×ÛZ[—Û[X™\—ÛÙ—Ü›ÝÜ×Ü\—Ü™\XØKˆŠ“[Z]H[X™\ˆÙˆ™\XØ\È\ÙY[ˆH]Y\žHÈ
+\Ý[X]Y›ÝÜÈÈ™XYÈZ[—Û[X™\—ÛÙ—Ü›ÝÜ×Ü\—Ü™\XØJKˆHX^\ÈÝ[[Z]YžH	ÛX^Ü\˜[[Ü™\XØ\ÉÂŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ü™Y™\—ÛØØ[Ú›Ú[‹YKˆŠ’YˆYK[™“ÒSˆØ[ˆ™H^XÝ]YÚ]\˜[[™\XØ\È[ÛÜš]K[™[ÝÜ˜YÙ\ÈÙˆšYÚ“ÒSˆ\\™H
+“Y\™ÙU™YKØØ[“ÒSˆÚ[™H\ÙY[œÝXYÙˆÓÐS“ÒS‹‚ŠH‹
+HˆPÓT‘JR[\˜[[Ü™\XØ\×ÛX\š×ÜÙYÛY[ÜÚ^™KˆŠ”\Èš\X[H]šYY[ÈÙYÛY[ÈÈ™H\ÝšX]Y™]ÙY[ˆ™\XØ\È›Üˆ\˜[[™XY[™Ëˆ\ÈÙ][™ÈÛÛ›ÛÈHÚ^™HÙˆ\ÙHÙYÛY[Ëˆ›Ý™XÛÛ[Y[™YÈÚ[™ÙH[[[ÝIÜ™HXœÛÛ][HÝ\™H[ˆÚ][ÝIÜ™HÚ[™Ëˆ˜[YHÚÝ[™H[ˆ˜[™ÙHÌLŽÈMŒÎBŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×ÛØØ[Ü[‹YKˆŠZ[ØØ[[ˆ›ÜˆØØ[™\XØBŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ü[—Ø˜\ÙY˜[ÙKˆŠ‘^™\ÜÈH\˜[[™\XØ\ÈØØ[Ü™[[ÝH›Ý[™\žH\ÈH[ˆ˜[œÙ›Ü›X][Û‹ˆH[›™\ˆZ[ÈHZ[ˆØØ[[ŽÈHÜ]Ý\\È[ˆ[œÙ\YX›Ý™HH™XY[™ÈÝ\[™™\XÙYÚ]HS’SÓ˜ÙˆHØØ[™XY[™H™[[ÝH™XYÙˆH\ÙˆH[ˆ™[ÝÈHÜ]Ý\ÛÈ]œ˜YÛY[[œÈÛˆH™\XØ\ÈÚ[HH™\Ý[œÈÛˆHÛÛÜ™[˜]Ü‹ˆ^\š[Y[[ZÙ\È™XÙY[˜ÙHÝ™\ˆ\˜[[Ü™\XØ\×ÛØØ[Ü[˜‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ü™Y™\—ÛØØ[Ü™\XØKYKˆŠ•Ú[ˆ[˜X›Y
+Y˜][
+KHØØ[™\XØH\È[Ø^\È[˜ÛYY[ˆHÙ]Ùˆ™\XØ\È\ÙY›Üˆ\˜[[™XY[™Ë‚•Ú[ˆ\ØX›YHØØ[™\XØH\È›ÝÚ]™[ˆ[žH™Y™\™[˜ÙH[™™\XØ\È\™HÙ[XÝY\™[HžHHØY˜[[˜Ú[™È[ÛÜš]K‚•\È[ÝÜÈ]Y\šY\ÈÚ]X^Ü\˜[[Ü™\XØ\ÈHXÈ™H\™XÝYÈ[›Ý\ˆÜÝÚXÚØ[ˆ[\›Ý™HØXÚHØØ[]HÚ[ˆX[žHÚÜ]Y\šY\È\™H\ÝšX]YXÜ›ÜÜÈHÛ\Ý\‹‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ú[™^Ø[˜[\Ú\×ÛÛ›WÛÛ—ØÛÛÜ™[˜]Ü‹YKˆŠ’[™^[˜[\Ú\ÈÛ™HÛ›HÛˆ™\XØKXÛÛÜ™[˜]Üˆ[™ÚÚ\YÛˆÝ\ˆ™\XØ\ËˆY™™XÝ]™HÛ›HÚ][˜X›Y\˜[[Ü™\XØ\×ÛØØ[Ü[‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×ÜÝ\ÜÜ›Ú™XÝ[Û‹YKˆŠ“Ü[Z^˜][ÛˆÙˆ›Ú™XÝ[ÛœÈØ[ˆ™H\YY[ˆ\˜[[™\XØ\ËˆY™™XÝ]™HÛ›HÚ][˜X›Y\˜[[Ü™\XØ\×ÛØØ[Ü[ˆ[™YÙÜ™YØ][Û—Ú[—ÛÜ™\ˆ\È[˜XÝ]™K‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×ÛÛ›WÝÚ]Ø[˜[^™\‹YKˆŠ•H[˜[^™\ˆÚÝ[™H[˜X›YÈ\ÙH\˜[[™\XØ\ËˆÚ]\ØX›Y[˜[^™\ˆ]Y\žH^XÝ][Ûˆ˜[˜XÚÜÈÈØØ[^XÝ][Û‹]™[ˆYˆ\˜[[™XY[™Èœ›ÛH™\XØ\È\È[˜X›Yˆ\Ú[™È\˜[[™\XØ\ÈÚ]Ý]H[˜[^™\ˆ[˜X›Y\È›ÝÝ\ÜYŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ú[œÙ\ÜÙ[XÝÛØØ[Ü\[[™KYKˆŠ•\ÙHØØ[\[[™H\š[™È\ÝšX]YS”ÑT•ÑSPÕÚ]\˜[[™\XØ\ÂŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™Ë\˜[[Ü™\XØ\×ØÛÛ›™XÝÝ[Y[Ý]Û\ËÌˆŠ•H[Y[Ý][ˆZ[\ÙXÛÛ™È›ÜˆÛÛ›™XÝ[™ÈÈH™[[ÝH™\XØH\š[™È]Y\žH^XÝ][ÛˆÚ]\˜[[™\XØ\ËˆYˆH[Y[Ý]\È^\™YHÛÜœ™\ÜÛ™[™È™\XØ\È\È›Ý\ÙY›Üˆ]Y\žH^XÝ][Û‚ŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ù›Ü—ØÛ\Ý\—Ù[™Ú[™\ËYKˆŠ”™\XÙHX›H[˜Ý[Ûˆ[™Ú[™\ÈÚ]Z\ˆPÛ\Ý\ˆ[\›˜]]™\ÂŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ø[Ý×ÛX]\šX[^™YÝšY]ÜËYKˆŠ[ÝÈ\ØYÙHÙˆX]\šX[^™YšY]ÜÈÚ]\˜[[™\XØ\ÂŠH‹
+HˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ùš[\—Ü\ÚÝÛ‹˜[ÙKˆŠ[ÝÈ\Ú[™ÈÝÛˆš[\œÈÈ\Ùˆ]Y\žHÚXÚ\˜[[™\XØ\ÈÚÛÜÙHÈ^XÝ]BŠH‹‘UJHˆPÓT‘J›ÛÛ\˜[[Ü™\XØ\×Ø[Ý×ÝšY]×ÛÝ™\—ÛY\™Ù]™YK˜[ÙKˆŠ[ÝÈ\˜[[™\XØ\ÈÈ^XÝ]HHÝ]\ˆ]Y\žHÙˆHÚ[\HšY]ÈÝ™\ˆY\™ÙU™YXX›\È
+[œÝXYÙˆHšY]ÉÜÈ[›™\ˆ]Y\žJK[\›Ýš[™È\˜[[^˜][ÛˆXÜ›ÜÜÈ›Ù\Ëˆ[ÛÈ\Y\ÈÈS’SÓˆSšY]ÜÈÚÜÙHœ˜[˜Ú\È[™XYœ›ÛHY™™\™[Y\™ÙU™YXX›\Ë‚ŠH‹‘UJHˆPÓT‘J›ÛÛ\ÝšX]YÚ[™^Ø[˜[\Ú\Ë˜[ÙKˆŠ’[™^[˜[\Ú\ÈÚ[™H\ÝšX]YXÜ›ÜÜÈ™\XØ\Ë‚™[™YšXÚX[›ÜˆÚ\™YÝÜ˜YÙH[™YÙH[[Ý[Ùˆ]H[ˆÛ\Ý\‹‚•\Ù\È™\XØ\Èœ›ÛHÛ\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\Ë‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÙ\ÝšX]YÚ[™^Ø[˜[\Ú\×Ù›Ü—Û›Û—ÜÚ\™YÛY\™ÙWÝ™YWJÙ\ÝšX]YÚ[™^Ø[˜[\Ú\×Ù›Ü—Û›Û—ÜÚ\™YÛY\™ÙWÝ™YJB‹HÙ\ÝšX]YÚ[™^Ø[˜[\Ú\×ÛZ[—Ü\×Ý×ØXÝ]˜]WJY\™ÙK]™YK\Ù][™ÜË›YÈÙ\ÝšX]YÚ[™^Ø[˜[\Ú\×ÛZ[—Ü\×Ý×ØXÝ]˜]JB‹HÙ\ÝšX]YÚ[™^Ø[˜[\Ú\×ÛZ[—Ú[™^\×Øž]\×Ý×ØXÝ]˜]WJY\™ÙK]™YK\Ù][™ÜË›YÈÙ\ÝšX]YÚ[™^Ø[˜[\Ú\×ÛZ[—Ú[™^\×Øž]\×Ý×ØXÝ]˜]JBŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\ÝšX]YÚ[™^Ø[˜[\Ú\×ÛÛ›WÛÛ—ØÛÛÜ™[˜]Ü‹˜[ÙKˆŠ’Yˆ[˜X›Y\ÝšX]Y[™^[˜[\Ú\È[œÈÛ›HÛˆHÛÛÜ™[˜]Ü‹‚•\È™]™[ÈÊ—ŒŠHÜ]Û™Y]Y\šY\ÈÚ[ˆH™YXØ]HÛÛZ[œÈÝXœ]Y\šY\È
+K™Ë‹Sˆ
+ÑSPÕ‹‹ŠX
+K˜™XØ]\ÙHXXÚ›ÛÝÙ\ˆ™\XØHÛÝ[Ý\Ú\ÙH[™\[™[HšYÙÙ\ˆ]ÈÝÛˆ\ÝšX]Y[™^[˜[\Ú\Ë˜]XZÙ\È\ÝšX]Y[™^[˜[\Ú\È\ÜÈY™šXÚY[Yˆ\™ÙHX›\È\™H\ÙY[ˆHÝXœ]Y\šY\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÝšX]YÚ[™^Ø[˜[\Ú\×Ù›Ü—Û›Û—ÜÚ\™YÛY\™ÙWÝ™YK˜[ÙKˆŠ‘[˜X›H\ÝšX]Y[™^[˜[\Ú\È]™[ˆ›Üˆ›ÛˆÚ\™YY\™ÙU™YH
+ÛÝYÛ›H[™Ú[™JK‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÚXÙX™\™Ë˜[ÙKˆŠ[ÝÈ^\š[Y[[]X˜\ÙH[™Ú[™H]SZÙPØ][ÙÈÚ]Ø][Ù×Ý\HH	ÚXÙX™\™ÉÂ‚ÛÝYY˜][˜[YNˆX‚ŠH‹‘UK[Ý×Ù]X˜\ÙWÚXÙX™\™ÊHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÝ[š]WØØ][ÙË˜[ÙKˆŠ[ÝÈ^\š[Y[[]X˜\ÙH[™Ú[™H]SZÙPØ][ÙÈÚ]Ø][Ù×Ý\HH	Ý[š]IÂ‚ÛÝYY˜][˜[YNˆX‚ŠH‹‘UK[Ý×Ù]X˜\ÙWÝ[š]WØØ][ÙÊHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÙÛYWØØ][ÙË˜[ÙKˆŠ[ÝÈ^\š[Y[[]X˜\ÙH[™Ú[™H]SZÙPØ][ÙÈÚ]Ø][Ù×Ý\HH	ÙÛYIÂ‚ÛÝYY˜][˜[YNˆX‚ŠH‹‘UK[Ý×Ù]X˜\ÙWÙÛYWØØ][ÙÊHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Ø[˜[^™\‹YKˆŠ[ÝÈH[˜[^™\‹‚ŠH‹STÔ•S•[˜X›WØ[˜[^™\ŠHˆPÓT‘J›ÛÛ[˜[^™\—ØÛÛ\]Xš[]WÚ›Ú[—Ý\Ú[™×ÝÜÛ]™[ÚY[YšY\‹˜[ÙKˆŠ‘›Ü˜ÙHÈ™\ÛÛ™HY[YšY\ˆ[ˆ“ÒSˆTÒS‘Èœ›ÛH›Ú™XÝ[Ûˆ
+›Üˆ^[\K[ˆÑSPÕH
+ÈHTÈˆ”“ÓHH“ÒSˆˆTÒS‘È
+ŠX›Ú[ˆÚ[™H\™›Ü›YYžHK˜H
+ÈHH‹˜˜˜]\ˆ[ˆK˜ˆH‹˜˜
+K‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜[^™\—ØÛÛ\]Xš[]WØ[Ý×ØÛÛ\Ý[™ÚY[YšY\œ×Ú[—Ý[™›][—Û™\ÝYYKˆŠ[ÝÈÈYÛÛ\Ý[™Y[YšY\œÈÈ™\ÝYˆ\È\ÈHÛÛ\]Xš[]HÙ][™È™XØ]\ÙH]Ú[™Ù\ÈH]Y\žH™\Ý[ˆÚ[ˆ\ØX›YÑSPÕK˜‹˜È”“ÓHX›HT”VH“ÒSˆXÙ\È›ÝÛÜšË[™ÑSPÕH”“ÓHX›XÙ\È›Ý[˜ÛYHK˜‹˜ØÛÛ[[ˆ[È™\ÝYX™\Ý[‚ˆ
+H‹
+HˆPÓT‘J›ÛÛ[˜[^™\—ØÛÛ\]Xš[]WØ[Ý×Û›Û—ØYÙÜ™YØ]WÚ[—Ú]š[™Ë˜[ÙKˆŠ•Ú[ˆ[˜X›YH[˜[^™\ˆZ[ZXÜÈHYØXÞH™Z]š[ÜˆÙˆ[Ýš[™È›Û‹XYÙÜ™YØ]HS‘XÛÛš[˜ÝÈœ›ÛHU’S‘ØÈÒT‘X[œÝXYÙˆ˜Z\Ú[™È“ÕÐS—ÐQÑÔ‘QÐUXˆHÝ[™\™XÛÛ\X[™Z™XÝ[Ûˆ\ÈHY˜][È\È\ÈHZYÜ˜][ÛˆZY›Üˆ]Y\šY\È]Ù\™HÚ[[HXØÙ\YžHHÛ[˜[^™\ˆ
+[˜X›WØ[˜[^™\ˆH
+KˆÛÛš[˜ÝÈÛÛZ[š[™ÈYÙÜ™YØ]KÜ›Ý\[™ØÜˆ›Û‹Y]\›Z[š\ÝXÈ[˜Ý[ÛœÈÝ^H[ˆU’S‘ØˆYˆ[žHÛÛš[˜ÝÛÛZ[œÈHÚ[™ÝÈ[˜Ý[ÛˆÜˆHÝ]Y[[˜Ý[Ûˆ
+›Üˆ^[\H›ÝÓ[X™\’[›ØÚØ
+KH™]Üš]H\È\ØX›Y›ÜˆHÚÛHU’S‘ØX]Ú[™ÈHYØXÞH™YXØ]Q^™\ÜÚ[ÛœÓÜ[Z^™\˜™Z]š[Ü‹ˆHÙ][™È\È[ÛÈYÛ›Ü™YÚ[ˆÔ“ÕT–X\Ù\ÈÒUÕP‘XÒU“ÓTÒUÕSØÜˆÔ“ÕTS‘ÈÑUØ‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜[^™\—ØÛÛ\]Xš[]WÜ™Y™\—Ø[X\×ÛÝ™\—ÜÝX˜ÛÛ[[‹˜[ÙKˆŠ•Ú[ˆH][K\\Y[YšY\ˆZÙH‹šYÛÝ[™Y™\ˆÈZ]\ˆHÛÛ[[ˆYÙˆHX›H[X\ÙY˜ÜˆÈH\HÝX˜ÛÛ[[ˆ‹šYÙˆÛÛYHÝ\ˆÛÛ[[‹™Y™\ˆH[X\Ë\™Yš^[\œ™]][Ûˆ
+ÛÛ[[ˆYÙˆ˜
+KˆžHY˜][H[˜[^™\ˆ™Y™\œÈHÝX˜ÛÛ[[‹ˆ[˜X›HÈX]ÚHÛ[˜[^™\‰ÜÈ™\ÛÛ][Û‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÚY[YšY\—Ü™\ÛÛ™WØØXÚKYKˆŠ‘[˜X›HHY[YšY\ˆ™\ÛÛ][ÛˆØXÚH[ˆH]Y\žH[˜[^™\‹ˆHØXÚHÚ\™\È™\ÛÛ™Y[X\È›Ù\ÈÈ™]™[TÕ^ÜÚ[ÛˆÚ[ˆHØ[YH[X\È\È™Y™\™[˜ÙY][\H[Y\ËˆÙ]È˜[ÙHÈ\ØX›HØXÚ[™ÈYˆ[˜ÛÜœ™XÝ™\Ý[È\™HÝ\ÜXÝY‚ŠH‹
+HˆˆPÓT‘J[Y^›Û™KÙ\ÜÚ[Û—Ý[Y^›Û™Kˆ‹ˆŠ”Ù]ÈH[\XÚ][YH›Û™HÙˆHÝ\œ™[Ù\ÜÚ[ÛˆÜˆ]Y\žK‚•H[\XÚ][YH›Û™H\ÈH[YH›Û™H\YYÈ˜[Y\ÈÙˆ\H]U[YKÑ]U[YMÚXÚ]™H›È^XÚ]HÜXÚYšYY[YH›Û™K‚•HÙ][™ÈZÙ\È™XÙY[˜ÙHÝ™\ˆHÛØ˜[HÛÛ™šYÝ\™Y
+Ù\™\‹[]™[
+H[\XÚ][YH›Û™K‚H˜[YHÙˆ	ÉÈ
+[\HÝš[™ÊHYX[œÈ]H[\XÚ][YH›Û™HÙˆHÝ\œ™[Ù\ÜÚ[ÛˆÜˆ]Y\žH\È\]X[ÈHÜÙ\™\ˆ[YH›Û™WJ‹‹ÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜË›YÈÝ[Y^›Û™JK‚‚–[ÝHØ[ˆ\ÙH[˜Ý[ÛœÈ[YV›Û™J
+X[™Ù\™\•[YV›Û™J
+XÈÙ]HÙ\ÜÚ[Ûˆ[YH›Û™H[™Ù\™\ˆ[YH›Û™K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹H[žH[YH›Û™H˜[YHœ›ÛHÞ\Ý[K[YWÞ›Û™\ØK™Ëˆ]\›ÜKÐ™\›[˜UØÜˆ[X‚‘^[\\Î‚‚˜Ü[”ÑSPÕ[YV›Û™J
+KÙ\™\•[YV›Û™J
+H“Ô“PUÔÕ‚‚ˆ‘]\›ÜKÐ™\›[ˆ‹‘]\›ÜKÐ™\›[ˆ‚˜‚˜Ü[”ÑSPÕ[YV›Û™J
+KÙ\™\•[YV›Û™J
+HÑUS‘ÔÈÙ\ÜÚ[Û—Ý[Y^›Û™HH	Ð\ÚXKÓ›Ý›ÜÚXš\œÚÉÈ“Ô“PUÔÕ‚‚ˆ\ÚXKÓ›Ý›ÜÚXš\œÚÈ‹‘]\›ÜKÐ™\›[ˆ‚˜‚\ÜÚYÛˆÙ\ÜÚ[Ûˆ[YH›Û™H	Ð[Y\šXØKÑ[™\‰ÈÈH[›™\ˆ]U[YHÚ]Ý]^XÚ]HÜXÚYšYY[YH›Û™N‚‚˜Ü[”ÑSPÕÑ]U[YM
+Ñ]U[YM
+	ÌNNNKLL‹LLˆŒÎŒŒÎŒŒËŒLŒÉËÊKË	Ñ]\›ÜKÖ\šXÚ	ÊHÑUS‘ÔÈÙ\ÜÚ[Û—Ý[Y^›Û™HH	Ð[Y\šXØKÑ[™\‰È“Ô“PUÕ‚‚ŒNNNKLL‹LLÈÎŒŒÎŒŒËŒLŒÂ˜‚ŽŽŽØ\›š[™Â“›Ý[[˜Ý[ÛœÈ]\œÙH]U[YKÑ]U[YM™\ÜXÝÙ\ÜÚ[Û—Ý[Y^›Û™Xˆ\ÈØ[ˆXYÈÝXH\œ›ÜœË‚”ÙYHH›ÛÝÚ[™È^[\H[™^[˜][Û‹‚ŽŽŽ‚‚˜Ü[Ô‘PUHP“H\ÝÝˆ
+]U[YJ	ÕUÉÊJHS‘ÒS‘HHY[[ÜžHTÈÑSPÕÑ]U[YJ	ÌŒLKLHŒŒ	Ë	ÕUÉÊNÂ‚”ÑSPÕ
+‹[YV›Û™J
+H”“ÓH\ÝÝˆÒT‘HHÑ]U[YJ	ÌŒLKLHŒŒ	ÊHÑUS‘ÔÈÙ\ÜÚ[Û—Ý[Y^›Û™HH	Ð\ÚXKÓ›Ý›ÜÚXš\œÚÉÂŒ›ÝÜÈ[ˆÙ]‚‚”ÑSPÕ
+‹[YV›Û™J
+H”“ÓH\ÝÝˆÒT‘HH	ÌŒLKLHŒŒ	ÈÑUS‘ÔÈÙ\ÜÚ[Û—Ý[Y^›Û™HH	Ð\ÚXKÓ›Ý›ÜÚXš\œÚÉÂ¸¥#8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥+8¥ [YV›Û™J
+x¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥$¸¥ ˆŒLKLHŒŒ8¥ ˆ\ÚXKÓ›Ý›ÜÚXš\œÚÈ8¥ ‚¸¥%8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥-8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥&˜‚•\È\[œÈYHÈY™™\™[\œÚ[™È\[[™\Î‚‚‹HÑ]U[YJ
+XÚ]Ý]^XÚ]HÚ]™[ˆ[YH›Û™H\ÙY[ˆHš\œÝÑSPÕ]Y\žHÛ›ÜœÈÙ][™ÈÙ\ÜÚ[Û—Ý[Y^›Û™X[™HÛØ˜[[YH›Û™K‚‹H[ˆHÙXÛÛ™]Y\žKH]U[YH\È\œÙYœ›ÛHHÝš[™Ë[™[š\š]ÈH\H[™[YH›Û™HÙˆH^\Ý[™ÈÛÛ[[˜ˆ\ËÙ][™ÈÙ\ÜÚ[Û—Ý[Y^›Û™X[™HÛØ˜[[YH›Û™H\™H›ÝÛ›Ü™Y‚‚ŠŠ”ÙYH[ÛÊŠ‚‚‹HÝ[Y^›Û™WJ‹‹ÜÙ\™\‹XÛÛ™šYÝ\˜][Û‹\\˜[Y]\œËÜÙ][™ÜË›YÈÝ[Y^›Û™JBŠH‹‘UJH‘PÓT‘J›ÛÛÜ™X]WÚY—Û›ÝÙ^\ÝË˜[ÙKˆŠ‘[˜X›HQˆ“ÕVTÕØ›ÜˆÔ‘PUXÝ][Y[žHY˜][ˆYˆZ]\ˆ\ÈÙ][™ÈÜˆQˆ“ÕVTÕØ\ÈÜXÚYšYY[™HX›HÚ]H›ÝšYY˜[YH[™XYH^\ÝË›È^Ù\[ÛˆÚ[™H›ÝÛ‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[™›Ü˜ÙWÜÝšXÝÚY[YšY\—Ù›Ü›X]˜[ÙKˆŠ’Yˆ[˜X›YÛ›H[ÝÈY[YšY\œÈÛÛZ[š[™È[[[Y\šXÈÚ\˜XÝ\œÈ[™[™\œØÛÜ™\Ë‚ŠH‹
+HˆPÓT‘JR[X^Û[Z]Ù›Ü—Ý™XÝÜ—ÜÙX\˜ÚÜ]Y\šY\ËIÌˆŠ”ÑSPÕ]Y\šY\ÈÚ]SRUšYÙÙ\ˆ[ˆ\ÈÙ][™ÈØ[››Ý\ÙH™XÝÜˆÚ[Z[\š]H[™XÙ\Ëˆ[ÈÈ™]™[Y[[ÜžHÝ™\™›ÝÜÈ[ˆ™XÝÜˆÚ[Z[\š]H[™XÙ\Ë‚ŠH‹
+HˆPÓT‘JR[œÝ×ØØ[™Y]WÛ\ÝÜÚ^™WÙ›Ü—ÜÙX\˜ÚM‹ˆŠ•HÚ^™HÙˆH[˜[ZXÈØ[™Y]H\ÝÚ[ˆÙX\˜Ú[™ÈH™XÝÜˆÚ[Z[\š]H[™^[ÛÈÛ›ÝÛˆ\È	ÙY—ÜÙX\˜Ú	Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ™XÝÜ—ÜÙX\˜ÚÝÚ]Ü™\ØÛÜš[™Ë˜[ÙKˆŠ’YˆÛXÚÒÝ\ÙH\™›Ü›\È™\ØÛÜš[™È›Üˆ]Y\šY\È]\ÙHH™XÝÜˆÚ[Z[\š]H[™^‚•Ú]Ý]™\ØÛÜš[™ËH™XÝÜˆÚ[Z[\š]H[™^™]\›œÈH›ÝÜÈÛÛZ[š[™ÈH™\ÝX]Ú\È\™XÝK‚•Ú]™\ØÛÜš[™ËH™XÝÜˆÚ[Z[\š]H[™^™]Ú\ÈØ[™Y]H›ÝÜÈ[™ÛXÚÒÝ\ÙHÛÛ\]\ÈH^XÝ\Ý[˜ÙB™›Üˆ\ÙH›ÝÜÈœ›ÛHHÜšYÚ[˜[[\™XÚ\Ú[Ûˆ™XÝÜœÈ[ˆH™YÝ[\ˆÔS\[[™K‚•Ú[ˆÜÜÚX›KÛXÚÒÝ\ÙHš[\œÈHØØ[ˆÈØ[™Y]H›ÝÜÈ™Y›Ü™HHš[˜[\Ý[˜ÙHÛÛ\]][Û‹‚’[˜Ü™X\ÙH™XÝÜ—ÜÙX\˜ÚÚ[™^Ù™]ÚÛ][\Y\˜Yˆ[Ü™HØ[™Y]H›ÝÜÈ\™H™YYY›Üˆ™]\ˆ™XØ[\ÜXÚX[BÚ]Y][Û˜[š[\œÈÜˆ]X[^™Y™XÝÜˆ[™^\Ë‚“›ÝNˆH]Y\žH[ˆÚ]Ý]™\ØÛÜš[™È[™Ú]\˜[[™\XØ\È[˜X›YX^H˜[˜XÚÈÈ™\ØÛÜš[™Ë‚ŠH‹
+HˆPÓT‘J™XÝÜ”ÙX\˜Úš[\”Ý˜]YÞK™XÝÜ—ÜÙX\˜ÚÙš[\—ÜÝ˜]YÞK™XÝÜ”ÙX\˜Úš[\”Ý˜]YÞNŽUUËˆŠ’YˆH™XÝÜˆÙX\˜Ú]Y\žH\ÈHÒT‘HÛ]\ÙK\ÈÙ][™È]\›Z[™\ÈYˆ]\È]˜[X]Yš\œÝ
+™KYš[\š[™ÊHÔˆYˆH™XÝÜˆÚ[Z[\š]H[™^\ÈÚXÚÙYš\œÝ
+ÜÝYš[\š[™ÊKˆÜÜÚX›H˜[Y\Î‚‹H	Ø]]ÉÈHÜÝš[\š[™È
+H^XÝÙ[X[XÜÈX^HÚ[™ÙH[ˆ]\™JK‚‹H	ÜÜÝš[\‰ÈH\ÙH™XÝÜˆÚ[Z[\š]H[™^ÈY[YžHH™X\™\Ý™ZYÚ›Ý\œË[ˆ\HÝ\ˆš[\œÂ‹H	Ü™Yš[\‰ÈH]˜[X]HÝ\ˆš[\œÈš\œÝ[ˆ\™›Ü›Hœ]KY›Ü˜ÙHÙX\˜ÚÈY[YžH™ZYÚ›Ý\œË‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›Ø]™XÝÜ—ÜÙX\˜ÚÚ[™^Ù™]ÚÛ][\Y\‹KŒˆŠ“][\HH[X™\ˆÙˆ™]ÚY™X\™\Ý™ZYÚ›ÜœÈœ›ÛHH™XÝÜˆÚ[Z[\š]H[™^žH\È[X™\‹ˆÛ›H\YY›ÜˆÜÝYš[\š[™ÈÚ]Ý\ˆ™YXØ]\ÈÜˆYˆÙ][™È	Ý™XÝÜ—ÜÙX\˜ÚÝÚ]Ü™\ØÛÜš[™ÈHIËˆ˜[Y˜[™ÙNˆÌKŒLŒKˆ˜[Y\ÈÝ]ÚYH\È˜[™ÙH\™H™Z™XÝY‚ŠH‹™XÝÜ—ÜÙX\˜ÚÜÜÝš[\—Û][\Y\ŠHˆPÓT‘J›ÛÛ™XÝÜ—ÜÙX\˜ÚÝ\ÙWÜ]X[^™YØÛÙ\Ë˜[ÙKˆŠ‘[˜X›\ÈHÛË\ÝYÙH\›Þ[X]H™XÝÜˆÙX\˜ÚÚ]Ý][™^
+œ]H›Ü˜ÙHØØ[ŠHÝ™\ˆH]X[^™YXÛÛ\™\ÜÙYÛÛ[[‹ˆÚ[ˆ[˜X›YÔ‘Tˆ–H‘\Ý[˜Ù_ÛÜÚ[™Q\Ý[˜ÙJ™XË™Y™\™[˜ÙJHSRUØYØZ[œÝHÛÛ[[ˆ[˜ÛÙYÚ]H]X[^™Y
+‹‹ŠXÛÙXÈÚ[ŒKˆØØ[ˆ[™š[\ˆH]X[^™Y™XÝÜœÈ
+\ÈÝ\›ÙXÙ\ÈÈ
+ˆ™XÝÜ—ÜÙX\˜ÚÚ[™^Ù™]ÚÛ][\Y\˜™\Ý[ÊK[™Œ‹ˆ™\ØÛÜ™HH›Ý[™™XÝÜœÈYØZ[œÝÜšYÚ[˜[[\™XÚ\Ú[Ûˆ™XÝÜœË‚ŠH‹
+HˆPÓT‘J›ÛÛ[Û™ÛÙ—Ý›Ý×ÛÛ—Ý[œÝ\ÜYÜ]Y\žKYKˆŠ’Yˆ[˜X›Y[Û™ÛÑˆX›\ÈÚ[™]\›ˆ[ˆ\œ›ÜˆÚ[ˆH[Û™ÛÑˆ]Y\žHØ[››Ý™HZ[ˆÝ\Ú\ÙKÛXÚÒÝ\ÙH™XYÈH[X›H[™›ØÙ\ÜÙ\È]ØØ[Kˆ\ÈÜ[ÛˆÙ\È›Ý\HÚ[ˆ	Ø[Ý×Ù^\š[Y[[Ø[˜[^™\L	Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[\XÚ]ÜÙ[XÝ˜[ÙKˆŠ[ÝÈÜš][™ÈÚ[\HÑSPÕ]Y\šY\ÈÚ]Ý]HXY[™ÈÑSPÕÙ^]ÛÜ™ÚXÚXZÙ\È]Ú[\H›ÜˆØ[Ý[]Ü‹\Ý[H\ØYÙKK™ËˆH
+È˜™XÛÛY\ÈH˜[Y]Y\žK‚‚’[ˆÛXÚÚÝ\ÙK[ØØ[]\È[˜X›YžHY˜][[™Ø[ˆ™H^XÚ]H\ØX›Y‚ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÙ^˜XÝØÛÛ[[Û—Ù^™\ÜÚ[ÛœËYKˆŠ[ÝÈ^˜XÝ[™ÈÛÛ[[Ûˆ^™\ÜÚ[ÛœÈœ›ÛH\Ú[˜Ý[ÛœÈ[ˆÒT‘K‘UÒT‘KÓ‹U’S‘È[™UPSQ–H^™\ÜÚ[ÛœËˆHÙÚXØ[^™\ÜÚ[ÛˆZÙH
+HS‘ŠHÔˆ
+HS‘ÊXØ[ˆ™H™]Üš][ˆÈHS‘
+ˆÔˆÊXÚXÚZYÚ[È][^™N‚‹H[™XÙ\È[ˆÚ[\Hš[\š[™È^™\ÜÚ[ÛœÂ‹HÜ›ÜÜÈÈ[›™\ˆ›Ú[ˆÜ[Z^˜][Û‚ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WØ[™ØÛÛ\\™WØÚZ[‹YKˆŠ”Ü[]HÛÛœÝ[ÛÛ\\š\ÛÛˆ[ˆS‘ÚZ[œÈÈ[š[˜ÙHš[\š[™ÈXš[]KˆÝ\ÜÜ\˜]ÜœÈX˜XX[™Z^Ùˆ[Kˆ›Üˆ^[\K
+HŠHS‘
+ˆÊHS‘
+ÈJXÛÝ[™H
+HŠHS‘
+ˆÊHS‘
+ÈJHS‘
+ˆJHS‘
+HJX‚ŠH‹
+HˆPÓT‘J›ÛÛÜ[Z^™WÜ™Y[™[ØÛÛ\\š\ÛÛœËYKˆŠ‘]XÝÛÛ™›XÝ[™È[™™Y[™[ÛÛ\\š\ÛÛˆÛÛ™][ÛœÈÛˆHØ[YH^™\ÜÚ[ÛˆÚ][ˆS‘ÚZ[œËˆ›Üˆ^[\KHHS‘HˆXÛÝ[™H™]Üš][ˆÈ˜[ÙX‚ŠH‹
+HˆPÓT‘JR[Ü[Z^™WØ[™ØÛÛ\\™WØÚZ[—ÛX^Ú\ÚÝÛÜšËIÌ	ÌˆŠ•ÛÜšÈYÙ]›ÜˆHÜ[Z^™WØ[™ØÛÛ\\™WØÚZ[˜Ü[Z^˜][Ûˆ\š[™È]Y\žH[˜[\Ú\ËYX\Ý\™Y[ˆH[X™\ˆÙˆ]Y\žK]™YH›Ù\È\ÚYžHÙ]™YR\Ú
+HÛZ[˜[ÛÜÝÙˆ\ÈÜ[Z^˜][ÛŠKˆÛ˜ÙHH]Y\žH\È\ÚY[Ü™H[ˆ\ÈX[žH›Ù\ÈÚ[H\Z[™ÈHÜ[Z^˜][Û‹]ÝÜÈ\Z[™È]›ÜˆH™\ÝÙˆH]Y\žKˆ\È›Ý[™È[˜[\Ú\È[YH›Üˆ]Y\šY\ÈÚ]™\žHX[žHÜˆ™\žH\™ÙHS‘XÚZ[œÈÙˆÛÛ\\š\ÛÛœËÚ\™HHÜ[Z^˜][ÛˆØ[ˆÝ\Ú\ÙHÛZ[˜]H[˜[\Ú\ÈÚ[H›Û[™È›Ý[™ËˆÝÜ[™ÈX\›H\È[Ø^\ÈØY™Nˆ]Û›H›Ü™ÛÙ\È[ˆÜ[Z^˜][Ûˆ[™™]™\ˆÚ[™Ù\È™\Ý[ËˆÙ]ÈÈ\ØX›HHYÙ]
+[›[Z]Y
+K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÚÙ^\›˜[Ü›Û\×Ú[—Ú[\œÙ\™\—Ü]Y\šY\ËYKˆŠ‘[˜X›H\Ú[™È\Ù\ˆ›Û\Èœ›ÛHÜšYÚ[˜]ÜˆÈÝ\ˆ›Ù\ÈÚ[H\™›Ü›Z[™ÈH]Y\žK‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÚ›Ú[—Ù\Ú[˜Ý[Ûœ×Ü\ÚÙÝÛ‹YKˆŠ‘[˜X›H\Ú[™ÈÔ‹XÛÛ›™XÝY\ÈÙˆ“ÒSˆÛÛ™][ÛœÈÝÛˆÈHÛÜœ™\ÜÛ™[™È[œ]ÚY\È
+œ\X[\ÚÝÛˆŠK‚•\È[ÝÜÈÝÜ˜YÙH[™Ú[™\ÈÈš[\ˆX\›Y\‹ÚXÚØ[ˆ™YXÙH]H™XY‚•HÜ[Z^˜][Ûˆ\ÈÙ[X[XÜË\™\Ù\š[™È[™\È\YYÛ›HÚ[ˆXXÚÜ[]™[Ôˆœ˜[˜ÚÛÛšX]\È]X\ÝÛ™H]\›Z[š\ÝXÂœ™YXØ]H›ÜˆH\™Ù]ÚYK‚ŠH‹
+HˆPÓT‘J›ÛÛÚ\™YÛY\™ÙWÝ™YWÜÞ[˜×Ü\×ÛÛ—Ü\][Û—ÛÜ\˜][ÛœËYKˆŠ]]ÛX]XØ[HÞ[˜Ú›Ûš^™HÙ]Ùˆ]H\ÈY\ˆSÕ‘_‘TPÑ_UPÒ\][ÛˆÜ\˜][ÛœÈ[ˆÓUX›\ËˆÛÝYÛ›BŠH‹
+HˆPÓT‘JÝš[™Ë[\XÚ]ÝX›WØ]ÝÜÛ]™[ˆ‹ˆŠ’Yˆ›Ý[\K]Y\šY\ÈÚ]Ý]”“ÓH]HÜ]™[Ú[™XYœ›ÛH\ÈX›H[œÝXYÙˆÞ\Ý[K›Û™K‚‚•\È\È\ÙY[ˆÛXÚÚÝ\ÙK[ØØ[›Üˆ[œ]]H›ØÙ\ÜÚ[™Ë‚•HÙ][™ÈÛÝ[™HÙ]^XÚ]HžHH\Ù\ˆ]\È›Ý[[™Y›Üˆ\È\HÙˆ\ØYÙK‚‚”ÝXœ]Y\šY\È\™H›ÝY™™XÝYžH\ÈÙ][™È
+™Z]\ˆØØ[\‹”“ÓKÜˆSˆÝXœ]Y\šY\ÊK‚”ÑSPÕÈ]HÜ]™[ÙˆS’SÓ‹S•T”ÑPÕVÑTÚZ[œÈ\™H™X]Y[šY›Ü›[H[™Y™™XÝYžH\ÈÙ][™Ë™YØ\™\ÜÈÙˆZ\ˆÜ›Ý\[™È[ˆ\™[\Ù\Ë‚’]\È[œÜXÚYšYYÝÈ\ÈÙ][™ÈY™™XÝÈšY]ÜÈ[™\ÝšX]Y]Y\šY\Ë‚‚•HÙ][™ÈXØÙ\ÈHX›H˜[YH
+[ˆHX›H\È™\ÛÛ™Yœ›ÛHHÝ\œ™[]X˜\ÙJHÜˆH]X[YšYY˜[YH[ˆH›Ü›HÙˆ	Ù]X˜\ÙKX›IË‚›Ý]X˜\ÙH[™X›H˜[Y\È]™HÈ™H[œ][ÝYHÛ›HÚ[\HY[YšY\œÈ\™H[ÝÙY‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×ÙÙ[™\˜[Ú›Ú[—Ü[›š[™ËYKˆŠ[ÝÜÈH[Ü™HÙ[™\˜[›Ú[ˆ[›š[™È[ÛÜš]H]Ø[ˆ[™H[Ü™HÛÛ\^ÛÛ™][ÛœË]Û›HÛÜšÜÈÚ]\Ú›Ú[‹ˆYˆ\Ú›Ú[ˆ\È›Ý[˜X›Y[ˆH\ÝX[›Ú[ˆ[›š[™È[ÛÜš]H\È\ÙY™YØ\™\ÜÈÙˆH˜[YHÙˆ\ÈÙ][™Ë‚ŠH‹
+HˆPÓT‘JØš™XÝÝÜ˜YÙQÜ˜[[\š]S]™[Û\Ý\—ÝX›WÙ[˜Ý[Û—ÜÜ]ÙÜ˜[[\š]KØš™XÝÝÜ˜YÙQÜ˜[[\š]S]™[Ž‘’SKˆŠÛÛ›ÛÈÝÈ]H\ÈÜ][È\ÚÜÈÚ[ˆ^XÝ][™ÈHÓTÕTˆP“H•SÕSÓ‹‚‚•\ÈÙ][™ÈYš[™\ÈHÜ˜[[\š]HÙˆÛÜšÈ\ÝšX][ÛˆXÜ›ÜÜÈHÛ\Ý\Ž‚‹Hš[X8 %XXÚ\ÚÈ›ØÙ\ÜÙ\È[ˆ[\™Hš[K‚‹HXÚÙ]8 %\ÚÜÈ\™HÜ™X]Y\ˆ[\›˜[]H›ØÚÈÚ][ˆHš[H
+›Üˆ^[\K\œ]Y]›ÝÈÜ›Ý\ÊK‚‚ÚÛÜÚ[™Èš[™\ˆÜ˜[[\š]H
+ZÙHXÚÙ]
+HØ[ˆ[\›Ý™H\˜[[\ÛHÚ[ˆÛÜšÚ[™ÈÚ]HÛX[[X™\ˆÙˆ\™ÙHš[\Ë‚‘›Üˆ[œÝ[˜ÙKYˆH\œ]Y]š[HÛÛZ[œÈ][\H›ÝÈÜ›Ý\Ë[˜X›[™ÈXÚÙ]Ü˜[[\š]H[ÝÜÈXXÚÜ›Ý\È™H›ØÙ\ÜÙY[™\[™[HžHY™™\™[ÛÜšÙ\œË‚ŠH‹
+HˆPÓT‘JR[Û\Ý\—ÝX›WÙ[˜Ý[Û—ØXÚÙ]×Ø˜]ÚÜÚ^™KˆŠ‘Yš[™\ÈH\›Þ[X]HÚ^™HÙˆH˜]Ú
+[ˆž]\ÊH\ÙY[ˆ\ÝšX]Y›ØÙ\ÜÚ[™ÈÙˆ\ÚÜÈ[ˆÛ\Ý\ˆX›H[˜Ý[ÛœÈÚ]XÚÙ]Ü]Ü˜[[\š]KˆHÞ\Ý[HXØÝ[][]\È]H[[]X\Ý\È[[Ý[\È™XXÚYˆHXÝX[Ú^™HX^H™HÛYÚH\™Ù\ˆÈ[YÛˆÚ]]H›Ý[™\šY\Ë‚ŠH‹
+HˆPÓT‘JR[Y\™ÙWÝX›WÛX^ÝX›\×Ý×ÛÛÚ×Ù›Ü—ÜØÚ[XWÚ[™™\™[˜ÙKLˆŠ•Ú[ˆÜ™X][™ÈHY\™ÙXX›HÚ]Ý][ˆ^XÚ]ØÚ[XHÜˆÚ[ˆ\Ú[™ÈHY\™ÙXX›H[˜Ý[Û‹[™™\ˆØÚ[XH\ÈH[š[ÛˆÙˆ›Ý[Ü™H[ˆHÜXÚYšYY[X™\ˆÙˆX]Ú[™ÈX›\Ë‚’Yˆ\™H\ÈH\™Ù\ˆ[X™\ˆÙˆX›\ËHØÚ[XHÚ[™H[™™\œ™Yœ›ÛHHš\œÝÜXÚYšYY[X™\ˆÙˆX›\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ˜[Y]WÙ[[WÛ]\˜[×Ú[—ÛÜ\˜]ÜœË˜[ÙKˆŠ’Yˆ[˜X›Y˜[Y]H[[H]\˜[È[ˆÜ\˜]ÜœÈZÙHS˜“ÕS˜OXOXYØZ[œÝH[[H\H[™›ÝÈ[ˆ^Ù\[ÛˆYˆH]\˜[\È›ÝH˜[Y[[H˜[YK‚ŠH‹
+HˆˆPÓT‘JR[X^Ø]]Ú[˜Ü™[Y[ÜÙ\šY\ËLˆŠ•H[Z]ÛˆH[X™\ˆÙˆÙ\šY\ÈÜ™X]YžHHÙ[™\˜]TÙ\šX[Q[˜Ý[Û‹‚‚\ÈXXÚÙ\šY\È™\™\Ù[ÈH›ÙH[ˆÙY\\‹]\È™XÛÛ[Y[™YÈ]™H›È[Ü™H[ˆHÛÝ\HÙˆZ[[ÛœÈÙˆ[K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÚ]™WÜ\][Ûš[™ËYKˆŠ•Ú[ˆ[˜X›YÛXÚÒÝ\ÙHÚ[]XÝ]™K\Ý[H\][Ûš[™È[ˆ]
+Û˜[YO]˜[YKØ
+H[ˆš[K[ZÙHX›H[™Ú[™\ÈÑš[WJÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËÙš[HÚ]™K\Ý[K\\][Ûš[™ÊKÖÔÌ×JÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËÜÌÈÚ]™K\Ý[K\\][Ûš[™ÊKÖÕT“JÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËÝ\›Ú]™K\Ý[K\\][Ûš[™ÊKÖÒ”×JÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËÚœÈÚ]™K\Ý[K\\][Ûš[™ÊKÖÐ^\™P›Ø”ÝÜ˜YÙWJÜÜ[\™Y™\™[˜ÙKÝX›KY[˜Ý[ÛœËØ^\™P›Ø”ÝÜ˜YÙHÚ]™K\Ý[K\\][Ûš[™ÊH[™Ú[[ÝÈÈ\ÙH\][ÛˆÛÛ[[œÈ\Èš\X[ÛÛ[[œÈ[ˆH]Y\žKˆ\ÙHš\X[ÛÛ[[œÈÚ[]™HHØ[YH˜[Y\È\È[ˆH\][Û™Y]]Ý\[™ÈÚ]Ø‚ŠH‹
+HˆPÓT‘JR[\˜[[Ú\ÚÚ›Ú[—Ý™\ÚÛL	ÌˆŠ•Ú[ˆ\ÚX˜\ÙY›Ú[ˆ[ÛÜš]H\È\YY\È™\ÚÛ[ÈÈXÚYH™]ÙY[ˆ\Ú[™È\Ú[™\˜[[Ú\Ú
+Û›HYˆ\Ý[X][ÛˆÙˆHšYÚX›HÚ^™H\È]˜Z[X›JK‚•H›Ü›Y\ˆ\È\ÙYÚ[ˆÙHÛ›ÝÈ]HšYÚX›HÚ^™H\È™[ÝÈH™\ÚÛ‚ŠH‹
+HˆPÓT‘J›ÛÛ\WÜÙ][™Ü×Ùœ›ÛWÜÙ\™\‹YKˆŠ•Ú]\ˆHÛY[ÚÝ[XØÙ\Ù][™ÜÈœ›ÛHÙ\™\‹‚‚•\ÈÛ›HY™™XÝÈÜ\˜][ÛœÈ\™›Ü›YYÛˆHÛY[ÚYK[ˆ\XÝ[\ˆ\œÚ[™ÈHS”ÑT•[œ]]H[™›Ü›X][™ÈH]Y\žH™\Ý[ˆ[ÜÝÙˆ]Y\žH^XÝ][Ûˆ\[œÈÛˆHÙ\™\ˆ[™\È›ÝY™™XÝYžH\ÈÙ][™Ë‚‚“›Ü›X[H\ÈÙ][™ÈÚÝ[™HÙ][ˆ\Ù\ˆ›Ùš[H
+\Ù\œËž[Üˆ]Y\šY\ÈZÙHSTˆTÑT˜
+K›Ý›ÝYÚHÛY[
+ÛY[ÛÛ[X[™[™H\™Ý[Y[ËÑU]Y\žKÜˆÑUS‘ÔØÙXÝ[ÛˆÙˆÑSPÕ]Y\žJKˆ›ÝYÚHÛY[]Ø[ˆ™HÚ[™ÙYÈ˜[ÙK]Ø[‰Ý™HÚ[™ÙYÈYH
+™XØ]\ÙHHÙ\™\ˆÛÛ‰ÝÙ[™HÙ][™ÜÈYˆ\Ù\ˆ›Ùš[H\È\WÜÙ][™Ü×Ùœ›ÛWÜÙ\™\ˆH˜[ÙX
+K‚‚“›ÝH][š]X[H
+ŒLŠH\™HØ\ÈHÙ\™\ˆÙ][™È
+Ù[™ÜÙ][™Ü×Ý×ØÛY[
+K]]\ˆ]ÛÝ™\XÙYÚ]\ÈÛY[Ù][™Ë›Üˆ™]\ˆ\ØXš[]K‚ŠH‹
+HˆPÓT‘J›ÛÛ[Ý×Ø\˜Ú]™WÜ]ÜÞ[^YKˆŠ‘š[KÔÌÈ[™Ú[™\ËÝX›H[˜Ý[ÛˆÚ[\œÙH]ÈÚ]	ÎŽ‰È\È\˜Ú]™OˆŽˆš[O˜YˆH\˜Ú]™H\ÈÛÜœ™XÝ^[œÚ[Û‹‚ŠH‹
+HˆPÓT‘JÌÕ\šTÝ[KÌ×Ý\šWÜÝ[KÌÕ\šTÝ[NŽUUËˆŠ‘›Ü˜ÙHHÌÈ[™Ú[Ý[KˆÜÜÚX›H˜[Y\Îˆ]]Ëš\X[ÚÜÝY]‚ŠH‹
+HˆPÓT‘JZ[\ÙXÛÛ™ËÝ×Üš[Üš]WÜ]Y\žWÝØZ]Ý[YWÛ\ËLˆŠ•Ú[ˆH]Y\žHš[Üš]^˜][ÛˆYXÚ[š\ÛH\È[\ÞYY
+ÙYHÙ][™Èš[Üš]X
+KÝË\š[Üš]H]Y\šY\ÈØZ]›ÜˆYÚ\‹\š[Üš]H]Y\šY\ÈÈš[š\Úˆ\ÈÙ][™ÈÜXÚYšY\ÈH\˜][ÛˆÙˆØZ][™Ë‚ŠH‹‘UJHˆPÓT‘JR[XÙX™\™×Ú[œÙ\ÛX^Ü›ÝÜ×Ú[—Ù]WÙš[KLˆŠ“X^›ÝÜÈÙˆXÙX™\™È\œ]Y]]Hš[HÛˆ[œÙ\Ü\˜][Û‹‚ŠH‹
+HˆPÓT‘JR[XÙX™\™×Ú[œÙ\ÛX^Øž]\×Ú[—Ù]WÙš[KWÑÚP‹ˆŠ“X^ž]\ÈÙˆXÙX™\™È\œ]Y]]Hš[HÛˆ[œÙ\Ü\˜][Û‹‚ŠH‹
+HˆPÓT‘JR[XÙX™\™×Ú[œÙ\ÛX^Ü\][ÛœËLˆŠ“X^[ÝÙY\][ÛœÈÛÝ[\ˆÛ™H[œÙ\Ü\˜][Ûˆ›ÜˆXÙX™\™ÈX›H[™Ú[™K‚ŠH‹
+HˆPÓT‘J›ÛÛ]X˜\ÙWÙ][ZÙWÜ™\]Z\™WÛY]Y]WØXØÙ\ÜËYKˆŠ‘Z]\ˆÈ›ÝÈ\œ›ÜˆÜˆ›ÝYˆÙHÛ‰Ý]™HšYÚÈÈÙ]X›IÜÈY]Y]H[ˆ]X˜\ÙH[™Ú[™H]SZÙPØ][ÙË‚ŠH‹
+HˆPÓT‘J›Ø]Z[—ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ý›ÝËŒ“Z[ˆ˜][È™]ÙY[ˆÔÈÔHØZ]
+ÔÐÔUØZ]ZXÜ›ÜÙXÛÛ™ÈY]šXÊH[™\ÞH
+ÔÐÔUš\X[[YSZXÜ›ÜÙXÛÛ™ÈY]šXÊH[Y\ÈÈÛÛœÚY\ˆ™Z™XÝ[™È]Y\šY\Ëˆ[™X\ˆ[\œÛ][Ûˆ™]ÙY[ˆZ[ˆ[™X^˜][È\È\ÙYÈØ[Ý[]HH›Ø˜Xš[]KH›Ø˜Xš[]H\È]\ÈÚ[ˆ‹
+HˆPÓT‘J›Ø]X^ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ý›ÝËŒ“X^˜][È™]ÙY[ˆÔÈÔHØZ]
+ÔÐÔUØZ]ZXÜ›ÜÙXÛÛ™ÈY]šXÊH[™\ÞH
+ÔÐÔUš\X[[YSZXÜ›ÜÙXÛÛ™ÈY]šXÊH[Y\ÈÈÛÛœÚY\ˆ™Z™XÝ[™È]Y\šY\Ëˆ[™X\ˆ[\œÛ][Ûˆ™]ÙY[ˆZ[ˆ[™X^˜][È\È\ÙYÈØ[Ý[]HH›Ø˜Xš[]KH›Ø˜Xš[]H\ÈH]\ÈÚ[ˆ‹
+HˆPÓT‘J›ÛÛ[˜X›WÜ›ÙXÚ[™×ØXÚÙ]×ÛÝ]ÛÙ—ÛÜ™\—Ú[—ØYÙÜ™YØ][Û‹YKˆŠ[ÝÈY[[ÜžKYY™šXÚY[YÙÜ™YØ][Ûˆ
+ÙYH\ÝšX]YØYÙÜ™YØ][Û—ÛY[[ÜžWÙY™šXÚY[
+HÈ›ÙXÙHXÚÙ]ÈÝ]ÙˆÜ™\‹‚’]X^H[\›Ý™H\™›Ü›X[˜ÙHÚ[ˆYÙÜ™YØ][ÛˆXÚÙ]Ú^™\È\™HÚÙ]ÙYžH][™ÈH™\XØHÈÙ[™XÚÙ]ÈÚ]YÚ\ˆY\ÈÈH[š]X]ÜˆÚ[H]\ÈÝ[›ØÙ\ÜÚ[™ÈÛÛYHX]žHXÚÙ]ÈÚ]ÝÙ\ˆY\Ë‚•HÝÛœÚYH\ÈÝ[X[HYÚ\ˆY[[ÜžH\ØYÙK‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÜ\˜[[Ø›ØÚÜ×ÛX\œÚ[[™ËYKY™™XÝÈÛ›H\ÝšX]Y]Y\šY\ËˆYˆ[˜X›Y›ØÚÜÈÚ[™H
+J\Ù\šX[^™Y[™
+JXÛÛ\™\ÜÙYÛˆ\[[™H™XYÈ
+K™KˆÚ]YÚ\ˆ\˜[[\ÛH]Ú]ÙH]™HžHY˜][
+H™Y›Ü™KØY\ˆÙ[™[™ÈÈH[š]X]Ü‹ˆ‹
+HˆPÓT‘JR[Z[—ÛÝ]Ý™X[\×Ü\—Ü™\Ú^™WØY\—ÜÜ]ˆŠ”ÜXÚYšY\ÈHZ[š[][H[X™\ˆÙˆÝ]]Ý™X[\ÈÙˆH™\Ú^™XÜˆÝšXÝ™\Ú^™X›ØÙ\ÜÛÜˆY\ˆHÜ]\È\™›Ü›YY\š[™È\[[™HÙ[™\˜][Û‹ˆYˆH™\Ý[[™È[X™\ˆÙˆÝ™X[\È\È\ÜÈ[ˆ\È˜[YKHÜ]Ü\˜][ÛˆÚ[›ÝØØÝ\‹‚‚ˆÈÈÈÚ]\ÈH™\Ú^™H›ÙBH™\Ú^™X›ÙH\ÈH›ØÙ\ÜÛÜˆ[ˆH]Y\žH\[[™H]Y\ÝÈH[X™\ˆÙˆ]HÝ™X[\È›ÝÚ[™È›ÝYÚH\[[™Kˆ]Ø[ˆZ]\ˆ[˜Ü™X\ÙHÜˆXÜ™X\ÙHH[X™\ˆÙˆÝ™X[\ÈÈ˜[[˜ÙHHÛÜšÛØYXÜ›ÜÜÈ][\H™XYÈÜˆ›ØÙ\ÜÛÜœËˆ›Üˆ^[\KYˆH]Y\žH™\]Z\™\È[Ü™H\˜[[\ÛKH™\Ú^™X›ÙHØ[ˆÜ]HÚ[™ÛHÝ™X[H[È][\HÝ™X[\ËˆÛÛ™\œÙ[K]Ø[ˆY\™ÙH][\HÝ™X[\È[È™]Ù\ˆÝ™X[\ÈÈÛÛœÛÛY]H]H›ØÙ\ÜÚ[™Ë‚‚•H™\Ú^™X›ÙH[œÝ\™\È]]H\È]™[›H\ÝšX]YXÜ›ÜÜÈÝ™X[\ËXZ[Z[š[™ÈHÝXÝ\™HÙˆH]H›ØÚÜËˆ\È[ÈÜ[Z^™H™\ÛÝ\˜ÙH][^˜][Ûˆ[™[\›Ý™H]Y\žH\™›Ü›X[˜ÙK‚‚ˆÈÈÈÚHH™\Ú^™H›ÙH™YYÈÈ™HÜ]‘\š[™È\[[™H^XÝ][Û‹^XÝ][™ÑÜ˜\Ž“›ÙNŽœÝ]\×Û]]^ÙˆHÙ[˜[KZX˜™Y™\Ú^™X›ÙH\ÈX]š[HÛÛ[™Y\ÜXÚX[H[ˆYÚXÛÜ™KXÛÝ[[š\›Û›Y[Ë[™\ÈÛÛ[[ÛˆXYÈÎ‚ŒKˆ[˜Ü™X\ÙY][˜ÞH›Üˆ^XÝ][™ÑÜ˜\Ž\]S›ÙK\™XÝH[\XÝ[™È]Y\žH\™›Ü›X[˜ÙK‚Œ‹ˆ^Ù\ÜÚ]™HÔHÞXÛ\È\™HØ\ÝY[ˆÜ[‹[ØÚÈÛÛ[[Ûˆ
+˜]]™WÜ]Y]YYÜÜ[—ÛØÚ×ÜÛÝÜ]
+KYÜ˜Y[™ÈY™šXÚY[˜ÞK‚ŒËˆ™YXÙYÔH][^˜][Û‹[Z][™È\˜[[\ÛH[™›ÝYÚ]‚‚ˆÈÈÈÝÈH™\Ú^™H›ÙHÙ]ÈÜ]ŒKˆH[X™\ˆÙˆÝ]]Ý™X[\È\ÈÚXÚÙYÈ[œÝ\™HHÜ]ÛÝ[™H\™›Ü›YYˆHÝ]]Ý™X[\ÈÙˆXXÚÜ]›ØÙ\ÜÛÜˆYY]Üˆ^ÙYYHZ[—ÛÝ]Ý™X[\×Ü\—Ü™\Ú^™WØY\—ÜÜ]™\ÚÛ‚Œ‹ˆH™\Ú^™X›ÙH\È]šYY[ÈÛX[\ˆ™\Ú^™X›Ù\ÈÚ]\]X[ÛÝ[ÙˆÜËXXÚ[™[™ÈHÝXœÙ]Ùˆ[œ][™Ý]]Ý™X[\Ë‚ŒËˆXXÚÜ›Ý\\È›ØÙ\ÜÙY[™\[™[K™YXÚ[™ÈHØÚÈÛÛ[[Û‹‚‚ˆÈÈÈÜ][™È™\Ú^™H›ÙHÚ]\˜š]˜\žH[œ]ËÓÝ]]Â’[ˆÛÛYHØ\Ù\ËÚ\™HH[œ]ËÛÝ]]È\™H[™]š\ÚX›HžHH[X™\ˆÙˆÜ]™\Ú^™X›Ù\ËÛÛYH[œ]È\™HÛÛ›™XÝYÈ[ÛÝ\˜ÙXÈ[™ÛÛYHÝ]]È\™HÛÛ›™XÝYÈ[Ú[šØËˆ\È[ÝÜÈHÜ]ÈØØÝ\ˆÚ]Ý]Y™™XÝ[™ÈHÝ™\˜[]H›ÝË‚‚ˆÈÈÈ\œÜÙHÙˆHÙ][™Â•HZ[—ÛÝ]Ý™X[\×Ü\—Ü™\Ú^™WØY\—ÜÜ]Ù][™È[œÝ\™\È]HÜ][™ÈÙˆ™\Ú^™X›Ù\È\ÈYX[š[™Ù[[™]›ÚYÈÜ™X][™ÈÛÈ™]ÈÝ™X[\ËÚXÚÛÝ[XYÈ[™Y™šXÚY[\˜[[›ØÙ\ÜÚ[™ËˆžH[™›Ü˜Ú[™ÈHZ[š[][H[X™\ˆÙˆÝ]]Ý™X[\Ë\ÈÙ][™È[ÈXZ[Z[ˆH˜[[˜ÙH™]ÙY[ˆ\˜[[\ÛH[™Ý™\šXYÜ[Z^š[™È]Y\žH^XÝ][Ûˆ[ˆØÙ[˜\š[ÜÈ[›Ûš[™ÈÝ™X[HÜ][™È[™Y\™Ú[™Ë‚‚ˆÈÈÈ\ØX›[™ÈHÙ][™Â•È\ØX›HHÜ]Ùˆ™\Ú^™X›Ù\ËÙ]\ÈÙ][™ÈÈˆ\ÈÚ[™]™[HÜ][™ÈÙˆ™\Ú^™X›Ù\È\š[™È\[[™HÙ[™\˜][Û‹[ÝÚ[™È[HÈ™]Z[ˆZ\ˆÜšYÚ[˜[ÝXÝ\™HÚ]Ý]]š\Ú[Ûˆ[ÈÛX[\ˆ›Ù\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WØYÙ\Ý[˜ÝÝ×Ú[—ÜÝXœ]Y\šY\Ë˜[ÙKˆŠ‘[˜X›HTÕSÕ[ˆS˜ÝXœ]Y\šY\Ëˆ\È\ÈH˜YK[Ù™ˆÙ][™Îˆ[˜X›[™È]Ø[ˆÜ™X]H™YXÙHHÚ^™HÙˆ[\Ü˜\žHX›\È˜[œÙ™\œ™Y›Üˆ\ÝšX]YSˆÝXœ]Y\šY\È[™ÚYÛšYšXØ[HÜYY\]H˜[œÙ™\ˆ™]ÙY[ˆÚ\™ËžH[œÝ\š[™ÈÛ›H[š\]YH˜[Y\È\™HÙ[‚’ÝÙ]™\‹[˜X›[™È\ÈÙ][™ÈYÈ^˜HY\™Ú[™ÈY™›ÜÛˆXXÚ›ÙK\ÈY\XØ][Ûˆ
+TÕSÕ
+H]\Ý™H\™›Ü›YYˆ\ÙH\ÈÙ][™ÈÚ[ˆ™]ÛÜšÈ˜[œÙ™\ˆ\ÈH›Ý[™XÚÈ[™HY][Û˜[Y\™Ú[™ÈÛÜÝ\ÈXØÙ\X›K‚ŠH‹
+HˆPÓT‘JR[[˜Ý[Û—Ù]WÝ[˜×Ü™]\›—Ý\WØ™Z]š[Ü‹ˆŠ[ÝÜÈÈÚ[™ÙHH™Z]š[Ý\ˆÙˆH™\Ý[\HÙˆ]U[˜Ø[˜Ý[Û‹‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HHÚ[ˆHÙXÛÛ™\™Ý[Y[\È]U[YMÑ]LÌ˜H™]\›ˆ\HÚ[™H]U[YMÑ]LÌ˜™YØ\™\ÜÈÙˆH[YH[š][ˆHš\œÝ\™Ý[Y[‚‹HHH›Üˆ]LÌ˜H™\Ý[\È[Ø^\È]Xˆ›Üˆ]U[YMH™\Ý[\È]U[YX›Üˆ[YH[š]ÈÙXÛÛ™[™YÚ\‹‚ŠH‹
+HˆPÓT‘J›ÛÛ]Y\žWÜ[—Ü™[[Ý™WÝ[\ÙYØÛÛ[[œËYKˆŠ•ÙÙÛ\ÈH]Y\žK\[‹[]™[Ü[Z^˜][ÛˆÚXÚšY\ÈÈ™[[Ý™H[\ÙYÛÛ[[œÈ
+›Ý[œ][™Ý]]ÛÛ[[œÊHœ›ÛH]Y\žH[ˆÝ\Ë‚“Û›HZÙ\ÈY™™XÝYˆÙ][™ÈÜ]Y\žWÜ[—Ù[˜X›WÛÜ[Z^˜][Ûœ×JÜ]Y\žWÜ[—Ù[˜X›WÛÜ[Z^˜][ÛœÊH\ÈK‚‚ŽŽŽ››ÝB•\È\È[ˆ^\[]™[Ù][™ÈÚXÚÚÝ[Û›H™H\ÙY›ÜˆXYÙÚ[™ÈžH]™[Ü\œËˆHÙ][™ÈX^HÚ[™ÙH[ˆ]\™H[ˆ˜XÚÝØ\™Z[˜ÛÛ\]X›HØ^\ÈÜˆ™H™[[Ý™Y‚ŽŽŽ‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HH\ØX›B‹HHH[˜X›BŠH‹
+HˆPÓT‘J›ÛÛ™[X[Ø×Ù[˜X›WÜ›Ùš[\‹˜[ÙKˆŠ‘[˜X›H™[X[ØÈ›Ùš[\ˆ›ÜˆH]Y\žKˆ™[X[ØÈÚ[Ø[\H[ØØ][ÛœÈ[™[X[ØØ][ÛœÈ›ÜˆØ[\Y[ØØ][ÛœË‚”›Ùš[\ÈØ[ˆ™H›\ÚY\Ú[™ÈÖTÕSH‘SPSÐÈ“TÒ“Ñ’SHÚXÚØ[ˆ™H\ÙY›Üˆ[ØØ][Ûˆ[˜[\Ú\Ë‚”Ø[\\ÈØ[ˆ[ÛÈ™HÝÜ™Y[ˆÞ\Ý[K˜XÙWÛÙÈ\Ú[™ÈÛÛ™šYÈ™[X[Ø×ØÛÛXÝÙÛØ˜[Ü›Ùš[WÜØ[\\×Ú[—Ý˜XÙWÛÙÈÜˆÚ]]Y\žHÙ][™È™[X[Ø×ØÛÛXÝÜ›Ùš[WÜØ[\\×Ú[—Ý˜XÙWÛÙË‚”ÙYHÐ[ØØ][Ûˆ›Ùš[[™×JÛÜ\˜][ÛœËØ[ØØ][Û‹\›Ùš[[™ÊJH‹
+HˆPÓT‘J›ÛÛ™[X[Ø×ØÛÛXÝÜ›Ùš[WÜØ[\\×Ú[—Ý˜XÙWÛÙË˜[ÙKˆŠÛÛXÝ™[X[ØÈ[ØØ][Ûˆ[™X[ØØ][ÛˆØ[\\È[ˆ˜XÙHÙË‚ŠH‹
+HˆPÓT‘J™[X[ØÔ›Ùš[Q›Ü›X]™[X[Ø×Ü›Ùš[WÝ^ÛÝ]]Ù›Ü›X]™[X[ØÔ›Ùš[Q›Ü›X]ŽÛÛ\ÙYˆŠ“Ý]]›Ü›X]›Üˆ™[X[ØÈX\›Ùš[H[ˆÞ\Ý[Kš™[X[Ø×Ü›Ùš[WÝ^X›KˆØ[ˆ™Nˆ	Ü˜]ÉÈ
+˜]È›Ùš[JK	ÜÞ[X›Û^™Y	È
+™\›Ùˆ›Ü›X]Ú]Þ[X›ÛÊKÜˆ	ØÛÛ\ÙY	È
+›[YQÜ˜\›Ü›X]
+K‚ŠH‹
+HˆPÓT‘J›ÛÛ™[X[Ø×Ü›Ùš[WÝ^ÜÞ[X›Û^™WÝÚ]Ú[›[™KYKˆŠ•Ú]\ˆÈ[˜ÛYH[›[™Hœ˜[Y\ÈÚ[ˆÞ[X›Û^š[™È™[X[ØÈX\›Ùš[KˆÚ[ˆ[˜X›Y[›[™Hœ˜[Y\È\™H[˜ÛYYÚXÚØ[ˆÛÝÈÝÛˆÞ[X›Û^˜][Ûˆ›ØÙ\ÜÈ˜\ÝXØ[NÈÚ[ˆ\ØX›Y^H\™HÚÚ\YˆÛ›HY™™XÝÈ	ÜÞ[X›Û^™Y	È[™	ØÛÛ\ÙY	ÈÝ]]›Ü›X]Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ™[X[Ø×Ü›Ùš[WÝ^ØÛÛ\ÙYÝ\ÙWØÛÝ[˜[ÙKˆŠ•Ú[ˆ\Ú[™ÈH	ØÛÛ\ÙY	ÈÝ]]›Ü›X]›Üˆ™[X[ØÈX\›Ùš[KYÙÜ™YØ]HžH[ØØ][ÛˆÛÝ[[œÝXYÙˆž]\ËˆÚ[ˆ˜[ÙH
+Y˜][
+KXXÚÝXÚÈ\ÈÙZYÚYžH]™Hž]\ÎÈÚ[ˆYKžH]™H[ØØ][ÛˆÛÝ[‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ[Ì‹Ü×Ý™XY×ÛšXÙWÝ˜[YWÜ]Y\žKˆŠ“[^šXÙH˜[YH›Üˆ]Y\žH›ØÙ\ÜÚ[™È™XYËˆÝÙ\ˆ˜[Y\ÈYX[ˆYÚ\ˆÔHš[Üš]K‚‚”™\]Z\™\ÈÐTÔÖT×Ó’PÑHØ\Xš[]KÝ\Ú\ÙH›Ë[Ü‚‚”ÜÜÚX›H˜[Y\ÎˆLŒÈNK‚ŠH‹Ü×Ý™XYÜš[Üš]JHˆPÓT‘J[Ì‹Ü×Ý™XY×ÛšXÙWÝ˜[YWÛX]\šX[^™YÝšY]ËˆŠ“[^šXÙH˜[YH›ÜˆX]\šX[^™YšY]È™XYËˆÝÙ\ˆ˜[Y\ÈYX[ˆYÚ\ˆÔHš[Üš]K‚‚”™\]Z\™\ÈÐTÔÖT×Ó’PÑHØ\Xš[]KÝ\Ú\ÙH›Ë[Ü‚‚”ÜÜÚX›H˜[Y\ÎˆLŒÈNK‚ŠH‹
+HˆPÓT‘J›ÛÛÚÝ×Ü›ØÙ\ÜÛ\ÝÚ[˜ÛYWÚ[\›˜[KˆŠ”ÚÝÈ[\›˜[]^[X\žH›ØÙ\ÜÙ\È[ˆHÒÕÈ“ÐÑTÔÓTÕ]Y\žHÝ]]‚‚’[\›˜[›ØÙ\ÜÙ\È[˜ÛYHXÝ[Û˜\žH™[ØYË™Yœ™\ÚX›HX]\šX[^™YšY]È™[ØYË]^[X\žHÑSPÕÈ^XÝ]Y[ˆÒÕÈ‹‹˜]Y\šY\Ë]^[X\žHÔ‘PUHUPTÑH‹‹˜]Y\šY\È^XÝ]Y[\›˜[HÈXØÛÛ[[Ù]Hœ›ÚÙ[ˆX›\È[™[Ü™K‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÜ›Ø\š[™×Øš]X\ÚXÙX™\™×ÜÜÚ][Û˜[Ù[]\Ë˜[ÙKˆŠ•\ÙH›Ø\š[™Èš]X\›ÜˆXÙX™\™ÈÜÚ][Û˜[[]\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ[š™XÝÜ˜[™ÛWÛÜ™\—Ù›Ü—ÜÙ[XÝÝÚ]Ý]ÛÜ™\—ØžK˜[ÙKˆŠ’Yˆ[˜X›Y[š™XÝÈ	ÓÔ‘Tˆ–H˜[™
+
+IÈ[ÈÑSPÕ]Y\šY\ÈÚ]Ý]Ô‘Tˆ–HÛ]\ÙK‚\YYÛ›H›ÜˆÝXœ]Y\žH\HˆÝXœ]Y\šY\È[™S”ÑT•S•È‹‹ˆÑSPÕ\™H›ÝY™™XÝY‚’YˆHÜ[]™[ÛÛœÝXÝ\ÈS’SÓ‹	ÓÔ‘Tˆ–H˜[™
+
+IÈ\È[š™XÝY[È[Ú[™[ˆ[™\[™[K‚“Û›H\ÙY[›Üˆ\Ý[™È[™]™[ÜY[
+Z\ÜÚ[™ÈÔ‘Tˆ–H\ÈHÛÝ\˜ÙHÙˆ›Û‹Y]\›Z[š\ÝXÈ]Y\žH™\Ý[ÊK‚ŠH‹
+HˆPÓT‘J[Ü[Z^™WØÛÛœÝÛ˜[YWÜÚ^™KM‹ˆŠ”™\XÙHÚ]ØØ[\ˆ[™\ÙH\Ú\ÈH˜[YH›Üˆ\™ÙHÛÛœÝ[È
+Ú^™H\È\Ý[X]YžHH˜[YH[™Ý
+K‚‚”ÜÜÚX›H˜[Y\Î‚‚‹HÜÚ]]™H[YÙ\ˆHX^[™ÝÙˆH˜[YK‹H8 %[Ø^\Ë‹H™YØ]]™H[YÙ\ˆH™]™\‹‚ŠH‹
+HˆPÓT‘J›ÛÛÙ\šX[^™WÜÝš[™×Ú[—ÛY[[ÜžWÝÚ]Þ™\›×Øž]KYKˆŠ”Ù\šX[^™HÝš[™È˜[Y\È\š[™ÈYÙÜ™YØ][ÛˆÚ]™\›Èž]H]H[™ˆ[˜X›HÈÙY\ÛÛ\]Xš[]HÚ[ˆ]Y\žZ[™ÈÛ\Ý\ˆÙˆ[˜ÛÛ\]X›H™\œÚ[ÛœË‚ŠH‹
+HˆPÓT‘JR[Ì×Ü]Ùš[\—Û[Z]LˆŠ“X^[][H[X™\ˆÙˆÜ]˜[Y\È]Ø[ˆ™H^˜XÝYœ›ÛH]Y\žHš[\œÈÈ\ÙH›Üˆš[H]\˜][Û‚š[œÝXYÙˆÛØˆ\Ý[™ËˆYX[œÈ\ØX›Y‚ŠH‹
+HˆPÓT‘J›ÛÛYÛ›Ü™WÛÛ—ØÛ\Ý\—Ù›Ü—Ü™\XØ]YÙ]X˜\ÙK˜[ÙKˆŠ[Ø^\ÈYÛ›Ü™HÓˆÓTÕTˆÛ]\ÙH›Üˆ]Y\šY\ÈÚ]™\XØ]Y]X˜\Ù\Ë‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Û[X›WÝ\WÝ\K˜[ÙKˆŠ[ÝÜÈÜ™X][ÛˆÙˆÓ[X›WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÛ[X›JHÕ\WJ‹‹Ë‹‹ÜÜ[\™Y™\™[˜ÙKÙ]K]\\ËÝ\K›Y
+HÛÛ[[œÈ[ˆX›\Ë‚‚•\ÈÙ][™ÈÙ\È›ÝÛÛ›ÛÚ]\ˆ^˜XÝY\HÝX˜ÛÛ[[œÈØ[ˆ™H[X›X
+›Üˆ^[\Kœ›ÛH[˜[ZXË˜\šX[”ÓÓ‹Üˆ\HÛÛ[[œÊK‚•\ÙH[Ý×Û[X›WÝ\WÚ[—Ù^˜XÝYÜÝX˜ÛÛ[[œØÈÛÛ›ÛÚ]\ˆ^˜XÝY\HÝX˜ÛÛ[[œÈØ[ˆ™H[X›X‚ŠH‹‘UK[˜X›WÛ[X›WÝ\WÝ\JHˆPÓT‘JR[\˜Ú]™WØY\]™WØY™™\—ÛX^ÜÚ^™WØž]\Ë
+ˆ“T×ÑQUSÐ•Q‘‘T—ÔÒV‘KˆŠ“[Z]ÈHX^[][HÚ^™HÙˆHY\]™HY™™\ˆ\ÙYÚ[ˆÜš][™ÈÈ\˜Ú]™Hš[\È
+›Üˆ^[\K\ˆ\˜Ú]™\ÊH‹
+HˆPÓT‘JR[Ú\™YÛY\™ÙWÝ™YWÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWÚ[š]X[Ü\×Ý\]WØ˜XÚÛÙ™—Û\ËLˆŠ’[š]X[˜XÚÛÙ™ˆ[ˆZ[\ÙXÛÛ™È›Üˆ\È\]HÚ[ˆ\Ú[™ÈÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞXÚ]Ú\™YY\™ÙU™YXˆÛ›H]˜Z[X›H[ˆÛXÚÒÝ\ÙHÛÝY‚ŠH‹
+HˆPÓT‘JR[Ú\™YÛY\™ÙWÝ™YWÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWÛX^Ü\×Ý\]WØ˜XÚÛÙ™—Û\ËLˆŠ“X^˜XÚÛÙ™ˆ[ˆZ[\ÙXÛÛ™È›Üˆ\È\]HÚ[ˆ\Ú[™ÈÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞXÚ]Ú\™YY\™ÙU™YXˆÛ›H]˜Z[X›H[ˆÛXÚÒÝ\ÙHÛÝY‚ŠH‹
+HˆPÓT‘JR[Ú\™YÛY\™ÙWÝ™YWÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞWÜ\×Ý\]WÛX^Ü™]šY\ËLˆŠ“X^™]šY\È›Üˆ\È\]HÚ[ˆ\Ú[™ÈÙ[XÝÜÙ\]Y[X[ØÛÛœÚ\Ý[˜ÞXÚ]Ú\™YY\™ÙU™YXˆÛ›H]˜Z[X›H[ˆÛXÚÒÝ\ÙHÛÝY‚ŠH‹
+HˆPÓT‘JR[X^Øž]\×Ø™Y›Ü™WÙ^\›˜[Ú›Ú[‹ˆŠ’YˆÙ]ÈH›Û‹^™\›È˜[YH[™›Ú[—Ø[ÛÜš]X\È\Ú\˜[[Ú\ÚY˜][Üˆ]]ØH\Ú›Ú[ˆÚ[]]ÛX]XØ[H™HÛÛ™\YÈÜ˜XÙH\Ú›Ú[ˆÈ[˜X›HÜ[[™ÈÈ\ÚÈÚ[ˆHšYÚ\ÚYH]H^ÙYYÈ\ÈX[žHž]\ËˆÚ[ˆÙ]È
+Y˜][
+K\ÈXœÛÛ]Hž]H™\ÚÛ\È\ØX›Y]]]ÛX]XÈÜ[[™ÈX^HÝ[ØØÝ\ˆšXHX^Øž]\×Ü˜][×Ø™Y›Ü™WÙ^\›˜[Ú›Ú[˜
+ÚXÚY˜][ÈÈX
+NÈÙ]›ÝÈÈ[H\ØX›H]]ÛX]XÈÜ[[™Ëˆ]™]™[È™XY[ˆÜ™\ˆ›ÝYÚ›Ú[ˆÜ[Z^˜][Û‹‚ŠH‹
+HˆPÓT‘JÝX›KX^Øž]\×Ü˜][×Ø™Y›Ü™WÙ^\›˜[Ú›Ú[‹KˆŠ•H˜][ÈÙˆ]˜Z[X›HY[[ÜžH]\È[ÝÙY›Üˆ“ÒS˜ˆÛ˜ÙH™XXÚYH\Ú›Ú[ˆÚ[™HÛÛ™\YÈÜ˜XÙH\Ú›Ú[ˆÈÜ[HšYÚ\ÚYH]HÈ\ÚË‚‚‘›Üˆ^[\KYˆÙ]È˜“ÒS˜Ú[[ÝÈ\Ú[™ÈŒ	XÙˆH]˜Z[X›HY[[ÜžH
+ÈÙ\™\‹Ý\Ù\‹ÛY\™Ù\ÊH›ÜˆHšYÚ\ÚYH\ÚX›H]H™YÚ[›š[™ÈÙˆH^XÝ][ÛŽÈY\ˆ]]Ý\ÈÜ[[™ÈÈ\ÚË‚‚’Yˆ›ÝX^Øž]\×Ø™Y›Ü™WÙ^\›˜[Ú›Ú[˜[™X^Øž]\×Ü˜][×Ø™Y›Ü™WÙ^\›˜[Ú›Ú[˜\™HÙ]HÛX[\ˆ™\Ý[[™È™\ÚÛ\È\ÙYˆYˆH˜][È\ÈÛ›HHXœÛÛ]HÙ][™È\Y\Ë‚‚’\ÈY™™XÝÛ›HÚ[ˆ›Ú[—Ø[ÛÜš]X\È\Ú\˜[[Ú\ÚY˜][Üˆ]]Ø[™H[\Ü˜\žH]H]\ÈÛÛ™šYÝ\™Y‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÚ›Ú[—Ùš^YÚ\ÚÝX›WØÛÛ™\œÚ[Û‹YKˆŠ‘[˜X›HÛÛ™\[™ÈH\ÚX›HÈH›]\œ˜^H›Üˆ›Ú[œÈÚ[ˆHÙ^H\ÈHÚ[™ÛH[YÙ\ˆÚ]HÛX[˜[YH˜[™ÙK‚ŠH‹
+HˆPÓT‘JR[]Y\žWÜ[—ÛX^Û[Z]Ù›Ü—Ú›Ú[—Û^žWÚ[™^[™ËLˆŠÛÛ›ÛX^[][H[Z]˜[YH][ÝÜÈÈ\ÙH]Y\žH[ˆ›Üˆ^žH[™^[™ÈÜ[Z^˜][Ûˆ[ˆ“ÒS‹ˆYˆ™\›Ë\™H\È›È[Z]‚ŠH‹
+HˆPÓT‘JR[]Y\žWÜ[—ÛZ[—ØÛÛ[[œ×Ù›Ü—Ú›Ú[—Û^žWÚ[™^[™ËËˆŠÛÛ›ÛHZ[š[][H[X™\ˆÙˆ^[ØYÛÛ[[œÈœ›ÛHHYÚYH™\]Z\™Y›Üˆ[˜X›[™È^žH[™^[™ÈÜ[Z^˜][Ûˆ[ˆ“ÒS‹ˆYX[œÈHÜ[Z^˜][Ûˆ\È\ØX›Y‚ŠH‹
+HˆˆÊˆÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈ
+‹ÈˆÊˆÈÈÈÈÈÈÈÈÈÈÈÕT•ÑˆVT’SQS•S‘PUT‘TÈÈÈÈÈÈÈÈÈÈÈÈÈ
+‹ÈˆÊˆÈÈQ“ÑPÕSÓˆÈ‘UH‘PUT‘TÈ‘Q“Ô‘HTÈ“ÐÒÈÈÈ
+‹ÈˆÊˆÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈ
+‹ÈˆˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÛX]\šX[^™YÜÜÝÜ™\Ü[ÝX›K˜[ÙKˆŠ[ÝÜÈÈ\ÙHHX]\šX[^™YÜÝÜ™TÔSX›H[™Ú[™Kˆ\ØX›YžHY˜][™XØ]\ÙH\È™X]\™H\È^\š[Y[[ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù[›™[Ù[˜Ý[ÛœË˜[ÙKˆŠ‘[˜X›H^\š[Y[[[˜Ý[ÛœÈ›Üˆ[›™[[˜[\Ú\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Û›Ù[˜Ý[ÛœË˜[ÙKˆŠ‘[˜X›H^\š[Y[[[˜Ý[ÛœÈ›Üˆ˜]\˜[[™ÝXYÙH›ØÙ\ÜÚ[™Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ú\ÚÙ[˜Ý[ÛœË˜[ÙKˆŠ‘[˜X›H^\š[Y[[\Ú[˜Ý[ÛœÂŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ý[YWÜÙ\šY\×ÝX›K˜[ÙKˆŠ[ÝÜÈÜ™X][ÛˆÙˆX›\ÈÚ]HÕ[YTÙ\šY\×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÚ[YÜ˜][ÛœËÝ[YK\Ù\šY\Ë›Y
+HX›H[™Ú[™KˆÜÜÚX›H˜[Y\Î‚‹H8 %HÕ[YTÙ\šY\×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÚ[YÜ˜][ÛœËÝ[YK\Ù\šY\Ë›Y
+HX›H[™Ú[™H\È\ØX›Y‚‹HH8 %HÕ[YTÙ\šY\×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÚ[YÜ˜][ÛœËÝ[YK\Ù\šY\Ë›Y
+HX›H[™Ú[™H\È[˜X›Y‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ü]Y]YWÝX›WÙ[™Ú[™K˜[ÙKˆŠ[ÝÜÈÜ™X][ÛˆÙˆX›\ÈÚ]H^\š[Y[[]Y]YXX›H[™Ú[™K‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™Ë]Y]YWØÛÛœÝ[Y\—ÙÜ›Ý\ˆ‹ˆŠ”Ù[XÝÈHÛÛœÝ[Y\ˆÜ›Ý\\ÙYÚ[ˆ™XY[™Èœ›ÛH[ˆ^\š[Y[[]Y]YXX›K‚‘›ÜˆHX]\šX[^™YšY]ËÜXÚYžH\ÈÙ][™È[ˆHšY]ÉÜÈÑSPÕ]Y\žK‚[ˆ[\H˜[YHÚ]™\ÈXXÚX]\šX[^™YšY]È[ˆ[™\[™[Ü›Ý\‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ]Y]YWØÛÛ[Z]ÛÛ—ÜÙ[XÝ˜[ÙKˆŠ•Ú]\ˆHÝXØÙ\ÜÙ[\™XÝÑSPÕœ›ÛH[ˆ^\š[Y[[]Y]YXX›HXÚÛ›ÝÛYÙ\ÈH™]\›™Y˜]Ú‚XÚÛ›ÝÛYÙ[Y[È\™HÜš][ˆÛ›HÈHÙ[XÝYÛÛœÝ[Y\ˆÜ›Ý\	ÜÈÝ]K‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[]Y]YWÛX^Ø˜]ÚÜÚ^™KˆŠ“X^[][H[X™\ˆÙˆY\ÜØYÙ\È™XYžHH\™XÝÛÛ[Z][™ÈÑSPÕœ›ÛH[ˆ^\š[Y[[]Y]YXX›K‚H˜[YHÙˆ\Ù\ÈHX›H[™Ú[™IÜÈX^Ø˜]ÚÜÚ^™X‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™Ë]Y]YWØÛÛœÝ[Y\—ÛÙ™œÙ]™X\›Y\Ý‹ˆŠ’[š]X[Ù™œÙ]›ÜˆH™]È^\š[Y[[]Y]YXÛÛœÝ[Y\ˆÜ›Ý\‚”Ý\ÜY˜[Y\È\™HX\›Y\Ý[™]\Ý‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ]Y]YWÜ™\Ù]ØÛÛœÝ[Y\—ÛÙ™œÙ]˜[ÙKˆŠ”™XÜ™X]\ÈHÙ[XÝY^\š[Y[[]Y]YXÛÛœÝ[Y\ˆÜ›Ý\	ÜÈ[™[™Ë[Y\ÜØYÙHX›H]˜]Y]YWØÛÛœÝ[Y\—ÛÙ™œÙ]ˆHÙ][™È™\]Z\™\È]Y]YWØÛÛœÝ[Y\—ÙÜ›Ý\‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[[š\]YWÚÙ^WÛX^Ù[˜ÛÙYÜÚ^™KM‹ˆŠ“X^[][HÚ^™H
+[ˆž]\ÊHÙˆHÜ™\‹\™\Ù\š[™Èš[˜\žH[˜ÛÙ[™ÈÙˆHÚ[™ÛHS’TUQHÑVX›ÝË‚ŠH‹VT’SQS•S
+HˆPÓT‘J[š\]YRÙ^T›Ø™R[\[Y[][Û‹[š\]YWÚÙ^WÜ›Ø™WÚ[\[Y[][Û‹[š\]YRÙ^T›Ø™R[\[Y[][ÛŽŽ]]ËˆŠ”Ù[XÝÈHS’TUQHÑVHÜš]K\]›Ø™H[\[Y[][Û‹ˆÝ\œ™[HÛ›HHÚ[™ÛK]™XYY˜˜\Ù[[™H^\ÝËÛÈ]]Ø[™Ú[\X›Ý™\ÛÛ™HÈ]‚‚”™\Ù\™Yˆ\ÈÙ][™È\È›ÈY™™XÝY]8 %H˜[YH\È›Ý™XY[[HS’TUQHÑVHS”ÑT•Üš]H]]ÛÛœÝXÝÈH›Ø™H\ÈÚ\™Y\ˆXÛ\™Y›ÝÈÛÈH]™\ˆÚ\ÈÚ]Bš[\[Y[][Û‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ý[š\]YWÚÙ^K˜[ÙKˆŠ[ÝÜÈÜ™X][ÛˆÙˆX›\ÈÚ]HS’TUQHÑVXÛ]\ÙHÛˆY\™ÙU™YKY˜[Z[H[™Ú[™\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ØÛÙXÜË˜[ÙKˆŠ’Yˆ]\ÈÙ]ÈYK[ÝÈÈÜXÚYžH^\š[Y[[ÛÛ\™\ÜÚ[ÛˆÛÙXÜÈ
+]ÙHÛ‰Ý]™HÜÙHY][™\ÈÜ[ÛˆÙ\È›Ý[™ÊK‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ›Ý×ÛÛ—Ý[œÝ\ÜYÜ]Y\žWÚ[œÚYWÝ˜[œØXÝ[Û‹YKˆŠ•›ÝÈ^Ù\[ÛˆYˆ[œÝ\ÜY]Y\žH\È\ÙY[œÚYH˜[œØXÝ[Û‚ŠH‹VT’SQS•S
+HˆPÓT‘J˜[œØXÝ[ÛœÕØZ]ÔÓ“[ÙKØZ]ØÚ[™Ù\×Ø™XÛÛYWÝš\ÚX›WØY\—ØÛÛ[Z]Û[ÙK˜[œØXÝ[ÛœÕØZ]ÔÓ“[ÙNŽ•ÐRUÕS’Ó“ÕÓ‹ˆŠ•ØZ]›ÜˆÛÛ[Z]YÚ[™Ù\ÈÈ™XÛÛYHXÝX[Hš\ÚX›H[ˆH]\ÝÛ˜\ÚÝŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[\XÚ]Ý˜[œØXÝ[Û‹˜[ÙKˆŠ’Yˆ[˜X›Y[™›Ý[™XYH[œÚYHH˜[œØXÝ[Û‹Ü˜\ÈH]Y\žH[œÚYHH[˜[œØXÝ[Ûˆ
+™YÚ[ˆ
+ÈÛÛ[Z]Üˆ›Û˜XÚÊBŠH‹VT’SQS•S
+HˆPÓT‘J›Û–™\›ÕR[Ü˜XÙWÚ\ÚÚ›Ú[—Ú[š]X[ØXÚÙ]ËKˆŠ’[š]X[[X™\ˆÙˆÜ˜XÙH\Ú›Ú[ˆXÚÙ]ÂŠH‹VT’SQS•S
+HˆPÓT‘J›Û–™\›ÕR[Ü˜XÙWÚ\ÚÚ›Ú[—ÛX^ØXÚÙ]ËLˆŠ“[Z]ÛˆH[X™\ˆÙˆÜ˜XÙH\Ú›Ú[ˆXÚÙ]ÂŠH‹VT’SQS•S
+HˆPÓT‘JR[›Ú[—Ý×ÜÛÜÛZ[š[][WÜ\šÙ^WÜ›ÝÜËˆŠ•HÝÙ\ˆ[Z]Ùˆ\‹ZÙ^H]™\˜YÙH›ÝÜÈ[ˆHšYÚX›HÈ]\›Z[™HÚ]\ˆÈ™\˜[™ÙHHšYÚX›HžHÙ^H[ˆYÜˆ[›™\ˆ›Ú[‹ˆ\ÈÙ][™È[œÝ\™\È]HÜ[Z^˜][Ûˆ\È›Ý\YY›ÜˆÜ\œÙHX›HÙ^\ÂŠH‹VT’SQS•S
+HˆPÓT‘JR[›Ú[—Ý×ÜÛÜÛX^[][WÝX›WÜ›ÝÜËLˆŠ•HX^[][H[X™\ˆÙˆ›ÝÜÈ[ˆHšYÚX›HÈ]\›Z[™HÚ]\ˆÈ™\˜[™ÙHHšYÚX›HžHÙ^H[ˆYÜˆ[›™\ˆ›Ú[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ú›Ú[—ÜšYÚÝX›WÜÛÜ[™Ë˜[ÙKˆŠ’Yˆ]\ÈÙ]ÈYK[™HÛÛ™][ÛœÈÙˆ›Ú[—Ý×ÜÛÜÛZ[š[][WÜ\šÙ^WÜ›ÝÜØ[™›Ú[—Ý×ÜÛÜÛX^[][WÝX›WÜ›ÝÜØ\™HY]™\˜[™ÙHHšYÚX›HžHÙ^HÈ[\›Ý™HH\™›Ü›X[˜ÙH[ˆYÜˆ[›™\ˆ\Ú›Ú[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÚœÛÛ—Û^žWÝ\WÚ[Ë˜[ÙKˆŠ‘[˜X›H^\š[Y[[^žH\H[È›Üˆ”ÓÓˆ\Kˆ\È™X]\™H[ÝÜÈÜ[Z^š[™È”ÓÓˆ\HÛÛ™\œÚ[ÛœÈžHY™\œš[™È\H[]˜[X][Û‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[˜X›WÜÝ™X[Z[™×Ü]Y\šY\Ë˜[ÙKˆŠ[ÝÈÑSPÕ‹‹ˆ”“ÓHÕ‘PSHÐÕT”ÓÔˆ	ÞË‹‹ŸI×XÛÛ[[Ý\È]Y\šY\Ë‚•Ú[ˆÙ™‹[žHX›H^™\ÜÚ[Ûˆ\Ú[™ÈHÕ‘PSX[ÙYšY\ˆ\È™Z™XÝY˜][‹XZ[[YKˆ\È\ÈH[Xœ™[HØ]H›ÜˆHÝ™X[Z[™Ë\]Y\šY\Â™™X]\™NÈY][Û˜[Ø\Xš[]Y\ÈX^H™HØ]YžHZ\ˆÝÛˆÙ][™ÜË‚ŠH‹VT’SQS•S
+HˆˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×ÜÝ]\ÝXÜ×ÛÜ[Z^™KYKˆŠ[ÝÜÈ\Ú[™ÈÝ]\ÝXÜÈÈÜ[Z^™H]Y\šY\ÂŠH‹[Ý×ÜÝ]\ÝX×ÛÜ[Z^™JHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ\ÙWÜÝ]\ÝXÜËYKˆŠËËÈ™Y™\œ™YÝ™\ˆ	Ø[Ý×ÜÝ]\ÝXÜ×ÛÜ[Z^™IÈ™XØ]\ÙHÙˆÛÛœÚ\Ý[˜ÞHÚ]	Ý\ÙWÜš[X\žWÚÙ^IÈ[™	Ý\ÙWÜÚÚ\Ú[™^\ÉÂ[ÝÜÈ\Ú[™ÈÝ]\ÝXÜÈÈÜ[Z^™H]Y\šY\ÂŠH‹[Ý×ÜÝ]\ÝX×ÛÜ[Z^™JHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×ÜÝ]\ÝXÜËYKˆŠ[ÝÜÈYš[š[™ÈÛÛ[[œÈÚ]ÜÝ]\ÝXÜ×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›YÈÝX›WÙ[™Ú[™K[Y\™Ù]™YKXÜ™X][™ËXK]X›JH[™ÛX[š\[]HÝ]\ÝXÜ×J‹‹Ë‹‹Ù[™Ú[™\ËÝX›KY[™Ú[™\ËÛY\™Ù]™YKY˜[Z[KÛY\™Ù]™YK›YÈØÛÛ[[‹\Ý]\ÝXÜÊK‚ŠH‹[Ý×Ù^\š[Y[[ÜÝ]\ÝXÜÊHˆPÓT‘J›ÛÛ\ÙWÜÝ]\ÝXÜ×ØØXÚKYKˆŠ\ÙHÝ]\ÝXÜÈØXÚH[ˆH]Y\žHÈ]›ÚYHÝ™\šXYÙˆØY[™ÈÝ]\ÝXÜÈÙˆ]™\žH\ÊH‹
+HˆˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[˜X›WÙ[Ý^Ú[™^YKˆŠ’YˆÙ]ÈYK[ÝÈ\Ú[™ÈH^[™^‚ŠH‹[Ý×Ù^\š[Y[[Ù[Ý^Ú[™^
+HˆPÓT‘J›ÛÛ]Y\žWÜ[—Ù\™XÝÜ™XYÙœ›ÛWÝ^Ú[™^YKˆŠ[ÝÈÈ\™›Ü›H[^ÙX\˜Úš[\š[™È\Ú[™ÈÛ›HH[™\Y^[™^[ˆ]Y\žH[‹‚ŠH‹
+HˆPÓT‘J›ÛÛ]Y\žWÜ[—Ý^Ú[™^ØYÚ[YKˆŠ[ÝÈÈY[
+Y][Û˜[™YXØ]JH›Üˆš[\š[™ÈZ[œ›ÛHH[™\Y^[™^[ˆ]Y\žH[‹‚ŠH‹
+HˆPÓT‘J›Ø]^Ú[™^Ú[ÛX^ÜÙ[XÝ]š]KŒ™‹ˆŠ“X^[X[Ù[XÝ]š]HÙˆHš[\ˆÈ\ÙHH[Z[œ›ÛHH[™\Y^[™^‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝ^Ú[™^ÛZÙWÙ]˜[X][Û—ØžWÙXÝ[Û˜\žWÜØØ[‹YKˆŠ‘[˜X›H]˜[X][ÛˆÙˆRÑKÒSRÑH]Y\šY\ÈžHØØ[›š[™ÈH[™\Y^[™^XÝ[Û˜\žK‚ŠH‹
+HˆPÓT‘JR[^Ú[™^ÛZÙWÛZ[—Ü]\›—Û[™ÝˆŠ“Z[š[][H[™ÝÙˆH[[[Y\šXÈ™YYH[ˆHRÑKÒSRÑH]\›ˆ™\]Z\™YÈ\ÙHH^[™^RÑH]˜[X][ÛˆžHHXÝ[Û˜\žHØØ[‹‚”]\›œÈÚÜ\ˆ[ˆ\È™\ÚÛX]ÚÛÈX[žHXÝ[Û˜\žHÚÙ[œÈ[™\™HÚÚ\YÈ]›ÚY^[œÚ]™HØØ[œË‚‚”™\]Z\™\È\ÙWÝ^Ú[™^ÛZÙWÙ]˜[X][Û—ØžWÙXÝ[Û˜\žWÜØØ[˜È™H[˜X›Y‚ŠH‹
+HˆPÓT‘JR[^Ú[™^ÛZÙWÛX^ÜÜÝ[™Ü×Ý×Ü™XYLˆŠ“X^[][H[X™\ˆÙˆ\™ÙHÜÝ[™ÜÈÈ™XYÚ[ˆ^[™^RÑH]˜[X][ÛˆžHHXÝ[Û˜\žHØØ[ˆ\È[˜X›Y‚‚”™\]Z\™\È\ÙWÝ^Ú[™^ÛZÙWÙ]˜[X][Û—ØžWÙXÝ[Û˜\žWÜØØ[˜È™H[˜X›Y‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝ^Ú[™^ÝÚÙ[œ×ØØXÚKYKˆŠ•Ú]\ˆÈØXÚH\Ù\šX[^™Y^[™^ÚÙ[ˆ[™›ÜÈ[ˆY[[ÜžK‚•\Ú[™ÈH^[™^ÚÙ[œÈØXÚHØ[ˆÚYÛšYšXØ[H™YXÙH][˜ÞH[™[˜Ü™X\ÙH›ÝYÚ]Ú[ˆÛÜšÚ[™ÈÚ]H\™ÙH[X™\ˆÙˆ^[™^]Y\šY\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝ^Ú[™^ÚXY\—ØØXÚKYKˆŠ•Ú]\ˆÈØXÚH\Ù\šX[^™Y^[™^XY\œÈ[ˆY[[ÜžK‚•\Ú[™ÈH^[™^XY\ˆØXÚHØ[ˆÚYÛšYšXØ[H™YXÙH][˜ÞH[™[˜Ü™X\ÙH›ÝYÚ]Ú[ˆÛÜšÚ[™ÈÚ]H\™ÙH[X™\ˆÙˆ^[™^]Y\šY\Ë‚ŠH‹
+HˆPÓT‘J›ÛÛ\ÙWÝ^Ú[™^ÜÜÝ[™Ü×ØØXÚK˜[ÙKˆŠ•Ú]\ˆÈØXÚH\Ù\šX[^™Y^[™^\Ù\šX[^™YÜÝ[™È\ÝÈ[ˆY[[ÜžK‚•\Ú[™ÈH^[™^ÜÝ[™ÜÈØXÚHØ[ˆÚYÛšYšXØ[H™YXÙH][˜ÞH[™[˜Ü™X\ÙH›ÝYÚ]Ú[ˆÛÜšÚ[™ÈÚ]H\™ÙH[X™\ˆÙˆ^[™^]Y\šY\Ë‚ŠH‹
+HˆPÓT‘J^[™^ÜÝ[™Ó\Ý\S[ÙK^Ú[™^ÜÜÝ[™×Û\ÝØ\WÛ[ÙK^[™^ÜÝ[™Ó\Ý\S[ÙNŽ“PUT’PSV‘KˆŠÛÛ›ÛÈÝÈÜÝ[™È\ÝÈ\™H\YY\š[™È^[™^]Y\šY\Ë‚‰ÛX]\šX[^™IÈ
+Y˜][
+HXYÙ\›HXÛÙ\ÈÜÝ[™È\ÝÈ[È›Ø\š[™Èš]X\Ë‚‰Û^žIÈ\Ù\ÈÝ\œÛÜ‹X˜\ÙYÛ‹Y[X[™XÛÙ[™È
+™\]Z\™\È[ˆ[™^›Ü›X]Ú]HÙ\šX[^™YÛÙXÊK‚ŠH‹
+HˆPÓT‘WÕÒUÐSPTÊ›Ø]^Ú[™^Û^žWÚ[\œÙXÝ[Û—Ù[œÚ]WÝ™\ÚÛŒ™‹ˆŠ”ÜÝ[™È\Ý[œÚ]H™\ÚÛ]Ù[XÝÈH[\œÙXÝ[Ûˆ[ÛÜš]H[ˆ^žHÜÝ[™È\Ý\H[ÙH
+^Ú[™^ÜÜÝ[™×Û\ÝØ\WÛ[ÙHH	Û^žIØ
+K‚™[ÝÈH™\ÚÛˆX\œ›ÙÈ[\œÙXÝ[Ûˆ
+˜]›ÜœÈÜ\œÙHÜÝ[™È\ÝÊKˆ]ÜˆX›Ý™Nˆœ]KY›Ü˜ÙHš]X\[\œÙXÝ[Ûˆ
+˜]›ÜœÈ[œÙHÜÝ[™È\ÝÊK‚ŠH‹^Ú[™^Ù[œÚ]WÝ™\ÚÛ
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÝÚ[™Ý×ÝšY]Ë˜[ÙKˆŠ‘[˜X›HÒS‘ÕÈ’QUËˆ›ÝX]\™H[›ÝYÚ‚ŠH‹VT’SQS•S
+HˆPÓT‘JÙXÛÛ™ËÚ[™Ý×ÝšY]×ØÛX[—Ú[\˜[ŒˆŠ•HÛX[ˆ[\˜[ÙˆÚ[™ÝÈšY]È[ˆÙXÛÛ™ÈÈœ™YHÝ]]Y]K‚ŠH‹VT’SQS•S
+HˆPÓT‘JÙXÛÛ™ËÚ[™Ý×ÝšY]×ÚX\™X]Ú[\˜[MKˆŠ•HX\™X][\˜[[ˆÙXÛÛ™ÈÈ[™XØ]HØ]Ú]Y\žH\È[]™K‚ŠH‹VT’SQS•S
+HˆPÓT‘JÙXÛÛ™ËØZ]Ù›Ü—ÝÚ[™Ý×ÝšY]×Ùš\™WÜÚYÛ˜[Ý[Y[Ý]LˆŠ•[Y[Ý]›ÜˆØZ][™È›ÜˆÚ[™ÝÈšY]Èš\™HÚYÛ˜[[ˆ]™[[YH›ØÙ\ÜÚ[™ÂŠH‹VT’SQS•S
+HˆˆPÓT‘J›ÛÛÝÜÜ™Yœ™\ÚX›WÛX]\šX[^™YÝšY]Ü×ÛÛ—ÜÝ\\˜[ÙKˆŠ“ÛˆÙ\™\ˆÝ\\™]™[ØÚY[[™ÈÙˆ™Yœ™\ÚX›HX]\šX[^™YšY]ÜË\ÈYˆÚ]ÖTÕSHÕÔ’QUÔËˆ[ÝHØ[ˆX[X[HÝ\[HÚ]ÖTÕSHÕT•’QUÔØÜˆÖTÕSHÕT•’QUÈ˜[YO˜Y\Ø\™Ëˆ[ÛÈ\Y\ÈÈ™]ÛHÜ™X]YšY]ÜËˆ\È›ÈY™™XÝÛˆ›Û‹\™Yœ™\ÚX›HX]\šX[^™YšY]ÜË‚ŠH‹VT’SQS•S
+HˆˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÛX]\šX[^™YÜÜÝÜ™\Ü[˜[ÙKˆŠ[ÝÈÈÜ™X]H]X˜\ÙHÚ][™Ú[™OSX]\šX[^™YÜÝÜ™TÔS
+‹‹ŠK‚ŠH‹VT’SQS•S
+HˆˆPÓT‘J›ÛÛ[Ý×Û[X›WÝ\WÚ[—Ù^˜XÝYÜÝX˜ÛÛ[[œË˜[ÙKˆŠÛÛ›ÛÈÚ]\ˆ^˜XÝYÝX˜ÛÛ[[œÈÙˆ\H\J‹‹ŠXØ[ˆ™H\Y\È[X›J\J‹‹ŠJX‚‚‹H˜[ÙXˆ™]\›ˆ\J‹‹ŠX[™\ÙHY˜][\H˜[Y\È›Üˆ›ÝÜÈÚ\™HHÝX˜ÛÛ[[ˆ\ÈZ\ÜÚ[™Ë‚‹HYXˆ™]\›ˆ[X›J\J‹‹ŠJX[™\ÙH•S›Üˆ›ÝÜÈÚ\™HHÝX˜ÛÛ[[ˆ\ÈZ\ÜÚ[™Ë‚‚•\ÈÙ][™ÈÛÛ›ÛÈ^˜XÝYÝX˜ÛÛ[[ˆ™Z]š[ÜˆÛ›K‚’]Ù\È›ÝÛÛ›ÛÚ]\ˆ[X›J\J‹‹ŠJXÛÛ[[œÈØ[ˆ™HÜ™X]Y[ˆX›\ÎÈ]\ÈÛÛ›ÛYžH[˜X›WÛ[X›WÝ\WÝ\X‚‚ÛXÚÒÝ\ÙH\Ù\ÈH˜[YH›Üˆ\ÈÙ][™ÈØYY]Ù\™\ˆÝ\\‚Ú[™Ù\ÈXYHÚ]ÑUÜˆ]Y\žK[]™[ÑUS‘ÔØÈ›ÝÚ[™ÙH^˜XÝYÝX˜ÛÛ[[ˆ™Z]š[Ü‹‚•ÈÚ[™ÙH^˜XÝYÝX˜ÛÛ[[ˆ™Z]š[Ü‹\]H[Ý×Û[X›WÝ\WÚ[—Ù^˜XÝYÜÝX˜ÛÛ[[œØ[ˆÝ\\›Ùš[HÛÛ™šYÝ\˜][Ûˆ
+›Üˆ^[\K\Ù\œËž[
+H[™™\Ý\HÙ\™\‹‚ŠH‹
+HˆˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÚ\×ØØ][ÙË˜[ÙKˆŠ[ÝÈ^\š[Y[[]X˜\ÙH[™Ú[™H]SZÙPØ][ÙÈÚ]Ø][Ù×Ý\HH	Ú\ÉÂŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÚÝ\Ý×ÙX[XÝ˜[ÙKˆŠ‘[˜X›HÝ\ÝÈ]Y\žH[™ÝXYÙH
+ÔS
+HH[ˆ[\›˜]]™HÈÔS‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Üœ[ÙX[XÝ˜[ÙKˆŠ‘[˜X›H”SH[ˆ[\›˜]]™HÈÔS‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÜÛYÛÝÙX[XÝ˜[ÙKˆŠ‘[˜X›HÛYÛÝÔS˜[œÜ[\ˆH˜[œÜ[\ÈÔSœ›ÛHÌ
+ÈX[XÝÈ
+^TÔSÜÝÜ™TÔSÔS]KÛ›ÝÙ›ZÙKXÚÑ‹]ËŠH[ÈÛXÚÒÝ\ÙHÔS‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™ËÛYÛÝÙX[XÝˆ‹ˆŠ”ÛÝ\˜ÙHÔSX[XÝ›ÜˆHÛYÛÝ˜[œÜ[\ˆ
+K™Ëˆ	ÜÜ[]IË	Û^\Ü[	Ë	ÜÜÝÜ™\Ü[	Ë	ÜÛ›ÝÙ›ZÙIË	ÙXÚÙ‰ÊK‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[˜X›WØY\]™WÛY[[ÜžWÜÜ[ÜØÚY[\‹˜[ÙKˆŠ•šYÙÙ\ˆ›ØÙ\ÜÛÜˆÈÜ[]H[È^\›˜[ÝÜ˜YÙHY]]™[KˆÜ˜XÙH›Ú[ˆ\ÈÝ\ÜY]™\Ù[‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù[WÚÙ\›™[ÜœËYKˆŠ[ÝÈ^\š[Y[[[KZÙ\›™[\œÈ[\[Y[][Û‹‚ŠH‹‘UJHˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ú[œÙ\Ú[×ÚXÙX™\™Ë˜[ÙKˆŠ[ÝÈÈ^XÝ]H[œÙ\]Y\šY\È[ÈXÙX™\™Ë‚ŠH‹‘UK[Ý×Ù^\š[Y[[Ú[œÙ\Ú[×ÚXÙX™\™ÊHˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ØÛX[\ÛÛÙ]WÙš[\×ØÛÛ\XÝ[Û‹˜[ÙKˆŠ[ÝÈÈÛX[ˆ\Û]Hš[\È\š[™ÈXÙX™\™ÈÛÛ\XÝ[Û‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÚXÙX™\™×ØÛÛ\XÝ[Û‹˜[ÙKˆŠ[ÝÈÈ^XÚ]H\ÙH	ÓÔSRV‘IÈ›ÜˆXÙX™\™ÈX›\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[XÙX™\™×ÛX[šY™\ÝÛZ[—ØÛÝ[Ý×ØÛÛ\XÝÌˆŠ“Z[š[][H[X™\ˆÙˆX[šY™\Ýš[\È™\]Z\™YÈšYÙÙ\ˆX[šY™\Ý[Û›HÛÛ\XÝ[ÛˆšXHÔSRV‘HP“H‹‹ˆPS’Q‘TÕ‚’YˆHÝ\œ™[[X™\ˆÙˆX[šY™\Ýš[\È\È\ÜÈ[ˆÜˆ\]X[È\È™\ÚÛÛÛ\XÝ[Ûˆ\ÈÚÚ\Y‚”™\]Z\™\È[Ý×Ù^\š[Y[[ÚXÙX™\™×ØÛÛ\XÝ[ÛˆÈ™H[˜X›Y‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×ÚXÙX™\™×Ü™[[Ý™WÛÜœ[—Ùš[\Ë˜[ÙKˆŠ[ÝÈÈ\ÙH	ÐSTˆP“H‹‹ˆVPÕUH™[[Ý™WÛÜœ[—Ùš[\Ê
+IÈ›ÜˆXÙX™\™ÈX›\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[XÙX™\™×ÛÜœ[—Ùš[\×ÛÛ\—Ý[—ÜÙXÛÛ™ËNLŒˆŠ‘Y˜][YÙH™\ÚÛ[ˆÙXÛÛ™È›ÜˆÜœ[ˆš[H™[[Ý˜[[ˆXÙX™\™ÈX›\Ëˆš[\È™]Ù\ˆ[ˆ\È\™H›ÝÛÛœÚY\™YÜœ[œËˆ\ÙYÚ[ˆHÛ\—Ý[ˆ\™Ý[Y[\ÈÛZ]Yœ›ÛHH™[[Ý™WÛÜœ[—Ùš[\Ê
+H›ØÙY\™HØ[ˆY˜][\ÈNLŒ
+È^\ÊK‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù^\™WÜÛ˜\ÚÝË˜[ÙKˆŠ[ÝÈÈ^XÝ]H^\š[Y[[XÙX™\™ÈÛÛ[X[™STˆP“H‹‹ˆVPÕUH^\™WÜÛ˜\ÚÝØ‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛÜš]WÙ[Ü]Ú[—ÚXÙX™\™×ÛY]Y]K˜[ÙKˆŠ•Üš]H[]È
+[˜ÛY[™ÈÌÎ‹ËÊH[ÈXÙX™\™ÈY]Y]Hš[\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™ËXÙX™\™×ÛY]Y]WØÛÛ\™\ÜÚ[Û—ÛY]Ùˆ‹ˆŠ“Y]ÙÈÛÛ\™\ÜÈ›Y]Y]KšœÛÛ˜š[K‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛXZÙWÙ\ÝšX]YÜ[‹˜[ÙKˆŠ“XZÙH\ÝšX]Y]Y\žH[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\ÝšX]YÜ[—Ù^XÝ]WÛØØ[K˜[ÙKˆŠ”[ˆ[\ÚÜÈÙˆH\ÝšX]Y]Y\žH[ˆØØ[Kˆ\ÙY[›Üˆ\Ý[™È[™XYÙÚ[™Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›Û–™\›ÕR[\ÝšX]YÜ[—ÙY˜][ÜÚY™›WÚ›Ú[—ØXÚÙ]ØÛÝ[ˆŠ‘Y˜][[X™\ˆÙˆXÚÙ]È›Üˆ\ÝšX]YÚY™›KZ\ÚZ›Ú[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›Û–™\›ÕR[\ÝšX]YÜ[—ÙY˜][Ü™XY\—ØXÚÙ]ØÛÝ[ˆŠ‘Y˜][[X™\ˆÙˆ\ÚÜÈ›Üˆ\˜[[™XY[™È[ˆ\ÝšX]Y]Y\žKˆ\ÚÜÈ\™HÜ™XYXÜ›ÜÜÈ™]ÙY[ˆ™\XØ\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\ÝšX]YÜ[—ÛÜ[Z^™WÙ^Ú[™Ù\ËYKˆŠ”™[[Ý™\È[›™XÙ\ÜØ\žH^Ú[™Ù\È[ˆ\ÝšX]Y]Y\žH[‹ˆ\ØX›H]›ÜˆXYÙÚ[™Ë‚ŠH‹
+HˆPÓT‘JR[\ÝšX]YÜ[—ÝÛÜšÙ\œ×Û[KˆŠ’ÝÈX[žHÝ][\ÜÈÛÜšÙ\œÈÚ[™H\ÙYÈ^XÝ]H\È]Y\žKˆ™\›È\ØX›\ÈÝ][\ÜË]ÛÜšÙ\ˆX\Ú[™È›Üˆ\ÝšX]Y[œË‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™Ë\ÝšX]YÜ[—Ù›Ü˜ÙWÙ^Ú[™ÙWÚÚ[™ˆ‹ˆŠ‘›Ü˜ÙHÜXÚYšYYÚ[™Ùˆ^Ú[™ÙHÜ\˜]ÜœÈ™]ÙY[ˆ\ÝšX]Y]Y\žHÝYÙ\Ë‚‚”ÜÜÚX›H˜[Y\Î‚‚ˆH	ÉÈHÈ›Ý›Ü˜ÙH[žHÚ[™Ùˆ^Ú[™ÙHÜ\˜]ÜœË]HÜ[Z^™\ˆÚÛÜÙKˆH	Ô\œÚ\ÝY	ÈH\ÙH[\Ü˜\žHš[\È[ˆØš™XÝÝÜ˜YÙKˆH	ÔÝ™X[Z[™ÉÈHÝ™X[H^Ú[™ÙH]HÝ™\ˆ™]ÛÜšË‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[\ÝšX]YÜ[—ÛX^Ü›ÝÜ×Ý×Øœ›ØYØ\ÝŒˆŠ“X^[][H›ÝÜÈÈ\ÙHœ›ØYØ\Ý›Ú[ˆ[œÝXYÙˆÚY™›H›Ú[ˆ[ˆ\ÝšX]Y]Y\žH[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\ÝšX]YÜ[—Ü™Y™\—Ü™\XØ\×ÛÝ™\—ÝÛÜšÙ\œË˜[ÙKˆŠ”Ù\šX[^™HH\ÝšX]Y]Y\žH[ˆ›Üˆ^XÝ][Ûˆ]™\XØ\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Þ]Ø]\\×ÝX›WÙ[™Ú[™K˜[ÙKˆŠ‘^\š[Y[[X›H[™Ú[™H›Üˆ[YÜ˜][ÛˆÚ]UØ]\\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Þ]Ø]\\×ÝX›WÙ[˜Ý[Û‹˜[ÙKˆŠ‘^\š[Y[[X›H[™Ú[™H›Üˆ[YÜ˜][ÛˆÚ]UØ]\\Ë‚ŠH‹VT’SQS•S
+H‘PÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Þ]Ø]\\×ÙXÝ[Û˜\žWÜÛÝ\˜ÙK˜[ÙKˆŠ‘^\š[Y[[XÝ[Û˜\žHÛÝ\˜ÙH›Üˆ[YÜ˜][ÛˆÚ]UØ]\\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\ÝšX]YÜ[—Ù›Ü˜ÙWÜÚY™›WØYÙÜ™YØ][Û‹˜[ÙKˆŠ•\ÙHÚY™›HYÙÜ™YØ][ÛˆÝ˜]YÞH[œÝXYÙˆ\X[YÙÜ™YØ][Ûˆ
+ÈY\™ÙH[ˆ\ÝšX]Y]Y\žH[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[˜X›WÚ›Ú[—Ü[[YWÙš[\œËYKˆŠ‘š[\ˆYÚYHžHÙ]Ùˆ“ÒSˆÙ^\ÈÛÛXÝYœ›ÛHHšYÚÚYH][[YK‚ŠH‹‘UJHˆPÓT‘JR[›Ú[—Ü[[YWÙš[\—Ù^XÝÝ˜[Y\×Û[Z]LˆŠ“X^[][H[X™\ˆÙˆ[[Y[È[ˆ[[YHš[\ˆ]\™HÝÜ™Y\È\È[ˆHÙ]Ú[ˆ\È™\ÚÛ\È^ÙYYY]ÝÚ]Ú\ÈÈ›ÛÛHš[\‹‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[›Ú[—Ü[[YWØ›ÛÛWÙš[\—Øž]\ËLL—ÒÚP‹ˆŠ”Ú^™H[ˆž]\ÈÙˆH›ÛÛHš[\ˆ\ÙY\È“ÒSˆ[[YHš[\ˆ
+ÙYH[˜X›WÚ›Ú[—Ü[[YWÙš[\œÈÙ][™ÊK‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[›Ú[—Ü[[YWØ›ÛÛWÙš[\—Ú\ÚÙ[˜Ý[ÛœËËˆŠ“[X™\ˆÙˆ\Ú[˜Ý[ÛœÈ[ˆH›ÛÛHš[\ˆ\ÙY\È“ÒSˆ[[YHš[\ˆ
+ÙYH[˜X›WÚ›Ú[—Ü[[YWÙš[\œÈÙ][™ÊK‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝX›K›Ú[—Ü[[YWÙš[\—Ü\Ü×Ü˜][×Ý™\ÚÛÙ›Ü—Ù\ØX›[™ËËˆŠ’Yˆ˜][ÈÙˆ\ÜÙY›ÝÜÈÈÚXÚÙY›ÝÜÈ\ÈÜ™X]\ˆ[ˆ\È™\ÚÛH[[YHš[\ˆ\ÈÛÛœÚY\™Y\ÈÛÜ›H\™›Ü›Z[™È[™\È\ØX›Y›ÜˆH™^›Ú[—Ü[[YWÙš[\—Ø›ØÚÜ×Ý×ÜÚÚ\Ø™Y›Ü™WÜ™Y[˜X›[™Ø›ØÚÜÈÈ™YXÙHHÝ™\šXY‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[›Ú[—Ü[[YWÙš[\—Ø›ØÚÜ×Ý×ÜÚÚ\Ø™Y›Ü™WÜ™Y[˜X›[™ËÌˆŠ“[X™\ˆÙˆ›ØÚÜÈ]\™HÚÚ\Y™Y›Ü™HžZ[™ÈÈ[˜[ZXØ[H™KY[˜X›HH[[YHš[\ˆ]™]š[Ý\ÛHØ\È\ØX›YYHÈÛÜˆš[\š[™È˜][Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝX›K›Ú[—Ü[[YWØ›ÛÛWÙš[\—ÛX^Ü˜][×ÛÙ—ÜÙ]Øš]ËËˆŠ’YˆH[X™\ˆÙˆÙ]š]È[ˆH[[YH›ÛÛHš[\ˆ^ÙYYÈ\È˜][ÈHš[\ˆ\ÈÛÛ\][H\ØX›YÈ™YXÙHHÝ™\šXY‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[›Ú[—Ü[[YWÙš[\—ÛZ[—Ü›Ø™WÜ›ÝÜËLˆŠ’Y‹]]Y\žH[›š[™È[YKH›Ø™HÚYHÙˆH“ÒSˆ\È\Ý[X]YÈ›ÙXÙH›È[Ü™H[ˆ\È[X™\ˆÙˆ›ÝÜËH“ÒSˆ[[YHš[\ˆ\È›ÝÜ™X]YˆZ[[™È[™\Z[™ÈH[[YHš[\ˆ›ÜˆH[žH›Ø™HÚYHÛÜÝÈ[Ü™H[ˆ]Ø]™\ËˆÙ]ÈÈ[Ø^\ÈÜ™X]HH[[YHš[\ˆ™YØ\™\ÜÈÙˆH\Ý[X]Y›Ø™HÚ^™K‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ›Ú[—Ü[[YWÙš[\—Ùœ›ÛWÙš^YÚ\ÚÝX›KYKˆŠ•Ú[ˆH\Ú›Ú[ˆZ[ÚYHØ\ÈÛÛ™\YÈHš^Y\ÚX\
+ÙYH[˜X›WÚ›Ú[—Ùš^YÚ\ÚÝX›WØÛÛ™\œÚ[Û˜
+K\ÙH]\ÚX\\™XÝH\ÈH[[YHš[\‹‚ŠH‹
+HˆPÓT‘J›ÛÛ[˜X›WÚ›Ú[—Ü[[YWÙš[\œ×Ú[™^Ø[˜[\Ú\Ë˜[ÙKˆŠ”[ˆHÙXÛÛ™\ÜÈ[™^[˜[\Ú\È
+šXH\ÙWÜÚÚ\Ú[™^\×ÛÛ—Ù]WÜ™XY
+HÈ[™HÜ˜[[\ÈÛˆÈÙˆH›Ú[‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ›Ú[—Ü[[YWÙš[\—ÜÚ^™WÙœ›ÛWÚ\ÚÝX›WÜÝ]ËYKˆŠ•\ÙH\ÚX›HÚ^™HÝ]\ÝXÜÈÛÛXÝYœ›ÛH™]š[Ý\È^XÝ][ÛœÈÈÚ^™HH“ÒSˆ[[YHš[\‹ˆÚ[ˆ\ØX›Y˜[˜XÚÈÈHš^Y›Ú[—Ü[[YWØ›ÛÛWÙš[\—Øž]\Ø‚ŠH‹
+HˆPÓT‘J›ÛÛ™]Üš]WÚ[—Ý×Ú›Ú[‹˜[ÙKˆŠ”™]Üš]H^™\ÜÚ[ÛœÈZÙH	ÞSˆÝXœ]Y\žIÈÈ“ÒS‹ˆ\ÈZYÚ™H\ÙY[›ÜˆÜ[Z^š[™ÈHÚÛH]Y\žHÚ]›Ú[ˆ™[Ü™\š[™Ë‚ŠH‹VT’SQS•S
+HˆˆÊŠˆ^\š[Y[[[YTÙ\šY\ÊˆYÙÜ™YØ]H[˜Ý[ÛœËˆ
+‹ÈˆPÓT‘WÕÒUÐSPTÊ›ÛÛ[Ý×Ù^\š[Y[[Ý[YWÜÙ\šY\×ØYÙÜ™YØ]WÙ[˜Ý[ÛœË˜[ÙKˆŠ‘^\š[Y[[[YTÙ\šY\ÊˆYÙÜ™YØ]H[˜Ý[ÛœÈ›Üˆ›ÛY]]\Ë[ZÙH[Y\Ù\šY\È™\Ø[\[™Ë˜]K[HØ[Ý[][Û‹‚ŠH‹VT’SQS•S[Ý×Ù^\š[Y[[Ý×Ý×ÙÜšYØYÙÜ™YØ]WÙ[˜Ý[ÛŠHˆˆPÓT‘JÝš[™Ë›Û\[Ù]X˜\ÙKˆ‹ˆŠ”ÜXÚYšY\ÈH]X˜\ÙH˜[YH\ÙYžHH	Ü›Û\[	ÈX[XÝˆ[\HÝš[™ÈYX[œÈHÝ\œ™[]X˜\ÙK‚ŠH‹VT’SQS•S
+HˆˆPÓT‘JÝš[™Ë›Û\[ÝX›Kˆ‹ˆŠ”ÜXÚYšY\ÈH˜[YHÙˆH[YTÙ\šY\ÈX›H\ÙYžHH	Ü›Û\[	ÈX[XÝ‚ŠH‹VT’SQS•S
+HˆˆPÓT‘WÕÒUÐSPTÊ›Ø]]]Ë›Û\[Ù]˜[X][Û—Ý[YKšY[
+˜]]ÈŠKˆŠ”Ù]ÈH]˜[X][Ûˆ[YHÈ™H\ÙYÚ]›Û\[X[XÝˆ	Ø]]ÉÈYX[œÈHÝ\œ™[[YK‚ŠH‹VT’SQS•S]˜[X][Û—Ý[YJHˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÜZ[[Û—ÜÝÜ˜YÙWÙ[™Ú[™K˜[ÙKˆŠ[ÝÈÈÜ™X]HX›\ÈÚ]Z[[ÛŠˆX›H[™Ú[™\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J[Z[[Û—Ý\™Ù]ÜÛ˜\ÚÝÚYLKˆŠ”]Y\žK[]™[\™Ù]YÛ˜\ÚÝ™XY›ÜˆZ[[Ûˆ[˜Ü™[Y[[[ÙKˆÚ[ˆŒH™XY\ˆÚ[Û›H™]ÚH[B™›ÜˆHÜXÚYšYYÛ˜\ÚÝÚYÚ]Ý]Y˜[˜Ú[™ÈHÛÛ[Z]YØ]\›X\šË‚‘Y˜][ˆLH
+\ØX›Y
+BŠH‹VT’SQS•S
+HˆPÓT‘JR[X^ØÛÛœÝ[YWÜÛ˜\ÚÝËˆŠ“X^[][H[X™\ˆÙˆZ[[ÛˆÛ˜\ÚÝÈÈÛÛœÝ[YH\ˆ[˜Ü™[Y[[™XYˆYX[œÈ›È[Z]‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ\ÙWÜZ[[Û—Ü\][Û—Ü[š[™Ë˜[ÙKˆŠ•\ÙHZ[[Ûˆ\][Ûˆ[š[™È›ÜˆZ[[ÛˆX›H[˜Ý[ÛœÂŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ÛØš™XÝÜÝÜ˜YÙWÜ]Y]YWÚ]™WÜ\][Ûš[™Ë˜[ÙKˆŠ[ÝÈÈ\ÙH]™H\][Ûš[™ÈÚ]ÌÔ]Y]YKÐ^\™T]Y]YH[™Ú[™\ÂŠH‹VT’SQS•S
+H‘PÓT‘J›Ú[“Ü™\[ÛÜš]K]Y\žWÜ[—ÛÜ[Z^™WÚ›Ú[—ÛÜ™\—Ø[ÛÜš]K™Ü™YYH‹ˆŠ”ÜXÚYšY\ÈÚXÚ“ÒSˆÜ™\ˆ[ÛÜš]\ÈÈ][\\š[™È]Y\žH[ˆÜ[Z^˜][Û‹ˆH›ÛÝÚ[™È[ÛÜš]\È\™H]˜Z[X›N‚ˆH	ÙÜ™YYIÈH˜\ÚXÈÜ™YYH[ÛÜš]HHÛÜšÜÈ˜\Ý]ZYÚ›Ý›ÙXÙHH™\Ý›Ú[ˆÜ™\‚ˆH	ÙÚ^™IÈH[\[Y[ÈÚ^™H[ÛÜš]HÝ\œ™[HÛ›H›Üˆ[›™\ˆ›Ú[œÈHÛÛœÚY\œÈ[ÜÜÚX›H›Ú[ˆÜ™\œÈ[™š[™ÈH[ÜÝÜ[X[Û™H]ZYÚ™HÛÝÈ›Üˆ]Y\šY\ÈÚ]X[žHX›\È[™›Ú[ˆ™YXØ]\Ë‚ˆH	ÙÝX‰ÈH[\[Y[ÈÝXˆ[ÛÜš]HÚXÚÝ\ÜÈ›Ý[›™\ˆ[™›Û‹Z[›™\ˆ›Ú[œÈHÛÛœÚY\œÈ[ÜÜÚX›H›Ú[ˆÜ™\œÈ[™š[™ÈH[ÜÝÜ[X[Û™H]ZYÚ™HÛÝÈ›Üˆ]Y\šY\ÈÚ]X[žHX›\È[™›Ú[ˆ™YXØ]\Ë‚ˆH	Ù\	ÈH[\[Y[È\
+[˜[ZXÈ›ÙÜ˜[[Z[™ÈšXH\\™Ü˜\\][Ûš[™ÊH[ÛÜš]HÝ\œ™[HÛ›H›Üˆ[›™\ˆ›Ú[œÈH^Ü™\ÈHØ[YHÙX\˜ÚÜXÙH\ÈÚ^™X][[Y\˜]\ÈÛ›HÛÛ›™XÝYÝX™Ü˜\Z\œËÚXÚÙ[™\˜]\È™]Ù\ˆ[\›YYX]H›Ú[œÈÛˆÜ\œÙH›Ú[ˆÜ˜\Ë]HÛÜÝÙˆ›ÝÛÛœÚY\š[™ÈÜ›ÜÜÈ›ÙXÝÂ“][\H[ÛÜš]\ÈØ[ˆ™HÜXÚYšYY\ÈHÛÛ[XK\Ù\\˜]Y\ÝK™Ëˆ\Ü™YYXˆ^H\™HšYY[ˆÜ™\ŽÈYˆ[ˆ[ÛÜš]HØ[››Ý[™HH]Y\žH
+K™ËˆYHÈÝ]\ˆ›Ú[œÈÜˆ\ØÛÛ›™XÝYÛÛ\Û™[ÊKH™^Û™H\È\ÙY\ÈH˜[˜XÚË‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÜZ[[Û—Ü™\ÝØØ][ÙË˜[ÙKˆŠ[ÝÈ^\š[Y[[]X˜\ÙH[™Ú[™H]SZÙPØ][ÙÈÚ]Ø][Ù×Ý\HH	ÜZ[[Û—Ü™\Ý	ÂŠH‹VT’SQS•S
+HˆPÓT‘JR[ÙX˜\ÜÙ[X›WÝY—ÛX^ÙY[L	ÌˆŠ‘Y[[Z]\ˆÙX\ÜÙ[X›HQˆ[œÝ[˜ÙH^XÝ][Û‹ˆXXÚÙX\ÜÙ[X›H[œÝXÝ[ÛˆÛÛœÝ[Y\ÈÛÛYH[[Ý[ÙˆY[ˆH˜[YH\ÈØØ[YžHL™Y›Ü™H™Z[™È\ÜÙYÈH[[YKÛÈÙX˜\ÜÙ[X›WÝY—ÛX^ÙY[HXÛÜœ™\ÜÛ™ÈÈ\›Þ[X][HLY[[š]ËˆÙ]È›Üˆ›Èš[š]H[Z]ˆ\Y\ÈÛ›HÈ[˜Ý[ÛœÈÚÜÙH\‹Y[˜Ý[ÛˆÙ][™ÈÙX˜\ÜÙ[X›WÝY—Ù[˜X›WÙY[\ÈYKÚXÚ\ÈHY˜][‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ÙX˜\ÜÙ[X›WÝY—ÛX^ÛY[[ÜžKLŽÓZP‹ˆŠ“Y[[ÜžH[Z][ˆž]\È\ˆÙX\ÜÙ[X›HQˆ[œÝ[˜ÙK‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ÙX˜\ÜÙ[X›WÝY—ÛX^Ú[œ]Ø›ØÚ×ÜÚ^™KˆŠ“X^[][H[X™\ˆÙˆ›ÝÜÈ\ÜÙYÈHÙX\ÜÙ[X›HQˆ[ˆHÚ[™ÛH›ØÚËˆÙ]ÈÈ›ØÙ\ÜÈ[›ÝÜÈ]Û˜ÙK‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ÙX˜\ÜÙ[X›WÝY—ÛX^Ú[œÝ[˜Ù\ËÌ‹ˆŠ“X^[][H[X™\ˆÙˆÙX\ÜÙ[X›HQˆ[œÝ[˜Ù\È]Ø[ˆ[ˆ[ˆ\˜[[\ˆ[˜Ý[Û‹‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[Ù]˜[ÝX›WÙ[˜Ý[Û‹˜[ÙKˆŠ‘[˜X›H^\š[Y[[X›H[˜Ý[Ûˆ]˜[‚ŠH‹VT’SQS•S
+HˆˆÊˆÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈ
+‹ÈˆÊˆRH[˜Ý[ÛˆÙ][™ÜÈ
+‹ÈˆPÓT‘J›ÛÛ[Ý×Ù^\š[Y[[ØZWÙ[˜Ý[ÛœË˜[ÙKˆŠ‘[˜X›H^\š[Y[[RH[˜Ý[ÛœÈ
+K™ËˆZQÙ[™\˜]PÛÛ[
+Kˆ\ÙH[˜Ý[ÛœÈXZÙH^\›˜[Ø[ÈÈRH›ÝšY\œË‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ZWÙ[˜Ý[Û—Ü™\]Y\ÝÝ[Y[Ý]ÜÙXËŒˆŠ•[Y[Ý][ˆÙXÛÛ™È›Üˆ[™]šYX[™\]Y\ÝÈXYHžHRH[˜Ý[ÛœÈ
+RHÚ]ÛÛ\][ÛœÈ[™[X™Y[™ÈTHØ[ÊKˆYˆH™\]Y\ÝÙ\È›ÝÛÛ\]HÚ][ˆ\È[YK]\ÈÛÛœÚY\™Y˜Z[Y[™X^H™H™]šYYXØÛÜ™[™ÈÈZWÙ[˜Ý[Û—ÛX^Ü™]šY\Ø‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ZWÙ[˜Ý[Û—ÛX^Ü™]šY\ËˆŠ“X^[][H[X™\ˆÙˆ™]žH][\È›Üˆ˜[œÚY[\œ›ÜœÈ\ˆ[™]šYX[TH™\]Y\ÝˆXXÚ™]žH\Ù\È^Û™[X[˜XÚÛÙ™ˆÝ\[™Èœ›ÛHZWÙ[˜Ý[Û—Ü™]žWÚ[š]X[Ù[^WÛ\Ø‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ZWÙ[˜Ý[Û—Ü™]žWÚ[š]X[Ù[^WÛ\ËLˆŠ’[š]X[[^H[ˆZ[\ÙXÛÛ™È™Y›Ü™HHš\œÝ™]žHÙˆH˜Z[YRH[˜Ý[ÛˆTH™\]Y\ÝˆH[^HÝX›\ÈÛˆXXÚÝXœÙ\]Y[][\
+^Û™[X[˜XÚÛÙ™ŠKˆ›Üˆ^[\KÚ]Y˜][Ù][™ÜÎˆL\ËŒ\Ë\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛZWÙ[˜Ý[Û—Ý›Ý×ÛÛ—Ù\œ›Ü‹YKˆŠ’YˆYH
+Y˜][
+K[ˆRH[˜Ý[ÛˆØ[]˜Z[È\›X[™[HY\ˆ^]\Ý[™È[™]šY\ÈX›ÜÈH]Y\žHÚ][ˆ^Ù\[Û‹ˆYˆ˜[ÙKH˜Z[Y›ÝÈ™XÙZ]™\ÈHY˜][˜[YH›ÜˆHÛÛ[[ˆ\H
+[\HÝš[™È›ÜˆÝš[™ÊH[™›ØÙ\ÜÚ[™ÈÛÛ[Y\Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ZWÙ[˜Ý[Û—ÛX^Ú[œ]ÝÚÙ[œ×Ü\—Ü]Y\žKLˆŠ“X^[][HÝ[[œ]
+›Û\
+HÚÙ[œÈXÜ›ÜÜÈ[RH[˜Ý[ÛˆTHØ[È[ˆHÚ[™ÛH]Y\žKˆ˜XÚÙYÝ[][]]™[Hœ›ÛH›ÝšY\ˆ™\ÜÛœÙ\Ëˆ›ÝH]\È[Z]X^H™H^ÙYYYžHÛ™HØ[	ÜÈÛÜÙˆ[œ]ÚÙ[œËÚ[˜ÙHH[X™\ˆÙˆ[œ]ÚÙ[œÈÙˆHØ[\™H›ÝÛ›ÝÛˆ[ˆY˜[˜ÙKˆÙ]ÈÈ\ØX›K‚‚•\È[Z]\ÈÛ›H[™›Ü˜ÙY›Üˆ›ÝšY\œÈ]™\ÜH\ØYÙXØš™XÝ[ˆZ\ˆ™\ÜÛœÙH
+Ü[RK[›ÜXË“JKˆ›ÝšY\œÈ]ÛZ]ÚÙ[ˆ\ØYÙH
+›ÝX›HYÙÚ[™Ñ˜XÙHRJHØ]\ÙHHÛÝ[\ˆÈÝ^H]8 %\ÙHZWÙ[˜Ý[Û—ÛX^Ø\WØØ[×Ü\—Ü]Y\žX[œÝXYÈ›Ý[™ÝXÚØ[Ë‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ZWÙ[˜Ý[Û—ÛX^ÛÝ]]ÝÚÙ[œ×Ü\—Ü]Y\žKLˆŠ“X^[][HÝ[Ý]]
+ÛÛ\][ÛŠHÚÙ[œÈXÜ›ÜÜÈ[RH[˜Ý[ÛˆTHØ[È[ˆHÚ[™ÛH]Y\žKˆ˜XÚÙYÝ[][]]™[Hœ›ÛH›ÝšY\ˆ™\ÜÛœÙ\Ëˆ›ÝH]\È[Z]X^H™H^ÙYYYžHÛ™HØ[	ÜÈÛÜÙˆÝ]]ÚÙ[œËÚ[˜ÙHH[X™\ˆÙˆÝ]]ÚÙ[œÈÙˆHØ[\™H›ÝÛ›ÝÛˆ[ˆY˜[˜ÙKˆÙ]ÈÈ\ØX›K‚‚•\È[Z]\ÈÛ›H[™›Ü˜ÙY›Üˆ›ÝšY\œÈ]™\ÜH\ØYÙXØš™XÝ[ˆZ\ˆ™\ÜÛœÙH
+Ü[RK[›ÜXË“JKˆ]Ù\È›Ý\HÈ[X™Y[™È[˜Ý[ÛœÈ
+›ÝX›HZQ[X™Y
+KÚXÚ™]™\ˆ›ÙXÙHÝ]]ÚÙ[œË‚ŠH‹VT’SQS•S
+HˆPÓT‘JR[ZWÙ[˜Ý[Û—ÛX^Ø\WØØ[×Ü\—Ü]Y\žKˆŠ“X^[][H[X™\ˆÙˆ™\]Y\ÝÈ]RH[˜Ý[ÛœÈX^H\Ü]Ú\ˆ]Y\žKˆÙ]ÈÈ\ØX›K‚ŠH‹VT’SQS•S
+HˆPÓT‘J›ÛÛZWÙ[˜Ý[Û—Ý›Ý×ÛÛ—Ü][ÝWÙ^ÙYYYYKˆŠ’YˆYH
+Y˜][
+K^ÙYY[™È[ˆRH[˜Ý[Ûˆ][ÝH[Z]
+ZWÙ[˜Ý[Û—ÛX^Ú[œ]ÝÚÙ[œ×Ü\—Ü]Y\žXZWÙ[˜Ý[Û—ÛX^ÛÝ]]ÝÚÙ[œ×Ü\—Ü]Y\žXÜˆZWÙ[˜Ý[Û—ÛX^Ø\WØØ[×Ü\—Ü]Y\žX
+HX›ÜÈH]Y\žHÚ][ˆ^Ù\[Û‹ˆYˆ˜[ÙK™[XZ[š[™È›ÝÜÈ™XÙZ]™HHY˜][˜[YH›ÜˆHÛÛ[[ˆ\H
+[\HÝš[™È›ÜˆÝš[™ÊK‚ŠH‹VT’SQS•S
+HˆPÓT‘J›Û–™\›ÕR[ZWÙ[˜Ý[Û—Ù[X™Y[™×ÛX^Ø˜]ÚÜÚ^™KLˆŠ“X^[][H[X™\ˆÙˆ^ÈÈ[˜ÛYH[ˆHÚ[™ÛH™\]Y\ÝXYHžHZQ[X™Yˆ^È\™HÜ›Ý\Y[È˜]Ú\ÈÙˆ\ÈÚ^™HÈ™YXÙHTHØ[Ý™\šXYˆ›Üˆ^[\KL[š\]YH^ÈÚ]H˜]ÚÚ^™HÙˆL™\Ý[[ˆH™\]Y\ÝË‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™ËZWÙ[˜Ý[Û—Ý^ÙY˜][ØÜ™Y[X[Ëˆ‹ˆŠ“˜[YHÙˆH˜[YYÛÛXÝ[Ûˆ\ÙYžHH^RH[˜Ý[ÛœÈ
+ZQÙ[™\˜]XZPÛ\ÜÚYžXZQ^˜XÝZU˜[œÛ]X
+HÚ[ˆHØ[Ù\È›Ý\ÜÈÜ™Y[X[Ø[ˆ]È\˜[Y]\ˆX\ˆ[\HYX[œÈ›ÈY˜][ˆÝXÚØ[È]\Ý\ÜÈÜ™Y[X[Ø^XÚ]KˆHÚ]XÛÛ\][ÛœÈ[™Ú[Y™™\œÈœ›ÛH[ˆ[X™Y[™ÜÈÛ™KÛÈ\È\ÈÙ\\˜]Hœ›ÛHZWÙ[˜Ý[Û—Ù[X™Y[™×ÙY˜][ØÜ™Y[X[Ø‚ŠH‹VT’SQS•S
+HˆPÓT‘JÝš[™ËZWÙ[˜Ý[Û—Ù[X™Y[™×ÙY˜][ØÜ™Y[X[Ëˆ‹ˆŠ“˜[YHÙˆH˜[YYÛÛXÝ[Ûˆ\ÙYžHZQ[X™YÚ[ˆHØ[Ù\È›Ý\ÜÈÜ™Y[X[Ø[ˆ]È\˜[Y]\ˆX\ˆ[\HYX[œÈ›ÈY˜][ˆÝXÚØ[È]\Ý\ÜÈÜ™Y[X[Ø^XÚ]KˆZQ[X™YZÙ\È[Ù[\ÈH™\]Z\™YÜÚ][Û˜[\™Ý[Y[›Ýœ›ÛHH˜[YYÛÛXÝ[Û‹ˆÙ\Ù\\˜]Hœ›ÛHZWÙ[˜Ý[Û—Ý^ÙY˜][ØÜ™Y[X[Ø™XØ]\ÙH[ˆ[X™Y[™ÜÈ[™Ú[Y™™\œÈœ›ÛHHÚ]Û™K‚ŠH‹VT’SQS•S
+HˆÊˆÈÈÈÈÈÈÈÈÈÈÈÈS‘ÑˆVT’SQS•S‘PUT‘TÈÈÈÈÈÈÈÈÈÈÈÈÈÈ
+‹ÈˆÊˆÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈÈ
+‹È‚‹ËÈ[™ÙˆÓÓSSÓ—ÔÑUS‘ÔÂ‹ËÈX\ÙHYÙ][™ÜÈ™[]YÈ›Ü›X]È[ˆÛÜ™KÑ›Ü›X]˜XÝÜžTÙ][™ÜËš[Ý™HØœÛÛ]HÙ][™ÜÈÈÐ”ÓÓUWÔÑUS‘ÔÈ[™ØœÛÛ]H›Ü›X]Ù][™ÜÈÈÐ”ÓÓUWÑ“Ô“PUÔÑUS‘ÔË‚‚ˆÙYš[™HÐ”ÓÓUWÔÑUS‘ÔÊKSPTÊHˆÊŠˆØœÛÛ]HÙ][™ÜÈÚXÚ\™HÙ\\›Ý[™›ÜˆÛÛ\]Xš[]H™X\ÛÛœËˆ^H]™H›ÈY™™XÝ[ž[[Ü™Kˆ
+‹ÈˆPRÑWÓÐ”ÓÓUJK›ÛÛ\ÝšX]YØØXÚWÝ\ÙWØÛY[×ØØXÚWÙ›Ü—ÝÜš]K˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ü]Y\žWÙY\XØ][Û‹˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ]Y\žWØÛÛ™][Û—ØØXÚWÜÝÜ™WØÛÛ™][Ûœ×Ø\×ÜZ[^˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ\]WÚ[œÙ\ÙY\XØ][Û—ÝÚÙ[—Ú[—Ù\[™[ÛX]\šX[^™YÝšY]ÜË
+HˆPRÑWÓÐ”ÓÓUJKR[X^ÛY[[ÜžWÝ\ØYÙWÙ›Ü—Ø[Ü]Y\šY\Ë
+HˆPRÑWÓÐ”ÓÓUJKR[][\WÚ›Ú[œ×Ü™]Üš]\—Ý™\œÚ[Û‹
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÙXY×Ü]Y\šY\Ë˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWØ]ÛZXËYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ØšYÚ[Ý\\ËYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÝÚ[™Ý×Ù[˜Ý[ÛœËYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÙÙ[×Ý\\ËYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ü]Y\žWØØXÚKYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ø[\—ÛX]\šX[^™YÝšY]×ÜÝXÝ\™KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÜÚ\™YÛY\™ÙWÝ™YKYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÜ™\XØ]YYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ü™Yœ™\ÚX›WÛX]\šX[^™YÝšY]ËYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ø™›Ø]M—Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ú[™\YÚ[™^˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^YJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ý^Ú[™^Û^žWØ\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÜÝ]\ÝXË˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÝ™XÝÜ—ÜÚ[Z[\š]WÚ[™^YJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÜXš]Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÜXš]Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ø[X\×ÝX›WÙ[™Ú[™K˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù\™XØ]YÜÛ›ÝÙ›ZÙWØÛÛ™\œÚ[Û—Ù[˜Ý[ÛœË˜[ÙJHˆˆPRÑWÓÐ”ÓÓUJKZ[\ÙXÛÛ™Ë\Þ[˜×Ú[œÙ\ÜÝ[WÝ[Y[Ý]Û\Ë
+HˆPRÑWÓÐ”ÓÓUJKÝ™X[Z[™Ò[™Q\œ›Ü“[ÙK[™WÚØYšØWÙ\œ›Ü—Û[ÙKÝ™X[Z[™Ò[™Q\œ›Ü“[ÙNŽ‘QUS
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ]X˜\ÙWÜ™\XØ]YÙÛÝ]]YJHˆPRÑWÓÐ”ÓÓUJKR[™\XØ][Û—Ø[\—ØÛÛ[[œ×Ý[Y[Ý]Œ
+HˆPRÑWÓÐ”ÓÓUJKR[Ù˜×ÛX^ÙšY[ÜÚ^™K
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÛX\Ý\KYJHˆPRÑWÓÐ”ÓÓUJKR[Y\™ÙWÝ™YWØÛX\—ÛÛÝ[\Ü˜\žWÙ\™XÝÜšY\×Ú[\˜[ÜÙXÛÛ™ËŒ
+HˆPRÑWÓÐ”ÓÓUJKR[Y\™ÙWÝ™YWØÛX\—ÛÛÜ\×Ú[\˜[ÜÙXÛÛ™ËJHˆPRÑWÓÐ”ÓÓUJKR[\X[ÛY\™ÙWÚ›Ú[—ÛÜ[Z^˜][ÛœË
+HˆPRÑWÓÐ”ÓÓUJKX^™XYËX^Ø[\—Ý™XYË
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ\ÙWÛ^\Ü[Ý\\×Ú[—ÜÚÝ×ØÛÛ[[œË˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛÌÜ]Y]YWØ[Ý×Ù^\š[Y[[ÜÚ\™YÛ[ÙK˜[ÙJHˆPRÑWÓÐ”ÓÓUJKYÚÙZYÚ]]][Û”›Ú™XÝ[Û“[ÙKYÚÙZYÚÛ]]][Û—Ü›Ú™XÝ[Û—Û[ÙKYÚÙZYÚ]]][Û”›Ú™XÝ[Û“[ÙNŽ•“ÕÊHˆPRÑWÓÐ”ÓÓUJK›ÛÛ\ÙWÛØØ[ØØXÚWÙ›Ü—Ü™[[ÝWÜÝÜ˜YÙK˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ú›Ú[—ØÛÛ™][Û‹˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ý˜\šX[Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ù[˜[ZX×Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÚœÛÛ—Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÝ˜\šX[Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÙ[˜[ZX×Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÚœÛÛ—Ý\KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛÌ×ÜÛÝ×Ø[Ý™XY×ØY\—Ü™]žXX›WÙ\œ›Ü‹˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ^\™WÜÙ×Ý\ÙWÛ˜]]™WØÛY[YJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Û›ÝØÛÛ\\˜X›WÝ\\×Ú[—ÛÜ™\—ØžK˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Û›ÝØÛÛ\\˜X›WÝ\\×Ú[—ØÛÛ\\š\ÛÛ—Ù[˜Ý[ÛœË˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÞœÝÜX]ØÛÙXË˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[˜X›WÙY›]WÜ\ØÛÙXË˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ›Ý×ÚY—ÙY\XØ][Û—Ú[—Ù\[™[ÛX]\šX[^™YÝšY]Ü×Ù[˜X›YÝÚ]Ø\Þ[˜×Ú[œÙ\˜[ÙJH—ˆÊˆ[Ý™YÈÛÛ™šYËž[ˆÙYH[ÛÈÜ˜ËÐÛÜ™KÔÙ\™\”Ù][™ÜËš
+‹ÈˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™ØY™™\—Ù›\ÚÜØÚY[WÜÛÛÜÚ^™KMŠHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™KMŠHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊK›Ø]˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ËŠHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™K
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™K
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™K
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÜÚ^™KLŽ
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™ÛY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÜÚ^™KMŠHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[˜XÚÙÜ›Ý[™Ù\ÝšX]YÜØÚY[WÜÛÛÜÚ^™KMŠHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[X^Ü™[[ÝWÜ™XYÛ™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\‹
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[X^Ü™[[ÝWÝÜš]WÛ™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\‹
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[\Þ[˜×Ú[œÙ\Ý™XYËMŠHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[X^Ü™\XØ]YÙ™]Ú\×Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\‹
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[X^Ü™\XØ]YÜÙ[™×Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\‹
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[X^Ù[šY\×Ù›Ü—Ú\ÚÝX›WÜÝ]ËL	Ì
+HˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[Ì×ÛX^Ü™Y\™XÝËÌÎŽ‘QUSÓPVÔ‘QT‘PÕÊHˆPRÑWÑT‘PÐUQÐ–WÔÑT•‘T—ÐÓÓ‘’QÊKR[Ì×Ü™]žWØ][\ËÌÎŽ‘QUSÔ‘U–WÐUSTÊHˆÊˆKKKH
+‹ÈˆPRÑWÓÐ”ÓÓUJKY˜][]X˜\ÙQ[™Ú[™KY˜][Ù]X˜\ÙWÙ[™Ú[™KY˜][]X˜\ÙQ[™Ú[™NŽ]ÛZXÊHˆPRÑWÓÐ”ÓÓUJKR[X^Ü\[[™WÙ\
+HˆPRÑWÓÐ”ÓÓUJKÙXÛÛ™Ë[\Ü˜\žWÛ]™WÝšY]×Ý[Y[Ý]JHˆPRÑWÓÐ”ÓÓUJKÙXÛÛ™Ë\š[ÙX×Û]™WÝšY]×Ü™Yœ™\ÚŒ
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Û]™WÝšY]Ë˜[ÙJHˆPRÑWÓÐ”ÓÓUJKÙXÛÛ™Ë]™WÝšY]×ÚX\™X]Ú[\˜[MJHˆPRÑWÓÐ”ÓÓUJKR[X^Û]™WÝšY]×Ú[œÙ\Ø›ØÚÜ×Ø™Y›Ü™WÜ™Yœ™\Ú
+HˆPRÑWÓÐ”ÓÓUJKZ[\ÙXÛÛ™Ë\Þ[˜×Ú[œÙ\ØÛX[\Ý[Y[Ý]Û\ËL
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛÜ[Z^™WÙ\ÙWÜÝ[WØÛÝ[Ø]™Ë
+HˆPRÑWÓÐ”ÓÓUJKÙXÛÛ™Ë˜Z[—Ý[Y[Ý]ÊHˆPRÑWÓÐ”ÓÓUJKR[˜XÚÝ\Ý™XYËMŠHˆPRÑWÓÐ”ÓÓUJKR[™\ÝÜ™WÝ™XYËMŠHˆPRÑWÓÐ”ÓÓUJK›ÛÛÜ[Z^™WÙ\XØ]WÛÜ™\—ØžWØ[™Ù\Ý[˜Ý˜[ÙJHˆPRÑWÓÐ”ÓÓUJKR[\˜[[Ü™\XØ\×ÛZ[—Û[X™\—ÛÙ—ÙÜ˜[[\×Ý×Ù[˜X›K
+HˆPRÑWÓÐ”ÓÓUJK\˜[[™\XØ\ÐÝ\ÝÛRÙ^Qš[\•\K\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^WÙš[\—Ý\K\˜[[™\XØ\ÐÝ\ÝÛRÙ^Qš[\•\NŽ‘QUS
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ]Y\žWÜ[—ÛÜ[Z^™WÜ›Ú™XÝ[Û‹YJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ]Y\žWØØXÚWÜÝÜ™WÜ™\Ý[×ÛÙ—Ü]Y\šY\×ÝÚ]Û›Û™]\›Z[š\ÝX×Ù[˜Ý[ÛœË˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ø[››ÞWÚ[™^˜[ÙJHˆPRÑWÓÐ”ÓÓUJKR[X^Ý™XY×Ù›Ü—Ø[››ÞWÚ[™^ØÜ™X][Û‹
+HˆPRÑWÓÐ”ÓÓUJK[[››ÞWÚ[™^ÜÙX\˜ÚÚ×Û›Ù\ËLJHˆPRÑWÓÐ”ÓÓUJK[X^Û[Z]Ù›Ü—Ø[›—Ü]Y\šY\ËLJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ý\ÙX\˜ÚÚ[™^˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛÜ[Z^™WÛ[Ý™WÙ[˜Ý[Ûœ×ÛÝ]ÛÙ—Ø[žK˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ý[™›ÜÝX›WÜ]Y\žKYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÜÌÜ]Y]YKYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ^Ú[™^Ý\ÙWØ›ÛÛWÙš[\‹YJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ]Y\žWÜ[—ÛÜ[Z^™WÜš[X\žWÚÙ^KYJHˆPRÑWÓÐ”ÓÓUJK›ÛÛÜ[Z^™WÛ[Û›ÝÛ›Ý\×Ù[˜Ý[Ûœ×Ú[—ÛÜ™\—ØžK˜[ÙJHˆPRÑWÓÐ”ÓÓUJKR[ÛX^ØÚ[š×ÜÚ^™KLÑÚPŠHˆPRÑWÓÐ”ÓÓUJK›ÛÛXÙX™\™×Ù[™Ú[™WÚYÛ›Ü™WÜØÚ[XWÙ]›Û][Û‹˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›Ø]\˜[[Ü™\XØ\×ÜÚ[™ÛWÝ\Ú×ÛX\šÜ×ØÛÝ[Û][\Y\‹ŠHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[Ù]X˜\ÙWÛX]\šX[^™YÛ^\Ü[˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÜÚ\™YÜÙ]Ú›Ú[‹YJHˆPRÑWÓÐ”ÓÓUJKR[Z[—Ù^\›˜[ÜÛÜØ›ØÚ×Øž]\ËLÓZPŠHˆPRÑWÓÐ”ÓÓUJKR[\ÝšX]YØØXÚWÜ™XYØ[YÛ›Y[
+HˆPRÑWÓÐ”ÓÓUJK›ÛÛ\ÙWÚœÛÛ—Ø[X\×Ù›Ü—ÛÛÛØš™XÝÝ\K˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ\ØÜšX™WÙ^[™ÛØš™XÝÝ\\Ë˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ[Ý×Ù^\š[Y[[ÛØš™XÝÝ\K˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ]]Ë[œÙ\ÜÙ[XÝÙY\XØ]KšY[È˜]]ÈŸJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ\ÙWÝ^Ú[™^ÙXÝ[Û˜\žWØØXÚK˜[ÙJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ]Y\žWÜ[—Ý\ÙWÛÙÚXØ[Ú›Ú[—ÜÝ\YJHˆPRÑWÓÐ”ÓÓUJK›ÛÛ]Y\žWÜ[—Ý\ÙWÛ™]×ÛÙÚXØ[Ú›Ú[—ÜÝ\YJHˆPRÑWÓÐ”ÓÓUJKR[ÛÝYÛ[ÙWÙ]X˜\ÙWÙ[™Ú[™KJBˆÊŠˆHÙXÝ[ÛˆX›Ý™H\È›ÜˆØœÛÛ]HÙ][™ÜËˆÈ›ÝY[ž][™È\™Kˆ
+‹ÂˆÙ[™YˆËËÈ×ÐÓSÓ—ÒQW×Â‚‚ˆÙYš[™HTÕÓÑ—ÔÑUS‘ÔÊKSPTÊHˆÓÓSSÓ—ÔÑUS‘ÔÊKSPTÊHˆÐ”ÓÓUWÔÑUS‘ÔÊKSPTÊHˆ“Ô“PUÑPÕÔ–WÔÑUS‘ÔÊKSPTÊHˆÐ”ÓÓUWÑ“Ô“PUÔÑUS‘ÔÊKSPTÊH‚‹ËÈÛ[™ËY›Ü›X]Û‚‚‘PÓT‘WÔÑUS‘Ô×ÕRU×ÐSÕ×ÐÕTÕÓWÔÑUS‘ÔÊÙ][™ÜÕ˜Z]ËTÕÓÑ—ÔÑUS‘ÔËÓÓSSÓ—ÔÑUS‘Ô×ÔÕTÔ•QÕTTÊB‚‹ÊŠˆÙ][™ÜÈÙˆ]Y\žH^XÝ][Û‹‚ˆ
+ˆ\ÙHÙ][™ÜÈÛÈÈ\Ù\œËž[‚ˆ
+‹ÂœÝXÝÙ][™ÜÒ[\ˆX›XÈ˜\ÙTÙ][™ÜÏÙ][™ÜÕ˜Z]Ï‹X›XÈR[Ï‚žÂˆÙ][™ÜÒ[\
+
+HHY˜][Â‚ˆÊŠˆÙ]][\HÙ][™ÜÈœ›ÛHœ›Ùš[Hˆ
+[ˆÙ\™\ˆÛÛ™šYÝ\˜][Ûˆš[H
+\Ù\œËž[
+K›Ùš[\ÈÛÛZ[ˆÜ›Ý\ÈÙˆ][\HÙ][™ÜÊK‚ˆ
+ˆH›Ùš[HØ[ˆ[ÛÈ™HÙ]\Ú[™ÈHÙ][˜Ý[ÛœËZÙHH›Ùš[HÙ][™Ë‚ˆ
+‹Âˆ›ÚYÙ]›Ùš[JÛÛœÝÝš[™È	ˆ›Ùš[WÛ˜[YKÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊNÂ‚ˆËËÈØYÙ][™ÜÈœ›ÛHÛÛ™šYÝ\˜][Ûˆš[K]œ]ˆ™Yš^[ˆÛÛ™šYÝ\˜][Û‹‚ˆ›ÚYØYÙ][™ÜÑœ›ÛPÛÛ™šYÊÛÛœÝÝš[™È	ˆ]ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊNÂ‚ˆËËÈ[\È›Ùš[H]™[ÈÈÛÛ[[ˆÙˆ\HX\
+Ýš[™ËÝš[™ÊBˆ›ÚY[\ÓX\ÛÛ[[ŠPÛÛ[[ˆ
+ˆÛÛ[[‹›ÛÛÚ[™ÙYÛÛ›HHYJNÂ‚ˆËËÈHÚ[™ÙYÙ][™ÜÈ\È[ˆÝÛš[™È˜[YHOˆ˜[YK\Ýš[™ÈX\
+Ø[YH˜[Y\È\È[\ÓX\ÛÛ[[ŠK‚ˆÝŽ›X\Ýš[™ËÝš[™ÏˆÚ[™ÙYÓX\
+
+HÛÛœÝÂ‚ˆËËÈÚXÚÈ]\™H\È›È\Ù\‹[]™[Ù][™ÜÈ]HÜ]™[[ˆÛÛ™šYË‚ˆËËÈ\È\ÈHÛÛ[[ÛˆÛÝ\˜ÙHÙˆZ\ÝZÙH
+\Ù\ˆÛ‰ÝÛ›ÝÈÚ\™HÈÜš]H\Ù\‹[]™[Ù][™ÊK‚ˆÝ]XÈ›ÚYÚXÚÓ›ÔÙ][™Ó˜[Y\Ð]Ü]™[
+ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÛÛœÝÝš[™È	ˆÛÛ™šY×Ü]
+NÂ‚ˆ™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝš[™ÏˆÙ][™YÚ\Ý\™Y˜[Y\Ê
+HÛÛœÝÝ™\œšYNÂ‚ˆ›ÚYÙ]
+ÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝšY[	ˆ˜[YJHÝ™\œšYNÂ‚ˆ›ÛÛ\ÔÙ][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+HÛÛœÝÈ™]\›ˆ\Ù][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™Ë™[\J
+NÈBˆ›ÚY™\Ù]Ù][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+NÂ‚œš]˜]N‚ˆ›ÚY\PÛÛ\]Xš[]TÙ][™ÊÛÛœÝÝš[™È	ˆÛÛ\]Xš[]JNÂ‚ˆ[›Ü™\™YÙ]Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™ÎÂŸNÂ‚‹ÊŠˆÙ]HÙ][™ÜÈœ›ÛHH›Ùš[H
+[ˆHÙ\™\ˆÛÛ™šYÝ\˜][Û‹X[žHÙ][™ÜÈØ[ˆ™H\ÝY[ˆÛ™H›Ùš[JK‚ˆ
+ˆH›Ùš[HØ[ˆ[ÛÈ™HÙ]\Ú[™ÈHÙ][˜Ý[ÛœËZÙHH›Ùš[XÙ][™Ë‚ˆ
+‹Â›ÚYÙ][™ÜÒ[\ŽœÙ]›Ùš[JÛÛœÝÝš[™È	ˆ›Ùš[WÛ˜[YKÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆÝš[™È[[HHœ›Ùš[\Ëˆˆ
+È›Ùš[WÛ˜[YNÂ‚ˆYˆ
+XÛÛ™šYËš\Ê[[JJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•T‘WÒT×Ó“×Ô“Ñ’SK•\™H\È›È›Ùš[H	ÞßIÈ[ˆÛÛ™šYÝ\˜][Ûˆš[Kˆ‹›Ùš[WÛ˜[YJNÂ‚ˆØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][ÛŽŽ’Ù^\ÈÛÛ™šY×ÚÙ^\ÎÂˆÛÛ™šYËšÙ^\Ê[[KÛÛ™šY×ÚÙ^\ÊNÂ‚ˆ›Üˆ
+ÛÛœÝÝŽœÝš[™È	ˆÙ^HˆÛÛ™šY×ÚÙ^\ÊBˆÂˆYˆ
+Ù^HOH˜ÛÛœÝ˜Z[ÈŠBˆÛÛ[YNÂˆYˆ
+Ù^HOHœ›Ùš[HˆÙ^KœÝ\×ÝÚ]
+œ›Ùš[VÈŠJHËËÈ[š\š][˜ÙHÙˆ›Ùš[\Èœ›ÛHHÝ\œ™[Û™K‚ˆÙ]›Ùš[JÛÛ™šYË™Ù]Ýš[™Ê[[H
+È‹ˆˆ
+ÈÙ^JKÛÛ™šYÊNÂˆ[ÙBˆÙ]
+Ù^KÛÛ™šYË™Ù]Ýš[™Ê[[H
+È‹ˆˆ
+ÈÙ^JJNÂˆBŸB‚›ÚYÙ][™ÜÒ[\Ž›ØYÙ][™ÜÑœ›ÛPÛÛ™šYÊÛÛœÝÝš[™È	ˆ]ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆYˆ
+XÛÛ™šYËš\Ê]
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË•\™H\È›È]	ÞßIÈ[ˆÛÛ™šYÝ\˜][Ûˆš[Kˆ‹]
+NÂ‚ˆØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][ÛŽŽ’Ù^\ÈÛÛ™šY×ÚÙ^\ÎÂˆÛÛ™šYËšÙ^\Ê]ÛÛ™šY×ÚÙ^\ÊNÂ‚ˆ›Üˆ
+ÛÛœÝÝŽœÝš[™È	ˆÙ^HˆÛÛ™šY×ÚÙ^\ÊBˆÂˆÙ]
+Ù^KÛÛ™šYË™Ù]Ýš[™Ê]
+È‹ˆˆ
+ÈÙ^JJNÂˆBŸB‚›ÚYÙ][™ÜÒ[\Ž™[\ÓX\ÛÛ[[ŠPÛÛ[[ˆ
+ˆÛÛ[[‹›ÛÛÚ[™ÙYÛÛ›JBžÂˆYˆ
+XÛÛ[[ŠBˆ™]\›ŽÂ‚ˆ]]È	ˆÛÛ[[—ÛX\H\ZYØØ\ÝÛÛ[[“X\	Š
+˜ÛÛ[[ŠNÂˆ]]È	ˆÙ™œÙ]ÈHÛÛ[[—ÛX\™Ù]™\ÝYÛÛ[[Š
+K™Ù]Ù™œÙ]Ê
+NÂ‚ˆ]]È	ˆ\WØÛÛ[[ˆHÛÛ[[—ÛX\™Ù]™\ÝY]J
+NÂˆ]]È	ˆÙ^WØÛÛ[[ˆH\ZYØØ\ÝÛÛ[[“ÝÐØ\™[˜[]H	Š\WØÛÛ[[‹™Ù]ÛÛ[[Š
+JNÂˆ]]È	ˆ˜[YWØÛÛ[[ˆH\ZYØØ\ÝÛÛ[[“ÝÐØ\™[˜[]H	Š\WØÛÛ[[‹™Ù]ÛÛ[[ŠJJNÂ‚ˆÚ^™WÝÚ^™HHÂ‚ˆËËÈ]\˜]HÝ™\ˆÝ[™\™Ù][™ÜÂˆÛÛœÝ]]È	ˆXØÙ\ÜÛÜˆH˜Z]ÎŽXØÙ\ÜÛÜŽŽš[œÝ[˜ÙJ
+NÂˆ›Üˆ
+Ú^™WÝHHÈHXØÙ\ÜÛÜ‹œÚ^™J
+NÈJÊÊBˆÂˆYˆ
+Ú[™ÙYÛÛ›H	‰ˆXXØÙ\ÜÛÜ‹š\Õ˜[YPÚ[™ÙY
+
+\ËJJBˆÛÛ[YNÂ‚ˆÛÛœÝ]]È	ˆ˜[YHHXØÙ\ÜÛÜ‹™Ù]˜[YJJNÂˆ]]È˜[YHHXØÙ\ÜÛÜ‹™Ù]˜[YTÝš[™Ê
+\ËJNÂˆÙ^WØÛÛ[[‹š[œÙ\]J˜[YK™]J
+K˜[YKœÚ^™J
+JNÂˆ˜[YWØÛÛ[[‹š[œÙ\]J˜[YK™]J
+K˜[YKœÚ^™J
+JNÂˆ
+ÊÜÚ^™NÂˆB‚ˆËËÈ]\˜]HÝ™\ˆHÝ\ÝÛHÙ][™ÜÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÝ\ÝÛHˆÝ\ÝÛWÜÙ][™Ü×ÛX\
+BˆÂˆÛÛœÝ]]È	ˆÙ][™×ÙšY[HÝ\ÝÛKœÙXÛÛ™ÂˆYˆ
+Ú[™ÙYÛÛ›H	‰ˆ\Ù][™×ÙšY[˜Ú[™ÙY
+BˆÛÛ[YNÂ‚ˆÛÛœÝ]]È	ˆ˜[YHHÝ\ÝÛK™š\œÝÂˆ]]È˜[YHHÙ][™×ÙšY[ÔÝš[™Ê
+NÂˆÙ^WØÛÛ[[‹š[œÙ\]J˜[YK™]J
+K˜[YKœÚ^™J
+JNÂˆ˜[YWØÛÛ[[‹š[œÙ\]J˜[YK™]J
+K˜[YKœÚ^™J
+JNÂˆ
+ÊÜÚ^™NÂˆB‚ˆÙ™œÙ]Ëœ\ÚØ˜XÚÊÙ™œÙ]Ë˜˜XÚÊ
+H
+ÈÚ^™JNÂŸB‚œÝŽ›X\Ýš[™ËÝš[™ÏˆÙ][™ÜÒ[\Ž˜Ú[™ÙYÓX\
+
+HÛÛœÝžÂˆÝŽ›X\Ýš[™ËÝš[™Ïˆ™\Ý[Â‚ˆÛÛœÝ]]È	ˆXØÙ\ÜÛÜˆH˜Z]ÎŽXØÙ\ÜÛÜŽŽš[œÝ[˜ÙJ
+NÂˆ›Üˆ
+Ú^™WÝHHÈHXØÙ\ÜÛÜ‹œÚ^™J
+NÈ
+ÊÚJBˆYˆ
+XØÙ\ÜÛÜ‹š\Õ˜[YPÚ[™ÙY
+
+\ËJJBˆ™\Ý[™[\XÙJXØÙ\ÜÛÜ‹™Ù]˜[YJJKXØÙ\ÜÛÜ‹™Ù]˜[YTÝš[™Ê
+\ËJJNÂ‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆÝ\ÝÛHˆÝ\ÝÛWÜÙ][™Ü×ÛX\
+BˆYˆ
+Ý\ÝÛKœÙXÛÛ™˜Ú[™ÙY
+Bˆ™\Ý[™[\XÙJÝ\ÝÛK™š\œÝÝ\ÝÛKœÙXÛÛ™ÔÝš[™Ê
+JNÂ‚ˆ™]\›ˆ™\Ý[ÂŸB‚›ÚYÙ][™ÜÒ[\Ž˜ÚXÚÓ›ÔÙ][™Ó˜[Y\Ð]Ü]™[
+ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÛÛœÝÝš[™È	ˆÛÛ™šY×Ü]
+BžÂˆYˆ
+ÛÛ™šYË™Ù]›ÛÛ
+œÚÚ\ØÚXÚ×Ù›Ü—Ú[˜ÛÜœ™XÝÜÙ][™ÜÈ‹˜[ÙJJBˆ™]\›ŽÂ‚ˆÙ][™ÜÒ[\Ù][™ÜÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™ÈˆÙ][™ÜË˜[
+
+JBˆÂˆÛÛœÝ]]È	ˆ˜[YHHÙ][™Ë™Ù]˜[YJ
+NÂˆ›ÛÛÚÝ[ÜÚÚ\ØÚXÚÈH˜[YHOH›X^ÝX›WÜÚ^™WÝ×Ù›Üˆ˜[YHOH›X^Ü\][Û—ÜÚ^™WÝ×Ù›ÜŽÂˆYˆ
+ÛÛ™šYËš\Ê˜[YJH	‰ˆ
+Ù][™Ë™Ù]Y\Š
+HOHÙ][™ÜÕY\•\NŽ“Ð”ÓÓUJH	‰ˆ\ÚÝ[ÜÚÚ\ØÚXÚÊBˆÂˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÑSSQS•ÒS—ÐÓÓ‘’QËHÙ][™È	ÞßIÈ\X\™Y]Ü]™[[ˆÛÛ™šYÈßKˆ‚ˆˆ]]\È\Ù\‹[]™[Ù][™È]ÚÝ[™HØØ]Y[ˆ\Ù\œËž[[œÚYH›Ùš[\ÏˆÙXÝ[Ûˆ›ÜˆÜXÚYšXÈ›Ùš[Kˆ‚ˆˆ[ÝHØ[ˆY]È›Ùš[\ÏY˜][ˆYˆ[ÝHØ[ÈÚ[™ÙHY˜][˜[YHÙˆ\ÈÙ][™Ëˆ‚ˆˆ[ÝHØ[ˆ[ÛÈ\ØX›HHÚXÚÈHÜXÚYžHÚÚ\ØÚXÚ×Ù›Ü—Ú[˜ÛÜœ™XÝÜÙ][™ÜÏŒOÜÚÚ\ØÚXÚ×Ù›Ü—Ú[˜ÛÜœ™XÝÜÙ][™ÜÏˆ‚ˆˆ[ˆHXZ[ˆÛÛ™šYÝ\˜][Ûˆš[Kˆ‹ˆ˜[YKÛÛ™šY×Ü]
+NÂˆBˆBŸB‚•™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝš[™ÏˆÙ][™ÜÒ[\Ž™Ù][™YÚ\Ý\™Y˜[Y\Ê
+HÛÛœÝžÂˆ™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝš[™Ïˆ[ÜÙ][™ÜÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™×ÙšY[ˆ[
+
+JBˆ[ÜÙ][™ÜËœ\ÚØ˜XÚÊÙ][™×ÙšY[™Ù]˜[YJ
+JNÂˆ™]\›ˆ[ÜÙ][™ÜÎÂŸB‚›ÚYÙ][™ÜÒ[\ŽœÙ]
+ÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝšY[	ˆ˜[YJBžÂˆYˆ
+˜[YHOH˜ÛÛ\]Xš[]HŠBˆÂˆYˆ
+˜[YK™Ù]\J
+HOHšY[Ž•\\ÎŽ•ÚXÚŽ”Ýš[™ÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽQÐT‘ÕSQS•Ë•[™^XÝY\HÙˆ˜[YH›ÜˆÙ][™È	ØÛÛ\]Xš[]IËˆ^XÝYÝš[™ËÛÝßH‹˜[YK™Ù]\S˜[YJ
+JNÂˆ\PÛÛ\]Xš[]TÙ][™Ê˜[YKœØY™QÙ]Ýš[™ÏŠ
+JNÂˆBˆËËÈYˆÙHÚ[™ÙHÙ][™È]Ø\ÈÚ[™ÙYžHÛÛ\]Xš[]HÙ][™È™Y›Ü™BˆËËÈÙHÚÝ[™[[Ý™H]œ›ÛHÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™ËˆËËÈÝ\Ú\ÙHH™^[YHÙHÚ[Ú[™ÙHÛÛ\]Xš[]HÙ][™ÂˆËËÈ\ÈÙ][™ÈÚ[™HÚ[™ÙYÛÈ
+[™ÙHÛ‰ÝØ[]
+K‚ˆËËÈ™\ÛÛ™H[X\Ù\ÈÛÈHÛÚÝ\X]Ú\ÈHØ[›ÛšXØ[˜[Y\ÈÝÜ™Y[ˆHÙ]‚ˆ[ÙHYˆ
+]]Èš[˜[Û˜[YHHÙ][™ÜÕ˜Z]ÎŽœ™\ÛÛ™S˜[YJ˜[YJNÈÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™Ë˜ÛÛZ[œÊš[˜[Û˜[YJJBˆÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™Ë™\˜\ÙJš[˜[Û˜[YJNÂ‚ˆ˜\ÙTÙ][™ÜÎŽœÙ]
+˜[YK˜[YJNÂŸB‚›ÚYÙ][™ÜÒ[\Žœ™\Ù]Ù][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+BžÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™×Û˜[YHˆÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™ÊBˆ™\Ù]ÑY˜][
+Ù][™×Û˜[YJNÂ‚ˆÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™Ë˜ÛX\Š
+NÂŸB‚›ÚYÙ][™ÜÒ[\Ž˜\PÛÛ\]Xš[]TÙ][™ÊÛÛœÝÝš[™È	ˆÛÛ\]Xš[]WÝ˜[YJBžÂˆËËÈš\œÝ™]™\[Ú[™Ù\È\YYžH™]š[Ý\ÈÛÛ\]Xš[]HÙ][™Âˆ™\Ù]Ù][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+NÂ‚ˆËËÈYˆÙ][™È˜[YH\È[\KÙHÛ‰Ý™YYÈÚ[™ÙHÙ][™ÜÂˆYˆ
+ÛÛ\]Xš[]WÝ˜[YK™[\J
+JBˆ™]\›ŽÂ‚ˆÛXÚÒÝ\ÙU™\œÚ[Ûˆ™\œÚ[ÛŠÛÛ\]Xš[]WÝ˜[YJNÂˆÛÛœÝ]]È	ˆÙ][™Ü×ØÚ[™Ù\×Ú\ÝÜžHHÙ]Ù][™ÜÐÚ[™Ù\Ò\ÝÜžJ
+NÂˆËËÈ]\˜]H›ÝYÚÛXÚÒÝ\ÙH™\œÚ[Ûˆ[ˆ\ØÙ[™[™ÈÜ™\ˆ[™\H™]™\œÙYˆËËÈÚ[™Ù\È›ÜˆXXÚ™\œÚ[Ûˆ]\ÈYÚ\ˆ]™\œÚ[Ûˆœ›ÛHÛÛ\]Xš[]HÙ][™Âˆ›Üˆ
+]]È]HÙ][™Ü×ØÚ[™Ù\×Ú\ÝÜžKœ˜™YÚ[Š
+NÈ]OHÙ][™Ü×ØÚ[™Ù\×Ú\ÝÜžKœ™[™
+
+NÈ
+ÊÚ]
+BˆÂˆYˆ
+™\œÚ[ÛˆH]O™š\œÝ
+Bˆœ™XZÎÂ‚ˆËËÈ\H™]™\œÙYÚ[™Ù\Èœ›ÛH\È™\œÚ[Û‹‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆÚ[™ÙHˆ]OœÙXÛÛ™
+BˆÂˆËËÈ[ˆØ\ÙHH[X\È\È™Z[™È\ÙY
+K™Ëˆ\ÙH[˜X›WØ[˜[^™\ŠHÙH]\ÝÚ[™ÙHHÜšYÚ[˜[Ù][™Âˆ]]Èš[˜[Û˜[YHHÙ][™ÜÕ˜Z]ÎŽœ™\ÛÛ™S˜[YJÚ[™ÙK›˜[YJNÂ‚ˆYˆ
+Ù]Y\Šš[˜[Û˜[YJHOHÙ][™ÜÕY\•\NŽ“Ð”ÓÓUJBˆÛÛ[YNÂ‚ˆËËÈYˆ\ÈÙ][™ÈØ\ÈÚ[™ÙYX[X[KÙHÛ‰ÝÚ[™ÙH]ˆYˆ
+\ÐÚ[™ÙY
+š[˜[Û˜[YJH	‰ˆ\Ù][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™Ë˜ÛÛZ[œÊš[˜[Û˜[YJJBˆÛÛ[YNÂ‚ˆËËÈÛ‰ÝX\šÈ\ÈÚ[™ÙYYˆH˜[YH\Û‰Ý™X[HÚ[™ÙYˆYˆ
+Ù]
+š[˜[Û˜[YJHOHÚ[™ÙKœ™]š[Ý\×Ý˜[YJBˆÛÛ[YNÂ‚ˆ˜\ÙTÙ][™ÜÎŽœÙ]
+š[˜[Û˜[YKÚ[™ÙKœ™]š[Ý\×Ý˜[YJNÂˆÙ][™Ü×ØÚ[™ÙYØžWØÛÛ\]Xš[]WÜÙ][™Ëš[œÙ\
+š[˜[Û˜[YJNÂˆBˆBŸB‚’STSQS•ÔÑUS‘Ô×ÕRU×ÐÕTÕÓWÒST
+Ù][™ÜÕ˜Z]ËTÕÓÑ—ÔÑUS‘ÔËÙ][™ÜËÙ][™ÊB‚”Ù][™ÜÎŽ”Ù][™ÜÊ
+Bˆˆ[\
+ÝŽ›XZÙWÝ[š\]YOÙ][™ÜÒ[\Š
+JBžßB‚”Ù][™ÜÎŽ”Ù][™ÜÊÛÛœÝÙ][™ÜÈ	ˆÙ][™ÜÊBˆˆ[\
+ÝŽ›XZÙWÝ[š\]YOÙ][™ÜÒ[\Š
+œÙ][™ÜËš[\
+JBžßB‚”Ù][™ÜÎŽ”Ù][™ÜÊÙ][™ÜÈ	‰ˆÙ][™ÜÊH›Ù^Ù\HY˜][Â‚”Ù][™ÜÎŽŸ”Ù][™ÜÊ
+HHY˜][Â‚”Ù][™ÜÈ	ˆÙ][™ÜÎŽ›Ü\˜]ÜJÛÛœÝÙ][™ÜÈ	ˆÝ\ŠBžÂˆYˆ
+	›Ý\ˆOH\ÊBˆ™]\›ˆ
+\ÎÂˆ
+š[\H
+›Ý\‹š[\Âˆ™]\›ˆ
+\ÎÂŸB‚˜›ÛÛÙ][™ÜÎŽ›Ü\˜]ÜOJÛÛœÝÙ][™ÜÈ	ˆÝ\ŠHÛÛœÝžÂˆ™]\›ˆ
+š[\OH
+›Ý\‹š[\ÂŸB‚ÓÓSSÓ—ÔÑUS‘Ô×ÔÕTÔ•QÕTTÊÙ][™ÜËSTSQS•ÔÑUS‘×ÔÕP”ÐÔ’TÓÔTUÔŠB‚˜›ÛÛÙ][™ÜÎŽš\ÊÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\Oš\Ê˜[YJNÂŸB‚˜›ÛÛÙ][™ÜÎŽš\ÐÚ[™ÙY
+ÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\Oš\ÐÚ[™ÙY
+˜[YJNÂŸB‚”Ù][™ÜÕY\•\HÙ][™ÜÎŽ™Ù]Y\ŠÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\O™Ù]Y\Š˜[YJNÂŸB‚œÝŽœÝš[™×ÝšY]ÈÙ][™ÜÎŽ™Ù]\ØÜš\[ÛŠÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\O™Ù]\ØÜš\[ÛŠ˜[YJNÂŸB‚œÝŽœÝš[™×ÝšY]ÈÙ][™ÜÎŽ™Ù]\S˜[YJÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\O™Ù]\S˜[YJ˜[YJNÂŸB‚”Ýš[™ÈÙ][™ÜÎŽ™Ù]Y˜][˜[YTÝš[™ÊÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\O™Ù]Y˜][˜[YTÝš[™Ê˜[YJNÂŸB‚˜›ÛÛÙ][™ÜÎŽžQÙ]
+ÝŽœÝš[™×ÝšY]È˜[YKšY[	ˆ˜[YJHÛÛœÝžÂˆ™]\›ˆ[\OžQÙ]
+˜[YK˜[YJNÂŸB‚‘šY[Ù][™ÜÎŽ™Ù]
+ÝŽœÝš[™×ÝšY]È˜[YJHÛÛœÝžÂˆ™]\›ˆ[\O™Ù]
+˜[YJNÂŸB‚›ÚYÙ][™ÜÎŽœÙ]
+ÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝšY[	ˆ˜[YJBžÂˆ[\OœÙ]
+˜[YK˜[YJNÂŸB‚›ÚYÙ][™ÜÎŽœÙ]Y˜][˜[YJÝŽœÝš[™×ÝšY]È˜[YJBžÂˆ[\Oœ™\Ù]ÑY˜][
+˜[YJNÂŸB‚˜›ÛÛÙ][™ÜÎŽš\ÔÙ][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+HÛÛœÝžÂˆ™]\›ˆ[\Oš\ÔÙ][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+NÂŸB‚›ÚYÙ][™ÜÎŽœ™\Ù]Ù][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+BžÂˆ[\Oœ™\Ù]Ù][™ÜÐÚ[™ÙYžPÛÛ\]Xš[]J
+NÂŸB‚•™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝš[™ÏˆÙ][™ÜÎŽ™Ù][ÊÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆ™]\›ˆ[\O™Ù][Ê˜[YJNÂŸB‚”Ýš[™ÈÙ][™ÜÎŽÔÝš[™Ê
+HÛÛœÝžÂˆ™]\›ˆ[\OÔÝš[™Ê
+NÂŸB‚”Ù][™ÜÐÚ[™Ù\ÈÙ][™ÜÎŽ˜Ú[™Ù\Ê
+HÛÛœÝžÂˆ™]\›ˆ[\O˜Ú[™Ù\Ê
+NÂŸB‚›ÚYÙ][™ÜÎŽ˜\PÚ[™Ù\ÊÛÛœÝÙ][™ÜÐÚ[™Ù\È	ˆÚ[™Ù\ÊBžÂˆ[\O˜\PÚ[™Ù\ÊÚ[™Ù\ÊNÂŸB‚•™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™ÜÎŽ™Ù][™YÚ\Ý\™Y˜[Y\Ê
+HÛÛœÝžÂˆ™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™×Û˜[Y\ÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™Èˆ[\O˜[
+
+JBˆÂˆÙ][™×Û˜[Y\Ë™[\XÙWØ˜XÚÊÙ][™Ë™Ù]˜[YJ
+JNÂˆBˆ™]\›ˆÙ][™×Û˜[Y\ÎÂŸB‚•™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™ÜÎŽ™Ù][[X\Ó˜[Y\Ê
+HÛÛœÝžÂˆ™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]Ïˆ[X\×Û˜[Y\ÎÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ý×Ø[X\Ù\ÈHÙ][™ÜÒ[\Ž•˜Z]ÎŽœÙ][™ÜÕÐ[X\Ù\Ê
+NÂˆ›Üˆ
+ÛÛœÝ]]È	ˆ×Ë[X\Ù\×HˆÙ][™Ü×Ý×Ø[X\Ù\ÊBˆÂˆ[X\×Û˜[Y\Ëš[œÙ\
+[X\×Û˜[Y\Ë™[™
+
+K[X\Ù\Ë˜™YÚ[Š
+K[X\Ù\Ë™[™
+
+JNÂˆBˆ™]\›ˆ[X\×Û˜[Y\ÎÂŸB‚•™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™ÜÎŽ™Ù]Ú[™ÙY[™ØœÛÛ]S˜[Y\Ê
+HÛÛœÝžÂˆ™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™×Û˜[Y\ÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™Èˆ[\O˜[Ú[™ÙY
+
+JBˆÂˆYˆ
+Ù][™Ë™Ù]Y\Š
+HOHÙ][™ÜÕY\•\NŽ“Ð”ÓÓUJBˆÙ][™×Û˜[Y\Ë™[\XÙWØ˜XÚÊÙ][™Ë™Ù]˜[YJ
+JNÂˆBˆ™]\›ˆÙ][™×Û˜[Y\ÎÂŸB‚•™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™ÜÎŽ™Ù][˜Ú[™ÙY˜[Y\Ê
+HÛÛœÝžÂˆ™XÝÜ•Ú]Y[[ÜžU˜XÚÚ[™ÏÝŽœÝš[™×ÝšY]ÏˆÙ][™×Û˜[Y\ÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™Èˆ[\O˜[[˜Ú[™ÙY
+
+JBˆÂˆÙ][™×Û˜[Y\Ë™[\XÙWØ˜XÚÊÙ][™Ë™Ù]˜[YJ
+JNÂˆBˆ™]\›ˆÙ][™×Û˜[Y\ÎÂŸB‚›ÚYÙ][™ÜÎŽ™[\ÔÞ\Ý[TÙ][™ÜÐÛÛ[[œÊ]]X›PÛÛ[[œÐ[™ÛÛœÝ˜Z[È	ˆ\˜[\ÊHÛÛœÝžÂˆ]]X›PÛÛ[[œÈ	ˆ™\×ØÛÛ[[œÈH\˜[\Ëœ™\×ØÛÛ[[œÎÂ‚ˆÛÛœÝ]]Èš[Ù]WÙ›Ü—ÜÙ][™ÈHÉ—JÝŽœÝš[™×ÝšY]ÈÙ][™×Û˜[YKÛÛœÝ]]È	ˆÙ][™ÊBˆÂˆ™\×ØÛÛ[[œÖÌWKOš[œÙ\
+Ù][™Ë™Ù]˜[YTÝš[™Ê
+JNÂˆ™\×ØÛÛ[[œÖÌ—KOš[œÙ\
+Ù][™Ëš\Õ˜[YPÚ[™ÙY
+
+JNÂ‚ˆËËÈš[HÝ\[™ËÙ[™[™È™]Û[™K‚ˆÝŽœÝš[™×ÝšY]ÈØÈHÙ][™Ë™Ù]\ØÜš\[ÛŠ
+NÂˆYˆ
+YØË™[\J
+H	‰ˆØÖÌHOH	×‰ÊBˆØÈHØËœÝXœÝŠJNÂˆYˆ
+YØË™[\J
+H	‰ˆØÖÙØË›[™Ý
+
+HHWHOH	×‰ÊBˆØÈHØËœÝXœÝŠØË›[™Ý
+
+HHJNÂ‚ˆ™\×ØÛÛ[[œÖÌ×KOš[œÙ\
+ØÊNÂ‚ˆšY[Z[ŽÂˆšY[X^ÂˆÝŽ™XÝÜšY[ˆ\Ø[ÝÙYÝ˜[Y\ÎÂˆÙ][™ÐÛÛœÝ˜Z[Üš]Xš[]HÜš]Xš[]HHÙ][™ÐÛÛœÝ˜Z[Üš]Xš[]NŽ•Ô’UP“NÂˆ\˜[\Ë˜ÛÛœÝ˜Z[Ë™Ù]
+
+\ËÙ][™×Û˜[YKZ[‹X^\Ø[ÝÙYÝ˜[Y\ËÜš]Xš[]JNÂ‚ˆËËÈ\ÙHÛÈÛÛ[[œÈØ[ˆXØÙ\Ýš[™ÜÈÛ›K‚ˆYˆ
+[Z[‹š\Ó[
+
+JBˆZ[ˆHÙ][™ÜÎŽ˜[YUÔÝš[™Õ][
+Ù][™×Û˜[YKZ[ŠNÂˆYˆ
+[X^š\Ó[
+
+JBˆX^HÙ][™ÜÎŽ˜[YUÔÝš[™Õ][
+Ù][™×Û˜[YKX^
+NÂ‚ˆ\œ˜^H\Ø[ÝÙYØ\œ˜^NÂˆ›Üˆ
+ÛÛœÝ]]È	ˆ˜[YHˆ\Ø[ÝÙYÝ˜[Y\ÊBˆ\Ø[ÝÙYØ\œ˜^K™[\XÙWØ˜XÚÊÙ][™ÜÎŽ˜[YUÔÝš[™Õ][
+Ù][™×Û˜[YK˜[YJJNÂ‚ˆ™\×ØÛÛ[[œÖÍKOš[œÙ\
+Z[ŠNÂˆ™\×ØÛÛ[[œÖÍWKOš[œÙ\
+X^
+NÂˆ™\×ØÛÛ[[œÖÍ—KOš[œÙ\
+\Ø[ÝÙYØ\œ˜^JNÂˆ™\×ØÛÛ[[œÖÍ×KOš[œÙ\
+Üš]Xš[]HOHÙ][™ÐÛÛœÝ˜Z[Üš]Xš[]NŽÓÓ”Õ
+NÂˆ™\×ØÛÛ[[œÖÎKOš[œÙ\
+Ù][™Ë™Ù]\S˜[YJ
+JNÂˆ™\×ØÛÛ[[œÖÎWKOš[œÙ\
+Ù][™Ë™Ù]Y˜][˜[YTÝš[™Ê
+JNÂˆ™\×ØÛÛ[[œÖÌLWKOš[œÙ\
+Ù][™Ë™Ù]Y\Š
+HOHÙ][™ÜÕY\•\NŽ“Ð”ÓÓUJNÂˆ™\×ØÛÛ[[œÖÌL—KOš[œÙ\
+Ù][™Ë™Ù]Y\Š
+JNÂˆNÂ‚ˆÛÛœÝ]]È	ˆÙ][™Ü×Ý×Ø[X\Ù\ÈHÙ][™ÜÒ[\Ž•˜Z]ÎŽœÙ][™ÜÕÐ[X\Ù\Ê
+NÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™Èˆ[\O˜[
+
+JBˆÂˆÛÛœÝ]]È	ˆÙ][™×Û˜[YHHÙ][™Ë™Ù]˜[YJ
+NÂˆ™\×ØÛÛ[[œÖÌKOš[œÙ\
+Ù][™×Û˜[YJNÂ‚ˆš[Ù]WÙ›Ü—ÜÙ][™ÊÙ][™×Û˜[YKÙ][™ÊNÂˆ™\×ØÛÛ[[œÖÌLKOš[œÙ\
+ˆŠNÂ‚ˆYˆ
+]]È]HÙ][™Ü×Ý×Ø[X\Ù\Ë™š[™
+Ù][™×Û˜[YJNÈ]OHÙ][™Ü×Ý×Ø[X\Ù\Ë™[™
+
+JBˆÂˆ›Üˆ
+ÛÛœÝ]]È[X\Èˆ]OœÙXÛÛ™
+BˆÂˆ™\×ØÛÛ[[œÖÌKOš[œÙ\
+[X\ÊNÂˆš[Ù]WÙ›Ü—ÜÙ][™Ê[X\ËÙ][™ÊNÂˆ™\×ØÛÛ[[œÖÌLKOš[œÙ\
+Ù][™×Û˜[YJNÂˆBˆBˆBŸB‚›ÚYÙ][™ÜÎŽ™[\ÓX\ÛÛ[[ŠPÛÛ[[ˆ
+ˆÛÛ[[‹›ÛÛÚ[™ÙYÛÛ›JHÛÛœÝžÂˆ[\O™[\ÓX\ÛÛ[[ŠÛÛ[[‹Ú[™ÙYÛÛ›JNÂŸB‚œÝŽ›X\Ýš[™ËÝš[™ÏˆÙ][™ÜÎŽ˜Ú[™ÙYÓX\
+
+HÛÛœÝžÂˆ™]\›ˆ[\O˜Ú[™ÙYÓX\
+
+NÂŸB‚›ÚYÜš]T]Y\žT\˜[Y]\œÊÛÛœÝ˜[YUÓ˜[YSX\	ˆ\˜[Y]\œËÜš]PY™™\ˆ	ˆÝ]
+BžÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÛ˜[YK˜[YWHˆ\˜[Y]\œÊBˆÂˆ˜\ÙTÙ][™ÜÒ[\œÎŽÜš]TÝš[™Ê˜[YKÝ]
+NÂˆ˜\ÙTÙ][™ÜÒ[\œÎŽÜš]Q›YÜÊ˜\ÙTÙ][™ÜÒ[\œÎŽ‘›YÜÎŽÕTÕÓKÝ]
+NÂˆ˜\ÙTÙ][™ÜÒ[\œÎŽÜš]TÝš[™ÊÙ][™ÑšY[Ý\ÝÛJšY[
+˜[YJJKÔÝš[™Ê
+KÝ]
+NÂˆBˆ˜\ÙTÙ][™ÜÒ[\œÎŽÜš]TÝš[™ÊÝŽœÝš[™×ÝšY]ÞßKÝ]
+NÂŸB‚“˜[YUÓ˜[YSX\™XY]Y\žT\˜[Y]\œÊ™XYY™™\ˆ	ˆ[ŠBžÂˆ˜[YUÓ˜[YSX\\˜[Y]\œÎÂˆÚ[H
+YJBˆÂˆÝš[™È˜[YHH˜\ÙTÙ][™ÜÒ[\œÎŽœ™XYÝš[™Ê[ŠNÂˆYˆ
+˜[YK™[\J
+JBˆœ™XZÎÂˆÝŽšYÛ›Ü™HH˜\ÙTÙ][™ÜÒ[\œÎŽœ™XY›YÜÊ[ŠNÂˆÝš[™È˜[YNÂˆ™XYY™™\‘œ›ÛSÝÛ”Ýš[™ÈYŠ˜\ÙTÙ][™ÜÒ[\œÎŽœ™XYÝš[™Ê[ŠJNÂˆ™XY][ÝY
+˜[YKYŠNÂˆ\˜[Y]\œËš[œÙ\ÛÜ—Ø\ÜÚYÛŠÝŽ›[Ý™J˜[YJKÝŽ›[Ý™J˜[YJJNÂˆBˆ™]\›ˆ\˜[Y]\œÎÂŸB‚›ÚYÙ][™ÜÎŽÜš]JÜš]PY™™\ˆ	ˆÝ]Ù][™ÜÕÜš]Q›Ü›X]›Ü›X]
+HÛÛœÝžÂˆ[\OÜš]JÝ]›Ü›X]
+NÂŸB‚›ÚYÙ][™ÜÎŽœ™XY
+™XYY™™\ˆ	ˆ[‹Ù][™ÜÕÜš]Q›Ü›X]›Ü›X]
+BžÂˆ[\Oœ™XY
+[‹›Ü›X]
+NÂŸB‚›ÚYÙ][™ÜÎŽÜš]Q[\JÜš]PY™™\ˆ	ˆÝ]
+BžÂˆ˜\ÙTÙ][™ÜÒ[\œÎŽÜš]TÝš[™Êˆ‹Ý]
+NÂŸB‚›ÚYÙ][™ÜÎŽ˜YÔ›ÙÜ˜[SÜ[ÛœÊ›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ›Ü[Ûœ×Ù\ØÜš\[Ûˆ	ˆÜ[ÛœÊBžÂˆY›ÙÜ˜[SÜ[ÛœÊ
+š[\Ü[ÛœÊNÂŸB‚›ÚYÙ][™ÜÎŽ˜YÔ›ÙÜ˜[SÜ[ÛœÊÝŽœÝš[™×ÝšY]ÈÙ][™×Û˜[YK›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ›Ü[Ûœ×Ù\ØÜš\[Ûˆ	ˆÜ[ÛœÊBžÂˆÛÛœÝ]]È	ˆXØÙ\ÜÛÜˆHÙ][™ÜÒ[\Ž•˜Z]ÎŽXØÙ\ÜÛÜŽŽš[œÝ[˜ÙJ
+NÂˆÚ^™WÝ[™^HXØÙ\ÜÛÜ‹™š[™
+Ù][™×Û˜[YJNÂˆÚ\ÜÙ\
+[™^OHÝ]X×ØØ\ÝÚ^™WÝŠLJJNÂˆ]]ÈÛ—Ü›ÙÜ˜[WÛÜ[ÛˆH›ÛÜÝŽ™[˜Ý[ÛŒO›ÚYÛÛœÝÝŽœÝš[™È	ŠˆÝ\ËÙ][™×Û˜[YWJÛÛœÝÝŽœÝš[™È	ˆ˜[YJBˆÂˆ\ËOœÙ]
+Ù][™×Û˜[YK˜[YJNÂˆJNÂˆÜ[ÛœË˜Y
+›ÛÜÝŽœÚ\™YÜ›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ›Ü[Û—Ù\ØÜš\[ÛŠ™]È›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ›Ü[Û—Ù\ØÜš\[ÛŠˆÙ][™×Û˜[YK™]J
+K›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ˜[YOÝŽœÝš[™ÏŠ
+KO˜ÛÛ\ÜÚ[™Ê
+KO››ÝYšY\ŠÛ—Ü›ÙÜ˜[WÛÜ[ÛŠKXØÙ\ÜÛÜ‹™Ù]\ØÜš\[ÛŠ[™^
+K™]J
+JJJNÈËÈ“ÓS•ŸB‚›ÚYÙ][™ÜÎŽ˜YÔ›ÙÜ˜[SÜ[ÛœÐ\Ó][]ÚÙ[œÊ›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ›Ü[Ûœ×Ù\ØÜš\[Ûˆ	ˆÜ[ÛœÊHÛÛœÝžÂˆY›ÙÜ˜[SÜ[ÛœÐ\Ó][]ÚÙ[œÊ
+š[\Ü[ÛœÊNÂŸB‚›ÚYÙ][™ÜÎŽ˜YÐÛY[Ü[ÛœÊØÛÎŽ•][Ž“^Y\™YÛÛ™šYÝ\˜][Ûˆ	˜ÛÛ™šYËÛÛœÝ›ÛÜÝŽœ›ÙÜ˜[WÛÜ[ÛœÎŽ˜\šXX›\×ÛX\	›Ü[ÛœË›ÛÛ™\X]YÜÙ][™ÜÊHÛÛœÝžÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ][™Èˆ[\O˜[
+
+JBˆÂˆÛÛœÝ]]È	ˆ˜[YHHÙ][™Ë™Ù]˜[YJ
+NÂˆYˆ
+Ü[ÛœË˜ÛÛZ[œÊ˜[YJJBˆÂˆYˆ
+™\X]YÜÙ][™ÜÊBˆÛÛ™šYËœÙ]Ýš[™Ê˜[YKÜ[ÛœÖÛ˜[YWK˜\ÏÝš[™ÜÏŠ
+K˜˜XÚÊ
+JNÂˆ[ÙBˆÛÛ™šYËœÙ]Ýš[™Ê˜[YKÜ[ÛœÖÛ˜[YWK˜\ÏÝš[™ÏŠ
+JNÂˆBˆBŸB‚‘šY[Ù][™ÜÎŽ˜Ø\Ý˜[YU][
+ÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝšY[	ˆ˜[YJBžÂˆ™]\›ˆÙ][™ÜÒ[\Ž˜Ø\Ý˜[YU][
+˜[YK˜[YJNÂŸB‚”Ýš[™ÈÙ][™ÜÎŽ˜[YUÔÝš[™Õ][
+ÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝšY[	ˆ˜[YJBžÂˆ™]\›ˆÙ][™ÜÒ[\Ž˜[YUÔÝš[™Õ][
+˜[YK˜[YJNÂŸB‚‘šY[Ù][™ÜÎŽœÝš[™ÕÕ˜[YU][
+ÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝÝš[™È	ˆÝŠBžÂˆ™]\›ˆÙ][™ÜÒ[\ŽœÝš[™ÕÕ˜[YU][
+˜[YKÝŠNÂŸB‚˜›ÛÛÙ][™ÜÎŽš\ÐZ[[ŠÝŽœÝš[™×ÝšY]È˜[YJBžÂˆ™]\›ˆÙ][™ÜÒ[\Žš\ÐZ[[Š˜[YJNÂŸB‚œÝŽœÝš[™×ÝšY]ÈÙ][™ÜÎŽœ™\ÛÛ™S˜[YJÝŽœÝš[™×ÝšY]È˜[YJBžÂˆ™]\›ˆÙ][™ÜÒ[\Ž•˜Z]ÎŽœ™\ÛÛ™S˜[YJ˜[YJNÂŸB‚›ÚYÙ][™ÜÎŽ˜ÚXÚÓ›ÔÙ][™Ó˜[Y\Ð]Ü]™[
+ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÛÛœÝÝš[™È	ˆÛÛ™šY×Ü]
+BžÂˆÙ][™ÜÒ[\Ž˜ÚXÚÓ›ÔÙ][™Ó˜[Y\Ð]Ü]™[
+ÛÛ™šYËÛÛ™šY×Ü]
+NÂŸB‚ŸB

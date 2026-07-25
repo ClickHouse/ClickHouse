@@ -8,6 +8,8 @@
 #include <Storages/IStreamingStorage.h>
 
 #include <mutex>
+#include <shared_mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -35,6 +37,7 @@ public:
     String getName() const override { return "Queue"; }
 
     bool noPushingToViewsOnInserts() const override { return true; }
+    bool shouldPushToMaterializedView(const StorageID & view_id, ContextPtr query_context) const override;
 
     void startup() override;
     void shutdown(bool is_drop) override;
@@ -65,23 +68,39 @@ public:
     Strings getDataPaths() const override;
 
     StoragePtr getInnerTable(ContextPtr local_context) const;
-    const StorageID & getInnerTableID() const { return inner_table_id; }
+    const StorageID & getInnerTableID() const { return main_table_id; }
 
 private:
     void scheduleStreamingTasksImpl() override;
     void threadFunc();
-    bool streamToViews(UInt64 cycle_epoch);
-    void acknowledge(const Blocks & blocks, ContextMutablePtr queue_context);
+    bool streamToViews(const String & consumer_group, const StorageID & consumer_table_id, UInt64 cycle_epoch);
+    void acknowledge(const StorageID & consumer_table_id, const Blocks & blocks, ContextMutablePtr queue_context);
 
-    static String getInnerTableName(const StorageID & queue_table_id);
-    static StorageID createInnerTable(
+    std::pair<String, bool> getConsumerSettingsForView(const StorageID & view_id, ContextPtr query_context) const;
+    std::unordered_map<String, bool> getConsumerGroups(const std::vector<StorageID> & view_ids, ContextPtr query_context) const;
+    StorageID ensureConsumerGroup(const String & consumer_group, bool start_at_latest);
+    StorageID resetConsumerGroup(const String & consumer_group, bool start_at_latest);
+
+    static String getMainTableName(const StorageID & queue_table_id);
+    static String getConsumerTableName(const StorageID & queue_table_id, const String & consumer_group);
+    static String getConsumerViewName(const StorageID & queue_table_id, const String & consumer_group);
+    static StorageID createDataTable(
         const ASTCreateQuery & outer_query,
-        const StorageID & queue_table_id,
+        const StorageID & table_id,
         ContextPtr local_context,
         LoadingStrictnessLevel mode,
-        UInt64 retention_seconds);
+        UInt64 retention_seconds,
+        bool consumer_table);
+    void createConsumerView(
+        const StorageID & consumer_table_id,
+        const StorageID & consumer_view_id,
+        ContextPtr query_context) const;
+    std::vector<StorageID> getInternalTables(ContextPtr query_context, std::string_view name_prefix) const;
+    void dropInternalTableIfAny(const StorageID & table_id, bool sync, ContextPtr query_context) const;
 
-    const StorageID inner_table_id;
+    const ASTPtr outer_create_query;
+    const StorageID main_table_id;
+    const UInt64 retention_seconds;
     const UInt64 max_batch_size;
     const UInt64 polling_interval_ms;
 
@@ -89,6 +108,7 @@ private:
     UInt64 last_seen_refresh_epoch = 0;
     LoggerPtr log;
     std::mutex consume_mutex;
+    mutable std::shared_mutex consumer_groups_mutex;
 };
 
 }

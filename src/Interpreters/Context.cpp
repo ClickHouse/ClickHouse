@@ -1,8612 +1,3041 @@
-#include <atomic>
-#include <map>
-#include <set>
-#include <optional>
-#include <memory>
-#include <Poco/UUID.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/Util/Application.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
-#include <Common/quoteString.h>
-#include <Common/setThreadName.h>
-#include <Common/ISlotControl.h>
-#include <Common/Scheduler/IResourceManager.h>
-#include <Common/AsyncLoader.h>
-#include <Common/PoolId.h>
-#include <Common/SensitiveDataMasker.h>
-#include <Common/Macros.h>
-#include <Common/EventNotifier.h>
-#include <Common/getNumberOfCPUCoresToUse.h>
-#include <base/getMemoryAmount.h>
-#include <Common/Stopwatch.h>
-#include <Common/formatReadable.h>
-#include <Common/Throttler.h>
-#include <Common/ThrottlerArray.h>
-#include <Common/thread_local_rng.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorHash.h>
-#include <Common/SipHash.h>
-#include <Common/getMultipleKeysFromConfig.h>
-#include <Common/callOnce.h>
-#include <Common/SharedLockGuard.h>
-#include <Common/PageCache.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/isLocalAddress.h>
-#include <Common/ConcurrencyControl.h>
-#include <Common/SystemAllocatedMemoryHolder.h>
-#include <Coordination/KeeperDispatcher.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Settings.h>
-#include <Formats/FormatFactory.h>
-#include <Databases/DatabaseReplicatedSettings.h>
-#include <Databases/IDatabase.h>
-#include <Interpreters/Context_fwd.h>
-#include <Server/ServerType.h>
-#include <Storages/MarkCache.h>
-#include <Storages/MergeTree/UniqueKey/UniqueKeyIndexCache.h>
-#include <Common/JemallocCacheArena.h>
-#include <Storages/MergeTree/MergeList.h>
-#include <Storages/MergeTree/MovesList.h>
-#include <Storages/MergeTree/ReplicatedFetchList.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
-#include <Storages/MergeTree/TextIndexCache.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
-#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
-#include <Processors/Formats/Impl/ParquetMetadataCache.h>
-#include <Storages/StreamingStorageRegistry.h>
-#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
-#include <Storages/Distributed/DistributedSettings.h>
-#include <Storages/CompressionCodecSelector.h>
-#include <IO/AsynchronousReader.h>
-#include <IO/LongConnectionLimit.h>
-#include <IO/S3Settings.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
-#include <Disks/DiskLocal.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/StoragePolicy.h>
-#include <Disks/IO/IOUringReader.h>
-#include <Disks/IO/getIOUringReader.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <Interpreters/ActionLocksManager.h>
-#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/FileCache/FileCacheFactory.h>
-#include <Interpreters/FileCache/FileCache.h>
-#include <Interpreters/Cache/EncryptionHeaderCache.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
-#include <Interpreters/Cache/QueryResultCache.h>
-#include <Interpreters/Cache/ReverseLookupCache.h>
-#include <Interpreters/ContextTimeSeriesTagsCollector.h>
-#include <Interpreters/SessionTracker.h>
-#include <Interpreters/WasmModuleManager.h>
-#include <Core/ServerSettings.h>
-#include <Interpreters/PreparedSets.h>
-#include <Core/SettingsQuirks.h>
-#include <Core/UUID.h>
-#include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
-#include <Access/EnabledRolesInfo.h>
-#include <Access/EnabledRowPolicies.h>
-#include <Access/QuotaUsage.h>
-#include <Access/User.h>
-#include <Access/Role.h>
-#include <Access/SettingsProfile.h>
-#include <Access/SettingsProfilesInfo.h>
-#include <Access/SettingsConstraintsAndProfileIDs.h>
-#include <Access/ExternalAuthenticators.h>
-#include <Access/GSSAcceptor.h>
-#include <Backups/BackupsWorker.h>
-#include <Dictionaries/Embedded/GeoDictionariesLoader.h>
-#include <Interpreters/EmbeddedDictionaries.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
-#include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
-#include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
-#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/ProcessList.h>
-#include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/InterserverIOHandler.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/DDLWorker.h>
-#include <Interpreters/DDLTask.h>
-#include <Interpreters/HypotheticalIndexStore.h>
-#include <Interpreters/Session.h>
-#include <Interpreters/TraceCollector.h>
-#include <IO/AsyncReadCounters.h>
-#include <IO/UncompressedCache.h>
-#include <IO/MMappedFileCache.h>
-#include <IO/WriteSettings.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTAsterisk.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Common/Scheduler/createResourceManager.h>
-#include <Common/Scheduler/Workload/createWorkloadEntityStorage.h>
-#include <Common/StackTrace.h>
-#include <Common/Config/ConfigHelper.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Functions/UserDefined/UserDefinedExecutableFunctionDriverRegistry.h>
-#include <Poco/Glob.h>
-#include <Common/Config/ConfigReloader.h>
-#include <Common/Config/AbstractConfigurationComparison.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/logger_useful.h>
-#include <Common/RemoteHostFilter.h>
-#include <Common/HTTPHeaderFilter.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Interpreters/StorageID.h>
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Storages/MaterializedView/RefreshSet.h>
-#include <Interpreters/SynonymsExtensions.h>
-#include <Interpreters/Lemmatizers.h>
-#include <Interpreters/ClusterDiscovery.h>
-#include <Interpreters/TransactionLog.h>
-#include <Interpreters/ZooKeeperConnectionLog.h>
-#include <Interpreters/AggregatedZooKeeperLog.h>
-#include <filesystem>
-#include <Storages/StorageView.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/FunctionParameterValuesVisitor.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <base/defines.h>
-
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-#include <Processors/QueryPlan/RuntimeFilterLookup.h>
-
-namespace fs = std::filesystem;
-
-namespace ProfileEvents
-{
-    extern const Event ContextLock;
-    extern const Event ContextLockWaitMicroseconds;
-    extern const Event LocalReadThrottlerBytes;
-    extern const Event LocalReadThrottlerSleepMicroseconds;
-    extern const Event LocalWriteThrottlerBytes;
-    extern const Event LocalWriteThrottlerSleepMicroseconds;
-    extern const Event RemoteReadThrottlerBytes;
-    extern const Event RemoteReadThrottlerSleepMicroseconds;
-    extern const Event RemoteWriteThrottlerBytes;
-    extern const Event RemoteWriteThrottlerSleepMicroseconds;
-    extern const Event BackupThrottlerBytes;
-    extern const Event BackupThrottlerSleepMicroseconds;
-    extern const Event MergesThrottlerBytes;
-    extern const Event MergesThrottlerSleepMicroseconds;
-    extern const Event MutationsThrottlerBytes;
-    extern const Event MutationsThrottlerSleepMicroseconds;
-    extern const Event QueryLocalReadThrottlerBytes;
-    extern const Event QueryLocalReadThrottlerSleepMicroseconds;
-    extern const Event QueryLocalWriteThrottlerBytes;
-    extern const Event QueryLocalWriteThrottlerSleepMicroseconds;
-    extern const Event QueryRemoteReadThrottlerBytes;
-    extern const Event QueryRemoteReadThrottlerSleepMicroseconds;
-    extern const Event QueryRemoteWriteThrottlerBytes;
-    extern const Event QueryRemoteWriteThrottlerSleepMicroseconds;
-    extern const Event QueryBackupThrottlerBytes;
-    extern const Event QueryBackupThrottlerSleepMicroseconds;
-
-    extern const Event MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds;
-    extern const Event MergeMutateBackgroundExecutorTaskCancelMicroseconds;
-    extern const Event MergeMutateBackgroundExecutorTaskResetMicroseconds;
-    extern const Event MergeMutateBackgroundExecutorWaitMicroseconds;
-
-    extern const Event MoveBackgroundExecutorTaskExecuteStepMicroseconds;
-    extern const Event MoveBackgroundExecutorTaskCancelMicroseconds;
-    extern const Event MoveBackgroundExecutorTaskResetMicroseconds;
-    extern const Event MoveBackgroundExecutorWaitMicroseconds;
-
-    extern const Event FetchBackgroundExecutorTaskExecuteStepMicroseconds;
-    extern const Event FetchBackgroundExecutorTaskCancelMicroseconds;
-    extern const Event FetchBackgroundExecutorTaskResetMicroseconds;
-    extern const Event FetchBackgroundExecutorWaitMicroseconds;
-
-    extern const Event CommonBackgroundExecutorTaskExecuteStepMicroseconds;
-    extern const Event CommonBackgroundExecutorTaskCancelMicroseconds;
-    extern const Event CommonBackgroundExecutorTaskResetMicroseconds;
-    extern const Event CommonBackgroundExecutorWaitMicroseconds;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric ContextLockWait;
-    extern const Metric BackgroundMovePoolTask;
-    extern const Metric BackgroundMovePoolSize;
-    extern const Metric BackgroundSchedulePoolTask;
-    extern const Metric BackgroundSchedulePoolSize;
-    extern const Metric BackgroundBufferFlushSchedulePoolTask;
-    extern const Metric BackgroundBufferFlushSchedulePoolSize;
-    extern const Metric BackgroundDistributedSchedulePoolTask;
-    extern const Metric BackgroundDistributedSchedulePoolSize;
-    extern const Metric BackgroundMessageBrokerSchedulePoolTask;
-    extern const Metric BackgroundMessageBrokerSchedulePoolSize;
-    extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric BackgroundMergesAndMutationsPoolSize;
-    extern const Metric BackgroundFetchesPoolTask;
-    extern const Metric BackgroundFetchesPoolSize;
-    extern const Metric BackgroundCommonPoolTask;
-    extern const Metric BackgroundCommonPoolSize;
-    extern const Metric IcebergSchedulePoolTask;
-    extern const Metric IcebergSchedulePoolSize;
-    extern const Metric BackgroundStreamingSchedulePoolTask;
-    extern const Metric BackgroundStreamingSchedulePoolSize;
-    extern const Metric MarksLoaderThreads;
-    extern const Metric MarksLoaderThreadsActive;
-    extern const Metric MarksLoaderThreadsScheduled;
-    extern const Metric IOPrefetchThreads;
-    extern const Metric IOPrefetchThreadsActive;
-    extern const Metric IOPrefetchThreadsScheduled;
-    extern const Metric IOWriterThreads;
-    extern const Metric IOWriterThreadsActive;
-    extern const Metric TablesLoaderBackgroundThreads;
-    extern const Metric TablesLoaderBackgroundThreadsActive;
-    extern const Metric TablesLoaderBackgroundThreadsScheduled;
-    extern const Metric TablesLoaderForegroundThreads;
-    extern const Metric TablesLoaderForegroundThreadsActive;
-    extern const Metric TablesLoaderForegroundThreadsScheduled;
-    extern const Metric IOWriterThreadsScheduled;
-    extern const Metric BuildVectorSimilarityIndexThreads;
-    extern const Metric BuildVectorSimilarityIndexThreadsActive;
-    extern const Metric BuildVectorSimilarityIndexThreadsScheduled;
-    extern const Metric AttachedTable;
-    extern const Metric AttachedView;
-    extern const Metric AttachedDictionary;
-    extern const Metric AttachedDatabase;
-    extern const Metric PartsActive;
-    extern const Metric NamedCollection;
-    extern const Metric IcebergCatalogThreads;
-    extern const Metric IcebergCatalogThreadsActive;
-    extern const Metric IcebergCatalogThreadsScheduled;
-    extern const Metric IndexMarkCacheBytes;
-    extern const Metric IndexMarkCacheFiles;
-    extern const Metric MarkCacheBytes;
-    extern const Metric MarkCacheFiles;
-    extern const Metric UniqueKeyIndexCacheBytes;
-    extern const Metric UniqueKeyIndexCacheEntries;
-    extern const Metric DeleteBitmapCacheBytes;
-    extern const Metric DeleteBitmapCacheEntries;
-    extern const Metric UncompressedCacheBytes;
-    extern const Metric UncompressedCacheCells;
-    extern const Metric IndexUncompressedCacheBytes;
-    extern const Metric IndexUncompressedCacheCells;
-    extern const Metric ZooKeeperSessionExpired;
-    extern const Metric ZooKeeperConnectionLossStartedTimestampSeconds;
-}
-
-
-namespace DB
-{
-namespace Setting
-{
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsFloat ast_fuzzer_runs;
-    extern const SettingsUInt64 automatic_parallel_replicas_mode;
-    extern const SettingsMilliseconds async_insert_poll_timeout_ms;
-    extern const SettingsBool azure_allow_parallel_part_upload;
-    extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsBool cloud_mode;
-    extern const SettingsBool enable_filesystem_cache;
-    extern const SettingsBool enable_filesystem_cache_log;
-    extern const SettingsBool enable_filesystem_cache_on_write_operations;
-    extern const SettingsBool enable_filesystem_read_prefetches_log;
-    extern const SettingsBool enable_blob_storage_log;
-    extern const SettingsBool enable_blob_storage_log_for_read_operations;
-    extern const SettingsUInt64 filesystem_cache_max_download_size;
-    extern const SettingsUInt64 filesystem_cache_reserve_space_wait_lock_timeout_milliseconds;
-    extern const SettingsUInt64 filesystem_cache_segments_batch_size;
-    extern const SettingsBool filesystem_cache_allow_background_download;
-    extern const SettingsBool filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage;
-    extern const SettingsBool filesystem_cache_enable_background_download_during_fetch;
-    extern const SettingsBool filesystem_cache_prefer_bigger_buffer_size;
-    extern const SettingsBool http_make_head_request;
-    extern const SettingsUInt64 http_max_fields;
-    extern const SettingsUInt64 http_max_field_name_size;
-    extern const SettingsUInt64 http_max_field_value_size;
-    extern const SettingsUInt64 http_max_request_header_size;
-    extern const SettingsSeconds http_headers_read_timeout;
-    extern const SettingsUInt64 http_max_tries;
-    extern const SettingsUInt64 http_max_uri_size;
-    extern const SettingsSeconds http_receive_timeout;
-    extern const SettingsUInt64 http_retry_initial_backoff_ms;
-    extern const SettingsUInt64 http_retry_max_backoff_ms;
-    extern const SettingsSeconds http_send_timeout;
-    extern const SettingsBool http_skip_not_found_url_for_globs;
-    extern const SettingsUInt64 hsts_max_age;
-    extern const SettingsString local_filesystem_read_method;
-    extern const SettingsBool local_filesystem_read_prefetch;
-    extern const SettingsUInt64 max_backup_bandwidth;
-    extern const SettingsUInt64 max_local_read_bandwidth;
-    extern const SettingsUInt64 max_local_write_bandwidth;
-    extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsNonZeroUInt64 max_read_buffer_size;
-    extern const SettingsUInt64 max_read_buffer_size_local_fs;
-    extern const SettingsUInt64 max_read_buffer_size_remote_fs;
-    extern const SettingsUInt64 max_remote_read_network_bandwidth;
-    extern const SettingsUInt64 max_remote_write_network_bandwidth;
-    extern const SettingsUInt64 min_bytes_to_use_direct_io;
-    extern const SettingsUInt64 min_bytes_to_use_mmap_io;
-    extern const SettingsBool page_cache_inject_eviction;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsString parallel_replicas_custom_key;
-    extern const SettingsBool parallel_replicas_prefer_local_replica;
-    extern const SettingsUInt64 prefetch_buffer_size;
-    extern const SettingsBool read_from_filesystem_cache_if_exists_otherwise_bypass_cache;
-    extern const SettingsBool read_from_page_cache_if_exists_otherwise_bypass_cache;
-    extern const SettingsUInt64 page_cache_block_size;
-    extern const SettingsUInt64 page_cache_lookahead_blocks;
-    extern const SettingsUInt64 page_cache_max_coalesced_bytes;
-    extern const SettingsInt64 read_priority;
-    extern const SettingsString remote_filesystem_read_method;
-    extern const SettingsBool remote_filesystem_read_prefetch;
-    extern const SettingsUInt64 remote_fs_read_max_backoff_ms;
-    extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
-    extern const SettingsUInt64 remote_read_min_bytes_for_seek;
-    extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
-    extern const SettingsBool s3_allow_parallel_part_upload;
-    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
-    extern const SettingsBool use_reader_executor;
-    extern const SettingsBool reader_executor_use_long_connections;
-    extern const SettingsUInt64 reader_executor_min_bytes_for_seek;
-    extern const SettingsUInt64 reader_executor_max_tail_for_drain;
-    extern const SettingsBool use_page_cache_for_disks_without_file_cache;
-    extern const SettingsBool use_page_cache_for_local_disks;
-    extern const SettingsBool use_page_cache_for_object_storage;
-    extern const SettingsBool use_page_cache_with_distributed_cache;
-    extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
-    extern const SettingsString workload;
-    extern const SettingsString compatibility;
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool parallel_replicas_only_with_analyzer;
-    extern const SettingsBool enable_hdfs_pread;
-    extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsString merge_workload;
-    extern const MergeTreeSettingsString mutation_workload;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_remote_read_connections;
-    extern const ServerSettingsUInt64 background_buffer_flush_schedule_pool_size;
-    extern const ServerSettingsUInt64 background_common_pool_size;
-    extern const ServerSettingsUInt64 background_distributed_schedule_pool_size;
-    extern const ServerSettingsUInt64 background_fetches_pool_size;
-    extern const ServerSettingsFloat background_merges_mutations_concurrency_ratio;
-    extern const ServerSettingsString background_merges_mutations_scheduling_policy;
-    extern const ServerSettingsUInt64 background_message_broker_schedule_pool_size;
-    extern const ServerSettingsUInt64 iceberg_background_schedule_pool_size;
-    extern const ServerSettingsUInt64 background_move_pool_size;
-    extern const ServerSettingsUInt64 background_pool_size;
-    extern const ServerSettingsUInt64 background_schedule_pool_size;
-    extern const ServerSettingsUInt64 background_schedule_pool_initial_size;
-    extern const ServerSettingsFloat background_schedule_pool_max_parallel_tasks_per_type_ratio;
-    extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
-    extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsBool display_secrets_in_show_and_select;
-    extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
-    extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_mutations_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
-    extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
-    extern const ServerSettingsBool s3queue_disable_streaming;
-    extern const ServerSettingsBool message_queue_disable_insertion;
-    extern const ServerSettingsUInt64 tables_loader_background_pool_size;
-    extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
-    extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
-    extern const ServerSettingsUInt64 prefetch_threadpool_queue_size;
-    extern const ServerSettingsUInt64 load_marks_threadpool_pool_size;
-    extern const ServerSettingsUInt64 load_marks_threadpool_queue_size;
-    extern const ServerSettingsNonZeroUInt64 threadpool_writer_pool_size;
-    extern const ServerSettingsUInt64 threadpool_writer_queue_size;
-    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
-    extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
-    extern const ServerSettingsBool dictionaries_lazy_load;
-    extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
-    extern const ServerSettingsBool enforce_keeper_component_tracking;
-    extern const ServerSettingsUInt64 max_table_size_to_drop;
-    extern const ServerSettingsUInt64 max_partition_size_to_drop;
-    extern const ServerSettingsUInt64 max_part_num_to_warn;
-    extern const ServerSettingsUInt64 max_table_num_to_throw;
-    extern const ServerSettingsUInt64 max_view_num_to_throw;
-    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
-    extern const ServerSettingsUInt64 max_database_num_to_throw;
-    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
-    extern const ServerSettingsBool allow_experimental_webassembly_udf;
-    extern const ServerSettingsString webassembly_udf_engine;
-    extern const ServerSettingsBool allow_experimental_executable_udf_drivers;
-}
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_DATABASE;
-    extern const int UNKNOWN_TABLE;
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int THERE_IS_NO_SESSION;
-    extern const int THERE_IS_NO_QUERY;
-    extern const int NO_ELEMENTS_IN_CONFIG;
-    extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
-    extern const int LOGICAL_ERROR;
-    extern const int INVALID_SETTING_VALUE;
-    extern const int NOT_IMPLEMENTED;
-    extern const int UNKNOWN_FUNCTION;
-    extern const int SUPPORT_IS_DISABLED;
-    extern const int ILLEGAL_COLUMN;
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
-    extern const int CLUSTER_DOESNT_EXIST;
-    extern const int SET_NON_GRANTED_ROLE;
-    extern const int UNKNOWN_DISK;
-    extern const int UNKNOWN_READ_METHOD;
-}
-
-#define SHUTDOWN(log, desc, ptr, method) do             \
-{                                                       \
-    if (ptr)                                            \
-    {                                                   \
-        LOG_DEBUG(log, "Shutting down " desc);          \
-        (ptr)->method;                                  \
-    }                                                   \
-} while (false)                                         \
-
-/** Set of known objects (environment), that could be used in query.
-  * Shared (global) part. Order of members (especially, order of destruction) is very important.
-  */
-struct ContextSharedPart : boost::noncopyable
-{
-    LoggerPtr log = getLogger("Context");
-
-    /// For access of most of shared objects.
-    mutable ContextSharedMutex mutex;
-    /// Separate mutex for access of dictionaries. Separate mutex to avoid locks when server doing request to itself.
-    mutable std::mutex embedded_dictionaries_mutex;
-    mutable std::mutex external_dictionaries_mutex;
-    mutable std::mutex external_user_defined_executable_functions_mutex;
-    /// Separate mutex for storage policies. During server startup we may
-    /// initialize some important storages (system logs with MergeTree engine)
-    /// under context lock.
-    mutable std::mutex storage_policies_mutex;
-    /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex zookeeper_mutex;
-
-    mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
-    ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
-
-    ConfigurationPtr sensitive_data_masker_config;
-
-    mutable std::mutex auxiliary_zookeepers_mutex;
-    mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
-    ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
-
-    /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
-    String interserver_io_host;                             /// The host name by which this server is available for other servers.
-    UInt16 interserver_io_port = 0;                         /// and port.
-    String interserver_scheme;                              /// http or https
-    MultiVersion<InterserverCredentials> interserver_io_credentials;
-
-    String path TSA_GUARDED_BY(mutex);                       /// Path to the data directory, with a slash at the end.
-    String flags_path TSA_GUARDED_BY(mutex);                 /// Path to the directory with some control flags for server maintenance.
-    String user_files_path TSA_GUARDED_BY(mutex);            /// Path to the directory with user provided files, usable by 'file' table function.
-    String dictionaries_lib_path TSA_GUARDED_BY(mutex);      /// Path to the directory with user provided binaries and libraries for external dictionaries.
-    String user_scripts_path TSA_GUARDED_BY(mutex);          /// Path to the directory with user provided scripts.
-    String dynamic_user_defined_executable_functions_path TSA_GUARDED_BY(mutex); /// Path to the directory for executable UDF configs created by drivers.
-    String filesystem_caches_path TSA_GUARDED_BY(mutex);     /// Path to the directory with filesystem caches.
-    String filesystem_cache_user TSA_GUARDED_BY(mutex);
-    ConfigurationPtr config TSA_GUARDED_BY(mutex);           /// Global configuration settings.
-    String tmp_path TSA_GUARDED_BY(mutex);                   /// Path to the temporary files that occur when processing the request.
-
-    /// The default disk storing metadata files for databases: database metadata files and table metadata files.
-    /// For DBs which have `disk` setting in the create query, the table metadata files of these DBs are stored on that disk.
-    /// However, the DB metadata files are still stored on this `default_db_disk`. So the instance can load its DBs during starting up.
-    std::shared_ptr<IDisk> default_db_disk TSA_GUARDED_BY(mutex);
-
-    /// All temporary files that occur when processing the requests accounted here.
-    /// Child scopes for more fine-grained accounting are created per user/query/etc.
-    /// Initialized once during server startup.
-    TemporaryDataOnDiskScopePtr root_temp_data_on_disk TSA_GUARDED_BY(mutex);
-    /// TODO: remove, use only root_temp_data_on_disk
-    VolumePtr temporary_volume_legacy;
-
-    mutable OnceFlag async_loader_initialized;
-    mutable std::unique_ptr<AsyncLoader> async_loader; /// Thread pool for asynchronous initialization of arbitrary DAG of `LoadJob`s (used for tables loading)
-
-    mutable OnceFlag long_connection_limit_initialized;
-    mutable std::shared_ptr<LongConnectionLimit> long_connection_limit; /// Bounds source connections held open by ReaderExecutor for sequential-read reuse
-
-    mutable std::unique_ptr<EmbeddedDictionaries> embedded_dictionaries TSA_GUARDED_BY(embedded_dictionaries_mutex);    /// Metrica's dictionaries. Have lazy initialization.
-    mutable std::unique_ptr<ExternalDictionariesLoader> external_dictionaries_loader TSA_GUARDED_BY(external_dictionaries_mutex);
-
-    ExternalLoaderXMLConfigRepository * external_dictionaries_config_repository TSA_GUARDED_BY(external_dictionaries_mutex) = nullptr;
-    scope_guard dictionaries_xmls TSA_GUARDED_BY(external_dictionaries_mutex);
-
-    mutable std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> external_user_defined_executable_functions_loader TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
-    ExternalLoaderXMLConfigRepository * user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
-    scope_guard user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
-    ExternalLoaderXMLConfigRepository * dynamic_user_defined_executable_functions_config_repository TSA_GUARDED_BY(external_user_defined_executable_functions_mutex) = nullptr;
-    scope_guard dynamic_user_defined_executable_functions_xmls TSA_GUARDED_BY(external_user_defined_executable_functions_mutex);
-
-    mutable OnceFlag user_defined_sql_objects_storage_initialized;
-    mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
-
-    mutable OnceFlag workload_entity_storage_initialized;
-    mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
-
-    mutable std::unique_ptr<WasmModuleManager> wasm_module_manager;
-
-#if USE_NLP
-    mutable OnceFlag synonyms_extensions_initialized;
-    mutable std::optional<SynonymsExtensions> synonyms_extensions;
-
-    mutable OnceFlag lemmatizers_initialized;
-    mutable std::optional<Lemmatizers> lemmatizers;
-#endif
-
-    mutable OnceFlag backups_worker_initialized;
-    std::optional<BackupsWorker> backups_worker;
-
-    /// No lock required for default_profile_name, system_profile_name, buffer_profile_name modified only during initialization
-    String default_profile_name;                                /// Default profile name used for default values.
-    String system_profile_name;                                 /// Profile used by system processes
-    String background_profile_name;                             /// Profile used by background operations
-    String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
-    String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
-    String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
-    String license_file TSA_GUARDED_BY(mutex);                  /// BYOC license text
-    bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
-    bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
-    bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
-    UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
-    UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
-    UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
-    UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
-    String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
-    bool concurrent_threads_lazy_allocation TSA_GUARDED_BY(mutex) = true;
-    std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
-    mutable OnceFlag resource_manager_initialized;
-    mutable ResourceManagerPtr resource_manager;
-    mutable UncompressedCachePtr uncompressed_cache TSA_GUARDED_BY(mutex);            /// The cache of decompressed blocks.
-    mutable MarkCachePtr mark_cache TSA_GUARDED_BY(mutex);                            /// Cache of marks in compressed files.
-    mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
-    mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
-    mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
-    mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
-    mutable OnceFlag load_marks_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
-    mutable OnceFlag prefetch_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
-    mutable std::unique_ptr<ThreadPool> iceberg_catalog_threadpool;
-    mutable OnceFlag iceberg_catalog_threadpool_initialized;
-    mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
-    mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
-    mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
-    mutable bool index_uncompressed_cache_enabled TSA_GUARDED_BY(mutex) = false;      /// Whether index_uncompressed_cache should be used.
-    mutable VectorSimilarityIndexCachePtr vector_similarity_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
-    mutable TextIndexTokensCachePtr text_index_tokens_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index tokens.
-    mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
-    mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
-    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
-    mutable EncryptionHeaderCachePtr encryption_header_cache TSA_GUARDED_BY(mutex);   /// Cache of raw encryption-header bytes by file path
-    mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
-    mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
-    mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-#if USE_AVRO
-    mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
-    mutable PaimonMetadataFilesCachePtr paimon_metadata_files_cache TSA_GUARDED_BY(mutex);     /// Cache of deserialized paimon metadata files.
-#endif
-#if USE_PARQUET
-    mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
-#endif
-    AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
-    mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
-    ProcessList process_list;                                   /// Executing queries at the moment.
-    SessionTracker session_tracker;
-    GlobalOvercommitTracker global_overcommit_tracker;
-    MergeList merge_list;                                       /// The list of executable merge (for (Replicated)?MergeTree)
-    MovesList moves_list;                                       /// The list of executing moves (for (Replicated)?MergeTree)
-    ReplicatedFetchList replicated_fetch_list;
-    RefreshSet refresh_set;                                 /// The list of active refreshes (for MaterializedView)
-    ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
-    InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
-
-    OnceFlag buffer_flush_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
-    OnceFlag schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
-    OnceFlag distributed_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
-    OnceFlag message_broker_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
-    OnceFlag iceberg_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that runs background metadata refresh for all active Iceberg tables
-    OnceFlag streaming_schedule_pool_initialized;
-    mutable BackgroundSchedulePoolPtr streaming_schedule_pool; /// A thread pool that runs streaming background jobs
-
-    mutable OnceFlag readers_initialized;
-    mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
-    mutable std::unique_ptr<IAsynchronousReader> asynchronous_local_fs_reader;
-    mutable std::unique_ptr<IAsynchronousReader> synchronous_local_fs_reader;
-
-    mutable OnceFlag threadpool_writer_initialized;
-    mutable std::unique_ptr<ThreadPool> threadpool_writer;
-
-#if USE_LIBURING
-    mutable OnceFlag io_uring_reader_initialized;
-    mutable std::unique_ptr<IOUringReader> io_uring_reader;
-#endif
-
-    mutable ThrottlerPtr replicated_fetches_throttler;      /// A server-wide throttler for replicated fetches
-    mutable ThrottlerPtr replicated_sends_throttler;        /// A server-wide throttler for replicated sends
-
-    mutable ThrottlerPtr remote_read_throttler;             /// A server-wide throttler for remote IO reads
-    mutable ThrottlerPtr remote_write_throttler;            /// A server-wide throttler for remote IO writes
-
-    mutable ThrottlerPtr local_read_throttler;              /// A server-wide throttler for local IO reads
-    mutable ThrottlerPtr local_write_throttler;             /// A server-wide throttler for local IO writes
-
-    mutable ThrottlerPtr backups_server_throttler;          /// A server-wide throttler for BACKUPs
-
-    mutable ThrottlerPtr mutations_throttler;               /// A server-wide throttler for mutations
-    mutable ThrottlerPtr merges_throttler;                  /// A server-wide throttler for merges
-
-    mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
-    mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
-
-    MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
-    std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
-    LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
-    /// Rules for selecting the compression settings, depending on the size of the part.
-    mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
-    /// Storage disk chooser for MergeTree engines
-    mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
-    /// Storage policy chooser for MergeTree engines
-    mutable std::shared_ptr<const StoragePolicySelector> merge_tree_storage_policy_selector TSA_GUARDED_BY(storage_policies_mutex);
-
-    ServerSettings server_settings;
-
-    std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
-    std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
-    std::optional<DatabaseReplicatedSettings> database_replicated_settings TSA_GUARDED_BY(mutex); /// Settings of DatabaseReplicated engine.
-    std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
-    std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
-    std::atomic_size_t max_partition_size_to_drop = 50000000000lu; /// Protects MergeTree partitions from accidental DROP (50GB by default)
-    /// No lock required for format_schema_path modified only during initialization
-    std::atomic_size_t max_part_num_to_warn = 100000lu;
-#define DEFINE_ENTITY_LIMIT_WARNING_FIELD(ename, EName, warn_default, warn_setting, warn_setting_name) \
-    std::atomic_size_t max_##ename##_num_to_warn = warn_default;
-    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(DEFINE_ENTITY_LIMIT_WARNING_FIELD)
-#undef DEFINE_ENTITY_LIMIT_WARNING_FIELD
-#define DEFINE_ENTITY_LIMIT_THROW_FIELD(ename, EName, throw_default, throw_setting, throw_setting_name) \
-    std::atomic_size_t max_##ename##_num_to_throw = throw_default;
-    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(DEFINE_ENTITY_LIMIT_THROW_FIELD)
-#undef DEFINE_ENTITY_LIMIT_THROW_FIELD
-    // these variables are used in inserting warning message into system.warning table based on asynchronous metrics
-    size_t max_pending_mutations_to_warn = 500lu;
-    size_t max_pending_mutations_execution_time_to_warn = 86400lu;
-    /// Only for system.server_settings, actually value stored in reloader itself
-    std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
-
-    /// Optional server-wide override for the analyzer in mutations.
-    /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
-    /// Refreshed on config reload.
-    std::atomic<int8_t> mutations_use_analyzer_override = -1;
-
-    double min_os_cpu_wait_time_ratio_to_drop_connection = 15.0;
-    double max_os_cpu_wait_time_ratio_to_drop_connection = 30.0;
-
-    String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
-    String google_protos_path; /// Path to a directory that contains the proto files for the well-known Protobuf types.
-    mutable OnceFlag action_locks_manager_initialized;
-    ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
-    OnceFlag system_logs_initialized;
-    std::unique_ptr<SystemLogs> system_logs TSA_GUARDED_BY(mutex);                /// Used to log queries and operations on parts
-
-    mutable std::mutex dashboard_mutex;
-    std::optional<Context::Dashboards> dashboards;
-
-    mutable SharedMutex users_to_ignore_early_memory_limit_check_mutex;
-    std::string users_to_ignore_early_memory_limit_check_source TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
-    std::shared_ptr<std::unordered_set<std::string>> users_to_ignore_early_memory_limit_check TSA_GUARDED_BY(users_to_ignore_early_memory_limit_check_mutex);
-
-    std::optional<S3SettingsByEndpoint> storage_s3_settings TSA_GUARDED_BY(mutex);   /// Settings of S3 storage
-    std::optional<AzureSettingsByEndpoint> storage_azure_settings TSA_GUARDED_BY(mutex);   /// Settings of AzureBlobStorage
-    std::unordered_map<Context::WarningType, PreformattedMessage> warnings TSA_GUARDED_BY(mutex); /// Store warning messages about server.
-
-    /// Background executors for *MergeTree tables
-    /// Has background executors for MergeTree tables been initialized?
-    mutable ContextSharedMutex background_executors_mutex;
-    bool are_background_executors_initialized TSA_GUARDED_BY(background_executors_mutex) = false;
-    MergeMutateBackgroundExecutorPtr merge_mutate_executor TSA_GUARDED_BY(background_executors_mutex);
-    OrdinaryBackgroundExecutorPtr moves_executor TSA_GUARDED_BY(background_executors_mutex);
-    OrdinaryBackgroundExecutorPtr fetch_executor TSA_GUARDED_BY(background_executors_mutex);
-    OrdinaryBackgroundExecutorPtr common_executor TSA_GUARDED_BY(background_executors_mutex);
-
-    /// Set to true when the low-memory auto-tuning heuristic lowered background_pool_size
-    /// at server startup. Used by MergeTreeSettings::sanityCheck to allow default thresholds
-    /// (e.g. number_of_free_entries_in_pool_to_execute_mutation) to stay above the lowered
-    /// max_tasks_count without failing table creation.
-    bool background_pool_auto_lowered TSA_GUARDED_BY(mutex) = false;
-
-    RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
-    HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
-
-    std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
-    /// Presence flag read concurrently by worker threads (ThreadStatus::initGlobalProfiler)
-    /// while shutdown() destroys trace_collector, so it must be atomic rather than optional::has_value().
-    std::atomic<bool> has_trace_collector = false;
-
-    /// Clusters for distributed tables
-    /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
-    mutable std::mutex clusters_mutex;                       /// Guards clusters, clusters_config and cluster_discovery
-    std::shared_ptr<Clusters> clusters TSA_GUARDED_BY(clusters_mutex);
-    ConfigurationPtr clusters_config TSA_GUARDED_BY(clusters_mutex);                        /// Stores updated configs
-    std::unique_ptr<ClusterDiscovery> cluster_discovery TSA_GUARDED_BY(clusters_mutex);
-    size_t clusters_version TSA_GUARDED_BY(clusters_mutex) = 0;
-
-    /// No lock required for async_insert_queue modified only during initialization
-    std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
-
-    /// Server listener port registry. Reads come from concurrent SQL contexts
-    /// (the `getServerPort` SQL function); writes happen during server startup
-    /// and at runtime via `SYSTEM START LISTEN` in `clickhouse-local`.
-    mutable std::mutex server_ports_mutex;
-    std::map<String, UInt16> server_ports TSA_GUARDED_BY(server_ports_mutex);
-
-    std::atomic<bool> shutdown_called = false;
-
-    Stopwatch uptime_watch TSA_GUARDED_BY(mutex);
-
-    /// No lock required for application_type modified only during initialization
-    Context::ApplicationType application_type = Context::ApplicationType::SERVER;
-
-    /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
-    Context::ConfigReloadCallback config_reload_callback;
-    Context::StartStopServersCallback start_servers_callback;
-    Context::StartStopServersCallback stop_servers_callback;
-
-    bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
-
-#if USE_NURAFT
-    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
-#endif
-
-    ContextSharedPart()
-        : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
-    {
-        /// TODO: make it singleton (?)
-        static std::atomic<size_t> num_calls{0};
-        if (++num_calls > 1)
-        {
-            std::cerr << "Attempting to create multiple ContextShared instances. Stack trace:\n" << StackTrace().toString();
-            std::cerr.flush();
-            std::terminate();
-        }
-    }
-
-    ~ContextSharedPart()
-    {
-        /// Shutdown must be called first to stop all background tasks (like loadOutdatedDataParts)
-        /// that may be using the thread pool readers. Otherwise there is a data race between
-        /// background tasks calling getThreadPoolReader() and the destructor resetting the readers.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/62143
-        try
-        {
-            shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-
-#if USE_NURAFT
-        if (keeper_dispatcher)
-        {
-            try
-            {
-                keeper_dispatcher->shutdown(false);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-#endif
-
-        /// Wait for thread pool for background reads and writes,
-        /// since it may use per-user MemoryTracker which will be destroyed here.
-        if (asynchronous_remote_fs_reader)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Destructing remote fs threadpool reader");
-                asynchronous_remote_fs_reader->wait();
-                asynchronous_remote_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (asynchronous_local_fs_reader)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Destructing local fs threadpool reader");
-                asynchronous_local_fs_reader->wait();
-                asynchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (synchronous_local_fs_reader)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Destructing local fs threadpool reader");
-                synchronous_local_fs_reader->wait();
-                synchronous_local_fs_reader.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (threadpool_writer)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Destructing threadpool writer");
-                threadpool_writer->wait();
-                threadpool_writer.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (load_marks_threadpool)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Destructing marks loader");
-                load_marks_threadpool->wait();
-                load_marks_threadpool.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-
-        if (prefetch_threadpool)
-        {
-            try
-            {
-                LOG_DEBUG(log, "Destructing prefetch threadpool");
-                prefetch_threadpool->wait();
-                prefetch_threadpool.reset();
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-            }
-        }
-    }
-
-    void setConfig(const ConfigurationPtr & config_value)
-    {
-        if (!config_value)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Set nullptr config is invalid");
-
-        std::lock_guard lock(mutex);
-        config = config_value;
-        access_control->setExternalAuthenticatorsConfig(*config_value);
-    }
-
-    const Poco::Util::AbstractConfiguration & getConfigRefWithLock(const std::lock_guard<ContextSharedMutex> &) const TSA_REQUIRES(this->mutex)
-    {
-        return config ? *config : Poco::Util::Application::instance().config();
-    }
-
-    const Poco::Util::AbstractConfiguration & getConfigRef() const
-    {
-        SharedLockGuard lock(mutex);
-        return config ? *config : Poco::Util::Application::instance().config();
-    }
-
-    ConfigurationPtr getConfig() const
-    {
-        SharedLockGuard lock(mutex);
-        if (config)
-            return config;
-        return ConfigurationPtr(&Poco::Util::Application::instance().config(), /* shared= */ true);
-    }
-
-    /** Perform a complex job of destroying objects in advance.
-      */
-    void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
-    {
-        bool is_shutdown_called = shutdown_called.exchange(true);
-        if (is_shutdown_called)
-            return;
-
-        /// Need to flush the async insert queue before shutting down the database catalog
-        std::shared_ptr<AsynchronousInsertQueue> delete_async_insert_queue;
-        {
-            std::lock_guard lock(mutex);
-            delete_async_insert_queue = std::move(async_insert_queue);
-        }
-        if (delete_async_insert_queue)
-            delete_async_insert_queue->flushAndShutdown();
-
-        /// Stop periodic reloading of the configuration files.
-        /// This must be done first because otherwise the reloading may pass a changed config
-        /// to some destroyed parts of ContextSharedPart.
-
-        /// We need to make sure no dictionary queries are concurrent with the further shutdown logic
-        /// because it sets various fields to null and those fields are unconditionally dereferenced by queries.
-        /// So we need to:
-        /// (1) Disable future dictionary queries.
-        /// (2) Make sure all the currently running dictionary queries are killed.
-        /// (3) Join the dictionary queries' threads.
-        SHUTDOWN(log, "dictionaries loader", external_dictionaries_loader, enablePeriodicUpdates(false));
-        process_list.killAllQueries();
-        SHUTDOWN(log, "dictionaries loader threads", external_dictionaries_loader, joinLoadingThreads());
-
-        SHUTDOWN(log, "UDFs loader", external_user_defined_executable_functions_loader, enablePeriodicUpdates(false));
-        SHUTDOWN(log, "another UDFs storage", user_defined_sql_objects_storage, stopWatching());
-
-        LOG_TRACE(log, "Shutting down named sessions");
-        Session::shutdownNamedSessions();
-
-        /// Stop watching DDL queue in ZooKeeper and wait until currently executed tasks finish.
-        /// This must be done before closing ZooKeeper connection (because DDLWorker can call Context::getZooKeeper() and resurrect it),
-        /// and before shutting down BackupsWorker (because DDLWorker can start an internal backup or restore).
-        SHUTDOWN(log, "ddl worker", ddl_worker, shutdown());
-
-        /// Waiting for current backups/restores to be finished. This must be done before shutting down DatabaseCatalog.
-        SHUTDOWN(log, "backups worker", backups_worker, shutdown());
-
-        LOG_TRACE(log, "Shutting down object storage queue streaming");
-        StreamingStorageRegistry::instance().shutdown();
-
-        /// Stop all MergeTree background executors before shutting down databases.
-        /// This ensures no background tasks (merges, mutations, moves, part cleanup)
-        /// are running when storage objects are shut down or destroyed.
-        /// Without this, a background task could be accessing a storage's data_parts_indexes
-        /// while DatabaseCatalog::shutdown is destroying that storage, causing a SIGBUS.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/85433
-        SHUTDOWN(log, "merges executor", merge_mutate_executor, wait());
-        SHUTDOWN(log, "fetches executor", fetch_executor, wait());
-        SHUTDOWN(log, "moves executor", moves_executor, wait());
-        SHUTDOWN(log, "common executor", common_executor, wait());
-
-        /// Deactivate FileCache background threads before shutting down the database catalog.
-        /// DatabaseCatalog::shutdown() can throw (e.g. ZooKeeper timeout in replicated DDL worker).
-        /// If it throws, deactivateBackgroundOperations() would be skipped, leaving FileCache
-        /// download/cleanup threads stuck on GlobalThreadPool, which causes
-        /// GlobalThreadPool::shutdown() to deadlock.
-        LOG_TRACE(log, "Shutting down caches");
-        for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
-            cache_data->cache->deactivateBackgroundOperations();
-
-        LOG_TRACE(log, "Shutting down database catalog");
-        DatabaseCatalog::shutdown([this]()
-        {
-            SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
-        });
-
-        FileCacheFactory::instance().clear();
-
-        NamedCollectionFactory::instance().shutdown();
-
-        delete_async_insert_queue.reset();
-
-        TransactionLog::shutdownIfAny();
-
-        // Workload entity storage must be destructed when no queries or merges are running because PipelineExecutor may access it.
-        // Read the `shared_ptr` under the mutex, because `getWorkloadEntityStoragePtr` may concurrently
-        // initialize it (a concurrent read/write of the same `shared_ptr` object would be a data race).
-        {
-            std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage_to_stop;
-            {
-                SharedLockGuard lock(mutex);
-                workload_entity_storage_to_stop = workload_entity_storage;
-            }
-            if (workload_entity_storage_to_stop)
-            {
-                LOG_DEBUG(log, "Shutting down workload entity storage");
-                workload_entity_storage_to_stop->stopWatching();
-            }
-        }
-
-        std::unique_ptr<SystemLogs> delete_system_logs;
-        std::unique_ptr<EmbeddedDictionaries> delete_embedded_dictionaries;
-        std::unique_ptr<ExternalDictionariesLoader> delete_external_dictionaries_loader;
-        std::unique_ptr<ExternalUserDefinedExecutableFunctionsLoader> delete_external_user_defined_executable_functions_loader;
-        std::unique_ptr<IUserDefinedSQLObjectsStorage> delete_user_defined_sql_objects_storage;
-        std::shared_ptr<IWorkloadEntityStorage> delete_workload_entity_storage;
-        std::unique_ptr<DDLWorker> delete_ddl_worker;
-
-        BackgroundSchedulePoolPtr delete_buffer_flush_schedule_pool;
-        BackgroundSchedulePoolPtr delete_schedule_pool;
-        BackgroundSchedulePoolPtr delete_distributed_schedule_pool;
-        BackgroundSchedulePoolPtr delete_message_broker_schedule_pool;
-        BackgroundSchedulePoolPtr delete_iceberg_schedule_pool;
-        BackgroundSchedulePoolPtr delete_streaming_schedule_pool;
-
-        std::unique_ptr<AccessControl> delete_access_control;
-
-        scope_guard delete_dictionaries_xmls;
-        scope_guard delete_user_defined_executable_functions_xmls;
-        scope_guard delete_dynamic_user_defined_executable_functions_xmls;
-
-        {
-            std::lock_guard lock(clusters_mutex);
-            if (cluster_discovery)
-            {
-                LOG_TRACE(log, "Shutting down ClusterDiscovery");
-                /// Reset cluster_discovery if any.
-                /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
-                /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
-                cluster_discovery.reset();
-            }
-        }
-
-        {
-            // Disk selector might not be initialized if there was some error during
-            // its initialization. Don't try to initialize it again on shutdown.
-            if (merge_tree_disk_selector)
-            {
-                for (const auto & [disk_name, disk] : merge_tree_disk_selector->getDisksMap())
-                {
-                    LOG_INFO(log, "Shutdown disk {}", disk_name);
-                    disk->shutdown();
-                }
-            }
-
-            /// Special volumes might also use disks that require shutdown.
-            if (temporary_volume_legacy)
-            {
-                auto & disks = temporary_volume_legacy->getDisks();
-                for (auto & disk : disks)
-                    disk->shutdown();
-            }
-        }
-
-        LOG_TRACE(log, "Shutting down AccessControl");
-        access_control->shutdown();
-
-        {
-            std::lock_guard lock(mutex);
-
-            /** Compiled expressions stored in cache need to be destroyed before destruction of static objects.
-              * Because CHJIT instance can be static object.
-              */
-#if USE_EMBEDDED_COMPILER
-            if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
-                cache->clear();
-#endif
-
-            /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
-            /// TODO: Get rid of this.
-
-            delete_dictionaries_xmls = std::move(dictionaries_xmls);
-            delete_user_defined_executable_functions_xmls = std::move(user_defined_executable_functions_xmls);
-            delete_dynamic_user_defined_executable_functions_xmls = std::move(dynamic_user_defined_executable_functions_xmls);
-
-            delete_system_logs = std::move(system_logs);
-            delete_embedded_dictionaries = std::move(embedded_dictionaries);
-            delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
-            delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
-            delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
-            delete_workload_entity_storage = std::move(workload_entity_storage);
-            delete_ddl_worker = std::move(ddl_worker);
-
-            delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
-            delete_schedule_pool = std::move(schedule_pool);
-            delete_distributed_schedule_pool = std::move(distributed_schedule_pool);
-            delete_message_broker_schedule_pool = std::move(message_broker_schedule_pool);
-            delete_iceberg_schedule_pool = std::move(iceberg_schedule_pool);
-            delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
-
-            delete_access_control = std::move(access_control);
-
-            /// Stop trace collector if any
-            has_trace_collector = false;
-            trace_collector.reset();
-        }
-
-        zkutil::ZooKeeperPtr delete_zookeeper;
-        {
-            /// Stop zookeeper connection
-            std::lock_guard lock(zookeeper_mutex);
-            delete_zookeeper = std::move(zookeeper);
-        }
-        if (delete_zookeeper)
-            delete_zookeeper->finalize("shutdown");
-
-        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
-        {
-            std::lock_guard lock(auxiliary_zookeepers_mutex);
-            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
-        }
-        for (auto & [name, zk] : delete_auxiliary_zookeepers)
-            zk->finalize("shutdown");
-
-        /// Dictionaries may be required:
-        /// - for storage shutdown (during final flush of the Buffer engine)
-        /// - before storage startup (because of some streaming of, i.e. Kafka, to
-        ///   the table with materialized column that has dictGet)
-        ///
-        /// So they should be created before any storages and preserved until storages will be terminated.
-        ///
-        /// But they cannot be created before storages since they may required table as a source,
-        /// but at least they can be preserved for storage termination.
-        delete_dictionaries_xmls.reset();
-        delete_user_defined_executable_functions_xmls.reset();
-        delete_dynamic_user_defined_executable_functions_xmls.reset();
-
-        /// Can be removed without context lock
-        delete_system_logs.reset();
-        delete_embedded_dictionaries.reset();
-        delete_external_dictionaries_loader.reset();
-        delete_external_user_defined_executable_functions_loader.reset();
-        delete_user_defined_sql_objects_storage.reset();
-        delete_workload_entity_storage.reset();
-        delete_ddl_worker.reset();
-
-        auto join_background_pool = [&](BackgroundSchedulePoolPtr && pool_ptr)
-        {
-            if (!pool_ptr)
-                return;
-            pool_ptr->join();
-            pool_ptr.reset();
-        };
-        join_background_pool(std::move(delete_buffer_flush_schedule_pool));
-        join_background_pool(std::move(delete_schedule_pool));
-        join_background_pool(std::move(delete_distributed_schedule_pool));
-        join_background_pool(std::move(delete_message_broker_schedule_pool));
-        join_background_pool(std::move(delete_iceberg_schedule_pool));
-        join_background_pool(std::move(delete_streaming_schedule_pool));
-
-        delete_access_control.reset();
-
-        total_memory_tracker.resetOvercommitTracker();
-        total_memory_tracker.resetPageCache();
-    }
-
-    bool hasTraceCollector() const
-    {
-        return has_trace_collector.load();
-    }
-
-    void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
-    {
-        if (!trace_collector.has_value())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "TraceCollector needs to be first created before initialization");
-
-        trace_collector->initialize(trace_log);
-    }
-
-    void createTraceCollector()
-    {
-        if (trace_collector.has_value())
-            return;
-
-        trace_collector.emplace();
-        has_trace_collector = true;
-    }
-
-    void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
-    {
-        /// A warning goes both: into server's log; stored to be placed in `system.warnings` table.
-        LOG_WARNING(log, "{}", message.text);
-        warnings[warning] = message;
-    }
-
-    void removeAllWarnings() TSA_REQUIRES(mutex)
-    {
-        warnings.clear();
-    }
-
-    void removeWarningMessage(Context::WarningType warning) TSA_REQUIRES(mutex)
-    {
-        if (warnings.contains(warning))
-        {
-            /// While removing the warning, log it with INFO level before it's removed from the `system.warnings` table.
-            LOG_INFO(log, "Removing warning {}", warnings[warning].text);
-            warnings.erase(warning);
-        }
-    }
-
-    void configureServerWideThrottling()
-    {
-        if (auto bandwidth = server_settings[ServerSetting::max_replicated_fetches_network_bandwidth_for_server])
-            replicated_fetches_throttler = std::make_shared<Throttler>(bandwidth);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_replicated_sends_network_bandwidth_for_server])
-            replicated_sends_throttler = std::make_shared<Throttler>(bandwidth);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server])
-            remote_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server])
-            remote_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_local_read_bandwidth_for_server])
-            local_read_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalReadThrottlerBytes, ProfileEvents::LocalReadThrottlerSleepMicroseconds);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_local_write_bandwidth_for_server])
-            local_write_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::LocalWriteThrottlerBytes, ProfileEvents::LocalWriteThrottlerSleepMicroseconds);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_backup_bandwidth_for_server])
-            backups_server_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::BackupThrottlerBytes, ProfileEvents::BackupThrottlerSleepMicroseconds);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_mutations_bandwidth_for_server])
-            mutations_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MutationsThrottlerBytes, ProfileEvents::MutationsThrottlerSleepMicroseconds);
-
-        if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
-            merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
-    }
-};
-
-void ContextSharedMutex::lockImpl()
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    Base::lockImpl();
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-}
-
-void ContextSharedMutex::lockSharedImpl()
-{
-    ProfileEvents::increment(ProfileEvents::ContextLock);
-    CurrentMetrics::Increment increment{CurrentMetrics::ContextLockWait};
-    Stopwatch watch;
-    Base::lockSharedImpl();
-    ProfileEvents::increment(ProfileEvents::ContextLockWaitMicroseconds, watch.elapsedMicroseconds());
-}
-
-ContextData::ContextData()
-{
-    settings = std::make_unique<Settings>();
-}
-
-ContextData::ContextData(const ContextData &o) :
-    shared(o.shared),
-    client_info(o.client_info),
-    external_tables_initializer_callback(o.external_tables_initializer_callback),
-    input_initializer_callback(o.input_initializer_callback),
-    input_blocks_reader(o.input_blocks_reader),
-    user_id(o.user_id),
-    current_roles(o.current_roles),
-    settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
-    access(o.access),
-    need_recalculate_access(o.need_recalculate_access),
-    current_database(o.current_database),
-    can_use_query_result_cache(o.can_use_query_result_cache),
-    settings(std::make_unique<Settings>(*o.settings)),
-    progress_callback(o.progress_callback),
-    file_progress_callback(o.file_progress_callback),
-    process_list_elem(o.process_list_elem),
-    has_process_list_elem(o.has_process_list_elem),
-    normalized_query_hash(o.normalized_query_hash),
-    insertion_table_info(o.insertion_table_info),
-    is_distributed(o.is_distributed),
-    default_format(o.default_format),
-    insert_format(o.insert_format),
-    external_tables_mapping(o.external_tables_mapping),
-    scalars(o.scalars),
-    special_scalars(o.special_scalars),
-    next_task_callback(o.next_task_callback),
-    merge_tree_read_task_callback(o.merge_tree_read_task_callback),
-    merge_tree_all_ranges_callback(o.merge_tree_all_ranges_callback),
-    parallel_replicas_group_uuid(o.parallel_replicas_group_uuid),
-    block_marshalling_callback(o.block_marshalling_callback),
-    is_under_restore(o.is_under_restore),
-    client_protocol_version(o.client_protocol_version),
-    partition_id_to_max_block(o.partition_id_to_max_block),
-    query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
-    query_factories_info(o.query_factories_info),
-    query_privileges_info(o.query_privileges_info),
-    async_read_counters(o.async_read_counters),
-    view_source(o.view_source),
-    /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
-    /// to avoid a data race with `Context::executeTableFunction` and other writers
-    /// that mutate the source object's map. See issue #104807.
-    query_context(o.query_context),
-    session_context(o.session_context),
-    global_context(o.global_context),
-    background_context(o.background_context),
-    buffer_context(o.buffer_context),
-    is_internal_query(o.is_internal_query),
-    is_background_operation(o.is_background_operation),
-    is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
-    is_view_inner_query(o.is_view_inner_query),
-    positional_arguments_already_resolved(o.positional_arguments_already_resolved),
-    temp_data_on_disk(o.temp_data_on_disk),
-    classifier(o.classifier),
-    prepared_sets_cache(o.prepared_sets_cache),
-    offset_parallel_replicas_enabled(o.offset_parallel_replicas_enabled),
-    runtime_filter_lookup(o.runtime_filter_lookup),
-    kitchen_sink(o.kitchen_sink),
-    query_parameters(o.query_parameters),
-    host_context(o.host_context),
-    metadata_transaction(o.metadata_transaction),
-    merge_tree_transaction(o.merge_tree_transaction),
-    merge_tree_transaction_holder(o.merge_tree_transaction_holder),
-    remote_read_query_throttler(o.remote_read_query_throttler),
-    remote_write_query_throttler(o.remote_write_query_throttler),
-    local_read_query_throttler(o.local_read_query_throttler),
-    local_write_query_throttler(o.local_write_query_throttler),
-    backups_query_throttler(o.backups_query_throttler)
-{
-    std::lock_guard lock(o.table_function_results_mutex);
-    table_function_results = o.table_function_results;
-}
-
-void ContextData::resetSharedContext()
-{
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    shared = nullptr;
-}
-
-ConfigurationPtr ContextData::tryGetConfig() const
-{
-    std::lock_guard<std::mutex> lock(mutex_shared_context);
-    return shared ? shared->getConfig() : nullptr;
-}
-
-Context::Context() = default;
-Context::Context(const Context & rhs) : ContextData(rhs), std::enable_shared_from_this<Context>(rhs) {}
-
-SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
-SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) noexcept = default;
-SharedContextHolder::SharedContextHolder() = default;
-SharedContextHolder::~SharedContextHolder() = default;
-SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shared_context)
-    : shared(std::move(shared_context)) {}
-
-void SharedContextHolder::reset() { shared.reset(); }
-
-ContextMutablePtr Context::createGlobal(ContextSharedPart * shared_part)
-{
-    auto res = std::shared_ptr<Context>(new Context);
-    res->shared = shared_part;
-    res->query_access_info = std::make_shared<QueryAccessInfo>();
-    res->query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
-    res->async_read_counters = std::make_shared<AsyncReadCounters>();
-    return res;
-}
-
-SharedContextHolder Context::createShared()
-{
-    return SharedContextHolder(std::make_unique<ContextSharedPart>());
-}
-
-ContextMutablePtr Context::createCopy(const ContextPtr & other)
-{
-    SharedLockGuard lock(other->mutex);
-    auto new_context = std::shared_ptr<Context>(new Context(*other));
-    return new_context;
-}
-
-ContextMutablePtr Context::createCopy(const ContextWeakPtr & other)
-{
-    auto ptr = other.lock();
-    if (!ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't copy an expired context");
-    return createCopy(ptr);
-}
-
-ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
-{
-    return createCopy(std::const_pointer_cast<const Context>(other));
-}
-
-Context::~Context() = default;
-
-InterserverIOHandler & Context::getInterserverIOHandler() { return shared->interserver_io_handler; }
-const InterserverIOHandler & Context::getInterserverIOHandler() const { return shared->interserver_io_handler; }
-
-ProcessList & Context::getProcessList() { return shared->process_list; }
-const ProcessList & Context::getProcessList() const { return shared->process_list; }
-OvercommitTracker * Context::getGlobalOvercommitTracker() const { return &shared->global_overcommit_tracker; }
-
-SessionTracker & Context::getSessionTracker() { return shared->session_tracker; }
-
-MergeList & Context::getMergeList() { return shared->merge_list; }
-const MergeList & Context::getMergeList() const { return shared->merge_list; }
-MovesList & Context::getMovesList() { return shared->moves_list; }
-const MovesList & Context::getMovesList() const { return shared->moves_list; }
-ReplicatedFetchList & Context::getReplicatedFetchList() { return shared->replicated_fetch_list; }
-const ReplicatedFetchList & Context::getReplicatedFetchList() const { return shared->replicated_fetch_list; }
-RefreshSet & Context::getRefreshSet() { return shared->refresh_set; }
-const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; }
-
-String Context::resolveDatabase(const String & database_name) const
-{
-    String res = database_name.empty() ? getCurrentDatabase() : database_name;
-    if (res.empty())
-        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
-    return res;
-}
-
-String Context::getPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->path;
-}
-
-String Context::getFlagsPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->flags_path;
-}
-
-String Context::getUserFilesPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->user_files_path;
-}
-
-String Context::getDictionariesLibPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->dictionaries_lib_path;
-}
-
-String Context::getUserScriptsPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->user_scripts_path;
-}
-
-String Context::getDynamicUserDefinedExecutableFunctionsPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->dynamic_user_defined_executable_functions_path;
-}
-
-String Context::getFilesystemCachesPath() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->filesystem_caches_path;
-}
-
-std::shared_ptr<IDisk> Context::getDatabaseDisk() const
-{
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (shared->default_db_disk)
-            return shared->default_db_disk;
-    }
-
-    // This is called first time early during the initialization.
-    // Even if multiple threads try to get target_db_disk, only the first one will initialize the disks as there is another mutex in `getDiskMap()`
-    // It is not necessary to introduce a mutex here.
-    auto target_db_disk = [&]() -> std::shared_ptr<IDisk>
-    {
-        const auto & config = shared->getConfigRef();
-        const auto & disk_map = getDisksMap();
-        auto disk_name = config.getString("database_disk.disk", DiskSelector::DEFAULT_DISK_NAME);
-
-        LOG_INFO(shared->log, "Database disk name: {}", disk_name);
-
-        auto it = disk_map.find(disk_name);
-        if (it == disk_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_DISK, "No disk {}", backQuote(disk_name));
-
-        chassert(it->second);
-
-        LOG_INFO(shared->log, "Database disk name: {}, path: {}", disk_name, it->second->getPath());
-        return it->second;
-    }();
-
-    std::lock_guard lock(shared->mutex);
-    if (shared->default_db_disk)
-        return shared->default_db_disk;
-
-    return shared->default_db_disk = target_db_disk;
-}
-
-String Context::getFilesystemCacheUser() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->filesystem_cache_user;
-}
-
-DatabaseAndTable Context::getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const
-{
-    auto & shard = storage_cache.shards[StorageCache::shardIndex(id)];
-    std::lock_guard lock(shard.mutex);
-
-    if (auto it = shard.set.find(id); it != shard.set.end())
-    {
-        DatabaseAndTable storage = DatabaseCatalog::instance().tryGetByUUID(it->uuid);
-        /// The cache is keyed by qualified name only (see `StorageCache::Shard::set`), so a hit can
-        /// carry a UUID that no longer matches the name we are resolving. Return the cached storage
-        /// only if it is still fresh. Otherwise the entry is stale and must not be reused:
-        ///  - the table no longer exists by its UUID (e.g. a refreshable materialized view's inner
-        ///    table was dropped and recreated), or
-        ///  - the UUID still exists but the name was reassigned to a different table by a rename or
-        ///    exchange within the same query. This happens during `CREATE OR REPLACE`, which creates a
-        ///    temporary table, populates it (caching the temporary name -> temporary UUID here), then
-        ///    atomically swaps it with the target via `EXCHANGE`. After the swap the temporary name
-        ///    refers to the old table that is about to be dropped, but the cache would still hand out
-        ///    the new (now live) table - so dropping by the temporary name would shut down the live
-        ///    table instead and break it (e.g. detaching a materialized view from its source), or
-        ///  - the caller asked for a specific UUID but the cached entry resolves to a different one
-        ///    (a same-name replacement); returning it would silently substitute the wrong table
-        ///    instead of letting the fresh lookup report `UNKNOWN_TABLE`/`TABLE_UUID_MISMATCH`.
-        /// In all cases remove the stale entry and fall through to a fresh lookup by name.
-        if (storage.second
-            && storage.second->getStorageID().getQualifiedName() == id.getQualifiedName()
-            && (!id.hasUUID() || it->uuid == id.uuid))
-            return storage;
-
-        shard.set.erase(it);
-    }
-
-    auto storage = storage_getter();
-
-    if (storage.second)
-    {
-        const auto & new_id = storage.second->getStorageID();
-        if (new_id.hasUUID())
-        {
-            shard.set.insert(new_id);
-        }
-    }
-
-    return storage;
-}
-
-std::unordered_map<Context::WarningType, PreformattedMessage> Context::getWarnings() const
-{
-    std::unordered_map<Context::WarningType, PreformattedMessage> common_warnings;
-    {
-        SharedLockGuard lock(shared->mutex);
-        common_warnings = shared->warnings;
-
-        auto active_parts = CurrentMetrics::get(CurrentMetrics::PartsActive);
-
-        auto check_entity_limit = [&](Int64 attached_count,
-                                      std::atomic_size_t ContextSharedPart::* warn_field,
-                                      std::atomic_size_t ContextSharedPart::* throw_field,
-                                      WarningType warning_type,
-                                      auto make_warning,
-                                      auto make_warning_with_throw)
-        {
-            auto warn_limit = (shared->*warn_field).load();
-            if (attached_count > static_cast<Int64>(warn_limit))
-            {
-                auto throw_limit = (shared->*throw_field).load();
-                if (throw_limit > warn_limit)
-                    common_warnings[warning_type] = make_warning_with_throw(attached_count, warn_limit, throw_limit);
-                else
-                    common_warnings[warning_type] = make_warning(attached_count, warn_limit);
-            }
-        };
-
-        check_entity_limit(
-            CurrentMetrics::get(CurrentMetrics::AttachedTable),
-            &ContextSharedPart::max_table_num_to_warn,
-            &ContextSharedPart::max_table_num_to_throw,
-            WarningType::MAX_ATTACHED_TABLES,
-            [](auto attached_count, auto warn_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached tables ({}) exceeds the warning limit of {}.", attached_count, warn_limit);
-            },
-            [](auto attached_count, auto warn_limit, auto throw_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached tables ({}) exceeds the warning limit of {}. You will not be able to create new tables once "
-                    "the "
-                    "limit of {} is reached.",
-                    attached_count,
-                    warn_limit,
-                    throw_limit);
-            });
-        check_entity_limit(
-            CurrentMetrics::get(CurrentMetrics::AttachedView),
-            &ContextSharedPart::max_view_num_to_warn,
-            &ContextSharedPart::max_view_num_to_throw,
-            WarningType::MAX_ATTACHED_VIEWS,
-            [](auto attached_count, auto warn_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached views ({}) exceeds the warning limit of {}.", attached_count, warn_limit);
-            },
-            [](auto attached_count, auto warn_limit, auto throw_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached views ({}) exceeds the warning limit of {}. You will not be able to create new views once the "
-                    "limit of {} is reached.",
-                    attached_count,
-                    warn_limit,
-                    throw_limit);
-            });
-        check_entity_limit(
-            CurrentMetrics::get(CurrentMetrics::AttachedDictionary),
-            &ContextSharedPart::max_dictionary_num_to_warn,
-            &ContextSharedPart::max_dictionary_num_to_throw,
-            WarningType::MAX_ATTACHED_DICTIONARIES,
-            [](auto attached_count, auto warn_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached dictionaries ({}) exceeds the warning limit of {}.", attached_count, warn_limit);
-            },
-            [](auto attached_count, auto warn_limit, auto throw_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached dictionaries ({}) exceeds the warning limit of {}. "
-                    "You will not be able to create new dictionaries once the "
-                    "limit of {} is reached.",
-                    attached_count,
-                    warn_limit,
-                    throw_limit);
-            });
-        check_entity_limit(
-            CurrentMetrics::get(CurrentMetrics::AttachedDatabase),
-            &ContextSharedPart::max_database_num_to_warn,
-            &ContextSharedPart::max_database_num_to_throw,
-            WarningType::MAX_ATTACHED_DATABASES,
-            [](auto attached_count, auto warn_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached databases ({}) exceeds the warning limit of {}.", attached_count, warn_limit);
-            },
-            [](auto attached_count, auto warn_limit, auto throw_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of attached databases ({}) exceeds the warning limit of {}. You will not be able to create new databases "
-                    "once the "
-                    "limit of {} is reached.",
-                    attached_count,
-                    warn_limit,
-                    throw_limit);
-            });
-        check_entity_limit(
-            CurrentMetrics::get(CurrentMetrics::NamedCollection),
-            &ContextSharedPart::max_named_collection_num_to_warn,
-            &ContextSharedPart::max_named_collection_num_to_throw,
-            WarningType::MAX_NAMED_COLLECTIONS,
-            [](auto attached_count, auto warn_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of named collections ({}) exceeds the warning limit of {}.", attached_count, warn_limit);
-            },
-            [](auto attached_count, auto warn_limit, auto throw_limit)
-            {
-                return PreformattedMessage::create(
-                    "The number of named collections ({}) exceeds the warning limit of {}. "
-                    "You will not be able to create new named collections once the "
-                    "limit of {} is reached.",
-                    attached_count,
-                    warn_limit,
-                    throw_limit);
-            });
-
-        if (active_parts > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = PreformattedMessage::create(
-                "The number of active parts ({}) exceeds the warning limit of {}.",
-                active_parts, shared->max_part_num_to_warn.load());
-    }
-    if ((*settings)[Setting::ast_fuzzer_runs] > 0)
-        common_warnings[Context::WarningType::AST_FUZZER_IS_ENABLED] = PreformattedMessage::create(
-            "The server-side AST fuzzer is enabled (`ast_fuzzer_runs` = {}). This is intended for testing only and is not suitable for production.",
-            (*settings)[Setting::ast_fuzzer_runs].value);
-
-    /// Make setting's name ordered
-    if (!(*settings)[Setting::cloud_mode])
-    {
-        auto obsolete_settings = settings->getChangedAndObsoleteNames();
-
-        if (!obsolete_settings.empty())
-        {
-            bool single_element = obsolete_settings.size() == 1;
-            constexpr auto message_format_string
-                = "Obsolete setting{} [{}]{} changed. Please check 'SELECT * FROM system.settings WHERE changed AND is_obsolete' and read the "
-                  "changelog at https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md";
-            String settings_list = fmt::format("'{}'", fmt::join(obsolete_settings, "', '"));
-            common_warnings[Context::WarningType::OBSOLETE_SETTINGS]
-                = PreformattedMessage::create(message_format_string, single_element ? "" : "s", settings_list, single_element ? " is" : " are");
-        }
-    }
-
-    return common_warnings;
-}
-
-/// TODO: remove, use `getTempDataOnDisk`
-VolumePtr Context::getGlobalTemporaryVolume() const
-{
-    SharedLockGuard lock(shared->mutex);
-    /// Calling this method we just bypass the `temp_data_on_disk` and write to the file on the volume directly.
-    /// Volume is the same for `root_temp_data_on_disk` (always set) and `temp_data_on_disk` (if it's set).
-    if (shared->temporary_volume_legacy)
-        return shared->temporary_volume_legacy;
-    return nullptr;
-}
-
-TemporaryDataOnDiskScopePtr Context::getTempDataOnDisk() const
-{
-    if (temp_data_on_disk)
-        return temp_data_on_disk;
-
-    SharedLockGuard lock(shared->mutex);
-    return shared->root_temp_data_on_disk;
-}
-
-TemporaryDataOnDiskScopePtr Context::getSharedTempDataOnDisk() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->root_temp_data_on_disk;
-}
-
-void Context::setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_)
-{
-    /// It's set from `ProcessList::insert` in `executeQueryImpl` before query execution
-    /// so no races with `getTempDataOnDisk` which is called from query execution.
-    this->temp_data_on_disk = std::move(temp_data_on_disk_);
-}
-
-void Context::setPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-
-    shared->path = path;
-
-    if (shared->tmp_path.empty() && !shared->root_temp_data_on_disk)
-        shared->tmp_path = shared->path + "tmp/";
-
-    if (shared->flags_path.empty())
-        shared->flags_path = shared->path + "flags/";
-
-    if (shared->user_files_path.empty())
-        shared->user_files_path = shared->path + "user_files/";
-
-    if (shared->dictionaries_lib_path.empty())
-        shared->dictionaries_lib_path = shared->path + "dictionaries_lib/";
-
-    if (shared->user_scripts_path.empty())
-        shared->user_scripts_path = shared->path + "user_scripts/";
-}
-
-void Context::setFilesystemCachesPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (getApplicationType() != ApplicationType::LOCAL && !fs::path(path).is_absolute())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Filesystem caches path must be absolute: {}", path);
-
-    shared->filesystem_caches_path = path;
-}
-
-void Context::setFilesystemCacheUser(const String & user) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->filesystem_cache_user = user;
-}
-
-static void setupTmpPath(LoggerPtr log, const DiskPtr & disk)
-try
-{
-    LOG_DEBUG(log, "Setting up temporary data storage at disk '{}' with path '{}'", disk->getName(), disk->getPath());
-
-    if (disk->existsDirectory(""))
-    {
-        for (auto it = disk->iterateDirectory(""); it->isValid(); it->next())
-        {
-            /// existsFile() checks for is_regular_file() for local disk
-            if (it->path().starts_with("tmp") && disk->existsFile(it->path()))
-            {
-                LOG_DEBUG(log, "Removing old temporary file {}", it->path());
-                disk->removeFile(it->path());
-            }
-            else
-            {
-                LOG_DEBUG(log, "Found unknown file in temporary path {}", it->path());
-            }
-        }
-    }
-    else
-    {
-        disk->createDirectory("");
-    }
-}
-catch (...)
-{
-    DB::tryLogCurrentException(log, fmt::format(
-        "Caught exception while setting up temporary disk {}:{}. "
-        "It is ok to skip this exception as cleaning old temporary files is not necessary",
-        disk->getName(), disk->getPath()));
-}
-
-static VolumePtr createLocalSingleDiskVolume(const std::string & path, const Poco::Util::AbstractConfiguration & config_)
-{
-    auto disk = std::make_shared<DiskLocal>("_tmp_default", path, 0, config_, "storage_configuration.disks._tmp_default");
-    VolumePtr volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
-    return volume;
-}
-
-void Context::setTemporaryStoragePath(const String & path, size_t max_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->root_temp_data_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
-
-    shared->tmp_path = path;
-    if (!shared->tmp_path.ends_with('/'))
-        shared->tmp_path += '/';
-
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
-
-    for (const auto & disk : volume->getDisks())
-        setupTmpPath(shared->log, disk);
-
-    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
-    temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
-    shared->temporary_volume_legacy = volume;
-}
-
-void Context::setTemporaryStoragePolicy(const String & policy_name, size_t max_size)
-{
-    StoragePolicyPtr tmp_policy;
-    {
-        /// lock in required only for accessing `shared->merge_tree_storage_policy_selector`
-        /// StoragePolicy itself is immutable.
-        std::lock_guard storage_policies_lock(shared->storage_policies_mutex);
-        tmp_policy = getStoragePolicySelector(storage_policies_lock)->get(policy_name);
-    }
-
-    if (tmp_policy->getVolumes().size() != 1)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-            "Policy '{}' is used temporary files, such policy should have exactly one volume", policy_name);
-
-    VolumePtr volume = tmp_policy->getVolume(0);
-
-    if (volume->getDisks().empty())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "No disks volume for temporary files");
-
-    for (const auto & disk : volume->getDisks())
-    {
-        if (!disk)
-            throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Temporary disk is null");
-
-        /// Check that underlying disk is local (can be wrapped in decorator)
-        DiskPtr disk_ptr = disk;
-        setupTmpPath(shared->log, disk);
-    }
-
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->root_temp_data_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
-
-    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
-    temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), volume);
-    shared->temporary_volume_legacy = volume;
-}
-
-void Context::setTemporaryStorageInDistributedCache([[maybe_unused]] size_t max_size)
-{
-#if ENABLE_DISTRIBUTED_CACHE
-    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
-    temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    auto temp_data = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), DistributedCacheTag{});
-    std::lock_guard lock(shared->mutex);
-    shared->root_temp_data_on_disk = std::move(temp_data);
-#else
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed cache for temporary files is not supported");
-#endif
-}
-
-void Context::setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size)
-{
-    auto disk_ptr = getDisk(cache_disk_name);
-    if (!disk_ptr)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Disk '{}' is not found", cache_disk_name);
-
-    std::lock_guard lock(shared->mutex);
-    if (shared->root_temp_data_on_disk)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary storage is already set");
-
-    auto file_cache = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->cache;
-    if (!file_cache)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Cache '{}' is not found", disk_ptr->getCacheName());
-
-    LOG_DEBUG(shared->log, "Using file cache ({}) for temporary files", file_cache->getBasePath());
-
-    shared->tmp_path = file_cache->getBasePath();
-    VolumePtr volume = createLocalSingleDiskVolume(shared->tmp_path, shared->getConfigRefWithLock(lock));
-
-    TemporaryDataOnDiskSettings temporary_data_on_disk_settings;
-    temporary_data_on_disk_settings.max_size_on_disk = max_size;
-    shared->root_temp_data_on_disk = std::make_shared<TemporaryDataOnDiskScope>(std::move(temporary_data_on_disk_settings), file_cache.get());
-    shared->temporary_volume_legacy = volume;
-}
-
-void Context::setFlagsPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->flags_path = path;
-}
-
-void Context::setUserFilesPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->user_files_path = path;
-}
-
-void Context::setDictionariesLibPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->dictionaries_lib_path = path;
-}
-
-void Context::setUserScriptsPath(const String & path)
-{
-    {
-        std::lock_guard lock(shared->mutex);
-        shared->user_scripts_path = path;
-    }
-
-    auto & function_storage = getUserDefinedSQLObjectsStorage();
-    function_storage.loadObjects();
-
-    /// Reload WASM functions if WebAssembly UDFs are enabled.
-    auto * wasm_module_manager = initWasmModuleManager();
-    if (wasm_module_manager)
-        UserDefinedSQLFunctionFactory::instance().loadFunctions(function_storage, *wasm_module_manager);
-}
-
-void Context::setDynamicUserDefinedExecutableFunctionsPath(const String & path)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->dynamic_user_defined_executable_functions_path = path;
-}
-
-void Context::addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const
-{
-    std::lock_guard lock(shared->mutex);
-    auto suppress_re = shared->getConfigRefWithLock(lock).getString("warning_supress_regexp", "");
-
-    bool is_supressed = !suppress_re.empty() && re2::RE2::PartialMatch(message.text, suppress_re);
-    if (!is_supressed)
-        shared->addOrUpdateWarningMessage(warning, message);
-}
-
-void Context::addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const
-{
-    if (message)
-        addOrUpdateWarningMessage(warning, *message);
-    else
-        removeWarningMessage(warning);
-}
-
-void Context::addWarningMessageAboutDatabaseOrdinary(const String & database_name) const
-{
-    std::lock_guard lock(shared->mutex);
-
-    /// We would like to report only about the first database with engine Ordinary
-    static std::atomic_bool is_called = false;
-    if (is_called.exchange(true))
-        return;
-
-    /// We don't use getFlagsPath method, because it takes a shared lock.
-    auto convert_databases_flag = fs::path(shared->flags_path) / "convert_ordinary_to_atomic";
-    constexpr auto message_format_string
-        = "Server has databases (for example `{}`) with Ordinary engine, which was deprecated. "
-          "To convert this database to the new Atomic engine, create a flag {} and make sure that ClickHouse has write permission for it. "
-          "Example: sudo touch '{}' && sudo chmod 666 '{}'";
-    shared->addOrUpdateWarningMessage(
-        Context::WarningType::DB_ORDINARY_DEPRECATED,
-        PreformattedMessage::create(
-            message_format_string,
-            database_name,
-            convert_databases_flag.string(),
-            convert_databases_flag.string(),
-            convert_databases_flag.string()));
-}
-
-void Context::removeWarningMessage(WarningType warning) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->removeWarningMessage(warning);
-}
-
-void Context::removeAllWarnings() const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->removeAllWarnings();
-}
-
-void Context::setConfig(const ConfigurationPtr & config)
-{
-    shared->setConfig(config);
-}
-
-const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
-{
-    return shared->getConfigRef();
-}
-
-AccessControl & Context::getAccessControl()
-{
-    SharedLockGuard lock(shared->mutex);
-    return *shared->access_control;
-}
-
-const AccessControl & Context::getAccessControl() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return *shared->access_control;
-}
-
-void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->access_control->setExternalAuthenticatorsConfig(config);
-}
-
-std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return std::make_unique<GSSAcceptorContext>(shared->access_control->getExternalAuthenticators().getKerberosParams());
-}
-
-void Context::setUsersConfig(const ConfigurationPtr & config)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->users_config = config;
-    shared->access_control->setUsersConfig(*shared->users_config);
-}
-
-ConfigurationPtr Context::getUsersConfig()
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->users_config;
-}
-
-void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
-{
-    /// Prepare lists of user's profiles, constraints, settings, roles.
-    /// NOTE: AccessControl::read<User>() and other AccessControl's functions may require some IO work,
-    /// so Context::getLocalLock() and Context::getGlobalLock() must be unlocked while we're doing this.
-
-    auto & access_control = getAccessControl();
-    auto user = access_control.read<User>(user_id_);
-
-    auto default_roles = user->granted_roles.findGranted(user->default_roles);
-    auto enabled_roles = access_control.getEnabledRolesInfo(default_roles, {});
-    auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
-    const auto & database = user->default_database;
-
-    /// Apply user's profiles, constraints, settings, roles.
-    std::lock_guard lock(mutex);
-
-    setUserIDWithLock(user_id_, lock);
-
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
-    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
-
-    setCurrentRolesWithLock(default_roles, lock);
-    setExternalRolesWithLock(external_roles_, lock);
-
-    /// It's optional to specify the DEFAULT DATABASE in the user's definition.
-    if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
-}
-
-std::shared_ptr<const User> Context::getUser() const
-{
-    return getAccess()->getUser();
-}
-
-String Context::getUserName() const
-{
-    return getAccess()->getUserName();
-}
-
-void Context::setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> &)
-{
-    user_id = user_id_;
-    need_recalculate_access = true;
-}
-
-void Context::setUserID(const UUID & user_id_)
-{
-    std::lock_guard lock(mutex);
-    setUserIDWithLock(user_id_, lock);
-}
-
-std::optional<UUID> Context::getUserID() const
-{
-    SharedLockGuard lock(mutex);
-    return user_id;
-}
-
-void Context::setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> &)
-{
-    if (new_current_roles.empty())
-        current_roles = nullptr;
-    else
-        current_roles = std::make_shared<std::vector<UUID>>(new_current_roles);
-    need_recalculate_access = true;
-}
-
-void Context::setExternalRolesWithLock(const std::vector<UUID> & new_external_roles, const std::lock_guard<ContextSharedMutex> &)
-{
-    // External roles are roles received from other node, current roles is a collection of roles that were assigned locally
-    if (!new_external_roles.empty())
-    {
-        if (external_roles)
-            external_roles->insert(external_roles->end(), new_external_roles.begin(), new_external_roles.end());
-        else
-            external_roles = std::make_shared<std::vector<UUID>>(new_external_roles);
-        need_recalculate_access = true;
-    }
-}
-
-void Context::setCurrentRolesImpl(const std::vector<UUID> & new_current_roles, bool throw_if_not_granted, bool skip_if_not_granted, const std::shared_ptr<const User> & user)
-{
-    if (skip_if_not_granted)
-    {
-        auto filtered_role_ids = user->granted_roles.findGranted(new_current_roles);
-        std::lock_guard lock{mutex};
-        setCurrentRolesWithLock(filtered_role_ids, lock);
-        return;
-    }
-    if (throw_if_not_granted)
-    {
-        for (const auto & role_id : new_current_roles)
-        {
-            if (!user->granted_roles.isGranted(role_id))
-            {
-                auto role_name = getAccessControl().tryReadName(role_id);
-                throw Exception(ErrorCodes::SET_NON_GRANTED_ROLE, "Role {} should be granted to set as a current", role_name.value_or(toString(role_id)));
-            }
-        }
-    }
-    std::lock_guard lock2{mutex};
-    setCurrentRolesWithLock(new_current_roles, lock2);
-}
-
-void Context::setCurrentRoles(const std::vector<UUID> & new_current_roles, bool check_grants)
-{
-    setCurrentRolesImpl(new_current_roles, /* throw_if_not_granted= */ check_grants, /* skip_if_not_granted= */ !check_grants, getUser());
-}
-
-void Context::setCurrentRoles(const RolesOrUsersSet & new_current_roles, bool check_grants)
-{
-    if (new_current_roles.all)
-    {
-        auto user = getUser();
-        setCurrentRolesImpl(user->granted_roles.findGranted(new_current_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
-    }
-    else
-    {
-        setCurrentRoles(new_current_roles.getMatchingIDs(), check_grants);
-    }
-}
-
-void Context::setCurrentRoles(const Strings & new_current_roles, bool check_grants)
-{
-    setCurrentRoles(getAccessControl().getIDs<Role>(new_current_roles), check_grants);
-}
-
-void Context::setCurrentRolesDefault()
-{
-    auto user = getUser();
-    setCurrentRolesImpl(user->granted_roles.findGranted(user->default_roles), /* throw_if_not_granted= */ false, /* skip_if_not_granted= */ false, user);
-}
-
-std::vector<UUID> Context::getCurrentRoles() const
-{
-    return getRolesInfo()->getCurrentRoles();
-}
-
-std::vector<UUID> Context::getEnabledRoles() const
-{
-    return getRolesInfo()->getEnabledRoles();
-}
-
-std::shared_ptr<const EnabledRolesInfo> Context::getRolesInfo() const
-{
-    return getAccess()->getRolesInfo();
-}
-
-namespace
-{
-ALWAYS_INLINE inline void
-contextSanityClampSettingsWithLock(const Context & context, Settings & settings, const std::lock_guard<ContextSharedMutex> &)
-{
-    const auto type = context.getApplicationType();
-    if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
-}
-
-ALWAYS_INLINE inline void contextSanityClampSettings(const Context & context, Settings & settings)
-{
-    const auto type = context.getApplicationType();
-    if (type == Context::ApplicationType::LOCAL || type == Context::ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(settings, getLogger("SettingsSanity"));
-}
-}
-
-template <typename... Args>
-void Context::checkAccessImpl(const Args &... args) const
-{
-    return getAccess()->checkAccess(args...);
-}
-
-void Context::checkAccess(const AccessFlags & flags) const { checkAccessImpl(flags); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database) const { checkAccessImpl(flags, database); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table) const { checkAccessImpl(flags, database, table); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, std::string_view column) const { checkAccessImpl(flags, database, table, column); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, database, table, columns); }
-void Context::checkAccess(const AccessFlags & flags, std::string_view database, std::string_view table, const Strings & columns) const { checkAccessImpl(flags, database, table, columns); }
-void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName()); }
-void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, std::string_view column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
-void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
-void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
-void Context::checkAccess(const AccessRightsElement & element) const { checkAccessImpl(element); }
-void Context::checkAccess(const AccessRightsElements & elements) const { checkAccessImpl(elements); }
-
-std::shared_ptr<const ContextAccessWrapper> Context::getAccess() const
-{
-    /// A helper function to collect parameters for calculating access rights, called with Context::getLocalSharedLock() acquired.
-    auto get_params = [this]()
-    {
-        /// If setUserID() was never called then this must be the global context with the full access.
-        bool full_access = !user_id;
-
-        std::optional<UUID> initial_user_id;
-        if (client_info.initial_user != client_info.current_user)
-            initial_user_id = getAccessControl().find<User>(client_info.initial_user);
-
-        return ContextAccessParams{
-            user_id, full_access, /* use_default_roles= */ false, current_roles, external_roles, *settings, current_database, client_info, initial_user_id};
-    };
-
-    /// Check if the current access rights are still valid, otherwise get parameters for recalculating access rights.
-    std::optional<ContextAccessParams> params;
-
-    {
-        SharedLockGuard lock(mutex);
-        if (access && !need_recalculate_access)
-            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
-    }
-
-    {
-        /// NOTE: We cannot just use SharedLockGuard here because we may need to write `need_recalculate_access`.
-        std::lock_guard lock(mutex);
-
-        /// Re-check after upgrading to exclusive lock - another thread may have already recalculated.
-        if (access && !need_recalculate_access)
-            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
-
-        params.emplace(get_params());
-
-        if (access && (access->getParams() == *params))
-        {
-            need_recalculate_access = false;
-            return std::make_shared<const ContextAccessWrapper>(access, shared_from_this()); /// No need to recalculate access rights.
-        }
-    }
-
-    /// Calculate new access rights according to the collected parameters.
-    /// NOTE: AccessControl::getContextAccess() may require some IO work, so Context::getLocalLock()
-    ///       and Context::getGlobalLock() must be unlocked while we're doing this.
-    auto res = getAccessControl().getContextAccess(*params);
-
-    {
-        /// If the parameters of access rights were not changed while we were calculated them
-        /// then we store the new access rights in the Context to allow reusing it later.
-        std::lock_guard lock(mutex);
-        if (get_params() == *params)
-        {
-            access = res;
-            need_recalculate_access = false;
-        }
-    }
-
-    return std::make_shared<const ContextAccessWrapper>(res, shared_from_this());
-}
-
-RowPolicyFilterPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
-{
-    return getAccess()->getRowPolicyFilter(database, table_name, filter_type);
-}
-
-
-std::shared_ptr<const EnabledQuota> Context::getQuota() const
-{
-    return getAccess()->getQuota();
-}
-
-
-std::vector<QuotaUsage> Context::getQuotaUsages() const
-{
-    return getAccess()->getQuotaUsages();
-}
-
-void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
-{
-    try
-    {
-        UUID profile_id = getAccessControl().getID<SettingsProfile>(profile_name);
-        setCurrentProfileWithLock(profile_id, check_constraints, lock);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(", while trying to set settings profile {}", profile_name);
-        throw;
-    }
-}
-
-void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
-{
-    auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
-    setCurrentProfilesWithLock(*profile_info, check_constraints, lock);
-}
-
-void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
-{
-    if (check_constraints)
-        checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    applySettingsChangesWithLock(profiles_info.settings, lock);
-    settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
-}
-
-void Context::setCurrentProfile(const String & profile_name, bool check_constraints)
-{
-    std::lock_guard lock(mutex);
-    setCurrentProfileWithLock(profile_name, check_constraints, lock);
-}
-
-void Context::setCurrentProfile(const UUID & profile_id, bool check_constraints)
-{
-    std::lock_guard lock(mutex);
-    setCurrentProfileWithLock(profile_id, check_constraints, lock);
-}
-
-void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints)
-{
-    std::lock_guard lock(mutex);
-    setCurrentProfilesWithLock(profiles_info, check_constraints, lock);
-}
-
-UUIDs Context::getCurrentProfiles() const
-{
-    SharedLockGuard lock(mutex);
-    if (!settings_constraints_and_current_profiles)
-        return {};
-    return settings_constraints_and_current_profiles->current_profiles;
-}
-
-UUIDs Context::getEnabledProfiles() const
-{
-    SharedLockGuard lock(mutex);
-    if (!settings_constraints_and_current_profiles)
-        return {};
-    return settings_constraints_and_current_profiles->enabled_profiles;
-}
-
-
-ResourceManagerPtr Context::getResourceManager() const
-{
-    callOnce(shared->resource_manager_initialized, [&] {
-        shared->resource_manager = createResourceManager(getGlobalContext());
-    });
-
-    return shared->resource_manager;
-}
-
-ClassifierPtr Context::getWorkloadClassifier() const
-{
-    ClassifierSettings settings{.throw_on_unknown_workload = getThrowOnUnknownWorkload()}; // to avoid locking shared mutex under `mutex`
-    std::lock_guard lock(mutex);
-    // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
-    if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload], settings);
-    return classifier;
-}
-
-void Context::releaseQuerySlot() const
-{
-    if (auto elem = getProcessListElementSafe())
-        elem->releaseQuerySlot();
-}
-
-String Context::getMergeWorkload() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->merge_workload;
-}
-
-void Context::setMergeWorkload(const String & value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->merge_workload = value;
-}
-
-String Context::getLicenseFile() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->license_file;
-}
-
-void Context::setLicenseFile(const String & value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->license_file = value;
-}
-
-
-bool Context::getShowLicenseExpirationWarnings() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->show_license_expiration_warnings;
-}
-
-void Context::setShowLicenseExpirationWarnings(bool value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->show_license_expiration_warnings = value;
-}
-
-String Context::getMutationWorkload() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->mutation_workload;
-}
-
-void Context::setMutationWorkload(const String & value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->mutation_workload = value;
-}
-
-bool Context::getThrowOnUnknownWorkload() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->throw_on_unknown_workload;
-}
-
-void Context::setThrowOnUnknownWorkload(bool value)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->throw_on_unknown_workload = value;
-}
-
-bool Context::getCPUSlotPreemption() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_preemption;
-}
-
-UInt64 Context::getCPUSlotQuantum() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_quantum_ns;
-}
-
-UInt64 Context::getCPUSlotPreemptionTimeout() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->cpu_slot_preemption_timeout_ms;
-}
-
-void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_quantum_ns, UInt64 cpu_slot_preemption_timeout_ms)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->cpu_slot_preemption = cpu_slot_preemption;
-    shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
-    shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
-}
-
-UInt64 Context::getConcurrentThreadsSoftLimitNum() const
-{
-    std::lock_guard lock(shared->mutex);
-    return shared->concurrent_threads_soft_limit_num;
-}
-
-UInt64 Context::getConcurrentThreadsSoftLimitRatioToCores() const
-{
-    std::lock_guard lock(shared->mutex);
-    return shared->concurrent_threads_soft_limit_ratio_to_cores;
-}
-
-String Context::getConcurrentThreadsScheduler() const
-{
-    std::lock_guard lock(shared->mutex);
-    return shared->concurrent_threads_scheduler;
-}
-
-bool Context::getConcurrentThreadsLazyAllocation() const
-{
-    std::lock_guard lock(shared->mutex);
-    return shared->concurrent_threads_lazy_allocation;
-}
-
-std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler, bool lazy_allocation)
-{
-    std::lock_guard lock(shared->mutex);
-
-    // Set the scheduler
-    bool ok = ConcurrencyControl::instance().setScheduler(scheduler);
-    if (ok)
-        shared->concurrent_threads_scheduler = scheduler;
-    else
-        LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", scheduler);
-
-    // Emergency revert lever for lazy slot allocation.
-    ConcurrencyControl::instance().setLazyAllocation(lazy_allocation);
-    shared->concurrent_threads_lazy_allocation = lazy_allocation;
-
-    // Set the limit
-    SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
-    if (num > 0 && num < concurrent_threads_soft_limit)
-        concurrent_threads_soft_limit = num;
-    if (ratio_to_cores > 0)
-    {
-        auto value = ratio_to_cores * getNumberOfCPUCoresToUse();
-        if (value > 0 && value < concurrent_threads_soft_limit)
-            concurrent_threads_soft_limit = value;
-    }
-    ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
-    shared->concurrent_threads_soft_limit_num = num;
-    shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
-    return { concurrent_threads_soft_limit, ConcurrencyControl::instance().getScheduler() };
-}
-
-
-Scalars Context::getScalars() const
-{
-    std::lock_guard lock(mutex);
-    return scalars;
-}
-
-
-Block Context::getScalar(const String & name) const
-{
-    std::lock_guard lock(mutex);
-
-    auto it = scalars.find(name);
-    if (scalars.end() == it)
-    {
-        // This should be a logical error, but it fails the sql_fuzz test too
-        // often, so 'bad arguments' for now.
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Scalar {} doesn't exist (internal bug)", backQuoteIfNeed(name));
-    }
-    return it->second;
-}
-
-std::optional<Block> Context::tryGetSpecialScalar(const String & name) const
-{
-    std::lock_guard lock(mutex);
-    auto it = special_scalars.find(name);
-    if (special_scalars.end() == it)
-        return std::nullopt;
-    return it->second;
-}
-
-Tables Context::getExternalTables() const
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    SharedLockGuard lock(mutex);
-
-    Tables res;
-    for (const auto & table : external_tables_mapping)
-        res[table.first] = table.second->getTable();
-
-    auto query_context_ptr = query_context.lock();
-    auto session_context_ptr = session_context.lock();
-    if (query_context_ptr && query_context_ptr.get() != this)
-    {
-        Tables buf = query_context_ptr->getExternalTables();
-        res.insert(buf.begin(), buf.end());
-    }
-    else if (session_context_ptr && session_context_ptr.get() != this)
-    {
-        Tables buf = session_context_ptr->getExternalTables();
-        res.insert(buf.begin(), buf.end());
-    }
-    return res;
-}
-
-
-void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    addExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::updateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    updateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::addOrUpdateExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
-{
-    addOrUpdateExternalTable(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
-}
-
-void Context::addExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::lock_guard lock(mutex);
-    if (external_tables_mapping.contains(table_name))
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary table {} already exists", backQuoteIfNeed(table_name));
-
-    external_tables_mapping.emplace(table_name, std::move(temporary_table));
-}
-
-void Context::updateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::lock_guard lock(mutex);
-    auto it = external_tables_mapping.find(table_name);
-    if (it == external_tables_mapping.end())
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Temporary table {} doesn't exist", backQuoteIfNeed(table_name));
-
-    it->second = std::move(temporary_table);
-}
-
-void Context::addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::lock_guard lock(mutex);
-    auto [it, inserted] = external_tables_mapping.emplace(table_name, temporary_table);
-    if (!inserted)
-        it->second = std::move(temporary_table);
-}
-
-std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & table_name) const
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::shared_ptr<TemporaryTableHolder> holder;
-    {
-        SharedLockGuard lock(mutex);
-        auto iter = external_tables_mapping.find(table_name);
-        if (iter == external_tables_mapping.end())
-            return {};
-        holder = iter->second;
-    }
-    return holder;
-}
-
-std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
-
-    std::shared_ptr<TemporaryTableHolder> holder;
-    {
-        std::lock_guard lock(mutex);
-        auto iter = external_tables_mapping.find(table_name);
-        if (iter == external_tables_mapping.end())
-            return {};
-        holder = iter->second;
-        external_tables_mapping.erase(iter);
-    }
-    return holder;
-}
-
-HypotheticalIndexStore & Context::getHypotheticalIndexStore() const
-{
-    /// in session context so the store persists across queries
-    if (auto session_ctx = session_context.lock(); session_ctx && session_ctx.get() != this)
-        return session_ctx->getHypotheticalIndexStore();
-
-    std::lock_guard lock(mutex);
-    if (!hypothetical_index_store)
-        hypothetical_index_store = std::make_shared<HypotheticalIndexStore>();
-    return *hypothetical_index_store;
-}
-
-
-void Context::addScalar(const String & name, const Block & block)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
-
-    std::lock_guard lock(mutex);
-    scalars[name] = block;
-}
-
-
-void Context::addSpecialScalar(const String & name, const Block & block)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
-
-    std::lock_guard lock(mutex);
-    special_scalars[name] = block;
-}
-
-
-bool Context::hasScalar(const String & name) const
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
-
-    std::lock_guard lock(mutex);
-    return scalars.contains(name);
-}
-
-void Context::addQueryAccessInfo(
-    const StorageID & table_id,
-    const Names & column_names)
-{
-    addQueryAccessInfo(backQuoteIfNeed(table_id.getDatabaseName()), table_id.getFullTableName(), column_names);
-}
-
-std::shared_ptr<ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector()
-{
-    {
-        SharedLockGuard lock(mutex);
-        if (time_series_tags_collector)
-            return time_series_tags_collector;
-    }
-    std::lock_guard lock(mutex);
-    if (!time_series_tags_collector)
-        time_series_tags_collector = std::make_shared<ContextTimeSeriesTagsCollector>();
-    return time_series_tags_collector;
-}
-
-std::shared_ptr<const ContextTimeSeriesTagsCollector> Context::getTimeSeriesTagsCollector() const
-{
-    return const_cast<Context *>(this)->getTimeSeriesTagsCollector();
-}
-
-
-void Context::addQueryAccessInfo(
-    const String & quoted_database_name,
-    const String & full_quoted_table_name,
-    const Names & column_names)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
-
-    std::lock_guard lock(query_access_info->mutex);
-    query_access_info->databases.emplace(quoted_database_name);
-    query_access_info->tables.emplace(full_quoted_table_name);
-
-    for (const auto & column_name : column_names)
-        query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
-}
-
-void Context::removeQueryAccessInfoTable(const String & full_quoted_table_name)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
-
-    std::lock_guard lock(query_access_info->mutex);
-    query_access_info->tables.erase(full_quoted_table_name);
-
-    /// Also drop any columns recorded under this table. The internal temporary table is normally recorded
-    /// without columns, so this is defensive.
-    const String prefix = full_quoted_table_name + ".";
-    std::erase_if(query_access_info->columns, [&](const String & column) { return column.starts_with(prefix); });
-}
-
-void Context::addQueryAccessInfo(const Names & partition_names)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
-
-    std::lock_guard<std::mutex> lock(query_access_info->mutex);
-    for (const auto & partition_name : partition_names)
-        query_access_info->partitions.emplace(partition_name);
-}
-
-void Context::addViewAccessInfo(const String & view_name)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have view access info");
-
-    std::lock_guard<std::mutex> lock(query_access_info->mutex);
-    query_access_info->views.emplace(view_name);
-}
-
-void Context::addUsedRowPolicy(const String & policy_name)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have used row policies info");
-
-    std::lock_guard<std::mutex> lock(query_access_info->mutex);
-    query_access_info->row_policies.emplace(policy_name);
-}
-
-void Context::addQueryAccessInfo(const QualifiedProjectionName & qualified_projection_name)
-{
-    if (!qualified_projection_name)
-        return;
-
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
-
-    std::lock_guard<std::mutex> lock(query_access_info->mutex);
-    query_access_info->projections.emplace(fmt::format(
-        "{}.{}", qualified_projection_name.storage_id.getFullTableName(), backQuoteIfNeed(qualified_projection_name.projection_name)));
-}
-
-Context::QueryFactoriesInfo Context::getQueryFactoriesInfo() const
-{
-    return query_factories_info;
-}
-
-namespace
-{
-    /// Set on threads that are reading factory metadata for introspection (e.g. system.functions
-    /// fillData), so that resolving every function â€” and the helper functions they construct
-    /// internally â€” does not record entries in query_log.used_functions for the user's query.
-    thread_local bool suppress_query_factories_info = false;
-}
-
-Context::SuppressQueryFactoriesInfoScope::SuppressQueryFactoriesInfoScope()
-    : prev(suppress_query_factories_info)
-{
-    suppress_query_factories_info = true;
-}
-
-Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
-{
-    suppress_query_factories_info = prev;
-}
-
-void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
-{
-    if (suppress_query_factories_info)
-        return;
-
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
-
-    std::lock_guard lock(query_factories_info.mutex);
-
-    switch (factory_type)
-    {
-        case QueryLogFactories::AggregateFunction:
-            query_factories_info.aggregate_functions.emplace(created_object);
-            break;
-        case QueryLogFactories::AggregateFunctionCombinator:
-            query_factories_info.aggregate_function_combinators.emplace(created_object);
-            break;
-        case QueryLogFactories::Database:
-            query_factories_info.database_engines.emplace(created_object);
-            break;
-        case QueryLogFactories::DataType:
-            query_factories_info.data_type_families.emplace(created_object);
-            break;
-        case QueryLogFactories::Dictionary:
-            query_factories_info.dictionaries.emplace(created_object);
-            break;
-        case QueryLogFactories::Format:
-            query_factories_info.formats.emplace(created_object);
-            break;
-        case QueryLogFactories::Function:
-            query_factories_info.functions.emplace(created_object);
-            break;
-        case QueryLogFactories::Storage:
-            query_factories_info.storages.emplace(created_object);
-            break;
-        case QueryLogFactories::TableFunction:
-            query_factories_info.table_functions.emplace(created_object);
-            break;
-        case QueryLogFactories::ExecutableUserDefinedFunction:
-            query_factories_info.executable_user_defined_functions.emplace(created_object);
-            break;
-        case QueryLogFactories::SQLUserDefinedFunction:
-            query_factories_info.sql_user_defined_functions.emplace(created_object);
-    }
-}
-
-void Context::addQueryPrivilegesInfo(const String & privilege, bool granted) const
-{
-    std::lock_guard lock(query_privileges_info->mutex);
-    if (granted)
-        query_privileges_info->used_privileges.emplace(privilege);
-    else
-        query_privileges_info->missing_privileges.emplace(privilege);
-}
-
-static bool findIdentifier(const ASTFunction * function)
-{
-    if (!function || !function->arguments)
-        return false;
-    if (const auto * arguments = function->arguments->as<ASTExpressionList>())
-    {
-        for (const auto & argument : arguments->children)
-        {
-            if (argument->as<ASTIdentifier>())
-                return true;
-            if (const auto * f = argument->as<ASTFunction>(); f && findIdentifier(f))
-                return true;
-        }
-    }
-    return false;
-}
-
-StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
-{
-    ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase();
-    String table_name = function->name;
-
-    if (function->isCompoundName())
-    {
-        std::vector<std::string> parts;
-        splitInto<'.'>(parts, function->name);
-
-        if (parts.size() == 2)
-        {
-            database_name = std::move(parts[0]);
-            table_name = std::move(parts[1]);
-        }
-    }
-
-    StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
-    if (table)
-    {
-        if (table.get()->isView() && table->as<StorageView>() && table->as<StorageView>()->isParameterizedView())
-        {
-            auto view_metadata = table->getInMemoryMetadataPtr(getQueryContext(), false);
-            auto query = view_metadata->getSelectQuery().inner_query->clone();
-            NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression, getQueryContext());
-            StorageView::replaceQueryParametersIfParameterizedView(query, parameterized_view_values);
-
-            ASTCreateQuery create;
-            create.set(create.select, query);
-
-            /// The sample block must be analyzed under the view's SQL security context, not the
-            /// invoker's (mirrors buildParameterizedViewStorage).
-            auto sql_security = make_intrusive<ASTSQLSecurity>();
-            sql_security->type = view_metadata->sql_security_type;
-            if (view_metadata->definer)
-                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*view_metadata->definer);
-            create.set(create.sql_security, sql_security);
-
-            auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
-            auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
-                                                     create,
-                                                     ColumnsDescription(sample_block->getNamesAndTypesList()),
-                                                     /* comment */ "",
-                                                     /* is_parameterized_view */ true);
-            res->startup();
-            function->setPreferSubqueryToFunctionFormatting(true);
-            return res;
-        }
-    }
-    auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
-    auto key = toString(hash);
-
-    StoragePtr res;
-    {
-        std::lock_guard lock(table_function_results_mutex);
-        res = table_function_results[key];
-    }
-
-    if (!res)
-    {
-        TableFunctionPtr table_function_ptr;
-        try
-        {
-            table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-        }
-        catch (Exception & e)
-        {
-            if (e.code() == ErrorCodes::UNKNOWN_FUNCTION)
-            {
-                e.addMessage(" or incorrect parameterized view");
-            }
-            throw;
-        }
-
-        uint64_t use_structure_from_insertion_table_in_table_functions
-            = getSettingsRef()[Setting::use_structure_from_insertion_table_in_table_functions];
-        if (select_query_hint && use_structure_from_insertion_table_in_table_functions && table_function_ptr->needStructureHint()
-            && hasInsertionTableColumnsDescription())
-        {
-            const auto & insert_columns = *getInsertionTableColumnsDescription();
-
-            const auto & insert_column_names = hasInsertionTableColumnNames() ? *getInsertionTableColumnNames() : insert_columns.getOrdinary().getNames();
-            DB::ColumnsDescription structure_hint;
-
-            bool use_columns_from_insert_query = true;
-
-            /// Insert table matches columns against SELECT expression by position, so we want to map
-            /// insert table columns to table function columns through names from SELECT expression.
-
-            auto insert_column_name_it = insert_column_names.begin();
-            auto insert_column_names_end = insert_column_names.end();  /// end iterator of the range covered by possible asterisk
-            auto virtual_column_names = table_function_ptr->getVirtualsToCheckBeforeUsingStructureHint();
-            bool asterisk = false;
-            const auto & expression_list = select_query_hint->select()->as<ASTExpressionList>()->children;
-            auto expression = expression_list.begin();
-
-            /// We want to go through SELECT expression list and correspond each expression to column in insert table
-            /// which type will be used as a hint for the file structure inference.
-            for (; expression != expression_list.end() && insert_column_name_it != insert_column_names_end; ++expression)
-            {
-                if (auto * identifier = (*expression)->as<ASTIdentifier>())
-                {
-                    if (!virtual_column_names.contains(identifier->name()))
-                    {
-                        if (asterisk)
-                        {
-                            if (use_structure_from_insertion_table_in_table_functions == 1)
-                                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
-
-                            use_columns_from_insert_query = false;
-                            break;
-                        }
-
-                        ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                        column.name = identifier->name();
-                        /// Change ephemeral columns to default columns.
-                        column.default_desc.kind = ColumnDefaultKind::Default;
-                        structure_hint.add(std::move(column));
-                    }
-
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
-                else if ((*expression)->as<ASTAsterisk>())
-                {
-                    if (asterisk)
-                    {
-                        if (use_structure_from_insertion_table_in_table_functions == 1)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Only one asterisk can be used in INSERT SELECT query.");
-
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-                    if (!structure_hint.empty())
-                    {
-                        if (use_structure_from_insertion_table_in_table_functions == 1)
-                            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Asterisk cannot be mixed with column list in INSERT SELECT query.");
-
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-
-                    asterisk = true;
-                }
-                else if (auto * func = (*expression)->as<ASTFunction>())
-                {
-                    if (use_structure_from_insertion_table_in_table_functions == 2 && findIdentifier(func))
-                    {
-                        use_columns_from_insert_query = false;
-                        break;
-                    }
-
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
-                else
-                {
-                    /// Once we hit asterisk we want to find end of the range covered by asterisk
-                    /// contributing every further SELECT expression to the tail of insert structure
-                    if (asterisk)
-                        --insert_column_names_end;
-                    else
-                        ++insert_column_name_it;
-                }
-            }
-
-            if (use_structure_from_insertion_table_in_table_functions == 2 && !asterisk)
-            {
-                /// For input function we should check if input format supports reading subset of columns.
-                if (table_function_ptr->getName() == "input")
-                    use_columns_from_insert_query = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(getInsertFormat(), shared_from_this());
-                else
-                    use_columns_from_insert_query = table_function_ptr->supportsReadingSubsetOfColumns(shared_from_this());
-            }
-
-            if (use_columns_from_insert_query)
-            {
-                if (expression == expression_list.end())
-                {
-                    /// Append tail of insert structure to the hint
-                    if (asterisk)
-                    {
-                        for (; insert_column_name_it != insert_column_names_end; ++insert_column_name_it)
-                        {
-                            ColumnDescription column = insert_columns.get(*insert_column_name_it);
-                            /// Change ephemeral columns to default columns.
-                            column.default_desc.kind = ColumnDefaultKind::Default;
-
-                            structure_hint.add(std::move(column));
-                        }
-                    }
-
-                    if (!structure_hint.empty())
-                        table_function_ptr->setStructureHint(structure_hint);
-                }
-                else if (use_structure_from_insertion_table_in_table_functions == 1)
-                    throw Exception(ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH, "Number of columns in insert table less than required by SELECT expression.");
-            }
-        }
-
-        res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
-
-        /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
-        ///
-        ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
-        ///
-        auto new_hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
-
-        std::lock_guard lock(table_function_results_mutex);
-        table_function_results[key] = res;
-        if (hash != new_hash)
-        {
-            key = toString(new_hash);
-            table_function_results[key] = res;
-        }
-    }
-    return res;
-}
-
-StoragePtr Context::executeTableFunction(
-    const ASTPtr & table_expression,
-    const TableFunctionPtr & table_function_ptr,
-    const ContextPtr & execution_context)
-{
-    const auto hash = table_expression->getTreeHash(/*ignore_aliases=*/ true);
-    const auto bare_key = toString(hash);
-    auto key = bare_key;
-
-    /// Incorporate a hash of the execution context's changed settings into the cache key.
-    /// This ensures that:
-    /// - identical table functions with the same effective settings are still reused from cache,
-    /// - table functions with different settings get separate cache entries.
-    {
-        SipHash settings_hash;
-        for (const auto & change : execution_context->getSettingsRef().changes())
-        {
-            settings_hash.update(change.name);
-            applyVisitor(FieldVisitorHash(settings_hash), change.value);
-        }
-        key += '/' + toString(settings_hash.get128());
-    }
-
-    StoragePtr res;
-    {
-        std::lock_guard lock(table_function_results_mutex);
-        res = table_function_results[key];
-        /// Also check the bare key (without settings suffix) for compatibility with
-        /// the other overload of executeTableFunction. That overload is used in
-        /// executeQuery.cpp to pre-create StorageInput for INSERT...SELECT with
-        /// inline data, and it caches the result under the bare AST hash key.
-        if (!res && key != bare_key)
-            res = table_function_results[bare_key];
-    }
-
-    if (!res)
-    {
-        res = table_function_ptr->execute(table_expression, execution_context, table_function_ptr->getName());
-        std::lock_guard lock(table_function_results_mutex);
-        /// In case of race, another thread might have inserted a result already.
-        /// We just overwrite it since both should be equivalent.
-        table_function_results[key] = res;
-    }
-
-    return res;
-}
-
-
-StoragePtr Context::buildParameterizedViewStorage(const String & database_name, const String & table_name, const NameToNameMap & param_values) const
-{
-    if (table_name.empty())
-        return nullptr;
-
-    StoragePtr original_view = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
-    if (!original_view || !original_view->isView())
-        return nullptr;
-    auto * storage_view = original_view->as<StorageView>();
-    if (!storage_view || !storage_view->isParameterizedView())
-        return nullptr;
-
-    auto original_view_metadata = original_view->getInMemoryMetadataPtr(getQueryContext(), false);
-    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
-    StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
-
-    ASTCreateQuery create;
-    create.set(create.select, query);
-
-    auto sql_security = make_intrusive<ASTSQLSecurity>();
-    sql_security->type = original_view_metadata->sql_security_type;
-    if (original_view_metadata->definer)
-        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
-    create.set(create.sql_security, sql_security);
-
-    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
-    auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
-                                                create,
-                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
-            /* comment */ "",
-            /* is_parameterized_view */ true);
-    res->startup();
-    return res;
-}
-
-
-void Context::addViewSource(const StoragePtr & storage)
-{
-    if (view_source)
-        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Temporary view source storage {} already exists.",
-            backQuoteIfNeed(view_source->getName()));
-    view_source = storage;
-}
-
-
-StoragePtr Context::getViewSource() const
-{
-    return view_source;
-}
-
-bool Context::displaySecretsInShowAndSelect() const
-{
-    return shared->server_settings[ServerSetting::display_secrets_in_show_and_select];
-}
-
-Settings Context::getSettingsCopy() const
-{
-    SharedLockGuard lock(mutex);
-    return *settings;
-}
-
-void Context::setSettings(const Settings & settings_)
-{
-    std::lock_guard lock(mutex);
-    *settings = settings_;
-    need_recalculate_access = true;
-    contextSanityClampSettings(*this, *settings);
-}
-
-void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
-{
-    if (name == "profile")
-    {
-        setCurrentProfileWithLock(value, true /*check_constraints*/, lock);
-        return;
-    }
-    settings->set(name, value);
-    if (ContextAccessParams::dependsOnSettingName(name))
-        need_recalculate_access = true;
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
-}
-
-void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
-{
-    if (name == "profile")
-    {
-        setCurrentProfileWithLock(value.safeGet<String>(), true /*check_constraints*/, lock);
-        return;
-    }
-    settings->set(name, value);
-    if (ContextAccessParams::dependsOnSettingName(name))
-        need_recalculate_access = true;
-}
-
-void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock)
-{
-    try
-    {
-        setSettingWithLock(change.name, change.value, lock);
-        contextSanityClampSettingsWithLock(*this, *settings, lock);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format(
-                         "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
-        throw;
-    }
-}
-
-void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
-{
-    for (const SettingChange & change : changes)
-        applySettingChangeWithLock(change, lock);
-    applySettingsQuirks(*settings);
-}
-
-void Context::setSetting(std::string_view name, const String & value)
-{
-    std::lock_guard lock(mutex);
-    setSettingWithLock(name, value, lock);
-}
-
-void Context::setSetting(std::string_view name, const Field & value)
-{
-    std::lock_guard lock(mutex);
-    setSettingWithLock(name, value, lock);
-    contextSanityClampSettingsWithLock(*this, *settings, lock);
-}
-
-void Context::setServerSetting(std::string_view name, const Field & value)
-{
-    std::lock_guard lock(mutex);
-    shared->server_settings.set(name, value);
-}
-
-void Context::applySettingChange(const SettingChange & change)
-{
-    try
-    {
-        setSetting(change.name, change.value);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format(
-                         "in attempt to set the value of setting '{}' to {}",
-                         change.name, applyVisitor(FieldVisitorToString(), change.value)));
-        throw;
-    }
-}
-
-
-void Context::applySettingsChanges(const SettingsChanges & changes)
-{
-    std::lock_guard lock(mutex);
-    applySettingsChangesWithLock(changes, lock);
-}
-
-void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, profile_elements, source);
-    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-}
-
-void Context::checkSettingsConstraintsWithLock(const SettingChange & change, SettingSource source)
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, change, source);
-    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-}
-
-void Context::checkSettingsConstraintsWithLock(const SettingsChanges & changes, SettingSource source)
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
-    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-}
-
-void Context::checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
-    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-}
-
-void Context::clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source)
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.clamp(*settings, changes, source);
-    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
-        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-}
-
-void Context::checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
-{
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(merge_tree_settings, changes);
-}
-
-void Context::checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source)
-{
-    SharedLockGuard lock(mutex);
-    checkSettingsConstraintsWithLock(profile_elements, source);
-}
-
-void Context::checkSettingsConstraints(const SettingChange & change, SettingSource source)
-{
-    SharedLockGuard lock(mutex);
-    checkSettingsConstraintsWithLock(change, source);
-}
-
-void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
-{
-    SharedLockGuard lock(mutex);
-    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.check(*settings, changes, source);
-    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-}
-
-void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
-{
-    SharedLockGuard lock(mutex);
-    checkSettingsConstraintsWithLock(changes, source);
-}
-
-void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
-{
-    SharedLockGuard lock(mutex);
-    clampToSettingsConstraintsWithLock(changes, source);
-}
-
-void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const
-{
-    SharedLockGuard lock(mutex);
-    checkMergeTreeSettingsConstraintsWithLock(merge_tree_settings, changes);
-}
-
-void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
-{
-    std::lock_guard lock(mutex);
-    for (const String & name: names)
-        settings->setDefaultValue(name);
-}
-
-std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfilesWithLock() const
-{
-    if (settings_constraints_and_current_profiles)
-        return settings_constraints_and_current_profiles;
-    static auto no_constraints_or_profiles = std::make_shared<SettingsConstraintsAndProfileIDs>(getAccessControl());
-    return no_constraints_or_profiles;
-}
-
-std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsConstraintsAndCurrentProfiles() const
-{
-    SharedLockGuard lock(mutex);
-    return getSettingsConstraintsAndCurrentProfilesWithLock();
-}
-
-String Context::getCurrentDatabase() const
-{
-    SharedLockGuard lock(mutex);
-    return current_database;
-}
-
-
-String Context::getInitialQueryId() const
-{
-    return client_info.initial_query_id;
-}
-
-
-void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
-{
-    if (name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
-
-    if (!isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Cannot set current database for non global context, this method should "
-                        "be used during server initialization");
-    std::lock_guard lock(mutex);
-
-    if (!current_database.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Default database name cannot be changed in global context without server restart");
-
-    current_database = name;
-}
-
-void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
-{
-    if (name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
-
-    DatabaseCatalog::instance().assertDatabaseExists(name);
-    current_database = name;
-    need_recalculate_access = true;
-}
-
-void Context::setCurrentDatabase(const String & name)
-{
-    std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
-}
-
-void Context::setCurrentDatabaseUnchecked(const String & name)
-{
-    if (name.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
-
-    std::lock_guard lock(mutex);
-    current_database = name;
-    need_recalculate_access = true;
-}
-
-void Context::setCurrentQueryId(const String & query_id)
-{
-    /// Generate random UUID, but using lower quality RNG,
-    ///  because Poco::UUIDGenerator::generateRandom method is using /dev/random, that is very expensive.
-    /// NOTE: Actually we don't need to use UUIDs for query identifiers.
-    /// We could use any suitable string instead.
-    union
-    {
-        char bytes[16];
-        struct
-        {
-            UInt64 a;
-            UInt64 b;
-        } words;
-        UUID uuid{};
-    } random;
-
-    random.words.a = thread_local_rng();
-    random.words.b = thread_local_rng();
-
-
-    String query_id_to_set = query_id;
-    if (query_id_to_set.empty())    /// If the user did not submit his query_id, then we generate it ourselves.
-    {
-        /// Use protected constructor.
-        struct QueryUUID : Poco::UUID
-        {
-            QueryUUID(const char * bytes, Poco::UUID::Version version)
-                : Poco::UUID(bytes, version) {}
-        };
-
-        query_id_to_set = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
-    }
-
-    client_info.current_query_id = query_id_to_set;
-
-    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        client_info.initial_query_id = client_info.current_query_id;
-}
-
-void Context::killCurrentQuery() const
-{
-    if (auto elem = getProcessListElement())
-        elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
-}
-
-bool Context::isCurrentQueryKilled() const
-{
-    /// Here getProcessListElementSafe is used, not getProcessListElement call
-    /// getProcessListElement requires that process list exists
-    /// In the most cases it is true, because process list exists during the query execution time.
-    /// That is valid for all operations with parts, like read and write operations.
-    /// However that Context::isCurrentQueryKilled call could be used on the edges
-    /// when query is starting or finishing, in such edges context still exist but process list already expired
-    if (auto elem = getProcessListElementSafe())
-        return elem->isKilled();
-
-    return false;
-}
-
-void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> column_names, std::shared_ptr<ColumnsDescription> column_description)
-{
-    insertion_table_info = {
-        .table = std::move(db_and_table),
-        .column_names = std::move(column_names),
-        .columns_description = std::move(column_description),
-    };
-}
-
-String Context::getDefaultFormat() const
-{
-    return default_format.empty() ? "TabSeparated" : default_format;
-}
-
-void Context::setDefaultFormat(const String & name)
-{
-    default_format = name;
-}
-
-String Context::getInsertFormat() const
-{
-    return insert_format;
-}
-
-void Context::setInsertFormat(const String & name)
-{
-    insert_format = name;
-}
-
-MultiVersion<Macros>::Version Context::getMacros() const
-{
-    return shared->macros.get();
-}
-
-void Context::setMacros(std::unique_ptr<Macros> && macros)
-{
-    shared->macros.set(std::move(macros));
-}
-
-ContextMutablePtr Context::getQueryContext() const
-{
-    auto ptr = query_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "There is no query or query context has expired");
-    return ptr;
-}
-
-bool Context::isInternalSubquery() const
-{
-    auto ptr = query_context.lock();
-    return ptr && ptr.get() != this;
-}
-
-ContextMutablePtr Context::getSessionContext() const
-{
-    auto ptr = session_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::THERE_IS_NO_SESSION, "There is no session or session context has expired");
-    return ptr;
-}
-
-ContextMutablePtr Context::getGlobalContext() const
-{
-    auto ptr = global_context.lock();
-    if (!ptr) throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no global context or global context has expired");
-    return ptr;
-}
-
-ContextMutablePtr Context::getBackgroundContext() const
-{
-    auto ptr = background_context.lock();
-    if (!ptr)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no background context or background context has not been initialized");
-    return ptr;
-}
-
-ContextMutablePtr Context::getBufferContext() const
-{
-    if (!buffer_context) throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no buffer context");
-    return buffer_context;
-}
-
-void Context::makeQueryContext()
-{
-    query_context = shared_from_this();
-
-    /// Throttling should not be inherited, otherwise if you will set
-    /// throttling for default profile you will not able to overwrite it
-    /// per-user/query.
-    ///
-    /// Note, that if you need to set it server-wide, you should use
-    /// per-server settings, i.e.:
-    /// - max_backup_bandwidth_for_server
-    /// - max_remote_read_network_bandwidth_for_server
-    /// - max_remote_write_network_bandwidth_for_server
-    /// - max_local_read_bandwidth_for_server
-    /// - max_local_write_bandwidth_for_server
-    remote_read_query_throttler.reset();
-    remote_write_query_throttler.reset();
-    local_read_query_throttler.reset();
-    local_write_query_throttler.reset();
-    backups_query_throttler.reset();
-    /// A new query starts with an empty set of used/missing privileges.
-    /// We must not copy the contents of the parent's `QueryPrivilegesInfo`: the parent is the session
-    /// (or global) context, whose `query_privileges_info` object is shared between all sessions and queries
-    /// (session contexts are created via `createCopy(global_context)` and never call `makeQueryContext`).
-    /// Copying its contents â€” and racing with concurrent writers during the copy â€” leaked privilege strings
-    /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
-    query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
-    async_read_counters = std::make_shared<AsyncReadCounters>();
-    runtime_filter_lookup = createRuntimeFilterLookup();
-}
-
-void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
-{
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
-}
-
-void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
-{
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
-    (*settings)[Setting::workload]
-        = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
-}
-
-void Context::makeSessionContext()
-{
-    session_context = shared_from_this();
-}
-
-void Context::makeGlobalContext()
-{
-    chassert(!global_context_instance);
-    global_context_instance = shared_from_this();
-    DatabaseCatalog::init(shared_from_this());
-    EventNotifier::init();
-
-    global_context = shared_from_this();
-}
-
-void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & config)
-{
-    chassert(!background_context_instance);
-    static constexpr std::string background_profile_name_setting = "background_profile";
-    static constexpr std::string background_profile_default_name = "background";
-
-    if (config.has(background_profile_name_setting))
-        /// 1. if background profile name setting is set explicitly - it'll be used, and will throw on lacking profile configuration
-        shared->background_profile_name = config.getString(background_profile_name_setting);
-    else if (getAccessControl().find<SettingsProfile>(background_profile_default_name).has_value())
-        /// 2. or if background profile is configured under its default name - it'll be used
-        shared->background_profile_name = background_profile_default_name;
-    else
-        /// 3. otherwise the system profile will be used for background operations
-        shared->background_profile_name = shared->system_profile_name;
-
-    ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
-    background_context_ptr->setCurrentProfile(shared->background_profile_name);
-    background_context_ptr->is_background_operation = true;
-
-    background_context_instance = background_context_ptr;
-    background_context = background_context_ptr;
-}
-
-const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
-{
-    return getEmbeddedDictionariesImpl(false);
-}
-
-EmbeddedDictionaries & Context::getEmbeddedDictionaries()
-{
-    return getEmbeddedDictionariesImpl(false);
-}
-
-AsyncLoader & Context::getAsyncLoader() const
-{
-    callOnce(shared->async_loader_initialized, [&] {
-        shared->async_loader = std::make_unique<AsyncLoader>(std::vector<AsyncLoader::PoolInitializer>{
-                // IMPORTANT: Pool declaration order should match the order in `PoolId.h` to get the indices right.
-                { // TablesLoaderForegroundPoolId
-                    "ForegroundLoad",
-                    CurrentMetrics::TablesLoaderForegroundThreads,
-                    CurrentMetrics::TablesLoaderForegroundThreadsActive,
-                    CurrentMetrics::TablesLoaderForegroundThreadsScheduled,
-                    shared->server_settings[ServerSetting::tables_loader_foreground_pool_size],
-                    TablesLoaderForegroundPriority
-                },
-                { // TablesLoaderBackgroundLoadPoolId
-                    "BackgroundLoad",
-                    CurrentMetrics::TablesLoaderBackgroundThreads,
-                    CurrentMetrics::TablesLoaderBackgroundThreadsActive,
-                    CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
-                    shared->server_settings[ServerSetting::tables_loader_background_pool_size],
-                    TablesLoaderBackgroundLoadPriority
-                },
-                { // TablesLoaderBackgroundStartupPoolId
-                    "BackgrndStartup",
-                    CurrentMetrics::TablesLoaderBackgroundThreads,
-                    CurrentMetrics::TablesLoaderBackgroundThreadsActive,
-                    CurrentMetrics::TablesLoaderBackgroundThreadsScheduled,
-                    shared->server_settings[ServerSetting::tables_loader_background_pool_size],
-                    TablesLoaderBackgroundStartupPriority
-                }
-            },
-            /* log_failures = */ true,
-            /* log_progress = */ true,
-            /* log_events = */ true);
-    });
-
-    return *shared->async_loader;
-}
-
-
-const ExternalDictionariesLoader & Context::getExternalDictionariesLoader() const
-{
-    return const_cast<Context *>(this)->getExternalDictionariesLoader();
-}
-
-ExternalDictionariesLoader & Context::getExternalDictionariesLoader()
-{
-    std::lock_guard lock(shared->external_dictionaries_mutex);
-    return getExternalDictionariesLoaderWithLock(lock);
-}
-
-ExternalDictionariesLoader & Context::getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> &) TSA_REQUIRES(shared->external_dictionaries_mutex)
-{
-    if (!shared->external_dictionaries_loader)
-        shared->external_dictionaries_loader =
-            std::make_unique<ExternalDictionariesLoader>(getGlobalContext());
-    return *shared->external_dictionaries_loader;
-}
-
-const ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader() const
-{
-    return const_cast<Context *>(this)->getExternalUserDefinedExecutableFunctionsLoader();
-}
-
-ExternalUserDefinedExecutableFunctionsLoader & Context::getExternalUserDefinedExecutableFunctionsLoader()
-{
-    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
-    return getExternalUserDefinedExecutableFunctionsLoaderWithLock(lock);
-}
-
-ExternalUserDefinedExecutableFunctionsLoader &
-Context::getExternalUserDefinedExecutableFunctionsLoaderWithLock(const std::lock_guard<std::mutex> &) TSA_REQUIRES(shared->external_user_defined_executable_functions_mutex)
-{
-    if (!shared->external_user_defined_executable_functions_loader)
-        shared->external_user_defined_executable_functions_loader =
-            std::make_unique<ExternalUserDefinedExecutableFunctionsLoader>(getGlobalContext());
-    return *shared->external_user_defined_executable_functions_loader;
-}
-
-EmbeddedDictionaries & Context::getEmbeddedDictionariesImpl(const bool throw_on_error) const
-{
-    std::lock_guard lock(shared->embedded_dictionaries_mutex);
-
-    if (!shared->embedded_dictionaries)
-    {
-        auto geo_dictionaries_loader = std::make_unique<GeoDictionariesLoader>();
-
-        shared->embedded_dictionaries = std::make_unique<EmbeddedDictionaries>(
-            std::move(geo_dictionaries_loader),
-            getGlobalContext(),
-            throw_on_error);
-    }
-
-    return *shared->embedded_dictionaries;
-}
-
-
-void Context::tryCreateEmbeddedDictionaries() const
-{
-    if (!shared->server_settings[ServerSetting::dictionaries_lazy_load])
-        static_cast<void>(getEmbeddedDictionariesImpl(true));
-}
-
-void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config)
-{
-    bool dictionaries_lazy_load = shared->server_settings[ServerSetting::dictionaries_lazy_load];
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "dictionaries_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
-
-    std::lock_guard lock(shared->external_dictionaries_mutex);
-
-    auto & external_dictionaries_loader = getExternalDictionariesLoaderWithLock(lock);
-    external_dictionaries_loader.enableAlwaysLoadEverything(!dictionaries_lazy_load);
-
-    if (shared->external_dictionaries_config_repository)
-    {
-        shared->external_dictionaries_config_repository->updatePatterns(patterns);
-        external_dictionaries_loader.reloadConfig(shared->external_dictionaries_config_repository->getName());
-        return;
-    }
-
-    auto app_path = getPath();
-    auto config_path = getConfigRef().getString("config-file", "config.xml");
-    auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
-    shared->external_dictionaries_config_repository = repository.get();
-    shared->dictionaries_xmls = external_dictionaries_loader.addConfigRepository(std::move(repository));
-}
-
-void Context::waitForDictionariesLoad() const
-{
-    LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
-    auto results = getExternalDictionariesLoader().tryLoadAllExceptLazy<ExternalLoader::LoadResults>();
-    bool all_dictionaries_loaded = true;
-    for (const auto & result : results)
-    {
-        if ((result.status != ExternalLoaderStatus::LOADED) && (result.status != ExternalLoaderStatus::LOADED_AND_RELOADING))
-        {
-            LOG_WARNING(shared->log, "Dictionary {} was not loaded ({})", result.name, result.status);
-            all_dictionaries_loaded = false;
-        }
-    }
-    if (all_dictionaries_loaded)
-        LOG_INFO(shared->log, "All dictionaries have been loaded");
-    else
-        LOG_INFO(shared->log, "Some dictionaries were not loaded");
-}
-
-void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
-{
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
-    std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
-
-    std::lock_guard lock(shared->external_user_defined_executable_functions_mutex);
-
-    auto & external_user_defined_executable_functions_loader = getExternalUserDefinedExecutableFunctionsLoaderWithLock(lock);
-
-    if (shared->user_defined_executable_functions_config_repository)
-    {
-        shared->user_defined_executable_functions_config_repository->updatePatterns(patterns);
-        external_user_defined_executable_functions_loader.reloadConfig(shared->user_defined_executable_functions_config_repository->getName());
-    }
-    else
-    {
-        auto app_path = getPath();
-        auto config_path = getConfigRef().getString("config-file", "config.xml");
-        auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(app_path, config_path, patterns);
-        shared->user_defined_executable_functions_config_repository = repository.get();
-        shared->user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
-    }
-
-    /// Additionally watch the dynamic UDF directory, where driver-generated configuration files live.
-    String dynamic_path;
-    {
-        SharedLockGuard inner_lock(shared->mutex);
-        dynamic_path = shared->dynamic_user_defined_executable_functions_path;
-    }
-
-    if (!dynamic_path.empty())
-    {
-        if (!dynamic_path.ends_with('/'))
-            dynamic_path.push_back('/');
-
-        std::unordered_set<std::string> dynamic_patterns;
-        dynamic_patterns.insert(dynamic_path + "*.xml");
-        dynamic_patterns.insert(dynamic_path + "*.yaml");
-
-        if (shared->dynamic_user_defined_executable_functions_config_repository)
-        {
-            shared->dynamic_user_defined_executable_functions_config_repository->updatePatterns(dynamic_patterns);
-            external_user_defined_executable_functions_loader.reloadConfig(shared->dynamic_user_defined_executable_functions_config_repository->getName());
-        }
-        else
-        {
-            auto repository = std::make_unique<ExternalLoaderXMLConfigRepository>(
-                dynamic_path, /* main_config_path */ "dynamic_user_defined_executable_functions.xml", dynamic_patterns);
-            shared->dynamic_user_defined_executable_functions_config_repository = repository.get();
-            shared->dynamic_user_defined_executable_functions_xmls = external_user_defined_executable_functions_loader.addConfigRepository(std::move(repository));
-        }
-    }
-}
-
-void Context::loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const
-{
-    /// The feature is experimental and disabled by default. When disabled, keep the registry empty so no
-    /// drivers are usable, and clear any drivers a previous configuration may have loaded.
-    /// Read the gate from the passed configuration rather than from the startup-time `shared->server_settings`:
-    /// `SYSTEM RELOAD CONFIG` does not refresh `shared->server_settings`, so reading it there would ignore a
-    /// toggle of `allow_experimental_executable_udf_drivers` until the next server restart. Reading from `config`
-    /// is equivalent at startup (it is the same configuration) and correct on reload.
-    ServerSettings reloaded_server_settings;
-    reloaded_server_settings.loadSettingsFromConfig(config);
-    if (!reloaded_server_settings[ServerSetting::allow_experimental_executable_udf_drivers])
-    {
-        UserDefinedExecutableFunctionDriverRegistry::instance().loadDriversFromConfigs({});
-        return;
-    }
-
-    auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_function_drivers_config");
-
-    auto app_path = getPath();
-    auto config_path = getConfigRef().getString("config-file", "config.xml");
-    auto config_dir = std::filesystem::path(config_path).parent_path();
-
-    std::vector<UserDefinedExecutableFunctionDriverRegistry::ConfigWithPath> driver_configs;
-    std::set<std::string> resolved_files;
-    for (const auto & pattern : patterns_values)
-    {
-        if (pattern.empty())
-            continue;
-
-        std::set<std::string> files;
-        if (pattern[0] != '/')
-        {
-            const String absolute_path = config_dir / pattern;
-            Poco::Glob::glob(absolute_path, files, 0);
-            if (files.empty())
-                Poco::Glob::glob(pattern, files, 0);
-        }
-        else
-        {
-            Poco::Glob::glob(pattern, files, 0);
-        }
-        for (const auto & path : files)
-        {
-            if (ConfigProcessor::isPreprocessedFile(path))
-                continue;
-            resolved_files.insert(path);
-        }
-    }
-
-    for (const auto & file_path : resolved_files)
-    {
-        ConfigProcessor processor(file_path);
-        auto loaded = processor.loadConfig();
-        processor.savePreprocessedConfig(loaded, app_path);
-        driver_configs.emplace_back(
-            loaded.configuration,
-            std::filesystem::absolute(file_path).parent_path().lexically_normal().string());
-    }
-
-    UserDefinedExecutableFunctionDriverRegistry::instance().loadDriversFromConfigs(driver_configs);
-}
-
-const IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage() const
-{
-    callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
-    });
-
-    return *shared->user_defined_sql_objects_storage;
-}
-
-IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
-{
-    callOnce(shared->user_defined_sql_objects_storage_initialized, [&] {
-        shared->user_defined_sql_objects_storage = createUserDefinedSQLObjectsStorage(getGlobalContext());
-    });
-
-    return *shared->user_defined_sql_objects_storage;
-}
-
-std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const
-{
-    callOnce(shared->workload_entity_storage_initialized, [&] {
-        auto storage = createWorkloadEntityStorage(getGlobalContext());
-        std::lock_guard lock(shared->mutex);
-        shared->workload_entity_storage = std::move(storage);
-    });
-
-    SharedLockGuard lock(shared->mutex);
-    return shared->workload_entity_storage;
-}
-
-WasmModuleManager * Context::initWasmModuleManager()
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->wasm_module_manager)
-        return shared->wasm_module_manager.get();
-
-    if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
-        return nullptr;
-
-    String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
-    LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
-
-    auto user_scripts_disk = std::make_shared<DiskLocal>("user_scripts", shared->user_scripts_path);
-    user_scripts_disk->startup(/* skip_access_check */ true);
-    shared->wasm_module_manager = std::make_unique<WasmModuleManager>(std::move(user_scripts_disk), /* user_scripts_path_ */ "wasm", engine_name);
-
-    return shared->wasm_module_manager.get();
-}
-
-bool Context::hasWasmModuleManager() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->wasm_module_manager != nullptr;
-}
-
-WasmModuleManager & Context::getWasmModuleManager() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->wasm_module_manager)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "WebAssembly support is not enabled");
-    return *shared->wasm_module_manager;
-}
-
-#if USE_NLP
-
-SynonymsExtensions & Context::getSynonymsExtensions() const
-{
-    callOnce(shared->synonyms_extensions_initialized, [&] {
-        shared->synonyms_extensions.emplace(getConfigRef());
-    });
-
-    return *shared->synonyms_extensions;
-}
-
-Lemmatizers & Context::getLemmatizers() const
-{
-    callOnce(shared->lemmatizers_initialized, [&] {
-        shared->lemmatizers.emplace(getConfigRef());
-    });
-
-    return *shared->lemmatizers;
-}
-#endif
-
-BackupsWorker & Context::getBackupsWorker() const
-{
-    callOnce(shared->backups_worker_initialized, [&] {
-        const auto & config = getConfigRef();
-        Poco::UInt64 max_threads_max_value = 256 * getNumberOfCPUCoresToUse(); /// Limit to something unreasonable
-        size_t backup_threads = std::min(max_threads_max_value, std::max(Poco::UInt64{1}, config.getUInt64("backup_threads", 16)));
-        size_t restore_threads = std::min(max_threads_max_value, std::max(Poco::UInt64{1}, config.getUInt64("restore_threads", 16)));
-
-        shared->backups_worker.emplace(getGlobalContext(), backup_threads, restore_threads);
-    });
-
-    return *shared->backups_worker;
-}
-
-void Context::waitAllBackupsAndRestores() const
-{
-    if (shared->backups_worker)
-        shared->backups_worker->waitAll();
-}
-
-void Context::cancelAllBackupsAndRestores() const
-{
-    if (shared->backups_worker)
-        shared->backups_worker->cancelAll();
-}
-
-std::shared_ptr<BackupsInMemoryHolder> Context::getBackupsInMemory()
-{
-    std::lock_guard lock(mutex);
-    if (!backups_in_memory)
-        backups_in_memory = std::make_shared<BackupsInMemoryHolder>();
-    return backups_in_memory;
-}
-
-std::shared_ptr<const BackupsInMemoryHolder> Context::getBackupsInMemory() const
-{
-    return const_cast<Context *>(this)->getBackupsInMemory();
-}
-
-
-void Context::setProgressCallback(ProgressCallback callback)
-{
-    /// Callback is set to a session or to a query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
-    progress_callback = callback;
-}
-
-ProgressCallback Context::getProgressCallback() const
-{
-    return progress_callback;
-}
-
-
-void Context::setProcessListElement(QueryStatusPtr elem)
-{
-    if (isGlobalContext())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have process list element");
-
-    /// Set to a session or query. In the session, only one query is processed at a time. Therefore, the lock is not needed.
-    process_list_elem = elem;
-    has_process_list_elem = elem.get();
-}
-
-QueryStatusPtr Context::getProcessListElement() const
-{
-    if (!has_process_list_elem)
-        return {};
-    if (auto res = process_list_elem.lock())
-        return res;
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Weak pointer to process_list_elem expired during query execution, it's a bug");
-}
-
-QueryStatusPtr Context::getProcessListElementSafe() const
-{
-    if (!has_process_list_elem)
-        return {};
-    if (auto res = process_list_elem.lock())
-        return res;
-    return {};
-}
-
-void Context::setNormalizedQueryHash(UInt64 normalized_query_hash_)
-{
-    /// Set once per query before execution starts. As with the process list element, only one query
-    /// is processed at a time in a session, so no lock is needed.
-    normalized_query_hash = normalized_query_hash_;
-}
-
-UInt64 Context::getNormalizedQueryHash() const
-{
-    return normalized_query_hash;
-}
-
-void Context::setUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache has been already created.");
-
-    shared->uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::UncompressedCacheBytes, CurrentMetrics::UncompressedCacheCells, max_size_in_bytes, size_ratio);
-}
-
-void Context::updateUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Uncompressed cache was not created yet.");
-
-    size_t size = config.getUInt64("uncompressed_cache_size", DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->uncompressed_cache->setMaxSizeInBytes(size);
-}
-
-UncompressedCachePtr Context::getUncompressedCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->uncompressed_cache;
-}
-
-void Context::clearUncompressedCache() const
-{
-    UncompressedCachePtr cache = getUncompressedCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-
-    JemallocCacheArena::purge();
-}
-
-void Context::setPageCache(std::chrono::milliseconds history_window,
-    const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
-    double free_memory_ratio, size_t num_shards)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->page_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
-
-    shared->page_cache = std::make_shared<PageCache>(
-        history_window, cache_policy, size_ratio,
-        min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
-}
-
-PageCachePtr Context::getPageCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->page_cache;
-}
-
-void Context::clearPageCache() const
-{
-    PageCachePtr cache;
-    {
-        SharedLockGuard lock(shared->mutex);
-        cache = shared->page_cache;
-    }
-    if (cache)
-        cache->clear();
-
-    JemallocCacheArena::purge();
-}
-
-void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache has been already created.");
-
-    shared->mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::MarkCacheBytes, CurrentMetrics::MarkCacheFiles, max_cache_size_in_bytes, size_ratio);
-}
-
-void Context::updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark cache was not created yet.");
-
-    size_t size = config.getUInt64("mark_cache_size", DEFAULT_MARK_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->mark_cache->setMaxSizeInBytes(size);
-}
-
-MarkCachePtr Context::getMarkCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->mark_cache;
-}
-
-void Context::clearMarkCache() const
-{
-    MarkCachePtr cache = getMarkCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-
-    JemallocCacheArena::purge();
-}
-
-void Context::setUniqueKeyIndexCache(
-    [[maybe_unused]] const String & cache_policy,
-    [[maybe_unused]] size_t max_cache_size_in_bytes,
-    [[maybe_unused]] double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->unique_key_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "UNIQUE KEY index cache has been already created.");
-
-#if USE_ROCKSDB
-    if (max_cache_size_in_bytes == 0)
-        return; /// Explicit opt-out â€” callers get nullptr from getUniqueKeyIndexCache.
-
-    shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
-        cache_policy,
-        CurrentMetrics::UniqueKeyIndexCacheBytes,
-        CurrentMetrics::UniqueKeyIndexCacheEntries,
-        max_cache_size_in_bytes,
-        size_ratio);
-#endif
-    /// !USE_ROCKSDB: index cache is never registered; silently accept the
-    /// call so startup works on non-RocksDB builds. `getUniqueKeyIndexCache`
-    /// returns nullptr.
-}
-
-void Context::updateUniqueKeyIndexCacheConfiguration(
-    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
-    [[maybe_unused]] size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-#if USE_ROCKSDB
-    size_t size = config.getUInt64("unique_key_index_cache_size_bytes", 1ULL << 30);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-
-    if (!shared->unique_key_index_cache)
-    {
-        if (size == 0)
-            return; /// Stay disabled until reload requests a non-zero size.
-        /// Construct on the first reload that requests a non-zero size, so
-        /// `unique_key_index_cache_size_bytes` is reversible rather than a
-        /// one-way disable for the process lifetime.
-        shared->unique_key_index_cache = std::make_shared<UniqueKeyIndexCache>(
-            config.getString("unique_key_index_cache_policy", "SLRU"),
-            CurrentMetrics::UniqueKeyIndexCacheBytes,
-            CurrentMetrics::UniqueKeyIndexCacheEntries,
-            size,
-            config.getDouble("unique_key_index_cache_size_ratio", 0.5));
-        LOG_INFO(shared->log, "Enabled UNIQUE KEY index cache at {} via reload-config",
-                 formatReadableSizeWithBinarySuffix(size));
-        return;
-    }
-
-    const size_t before = shared->unique_key_index_cache->GetCapacity();
-    shared->unique_key_index_cache->setMaxSizeInBytes(size);
-    if (size != before)
-        LOG_INFO(shared->log, "Reconfigured UNIQUE KEY index cache from {} to {}",
-                 formatReadableSizeWithBinarySuffix(before), formatReadableSizeWithBinarySuffix(size));
-#endif
-}
-
-UniqueKeyIndexCachePtr Context::getUniqueKeyIndexCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->unique_key_index_cache;
-}
-
-void Context::clearUniqueKeyIndexCache() const
-{
-#if USE_ROCKSDB
-    UniqueKeyIndexCachePtr cache = getUniqueKeyIndexCache();
-    if (cache)
-        cache->clear();
-#endif
-}
-
-void Context::setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->delete_bitmap_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Delete bitmap cache has been already created.");
-
-    if (max_cache_size_in_bytes == 0)
-        return; /// Explicit opt-out â€” leave unregistered; getDeleteBitmapCache returns nullptr.
-
-    shared->delete_bitmap_cache = std::make_shared<DeleteBitmapCache>(
-        cache_policy,
-        CurrentMetrics::DeleteBitmapCacheBytes,
-        CurrentMetrics::DeleteBitmapCacheEntries,
-        max_cache_size_in_bytes,
-        size_ratio);
-}
-
-void Context::updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    size_t size = config.getUInt64("unique_key_bitmap_cache_size_bytes", 1ULL << 30);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-
-    if (!shared->delete_bitmap_cache)
-    {
-        if (size == 0)
-            return; /// Stay disabled until reload requests a non-zero size.
-        /// Enable on the first reload that requests a non-zero size, so a
-        /// startup `size = 0` is reversible rather than a one-way disable
-        /// (mirrors updateUniqueKeyIndexCacheConfiguration).
-        shared->delete_bitmap_cache = std::make_shared<DeleteBitmapCache>(
-            config.getString("unique_key_bitmap_cache_policy", "SLRU"),
-            CurrentMetrics::DeleteBitmapCacheBytes,
-            CurrentMetrics::DeleteBitmapCacheEntries,
-            size,
-            config.getDouble("unique_key_bitmap_cache_size_ratio", 0.5));
-        LOG_INFO(shared->log, "Enabled UNIQUE KEY delete-bitmap cache at {} via reload-config", formatReadableSizeWithBinarySuffix(size));
-        return;
-    }
-
-    shared->delete_bitmap_cache->setMaxSizeInBytes(size);
-    LOG_DEBUG(shared->log, "UNIQUE KEY delete-bitmap cache size set to {}", formatReadableSizeWithBinarySuffix(size));
-}
-
-DeleteBitmapCachePtr Context::getDeleteBitmapCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->delete_bitmap_cache;
-}
-
-void Context::clearDeleteBitmapCache() const
-{
-    DeleteBitmapCachePtr cache = getDeleteBitmapCache();
-    if (cache)
-        cache->clear();
-}
-
-ThreadPool & Context::getLoadMarksThreadpool() const
-{
-    callOnce(shared->load_marks_threadpool_initialized, [&] {
-        auto pool_size = shared->server_settings[ServerSetting::load_marks_threadpool_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::load_marks_threadpool_queue_size];
-        shared->load_marks_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::MarksLoaderThreads, CurrentMetrics::MarksLoaderThreadsActive, CurrentMetrics::MarksLoaderThreadsScheduled, pool_size, pool_size, queue_size);
-    });
-
-    return *shared->load_marks_threadpool;
-}
-
-ThreadPool & Context::getIcebergCatalogThreadpool() const
-{
-    callOnce(shared->iceberg_catalog_threadpool_initialized, [&]
-    {
-        auto pool_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::iceberg_catalog_threadpool_queue_size];
-
-        shared->iceberg_catalog_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IcebergCatalogThreads,
-            CurrentMetrics::IcebergCatalogThreadsActive,
-            CurrentMetrics::IcebergCatalogThreadsScheduled,
-            pool_size, pool_size, queue_size);
-    });
-
-    return *shared->iceberg_catalog_threadpool;
-}
-
-void Context::setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->primary_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache has been already created.");
-
-    shared->primary_index_cache = std::make_shared<PrimaryIndexCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
-}
-
-void Context::updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->primary_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Primary index cache was not created yet.");
-
-    size_t size = config.getUInt64("primary_index_cache_size", DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered primary index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->primary_index_cache->setMaxSizeInBytes(size);
-}
-
-PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->primary_index_cache;
-}
-
-SystemAllocatedMemoryHolderPtr Context::getSystemAllocatedMemoryHolder() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->untracked_memory_holder;
-}
-void Context::allowSystemAllocateMemory(bool allow)
-{
-    std::lock_guard lock(shared->mutex);
-    if (allow && !shared->untracked_memory_holder)
-        shared->untracked_memory_holder = std::make_shared<SystemAllocatedMemoryHolder>();
-    else if (!allow)
-        shared->untracked_memory_holder = nullptr;
-}
-
-void Context::setUsersToIgnoreEarlyMemoryLimitCheck(std::string users)
-{
-    std::shared_ptr<std::unordered_set<std::string>> map;
-    std::lock_guard lock(shared->users_to_ignore_early_memory_limit_check_mutex);
-
-    if (users == shared->users_to_ignore_early_memory_limit_check_source)
-        return;
-
-    LOG_DEBUG(shared->log, "Changing users_to_ignore_early_memory_limit_check to: {}", users);
-
-    if (!users.empty())
-    {
-        map = std::make_shared<std::unordered_set<std::string>>(parseIdentifiersOrStringLiteralsToSet(users, *settings));
-        shared->users_to_ignore_early_memory_limit_check_source = std::move(users);
-    }
-
-    shared->users_to_ignore_early_memory_limit_check = std::move(map);
-}
-
-std::shared_ptr<std::unordered_set<std::string>> Context::getUsersToIgnoreEarlyMemoryLimitCheck() const
-{
-    SharedLockGuard lock(shared->users_to_ignore_early_memory_limit_check_mutex);
-    return shared->users_to_ignore_early_memory_limit_check;
-}
-
-void Context::clearPrimaryIndexCache() const
-{
-    PrimaryIndexCachePtr cache = getPrimaryIndexCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-
-void Context::setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->index_uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache has been already created.");
-
-    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(cache_policy, CurrentMetrics::IndexUncompressedCacheBytes, CurrentMetrics::IndexUncompressedCacheCells, max_size_in_bytes, size_ratio);
-    shared->index_uncompressed_cache_enabled = shared->index_uncompressed_cache->maxSizeInBytes() != 0;
-}
-
-void Context::updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->index_uncompressed_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index uncompressed cache was not created yet.");
-
-    size_t size = config.getUInt64("index_uncompressed_cache_size", DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered index uncompressed cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->index_uncompressed_cache->setMaxSizeInBytes(size);
-    shared->index_uncompressed_cache_enabled = shared->index_uncompressed_cache->maxSizeInBytes() != 0;
-}
-
-UncompressedCachePtr Context::getIndexUncompressedCache(bool only_if_enabled) const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (only_if_enabled && !shared->index_uncompressed_cache_enabled)
-        return nullptr;
-    return shared->index_uncompressed_cache;
-}
-
-void Context::clearIndexUncompressedCache() const
-{
-    UncompressedCachePtr cache = getIndexUncompressedCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-
-    JemallocCacheArena::purge();
-}
-
-void Context::setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->index_mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache has been already created.");
-
-    shared->index_mark_cache = std::make_shared<MarkCache>(cache_policy, CurrentMetrics::IndexMarkCacheBytes, CurrentMetrics::IndexMarkCacheFiles, max_cache_size_in_bytes, size_ratio);
-}
-
-void Context::updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->index_mark_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index mark cache was not created yet.");
-
-    size_t size = config.getUInt64("index_mark_cache_size", DEFAULT_INDEX_MARK_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered index mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->index_mark_cache->setMaxSizeInBytes(size);
-}
-
-MarkCachePtr Context::getIndexMarkCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->index_mark_cache;
-}
-
-void Context::clearIndexMarkCache() const
-{
-    MarkCachePtr cache = getIndexMarkCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-
-    JemallocCacheArena::purge();
-}
-
-void Context::setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->vector_similarity_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache has been already created.");
-
-    shared->vector_similarity_index_cache = std::make_shared<VectorSimilarityIndexCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->vector_similarity_index_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector similarity index cache was not created yet.");
-
-    size_t size = config.getUInt64("vector_similarity_index_cache_size", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("vector_similarity_index_cache_max_entries", DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->vector_similarity_index_cache->setMaxSizeInBytes(size);
-    shared->vector_similarity_index_cache->setMaxCount(max_entries);
-}
-
-VectorSimilarityIndexCachePtr Context::getVectorSimilarityIndexCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->vector_similarity_index_cache;
-}
-
-void Context::clearVectorSimilarityIndexCache() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
-}
-
-void Context::setTextIndexTokensCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->text_index_tokens_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache has been already created.");
-
-    shared->text_index_tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateTextIndexTokensCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->text_index_tokens_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index tokens cache was not created yet.");
-
-    size_t size = config.getUInt64("text_index_tokens_cache_size", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("text_index_tokens_cache_max_entries", DEFAULT_TEXT_INDEX_TOKENS_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered text index tokens cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->text_index_tokens_cache->setMaxSizeInBytes(size);
-    shared->text_index_tokens_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<TextIndexTokensCache> Context::getTextIndexTokensCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->text_index_tokens_cache;
-}
-
-void Context::clearTextIndexTokensCache() const
-{
-    auto cache = getTextIndexTokensCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-
-void Context::setTextIndexHeaderCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->text_index_header_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache has been already created.");
-
-    shared->text_index_header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateTextIndexHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->text_index_header_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index header cache was not created yet.");
-
-    size_t size = config.getUInt64("text_index_header_cache_size", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("text_index_header_cache_max_entries", DEFAULT_TEXT_INDEX_HEADER_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered text index header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->text_index_header_cache->setMaxSizeInBytes(size);
-    shared->text_index_header_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<TextIndexHeaderCache> Context::getTextIndexHeaderCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->text_index_header_cache;
-}
-
-void Context::clearTextIndexHeaderCache() const
-{
-    auto cache = getTextIndexHeaderCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-
-void Context::setTextIndexPostingsCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->text_index_postings_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index posting list cache has been already created.");
-
-    shared->text_index_postings_cache = std::make_shared<TextIndexPostingsCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateTextIndexPostingsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->text_index_postings_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index posting list cache was not created yet.");
-
-    size_t size = config.getUInt64("text_index_postings_cache_size", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("text_index_postings_cache_max_entries", DEFAULT_TEXT_INDEX_POSTINGS_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered text index posting list cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->text_index_postings_cache->setMaxSizeInBytes(size);
-    shared->text_index_postings_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<TextIndexPostingsCache> Context::getTextIndexPostingsCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->text_index_postings_cache;
-}
-
-void Context::clearTextIndexPostingsCache() const
-{
-    auto cache = getTextIndexPostingsCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-
-void Context::setMMappedFileCache(size_t max_cache_size_in_num_entries)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->mmap_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache has been already created.");
-
-    shared->mmap_cache = std::make_shared<MMappedFileCache>(max_cache_size_in_num_entries);
-}
-
-void Context::updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->mmap_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapped file cache was not created yet.");
-
-    size_t size = config.getUInt64("mmap_cache_size", DEFAULT_MMAP_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered mmap file cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->mmap_cache->setMaxSizeInBytes(size);
-}
-
-MMappedFileCachePtr Context::getMMappedFileCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->mmap_cache;
-}
-
-void Context::clearMMappedFileCache() const
-{
-    MMappedFileCachePtr cache = getMMappedFileCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-
-#if USE_AVRO
-void Context::setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->iceberg_metadata_files_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache has been already created.");
-
-    shared->iceberg_metadata_files_cache = std::make_shared<IcebergMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->iceberg_metadata_files_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg metadata cache was not created yet.");
-
-    size_t size = config.getUInt64("iceberg_metadata_files_cache_size", DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("iceberg_metadata_files_cache_max_entries", DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->iceberg_metadata_files_cache->setMaxSizeInBytes(size);
-    shared->iceberg_metadata_files_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache() const
-{
-    std::lock_guard lock(shared->mutex);
-    return shared->iceberg_metadata_files_cache;
-}
-
-void Context::clearIcebergMetadataFilesCache() const
-{
-    auto cache = getIcebergMetadataFilesCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-
-void Context::setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->paimon_metadata_files_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache has been already created.");
-
-    shared->paimon_metadata_files_cache = std::make_shared<PaimonMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->paimon_metadata_files_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache was not created yet.");
-
-    size_t size = config.getUInt64("paimon_metadata_files_cache_size", DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("paimon_metadata_files_cache_max_entries", DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->paimon_metadata_files_cache->setMaxSizeInBytes(size);
-    shared->paimon_metadata_files_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<PaimonMetadataFilesCache> Context::getPaimonMetadataFilesCache() const
-{
-    std::lock_guard lock(shared->mutex);
-    return shared->paimon_metadata_files_cache;
-}
-
-void Context::clearPaimonMetadataFilesCache() const
-{
-    auto cache = getPaimonMetadataFilesCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-#endif
-
-#if USE_PARQUET
-void Context::setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->parquet_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache has been already created.");
-
-    shared->parquet_metadata_cache = std::make_shared<ParquetMetadataCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
-}
-
-void Context::updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->parquet_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
-
-    size_t size = config.getUInt64("parquet_metadata_cache_size", DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("parquet_metadata_cache_max_entries", DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered Parquet metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->parquet_metadata_cache->setMaxSizeInBytes(size);
-    shared->parquet_metadata_cache->setMaxCount(max_entries);
-}
-
-std::shared_ptr<ParquetMetadataCache> Context::getParquetMetadataCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->parquet_metadata_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Parquet metadata cache was not created yet.");
-    return shared->parquet_metadata_cache;
-}
-
-std::shared_ptr<ParquetMetadataCache> Context::tryGetParquetMetadataCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->parquet_metadata_cache;
-}
-
-void Context::clearParquetMetadataCache() const
-{
-    auto cache = getParquetMetadataCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear();
-}
-#endif
-
-void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
-
-    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
-}
-
-QueryConditionCachePtr Context::getQueryConditionCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->query_condition_cache;
-}
-
-void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
-
-    size_t size = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered query condition cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->query_condition_cache->setMaxSizeInBytes(size);
-}
-
-void Context::clearQueryConditionCache() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_condition_cache)
-        shared->query_condition_cache->clear();
-}
-
-void Context::setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->encryption_header_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Encryption header cache has been already created.");
-
-    shared->encryption_header_cache = std::make_shared<EncryptionHeaderCache>(cache_policy, max_size_in_bytes, size_ratio);
-}
-
-EncryptionHeaderCachePtr Context::getEncryptionHeaderCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->encryption_header_cache;
-}
-
-void Context::updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->encryption_header_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Encryption header cache was not created yet.");
-
-    size_t size = config.getUInt64("encryption_header_cache_size", DEFAULT_ENCRYPTION_HEADER_CACHE_MAX_SIZE);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered encryption header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->encryption_header_cache->setMaxSizeInBytes(size);
-}
-
-void Context::clearEncryptionHeaderCache() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->encryption_header_cache)
-        shared->encryption_header_cache->clear();
-}
-
-
-void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_result_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
-
-    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
-}
-
-void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->query_result_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache was not created yet.");
-
-    size_t size = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
-    size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    if (size > max_cache_size)
-    {
-        size = max_cache_size;
-        LOG_DEBUG(shared->log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
-    }
-    shared->query_result_cache->updateConfiguration(size, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
-}
-
-QueryResultCachePtr Context::getQueryResultCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->query_result_cache;
-}
-
-void Context::clearQueryResultCache(const std::optional<String> & tag) const
-{
-    QueryResultCachePtr cache = getQueryResultCache();
-
-    /// Clear the cache without holding context mutex to avoid blocking context for a long time
-    if (cache)
-        cache->clear(tag);
-}
-
-void Context::clearCaches() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    /// Each cache is null-checked because some `Context` users (e.g. the
-    /// `execute_query_fuzzer` libFuzzer harness) intentionally do not initialize
-    /// the full set of caches; matches the single-cache `clear<X>Cache` methods.
-
-    if (shared->uncompressed_cache)
-        shared->uncompressed_cache->clear();
-
-    if (shared->mark_cache)
-        shared->mark_cache->clear();
-
-    if (shared->primary_index_cache)
-        shared->primary_index_cache->clear();
-
-    if (shared->index_uncompressed_cache)
-        shared->index_uncompressed_cache->clear();
-
-    if (shared->index_mark_cache)
-        shared->index_mark_cache->clear();
-
-    if (shared->vector_similarity_index_cache)
-        shared->vector_similarity_index_cache->clear();
-
-    if (shared->text_index_tokens_cache)
-        shared->text_index_tokens_cache->clear();
-
-    if (shared->text_index_header_cache)
-        shared->text_index_header_cache->clear();
-
-    if (shared->text_index_postings_cache)
-        shared->text_index_postings_cache->clear();
-
-    if (shared->mmap_cache)
-        shared->mmap_cache->clear();
-
-    if (shared->query_condition_cache)
-        shared->query_condition_cache->clear();
-
-    /// Path-keyed like the delete-bitmap cache below; clear it here too (see the note there).
-    if (shared->encryption_header_cache)
-        shared->encryption_header_cache->clear();
-
-    /// UNIQUE KEY delete-bitmap cache is optional (zero size disables it),
-    /// so the null check stays non-fatal. Without clearing, a renamed /
-    /// dropped non-UUID table whose `disk:relpath` cache identity gets
-    /// reused could see stale bitmaps from the prior table.
-    if (shared->delete_bitmap_cache)
-        shared->delete_bitmap_cache->clear();
-
-    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
-}
-
-void Context::setCanUseQueryResultCache(bool can_use_query_result_cache_)
-{
-    can_use_query_result_cache = can_use_query_result_cache_;
-}
-
-bool Context::getCanUseQueryResultCache() const
-{
-    return can_use_query_result_cache;
-}
-
-void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->asynchronous_metrics = asynchronous_metrics_;
-}
-
-AsynchronousMetrics * Context::getAsynchronousMetrics() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->asynchronous_metrics;
-}
-
-ThreadPool & Context::getPrefetchThreadpool() const
-{
-    callOnce(shared->prefetch_threadpool_initialized, [&] {
-        auto pool_size = shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::prefetch_threadpool_queue_size];
-
-        shared->prefetch_threadpool = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOPrefetchThreads, CurrentMetrics::IOPrefetchThreadsActive, CurrentMetrics::IOPrefetchThreadsScheduled, pool_size, pool_size, queue_size);
-    });
-
-    return *shared->prefetch_threadpool;
-}
-
-size_t Context::getPrefetchThreadpoolSize() const
-{
-    return shared->server_settings[ServerSetting::prefetch_threadpool_pool_size];
-}
-
-ThreadPool & Context::getBuildVectorSimilarityIndexThreadPool() const
-{
-    callOnce(
-        shared->build_vector_similarity_index_threadpool_initialized,
-        [&]
-        {
-            size_t pool_size = shared->server_settings[ServerSetting::max_build_vector_similarity_index_thread_pool_size] > 0
-                ? shared->server_settings[ServerSetting::max_build_vector_similarity_index_thread_pool_size]
-                : getNumberOfCPUCoresToUse();
-            shared->build_vector_similarity_index_threadpool = std::make_unique<ThreadPool>(
-                CurrentMetrics::BuildVectorSimilarityIndexThreads,
-                CurrentMetrics::BuildVectorSimilarityIndexThreadsActive,
-                CurrentMetrics::BuildVectorSimilarityIndexThreadsScheduled,
-                pool_size);
-        });
-    return *shared->build_vector_similarity_index_threadpool;
-}
-
-BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
-{
-    callOnce(shared->buffer_flush_schedule_pool_initialized, [&] {
-        shared->buffer_flush_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_buffer_flush_schedule_pool_size],
-            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
-            CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
-            CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
-            ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
-    });
-
-    return *shared->buffer_flush_schedule_pool;
-}
-
-BackgroundTaskSchedulingSettings Context::getBackgroundProcessingTaskSchedulingSettings() const
-{
-    BackgroundTaskSchedulingSettings task_settings;
-
-    const auto & config = getConfigRef();
-    task_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
-    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
-    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
-    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
-    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
-    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
-    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
-    return task_settings;
-}
-
-BackgroundTaskSchedulingSettings Context::getBackgroundMoveTaskSchedulingSettings() const
-{
-    BackgroundTaskSchedulingSettings task_settings;
-
-    const auto & config = getConfigRef();
-    task_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
-    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
-    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
-    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_min", 10);
-    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_max", 600);
-    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
-    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_move_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
-
-    return task_settings;
-}
-
-BackgroundTaskSchedulingSettings Context::getBackgroundStreamingTaskSchedulingSettings() const
-{
-    BackgroundTaskSchedulingSettings task_settings;
-
-    const auto & config = getConfigRef();
-    task_settings.thread_sleep_seconds = config.getDouble("background_streaming_processing_pool_thread_sleep_seconds", 10);
-    task_settings.thread_sleep_seconds_random_part = config.getDouble("background_streaming_processing_pool_thread_sleep_seconds_random_part", 1.0);
-    task_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_streaming_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
-    task_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_min", 10);
-    task_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_max", 600);
-    task_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
-    task_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_streaming_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
-
-    return task_settings;
-}
-
-BackgroundSchedulePool & Context::getSchedulePool() const
-{
-    size_t max_parallel_tasks_per_type = static_cast<size_t>(
-        static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_size])
-        * static_cast<double>(shared->server_settings[ServerSetting::background_schedule_pool_max_parallel_tasks_per_type_ratio]));
-    callOnce(
-        shared->schedule_pool_initialized,
-        [&]
-        {
-            shared->schedule_pool = BackgroundSchedulePool::create(
-                shared->server_settings[ServerSetting::background_schedule_pool_size],
-                shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-                max_parallel_tasks_per_type,
-                CurrentMetrics::BackgroundSchedulePoolTask,
-                CurrentMetrics::BackgroundSchedulePoolSize,
-                DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
-        });
-
-    return *shared->schedule_pool;
-}
-
-BackgroundSchedulePool & Context::getDistributedSchedulePool() const
-{
-    callOnce(shared->distributed_schedule_pool_initialized, [&] {
-        shared->distributed_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_distributed_schedule_pool_size],
-            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
-            CurrentMetrics::BackgroundDistributedSchedulePoolTask,
-            CurrentMetrics::BackgroundDistributedSchedulePoolSize,
-            DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
-    });
-
-    return *shared->distributed_schedule_pool;
-}
-
-BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
-{
-    callOnce(shared->message_broker_schedule_pool_initialized, [&] {
-        shared->message_broker_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_message_broker_schedule_pool_size],
-            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
-            CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
-            CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
-            DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
-    });
-
-    return *shared->message_broker_schedule_pool;
-}
-
-BackgroundSchedulePool & Context::getIcebergSchedulePool() const
-{
-    callOnce(shared->iceberg_schedule_pool_initialized, [&] {
-        shared->iceberg_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::iceberg_background_schedule_pool_size],
-            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
-            CurrentMetrics::IcebergSchedulePoolTask,
-            CurrentMetrics::IcebergSchedulePoolSize,
-            DB::ThreadName::ICEBERG_SCHEDULE_POOL);
-    });
-
-    return *shared->iceberg_schedule_pool;
-}
-
-BackgroundSchedulePool & Context::getStreamingSchedulePool() const
-{
-    callOnce(shared->streaming_schedule_pool_initialized, [&] {
-        shared->streaming_schedule_pool = BackgroundSchedulePool::create(
-            shared->server_settings[ServerSetting::background_streaming_schedule_pool_size],
-            shared->server_settings[ServerSetting::background_schedule_pool_initial_size],
-            /*max_parallel_tasks_per_type*/ 0,
-            CurrentMetrics::BackgroundStreamingSchedulePoolTask,
-            CurrentMetrics::BackgroundStreamingSchedulePoolSize,
-            DB::ThreadName::BACKGROUND_STREAMING_SCHEDULE_POOL);
-    });
-
-    return *shared->streaming_schedule_pool;
-}
-
-void Context::configureServerWideThrottling()
-{
-    if (shared->application_type == ApplicationType::LOCAL || shared->application_type == ApplicationType::SERVER || shared->application_type == ApplicationType::DISKS)
-        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
-    if (shared->application_type == ApplicationType::SERVER)
-        shared->configureServerWideThrottling();
-}
-
-ThrottlerPtr Context::getReplicatedFetchesThrottler() const
-{
-    return shared->replicated_fetches_throttler;
-}
-
-ThrottlerPtr Context::getReplicatedSendsThrottler() const
-{
-    return shared->replicated_sends_throttler;
-}
-
-ThrottlerPtr Context::getRemoteReadThrottler() const
-{
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_read_throttler;
-    }
-
-    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    if (auto process_list_element = getProcessListElementSafe())
-        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
-
-    if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
-    {
-        std::lock_guard lock(mutex);
-        if (!remote_read_query_throttler)
-            remote_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteReadThrottlerBytes, ProfileEvents::QueryRemoteReadThrottlerSleepMicroseconds);
-        throttler = remote_read_query_throttler;
-    }
-    return throttler;
-}
-
-ThrottlerPtr Context::getRemoteWriteThrottler() const
-{
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_write_throttler;
-    }
-
-    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
-    if (auto process_list_element = getProcessListElementSafe())
-        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
-
-    if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
-    {
-        std::lock_guard lock(mutex);
-        if (!remote_write_query_throttler)
-            remote_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryRemoteWriteThrottlerBytes, ProfileEvents::QueryRemoteWriteThrottlerSleepMicroseconds);
-        throttler = remote_write_query_throttler;
-    }
-    return throttler;
-}
-
-ThrottlerPtr Context::getLocalReadThrottler() const
-{
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_read_throttler;
-    }
-
-    if (auto bandwidth = getSettingsRef()[Setting::max_local_read_bandwidth])
-    {
-        std::lock_guard lock(mutex);
-        if (!local_read_query_throttler)
-            local_read_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalReadThrottlerBytes, ProfileEvents::QueryLocalReadThrottlerSleepMicroseconds);
-        throttler = local_read_query_throttler;
-    }
-    return throttler;
-}
-
-ThrottlerPtr Context::getLocalWriteThrottler() const
-{
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_write_throttler;
-    }
-
-    if (auto bandwidth = getSettingsRef()[Setting::max_local_write_bandwidth])
-    {
-        std::lock_guard lock(mutex);
-        if (!local_write_query_throttler)
-            local_write_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryLocalWriteThrottlerBytes, ProfileEvents::QueryLocalWriteThrottlerSleepMicroseconds);
-        throttler = local_write_query_throttler;
-    }
-    return throttler;
-}
-
-ThrottlerPtr Context::getBackupsThrottler() const
-{
-    ThrottlerPtr throttler = shared->backups_server_throttler;
-    if (auto bandwidth = getSettingsRef()[Setting::max_backup_bandwidth])
-    {
-        std::lock_guard lock(mutex);
-         if (!backups_query_throttler)
-            backups_query_throttler = std::make_shared<Throttler>(bandwidth, throttler, ProfileEvents::QueryBackupThrottlerBytes, ProfileEvents::QueryBackupThrottlerSleepMicroseconds);
-        throttler = backups_query_throttler;
-    }
-    return throttler;
-}
-
-ThrottlerPtr Context::getMutationsThrottler() const
-{
-    return shared->mutations_throttler;
-}
-
-ThrottlerPtr Context::getMergesThrottler() const
-{
-    return shared->merges_throttler;
-}
-
-ThrottlerPtr Context::getDistributedCacheReadThrottler() const
-{
-    return shared->distributed_cache_read_throttler;
-}
-
-ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
-{
-    return shared->distributed_cache_write_throttler;
-}
-
-void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
-{
-    if (read_bandwidth)
-    {
-        std::lock_guard lock(shared->mutex);
-        if (!shared->remote_read_throttler)
-            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth, ProfileEvents::RemoteReadThrottlerBytes, ProfileEvents::RemoteReadThrottlerSleepMicroseconds);
-    }
-
-    if (shared->remote_read_throttler)
-        std::static_pointer_cast<Throttler>(shared->remote_read_throttler)->setMaxSpeed(read_bandwidth);
-
-    if (write_bandwidth)
-    {
-        std::lock_guard lock(shared->mutex);
-        if (!shared->remote_write_throttler)
-            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth, ProfileEvents::RemoteWriteThrottlerBytes, ProfileEvents::RemoteWriteThrottlerSleepMicroseconds);
-    }
-
-    if (shared->remote_write_throttler)
-        std::static_pointer_cast<Throttler>(shared->remote_write_throttler)->setMaxSpeed(write_bandwidth);
-}
-
-void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
-{
-    if (read_bandwidth)
-    {
-        std::lock_guard lock(shared->mutex);
-        if (!shared->local_read_throttler)
-            shared->local_read_throttler = std::make_shared<Throttler>(read_bandwidth);
-    }
-
-    if (shared->local_read_throttler)
-        std::static_pointer_cast<Throttler>(shared->local_read_throttler)->setMaxSpeed(read_bandwidth);
-
-    if (write_bandwidth)
-    {
-        std::lock_guard lock(shared->mutex);
-        if (!shared->local_write_throttler)
-            shared->local_write_throttler = std::make_shared<Throttler>(write_bandwidth);
-    }
-
-    if (shared->local_write_throttler)
-        std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
-}
-
-bool Context::hasDistributedDDL() const
-{
-    return getConfigRef().has("distributed_ddl");
-}
-
-void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTaskPtrs & startup_after)
-{
-    std::lock_guard lock(shared->mutex);
-    if (shared->ddl_worker)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DDL background thread has already been initialized");
-
-    shared->ddl_worker = std::move(ddl_worker);
-
-    auto job = makeLoadJob(
-        getGoals(startup_after),
-        TablesLoaderBackgroundStartupPoolId,
-        "startup ddl worker",
-        [this] (AsyncLoader &, const LoadJobPtr &)
-        {
-            std::lock_guard lock2(shared->mutex);
-            shared->ddl_worker->startup();
-        });
-
-    shared->ddl_worker_startup_task = makeLoadTask(getAsyncLoader(), {job});
-    shared->ddl_worker_startup_task->schedule();
-}
-
-DDLWorker & Context::getDDLWorker() const
-{
-    // We have to ensure that DDL worker will not interfere with async loading of tables.
-    // For example to prevent creation of a table that already exists, but has not been yet loaded.
-    // So we have to wait for all tables to be loaded before starting up DDL worker.
-    // NOTE: Possible improvement: above requirement can be loosen by waiting for specific tables to load.
-    if (shared->ddl_worker_startup_task)
-        waitLoad(shared->ddl_worker_startup_task); // Just wait and do not prioritize, because it depends on all load and startup tasks
-
-    {
-        /// Only acquire the lock for reading ddl_worker field.
-        /// hasZooKeeper() and hasDistributedDDL() acquire the same lock as well and double acquisition of the lock in shared mode can lead
-        /// to a deadlock if an exclusive lock attempt is made in the meantime by another thread.
-        SharedLockGuard lock(shared->mutex);
-        if (shared->ddl_worker)
-            return *shared->ddl_worker;
-    }
-
-    if (!hasZooKeeper())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no Zookeeper configuration in server config");
-
-    if (!hasDistributedDDL())
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "There is no DistributedDDL configuration in server config");
-
-    throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "DDL background thread is not initialized");
-}
-
-namespace
-{
-
-void recordZooKeeperConnectionLoss()
-{
-    /// Use CAS to make sure we only set the timestamp for the first connection loss.
-    CurrentMetrics::cas(
-        CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds,
-        0,
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::system_clock::now().time_since_epoch()
-        ).count()
-    );
-}
-
-}
-
-zkutil::ZooKeeperPtr Context::getZooKeeper() const
-{
-    auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
-    std::lock_guard lock(shared->zookeeper_mutex);
-
-    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
-
-    if (!shared->zookeeper)
-    {
-        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
-        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
-
-        try
-        {
-            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-            {
-                recordZooKeeperConnectionLoss();
-            }
-            throw;
-        }
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
-    }
-
-    if (shared->zookeeper->expired())
-    {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-
-        Stopwatch watch;
-        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
-
-        auto old_zookeeper = shared->zookeeper;
-
-        try
-        {
-            shared->zookeeper = shared->zookeeper->startNewSession();
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-            {
-                recordZooKeeperConnectionLoss();
-            }
-            throw;
-        }
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-        {
-            zookeeper_connection_log->addDisconnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-            zookeeper_connection_log->addConnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-        }
-
-        if (isServerCompletelyStarted())
-            shared->zookeeper->setServerCompletelyStarted();
-        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
-    }
-
-    return shared->zookeeper;
-}
-
-int64_t Context::getZooKeeperLastZXIDSeen() const
-{
-    std::lock_guard lock(shared->zookeeper_mutex);
-    return shared->zookeeper ? shared->zookeeper->getLastZXIDSeen() : 0;
-}
-
-namespace
-{
-
-bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_name, keys);
-
-    for (const auto & key : keys)
-    {
-        if (startsWith(key, "node"))
-        {
-            String host = config.getString(config_name + "." + key + ".host");
-            if (isLocalAddress(DNSResolver::instance().resolveHostAllInOriginOrder(host).front()))
-                return true;
-        }
-    }
-    return false;
-}
-
-}
-
-
-bool Context::tryCheckClientConnectionToMyKeeperCluster() const
-{
-    try
-    {
-        const auto config_name = zkutil::getZooKeeperConfigName(getConfigRef());
-        /// If our server is part of main Keeper cluster
-        if (config_name == "keeper_server" || checkZooKeeperConfigIsLocal(getConfigRef(), config_name))
-        {
-            LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
-            getZooKeeper();
-            /// Connected, return true
-            return true;
-        }
-
-        Poco::Util::AbstractConfiguration::Keys keys;
-        getConfigRef().keys("auxiliary_zookeepers", keys);
-
-        /// If our server is part of some auxiliary_zookeeper
-        for (const auto & aux_zk_name : keys)
-        {
-            if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
-            {
-                LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
-                getAuxiliaryZooKeeper(aux_zk_name);
-                /// Connected, return true
-                return true;
-            }
-        }
-
-        /// Our server doesn't depend on our Keeper cluster
-        return true;
-    }
-    catch (const std::exception &)
-    {
-        return false;
-    }
-}
-
-UInt32 Context::getZooKeeperSessionUptime() const
-{
-    std::lock_guard lock(shared->zookeeper_mutex);
-    if (!shared->zookeeper || shared->zookeeper->expired())
-        return 0;
-    return shared->zookeeper->getSessionUptime();
-}
-
-void Context::reconnectZooKeeper(const String & reason) const
-{
-    std::lock_guard lock(shared->zookeeper_mutex);
-    if (shared->zookeeper)
-    {
-        shared->zookeeper->finalize(reason);
-        LOG_INFO(shared->log, "ZooKeeper connection closed: {}", reason);
-    }
-}
-
-void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
-{
-    std::shared_ptr<ZooKeeperConnectionLog> zookeeper_connection_log;
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (!shared->system_logs)
-            return;
-
-        zookeeper_connection_log = shared->system_logs->zookeeper_connection_log;
-    }
-
-    if (!zookeeper_connection_log)
-        return;
-
-    {
-        std::lock_guard lock(shared->zookeeper_mutex);
-        if (shared->zookeeper)
-        {
-            if (zookeeper_connection_log)
-                zookeeper_connection_log->addConnected(
-                    ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
-        }
-    }
-
-    {
-        std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
-        for (auto & zk : shared->auxiliary_zookeepers)
-        {
-            if (zookeeper_connection_log)
-                zookeeper_connection_log->addConnected(
-                    zk.first, *zk.second, ZooKeeperConnectionLog::keeper_init_reason);
-        }
-    }
-}
-
-void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
-{
-#if USE_NURAFT
-    if (std::atomic_load_explicit(&shared->keeper_dispatcher, std::memory_order_relaxed))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
-
-    const auto & config = getConfigRef();
-    if (config.has("keeper_server"))
-    {
-        bool is_standalone_app = config.getBool("keeper_server.standalone_keeper", getApplicationType() == ApplicationType::KEEPER);
-        if (start_async)
-        {
-            chassert(!is_standalone_app);
-            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster, "
-                     "will wait for Keeper asynchronously");
-        }
-        else
-        {
-            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start, "
-                     "will wait for Keeper synchronously");
-        }
-
-        auto dispatcher = std::make_shared<KeeperDispatcher>();
-        dispatcher->initialize(config, is_standalone_app, start_async, getMacros());
-        std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
-    }
-#endif
-}
-
-#if USE_NURAFT
-std::shared_ptr<KeeperDispatcher> Context::getKeeperDispatcher() const
-{
-    auto dispatcher = tryGetKeeperDispatcher();
-    if (!dispatcher)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
-
-    return dispatcher;
-}
-
-std::shared_ptr<KeeperDispatcher> Context::tryGetKeeperDispatcher() const
-{
-    return std::atomic_load_explicit(&shared->keeper_dispatcher, std::memory_order_relaxed);
-}
-
-void Context::setKeeperDispatcher(std::shared_ptr<KeeperDispatcher> dispatcher) const
-{
-    std::atomic_store_explicit(&shared->keeper_dispatcher, dispatcher, std::memory_order_relaxed);
-}
-#endif
-
-void Context::signalKeeperDispatcherShutdown() const
-{
-#if USE_NURAFT
-    if (auto dispatcher = tryGetKeeperDispatcher())
-        dispatcher->signalShutdown();
-#endif
-}
-
-void Context::shutdownKeeperDispatcher([[maybe_unused]] bool closed_all_connections) const
-{
-#if USE_NURAFT
-    if (auto dispatcher = tryGetKeeperDispatcher())
-    {
-        dispatcher->shutdown(closed_all_connections);
-        setKeeperDispatcher(nullptr);
-    }
-#endif
-}
-
-
-void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config) const
-{
-#if USE_NURAFT
-    auto dispatcher = tryGetKeeperDispatcher();
-    if (!dispatcher)
-        return;
-
-    dispatcher->updateConfiguration(config, getMacros());
-#endif
-}
-
-
-zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
-{
-    auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-    const auto config_name = "auxiliary_zookeepers." + name;
-
-    auto zookeeper = shared->auxiliary_zookeepers.find(name);
-    if (zookeeper == shared->auxiliary_zookeepers.end())
-    {
-        if (name.contains(':') || name.contains('/'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
-
-        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has(config_name))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                "config.xml",
-                name);
-
-        zkutil::ZooKeeperArgs args(config, config_name);
-        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
-
-        zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
-    }
-    else if (zookeeper->second->expired())
-    {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-
-        auto old_zookeeper = zookeeper->second;
-        zookeeper->second = zookeeper->second->startNewSession();
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-        {
-            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_expired_reason);
-        }
-    }
-
-    return zookeeper->second;
-}
-
-std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const String & name) const
-{
-    return name == zkutil::DEFAULT_ZOOKEEPER_NAME ? getZooKeeper() : getAuxiliaryZooKeeper(name);
-}
-
-
-std::map<String, zkutil::ZooKeeperPtr> Context::getAuxiliaryZooKeepers() const
-{
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-    return shared->auxiliary_zookeepers;
-}
-
-static void reloadZooKeeperIfChangedImpl(
-    const ConfigurationPtr & config,
-    const std::string_view keeper_name,
-    const std::string & config_name,
-    zkutil::ZooKeeperPtr & zk,
-    std::shared_ptr<ZooKeeperLog> zk_log,
-    std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
-    std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
-    bool server_started,
-    const Int32 send_receive_os_threads_nice_value,
-    bool enforce_component_tracking)
-{
-    auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChangedImpl");
-    static constexpr auto reason = "Config changed";
-    if (!zk || zk->configChanged(*config, config_name))
-    {
-        if (zk)
-            zk->finalize(reason);
-
-        auto old_zk = zk;
-
-        zkutil::ZooKeeperArgs args(*config, config_name);
-        args.send_receive_os_threads_nice_value = send_receive_os_threads_nice_value;
-        args.enforce_component_tracking = enforce_component_tracking;
-        zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
-
-        if (zk_concection_log)
-        {
-            if (old_zk)
-                zk_concection_log->addDisconnected(keeper_name, *old_zk, reason);
-            zk_concection_log->addConnected(keeper_name, *zk, reason);
-        }
-
-        if (server_started)
-            zk->setServerCompletelyStarted();
-    }
-}
-
-void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
-{
-    bool server_started = isServerCompletelyStarted();
-
-    auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChanged");
-    std::lock_guard lock(shared->zookeeper_mutex);
-    shared->zookeeper_config = config;
-
-    reloadZooKeeperIfChangedImpl(
-        config,
-        ZooKeeperConnectionLog::default_zookeeper_name,
-        zkutil::getZooKeeperConfigName(*config),
-        shared->zookeeper,
-        getZooKeeperLog(),
-        getZooKeeperConnectionLog(),
-        getAggregatedZooKeeperLog(),
-        server_started,
-        getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
-        getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
-}
-
-void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
-{
-    bool server_started = isServerCompletelyStarted();
-    auto zookeeper_connection_log = getZooKeeperConnectionLog();
-
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-
-    shared->auxiliary_zookeepers_config = config;
-
-    for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
-    {
-        const auto config_name = "auxiliary_zookeepers." + it->first;
-        LOG_TRACE(shared->log, "Reloading auxiliary ZooKeeper config for {}", it->first);
-        if (!config->has(config_name))
-        {
-            LOG_TRACE(shared->log, "Removing auxiliary ZooKeeper {}", it->first);
-            if (zookeeper_connection_log)
-                zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
-
-            it = shared->auxiliary_zookeepers.erase(it);
-        }
-        else
-        {
-            LOG_TRACE(shared->log, "Replacing auxiliary ZooKeeper {}", it->first);
-            reloadZooKeeperIfChangedImpl(
-                config,
-                it->first,
-                config_name,
-                it->second,
-                getZooKeeperLog(),
-                zookeeper_connection_log,
-                getAggregatedZooKeeperLog(),
-                server_started,
-                getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive],
-                getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
-            ++it;
-        }
-    }
-}
-
-
-bool Context::hasZooKeeper() const
-{
-    return zkutil::hasZooKeeperConfig(getConfigRef());
-}
-
-bool Context::hasAuxiliaryZooKeeper(const String & name) const
-{
-    return getConfigRef().has("auxiliary_zookeepers." + name);
-}
-
-void Context::reloadQueryMaskingRulesIfChanged(const ConfigurationPtr & config) const
-{
-    const auto old_config = shared->sensitive_data_masker_config;
-    if (old_config && isSameConfiguration(*config, *old_config, "query_masking_rules"))
-        return;
-
-    SensitiveDataMasker::setInstance(std::make_unique<SensitiveDataMasker>(*config, "query_masking_rules"));
-    shared->sensitive_data_masker_config = config;
-}
-
-InterserverCredentialsPtr Context::getInterserverCredentials() const
-{
-    return shared->interserver_io_credentials.get();
-}
-
-void Context::updateInterserverCredentials(const Poco::Util::AbstractConfiguration & config)
-{
-    auto credentials = InterserverCredentials::make(config, "interserver_http_credentials");
-    shared->interserver_io_credentials.set(std::move(credentials));
-}
-
-void Context::setInterserverIOAddress(const String & host, UInt16 port)
-{
-    shared->interserver_io_host = host;
-    shared->interserver_io_port = port;
-}
-
-std::pair<String, UInt16> Context::getInterserverIOAddress() const
-{
-    if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
-        throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-                        "Parameter 'interserver_http(s)_port' required for replication is not specified "
-                        "in configuration file.");
-
-    return { shared->interserver_io_host, shared->interserver_io_port };
-}
-
-void Context::setInterserverScheme(const String & scheme)
-{
-    shared->interserver_scheme = scheme;
-}
-
-String Context::getInterserverScheme() const
-{
-    return shared->interserver_scheme;
-}
-
-void Context::setRemoteHostFilter(const Poco::Util::AbstractConfiguration & config)
-{
-    shared->remote_host_filter.setValuesFromConfig(config);
-}
-
-const RemoteHostFilter & Context::getRemoteHostFilter() const
-{
-    return shared->remote_host_filter;
-}
-
-void Context::setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config)
-{
-    shared->http_header_filter.setValuesFromConfig(config);
-}
-
-const HTTPHeaderFilter & Context::getHTTPHeaderFilter() const
-{
-    return shared->http_header_filter;
-}
-
-UInt16 Context::getTCPPort() const
-{
-    const auto & config = getConfigRef();
-    return static_cast<UInt16>(config.getInt("tcp_port", DBMS_DEFAULT_PORT));
-}
-
-std::optional<UInt16> Context::getTCPPortSecure() const
-{
-    const auto & config = getConfigRef();
-    if (config.has("tcp_port_secure"))
-        return config.getInt("tcp_port_secure");
-    return {};
-}
-
-void Context::registerServerPort(String port_name, UInt16 port)
-{
-    /// Use `insert_or_assign` so re-registration after stop/start refreshes the
-    /// stored port. With `--tcp_port 0` / `--http_port 0` in `clickhouse-local`,
-    /// each restart binds a new ephemeral port and the registry must reflect it.
-    std::lock_guard lock(shared->server_ports_mutex);
-    shared->server_ports.insert_or_assign(std::move(port_name), port);
-}
-
-UInt16 Context::getServerPort(const String & port_name) const
-{
-    std::lock_guard lock(shared->server_ports_mutex);
-    auto it = shared->server_ports.find(port_name);
-    if (it == shared->server_ports.end())
-        throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "There is no port named {}", port_name);
-    return it->second;
-}
-
-size_t Context::getMaxPendingMutationsToWarn() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->max_pending_mutations_to_warn;
-}
-
-size_t Context::getMaxPendingMutationsExecutionTimeToWarn() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->max_pending_mutations_execution_time_to_warn;
-}
-
-size_t Context::getMaxPartNumToWarn() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->max_part_num_to_warn.load();
-}
-
-#define IMPLEMENT_ENTITY_LIMIT_WITH_WARNING_GETTER(ename, EName, warn_default, warn_setting, warn_setting_name) \
-    size_t Context::getMax##EName##NumToWarn() const \
-    { \
-        SharedLockGuard lock(shared->mutex); \
-        return shared->max_##ename##_num_to_warn.load(); \
-    }
-APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(IMPLEMENT_ENTITY_LIMIT_WITH_WARNING_GETTER)
-#undef IMPLEMENT_ENTITY_LIMIT_WITH_WARNING_GETTER
-
-#define IMPLEMENT_ENTITY_LIMIT_WITH_THROW_GETTER(ename, EName, throw_default, throw_setting, throw_setting_name) \
-    size_t Context::getMax##EName##NumToThrow() const \
-    { \
-        SharedLockGuard lock(shared->mutex); \
-        return shared->max_##ename##_num_to_throw.load(); \
-    }
-APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(IMPLEMENT_ENTITY_LIMIT_WITH_THROW_GETTER)
-#undef IMPLEMENT_ENTITY_LIMIT_WITH_THROW_GETTER
-
-void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
-}
-
-void Context::setMaxPendingMutationsExecutionTimeToWarn(size_t max_pending_mutations_execution_time_to_warn)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->max_pending_mutations_execution_time_to_warn = max_pending_mutations_execution_time_to_warn;
-}
-
-void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->max_part_num_to_warn = max_part_to_warn;
-}
-#define IMPLEMENT_ENTITY_LIMIT_WITH_WARNING_SETTER(ename, EName, warn_default, warn_setting, warn_setting_name) \
-    void Context::setMax##EName##NumToWarn(size_t max_##ename##_to_warn) \
-    { \
-        std::lock_guard lock(shared->mutex); \
-        shared->max_##ename##_num_to_warn = max_##ename##_to_warn; \
-    }
-APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(IMPLEMENT_ENTITY_LIMIT_WITH_WARNING_SETTER)
-#undef IMPLEMENT_ENTITY_LIMIT_WITH_WARNING_SETTER
-
-#define IMPLEMENT_ENTITY_LIMIT_WITH_THROW_SETTER(ename, EName, throw_default, throw_setting, throw_setting_name) \
-    void Context::setMax##EName##NumToThrow(size_t max_##ename##_to_throw) \
-    { \
-        std::lock_guard lock(shared->mutex); \
-        shared->max_##ename##_num_to_throw = max_##ename##_to_throw; \
-        shared->server_settings.set(throw_setting_name, max_##ename##_to_throw); \
-    }
-APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(IMPLEMENT_ENTITY_LIMIT_WITH_THROW_SETTER)
-#undef IMPLEMENT_ENTITY_LIMIT_WITH_THROW_SETTER
-
-double Context::getMinOSCPUWaitTimeRatioToDropConnection() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->min_os_cpu_wait_time_ratio_to_drop_connection;
-}
-
-double Context::getMaxOSCPUWaitTimeRatioToDropConnection() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->max_os_cpu_wait_time_ratio_to_drop_connection;
-}
-
-void Context::setOSCPUOverloadSettings(double min_os_cpu_wait_time_ratio_to_drop_connection, double max_os_cpu_wait_time_ratio_to_drop_connection)
-{
-    std::lock_guard lock(shared->mutex);
-    shared->min_os_cpu_wait_time_ratio_to_drop_connection = min_os_cpu_wait_time_ratio_to_drop_connection;
-    shared->max_os_cpu_wait_time_ratio_to_drop_connection = max_os_cpu_wait_time_ratio_to_drop_connection;
-}
-
-bool Context::getS3QueueDisableStreaming() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::s3queue_disable_streaming]
-        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
-}
-
-void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("s3queue_disable_streaming", s3queue_disable_streaming);
-}
-
-bool Context::getMessageQueueDisableInsertion() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::message_queue_disable_insertion];
-}
-
-void Context::setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("message_queue_disable_insertion", message_queue_disable_insertion);
-}
-
-std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
-{
-    if (auto res = tryGetCluster(cluster_name))
-        return res;
-    throw Exception(ErrorCodes::CLUSTER_DOESNT_EXIST, "Requested cluster '{}' not found", cluster_name);
-}
-
-
-std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
-{
-    std::shared_ptr<Cluster> res = nullptr;
-
-    {
-        std::lock_guard lock(shared->clusters_mutex);
-        res = getClustersImpl(lock)->getCluster(cluster_name);
-
-        if (res == nullptr && shared->cluster_discovery)
-            res = shared->cluster_discovery->getCluster(cluster_name);
-    }
-
-    if (res == nullptr && !cluster_name.empty())
-        res = tryGetReplicatedDatabaseCluster(cluster_name);
-
-    return res;
-}
-
-
-void Context::reloadClusterConfig() const
-{
-    while (true)
-    {
-        ConfigurationPtr cluster_config;
-        {
-            std::lock_guard lock(shared->clusters_mutex);
-            cluster_config = shared->clusters_config;
-        }
-
-        const auto & config = cluster_config ? *cluster_config : getConfigRef();
-        auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
-
-        {
-            std::lock_guard lock(shared->clusters_mutex);
-            if (shared->clusters_config.get() == cluster_config.get())
-            {
-                shared->clusters = std::move(new_clusters);
-                return;
-            }
-
-            // Clusters config has been suddenly changed, recompute clusters
-        }
-    }
-}
-
-std::map<String, ClusterPtr> Context::getClusters() const
-{
-    std::lock_guard lock(shared->clusters_mutex);
-
-    auto clusters = getClustersImpl(lock)->getContainer();
-
-    if (shared->cluster_discovery)
-    {
-        const auto & cluster_discovery_map = shared->cluster_discovery->getClusters();
-        for (const auto & [name, cluster] : cluster_discovery_map)
-            clusters.emplace(name, cluster);
-    }
-    return clusters;
-}
-
-std::shared_ptr<Clusters> Context::getClustersImpl(std::lock_guard<std::mutex> & /* lock */) const TSA_REQUIRES(shared->clusters_mutex)
-{
-    if (!shared->clusters)
-    {
-        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-        shared->clusters = std::make_shared<Clusters>(config, *settings, getMacros());
-    }
-
-    return shared->clusters;
-}
-
-void Context::startClusterDiscovery()
-{
-    std::lock_guard lock(shared->clusters_mutex);
-    if (!shared->cluster_discovery)
-        return;
-    shared->cluster_discovery->start();
-}
-
-
-/// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
-void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
-{
-    {
-        std::lock_guard lock(shared->clusters_mutex);
-        if (ConfigHelper::getBool(*config, "allow_experimental_cluster_discovery") && enable_discovery && !shared->cluster_discovery)
-        {
-            shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext(), getMacros());
-        }
-
-        /// Do not update clusters if this part of config wasn't changed.
-        /// Note: clusters_config must be checked for null separately from clusters, because
-        /// reloadClusterConfig() (called e.g. from DNSCacheUpdater on startup) can populate
-        /// shared->clusters using the fallback getConfigRef() without setting shared->clusters_config.
-        /// If setClustersConfig() then runs before the config reloader stores its ConfigurationPtr,
-        /// dereferencing shared->clusters_config would throw Poco::NullPointerException.
-        if (shared->clusters && shared->clusters_config && isSameConfiguration(*config, *shared->clusters_config, config_name))
-            return;
-
-        auto old_clusters_config = shared->clusters_config;
-        shared->clusters_config = config;
-
-        if (!shared->clusters)
-            shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, *settings, getMacros(), config_name);
-        else
-            shared->clusters->updateClusters(*shared->clusters_config, *settings, config_name, old_clusters_config);
-
-        ++shared->clusters_version;
-    }
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (shared->ddl_worker)
-            shared->ddl_worker->notifyHostIDsUpdated();
-    }
-}
-
-size_t Context::getClustersVersion() const
-{
-    std::lock_guard lock(shared->clusters_mutex);
-    return shared->clusters_version;
-}
-
-
-void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
-{
-    std::lock_guard lock(shared->clusters_mutex);
-
-    if (!shared->clusters)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clusters are not set");
-
-    shared->clusters->setCluster(cluster_name, cluster);
-}
-
-
-void Context::initializeSystemLogs()
-{
-    /// It is required, because the initialization of system logs can be also
-    /// triggered from another thread, that is launched while initializing the system logs,
-    /// for example, system.filesystem_cache_log will be triggered by parts loading
-    /// of any other table if it is stored on a disk with cache.
-    callOnce(shared->system_logs_initialized, [&] {
-        auto system_logs = std::make_unique<SystemLogs>(getGlobalContext(), getConfigRef());
-        std::lock_guard lock(shared->mutex);
-        shared->system_logs = std::move(system_logs);
-    });
-}
-
-void Context::createTraceCollector()
-{
-    shared->createTraceCollector();
-}
-
-void Context::initializeTraceCollector()
-{
-    shared->initializeTraceCollector(getTraceLog());
-}
-
-/// Call after unexpected crash happen.
-void Context::handleCrash() const
-{
-    std::optional<SystemLogs> system_logs;
-    {
-        std::lock_guard<std::mutex> lock(mutex_shared_context);
-        if (!shared)
-            return;
-
-        {
-            SharedLockGuard lock2(shared->mutex);
-            if (!shared->system_logs)
-                return;
-            system_logs.emplace(*shared->system_logs);
-        }
-    }
-
-    /// Must be called without mutex_shared_context to avoid deadlock:
-    /// handleCrash() -> SystemLog<...>::prepareTable -> keeper -> Context::getZooKeeperLog() -> mutex_shared_context
-    system_logs->handleCrash();
-}
-
-bool Context::hasTraceCollector() const
-{
-    return shared->hasTraceCollector();
-}
-
-
-std::shared_ptr<QueryLog> Context::getQueryLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->query_log;
-}
-
-std::shared_ptr<QueryMetricLog> Context::getQueryMetricLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->query_metric_log;
-}
-
-std::shared_ptr<ZooKeeperConnectionLog> Context::getZooKeeperConnectionLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->zookeeper_connection_log;
-}
-
-std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->query_thread_log;
-}
-
-std::shared_ptr<QueryViewsLog> Context::getQueryViewsLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->query_views_log;
-}
-
-std::shared_ptr<PartLog> Context::getPartLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    /// No part log or system logs are shutting down.
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->part_log;
-}
-
-std::shared_ptr<BackgroundSchedulePoolLog> Context::getBackgroundSchedulePoolLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->background_schedule_pool_log;
-}
-
-std::shared_ptr<TraceLog> Context::getTraceLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->trace_log;
-}
-
-std::shared_ptr<TextLog> Context::getTextLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->text_log;
-}
-
-
-std::shared_ptr<MetricLog> Context::getMetricLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->metric_log;
-}
-
-std::shared_ptr<TransposedMetricLog> Context::getTransposedMetricLog() const
-{
-     SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->transposed_metric_log;
-}
-
-std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->asynchronous_metric_log;
-}
-
-
-std::shared_ptr<OpenTelemetrySpanLog> Context::getOpenTelemetrySpanLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->opentelemetry_span_log;
-}
-
-std::shared_ptr<SessionLog> Context::getSessionLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->session_log;
-}
-
-
-std::shared_ptr<ZooKeeperLog> Context::getZooKeeperLog() const
-{
-    std::lock_guard lock(mutex_shared_context);
-    if (!shared)
-        return {};
-
-    SharedLockGuard lock2(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->zookeeper_log;
-}
-
-
-std::shared_ptr<TransactionsInfoLog> Context::getTransactionsInfoLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->transactions_info_log;
-}
-
-
-std::shared_ptr<ProcessorsProfileLog> Context::getProcessorsProfileLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->processors_profile_log;
-}
-
-std::shared_ptr<FilesystemCacheLog> Context::getFilesystemCacheLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->filesystem_cache_log;
-}
-
-std::shared_ptr<ObjectStorageQueueLog> Context::getS3QueueLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->s3queue_log;
-}
-
-std::shared_ptr<ObjectStorageQueueLog> Context::getAzureQueueLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->azure_queue_log;
-}
-
-std::shared_ptr<FilesystemReadPrefetchesLog> Context::getFilesystemReadPrefetchesLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->filesystem_read_prefetches_log;
-}
-
-std::shared_ptr<AsynchronousInsertLog> Context::getAsynchronousInsertLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->asynchronous_insert_log;
-}
-
-std::shared_ptr<BackupLog> Context::getBackupLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->backup_log;
-}
-
-std::shared_ptr<BlobStorageLog> Context::getBlobStorageLog() const
-{
-    bool enable_blob_storage_log = getSettingsRef()[Setting::enable_blob_storage_log];
-    if (hasQueryContext())
-        enable_blob_storage_log = getQueryContext()->getSettingsRef()[Setting::enable_blob_storage_log];
-
-    if (!enable_blob_storage_log)
-        return {};
-
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-    return shared->system_logs->blob_storage_log;
-}
-
-std::shared_ptr<IcebergMetadataLog> Context::getIcebergMetadataLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->iceberg_metadata_log;
-}
-
-std::shared_ptr<DeltaMetadataLog> Context::getDeltaMetadataLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->delta_lake_metadata_log;
-}
-
-std::shared_ptr<DeadLetterQueue> Context::getDeadLetterQueue() const
-{
-    SharedLockGuard lock(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->dead_letter_queue;
-}
-
-std::shared_ptr<AggregatedZooKeeperLog> Context::getAggregatedZooKeeperLog() const
-{
-    std::lock_guard lock(mutex_shared_context);
-    if (!shared)
-        return {};
-
-    SharedLockGuard lock2(shared->mutex);
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->aggregated_zookeeper_log;
-}
-
-std::shared_ptr<PredicateStatisticsLog> Context::getPredicateStatisticsLog() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-
-    return shared->system_logs->predicate_statistics_log;
-}
-
-SystemLogs Context::getSystemLogs() const
-{
-    SharedLockGuard lock(shared->mutex);
-
-    if (!shared->system_logs)
-        return {};
-    return *shared->system_logs;
-}
-
-std::optional<Context::Dashboards> Context::getDashboards() const
-{
-    std::lock_guard lock(shared->dashboard_mutex);
-
-    if (!shared->dashboards)
-        return {};
-    return shared->dashboards;
-}
-
-
-namespace
-{
-
-String trim(const String & text)
-{
-    std::string_view view(text);
-    ::trim(view, '\n');
-    return String(view);
-}
-
-}
-
-void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys("dashboards", keys);
-
-    Dashboards dashboards;
-    for (const auto & key : keys)
-    {
-        const auto & prefix = "dashboards." + key + ".";
-        dashboards.push_back({
-            { "dashboard", config.getString(prefix + "dashboard") },
-            { "title",     config.getString(prefix + "title") },
-            { "query",     trim(config.getString(prefix + "query")) },
-        });
-    }
-
-    {
-        std::lock_guard lock(shared->dashboard_mutex);
-        if (!dashboards.empty())
-            shared->dashboards.emplace(std::move(dashboards));
-        else
-            shared->dashboards.reset();
-    }
-}
-
-CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->compression_codec_selector)
-    {
-        constexpr auto config_name = "compression";
-        const auto & config = shared->getConfigRefWithLock(lock);
-
-        if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
-        else
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
-    }
-
-    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
-}
-
-
-DiskPtr Context::getDisk(const String & name) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    auto disk_selector = getDiskSelector(lock);
-
-    return disk_selector->get(name);
-}
-
-DiskPtr Context::getOrCreateDisk(const String & name, DiskCreator creator) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    auto disk_selector = getDiskSelector(lock);
-
-    auto disk = disk_selector->tryGet(name);
-    if (!disk)
-    {
-        disk = creator(getDisksMap(lock));
-        const_cast<DiskSelector *>(disk_selector.get())->addToDiskMap(name, disk);
-    }
-
-    return disk;
-}
-
-StoragePolicyPtr Context::getStoragePolicy(const String & name) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    auto policy_selector = getStoragePolicySelector(lock);
-
-    return policy_selector->get(name);
-}
-
-StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    const std::string storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
-    auto storage_policy_selector = getStoragePolicySelector(lock);
-    StoragePolicyPtr storage_policy = storage_policy_selector->tryGet(storage_policy_name);
-
-    if (!storage_policy)
-    {
-        auto disk_selector = getDiskSelector(lock);
-        auto disk = disk_selector->get(disk_name);
-        auto volume = std::make_shared<SingleDiskVolume>("_volume_" + disk_name, disk);
-
-        static const auto move_factor_for_single_disk_volume = 0.0;
-        storage_policy = std::make_shared<StoragePolicy>(storage_policy_name, Volumes{volume}, move_factor_for_single_disk_volume);
-        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
-    }
-    /// Note: it is important to put storage policy into disk selector (and not recreate it on each call)
-    /// because in some places there are checks that storage policy pointers are the same from different tables.
-    /// (We can assume that tables with the same `disk` setting are on the same storage policy).
-
-    return storage_policy;
-}
-
-StoragePolicyPtr Context::getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-
-    auto storage_policy_selector = getStoragePolicySelector(lock);
-
-    auto storage_policy = storage_policy_selector->tryGet(name);
-    if (!storage_policy)
-    {
-        storage_policy = creator(storage_policy_selector->getPoliciesMap());
-        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
-    }
-
-    return storage_policy;
-}
-
-DisksMap Context::getDisksMap() const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    return getDisksMap(lock);
-}
-
-DisksMap Context::getDisksMap(std::lock_guard<std::mutex> & lock) const
-{
-    return getDiskSelector(lock)->getDisksMap();
-}
-
-StoragePoliciesMap Context::getPoliciesMap() const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    return getStoragePolicySelector(lock)->getPoliciesMap();
-}
-
-DiskSelectorPtr Context::getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const TSA_REQUIRES(shared->storage_policies_mutex)
-{
-    if (!shared->merge_tree_disk_selector)
-    {
-        constexpr auto config_name = "storage_configuration.disks";
-        const auto & config = getConfigRef();
-        auto disk_selector = std::make_shared<DiskSelector>();
-        disk_selector->initialize(config, config_name, shared_from_this());
-        shared->merge_tree_disk_selector = disk_selector;
-    }
-
-    return shared->merge_tree_disk_selector;
-}
-
-StoragePolicySelectorPtr Context::getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const TSA_REQUIRES(shared->storage_policies_mutex)
-{
-    if (!shared->merge_tree_storage_policy_selector)
-    {
-        constexpr auto config_name = "storage_configuration.policies";
-        const auto & config = getConfigRef();
-        shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector(lock));
-    }
-
-    return shared->merge_tree_storage_policy_selector;
-}
-
-
-void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    {
-        std::lock_guard lock(shared->storage_policies_mutex);
-        Strings disks_to_reinit;
-        if (shared->merge_tree_disk_selector)
-            shared->merge_tree_disk_selector
-                = shared->merge_tree_disk_selector->updateFromConfig(config, "storage_configuration.disks", shared_from_this());
-
-        if (shared->merge_tree_storage_policy_selector)
-        {
-            try
-            {
-                shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
-                    config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
-            }
-            catch (Exception & e)
-            {
-                LOG_ERROR(
-                    shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
-            }
-        }
-
-        if (!disks_to_reinit.empty())
-        {
-            LOG_INFO(shared->log, "Initializing disks: ({}) for all tables", fmt::join(disks_to_reinit, ", "));
-            DatabaseCatalog::instance().triggerReloadDisksTask(disks_to_reinit);
-        }
-    }
-
-    {
-        std::lock_guard lock(shared->mutex);
-        if (shared->storage_s3_settings)
-            shared->storage_s3_settings->loadFromConfig(config, /* config_prefix */"s3", getSettingsRef());
-    }
-
-    {
-        std::lock_guard lock(shared->mutex);
-        if (shared->storage_azure_settings)
-            shared->storage_azure_settings->loadFromConfig(config, /* config_prefix */"storage_configuration.disks", getSettingsRef());
-    }
-
-}
-
-
-const MergeTreeSettings & Context::getMergeTreeSettings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->merge_tree_settings)
-    {
-        const auto & config = shared->getConfigRefWithLock(lock);
-        MergeTreeSettings mt_settings;
-
-        /// Respect compatibility setting from the default profile.
-        /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
-
-        mt_settings.loadFromConfig("merge_tree", config);
-        shared->merge_tree_settings.emplace(mt_settings);
-    }
-
-    return *shared->merge_tree_settings;
-}
-
-const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->replicated_merge_tree_settings)
-    {
-        const auto & config = shared->getConfigRefWithLock(lock);
-        MergeTreeSettings mt_settings;
-
-        /// Respect compatibility setting from the default profile.
-        /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
-
-        mt_settings.loadFromConfig("merge_tree", config);
-        mt_settings.loadFromConfig("replicated_merge_tree", config);
-        shared->replicated_merge_tree_settings.emplace(mt_settings);
-    }
-
-    return *shared->replicated_merge_tree_settings;
-}
-
-const DatabaseReplicatedSettings & Context::getDatabaseReplicatedSettings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->database_replicated_settings)
-    {
-        const auto & config = shared->getConfigRefWithLock(lock);
-        DatabaseReplicatedSettings db_replicated_settings;
-
-        db_replicated_settings.loadFromConfig("database_replicated", config);
-        shared->database_replicated_settings.emplace(db_replicated_settings);
-    }
-
-    return *shared->database_replicated_settings;
-}
-
-const DistributedSettings & Context::getDistributedSettings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->distributed_settings)
-    {
-        const auto & config = shared->getConfigRefWithLock(lock);
-        DistributedSettings distributed_settings;
-        distributed_settings.loadFromConfig("distributed", config);
-        shared->distributed_settings.emplace(distributed_settings);
-    }
-
-    return *shared->distributed_settings;
-}
-
-const S3SettingsByEndpoint & Context::getStorageS3Settings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->storage_s3_settings)
-    {
-        const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_s3_settings.emplace().loadFromConfig(config, "s3", getSettingsRef());
-    }
-
-    return *shared->storage_s3_settings;
-}
-
-const AzureSettingsByEndpoint & Context::getStorageAzureSettings() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->storage_azure_settings)
-    {
-        const auto & config = shared->getConfigRefWithLock(lock);
-        shared->storage_azure_settings.emplace().loadFromConfig(config, "storage_configuration.disks", getSettingsRef());
-    }
-
-    return *shared->storage_azure_settings;
-}
-
-void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
-{
-    if (!max_size_to_drop || size <= max_size_to_drop)
-        return;
-
-    fs::path force_file(getFlagsPath() + "force_drop_table");
-    bool force_file_exists = fs::exists(force_file);
-
-    if (force_file_exists)
-    {
-        try
-        {
-            fs::remove(force_file);
-            return;
-        }
-        catch (...)
-        {
-            /// User should recreate force file on each drop, it shouldn't be protected
-            tryLogCurrentException("Drop table check", "Can't remove force file to enable table or partition drop");
-        }
-    }
-
-    String size_str = formatReadableSizeWithDecimalSuffix(size);
-    String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
-    throw Exception(ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT,
-                    "Table or Partition in {}.{} was not dropped.\nReason:\n"
-                    "1. Size ({}) is greater than max_[table/partition]_size_to_drop ({})\n"
-                    "2. File '{}' intended to force DROP {}\n"
-                    "How to fix this:\n"
-                    "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config\n"
-                    "2. Either pass a bigger (or set to zero) max_[table/partition]_size_to_drop through query settings\n"
-                    "3. Either create forcing file {} and make sure that ClickHouse has write permission for it.\n"
-                    "Example:\nsudo touch '{}' && sudo chmod 666 '{}'",
-                    backQuoteIfNeed(database), backQuoteIfNeed(table),
-                    size_str, max_size_to_drop_str,
-                    force_file.string(), force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist",
-                    force_file.string(),
-                    force_file.string(), force_file.string());
-}
-
-
-void Context::setMaxTableSizeToDrop(size_t max_size)
-{
-    // Is initialized at server startup and updated at config reload
-    shared->max_table_size_to_drop.store(max_size, std::memory_order_relaxed);
-}
-
-size_t Context::getMaxTableSizeToDrop() const
-{
-    return shared->max_table_size_to_drop.load();
-}
-
-void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size) const
-{
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop.load();
-
-    checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
-}
-
-void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size, const size_t & max_table_size_to_drop) const
-{
-    checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
-}
-
-void Context::setMaxPartitionSizeToDrop(size_t max_size)
-{
-    // Is initialized at server startup and updated at config reload
-    shared->max_partition_size_to_drop.store(max_size, std::memory_order_relaxed);
-}
-
-size_t Context::getMaxPartitionSizeToDrop() const
-{
-    return shared->max_partition_size_to_drop.load();
-}
-
-void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size) const
-{
-    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop.load();
-
-    checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
-}
-
-void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size, const size_t & max_partition_size_to_drop) const
-{
-    checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
-}
-
-void Context::setMutationsUseAnalyzerOverride(std::optional<bool> value)
-{
-    int8_t encoded = !value.has_value() ? int8_t{-1} : (*value ? int8_t{1} : int8_t{0});
-    shared->mutations_use_analyzer_override.store(encoded, std::memory_order_relaxed);
-}
-
-std::optional<bool> Context::getMutationsUseAnalyzerOverride() const
-{
-    int8_t encoded = shared->mutations_use_analyzer_override.load(std::memory_order_relaxed);
-    if (encoded < 0)
-        return std::nullopt;
-    return encoded != 0;
-}
-
-void Context::setConfigReloaderInterval(size_t value_ms)
-{
-    shared->config_reload_interval_ms.store(value_ms, std::memory_order_relaxed);
-}
-
-size_t Context::getConfigReloaderInterval() const
-{
-    return shared->config_reload_interval_ms.load(std::memory_order_relaxed);
-}
-
-InputFormatPtr Context::getInputFormat(
-    const String & name,
-    ReadBuffer & buf,
-    const Block & sample,
-    UInt64 max_block_size,
-    const std::optional<FormatSettings> & format_settings,
-    const std::optional<UInt64> & max_block_size_bytes,
-    const std::optional<UInt64> & min_block_size_rows,
-    const std::optional<UInt64> & min_block_size_bytes) const
-{
-    return FormatFactory::instance().getInput(
-        name,
-        buf,
-        sample,
-        shared_from_this(),
-        max_block_size,
-        format_settings,
-        nullptr,
-        nullptr,
-        false,
-        CompressionMethod::None,
-        false,
-        max_block_size_bytes,
-        min_block_size_rows,
-        min_block_size_bytes);
-}
-
-OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
-{
-    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this(), format_settings);
-}
-
-OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample, const std::optional<FormatSettings> & format_settings) const
-{
-    return FormatFactory::instance().getOutputFormatParallelIfPossible(name, buf, sample, shared_from_this(), format_settings);
-}
-
-
-double Context::getUptimeSeconds() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->uptime_watch.elapsedSeconds();
-}
-
-
-void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
-{
-    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
-    shared->config_reload_callback = std::move(callback);
-}
-
-void Context::reloadConfig() const
-{
-    /// Use mutex if callback may be changed after startup.
-    if (!shared->config_reload_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't reload config because config_reload_callback is not set.");
-
-    shared->config_reload_callback();
-}
-
-void Context::setStartServersCallback(StartStopServersCallback && callback)
-{
-    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
-    shared->start_servers_callback = std::move(callback);
-}
-
-void Context::setStopServersCallback(StartStopServersCallback && callback)
-{
-    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
-    shared->stop_servers_callback = std::move(callback);
-}
-
-void Context::startServers(const ServerType & server_type) const
-{
-    /// Use mutex if callback may be changed after startup.
-    if (!shared->start_servers_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't start servers because start_servers_callback is not set.");
-
-    shared->start_servers_callback(server_type);
-}
-
-void Context::stopServers(const ServerType & server_type) const
-{
-    /// Use mutex if callback may be changed after startup.
-    if (!shared->stop_servers_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't stop servers because stop_servers_callback is not set.");
-
-    shared->stop_servers_callback(server_type);
-}
-
-
-void Context::shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
-{
-    shared->shutdown();
-}
-
-
-Context::ApplicationType Context::getApplicationType() const
-{
-    return shared->application_type;
-}
-
-void Context::setApplicationType(ApplicationType type)
-{
-    /// Lock isn't required, you should set it at start
-    shared->application_type = type;
-
-    if (type == ApplicationType::LOCAL
-        || type == ApplicationType::SERVER
-        || type == ApplicationType::KEEPER
-        || type == ApplicationType::DISKS)
-    {
-        /// Use the context's own config when it has been set (e.g. keeper-bench, which runs
-        /// without a Poco::Util::Application), falling back to the global application config.
-        shared->server_settings.loadSettingsFromConfig(getConfigRef());
-
-        /// Initialize the max_* mirrors from server_settings
-        /// This ensures limits are enforced even when ConfigReloader is not running (e.g., clickhouse-local)
-        shared->max_table_size_to_drop = shared->server_settings[ServerSetting::max_table_size_to_drop];
-        shared->max_partition_size_to_drop = shared->server_settings[ServerSetting::max_partition_size_to_drop];
-        shared->max_part_num_to_warn = shared->server_settings[ServerSetting::max_part_num_to_warn];
-#define INITIALIZE_ENTITY_LIMIT_WITH_WARNING(ename, EName, warn_default, warn_setting, warn_setting_name) \
-    shared->max_##ename##_num_to_warn = shared->server_settings.get(warn_setting_name).safeGet<UInt64>();
-        APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(INITIALIZE_ENTITY_LIMIT_WITH_WARNING)
-#undef INITIALIZE_ENTITY_LIMIT_WITH_WARNING
-#define INITIALIZE_ENTITY_LIMIT_WITH_THROW(ename, EName, throw_default, throw_setting, throw_setting_name) \
-    shared->max_##ename##_num_to_throw = shared->server_settings.get(throw_setting_name).safeGet<UInt64>();
-        APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(INITIALIZE_ENTITY_LIMIT_WITH_THROW)
-#undef INITIALIZE_ENTITY_LIMIT_WITH_THROW
-    }
-}
-
-bool Context::shouldRestrictUserQueryS3Credentials(bool allow_server_credentials_in_user_queries) const
-{
-    /// Only the server runs untrusted user SQL against shared infrastructure. In clickhouse-local the
-    /// user is the operator, so server-managed credentials (e.g. an instance profile) are theirs to use.
-    if (getApplicationType() != ApplicationType::SERVER)
-        return false;
-
-    return !allow_server_credentials_in_user_queries;
-}
-
-bool Context::shouldRestrictUserQueryS3Credentials() const
-{
-    /// A session setting, so a trusted administrative client can enable it for its own operations while a
-    /// settings constraint keeps it disabled for untrusted users.
-    return shouldRestrictUserQueryS3Credentials(getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries]);
-}
-
-void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
-{
-    shared->default_profile_name = config.getString("default_profile", "default");
-    getAccessControl().setDefaultProfileName(shared->default_profile_name);
-
-    shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-
-    /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
-    /// the default value set in the config might be outside of the constraints range
-    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
-    bool check_constraints = false;
-    setCurrentProfile(shared->system_profile_name, check_constraints);
-
-    applySettingsQuirks(*settings, getLogger("SettingsQuirks"));
-    doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
-
-    makeBackgroundContext(config);
-
-    shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setCurrentProfile(shared->buffer_profile_name);
-}
-
-String Context::getDefaultProfileName() const
-{
-    return shared->default_profile_name;
-}
-
-String Context::getSystemProfileName() const
-{
-    return shared->system_profile_name;
-}
-
-String Context::getFormatSchemaPath() const
-{
-    return shared->format_schema_path;
-}
-
-void Context::setFormatSchemaPath(const String & path)
-{
-    shared->format_schema_path = path;
-}
-
-String Context::getGoogleProtosPath() const
-{
-    return shared->google_protos_path;
-}
-
-void Context::setGoogleProtosPath(const String & path)
-{
-    shared->google_protos_path = path;
-}
-
-std::pair<Context::SampleBlockCache *, std::unique_lock<std::mutex>> Context::getSampleBlockCache() const
-{
-    chassert(hasQueryContext());
-    return std::make_pair(&getQueryContext()->sample_block_cache, std::unique_lock(getQueryContext()->sample_block_cache_mutex));
-}
-
-QueryMetadataCachePtr Context::getQueryMetadataCache() const
-{
-    chassert(hasQueryContext());
-    return getQueryContext()->query_metadata_cache.lock();
-}
-
-void Context::setQueryMetadataCache(const QueryMetadataCachePtr & query_metadata_cache_)
-{
-    query_metadata_cache = query_metadata_cache_;
-}
-
-bool Context::hasQueryParameters() const
-{
-    return !query_parameters.empty();
-}
-
-
-const NameToNameMap & Context::getQueryParameters() const
-{
-    return query_parameters;
-}
-
-
-void Context::setQueryParameter(const String & name, const String & value)
-{
-    if (!query_parameters.emplace(name, value).second)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate name {} of query parameter", backQuote(name));
-}
-
-void Context::addQueryParameters(const NameToNameMap & parameters)
-{
-    for (const auto & [name, value] : parameters)
-        query_parameters.insert_or_assign(name, value);
-}
-
-
-IHostContextPtr & Context::getHostContext()
-{
-    return host_context;
-}
-
-
-const IHostContextPtr & Context::getHostContext() const
-{
-    return host_context;
-}
-
-
-std::shared_ptr<ActionLocksManager> Context::getActionLocksManager() const
-{
-    callOnce(shared->action_locks_manager_initialized, [&] {
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(shared_from_this());
-    });
-
-    return shared->action_locks_manager;
-}
-
-
-void Context::setExternalTablesInitializer(ExternalTablesInitializer && initializer)
-{
-    if (external_tables_initializer_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "External tables initializer is already set");
-
-    external_tables_initializer_callback = std::move(initializer);
-}
-
-void Context::initializeExternalTablesIfSet()
-{
-    if (external_tables_initializer_callback)
-    {
-        external_tables_initializer_callback(shared_from_this());
-        /// Reset callback
-        external_tables_initializer_callback = {};
-    }
-}
-
-void Context::setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback)
-{
-    query_plan_deserialization_callback = std::move(callback);
-}
-
-std::shared_ptr<QueryPlanAndSets> Context::getDeserializedQueryPlan()
-{
-    if (!query_plan_deserialization_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan deserialization callback is not set");
-
-    return query_plan_deserialization_callback();
-}
-
-void Context::setInputInitializer(InputInitializer && initializer)
-{
-    if (input_initializer_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is already set");
-
-    input_initializer_callback = std::move(initializer);
-}
-
-
-void Context::initializeInput(const StoragePtr & input_storage)
-{
-    if (!input_initializer_callback)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input initializer is not set");
-
-    input_initializer_callback(shared_from_this(), input_storage);
-    /// Reset callback
-    input_initializer_callback = {};
-}
-
-
-void Context::setInputBlocksReaderCallback(InputBlocksReader && reader)
-{
-    if (input_blocks_reader)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Input blocks reader is already set");
-
-    input_blocks_reader = std::move(reader);
-}
-
-
-InputBlocksReader Context::getInputBlocksReaderCallback() const
-{
-    return input_blocks_reader;
-}
-
-
-void Context::resetInputCallbacks()
-{
-    if (input_initializer_callback)
-        input_initializer_callback = {};
-
-    if (input_blocks_reader)
-        input_blocks_reader = {};
-}
-
-void Context::clearTableFunctionResults()
-{
-    std::lock_guard lock(table_function_results_mutex);
-    table_function_results.clear();
-}
-
-
-void Context::setClientInfo(const ClientInfo & client_info_)
-{
-    client_info = client_info_;
-    need_recalculate_access = true;
-}
-
-void Context::setClientName(const String & client_name)
-{
-    client_info.client_name = client_name;
-}
-
-void Context::setClientInterface(ClientInfo::Interface interface)
-{
-    client_info.interface = interface;
-    need_recalculate_access = true;
-}
-
-void Context::setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
-{
-    client_info.client_version_major = client_version_major;
-    client_info.client_version_minor = client_version_minor;
-    client_info.client_version_patch = client_version_patch;
-    client_info.client_tcp_protocol_version = client_tcp_protocol_version;
-}
-
-void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
-{
-    client_info.script_query_number = query_number;
-    client_info.script_line_number = line_number;
-}
-
-void Context::setClientConnectionId(uint32_t connection_id_)
-{
-    client_info.connection_id = connection_id_;
-}
-
-void Context::setHTTPClientInfo(const Poco::Net::HTTPRequest & request)
-{
-    client_info.setFromHTTPRequest(request);
-    need_recalculate_access = true;
-}
-
-void Context::setForwardedFor(const String & forwarded_for)
-{
-    client_info.forwarded_for = forwarded_for;
-    need_recalculate_access = true;
-}
-
-void Context::setQueryKind(ClientInfo::QueryKind query_kind)
-{
-    client_info.query_kind = query_kind;
-}
-
-void Context::setQueryKindInitial()
-{
-    /// TODO: Try to combine this function with setQueryKind().
-    client_info.setInitialQuery();
-}
-
-void Context::setQueryKindReplicatedDatabaseInternal()
-{
-    /// TODO: Try to combine this function with setQueryKind().
-    client_info.is_replicated_database_internal = true;
-}
-
-void Context::setCurrentUserName(const String & current_user_name)
-{
-    /// TODO: Try to combine this function with setUser().
-    client_info.current_user = current_user_name;
-    need_recalculate_access = true;
-}
-
-void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
-{
-    client_info.current_address = Poco::Net::SocketAddress(current_address);
-    need_recalculate_access = true;
-}
-
-void Context::setInitialUserName(const String & initial_user_name)
-{
-    client_info.initial_user = initial_user_name;
-    need_recalculate_access = true;
-}
-
-void Context::setAuthenticatedUserName(const String & authenticated_user_name)
-{
-    client_info.authenticated_user = authenticated_user_name;
-    need_recalculate_access = true;
-}
-
-void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
-{
-    client_info.initial_address = Poco::Net::SocketAddress(initial_address);
-}
-
-void Context::setInitialQueryId(const String & initial_query_id)
-{
-    client_info.initial_query_id = initial_query_id;
-}
-
-void Context::setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time)
-{
-    client_info.initial_query_start_time = timeInSeconds(initial_query_start_time);
-    client_info.initial_query_start_time_microseconds = timeInMicroseconds(initial_query_start_time);
-}
-
-void Context::setQuotaClientKey(const String & quota_key_)
-{
-    client_info.quota_key = quota_key_;
-    need_recalculate_access = true;
-}
-
-void Context::setConnectionClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version)
-{
-    client_info.connection_client_version_major = client_version_major;
-    client_info.connection_client_version_minor = client_version_minor;
-    client_info.connection_client_version_patch = client_version_patch;
-    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
-}
-
-void Context::increaseDistributedDepth()
-{
-    ++client_info.distributed_depth;
-}
-
-
-StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
-{
-    if (storage_id.uuid != UUIDHelpers::Nil)
-        return storage_id;
-
-    StorageID resolved = StorageID::createEmpty();
-    std::optional<Exception> exc;
-    {
-        SharedLockGuard lock(mutex);
-        resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
-    }
-    if (exc)
-        throw Exception(*exc);
-    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
-    return resolved;
-}
-
-StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
-{
-    if (storage_id.uuid != UUIDHelpers::Nil)
-        return storage_id;
-
-    StorageID resolved = StorageID::createEmpty();
-    {
-        SharedLockGuard lock(mutex);
-        resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
-    }
-    if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
-    {
-        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
-        if (db)
-            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
-    }
-    return resolved;
-}
-
-StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const
-{
-    if (storage_id.uuid != UUIDHelpers::Nil)
-        return storage_id;
-
-    if (!storage_id)
-    {
-        if (exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Both table name and UUID are empty"));
-        return storage_id;
-    }
-
-    bool look_for_external_table = where & StorageNamespace::ResolveExternal;
-    /// Global context should not contain temporary tables
-    if (isGlobalContext())
-        look_for_external_table = false;
-
-    bool in_current_database = where & StorageNamespace::ResolveCurrentDatabase;
-    bool in_specified_database = where & StorageNamespace::ResolveGlobal;
-
-    if (!storage_id.database_name.empty())
-    {
-        if (in_specified_database)
-            return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
-        if (exception)
-            exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "External and temporary tables have no database, but {} is specified",
-                               storage_id.database_name));
-        return StorageID::createEmpty();
-    }
-
-    /// Database name is not specified. It's temporary table or table in current database.
-
-    if (look_for_external_table)
-    {
-        auto resolved_id = StorageID::createEmpty();
-        auto try_resolve = [&](ContextPtr context) -> bool
-        {
-            const auto & tables = context->external_tables_mapping;
-            auto it = tables.find(storage_id.getTableName());
-            if (it == tables.end())
-                return false;
-            resolved_id = it->second->getGlobalTableID();
-            return true;
-        };
-
-        /// Firstly look for temporary table in current context
-        if (try_resolve(shared_from_this()))
-            return resolved_id;
-
-        /// If not found and current context was created from some query context, look for temporary table in query context
-        auto query_context_ptr = query_context.lock();
-        bool is_local_context = query_context_ptr && query_context_ptr.get() != this;
-        if (is_local_context && try_resolve(query_context_ptr))
-            return resolved_id;
-
-        /// If not found and current context was created from some session context, look for temporary table in session context
-        auto session_context_ptr = session_context.lock();
-        bool is_local_or_query_context = session_context_ptr && session_context_ptr.get() != this;
-        if (is_local_or_query_context && try_resolve(session_context_ptr))
-            return resolved_id;
-    }
-
-    /// Temporary table not found. It's table in current database.
-
-    if (in_current_database)
-    {
-        if (current_database.empty())
-        {
-            if (exception)
-                exception->emplace(Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected"));
-            return StorageID::createEmpty();
-        }
-        storage_id.database_name = current_database;
-        /// NOTE There is no guarantees that table actually exists in database.
-        return storage_id;
-    }
-
-    if (exception)
-        exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot resolve database name for table {}", storage_id.getNameForLogs()));
-    return StorageID::createEmpty();
-}
-
-void Context::initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, [[maybe_unused]] bool attach_existing)
-{
-    chassert(!metadata_transaction);
-    chassert(attach_existing || query_context.lock().get() == this);
-    metadata_transaction = std::move(txn);
-}
-
-ZooKeeperMetadataTransactionPtr Context::getZooKeeperMetadataTransaction() const
-{
-    chassert(!metadata_transaction || hasQueryContext());
-    return metadata_transaction;
-}
-
-void Context::setParentTable(UUID uuid)
-{
-    chassert(!parent_table_uuid.has_value());
-    parent_table_uuid = uuid;
-}
-
-std::optional<UUID> Context::getParentTable() const
-{
-    return parent_table_uuid;
-}
-
-void Context::setDDLQueryCancellation(StopToken cancel)
-{
-    chassert(!ddl_query_cancellation.stop_possible());
-    ddl_query_cancellation = cancel;
-}
-
-StopToken Context::getDDLQueryCancellation() const
-{
-    return ddl_query_cancellation;
-}
-
-void Context::setDDLAdditionalChecksOnEnqueue(Coordination::Requests requests)
-{
-    ddl_additional_checks_on_enqueue = requests;
-}
-
-Coordination::Requests Context::getDDLAdditionalChecksOnEnqueue() const
-{
-    return ddl_additional_checks_on_enqueue;
-}
-
-
-void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
-{
-    if (getConfigRef().getInt("allow_experimental_transactions", 0))
-        return;
-
-    if (explicit_tcl_query)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
-
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Experimental support for transactions is disabled, "
-                    "however, some query or background task tried to access TransactionLog. "
-                    "If you have not enabled this feature explicitly, then it's a bug.");
-}
-
-void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)
-{
-    merge_tree_transaction_holder = MergeTreeTransactionHolder(txn, false, this);
-    setCurrentTransaction(std::move(txn));
-}
-
-void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
-{
-    chassert(!merge_tree_transaction || !txn);
-    chassert(this == session_context.lock().get() || this == query_context.lock().get());
-    merge_tree_transaction = std::move(txn);
-    if (!merge_tree_transaction)
-        merge_tree_transaction_holder = {};
-}
-
-MergeTreeTransactionPtr Context::getCurrentTransaction() const
-{
-    return merge_tree_transaction;
-}
-
-bool Context::isServerCompletelyStarted() const
-{
-    SharedLockGuard lock(shared->mutex);
-    chassert(getApplicationType() == ApplicationType::SERVER);
-    return shared->is_server_completely_started;
-}
-
-void Context::setServerCompletelyStarted()
-{
-    {
-        {
-            std::lock_guard lock(shared->zookeeper_mutex);
-            if (shared->zookeeper)
-                shared->zookeeper->setServerCompletelyStarted();
-        }
-
-        {
-            std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-            for (auto & zk : shared->auxiliary_zookeepers)
-                zk.second->setServerCompletelyStarted();
-        }
-    }
-
-    std::lock_guard lock(shared->mutex);
-    chassert(global_context.lock().get() == this);
-    chassert(!shared->is_server_completely_started);
-    chassert(getApplicationType() == ApplicationType::SERVER);
-    shared->is_server_completely_started = true;
-}
-
-ClusterFunctionReadTaskCallback Context::getClusterFunctionReadTaskCallback() const
-{
-    if (!next_task_callback.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query {}", getInitialQueryId());
-    return next_task_callback.value();
-}
-
-
-void Context::setClusterFunctionReadTaskCallback(ClusterFunctionReadTaskCallback && callback)
-{
-    next_task_callback = callback;
-}
-
-
-bool Context::hasClusterFunctionReadTaskCallback() const
-{
-    return next_task_callback.has_value();
-}
-
-
-MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
-{
-    if (!merge_tree_read_task_callback.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback for is not set for query {}", getInitialQueryId());
-
-    return merge_tree_read_task_callback.value();
-}
-
-void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback)
-{
-    merge_tree_read_task_callback = callback;
-}
-
-bool Context::hasMergeTreeAllRangesCallback() const
-{
-    return merge_tree_all_ranges_callback.has_value();
-}
-
-MergeTreeAllRangesCallback Context::getMergeTreeAllRangesCallback() const
-{
-    if (!merge_tree_all_ranges_callback.has_value())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query with id: {}", getInitialQueryId());
-
-    return merge_tree_all_ranges_callback.value();
-}
-
-
-void Context::setMergeTreeAllRangesCallback(MergeTreeAllRangesCallback && callback)
-{
-    merge_tree_all_ranges_callback = callback;
-}
-
-BlockMarshallingCallback Context::getBlockMarshallingCallback() const
-{
-    return block_marshalling_callback;
-}
-
-void Context::setBlockMarshallingCallback(BlockMarshallingCallback && callback)
-{
-    block_marshalling_callback = std::move(callback);
-}
-
-void Context::setParallelReplicasGroupUUID(UUID uuid)
-{
-    parallel_replicas_group_uuid = uuid;
-}
-
-UUID Context::getParallelReplicasGroupUUID() const
-{
-    return parallel_replicas_group_uuid;
-}
-
-AsynchronousInsertQueue * Context::tryGetAsynchronousInsertQueue() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->async_insert_queue.get();
-}
-
-void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr)
-{
-    AsynchronousInsertQueue::validateSettings(*settings, getLogger("Context"));
-
-    std::lock_guard lock(shared->mutex);
-
-    if (std::chrono::milliseconds(getSettingsRef()[Setting::async_insert_poll_timeout_ms].totalMilliseconds()) == std::chrono::milliseconds::zero())
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting async_insert_poll_timeout_ms can't be zero");
-
-    shared->async_insert_queue = ptr;
-}
-
-void Context::initializeBackgroundExecutorsIfNeeded()
-{
-    std::lock_guard lock(shared->background_executors_mutex);
-
-    if (shared->are_background_executors_initialized)
-        return;
-
-    const ServerSettings & server_settings = shared->server_settings;
-    size_t background_pool_size = server_settings[ServerSetting::background_pool_size];
-    auto background_merges_mutations_concurrency_ratio = server_settings[ServerSetting::background_merges_mutations_concurrency_ratio];
-
-    /// On low-memory systems, limit concurrent merges to avoid OOM.
-    /// Each merge can use 40-80 MiB; with the default pool_size=16 and ratio=2,
-    /// 32 concurrent merges would need 1.3-2.6 GiB just for merge buffers.
-    /// Only apply this cap when the user hasn't explicitly configured `background_pool_size`.
-    bool background_pool_auto_lowered = false;
-    size_t available_memory = getMemoryAmount();
-    if (available_memory > 0 && available_memory < (4ul << 30)
-        && !server_settings[ServerSetting::background_pool_size].changed)
-    {
-        size_t max_pool = std::max<size_t>(1, available_memory / (1ul << 30)); /// 1 per GiB
-        if (background_pool_size > max_pool)
-        {
-            LOG_INFO(getLogger("Context"),
-                "Lowered background_pool_size from {} to {} because the system has limited RAM ({})",
-                background_pool_size, max_pool, formatReadableSizeWithBinarySuffix(available_memory));
-            background_pool_size = max_pool;
-            /// Clamp the concurrency ratio to at most 1 to avoid increasing it beyond what the user configured.
-            if (!server_settings[ServerSetting::background_merges_mutations_concurrency_ratio].changed)
-                background_merges_mutations_concurrency_ratio = std::min(static_cast<float>(background_merges_mutations_concurrency_ratio), 1.0f);
-            background_pool_auto_lowered = true;
-            /// Update shared settings so the MergeTree sanity check sees the lowered values.
-            /// Writes to shared->server_settings must be synchronized with other readers via shared->mutex.
-            {
-                std::lock_guard shared_lock(shared->mutex);
-                shared->server_settings.set("background_pool_size", max_pool);
-                shared->server_settings.set("background_merges_mutations_concurrency_ratio", static_cast<double>(background_merges_mutations_concurrency_ratio));
-                shared->background_pool_auto_lowered = true;
-            }
-        }
-    }
-    size_t background_pool_max_tasks_count = static_cast<size_t>(static_cast<double>(background_pool_size) * static_cast<double>(background_merges_mutations_concurrency_ratio));
-    /// After auto-lowering, a small `background_pool_size` combined with a user-configured
-    /// fractional `background_merges_mutations_concurrency_ratio` (e.g. `1 * 0.5 = 0`) can
-    /// produce zero task count, which fails the `MergeTreeBackgroundExecutor` startup check.
-    /// Clamp to at least 1 in the auto-lowered path so the server can still start.
-    if (background_pool_auto_lowered && background_pool_max_tasks_count == 0)
-        background_pool_max_tasks_count = 1;
-    String background_merges_mutations_scheduling_policy = server_settings[ServerSetting::background_merges_mutations_scheduling_policy];
-    size_t background_move_pool_size = server_settings[ServerSetting::background_move_pool_size];
-    size_t background_fetches_pool_size = server_settings[ServerSetting::background_fetches_pool_size];
-    size_t background_common_pool_size = server_settings[ServerSetting::background_common_pool_size];
-
-    /// With this executor we can execute more tasks than threads we have
-    shared->merge_mutate_executor = std::make_shared<MergeMutateBackgroundExecutor>
-    (
-        ThreadName::MERGE_MUTATE,
-        /*max_threads_count*/background_pool_size,
-        /*max_tasks_count*/background_pool_max_tasks_count,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolTask,
-        CurrentMetrics::BackgroundMergesAndMutationsPoolSize,
-        ProfileEvents::MergeMutateBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::MergeMutateBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::MergeMutateBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::MergeMutateBackgroundExecutorWaitMicroseconds,
-        background_merges_mutations_scheduling_policy
-    );
-    LOG_INFO(shared->log, "Initialized background executor for merges and mutations with num_threads={}, num_tasks={}, scheduling_policy={}",
-        background_pool_size, background_pool_max_tasks_count, background_merges_mutations_scheduling_policy);
-
-    shared->moves_executor = std::make_shared<OrdinaryBackgroundExecutor>
-    (
-        ThreadName::MERGETREE_MOVE,
-        background_move_pool_size,
-        background_move_pool_size,
-        CurrentMetrics::BackgroundMovePoolTask,
-        CurrentMetrics::BackgroundMovePoolSize,
-        ProfileEvents::MoveBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::MoveBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::MoveBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::MoveBackgroundExecutorWaitMicroseconds
-    );
-    LOG_INFO(shared->log, "Initialized background executor for move operations with num_threads={}, num_tasks={}", background_move_pool_size, background_move_pool_size);
-
-    shared->fetch_executor = std::make_shared<OrdinaryBackgroundExecutor>
-    (
-        ThreadName::MERGETREE_FETCH,
-        background_fetches_pool_size,
-        background_fetches_pool_size,
-        CurrentMetrics::BackgroundFetchesPoolTask,
-        CurrentMetrics::BackgroundFetchesPoolSize,
-        ProfileEvents::FetchBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::FetchBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::FetchBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::FetchBackgroundExecutorWaitMicroseconds
-    );
-    LOG_INFO(shared->log, "Initialized background executor for fetches with num_threads={}, num_tasks={}", background_fetches_pool_size, background_fetches_pool_size);
-
-    shared->common_executor = std::make_shared<OrdinaryBackgroundExecutor>
-    (
-        ThreadName::MERGETREE_COMMON,
-        background_common_pool_size,
-        background_common_pool_size,
-        CurrentMetrics::BackgroundCommonPoolTask,
-        CurrentMetrics::BackgroundCommonPoolSize,
-        ProfileEvents::CommonBackgroundExecutorTaskExecuteStepMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskCancelMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorTaskResetMicroseconds,
-        ProfileEvents::CommonBackgroundExecutorWaitMicroseconds
-    );
-    LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}", background_common_pool_size, background_common_pool_size);
-
-    shared->are_background_executors_initialized = true;
-}
-
-bool Context::areBackgroundExecutorsInitialized() const
-{
-    SharedLockGuard lock(shared->background_executors_mutex);
-    return shared->are_background_executors_initialized;
-}
-
-bool Context::wasBackgroundPoolAutoLowered() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->background_pool_auto_lowered;
-}
-
-MergeMutateBackgroundExecutorPtr Context::getMergeMutateExecutor() const
-{
-    SharedLockGuard lock(shared->background_executors_mutex);
-    return shared->merge_mutate_executor;
-}
-
-OrdinaryBackgroundExecutorPtr Context::getMovesExecutor() const
-{
-    SharedLockGuard lock(shared->background_executors_mutex);
-    return shared->moves_executor;
-}
-
-OrdinaryBackgroundExecutorPtr Context::getFetchesExecutor() const
-{
-    SharedLockGuard lock(shared->background_executors_mutex);
-    return shared->fetch_executor;
-}
-
-OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
-{
-    SharedLockGuard lock(shared->background_executors_mutex);
-    return shared->common_executor;
-}
-
-IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
-{
-    callOnce(
-        shared->readers_initialized,
-        [&]
-        {
-            const auto & server_settings = getServerSettings();
-            shared->asynchronous_remote_fs_reader
-                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER, server_settings);
-            shared->asynchronous_local_fs_reader
-                = createThreadPoolReader(FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER, server_settings);
-            shared->synchronous_local_fs_reader
-                = createThreadPoolReader(FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER, server_settings);
-        });
-
-    switch (type)
-    {
-        case FilesystemReaderType::ASYNCHRONOUS_REMOTE_FS_READER:
-            return *shared->asynchronous_remote_fs_reader;
-        case FilesystemReaderType::ASYNCHRONOUS_LOCAL_FS_READER:
-            return *shared->asynchronous_local_fs_reader;
-        case FilesystemReaderType::SYNCHRONOUS_LOCAL_FS_READER:
-            return *shared->synchronous_local_fs_reader;
-    }
-}
-
-#if USE_LIBURING
-IOUringReader & Context::getIOUringReader() const
-{
-    callOnce(shared->io_uring_reader_initialized, [&] {
-        shared->io_uring_reader = createIOUringReader();
-    });
-
-    return *shared->io_uring_reader;
-}
-#endif
-
-ThreadPool & Context::getThreadPoolWriter() const
-{
-    callOnce(shared->threadpool_writer_initialized, [&] {
-        auto pool_size = shared->server_settings[ServerSetting::threadpool_writer_pool_size];
-        auto queue_size = shared->server_settings[ServerSetting::threadpool_writer_queue_size];
-
-        shared->threadpool_writer = std::make_unique<ThreadPool>(
-            CurrentMetrics::IOWriterThreads, CurrentMetrics::IOWriterThreadsActive, CurrentMetrics::IOWriterThreadsScheduled, pool_size, pool_size, queue_size);
-    });
-
-    return *shared->threadpool_writer;
-}
-
-std::shared_ptr<LongConnectionLimit> Context::getLongConnectionLimit() const
-{
-    callOnce(shared->long_connection_limit_initialized, [&]
-    {
-        const auto & server_settings = getServerSettings();
-        shared->long_connection_limit
-            = std::make_shared<LongConnectionLimit>(server_settings[ServerSetting::max_remote_read_connections]);
-    });
-    return shared->long_connection_limit;
-}
-
-void Context::reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const
-{
-    /// Routed through `getLongConnectionLimit` so there is a single creation path and a first use
-    /// racing a reload can never both construct the limit.
-    getLongConnectionLimit()->setCapacity(max_remote_read_connections);
-}
-
-ReadSettings Context::getReadSettings() const
-{
-    ReadSettings res;
-    const auto & settings_ref = getSettingsRef();
-
-    std::string_view read_method_str = getSettingsRef()[Setting::local_filesystem_read_method].value;
-
-    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
-        res.local_fs_settings.method = *opt_method;
-    else
-        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
-
-    read_method_str = getSettingsRef()[Setting::remote_filesystem_read_method].value;
-
-    if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
-        res.remote_fs_settings.method = *opt_method;
-    else
-        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
-
-    res.local_fs_settings.prefetch = settings_ref[Setting::local_filesystem_read_prefetch];
-    res.remote_fs_settings.prefetch = settings_ref[Setting::remote_filesystem_read_prefetch];
-
-    res.enable_filesystem_read_prefetches_log = settings_ref[Setting::enable_filesystem_read_prefetches_log];
-
-    res.remote_fs_settings.max_backoff_ms = settings_ref[Setting::remote_fs_read_max_backoff_ms];
-    res.remote_fs_settings.max_retries = settings_ref[Setting::remote_fs_read_backoff_max_tries];
-    res.enable_filesystem_cache = settings_ref[Setting::enable_filesystem_cache];
-    res.filesystem_cache_settings.read_if_exists_otherwise_bypass
-        = settings_ref[Setting::read_from_filesystem_cache_if_exists_otherwise_bypass_cache];
-    res.filesystem_cache_settings.enable_log = settings_ref[Setting::enable_filesystem_cache_log];
-    res.filesystem_cache_settings.segments_batch_size = settings_ref[Setting::filesystem_cache_segments_batch_size];
-    res.filesystem_cache_settings.reserve_space_wait_lock_timeout_milliseconds
-        = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
-    res.filesystem_cache_settings.allow_background_download = settings_ref[Setting::filesystem_cache_allow_background_download];
-    res.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage
-        = settings_ref[Setting::filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage];
-    res.filesystem_cache_settings.allow_background_download_during_fetch
-        = settings_ref[Setting::filesystem_cache_enable_background_download_during_fetch];
-    res.filesystem_cache_settings.prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
-
-    res.filesystem_cache_settings.max_download_size_per_query = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_settings.skip_download_if_exceeds_per_query_cache_write_limit
-        = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
-
-    res.page_cache_settings.cache = getPageCache();
-    res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
-    res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
-    res.use_page_cache_for_local_disks = settings_ref[Setting::use_page_cache_for_local_disks];
-    res.use_page_cache_for_object_storage = settings_ref[Setting::use_page_cache_for_object_storage];
-    res.reader_executor.enabled = settings_ref[Setting::use_reader_executor];
-    res.reader_executor.use_long_connections = settings_ref[Setting::reader_executor_use_long_connections];
-    res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
-    res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
-    res.page_cache_settings.read_if_exists_otherwise_bypass
-        = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
-    res.page_cache_settings.random_eviction_for_tests = settings_ref[Setting::page_cache_inject_eviction];
-    res.page_cache_settings.block_size = settings_ref[Setting::page_cache_block_size];
-    res.page_cache_settings.lookahead_blocks = settings_ref[Setting::page_cache_lookahead_blocks];
-    res.page_cache_settings.max_coalesced_bytes = settings_ref[Setting::page_cache_max_coalesced_bytes];
-
-    res.remote_fs_settings.min_bytes_for_seek = getSettingsRef()[Setting::remote_read_min_bytes_for_seek];
-
-    /// Zero read buffer will not make progress.
-    if (!getSettingsRef()[Setting::max_read_buffer_size])
-    {
-        throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size].value);
-    }
-
-    res.local_fs_settings.buffer_size
-        = settings_ref[Setting::max_read_buffer_size_local_fs] ? settings_ref[Setting::max_read_buffer_size_local_fs] : settings_ref[Setting::max_read_buffer_size];
-    res.remote_fs_settings.buffer_size
-        = settings_ref[Setting::max_read_buffer_size_remote_fs] ? settings_ref[Setting::max_read_buffer_size_remote_fs] : settings_ref[Setting::max_read_buffer_size];
-    res.remote_fs_settings.large_buffer_size = settings_ref[Setting::prefetch_buffer_size];
-    res.local_fs_settings.direct_io_threshold = settings_ref[Setting::min_bytes_to_use_direct_io];
-    res.local_fs_settings.mmap_threshold = settings_ref[Setting::min_bytes_to_use_mmap_io];
-    res.priority = Priority{settings_ref[Setting::read_priority]};
-
-    res.remote_throttler = getRemoteReadThrottler();
-    res.local_throttler = getLocalReadThrottler();
-
-    res.http_settings.max_tries = settings_ref[Setting::http_max_tries];
-    res.http_settings.retry_initial_backoff_ms = settings_ref[Setting::http_retry_initial_backoff_ms];
-    res.http_settings.retry_max_backoff_ms = settings_ref[Setting::http_retry_max_backoff_ms];
-    res.http_settings.skip_not_found_url_for_globs = settings_ref[Setting::http_skip_not_found_url_for_globs];
-    res.http_settings.make_head_request = settings_ref[Setting::http_make_head_request];
-
-    res.local_fs_settings.mmap_cache = getMMappedFileCache().get();
-    res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
-    res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
-
-    return res;
-}
-
-WriteSettings Context::getWriteSettings() const
-{
-    WriteSettings res;
-    const auto & settings_ref = getSettingsRef();
-
-    res.enable_filesystem_cache_on_write_operations = settings_ref[Setting::enable_filesystem_cache_on_write_operations];
-    res.enable_filesystem_cache_log = settings_ref[Setting::enable_filesystem_cache_log];
-    res.throw_on_error_from_cache = settings_ref[Setting::throw_on_error_from_cache_on_write_operations];
-    res.filesystem_cache_reserve_space_wait_lock_timeout_milliseconds
-        = settings_ref[Setting::filesystem_cache_reserve_space_wait_lock_timeout_milliseconds];
-
-    res.s3_allow_parallel_part_upload = settings_ref[Setting::s3_allow_parallel_part_upload];
-    res.azure_allow_parallel_part_upload = settings_ref[Setting::azure_allow_parallel_part_upload];
-
-    res.remote_throttler = getRemoteWriteThrottler();
-    res.local_throttler = getLocalWriteThrottler();
-
-    return res;
-}
-
-std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
-{
-    return async_read_counters;
-}
-
-bool Context::canUseTaskBasedParallelReplicas() const
-{
-    const auto & settings_ref = getSettingsRef();
-
-    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
-        return false;
-
-    return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
-        && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS
-        && (settings_ref[Setting::max_parallel_replicas] > 1
-            || !settings_ref[Setting::parallel_replicas_prefer_local_replica])
-        && settings_ref[Setting::automatic_parallel_replicas_mode] == 0;
-}
-
-bool Context::canUseParallelReplicasOnInitiator() const
-{
-    return canUseTaskBasedParallelReplicas() && !getClientInfo().collaborate_with_initiator;
-}
-
-bool Context::canUseParallelReplicasOnFollower() const
-{
-    return canUseTaskBasedParallelReplicas() && getClientInfo().collaborate_with_initiator;
-}
-
-bool Context::canUseParallelReplicasCustomKey() const
-{
-    const auto & settings_ref = getSettingsRef();
-
-    const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
-    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
-    const bool is_parallel_replicas_with_custom_key =
-        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
-        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
-
-    return has_enough_servers && parallel_replicas_enabled && is_parallel_replicas_with_custom_key;
-}
-
-bool Context::canUseParallelReplicasCustomKeyForCluster(const Cluster & cluster) const
-{
-    return canUseParallelReplicasCustomKey() && cluster.getShardCount() == 1 && cluster.getShardsInfo()[0].getAllNodeCount() > 1;
-}
-
-bool Context::canUseOffsetParallelReplicas() const
-{
-    const auto & settings_ref = getSettingsRef();
-
-    /**
-     * Offset parallel replicas algorithm is not only the one which relies on native SAMPLING KEY,
-     * but also those which rely on customer-provided "custom" key.
-     * We combine them together into one group for convenience.
-     */
-    const bool has_enough_servers = settings_ref[Setting::max_parallel_replicas] > 1;
-    const bool parallel_replicas_enabled = settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0;
-    const bool is_parallel_replicas_with_custom_key_or_native_sampling_key =
-        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::SAMPLING_KEY ||
-        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_SAMPLING ||
-        settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::CUSTOM_KEY_RANGE;
-    return offset_parallel_replicas_enabled &&
-           has_enough_servers &&
-           parallel_replicas_enabled &&
-           is_parallel_replicas_with_custom_key_or_native_sampling_key;
-}
-
-void Context::disableOffsetParallelReplicas()
-{
-    offset_parallel_replicas_enabled = false;
-}
-
-ClusterPtr Context::getClusterForParallelReplicas() const
-{
-    const auto & settings_ref = getSettingsRef();
-    /// check cluster for parallel replicas
-    if (settings_ref[Setting::cluster_for_parallel_replicas].value.empty())
-        throw Exception(
-            ErrorCodes::CLUSTER_DOESNT_EXIST,
-            "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
-            "'cluster_for_parallel_replicas' setting");
-
-    return getCluster(settings_ref[Setting::cluster_for_parallel_replicas]);
-}
-
-void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)
-{
-    prepared_sets_cache = cache;
-}
-
-PreparedSetsCachePtr Context::getPreparedSetsCache() const
-{
-    return prepared_sets_cache;
-}
-
-ReverseLookupCache & Context::getReverseLookupCache() const
-{
-    auto query_context = getQueryContext();
-
-    const auto & settings_ref = getSettingsRef();
-
-    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
-    if (!query_context->reverse_lookup_cache)
-    {
-        query_context->reverse_lookup_cache = std::make_shared<ReverseLookupCache>(
-            "LRU",
-            CurrentMetrics::end(),
-            CurrentMetrics::end(),
-            settings_ref[Setting::max_reverse_dictionary_lookup_cache_size_bytes],
-            ReverseLookupCache::NO_MAX_COUNT,
-            ReverseLookupCache::DEFAULT_SIZE_RATIO);
-    }
-    return *query_context->reverse_lookup_cache;
-}
-
-void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
-{
-    runtime_filter_lookup = filter_lookup;
-}
-
-RuntimeFilterLookupPtr Context::getRuntimeFilterLookup() const
-{
-    return runtime_filter_lookup;
-}
-
-UInt64 Context::getClientProtocolVersion() const
-{
-    return client_protocol_version;
-}
-
-void Context::setClientProtocolVersion(UInt64 version)
-{
-    client_protocol_version = version;
-}
-
-void Context::setPartitionIdToMaxBlock(const UUID & table_uuid, PartitionIdToMaxBlockPtr partitions)
-{
-    partition_id_to_max_block[table_uuid] = std::move(partitions);
-}
-
-PartitionIdToMaxBlockPtr Context::getPartitionIdToMaxBlock(const UUID & table_uuid) const
-{
-    auto it = partition_id_to_max_block.find(table_uuid);
-    return it != partition_id_to_max_block.end() ? it->second : nullptr;
-}
-
-const ServerSettings & Context::getServerSettings() const
-{
-    return shared->server_settings;
-}
-
-ServerSettings Context::getServerSettingsCopy() const
-{
-    /// Synchronize with the runtime writers of `shared->server_settings`
-    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
-    SharedLockGuard lock(shared->mutex);
-    return shared->server_settings;
-}
-
-uint64_t HTTPContext::getMaxHstsAge() const
-{
-    return context->getSettingsRef()[Setting::hsts_max_age];
-}
-
-    uint64_t HTTPContext::getMaxUriSize() const
-{
-    return context->getSettingsRef()[Setting::http_max_uri_size];
-}
-
-uint64_t HTTPContext::getMaxFields() const
-{
-    return context->getSettingsRef()[Setting::http_max_fields];
-}
-
-uint64_t HTTPContext::getMaxFieldNameSize() const
-{
-    return context->getSettingsRef()[Setting::http_max_field_name_size];
-}
-
-uint64_t HTTPContext::getMaxFieldValueSize() const
-{
-    return context->getSettingsRef()[Setting::http_max_field_value_size];
-}
-
-uint64_t HTTPContext::getMaxRequestHeaderSize() const
-{
-    return context->getSettingsRef()[Setting::http_max_request_header_size];
-}
-
-Poco::Timespan HTTPContext::getHeadersReadTimeout() const
-{
-    return context->getSettingsRef()[Setting::http_headers_read_timeout];
-}
-
-Poco::Timespan HTTPContext::getReceiveTimeout() const
-{
-    return context->getSettingsRef()[Setting::http_receive_timeout];
-}
-
-Poco::Timespan HTTPContext::getSendTimeout() const
-{
-    return context->getSettingsRef()[Setting::http_send_timeout];
-}
-
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×^x×„èµ©hºÚn¶X§zÍHÚ[˜ÛYH]ÛZXÏ‚ˆÚ[˜ÛYHX\‚ˆÚ[˜ÛYHÙ]‚ˆÚ[˜ÛYHÜ[Û˜[‚ˆÚ[˜ÛYHY[[ÜžO‚ˆÚ[˜ÛYHØÛËÕURQš‚ˆÚ[˜ÛYHØÛËÕ][ÐXœÝ˜XÝÛÛ™šYÝ\˜][Û‹š‚ˆÚ[˜ÛYHØÛËÕ][Ð\XØ][Û‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹Ö›ÛÒÙY\\‹Ö›ÛÒÙY\\ÛÛ[[Û‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹Ü][ÝTÝš[™Ëš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÜÙ]™XY˜[YKš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÒTÛÝÛÛ›Ûš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔØÚY[\‹ÒT™\ÛÝ\˜ÙSX[˜YÙ\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹Ð\Þ[˜ÓØY\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÛÛYš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÙ[œÚ]]™Q]SX\ÚÙ\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÓXXÜ›ÜËš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ñ]™[›ÝYšY\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÙÙ][X™\“ÙÔPÛÜ™\ÕÕ\ÙKš‚ˆÚ[˜ÛYH˜\ÙKÙÙ]Y[[ÜžP[[Ý[š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÝÜØ]Úš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ù›Ü›X]™XYX›Kš‚ˆÚ[˜ÛYHÛÛ[[Û‹Õ›Ý\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹Õ›Ý\\œ˜^Kš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ý™XYÛØØ[Ü›™Ëš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÑšY[š\Ú]Ü•ÔÝš[™Ëš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÑšY[š\Ú]Ü’\Úš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÚ\\Úš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÙÙ]][\RÙ^\Ñœ›ÛPÛÛ™šYËš‚ˆÚ[˜ÛYHÛÛ[[Û‹ØØ[Û˜ÙKš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÚ\™YØÚÑÝX\™š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔYÙPØXÚKš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ó˜[YYÛÛXÝ[ÛœËÓ˜[YYÛÛXÝ[ÛœÑ˜XÝÜžKš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ú\ÓØØ[Y™\ÜËš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÐÛÛ˜Ý\œ™[˜ÞPÛÛ›Ûš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÞ\Ý[P[ØØ]YY[[ÜžRÛ\‹š‚ˆÚ[˜ÛYHÛÛÜ™[˜][Û‹ÒÙY\\‘\Ü]Ú\‹š‚ˆÚ[˜ÛYHÛÜ™KÐ˜XÚÙÜ›Ý[™ØÚY[TÛÛš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜËš‚ˆÚ[˜ÛYH›Ü›X]ËÑ›Ü›X]˜XÝÜžKš‚ˆÚ[˜ÛYH]X˜\Ù\ËÑ]X˜\ÙT™\XØ]YÙ][™ÜËš‚ˆÚ[˜ÛYH]X˜\Ù\ËÒQ]X˜\ÙKš‚ˆÚ[˜ÛYH[\œ™]\œËÐÛÛ^ÙÙš‚ˆÚ[˜ÛYHÙ\™\‹ÔÙ\™\•\Kš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓX\šÐØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÕ[š\]YRÙ^KÕ[š\]YRÙ^R[™^ØXÚKš‚ˆÚ[˜ÛYHÛÛ[[Û‹Ò™[X[ØÐØXÚP\™[˜Kš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÓY\™ÙS\Ýš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÓ[Ý™\Ó\Ýš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÔ™\XØ]Y™]Ú\Ýš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÓY\™ÙU™YQ]Kš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÓY\™ÙU™YTÙ][™ÜËš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÕ[š\]YRÙ^KÑ[]Pš]X\ØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÔš[X\žR[™^ØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÕ^[™^ØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓØš™XÝÝÜ˜YÙKÑ]SZÙ\ËÒXÙX™\™ËÒXÙX™\™ÓY]Y]Qš[\ÐØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓØš™XÝÝÜ˜YÙKÑ]SZÙ\ËÔZ[[Û‹ÔZ[[Û“Y]Y]Qš[\ÐØXÚKš‚ˆÚ[˜ÛYH›ØÙ\ÜÛÜœËÑ›Ü›X]ËÒ[\Ô\œ]Y]Y]Y]PØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÔÝ™X[Z[™ÔÝÜ˜YÙT™YÚ\ÝžKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÕ™XÝÜ”Ú[Z[\š]R[™^ØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÑ\ÝšX]YÑ\ÝšX]YÙ][™ÜËš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÐÛÛ\™\ÜÚ[ÛÛÙXÔÙ[XÝÜ‹š‚ˆÚ[˜ÛYHSËÐ\Þ[˜Ú›Û›Ý\Ô™XY\‹š‚ˆÚ[˜ÛYHSËÓÛ™ÐÛÛ›™XÝ[Û“[Z]š‚ˆÚ[˜ÛYHSËÔÌÔÙ][™ÜËš‚ˆÚ[˜ÛYH\ÚÜËÑ\ÚÓØš™XÝÝÜ˜YÙKÓØš™XÝÝÜ˜YÙ\ËÐ^\™P›Ø”ÝÜ˜YÙKÐ^\™P›Ø”ÝÜ˜YÙPÛÛ[[Û‹š‚ˆÚ[˜ÛYH\ÚÜËÑ\ÚÓØØ[š‚ˆÚ[˜ÛYH\ÚÜËÑ\ÚÓØš™XÝÝÜ˜YÙKÓØš™XÝÝÜ˜YÙ\ËÒSØš™XÝÝÜ˜YÙKš‚ˆÚ[˜ÛYH\ÚÜËÔÚ[™ÛQ\ÚÕ›Û[YKš‚ˆÚ[˜ÛYH\ÚÜËÔÝÜ˜YÙTÛXÞKš‚ˆÚ[˜ÛYH\ÚÜËÒSËÒSÕ\š[™Ô™XY\‹š‚ˆÚ[˜ÛYH\ÚÜËÒSËÙÙ]SÕ\š[™Ô™XY\‹š‚ˆÚ[˜ÛYHX›Q[˜Ý[ÛœËÕX›Q[˜Ý[Û‘˜XÝÜžKš‚ˆÚ[˜ÛYH[\œ™]\œËÐXÝ[Û“ØÚÜÓX[˜YÙ\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÑ^\›˜[ØY\–SÛÛ™šYÔ™\ÜÚ]ÜžKš‚ˆÚ[˜ÛYH[\œ™]\œËÕ[\Ü˜\žQ]SÛ‘\ÚËš‚ˆÚ[˜ÛYH[\œ™]\œËÑš[PØXÚKÑš[PØXÚQ˜XÝÜžKš‚ˆÚ[˜ÛYH[\œ™]\œËÑš[PØXÚKÑš[PØXÚKš‚ˆÚ[˜ÛYH[\œ™]\œËÐØXÚKÑ[˜Üž\[Û’XY\ØXÚKš‚ˆÚ[˜ÛYH[\œ™]\œËÐØXÚKÔ]Y\žPÛÛ™][ÛØXÚKš‚ˆÚ[˜ÛYH[\œ™]\œËÐØXÚKÔ]Y\žT™\Ý[ØXÚKš‚ˆÚ[˜ÛYH[\œ™]\œËÐØXÚKÔ™]™\œÙSÛÚÝ\ØXÚKš‚ˆÚ[˜ÛYH[\œ™]\œËÐÛÛ^[YTÙ\šY\ÕYÜÐÛÛXÝÜ‹š‚ˆÚ[˜ÛYH[\œ™]\œËÔÙ\ÜÚ[Û•˜XÚÙ\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÕØ\ÛS[Ù[SX[˜YÙ\‹š‚ˆÚ[˜ÛYHÛÜ™KÔÙ\™\”Ù][™ÜËš‚ˆÚ[˜ÛYH[\œ™]\œËÔ™\\™YÙ]Ëš‚ˆÚ[˜ÛYHÛÜ™KÔÙ][™ÜÔ]Z\šÜËš‚ˆÚ[˜ÛYHÛÜ™KÕURQš‚ˆÚ[˜ÛYHXØÙ\ÜËÐXØÙ\ÜÐÛÛ›Ûš‚ˆÚ[˜ÛYHXØÙ\ÜËÐÛÛ^XØÙ\ÜËš‚ˆÚ[˜ÛYHXØÙ\ÜËÑ[˜X›Y›Û\Ò[™›Ëš‚ˆÚ[˜ÛYHXØÙ\ÜËÑ[˜X›Y›ÝÔÛXÚY\Ëš‚ˆÚ[˜ÛYHXØÙ\ÜËÔ][ÝU\ØYÙKš‚ˆÚ[˜ÛYHXØÙ\ÜËÕ\Ù\‹š‚ˆÚ[˜ÛYHXØÙ\ÜËÔ›ÛKš‚ˆÚ[˜ÛYHXØÙ\ÜËÔÙ][™ÜÔ›Ùš[Kš‚ˆÚ[˜ÛYHXØÙ\ÜËÔÙ][™ÜÔ›Ùš[\Ò[™›Ëš‚ˆÚ[˜ÛYHXØÙ\ÜËÔÙ][™ÜÐÛÛœÝ˜Z[Ð[™›Ùš[RQËš‚ˆÚ[˜ÛYHXØÙ\ÜËÑ^\›˜[]][XØ]ÜœËš‚ˆÚ[˜ÛYHXØÙ\ÜËÑÔÔÐXØÙ\Ü‹š‚ˆÚ[˜ÛYH˜XÚÝ\ËÐ˜XÚÝ\ÕÛÜšÙ\‹š‚ˆÚ[˜ÛYHXÝ[Û˜\šY\ËÑ[X™YYÑÙ[ÑXÝ[Û˜\šY\ÓØY\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÑ[X™YYXÝ[Û˜\šY\Ëš‚ˆÚ[˜ÛYH[\œ™]\œËÑ^\›˜[XÝ[Û˜\šY\ÓØY\‹š‚ˆÚ[˜ÛYH[˜Ý[ÛœËÕ\Ù\‘Yš[™YÑ^\›˜[\Ù\‘Yš[™Y^XÝ]X›Q[˜Ý[ÛœÓØY\‹š‚ˆÚ[˜ÛYH[˜Ý[ÛœËÕ\Ù\‘Yš[™YÒU\Ù\‘Yš[™YÔSØš™XÝÔÝÜ˜YÙKš‚ˆÚ[˜ÛYH[˜Ý[ÛœËÕ\Ù\‘Yš[™YØÜ™X]U\Ù\‘Yš[™YÔSØš™XÝÔÝÜ˜YÙKš‚ˆÚ[˜ÛYH[˜Ý[ÛœËÕ\Ù\‘Yš[™YÕ\Ù\‘Yš[™YÔS[˜Ý[Û‘˜XÝÜžKš‚ˆÚ[˜ÛYH[\œ™]\œËÔ›ØÙ\ÜÓ\Ýš‚ˆÚ[˜ÛYH[\œ™]\œËÒ[\œÙ\™\Ü™Y[X[Ëš‚ˆÚ[˜ÛYH[\œ™]\œËÐÛ\Ý\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÒ[\œÙ\™\’SÒ[™\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÐÛÛ^š‚ˆÚ[˜ÛYH[\œ™]\œËÑÛÜšÙ\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÑ\ÚËš‚ˆÚ[˜ÛYH[\œ™]\œËÒ\Ý]XØ[[™^ÝÜ™Kš‚ˆÚ[˜ÛYH[\œ™]\œËÔÙ\ÜÚ[Û‹š‚ˆÚ[˜ÛYH[\œ™]\œËÕ˜XÙPÛÛXÝÜ‹š‚ˆÚ[˜ÛYHSËÐ\Þ[˜Ô™XYÛÝ[\œËš‚ˆÚ[˜ÛYHSËÕ[˜ÛÛ\™\ÜÙYØXÚKš‚ˆÚ[˜ÛYHSËÓSX\Yš[PØXÚKš‚ˆÚ[˜ÛYHSËÕÜš]TÙ][™ÜËš‚ˆÚ[˜ÛYH\œÙ\œËÐTÕÜ™X]T]Y\žKš‚ˆÚ[˜ÛYH\œÙ\œËÐTÕ\Ý\š\ÚËš‚ˆÚ[˜ÛYH\œÙ\œËÐTÕY[YšY\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔØÚY[\‹ØÜ™X]T™\ÛÝ\˜ÙSX[˜YÙ\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔØÚY[\‹ÕÛÜšÛØYØÜ™X]UÛÜšÛØY[]TÝÜ˜YÙKš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÔÝXÚÕ˜XÙKš‚ˆÚ[˜ÛYHÛÛ[[Û‹ÐÛÛ™šYËÐÛÛ™šYÒ[\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÐÛÛ™šYËÐÛÛ™šYÔ›ØÙ\ÜÛÜ‹š‚ˆÚ[˜ÛYH[˜Ý[ÛœËÕ\Ù\‘Yš[™YÕ\Ù\‘Yš[™Y^XÝ]X›Q[˜Ý[Û‘š]™\”™YÚ\ÝžKš‚ˆÚ[˜ÛYHØÛËÑÛØ‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÐÛÛ™šYËÐÛÛ™šYÔ™[ØY\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÐÛÛ™šYËÐXœÝ˜XÝÛÛ™šYÝ\˜][ÛÛÛ\\š\ÛÛ‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹Ö›ÛÒÙY\\‹Ö›ÛÒÙY\\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÛÙÙÙ\—Ý\ÙY[š‚ˆÚ[˜ÛYHÛÛ[[Û‹Ô™[[ÝRÜÝš[\‹š‚ˆÚ[˜ÛYHÛÛ[[Û‹ÒXY\‘š[\‹š‚ˆÚ[˜ÛYH\œÙ\œËÜ\œÙRY[YšY\“Ü”Ýš[™Ó]\˜[š‚ˆÚ[˜ÛYH[\œ™]\œËÔÝÜ˜YÙRQš‚ˆÚ[˜ÛYH[\œ™]\œËÔÞ\Ý[SÙËš‚ˆÚ[˜ÛYH[\œ™]\œËÒ[\œ™]\”Ù[XÝ]Y\žP[˜[^™\‹š‚ˆÚ[˜ÛYH[\œ™]\œËÐ\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YKš‚ˆÚ[˜ÛYH[\œ™]\œËÑ]X˜\ÙPØ][ÙËš‚ˆÚ[˜ÛYH[\œ™]\œËÒ’UÐÛÛ\[Y^™\ÜÚ[ÛØXÚKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓY\™ÙU™YKÐ˜XÚÙÜ›Ý[™›ØœÐ\ÜÚYÛ™YKš‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÓX]\šX[^™YšY]ËÔ™Yœ™\ÚÙ]š‚ˆÚ[˜ÛYH[\œ™]\œËÔÞ[›Ûž[\Ñ^[œÚ[ÛœËš‚ˆÚ[˜ÛYH[\œ™]\œËÓ[[X]^™\œËš‚ˆÚ[˜ÛYH[\œ™]\œËÐÛ\Ý\‘\ØÛÝ™\žKš‚ˆÚ[˜ÛYH[\œ™]\œËÕ˜[œØXÝ[Û“ÙËš‚ˆÚ[˜ÛYH[\œ™]\œËÖ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙËš‚ˆÚ[˜ÛYH[\œ™]\œËÐYÙÜ™YØ]Y›ÛÒÙY\\“ÙËš‚ˆÚ[˜ÛYHš[\Þ\Ý[O‚ˆÚ[˜ÛYHÝÜ˜YÙ\ËÔÝÜ˜YÙUšY]Ëš‚ˆÚ[˜ÛYH\œÙ\œËÐTÕ[˜Ý[Û‹š‚ˆÚ[˜ÛYH\œÙ\œËÑ[˜Ý[Û”\˜[Y]\•˜[Y\Õš\Ú]Ü‹š‚ˆÚ[˜ÛYH\œÙ\œËÐTÕÙ[XÝÚ][š[Û”]Y\žKš‚ˆÚ[˜ÛYH[\œ™]\œËÒ[\œ™]\”Ù[XÝÚ][š[Û”]Y\žKš‚ˆÚ[˜ÛYH˜\ÙKÙYš[™\Ëš‚‚ˆÚ[˜ÛYH›ØÙ\ÜÛÜœËÔ]Y\žT[‹ÓÜ[Z^˜][ÛœËÔ[[YQ]Y›ÝÔÝ]\ÝXÜËš‚ˆÚ[˜ÛYH›ØÙ\ÜÛÜœËÔ]Y\žT[‹Ô[[YQš[\“ÛÚÝ\š‚‚›˜[Y\ÜXÙHœÈHÝŽ™š[\Þ\Ý[NÂ‚›˜[Y\ÜXÙH›Ùš[Q]™[ÂžÂˆ^\›ˆÛÛœÝ]™[ÛÛ^ØÚÎÂˆ^\›ˆÛÛœÝ]™[ÛÛ^ØÚÕØZ]ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[ØØ[™XY›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[ØØ[™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[ØØ[Üš]U›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[ØØ[Üš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[™[[ÝT™XY›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[™[[ÝT™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[™[[ÝUÜš]U›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[™[[ÝUÜš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[˜XÚÝ\›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[˜XÚÝ\›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[Y\™Ù\Õ›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[Y\™Ù\Õ›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[]]][ÛœÕ›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[]]][ÛœÕ›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žSØØ[™XY›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žSØØ[™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žSØØ[Üš]U›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žSØØ[Üš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žT™[[ÝT™XY›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žT™[[ÝT™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žT™[[ÝUÜš]U›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žT™[[ÝUÜš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žP˜XÚÝ\›Ý\ž]\ÎÂˆ^\›ˆÛÛœÝ]™[]Y\žP˜XÚÝ\›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÎÂ‚ˆ^\›ˆÛÛœÝ]™[Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™ÎÂ‚ˆ^\›ˆÛÛœÝ]™[[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™ÎÂ‚ˆ^\›ˆÛÛœÝ]™[™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™ÎÂ‚ˆ^\›ˆÛÛœÝ]™[ÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[ÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[ÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝ]™[ÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™ÎÂŸB‚›˜[Y\ÜXÙHÝ\œ™[Y]šXÜÂžÂˆ^\›ˆÛÛœÝY]šXÈÛÛ^ØÚÕØZ]Âˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™[Ý™TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™[Ý™TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™ØÚY[TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™ØÚY[TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Y™™\‘›\ÚØÚY[TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Y™™\‘›\ÚØÚY[TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™\ÝšX]YØÚY[TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™\ÝšX]YØÚY[TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Y\ÜØYÙPœ›ÚÙ\”ØÚY[TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Y\ÜØYÙPœ›ÚÙ\”ØÚY[TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Y\™Ù\Ð[™]]][ÛœÔÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Y\™Ù\Ð[™]]][ÛœÔÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™™]Ú\ÔÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™™]Ú\ÔÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™ÛÛ[[Û”ÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™ÛÛ[[Û”ÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈXÙX™\™ÔØÚY[TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈXÙX™\™ÔØÚY[TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Ý™X[Z[™ÔØÚY[TÛÛ\ÚÎÂˆ^\›ˆÛÛœÝY]šXÈ˜XÚÙÜ›Ý[™Ý™X[Z[™ÔØÚY[TÛÛÚ^™NÂˆ^\›ˆÛÛœÝY]šXÈX\šÜÓØY\•™XYÎÂˆ^\›ˆÛÛœÝY]šXÈX\šÜÓØY\•™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈX\šÜÓØY\•™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈSÔ™Y™]Ú™XYÎÂˆ^\›ˆÛÛœÝY]šXÈSÔ™Y™]Ú™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈSÔ™Y™]Ú™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈSÕÜš]\•™XYÎÂˆ^\›ˆÛÛœÝY]šXÈSÕÜš]\•™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈX›\ÓØY\˜XÚÙÜ›Ý[™™XYÎÂˆ^\›ˆÛÛœÝY]šXÈX›\ÓØY\˜XÚÙÜ›Ý[™™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈX›\ÓØY\˜XÚÙÜ›Ý[™™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈX›\ÓØY\‘›Ü™YÜ›Ý[™™XYÎÂˆ^\›ˆÛÛœÝY]šXÈX›\ÓØY\‘›Ü™YÜ›Ý[™™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈX›\ÓØY\‘›Ü™YÜ›Ý[™™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈSÕÜš]\•™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈZ[™XÝÜ”Ú[Z[\š]R[™^™XYÎÂˆ^\›ˆÛÛœÝY]šXÈZ[™XÝÜ”Ú[Z[\š]R[™^™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈZ[™XÝÜ”Ú[Z[\š]R[™^™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈ]XÚYX›NÂˆ^\›ˆÛÛœÝY]šXÈ]XÚYšY]ÎÂˆ^\›ˆÛÛœÝY]šXÈ]XÚYXÝ[Û˜\žNÂˆ^\›ˆÛÛœÝY]šXÈ]XÚY]X˜\ÙNÂˆ^\›ˆÛÛœÝY]šXÈ\ÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈ˜[YYÛÛXÝ[ÛŽÂˆ^\›ˆÛÛœÝY]šXÈXÙX™\™ÐØ][ÙÕ™XYÎÂˆ^\›ˆÛÛœÝY]šXÈXÙX™\™ÐØ][ÙÕ™XYÐXÝ]™NÂˆ^\›ˆÛÛœÝY]šXÈXÙX™\™ÐØ][ÙÕ™XYÔØÚY[YÂˆ^\›ˆÛÛœÝY]šXÈ[™^X\šÐØXÚPž]\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[™^X\šÐØXÚQš[\ÎÂˆ^\›ˆÛÛœÝY]šXÈX\šÐØXÚPž]\ÎÂˆ^\›ˆÛÛœÝY]šXÈX\šÐØXÚQš[\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[š\]YRÙ^R[™^ØXÚPž]\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[š\]YRÙ^R[™^ØXÚQ[šY\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[]Pš]X\ØXÚPž]\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[]Pš]X\ØXÚQ[šY\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[˜ÛÛ\™\ÜÙYØXÚPž]\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[˜ÛÛ\™\ÜÙYØXÚPÙ[ÎÂˆ^\›ˆÛÛœÝY]šXÈ[™^[˜ÛÛ\™\ÜÙYØXÚPž]\ÎÂˆ^\›ˆÛÛœÝY]šXÈ[™^[˜ÛÛ\™\ÜÙYØXÚPÙ[ÎÂˆ^\›ˆÛÛœÝY]šXÈ›ÛÒÙY\\”Ù\ÜÚ[Û‘^\™YÂˆ^\›ˆÛÛœÝY]šXÈ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÔÝ\Y[Y\Ý[\ÙXÛÛ™ÎÂŸB‚‚›˜[Y\ÜXÙH‚žÂ›˜[Y\ÜXÙHÙ][™ÂžÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[[Ý×Ù^\š[Y[[Ü\˜[[Ü™XY[™×Ùœ›ÛWÜ™\XØ\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÑ›Ø]\ÝÙ^ž™\—Ü[œÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[]]ÛX]X×Ü\˜[[Ü™\XØ\×Û[ÙNÂˆ^\›ˆÛÛœÝÙ][™ÜÓZ[\ÙXÛÛ™È\Þ[˜×Ú[œÙ\ÜÛÝ[Y[Ý]Û\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ^\™WØ[Ý×Ü\˜[[Ü\Ý\ØYÂˆ^\›ˆÛÛœÝÙ][™ÜÔÝš[™ÈÛ\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛÛÝYÛ[ÙNÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WÙš[\Þ\Ý[WØØXÚNÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WÙš[\Þ\Ý[WØØXÚWÛÙÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WÙš[\Þ\Ý[WØØXÚWÛÛ—ÝÜš]WÛÜ\˜][ÛœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WÙš[\Þ\Ý[WÜ™XYÜ™Y™]Ú\×ÛÙÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙ×Ù›Ü—Ü™XYÛÜ\˜][ÛœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[š[\Þ\Ý[WØØXÚWÛX^ÙÝÛ›ØYÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[š[\Þ\Ý[WØØXÚWÜ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[š[\Þ\Ý[WØØXÚWÜÙYÛY[×Ø˜]ÚÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛš[\Þ\Ý[WØØXÚWØ[Ý×Ø˜XÚÙÜ›Ý[™ÙÝÛ›ØYÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛš[\Þ\Ý[WØØXÚWÙ[˜X›WØ˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ›Ü—ÛY]Y]WÙš[\×Ú[—ÜXÚÙYÜÝÜ˜YÙNÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛš[\Þ\Ý[WØØXÚWÙ[˜X›WØ˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ\š[™×Ù™]ÚÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛš[\Þ\Ý[WØØXÚWÜ™Y™\—ØšYÙÙ\—ØY™™\—ÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛÛXZÙWÚXYÜ™\]Y\ÝÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[ÛX^ÙšY[ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[ÛX^ÙšY[Û˜[YWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[ÛX^ÙšY[Ý˜[YWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[ÛX^Ü™\]Y\ÝÚXY\—ÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÔÙXÛÛ™ÈÚXY\œ×Ü™XYÝ[Y[Ý]Âˆ^\›ˆÛÛœÝÙ][™ÜÕR[ÛX^ÝšY\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[ÛX^Ý\šWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÔÙXÛÛ™ÈÜ™XÙZ]™WÝ[Y[Ý]Âˆ^\›ˆÛÛœÝÙ][™ÜÕR[Ü™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[Ü™]žWÛX^Ø˜XÚÛÙ™—Û\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÔÙXÛÛ™ÈÜÙ[™Ý[Y[Ý]Âˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛÜÚÚ\Û›ÝÙ›Ý[™Ý\›Ù›Ü—ÙÛØœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[Ý×ÛX^ØYÙNÂˆ^\›ˆÛÛœÝÙ][™ÜÔÝš[™ÈØØ[Ùš[\Þ\Ý[WÜ™XYÛY]ÙÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛØØ[Ùš[\Þ\Ý[WÜ™XYÜ™Y™]ÚÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^Ø˜XÚÝ\Ø˜[™ÚYÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^ÛØØ[Ü™XYØ˜[™ÚYÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^ÛØØ[ÝÜš]WØ˜[™ÚYÂˆ^\›ˆÛÛœÝÙ][™ÜÓ›Û–™\›ÕR[X^Ü\˜[[Ü™\XØ\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÓ›Û–™\›ÕR[X^Ü™XYØY™™\—ÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^Ü™XYØY™™\—ÜÚ^™WÛØØ[ÙœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^Ü™XYØY™™\—ÜÚ^™WÜ™[[ÝWÙœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^Ü™[[ÝWÜ™XYÛ™]ÛÜš×Ø˜[™ÚYÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^Ü™[[ÝWÝÜš]WÛ™]ÛÜš×Ø˜[™ÚYÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[Z[—Øž]\×Ý×Ý\ÙWÙ\™XÝÚ[ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[Z[—Øž]\×Ý×Ý\ÙWÛ[X\Ú[ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛYÙWØØXÚWÚ[š™XÝÙ]šXÝ[ÛŽÂˆ^\›ˆÛÛœÝÙ][™ÜÔ\˜[[™\XØ\Ó[ÙH\˜[[Ü™\XØ\×Û[ÙNÂˆ^\›ˆÛÛœÝÙ][™ÜÔÝš[™È\˜[[Ü™\XØ\×ØÝ\ÝÛWÚÙ^NÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\˜[[Ü™\XØ\×Ü™Y™\—ÛØØ[Ü™\XØNÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[™Y™]ÚØY™™\—ÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ™XYÙœ›ÛWÙš[\Þ\Ý[WØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚNÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ™XYÙœ›ÛWÜYÙWØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚNÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[YÙWØØXÚWØ›ØÚ×ÜÚ^™NÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[YÙWØØXÚWÛÛÚØZXYØ›ØÚÜÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[YÙWØØXÚWÛX^ØÛØ[\ØÙYØž]\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÒ[™XYÜš[Üš]NÂˆ^\›ˆÛÛœÝÙ][™ÜÔÝš[™È™[[ÝWÙš[\Þ\Ý[WÜ™XYÛY]ÙÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ™[[ÝWÙš[\Þ\Ý[WÜ™XYÜ™Y™]ÚÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[™[[ÝWÙœ×Ü™XYÛX^Ø˜XÚÛÙ™—Û\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[™[[ÝWÙœ×Ü™XYØ˜XÚÛÙ™—ÛX^ÝšY\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[™[[ÝWÜ™XYÛZ[—Øž]\×Ù›Ü—ÜÙYZÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ›Ý×ÛÛ—Ù\œ›Ü—Ùœ›ÛWØØXÚWÛÛ—ÝÜš]WÛÜ\˜][ÛœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛš[\Þ\Ý[WØØXÚWÜÚÚ\ÙÝÛ›ØYÚY—Ù^ÙYY×Ü\—Ü]Y\žWØØXÚWÝÜš]WÛ[Z]Âˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛÌ×Ø[Ý×Ü\˜[[Ü\Ý\ØYÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛÌ×Ø[Ý×ÜÙ\™\—ØÜ™Y[X[×Ú[—Ý\Ù\—Ü]Y\šY\ÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\ÙWÜ™XY\—Ù^XÝ]ÜŽÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ™XY\—Ù^XÝ]Ü—Ý\ÙWÛÛ™×ØÛÛ›™XÝ[ÛœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[™XY\—Ù^XÝ]Ü—ÛZ[—Øž]\×Ù›Ü—ÜÙYZÎÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[™XY\—Ù^XÝ]Ü—ÛX^ÝZ[Ù›Ü—Ù˜Z[ŽÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\ÙWÜYÙWØØXÚWÙ›Ü—Ù\ÚÜ×ÝÚ]Ý]Ùš[WØØXÚNÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\ÙWÜYÙWØØXÚWÙ›Ü—ÛØØ[Ù\ÚÜÎÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\ÙWÜYÙWØØXÚWÙ›Ü—ÛØš™XÝÜÝÜ˜YÙNÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\ÙWÜYÙWØØXÚWÝÚ]Ù\ÝšX]YØØXÚNÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÎÂˆ^\›ˆÛÛœÝÙ][™ÜÔÝš[™ÈÛÜšÛØYÂˆ^\›ˆÛÛœÝÙ][™ÜÔÝš[™ÈÛÛ\]Xš[]NÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[Ý×Ù^\š[Y[[Ø[˜[^™\ŽÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ\˜[[Ü™\XØ\×ÛÛ›WÝÚ]Ø[˜[^™\ŽÂˆ^\›ˆÛÛœÝÙ][™ÜÐ›ÛÛ[˜X›WÚœ×Ü™XYÂˆ^\›ˆÛÛœÝÙ][™ÜÕR[X^Ü™]™\œÙWÙXÝ[Û˜\žWÛÛÚÝ\ØØXÚWÜÚ^™WØž]\ÎÂŸB‚›˜[Y\ÜXÙHY\™ÙU™YTÙ][™ÂžÂˆ^\›ˆÛÛœÝY\™ÙU™YTÙ][™ÜÔÝš[™ÈY\™ÙWÝÛÜšÛØYÂˆ^\›ˆÛÛœÝY\™ÙU™YTÙ][™ÜÔÝš[™È]]][Û—ÝÛÜšÛØYÂŸB‚›˜[Y\ÜXÙHÙ\™\”Ù][™ÂžÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü™[[ÝWÜ™XYØÛÛ›™XÝ[ÛœÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ØY™™\—Ù›\ÚÜØÚY[WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™Ù\ÝšX]YÜØÚY[WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÑ›Ø]˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÔÝš[™È˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ÜØÚY[[™×ÜÛXÞNÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ÛY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[XÙX™\™×Ø˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÑ›Ø]˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÛX^Ü\˜[[Ý\ÚÜ×Ü\—Ý\WÜ˜][ÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×ÜØÚY[WÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛ\ØX›WÚ[œÙ\[Û—Ø[™Û]]][ÛŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛ\Ü^WÜÙXÜ™]×Ú[—ÜÚÝ×Ø[™ÜÙ[XÝÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ø˜XÚÝ\Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ØZ[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÛØØ[Ü™XYØ˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÛØØ[ÝÜš]WØ˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÛY\™Ù\×Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Û]]][Ûœ×Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü™[[ÝWÜ™XYÛ™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü™[[ÝWÝÜš]WÛ™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü™\XØ]YÙ™]Ú\×Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü™\XØ]YÜÙ[™×Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛÌÜ]Y]YWÙ\ØX›WÜÝ™X[Z[™ÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛY\ÜØYÙWÜ]Y]YWÙ\ØX›WÚ[œÙ\[ÛŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X›\×ÛØY\—Ø˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X›\×ÛØY\—Ù›Ü™YÜ›Ý[™ÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÓ›Û–™\›ÕR[™Y™]ÚÝ™XYÛÛÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[™Y™]ÚÝ™XYÛÛÜ]Y]YWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[ØYÛX\šÜ×Ý™XYÛÛÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[ØYÛX\šÜ×Ý™XYÛÛÜ]Y]YWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÓ›Û–™\›ÕR[™XYÛÛÝÜš]\—ÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[™XYÛÛÝÜš]\—Ü]Y]YWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[XÙX™\™×ØØ][Ù×Ý™XYÛÛÜÛÛÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[XÙX™\™×ØØ][Ù×Ý™XYÛÛÜ]Y]YWÜÚ^™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛXÝ[Û˜\šY\×Û^žWÛØYÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÒ[ÌˆÜ×Ý™XY×ÛšXÙWÝ˜[YWÞ›ÛÚÙY\\—ØÛY[ÜÙ[™Ü™XÙZ]™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛ[™›Ü˜ÙWÚÙY\\—ØÛÛ\Û™[Ý˜XÚÚ[™ÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÝX›WÜÚ^™WÝ×Ù›ÜÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü\][Û—ÜÚ^™WÝ×Ù›ÜÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ü\Û[WÝ×ÝØ\›ŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÝX›WÛ[WÝ×Ý›ÝÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÝšY]×Û[WÝ×Ý›ÝÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^ÙXÝ[Û˜\žWÛ[WÝ×Ý›ÝÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Ù]X˜\ÙWÛ[WÝ×Ý›ÝÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÕR[X^Û˜[YYØÛÛXÝ[Û—Û[WÝ×Ý›ÝÎÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛ[Ý×Ù^\š[Y[[ÝÙX˜\ÜÙ[X›WÝYŽÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÔÝš[™ÈÙX˜\ÜÙ[X›WÝY—Ù[™Ú[™NÂˆ^\›ˆÛÛœÝÙ\™\”Ù][™ÜÐ›ÛÛ[Ý×Ù^\š[Y[[Ù^XÝ]X›WÝY—Ùš]™\œÎÂŸB‚›˜[Y\ÜXÙH\œ›ÜÛÙ\ÂžÂˆ^\›ˆÛÛœÝ[QÐT‘ÕSQS•ÎÂˆ^\›ˆÛÛœÝ[S’Ó“ÕÓ—ÑUPTÑNÂˆ^\›ˆÛÛœÝ[S’Ó“ÕÓ—ÕP“NÂˆ^\›ˆÛÛœÝ[P“WÐS‘PQWÑVTÕÎÂˆ^\›ˆÛÛœÝ[T‘WÒT×Ó“×ÔÑTÔÒSÓŽÂˆ^\›ˆÛÛœÝ[T‘WÒT×Ó“×ÔUQT–NÂˆ^\›ˆÛÛœÝ[“×ÑSSQS•×ÒS—ÐÓÓ‘’QÎÂˆ^\›ˆÛÛœÝ[P“WÔÒV‘WÑVÑQQ×ÓPVÑ“ÔÔÒV‘WÓSRUÂˆ^\›ˆÛÛœÝ[ÑÒPÐSÑT”“ÔŽÂˆ^\›ˆÛÛœÝ[S•SQÔÑUS‘×ÕSQNÂˆ^\›ˆÛÛœÝ[“ÕÒSTSQS•QÂˆ^\›ˆÛÛœÝ[S’Ó“ÕÓ—Ñ•SÕSÓŽÂˆ^\›ˆÛÛœÝ[ÕTÔ•ÒT×ÑTÐP“QÂˆ^\›ˆÛÛœÝ[SQÐSÐÓÓSSŽÂˆ^\›ˆÛÛœÝ[•SP‘T—ÓÑ—ÐÓÓSS”×ÑÑTÓ•ÓPUÒÂˆ^\›ˆÛÛœÝ[ÓTÕT—ÑÑTÓ•ÑVTÕÂˆ^\›ˆÛÛœÝ[ÑUÓ“Ó—ÑÔS•QÔ“ÓNÂˆ^\›ˆÛÛœÝ[S’Ó“ÕÓ—ÑTÒÎÂˆ^\›ˆÛÛœÝ[S’Ó“ÕÓ—Ô‘PQÓQUÑÂŸB‚ˆÙYš[™HÒUÕÓŠÙË\ØË‹Y]Ù
+HÈžÈˆYˆ
+ŠHˆÈˆÑ×ÑP•QÊÙË”Ú][™ÈÝÛˆˆ\ØÊNÈˆ
+ŠKO›Y]ÙÈˆHŸHÚ[H
+˜[ÙJH‚‹ÊŠˆÙ]ÙˆÛ›ÝÛˆØš™XÝÈ
+[š\›Û›Y[
+K]ÛÝ[™H\ÙY[ˆ]Y\žK‚ˆ
+ˆÚ\™Y
+ÛØ˜[
+H\ˆÜ™\ˆÙˆY[X™\œÈ
+\ÜXÚX[KÜ™\ˆÙˆ\ÝXÝ[ÛŠH\È™\žH[\Ü[‚ˆ
+‹ÂœÝXÝÛÛ^Ú\™Y\ˆ›ÛÜÝŽ››Û˜ÛÜXX›BžÂˆÙÙÙ\”ˆÙÈHÙ]ÙÙÙ\ŠÛÛ^ŠNÂ‚ˆËËÈ›ÜˆXØÙ\ÜÈÙˆ[ÜÝÙˆÚ\™YØš™XÝË‚ˆ]]X›HÛÛ^Ú\™Y]]^]]^ÂˆËËÈÙ\\˜]H]]^›ÜˆXØÙ\ÜÈÙˆXÝ[Û˜\šY\ËˆÙ\\˜]H]]^È]›ÚYØÚÜÈÚ[ˆÙ\™\ˆÚ[™È™\]Y\ÝÈ]Ù[‹‚ˆ]]X›HÝŽ›]]^[X™YYÙXÝ[Û˜\šY\×Û]]^Âˆ]]X›HÝŽ›]]^^\›˜[ÙXÝ[Û˜\šY\×Û]]^Âˆ]]X›HÝŽ›]]^^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Û]]^ÂˆËËÈÙ\\˜]H]]^›ÜˆÝÜ˜YÙHÛXÚY\Ëˆ\š[™ÈÙ\™\ˆÝ\\ÙHX^BˆËËÈ[š]X[^™HÛÛYH[\Ü[ÝÜ˜YÙ\È
+Þ\Ý[HÙÜÈÚ]Y\™ÙU™YH[™Ú[™JBˆËËÈ[™\ˆÛÛ^ØÚË‚ˆ]]X›HÝŽ›]]^ÝÜ˜YÙWÜÛXÚY\×Û]]^ÂˆËËÈÙ\\˜]H]]^›Üˆ™KZ[š]X[^˜][ÛˆÙˆ›ÛÚÙY\\ˆÙ\ÜÚ[Û‹ˆ\ÈÜ\˜][ÛˆÛÝ[ZÙHHÛ™È[YH[™]\Ý›Ý[\™™\™HÚ][›Ý\ˆÜ\˜][ÛœË‚ˆ]]X›HÝŽ›]]^›ÛÚÙY\\—Û]]^Â‚ˆ]]X›HšÝ][Ž–›ÛÒÙY\\”ˆ›ÛÚÙY\\ˆÐWÑÕPT‘QÐ–J›ÛÚÙY\\—Û]]^
+NÈËËÈÛY[›Üˆ›ÛÒÙY\\‹‚ˆÛÛ™šYÝ\˜][Û”ˆ›ÛÚÙY\\—ØÛÛ™šYÈÐWÑÕPT‘QÐ–J›ÛÚÙY\\—Û]]^
+NÈËËÈÝÜ™\È›ÛÚÙY\\ˆÛÛ™šYÜÂ‚ˆÛÛ™šYÝ\˜][Û”ˆÙ[œÚ]]™WÙ]WÛX\ÚÙ\—ØÛÛ™šYÎÂ‚ˆ]]X›HÝŽ›]]^]^[X\žWÞ›ÛÚÙY\\œ×Û]]^Âˆ]]X›HÝŽ›X\Ýš[™ËšÝ][Ž–›ÛÒÙY\\”ˆ]^[X\žWÞ›ÛÚÙY\\œÈÐWÑÕPT‘QÐ–J]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÈËËÈX\›Üˆ]^[X\žH›ÛÒÙY\\ˆÛY[Ë‚ˆÛÛ™šYÝ\˜][Û”ˆ]^[X\žWÞ›ÛÚÙY\\œ×ØÛÛ™šYÈÐWÑÕPT‘QÐ–J]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÈËËÈÝÜ™\È]^[X\žH›ÛÚÙY\\œÈÛÛ™šYÜÂ‚ˆËËÈ›ÈØÚÈ™\]Z\™Y›Üˆ[\œÙ\™\—Ú[×ÚÜÝ[\œÙ\™\—Ú[×ÜÜ[\œÙ\™\—ÜØÚ[YH[ÙYšYYÛ›H\š[™È[š]X[^˜][Û‚ˆÝš[™È[\œÙ\™\—Ú[×ÚÜÝÈËËÈHÜÝ˜[YHžHÚXÚ\ÈÙ\™\ˆ\È]˜Z[X›H›ÜˆÝ\ˆÙ\™\œË‚ˆR[Mˆ[\œÙ\™\—Ú[×ÜÜHÈËËÈ[™Ü‚ˆÝš[™È[\œÙ\™\—ÜØÚ[YNÈËËÈÜˆÂˆ][U™\œÚ[Û[\œÙ\™\Ü™Y[X[Ïˆ[\œÙ\™\—Ú[×ØÜ™Y[X[ÎÂ‚ˆÝš[™È]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH]H\™XÝÜžKÚ]HÛ\Ú]H[™‚ˆÝš[™È›YÜ×Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH\™XÝÜžHÚ]ÛÛYHÛÛ›Û›YÜÈ›ÜˆÙ\™\ˆXZ[[˜[˜ÙK‚ˆÝš[™È\Ù\—Ùš[\×Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH\™XÝÜžHÚ]\Ù\ˆ›ÝšYYš[\Ë\ØX›HžH	Ùš[IÈX›H[˜Ý[Û‹‚ˆÝš[™ÈXÝ[Û˜\šY\×ÛX—Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH\™XÝÜžHÚ]\Ù\ˆ›ÝšYYš[˜\šY\È[™Xœ˜\šY\È›Üˆ^\›˜[XÝ[Û˜\šY\Ë‚ˆÝš[™È\Ù\—ÜØÜš\×Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH\™XÝÜžHÚ]\Ù\ˆ›ÝšYYØÜš\Ë‚ˆÝš[™È[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH\™XÝÜžH›Üˆ^XÝ]X›HQˆÛÛ™šYÜÈÜ™X]YžHš]™\œË‚ˆÝš[™Èš[\Þ\Ý[WØØXÚ\×Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH\™XÝÜžHÚ]š[\Þ\Ý[HØXÚ\Ë‚ˆÝš[™Èš[\Þ\Ý[WØØXÚWÝ\Ù\ˆÐWÑÕPT‘QÐ–J]]^
+NÂˆÛÛ™šYÝ\˜][Û”ˆÛÛ™šYÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÛØ˜[ÛÛ™šYÝ\˜][ÛˆÙ][™ÜË‚ˆÝš[™È\Ü]ÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ]ÈH[\Ü˜\žHš[\È]ØØÝ\ˆÚ[ˆ›ØÙ\ÜÚ[™ÈH™\]Y\Ý‚‚ˆËËÈHY˜][\ÚÈÝÜš[™ÈY]Y]Hš[\È›Üˆ]X˜\Ù\Îˆ]X˜\ÙHY]Y]Hš[\È[™X›HY]Y]Hš[\Ë‚ˆËËÈ›ÜˆœÈÚXÚ]™H\ÚØÙ][™È[ˆHÜ™X]H]Y\žKHX›HY]Y]Hš[\ÈÙˆ\ÙHœÈ\™HÝÜ™YÛˆ]\ÚË‚ˆËËÈÝÙ]™\‹HˆY]Y]Hš[\È\™HÝ[ÝÜ™YÛˆ\ÈY˜][Ù—Ù\ÚØˆÛÈH[œÝ[˜ÙHØ[ˆØY]ÈœÈ\š[™ÈÝ\[™È\‚ˆÝŽœÚ\™YÜQ\ÚÏˆY˜][Ù—Ù\ÚÈÐWÑÕPT‘QÐ–J]]^
+NÂ‚ˆËËÈ[[\Ü˜\žHš[\È]ØØÝ\ˆÚ[ˆ›ØÙ\ÜÚ[™ÈH™\]Y\ÝÈXØÛÝ[Y\™K‚ˆËËÈÚ[ØÛÜ\È›Üˆ[Ü™Hš[™KYÜ˜Z[™YXØÛÝ[[™È\™HÜ™X]Y\ˆ\Ù\‹Ü]Y\žKÙ]Ë‚ˆËËÈ[š]X[^™YÛ˜ÙH\š[™ÈÙ\™\ˆÝ\\‚ˆ[\Ü˜\žQ]SÛ‘\ÚÔØÛÜTˆ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÈÐWÑÕPT‘QÐ–J]]^
+NÂˆËËÈÑÎˆ™[[Ý™K\ÙHÛ›H›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÂˆ›Û[YTˆ[\Ü˜\žWÝ›Û[YWÛYØXÞNÂ‚ˆ]]X›HÛ˜ÙQ›YÈ\Þ[˜×ÛØY\—Ú[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜ\Þ[˜ÓØY\ˆ\Þ[˜×ÛØY\ŽÈËËÈ™XYÛÛ›Üˆ\Þ[˜Ú›Û›Ý\È[š]X[^˜][ÛˆÙˆ\˜š]˜\žHQÈÙˆØY›Ø˜È
+\ÙY›ÜˆX›\ÈØY[™ÊB‚ˆ]]X›HÛ˜ÙQ›YÈÛ™×ØÛÛ›™XÝ[Û—Û[Z]Ú[š]X[^™YÂˆ]]X›HÝŽœÚ\™YÜÛ™ÐÛÛ›™XÝ[Û“[Z]ˆÛ™×ØÛÛ›™XÝ[Û—Û[Z]ÈËËÈ›Ý[™ÈÛÝ\˜ÙHÛÛ›™XÝ[ÛœÈ[Ü[ˆžH™XY\‘^XÝ]Üˆ›ÜˆÙ\]Y[X[\™XY™]\ÙB‚ˆ]]X›HÝŽ[š\]YWÜ[X™YYXÝ[Û˜\šY\Ïˆ[X™YYÙXÝ[Û˜\šY\ÈÐWÑÕPT‘QÐ–J[X™YYÙXÝ[Û˜\šY\×Û]]^
+NÈËËÈY]šXØIÜÈXÝ[Û˜\šY\Ëˆ]™H^žH[š]X[^˜][Û‹‚ˆ]]X›HÝŽ[š\]YWÜ^\›˜[XÝ[Û˜\šY\ÓØY\ˆ^\›˜[ÙXÝ[Û˜\šY\×ÛØY\ˆÐWÑÕPT‘QÐ–J^\›˜[ÙXÝ[Û˜\šY\×Û]]^
+NÂ‚ˆ^\›˜[ØY\–SÛÛ™šYÔ™\ÜÚ]ÜžH
+ˆ^\›˜[ÙXÝ[Û˜\šY\×ØÛÛ™šY×Ü™\ÜÚ]ÜžHÐWÑÕPT‘QÐ–J^\›˜[ÙXÝ[Û˜\šY\×Û]]^
+HH[ŽÂˆØÛÜWÙÝX\™XÝ[Û˜\šY\×Þ[ÈÐWÑÕPT‘QÐ–J^\›˜[ÙXÝ[Û˜\šY\×Û]]^
+NÂ‚ˆ]]X›HÝŽ[š\]YWÜ^\›˜[\Ù\‘Yš[™Y^XÝ]X›Q[˜Ý[ÛœÓØY\ˆ^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ÛØY\ˆÐWÑÕPT‘QÐ–J^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Û]]^
+NÂˆ^\›˜[ØY\–SÛÛ™šYÔ™\ÜÚ]ÜžH
+ˆ\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ØÛÛ™šY×Ü™\ÜÚ]ÜžHÐWÑÕPT‘QÐ–J^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Û]]^
+HH[ŽÂˆØÛÜWÙÝX\™\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÈÐWÑÕPT‘QÐ–J^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Û]]^
+NÂˆ^\›˜[ØY\–SÛÛ™šYÔ™\ÜÚ]ÜžH
+ˆ[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ØÛÛ™šY×Ü™\ÜÚ]ÜžHÐWÑÕPT‘QÐ–J^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Û]]^
+HH[ŽÂˆØÛÜWÙÝX\™[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÈÐWÑÕPT‘QÐ–J^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Û]]^
+NÂ‚ˆ]]X›HÛ˜ÙQ›YÈ\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙWÚ[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜU\Ù\‘Yš[™YÔSØš™XÝÔÝÜ˜YÙOˆ\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙNÂ‚ˆ]]X›HÛ˜ÙQ›YÈÛÜšÛØYÙ[]WÜÝÜ˜YÙWÚ[š]X[^™YÂˆ]]X›HÝŽœÚ\™YÜUÛÜšÛØY[]TÝÜ˜YÙOˆÛÜšÛØYÙ[]WÜÝÜ˜YÙNÂ‚ˆ]]X›HÝŽ[š\]YWÜØ\ÛS[Ù[SX[˜YÙ\ˆØ\ÛWÛ[Ù[WÛX[˜YÙ\ŽÂ‚ˆÚYˆTÑWÓ“ˆ]]X›HÛ˜ÙQ›YÈÞ[›Ûž[\×Ù^[œÚ[Ûœ×Ú[š]X[^™YÂˆ]]X›HÝŽ›Ü[Û˜[Þ[›Ûž[\Ñ^[œÚ[ÛœÏˆÞ[›Ûž[\×Ù^[œÚ[ÛœÎÂ‚ˆ]]X›HÛ˜ÙQ›YÈ[[X]^™\œ×Ú[š]X[^™YÂˆ]]X›HÝŽ›Ü[Û˜[[[X]^™\œÏˆ[[X]^™\œÎÂˆÙ[™Y‚‚ˆ]]X›HÛ˜ÙQ›YÈ˜XÚÝ\×ÝÛÜšÙ\—Ú[š]X[^™YÂˆÝŽ›Ü[Û˜[˜XÚÝ\ÕÛÜšÙ\ˆ˜XÚÝ\×ÝÛÜšÙ\ŽÂ‚ˆËËÈ›ÈØÚÈ™\]Z\™Y›ÜˆY˜][Ü›Ùš[WÛ˜[YKÞ\Ý[WÜ›Ùš[WÛ˜[YKY™™\—Ü›Ùš[WÛ˜[YH[ÙYšYYÛ›H\š[™È[š]X[^˜][Û‚ˆÝš[™ÈY˜][Ü›Ùš[WÛ˜[YNÈËËÈY˜][›Ùš[H˜[YH\ÙY›ÜˆY˜][˜[Y\Ë‚ˆÝš[™ÈÞ\Ý[WÜ›Ùš[WÛ˜[YNÈËËÈ›Ùš[H\ÙYžHÞ\Ý[H›ØÙ\ÜÙ\ÂˆÝš[™È˜XÚÙÜ›Ý[™Ü›Ùš[WÛ˜[YNÈËËÈ›Ùš[H\ÙYžH˜XÚÙÜ›Ý[™Ü\˜][ÛœÂˆÝš[™ÈY™™\—Ü›Ùš[WÛ˜[YNÈËËÈ›Ùš[H\ÙYžHY™™\ˆ[™Ú[™H›Üˆ›\Ú[™ÈÈH[™\›Z[™ÂˆÝš[™ÈY\™ÙWÝÛÜšÛØYÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÛÜšÛØYÙ][™È˜[YH]\È\ÙYžH[Y\™Ù\ÂˆÝš[™È]]][Û—ÝÛÜšÛØYÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÛÜšÛØYÙ][™È˜[YH]\È\ÙYžH[]]][ÛœÂˆÝš[™ÈXÙ[œÙWÙš[HÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ–SÐÈXÙ[œÙH^ˆ›ÛÛÚÝ×ÛXÙ[œÙWÙ^\˜][Û—ÝØ\›š[™ÜÈÐWÑÕPT‘QÐ–J]]^
+HHYNÈËËÈÚ]\ˆÈÚÝÈHXÙ[œÙH^\˜][ÛˆØ\›š[™È[ˆÞ\Ý[KØ\›š[™ÜÂˆ›ÛÛ›Ý×ÛÛ—Ý[šÛ›ÝÛ—ÝÛÜšÛØYÐWÑÕPT‘QÐ–J]]^
+HH˜[ÙNÂˆ›ÛÛÜWÜÛÝÜ™Y[\[ÛˆÐWÑÕPT‘QÐ–J]]^
+HH˜[ÙNÂˆR[ÜWÜÛÝÜ]X[[WÛœÈÐWÑÕPT‘QÐ–J]]^
+HHL	Ì	ÌÂˆR[ÜWÜÛÝÜ™Y[\[Û—Ý[Y[Ý]Û\ÈÐWÑÕPT‘QÐ–J]]^
+HHLÂˆR[ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Û[HÐWÑÕPT‘QÐ–J]]^
+HHÂˆR[ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Ü˜][×Ý×ØÛÜ™\ÈÐWÑÕPT‘QÐ–J]]^
+HHÂˆÝš[™ÈÛÛ˜Ý\œ™[Ý™XY×ÜØÚY[\ˆÐWÑÕPT‘QÐ–J]]^
+NÂˆ›ÛÛÛÛ˜Ý\œ™[Ý™XY×Û^žWØ[ØØ][ÛˆÐWÑÕPT‘QÐ–J]]^
+HHYNÂˆÝŽ[š\]YWÜXØÙ\ÜÐÛÛ›ÛˆXØÙ\Ü×ØÛÛ›ÛÐWÑÕPT‘QÐ–J]]^
+NÂˆ]]X›HÛ˜ÙQ›YÈ™\ÛÝ\˜ÙWÛX[˜YÙ\—Ú[š]X[^™YÂˆ]]X›H™\ÛÝ\˜ÙSX[˜YÙ\”ˆ™\ÛÝ\˜ÙWÛX[˜YÙ\ŽÂˆ]]X›H[˜ÛÛ\™\ÜÙYØXÚTˆ[˜ÛÛ\™\ÜÙYØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈHØXÚHÙˆXÛÛ\™\ÜÙY›ØÚÜË‚ˆ]]X›HX\šÐØXÚTˆX\š×ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆX\šÜÈ[ˆÛÛ\™\ÜÙYš[\Ë‚ˆ]]X›H[š\]YRÙ^R[™^ØXÚTˆ[š\]YWÚÙ^WÚ[™^ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ›ØÚÜÑ‹XÛÛ\]X›H›ØÚÈØXÚHÝ™\ˆØXÚP˜\ÙH›ÜˆHS’TUQHÑVH[™^
+[ˆÚ[ˆ›ØÚÜÑˆ[˜]˜Z[X›HÜˆ\ØX›Y
+K‚ˆ]]X›H[]Pš]X\ØXÚTˆ[]WØš]X\ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈS’TUQHÑVH\‹\\[]KXš]X\ØXÚK‚ˆ]]X›Hš[X\žR[™^ØXÚTˆš[X\žWÚ[™^ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÂˆ]]X›HÞ\Ý[P[ØØ]YY[[ÜžRÛ\”ˆ[˜XÚÙYÛY[[ÜžWÚÛ\ˆÐWÑÕPT‘QÐ–J]]^
+NÂˆ]]X›HÛ˜ÙQ›YÈØYÛX\šÜ×Ý™XYÛÛÚ[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜ™XYÛÛˆØYÛX\šÜ×Ý™XYÛÛÈËËÈ™XYÛÛ›ÜˆØY[™ÈX\šÜÈØXÚK‚ˆ]]X›HÛ˜ÙQ›YÈ™Y™]ÚÝ™XYÛÛÚ[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜ™XYÛÛˆ™Y™]ÚÝ™XYÛÛÈËËÈ™XYÛÛ›ÜˆØY[™ÈX\šÜÈØXÚK‚ˆ]]X›HÝŽ[š\]YWÜ™XYÛÛˆXÙX™\™×ØØ][Ù×Ý™XYÛÛÂˆ]]X›HÛ˜ÙQ›YÈXÙX™\™×ØØ][Ù×Ý™XYÛÛÚ[š]X[^™YÂˆ]]X›HÛ˜ÙQ›YÈZ[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÛÛÚ[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜ™XYÛÛˆZ[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÛÛÈËËÈ™XYÛÛ›Üˆ™XÝÜ‹\Ú[Z[\š]H[™^Ü™X][Û‹‚ˆ]]X›H[˜ÛÛ\™\ÜÙYØXÚTˆ[™^Ý[˜ÛÛ\™\ÜÙYØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈHØXÚHÙˆXÛÛ\™\ÜÙY›ØÚÜÈ›ÜˆY\™ÙU™YH[™XÙ\Ë‚ˆ]]X›H›ÛÛ[™^Ý[˜ÛÛ\™\ÜÙYØØXÚWÙ[˜X›YÐWÑÕPT‘QÐ–J]]^
+HH˜[ÙNÈËËÈÚ]\ˆ[™^Ý[˜ÛÛ\™\ÜÙYØØXÚHÚÝ[™H\ÙY‚ˆ]]X›H™XÝÜ”Ú[Z[\š]R[™^ØXÚTˆ™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™YÙXÛÛ™\žH[™^Ü˜[[\Ë‚ˆ]]X›H^[™^ÚÙ[œÐØXÚTˆ^Ú[™^ÝÚÙ[œ×ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™Y^[™^ÚÙ[œË‚ˆ]]X›H^[™^XY\ØXÚTˆ^Ú[™^ÚXY\—ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™Y^[™^XY\œË‚ˆ]]X›H^[™^ÜÝ[™ÜÐØXÚTˆ^Ú[™^ÜÜÝ[™Ü×ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™Y^[™^ÜÝ[™È\ÝË‚ˆ]]X›H]Y\žPÛÛ™][ÛØXÚTˆ]Y\žWØÛÛ™][Û—ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆX]Ú[™ÈX\šÜÈ›Üˆ™YXØ]\Âˆ]]X›H[˜Üž\[Û’XY\ØXÚTˆ[˜Üž\[Û—ÚXY\—ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ˜]È[˜Üž\[Û‹ZXY\ˆž]\ÈžHš[H]ˆ]]X›H]Y\žT™\Ý[ØXÚTˆ]Y\žWÜ™\Ý[ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ]Y\žH™\Ý[Ë‚ˆ]]X›HX\šÐØXÚTˆ[™^ÛX\š×ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆX\šÜÈ[ˆÛÛ\™\ÜÙYš[\ÈÙˆY\™ÙU™YH[™XÙ\Ë‚ˆ]]X›HSX\Yš[PØXÚTˆ[X\ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ[X\Yš[\ÈÈ]›ÚYœ™\]Y[Ü[‹ÛX\Ý[›X\ØÛÜÙH[™È™]\ÙHœ›ÛHÙ]™\˜[™XYË‚ˆÚYˆTÑWÐU”“Âˆ]]X›HXÙX™\™ÓY]Y]Qš[\ÐØXÚTˆXÙX™\™×ÛY]Y]WÙš[\×ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™YXÙX™\™ÈY]Y]Hš[\Ë‚ˆ]]X›HZ[[Û“Y]Y]Qš[\ÐØXÚTˆZ[[Û—ÛY]Y]WÙš[\×ØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™YZ[[ÛˆY]Y]Hš[\Ë‚ˆÙ[™Y‚ˆÚYˆTÑWÔT”UQUˆ]]X›H\œ]Y]Y]Y]PØXÚTˆ\œ]Y]ÛY]Y]WØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈØXÚHÙˆ\Ù\šX[^™Y\œ]Y]Y]Y]Hš[\Ë‚ˆÙ[™Y‚ˆ\Þ[˜Ú›Û›Ý\ÓY]šXÜÈ
+ˆ\Þ[˜Ú›Û›Ý\×ÛY]šXÜÈÐWÑÕPT‘QÐ–J]]^
+HH[ŽÈËËÈÚ[ÈÈ\Þ[˜Ú›Û›Ý\ÈY]šXÜÂˆ]]X›HYÙPØXÚTˆYÙWØØXÚHÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ\Ù\œÜXÙHYÙHØXÚK‚ˆ›ØÙ\ÜÓ\Ý›ØÙ\Ü×Û\ÝÈËËÈ^XÝ][™È]Y\šY\È]H[ÛY[‚ˆÙ\ÜÚ[Û•˜XÚÙ\ˆÙ\ÜÚ[Û—Ý˜XÚÙ\ŽÂˆÛØ˜[Ý™\˜ÛÛ[Z]˜XÚÙ\ˆÛØ˜[ÛÝ™\˜ÛÛ[Z]Ý˜XÚÙ\ŽÂˆY\™ÙS\ÝY\™ÙWÛ\ÝÈËËÈH\ÝÙˆ^XÝ]X›HY\™ÙH
+›Üˆ
+™\XØ]Y
+OÓY\™ÙU™YJBˆ[Ý™\Ó\Ý[Ý™\×Û\ÝÈËËÈH\ÝÙˆ^XÝ][™È[Ý™\È
+›Üˆ
+™\XØ]Y
+OÓY\™ÙU™YJBˆ™\XØ]Y™]Ú\Ý™\XØ]YÙ™]ÚÛ\ÝÂˆ™Yœ™\ÚÙ]™Yœ™\ÚÜÙ]ÈËËÈH\ÝÙˆXÝ]™H™Yœ™\Ú\È
+›ÜˆX]\šX[^™YšY]ÊBˆÛÛ™šYÝ\˜][Û”ˆ\Ù\œ×ØÛÛ™šYÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÛÛ™šYÈÚ]H\Ù\œË›Ùš[\È[™][Ý\ÈÙXÝ[ÛœË‚ˆ[\œÙ\™\’SÒ[™\ˆ[\œÙ\™\—Ú[×Ú[™\ŽÈËËÈ[™\ˆ›Üˆ[\œÙ\™\ˆÛÛ[][šXØ][Û‹‚‚ˆÛ˜ÙQ›YÈY™™\—Ù›\ÚÜØÚY[WÜÛÛÚ[š]X[^™YÂˆ]]X›H˜XÚÙÜ›Ý[™ØÚY[TÛÛˆY™™\—Ù›\ÚÜØÚY[WÜÛÛÈËËÈH™XYÛÛ]Ø[ˆÈ˜XÚÙÜ›Ý[™›\Ú›ÜˆY™™\ˆX›\Ë‚ˆÛ˜ÙQ›YÈØÚY[WÜÛÛÚ[š]X[^™YÂˆ]]X›H˜XÚÙÜ›Ý[™ØÚY[TÛÛˆØÚY[WÜÛÛÈËËÈH™XYÛÛ]Ø[ˆ[ˆY™™\™[›ØœÈ[ˆ˜XÚÙÜ›Ý[™
+\ÙY[ˆ™\XØ]YX›\ÊBˆÛ˜ÙQ›YÈ\ÝšX]YÜØÚY[WÜÛÛÚ[š]X[^™YÂˆ]]X›H˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ\ÝšX]YÜØÚY[WÜÛÛÈËËÈH™XYÛÛ]Ø[ˆ[ˆY™™\™[›ØœÈ[ˆ˜XÚÙÜ›Ý[™
+\ÙY›Üˆ\ÝšX]YÙ[™ÊBˆÛ˜ÙQ›YÈY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÚ[š]X[^™YÂˆ]]X›H˜XÚÙÜ›Ý[™ØÚY[TÛÛˆY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÈËËÈH™XYÛÛ]Ø[ˆ[ˆY™™\™[›ØœÈ[ˆ˜XÚÙÜ›Ý[™
+\ÙY›ÜˆY\ÜØYÙHœ›ÚÙ\œËZÙH˜X˜š]TH[™ØYšØJBˆÛ˜ÙQ›YÈXÙX™\™×ÜØÚY[WÜÛÛÚ[š]X[^™YÂˆ]]X›H˜XÚÙÜ›Ý[™ØÚY[TÛÛˆXÙX™\™×ÜØÚY[WÜÛÛÈËËÈH™XYÛÛ][œÈ˜XÚÙÜ›Ý[™Y]Y]H™Yœ™\Ú›Üˆ[XÝ]™HXÙX™\™ÈX›\ÂˆÛ˜ÙQ›YÈÝ™X[Z[™×ÜØÚY[WÜÛÛÚ[š]X[^™YÂˆ]]X›H˜XÚÙÜ›Ý[™ØÚY[TÛÛˆÝ™X[Z[™×ÜØÚY[WÜÛÛÈËËÈH™XYÛÛ][œÈÝ™X[Z[™È˜XÚÙÜ›Ý[™›ØœÂ‚ˆ]]X›HÛ˜ÙQ›YÈ™XY\œ×Ú[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜP\Þ[˜Ú›Û›Ý\Ô™XY\ˆ\Þ[˜Ú›Û›Ý\×Ü™[[ÝWÙœ×Ü™XY\ŽÂˆ]]X›HÝŽ[š\]YWÜP\Þ[˜Ú›Û›Ý\Ô™XY\ˆ\Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\ŽÂˆ]]X›HÝŽ[š\]YWÜP\Þ[˜Ú›Û›Ý\Ô™XY\ˆÞ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\ŽÂ‚ˆ]]X›HÛ˜ÙQ›YÈ™XYÛÛÝÜš]\—Ú[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜ™XYÛÛˆ™XYÛÛÝÜš]\ŽÂ‚ˆÚYˆTÑWÓP•T’S‘Âˆ]]X›HÛ˜ÙQ›YÈ[×Ý\š[™×Ü™XY\—Ú[š]X[^™YÂˆ]]X›HÝŽ[š\]YWÜSÕ\š[™Ô™XY\ˆ[×Ý\š[™×Ü™XY\ŽÂˆÙ[™Y‚‚ˆ]]X›H›Ý\”ˆ™\XØ]YÙ™]Ú\×Ý›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ™\XØ]Y™]Ú\Âˆ]]X›H›Ý\”ˆ™\XØ]YÜÙ[™×Ý›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ™\XØ]YÙ[™Â‚ˆ]]X›H›Ý\”ˆ™[[ÝWÜ™XYÝ›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ™[[ÝHSÈ™XYÂˆ]]X›H›Ý\”ˆ™[[ÝWÝÜš]WÝ›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ™[[ÝHSÈÜš]\Â‚ˆ]]X›H›Ý\”ˆØØ[Ü™XYÝ›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›ÜˆØØ[SÈ™XYÂˆ]]X›H›Ý\”ˆØØ[ÝÜš]WÝ›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›ÜˆØØ[SÈÜš]\Â‚ˆ]]X›H›Ý\”ˆ˜XÚÝ\×ÜÙ\™\—Ý›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›ÜˆPÒÕTÂ‚ˆ]]X›H›Ý\”ˆ]]][Ûœ×Ý›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ]]][ÛœÂˆ]]X›H›Ý\”ˆY\™Ù\×Ý›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›ÜˆY\™Ù\Â‚ˆ]]X›H›Ý\”ˆ\ÝšX]YØØXÚWÜ™XYÝ›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ\ÝšX]YØXÚH™XYˆ]]X›H›Ý\”ˆ\ÝšX]YØØXÚWÝÜš]WÝ›Ý\ŽÈËËÈHÙ\™\‹]ÚYH›Ý\ˆ›Üˆ\ÝšX]YØXÚHÜš]B‚ˆ][U™\œÚ[ÛXXÜ›ÜÏˆXXÜ›ÜÎÈËËÈÝXœÝ]][ÛœÈ^˜XÝYœ›ÛHÛÛ™šYË‚ˆÝŽ[š\]YWÜÛÜšÙ\ˆÝÛÜšÙ\ˆÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ›ØÙ\ÜÈÛÛ[X[™Èœ›ÛHšË‚ˆØY\ÚÔˆÝÛÜšÙ\—ÜÝ\\Ý\ÚÎÈËËÈÈÜÝÛ™HÝÛÜšÙ\‹OœÝ\\
+
+XY\ˆ[X›\ÈÝ\\ˆËËÈ[\È›ÜˆÙ[XÝ[™ÈHÛÛ\™\ÜÚ[ÛˆÙ][™ÜË\[™[™ÈÛˆHÚ^™HÙˆH\‚ˆ]]X›HÝŽ[š\]YWÜÛÛ\™\ÜÚ[ÛÛÙXÔÙ[XÝÜˆÛÛ\™\ÜÚ[Û—ØÛÙX×ÜÙ[XÝÜˆÐWÑÕPT‘QÐ–J]]^
+NÂˆËËÈÝÜ˜YÙH\ÚÈÚÛÜÙ\ˆ›ÜˆY\™ÙU™YH[™Ú[™\Âˆ]]X›HÝŽœÚ\™YÜÛÛœÝ\ÚÔÙ[XÝÜˆY\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜˆÐWÑÕPT‘QÐ–JÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂˆËËÈÝÜ˜YÙHÛXÞHÚÛÜÙ\ˆ›ÜˆY\™ÙU™YH[™Ú[™\Âˆ]]X›HÝŽœÚ\™YÜÛÛœÝÝÜ˜YÙTÛXÞTÙ[XÝÜˆY\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜˆÐWÑÕPT‘QÐ–JÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂ‚ˆÙ\™\”Ù][™ÜÈÙ\™\—ÜÙ][™ÜÎÂ‚ˆÝŽ›Ü[Û˜[Y\™ÙU™YTÙ][™ÜÏˆY\™ÙWÝ™YWÜÙ][™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÙ][™ÜÈÙˆY\™ÙU™YJˆ[™Ú[™\Ë‚ˆÝŽ›Ü[Û˜[Y\™ÙU™YTÙ][™ÜÏˆ™\XØ]YÛY\™ÙWÝ™YWÜÙ][™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÙ][™ÜÈÙˆ™\XØ]YY\™ÙU™YJˆ[™Ú[™\Ë‚ˆÝŽ›Ü[Û˜[]X˜\ÙT™\XØ]YÙ][™ÜÏˆ]X˜\ÙWÜ™\XØ]YÜÙ][™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÙ][™ÜÈÙˆ]X˜\ÙT™\XØ]Y[™Ú[™K‚ˆÝŽ›Ü[Û˜[\ÝšX]YÙ][™ÜÏˆ\ÝšX]YÜÙ][™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÂˆÝŽ˜]ÛZX×ÜÚ^™WÝX^ÝX›WÜÚ^™WÝ×Ù›ÜHLNÈËËÈ›ÝXÝÈY\™ÙU™YHX›\Èœ›ÛHXØÚY[[“Ô
+LÐˆžHY˜][
+BˆÝŽ˜]ÛZX×ÜÚ^™WÝX^Ü\][Û—ÜÚ^™WÝ×Ù›ÜHLNÈËËÈ›ÝXÝÈY\™ÙU™YH\][ÛœÈœ›ÛHXØÚY[[“Ô
+LÐˆžHY˜][
+BˆËËÈ›ÈØÚÈ™\]Z\™Y›Üˆ›Ü›X]ÜØÚ[XWÜ][ÙYšYYÛ›H\š[™È[š]X[^˜][Û‚ˆÝŽ˜]ÛZX×ÜÚ^™WÝX^Ü\Û[WÝ×ÝØ\›ˆHLNÂˆÙYš[™HQ’S‘WÑS•UWÓSRUÕÐT“’S‘×Ñ’QS
+[˜[YKS˜[YKØ\›—ÙY˜][Ø\›—ÜÙ][™ËØ\›—ÜÙ][™×Û˜[YJHˆÝŽ˜]ÛZX×ÜÚ^™WÝX^ÈÈÙ[˜[YHÈ×Û[WÝ×ÝØ\›ˆHØ\›—ÙY˜][ÂˆTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕÐT“’S‘ÊQ’S‘WÑS•UWÓSRUÕÐT“’S‘×Ñ’QS
+BˆÝ[™YˆQ’S‘WÑS•UWÓSRUÕÐT“’S‘×Ñ’QSˆÙYš[™HQ’S‘WÑS•UWÓSRUÕ“Õ×Ñ’QS
+[˜[YKS˜[YK›Ý×ÙY˜][›Ý×ÜÙ][™Ë›Ý×ÜÙ][™×Û˜[YJHˆÝŽ˜]ÛZX×ÜÚ^™WÝX^ÈÈÙ[˜[YHÈ×Û[WÝ×Ý›ÝÈH›Ý×ÙY˜][ÂˆTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕ“ÕÊQ’S‘WÑS•UWÓSRUÕ“Õ×Ñ’QS
+BˆÝ[™YˆQ’S‘WÑS•UWÓSRUÕ“Õ×Ñ’QSˆËÈ\ÙH˜\šXX›\È\™H\ÙY[ˆ[œÙ\[™ÈØ\›š[™ÈY\ÜØYÙH[ÈÞ\Ý[KØ\›š[™ÈX›H˜\ÙYÛˆ\Þ[˜Ú›Û›Ý\ÈY]šXÜÂˆÚ^™WÝX^Ü[™[™×Û]]][Ûœ×Ý×ÝØ\›ˆHLNÂˆÚ^™WÝX^Ü[™[™×Û]]][Ûœ×Ù^XÝ][Û—Ý[YWÝ×ÝØ\›ˆHNÂˆËËÈÛ›H›ÜˆÞ\Ý[KœÙ\™\—ÜÙ][™ÜËXÝX[H˜[YHÝÜ™Y[ˆ™[ØY\ˆ]Ù[‚ˆÝŽ˜]ÛZX×ÜÚ^™WÝÛÛ™šY×Ü™[ØYÚ[\˜[Û\ÈHÛÛ™šYÔ™[ØY\ŽŽ‘QUSÔ‘SÐQÒS•T•S˜ÛÝ[
+
+NÂ‚ˆËËÈÜ[Û˜[Ù\™\‹]ÚYHÝ™\œšYH›ÜˆH[˜[^™\ˆ[ˆ]]][ÛœË‚ˆËËÈ[˜ÛÙY\ÈHšK\Ý]NˆLHH[œÙ]
+\ÙHÙ\ÜÚ[ÛˆÙ][™ÊKH›Ü˜ÙHÙ™‹HH›Ü˜ÙHÛ‹‚ˆËËÈ™Yœ™\ÚYÛˆÛÛ™šYÈ™[ØY‚ˆÝŽ˜]ÛZXÏ[Ýˆ]]][Ûœ×Ý\ÙWØ[˜[^™\—ÛÝ™\œšYHHLNÂ‚ˆÝX›HZ[—ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛˆHMKŒÂˆÝX›HX^ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛˆHÌŒÂ‚ˆÝš[™È›Ü›X]ÜØÚ[XWÜ]ÈËËÈ]ÈH\™XÝÜžH]ÛÛZ[œÈØÚ[XHš[\È\ÙYžH[œ]›Ü›X]Ë‚ˆÝš[™ÈÛÛÙÛWÜ›ÝÜ×Ü]ÈËËÈ]ÈH\™XÝÜžH]ÛÛZ[œÈH›ÝÈš[\È›ÜˆHÙ[ZÛ›ÝÛˆ›ÝØYˆ\\Ë‚ˆ]]X›HÛ˜ÙQ›YÈXÝ[Û—ÛØÚÜ×ÛX[˜YÙ\—Ú[š]X[^™YÂˆXÝ[Û“ØÚÜÓX[˜YÙ\”ˆXÝ[Û—ÛØÚÜ×ÛX[˜YÙ\ŽÈËËÈÙ]ÙˆÝÜ˜YÙ\ÉÈXÝ[ÛˆØÚÙ\œÂˆÛ˜ÙQ›YÈÞ\Ý[WÛÙÜ×Ú[š]X[^™YÂˆÝŽ[š\]YWÜÞ\Ý[SÙÜÏˆÞ\Ý[WÛÙÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈ\ÙYÈÙÈ]Y\šY\È[™Ü\˜][ÛœÈÛˆ\Â‚ˆ]]X›HÝŽ›]]^\Ú›Ø\™Û]]^ÂˆÝŽ›Ü[Û˜[ÛÛ^Ž‘\Ú›Ø\™Ïˆ\Ú›Ø\™ÎÂ‚ˆ]]X›HÚ\™Y]]^\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×Û]]^ÂˆÝŽœÝš[™È\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×ÜÛÝ\˜ÙHÐWÑÕPT‘QÐ–J\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×Û]]^
+NÂˆÝŽœÚ\™YÜÝŽ[›Ü™\™YÜÙ]ÝŽœÝš[™Ïˆ\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚÈÐWÑÕPT‘QÐ–J\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×Û]]^
+NÂ‚ˆÝŽ›Ü[Û˜[ÌÔÙ][™ÜÐžQ[™Ú[ˆÝÜ˜YÙWÜÌ×ÜÙ][™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÙ][™ÜÈÙˆÌÈÝÜ˜YÙBˆÝŽ›Ü[Û˜[^\™TÙ][™ÜÐžQ[™Ú[ˆÝÜ˜YÙWØ^\™WÜÙ][™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÙ][™ÜÈÙˆ^\™P›Ø”ÝÜ˜YÙBˆÝŽ[›Ü™\™YÛX\ÛÛ^Ž•Ø\›š[™Õ\K™Y›Ü›X]YY\ÜØYÙOˆØ\›š[™ÜÈÐWÑÕPT‘QÐ–J]]^
+NÈËËÈÝÜ™HØ\›š[™ÈY\ÜØYÙ\ÈX›Ý]Ù\™\‹‚‚ˆËËÈ˜XÚÙÜ›Ý[™^XÝ]ÜœÈ›Üˆ
+“Y\™ÙU™YHX›\ÂˆËËÈ\È˜XÚÙÜ›Ý[™^XÝ]ÜœÈ›ÜˆY\™ÙU™YHX›\È™Y[ˆ[š]X[^™YÂˆ]]X›HÛÛ^Ú\™Y]]^˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^Âˆ›ÛÛ\™WØ˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Ú[š]X[^™YÐWÑÕPT‘QÐ–J˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+HH˜[ÙNÂˆY\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü”ˆY\™ÙWÛ]]]WÙ^XÝ]ÜˆÐWÑÕPT‘QÐ–J˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆÜ™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü”ˆ[Ý™\×Ù^XÝ]ÜˆÐWÑÕPT‘QÐ–J˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆÜ™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü”ˆ™]ÚÙ^XÝ]ÜˆÐWÑÕPT‘QÐ–J˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆÜ™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü”ˆÛÛ[[Û—Ù^XÝ]ÜˆÐWÑÕPT‘QÐ–J˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂ‚ˆËËÈÙ]ÈYHÚ[ˆHÝË[Y[[ÜžH]]Ë][š[™È]\š\ÝXÈÝÙ\™Y˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™BˆËËÈ]Ù\™\ˆÝ\\ˆ\ÙYžHY\™ÙU™YTÙ][™ÜÎŽœØ[š]PÚXÚÈÈ[ÝÈY˜][™\ÚÛÂˆËËÈ
+K™Ëˆ[X™\—ÛÙ—Ùœ™YWÙ[šY\×Ú[—ÜÛÛÝ×Ù^XÝ]WÛ]]][ÛŠHÈÝ^HX›Ý™HHÝÙ\™YˆËËÈX^Ý\ÚÜ×ØÛÝ[Ú]Ý]˜Z[[™ÈX›HÜ™X][Û‹‚ˆ›ÛÛ˜XÚÙÜ›Ý[™ÜÛÛØ]]×ÛÝÙ\™YÐWÑÕPT‘QÐ–J]]^
+HH˜[ÙNÂ‚ˆ™[[ÝRÜÝš[\ˆ™[[ÝWÚÜÝÙš[\ŽÈËËÈ[ÝÙYT“œ›ÛHÛÛ™šYËž[ˆXY\‘š[\ˆÚXY\—Ùš[\ŽÈËËÈ›Ü˜šY[ˆXY\œÈœ›ÛHÛÛ™šYËž[‚ˆÝŽ›Ü[Û˜[˜XÙPÛÛXÝÜˆ˜XÙWØÛÛXÝÜŽÈËËÈ™XYÛÛXÝ[™È˜XÙ\Èœ›ÛH™XYÈ^XÝ][™È]Y\šY\ÂˆËËÈ™\Ù[˜ÙH›YÈ™XYÛÛ˜Ý\œ™[HžHÛÜšÙ\ˆ™XYÈ
+™XYÝ]\ÎŽš[š]ÛØ˜[›Ùš[\ŠBˆËËÈÚ[HÚ]ÝÛŠ
+H\Ý›Þ\È˜XÙWØÛÛXÝÜ‹ÛÈ]]\Ý™H]ÛZXÈ˜]\ˆ[ˆÜ[Û˜[Žš\×Ý˜[YJ
+K‚ˆÝŽ˜]ÛZXÏ›ÛÛˆ\×Ý˜XÙWØÛÛXÝÜˆH˜[ÙNÂ‚ˆËËÈÛ\Ý\œÈ›Üˆ\ÝšX]YX›\ÂˆËËÈ[š]X[^™YÛˆ[X[™
+Ûˆ\ÝšX]YÝÜ˜YÙ\È[š]X[^˜][ÛŠHÚ[˜ÙHÙ][™ÜÈÚÝ[™H[š]X[^™Yˆ]]X›HÝŽ›]]^Û\Ý\œ×Û]]^ÈËËÈÝX\™ÈÛ\Ý\œËÛ\Ý\œ×ØÛÛ™šYÈ[™Û\Ý\—Ù\ØÛÝ™\žBˆÝŽœÚ\™YÜÛ\Ý\œÏˆÛ\Ý\œÈÐWÑÕPT‘QÐ–JÛ\Ý\œ×Û]]^
+NÂˆÛÛ™šYÝ\˜][Û”ˆÛ\Ý\œ×ØÛÛ™šYÈÐWÑÕPT‘QÐ–JÛ\Ý\œ×Û]]^
+NÈËËÈÝÜ™\È\]YÛÛ™šYÜÂˆÝŽ[š\]YWÜÛ\Ý\‘\ØÛÝ™\žOˆÛ\Ý\—Ù\ØÛÝ™\žHÐWÑÕPT‘QÐ–JÛ\Ý\œ×Û]]^
+NÂˆÚ^™WÝÛ\Ý\œ×Ý™\œÚ[ÛˆÐWÑÕPT‘QÐ–JÛ\Ý\œ×Û]]^
+HHÂ‚ˆËËÈ›ÈØÚÈ™\]Z\™Y›Üˆ\Þ[˜×Ú[œÙ\Ü]Y]YH[ÙYšYYÛ›H\š[™È[š]X[^˜][Û‚ˆÝŽœÚ\™YÜ\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YOˆ\Þ[˜×Ú[œÙ\Ü]Y]YNÂ‚ˆËËÈÙ\™\ˆ\Ý[™\ˆÜ™YÚ\ÝžKˆ™XYÈÛÛYHœ›ÛHÛÛ˜Ý\œ™[ÔSÛÛ^ÂˆËËÈ
+HÙ]Ù\™\”ÜÔS[˜Ý[ÛŠNÈÜš]\È\[ˆ\š[™ÈÙ\™\ˆÝ\\ˆËËÈ[™][[YHšXHÖTÕSHÕT•TÕS˜[ˆÛXÚÚÝ\ÙK[ØØ[‚ˆ]]X›HÝŽ›]]^Ù\™\—ÜÜ×Û]]^ÂˆÝŽ›X\Ýš[™ËR[MˆÙ\™\—ÜÜÈÐWÑÕPT‘QÐ–JÙ\™\—ÜÜ×Û]]^
+NÂ‚ˆÝŽ˜]ÛZXÏ›ÛÛˆÚ]ÝÛ—ØØ[YH˜[ÙNÂ‚ˆÝÜØ]Ú\[YWÝØ]ÚÐWÑÕPT‘QÐ–J]]^
+NÂ‚ˆËËÈ›ÈØÚÈ™\]Z\™Y›Üˆ\XØ][Û—Ý\H[ÙYšYYÛ›H\š[™È[š]X[^˜][Û‚ˆÛÛ^Ž\XØ][Û•\H\XØ][Û—Ý\HHÛÛ^Ž\XØ][Û•\NŽ”ÑT•‘TŽÂ‚ˆËËÈ›ÈØÚÈ™\]Z\™Y›ÜˆÛÛ™šY×Ü™[ØYØØ[˜XÚËÝ\ÜÙ\™\œ×ØØ[˜XÚËÝÜÜÙ\™\œ×ØØ[˜XÚÈ[ÙYšYYÛ›H\š[™È[š]X[^˜][Û‚ˆÛÛ^ŽÛÛ™šYÔ™[ØYØ[˜XÚÈÛÛ™šY×Ü™[ØYØØ[˜XÚÎÂˆÛÛ^Ž”Ý\ÝÜÙ\™\œÐØ[˜XÚÈÝ\ÜÙ\™\œ×ØØ[˜XÚÎÂˆÛÛ^Ž”Ý\ÝÜÙ\™\œÐØ[˜XÚÈÝÜÜÙ\™\œ×ØØ[˜XÚÎÂ‚ˆ›ÛÛ\×ÜÙ\™\—ØÛÛ\][WÜÝ\YÐWÑÕPT‘QÐ–J]]^
+HH˜[ÙNÂ‚ˆÚYˆTÑWÓ•TQ•ˆ]]X›HÝŽœÚ\™YÜÙY\\‘\Ü]Ú\ˆÙY\\—Ù\Ü]Ú\ŽÂˆÙ[™Y‚‚ˆÛÛ^Ú\™Y\
+
+BˆˆXØÙ\Ü×ØÛÛ›Û
+ÝŽ›XZÙWÝ[š\]YOXØÙ\ÜÐÛÛ›ÛŠ
+JKÛØ˜[ÛÝ™\˜ÛÛ[Z]Ý˜XÚÙ\Š	œ›ØÙ\Ü×Û\Ý
+KXXÜ›ÜÊÝŽ›XZÙWÝ[š\]YOXXÜ›ÜÏŠ
+JBˆÂˆËËÈÑÎˆXZÙH]Ú[™Û]Ûˆ
+ÊBˆÝ]XÈÝŽ˜]ÛZXÏÚ^™WÝˆ[WØØ[ÞÌNÂˆYˆ
+
+ÊÛ[WØØ[ÈˆJBˆÂˆÝŽ˜Ù\œˆ][\[™ÈÈÜ™X]H][\HÛÛ^Ú\™Y[œÝ[˜Ù\ËˆÝXÚÈ˜XÙN—ˆˆÝXÚÕ˜XÙJ
+KÔÝš[™Ê
+NÂˆÝŽ˜Ù\œ‹™›\Ú
+
+NÂˆÝŽ\›Z[˜]J
+NÂˆBˆB‚ˆÛÛ^Ú\™Y\
+
+BˆÂˆËËÈÚ]ÝÛˆ]\Ý™HØ[Yš\œÝÈÝÜ[˜XÚÙÜ›Ý[™\ÚÜÈ
+ZÙHØYÝ]]Y]T\ÊBˆËËÈ]X^H™H\Ú[™ÈH™XYÛÛ™XY\œËˆÝ\Ú\ÙH\™H\ÈH]H˜XÙH™]ÙY[‚ˆËËÈ˜XÚÙÜ›Ý[™\ÚÜÈØ[[™ÈÙ]™XYÛÛ™XY\Š
+H[™H\ÝXÝÜˆ™\Ù][™ÈH™XY\œË‚ˆËËÈÙYHÎ‹ËÙÚ]X‹˜ÛÛKÐÛXÚÒÝ\ÙKÐÛXÚÒÝ\ÙKÚ\ÜÝY\ËÍŒŒMÂˆžBˆÂˆÚ]ÝÛŠ
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆB‚ˆÚYˆTÑWÓ•TQ•ˆYˆ
+ÙY\\—Ù\Ü]Ú\ŠBˆÂˆžBˆÂˆÙY\\—Ù\Ü]Ú\‹OœÚ]ÝÛŠ˜[ÙJNÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆBˆÙ[™Y‚‚ˆËËÈØZ]›Üˆ™XYÛÛ›Üˆ˜XÚÙÜ›Ý[™™XYÈ[™Üš]\ËˆËËÈÚ[˜ÙH]X^H\ÙH\‹]\Ù\ˆY[[ÜžU˜XÚÙ\ˆÚXÚÚ[™H\Ý›ÞYY\™K‚ˆYˆ
+\Þ[˜Ú›Û›Ý\×Ü™[[ÝWÙœ×Ü™XY\ŠBˆÂˆžBˆÂˆÑ×ÑP•QÊÙË‘\ÝXÝ[™È™[[ÝHœÈ™XYÛÛ™XY\ˆŠNÂˆ\Þ[˜Ú›Û›Ý\×Ü™[[ÝWÙœ×Ü™XY\‹OØZ]
+
+NÂˆ\Þ[˜Ú›Û›Ý\×Ü™[[ÝWÙœ×Ü™XY\‹œ™\Ù]
+
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆB‚ˆYˆ
+\Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\ŠBˆÂˆžBˆÂˆÑ×ÑP•QÊÙË‘\ÝXÝ[™ÈØØ[œÈ™XYÛÛ™XY\ˆŠNÂˆ\Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\‹OØZ]
+
+NÂˆ\Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\‹œ™\Ù]
+
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆB‚ˆYˆ
+Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\ŠBˆÂˆžBˆÂˆÑ×ÑP•QÊÙË‘\ÝXÝ[™ÈØØ[œÈ™XYÛÛ™XY\ˆŠNÂˆÞ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\‹OØZ]
+
+NÂˆÞ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\‹œ™\Ù]
+
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆB‚ˆYˆ
+™XYÛÛÝÜš]\ŠBˆÂˆžBˆÂˆÑ×ÑP•QÊÙË‘\ÝXÝ[™È™XYÛÛÜš]\ˆŠNÂˆ™XYÛÛÝÜš]\‹OØZ]
+
+NÂˆ™XYÛÛÝÜš]\‹œ™\Ù]
+
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆB‚ˆYˆ
+ØYÛX\šÜ×Ý™XYÛÛ
+BˆÂˆžBˆÂˆÑ×ÑP•QÊÙË‘\ÝXÝ[™ÈX\šÜÈØY\ˆŠNÂˆØYÛX\šÜ×Ý™XYÛÛOØZ]
+
+NÂˆØYÛX\šÜ×Ý™XYÛÛœ™\Ù]
+
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆB‚ˆYˆ
+™Y™]ÚÝ™XYÛÛ
+BˆÂˆžBˆÂˆÑ×ÑP•QÊÙË‘\ÝXÝ[™È™Y™]Ú™XYÛÛŠNÂˆ™Y™]ÚÝ™XYÛÛOØZ]
+
+NÂˆ™Y™]ÚÝ™XYÛÛœ™\Ù]
+
+NÂˆBˆØ]Ú
+‹‹ŠBˆÂˆžSÙÐÝ\œ™[^Ù\[ÛŠ×Ô‘UWÑ•SÕSÓ—×ÊNÂˆBˆBˆB‚ˆ›ÚYÙ]ÛÛ™šYÊÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šY×Ý˜[YJBˆÂˆYˆ
+XÛÛ™šY×Ý˜[YJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”Ù][ˆÛÛ™šYÈ\È[˜[YŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆÛÛ™šYÈHÛÛ™šY×Ý˜[YNÂˆXØÙ\Ü×ØÛÛ›ÛOœÙ]^\›˜[]][XØ]ÜœÐÛÛ™šYÊ
+˜ÛÛ™šY×Ý˜[YJNÂˆB‚ˆÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÙ]ÛÛ™šYÔ™Y•Ú]ØÚÊÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ŠHÛÛœÝÐWÔ‘TURT‘TÊ\ËO›]]^
+BˆÂˆ™]\›ˆÛÛ™šYÈÈ
+˜ÛÛ™šYÈˆØÛÎŽ•][Ž\XØ][ÛŽŽš[œÝ[˜ÙJ
+K˜ÛÛ™šYÊ
+NÂˆB‚ˆÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÙ]ÛÛ™šYÔ™YŠ
+HÛÛœÝˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆ™]\›ˆÛÛ™šYÈÈ
+˜ÛÛ™šYÈˆØÛÎŽ•][Ž\XØ][ÛŽŽš[œÝ[˜ÙJ
+K˜ÛÛ™šYÊ
+NÂˆB‚ˆÛÛ™šYÝ\˜][Û”ˆÙ]ÛÛ™šYÊ
+HÛÛœÝˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆYˆ
+ÛÛ™šYÊBˆ™]\›ˆÛÛ™šYÎÂˆ™]\›ˆÛÛ™šYÝ\˜][Û”Š	”ØÛÎŽ•][Ž\XØ][ÛŽŽš[œÝ[˜ÙJ
+K˜ÛÛ™šYÊ
+KÊˆÚ\™YH
+‹ÈYJNÂˆB‚ˆÊŠˆ\™›Ü›HHÛÛ\^›ØˆÙˆ\Ý›ÞZ[™ÈØš™XÝÈ[ˆY˜[˜ÙK‚ˆ
+‹Âˆ›ÚYÚ]ÝÛŠ
+HÐWÓ“×Õ‘PQÔÐQ‘UWÐSSTÒTÂˆÂˆ›ÛÛ\×ÜÚ]ÝÛ—ØØ[YHÚ]ÝÛ—ØØ[Y™^Ú[™ÙJYJNÂˆYˆ
+\×ÜÚ]ÝÛ—ØØ[Y
+Bˆ™]\›ŽÂ‚ˆËËÈ™YYÈ›\ÚH\Þ[˜È[œÙ\]Y]YH™Y›Ü™HÚ][™ÈÝÛˆH]X˜\ÙHØ][ÙÂˆÝŽœÚ\™YÜ\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YOˆ[]WØ\Þ[˜×Ú[œÙ\Ü]Y]YNÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ[]WØ\Þ[˜×Ú[œÙ\Ü]Y]YHHÝŽ›[Ý™J\Þ[˜×Ú[œÙ\Ü]Y]YJNÂˆBˆYˆ
+[]WØ\Þ[˜×Ú[œÙ\Ü]Y]YJBˆ[]WØ\Þ[˜×Ú[œÙ\Ü]Y]YKO™›\Ú[™Ú]ÝÛŠ
+NÂ‚ˆËËÈÝÜ\š[ÙXÈ™[ØY[™ÈÙˆHÛÛ™šYÝ\˜][Ûˆš[\Ë‚ˆËËÈ\È]\Ý™HÛ™Hš\œÝ™XØ]\ÙHÝ\Ú\ÙHH™[ØY[™ÈX^H\ÜÈHÚ[™ÙYÛÛ™šYÂˆËËÈÈÛÛYH\Ý›ÞYY\ÈÙˆÛÛ^Ú\™Y\‚‚ˆËËÈÙH™YYÈXZÙHÝ\™H›ÈXÝ[Û˜\žH]Y\šY\È\™HÛÛ˜Ý\œ™[Ú]H\\ˆÚ]ÝÛˆÙÚXÂˆËËÈ™XØ]\ÙH]Ù]È˜\š[Ý\ÈšY[ÈÈ[[™ÜÙHšY[È\™H[˜ÛÛ™][Û˜[H\™Y™\™[˜ÙYžH]Y\šY\Ë‚ˆËËÈÛÈÙH™YYÎ‚ˆËËÈ
+JH\ØX›H]\™HXÝ[Û˜\žH]Y\šY\Ë‚ˆËËÈ
+ŠHXZÙHÝ\™H[HÝ\œ™[H[›š[™ÈXÝ[Û˜\žH]Y\šY\È\™HÚ[Y‚ˆËËÈ
+ÊH›Ú[ˆHXÝ[Û˜\žH]Y\šY\ÉÈ™XYË‚ˆÒUÕÓŠÙË™XÝ[Û˜\šY\ÈØY\ˆ‹^\›˜[ÙXÝ[Û˜\šY\×ÛØY\‹[˜X›T\š[ÙXÕ\]\Ê˜[ÙJJNÂˆ›ØÙ\Ü×Û\ÝšÚ[[]Y\šY\Ê
+NÂˆÒUÕÓŠÙË™XÝ[Û˜\šY\ÈØY\ˆ™XYÈ‹^\›˜[ÙXÝ[Û˜\šY\×ÛØY\‹›Ú[“ØY[™Õ™XYÊ
+JNÂ‚ˆÒUÕÓŠÙË•QœÈØY\ˆ‹^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ÛØY\‹[˜X›T\š[ÙXÕ\]\Ê˜[ÙJJNÂˆÒUÕÓŠÙË˜[›Ý\ˆQœÈÝÜ˜YÙH‹\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙKÝÜØ]Ú[™Ê
+JNÂ‚ˆÑ×ÕPÑJÙË”Ú][™ÈÝÛˆ˜[YYÙ\ÜÚ[ÛœÈŠNÂˆÙ\ÜÚ[ÛŽŽœÚ]ÝÛ“˜[YYÙ\ÜÚ[ÛœÊ
+NÂ‚ˆËËÈÝÜØ]Ú[™È]Y]YH[ˆ›ÛÒÙY\\ˆ[™ØZ][[Ý\œ™[H^XÝ]Y\ÚÜÈš[š\Ú‚ˆËËÈ\È]\Ý™HÛ™H™Y›Ü™HÛÜÚ[™È›ÛÒÙY\\ˆÛÛ›™XÝ[Ûˆ
+™XØ]\ÙHÛÜšÙ\ˆØ[ˆØ[ÛÛ^Ž™Ù]›ÛÒÙY\\Š
+H[™™\Ý\œ™XÝ]
+KˆËËÈ[™™Y›Ü™HÚ][™ÈÝÛˆ˜XÚÝ\ÕÛÜšÙ\ˆ
+™XØ]\ÙHÛÜšÙ\ˆØ[ˆÝ\[ˆ[\›˜[˜XÚÝ\Üˆ™\ÝÜ™JK‚ˆÒUÕÓŠÙË™ÛÜšÙ\ˆ‹ÝÛÜšÙ\‹Ú]ÝÛŠ
+JNÂ‚ˆËËÈØZ][™È›ÜˆÝ\œ™[˜XÚÝ\ËÜ™\ÝÜ™\ÈÈ™Hš[š\ÚYˆ\È]\Ý™HÛ™H™Y›Ü™HÚ][™ÈÝÛˆ]X˜\ÙPØ][ÙË‚ˆÒUÕÓŠÙË˜˜XÚÝ\ÈÛÜšÙ\ˆ‹˜XÚÝ\×ÝÛÜšÙ\‹Ú]ÝÛŠ
+JNÂ‚ˆÑ×ÕPÑJÙË”Ú][™ÈÝÛˆØš™XÝÝÜ˜YÙH]Y]YHÝ™X[Z[™ÈŠNÂˆÝ™X[Z[™ÔÝÜ˜YÙT™YÚ\ÝžNŽš[œÝ[˜ÙJ
+KœÚ]ÝÛŠ
+NÂ‚ˆËËÈÝÜ[Y\™ÙU™YH˜XÚÙÜ›Ý[™^XÝ]ÜœÈ™Y›Ü™HÚ][™ÈÝÛˆ]X˜\Ù\Ë‚ˆËËÈ\È[œÝ\™\È›È˜XÚÙÜ›Ý[™\ÚÜÈ
+Y\™Ù\Ë]]][ÛœË[Ý™\Ë\ÛX[\
+BˆËËÈ\™H[›š[™ÈÚ[ˆÝÜ˜YÙHØš™XÝÈ\™HÚ]ÝÛˆÜˆ\Ý›ÞYY‚ˆËËÈÚ]Ý]\ËH˜XÚÙÜ›Ý[™\ÚÈÛÝ[™HXØÙ\ÜÚ[™ÈHÝÜ˜YÙIÜÈ]WÜ\×Ú[™^\ÂˆËËÈÚ[H]X˜\ÙPØ][ÙÎŽœÚ]ÝÛˆ\È\Ý›ÞZ[™È]ÝÜ˜YÙKØ]\Ú[™ÈHÒQÐ•TË‚ˆËËÈÙYHÎ‹ËÙÚ]X‹˜ÛÛKÐÛXÚÒÝ\ÙKÐÛXÚÒÝ\ÙKÚ\ÜÝY\ËÎMÌÂˆÒUÕÓŠÙË›Y\™Ù\È^XÝ]Üˆ‹Y\™ÙWÛ]]]WÙ^XÝ]Ü‹ØZ]
+
+JNÂˆÒUÕÓŠÙË™™]Ú\È^XÝ]Üˆ‹™]ÚÙ^XÝ]Ü‹ØZ]
+
+JNÂˆÒUÕÓŠÙË›[Ý™\È^XÝ]Üˆ‹[Ý™\×Ù^XÝ]Ü‹ØZ]
+
+JNÂˆÒUÕÓŠÙË˜ÛÛ[[Ûˆ^XÝ]Üˆ‹ÛÛ[[Û—Ù^XÝ]Ü‹ØZ]
+
+JNÂ‚ˆËËÈXXÝ]˜]Hš[PØXÚH˜XÚÙÜ›Ý[™™XYÈ™Y›Ü™HÚ][™ÈÝÛˆH]X˜\ÙHØ][ÙË‚ˆËËÈ]X˜\ÙPØ][ÙÎŽœÚ]ÝÛŠ
+HØ[ˆ›ÝÈ
+K™Ëˆ›ÛÒÙY\\ˆ[Y[Ý][ˆ™\XØ]YÛÜšÙ\ŠK‚ˆËËÈYˆ]›ÝÜËXXÝ]˜]P˜XÚÙÜ›Ý[™Ü\˜][ÛœÊ
+HÛÝ[™HÚÚ\YX]š[™Èš[PØXÚBˆËËÈÝÛ›ØYØÛX[\™XYÈÝXÚÈÛˆÛØ˜[™XYÛÛÚXÚØ]\Ù\ÂˆËËÈÛØ˜[™XYÛÛŽœÚ]ÝÛŠ
+HÈXYØÚË‚ˆÑ×ÕPÑJÙË”Ú][™ÈÝÛˆØXÚ\ÈŠNÂˆ›Üˆ
+ÛÛœÝ]]È	ˆØXÚWÙ]Hˆš[PØXÚQ˜XÝÜžNŽš[œÝ[˜ÙJ
+K™Ù][š\]YR[œÝ[˜Ù\Ê
+JBˆØXÚWÙ]KO˜ØXÚKO™XXÝ]˜]P˜XÚÙÜ›Ý[™Ü\˜][ÛœÊ
+NÂ‚ˆÑ×ÕPÑJÙË”Ú][™ÈÝÛˆ]X˜\ÙHØ][ÙÈŠNÂˆ]X˜\ÙPØ][ÙÎŽœÚ]ÝÛŠÝ\×J
+BˆÂˆÒUÕÓŠÙËœÞ\Ý[HÙÜÈ‹ÐWÔÕT‘TÔ×ÕÐT“’S‘×Ñ“Ô—Ô‘PQ
+Þ\Ý[WÛÙÜÊK›\Ú[™Ú]ÝÛŠ
+JNÂˆJNÂ‚ˆš[PØXÚQ˜XÝÜžNŽš[œÝ[˜ÙJ
+K˜ÛX\Š
+NÂ‚ˆ˜[YYÛÛXÝ[Û‘˜XÝÜžNŽš[œÝ[˜ÙJ
+KœÚ]ÝÛŠ
+NÂ‚ˆ[]WØ\Þ[˜×Ú[œÙ\Ü]Y]YKœ™\Ù]
+
+NÂ‚ˆ˜[œØXÝ[Û“ÙÎŽœÚ]ÝÛ’Y[žJ
+NÂ‚ˆËÈÛÜšÛØY[]HÝÜ˜YÙH]\Ý™H\ÝXÝYÚ[ˆ›È]Y\šY\ÈÜˆY\™Ù\È\™H[›š[™È™XØ]\ÙH\[[™Q^XÝ]ÜˆX^HXØÙ\ÜÈ]‚ˆËÈ™XYHÚ\™YÜ˜[™\ˆH]]^™XØ]\ÙHÙ]ÛÜšÛØY[]TÝÜ˜YÙT˜X^HÛÛ˜Ý\œ™[BˆËÈ[š]X[^™H]
+HÛÛ˜Ý\œ™[™XYÝÜš]HÙˆHØ[YHÚ\™YÜ˜Øš™XÝÛÝ[™HH]H˜XÙJK‚ˆÂˆÝŽœÚ\™YÜUÛÜšÛØY[]TÝÜ˜YÙOˆÛÜšÛØYÙ[]WÜÝÜ˜YÙWÝ×ÜÝÜÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆÛÜšÛØYÙ[]WÜÝÜ˜YÙWÝ×ÜÝÜHÛÜšÛØYÙ[]WÜÝÜ˜YÙNÂˆBˆYˆ
+ÛÜšÛØYÙ[]WÜÝÜ˜YÙWÝ×ÜÝÜ
+BˆÂˆÑ×ÑP•QÊÙË”Ú][™ÈÝÛˆÛÜšÛØY[]HÝÜ˜YÙHŠNÂˆÛÜšÛØYÙ[]WÜÝÜ˜YÙWÝ×ÜÝÜOœÝÜØ]Ú[™Ê
+NÂˆBˆB‚ˆÝŽ[š\]YWÜÞ\Ý[SÙÜÏˆ[]WÜÞ\Ý[WÛÙÜÎÂˆÝŽ[š\]YWÜ[X™YYXÝ[Û˜\šY\Ïˆ[]WÙ[X™YYÙXÝ[Û˜\šY\ÎÂˆÝŽ[š\]YWÜ^\›˜[XÝ[Û˜\šY\ÓØY\ˆ[]WÙ^\›˜[ÙXÝ[Û˜\šY\×ÛØY\ŽÂˆÝŽ[š\]YWÜ^\›˜[\Ù\‘Yš[™Y^XÝ]X›Q[˜Ý[ÛœÓØY\ˆ[]WÙ^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ÛØY\ŽÂˆÝŽ[š\]YWÜU\Ù\‘Yš[™YÔSØš™XÝÔÝÜ˜YÙOˆ[]WÝ\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙNÂˆÝŽœÚ\™YÜUÛÜšÛØY[]TÝÜ˜YÙOˆ[]WÝÛÜšÛØYÙ[]WÜÝÜ˜YÙNÂˆÝŽ[š\]YWÜÛÜšÙ\ˆ[]WÙÝÛÜšÙ\ŽÂ‚ˆ˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ[]WØY™™\—Ù›\ÚÜØÚY[WÜÛÛÂˆ˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ[]WÜØÚY[WÜÛÛÂˆ˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ[]WÙ\ÝšX]YÜØÚY[WÜÛÛÂˆ˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ[]WÛY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÂˆ˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ[]WÚXÙX™\™×ÜØÚY[WÜÛÛÂˆ˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ[]WÜÝ™X[Z[™×ÜØÚY[WÜÛÛÂ‚ˆÝŽ[š\]YWÜXØÙ\ÜÐÛÛ›Ûˆ[]WØXØÙ\Ü×ØÛÛ›ÛÂ‚ˆØÛÜWÙÝX\™[]WÙXÝ[Û˜\šY\×Þ[ÎÂˆØÛÜWÙÝX\™[]WÝ\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÎÂˆØÛÜWÙÝX\™[]WÙ[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÎÂ‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÛ\Ý\œ×Û]]^
+NÂˆYˆ
+Û\Ý\—Ù\ØÛÝ™\žJBˆÂˆÑ×ÕPÑJÙË”Ú][™ÈÝÛˆÛ\Ý\‘\ØÛÝ™\žHŠNÂˆËËÈ™\Ù]Û\Ý\—Ù\ØÛÝ™\žHYˆ[žK‚ˆËËÈÛÛYHÛ\ÜÙ\È
+ÝXÚ\È›ÛÒÙY\\‹™\XØ]YXØÙ\ÜÔÝÜ˜YÙJHÚ[š[˜[^™HHÙY\\ˆÙ\ÜÚ[ÛˆÚ[HXÛÛœÝXÝ[™ËˆËËÈÚXÚÚ[šYÙÙ\ˆHØ[˜XÚÈ[™XZÙHÛ\Ý\‘\ØÛÝ™\žH™XÛÛ›™XÝÈÙY\\ˆYØZ[ˆ
+[›™XÙ\ÜØ\žJK‚ˆÛ\Ý\—Ù\ØÛÝ™\žKœ™\Ù]
+
+NÂˆBˆB‚ˆÂˆËÈ\ÚÈÙ[XÝÜˆZYÚ›Ý™H[š]X[^™YYˆ\™HØ\ÈÛÛYH\œ›Üˆ\š[™ÂˆËÈ]È[š]X[^˜][Û‹ˆÛ‰ÝžHÈ[š]X[^™H]YØZ[ˆÛˆÚ]ÝÛ‹‚ˆYˆ
+Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜŠBˆÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ\Ú×Û˜[YK\Ú×HˆY\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜ‹O™Ù]\ÚÜÓX\
+
+JBˆÂˆÑ×ÒS‘“ÊÙË”Ú]ÝÛˆ\ÚÈßH‹\Ú×Û˜[YJNÂˆ\ÚËOœÚ]ÝÛŠ
+NÂˆBˆB‚ˆËËÈÜXÚX[›Û[Y\ÈZYÚ[ÛÈ\ÙH\ÚÜÈ]™\]Z\™HÚ]ÝÛ‹‚ˆYˆ
+[\Ü˜\žWÝ›Û[YWÛYØXÞJBˆÂˆ]]È	ˆ\ÚÜÈH[\Ü˜\žWÝ›Û[YWÛYØXÞKO™Ù]\ÚÜÊ
+NÂˆ›Üˆ
+]]È	ˆ\ÚÈˆ\ÚÜÊBˆ\ÚËOœÚ]ÝÛŠ
+NÂˆBˆB‚ˆÑ×ÕPÑJÙË”Ú][™ÈÝÛˆXØÙ\ÜÐÛÛ›ÛŠNÂˆXØÙ\Ü×ØÛÛ›ÛOœÚ]ÝÛŠ
+NÂ‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂ‚ˆÊŠˆÛÛ\[Y^™\ÜÚ[ÛœÈÝÜ™Y[ˆØXÚH™YYÈ™H\Ý›ÞYY™Y›Ü™H\ÝXÝ[ÛˆÙˆÝ]XÈØš™XÝË‚ˆ
+ˆ™XØ]\ÙHÒ’U[œÝ[˜ÙHØ[ˆ™HÝ]XÈØš™XÝ‚ˆ
+‹ÂˆÚYˆTÑWÑSP‘QQÐÓÓTST‚ˆYˆ
+]]È
+ˆØXÚHHÛÛ\[Y^™\ÜÚ[ÛØXÚQ˜XÝÜžNŽš[œÝ[˜ÙJ
+KžQÙ]ØXÚJ
+JBˆØXÚKO˜ÛX\Š
+NÂˆÙ[™Y‚‚ˆËËÈ™Y[\]™H\ÝXÝ[Ûˆ\È[\Ü[™XØ]\ÙH\ÙHØš™XÝÈX^H]™HH™Y˜ÛÝ[ÈÛÛ^Ú\™Y
+ÞXÛXÈ™Y™\™[˜ÙJK‚ˆËËÈÑÎˆÙ]šYÙˆ\Ë‚‚ˆ[]WÙXÝ[Û˜\šY\×Þ[ÈHÝŽ›[Ý™JXÝ[Û˜\šY\×Þ[ÊNÂˆ[]WÝ\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÈHÝŽ›[Ý™J\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÊNÂˆ[]WÙ[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÈHÝŽ›[Ý™J[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[ÊNÂ‚ˆ[]WÜÞ\Ý[WÛÙÜÈHÝŽ›[Ý™JÞ\Ý[WÛÙÜÊNÂˆ[]WÙ[X™YYÙXÝ[Û˜\šY\ÈHÝŽ›[Ý™J[X™YYÙXÝ[Û˜\šY\ÊNÂˆ[]WÙ^\›˜[ÙXÝ[Û˜\šY\×ÛØY\ˆHÝŽ›[Ý™J^\›˜[ÙXÝ[Û˜\šY\×ÛØY\ŠNÂˆ[]WÙ^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ÛØY\ˆHÝŽ›[Ý™J^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ÛØY\ŠNÂˆ[]WÝ\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙHHÝŽ›[Ý™J\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙJNÂˆ[]WÝÛÜšÛØYÙ[]WÜÝÜ˜YÙHHÝŽ›[Ý™JÛÜšÛØYÙ[]WÜÝÜ˜YÙJNÂˆ[]WÙÝÛÜšÙ\ˆHÝŽ›[Ý™JÝÛÜšÙ\ŠNÂ‚ˆ[]WØY™™\—Ù›\ÚÜØÚY[WÜÛÛHÝŽ›[Ý™JY™™\—Ù›\ÚÜØÚY[WÜÛÛ
+NÂˆ[]WÜØÚY[WÜÛÛHÝŽ›[Ý™JØÚY[WÜÛÛ
+NÂˆ[]WÙ\ÝšX]YÜØÚY[WÜÛÛHÝŽ›[Ý™J\ÝšX]YÜØÚY[WÜÛÛ
+NÂˆ[]WÛY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛHÝŽ›[Ý™JY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛ
+NÂˆ[]WÚXÙX™\™×ÜØÚY[WÜÛÛHÝŽ›[Ý™JXÙX™\™×ÜØÚY[WÜÛÛ
+NÂˆ[]WÜÝ™X[Z[™×ÜØÚY[WÜÛÛHÝŽ›[Ý™JÝ™X[Z[™×ÜØÚY[WÜÛÛ
+NÂ‚ˆ[]WØXØÙ\Ü×ØÛÛ›ÛHÝŽ›[Ý™JXØÙ\Ü×ØÛÛ›Û
+NÂ‚ˆËËÈÝÜ˜XÙHÛÛXÝÜˆYˆ[žBˆ\×Ý˜XÙWØÛÛXÝÜˆH˜[ÙNÂˆ˜XÙWØÛÛXÝÜ‹œ™\Ù]
+
+NÂˆB‚ˆšÝ][Ž–›ÛÒÙY\\”ˆ[]WÞ›ÛÚÙY\\ŽÂˆÂˆËËÈÝÜ›ÛÚÙY\\ˆÛÛ›™XÝ[Û‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ›ÛÚÙY\\—Û]]^
+NÂˆ[]WÞ›ÛÚÙY\\ˆHÝŽ›[Ý™J›ÛÚÙY\\ŠNÂˆBˆYˆ
+[]WÞ›ÛÚÙY\\ŠBˆ[]WÞ›ÛÚÙY\\‹O™š[˜[^™JœÚ]ÝÛˆŠNÂ‚ˆÝŽ›X\Ýš[™ËšÝ][Ž–›ÛÒÙY\\”ˆ[]WØ]^[X\žWÞ›ÛÚÙY\\œÎÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÂˆ[]WØ]^[X\žWÞ›ÛÚÙY\\œÈHÝŽ›[Ý™J]^[X\žWÞ›ÛÚÙY\\œÊNÂˆBˆ›Üˆ
+]]È	ˆÛ˜[YKš×Hˆ[]WØ]^[X\žWÞ›ÛÚÙY\\œÊBˆšËO™š[˜[^™JœÚ]ÝÛˆŠNÂ‚ˆËËÈXÝ[Û˜\šY\ÈX^H™H™\]Z\™Y‚ˆËËÈH›ÜˆÝÜ˜YÙHÚ]ÝÛˆ
+\š[™Èš[˜[›\ÚÙˆHY™™\ˆ[™Ú[™JBˆËËÈH™Y›Ü™HÝÜ˜YÙHÝ\\
+™XØ]\ÙHÙˆÛÛYHÝ™X[Z[™ÈÙ‹K™KˆØYšØKÂˆËËÈHX›HÚ]X]\šX[^™YÛÛ[[ˆ]\ÈXÝÙ]
+BˆËËÂˆËËÈÛÈ^HÚÝ[™HÜ™X]Y™Y›Ü™H[žHÝÜ˜YÙ\È[™™\Ù\™Y[[ÝÜ˜YÙ\ÈÚ[™H\›Z[˜]Y‚ˆËËÂˆËËÈ]^HØ[››Ý™HÜ™X]Y™Y›Ü™HÝÜ˜YÙ\ÈÚ[˜ÙH^HX^H™\]Z\™YX›H\ÈHÛÝ\˜ÙKˆËËÈ]]X\Ý^HØ[ˆ™H™\Ù\™Y›ÜˆÝÜ˜YÙH\›Z[˜][Û‹‚ˆ[]WÙXÝ[Û˜\šY\×Þ[Ëœ™\Ù]
+
+NÂˆ[]WÝ\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[Ëœ™\Ù]
+
+NÂˆ[]WÙ[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Þ[Ëœ™\Ù]
+
+NÂ‚ˆËËÈØ[ˆ™H™[[Ý™YÚ]Ý]ÛÛ^ØÚÂˆ[]WÜÞ\Ý[WÛÙÜËœ™\Ù]
+
+NÂˆ[]WÙ[X™YYÙXÝ[Û˜\šY\Ëœ™\Ù]
+
+NÂˆ[]WÙ^\›˜[ÙXÝ[Û˜\šY\×ÛØY\‹œ™\Ù]
+
+NÂˆ[]WÙ^\›˜[Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×ÛØY\‹œ™\Ù]
+
+NÂˆ[]WÝ\Ù\—ÙYš[™YÜÜ[ÛØš™XÝ×ÜÝÜ˜YÙKœ™\Ù]
+
+NÂˆ[]WÝÛÜšÛØYÙ[]WÜÝÜ˜YÙKœ™\Ù]
+
+NÂˆ[]WÙÝÛÜšÙ\‹œ™\Ù]
+
+NÂ‚ˆ]]È›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛHÉ—J˜XÚÙÜ›Ý[™ØÚY[TÛÛˆ	‰ˆÛÛÜŠBˆÂˆYˆ
+\ÛÛÜŠBˆ™]\›ŽÂˆÛÛÜ‹Oš›Ú[Š
+NÂˆÛÛÜ‹œ™\Ù]
+
+NÂˆNÂˆ›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛ
+ÝŽ›[Ý™J[]WØY™™\—Ù›\ÚÜØÚY[WÜÛÛ
+JNÂˆ›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛ
+ÝŽ›[Ý™J[]WÜØÚY[WÜÛÛ
+JNÂˆ›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛ
+ÝŽ›[Ý™J[]WÙ\ÝšX]YÜØÚY[WÜÛÛ
+JNÂˆ›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛ
+ÝŽ›[Ý™J[]WÛY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛ
+JNÂˆ›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛ
+ÝŽ›[Ý™J[]WÚXÙX™\™×ÜØÚY[WÜÛÛ
+JNÂˆ›Ú[—Ø˜XÚÙÜ›Ý[™ÜÛÛ
+ÝŽ›[Ý™J[]WÜÝ™X[Z[™×ÜØÚY[WÜÛÛ
+JNÂ‚ˆ[]WØXØÙ\Ü×ØÛÛ›Ûœ™\Ù]
+
+NÂ‚ˆÝ[ÛY[[ÜžWÝ˜XÚÙ\‹œ™\Ù]Ý™\˜ÛÛ[Z]˜XÚÙ\Š
+NÂˆÝ[ÛY[[ÜžWÝ˜XÚÙ\‹œ™\Ù]YÙPØXÚJ
+NÂˆB‚ˆ›ÛÛ\Õ˜XÙPÛÛXÝÜŠ
+HÛÛœÝˆÂˆ™]\›ˆ\×Ý˜XÙWØÛÛXÝÜ‹›ØY
+
+NÂˆB‚ˆ›ÚY[š]X[^™U˜XÙPÛÛXÝÜŠÝŽœÚ\™YÜ˜XÙSÙÏˆ˜XÙWÛÙÊBˆÂˆYˆ
+]˜XÙWØÛÛXÝÜ‹š\×Ý˜[YJ
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•˜XÙPÛÛXÝÜˆ™YYÈÈ™Hš\œÝÜ™X]Y™Y›Ü™H[š]X[^˜][ÛˆŠNÂ‚ˆ˜XÙWØÛÛXÝÜ‹Oš[š]X[^™J˜XÙWÛÙÊNÂˆB‚ˆ›ÚYÜ™X]U˜XÙPÛÛXÝÜŠ
+BˆÂˆYˆ
+˜XÙWØÛÛXÝÜ‹š\×Ý˜[YJ
+JBˆ™]\›ŽÂ‚ˆ˜XÙWØÛÛXÝÜ‹™[\XÙJ
+NÂˆ\×Ý˜XÙWØÛÛXÝÜˆHYNÂˆB‚ˆ›ÚYYÜ•\]UØ\›š[™ÓY\ÜØYÙJÛÛ^Ž•Ø\›š[™Õ\HØ\›š[™ËÛÛœÝ™Y›Ü›X]YY\ÜØYÙH	ˆY\ÜØYÙJHÐWÔ‘TURT‘TÊ]]^
+BˆÂˆËËÈHØ\›š[™ÈÛÙ\È›Ýˆ[ÈÙ\™\‰ÜÈÙÎÈÝÜ™YÈ™HXÙY[ˆÞ\Ý[KØ\›š[™ÜØX›K‚ˆÑ×ÕÐT“’S‘ÊÙËžßH‹Y\ÜØYÙK^
+NÂˆØ\›š[™ÜÖÝØ\›š[™×HHY\ÜØYÙNÂˆB‚ˆ›ÚY™[[Ý™P[Ø\›š[™ÜÊ
+HÐWÔ‘TURT‘TÊ]]^
+BˆÂˆØ\›š[™ÜË˜ÛX\Š
+NÂˆB‚ˆ›ÚY™[[Ý™UØ\›š[™ÓY\ÜØYÙJÛÛ^Ž•Ø\›š[™Õ\HØ\›š[™ÊHÐWÔ‘TURT‘TÊ]]^
+BˆÂˆYˆ
+Ø\›š[™ÜË˜ÛÛZ[œÊØ\›š[™ÊJBˆÂˆËËÈÚ[H™[[Ýš[™ÈHØ\›š[™ËÙÈ]Ú]S‘“È]™[™Y›Ü™H]	ÜÈ™[[Ý™Yœ›ÛHHÞ\Ý[KØ\›š[™ÜØX›K‚ˆÑ×ÒS‘“ÊÙË”™[[Ýš[™ÈØ\›š[™ÈßH‹Ø\›š[™ÜÖÝØ\›š[™×K^
+NÂˆØ\›š[™ÜË™\˜\ÙJØ\›š[™ÊNÂˆBˆB‚ˆ›ÚYÛÛ™šYÝ\™TÙ\™\•ÚYU›Ý[™Ê
+BˆÂˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü™\XØ]YÙ™]Ú\×Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆ™\XØ]YÙ™]Ú\×Ý›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY
+NÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü™\XØ]YÜÙ[™×Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆ™\XØ]YÜÙ[™×Ý›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY
+NÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü™[[ÝWÜ™XYÛ™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆ™[[ÝWÜ™XYÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ”™[[ÝT™XY›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”™[[ÝT™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü™[[ÝWÝÜš]WÛ™]ÛÜš×Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆ™[[ÝWÝÜš]WÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ”™[[ÝUÜš]U›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”™[[ÝUÜš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^ÛØØ[Ü™XYØ˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆØØ[Ü™XYÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ“ØØ[™XY›Ý\ž]\Ë›Ùš[Q]™[ÎŽ“ØØ[™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^ÛØØ[ÝÜš]WØ˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆØØ[ÝÜš]WÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ“ØØ[Üš]U›Ý\ž]\Ë›Ùš[Q]™[ÎŽ“ØØ[Üš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ø˜XÚÝ\Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆ˜XÚÝ\×ÜÙ\™\—Ý›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ˜XÚÝ\›Ý\ž]\Ë›Ùš[Q]™[ÎŽ˜XÚÝ\›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Û]]][Ûœ×Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆ]]][Ûœ×Ý›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ“]]][ÛœÕ›Ý\ž]\Ë›Ùš[Q]™[ÎŽ“]]][ÛœÕ›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^ÛY\™Ù\×Ø˜[™ÚYÙ›Ü—ÜÙ\™\—JBˆY\™Ù\×Ý›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ùš[Q]™[ÎŽ“Y\™Ù\Õ›Ý\ž]\Ë›Ùš[Q]™[ÎŽ“Y\™Ù\Õ›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆBŸNÂ‚›ÚYÛÛ^Ú\™Y]]^Ž›ØÚÒ[\
+
+BžÂˆ›Ùš[Q]™[ÎŽš[˜Ü™[Y[
+›Ùš[Q]™[ÎŽÛÛ^ØÚÊNÂˆÝ\œ™[Y]šXÜÎŽ’[˜Ü™[Y[[˜Ü™[Y[ÐÝ\œ™[Y]šXÜÎŽÛÛ^ØÚÕØZ]NÂˆÝÜØ]ÚØ]ÚÂˆ˜\ÙNŽ›ØÚÒ[\
+
+NÂˆ›Ùš[Q]™[ÎŽš[˜Ü™[Y[
+›Ùš[Q]™[ÎŽÛÛ^ØÚÕØZ]ZXÜ›ÜÙXÛÛ™ËØ]Ú™[\ÙYZXÜ›ÜÙXÛÛ™Ê
+JNÂŸB‚›ÚYÛÛ^Ú\™Y]]^Ž›ØÚÔÚ\™Y[\
+
+BžÂˆ›Ùš[Q]™[ÎŽš[˜Ü™[Y[
+›Ùš[Q]™[ÎŽÛÛ^ØÚÊNÂˆÝ\œ™[Y]šXÜÎŽ’[˜Ü™[Y[[˜Ü™[Y[ÐÝ\œ™[Y]šXÜÎŽÛÛ^ØÚÕØZ]NÂˆÝÜØ]ÚØ]ÚÂˆ˜\ÙNŽ›ØÚÔÚ\™Y[\
+
+NÂˆ›Ùš[Q]™[ÎŽš[˜Ü™[Y[
+›Ùš[Q]™[ÎŽÛÛ^ØÚÕØZ]ZXÜ›ÜÙXÛÛ™ËØ]Ú™[\ÙYZXÜ›ÜÙXÛÛ™Ê
+JNÂŸB‚ÛÛ^]NŽÛÛ^]J
+BžÂˆÙ][™ÜÈHÝŽ›XZÙWÝ[š\]YOÙ][™ÜÏŠ
+NÂŸB‚ÛÛ^]NŽÛÛ^]JÛÛœÝÛÛ^]H	›ÊH‚ˆÚ\™Y
+ËœÚ\™Y
+KˆÛY[Ú[™›ÊË˜ÛY[Ú[™›ÊKˆ^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÊË™^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÊKˆ[œ]Ú[š]X[^™\—ØØ[˜XÚÊËš[œ]Ú[š]X[^™\—ØØ[˜XÚÊKˆ[œ]Ø›ØÚÜ×Ü™XY\ŠËš[œ]Ø›ØÚÜ×Ü™XY\ŠKˆ\Ù\—ÚY
+Ë\Ù\—ÚY
+KˆÝ\œ™[Ü›Û\ÊË˜Ý\œ™[Ü›Û\ÊKˆÙ][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ÊËœÙ][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ÊKˆXØÙ\ÜÊË˜XØÙ\ÜÊKˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÊË›™YYÜ™XØ[Ý[]WØXØÙ\ÜÊKˆÝ\œ™[Ù]X˜\ÙJË˜Ý\œ™[Ù]X˜\ÙJKˆØ[—Ý\ÙWÜ]Y\žWÜ™\Ý[ØØXÚJË˜Ø[—Ý\ÙWÜ]Y\žWÜ™\Ý[ØØXÚJKˆÙ][™ÜÊÝŽ›XZÙWÝ[š\]YOÙ][™ÜÏŠ
+›ËœÙ][™ÜÊJKˆ›ÙÜ™\Ü×ØØ[˜XÚÊËœ›ÙÜ™\Ü×ØØ[˜XÚÊKˆš[WÜ›ÙÜ™\Ü×ØØ[˜XÚÊË™š[WÜ›ÙÜ™\Ü×ØØ[˜XÚÊKˆ›ØÙ\Ü×Û\ÝÙ[[JËœ›ØÙ\Ü×Û\ÝÙ[[JKˆ\×Ü›ØÙ\Ü×Û\ÝÙ[[JËš\×Ü›ØÙ\Ü×Û\ÝÙ[[JKˆ›Ü›X[^™YÜ]Y\žWÚ\Ú
+Ë››Ü›X[^™YÜ]Y\žWÚ\Ú
+Kˆ[œÙ\[Û—ÝX›WÚ[™›ÊËš[œÙ\[Û—ÝX›WÚ[™›ÊKˆ\×Ù\ÝšX]Y
+Ëš\×Ù\ÝšX]Y
+KˆY˜][Ù›Ü›X]
+Ë™Y˜][Ù›Ü›X]
+Kˆ[œÙ\Ù›Ü›X]
+Ëš[œÙ\Ù›Ü›X]
+Kˆ^\›˜[ÝX›\×ÛX\[™ÊË™^\›˜[ÝX›\×ÛX\[™ÊKˆØØ[\œÊËœØØ[\œÊKˆÜXÚX[ÜØØ[\œÊËœÜXÚX[ÜØØ[\œÊKˆ™^Ý\Ú×ØØ[˜XÚÊË›™^Ý\Ú×ØØ[˜XÚÊKˆY\™ÙWÝ™YWÜ™XYÝ\Ú×ØØ[˜XÚÊË›Y\™ÙWÝ™YWÜ™XYÝ\Ú×ØØ[˜XÚÊKˆY\™ÙWÝ™YWØ[Ü˜[™Ù\×ØØ[˜XÚÊË›Y\™ÙWÝ™YWØ[Ü˜[™Ù\×ØØ[˜XÚÊKˆ\˜[[Ü™\XØ\×ÙÜ›Ý\Ý]ZY
+Ëœ\˜[[Ü™\XØ\×ÙÜ›Ý\Ý]ZY
+Kˆ›ØÚ×ÛX\œÚ[[™×ØØ[˜XÚÊË˜›ØÚ×ÛX\œÚ[[™×ØØ[˜XÚÊKˆ\×Ý[™\—Ü™\ÝÜ™JËš\×Ý[™\—Ü™\ÝÜ™JKˆÛY[Ü›ÝØÛÛÝ™\œÚ[ÛŠË˜ÛY[Ü›ÝØÛÛÝ™\œÚ[ÛŠKˆ\][Û—ÚYÝ×ÛX^Ø›ØÚÊËœ\][Û—ÚYÝ×ÛX^Ø›ØÚÊKˆ]Y\žWØXØÙ\Ü×Ú[™›ÊÝŽ›XZÙWÜÚ\™Y]Y\žPXØÙ\ÜÒ[™›ÏŠ
+›Ëœ]Y\žWØXØÙ\Ü×Ú[™›ÊJKˆ]Y\žWÙ˜XÝÜšY\×Ú[™›ÊËœ]Y\žWÙ˜XÝÜšY\×Ú[™›ÊKˆ]Y\žWÜš]š[YÙ\×Ú[™›ÊËœ]Y\žWÜš]š[YÙ\×Ú[™›ÊKˆ\Þ[˜×Ü™XYØÛÝ[\œÊË˜\Þ[˜×Ü™XYØÛÝ[\œÊKˆšY]×ÜÛÝ\˜ÙJËšY]×ÜÛÝ\˜ÙJKˆËËÈX›WÙ[˜Ý[Û—Ü™\Ý[Ø\ÈÛÜYY[ˆH›ÙH[™\ˆËX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^ˆËËÈÈ]›ÚYH]H˜XÙHÚ]ÛÛ^Ž™^XÝ]UX›Q[˜Ý[Û˜[™Ý\ˆÜš]\œÂˆËËÈ]]]]HHÛÝ\˜ÙHØš™XÝ	ÜÈX\ˆÙYH\ÜÝYHÌLË‚ˆ]Y\žWØÛÛ^
+Ëœ]Y\žWØÛÛ^
+KˆÙ\ÜÚ[Û—ØÛÛ^
+ËœÙ\ÜÚ[Û—ØÛÛ^
+KˆÛØ˜[ØÛÛ^
+Ë™ÛØ˜[ØÛÛ^
+Kˆ˜XÚÙÜ›Ý[™ØÛÛ^
+Ë˜˜XÚÙÜ›Ý[™ØÛÛ^
+KˆY™™\—ØÛÛ^
+Ë˜Y™™\—ØÛÛ^
+Kˆ\×Ú[\›˜[Ü]Y\žJËš\×Ú[\›˜[Ü]Y\žJKˆ\×Ø˜XÚÙÜ›Ý[™ÛÜ\˜][ÛŠËš\×Ø˜XÚÙÜ›Ý[™ÛÜ\˜][ÛŠKˆ\×ÙÛÜ—ÛÛ—ØÛ\Ý\—Ú[\›˜[
+Ëš\×ÙÛÜ—ÛÛ—ØÛ\Ý\—Ú[\›˜[
+Kˆ\×ÝšY]×Ú[›™\—Ü]Y\žJËš\×ÝšY]×Ú[›™\—Ü]Y\žJKˆÜÚ][Û˜[Ø\™Ý[Y[×Ø[™XYWÜ™\ÛÛ™Y
+ËœÜÚ][Û˜[Ø\™Ý[Y[×Ø[™XYWÜ™\ÛÛ™Y
+Kˆ[\Ù]WÛÛ—Ù\ÚÊË[\Ù]WÛÛ—Ù\ÚÊKˆÛ\ÜÚYšY\ŠË˜Û\ÜÚYšY\ŠKˆ™\\™YÜÙ]×ØØXÚJËœ™\\™YÜÙ]×ØØXÚJKˆÙ™œÙ]Ü\˜[[Ü™\XØ\×Ù[˜X›Y
+Ë›Ù™œÙ]Ü\˜[[Ü™\XØ\×Ù[˜X›Y
+Kˆ[[YWÙš[\—ÛÛÚÝ\
+Ëœ[[YWÙš[\—ÛÛÚÝ\
+KˆÚ]Ú[—ÜÚ[šÊËšÚ]Ú[—ÜÚ[šÊKˆ]Y\žWÜ\˜[Y]\œÊËœ]Y\žWÜ\˜[Y]\œÊKˆÜÝØÛÛ^
+ËšÜÝØÛÛ^
+KˆY]Y]WÝ˜[œØXÝ[ÛŠË›Y]Y]WÝ˜[œØXÝ[ÛŠKˆY\™ÙWÝ™YWÝ˜[œØXÝ[ÛŠË›Y\™ÙWÝ™YWÝ˜[œØXÝ[ÛŠKˆY\™ÙWÝ™YWÝ˜[œØXÝ[Û—ÚÛ\ŠË›Y\™ÙWÝ™YWÝ˜[œØXÝ[Û—ÚÛ\ŠKˆ™[[ÝWÜ™XYÜ]Y\žWÝ›Ý\ŠËœ™[[ÝWÜ™XYÜ]Y\žWÝ›Ý\ŠKˆ™[[ÝWÝÜš]WÜ]Y\žWÝ›Ý\ŠËœ™[[ÝWÝÜš]WÜ]Y\žWÝ›Ý\ŠKˆØØ[Ü™XYÜ]Y\žWÝ›Ý\ŠË›ØØ[Ü™XYÜ]Y\žWÝ›Ý\ŠKˆØØ[ÝÜš]WÜ]Y\žWÝ›Ý\ŠË›ØØ[ÝÜš]WÜ]Y\žWÝ›Ý\ŠKˆ˜XÚÝ\×Ü]Y\žWÝ›Ý\ŠË˜˜XÚÝ\×Ü]Y\žWÝ›Ý\ŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊËX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^
+NÂˆX›WÙ[˜Ý[Û—Ü™\Ý[ÈHËX›WÙ[˜Ý[Û—Ü™\Ý[ÎÂŸB‚›ÚYÛÛ^]NŽœ™\Ù]Ú\™YÛÛ^
+
+BžÂˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]]^ÜÚ\™YØÛÛ^
+NÂˆÚ\™YH[ŽÂŸB‚ÛÛ™šYÝ\˜][Û”ˆÛÛ^]NŽžQÙ]ÛÛ™šYÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]]^ÜÚ\™YØÛÛ^
+NÂˆ™]\›ˆÚ\™YÈÚ\™YO™Ù]ÛÛ™šYÊ
+Hˆ[ŽÂŸB‚ÛÛ^ŽÛÛ^
+
+HHY˜][ÂÛÛ^ŽÛÛ^
+ÛÛœÝÛÛ^	ˆšÊHˆÛÛ^]JšÊKÝŽ™[˜X›WÜÚ\™YÙœ›ÛWÝ\ÏÛÛ^ŠšÊHßB‚”Ú\™YÛÛ^Û\ŽŽ”Ú\™YÛÛ^Û\ŠÚ\™YÛÛ^Û\ˆ	‰ŠH›Ù^Ù\HY˜][Â”Ú\™YÛÛ^Û\ˆ	ˆÚ\™YÛÛ^Û\ŽŽ›Ü\˜]ÜJÚ\™YÛÛ^Û\ˆ	‰ŠH›Ù^Ù\HY˜][Â”Ú\™YÛÛ^Û\ŽŽ”Ú\™YÛÛ^Û\Š
+HHY˜][Â”Ú\™YÛÛ^Û\ŽŽŸ”Ú\™YÛÛ^Û\Š
+HHY˜][Â”Ú\™YÛÛ^Û\ŽŽ”Ú\™YÛÛ^Û\ŠÝŽ[š\]YWÜÛÛ^Ú\™Y\ˆÚ\™YØÛÛ^
+BˆˆÚ\™Y
+ÝŽ›[Ý™JÚ\™YØÛÛ^
+JHßB‚›ÚYÚ\™YÛÛ^Û\ŽŽœ™\Ù]
+
+HÈÚ\™Yœ™\Ù]
+
+NÈB‚ÛÛ^]]X›TˆÛÛ^Ž˜Ü™X]QÛØ˜[
+ÛÛ^Ú\™Y\
+ˆÚ\™YÜ\
+BžÂˆ]]È™\ÈHÝŽœÚ\™YÜÛÛ^Š™]ÈÛÛ^
+NÂˆ™\ËOœÚ\™YHÚ\™YÜ\Âˆ™\ËOœ]Y\žWØXØÙ\Ü×Ú[™›ÈHÝŽ›XZÙWÜÚ\™Y]Y\žPXØÙ\ÜÒ[™›ÏŠ
+NÂˆ™\ËOœ]Y\žWÜš]š[YÙ\×Ú[™›ÈHÝŽ›XZÙWÜÚ\™Y]Y\žTš]š[YÙ\Ò[™›ÏŠ
+NÂˆ™\ËO˜\Þ[˜×Ü™XYØÛÝ[\œÈHÝŽ›XZÙWÜÚ\™Y\Þ[˜Ô™XYÛÝ[\œÏŠ
+NÂˆ™]\›ˆ™\ÎÂŸB‚”Ú\™YÛÛ^Û\ˆÛÛ^Ž˜Ü™X]TÚ\™Y
+
+BžÂˆ™]\›ˆÚ\™YÛÛ^Û\ŠÝŽ›XZÙWÝ[š\]YOÛÛ^Ú\™Y\Š
+JNÂŸB‚ÛÛ^]]X›TˆÛÛ^Ž˜Ü™X]PÛÜJÛÛœÝÛÛ^ˆ	ˆÝ\ŠBžÂˆÚ\™YØÚÑÝX\™ØÚÊÝ\‹O›]]^
+NÂˆ]]È™]×ØÛÛ^HÝŽœÚ\™YÜÛÛ^Š™]ÈÛÛ^
+
+›Ý\ŠJNÂˆ™]\›ˆ™]×ØÛÛ^ÂŸB‚ÛÛ^]]X›TˆÛÛ^Ž˜Ü™X]PÛÜJÛÛœÝÛÛ^ÙXZÔˆ	ˆÝ\ŠBžÂˆ]]ÈˆHÝ\‹›ØÚÊ
+NÂˆYˆ
+\ŠBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹Ø[‰ÝÛÜH[ˆ^\™YÛÛ^ŠNÂˆ™]\›ˆÜ™X]PÛÜJŠNÂŸB‚ÛÛ^]]X›TˆÛÛ^Ž˜Ü™X]PÛÜJÛÛœÝÛÛ^]]X›Tˆ	ˆÝ\ŠBžÂˆ™]\›ˆÜ™X]PÛÜJÝŽ˜ÛÛœÝÜÚ[\—ØØ\ÝÛÛœÝÛÛ^ŠÝ\ŠJNÂŸB‚ÛÛ^ŽŸÛÛ^
+
+HHY˜][Â‚’[\œÙ\™\’SÒ[™\ˆ	ˆÛÛ^Ž™Ù][\œÙ\™\’SÒ[™\Š
+HÈ™]\›ˆÚ\™YOš[\œÙ\™\—Ú[×Ú[™\ŽÈB˜ÛÛœÝ[\œÙ\™\’SÒ[™\ˆ	ˆÛÛ^Ž™Ù][\œÙ\™\’SÒ[™\Š
+HÛÛœÝÈ™]\›ˆÚ\™YOš[\œÙ\™\—Ú[×Ú[™\ŽÈB‚”›ØÙ\ÜÓ\Ý	ˆÛÛ^Ž™Ù]›ØÙ\ÜÓ\Ý
+
+HÈ™]\›ˆÚ\™YOœ›ØÙ\Ü×Û\ÝÈB˜ÛÛœÝ›ØÙ\ÜÓ\Ý	ˆÛÛ^Ž™Ù]›ØÙ\ÜÓ\Ý
+
+HÛÛœÝÈ™]\›ˆÚ\™YOœ›ØÙ\Ü×Û\ÝÈB“Ý™\˜ÛÛ[Z]˜XÚÙ\ˆ
+ˆÛÛ^Ž™Ù]ÛØ˜[Ý™\˜ÛÛ[Z]˜XÚÙ\Š
+HÛÛœÝÈ™]\›ˆ	œÚ\™YO™ÛØ˜[ÛÝ™\˜ÛÛ[Z]Ý˜XÚÙ\ŽÈB‚”Ù\ÜÚ[Û•˜XÚÙ\ˆ	ˆÛÛ^Ž™Ù]Ù\ÜÚ[Û•˜XÚÙ\Š
+HÈ™]\›ˆÚ\™YOœÙ\ÜÚ[Û—Ý˜XÚÙ\ŽÈB‚“Y\™ÙS\Ý	ˆÛÛ^Ž™Ù]Y\™ÙS\Ý
+
+HÈ™]\›ˆÚ\™YO›Y\™ÙWÛ\ÝÈB˜ÛÛœÝY\™ÙS\Ý	ˆÛÛ^Ž™Ù]Y\™ÙS\Ý
+
+HÛÛœÝÈ™]\›ˆÚ\™YO›Y\™ÙWÛ\ÝÈB“[Ý™\Ó\Ý	ˆÛÛ^Ž™Ù][Ý™\Ó\Ý
+
+HÈ™]\›ˆÚ\™YO›[Ý™\×Û\ÝÈB˜ÛÛœÝ[Ý™\Ó\Ý	ˆÛÛ^Ž™Ù][Ý™\Ó\Ý
+
+HÛÛœÝÈ™]\›ˆÚ\™YO›[Ý™\×Û\ÝÈB”™\XØ]Y™]Ú\Ý	ˆÛÛ^Ž™Ù]™\XØ]Y™]Ú\Ý
+
+HÈ™]\›ˆÚ\™YOœ™\XØ]YÙ™]ÚÛ\ÝÈB˜ÛÛœÝ™\XØ]Y™]Ú\Ý	ˆÛÛ^Ž™Ù]™\XØ]Y™]Ú\Ý
+
+HÛÛœÝÈ™]\›ˆÚ\™YOœ™\XØ]YÙ™]ÚÛ\ÝÈB”™Yœ™\ÚÙ]	ˆÛÛ^Ž™Ù]™Yœ™\ÚÙ]
+
+HÈ™]\›ˆÚ\™YOœ™Yœ™\ÚÜÙ]ÈB˜ÛÛœÝ™Yœ™\ÚÙ]	ˆÛÛ^Ž™Ù]™Yœ™\ÚÙ]
+
+HÛÛœÝÈ™]\›ˆÚ\™YOœ™Yœ™\ÚÜÙ]ÈB‚”Ýš[™ÈÛÛ^Žœ™\ÛÛ™Q]X˜\ÙJÛÛœÝÝš[™È	ˆ]X˜\ÙWÛ˜[YJHÛÛœÝžÂˆÝš[™È™\ÈH]X˜\ÙWÛ˜[YK™[\J
+HÈÙ]Ý\œ™[]X˜\ÙJ
+Hˆ]X˜\ÙWÛ˜[YNÂˆYˆ
+™\Ë™[\J
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÑUPTÑK‘Y˜][]X˜\ÙH\È›ÝÙ[XÝYŠNÂˆ™]\›ˆ™\ÎÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœ]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]›YÜÔ]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™›YÜ×Ü]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]\Ù\‘š[\Ô]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO\Ù\—Ùš[\×Ü]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]XÝ[Û˜\šY\ÓX”]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™XÝ[Û˜\šY\×ÛX—Ü]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]\Ù\”ØÜš\Ô]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO\Ù\—ÜØÜš\×Ü]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù][˜[ZXÕ\Ù\‘Yš[™Y^XÝ]X›Q[˜Ý[ÛœÔ]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Ü]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]š[\Þ\Ý[PØXÚ\Ô]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™š[\Þ\Ý[WØØXÚ\×Ü]ÂŸB‚œÝŽœÚ\™YÜQ\ÚÏˆÛÛ^Ž™Ù]]X˜\ÙQ\ÚÊ
+HÛÛœÝžÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YO™Y˜][Ù—Ù\ÚÊBˆ™]\›ˆÚ\™YO™Y˜][Ù—Ù\ÚÎÂˆB‚ˆËÈ\È\ÈØ[Yš\œÝ[YHX\›H\š[™ÈH[š]X[^˜][Û‹‚ˆËÈ]™[ˆYˆ][\H™XYÈžHÈÙ]\™Ù]Ù—Ù\ÚËÛ›HHš\œÝÛ™HÚ[[š]X[^™HH\ÚÜÈ\È\™H\È[›Ý\ˆ]]^[ˆÙ]\ÚÓX\
+
+XˆËÈ]\È›Ý™XÙ\ÜØ\žHÈ[›ÙXÙHH]]^\™K‚ˆ]]È\™Ù]Ù—Ù\ÚÈHÉ—J
+HOˆÝŽœÚ\™YÜQ\ÚÏ‚ˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™YŠ
+NÂˆÛÛœÝ]]È	ˆ\Ú×ÛX\HÙ]\ÚÜÓX\
+
+NÂˆ]]È\Ú×Û˜[YHHÛÛ™šYË™Ù]Ýš[™Ê™]X˜\ÙWÙ\ÚË™\ÚÈ‹\ÚÔÙ[XÝÜŽŽ‘QUSÑTÒ×ÓSQJNÂ‚ˆÑ×ÒS‘“ÊÚ\™YO›ÙË‘]X˜\ÙH\ÚÈ˜[YNˆßH‹\Ú×Û˜[YJNÂ‚ˆ]]È]H\Ú×ÛX\™š[™
+\Ú×Û˜[YJNÂˆYˆ
+]OH\Ú×ÛX\™[™
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÑTÒË“›È\ÚÈßH‹˜XÚÔ][ÝJ\Ú×Û˜[YJJNÂ‚ˆÚ\ÜÙ\
+]OœÙXÛÛ™
+NÂ‚ˆÑ×ÒS‘“ÊÚ\™YO›ÙË‘]X˜\ÙH\ÚÈ˜[YNˆßK]ˆßH‹\Ú×Û˜[YK]OœÙXÛÛ™O™Ù]]
+
+JNÂˆ™]\›ˆ]OœÙXÛÛ™ÂˆJ
+NÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YO™Y˜][Ù—Ù\ÚÊBˆ™]\›ˆÚ\™YO™Y˜][Ù—Ù\ÚÎÂ‚ˆ™]\›ˆÚ\™YO™Y˜][Ù—Ù\ÚÈH\™Ù]Ù—Ù\ÚÎÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]š[\Þ\Ý[PØXÚU\Ù\Š
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™š[\Þ\Ý[WØØXÚWÝ\Ù\ŽÂŸB‚‘]X˜\ÙP[™X›HÛÛ^Ž™Ù]ÜØXÚTÝÜ˜YÙJÛÛœÝÝÜ˜YÙRQ	ˆYÝŽ™[˜Ý[Û]X˜\ÙP[™X›J
+OˆÝÜ˜YÙWÙÙ]\ŠHÛÛœÝžÂˆ]]È	ˆÚ\™HÝÜ˜YÙWØØXÚKœÚ\™ÖÔÝÜ˜YÙPØXÚNŽœÚ\™[™^
+Y
+WNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™›]]^
+NÂ‚ˆYˆ
+]]È]HÚ\™œÙ]™š[™
+Y
+NÈ]OHÚ\™œÙ]™[™
+
+JBˆÂˆ]X˜\ÙP[™X›HÝÜ˜YÙHH]X˜\ÙPØ][ÙÎŽš[œÝ[˜ÙJ
+KžQÙ]žUURQ
+]O]ZY
+NÂˆËËÈHØXÚH\ÈÙ^YYžH]X[YšYY˜[YHÛ›H
+ÙYHÝÜ˜YÙPØXÚNŽ”Ú\™ŽœÙ]
+KÛÈH]Ø[‚ˆËËÈØ\œžHHURQ]›ÈÛ™Ù\ˆX]Ú\ÈH˜[YHÙH\™H™\ÛÛš[™Ëˆ™]\›ˆHØXÚYÝÜ˜YÙBˆËËÈÛ›HYˆ]\ÈÝ[œ™\ÚˆÝ\Ú\ÙHH[žH\ÈÝ[H[™]\Ý›Ý™H™]\ÙY‚ˆËËÈHHX›H›ÈÛ™Ù\ˆ^\ÝÈžH]ÈURQ
+K™ËˆH™Yœ™\ÚX›HX]\šX[^™YšY]ÉÜÈ[›™\‚ˆËËÈX›HØ\È›ÜY[™™XÜ™X]Y
+KÜ‚ˆËËÈHHURQÝ[^\ÝÈ]H˜[YHØ\È™X\ÜÚYÛ™YÈHY™™\™[X›HžHH™[˜[YHÜ‚ˆËËÈ^Ú[™ÙHÚ][ˆHØ[YH]Y\žKˆ\È\[œÈ\š[™ÈÔ‘PUHÔˆ‘TPÑXÚXÚÜ™X]\ÈBˆËËÈ[\Ü˜\žHX›KÜ[]\È]
+ØXÚ[™ÈH[\Ü˜\žH˜[YHOˆ[\Ü˜\žHURQ\™JK[‚ˆËËÈ]ÛZXØ[HÝØ\È]Ú]H\™Ù]šXHVÒS‘ÑXˆY\ˆHÝØ\H[\Ü˜\žH˜[YBˆËËÈ™Y™\œÈÈHÛX›H]\ÈX›Ý]È™H›ÜY]HØXÚHÛÝ[Ý[[™Ý]ˆËËÈH™]È
+›ÝÈ]™JHX›HHÛÈ›Ü[™ÈžHH[\Ü˜\žH˜[YHÛÝ[Ú]ÝÛˆH]™BˆËËÈX›H[œÝXY[™œ™XZÈ]
+K™Ëˆ]XÚ[™ÈHX]\šX[^™YšY]Èœ›ÛH]ÈÛÝ\˜ÙJKÜ‚ˆËËÈHHØ[\ˆ\ÚÙY›ÜˆHÜXÚYšXÈURQ]HØXÚY[žH™\ÛÛ™\ÈÈHY™™\™[Û™BˆËËÈ
+HØ[YK[˜[YH™\XÙ[Y[
+NÈ™]\›š[™È]ÛÝ[Ú[[HÝXœÝ]]HHÜ›Û™ÈX›BˆËËÈ[œÝXYÙˆ][™ÈHœ™\ÚÛÚÝ\™\ÜS’Ó“ÕÓ—ÕP“XØP“WÕURQÓRTÓPUÒ‚ˆËËÈ[ˆ[Ø\Ù\È™[[Ý™HHÝ[H[žH[™˜[›ÝYÚÈHœ™\ÚÛÚÝ\žH˜[YK‚ˆYˆ
+ÝÜ˜YÙKœÙXÛÛ™ˆ	‰ˆÝÜ˜YÙKœÙXÛÛ™O™Ù]ÝÜ˜YÙRQ
+
+K™Ù]]X[YšYY˜[YJ
+HOHY™Ù]]X[YšYY˜[YJ
+Bˆ	‰ˆ
+ZYš\ÕURQ
+
+H]O]ZYOHY]ZY
+JBˆ™]\›ˆÝÜ˜YÙNÂ‚ˆÚ\™œÙ]™\˜\ÙJ]
+NÂˆB‚ˆ]]ÈÝÜ˜YÙHHÝÜ˜YÙWÙÙ]\Š
+NÂ‚ˆYˆ
+ÝÜ˜YÙKœÙXÛÛ™
+BˆÂˆÛÛœÝ]]È	ˆ™]×ÚYHÝÜ˜YÙKœÙXÛÛ™O™Ù]ÝÜ˜YÙRQ
+
+NÂˆYˆ
+™]×ÚYš\ÕURQ
+
+JBˆÂˆÚ\™œÙ]š[œÙ\
+™]×ÚY
+NÂˆBˆB‚ˆ™]\›ˆÝÜ˜YÙNÂŸB‚œÝŽ[›Ü™\™YÛX\ÛÛ^Ž•Ø\›š[™Õ\K™Y›Ü›X]YY\ÜØYÙOˆÛÛ^Ž™Ù]Ø\›š[™ÜÊ
+HÛÛœÝžÂˆÝŽ[›Ü™\™YÛX\ÛÛ^Ž•Ø\›š[™Õ\K™Y›Ü›X]YY\ÜØYÙOˆÛÛ[[Û—ÝØ\›š[™ÜÎÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÛÛ[[Û—ÝØ\›š[™ÜÈHÚ\™YOØ\›š[™ÜÎÂ‚ˆ]]ÈXÝ]™WÜ\ÈHÝ\œ™[Y]šXÜÎŽ™Ù]
+Ý\œ™[Y]šXÜÎŽ”\ÐXÝ]™JNÂ‚ˆ]]ÈÚXÚ×Ù[]WÛ[Z]HÉ—J[]XÚYØÛÝ[ˆÝŽ˜]ÛZX×ÜÚ^™WÝÛÛ^Ú\™Y\ŽŠˆØ\›—ÙšY[ˆÝŽ˜]ÛZX×ÜÚ^™WÝÛÛ^Ú\™Y\ŽŠˆ›Ý×ÙšY[ˆØ\›š[™Õ\HØ\›š[™×Ý\Kˆ]]ÈXZÙWÝØ\›š[™Ëˆ]]ÈXZÙWÝØ\›š[™×ÝÚ]Ý›ÝÊBˆÂˆ]]ÈØ\›—Û[Z]H
+Ú\™YOŠØ\›—ÙšY[
+K›ØY
+
+NÂˆYˆ
+]XÚYØÛÝ[ˆÝ]X×ØØ\Ý[ŠØ\›—Û[Z]
+JBˆÂˆ]]È›Ý×Û[Z]H
+Ú\™YOŠ›Ý×ÙšY[
+K›ØY
+
+NÂˆYˆ
+›Ý×Û[Z]ˆØ\›—Û[Z]
+BˆÛÛ[[Û—ÝØ\›š[™ÜÖÝØ\›š[™×Ý\WHHXZÙWÝØ\›š[™×ÝÚ]Ý›ÝÊ]XÚYØÛÝ[Ø\›—Û[Z]›Ý×Û[Z]
+NÂˆ[ÙBˆÛÛ[[Û—ÝØ\›š[™ÜÖÝØ\›š[™×Ý\WHHXZÙWÝØ\›š[™Ê]XÚYØÛÝ[Ø\›—Û[Z]
+NÂˆBˆNÂ‚ˆÚXÚ×Ù[]WÛ[Z]
+ˆÝ\œ™[Y]šXÜÎŽ™Ù]
+Ý\œ™[Y]šXÜÎŽ]XÚYX›JKˆ	ÛÛ^Ú\™Y\Ž›X^ÝX›WÛ[WÝ×ÝØ\›‹ˆ	ÛÛ^Ú\™Y\Ž›X^ÝX›WÛ[WÝ×Ý›ÝËˆØ\›š[™Õ\NŽ“PVÐUPÒQÕP“TËˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚYX›\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‹]XÚYØÛÝ[Ø\›—Û[Z]
+NÂˆKˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]]]È›Ý×Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚYX›\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ[ÝHÚ[›Ý™HX›HÈÜ™X]H™]ÈX›\ÈÛ˜ÙH‚ˆH‚ˆ›[Z]ÙˆßH\È™XXÚYˆ‹ˆ]XÚYØÛÝ[ˆØ\›—Û[Z]ˆ›Ý×Û[Z]
+NÂˆJNÂˆÚXÚ×Ù[]WÛ[Z]
+ˆÝ\œ™[Y]šXÜÎŽ™Ù]
+Ý\œ™[Y]šXÜÎŽ]XÚYšY]ÊKˆ	ÛÛ^Ú\™Y\Ž›X^ÝšY]×Û[WÝ×ÝØ\›‹ˆ	ÛÛ^Ú\™Y\Ž›X^ÝšY]×Û[WÝ×Ý›ÝËˆØ\›š[™Õ\NŽ“PVÐUPÒQÕ’QUÔËˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚYšY]ÜÈ
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‹]XÚYØÛÝ[Ø\›—Û[Z]
+NÂˆKˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]]]È›Ý×Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚYšY]ÜÈ
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ[ÝHÚ[›Ý™HX›HÈÜ™X]H™]ÈšY]ÜÈÛ˜ÙHH‚ˆ›[Z]ÙˆßH\È™XXÚYˆ‹ˆ]XÚYØÛÝ[ˆØ\›—Û[Z]ˆ›Ý×Û[Z]
+NÂˆJNÂˆÚXÚ×Ù[]WÛ[Z]
+ˆÝ\œ™[Y]šXÜÎŽ™Ù]
+Ý\œ™[Y]šXÜÎŽ]XÚYXÝ[Û˜\žJKˆ	ÛÛ^Ú\™Y\Ž›X^ÙXÝ[Û˜\žWÛ[WÝ×ÝØ\›‹ˆ	ÛÛ^Ú\™Y\Ž›X^ÙXÝ[Û˜\žWÛ[WÝ×Ý›ÝËˆØ\›š[™Õ\NŽ“PVÐUPÒQÑPÕSÓT’QTËˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚYXÝ[Û˜\šY\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‹]XÚYØÛÝ[Ø\›—Û[Z]
+NÂˆKˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]]]È›Ý×Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚYXÝ[Û˜\šY\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‚ˆ–[ÝHÚ[›Ý™HX›HÈÜ™X]H™]ÈXÝ[Û˜\šY\ÈÛ˜ÙHH‚ˆ›[Z]ÙˆßH\È™XXÚYˆ‹ˆ]XÚYØÛÝ[ˆØ\›—Û[Z]ˆ›Ý×Û[Z]
+NÂˆJNÂˆÚXÚ×Ù[]WÛ[Z]
+ˆÝ\œ™[Y]šXÜÎŽ™Ù]
+Ý\œ™[Y]šXÜÎŽ]XÚY]X˜\ÙJKˆ	ÛÛ^Ú\™Y\Ž›X^Ù]X˜\ÙWÛ[WÝ×ÝØ\›‹ˆ	ÛÛ^Ú\™Y\Ž›X^Ù]X˜\ÙWÛ[WÝ×Ý›ÝËˆØ\›š[™Õ\NŽ“PVÐUPÒQÑUPTÑTËˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚY]X˜\Ù\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‹]XÚYØÛÝ[Ø\›—Û[Z]
+NÂˆKˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]]]È›Ý×Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ]XÚY]X˜\Ù\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ[ÝHÚ[›Ý™HX›HÈÜ™X]H™]È]X˜\Ù\È‚ˆ›Û˜ÙHH‚ˆ›[Z]ÙˆßH\È™XXÚYˆ‹ˆ]XÚYØÛÝ[ˆØ\›—Û[Z]ˆ›Ý×Û[Z]
+NÂˆJNÂˆÚXÚ×Ù[]WÛ[Z]
+ˆÝ\œ™[Y]šXÜÎŽ™Ù]
+Ý\œ™[Y]šXÜÎŽ“˜[YYÛÛXÝ[ÛŠKˆ	ÛÛ^Ú\™Y\Ž›X^Û˜[YYØÛÛXÝ[Û—Û[WÝ×ÝØ\›‹ˆ	ÛÛ^Ú\™Y\Ž›X^Û˜[YYØÛÛXÝ[Û—Û[WÝ×Ý›ÝËˆØ\›š[™Õ\NŽ“PVÓSQQÐÓÓPÕSÓ”Ëˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ˜[YYÛÛXÝ[ÛœÈ
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‹]XÚYØÛÝ[Ø\›—Û[Z]
+NÂˆKˆ×J]]È]XÚYØÛÝ[]]ÈØ\›—Û[Z]]]È›Ý×Û[Z]
+BˆÂˆ™]\›ˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆ˜[YYÛÛXÝ[ÛœÈ
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‚ˆ–[ÝHÚ[›Ý™HX›HÈÜ™X]H™]È˜[YYÛÛXÝ[ÛœÈÛ˜ÙHH‚ˆ›[Z]ÙˆßH\È™XXÚYˆ‹ˆ]XÚYØÛÝ[ˆØ\›—Û[Z]ˆ›Ý×Û[Z]
+NÂˆJNÂ‚ˆYˆ
+XÝ]™WÜ\ÈˆÝ]X×ØØ\Ý[ŠÚ\™YO›X^Ü\Û[WÝ×ÝØ\›ŠJBˆÛÛ[[Û—ÝØ\›š[™ÜÖÐÛÛ^Ž•Ø\›š[™Õ\NŽ“PVÐPÕU‘WÔT•×HH™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•H[X™\ˆÙˆXÝ]™H\È
+ßJH^ÙYYÈHØ\›š[™È[Z]ÙˆßKˆ‹ˆXÝ]™WÜ\ËÚ\™YO›X^Ü\Û[WÝ×ÝØ\›‹›ØY
+
+JNÂˆBˆYˆ
+
+
+œÙ][™ÜÊVÔÙ][™ÎŽ˜\ÝÙ^ž™\—Ü[œ×Hˆ
+BˆÛÛ[[Û—ÝØ\›š[™ÜÖÐÛÛ^Ž•Ø\›š[™Õ\NŽTÕÑ•V–‘T—ÒT×ÑSP“QHH™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]Jˆ•HÙ\™\‹\ÚYHTÕ^ž™\ˆ\È[˜X›Y
+\ÝÙ^ž™\—Ü[œØHßJKˆ\È\È[[™Y›Üˆ\Ý[™ÈÛ›H[™\È›ÝÝZ]X›H›Üˆ›ÙXÝ[Û‹ˆ‹ˆ
+
+œÙ][™ÜÊVÔÙ][™ÎŽ˜\ÝÙ^ž™\—Ü[œ×K˜[YJNÂ‚ˆËËÈXZÙHÙ][™ÉÜÈ˜[YHÜ™\™YˆYˆ
+J
+œÙ][™ÜÊVÔÙ][™ÎŽ˜ÛÝYÛ[ÙWJBˆÂˆ]]ÈØœÛÛ]WÜÙ][™ÜÈHÙ][™ÜËO™Ù]Ú[™ÙY[™ØœÛÛ]S˜[Y\Ê
+NÂ‚ˆYˆ
+[ØœÛÛ]WÜÙ][™ÜË™[\J
+JBˆÂˆ›ÛÛÚ[™ÛWÙ[[Y[HØœÛÛ]WÜÙ][™ÜËœÚ^™J
+HOHNÂˆÛÛœÝ^ˆ]]ÈY\ÜØYÙWÙ›Ü›X]ÜÝš[™ÂˆH“ØœÛÛ]HÙ][™ÞßHÞßW^ßHÚ[™ÙYˆX\ÙHÚXÚÈ	ÔÑSPÕ
+ˆ”“ÓHÞ\Ý[KœÙ][™ÜÈÒT‘HÚ[™ÙYS‘\×ÛØœÛÛ]IÈ[™™XYH‚ˆ˜Ú[™Ù[ÙÈ]Î‹ËÙÚ]X‹˜ÛÛKÐÛXÚÒÝ\ÙKÐÛXÚÒÝ\ÙKØ›Ø‹ÛX\Ý\‹ÐÒS‘ÑSÑË›YŽÂˆÝš[™ÈÙ][™Ü×Û\ÝH›]Ž™›Ü›X]
+‰ÞßIÈ‹›]Žš›Ú[ŠØœÛÛ]WÜÙ][™ÜË‰Ë	ÈŠJNÂˆÛÛ[[Û—ÝØ\›š[™ÜÖÐÛÛ^Ž•Ø\›š[™Õ\NŽ“Ð”ÓÓUWÔÑUS‘Ô×BˆH™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]JY\ÜØYÙWÙ›Ü›X]ÜÝš[™ËÚ[™ÛWÙ[[Y[ÈˆˆˆœÈ‹Ù][™Ü×Û\ÝÚ[™ÛWÙ[[Y[Èˆ\Èˆˆˆ\™HŠNÂˆBˆB‚ˆ™]\›ˆÛÛ[[Û—ÝØ\›š[™ÜÎÂŸB‚‹ËËÈÑÎˆ™[[Ý™K\ÙHÙ][\]SÛ‘\ÚØ•›Û[YTˆÛÛ^Ž™Ù]ÛØ˜[[\Ü˜\žU›Û[YJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆËËÈØ[[™È\ÈY]ÙÙH\Ýž\\ÜÈH[\Ù]WÛÛ—Ù\ÚØ[™Üš]HÈHš[HÛˆH›Û[YH\™XÝK‚ˆËËÈ›Û[YH\ÈHØ[YH›Üˆ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚØ
+[Ø^\ÈÙ]
+H[™[\Ù]WÛÛ—Ù\ÚØ
+Yˆ]	ÜÈÙ]
+K‚ˆYˆ
+Ú\™YO[\Ü˜\žWÝ›Û[YWÛYØXÞJBˆ™]\›ˆÚ\™YO[\Ü˜\žWÝ›Û[YWÛYØXÞNÂˆ™]\›ˆ[ŽÂŸB‚•[\Ü˜\žQ]SÛ‘\ÚÔØÛÜTˆÛÛ^Ž™Ù][\]SÛ‘\ÚÊ
+HÛÛœÝžÂˆYˆ
+[\Ù]WÛÛ—Ù\ÚÊBˆ™]\›ˆ[\Ù]WÛÛ—Ù\ÚÎÂ‚ˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÎÂŸB‚•[\Ü˜\žQ]SÛ‘\ÚÔØÛÜTˆÛÛ^Ž™Ù]Ú\™Y[\]SÛ‘\ÚÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÎÂŸB‚›ÚYÛÛ^ŽœÙ][\]SÛ‘\ÚÊ[\Ü˜\žQ]SÛ‘\ÚÔØÛÜTˆ[\Ù]WÛÛ—Ù\Ú×ÊBžÂˆËËÈ]	ÜÈÙ]œ›ÛH›ØÙ\ÜÓ\ÝŽš[œÙ\[ˆ^XÝ]T]Y\žR[\™Y›Ü™H]Y\žH^XÝ][Û‚ˆËËÈÛÈ›È˜XÙ\ÈÚ]Ù][\]SÛ‘\ÚØÚXÚ\ÈØ[Yœ›ÛH]Y\žH^XÝ][Û‹‚ˆ\ËO[\Ù]WÛÛ—Ù\ÚÈHÝŽ›[Ý™J[\Ù]WÛÛ—Ù\Ú×ÊNÂŸB‚›ÚYÛÛ^ŽœÙ]]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆÚ\™YOœ]H]Â‚ˆYˆ
+Ú\™YO\Ü]™[\J
+H	‰ˆ\Ú\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÊBˆÚ\™YO\Ü]HÚ\™YOœ]
+È\ÈŽÂ‚ˆYˆ
+Ú\™YO™›YÜ×Ü]™[\J
+JBˆÚ\™YO™›YÜ×Ü]HÚ\™YOœ]
+È™›YÜËÈŽÂ‚ˆYˆ
+Ú\™YO\Ù\—Ùš[\×Ü]™[\J
+JBˆÚ\™YO\Ù\—Ùš[\×Ü]HÚ\™YOœ]
+È\Ù\—Ùš[\ËÈŽÂ‚ˆYˆ
+Ú\™YO™XÝ[Û˜\šY\×ÛX—Ü]™[\J
+JBˆÚ\™YO™XÝ[Û˜\šY\×ÛX—Ü]HÚ\™YOœ]
+È™XÝ[Û˜\šY\×ÛX‹ÈŽÂ‚ˆYˆ
+Ú\™YO\Ù\—ÜØÜš\×Ü]™[\J
+JBˆÚ\™YO\Ù\—ÜØÜš\×Ü]HÚ\™YOœ]
+È\Ù\—ÜØÜš\ËÈŽÂŸB‚›ÚYÛÛ^ŽœÙ]š[\Þ\Ý[PØXÚ\Ô]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ù]\XØ][Û•\J
+HOH\XØ][Û•\NŽ“ÐÐS	‰ˆYœÎŽœ]
+]
+Kš\×ØXœÛÛ]J
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽQÐT‘ÕSQS•Ë‘š[\Þ\Ý[HØXÚ\È]]\Ý™HXœÛÛ]NˆßH‹]
+NÂ‚ˆÚ\™YO™š[\Þ\Ý[WØØXÚ\×Ü]H]ÂŸB‚›ÚYÛÛ^ŽœÙ]š[\Þ\Ý[PØXÚU\Ù\ŠÛÛœÝÝš[™È	ˆ\Ù\ŠHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO™š[\Þ\Ý[WØØXÚWÝ\Ù\ˆH\Ù\ŽÂŸB‚œÝ]XÈ›ÚYÙ]\\]
+ÙÙÙ\”ˆÙËÛÛœÝ\ÚÔˆ	ˆ\ÚÊBžBžÂˆÑ×ÑP•QÊÙË”Ù][™È\[\Ü˜\žH]HÝÜ˜YÙH]\ÚÈ	ÞßIÈÚ]]	ÞßIÈ‹\ÚËO™Ù]˜[YJ
+K\ÚËO™Ù]]
+
+JNÂ‚ˆYˆ
+\ÚËO™^\ÝÑ\™XÝÜžJˆŠJBˆÂˆ›Üˆ
+]]È]H\ÚËOš]\˜]Q\™XÝÜžJˆŠNÈ]Oš\Õ˜[Y
+
+NÈ]O›™^
+
+JBˆÂˆËËÈ^\ÝÑš[J
+HÚXÚÜÈ›Üˆ\×Ü™YÝ[\—Ùš[J
+H›ÜˆØØ[\ÚÂˆYˆ
+]Oœ]
+
+KœÝ\×ÝÚ]
+\ŠH	‰ˆ\ÚËO™^\ÝÑš[J]Oœ]
+
+JJBˆÂˆÑ×ÑP•QÊÙË”™[[Ýš[™ÈÛ[\Ü˜\žHš[HßH‹]Oœ]
+
+JNÂˆ\ÚËOœ™[[Ý™Qš[J]Oœ]
+
+JNÂˆBˆ[ÙBˆÂˆÑ×ÑP•QÊÙË‘›Ý[™[šÛ›ÝÛˆš[H[ˆ[\Ü˜\žH]ßH‹]Oœ]
+
+JNÂˆBˆBˆBˆ[ÙBˆÂˆ\ÚËO˜Ü™X]Q\™XÝÜžJˆŠNÂˆBŸB˜Ø]Ú
+‹‹ŠBžÂˆŽŽžSÙÐÝ\œ™[^Ù\[ÛŠÙË›]Ž™›Ü›X]
+ˆØ]YÚ^Ù\[ÛˆÚ[HÙ][™È\[\Ü˜\žH\ÚÈßNžßKˆ‚ˆ’]\ÈÚÈÈÚÚ\\È^Ù\[Ûˆ\ÈÛX[š[™ÈÛ[\Ü˜\žHš[\È\È›Ý™XÙ\ÜØ\žH‹ˆ\ÚËO™Ù]˜[YJ
+K\ÚËO™Ù]]
+
+JJNÂŸB‚œÝ]XÈ›Û[YTˆÜ™X]SØØ[Ú[™ÛQ\ÚÕ›Û[YJÛÛœÝÝŽœÝš[™È	ˆ]ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šY×ÊBžÂˆ]]È\ÚÈHÝŽ›XZÙWÜÚ\™Y\ÚÓØØ[Š—Ý\ÙY˜][‹]ÛÛ™šY×ËœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹™\ÚÜË—Ý\ÙY˜][ŠNÂˆ›Û[YTˆ›Û[YHHÝŽ›XZÙWÜÚ\™YÚ[™ÛQ\ÚÕ›Û[YOŠ—Ý\ÙY˜][‹\ÚË
+NÂˆ™]\›ˆ›Û[YNÂŸB‚›ÚYÛÛ^ŽœÙ][\Ü˜\žTÝÜ˜YÙT]
+ÛÛœÝÝš[™È	ˆ]Ú^™WÝX^ÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•[\Ü˜\žHÝÜ˜YÙH\È[™XYHÙ]ŠNÂ‚ˆÚ\™YO\Ü]H]ÂˆYˆ
+\Ú\™YO\Ü]™[™×ÝÚ]
+	ËÉÊJBˆÚ\™YO\Ü]
+ÏH	ËÉÎÂ‚ˆ›Û[YTˆ›Û[YHHÜ™X]SØØ[Ú[™ÛQ\ÚÕ›Û[YJÚ\™YO\Ü]Ú\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊJNÂ‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆ\ÚÈˆ›Û[YKO™Ù]\ÚÜÊ
+JBˆÙ]\\]
+Ú\™YO›ÙË\ÚÊNÂ‚ˆ[\Ü˜\žQ]SÛ‘\ÚÔÙ][™ÜÈ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÎÂˆ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜË›X^ÜÚ^™WÛÛ—Ù\ÚÈHX^ÜÚ^™NÂˆÚ\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÈHÝŽ›XZÙWÜÚ\™Y[\Ü˜\žQ]SÛ‘\ÚÔØÛÜOŠÝŽ›[Ý™J[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÊK›Û[YJNÂˆÚ\™YO[\Ü˜\žWÝ›Û[YWÛYØXÞHH›Û[YNÂŸB‚›ÚYÛÛ^ŽœÙ][\Ü˜\žTÝÜ˜YÙTÛXÞJÛÛœÝÝš[™È	ˆÛXÞWÛ˜[YKÚ^™WÝX^ÜÚ^™JBžÂˆÝÜ˜YÙTÛXÞTˆ\ÜÛXÞNÂˆÂˆËËÈØÚÈ[ˆ™\]Z\™YÛ›H›ÜˆXØÙ\ÜÚ[™ÈÚ\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ˜ˆËËÈÝÜ˜YÙTÛXÞH]Ù[ˆ\È[[]]X›K‚ˆÝŽ›ØÚ×ÙÝX\™ÝÜ˜YÙWÜÛXÚY\×ÛØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂˆ\ÜÛXÞHHÙ]ÝÜ˜YÙTÛXÞTÙ[XÝÜŠÝÜ˜YÙWÜÛXÚY\×ÛØÚÊKO™Ù]
+ÛXÞWÛ˜[YJNÂˆB‚ˆYˆ
+\ÜÛXÞKO™Ù]›Û[Y\Ê
+KœÚ^™J
+HOHJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QËˆ”ÛXÞH	ÞßIÈ\È\ÙY[\Ü˜\žHš[\ËÝXÚÛXÞHÚÝ[]™H^XÝHÛ™H›Û[YH‹ÛXÞWÛ˜[YJNÂ‚ˆ›Û[YTˆ›Û[YHH\ÜÛXÞKO™Ù]›Û[YJ
+NÂ‚ˆYˆ
+›Û[YKO™Ù]\ÚÜÊ
+K™[\J
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË“›È\ÚÜÈ›Û[YH›Üˆ[\Ü˜\žHš[\ÈŠNÂ‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆ\ÚÈˆ›Û[YKO™Ù]\ÚÜÊ
+JBˆÂˆYˆ
+Y\ÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË•[\Ü˜\žH\ÚÈ\È[ŠNÂ‚ˆËËÈÚXÚÈ][™\›Z[™È\ÚÈ\ÈØØ[
+Ø[ˆ™HÜ˜\Y[ˆXÛÜ˜]ÜŠBˆ\ÚÔˆ\Ú×ÜˆH\ÚÎÂˆÙ]\\]
+Ú\™YO›ÙË\ÚÊNÂˆB‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•[\Ü˜\žHÝÜ˜YÙH\È[™XYHÙ]ŠNÂ‚ˆ[\Ü˜\žQ]SÛ‘\ÚÔÙ][™ÜÈ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÎÂˆ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜË›X^ÜÚ^™WÛÛ—Ù\ÚÈHX^ÜÚ^™NÂˆÚ\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÈHÝŽ›XZÙWÜÚ\™Y[\Ü˜\žQ]SÛ‘\ÚÔØÛÜOŠÝŽ›[Ý™J[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÊK›Û[YJNÂˆÚ\™YO[\Ü˜\žWÝ›Û[YWÛYØXÞHH›Û[YNÂŸB‚›ÚYÛÛ^ŽœÙ][\Ü˜\žTÝÜ˜YÙR[‘\ÝšX]YØXÚJÖÛX^X™WÝ[\ÙYWHÚ^™WÝX^ÜÚ^™JBžÂˆÚYˆSP“WÑTÕ’P•UQÐÐPÒBˆ[\Ü˜\žQ]SÛ‘\ÚÔÙ][™ÜÈ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÎÂˆ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜË›X^ÜÚ^™WÛÛ—Ù\ÚÈHX^ÜÚ^™NÂˆ]]È[\Ù]HHÝŽ›XZÙWÜÚ\™Y[\Ü˜\žQ]SÛ‘\ÚÔØÛÜOŠÝŽ›[Ý™J[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÊK\ÝšX]YØXÚUYÞßJNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÈHÝŽ›[Ý™J[\Ù]JNÂˆÙ[ÙBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘\ÝšX]YØXÚH›Üˆ[\Ü˜\žHš[\È\È›ÝÝ\ÜYŠNÂˆÙ[™Y‚ŸB‚›ÚYÛÛ^ŽœÙ][\Ü˜\žTÝÜ˜YÙR[ØXÚJÛÛœÝÝš[™È	ˆØXÚWÙ\Ú×Û˜[YKÚ^™WÝX^ÜÚ^™JBžÂˆ]]È\Ú×ÜˆHÙ]\ÚÊØXÚWÙ\Ú×Û˜[YJNÂˆYˆ
+Y\Ú×ÜŠBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË‘\ÚÈ	ÞßIÈ\È›Ý›Ý[™‹ØXÚWÙ\Ú×Û˜[YJNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•[\Ü˜\žHÝÜ˜YÙH\È[™XYHÙ]ŠNÂ‚ˆ]]Èš[WØØXÚHHš[PØXÚQ˜XÝÜžNŽš[œÝ[˜ÙJ
+K™Ù]žS˜[YJ\Ú×Ü‹O™Ù]ØXÚS˜[YJ
+JKO˜ØXÚNÂˆYˆ
+Yš[WØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QËØXÚH	ÞßIÈ\È›Ý›Ý[™‹\Ú×Ü‹O™Ù]ØXÚS˜[YJ
+JNÂ‚ˆÑ×ÑP•QÊÚ\™YO›ÙË•\Ú[™Èš[HØXÚH
+ßJH›Üˆ[\Ü˜\žHš[\È‹š[WØØXÚKO™Ù]˜\ÙT]
+
+JNÂ‚ˆÚ\™YO\Ü]Hš[WØØXÚKO™Ù]˜\ÙT]
+
+NÂˆ›Û[YTˆ›Û[YHHÜ™X]SØØ[Ú[™ÛQ\ÚÕ›Û[YJÚ\™YO\Ü]Ú\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊJNÂ‚ˆ[\Ü˜\žQ]SÛ‘\ÚÔÙ][™ÜÈ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÎÂˆ[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜË›X^ÜÚ^™WÛÛ—Ù\ÚÈHX^ÜÚ^™NÂˆÚ\™YOœ›ÛÝÝ[\Ù]WÛÛ—Ù\ÚÈHÝŽ›XZÙWÜÚ\™Y[\Ü˜\žQ]SÛ‘\ÚÔØÛÜOŠÝŽ›[Ý™J[\Ü˜\žWÙ]WÛÛ—Ù\Ú×ÜÙ][™ÜÊKš[WØØXÚK™Ù]
+
+JNÂˆÚ\™YO[\Ü˜\žWÝ›Û[YWÛYØXÞHH›Û[YNÂŸB‚›ÚYÛÛ^ŽœÙ]›YÜÔ]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO™›YÜ×Ü]H]ÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\‘š[\Ô]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO\Ù\—Ùš[\×Ü]H]ÂŸB‚›ÚYÛÛ^ŽœÙ]XÝ[Û˜\šY\ÓX”]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO™XÝ[Û˜\šY\×ÛX—Ü]H]ÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\”ØÜš\Ô]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO\Ù\—ÜØÜš\×Ü]H]ÂˆB‚ˆ]]È	ˆ[˜Ý[Û—ÜÝÜ˜YÙHHÙ]\Ù\‘Yš[™YÔSØš™XÝÔÝÜ˜YÙJ
+NÂˆ[˜Ý[Û—ÜÝÜ˜YÙK›ØYØš™XÝÊ
+NÂ‚ˆËËÈ™[ØYÐTÓH[˜Ý[ÛœÈYˆÙX\ÜÙ[X›HQœÈ\™H[˜X›Y‚ˆ]]È
+ˆØ\ÛWÛ[Ù[WÛX[˜YÙ\ˆH[š]Ø\ÛS[Ù[SX[˜YÙ\Š
+NÂˆYˆ
+Ø\ÛWÛ[Ù[WÛX[˜YÙ\ŠBˆ\Ù\‘Yš[™YÔS[˜Ý[Û‘˜XÝÜžNŽš[œÝ[˜ÙJ
+K›ØY[˜Ý[ÛœÊ[˜Ý[Û—ÜÝÜ˜YÙK
+Ø\ÛWÛ[Ù[WÛX[˜YÙ\ŠNÂŸB‚›ÚYÛÛ^ŽœÙ][˜[ZXÕ\Ù\‘Yš[™Y^XÝ]X›Q[˜Ý[ÛœÔ]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO™[˜[ZX×Ý\Ù\—ÙYš[™YÙ^XÝ]X›WÙ[˜Ý[Ûœ×Ü]H]ÂŸB‚›ÚYÛÛ^Ž˜YÜ•\]UØ\›š[™ÓY\ÜØYÙJØ\›š[™Õ\HØ\›š[™ËÛÛœÝ™Y›Ü›X]YY\ÜØYÙH	ˆY\ÜØYÙJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ]]ÈÝ\™\Ü×Ü™HHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊK™Ù]Ýš[™ÊØ\›š[™×ÜÝ\™\Ü×Ü™YÙ^‹ˆŠNÂ‚ˆ›ÛÛ\×ÜÝ\™\ÜÙYH\Ý\™\Ü×Ü™K™[\J
+H	‰ˆ™LŽŽ”‘LŽŽ”\X[X]Ú
+Y\ÜØYÙK^Ý\™\Ü×Ü™JNÂˆYˆ
+Z\×ÜÝ\™\ÜÙY
+BˆÚ\™YO˜YÜ•\]UØ\›š[™ÓY\ÜØYÙJØ\›š[™ËY\ÜØYÙJNÂŸB‚›ÚYÛÛ^Ž˜YÜ•\]UØ\›š[™ÓY\ÜØYÙJØ\›š[™Õ\HØ\›š[™ËÝŽ›Ü[Û˜[™Y›Ü›X]YY\ÜØYÙOˆY\ÜØYÙJHÛÛœÝžÂˆYˆ
+Y\ÜØYÙJBˆYÜ•\]UØ\›š[™ÓY\ÜØYÙJØ\›š[™Ë
+›Y\ÜØYÙJNÂˆ[ÙBˆ™[[Ý™UØ\›š[™ÓY\ÜØYÙJØ\›š[™ÊNÂŸB‚›ÚYÛÛ^Ž˜YØ\›š[™ÓY\ÜØYÙPX›Ý]]X˜\ÙSÜ™[˜\žJÛÛœÝÝš[™È	ˆ]X˜\ÙWÛ˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆËËÈÙHÛÝ[ZÙHÈ™\ÜÛ›HX›Ý]Hš\œÝ]X˜\ÙHÚ][™Ú[™HÜ™[˜\žBˆÝ]XÈÝŽ˜]ÛZX×Ø›ÛÛ\×ØØ[YH˜[ÙNÂˆYˆ
+\×ØØ[Y™^Ú[™ÙJYJJBˆ™]\›ŽÂ‚ˆËËÈÙHÛ‰Ý\ÙHÙ]›YÜÔ]Y]Ù™XØ]\ÙH]ZÙ\ÈHÚ\™YØÚË‚ˆ]]ÈÛÛ™\Ù]X˜\Ù\×Ù›YÈHœÎŽœ]
+Ú\™YO™›YÜ×Ü]
+HÈ˜ÛÛ™\ÛÜ™[˜\žWÝ×Ø]ÛZXÈŽÂˆÛÛœÝ^ˆ]]ÈY\ÜØYÙWÙ›Ü›X]ÜÝš[™ÂˆH”Ù\™\ˆ\È]X˜\Ù\È
+›Üˆ^[\HßX
+HÚ]Ü™[˜\žH[™Ú[™KÚXÚØ\È\™XØ]Yˆ‚ˆ•ÈÛÛ™\\È]X˜\ÙHÈH™]È]ÛZXÈ[™Ú[™KÜ™X]HH›YÈßH[™XZÙHÝ\™H]ÛXÚÒÝ\ÙH\ÈÜš]H\›Z\ÜÚ[Ûˆ›Üˆ]ˆ‚ˆ‘^[\NˆÝYÈÝXÚ	ÞßIÈ	‰ˆÝYÈÚ[Ùˆ	ÞßIÈŽÂˆÚ\™YO˜YÜ•\]UØ\›š[™ÓY\ÜØYÙJˆÛÛ^Ž•Ø\›š[™Õ\NŽ‘—ÓÔ‘ST–WÑT‘PÐUQˆ™Y›Ü›X]YY\ÜØYÙNŽ˜Ü™X]JˆY\ÜØYÙWÙ›Ü›X]ÜÝš[™Ëˆ]X˜\ÙWÛ˜[YKˆÛÛ™\Ù]X˜\Ù\×Ù›YËœÝš[™Ê
+KˆÛÛ™\Ù]X˜\Ù\×Ù›YËœÝš[™Ê
+KˆÛÛ™\Ù]X˜\Ù\×Ù›YËœÝš[™Ê
+JJNÂŸB‚›ÚYÛÛ^Žœ™[[Ý™UØ\›š[™ÓY\ÜØYÙJØ\›š[™Õ\HØ\›š[™ÊHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœ™[[Ý™UØ\›š[™ÓY\ÜØYÙJØ\›š[™ÊNÂŸB‚›ÚYÛÛ^Žœ™[[Ý™P[Ø\›š[™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœ™[[Ý™P[Ø\›š[™ÜÊ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]ÛÛ™šYÊÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYÊBžÂˆÚ\™YOœÙ]ÛÛ™šYÊÛÛ™šYÊNÂŸB‚˜ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ^Ž™Ù]ÛÛ™šYÔ™YŠ
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO™Ù]ÛÛ™šYÔ™YŠ
+NÂŸB‚XØÙ\ÜÐÛÛ›Û	ˆÛÛ^Ž™Ù]XØÙ\ÜÐÛÛ›Û
+
+BžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆ
+œÚ\™YO˜XØÙ\Ü×ØÛÛ›ÛÂŸB‚˜ÛÛœÝXØÙ\ÜÐÛÛ›Û	ˆÛÛ^Ž™Ù]XØÙ\ÜÐÛÛ›Û
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆ
+œÚ\™YO˜XØÙ\Ü×ØÛÛ›ÛÂŸB‚›ÚYÛÛ^ŽœÙ]^\›˜[]][XØ]ÜœÐÛÛ™šYÊÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO˜XØÙ\Ü×ØÛÛ›ÛOœÙ]^\›˜[]][XØ]ÜœÐÛÛ™šYÊÛÛ™šYÊNÂŸB‚œÝŽ[š\]YWÜÔÔÐXØÙ\ÜÛÛ^ˆÛÛ^Ž›XZÙQÔÔÐXØÙ\ÜÛÛ^
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÝŽ›XZÙWÝ[š\]YOÔÔÐXØÙ\ÜÛÛ^ŠÚ\™YO˜XØÙ\Ü×ØÛÛ›ÛO™Ù]^\›˜[]][XØ]ÜœÊ
+K™Ù]Ù\˜™\›ÜÔ\˜[\Ê
+JNÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\œÐÛÛ™šYÊÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO\Ù\œ×ØÛÛ™šYÈHÛÛ™šYÎÂˆÚ\™YO˜XØÙ\Ü×ØÛÛ›ÛOœÙ]\Ù\œÐÛÛ™šYÊ
+œÚ\™YO\Ù\œ×ØÛÛ™šYÊNÂŸB‚ÛÛ™šYÝ\˜][Û”ˆÛÛ^Ž™Ù]\Ù\œÐÛÛ™šYÊ
+BžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO\Ù\œ×ØÛÛ™šYÎÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\ŠÛÛœÝURQ	ˆ\Ù\—ÚYËÛÛœÝÝŽ™XÝÜURQˆ	ˆ^\›˜[Ü›Û\×ÊBžÂˆËËÈ™\\™H\ÝÈÙˆ\Ù\‰ÜÈ›Ùš[\ËÛÛœÝ˜Z[ËÙ][™ÜË›Û\Ë‚ˆËËÈ“ÕNˆXØÙ\ÜÐÛÛ›ÛŽœ™XY\Ù\Š
+H[™Ý\ˆXØÙ\ÜÐÛÛ›Û	ÜÈ[˜Ý[ÛœÈX^H™\]Z\™HÛÛYHSÈÛÜšËˆËËÈÛÈÛÛ^Ž™Ù]ØØ[ØÚÊ
+H[™ÛÛ^Ž™Ù]ÛØ˜[ØÚÊ
+H]\Ý™H[›ØÚÙYÚ[HÙIÜ™HÚ[™È\Ë‚‚ˆ]]È	ˆXØÙ\Ü×ØÛÛ›ÛHÙ]XØÙ\ÜÐÛÛ›Û
+
+NÂˆ]]È\Ù\ˆHXØÙ\Ü×ØÛÛ›Ûœ™XY\Ù\Š\Ù\—ÚYÊNÂ‚ˆ]]ÈY˜][Ü›Û\ÈH\Ù\‹O™Ü˜[YÜ›Û\Ë™š[™Ü˜[Y
+\Ù\‹O™Y˜][Ü›Û\ÊNÂˆ]]È[˜X›YÜ›Û\ÈHXØÙ\Ü×ØÛÛ›Û™Ù][˜X›Y›Û\Ò[™›ÊY˜][Ü›Û\ËßJNÂˆ]]È[˜X›YÜ›Ùš[\ÈHXØÙ\Ü×ØÛÛ›Û™Ù][˜X›YÙ][™ÜÒ[™›Ê\Ù\—ÚYË\Ù\‹OœÙ][™ÜË[˜X›YÜ›Û\ËO™[˜X›YÜ›Û\Ë[˜X›YÜ›Û\ËOœÙ][™Ü×Ùœ›ÛWÙ[˜X›YÜ›Û\ÊNÂˆÛÛœÝ]]È	ˆ]X˜\ÙHH\Ù\‹O™Y˜][Ù]X˜\ÙNÂ‚ˆËËÈ\H\Ù\‰ÜÈ›Ùš[\ËÛÛœÝ˜Z[ËÙ][™ÜË›Û\Ë‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂ‚ˆÙ]\Ù\’QÚ]ØÚÊ\Ù\—ÚYËØÚÊNÂ‚ˆËËÈH›Ùš[HØ[ˆÜXÚYžHH˜[YH[™H™XYÛ›HÛÛœÝ˜Z[›ÜˆØ[YHÙ][™È]HØ[YH[YKˆËËÈÛÈÙHÚÝ[‰ÝÚXÚÈÛÛœÝ˜Z[È\™K‚ˆÙ]Ý\œ™[›Ùš[\ÕÚ]ØÚÊ
+™[˜X›YÜ›Ùš[\ËÊˆÚXÚ×ØÛÛœÝ˜Z[ÏH
+‹È˜[ÙKØÚÊNÂ‚ˆÙ]Ý\œ™[›Û\ÕÚ]ØÚÊY˜][Ü›Û\ËØÚÊNÂˆÙ]^\›˜[›Û\ÕÚ]ØÚÊ^\›˜[Ü›Û\×ËØÚÊNÂ‚ˆËËÈ]	ÜÈÜ[Û˜[ÈÜXÚYžHHQUSUPTÑH[ˆH\Ù\‰ÜÈYš[š][Û‹‚ˆYˆ
+Y]X˜\ÙK™[\J
+JBˆÙ]Ý\œ™[]X˜\ÙUÚ]ØÚÊ]X˜\ÙKØÚÊNÂŸB‚œÝŽœÚ\™YÜÛÛœÝ\Ù\ˆÛÛ^Ž™Ù]\Ù\Š
+HÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO™Ù]\Ù\Š
+NÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]\Ù\“˜[YJ
+HÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO™Ù]\Ù\“˜[YJ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\’QÚ]ØÚÊÛÛœÝURQ	ˆ\Ù\—ÚYËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ŠBžÂˆ\Ù\—ÚYH\Ù\—ÚYÎÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\’Q
+ÛÛœÝURQ	ˆ\Ù\—ÚYÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆÙ]\Ù\’QÚ]ØÚÊ\Ù\—ÚYËØÚÊNÂŸB‚œÝŽ›Ü[Û˜[URQˆÛÛ^Ž™Ù]\Ù\’Q
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆ™]\›ˆ\Ù\—ÚYÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Û\ÕÚ]ØÚÊÛÛœÝÝŽ™XÝÜURQˆ	ˆ™]×ØÝ\œ™[Ü›Û\ËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ŠBžÂˆYˆ
+™]×ØÝ\œ™[Ü›Û\Ë™[\J
+JBˆÝ\œ™[Ü›Û\ÈH[ŽÂˆ[ÙBˆÝ\œ™[Ü›Û\ÈHÝŽ›XZÙWÜÚ\™YÝŽ™XÝÜURQŠ™]×ØÝ\œ™[Ü›Û\ÊNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]^\›˜[›Û\ÕÚ]ØÚÊÛÛœÝÝŽ™XÝÜURQˆ	ˆ™]×Ù^\›˜[Ü›Û\ËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ŠBžÂˆËÈ^\›˜[›Û\È\™H›Û\È™XÙZ]™Yœ›ÛHÝ\ˆ›ÙKÝ\œ™[›Û\È\ÈHÛÛXÝ[ÛˆÙˆ›Û\È]Ù\™H\ÜÚYÛ™YØØ[BˆYˆ
+[™]×Ù^\›˜[Ü›Û\Ë™[\J
+JBˆÂˆYˆ
+^\›˜[Ü›Û\ÊBˆ^\›˜[Ü›Û\ËOš[œÙ\
+^\›˜[Ü›Û\ËO™[™
+
+K™]×Ù^\›˜[Ü›Û\Ë˜™YÚ[Š
+K™]×Ù^\›˜[Ü›Û\Ë™[™
+
+JNÂˆ[ÙBˆ^\›˜[Ü›Û\ÈHÝŽ›XZÙWÜÚ\™YÝŽ™XÝÜURQŠ™]×Ù^\›˜[Ü›Û\ÊNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂˆBŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Û\Ò[\
+ÛÛœÝÝŽ™XÝÜURQˆ	ˆ™]×ØÝ\œ™[Ü›Û\Ë›ÛÛ›Ý×ÚY—Û›ÝÙÜ˜[Y›ÛÛÚÚ\ÚY—Û›ÝÙÜ˜[YÛÛœÝÝŽœÚ\™YÜÛÛœÝ\Ù\ˆ	ˆ\Ù\ŠBžÂˆYˆ
+ÚÚ\ÚY—Û›ÝÙÜ˜[Y
+BˆÂˆ]]Èš[\™YÜ›ÛWÚYÈH\Ù\‹O™Ü˜[YÜ›Û\Ë™š[™Ü˜[Y
+™]×ØÝ\œ™[Ü›Û\ÊNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÞÛ]]^NÂˆÙ]Ý\œ™[›Û\ÕÚ]ØÚÊš[\™YÜ›ÛWÚYËØÚÊNÂˆ™]\›ŽÂˆBˆYˆ
+›Ý×ÚY—Û›ÝÙÜ˜[Y
+BˆÂˆ›Üˆ
+ÛÛœÝ]]È	ˆ›ÛWÚYˆ™]×ØÝ\œ™[Ü›Û\ÊBˆÂˆYˆ
+]\Ù\‹O™Ü˜[YÜ›Û\Ëš\ÑÜ˜[Y
+›ÛWÚY
+JBˆÂˆ]]È›ÛWÛ˜[YHHÙ]XØÙ\ÜÐÛÛ›Û
+
+KžT™XY˜[YJ›ÛWÚY
+NÂˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ”ÑUÓ“Ó—ÑÔS•QÔ“ÓK”›ÛHßHÚÝ[™HÜ˜[YÈÙ]\ÈHÝ\œ™[‹›ÛWÛ˜[YK˜[YWÛÜŠÔÝš[™Ê›ÛWÚY
+JJNÂˆBˆBˆBˆÝŽ›ØÚ×ÙÝX\™ØÚÌžÛ]]^NÂˆÙ]Ý\œ™[›Û\ÕÚ]ØÚÊ™]×ØÝ\œ™[Ü›Û\ËØÚÌŠNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Û\ÊÛÛœÝÝŽ™XÝÜURQˆ	ˆ™]×ØÝ\œ™[Ü›Û\Ë›ÛÛÚXÚ×ÙÜ˜[ÊBžÂˆÙ]Ý\œ™[›Û\Ò[\
+™]×ØÝ\œ™[Ü›Û\ËÊˆ›Ý×ÚY—Û›ÝÙÜ˜[YH
+‹ÈÚXÚ×ÙÜ˜[ËÊˆÚÚ\ÚY—Û›ÝÙÜ˜[YH
+‹ÈXÚXÚ×ÙÜ˜[ËÙ]\Ù\Š
+JNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Û\ÊÛÛœÝ›Û\ÓÜ•\Ù\œÔÙ]	ˆ™]×ØÝ\œ™[Ü›Û\Ë›ÛÛÚXÚ×ÙÜ˜[ÊBžÂˆYˆ
+™]×ØÝ\œ™[Ü›Û\Ë˜[
+BˆÂˆ]]È\Ù\ˆHÙ]\Ù\Š
+NÂˆÙ]Ý\œ™[›Û\Ò[\
+\Ù\‹O™Ü˜[YÜ›Û\Ë™š[™Ü˜[Y
+™]×ØÝ\œ™[Ü›Û\ÊKÊˆ›Ý×ÚY—Û›ÝÙÜ˜[YH
+‹È˜[ÙKÊˆÚÚ\ÚY—Û›ÝÙÜ˜[YH
+‹È˜[ÙK\Ù\ŠNÂˆBˆ[ÙBˆÂˆÙ]Ý\œ™[›Û\Ê™]×ØÝ\œ™[Ü›Û\Ë™Ù]X]Ú[™ÒQÊ
+KÚXÚ×ÙÜ˜[ÊNÂˆBŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Û\ÊÛÛœÝÝš[™ÜÈ	ˆ™]×ØÝ\œ™[Ü›Û\Ë›ÛÛÚXÚ×ÙÜ˜[ÊBžÂˆÙ]Ý\œ™[›Û\ÊÙ]XØÙ\ÜÐÛÛ›Û
+
+K™Ù]QÏ›ÛOŠ™]×ØÝ\œ™[Ü›Û\ÊKÚXÚ×ÙÜ˜[ÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Û\ÑY˜][
+
+BžÂˆ]]È\Ù\ˆHÙ]\Ù\Š
+NÂˆÙ]Ý\œ™[›Û\Ò[\
+\Ù\‹O™Ü˜[YÜ›Û\Ë™š[™Ü˜[Y
+\Ù\‹O™Y˜][Ü›Û\ÊKÊˆ›Ý×ÚY—Û›ÝÙÜ˜[YH
+‹È˜[ÙKÊˆÚÚ\ÚY—Û›ÝÙÜ˜[YH
+‹È˜[ÙK\Ù\ŠNÂŸB‚œÝŽ™XÝÜURQˆÛÛ^Ž™Ù]Ý\œ™[›Û\Ê
+HÛÛœÝžÂˆ™]\›ˆÙ]›Û\Ò[™›Ê
+KO™Ù]Ý\œ™[›Û\Ê
+NÂŸB‚œÝŽ™XÝÜURQˆÛÛ^Ž™Ù][˜X›Y›Û\Ê
+HÛÛœÝžÂˆ™]\›ˆÙ]›Û\Ò[™›Ê
+KO™Ù][˜X›Y›Û\Ê
+NÂŸB‚œÝŽœÚ\™YÜÛÛœÝ[˜X›Y›Û\Ò[™›ÏˆÛÛ^Ž™Ù]›Û\Ò[™›Ê
+HÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO™Ù]›Û\Ò[™›Ê
+NÂŸB‚›˜[Y\ÜXÙBžÂSÐVT×ÒS“S‘H[›[™H›ÚY˜ÛÛ^Ø[š]PÛ[\Ù][™ÜÕÚ]ØÚÊÛÛœÝÛÛ^	ˆÛÛ^Ù][™ÜÈ	ˆÙ][™ÜËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ŠBžÂˆÛÛœÝ]]È\HHÛÛ^™Ù]\XØ][Û•\J
+NÂˆYˆ
+\HOHÛÛ^Ž\XØ][Û•\NŽ“ÐÐS\HOHÛÛ^Ž\XØ][Û•\NŽ”ÑT•‘TŠBˆÔÙ][™ÜÔØ[š]PÚXÚÐÛ[\
+Ù][™ÜËÙ]ÙÙÙ\Š”Ù][™ÜÔØ[š]HŠJNÂŸB‚SÐVT×ÒS“S‘H[›[™H›ÚYÛÛ^Ø[š]PÛ[\Ù][™ÜÊÛÛœÝÛÛ^	ˆÛÛ^Ù][™ÜÈ	ˆÙ][™ÜÊBžÂˆÛÛœÝ]]È\HHÛÛ^™Ù]\XØ][Û•\J
+NÂˆYˆ
+\HOHÛÛ^Ž\XØ][Û•\NŽ“ÐÐS\HOHÛÛ^Ž\XØ][Û•\NŽ”ÑT•‘TŠBˆÔÙ][™ÜÔØ[š]PÚXÚÐÛ[\
+Ù][™ÜËÙ]ÙÙÙ\Š”Ù][™ÜÔØ[š]HŠJNÂŸBŸB‚[\]H\[˜[YK‹‹ˆ\™ÜÏ‚›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÒ[\
+ÛÛœÝ\™ÜÈ	‹‹‹ˆ\™ÜÊHÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO˜ÚXÚÐXØÙ\ÜÊ\™ÜË‹‹ŠNÂŸB‚›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜÊHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜÊNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÝŽœÝš[™×ÝšY]È]X˜\ÙJHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜË]X˜\ÙJNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÝŽœÝš[™×ÝšY]È]X˜\ÙKÝŽœÝš[™×ÝšY]ÈX›JHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜË]X˜\ÙKX›JNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÝŽœÝš[™×ÝšY]È]X˜\ÙKÝŽœÝš[™×ÝšY]ÈX›KÝŽœÝš[™×ÝšY]ÈÛÛ[[ŠHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜË]X˜\ÙKX›KÛÛ[[ŠNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÝŽœÝš[™×ÝšY]È]X˜\ÙKÝŽœÝš[™×ÝšY]ÈX›KÛÛœÝÝŽ™XÝÜÝŽœÝš[™×ÝšY]Ïˆ	ˆÛÛ[[œÊHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜË]X˜\ÙKX›KÛÛ[[œÊNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÝŽœÝš[™×ÝšY]È]X˜\ÙKÝŽœÝš[™×ÝšY]ÈX›KÛÛœÝÝš[™ÜÈ	ˆÛÛ[[œÊHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜË]X˜\ÙKX›KÛÛ[[œÊNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÛÛœÝÝÜ˜YÙRQ	ˆX›WÚY
+HÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜËX›WÚY™Ù]]X˜\ÙS˜[YJ
+KX›WÚY™Ù]X›S˜[YJ
+JNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÛÛœÝÝÜ˜YÙRQ	ˆX›WÚYÝŽœÝš[™×ÝšY]ÈÛÛ[[ŠHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜËX›WÚY™Ù]]X˜\ÙS˜[YJ
+KX›WÚY™Ù]X›S˜[YJ
+KÛÛ[[ŠNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÛÛœÝÝÜ˜YÙRQ	ˆX›WÚYÛÛœÝÝŽ™XÝÜÝŽœÝš[™×ÝšY]Ïˆ	ˆÛÛ[[œÊHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜËX›WÚY™Ù]]X˜\ÙS˜[YJ
+KX›WÚY™Ù]X›S˜[YJ
+KÛÛ[[œÊNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÑ›YÜÈ	ˆ›YÜËÛÛœÝÝÜ˜YÙRQ	ˆX›WÚYÛÛœÝÝš[™ÜÈ	ˆÛÛ[[œÊHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+›YÜËX›WÚY™Ù]]X˜\ÙS˜[YJ
+KX›WÚY™Ù]X›S˜[YJ
+KÛÛ[[œÊNÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÔšYÚÑ[[Y[	ˆ[[Y[
+HÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+[[Y[
+NÈB›ÚYÛÛ^Ž˜ÚXÚÐXØÙ\ÜÊÛÛœÝXØÙ\ÜÔšYÚÑ[[Y[È	ˆ[[Y[ÊHÛÛœÝÈÚXÚÐXØÙ\ÜÒ[\
+[[Y[ÊNÈB‚œÝŽœÚ\™YÜÛÛœÝÛÛ^XØÙ\ÜÕÜ˜\\ˆÛÛ^Ž™Ù]XØÙ\ÜÊ
+HÛÛœÝžÂˆËËÈH[\ˆ[˜Ý[ÛˆÈÛÛXÝ\˜[Y]\œÈ›ÜˆØ[Ý[][™ÈXØÙ\ÜÈšYÚËØ[YÚ]ÛÛ^Ž™Ù]ØØ[Ú\™YØÚÊ
+HXÜ]Z\™Y‚ˆ]]ÈÙ]Ü\˜[\ÈHÝ\×J
+BˆÂˆËËÈYˆÙ]\Ù\’Q
+
+HØ\È™]™\ˆØ[Y[ˆ\È]\Ý™HHÛØ˜[ÛÛ^Ú]H[XØÙ\ÜË‚ˆ›ÛÛ[ØXØÙ\ÜÈH]\Ù\—ÚYÂ‚ˆÝŽ›Ü[Û˜[URQˆ[š]X[Ý\Ù\—ÚYÂˆYˆ
+ÛY[Ú[™›Ëš[š]X[Ý\Ù\ˆOHÛY[Ú[™›Ë˜Ý\œ™[Ý\Ù\ŠBˆ[š]X[Ý\Ù\—ÚYHÙ]XØÙ\ÜÐÛÛ›Û
+
+K™š[™\Ù\ŠÛY[Ú[™›Ëš[š]X[Ý\Ù\ŠNÂ‚ˆ™]\›ˆÛÛ^XØÙ\ÜÔ\˜[\ÞÂˆ\Ù\—ÚY[ØXØÙ\ÜËÊˆ\ÙWÙY˜][Ü›Û\ÏH
+‹È˜[ÙKÝ\œ™[Ü›Û\Ë^\›˜[Ü›Û\Ë
+œÙ][™ÜËÝ\œ™[Ù]X˜\ÙKÛY[Ú[™›Ë[š]X[Ý\Ù\—ÚYNÂˆNÂ‚ˆËËÈÚXÚÈYˆHÝ\œ™[XØÙ\ÜÈšYÚÈ\™HÝ[˜[YÝ\Ú\ÙHÙ]\˜[Y]\œÈ›Üˆ™XØ[Ý[][™ÈXØÙ\ÜÈšYÚË‚ˆÝŽ›Ü[Û˜[ÛÛ^XØÙ\ÜÔ\˜[\Ïˆ\˜[\ÎÂ‚ˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆYˆ
+XØÙ\ÜÈ	‰ˆ[™YYÜ™XØ[Ý[]WØXØÙ\ÜÊBˆ™]\›ˆÝŽ›XZÙWÜÚ\™YÛÛœÝÛÛ^XØÙ\ÜÕÜ˜\\ŠXØÙ\ÜËÚ\™YÙœ›ÛWÝ\Ê
+JNÈËËÈ›È™YYÈ™XØ[Ý[]HXØÙ\ÜÈšYÚË‚ˆB‚ˆÂˆËËÈ“ÕNˆÙHØ[››Ý\Ý\ÙHÚ\™YØÚÑÝX\™\™H™XØ]\ÙHÙHX^H™YYÈÜš]H™YYÜ™XØ[Ý[]WØXØÙ\ÜØ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂ‚ˆËËÈ™KXÚXÚÈY\ˆ\Ü˜Y[™ÈÈ^Û\Ú]™HØÚÈH[›Ý\ˆ™XYX^H]™H[™XYH™XØ[Ý[]Y‚ˆYˆ
+XØÙ\ÜÈ	‰ˆ[™YYÜ™XØ[Ý[]WØXØÙ\ÜÊBˆ™]\›ˆÝŽ›XZÙWÜÚ\™YÛÛœÝÛÛ^XØÙ\ÜÕÜ˜\\ŠXØÙ\ÜËÚ\™YÙœ›ÛWÝ\Ê
+JNÈËËÈ›È™YYÈ™XØ[Ý[]HXØÙ\ÜÈšYÚË‚‚ˆ\˜[\Ë™[\XÙJÙ]Ü\˜[\Ê
+JNÂ‚ˆYˆ
+XØÙ\ÜÈ	‰ˆ
+XØÙ\ÜËO™Ù]\˜[\Ê
+HOH
+œ\˜[\ÊJBˆÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈH˜[ÙNÂˆ™]\›ˆÝŽ›XZÙWÜÚ\™YÛÛœÝÛÛ^XØÙ\ÜÕÜ˜\\ŠXØÙ\ÜËÚ\™YÙœ›ÛWÝ\Ê
+JNÈËËÈ›È™YYÈ™XØ[Ý[]HXØÙ\ÜÈšYÚË‚ˆBˆB‚ˆËËÈØ[Ý[]H™]ÈXØÙ\ÜÈšYÚÈXØÛÜ™[™ÈÈHÛÛXÝY\˜[Y]\œË‚ˆËËÈ“ÕNˆXØÙ\ÜÐÛÛ›ÛŽ™Ù]ÛÛ^XØÙ\ÜÊ
+HX^H™\]Z\™HÛÛYHSÈÛÜšËÛÈÛÛ^Ž™Ù]ØØ[ØÚÊ
+BˆËËÈ[™ÛÛ^Ž™Ù]ÛØ˜[ØÚÊ
+H]\Ý™H[›ØÚÙYÚ[HÙIÜ™HÚ[™È\Ë‚ˆ]]È™\ÈHÙ]XØÙ\ÜÐÛÛ›Û
+
+K™Ù]ÛÛ^XØÙ\ÜÊ
+œ\˜[\ÊNÂ‚ˆÂˆËËÈYˆH\˜[Y]\œÈÙˆXØÙ\ÜÈšYÚÈÙ\™H›ÝÚ[™ÙYÚ[HÙHÙ\™HØ[Ý[]Y[BˆËËÈ[ˆÙHÝÜ™HH™]ÈXØÙ\ÜÈšYÚÈ[ˆHÛÛ^È[ÝÈ™]\Ú[™È]]\‹‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+Ù]Ü\˜[\Ê
+HOH
+œ\˜[\ÊBˆÂˆXØÙ\ÜÈH™\ÎÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈH˜[ÙNÂˆBˆB‚ˆ™]\›ˆÝŽ›XZÙWÜÚ\™YÛÛœÝÛÛ^XØÙ\ÜÕÜ˜\\Š™\ËÚ\™YÙœ›ÛWÝ\Ê
+JNÂŸB‚”›ÝÔÛXÞQš[\”ˆÛÛ^Ž™Ù]›ÝÔÛXÞQš[\ŠÛÛœÝÝš[™È	ˆ]X˜\ÙKÛÛœÝÝš[™È	ˆX›WÛ˜[YK›ÝÔÛXÞQš[\•\Hš[\—Ý\JHÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO™Ù]›ÝÔÛXÞQš[\Š]X˜\ÙKX›WÛ˜[YKš[\—Ý\JNÂŸB‚‚œÝŽœÚ\™YÜÛÛœÝ[˜X›Y][ÝOˆÛÛ^Ž™Ù]][ÝJ
+HÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO™Ù]][ÝJ
+NÂŸB‚‚œÝŽ™XÝÜ][ÝU\ØYÙOˆÛÛ^Ž™Ù]][ÝU\ØYÙ\Ê
+HÛÛœÝžÂˆ™]\›ˆÙ]XØÙ\ÜÊ
+KO™Ù]][ÝU\ØYÙ\Ê
+NÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Ùš[UÚ]ØÚÊÛÛœÝÝš[™È	ˆ›Ùš[WÛ˜[YK›ÛÛÚXÚ×ØÛÛœÝ˜Z[ËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ˆØÚÊBžÂˆžBˆÂˆURQ›Ùš[WÚYHÙ]XØÙ\ÜÐÛÛ›Û
+
+K™Ù]QÙ][™ÜÔ›Ùš[OŠ›Ùš[WÛ˜[YJNÂˆÙ]Ý\œ™[›Ùš[UÚ]ØÚÊ›Ùš[WÚYÚXÚ×ØÛÛœÝ˜Z[ËØÚÊNÂˆBˆØ]Ú
+^Ù\[Ûˆ	ˆJBˆÂˆK˜YY\ÜØYÙJ‹Ú[HžZ[™ÈÈÙ]Ù][™ÜÈ›Ùš[HßH‹›Ùš[WÛ˜[YJNÂˆ›ÝÎÂˆBŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Ùš[UÚ]ØÚÊÛÛœÝURQ	ˆ›Ùš[WÚY›ÛÛÚXÚ×ØÛÛœÝ˜Z[ËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ˆØÚÊBžÂˆ]]È›Ùš[WÚ[™›ÈHÙ]XØÙ\ÜÐÛÛ›Û
+
+K™Ù]Ù][™ÜÔ›Ùš[R[™›Ê›Ùš[WÚY
+NÂˆÙ]Ý\œ™[›Ùš[\ÕÚ]ØÚÊ
+œ›Ùš[WÚ[™›ËÚXÚ×ØÛÛœÝ˜Z[ËØÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Ùš[\ÕÚ]ØÚÊÛÛœÝÙ][™ÜÔ›Ùš[\Ò[™›È	ˆ›Ùš[\×Ú[™›Ë›ÛÛÚXÚ×ØÛÛœÝ˜Z[ËÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ˆØÚÊBžÂˆYˆ
+ÚXÚ×ØÛÛœÝ˜Z[ÊBˆÚXÚÔÙ][™ÜÐÛÛœÝ˜Z[ÕÚ]ØÚÊ›Ùš[\×Ú[™›ËœÙ][™ÜËÙ][™ÔÛÝ\˜ÙNŽ”“Ñ’SJNÂˆ\TÙ][™ÜÐÚ[™Ù\ÕÚ]ØÚÊ›Ùš[\×Ú[™›ËœÙ][™ÜËØÚÊNÂˆÙ][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ÈH›Ùš[\×Ú[™›Ë™Ù]ÛÛœÝ˜Z[Ð[™›Ùš[RQÊÙ][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ÊNÂˆÛÛ^Ø[š]PÛ[\Ù][™ÜÕÚ]ØÚÊ
+\Ë
+œÙ][™ÜËØÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Ùš[JÛÛœÝÝš[™È	ˆ›Ùš[WÛ˜[YK›ÛÛÚXÚ×ØÛÛœÝ˜Z[ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆÙ]Ý\œ™[›Ùš[UÚ]ØÚÊ›Ùš[WÛ˜[YKÚXÚ×ØÛÛœÝ˜Z[ËØÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Ùš[JÛÛœÝURQ	ˆ›Ùš[WÚY›ÛÛÚXÚ×ØÛÛœÝ˜Z[ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆÙ]Ý\œ™[›Ùš[UÚ]ØÚÊ›Ùš[WÚYÚXÚ×ØÛÛœÝ˜Z[ËØÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[›Ùš[\ÊÛÛœÝÙ][™ÜÔ›Ùš[\Ò[™›È	ˆ›Ùš[\×Ú[™›Ë›ÛÛÚXÚ×ØÛÛœÝ˜Z[ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆÙ]Ý\œ™[›Ùš[\ÕÚ]ØÚÊ›Ùš[\×Ú[™›ËÚXÚ×ØÛÛœÝ˜Z[ËØÚÊNÂŸB‚•URQÈÛÛ^Ž™Ù]Ý\œ™[›Ùš[\Ê
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆYˆ
+\Ù][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ÊBˆ™]\›ˆßNÂˆ™]\›ˆÙ][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ËO˜Ý\œ™[Ü›Ùš[\ÎÂŸB‚•URQÈÛÛ^Ž™Ù][˜X›Y›Ùš[\Ê
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆYˆ
+\Ù][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ÊBˆ™]\›ˆßNÂˆ™]\›ˆÙ][™Ü×ØÛÛœÝ˜Z[×Ø[™ØÝ\œ™[Ü›Ùš[\ËO™[˜X›YÜ›Ùš[\ÎÂŸB‚‚”™\ÛÝ\˜ÙSX[˜YÙ\”ˆÛÛ^Ž™Ù]™\ÛÝ\˜ÙSX[˜YÙ\Š
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YOœ™\ÛÝ\˜ÙWÛX[˜YÙ\—Ú[š]X[^™YÉ—HÂˆÚ\™YOœ™\ÛÝ\˜ÙWÛX[˜YÙ\ˆHÜ™X]T™\ÛÝ\˜ÙSX[˜YÙ\ŠÙ]ÛØ˜[ÛÛ^
+
+JNÂˆJNÂ‚ˆ™]\›ˆÚ\™YOœ™\ÛÝ\˜ÙWÛX[˜YÙ\ŽÂŸB‚Û\ÜÚYšY\”ˆÛÛ^Ž™Ù]ÛÜšÛØYÛ\ÜÚYšY\Š
+HÛÛœÝžÂˆÛ\ÜÚYšY\”Ù][™ÜÈÙ][™ÜÞË›Ý×ÛÛ—Ý[šÛ›ÝÛ—ÝÛÜšÛØYHÙ]›ÝÓÛ•[šÛ›ÝÛ•ÛÜšÛØY
+
+_NÈËÈÈ]›ÚYØÚÚ[™ÈÚ\™Y]]^[™\ˆ]]^ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆËÈ“ÕNˆÛÜšÛØYØ[››Ý™HÚ[™ÙYY\ˆ]Y\žHÝ\[™Ù]ÛÜšÛØYÛ\ÜÚYšY\Š
+HÚÝ[›Ý™HØ[Y™Y›Ü™H›Ü\ˆÛÜšÛØY\ÈÙ]ˆYˆ
+XÛ\ÜÚYšY\ŠBˆÛ\ÜÚYšY\ˆHÙ]™\ÛÝ\˜ÙSX[˜YÙ\Š
+KO˜XÜ]Z\™JÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽÛÜšÛØYKÙ][™ÜÊNÂˆ™]\›ˆÛ\ÜÚYšY\ŽÂŸB‚›ÚYÛÛ^Žœ™[X\ÙT]Y\žTÛÝ
+
+HÛÛœÝžÂˆYˆ
+]]È[[HHÙ]›ØÙ\ÜÓ\Ý[[Y[ØY™J
+JBˆ[[KOœ™[X\ÙT]Y\žTÛÝ
+
+NÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]Y\™ÙUÛÜšÛØY
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›Y\™ÙWÝÛÜšÛØYÂŸB‚›ÚYÛÛ^ŽœÙ]Y\™ÙUÛÜšÛØY
+ÛÛœÝÝš[™È	ˆ˜[YJBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›Y\™ÙWÝÛÜšÛØYH˜[YNÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]XÙ[œÙQš[J
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›XÙ[œÙWÙš[NÂŸB‚›ÚYÛÛ^ŽœÙ]XÙ[œÙQš[JÛÛœÝÝš[™È	ˆ˜[YJBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›XÙ[œÙWÙš[HH˜[YNÂŸB‚‚˜›ÛÛÛÛ^Ž™Ù]ÚÝÓXÙ[œÙQ^\˜][Û•Ø\›š[™ÜÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœÚÝ×ÛXÙ[œÙWÙ^\˜][Û—ÝØ\›š[™ÜÎÂŸB‚›ÚYÛÛ^ŽœÙ]ÚÝÓXÙ[œÙQ^\˜][Û•Ø\›š[™ÜÊ›ÛÛ˜[YJBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœÚÝ×ÛXÙ[œÙWÙ^\˜][Û—ÝØ\›š[™ÜÈH˜[YNÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]]]][Û•ÛÜšÛØY
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›]]][Û—ÝÛÜšÛØYÂŸB‚›ÚYÛÛ^ŽœÙ]]]][Û•ÛÜšÛØY
+ÛÛœÝÝš[™È	ˆ˜[YJBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›]]][Û—ÝÛÜšÛØYH˜[YNÂŸB‚˜›ÛÛÛÛ^Ž™Ù]›ÝÓÛ•[šÛ›ÝÛ•ÛÜšÛØY
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›Ý×ÛÛ—Ý[šÛ›ÝÛ—ÝÛÜšÛØYÂŸB‚›ÚYÛÛ^ŽœÙ]›ÝÓÛ•[šÛ›ÝÛ•ÛÜšÛØY
+›ÛÛ˜[YJBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›Ý×ÛÛ—Ý[šÛ›ÝÛ—ÝÛÜšÛØYH˜[YNÂŸB‚˜›ÛÛÛÛ^Ž™Ù]ÔTÛÝ™Y[\[ÛŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÜWÜÛÝÜ™Y[\[ÛŽÂŸB‚•R[ÛÛ^Ž™Ù]ÔTÛÝ]X[[J
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÜWÜÛÝÜ]X[[WÛœÎÂŸB‚•R[ÛÛ^Ž™Ù]ÔTÛÝ™Y[\[Û•[Y[Ý]
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÜWÜÛÝÜ™Y[\[Û—Ý[Y[Ý]Û\ÎÂŸB‚›ÚYÛÛ^ŽœÙ]ÔTÛÝ™Y[\[ÛŠ›ÛÛÜWÜÛÝÜ™Y[\[Û‹R[ÜWÜÛÝÜ]X[[WÛœËR[ÜWÜÛÝÜ™Y[\[Û—Ý[Y[Ý]Û\ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO˜ÜWÜÛÝÜ™Y[\[ÛˆHÜWÜÛÝÜ™Y[\[ÛŽÂˆÚ\™YO˜ÜWÜÛÝÜ]X[[WÛœÈHÜWÜÛÝÜ]X[[WÛœÎÂˆÚ\™YO˜ÜWÜÛÝÜ™Y[\[Û—Ý[Y[Ý]Û\ÈHÜWÜÛÝÜ™Y[\[Û—Ý[Y[Ý]Û\ÎÂŸB‚•R[ÛÛ^Ž™Ù]ÛÛ˜Ý\œ™[™XYÔÛÙ[Z][J
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Û[NÂŸB‚•R[ÛÛ^Ž™Ù]ÛÛ˜Ý\œ™[™XYÔÛÙ[Z]˜][ÕÐÛÜ™\Ê
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Ü˜][×Ý×ØÛÜ™\ÎÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]ÛÛ˜Ý\œ™[™XYÔØÚY[\Š
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×ÜØÚY[\ŽÂŸB‚˜›ÛÛÛÛ^Ž™Ù]ÛÛ˜Ý\œ™[™XYÓ^žP[ØØ][ÛŠ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×Û^žWØ[ØØ][ÛŽÂŸB‚œÝŽœZ\R[Ýš[™ÏˆÛÛ^ŽœÙ]ÛÛ˜Ý\œ™[™XYÔÛÙ[Z]
+R[[KR[˜][×Ý×ØÛÜ™\ËÛÛœÝÝš[™È	ˆØÚY[\‹›ÛÛ^žWØ[ØØ][ÛŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆËÈÙ]HØÚY[\‚ˆ›ÛÛÚÈHÛÛ˜Ý\œ™[˜ÞPÛÛ›ÛŽš[œÝ[˜ÙJ
+KœÙ]ØÚY[\ŠØÚY[\ŠNÂˆYˆ
+ÚÊBˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×ÜØÚY[\ˆHØÚY[\ŽÂˆ[ÙBˆÑ×ÑT”“ÔŠÚ\™YO›ÙË’[˜[Y˜[YH	ÞßIÈ\ÈÙ]›ÜˆHÙ\™\ˆÙ][™È	ØÛÛ˜Ý\œ™[Ý™XY×ÜØÚY[\‰ËˆØÚY[\ˆØ\È›ÝÚ[™ÙYˆ‹ØÚY[\ŠNÂ‚ˆËÈ[Y\™Ù[˜ÞH™]™\]™\ˆ›Üˆ^žHÛÝ[ØØ][Û‹‚ˆÛÛ˜Ý\œ™[˜ÞPÛÛ›ÛŽš[œÝ[˜ÙJ
+KœÙ]^žP[ØØ][ÛŠ^žWØ[ØØ][ÛŠNÂˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×Û^žWØ[ØØ][ÛˆH^žWØ[ØØ][ÛŽÂ‚ˆËÈÙ]H[Z]ˆÛÝÛÝ[ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]H[›[Z]YÛÝÎÂˆYˆ
+[Hˆ	‰ˆ[HÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]
+BˆÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]H[NÂˆYˆ
+˜][×Ý×ØÛÜ™\Èˆ
+BˆÂˆ]]È˜[YHH˜][×Ý×ØÛÜ™\È
+ˆÙ][X™\“ÙÔPÛÜ™\ÕÕ\ÙJ
+NÂˆYˆ
+˜[YHˆ	‰ˆ˜[YHÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]
+BˆÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]H˜[YNÂˆBˆÛÛ˜Ý\œ™[˜ÞPÛÛ›ÛŽš[œÝ[˜ÙJ
+KœÙ]X^ÛÛ˜Ý\œ™[˜ÞJÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]
+NÂˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Û[HH[NÂˆÚ\™YO˜ÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]Ü˜][×Ý×ØÛÜ™\ÈH˜][×Ý×ØÛÜ™\ÎÂˆ™]\›ˆÈÛÛ˜Ý\œ™[Ý™XY×ÜÛÙÛ[Z]ÛÛ˜Ý\œ™[˜ÞPÛÛ›ÛŽš[œÝ[˜ÙJ
+K™Ù]ØÚY[\Š
+HNÂŸB‚‚”ØØ[\œÈÛÛ^Ž™Ù]ØØ[\œÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ™]\›ˆØØ[\œÎÂŸB‚‚›ØÚÈÛÛ^Ž™Ù]ØØ[\ŠÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂ‚ˆ]]È]HØØ[\œË™š[™
+˜[YJNÂˆYˆ
+ØØ[\œË™[™
+
+HOH]
+BˆÂˆËÈ\ÈÚÝ[™HHÙÚXØ[\œ›Ü‹]]˜Z[ÈHÜ[Ù^žˆ\ÝÛÂˆËÈÙ[‹ÛÈ	Ø˜Y\™Ý[Y[ÉÈ›Üˆ›ÝË‚ˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽQÐT‘ÕSQS•Ë”ØØ[\ˆßHÙ\Û‰Ý^\Ý
+[\›˜[YÊH‹˜XÚÔ][ÝRY“™YY
+˜[YJJNÂˆBˆ™]\›ˆ]OœÙXÛÛ™ÂŸB‚œÝŽ›Ü[Û˜[›ØÚÏˆÛÛ^ŽžQÙ]ÜXÚX[ØØ[\ŠÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ]]È]HÜXÚX[ÜØØ[\œË™š[™
+˜[YJNÂˆYˆ
+ÜXÚX[ÜØØ[\œË™[™
+
+HOH]
+Bˆ™]\›ˆÝŽ›[ÜÂˆ™]\›ˆ]OœÙXÛÛ™ÂŸB‚•X›\ÈÛÛ^Ž™Ù]^\›˜[X›\Ê
+HÛÛœÝžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H^\›˜[X›\ÈŠNÂ‚ˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂ‚ˆX›\È™\ÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆX›Hˆ^\›˜[ÝX›\×ÛX\[™ÊBˆ™\ÖÝX›K™š\œÝHHX›KœÙXÛÛ™O™Ù]X›J
+NÂ‚ˆ]]È]Y\žWØÛÛ^ÜˆH]Y\žWØÛÛ^›ØÚÊ
+NÂˆ]]ÈÙ\ÜÚ[Û—ØÛÛ^ÜˆHÙ\ÜÚ[Û—ØÛÛ^›ØÚÊ
+NÂˆYˆ
+]Y\žWØÛÛ^Üˆ	‰ˆ]Y\žWØÛÛ^Ü‹™Ù]
+
+HOH\ÊBˆÂˆX›\ÈYˆH]Y\žWØÛÛ^Ü‹O™Ù]^\›˜[X›\Ê
+NÂˆ™\Ëš[œÙ\
+Y‹˜™YÚ[Š
+KY‹™[™
+
+JNÂˆBˆ[ÙHYˆ
+Ù\ÜÚ[Û—ØÛÛ^Üˆ	‰ˆÙ\ÜÚ[Û—ØÛÛ^Ü‹™Ù]
+
+HOH\ÊBˆÂˆX›\ÈYˆHÙ\ÜÚ[Û—ØÛÛ^Ü‹O™Ù]^\›˜[X›\Ê
+NÂˆ™\Ëš[œÙ\
+Y‹˜™YÚ[Š
+KY‹™[™
+
+JNÂˆBˆ™]\›ˆ™\ÎÂŸB‚‚›ÚYÛÛ^Ž˜Y^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YK[\Ü˜\žUX›RÛ\ˆ	‰ˆ[\Ü˜\žWÝX›JBžÂˆY^\›˜[X›JX›WÛ˜[YKÝŽ›XZÙWÜÚ\™Y[\Ü˜\žUX›RÛ\ŠÝŽ›[Ý™J[\Ü˜\žWÝX›JJJNÂŸB‚›ÚYÛÛ^Ž\]Q^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YK[\Ü˜\žUX›RÛ\ˆ	‰ˆ[\Ü˜\žWÝX›JBžÂˆ\]Q^\›˜[X›JX›WÛ˜[YKÝŽ›XZÙWÜÚ\™Y[\Ü˜\žUX›RÛ\ŠÝŽ›[Ý™J[\Ü˜\žWÝX›JJJNÂŸB‚›ÚYÛÛ^Ž˜YÜ•\]Q^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YK[\Ü˜\žUX›RÛ\ˆ	‰ˆ[\Ü˜\žWÝX›JBžÂˆYÜ•\]Q^\›˜[X›JX›WÛ˜[YKÝŽ›XZÙWÜÚ\™Y[\Ü˜\žUX›RÛ\ŠÝŽ›[Ý™J[\Ü˜\žWÝX›JJJNÂŸB‚›ÚYÛÛ^Ž˜Y^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YKÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆ[\Ü˜\žWÝX›JBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H^\›˜[X›\ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+^\›˜[ÝX›\×ÛX\[™Ë˜ÛÛZ[œÊX›WÛ˜[YJJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•P“WÐS‘PQWÑVTÕË•[\Ü˜\žHX›HßH[™XYH^\ÝÈ‹˜XÚÔ][ÝRY“™YY
+X›WÛ˜[YJJNÂ‚ˆ^\›˜[ÝX›\×ÛX\[™Ë™[\XÙJX›WÛ˜[YKÝŽ›[Ý™J[\Ü˜\žWÝX›JJNÂŸB‚›ÚYÛÛ^Ž\]Q^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YKÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆ[\Ü˜\žWÝX›JBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H^\›˜[X›\ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ]]È]H^\›˜[ÝX›\×ÛX\[™Ë™š[™
+X›WÛ˜[YJNÂˆYˆ
+]OH^\›˜[ÝX›\×ÛX\[™Ë™[™
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÕP“K•[\Ü˜\žHX›HßHÙ\Û‰Ý^\Ý‹˜XÚÔ][ÝRY“™YY
+X›WÛ˜[YJJNÂ‚ˆ]OœÙXÛÛ™HÝŽ›[Ý™J[\Ü˜\žWÝX›JNÂŸB‚›ÚYÛÛ^Ž˜YÜ•\]Q^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YKÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆ[\Ü˜\žWÝX›JBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H^\›˜[X›\ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ]]ÈÚ][œÙ\YHH^\›˜[ÝX›\×ÛX\[™Ë™[\XÙJX›WÛ˜[YK[\Ü˜\žWÝX›JNÂˆYˆ
+Z[œÙ\Y
+Bˆ]OœÙXÛÛ™HÝŽ›[Ý™J[\Ü˜\žWÝX›JNÂŸB‚œÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆÛÛ^Ž™š[™^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YJHÛÛœÝžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H^\›˜[X›\ÈŠNÂ‚ˆÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆÛ\ŽÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆ]]È]\ˆH^\›˜[ÝX›\×ÛX\[™Ë™š[™
+X›WÛ˜[YJNÂˆYˆ
+]\ˆOH^\›˜[ÝX›\×ÛX\[™Ë™[™
+
+JBˆ™]\›ˆßNÂˆÛ\ˆH]\‹OœÙXÛÛ™ÂˆBˆ™]\›ˆÛ\ŽÂŸB‚œÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆÛÛ^Žœ™[[Ý™Q^\›˜[X›JÛÛœÝÝš[™È	ˆX›WÛ˜[YJBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H^\›˜[X›\ÈŠNÂ‚ˆÝŽœÚ\™YÜ[\Ü˜\žUX›RÛ\ˆÛ\ŽÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ]]È]\ˆH^\›˜[ÝX›\×ÛX\[™Ë™š[™
+X›WÛ˜[YJNÂˆYˆ
+]\ˆOH^\›˜[ÝX›\×ÛX\[™Ë™[™
+
+JBˆ™]\›ˆßNÂˆÛ\ˆH]\‹OœÙXÛÛ™Âˆ^\›˜[ÝX›\×ÛX\[™Ë™\˜\ÙJ]\ŠNÂˆBˆ™]\›ˆÛ\ŽÂŸB‚’\Ý]XØ[[™^ÝÜ™H	ˆÛÛ^Ž™Ù]\Ý]XØ[[™^ÝÜ™J
+HÛÛœÝžÂˆËËÈ[ˆÙ\ÜÚ[ÛˆÛÛ^ÛÈHÝÜ™H\œÚ\ÝÈXÜ›ÜÜÈ]Y\šY\ÂˆYˆ
+]]ÈÙ\ÜÚ[Û—ØÝHÙ\ÜÚ[Û—ØÛÛ^›ØÚÊ
+NÈÙ\ÜÚ[Û—ØÝ	‰ˆÙ\ÜÚ[Û—ØÝ™Ù]
+
+HOH\ÊBˆ™]\›ˆÙ\ÜÚ[Û—ØÝO™Ù]\Ý]XØ[[™^ÝÜ™J
+NÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+Z\Ý]XØ[Ú[™^ÜÝÜ™JBˆ\Ý]XØ[Ú[™^ÜÝÜ™HHÝŽ›XZÙWÜÚ\™Y\Ý]XØ[[™^ÝÜ™OŠ
+NÂˆ™]\›ˆ
+š\Ý]XØ[Ú[™^ÜÝÜ™NÂŸB‚‚›ÚYÛÛ^Ž˜YØØ[\ŠÛÛœÝÝš[™È	ˆ˜[YKÛÛœÝ›ØÚÈ	ˆ›ØÚÊBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™HØØ[\œÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆØØ[\œÖÛ˜[YWHH›ØÚÎÂŸB‚‚›ÚYÛÛ^Ž˜YÜXÚX[ØØ[\ŠÛÛœÝÝš[™È	ˆ˜[YKÛÛœÝ›ØÚÈ	ˆ›ØÚÊBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™HØØ[ØØ[\œÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆÜXÚX[ÜØØ[\œÖÛ˜[YWHH›ØÚÎÂŸB‚‚˜›ÛÛÛÛ^Žš\ÔØØ[\ŠÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™HØØ[\œÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ™]\›ˆØØ[\œË˜ÛÛZ[œÊ˜[YJNÂŸB‚›ÚYÛÛ^Ž˜Y]Y\žPXØÙ\ÜÒ[™›ÊˆÛÛœÝÝÜ˜YÙRQ	ˆX›WÚYˆÛÛœÝ˜[Y\È	ˆÛÛ[[—Û˜[Y\ÊBžÂˆY]Y\žPXØÙ\ÜÒ[™›Ê˜XÚÔ][ÝRY“™YY
+X›WÚY™Ù]]X˜\ÙS˜[YJ
+JKX›WÚY™Ù][X›S˜[YJ
+KÛÛ[[—Û˜[Y\ÊNÂŸB‚œÝŽœÚ\™YÜÛÛ^[YTÙ\šY\ÕYÜÐÛÛXÝÜˆÛÛ^Ž™Ù][YTÙ\šY\ÕYÜÐÛÛXÝÜŠ
+BžÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆYˆ
+[YWÜÙ\šY\×ÝYÜ×ØÛÛXÝÜŠBˆ™]\›ˆ[YWÜÙ\šY\×ÝYÜ×ØÛÛXÝÜŽÂˆBˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+][YWÜÙ\šY\×ÝYÜ×ØÛÛXÝÜŠBˆ[YWÜÙ\šY\×ÝYÜ×ØÛÛXÝÜˆHÝŽ›XZÙWÜÚ\™YÛÛ^[YTÙ\šY\ÕYÜÐÛÛXÝÜŠ
+NÂˆ™]\›ˆ[YWÜÙ\šY\×ÝYÜ×ØÛÛXÝÜŽÂŸB‚œÝŽœÚ\™YÜÛÛœÝÛÛ^[YTÙ\šY\ÕYÜÐÛÛXÝÜˆÛÛ^Ž™Ù][YTÙ\šY\ÕYÜÐÛÛXÝÜŠ
+HÛÛœÝžÂˆ™]\›ˆÛÛœÝØØ\ÝÛÛ^
+Š\ÊKO™Ù][YTÙ\šY\ÕYÜÐÛÛXÝÜŠ
+NÂŸB‚‚›ÚYÛÛ^Ž˜Y]Y\žPXØÙ\ÜÒ[™›ÊˆÛÛœÝÝš[™È	ˆ][ÝYÙ]X˜\ÙWÛ˜[YKˆÛÛœÝÝš[™È	ˆ[Ü][ÝYÝX›WÛ˜[YKˆÛÛœÝ˜[Y\È	ˆÛÛ[[—Û˜[Y\ÊBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H]Y\žHXØÙ\ÜÈ[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]Y\žWØXØÙ\Ü×Ú[™›ËO›]]^
+NÂˆ]Y\žWØXØÙ\Ü×Ú[™›ËO™]X˜\Ù\Ë™[\XÙJ][ÝYÙ]X˜\ÙWÛ˜[YJNÂˆ]Y\žWØXØÙ\Ü×Ú[™›ËOX›\Ë™[\XÙJ[Ü][ÝYÝX›WÛ˜[YJNÂ‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆÛÛ[[—Û˜[YHˆÛÛ[[—Û˜[Y\ÊBˆ]Y\žWØXØÙ\Ü×Ú[™›ËO˜ÛÛ[[œË™[\XÙJ[Ü][ÝYÝX›WÛ˜[YH
+È‹ˆˆ
+È˜XÚÔ][ÝRY“™YY
+ÛÛ[[—Û˜[YJJNÂŸB‚›ÚYÛÛ^Žœ™[[Ý™T]Y\žPXØÙ\ÜÒ[™›ÕX›JÛÛœÝÝš[™È	ˆ[Ü][ÝYÝX›WÛ˜[YJBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H]Y\žHXØÙ\ÜÈ[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]Y\žWØXØÙ\Ü×Ú[™›ËO›]]^
+NÂˆ]Y\žWØXØÙ\Ü×Ú[™›ËOX›\Ë™\˜\ÙJ[Ü][ÝYÝX›WÛ˜[YJNÂ‚ˆËËÈ[ÛÈ›Ü[žHÛÛ[[œÈ™XÛÜ™Y[™\ˆ\ÈX›KˆH[\›˜[[\Ü˜\žHX›H\È›Ü›X[H™XÛÜ™YˆËËÈÚ]Ý]ÛÛ[[œËÛÈ\È\ÈY™[œÚ]™K‚ˆÛÛœÝÝš[™È™Yš^H[Ü][ÝYÝX›WÛ˜[YH
+È‹ˆŽÂˆÝŽ™\˜\ÙWÚYŠ]Y\žWØXØÙ\Ü×Ú[™›ËO˜ÛÛ[[œËÉ—JÛÛœÝÝš[™È	ˆÛÛ[[ŠHÈ™]\›ˆÛÛ[[‹œÝ\×ÝÚ]
+™Yš^
+NÈJNÂŸB‚›ÚYÛÛ^Ž˜Y]Y\žPXØÙ\ÜÒ[™›ÊÛÛœÝ˜[Y\È	ˆ\][Û—Û˜[Y\ÊBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H]Y\žHXØÙ\ÜÈ[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]Y\žWØXØÙ\Ü×Ú[™›ËO›]]^
+NÂˆ›Üˆ
+ÛÛœÝ]]È	ˆ\][Û—Û˜[YHˆ\][Û—Û˜[Y\ÊBˆ]Y\žWØXØÙ\Ü×Ú[™›ËOœ\][ÛœË™[\XÙJ\][Û—Û˜[YJNÂŸB‚›ÚYÛÛ^Ž˜YšY]ÐXØÙ\ÜÒ[™›ÊÛÛœÝÝš[™È	ˆšY]×Û˜[YJBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™HšY]ÈXØÙ\ÜÈ[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]Y\žWØXØÙ\Ü×Ú[™›ËO›]]^
+NÂˆ]Y\žWØXØÙ\Ü×Ú[™›ËOšY]ÜË™[\XÙJšY]×Û˜[YJNÂŸB‚›ÚYÛÛ^Ž˜Y\ÙY›ÝÔÛXÞJÛÛœÝÝš[™È	ˆÛXÞWÛ˜[YJBžÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H\ÙY›ÝÈÛXÚY\È[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]Y\žWØXØÙ\Ü×Ú[™›ËO›]]^
+NÂˆ]Y\žWØXØÙ\Ü×Ú[™›ËOœ›Ý×ÜÛXÚY\Ë™[\XÙJÛXÞWÛ˜[YJNÂŸB‚›ÚYÛÛ^Ž˜Y]Y\žPXØÙ\ÜÒ[™›ÊÛÛœÝ]X[YšYY›Ú™XÝ[Û“˜[YH	ˆ]X[YšYYÜ›Ú™XÝ[Û—Û˜[YJBžÂˆYˆ
+\]X[YšYYÜ›Ú™XÝ[Û—Û˜[YJBˆ™]\›ŽÂ‚ˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H]Y\žHXØÙ\ÜÈ[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]Y\žWØXØÙ\Ü×Ú[™›ËO›]]^
+NÂˆ]Y\žWØXØÙ\Ü×Ú[™›ËOœ›Ú™XÝ[ÛœË™[\XÙJ›]Ž™›Ü›X]
+ˆžßKžßH‹]X[YšYYÜ›Ú™XÝ[Û—Û˜[YKœÝÜ˜YÙWÚY™Ù][X›S˜[YJ
+K˜XÚÔ][ÝRY“™YY
+]X[YšYYÜ›Ú™XÝ[Û—Û˜[YKœ›Ú™XÝ[Û—Û˜[YJJJNÂŸB‚ÛÛ^Ž”]Y\žQ˜XÝÜšY\Ò[™›ÈÛÛ^Ž™Ù]]Y\žQ˜XÝÜšY\Ò[™›Ê
+HÛÛœÝžÂˆ™]\›ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›ÎÂŸB‚›˜[Y\ÜXÙBžÂˆËËÈÙ]Ûˆ™XYÈ]\™H™XY[™È˜XÝÜžHY]Y]H›Üˆ[›ÜÜXÝ[Ûˆ
+K™ËˆÞ\Ý[K™[˜Ý[ÛœÂˆËËÈš[]JKÛÈ]™\ÛÛš[™È]™\žH[˜Ý[Ûˆ8 %[™H[\ˆ[˜Ý[ÛœÈ^HÛÛœÝXÝˆËËÈ[\›˜[H8 %Ù\È›Ý™XÛÜ™[šY\È[ˆ]Y\žWÛÙË\ÙYÙ[˜Ý[ÛœÈ›ÜˆH\Ù\‰ÜÈ]Y\žK‚ˆ™XYÛØØ[›ÛÛÝ\™\Ü×Ü]Y\žWÙ˜XÝÜšY\×Ú[™›ÈH˜[ÙNÂŸB‚ÛÛ^Ž”Ý\™\ÜÔ]Y\žQ˜XÝÜšY\Ò[™›ÔØÛÜNŽ”Ý\™\ÜÔ]Y\žQ˜XÝÜšY\Ò[™›ÔØÛÜJ
+Bˆˆ™]ŠÝ\™\Ü×Ü]Y\žWÙ˜XÝÜšY\×Ú[™›ÊBžÂˆÝ\™\Ü×Ü]Y\žWÙ˜XÝÜšY\×Ú[™›ÈHYNÂŸB‚ÛÛ^Ž”Ý\™\ÜÔ]Y\žQ˜XÝÜšY\Ò[™›ÔØÛÜNŽŸ”Ý\™\ÜÔ]Y\žQ˜XÝÜšY\Ò[™›ÔØÛÜJ
+BžÂˆÝ\™\Ü×Ü]Y\žWÙ˜XÝÜšY\×Ú[™›ÈH™]ŽÂŸB‚›ÚYÛÛ^Ž˜Y]Y\žQ˜XÝÜšY\Ò[™›Ê]Y\žSÙÑ˜XÝÜšY\È˜XÝÜžWÝ\KÛÛœÝÝš[™È	ˆÜ™X]YÛØš™XÝ
+HÛÛœÝžÂˆYˆ
+Ý\™\Ü×Ü]Y\žWÙ˜XÝÜšY\×Ú[™›ÊBˆ™]\›ŽÂ‚ˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘ÛØ˜[ÛÛ^Ø[››Ý]™H]Y\žH˜XÝÜšY\È[™›ÈŠNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë›]]^
+NÂ‚ˆÝÚ]Ú
+˜XÝÜžWÝ\JBˆÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽYÙÜ™YØ]Q[˜Ý[ÛŽ‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë˜YÙÜ™YØ]WÙ[˜Ý[ÛœË™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽYÙÜ™YØ]Q[˜Ý[ÛÛÛXš[˜]ÜŽ‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë˜YÙÜ™YØ]WÙ[˜Ý[Û—ØÛÛXš[˜]ÜœË™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ‘]X˜\ÙN‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë™]X˜\ÙWÙ[™Ú[™\Ë™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ‘]U\N‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë™]WÝ\WÙ˜[Z[Y\Ë™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ‘XÝ[Û˜\žN‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë™XÝ[Û˜\šY\Ë™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ‘›Ü›X]‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë™›Ü›X]Ë™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ‘[˜Ý[ÛŽ‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë™[˜Ý[ÛœË™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ”ÝÜ˜YÙN‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›ËœÝÜ˜YÙ\Ë™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ•X›Q[˜Ý[ÛŽ‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›ËX›WÙ[˜Ý[ÛœË™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ‘^XÝ]X›U\Ù\‘Yš[™Y[˜Ý[ÛŽ‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›Ë™^XÝ]X›WÝ\Ù\—ÙYš[™YÙ[˜Ý[ÛœË™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆœ™XZÎÂˆØ\ÙH]Y\žSÙÑ˜XÝÜšY\ÎŽ”ÔS\Ù\‘Yš[™Y[˜Ý[ÛŽ‚ˆ]Y\žWÙ˜XÝÜšY\×Ú[™›ËœÜ[Ý\Ù\—ÙYš[™YÙ[˜Ý[ÛœË™[\XÙJÜ™X]YÛØš™XÝ
+NÂˆBŸB‚›ÚYÛÛ^Ž˜Y]Y\žTš]š[YÙ\Ò[™›ÊÛÛœÝÝš[™È	ˆš]š[YÙK›ÛÛÜ˜[Y
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]Y\žWÜš]š[YÙ\×Ú[™›ËO›]]^
+NÂˆYˆ
+Ü˜[Y
+Bˆ]Y\žWÜš]š[YÙ\×Ú[™›ËO\ÙYÜš]š[YÙ\Ë™[\XÙJš]š[YÙJNÂˆ[ÙBˆ]Y\žWÜš]š[YÙ\×Ú[™›ËO›Z\ÜÚ[™×Üš]š[YÙ\Ë™[\XÙJš]š[YÙJNÂŸB‚œÝ]XÈ›ÛÛš[™Y[YšY\ŠÛÛœÝTÕ[˜Ý[Ûˆ
+ˆ[˜Ý[ÛŠBžÂˆYˆ
+Y[˜Ý[ÛˆY[˜Ý[Û‹O˜\™Ý[Y[ÊBˆ™]\›ˆ˜[ÙNÂˆYˆ
+ÛÛœÝ]]È
+ˆ\™Ý[Y[ÈH[˜Ý[Û‹O˜\™Ý[Y[ËO˜\ÏTÕ^™\ÜÚ[Û“\ÝŠ
+JBˆÂˆ›Üˆ
+ÛÛœÝ]]È	ˆ\™Ý[Y[ˆ\™Ý[Y[ËO˜Ú[™[ŠBˆÂˆYˆ
+\™Ý[Y[O˜\ÏTÕY[YšY\Š
+JBˆ™]\›ˆYNÂˆYˆ
+ÛÛœÝ]]È
+ˆˆH\™Ý[Y[O˜\ÏTÕ[˜Ý[ÛŠ
+NÈˆ	‰ˆš[™Y[YšY\ŠŠJBˆ™]\›ˆYNÂˆBˆBˆ™]\›ˆ˜[ÙNÂŸB‚”ÝÜ˜YÙTˆÛÛ^Ž™^XÝ]UX›Q[˜Ý[ÛŠÛÛœÝTÕˆ	ˆX›WÙ^™\ÜÚ[Û‹ÛÛœÝTÕÙ[XÝ]Y\žH
+ˆÙ[XÝÜ]Y\žWÚ[
+BžÂˆTÕ[˜Ý[Ûˆ
+ˆ[˜Ý[ÛˆH\ÜÙ\ØØ\ÝTÕ[˜Ý[Ûˆ
+ŠX›WÙ^™\ÜÚ[Û‹™Ù]
+
+JNÂˆÝš[™È]X˜\ÙWÛ˜[YHHÙ]Ý\œ™[]X˜\ÙJ
+NÂˆÝš[™ÈX›WÛ˜[YHH[˜Ý[Û‹O›˜[YNÂ‚ˆYˆ
+[˜Ý[Û‹Oš\ÐÛÛ\Ý[™˜[YJ
+JBˆÂˆÝŽ™XÝÜÝŽœÝš[™Ïˆ\ÎÂˆÜ][Ï	Ë‰ÏŠ\Ë[˜Ý[Û‹O›˜[YJNÂ‚ˆYˆ
+\ËœÚ^™J
+HOHŠBˆÂˆ]X˜\ÙWÛ˜[YHHÝŽ›[Ý™J\ÖÌJNÂˆX›WÛ˜[YHHÝŽ›[Ý™J\ÖÌWJNÂˆBˆB‚ˆÝÜ˜YÙTˆX›HH]X˜\ÙPØ][ÙÎŽš[œÝ[˜ÙJ
+KžQÙ]X›JÙ]X˜\ÙWÛ˜[YKX›WÛ˜[Y_KÙ]]Y\žPÛÛ^
+
+JNÂˆYˆ
+X›JBˆÂˆYˆ
+X›K™Ù]
+
+KOš\ÕšY]Ê
+H	‰ˆX›KO˜\ÏÝÜ˜YÙUšY]ÏŠ
+H	‰ˆX›KO˜\ÏÝÜ˜YÙUšY]ÏŠ
+KOš\Ô\˜[Y]\š^™YšY]Ê
+JBˆÂˆ]]ÈšY]×ÛY]Y]HHX›KO™Ù][“Y[[ÜžSY]Y]TŠÙ]]Y\žPÛÛ^
+
+K˜[ÙJNÂˆ]]È]Y\žHHšY]×ÛY]Y]KO™Ù]Ù[XÝ]Y\žJ
+Kš[›™\—Ü]Y\žKO˜ÛÛ™J
+NÂˆ˜[YUÓ˜[YSX\\˜[Y]\š^™YÝšY]×Ý˜[Y\ÈH[˜[^™Q[˜Ý[Û”\˜[U˜[Y\ÊX›WÙ^™\ÜÚ[Û‹Ù]]Y\žPÛÛ^
+
+JNÂˆÝÜ˜YÙUšY]ÎŽœ™\XÙT]Y\žT\˜[Y]\œÒY”\˜[Y]\š^™YšY]Ê]Y\žK\˜[Y]\š^™YÝšY]×Ý˜[Y\ÊNÂ‚ˆTÕÜ™X]T]Y\žHÜ™X]NÂˆÜ™X]KœÙ]
+Ü™X]KœÙ[XÝ]Y\žJNÂ‚ˆËËÈHØ[\H›ØÚÈ]\Ý™H[˜[^™Y[™\ˆHšY]ÉÜÈÔSÙXÝ\š]HÛÛ^›ÝBˆËËÈ[›ÚÙ\‰ÜÈ
+Z\œ›ÜœÈZ[\˜[Y]\š^™YšY]ÔÝÜ˜YÙJK‚ˆ]]ÈÜ[ÜÙXÝ\š]HHXZÙWÚ[\Ú]™OTÕÔSÙXÝ\š]OŠ
+NÂˆÜ[ÜÙXÝ\š]KO\HHšY]×ÛY]Y]KOœÜ[ÜÙXÝ\š]WÝ\NÂˆYˆ
+šY]×ÛY]Y]KO™Yš[™\ŠBˆÜ[ÜÙXÝ\š]KO™Yš[™\ˆHXZÙWÚ[\Ú]™OTÕ\Ù\“˜[YUÚ]ÜÝŠ
+šY]×ÛY]Y]KO™Yš[™\ŠNÂˆÜ™X]KœÙ]
+Ü™X]KœÜ[ÜÙXÝ\š]KÜ[ÜÙXÝ\š]JNÂ‚ˆ]]ÈšY]×ØÛÛ^HšY]×ÛY]Y]KO™Ù]ÔSÙXÝ\š]SÝ™\œšY[ÛÛ^
+Ú\™YÙœ›ÛWÝ\Ê
+JNÂˆ]]ÈØ[\WØ›ØÚÈH[\œ™]\”Ù[XÝÚ][š[Û”]Y\žNŽ™Ù]Ø[\P›ØÚÊ]Y\žKšY]×ØÛÛ^
+NÂˆ]]È™\ÈHÝŽ›XZÙWÜÚ\™YÝÜ˜YÙUšY]ÏŠÝÜ˜YÙRQ
+]X˜\ÙWÛ˜[YKX›WÛ˜[YJKˆÜ™X]KˆÛÛ[[œÑ\ØÜš\[ÛŠØ[\WØ›ØÚËO™Ù]˜[Y\Ð[™\\Ó\Ý
+
+JKˆÊˆÛÛ[Y[
+‹Èˆ‹ˆÊˆ\×Ü\˜[Y]\š^™YÝšY]È
+‹ÈYJNÂˆ™\ËOœÝ\\
+
+NÂˆ[˜Ý[Û‹OœÙ]™Y™\”ÝXœ]Y\žUÑ[˜Ý[Û‘›Ü›X][™ÊYJNÂˆ™]\›ˆ™\ÎÂˆBˆBˆ]]È\ÚHX›WÙ^™\ÜÚ[Û‹O™Ù]™YR\Ú
+ÊšYÛ›Ü™WØ[X\Ù\ÏJ‹ÈYJNÂˆ]]ÈÙ^HHÔÝš[™Ê\Ú
+NÂ‚ˆÝÜ˜YÙTˆ™\ÎÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^
+NÂˆ™\ÈHX›WÙ[˜Ý[Û—Ü™\Ý[ÖÚÙ^WNÂˆB‚ˆYˆ
+\™\ÊBˆÂˆX›Q[˜Ý[Û”ˆX›WÙ[˜Ý[Û—ÜŽÂˆžBˆÂˆX›WÙ[˜Ý[Û—ÜˆHX›Q[˜Ý[Û‘˜XÝÜžNŽš[œÝ[˜ÙJ
+K™Ù]
+X›WÙ^™\ÜÚ[Û‹Ú\™YÙœ›ÛWÝ\Ê
+JNÂˆBˆØ]Ú
+^Ù\[Ûˆ	ˆJBˆÂˆYˆ
+K˜ÛÙJ
+HOH\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—Ñ•SÕSÓŠBˆÂˆK˜YY\ÜØYÙJˆÜˆ[˜ÛÜœ™XÝ\˜[Y]\š^™YšY]ÈŠNÂˆBˆ›ÝÎÂˆB‚ˆZ[Ý\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÂˆHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[Ûœ×NÂˆYˆ
+Ù[XÝÜ]Y\žWÚ[	‰ˆ\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈ	‰ˆX›WÙ[˜Ý[Û—Ü‹O›™YYÝXÝ\™R[
+
+Bˆ	‰ˆ\Ò[œÙ\[Û•X›PÛÛ[[œÑ\ØÜš\[ÛŠ
+JBˆÂˆÛÛœÝ]]È	ˆ[œÙ\ØÛÛ[[œÈH
+™Ù][œÙ\[Û•X›PÛÛ[[œÑ\ØÜš\[ÛŠ
+NÂ‚ˆÛÛœÝ]]È	ˆ[œÙ\ØÛÛ[[—Û˜[Y\ÈH\Ò[œÙ\[Û•X›PÛÛ[[“˜[Y\Ê
+HÈ
+™Ù][œÙ\[Û•X›PÛÛ[[“˜[Y\Ê
+Hˆ[œÙ\ØÛÛ[[œË™Ù]Ü™[˜\žJ
+K™Ù]˜[Y\Ê
+NÂˆŽŽÛÛ[[œÑ\ØÜš\[ÛˆÝXÝ\™WÚ[Â‚ˆ›ÛÛ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHHYNÂ‚ˆËËÈ[œÙ\X›HX]Ú\ÈÛÛ[[œÈYØZ[œÝÑSPÕ^™\ÜÚ[ÛˆžHÜÚ][Û‹ÛÈÙHØ[ÈX\ˆËËÈ[œÙ\X›HÛÛ[[œÈÈX›H[˜Ý[ÛˆÛÛ[[œÈ›ÝYÚ˜[Y\Èœ›ÛHÑSPÕ^™\ÜÚ[Û‹‚‚ˆ]]È[œÙ\ØÛÛ[[—Û˜[YWÚ]H[œÙ\ØÛÛ[[—Û˜[Y\Ë˜™YÚ[Š
+NÂˆ]]È[œÙ\ØÛÛ[[—Û˜[Y\×Ù[™H[œÙ\ØÛÛ[[—Û˜[Y\Ë™[™
+
+NÈËËÈ[™]\˜]ÜˆÙˆH˜[™ÙHÛÝ™\™YžHÜÜÚX›H\Ý\š\ÚÂˆ]]Èš\X[ØÛÛ[[—Û˜[Y\ÈHX›WÙ[˜Ý[Û—Ü‹O™Ù]š\X[ÕÐÚXÚÐ™Y›Ü™U\Ú[™ÔÝXÝ\™R[
+
+NÂˆ›ÛÛ\Ý\š\ÚÈH˜[ÙNÂˆÛÛœÝ]]È	ˆ^™\ÜÚ[Û—Û\ÝHÙ[XÝÜ]Y\žWÚ[OœÙ[XÝ
+
+KO˜\ÏTÕ^™\ÜÚ[Û“\ÝŠ
+KO˜Ú[™[ŽÂˆ]]È^™\ÜÚ[ÛˆH^™\ÜÚ[Û—Û\Ý˜™YÚ[Š
+NÂ‚ˆËËÈÙHØ[ÈÛÈ›ÝYÚÑSPÕ^™\ÜÚ[Ûˆ\Ý[™ÛÜœ™\ÜÛ™XXÚ^™\ÜÚ[ÛˆÈÛÛ[[ˆ[ˆ[œÙ\X›BˆËËÈÚXÚ\HÚ[™H\ÙY\ÈH[›ÜˆHš[HÝXÝ\™H[™™\™[˜ÙK‚ˆ›Üˆ
+È^™\ÜÚ[ÛˆOH^™\ÜÚ[Û—Û\Ý™[™
+
+H	‰ˆ[œÙ\ØÛÛ[[—Û˜[YWÚ]OH[œÙ\ØÛÛ[[—Û˜[Y\×Ù[™È
+ÊÙ^™\ÜÚ[ÛŠBˆÂˆYˆ
+]]È
+ˆY[YšY\ˆH
+
+™^™\ÜÚ[ÛŠKO˜\ÏTÕY[YšY\Š
+JBˆÂˆYˆ
+]š\X[ØÛÛ[[—Û˜[Y\Ë˜ÛÛZ[œÊY[YšY\‹O›˜[YJ
+JJBˆÂˆYˆ
+\Ý\š\ÚÊBˆÂˆYˆ
+\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈOHJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ’SQÐSÐÓÓSS‹\Ý\š\ÚÈØ[››Ý™HZ^YÚ]ÛÛ[[ˆ\Ý[ˆS”ÑT•ÑSPÕ]Y\žKˆŠNÂ‚ˆ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHH˜[ÙNÂˆœ™XZÎÂˆB‚ˆÛÛ[[‘\ØÜš\[ÛˆÛÛ[[ˆH[œÙ\ØÛÛ[[œË™Ù]
+
+š[œÙ\ØÛÛ[[—Û˜[YWÚ]
+NÂˆÛÛ[[‹›˜[YHHY[YšY\‹O›˜[YJ
+NÂˆËËÈÚ[™ÙH\[Y\˜[ÛÛ[[œÈÈY˜][ÛÛ[[œË‚ˆÛÛ[[‹™Y˜][Ù\ØËšÚ[™HÛÛ[[‘Y˜][Ú[™Ž‘Y˜][ÂˆÝXÝ\™WÚ[˜Y
+ÝŽ›[Ý™JÛÛ[[ŠJNÂˆB‚ˆËËÈÛ˜ÙHÙH]\Ý\š\ÚÈÙHØ[Èš[™[™ÙˆH˜[™ÙHÛÝ™\™YžH\Ý\š\ÚÂˆËËÈÛÛšX][™È]™\žH\\ˆÑSPÕ^™\ÜÚ[ÛˆÈHZ[Ùˆ[œÙ\ÝXÝ\™BˆYˆ
+\Ý\š\ÚÊBˆKZ[œÙ\ØÛÛ[[—Û˜[Y\×Ù[™Âˆ[ÙBˆ
+ÊÚ[œÙ\ØÛÛ[[—Û˜[YWÚ]ÂˆBˆ[ÙHYˆ
+
+
+™^™\ÜÚ[ÛŠKO˜\ÏTÕ\Ý\š\ÚÏŠ
+JBˆÂˆYˆ
+\Ý\š\ÚÊBˆÂˆYˆ
+\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈOHJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ’SQÐSÐÓÓSS‹“Û›HÛ™H\Ý\š\ÚÈØ[ˆ™H\ÙY[ˆS”ÑT•ÑSPÕ]Y\žKˆŠNÂ‚ˆ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHH˜[ÙNÂˆœ™XZÎÂˆBˆYˆ
+\ÝXÝ\™WÚ[™[\J
+JBˆÂˆYˆ
+\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈOHJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ’SQÐSÐÓÓSS‹\Ý\š\ÚÈØ[››Ý™HZ^YÚ]ÛÛ[[ˆ\Ý[ˆS”ÑT•ÑSPÕ]Y\žKˆŠNÂ‚ˆ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHH˜[ÙNÂˆœ™XZÎÂˆB‚ˆ\Ý\š\ÚÈHYNÂˆBˆ[ÙHYˆ
+]]È
+ˆ[˜ÈH
+
+™^™\ÜÚ[ÛŠKO˜\ÏTÕ[˜Ý[ÛŠ
+JBˆÂˆYˆ
+\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈOHˆ	‰ˆš[™Y[YšY\Š[˜ÊJBˆÂˆ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHH˜[ÙNÂˆœ™XZÎÂˆB‚ˆËËÈÛ˜ÙHÙH]\Ý\š\ÚÈÙHØ[Èš[™[™ÙˆH˜[™ÙHÛÝ™\™YžH\Ý\š\ÚÂˆËËÈÛÛšX][™È]™\žH\\ˆÑSPÕ^™\ÜÚ[ÛˆÈHZ[Ùˆ[œÙ\ÝXÝ\™BˆYˆ
+\Ý\š\ÚÊBˆKZ[œÙ\ØÛÛ[[—Û˜[Y\×Ù[™Âˆ[ÙBˆ
+ÊÚ[œÙ\ØÛÛ[[—Û˜[YWÚ]ÂˆBˆ[ÙBˆÂˆËËÈÛ˜ÙHÙH]\Ý\š\ÚÈÙHØ[Èš[™[™ÙˆH˜[™ÙHÛÝ™\™YžH\Ý\š\ÚÂˆËËÈÛÛšX][™È]™\žH\\ˆÑSPÕ^™\ÜÚ[ÛˆÈHZ[Ùˆ[œÙ\ÝXÝ\™BˆYˆ
+\Ý\š\ÚÊBˆKZ[œÙ\ØÛÛ[[—Û˜[Y\×Ù[™Âˆ[ÙBˆ
+ÊÚ[œÙ\ØÛÛ[[—Û˜[YWÚ]ÂˆBˆB‚ˆYˆ
+\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈOHˆ	‰ˆX\Ý\š\ÚÊBˆÂˆËËÈ›Üˆ[œ][˜Ý[ÛˆÙHÚÝ[ÚXÚÈYˆ[œ]›Ü›X]Ý\ÜÈ™XY[™ÈÝXœÙ]ÙˆÛÛ[[œË‚ˆYˆ
+X›WÙ[˜Ý[Û—Ü‹O™Ù]˜[YJ
+HOHš[œ]ŠBˆ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHH›Ü›X]˜XÝÜžNŽš[œÝ[˜ÙJ
+K˜ÚXÚÒY‘›Ü›X]Ý\ÜÔÝXœÙ]ÙÛÛ[[œÊÙ][œÙ\›Ü›X]
+
+KÚ\™YÙœ›ÛWÝ\Ê
+JNÂˆ[ÙBˆ\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žHHX›WÙ[˜Ý[Û—Ü‹OœÝ\ÜÔ™XY[™ÔÝXœÙ]ÙÛÛ[[œÊÚ\™YÙœ›ÛWÝ\Ê
+JNÂˆB‚ˆYˆ
+\ÙWØÛÛ[[œ×Ùœ›ÛWÚ[œÙ\Ü]Y\žJBˆÂˆYˆ
+^™\ÜÚ[ÛˆOH^™\ÜÚ[Û—Û\Ý™[™
+
+JBˆÂˆËËÈ\[™Z[Ùˆ[œÙ\ÝXÝ\™HÈH[ˆYˆ
+\Ý\š\ÚÊBˆÂˆ›Üˆ
+È[œÙ\ØÛÛ[[—Û˜[YWÚ]OH[œÙ\ØÛÛ[[—Û˜[Y\×Ù[™È
+ÊÚ[œÙ\ØÛÛ[[—Û˜[YWÚ]
+BˆÂˆÛÛ[[‘\ØÜš\[ÛˆÛÛ[[ˆH[œÙ\ØÛÛ[[œË™Ù]
+
+š[œÙ\ØÛÛ[[—Û˜[YWÚ]
+NÂˆËËÈÚ[™ÙH\[Y\˜[ÛÛ[[œÈÈY˜][ÛÛ[[œË‚ˆÛÛ[[‹™Y˜][Ù\ØËšÚ[™HÛÛ[[‘Y˜][Ú[™Ž‘Y˜][Â‚ˆÝXÝ\™WÚ[˜Y
+ÝŽ›[Ý™JÛÛ[[ŠJNÂˆBˆB‚ˆYˆ
+\ÝXÝ\™WÚ[™[\J
+JBˆX›WÙ[˜Ý[Û—Ü‹OœÙ]ÝXÝ\™R[
+ÝXÝ\™WÚ[
+NÂˆBˆ[ÙHYˆ
+\ÙWÜÝXÝ\™WÙœ›ÛWÚ[œÙ\[Û—ÝX›WÚ[—ÝX›WÙ[˜Ý[ÛœÈOHJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“•SP‘T—ÓÑ—ÐÓÓSS”×ÑÑTÓ•ÓPUÒ“[X™\ˆÙˆÛÛ[[œÈ[ˆ[œÙ\X›H\ÜÈ[ˆ™\]Z\™YžHÑSPÕ^™\ÜÚ[Û‹ˆŠNÂˆBˆB‚ˆ™\ÈHX›WÙ[˜Ý[Û—Ü‹O™^XÝ]JX›WÙ^™\ÜÚ[Û‹Ú\™YÙœ›ÛWÝ\Ê
+KX›WÙ[˜Ý[Û—Ü‹O™Ù]˜[YJ
+JNÂ‚ˆËËÈÚ[˜ÙHUX›Q[˜Ý[ÛŽŽœ\œÙP\™Ý[Y[Ê
+HX^HÚ[™ÙHX›WÙ^™\ÜÚ[Û‹K™KŽ‚ˆËËÂˆËËÈ™[[ÝJ	ÌLËŒIËÞ\Ý[K›Û™JHOˆ™[[ÝJ	ÌLËŒIË	ÜÞ\Ý[K›Û™IÊKˆËËÂˆ]]È™]×Ú\ÚHX›WÙ^™\ÜÚ[Û‹O™Ù]™YR\Ú
+ÊšYÛ›Ü™WØ[X\Ù\ÏJ‹ÈYJNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^
+NÂˆX›WÙ[˜Ý[Û—Ü™\Ý[ÖÚÙ^WHH™\ÎÂˆYˆ
+\ÚOH™]×Ú\Ú
+BˆÂˆÙ^HHÔÝš[™Ê™]×Ú\Ú
+NÂˆX›WÙ[˜Ý[Û—Ü™\Ý[ÖÚÙ^WHH™\ÎÂˆBˆBˆ™]\›ˆ™\ÎÂŸB‚”ÝÜ˜YÙTˆÛÛ^Ž™^XÝ]UX›Q[˜Ý[ÛŠˆÛÛœÝTÕˆ	ˆX›WÙ^™\ÜÚ[Û‹ˆÛÛœÝX›Q[˜Ý[Û”ˆ	ˆX›WÙ[˜Ý[Û—Ü‹ˆÛÛœÝÛÛ^ˆ	ˆ^XÝ][Û—ØÛÛ^
+BžÂˆÛÛœÝ]]È\ÚHX›WÙ^™\ÜÚ[Û‹O™Ù]™YR\Ú
+ÊšYÛ›Ü™WØ[X\Ù\ÏJ‹ÈYJNÂˆÛÛœÝ]]È˜\™WÚÙ^HHÔÝš[™Ê\Ú
+NÂˆ]]ÈÙ^HH˜\™WÚÙ^NÂ‚ˆËËÈ[˜ÛÜœÜ˜]HH\ÚÙˆH^XÝ][ÛˆÛÛ^	ÜÈÚ[™ÙYÙ][™ÜÈ[ÈHØXÚHÙ^K‚ˆËËÈ\È[œÝ\™\È]‚ˆËËÈHY[XØ[X›H[˜Ý[ÛœÈÚ]HØ[YHY™™XÝ]™HÙ][™ÜÈ\™HÝ[™]\ÙYœ›ÛHØXÚKˆËËÈHX›H[˜Ý[ÛœÈÚ]Y™™\™[Ù][™ÜÈÙ]Ù\\˜]HØXÚH[šY\Ë‚ˆÂˆÚ\\ÚÙ][™Ü×Ú\ÚÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÚ[™ÙHˆ^XÝ][Û—ØÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+K˜Ú[™Ù\Ê
+JBˆÂˆÙ][™Ü×Ú\Ú\]JÚ[™ÙK›˜[YJNÂˆ\Uš\Ú]ÜŠšY[š\Ú]Ü’\Ú
+Ù][™Ü×Ú\Ú
+KÚ[™ÙK˜[YJNÂˆBˆÙ^H
+ÏH	ËÉÈ
+ÈÔÝš[™ÊÙ][™Ü×Ú\Ú™Ù]LŽ
+
+JNÂˆB‚ˆÝÜ˜YÙTˆ™\ÎÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^
+NÂˆ™\ÈHX›WÙ[˜Ý[Û—Ü™\Ý[ÖÚÙ^WNÂˆËËÈ[ÛÈÚXÚÈH˜\™HÙ^H
+Ú]Ý]Ù][™ÜÈÝY™š^
+H›ÜˆÛÛ\]Xš[]HÚ]ˆËËÈHÝ\ˆÝ™\›ØYÙˆ^XÝ]UX›Q[˜Ý[Û‹ˆ]Ý™\›ØY\È\ÙY[‚ˆËËÈ^XÝ]T]Y\žK˜ÜÈ™KXÜ™X]HÝÜ˜YÙR[œ]›ÜˆS”ÑT•‹‹”ÑSPÕÚ]ˆËËÈ[›[™H]K[™]ØXÚ\ÈH™\Ý[[™\ˆH˜\™HTÕ\ÚÙ^K‚ˆYˆ
+\™\È	‰ˆÙ^HOH˜\™WÚÙ^JBˆ™\ÈHX›WÙ[˜Ý[Û—Ü™\Ý[ÖØ˜\™WÚÙ^WNÂˆB‚ˆYˆ
+\™\ÊBˆÂˆ™\ÈHX›WÙ[˜Ý[Û—Ü‹O™^XÝ]JX›WÙ^™\ÜÚ[Û‹^XÝ][Û—ØÛÛ^X›WÙ[˜Ý[Û—Ü‹O™Ù]˜[YJ
+JNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^
+NÂˆËËÈ[ˆØ\ÙHÙˆ˜XÙK[›Ý\ˆ™XYZYÚ]™H[œÙ\YH™\Ý[[™XYK‚ˆËËÈÙH\ÝÝ™\Üš]H]Ú[˜ÙH›ÝÚÝ[™H\]Z]˜[[‚ˆX›WÙ[˜Ý[Û—Ü™\Ý[ÖÚÙ^WHH™\ÎÂˆB‚ˆ™]\›ˆ™\ÎÂŸB‚‚”ÝÜ˜YÙTˆÛÛ^Ž˜Z[\˜[Y]\š^™YšY]ÔÝÜ˜YÙJÛÛœÝÝš[™È	ˆ]X˜\ÙWÛ˜[YKÛÛœÝÝš[™È	ˆX›WÛ˜[YKÛÛœÝ˜[YUÓ˜[YSX\	ˆ\˜[WÝ˜[Y\ÊHÛÛœÝžÂˆYˆ
+X›WÛ˜[YK™[\J
+JBˆ™]\›ˆ[ŽÂ‚ˆÝÜ˜YÙTˆÜšYÚ[˜[ÝšY]ÈH]X˜\ÙPØ][ÙÎŽš[œÝ[˜ÙJ
+KžQÙ]X›JÙ]X˜\ÙWÛ˜[YKX›WÛ˜[Y_KÙ]]Y\žPÛÛ^
+
+JNÂˆYˆ
+[ÜšYÚ[˜[ÝšY]È[ÜšYÚ[˜[ÝšY]ËOš\ÕšY]Ê
+JBˆ™]\›ˆ[ŽÂˆ]]È
+ˆÝÜ˜YÙWÝšY]ÈHÜšYÚ[˜[ÝšY]ËO˜\ÏÝÜ˜YÙUšY]ÏŠ
+NÂˆYˆ
+\ÝÜ˜YÙWÝšY]È\ÝÜ˜YÙWÝšY]ËOš\Ô\˜[Y]\š^™YšY]Ê
+JBˆ™]\›ˆ[ŽÂ‚ˆ]]ÈÜšYÚ[˜[ÝšY]×ÛY]Y]HHÜšYÚ[˜[ÝšY]ËO™Ù][“Y[[ÜžSY]Y]TŠÙ]]Y\žPÛÛ^
+
+K˜[ÙJNÂˆ]]È]Y\žHHÜšYÚ[˜[ÝšY]×ÛY]Y]KO™Ù]Ù[XÝ]Y\žJ
+Kš[›™\—Ü]Y\žKO˜ÛÛ™J
+NÂˆÝÜ˜YÙUšY]ÎŽœ™\XÙT]Y\žT\˜[Y]\œÒY”\˜[Y]\š^™YšY]Ê]Y\žK\˜[WÝ˜[Y\ÊNÂ‚ˆTÕÜ™X]T]Y\žHÜ™X]NÂˆÜ™X]KœÙ]
+Ü™X]KœÙ[XÝ]Y\žJNÂ‚ˆ]]ÈÜ[ÜÙXÝ\š]HHXZÙWÚ[\Ú]™OTÕÔSÙXÝ\š]OŠ
+NÂˆÜ[ÜÙXÝ\š]KO\HHÜšYÚ[˜[ÝšY]×ÛY]Y]KOœÜ[ÜÙXÝ\š]WÝ\NÂˆYˆ
+ÜšYÚ[˜[ÝšY]×ÛY]Y]KO™Yš[™\ŠBˆÜ[ÜÙXÝ\š]KO™Yš[™\ˆHXZÙWÚ[\Ú]™OTÕ\Ù\“˜[YUÚ]ÜÝŠ
+›ÜšYÚ[˜[ÝšY]×ÛY]Y]KO™Yš[™\ŠNÂˆÜ™X]KœÙ]
+Ü™X]KœÜ[ÜÙXÝ\š]KÜ[ÜÙXÝ\š]JNÂ‚ˆ]]ÈšY]×ØÛÛ^HÜšYÚ[˜[ÝšY]×ÛY]Y]KO™Ù]ÔSÙXÝ\š]SÝ™\œšY[ÛÛ^
+Ú\™YÙœ›ÛWÝ\Ê
+JNÂˆ]]ÈØ[\WØ›ØÚÈH[\œ™]\”Ù[XÝ]Y\žP[˜[^™\ŽŽ™Ù]Ø[\P›ØÚÊ]Y\žKšY]×ØÛÛ^
+NÂˆ]]È™\ÈHÝŽ›XZÙWÜÚ\™YÝÜ˜YÙUšY]ÏŠÝÜ˜YÙRQ
+]X˜\ÙWÛ˜[YKX›WÛ˜[YJKˆÜ™X]KˆÛÛ[[œÑ\ØÜš\[ÛŠØ[\WØ›ØÚËO™Ù]˜[Y\Ð[™\\Ó\Ý
+
+JKˆÊˆÛÛ[Y[
+‹Èˆ‹ˆÊˆ\×Ü\˜[Y]\š^™YÝšY]È
+‹ÈYJNÂˆ™\ËOœÝ\\
+
+NÂˆ™]\›ˆ™\ÎÂŸB‚‚›ÚYÛÛ^Ž˜YšY]ÔÛÝ\˜ÙJÛÛœÝÝÜ˜YÙTˆ	ˆÝÜ˜YÙJBžÂˆYˆ
+šY]×ÜÛÝ\˜ÙJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•P“WÐS‘PQWÑVTÕË•[\Ü˜\žHšY]ÈÛÝ\˜ÙHÝÜ˜YÙHßH[™XYH^\ÝËˆ‹ˆ˜XÚÔ][ÝRY“™YY
+šY]×ÜÛÝ\˜ÙKO™Ù]˜[YJ
+JJNÂˆšY]×ÜÛÝ\˜ÙHHÝÜ˜YÙNÂŸB‚‚”ÝÜ˜YÙTˆÛÛ^Ž™Ù]šY]ÔÛÝ\˜ÙJ
+HÛÛœÝžÂˆ™]\›ˆšY]×ÜÛÝ\˜ÙNÂŸB‚˜›ÛÛÛÛ^Ž™\Ü^TÙXÜ™]Ò[”ÚÝÐ[™Ù[XÝ
+
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ™\Ü^WÜÙXÜ™]×Ú[—ÜÚÝ×Ø[™ÜÙ[XÝNÂŸB‚”Ù][™ÜÈÛÛ^Ž™Ù]Ù][™ÜÐÛÜJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆ™]\›ˆ
+œÙ][™ÜÎÂŸB‚›ÚYÛÛ^ŽœÙ]Ù][™ÜÊÛÛœÝÙ][™ÜÈ	ˆÙ][™Ü×ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆ
+œÙ][™ÜÈHÙ][™Ü×ÎÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂˆÛÛ^Ø[š]PÛ[\Ù][™ÜÊ
+\Ë
+œÙ][™ÜÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ù][™ÕÚ]ØÚÊÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝÝš[™È	ˆ˜[YKÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ˆØÚÊBžÂˆYˆ
+˜[YHOHœ›Ùš[HŠBˆÂˆÙ]Ý\œ™[›Ùš[UÚ]ØÚÊ˜[YKYHÊ˜ÚXÚ×ØÛÛœÝ˜Z[Ê‹ËØÚÊNÂˆ™]\›ŽÂˆBˆÙ][™ÜËOœÙ]
+˜[YK˜[YJNÂˆYˆ
+ÛÛ^XØÙ\ÜÔ\˜[\ÎŽ™\[™ÓÛ”Ù][™Ó˜[YJ˜[YJJBˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂˆÛÛ^Ø[š]PÛ[\Ù][™ÜÕÚ]ØÚÊ
+\Ë
+œÙ][™ÜËØÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]Ù][™ÕÚ]ØÚÊÝŽœÝš[™×ÝšY]È˜[YKÛÛœÝšY[	ˆ˜[YKÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ˆØÚÊBžÂˆYˆ
+˜[YHOHœ›Ùš[HŠBˆÂˆÙ]Ý\œ™[›Ùš[UÚ]ØÚÊ˜[YKœØY™QÙ]Ýš[™ÏŠ
+KYHÊ˜ÚXÚ×ØÛÛœÝ˜Z[Ê‹ËØÚÊNÂˆ™]\›ŽÂˆBˆÙ][™ÜËOœÙ]
+˜[YK˜[YJNÂˆYˆ
+ÛÛ^XØÙ\ÜÔ\˜[\ÎŽ™\[™ÓÛ”Ù][™Ó˜[YJ˜[YJJBˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^Ž˜\TÙ][™ÐÚ[™ÙUÚ]ØÚÊÛÛœÝÙ][™ÐÚ[™ÙH	ˆÚ[™ÙKÛÛœÝÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆ	ˆØÚÊBžÂˆžBˆÂˆÙ]Ù][™ÕÚ]ØÚÊÚ[™ÙK›˜[YKÚ[™ÙK˜[YKØÚÊNÂˆÛÛ^Ø[š]PÛ[\Ù][™ÜÕÚ]ØÚÊ
+\Ë
+œÙ][™ÜËØÚÊNÂˆBˆØ]Ú
+^Ù\[Ûˆ	ˆJBˆÂˆK˜YY\ÜØYÙJ›]Ž™›Ü›X]
+ˆ5çx¶‰žËkºwµç\Ú\™YOœš[X\žWÚ[™^ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂŸB‚”š[X\žR[™^ØXÚTˆÛÛ^Ž™Ù]š[X\žR[™^ØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœš[X\žWÚ[™^ØØXÚNÂŸB‚”Þ\Ý[P[ØØ]YY[[ÜžRÛ\”ˆÛÛ^Ž™Ù]Þ\Ý[P[ØØ]YY[[ÜžRÛ\Š
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO[˜XÚÙYÛY[[ÜžWÚÛ\ŽÂŸB›ÚYÛÛ^Ž˜[ÝÔÞ\Ý[P[ØØ]SY[[ÜžJ›ÛÛ[ÝÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+[ÝÈ	‰ˆ\Ú\™YO[˜XÚÙYÛY[[ÜžWÚÛ\ŠBˆÚ\™YO[˜XÚÙYÛY[[ÜžWÚÛ\ˆHÝŽ›XZÙWÜÚ\™YÞ\Ý[P[ØØ]YY[[ÜžRÛ\Š
+NÂˆ[ÙHYˆ
+X[ÝÊBˆÚ\™YO[˜XÚÙYÛY[[ÜžWÚÛ\ˆH[ŽÂŸB‚›ÚYÛÛ^ŽœÙ]\Ù\œÕÒYÛ›Ü™QX\›SY[[ÜžS[Z]ÚXÚÊÝŽœÝš[™È\Ù\œÊBžÂˆÝŽœÚ\™YÜÝŽ[›Ü™\™YÜÙ]ÝŽœÝš[™ÏˆX\ÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×Û]]^
+NÂ‚ˆYˆ
+\Ù\œÈOHÚ\™YO\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×ÜÛÝ\˜ÙJBˆ™]\›ŽÂ‚ˆÑ×ÑP•QÊÚ\™YO›ÙËÚ[™Ú[™È\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚÈÎˆßH‹\Ù\œÊNÂ‚ˆYˆ
+]\Ù\œË™[\J
+JBˆÂˆX\HÝŽ›XZÙWÜÚ\™YÝŽ[›Ü™\™YÜÙ]ÝŽœÝš[™ÏŠ\œÙRY[YšY\œÓÜ”Ýš[™Ó]\˜[ÕÔÙ]
+\Ù\œË
+œÙ][™ÜÊJNÂˆÚ\™YO\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×ÜÛÝ\˜ÙHHÝŽ›[Ý™J\Ù\œÊNÂˆB‚ˆÚ\™YO\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚÈHÝŽ›[Ý™JX\
+NÂŸB‚œÝŽœÚ\™YÜÝŽ[›Ü™\™YÜÙ]ÝŽœÝš[™ÏˆÛÛ^Ž™Ù]\Ù\œÕÒYÛ›Ü™QX\›SY[[ÜžS[Z]ÚXÚÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚ×Û]]^
+NÂˆ™]\›ˆÚ\™YO\Ù\œ×Ý×ÚYÛ›Ü™WÙX\›WÛY[[ÜžWÛ[Z]ØÚXÚÎÂŸB‚›ÚYÛÛ^Ž˜ÛX\”š[X\žR[™^ØXÚJ
+HÛÛœÝžÂˆš[X\žR[™^ØXÚTˆØXÚHHÙ]š[X\žR[™^ØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ][™^[˜ÛÛ\™\ÜÙYØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[™^[˜ÛÛ\™\ÜÙYØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚHHÝŽ›XZÙWÜÚ\™Y[˜ÛÛ\™\ÜÙYØXÚOŠØXÚWÜÛXÞKÝ\œ™[Y]šXÜÎŽ’[™^[˜ÛÛ\™\ÜÙYØXÚPž]\ËÝ\œ™[Y]šXÜÎŽ’[™^[˜ÛÛ\™\ÜÙYØXÚPÙ[ËX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÜ˜][ÊNÂˆÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚWÙ[˜X›YHÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚKO›X^Ú^™R[ž]\Ê
+HOHÂŸB‚›ÚYÛÛ^Ž\]R[™^[˜ÛÛ\™\ÜÙYØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[™^[˜ÛÛ\™\ÜÙYØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+š[™^Ý[˜ÛÛ\™\ÜÙYØØXÚWÜÚ^™H‹QUSÒS‘VÕSÓÓT‘TÔÑQÐÐPÒWÓPVÔÒV‘JNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y[™^[˜ÛÛ\™\ÜÙYØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚWÙ[˜X›YHÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚKO›X^Ú^™R[ž]\Ê
+HOHÂŸB‚•[˜ÛÛ\™\ÜÙYØXÚTˆÛÛ^Ž™Ù][™^[˜ÛÛ\™\ÜÙYØXÚJ›ÛÛÛ›WÚY—Ù[˜X›Y
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Û›WÚY—Ù[˜X›Y	‰ˆ\Ú\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚWÙ[˜X›Y
+Bˆ™]\›ˆ[ŽÂˆ™]\›ˆÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\’[™^[˜ÛÛ\™\ÜÙYØXÚJ
+HÛÛœÝžÂˆ[˜ÛÛ\™\ÜÙYØXÚTˆØXÚHHÙ][™^[˜ÛÛ\™\ÜÙYØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂ‚ˆ™[X[ØÐØXÚP\™[˜NŽœ\™ÙJ
+NÂŸB‚›ÚYÛÛ^ŽœÙ][™^X\šÐØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ØØXÚWÜÚ^™WÚ[—Øž]\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOš[™^ÛX\š×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[™^X\šÈØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YOš[™^ÛX\š×ØØXÚHHÝŽ›XZÙWÜÚ\™YX\šÐØXÚOŠØXÚWÜÛXÞKÝ\œ™[Y]šXÜÎŽ’[™^X\šÐØXÚPž]\ËÝ\œ™[Y]šXÜÎŽ’[™^X\šÐØXÚQš[\ËX^ØØXÚWÜÚ^™WÚ[—Øž]\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]R[™^X\šÐØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOš[™^ÛX\š×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[™^X\šÈØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+š[™^ÛX\š×ØØXÚWÜÚ^™H‹QUSÒS‘VÓPT’×ÐÐPÒWÓPVÔÒV‘JNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y[™^X\šÈØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOš[™^ÛX\š×ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂŸB‚“X\šÐØXÚTˆÛÛ^Ž™Ù][™^X\šÐØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOš[™^ÛX\š×ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\’[™^X\šÐØXÚJ
+HÛÛœÝžÂˆX\šÐØXÚTˆØXÚHHÙ][™^X\šÐØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂ‚ˆ™[X[ØÐØXÚP\™[˜NŽœ\™ÙJ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]™XÝÜ”Ú[Z[\š]R[™^ØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•™XÝÜˆÚ[Z[\š]H[™^ØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚHHÝŽ›XZÙWÜÚ\™Y™XÝÜ”Ú[Z[\š]R[™^ØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]U™XÝÜ”Ú[Z[\š]R[™^ØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•™XÝÜˆÚ[Z[\š]H[™^ØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚWÜÚ^™H‹QUSÕ‘PÕÔ—ÔÒSRST’UWÒS‘VÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚWÛX^Ù[šY\È‹QUSÕ‘PÕÔ—ÔÒSRST’UWÒS‘VÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y™XÝÜˆÚ[Z[\š]H[™^ØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚•™XÝÜ”Ú[Z[\š]R[™^ØXÚTˆÛÛ^Ž™Ù]™XÝÜ”Ú[Z[\š]R[™^ØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\•™XÝÜ”Ú[Z[\š]R[™^ØXÚJ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚJBˆÚ\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ]^[™^ÚÙ[œÐØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO^Ú[™^ÝÚÙ[œ×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•^[™^ÚÙ[œÈØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YO^Ú[™^ÝÚÙ[œ×ØØXÚHHÝŽ›XZÙWÜÚ\™Y^[™^ÚÙ[œÐØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]U^[™^ÚÙ[œÐØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO^Ú[™^ÝÚÙ[œ×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•^[™^ÚÙ[œÈØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+^Ú[™^ÝÚÙ[œ×ØØXÚWÜÚ^™H‹QUSÕVÒS‘VÕÒÑS”×ÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+^Ú[™^ÝÚÙ[œ×ØØXÚWÛX^Ù[šY\È‹QUSÕVÒS‘VÕÒÑS”×ÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y^[™^ÚÙ[œÈØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YO^Ú[™^ÝÚÙ[œ×ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YO^Ú[™^ÝÚÙ[œ×ØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚œÝŽœÚ\™YÜ^[™^ÚÙ[œÐØXÚOˆÛÛ^Ž™Ù]^[™^ÚÙ[œÐØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO^Ú[™^ÝÚÙ[œ×ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\•^[™^ÚÙ[œÐØXÚJ
+HÛÛœÝžÂˆ]]ÈØXÚHHÙ]^[™^ÚÙ[œÐØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ]^[™^XY\ØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO^Ú[™^ÚXY\—ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•^[™^XY\ˆØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YO^Ú[™^ÚXY\—ØØXÚHHÝŽ›XZÙWÜÚ\™Y^[™^XY\ØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]U^[™^XY\ØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO^Ú[™^ÚXY\—ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•^[™^XY\ˆØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+^Ú[™^ÚXY\—ØØXÚWÜÚ^™H‹QUSÕVÒS‘VÒPQT—ÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+^Ú[™^ÚXY\—ØØXÚWÛX^Ù[šY\È‹QUSÕVÒS‘VÒPQT—ÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y^[™^XY\ˆØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YO^Ú[™^ÚXY\—ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YO^Ú[™^ÚXY\—ØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚œÝŽœÚ\™YÜ^[™^XY\ØXÚOˆÛÛ^Ž™Ù]^[™^XY\ØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO^Ú[™^ÚXY\—ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\•^[™^XY\ØXÚJ
+HÛÛœÝžÂˆ]]ÈØXÚHHÙ]^[™^XY\ØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ]^[™^ÜÝ[™ÜÐØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•^[™^ÜÝ[™È\ÝØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚHHÝŽ›XZÙWÜÚ\™Y^[™^ÜÝ[™ÜÐØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]U^[™^ÜÝ[™ÜÐØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•^[™^ÜÝ[™È\ÝØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+^Ú[™^ÜÜÝ[™Ü×ØØXÚWÜÚ^™H‹QUSÕVÒS‘VÔÔÕS‘Ô×ÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+^Ú[™^ÜÜÝ[™Ü×ØØXÚWÛX^Ù[šY\È‹QUSÕVÒS‘VÔÔÕS‘Ô×ÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y^[™^ÜÝ[™È\ÝØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚œÝŽœÚ\™YÜ^[™^ÜÝ[™ÜÐØXÚOˆÛÛ^Ž™Ù]^[™^ÜÝ[™ÜÐØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\•^[™^ÜÝ[™ÜÐØXÚJ
+HÛÛœÝžÂˆ]]ÈØXÚHHÙ]^[™^ÜÝ[™ÜÐØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ]SX\Yš[PØXÚJÚ^™WÝX^ØØXÚWÜÚ^™WÚ[—Û[WÙ[šY\ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO›[X\ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹“X\Yš[HØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YO›[X\ØØXÚHHÝŽ›XZÙWÜÚ\™YSX\Yš[PØXÚOŠX^ØØXÚWÜÚ^™WÚ[—Û[WÙ[šY\ÊNÂŸB‚›ÚYÛÛ^Ž\]SSX\Yš[PØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO›[X\ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹“X\Yš[HØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+›[X\ØØXÚWÜÚ^™H‹QUSÓSPTÐÐPÒWÓPVÔÒV‘JNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y[X\š[HØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YO›[X\ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂŸB‚“SX\Yš[PØXÚTˆÛÛ^Ž™Ù]SX\Yš[PØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›[X\ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\“SX\Yš[PØXÚJ
+HÛÛœÝžÂˆSX\Yš[PØXÚTˆØXÚHHÙ]SX\Yš[PØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸB‚ˆÚYˆTÑWÐU”“Â›ÚYÛÛ^ŽœÙ]XÙX™\™ÓY]Y]Qš[\ÐØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOšXÙX™\™×ÛY]Y]WÙš[\×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’XÙX™\™ÈY]Y]HØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YOšXÙX™\™×ÛY]Y]WÙš[\×ØØXÚHHÝŽ›XZÙWÜÚ\™YXÙX™\™ÓY]Y]Qš[\ÐØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]RXÙX™\™ÓY]Y]Qš[\ÐØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOšXÙX™\™×ÛY]Y]WÙš[\×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’XÙX™\™ÈY]Y]HØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+šXÙX™\™×ÛY]Y]WÙš[\×ØØXÚWÜÚ^™H‹QUSÒPÑP‘T‘×ÓQUQUWÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+šXÙX™\™×ÛY]Y]WÙš[\×ØØXÚWÛX^Ù[šY\È‹QUSÒPÑP‘T‘×ÓQUQUWÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™YXÙX™\™ÈY]Y]HØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOšXÙX™\™×ÛY]Y]WÙš[\×ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YOšXÙX™\™×ÛY]Y]WÙš[\×ØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚œÝŽœÚ\™YÜXÙX™\™ÓY]Y]Qš[\ÐØXÚOˆÛÛ^Ž™Ù]XÙX™\™ÓY]Y]Qš[\ÐØXÚJ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOšXÙX™\™×ÛY]Y]WÙš[\×ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\’XÙX™\™ÓY]Y]Qš[\ÐØXÚJ
+HÛÛœÝžÂˆ]]ÈØXÚHHÙ]XÙX™\™ÓY]Y]Qš[\ÐØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ]Z[[Û“Y]Y]Qš[\ÐØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœZ[[Û—ÛY]Y]WÙš[\×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”Z[[ÛˆY]Y]HØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YOœZ[[Û—ÛY]Y]WÙš[\×ØØXÚHHÝŽ›XZÙWÜÚ\™YZ[[Û“Y]Y]Qš[\ÐØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]TZ[[Û“Y]Y]Qš[\ÐØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœZ[[Û—ÛY]Y]WÙš[\×ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”Z[[ÛˆY]Y]HØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+œZ[[Û—ÛY]Y]WÙš[\×ØØXÚWÜÚ^™H‹QUSÔRSSÓ—ÓQUQUWÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+œZ[[Û—ÛY]Y]WÙš[\×ØØXÚWÛX^Ù[šY\È‹QUSÔRSSÓ—ÓQUQUWÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™YZ[[ÛˆY]Y]HØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOœZ[[Û—ÛY]Y]WÙš[\×ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YOœZ[[Û—ÛY]Y]WÙš[\×ØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚œÝŽœÚ\™YÜZ[[Û“Y]Y]Qš[\ÐØXÚOˆÛÛ^Ž™Ù]Z[[Û“Y]Y]Qš[\ÐØXÚJ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœZ[[Û—ÛY]Y]WÙš[\×ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\”Z[[Û“Y]Y]Qš[\ÐØXÚJ
+HÛÛœÝžÂˆ]]ÈØXÚHHÙ]Z[[Û“Y]Y]Qš[\ÐØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸBˆÙ[™Y‚‚ˆÚYˆTÑWÔT”UQU›ÚYÛÛ^ŽœÙ]\œ]Y]Y]Y]PØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœ\œ]Y]ÛY]Y]WØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”\œ]Y]Y]Y]HØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YOœ\œ]Y]ÛY]Y]WØØXÚHHÝŽ›XZÙWÜÚ\™Y\œ]Y]Y]Y]PØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËÚ^™WÜ˜][ÊNÂŸB‚›ÚYÛÛ^Ž\]T\œ]Y]Y]Y]PØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœ\œ]Y]ÛY]Y]WØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”\œ]Y]Y]Y]HØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+œ\œ]Y]ÛY]Y]WØØXÚWÜÚ^™H‹QUSÔT”UQUÓQUQUWÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+œ\œ]Y]ÛY]Y]WØØXÚWÛX^Ù[šY\È‹QUSÔT”UQUÓQUQUWÐÐPÒWÓPVÑS•’QTÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y\œ]Y]Y]Y]HØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOœ\œ]Y]ÛY]Y]WØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂˆÚ\™YOœ\œ]Y]ÛY]Y]WØØXÚKOœÙ]X^ÛÝ[
+X^Ù[šY\ÊNÂŸB‚œÝŽœÚ\™YÜ\œ]Y]Y]Y]PØXÚOˆÛÛ^Ž™Ù]\œ]Y]Y]Y]PØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœ\œ]Y]ÛY]Y]WØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”\œ]Y]Y]Y]HØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂˆ™]\›ˆÚ\™YOœ\œ]Y]ÛY]Y]WØØXÚNÂŸB‚œÝŽœÚ\™YÜ\œ]Y]Y]Y]PØXÚOˆÛÛ^ŽžQÙ]\œ]Y]Y]Y]PØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœ\œ]Y]ÛY]Y]WØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\”\œ]Y]Y]Y]PØXÚJ
+HÛÛœÝžÂˆ]]ÈØXÚHHÙ]\œ]Y]Y]Y]PØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\Š
+NÂŸBˆÙ[™Y‚‚›ÚYÛÛ^ŽœÙ]]Y\žPÛÛ™][ÛØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœ]Y\žWØÛÛ™][Û—ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹“X\šÈš[\ˆØXÚH\È™Y[ˆ[™XYHÜ™X]KˆŠNÂ‚ˆÚ\™YOœ]Y\žWØÛÛ™][Û—ØØXÚHHÝŽ›XZÙWÜÚ\™Y]Y\žPÛÛ™][ÛØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÜ˜][ÊNÂŸB‚”]Y\žPÛÛ™][ÛØXÚTˆÛÛ^Ž™Ù]]Y\žPÛÛ™][ÛØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœ]Y\žWØÛÛ™][Û—ØØXÚNÂŸB‚›ÚYÛÛ^Ž\]T]Y\žPÛÛ™][ÛØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœ]Y\žWØÛÛ™][Û—ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”]Y\žHÛÛ™][ÛˆØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+œ]Y\žWØÛÛ™][Û—ØØXÚWÜÚ^™H‹QUSÔUQT–WÐÓÓ‘USÓ—ÐÐPÒWÓPVÔÒV‘JNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y]Y\žHÛÛ™][ÛˆØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOœ]Y\žWØÛÛ™][Û—ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂŸB‚›ÚYÛÛ^Ž˜ÛX\”]Y\žPÛÛ™][ÛØXÚJ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœ]Y\žWØÛÛ™][Û—ØØXÚJBˆÚ\™YOœ]Y\žWØÛÛ™][Û—ØØXÚKO˜ÛX\Š
+NÂŸB‚›ÚYÛÛ^ŽœÙ][˜Üž\[Û’XY\ØXÚJÛÛœÝÝš[™È	ˆØXÚWÜÛXÞKÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÝX›HÚ^™WÜ˜][ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO™[˜Üž\[Û—ÚXY\—ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘[˜Üž\[ÛˆXY\ˆØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YO™[˜Üž\[Û—ÚXY\—ØØXÚHHÝŽ›XZÙWÜÚ\™Y[˜Üž\[Û’XY\ØXÚOŠØXÚWÜÛXÞKX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÜ˜][ÊNÂŸB‚‘[˜Üž\[Û’XY\ØXÚTˆÛÛ^Ž™Ù][˜Üž\[Û’XY\ØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO™[˜Üž\[Û—ÚXY\—ØØXÚNÂŸB‚›ÚYÛÛ^Ž\]Q[˜Üž\[Û’XY\ØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO™[˜Üž\[Û—ÚXY\—ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘[˜Üž\[ÛˆXY\ˆØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+™[˜Üž\[Û—ÚXY\—ØØXÚWÜÚ^™H‹QUSÑSÔ–TSÓ—ÒPQT—ÐÐPÒWÓPVÔÒV‘JNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y[˜Üž\[ÛˆXY\ˆØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YO™[˜Üž\[Û—ÚXY\—ØØXÚKOœÙ]X^Ú^™R[ž]\ÊÚ^™JNÂŸB‚›ÚYÛÛ^Ž˜ÛX\‘[˜Üž\[Û’XY\ØXÚJ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YO™[˜Üž\[Û—ÚXY\—ØØXÚJBˆÚ\™YO™[˜Üž\[Û—ÚXY\—ØØXÚKO˜ÛX\Š
+NÂŸB‚‚›ÚYÛÛ^ŽœÙ]]Y\žT™\Ý[ØXÚJÚ^™WÝX^ÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[šY\ËÚ^™WÝX^Ù[žWÜÚ^™WÚ[—Øž]\ËÚ^™WÝX^Ù[žWÜÚ^™WÚ[—Ü›ÝÜÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+Ú\™YOœ]Y\žWÜ™\Ý[ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”]Y\žHØXÚH\È™Y[ˆ[™XYHÜ™X]YˆŠNÂ‚ˆÚ\™YOœ]Y\žWÜ™\Ý[ØØXÚHHÝŽ›XZÙWÜÚ\™Y]Y\žT™\Ý[ØXÚOŠX^ÜÚ^™WÚ[—Øž]\ËX^Ù[šY\ËX^Ù[žWÜÚ^™WÚ[—Øž]\ËX^Ù[žWÜÚ^™WÚ[—Ü›ÝÜÊNÂŸB‚›ÚYÛÛ^Ž\]T]Y\žT™\Ý[ØXÚPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÚ^™WÝX^ØØXÚWÜÚ^™JBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœ]Y\žWÜ™\Ý[ØØXÚJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”]Y\žHØXÚHØ\È›ÝÜ™X]YY]ˆŠNÂ‚ˆÚ^™WÝÚ^™HHÛÛ™šYË™Ù]R[
+œ]Y\žWØØXÚK›X^ÜÚ^™WÚ[—Øž]\È‹QUSÔUQT–WÔ‘TÕSÐÐPÒWÓPVÔÒV‘JNÂˆÚ^™WÝX^Ù[šY\ÈHÛÛ™šYË™Ù]R[
+œ]Y\žWØØXÚK›X^Ù[šY\È‹QUSÔUQT–WÔ‘TÕSÐÐPÒWÓPVÑS•’QTÊNÂˆÚ^™WÝX^Ù[žWÜÚ^™WÚ[—Øž]\ÈHÛÛ™šYË™Ù]R[
+œ]Y\žWØØXÚK›X^Ù[žWÜÚ^™WÚ[—Øž]\È‹QUSÔUQT–WÔ‘TÕSÐÐPÒWÓPVÑS•–WÔÒV‘WÒS—Ð–UTÊNÂˆÚ^™WÝX^Ù[žWÜÚ^™WÚ[—Ü›ÝÜÈHÛÛ™šYË™Ù]R[
+œ]Y\žWØØXÚK›X^Ù[žWÜ›ÝÜ×Ú[—Ü›ÝÜÈ‹QUSÔUQT–WÔ‘TÕSÐÐPÒWÓPVÑS•–WÔÒV‘WÒS—Ô“ÕÔÊNÂˆYˆ
+Ú^™HˆX^ØØXÚWÜÚ^™JBˆÂˆÚ^™HHX^ØØXÚWÜÚ^™NÂˆÑ×ÑP•QÊÚ\™YO›ÙË“ÝÙ\™Y]Y\žH™\Ý[ØXÚHÚ^™HÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH‹›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+Ú^™JJNÂˆBˆÚ\™YOœ]Y\žWÜ™\Ý[ØØXÚKO\]PÛÛ™šYÝ\˜][ÛŠÚ^™KX^Ù[šY\ËX^Ù[žWÜÚ^™WÚ[—Øž]\ËX^Ù[žWÜÚ^™WÚ[—Ü›ÝÜÊNÂŸB‚”]Y\žT™\Ý[ØXÚTˆÛÛ^Ž™Ù]]Y\žT™\Ý[ØXÚJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœ]Y\žWÜ™\Ý[ØØXÚNÂŸB‚›ÚYÛÛ^Ž˜ÛX\”]Y\žT™\Ý[ØXÚJÛÛœÝÝŽ›Ü[Û˜[Ýš[™Ïˆ	ˆYÊHÛÛœÝžÂˆ]Y\žT™\Ý[ØXÚTˆØXÚHHÙ]]Y\žT™\Ý[ØXÚJ
+NÂ‚ˆËËÈÛX\ˆHØXÚHÚ]Ý]Û[™ÈÛÛ^]]^È]›ÚY›ØÚÚ[™ÈÛÛ^›ÜˆHÛ™È[YBˆYˆ
+ØXÚJBˆØXÚKO˜ÛX\ŠYÊNÂŸB‚›ÚYÛÛ^Ž˜ÛX\ØXÚ\Ê
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆËËÈXXÚØXÚH\È[XÚXÚÙY™XØ]\ÙHÛÛYHÛÛ^\Ù\œÈ
+K™ËˆBˆËËÈ^XÝ]WÜ]Y\žWÙ^ž™\˜X‘^ž™\ˆ\›™\ÜÊH[[[Û˜[HÈ›Ý[š]X[^™BˆËËÈH[Ù]ÙˆØXÚ\ÎÈX]Ú\ÈHÚ[™ÛKXØXÚHÛX\ØXÚXY]ÙË‚‚ˆYˆ
+Ú\™YO[˜ÛÛ\™\ÜÙYØØXÚJBˆÚ\™YO[˜ÛÛ\™\ÜÙYØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YO›X\š×ØØXÚJBˆÚ\™YO›X\š×ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YOœš[X\žWÚ[™^ØØXÚJBˆÚ\™YOœš[X\žWÚ[™^ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚJBˆÚ\™YOš[™^Ý[˜ÛÛ\™\ÜÙYØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YOš[™^ÛX\š×ØØXÚJBˆÚ\™YOš[™^ÛX\š×ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚJBˆÚ\™YO™XÝÜ—ÜÚ[Z[\š]WÚ[™^ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YO^Ú[™^ÝÚÙ[œ×ØØXÚJBˆÚ\™YO^Ú[™^ÝÚÙ[œ×ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YO^Ú[™^ÚXY\—ØØXÚJBˆÚ\™YO^Ú[™^ÚXY\—ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚJBˆÚ\™YO^Ú[™^ÜÜÝ[™Ü×ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YO›[X\ØØXÚJBˆÚ\™YO›[X\ØØXÚKO˜ÛX\Š
+NÂ‚ˆYˆ
+Ú\™YOœ]Y\žWØÛÛ™][Û—ØØXÚJBˆÚ\™YOœ]Y\žWØÛÛ™][Û—ØØXÚKO˜ÛX\Š
+NÂ‚ˆËËÈ]ZÙ^YYZÙHH[]KXš]X\ØXÚH™[ÝÎÈÛX\ˆ]\™HÛÈ
+ÙYHH›ÝH\™JK‚ˆYˆ
+Ú\™YO™[˜Üž\[Û—ÚXY\—ØØXÚJBˆÚ\™YO™[˜Üž\[Û—ÚXY\—ØØXÚKO˜ÛX\Š
+NÂ‚ˆËËÈS’TUQHÑVH[]KXš]X\ØXÚH\ÈÜ[Û˜[
+™\›ÈÚ^™H\ØX›\È]
+KˆËËÈÛÈH[ÚXÚÈÝ^\È›Û‹Y˜][ˆÚ]Ý]ÛX\š[™ËH™[˜[YYÂˆËËÈ›ÜY›Û‹UURQX›HÚÜÙH\ÚÎœ™[]ØXÚHY[]HÙ]ÂˆËËÈ™]\ÙYÛÝ[ÙYHÝ[Hš]X\Èœ›ÛHHš[ÜˆX›K‚ˆYˆ
+Ú\™YO™[]WØš]X\ØØXÚJBˆÚ\™YO™[]WØš]X\ØØXÚKO˜ÛX\Š
+NÂ‚ˆËËÈ[[[Û˜[H›ÝÛX\š[™ÈH]Y\žH™\Ý[ØXÚHÚXÚ\È˜[œØXÝ[Û˜[H[˜ÛÛœÚ\Ý[žH\ÚYÛ‹‚ŸB‚›ÚYÛÛ^ŽœÙ]Ø[•\ÙT]Y\žT™\Ý[ØXÚJ›ÛÛØ[—Ý\ÙWÜ]Y\žWÜ™\Ý[ØØXÚWÊBžÂˆØ[—Ý\ÙWÜ]Y\žWÜ™\Ý[ØØXÚHHØ[—Ý\ÙWÜ]Y\žWÜ™\Ý[ØØXÚWÎÂŸB‚˜›ÛÛÛÛ^Ž™Ù]Ø[•\ÙT]Y\žT™\Ý[ØXÚJ
+HÛÛœÝžÂˆ™]\›ˆØ[—Ý\ÙWÜ]Y\žWÜ™\Ý[ØØXÚNÂŸB‚›ÚYÛÛ^ŽœÙ]\Þ[˜Ú›Û›Ý\ÓY]šXÜÊ\Þ[˜Ú›Û›Ý\ÓY]šXÜÈ
+ˆ\Þ[˜Ú›Û›Ý\×ÛY]šXÜ×ÊBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO˜\Þ[˜Ú›Û›Ý\×ÛY]šXÜÈH\Þ[˜Ú›Û›Ý\×ÛY]šXÜ×ÎÂŸB‚\Þ[˜Ú›Û›Ý\ÓY]šXÜÈ
+ˆÛÛ^Ž™Ù]\Þ[˜Ú›Û›Ý\ÓY]šXÜÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜\Þ[˜Ú›Û›Ý\×ÛY]šXÜÎÂŸB‚•™XYÛÛ	ˆÛÛ^Ž™Ù]™Y™]Ú™XYÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YOœ™Y™]ÚÝ™XYÛÛÚ[š]X[^™YÉ—HÂˆ]]ÈÛÛÜÚ^™HHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽœ™Y™]ÚÝ™XYÛÛÜÛÛÜÚ^™WNÂˆ]]È]Y]YWÜÚ^™HHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽœ™Y™]ÚÝ™XYÛÛÜ]Y]YWÜÚ^™WNÂ‚ˆÚ\™YOœ™Y™]ÚÝ™XYÛÛHÝŽ›XZÙWÝ[š\]YO™XYÛÛŠˆÝ\œ™[Y]šXÜÎŽ’SÔ™Y™]Ú™XYËÝ\œ™[Y]šXÜÎŽ’SÔ™Y™]Ú™XYÐXÝ]™KÝ\œ™[Y]šXÜÎŽ’SÔ™Y™]Ú™XYÔØÚY[YÛÛÜÚ^™KÛÛÜÚ^™K]Y]YWÜÚ^™JNÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YOœ™Y™]ÚÝ™XYÛÛÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]™Y™]Ú™XYÛÛÚ^™J
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽœ™Y™]ÚÝ™XYÛÛÜÛÛÜÚ^™WNÂŸB‚•™XYÛÛ	ˆÛÛ^Ž™Ù]Z[™XÝÜ”Ú[Z[\š]R[™^™XYÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJˆÚ\™YO˜Z[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÛÛÚ[š]X[^™YˆÉ—BˆÂˆÚ^™WÝÛÛÜÚ^™HHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^ØZ[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÜÛÛÜÚ^™WHˆˆÈÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^ØZ[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÜÛÛÜÚ^™WBˆˆÙ][X™\“ÙÔPÛÜ™\ÕÕ\ÙJ
+NÂˆÚ\™YO˜Z[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÛÛHÝŽ›XZÙWÝ[š\]YO™XYÛÛŠˆÝ\œ™[Y]šXÜÎŽZ[™XÝÜ”Ú[Z[\š]R[™^™XYËˆÝ\œ™[Y]šXÜÎŽZ[™XÝÜ”Ú[Z[\š]R[™^™XYÐXÝ]™KˆÝ\œ™[Y]šXÜÎŽZ[™XÝÜ”Ú[Z[\š]R[™^™XYÔØÚY[YˆÛÛÜÚ^™JNÂˆJNÂˆ™]\›ˆ
+œÚ\™YO˜Z[Ý™XÝÜ—ÜÚ[Z[\š]WÚ[™^Ý™XYÛÛÂŸB‚˜XÚÙÜ›Ý[™ØÚY[TÛÛ	ˆÛÛ^Ž™Ù]Y™™\‘›\ÚØÚY[TÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YO˜Y™™\—Ù›\ÚÜØÚY[WÜÛÛÚ[š]X[^™YÉ—HÂˆÚ\™YO˜Y™™\—Ù›\ÚÜØÚY[WÜÛÛH˜XÚÙÜ›Ý[™ØÚY[TÛÛŽ˜Ü™X]JˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ØY™™\—Ù›\ÚÜØÚY[WÜÛÛÜÚ^™WKˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™WKˆÊ›X^Ü\˜[[Ý\ÚÜ×Ü\—Ý\J‹ÈˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Y™™\‘›\ÚØÚY[TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Y™™\‘›\ÚØÚY[TÛÛÚ^™Kˆ™XY˜[YNŽPÒÑÔ“ÕS‘Ð•Q‘‘T—Ñ“TÒÔÐÒQSWÔÓÓ
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YO˜Y™™\—Ù›\ÚÜØÚY[WÜÛÛÂŸB‚˜XÚÙÜ›Ý[™\ÚÔØÚY[[™ÔÙ][™ÜÈÛÛ^Ž™Ù]˜XÚÙÜ›Ý[™›ØÙ\ÜÚ[™Õ\ÚÔØÚY[[™ÔÙ][™ÜÊ
+HÛÛœÝžÂˆ˜XÚÙÜ›Ý[™\ÚÔØÚY[[™ÔÙ][™ÜÈ\Ú×ÜÙ][™ÜÎÂ‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™ÈHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™È‹L
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™×Ü˜[™ÛWÜ\HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™×Ü˜[™ÛWÜ\‹KŒ
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™×ÚY—Û›Ý[™×Ý×ÙÈHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™×ÚY—Û›Ý[™×Ý×ÙÈ‹ŒJNÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛZ[ˆHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛZ[ˆ‹L
+NÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛX^HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛX^‹Œ
+NÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Û][\Y\ˆHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Û][\Y\ˆ‹KŒJNÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Ü˜[™ÛWÜ\HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Ü˜[™ÛWÜ\‹KŒ
+NÂˆ™]\›ˆ\Ú×ÜÙ][™ÜÎÂŸB‚˜XÚÙÜ›Ý[™\ÚÔØÚY[[™ÔÙ][™ÜÈÛÛ^Ž™Ù]˜XÚÙÜ›Ý[™[Ý™U\ÚÔØÚY[[™ÔÙ][™ÜÊ
+HÛÛœÝžÂˆ˜XÚÙÜ›Ý[™\ÚÔØÚY[[™ÔÙ][™ÜÈ\Ú×ÜÙ][™ÜÎÂ‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™ÈHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™È‹L
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™×Ü˜[™ÛWÜ\HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™×Ü˜[™ÛWÜ\‹KŒ
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™×ÚY—Û›Ý[™×Ý×ÙÈHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™×ÚY—Û›Ý[™×Ý×ÙÈ‹ŒJNÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛZ[ˆHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛZ[ˆ‹L
+NÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛX^HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛX^‹Œ
+NÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Û][\Y\ˆHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Û][\Y\ˆ‹KŒJNÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Ü˜[™ÛWÜ\HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™Û[Ý™WÜ›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Ü˜[™ÛWÜ\‹KŒ
+NÂ‚ˆ™]\›ˆ\Ú×ÜÙ][™ÜÎÂŸB‚˜XÚÙÜ›Ý[™\ÚÔØÚY[[™ÔÙ][™ÜÈÛÛ^Ž™Ù]˜XÚÙÜ›Ý[™Ý™X[Z[™Õ\ÚÔØÚY[[™ÔÙ][™ÜÊ
+HÛÛœÝžÂˆ˜XÚÙÜ›Ý[™\ÚÔØÚY[[™ÔÙ][™ÜÈ\Ú×ÜÙ][™ÜÎÂ‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™ÈHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™È‹L
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™×Ü˜[™ÛWÜ\HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™×Ü˜[™ÛWÜ\‹KŒ
+NÂˆ\Ú×ÜÙ][™ÜË™XYÜÛY\ÜÙXÛÛ™×ÚY—Û›Ý[™×Ý×ÙÈHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ™XYÜÛY\ÜÙXÛÛ™×ÚY—Û›Ý[™×Ý×ÙÈ‹ŒJNÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛZ[ˆHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛZ[ˆ‹L
+NÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛX^HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×ÛX^‹Œ
+NÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Û][\Y\ˆHÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Û][\Y\ˆ‹KŒJNÂˆ\Ú×ÜÙ][™ÜË\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Ü˜[™ÛWÜ\HÛÛ™šYË™Ù]ÝX›J˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×Ü›ØÙ\ÜÚ[™×ÜÛÛÝ\Ú×ÜÛY\ÜÙXÛÛ™×ÝÚ[—Û›×ÝÛÜš×Ü˜[™ÛWÜ\‹KŒ
+NÂ‚ˆ™]\›ˆ\Ú×ÜÙ][™ÜÎÂŸB‚˜XÚÙÜ›Ý[™ØÚY[TÛÛ	ˆÛÛ^Ž™Ù]ØÚY[TÛÛ
+
+HÛÛœÝžÂˆÚ^™WÝX^Ü\˜[[Ý\ÚÜ×Ü\—Ý\HHÝ]X×ØØ\ÝÚ^™WÝŠˆÝ]X×ØØ\ÝÝX›OŠÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÜÚ^™WJBˆ
+ˆÝ]X×ØØ\ÝÝX›OŠÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÛX^Ü\˜[[Ý\ÚÜ×Ü\—Ý\WÜ˜][×JJNÂˆØ[Û˜ÙJˆÚ\™YOœØÚY[WÜÛÛÚ[š]X[^™YˆÉ—BˆÂˆÚ\™YOœØÚY[WÜÛÛH˜XÚÙÜ›Ý[™ØÚY[TÛÛŽ˜Ü™X]JˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÜÚ^™WKˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™WKˆX^Ü\˜[[Ý\ÚÜ×Ü\—Ý\KˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™ØÚY[TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™ØÚY[TÛÛÚ^™KˆŽŽ•™XY˜[YNŽPÒÑÔ“ÕS‘ÔÐÒQSWÔÓÓ
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YOœØÚY[WÜÛÛÂŸB‚˜XÚÙÜ›Ý[™ØÚY[TÛÛ	ˆÛÛ^Ž™Ù]\ÝšX]YØÚY[TÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YO™\ÝšX]YÜØÚY[WÜÛÛÚ[š]X[^™YÉ—HÂˆÚ\™YO™\ÝšX]YÜØÚY[WÜÛÛH˜XÚÙÜ›Ý[™ØÚY[TÛÛŽ˜Ü™X]JˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™Ù\ÝšX]YÜØÚY[WÜÛÛÜÚ^™WKˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™WKˆÊ›X^Ü\˜[[Ý\ÚÜ×Ü\—Ý\J‹ÈˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™\ÝšX]YØÚY[TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™\ÝšX]YØÚY[TÛÛÚ^™KˆŽŽ•™XY˜[YNŽ‘TÕ’P•UQÔÐÒQSWÔÓÓ
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YO™\ÝšX]YÜØÚY[WÜÛÛÂŸB‚˜XÚÙÜ›Ý[™ØÚY[TÛÛ	ˆÛÛ^Ž™Ù]Y\ÜØYÙPœ›ÚÙ\”ØÚY[TÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YO›Y\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÚ[š]X[^™YÉ—HÂˆÚ\™YO›Y\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛH˜XÚÙÜ›Ý[™ØÚY[TÛÛŽ˜Ü™X]JˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÛY\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÜÚ^™WKˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™WKˆÊ›X^Ü\˜[[Ý\ÚÜ×Ü\—Ý\J‹ÈˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Y\ÜØYÙPœ›ÚÙ\”ØÚY[TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Y\ÜØYÙPœ›ÚÙ\”ØÚY[TÛÛÚ^™KˆŽŽ•™XY˜[YNŽ“TÑ×Ð”“ÒÑT—ÔÐÒQSWÔÓÓ
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YO›Y\ÜØYÙWØœ›ÚÙ\—ÜØÚY[WÜÛÛÂŸB‚˜XÚÙÜ›Ý[™ØÚY[TÛÛ	ˆÛÛ^Ž™Ù]XÙX™\™ÔØÚY[TÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YOšXÙX™\™×ÜØÚY[WÜÛÛÚ[š]X[^™YÉ—HÂˆÚ\™YOšXÙX™\™×ÜØÚY[WÜÛÛH˜XÚÙÜ›Ý[™ØÚY[TÛÛŽ˜Ü™X]JˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽšXÙX™\™×Ø˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÜÚ^™WKˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™WKˆÊ›X^Ü\˜[[Ý\ÚÜ×Ü\—Ý\J‹ÈˆÝ\œ™[Y]šXÜÎŽ’XÙX™\™ÔØÚY[TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ’XÙX™\™ÔØÚY[TÛÛÚ^™KˆŽŽ•™XY˜[YNŽ’PÑP‘T‘×ÔÐÒQSWÔÓÓ
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YOšXÙX™\™×ÜØÚY[WÜÛÛÂŸB‚˜XÚÙÜ›Ý[™ØÚY[TÛÛ	ˆÛÛ^Ž™Ù]Ý™X[Z[™ÔØÚY[TÛÛ
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YOœÝ™X[Z[™×ÜØÚY[WÜÛÛÚ[š]X[^™YÉ—HÂˆÚ\™YOœÝ™X[Z[™×ÜØÚY[WÜÛÛH˜XÚÙÜ›Ý[™ØÚY[TÛÛŽ˜Ü™X]JˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜÝ™X[Z[™×ÜØÚY[WÜÛÛÜÚ^™WKˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÚ[š]X[ÜÚ^™WKˆÊ›X^Ü\˜[[Ý\ÚÜ×Ü\—Ý\J‹ÈˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Ý™X[Z[™ÔØÚY[TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Ý™X[Z[™ÔØÚY[TÛÛÚ^™KˆŽŽ•™XY˜[YNŽPÒÑÔ“ÕS‘ÔÕ‘PSRS‘×ÔÐÒQSWÔÓÓ
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YOœÝ™X[Z[™×ÜØÚY[WÜÛÛÂŸB‚›ÚYÛÛ^Ž˜ÛÛ™šYÝ\™TÙ\™\•ÚYU›Ý[™Ê
+BžÂˆYˆ
+Ú\™YO˜\XØ][Û—Ý\HOH\XØ][Û•\NŽ“ÐÐSÚ\™YO˜\XØ][Û—Ý\HOH\XØ][Û•\NŽ”ÑT•‘TˆÚ\™YO˜\XØ][Û—Ý\HOH\XØ][Û•\NŽ‘TÒÔÊBˆÚ\™YOœÙ\™\—ÜÙ][™ÜË›ØYÙ][™ÜÑœ›ÛPÛÛ™šYÊØÛÎŽ•][Ž\XØ][ÛŽŽš[œÝ[˜ÙJ
+K˜ÛÛ™šYÊ
+JNÂˆYˆ
+Ú\™YO˜\XØ][Û—Ý\HOH\XØ][Û•\NŽ”ÑT•‘TŠBˆÚ\™YO˜ÛÛ™šYÝ\™TÙ\™\•ÚYU›Ý[™Ê
+NÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]™\XØ]Y™]Ú\Õ›Ý\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœ™\XØ]YÙ™]Ú\×Ý›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]™\XØ]YÙ[™Õ›Ý\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœ™\XØ]YÜÙ[™×Ý›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]™[[ÝT™XY›Ý\Š
+HÛÛœÝžÂˆ›Ý\”ˆ›Ý\ŽÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ›Ý\ˆHÚ\™YOœ™[[ÝWÜ™XYÝ›Ý\ŽÂˆB‚ˆËËÈ\Ù\‹[]™[›Ý\ˆ
+X^Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—Ý\Ù\˜ÈX^Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—Ø[Ý\Ù\œØ
+K‚ˆYˆ
+]]È›ØÙ\Ü×Û\ÝÙ[[Y[HÙ]›ØÙ\ÜÓ\Ý[[Y[ØY™J
+JBˆY›Ý\Š›Ý\‹›ØÙ\Ü×Û\ÝÙ[[Y[O™Ù]\Ù\“™]ÛÜšÕ›Ý\Š
+JNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^Ü™[[ÝWÜ™XYÛ™]ÛÜš×Ø˜[™ÚYJBˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+\™[[ÝWÜ™XYÜ]Y\žWÝ›Ý\ŠBˆ™[[ÝWÜ™XYÜ]Y\žWÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ý\‹›Ùš[Q]™[ÎŽ”]Y\žT™[[ÝT™XY›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”]Y\žT™[[ÝT™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆ›Ý\ˆH™[[ÝWÜ™XYÜ]Y\žWÝ›Ý\ŽÂˆBˆ™]\›ˆ›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]™[[ÝUÜš]U›Ý\Š
+HÛÛœÝžÂˆ›Ý\”ˆ›Ý\ŽÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ›Ý\ˆHÚ\™YOœ™[[ÝWÝÜš]WÝ›Ý\ŽÂˆB‚ˆËËÈ\Ù\‹[]™[›Ý\ˆ
+X^Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—Ý\Ù\˜ÈX^Û™]ÛÜš×Ø˜[™ÚYÙ›Ü—Ø[Ý\Ù\œØ
+K‚ˆYˆ
+]]È›ØÙ\Ü×Û\ÝÙ[[Y[HÙ]›ØÙ\ÜÓ\Ý[[Y[ØY™J
+JBˆY›Ý\Š›Ý\‹›ØÙ\Ü×Û\ÝÙ[[Y[O™Ù]\Ù\“™]ÛÜšÕ›Ý\Š
+JNÂ‚ˆYˆ
+]]È˜[™ÚYHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^Ü™[[ÝWÝÜš]WÛ™]ÛÜš×Ø˜[™ÚYJBˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+\™[[ÝWÝÜš]WÜ]Y\žWÝ›Ý\ŠBˆ™[[ÝWÝÜš]WÜ]Y\žWÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ý\‹›Ùš[Q]™[ÎŽ”]Y\žT™[[ÝUÜš]U›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”]Y\žT™[[ÝUÜš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆ›Ý\ˆH™[[ÝWÝÜš]WÜ]Y\žWÝ›Ý\ŽÂˆBˆ™]\›ˆ›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]ØØ[™XY›Ý\Š
+HÛÛœÝžÂˆ›Ý\”ˆ›Ý\ŽÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ›Ý\ˆHÚ\™YO›ØØ[Ü™XYÝ›Ý\ŽÂˆB‚ˆYˆ
+]]È˜[™ÚYHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^ÛØØ[Ü™XYØ˜[™ÚYJBˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+[ØØ[Ü™XYÜ]Y\žWÝ›Ý\ŠBˆØØ[Ü™XYÜ]Y\žWÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ý\‹›Ùš[Q]™[ÎŽ”]Y\žSØØ[™XY›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”]Y\žSØØ[™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆ›Ý\ˆHØØ[Ü™XYÜ]Y\žWÝ›Ý\ŽÂˆBˆ™]\›ˆ›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]ØØ[Üš]U›Ý\Š
+HÛÛœÝžÂˆ›Ý\”ˆ›Ý\ŽÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ›Ý\ˆHÚ\™YO›ØØ[ÝÜš]WÝ›Ý\ŽÂˆB‚ˆYˆ
+]]È˜[™ÚYHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^ÛØØ[ÝÜš]WØ˜[™ÚYJBˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+[ØØ[ÝÜš]WÜ]Y\žWÝ›Ý\ŠBˆØØ[ÝÜš]WÜ]Y\žWÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ý\‹›Ùš[Q]™[ÎŽ”]Y\žSØØ[Üš]U›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”]Y\žSØØ[Üš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆ›Ý\ˆHØØ[ÝÜš]WÜ]Y\žWÝ›Ý\ŽÂˆBˆ™]\›ˆ›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]˜XÚÝ\Õ›Ý\Š
+HÛÛœÝžÂˆ›Ý\”ˆ›Ý\ˆHÚ\™YO˜˜XÚÝ\×ÜÙ\™\—Ý›Ý\ŽÂˆYˆ
+]]È˜[™ÚYHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^Ø˜XÚÝ\Ø˜[™ÚYJBˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^
+NÂˆYˆ
+X˜XÚÝ\×Ü]Y\žWÝ›Ý\ŠBˆ˜XÚÝ\×Ü]Y\žWÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š˜[™ÚY›Ý\‹›Ùš[Q]™[ÎŽ”]Y\žP˜XÚÝ\›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”]Y\žP˜XÚÝ\›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆ›Ý\ˆH˜XÚÝ\×Ü]Y\žWÝ›Ý\ŽÂˆBˆ™]\›ˆ›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]]]][ÛœÕ›Ý\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO›]]][Ûœ×Ý›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]Y\™Ù\Õ›Ý\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO›Y\™Ù\×Ý›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]\ÝšX]YØXÚT™XY›Ý\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO™\ÝšX]YØØXÚWÜ™XYÝ›Ý\ŽÂŸB‚•›Ý\”ˆÛÛ^Ž™Ù]\ÝšX]YØXÚUÜš]U›Ý\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO™\ÝšX]YØØXÚWÝÜš]WÝ›Ý\ŽÂŸB‚›ÚYÛÛ^Žœ™[ØY™[[ÝU›Ý\ÛÛ™šYÊÚ^™WÝ™XYØ˜[™ÚYÚ^™WÝÜš]WØ˜[™ÚY
+HÛÛœÝžÂˆYˆ
+™XYØ˜[™ÚY
+BˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœ™[[ÝWÜ™XYÝ›Ý\ŠBˆÚ\™YOœ™[[ÝWÜ™XYÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š™XYØ˜[™ÚY›Ùš[Q]™[ÎŽ”™[[ÝT™XY›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”™[[ÝT™XY›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆB‚ˆYˆ
+Ú\™YOœ™[[ÝWÜ™XYÝ›Ý\ŠBˆÝŽœÝ]X×ÜÚ[\—ØØ\Ý›Ý\ŠÚ\™YOœ™[[ÝWÜ™XYÝ›Ý\ŠKOœÙ]X^ÜYY
+™XYØ˜[™ÚY
+NÂ‚ˆYˆ
+Üš]WØ˜[™ÚY
+BˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœ™[[ÝWÝÜš]WÝ›Ý\ŠBˆÚ\™YOœ™[[ÝWÝÜš]WÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\ŠÜš]WØ˜[™ÚY›Ùš[Q]™[ÎŽ”™[[ÝUÜš]U›Ý\ž]\Ë›Ùš[Q]™[ÎŽ”™[[ÝUÜš]U›Ý\”ÛY\ZXÜ›ÜÙXÛÛ™ÊNÂˆB‚ˆYˆ
+Ú\™YOœ™[[ÝWÝÜš]WÝ›Ý\ŠBˆÝŽœÝ]X×ÜÚ[\—ØØ\Ý›Ý\ŠÚ\™YOœ™[[ÝWÝÜš]WÝ›Ý\ŠKOœÙ]X^ÜYY
+Üš]WØ˜[™ÚY
+NÂŸB‚›ÚYÛÛ^Žœ™[ØYØØ[›Ý\ÛÛ™šYÊÚ^™WÝ™XYØ˜[™ÚYÚ^™WÝÜš]WØ˜[™ÚY
+HÛÛœÝžÂˆYˆ
+™XYØ˜[™ÚY
+BˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YO›ØØ[Ü™XYÝ›Ý\ŠBˆÚ\™YO›ØØ[Ü™XYÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\Š™XYØ˜[™ÚY
+NÂˆB‚ˆYˆ
+Ú\™YO›ØØ[Ü™XYÝ›Ý\ŠBˆÝŽœÝ]X×ÜÚ[\—ØØ\Ý›Ý\ŠÚ\™YO›ØØ[Ü™XYÝ›Ý\ŠKOœÙ]X^ÜYY
+™XYØ˜[™ÚY
+NÂ‚ˆYˆ
+Üš]WØ˜[™ÚY
+BˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YO›ØØ[ÝÜš]WÝ›Ý\ŠBˆÚ\™YO›ØØ[ÝÜš]WÝ›Ý\ˆHÝŽ›XZÙWÜÚ\™Y›Ý\ŠÜš]WØ˜[™ÚY
+NÂˆB‚ˆYˆ
+Ú\™YO›ØØ[ÝÜš]WÝ›Ý\ŠBˆÝŽœÝ]X×ÜÚ[\—ØØ\Ý›Ý\ŠÚ\™YO›ØØ[ÝÜš]WÝ›Ý\ŠKOœÙ]X^ÜYY
+Üš]WØ˜[™ÚY
+NÂŸB‚˜›ÛÛÛÛ^Žš\Ñ\ÝšX]Y
+
+HÛÛœÝžÂˆ™]\›ˆÙ]ÛÛ™šYÔ™YŠ
+Kš\Ê™\ÝšX]YÙŠNÂŸB‚›ÚYÛÛ^ŽœÙ]ÛÜšÙ\ŠÝŽ[š\]YWÜÛÜšÙ\ˆÝÛÜšÙ\‹ÛÛœÝØY\ÚÔœÈ	ˆÝ\\ØY\ŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YO™ÝÛÜšÙ\ŠBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘˜XÚÙÜ›Ý[™™XY\È[™XYH™Y[ˆ[š]X[^™YŠNÂ‚ˆÚ\™YO™ÝÛÜšÙ\ˆHÝŽ›[Ý™JÝÛÜšÙ\ŠNÂ‚ˆ]]È›ØˆHXZÙSØY›ØŠˆÙ]ÛØ[ÊÝ\\ØY\ŠKˆX›\ÓØY\˜XÚÙÜ›Ý[™Ý\\ÛÛYˆœÝ\\ÛÜšÙ\ˆ‹ˆÝ\×H
+\Þ[˜ÓØY\ˆ	‹ÛÛœÝØY›Ø”ˆ	ŠBˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÌŠÚ\™YO›]]^
+NÂˆÚ\™YO™ÝÛÜšÙ\‹OœÝ\\
+
+NÂˆJNÂ‚ˆÚ\™YO™ÝÛÜšÙ\—ÜÝ\\Ý\ÚÈHXZÙSØY\ÚÊÙ]\Þ[˜ÓØY\Š
+KÚ›ØŸJNÂˆÚ\™YO™ÝÛÜšÙ\—ÜÝ\\Ý\ÚËOœØÚY[J
+NÂŸB‚‘ÛÜšÙ\ˆ	ˆÛÛ^Ž™Ù]ÛÜšÙ\Š
+HÛÛœÝžÂˆËÈÙH]™HÈ[œÝ\™H]ÛÜšÙ\ˆÚ[›Ý[\™™\™HÚ]\Þ[˜ÈØY[™ÈÙˆX›\Ë‚ˆËÈ›Üˆ^[\HÈ™]™[Ü™X][ÛˆÙˆHX›H][™XYH^\ÝË]\È›Ý™Y[ˆY]ØYY‚ˆËÈÛÈÙH]™HÈØZ]›Üˆ[X›\ÈÈ™HØYY™Y›Ü™HÝ\[™È\ÛÜšÙ\‹‚ˆËÈ“ÕNˆÜÜÚX›H[\›Ý™[Y[ˆX›Ý™H™\]Z\™[Y[Ø[ˆ™HÛÜÙ[ˆžHØZ][™È›ÜˆÜXÚYšXÈX›\ÈÈØY‚ˆYˆ
+Ú\™YO™ÝÛÜšÙ\—ÜÝ\\Ý\ÚÊBˆØZ]ØY
+Ú\™YO™ÝÛÜšÙ\—ÜÝ\\Ý\ÚÊNÈËÈ\ÝØZ][™È›Ýš[Üš]^™K™XØ]\ÙH]\[™ÈÛˆ[ØY[™Ý\\\ÚÜÂ‚ˆÂˆËËÈÛ›HXÜ]Z\™HHØÚÈ›Üˆ™XY[™ÈÝÛÜšÙ\ˆšY[‚ˆËËÈ\Ö›ÛÒÙY\\Š
+H[™\Ñ\ÝšX]Y
+
+HXÜ]Z\™HHØ[YHØÚÈ\ÈÙ[[™ÝX›HXÜ]Z\Ú][ÛˆÙˆHØÚÈ[ˆÚ\™Y[ÙHØ[ˆXYˆËËÈÈHXYØÚÈYˆ[ˆ^Û\Ú]™HØÚÈ][\\ÈXYH[ˆHYX[[YHžH[›Ý\ˆ™XY‚ˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YO™ÝÛÜšÙ\ŠBˆ™]\›ˆ
+œÚ\™YO™ÝÛÜšÙ\ŽÂˆB‚ˆYˆ
+Z\Ö›ÛÒÙY\\Š
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË•\™H\È›È›ÛÚÙY\\ˆÛÛ™šYÝ\˜][Ûˆ[ˆÙ\™\ˆÛÛ™šYÈŠNÂ‚ˆYˆ
+Z\Ñ\ÝšX]Y
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË•\™H\È›È\ÝšX]YÛÛ™šYÝ\˜][Ûˆ[ˆÙ\™\ˆÛÛ™šYÈŠNÂ‚ˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QË‘˜XÚÙÜ›Ý[™™XY\È›Ý[š]X[^™YŠNÂŸB‚›˜[Y\ÜXÙBžÂ‚›ÚY™XÛÜ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÊ
+BžÂˆËËÈ\ÙHÐTÈÈXZÙHÝ\™HÙHÛ›HÙ]H[Y\Ý[\›ÜˆHš\œÝÛÛ›™XÝ[ÛˆÜÜË‚ˆÝ\œ™[Y]šXÜÎŽ˜Ø\ÊˆÝ\œ™[Y]šXÜÎŽ–›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÔÝ\Y[Y\Ý[\ÙXÛÛ™ËˆˆÝŽ˜Ú›Û›ÎŽ™\˜][Û—ØØ\ÝÝŽ˜Ú›Û›ÎŽœÙXÛÛ™ÏŠˆÝŽ˜Ú›Û›ÎŽœÞ\Ý[WØÛØÚÎŽ››ÝÊ
+K[YWÜÚ[˜ÙWÙ\ØÚ
+
+Bˆ
+K˜ÛÝ[
+
+Bˆ
+NÂŸB‚ŸB‚žšÝ][Ž–›ÛÒÙY\\”ˆÛÛ^Ž™Ù]›ÛÒÙY\\Š
+HÛÛœÝžÂˆ]]ÈÛÛ\Û™[ÙÝX\™HÛÛÜ™[˜][ÛŽŽœÙ]Ý\œ™[ÛÛ\Û™[
+ÛÛ^Ž™Ù]›ÛÒÙY\\ˆŠNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂ‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YOž›ÛÚÙY\\—ØÛÛ™šYÈÈ
+œÚ\™YOž›ÛÚÙY\\—ØÛÛ™šYÈˆÙ]ÛÛ™šYÔ™YŠ
+NÂ‚ˆYˆ
+\Ú\™YOž›ÛÚÙY\\ŠBˆÂˆšÝ][Ž–›ÛÒÙY\\\™ÜÈ\™ÜÊÛÛ™šYËšÝ][Ž™Ù]›ÛÒÙY\\ÛÛ™šYÓ˜[YJÛÛ™šYÊJNÂˆ\™ÜËœÙ[™Ü™XÙZ]™WÛÜ×Ý™XY×ÛšXÙWÝ˜[YHHÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ›Ü×Ý™XY×ÛšXÙWÝ˜[YWÞ›ÛÚÙY\\—ØÛY[ÜÙ[™Ü™XÙZ]™WNÂˆ\™ÜË™[™›Ü˜ÙWØÛÛ\Û™[Ý˜XÚÚ[™ÈHÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ™[™›Ü˜ÙWÚÙY\\—ØÛÛ\Û™[Ý˜XÚÚ[™×NÂ‚ˆžBˆÂˆÚ\™YOž›ÛÚÙY\\ˆHšÝ][Ž–›ÛÒÙY\\ŽŽ˜Ü™X]JÝŽ›[Ý™J\™ÜÊKÙ]›ÛÒÙY\\“ÙÊ
+KÙ]YÙÜ™YØ]Y›ÛÒÙY\\“ÙÊ
+JNÂˆÝ\œ™[Y]šXÜÎŽœÙ]
+Ý\œ™[Y]šXÜÎŽ–›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÔÝ\Y[Y\Ý[\ÙXÛÛ™Ë
+NÂˆBˆØ]Ú
+ÛÛœÝÛÛÜ™[˜][ÛŽŽ‘^Ù\[Ûˆ	ˆJBˆÂˆYˆ
+K˜ÛÙHOHÛÛÜ™[˜][ÛŽŽ‘\œ›ÜŽŽ–ÓÓ“‘PÕSÓ“ÔÔÊBˆÂˆ™XÛÜ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÊ
+NÂˆBˆ›ÝÎÂˆB‚ˆYˆ
+]]È›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÈHÙ]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+NÈ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+ˆ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽ™Y˜][Þ›ÛÚÙY\\—Û˜[YK
+œÚ\™YOž›ÛÚÙY\\‹›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ú[š]Ü™X\ÛÛŠNÂˆB‚ˆYˆ
+Ú\™YOž›ÛÚÙY\\‹O™^\™Y
+
+JBˆÂˆÝ\œ™[Y]šXÜÎŽ˜Y
+Ý\œ™[Y]šXÜÎŽ–›ÛÒÙY\\”Ù\ÜÚ[Û‘^\™Y
+NÂ‚ˆÝÜØ]ÚØ]ÚÂˆÑ×ÑP•QÊÚ\™YO›ÙË•žZ[™ÈÈ\ÝX›\ÚH™]ÈÛÛ›™XÝ[ÛˆÚ]›ÛÒÙY\\ˆŠNÂ‚ˆ]]ÈÛÞ›ÛÚÙY\\ˆHÚ\™YOž›ÛÚÙY\\ŽÂ‚ˆžBˆÂˆÚ\™YOž›ÛÚÙY\\ˆHÚ\™YOž›ÛÚÙY\\‹OœÝ\™]ÔÙ\ÜÚ[ÛŠ
+NÂˆÝ\œ™[Y]šXÜÎŽœÙ]
+Ý\œ™[Y]šXÜÎŽ–›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÔÝ\Y[Y\Ý[\ÙXÛÛ™Ë
+NÂˆBˆØ]Ú
+ÛÛœÝÛÛÜ™[˜][ÛŽŽ‘^Ù\[Ûˆ	ˆJBˆÂˆYˆ
+K˜ÛÙHOHÛÛÜ™[˜][ÛŽŽ‘\œ›ÜŽŽ–ÓÓ“‘PÕSÓ“ÔÔÊBˆÂˆ™XÛÜ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÜÜÊ
+NÂˆBˆ›ÝÎÂˆB‚ˆYˆ
+]]È›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÈHÙ]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+NÈ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆÂˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜Y\ØÛÛ›™XÝY
+ˆ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽ™Y˜][Þ›ÛÚÙY\\—Û˜[YK
+›ÛÞ›ÛÚÙY\\‹›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ù^\™YÜ™X\ÛÛŠNÂˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+ˆ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽ™Y˜][Þ›ÛÚÙY\\—Û˜[YK
+œÚ\™YOž›ÛÚÙY\\‹›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ù^\™YÜ™X\ÛÛŠNÂˆB‚ˆYˆ
+\ÔÙ\™\ÛÛ\][TÝ\Y
+
+JBˆÚ\™YOž›ÛÚÙY\\‹OœÙ]Ù\™\ÛÛ\][TÝ\Y
+
+NÂˆÑ×ÑP•QÊÚ\™YO›ÙË‘\ÝX›\Ú[™ÈH™]ÈÛÛ›™XÝ[ÛˆÚ]›ÛÒÙY\\ˆÛÚÈßH\È‹Ø]Ú™[\ÙYZ[\ÙXÛÛ™Ê
+JNÂˆB‚ˆ™]\›ˆÚ\™YOž›ÛÚÙY\\ŽÂŸB‚š[ÝÛÛ^Ž™Ù]›ÛÒÙY\\“\Ý–QÙY[Š
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂˆ™]\›ˆÚ\™YOž›ÛÚÙY\\ˆÈÚ\™YOž›ÛÚÙY\\‹O™Ù]\Ý–QÙY[Š
+HˆÂŸB‚›˜[Y\ÜXÙBžÂ‚˜›ÛÛÚXÚÖ›ÛÒÙY\\ÛÛ™šYÒ\ÓØØ[
+ÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYËÛÛœÝÝŽœÝš[™È	ˆÛÛ™šY×Û˜[YJBžÂˆØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][ÛŽŽ’Ù^\ÈÙ^\ÎÂˆÛÛ™šYËšÙ^\ÊÛÛ™šY×Û˜[YKÙ^\ÊNÂ‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ^HˆÙ^\ÊBˆÂˆYˆ
+Ý\ÕÚ]
+Ù^K››ÙHŠJBˆÂˆÝš[™ÈÜÝHÛÛ™šYË™Ù]Ýš[™ÊÛÛ™šY×Û˜[YH
+È‹ˆˆ
+ÈÙ^H
+È‹šÜÝŠNÂˆYˆ
+\ÓØØ[Y™\ÜÊ”Ô™\ÛÛ™\ŽŽš[œÝ[˜ÙJ
+Kœ™\ÛÛ™RÜÝ[[“ÜšYÚ[“Ü™\ŠÜÝ
+K™œ›Û
+
+JJBˆ™]\›ˆYNÂˆBˆBˆ™]\›ˆ˜[ÙNÂŸB‚ŸB‚‚˜›ÛÛÛÛ^ŽžPÚXÚÐÛY[ÛÛ›™XÝ[Û•Ó^RÙY\\Û\Ý\Š
+HÛÛœÝžÂˆžBˆÂˆÛÛœÝ]]ÈÛÛ™šY×Û˜[YHHšÝ][Ž™Ù]›ÛÒÙY\\ÛÛ™šYÓ˜[YJÙ]ÛÛ™šYÔ™YŠ
+JNÂˆËËÈYˆÝ\ˆÙ\™\ˆ\È\ÙˆXZ[ˆÙY\\ˆÛ\Ý\‚ˆYˆ
+ÛÛ™šY×Û˜[YHOHšÙY\\—ÜÙ\™\ˆˆÚXÚÖ›ÛÒÙY\\ÛÛ™šYÒ\ÓØØ[
+Ù]ÛÛ™šYÔ™YŠ
+KÛÛ™šY×Û˜[YJJBˆÂˆÑ×ÑP•QÊÚ\™YO›ÙË’ÙY\\ˆÙ\™\ˆ\È\XÚ\[ÙˆHXZ[ˆ›ÛÚÙY\\ˆÛ\Ý\‹Ú[žHÈÛÛ›™XÝÈ]ŠNÂˆÙ]›ÛÒÙY\\Š
+NÂˆËËÈÛÛ›™XÝY™]\›ˆYBˆ™]\›ˆYNÂˆB‚ˆØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][ÛŽŽ’Ù^\ÈÙ^\ÎÂˆÙ]ÛÛ™šYÔ™YŠ
+KšÙ^\Ê˜]^[X\žWÞ›ÛÚÙY\\œÈ‹Ù^\ÊNÂ‚ˆËËÈYˆÝ\ˆÙ\™\ˆ\È\ÙˆÛÛYH]^[X\žWÞ›ÛÚÙY\\‚ˆ›Üˆ
+ÛÛœÝ]]È	ˆ]^Þš×Û˜[YHˆÙ^\ÊBˆÂˆYˆ
+ÚXÚÖ›ÛÒÙY\\ÛÛ™šYÒ\ÓØØ[
+Ù]ÛÛ™šYÔ™YŠ
+K˜]^[X\žWÞ›ÛÚÙY\\œËˆˆ
+È]^Þš×Û˜[YJJBˆÂˆÑ×ÑP•QÊÚ\™YO›ÙË“Ý\ˆÙY\\ˆÙ\™\ˆ\È\XÚ\[ÙˆH]^[X\žH›ÛÚÙY\\ˆÛ\Ý\ˆ
+ßJKÚ[žHÈÛÛ›™XÝÈ]‹]^Þš×Û˜[YJNÂˆÙ]]^[X\žV›ÛÒÙY\\Š]^Þš×Û˜[YJNÂˆËËÈÛÛ›™XÝY™]\›ˆYBˆ™]\›ˆYNÂˆBˆB‚ˆËËÈÝ\ˆÙ\™\ˆÙ\Û‰Ý\[™ÛˆÝ\ˆÙY\\ˆÛ\Ý\‚ˆ™]\›ˆYNÂˆBˆØ]Ú
+ÛÛœÝÝŽ™^Ù\[Ûˆ	ŠBˆÂˆ™]\›ˆ˜[ÙNÂˆBŸB‚•R[ÌˆÛÛ^Ž™Ù]›ÛÒÙY\\”Ù\ÜÚ[Û•\[YJ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂˆYˆ
+\Ú\™YOž›ÛÚÙY\\ˆÚ\™YOž›ÛÚÙY\\‹O™^\™Y
+
+JBˆ™]\›ˆÂˆ™]\›ˆÚ\™YOž›ÛÚÙY\\‹O™Ù]Ù\ÜÚ[Û•\[YJ
+NÂŸB‚›ÚYÛÛ^Žœ™XÛÛ›™XÝ›ÛÒÙY\\ŠÛÛœÝÝš[™È	ˆ™X\ÛÛŠHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂˆYˆ
+Ú\™YOž›ÛÚÙY\\ŠBˆÂˆÚ\™YOž›ÛÚÙY\\‹O™š[˜[^™J™X\ÛÛŠNÂˆÑ×ÒS‘“ÊÚ\™YO›ÙË–›ÛÒÙY\\ˆÛÛ›™XÝ[ÛˆÛÜÙYˆßH‹™X\ÛÛŠNÂˆBŸB‚›ÚYÛÛ^Žš[™TÞ\Ý[V›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÐY\’[š]X[^˜][Û’Y“™YYY
+
+BžÂˆÝŽœÚ\™YÜ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÏˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÎÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ŽÂ‚ˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÈHÚ\™YOœÞ\Ý[WÛÙÜËOž›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÎÂˆB‚ˆYˆ
+^›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆ™]\›ŽÂ‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂˆYˆ
+Ú\™YOž›ÛÚÙY\\ŠBˆÂˆYˆ
+›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+ˆ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽ™Y˜][Þ›ÛÚÙY\\—Û˜[YK
+œÚ\™YOž›ÛÚÙY\\‹›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ú[š]Ü™X\ÛÛŠNÂˆBˆB‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚ×Ø]^[X\žWÞ›ÛÚÙY\\œÊÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÂˆ›Üˆ
+]]È	ˆšÈˆÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œÊBˆÂˆYˆ
+›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+ˆšË™š\œÝ
+žšËœÙXÛÛ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ú[š]Ü™X\ÛÛŠNÂˆBˆBŸB‚›ÚYÛÛ^Žš[š]X[^™RÙY\\‘\Ü]Ú\ŠÖÛX^X™WÝ[\ÙYWH›ÛÛÝ\Ø\Þ[˜ÊHÛÛœÝžÂˆÚYˆTÑWÓ•TQ•ˆYˆ
+ÝŽ˜]ÛZX×ÛØYÙ^XÚ]
+	œÚ\™YOšÙY\\—Ù\Ü]Ú\‹ÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹•žZ[™ÈÈ[š]X[^™HÙY\\ˆ][\H[Y\ÈŠNÂ‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆYˆ
+ÛÛ™šYËš\ÊšÙY\\—ÜÙ\™\ˆŠJBˆÂˆ›ÛÛ\×ÜÝ[™[Û™WØ\HÛÛ™šYË™Ù]›ÛÛ
+šÙY\\—ÜÙ\™\‹œÝ[™[Û™WÚÙY\\ˆ‹Ù]\XØ][Û•\J
+HOH\XØ][Û•\NŽ’ÑQTTŠNÂˆYˆ
+Ý\Ø\Þ[˜ÊBˆÂˆÚ\ÜÙ\
+Z\×ÜÝ[™[Û™WØ\
+NÂˆÑ×ÒS‘“ÊÚ\™YO›ÙËÛÛ›™XÝYÈ›ÛÒÙY\\ˆ
+ÜˆÙY\\ŠH™Y›Ü™H[\›˜[ÙY\\ˆÝ\ÜˆÙHÛ‰Ý\[™ÛˆÝ\ˆÙY\\ˆÛ\Ý\‹‚ˆÚ[ØZ]›ÜˆÙY\\ˆ\Þ[˜Ú›Û›Ý\ÛHŠNÂˆBˆ[ÙBˆÂˆÑ×ÒS‘“ÊÚ\™YO›ÙËØ[››ÝÛÛ›™XÝÈ›ÛÒÙY\\ˆ
+ÜˆÙY\\ŠH™Y›Ü™H[\›˜[ÙY\\ˆÝ\‚ˆÚ[ØZ]›ÜˆÙY\\ˆÞ[˜Ú›Û›Ý\ÛHŠNÂˆB‚ˆ]]È\Ü]Ú\ˆHÝŽ›XZÙWÜÚ\™YÙY\\‘\Ü]Ú\Š
+NÂˆ\Ü]Ú\‹Oš[š]X[^™JÛÛ™šYË\×ÜÝ[™[Û™WØ\Ý\Ø\Þ[˜ËÙ]XXÜ›ÜÊ
+JNÂˆÝŽ˜]ÛZX×ÜÝÜ™WÙ^XÚ]
+	œÚ\™YOšÙY\\—Ù\Ü]Ú\‹\Ü]Ú\‹ÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂˆBˆÙ[™Y‚ŸB‚ˆÚYˆTÑWÓ•TQ•œÝŽœÚ\™YÜÙY\\‘\Ü]Ú\ˆÛÛ^Ž™Ù]ÙY\\‘\Ü]Ú\Š
+HÛÛœÝžÂˆ]]È\Ü]Ú\ˆHžQÙ]ÙY\\‘\Ü]Ú\Š
+NÂˆYˆ
+Y\Ü]Ú\ŠBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’ÙY\\ˆ]\Ý™H[š]X[^™Y™Y›Ü™H™\]Y\ÝÈŠNÂ‚ˆ™]\›ˆ\Ü]Ú\ŽÂŸB‚œÝŽœÚ\™YÜÙY\\‘\Ü]Ú\ˆÛÛ^ŽžQÙ]ÙY\\‘\Ü]Ú\Š
+HÛÛœÝžÂˆ™]\›ˆÝŽ˜]ÛZX×ÛØYÙ^XÚ]
+	œÚ\™YOšÙY\\—Ù\Ü]Ú\‹ÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸB‚›ÚYÛÛ^ŽœÙ]ÙY\\‘\Ü]Ú\ŠÝŽœÚ\™YÜÙY\\‘\Ü]Ú\ˆ\Ü]Ú\ŠHÛÛœÝžÂˆÝŽ˜]ÛZX×ÜÝÜ™WÙ^XÚ]
+	œÚ\™YOšÙY\\—Ù\Ü]Ú\‹\Ü]Ú\‹ÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸBˆÙ[™Y‚‚›ÚYÛÛ^ŽœÚYÛ˜[ÙY\\‘\Ü]Ú\”Ú]ÝÛŠ
+HÛÛœÝžÂˆÚYˆTÑWÓ•TQ•ˆYˆ
+]]È\Ü]Ú\ˆHžQÙ]ÙY\\‘\Ü]Ú\Š
+JBˆ\Ü]Ú\‹OœÚYÛ˜[Ú]ÝÛŠ
+NÂˆÙ[™Y‚ŸB‚›ÚYÛÛ^ŽœÚ]ÝÛ’ÙY\\‘\Ü]Ú\ŠÖÛX^X™WÝ[\ÙYWH›ÛÛÛÜÙYØ[ØÛÛ›™XÝ[ÛœÊHÛÛœÝžÂˆÚYˆTÑWÓ•TQ•ˆYˆ
+]]È\Ü]Ú\ˆHžQÙ]ÙY\\‘\Ü]Ú\Š
+JBˆÂˆ\Ü]Ú\‹OœÚ]ÝÛŠÛÜÙYØ[ØÛÛ›™XÝ[ÛœÊNÂˆÙ]ÙY\\‘\Ü]Ú\Š[ŠNÂˆBˆÙ[™Y‚ŸB‚‚›ÚYÛÛ^Ž\]RÙY\\ÛÛ™šYÝ\˜][ÛŠÖÛX^X™WÝ[\ÙYWHÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊHÛÛœÝžÂˆÚYˆTÑWÓ•TQ•ˆ]]È\Ü]Ú\ˆHžQÙ]ÙY\\‘\Ü]Ú\Š
+NÂˆYˆ
+Y\Ü]Ú\ŠBˆ™]\›ŽÂ‚ˆ\Ü]Ú\‹O\]PÛÛ™šYÝ\˜][ÛŠÛÛ™šYËÙ]XXÜ›ÜÊ
+JNÂˆÙ[™Y‚ŸB‚‚žšÝ][Ž–›ÛÒÙY\\”ˆÛÛ^Ž™Ù]]^[X\žV›ÛÒÙY\\ŠÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆ]]ÈÛÛ\Û™[ÙÝX\™HÛÛÜ™[˜][ÛŽŽœÙ]Ý\œ™[ÛÛ\Û™[
+ÛÛ^Ž™Ù]]^[X\žV›ÛÒÙY\\ˆŠNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÂˆÛÛœÝ]]ÈÛÛ™šY×Û˜[YHH˜]^[X\žWÞ›ÛÚÙY\\œËˆˆ
+È˜[YNÂ‚ˆ]]È›ÛÚÙY\\ˆHÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œË™š[™
+˜[YJNÂˆYˆ
+›ÛÚÙY\\ˆOHÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œË™[™
+
+JBˆÂˆYˆ
+˜[YK˜ÛÛZ[œÊ	Î‰ÊH˜[YK˜ÛÛZ[œÊ	ËÉÊJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽQÐT‘ÕSQS•Ë’[˜[Y]^[X\žH›ÛÒÙY\\ˆ˜[YHßNˆ	Î‰È[™	ËÉÈ\™H›Ý[ÝÙY‹˜[YJNÂ‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×ØÛÛ™šYÈÈ
+œÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×ØÛÛ™šYÈˆÙ]ÛÛ™šYÔ™YŠ
+NÂˆYˆ
+XÛÛ™šYËš\ÊÛÛ™šY×Û˜[YJJBˆ›ÝÈ^Ù\[ÛŠˆ\œ›ÜÛÙ\ÎŽQÐT‘ÕSQS•Ëˆ•[šÛ›ÝÛˆ]^[X\žH›ÛÒÙY\\ˆ˜[YH	ÞßIËˆYˆ]	ÜÈ™\]Z\™Y]Ø[ˆ™HYYÈHÙXÝ[Ûˆ]^[X\žWÞ›ÛÚÙY\\œÏˆ[ˆ‚ˆ˜ÛÛ™šYËž[‹ˆ˜[YJNÂ‚ˆšÝ][Ž–›ÛÒÙY\\\™ÜÈ\™ÜÊÛÛ™šYËÛÛ™šY×Û˜[YJNÂˆ\™ÜËœÙ[™Ü™XÙZ]™WÛÜ×Ý™XY×ÛšXÙWÝ˜[YHHÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ›Ü×Ý™XY×ÛšXÙWÝ˜[YWÞ›ÛÚÙY\\—ØÛY[ÜÙ[™Ü™XÙZ]™WNÂˆ\™ÜË™[™›Ü˜ÙWØÛÛ\Û™[Ý˜XÚÚ[™ÈHÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ™[™›Ü˜ÙWÚÙY\\—ØÛÛ\Û™[Ý˜XÚÚ[™×NÂ‚ˆ›ÛÚÙY\\ˆHÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œË™[\XÙJ˜[YKˆšÝ][Ž–›ÛÒÙY\\ŽŽ˜Ü™X]JÝŽ›[Ý™J\™ÜÊKÙ]›ÛÒÙY\\“ÙÊ
+KÙ]YÙÜ™YØ]Y›ÛÒÙY\\“ÙÊ
+JJK™š\œÝÂ‚ˆYˆ
+]]È›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÈHÙ]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+NÈ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+˜[YK
+ž›ÛÚÙY\\‹OœÙXÛÛ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ú[š]Ü™X\ÛÛŠNÂˆBˆ[ÙHYˆ
+›ÛÚÙY\\‹OœÙXÛÛ™O™^\™Y
+
+JBˆÂˆÝ\œ™[Y]šXÜÎŽ˜Y
+Ý\œ™[Y]šXÜÎŽ–›ÛÒÙY\\”Ù\ÜÚ[Û‘^\™Y
+NÂ‚ˆ]]ÈÛÞ›ÛÚÙY\\ˆH›ÛÚÙY\\‹OœÙXÛÛ™Âˆ›ÛÚÙY\\‹OœÙXÛÛ™H›ÛÚÙY\\‹OœÙXÛÛ™OœÝ\™]ÔÙ\ÜÚ[ÛŠ
+NÂ‚ˆYˆ
+]]È›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÈHÙ]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+NÈ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆÂˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜Y\ØÛÛ›™XÝY
+˜[YK
+›ÛÞ›ÛÚÙY\\‹›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ù^\™YÜ™X\ÛÛŠNÂˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+˜[YK
+ž›ÛÚÙY\\‹OœÙXÛÛ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ù^\™YÜ™X\ÛÛŠNÂˆBˆB‚ˆ™]\›ˆ›ÛÚÙY\\‹OœÙXÛÛ™ÂŸB‚œÝŽœÚ\™YÜšÝ][Ž–›ÛÒÙY\\ˆÛÛ^Ž™Ù]Y˜][Ü]^[X\žV›ÛÒÙY\\ŠÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆ™]\›ˆ˜[YHOHšÝ][Ž‘QUSÖ“ÓÒÑQTT—ÓSQHÈÙ]›ÛÒÙY\\Š
+HˆÙ]]^[X\žV›ÛÒÙY\\Š˜[YJNÂŸB‚‚œÝŽ›X\Ýš[™ËšÝ][Ž–›ÛÒÙY\\”ˆÛÛ^Ž™Ù]]^[X\žV›ÛÒÙY\\œÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÂˆ™]\›ˆÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œÎÂŸB‚œÝ]XÈ›ÚY™[ØY›ÛÒÙY\\’YÚ[™ÙY[\
+ˆÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYËˆÛÛœÝÝŽœÝš[™×ÝšY]ÈÙY\\—Û˜[YKˆÛÛœÝÝŽœÝš[™È	ˆÛÛ™šY×Û˜[YKˆšÝ][Ž–›ÛÒÙY\\”ˆ	ˆšËˆÝŽœÚ\™YÜ›ÛÒÙY\\“ÙÏˆš×ÛÙËˆÝŽœÚ\™YÜ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÏˆš×ØÛÛ˜ÙXÝ[Û—ÛÙËˆÝŽœÚ\™YÜYÙÜ™YØ]Y›ÛÒÙY\\“ÙÏˆYÙÜ™YØ]YÞ›ÛÚÙY\\—ÛÙËˆ›ÛÛÙ\™\—ÜÝ\YˆÛÛœÝ[ÌˆÙ[™Ü™XÙZ]™WÛÜ×Ý™XY×ÛšXÙWÝ˜[YKˆ›ÛÛ[™›Ü˜ÙWØÛÛ\Û™[Ý˜XÚÚ[™ÊBžÂˆ]]ÈÛÛ\Û™[ÙÝX\™HÛÛÜ™[˜][ÛŽŽœÙ]Ý\œ™[ÛÛ\Û™[
+ÛÛ^Žœ™[ØY›ÛÒÙY\\’YÚ[™ÙY[\ŠNÂˆÝ]XÈÛÛœÝ^ˆ]]È™X\ÛÛˆHÛÛ™šYÈÚ[™ÙYŽÂˆYˆ
+^šÈšËO˜ÛÛ™šYÐÚ[™ÙY
+
+˜ÛÛ™šYËÛÛ™šY×Û˜[YJJBˆÂˆYˆ
+šÊBˆšËO™š[˜[^™J™X\ÛÛŠNÂ‚ˆ]]ÈÛÞšÈHšÎÂ‚ˆšÝ][Ž–›ÛÒÙY\\\™ÜÈ\™ÜÊ
+˜ÛÛ™šYËÛÛ™šY×Û˜[YJNÂˆ\™ÜËœÙ[™Ü™XÙZ]™WÛÜ×Ý™XY×ÛšXÙWÝ˜[YHHÙ[™Ü™XÙZ]™WÛÜ×Ý™XY×ÛšXÙWÝ˜[YNÂˆ\™ÜË™[™›Ü˜ÙWØÛÛ\Û™[Ý˜XÚÚ[™ÈH[™›Ü˜ÙWØÛÛ\Û™[Ý˜XÚÚ[™ÎÂˆšÈHšÝ][Ž–›ÛÒÙY\\ŽŽ˜Ü™X]JÝŽ›[Ý™J\™ÜÊKÝŽ›[Ý™Jš×ÛÙÊKÝŽ›[Ý™JYÙÜ™YØ]YÞ›ÛÚÙY\\—ÛÙÊJNÂ‚ˆYˆ
+š×ØÛÛ˜ÙXÝ[Û—ÛÙÊBˆÂˆYˆ
+ÛÞšÊBˆš×ØÛÛ˜ÙXÝ[Û—ÛÙËO˜Y\ØÛÛ›™XÝY
+ÙY\\—Û˜[YK
+›ÛÞšË™X\ÛÛŠNÂˆš×ØÛÛ˜ÙXÝ[Û—ÛÙËO˜YÛÛ›™XÝY
+ÙY\\—Û˜[YK
+žšË™X\ÛÛŠNÂˆB‚ˆYˆ
+Ù\™\—ÜÝ\Y
+BˆšËOœÙ]Ù\™\ÛÛ\][TÝ\Y
+
+NÂˆBŸB‚›ÚYÛÛ^Žœ™[ØY›ÛÒÙY\\’YÚ[™ÙY
+ÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYÊHÛÛœÝžÂˆ›ÛÛÙ\™\—ÜÝ\YH\ÔÙ\™\ÛÛ\][TÝ\Y
+
+NÂ‚ˆ]]ÈÛÛ\Û™[ÙÝX\™HÛÛÜ™[˜][ÛŽŽœÙ]Ý\œ™[ÛÛ\Û™[
+ÛÛ^Žœ™[ØY›ÛÒÙY\\’YÚ[™ÙYŠNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂˆÚ\™YOž›ÛÚÙY\\—ØÛÛ™šYÈHÛÛ™šYÎÂ‚ˆ™[ØY›ÛÒÙY\\’YÚ[™ÙY[\
+ˆÛÛ™šYËˆ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽ™Y˜][Þ›ÛÚÙY\\—Û˜[YKˆšÝ][Ž™Ù]›ÛÒÙY\\ÛÛ™šYÓ˜[YJ
+˜ÛÛ™šYÊKˆÚ\™YOž›ÛÚÙY\\‹ˆÙ]›ÛÒÙY\\“ÙÊ
+KˆÙ]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+KˆÙ]YÙÜ™YØ]Y›ÛÒÙY\\“ÙÊ
+KˆÙ\™\—ÜÝ\YˆÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ›Ü×Ý™XY×ÛšXÙWÝ˜[YWÞ›ÛÚÙY\\—ØÛY[ÜÙ[™Ü™XÙZ]™WKˆÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ™[™›Ü˜ÙWÚÙY\\—ØÛÛ\Û™[Ý˜XÚÚ[™×JNÂŸB‚›ÚYÛÛ^Žœ™[ØY]^[X\žV›ÛÒÙY\\œÐÛÛ™šYÒYÚ[™ÙY
+ÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYÊBžÂˆ›ÛÛÙ\™\—ÜÝ\YH\ÔÙ\™\ÛÛ\][TÝ\Y
+
+NÂˆ]]È›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÈHÙ]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+NÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÂ‚ˆÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×ØÛÛ™šYÈHÛÛ™šYÎÂ‚ˆ›Üˆ
+]]È]HÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œË˜™YÚ[Š
+NÈ]OHÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œË™[™
+
+NÊBˆÂˆÛÛœÝ]]ÈÛÛ™šY×Û˜[YHH˜]^[X\žWÞ›ÛÚÙY\\œËˆˆ
+È]O™š\œÝÂˆÑ×ÕPÑJÚ\™YO›ÙË”™[ØY[™È]^[X\žH›ÛÒÙY\\ˆÛÛ™šYÈ›ÜˆßH‹]O™š\œÝ
+NÂˆYˆ
+XÛÛ™šYËOš\ÊÛÛ™šY×Û˜[YJJBˆÂˆÑ×ÕPÑJÚ\™YO›ÙË”™[[Ýš[™È]^[X\žH›ÛÒÙY\\ˆßH‹]O™š\œÝ
+NÂˆYˆ
+›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÊBˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËO˜Y\ØÛÛ›™XÝY
+]O™š\œÝ
+š]OœÙXÛÛ™›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÎŽšÙY\\—Ü™[[Ý™YÙœ›ÛWØÛÛ™šYÊNÂ‚ˆ]HÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œË™\˜\ÙJ]
+NÂˆBˆ[ÙBˆÂˆÑ×ÕPÑJÚ\™YO›ÙË”™\XÚ[™È]^[X\žH›ÛÒÙY\\ˆßH‹]O™š\œÝ
+NÂˆ™[ØY›ÛÒÙY\\’YÚ[™ÙY[\
+ˆÛÛ™šYËˆ]O™š\œÝˆÛÛ™šY×Û˜[YKˆ]OœÙXÛÛ™ˆÙ]›ÛÒÙY\\“ÙÊ
+Kˆ›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙËˆÙ]YÙÜ™YØ]Y›ÛÒÙY\\“ÙÊ
+KˆÙ\™\—ÜÝ\YˆÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ›Ü×Ý™XY×ÛšXÙWÝ˜[YWÞ›ÛÚÙY\\—ØÛY[ÜÙ[™Ü™XÙZ]™WKˆÙ]Ù\™\”Ù][™ÜÊ
+VÔÙ\™\”Ù][™ÎŽ™[™›Ü˜ÙWÚÙY\\—ØÛÛ\Û™[Ý˜XÚÚ[™×JNÂˆ
+ÊÚ]ÂˆBˆBŸB‚‚˜›ÛÛÛÛ^Žš\Ö›ÛÒÙY\\Š
+HÛÛœÝžÂˆ™]\›ˆšÝ][Žš\Ö›ÛÒÙY\\ÛÛ™šYÊÙ]ÛÛ™šYÔ™YŠ
+JNÂŸB‚˜›ÛÛÛÛ^Žš\Ð]^[X\žV›ÛÒÙY\\ŠÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆ™]\›ˆÙ]ÛÛ™šYÔ™YŠ
+Kš\Ê˜]^[X\žWÞ›ÛÚÙY\\œËˆˆ
+È˜[YJNÂŸB‚›ÚYÛÛ^Žœ™[ØY]Y\žSX\ÚÚ[™Ô[\ÒYÚ[™ÙY
+ÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYÊHÛÛœÝžÂˆÛÛœÝ]]ÈÛØÛÛ™šYÈHÚ\™YOœÙ[œÚ]]™WÙ]WÛX\ÚÙ\—ØÛÛ™šYÎÂˆYˆ
+ÛØÛÛ™šYÈ	‰ˆ\ÔØ[YPÛÛ™šYÝ\˜][ÛŠ
+˜ÛÛ™šYË
+›ÛØÛÛ™šYËœ]Y\žWÛX\ÚÚ[™×Ü[\ÈŠJBˆ™]\›ŽÂ‚ˆÙ[œÚ]]™Q]SX\ÚÙ\ŽŽœÙ][œÝ[˜ÙJÝŽ›XZÙWÝ[š\]YOÙ[œÚ]]™Q]SX\ÚÙ\Š
+˜ÛÛ™šYËœ]Y\žWÛX\ÚÚ[™×Ü[\ÈŠJNÂˆÚ\™YOœÙ[œÚ]]™WÙ]WÛX\ÚÙ\—ØÛÛ™šYÈHÛÛ™šYÎÂŸB‚’[\œÙ\™\Ü™Y[X[ÔˆÛÛ^Ž™Ù][\œÙ\™\Ü™Y[X[Ê
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOš[\œÙ\™\—Ú[×ØÜ™Y[X[Ë™Ù]
+
+NÂŸB‚›ÚYÛÛ^Ž\]R[\œÙ\™\Ü™Y[X[ÊÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆ]]ÈÜ™Y[X[ÈH[\œÙ\™\Ü™Y[X[ÎŽ›XZÙJÛÛ™šYËš[\œÙ\™\—ÚØÜ™Y[X[ÈŠNÂˆÚ\™YOš[\œÙ\™\—Ú[×ØÜ™Y[X[ËœÙ]
+ÝŽ›[Ý™JÜ™Y[X[ÊJNÂŸB‚›ÚYÛÛ^ŽœÙ][\œÙ\™\’SÐY™\ÜÊÛÛœÝÝš[™È	ˆÜÝR[MˆÜ
+BžÂˆÚ\™YOš[\œÙ\™\—Ú[×ÚÜÝHÜÝÂˆÚ\™YOš[\œÙ\™\—Ú[×ÜÜHÜÂŸB‚œÝŽœZ\Ýš[™ËR[MˆÛÛ^Ž™Ù][\œÙ\™\’SÐY™\ÜÊ
+HÛÛœÝžÂˆYˆ
+Ú\™YOš[\œÙ\™\—Ú[×ÚÜÝ™[\J
+HÚ\™YOš[\œÙ\™\—Ú[×ÜÜOH
+Bˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““×ÑSSQS•×ÒS—ÐÓÓ‘’QËˆ”\˜[Y]\ˆ	Ú[\œÙ\™\—Ú
+ÊWÜÜ	È™\]Z\™Y›Üˆ™\XØ][Ûˆ\È›ÝÜXÚYšYY‚ˆš[ˆÛÛ™šYÝ\˜][Ûˆš[KˆŠNÂ‚ˆ™]\›ˆÈÚ\™YOš[\œÙ\™\—Ú[×ÚÜÝÚ\™YOš[\œÙ\™\—Ú[×ÜÜNÂŸB‚›ÚYÛÛ^ŽœÙ][\œÙ\™\”ØÚ[YJÛÛœÝÝš[™È	ˆØÚ[YJBžÂˆÚ\™YOš[\œÙ\™\—ÜØÚ[YHHØÚ[YNÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù][\œÙ\™\”ØÚ[YJ
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOš[\œÙ\™\—ÜØÚ[YNÂŸB‚›ÚYÛÛ^ŽœÙ]™[[ÝRÜÝš[\ŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆÚ\™YOœ™[[ÝWÚÜÝÙš[\‹œÙ]˜[Y\Ñœ›ÛPÛÛ™šYÊÛÛ™šYÊNÂŸB‚˜ÛÛœÝ™[[ÝRÜÝš[\ˆ	ˆÛÛ^Ž™Ù]™[[ÝRÜÝš[\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœ™[[ÝWÚÜÝÙš[\ŽÂŸB‚›ÚYÛÛ^ŽœÙ]XY\‘š[\ŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆÚ\™YOšÚXY\—Ùš[\‹œÙ]˜[Y\Ñœ›ÛPÛÛ™šYÊÛÛ™šYÊNÂŸB‚˜ÛÛœÝXY\‘š[\ˆ	ˆÛÛ^Ž™Ù]XY\‘š[\Š
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOšÚXY\—Ùš[\ŽÂŸB‚•R[MˆÛÛ^Ž™Ù]ÔÜ
+
+HÛÛœÝžÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆ™]\›ˆÝ]X×ØØ\ÝR[MŠÛÛ™šYË™Ù][
+ÜÜÜ‹“T×ÑQUSÔÔ•
+JNÂŸB‚œÝŽ›Ü[Û˜[R[MˆÛÛ^Ž™Ù]ÔÜÙXÝ\™J
+HÛÛœÝžÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆYˆ
+ÛÛ™šYËš\ÊÜÜÜÜÙXÝ\™HŠJBˆ™]\›ˆÛÛ™šYË™Ù][
+ÜÜÜÜÙXÝ\™HŠNÂˆ™]\›ˆßNÂŸB‚›ÚYÛÛ^Žœ™YÚ\Ý\”Ù\™\”Ü
+Ýš[™ÈÜÛ˜[YKR[MˆÜ
+BžÂˆËËÈ\ÙH[œÙ\ÛÜ—Ø\ÜÚYÛ˜ÛÈ™K\™YÚ\Ý˜][ÛˆY\ˆÝÜÜÝ\™Yœ™\Ú\ÈBˆËËÈÝÜ™YÜˆÚ]K]ÜÜÜÈKZÜÜ[ˆÛXÚÚÝ\ÙK[ØØ[ˆËËÈXXÚ™\Ý\š[™ÈH™]È\[Y\˜[Ü[™H™YÚ\ÝžH]\Ý™Y›XÝ]‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÙ\™\—ÜÜ×Û]]^
+NÂˆÚ\™YOœÙ\™\—ÜÜËš[œÙ\ÛÜ—Ø\ÜÚYÛŠÝŽ›[Ý™JÜÛ˜[YJKÜ
+NÂŸB‚•R[MˆÛÛ^Ž™Ù]Ù\™\”Ü
+ÛÛœÝÝš[™È	ˆÜÛ˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÙ\™\—ÜÜ×Û]]^
+NÂˆ]]È]HÚ\™YOœÙ\™\—ÜÜË™š[™
+ÜÛ˜[YJNÂˆYˆ
+]OHÚ\™YOœÙ\™\—ÜÜË™[™
+
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽÓTÕT—ÑÑTÓ•ÑVTÕ•\™H\È›ÈÜ˜[YYßH‹ÜÛ˜[YJNÂˆ™]\›ˆ]OœÙXÛÛ™ÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]X^[™[™Ó]]][ÛœÕÕØ\›Š
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›X^Ü[™[™×Û]]][Ûœ×Ý×ÝØ\›ŽÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]X^[™[™Ó]]][ÛœÑ^XÝ][Û•[YUÕØ\›Š
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›X^Ü[™[™×Û]]][Ûœ×Ù^XÝ][Û—Ý[YWÝ×ÝØ\›ŽÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]X^\[UÕØ\›Š
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›X^Ü\Û[WÝ×ÝØ\›‹›ØY
+
+NÂŸB‚ˆÙYš[™HSTSQS•ÑS•UWÓSRUÕÒUÕÐT“’S‘×ÑÑUTŠ[˜[YKS˜[YKØ\›—ÙY˜][Ø\›—ÜÙ][™ËØ\›—ÜÙ][™×Û˜[YJHˆÚ^™WÝÛÛ^Ž™Ù]X^ÈÑS˜[YHÈÓ[UÕØ\›Š
+HÛÛœÝˆÈˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÈˆ™]\›ˆÚ\™YO›X^ÈÈÙ[˜[YHÈ×Û[WÝ×ÝØ\›‹›ØY
+
+NÈˆBTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕÐT“’S‘ÊSTSQS•ÑS•UWÓSRUÕÒUÕÐT“’S‘×ÑÑUTŠBˆÝ[™YˆSTSQS•ÑS•UWÓSRUÕÒUÕÐT“’S‘×ÑÑUT‚‚ˆÙYš[™HSTSQS•ÑS•UWÓSRUÕÒUÕ“Õ×ÑÑUTŠ[˜[YKS˜[YK›Ý×ÙY˜][›Ý×ÜÙ][™Ë›Ý×ÜÙ][™×Û˜[YJHˆÚ^™WÝÛÛ^Ž™Ù]X^ÈÑS˜[YHÈÓ[UÕ›ÝÊ
+HÛÛœÝˆÈˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÈˆ™]\›ˆÚ\™YO›X^ÈÈÙ[˜[YHÈ×Û[WÝ×Ý›ÝË›ØY
+
+NÈˆBTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕ“ÕÊSTSQS•ÑS•UWÓSRUÕÒUÕ“Õ×ÑÑUTŠBˆÝ[™YˆSTSQS•ÑS•UWÓSRUÕÒUÕ“Õ×ÑÑUT‚‚›ÚYÛÛ^ŽœÙ]X^[™[™Ó]]][ÛœÕÕØ\›ŠÚ^™WÝX^Ü[™[™×Û]]][Ûœ×Ý×ÝØ\›ŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›X^Ü[™[™×Û]]][Ûœ×Ý×ÝØ\›ˆHX^Ü[™[™×Û]]][Ûœ×Ý×ÝØ\›ŽÂŸB‚›ÚYÛÛ^ŽœÙ]X^[™[™Ó]]][ÛœÑ^XÝ][Û•[YUÕØ\›ŠÚ^™WÝX^Ü[™[™×Û]]][Ûœ×Ù^XÝ][Û—Ý[YWÝ×ÝØ\›ŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›X^Ü[™[™×Û]]][Ûœ×Ù^XÝ][Û—Ý[YWÝ×ÝØ\›ˆHX^Ü[™[™×Û]]][Ûœ×Ù^XÝ][Û—Ý[YWÝ×ÝØ\›ŽÂŸB‚›ÚYÛÛ^ŽœÙ]X^\[UÕØ\›ŠÚ^™WÝX^Ü\Ý×ÝØ\›ŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›X^Ü\Û[WÝ×ÝØ\›ˆHX^Ü\Ý×ÝØ\›ŽÂŸBˆÙYš[™HSTSQS•ÑS•UWÓSRUÕÒUÕÐT“’S‘×ÔÑUTŠ[˜[YKS˜[YKØ\›—ÙY˜][Ø\›—ÜÙ][™ËØ\›—ÜÙ][™×Û˜[YJHˆ›ÚYÛÛ^ŽœÙ]X^ÈÑS˜[YHÈÓ[UÕØ\›ŠÚ^™WÝX^ÈÈÙ[˜[YHÈ×Ý×ÝØ\›ŠHˆÈˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÈˆÚ\™YO›X^ÈÈÙ[˜[YHÈ×Û[WÝ×ÝØ\›ˆHX^ÈÈÙ[˜[YHÈ×Ý×ÝØ\›ŽÈˆBTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕÐT“’S‘ÊSTSQS•ÑS•UWÓSRUÕÒUÕÐT“’S‘×ÔÑUTŠBˆÝ[™YˆSTSQS•ÑS•UWÓSRUÕÒUÕÐT“’S‘×ÔÑUT‚‚ˆÙYš[™HSTSQS•ÑS•UWÓSRUÕÒUÕ“Õ×ÔÑUTŠ[˜[YKS˜[YK›Ý×ÙY˜][›Ý×ÜÙ][™Ë›Ý×ÜÙ][™×Û˜[YJHˆ›ÚYÛÛ^ŽœÙ]X^ÈÑS˜[YHÈÓ[UÕ›ÝÊÚ^™WÝX^ÈÈÙ[˜[YHÈ×Ý×Ý›ÝÊHˆÈˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÈˆÚ\™YO›X^ÈÈÙ[˜[YHÈ×Û[WÝ×Ý›ÝÈHX^ÈÈÙ[˜[YHÈ×Ý×Ý›ÝÎÈˆÚ\™YOœÙ\™\—ÜÙ][™ÜËœÙ]
+›Ý×ÜÙ][™×Û˜[YKX^ÈÈÙ[˜[YHÈ×Ý×Ý›ÝÊNÈˆBTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕ“ÕÊSTSQS•ÑS•UWÓSRUÕÒUÕ“Õ×ÔÑUTŠBˆÝ[™YˆSTSQS•ÑS•UWÓSRUÕÒUÕ“Õ×ÔÑUT‚‚™ÝX›HÛÛ^Ž™Ù]Z[“ÔÐÔUØZ][YT˜][ÕÑ›ÜÛÛ›™XÝ[ÛŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›Z[—ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛŽÂŸB‚™ÝX›HÛÛ^Ž™Ù]X^ÔÐÔUØZ][YT˜][ÕÑ›ÜÛÛ›™XÝ[ÛŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO›X^ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛŽÂŸB‚›ÚYÛÛ^ŽœÙ]ÔÐÔSÝ™\›ØYÙ][™ÜÊÝX›HZ[—ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[Û‹ÝX›HX^ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YO›Z[—ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛˆHZ[—ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛŽÂˆÚ\™YO›X^ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛˆHX^ÛÜ×ØÜWÝØZ]Ý[YWÜ˜][×Ý×Ù›ÜØÛÛ›™XÝ[ÛŽÂŸB‚˜›ÛÛÛÛ^Ž™Ù]ÌÔ]Y]YQ\ØX›TÝ™X[Z[™Ê
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽœÌÜ]Y]YWÙ\ØX›WÜÝ™X[Z[™×BˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ™\ØX›WÚ[œÙ\[Û—Ø[™Û]]][Û—NÂŸB‚›ÚYÛÛ^ŽœÙ]ÌÔ]Y]YQ\ØX›TÝ™X[Z[™Ê›ÛÛÌÜ]Y]YWÙ\ØX›WÜÝ™X[Z[™ÊHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœÙ\™\—ÜÙ][™ÜËœÙ]
+œÌÜ]Y]YWÙ\ØX›WÜÝ™X[Z[™È‹ÌÜ]Y]YWÙ\ØX›WÜÝ™X[Z[™ÊNÂŸB‚˜›ÛÛÛÛ^Ž™Ù]Y\ÜØYÙT]Y]YQ\ØX›R[œÙ\[ÛŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›Y\ÜØYÙWÜ]Y]YWÙ\ØX›WÚ[œÙ\[Û—NÂŸB‚›ÚYÛÛ^ŽœÙ]Y\ÜØYÙT]Y]YQ\ØX›R[œÙ\[ÛŠ›ÛÛY\ÜØYÙWÜ]Y]YWÙ\ØX›WÚ[œÙ\[ÛŠHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœÙ\™\—ÜÙ][™ÜËœÙ]
+›Y\ÜØYÙWÜ]Y]YWÙ\ØX›WÚ[œÙ\[Ûˆ‹Y\ÜØYÙWÜ]Y]YWÙ\ØX›WÚ[œÙ\[ÛŠNÂŸB‚œÝŽœÚ\™YÜÛ\Ý\ˆÛÛ^Ž™Ù]Û\Ý\ŠÛÛœÝÝŽœÝš[™È	ˆÛ\Ý\—Û˜[YJHÛÛœÝžÂˆYˆ
+]]È™\ÈHžQÙ]Û\Ý\ŠÛ\Ý\—Û˜[YJJBˆ™]\›ˆ™\ÎÂˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽÓTÕT—ÑÑTÓ•ÑVTÕ”™\]Y\ÝYÛ\Ý\ˆ	ÞßIÈ›Ý›Ý[™‹Û\Ý\—Û˜[YJNÂŸB‚‚œÝŽœÚ\™YÜÛ\Ý\ˆÛÛ^ŽžQÙ]Û\Ý\ŠÛÛœÝÝŽœÝš[™È	ˆÛ\Ý\—Û˜[YJHÛÛœÝžÂˆÝŽœÚ\™YÜÛ\Ý\ˆ™\ÈH[ŽÂ‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂˆ™\ÈHÙ]Û\Ý\œÒ[\
+ØÚÊKO™Ù]Û\Ý\ŠÛ\Ý\—Û˜[YJNÂ‚ˆYˆ
+™\ÈOH[ˆ	‰ˆÚ\™YO˜Û\Ý\—Ù\ØÛÝ™\žJBˆ™\ÈHÚ\™YO˜Û\Ý\—Ù\ØÛÝ™\žKO™Ù]Û\Ý\ŠÛ\Ý\—Û˜[YJNÂˆB‚ˆYˆ
+™\ÈOH[ˆ	‰ˆXÛ\Ý\—Û˜[YK™[\J
+JBˆ™\ÈHžQÙ]™\XØ]Y]X˜\ÙPÛ\Ý\ŠÛ\Ý\—Û˜[YJNÂ‚ˆ™]\›ˆ™\ÎÂŸB‚‚›ÚYÛÛ^Žœ™[ØYÛ\Ý\ÛÛ™šYÊ
+HÛÛœÝžÂˆÚ[H
+YJBˆÂˆÛÛ™šYÝ\˜][Û”ˆÛ\Ý\—ØÛÛ™šYÎÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂˆÛ\Ý\—ØÛÛ™šYÈHÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÎÂˆB‚ˆÛÛœÝ]]È	ˆÛÛ™šYÈHÛ\Ý\—ØÛÛ™šYÈÈ
+˜Û\Ý\—ØÛÛ™šYÈˆÙ]ÛÛ™šYÔ™YŠ
+NÂˆ]]È™]×ØÛ\Ý\œÈHÝŽ›XZÙWÜÚ\™YÛ\Ý\œÏŠÛÛ™šYË
+œÙ][™ÜËÙ]XXÜ›ÜÊ
+JNÂ‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂˆYˆ
+Ú\™YO˜Û\Ý\œ×ØÛÛ™šYË™Ù]
+
+HOHÛ\Ý\—ØÛÛ™šYË™Ù]
+
+JBˆÂˆÚ\™YO˜Û\Ý\œÈHÝŽ›[Ý™J™]×ØÛ\Ý\œÊNÂˆ™]\›ŽÂˆB‚ˆËÈÛ\Ý\œÈÛÛ™šYÈ\È™Y[ˆÝY[›HÚ[™ÙY™XÛÛ\]HÛ\Ý\œÂˆBˆBŸB‚œÝŽ›X\Ýš[™ËÛ\Ý\”ˆÛÛ^Ž™Ù]Û\Ý\œÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂ‚ˆ]]ÈÛ\Ý\œÈHÙ]Û\Ý\œÒ[\
+ØÚÊKO™Ù]ÛÛZ[™\Š
+NÂ‚ˆYˆ
+Ú\™YO˜Û\Ý\—Ù\ØÛÝ™\žJBˆÂˆÛÛœÝ]]È	ˆÛ\Ý\—Ù\ØÛÝ™\žWÛX\HÚ\™YO˜Û\Ý\—Ù\ØÛÝ™\žKO™Ù]Û\Ý\œÊ
+NÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÛ˜[YKÛ\Ý\—HˆÛ\Ý\—Ù\ØÛÝ™\žWÛX\
+BˆÛ\Ý\œË™[\XÙJ˜[YKÛ\Ý\ŠNÂˆBˆ™]\›ˆÛ\Ý\œÎÂŸB‚œÝŽœÚ\™YÜÛ\Ý\œÏˆÛÛ^Ž™Ù]Û\Ý\œÒ[\
+ÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆ	ˆÊˆØÚÈ
+‹ÊHÛÛœÝÐWÔ‘TURT‘TÊÚ\™YO˜Û\Ý\œ×Û]]^
+BžÂˆYˆ
+\Ú\™YO˜Û\Ý\œÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÈÈ
+œÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÈˆÙ]ÛÛ™šYÔ™YŠ
+NÂˆÚ\™YO˜Û\Ý\œÈHÝŽ›XZÙWÜÚ\™YÛ\Ý\œÏŠÛÛ™šYË
+œÙ][™ÜËÙ]XXÜ›ÜÊ
+JNÂˆB‚ˆ™]\›ˆÚ\™YO˜Û\Ý\œÎÂŸB‚›ÚYÛÛ^ŽœÝ\Û\Ý\‘\ØÛÝ™\žJ
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂˆYˆ
+\Ú\™YO˜Û\Ý\—Ù\ØÛÝ™\žJBˆ™]\›ŽÂˆÚ\™YO˜Û\Ý\—Ù\ØÛÝ™\žKOœÝ\
+
+NÂŸB‚‚‹ËËÈÛˆ™\X][™ÈØ[È\]\È^\Ý[™ÈÛ\Ý\œÈ[™YÈ™]ÈÛ\Ý\œËÙ\Û‰Ý[]HÛÛ\Ý\œÂ›ÚYÛÛ^ŽœÙ]Û\Ý\œÐÛÛ™šYÊÛÛœÝÛÛ™šYÝ\˜][Û”ˆ	ˆÛÛ™šYË›ÛÛ[˜X›WÙ\ØÛÝ™\žKÛÛœÝÝš[™È	ˆÛÛ™šY×Û˜[YJBžÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂˆYˆ
+ÛÛ™šYÒ[\ŽŽ™Ù]›ÛÛ
+
+˜ÛÛ™šYË˜[Ý×Ù^\š[Y[[ØÛ\Ý\—Ù\ØÛÝ™\žHŠH	‰ˆ[˜X›WÙ\ØÛÝ™\žH	‰ˆ\Ú\™YO˜Û\Ý\—Ù\ØÛÝ™\žJBˆÂˆÚ\™YO˜Û\Ý\—Ù\ØÛÝ™\žHHÝŽ›XZÙWÝ[š\]YOÛ\Ý\‘\ØÛÝ™\žOŠ
+˜ÛÛ™šYËÙ]ÛØ˜[ÛÛ^
+
+KÙ]XXÜ›ÜÊ
+JNÂˆB‚ˆËËÈÈ›Ý\]HÛ\Ý\œÈYˆ\È\ÙˆÛÛ™šYÈØ\Û‰ÝÚ[™ÙY‚ˆËËÈ›ÝNˆÛ\Ý\œ×ØÛÛ™šYÈ]\Ý™HÚXÚÙY›Üˆ[Ù\\˜][Hœ›ÛHÛ\Ý\œË™XØ]\ÙBˆËËÈ™[ØYÛ\Ý\ÛÛ™šYÊ
+H
+Ø[YK™Ëˆœ›ÛH”ÐØXÚU\]\ˆÛˆÝ\\
+HØ[ˆÜ[]BˆËËÈÚ\™YO˜Û\Ý\œÈ\Ú[™ÈH˜[˜XÚÈÙ]ÛÛ™šYÔ™YŠ
+HÚ]Ý]Ù][™ÈÚ\™YO˜Û\Ý\œ×ØÛÛ™šYË‚ˆËËÈYˆÙ]Û\Ý\œÐÛÛ™šYÊ
+H[ˆ[œÈ™Y›Ü™HHÛÛ™šYÈ™[ØY\ˆÝÜ™\È]ÈÛÛ™šYÝ\˜][Û”‹ˆËËÈ\™Y™\™[˜Ú[™ÈÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÈÛÝ[›ÝÈØÛÎŽ“[Ú[\‘^Ù\[Û‹‚ˆYˆ
+Ú\™YO˜Û\Ý\œÈ	‰ˆÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÈ	‰ˆ\ÔØ[YPÛÛ™šYÝ\˜][ÛŠ
+˜ÛÛ™šYË
+œÚ\™YO˜Û\Ý\œ×ØÛÛ™šYËÛÛ™šY×Û˜[YJJBˆ™]\›ŽÂ‚ˆ]]ÈÛØÛ\Ý\œ×ØÛÛ™šYÈHÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÎÂˆÚ\™YO˜Û\Ý\œ×ØÛÛ™šYÈHÛÛ™šYÎÂ‚ˆYˆ
+\Ú\™YO˜Û\Ý\œÊBˆÚ\™YO˜Û\Ý\œÈHÝŽ›XZÙWÜÚ\™YÛ\Ý\œÏŠ
+œÚ\™YO˜Û\Ý\œ×ØÛÛ™šYË
+œÙ][™ÜËÙ]XXÜ›ÜÊ
+KÛÛ™šY×Û˜[YJNÂˆ[ÙBˆÚ\™YO˜Û\Ý\œËO\]PÛ\Ý\œÊ
+œÚ\™YO˜Û\Ý\œ×ØÛÛ™šYË
+œÙ][™ÜËÛÛ™šY×Û˜[YKÛØÛ\Ý\œ×ØÛÛ™šYÊNÂ‚ˆ
+ÊÜÚ\™YO˜Û\Ý\œ×Ý™\œÚ[ÛŽÂˆBˆÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YO™ÝÛÜšÙ\ŠBˆÚ\™YO™ÝÛÜšÙ\‹O››ÝYžRÜÝQÕ\]Y
+
+NÂˆBŸB‚œÚ^™WÝÛÛ^Ž™Ù]Û\Ý\œÕ™\œÚ[ÛŠ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂˆ™]\›ˆÚ\™YO˜Û\Ý\œ×Ý™\œÚ[ÛŽÂŸB‚‚›ÚYÛÛ^ŽœÙ]Û\Ý\ŠÛÛœÝÝš[™È	ˆÛ\Ý\—Û˜[YKÛÛœÝÝŽœÚ\™YÜÛ\Ý\ˆ	ˆÛ\Ý\ŠBžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜Û\Ý\œ×Û]]^
+NÂ‚ˆYˆ
+\Ú\™YO˜Û\Ý\œÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹Û\Ý\œÈ\™H›ÝÙ]ŠNÂ‚ˆÚ\™YO˜Û\Ý\œËOœÙ]Û\Ý\ŠÛ\Ý\—Û˜[YKÛ\Ý\ŠNÂŸB‚‚›ÚYÛÛ^Žš[š]X[^™TÞ\Ý[SÙÜÊ
+BžÂˆËËÈ]\È™\]Z\™Y™XØ]\ÙHH[š]X[^˜][ÛˆÙˆÞ\Ý[HÙÜÈØ[ˆ™H[ÛÂˆËËÈšYÙÙ\™Yœ›ÛH[›Ý\ˆ™XY]\È][˜ÚYÚ[H[š]X[^š[™ÈHÞ\Ý[HÙÜËˆËËÈ›Üˆ^[\KÞ\Ý[K™š[\Þ\Ý[WØØXÚWÛÙÈÚ[™HšYÙÙ\™YžH\ÈØY[™ÂˆËËÈÙˆ[žHÝ\ˆX›HYˆ]\ÈÝÜ™YÛˆH\ÚÈÚ]ØXÚK‚ˆØ[Û˜ÙJÚ\™YOœÞ\Ý[WÛÙÜ×Ú[š]X[^™YÉ—HÂˆ]]ÈÞ\Ý[WÛÙÜÈHÝŽ›XZÙWÝ[š\]YOÞ\Ý[SÙÜÏŠÙ]ÛØ˜[ÛÛ^
+
+KÙ]ÛÛ™šYÔ™YŠ
+JNÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœÞ\Ý[WÛÙÜÈHÝŽ›[Ý™JÞ\Ý[WÛÙÜÊNÂˆJNÂŸB‚›ÚYÛÛ^Ž˜Ü™X]U˜XÙPÛÛXÝÜŠ
+BžÂˆÚ\™YO˜Ü™X]U˜XÙPÛÛXÝÜŠ
+NÂŸB‚›ÚYÛÛ^Žš[š]X[^™U˜XÙPÛÛXÝÜŠ
+BžÂˆÚ\™YOš[š]X[^™U˜XÙPÛÛXÝÜŠÙ]˜XÙSÙÊ
+JNÂŸB‚‹ËËÈØ[Y\ˆ[™^XÝYÜ˜\Ú\[‹‚›ÚYÛÛ^Žš[™PÜ˜\Ú
+
+HÛÛœÝžÂˆÝŽ›Ü[Û˜[Þ\Ý[SÙÜÏˆÞ\Ý[WÛÙÜÎÂˆÂˆÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆØÚÊ]]^ÜÚ\™YØÛÛ^
+NÂˆYˆ
+\Ú\™Y
+Bˆ™]\›ŽÂ‚ˆÂˆÚ\™YØÚÑÝX\™ØÚÌŠÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ŽÂˆÞ\Ý[WÛÙÜË™[\XÙJ
+œÚ\™YOœÞ\Ý[WÛÙÜÊNÂˆBˆB‚ˆËËÈ]\Ý™HØ[YÚ]Ý]]]^ÜÚ\™YØÛÛ^È]›ÚYXYØÚÎ‚ˆËËÈ[™PÜ˜\Ú
+
+HOˆÞ\Ý[SÙÏ‹‹ŽŽœ™\\™UX›HOˆÙY\\ˆOˆÛÛ^Ž™Ù]›ÛÒÙY\\“ÙÊ
+HOˆ]]^ÜÚ\™YØÛÛ^ˆÞ\Ý[WÛÙÜËOš[™PÜ˜\Ú
+
+NÂŸB‚˜›ÛÛÛÛ^Žš\Õ˜XÙPÛÛXÝÜŠ
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOš\Õ˜XÙPÛÛXÝÜŠ
+NÂŸB‚‚œÝŽœÚ\™YÜ]Y\žSÙÏˆÛÛ^Ž™Ù]]Y\žSÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ]Y\žWÛÙÎÂŸB‚œÝŽœÚ\™YÜ]Y\žSY]šXÓÙÏˆÛÛ^Ž™Ù]]Y\žSY]šXÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ]Y\žWÛY]šX×ÛÙÎÂŸB‚œÝŽœÚ\™YÜ›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÏˆÛÛ^Ž™Ù]›ÛÒÙY\\ÛÛ›™XÝ[Û“ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOž›ÛÚÙY\\—ØÛÛ›™XÝ[Û—ÛÙÎÂŸB‚œÝŽœÚ\™YÜ]Y\žU™XYÙÏˆÛÛ^Ž™Ù]]Y\žU™XYÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ]Y\žWÝ™XYÛÙÎÂŸB‚œÝŽœÚ\™YÜ]Y\žUšY]ÜÓÙÏˆÛÛ^Ž™Ù]]Y\žUšY]ÜÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ]Y\žWÝšY]Ü×ÛÙÎÂŸB‚œÝŽœÚ\™YÜ\ÙÏˆÛÛ^Ž™Ù]\ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆËËÈ›È\ÙÈÜˆÞ\Ý[HÙÜÈ\™HÚ][™ÈÝÛ‹‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ\ÛÙÎÂŸB‚œÝŽœÚ\™YÜ˜XÚÙÜ›Ý[™ØÚY[TÛÛÙÏˆÛÛ^Ž™Ù]˜XÚÙÜ›Ý[™ØÚY[TÛÛÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜˜XÚÙÜ›Ý[™ÜØÚY[WÜÛÛÛÙÎÂŸB‚œÝŽœÚ\™YÜ˜XÙSÙÏˆÛÛ^Ž™Ù]˜XÙSÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜XÙWÛÙÎÂŸB‚œÝŽœÚ\™YÜ^ÙÏˆÛÛ^Ž™Ù]^ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO^ÛÙÎÂŸB‚‚œÝŽœÚ\™YÜY]šXÓÙÏˆÛÛ^Ž™Ù]Y]šXÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO›Y]šX×ÛÙÎÂŸB‚œÝŽœÚ\™YÜ˜[œÜÜÙYY]šXÓÙÏˆÛÛ^Ž™Ù]˜[œÜÜÙYY]šXÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜[œÜÜÙYÛY]šX×ÛÙÎÂŸB‚œÝŽœÚ\™YÜ\Þ[˜Ú›Û›Ý\ÓY]šXÓÙÏˆÛÛ^Ž™Ù]\Þ[˜Ú›Û›Ý\ÓY]šXÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜\Þ[˜Ú›Û›Ý\×ÛY]šX×ÛÙÎÂŸB‚‚œÝŽœÚ\™YÜÜ[•[[Y]žTÜ[“ÙÏˆÛÛ^Ž™Ù]Ü[•[[Y]žTÜ[“ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO›Ü[[[Y]žWÜÜ[—ÛÙÎÂŸB‚œÝŽœÚ\™YÜÙ\ÜÚ[Û“ÙÏˆÛÛ^Ž™Ù]Ù\ÜÚ[Û“ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœÙ\ÜÚ[Û—ÛÙÎÂŸB‚‚œÝŽœÚ\™YÜ›ÛÒÙY\\“ÙÏˆÛÛ^Ž™Ù]›ÛÒÙY\\“ÙÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^ÜÚ\™YØÛÛ^
+NÂˆYˆ
+\Ú\™Y
+Bˆ™]\›ˆßNÂ‚ˆÚ\™YØÚÑÝX\™ØÚÌŠÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOž›ÛÚÙY\\—ÛÙÎÂŸB‚‚œÝŽœÚ\™YÜ˜[œØXÝ[ÛœÒ[™›ÓÙÏˆÛÛ^Ž™Ù]˜[œØXÝ[ÛœÒ[™›ÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜[œØXÝ[Ûœ×Ú[™›×ÛÙÎÂŸB‚‚œÝŽœÚ\™YÜ›ØÙ\ÜÛÜœÔ›Ùš[SÙÏˆÛÛ^Ž™Ù]›ØÙ\ÜÛÜœÔ›Ùš[SÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ›ØÙ\ÜÛÜœ×Ü›Ùš[WÛÙÎÂŸB‚œÝŽœÚ\™YÜš[\Þ\Ý[PØXÚSÙÏˆÛÛ^Ž™Ù]š[\Þ\Ý[PØXÚSÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO™š[\Þ\Ý[WØØXÚWÛÙÎÂŸB‚œÝŽœÚ\™YÜØš™XÝÝÜ˜YÙT]Y]YSÙÏˆÛÛ^Ž™Ù]ÌÔ]Y]YSÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœÌÜ]Y]YWÛÙÎÂŸB‚œÝŽœÚ\™YÜØš™XÝÝÜ˜YÙT]Y]YSÙÏˆÛÛ^Ž™Ù]^\™T]Y]YSÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜^\™WÜ]Y]YWÛÙÎÂŸB‚œÝŽœÚ\™YÜš[\Þ\Ý[T™XY™Y™]Ú\ÓÙÏˆÛÛ^Ž™Ù]š[\Þ\Ý[T™XY™Y™]Ú\ÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO™š[\Þ\Ý[WÜ™XYÜ™Y™]Ú\×ÛÙÎÂŸB‚œÝŽœÚ\™YÜ\Þ[˜Ú›Û›Ý\Ò[œÙ\ÙÏˆÛÛ^Ž™Ù]\Þ[˜Ú›Û›Ý\Ò[œÙ\ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜\Þ[˜Ú›Û›Ý\×Ú[œÙ\ÛÙÎÂŸB‚œÝŽœÚ\™YÜ˜XÚÝ\ÙÏˆÛÛ^Ž™Ù]˜XÚÝ\ÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜˜XÚÝ\ÛÙÎÂŸB‚œÝŽœÚ\™YÜ›Ø”ÝÜ˜YÙSÙÏˆÛÛ^Ž™Ù]›Ø”ÝÜ˜YÙSÙÊ
+HÛÛœÝžÂˆ›ÛÛ[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙÈHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ™[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙ×NÂˆYˆ
+\Ô]Y\žPÛÛ^
+
+JBˆ[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙÈHÙ]]Y\žPÛÛ^
+
+KO™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ™[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙ×NÂ‚ˆYˆ
+Y[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙÊBˆ™]\›ˆßNÂ‚ˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜›Ø—ÜÝÜ˜YÙWÛÙÎÂŸB‚œÝŽœÚ\™YÜXÙX™\™ÓY]Y]SÙÏˆÛÛ^Ž™Ù]XÙX™\™ÓY]Y]SÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOšXÙX™\™×ÛY]Y]WÛÙÎÂŸB‚œÝŽœÚ\™YÜ[SY]Y]SÙÏˆÛÛ^Ž™Ù][SY]Y]SÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO™[WÛZÙWÛY]Y]WÛÙÎÂŸB‚œÝŽœÚ\™YÜXY]\”]Y]YOˆÛÛ^Ž™Ù]XY]\”]Y]YJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO™XYÛ]\—Ü]Y]YNÂŸB‚œÝŽœÚ\™YÜYÙÜ™YØ]Y›ÛÒÙY\\“ÙÏˆÛÛ^Ž™Ù]YÙÜ™YØ]Y›ÛÒÙY\\“ÙÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊ]]^ÜÚ\™YØÛÛ^
+NÂˆYˆ
+\Ú\™Y
+Bˆ™]\›ˆßNÂ‚ˆÚ\™YØÚÑÝX\™ØÚÌŠÚ\™YO›]]^
+NÂˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËO˜YÙÜ™YØ]YÞ›ÛÚÙY\\—ÛÙÎÂŸB‚œÝŽœÚ\™YÜ™YXØ]TÝ]\ÝXÜÓÙÏˆÛÛ^Ž™Ù]™YXØ]TÝ]\ÝXÜÓÙÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂ‚ˆ™]\›ˆÚ\™YOœÞ\Ý[WÛÙÜËOœ™YXØ]WÜÝ]\ÝXÜ×ÛÙÎÂŸB‚”Þ\Ý[SÙÜÈÛÛ^Ž™Ù]Þ\Ý[SÙÜÊ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÞ\Ý[WÛÙÜÊBˆ™]\›ˆßNÂˆ™]\›ˆ
+œÚ\™YOœÞ\Ý[WÛÙÜÎÂŸB‚œÝŽ›Ü[Û˜[ÛÛ^Ž‘\Ú›Ø\™ÏˆÛÛ^Ž™Ù]\Ú›Ø\™Ê
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO™\Ú›Ø\™Û]]^
+NÂ‚ˆYˆ
+\Ú\™YO™\Ú›Ø\™ÊBˆ™]\›ˆßNÂˆ™]\›ˆÚ\™YO™\Ú›Ø\™ÎÂŸB‚‚›˜[Y\ÜXÙBžÂ‚”Ýš[™Èš[JÛÛœÝÝš[™È	ˆ^
+BžÂˆÝŽœÝš[™×ÝšY]ÈšY]Ê^
+NÂˆŽš[JšY]Ë	×‰ÊNÂˆ™]\›ˆÝš[™ÊšY]ÊNÂŸB‚ŸB‚›ÚYÛÛ^ŽœÙ]\Ú›Ø\™ÐÛÛ™šYÊÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][ÛŽŽ’Ù^\ÈÙ^\ÎÂˆÛÛ™šYËšÙ^\Ê™\Ú›Ø\™È‹Ù^\ÊNÂ‚ˆ\Ú›Ø\™È\Ú›Ø\™ÎÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÙ^HˆÙ^\ÊBˆÂˆÛÛœÝ]]È	ˆ™Yš^H™\Ú›Ø\™Ëˆˆ
+ÈÙ^H
+È‹ˆŽÂˆ\Ú›Ø\™Ëœ\ÚØ˜XÚÊÂˆÈ™\Ú›Ø\™‹ÛÛ™šYË™Ù]Ýš[™Ê™Yš^
+È™\Ú›Ø\™ŠHKˆÈ]H‹ÛÛ™šYË™Ù]Ýš[™Ê™Yš^
+È]HŠHKˆÈœ]Y\žH‹š[JÛÛ™šYË™Ù]Ýš[™Ê™Yš^
+Èœ]Y\žHŠJHKˆJNÂˆB‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO™\Ú›Ø\™Û]]^
+NÂˆYˆ
+Y\Ú›Ø\™Ë™[\J
+JBˆÚ\™YO™\Ú›Ø\™Ë™[\XÙJÝŽ›[Ý™J\Ú›Ø\™ÊJNÂˆ[ÙBˆÚ\™YO™\Ú›Ø\™Ëœ™\Ù]
+
+NÂˆBŸB‚ÛÛ\™\ÜÚ[ÛÛÙXÔˆÛÛ^Ž˜ÚÛÜÙPÛÛ\™\ÜÚ[ÛÛÙXÊÚ^™WÝ\ÜÚ^™KÝX›H\ÜÚ^™WÜ˜][ÊHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO˜ÛÛ\™\ÜÚ[Û—ØÛÙX×ÜÙ[XÝÜŠBˆÂˆÛÛœÝ^ˆ]]ÈÛÛ™šY×Û˜[YHH˜ÛÛ\™\ÜÚ[ÛˆŽÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂ‚ˆYˆ
+ÛÛ™šYËš\ÊÛÛ™šY×Û˜[YJJBˆÚ\™YO˜ÛÛ\™\ÜÚ[Û—ØÛÙX×ÜÙ[XÝÜˆHÝŽ›XZÙWÝ[š\]YOÛÛ\™\ÜÚ[ÛÛÙXÔÙ[XÝÜŠÛÛ™šYË˜ÛÛ\™\ÜÚ[ÛˆŠNÂˆ[ÙBˆÚ\™YO˜ÛÛ\™\ÜÚ[Û—ØÛÙX×ÜÙ[XÝÜˆHÝŽ›XZÙWÝ[š\]YOÛÛ\™\ÜÚ[ÛÛÙXÔÙ[XÝÜŠ
+NÂˆB‚ˆ™]\›ˆÚ\™YO˜ÛÛ\™\ÜÚ[Û—ØÛÙX×ÜÙ[XÝÜ‹O˜ÚÛÜÙJ\ÜÚ^™K\ÜÚ^™WÜ˜][ÊNÂŸB‚‚‘\ÚÔˆÛÛ^Ž™Ù]\ÚÊÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂ‚ˆ]]È\Ú×ÜÙ[XÝÜˆHÙ]\ÚÔÙ[XÝÜŠØÚÊNÂ‚ˆ™]\›ˆ\Ú×ÜÙ[XÝÜ‹O™Ù]
+˜[YJNÂŸB‚‘\ÚÔˆÛÛ^Ž™Ù]ÜÜ™X]Q\ÚÊÛÛœÝÝš[™È	ˆ˜[YK\ÚÐÜ™X]ÜˆÜ™X]ÜŠHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂ‚ˆ]]È\Ú×ÜÙ[XÝÜˆHÙ]\ÚÔÙ[XÝÜŠØÚÊNÂ‚ˆ]]È\ÚÈH\Ú×ÜÙ[XÝÜ‹OžQÙ]
+˜[YJNÂˆYˆ
+Y\ÚÊBˆÂˆ\ÚÈHÜ™X]ÜŠÙ]\ÚÜÓX\
+ØÚÊJNÂˆÛÛœÝØØ\Ý\ÚÔÙ[XÝÜˆ
+Š\Ú×ÜÙ[XÝÜ‹™Ù]
+
+JKO˜YÑ\ÚÓX\
+˜[YK\ÚÊNÂˆB‚ˆ™]\›ˆ\ÚÎÂŸB‚”ÝÜ˜YÙTÛXÞTˆÛÛ^Ž™Ù]ÝÜ˜YÙTÛXÞJÛÛœÝÝš[™È	ˆ˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂ‚ˆ]]ÈÛXÞWÜÙ[XÝÜˆHÙ]ÝÜ˜YÙTÛXÞTÙ[XÝÜŠØÚÊNÂ‚ˆ™]\›ˆÛXÞWÜÙ[XÝÜ‹O™Ù]
+˜[YJNÂŸB‚”ÝÜ˜YÙTÛXÞTˆÛÛ^Ž™Ù]ÝÜ˜YÙTÛXÞQœ›ÛQ\ÚÊÛÛœÝÝš[™È	ˆ\Ú×Û˜[YJHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂ‚ˆÛÛœÝÝŽœÝš[™ÈÝÜ˜YÙWÜÛXÞWÛ˜[YHHÝÜ˜YÙTÛXÞTÙ[XÝÜŽŽ•TÔÕÔQÑWÔÓPÖWÔ‘Q’V
+È\Ú×Û˜[YNÂˆ]]ÈÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜˆHÙ]ÝÜ˜YÙTÛXÞTÙ[XÝÜŠØÚÊNÂˆÝÜ˜YÙTÛXÞTˆÝÜ˜YÙWÜÛXÞHHÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ‹OžQÙ]
+ÝÜ˜YÙWÜÛXÞWÛ˜[YJNÂ‚ˆYˆ
+\ÝÜ˜YÙWÜÛXÞJBˆÂˆ]]È\Ú×ÜÙ[XÝÜˆHÙ]\ÚÔÙ[XÝÜŠØÚÊNÂˆ]]È\ÚÈH\Ú×ÜÙ[XÝÜ‹O™Ù]
+\Ú×Û˜[YJNÂˆ]]È›Û[YHHÝŽ›XZÙWÜÚ\™YÚ[™ÛQ\ÚÕ›Û[YOŠ—Ý›Û[YWÈˆ
+È\Ú×Û˜[YK\ÚÊNÂ‚ˆÝ]XÈÛÛœÝ]]È[Ý™WÙ˜XÝÜ—Ù›Ü—ÜÚ[™ÛWÙ\Ú×Ý›Û[YHHŒÂˆÝÜ˜YÙWÜÛXÞHHÝŽ›XZÙWÜÚ\™YÝÜ˜YÙTÛXÞOŠÝÜ˜YÙWÜÛXÞWÛ˜[YK›Û[Y\ÞÝ›Û[Y_K[Ý™WÙ˜XÝÜ—Ù›Ü—ÜÚ[™ÛWÙ\Ú×Ý›Û[YJNÂˆÛÛœÝØØ\ÝÝÜ˜YÙTÛXÞTÙ[XÝÜˆ
+ŠÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ‹™Ù]
+
+JKO˜Y
+ÝÜ˜YÙWÜÛXÞJNÂˆBˆËËÈ›ÝNˆ]\È[\Ü[È]ÝÜ˜YÙHÛXÞH[È\ÚÈÙ[XÝÜˆ
+[™›Ý™XÜ™X]H]ÛˆXXÚØ[
+BˆËËÈ™XØ]\ÙH[ˆÛÛYHXÙ\È\™H\™HÚXÚÜÈ]ÝÜ˜YÙHÛXÞHÚ[\œÈ\™HHØ[YHœ›ÛHY™™\™[X›\Ë‚ˆËËÈ
+ÙHØ[ˆ\ÜÝ[YH]X›\ÈÚ]HØ[YH\ÚØÙ][™È\™HÛˆHØ[YHÝÜ˜YÙHÛXÞJK‚‚ˆ™]\›ˆÝÜ˜YÙWÜÛXÞNÂŸB‚”ÝÜ˜YÙTÛXÞTˆÛÛ^Ž™Ù]ÜÜ™X]TÝÜ˜YÙTÛXÞJÛÛœÝÝš[™È	ˆ˜[YKÝÜ˜YÙTÛXÞPÜ™X]ÜˆÜ™X]ÜŠHÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂ‚ˆ]]ÈÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜˆHÙ]ÝÜ˜YÙTÛXÞTÙ[XÝÜŠØÚÊNÂ‚ˆ]]ÈÝÜ˜YÙWÜÛXÞHHÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ‹OžQÙ]
+˜[YJNÂˆYˆ
+\ÝÜ˜YÙWÜÛXÞJBˆÂˆÝÜ˜YÙWÜÛXÞHHÜ™X]ÜŠÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ‹O™Ù]ÛXÚY\ÓX\
+
+JNÂˆÛÛœÝØØ\ÝÝÜ˜YÙTÛXÞTÙ[XÝÜˆ
+ŠÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ‹™Ù]
+
+JKO˜Y
+ÝÜ˜YÙWÜÛXÞJNÂˆB‚ˆ™]\›ˆÝÜ˜YÙWÜÛXÞNÂŸB‚‘\ÚÜÓX\ÛÛ^Ž™Ù]\ÚÜÓX\
+
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂˆ™]\›ˆÙ]\ÚÜÓX\
+ØÚÊNÂŸB‚‘\ÚÜÓX\ÛÛ^Ž™Ù]\ÚÜÓX\
+ÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆ	ˆØÚÊHÛÛœÝžÂˆ™]\›ˆÙ]\ÚÔÙ[XÝÜŠØÚÊKO™Ù]\ÚÜÓX\
+
+NÂŸB‚”ÝÜ˜YÙTÛXÚY\ÓX\ÛÛ^Ž™Ù]ÛXÚY\ÓX\
+
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂˆ™]\›ˆÙ]ÝÜ˜YÙTÛXÞTÙ[XÝÜŠØÚÊKO™Ù]ÛXÚY\ÓX\
+
+NÂŸB‚‘\ÚÔÙ[XÝÜ”ˆÛÛ^Ž™Ù]\ÚÔÙ[XÝÜŠÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆ	ˆÊˆØÚÈ
+‹ÊHÛÛœÝÐWÔ‘TURT‘TÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+BžÂˆYˆ
+\Ú\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜŠBˆÂˆÛÛœÝ^ˆ]]ÈÛÛ™šY×Û˜[YHHœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹™\ÚÜÈŽÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆ]]È\Ú×ÜÙ[XÝÜˆHÝŽ›XZÙWÜÚ\™Y\ÚÔÙ[XÝÜŠ
+NÂˆ\Ú×ÜÙ[XÝÜ‹Oš[š]X[^™JÛÛ™šYËÛÛ™šY×Û˜[YKÚ\™YÙœ›ÛWÝ\Ê
+JNÂˆÚ\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜˆH\Ú×ÜÙ[XÝÜŽÂˆB‚ˆ™]\›ˆÚ\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜŽÂŸB‚”ÝÜ˜YÙTÛXÞTÙ[XÝÜ”ˆÛÛ^Ž™Ù]ÝÜ˜YÙTÛXÞTÙ[XÝÜŠÝŽ›ØÚ×ÙÝX\™ÝŽ›]]^ˆ	ˆØÚÊHÛÛœÝÐWÔ‘TURT‘TÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+BžÂˆYˆ
+\Ú\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜŠBˆÂˆÛÛœÝ^ˆ]]ÈÛÛ™šY×Û˜[YHHœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹œÛXÚY\ÈŽÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÙ]ÛÛ™šYÔ™YŠ
+NÂˆÚ\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜˆHÝŽ›XZÙWÜÚ\™YÝÜ˜YÙTÛXÞTÙ[XÝÜŠÛÛ™šYËÛÛ™šY×Û˜[YKÙ]\ÚÔÙ[XÝÜŠØÚÊJNÂˆB‚ˆ™]\›ˆÚ\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜŽÂŸB‚‚›ÚYÛÛ^Ž\]TÝÜ˜YÙPÛÛ™šYÝ\˜][ÛŠÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOœÝÜ˜YÙWÜÛXÚY\×Û]]^
+NÂˆÝš[™ÜÈ\ÚÜ×Ý×Ü™Z[š]ÂˆYˆ
+Ú\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜŠBˆÚ\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜ‚ˆHÚ\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜ‹O\]Qœ›ÛPÛÛ™šYÊÛÛ™šYËœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹™\ÚÜÈ‹Ú\™YÙœ›ÛWÝ\Ê
+JNÂ‚ˆYˆ
+Ú\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜŠBˆÂˆžBˆÂˆÚ\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜˆHÚ\™YO›Y\™ÙWÝ™YWÜÝÜ˜YÙWÜÛXÞWÜÙ[XÝÜ‹O\]Qœ›ÛPÛÛ™šYÊˆÛÛ™šYËœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹œÛXÚY\È‹Ú\™YO›Y\™ÙWÝ™YWÙ\Ú×ÜÙ[XÝÜ‹\ÚÜ×Ý×Ü™Z[š]
+NÂˆBˆØ]Ú
+^Ù\[Ûˆ	ˆJBˆÂˆÑ×ÑT”“ÔŠˆÚ\™YO›ÙË[ˆ\œ›Üˆ\ÈØØÝ\œ™YÚ[H™[ØY[™ÈÝÜ˜YÙHÛXÚY\ËÝÜ˜YÙHÛXÚY\ÈÙ\™H›Ý\YYˆßH‹K›Y\ÜØYÙJ
+JNÂˆBˆB‚ˆYˆ
+Y\ÚÜ×Ý×Ü™Z[š]™[\J
+JBˆÂˆÑ×ÒS‘“ÊÚ\™YO›ÙË’[š]X[^š[™È\ÚÜÎˆ
+ßJH›Üˆ[X›\È‹›]Žš›Ú[Š\ÚÜ×Ý×Ü™Z[š]‹ŠJNÂˆ]X˜\ÙPØ][ÙÎŽš[œÝ[˜ÙJ
+KšYÙÙ\”™[ØY\ÚÜÕ\ÚÊ\ÚÜ×Ý×Ü™Z[š]
+NÂˆBˆB‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YOœÝÜ˜YÙWÜÌ×ÜÙ][™ÜÊBˆÚ\™YOœÝÜ˜YÙWÜÌ×ÜÙ][™ÜËO›ØYœ›ÛPÛÛ™šYÊÛÛ™šYËÊˆÛÛ™šY×Ü™Yš^
+‹ÈœÌÈ‹Ù]Ù][™ÜÔ™YŠ
+JNÂˆB‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆYˆ
+Ú\™YOœÝÜ˜YÙWØ^\™WÜÙ][™ÜÊBˆÚ\™YOœÝÜ˜YÙWØ^\™WÜÙ][™ÜËO›ØYœ›ÛPÛÛ™šYÊÛÛ™šYËÊˆÛÛ™šY×Ü™Yš^
+‹ÈœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹™\ÚÜÈ‹Ù]Ù][™ÜÔ™YŠ
+JNÂˆB‚ŸB‚‚˜ÛÛœÝY\™ÙU™YTÙ][™ÜÈ	ˆÛÛ^Ž™Ù]Y\™ÙU™YTÙ][™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO›Y\™ÙWÝ™YWÜÙ][™ÜÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂˆY\™ÙU™YTÙ][™ÜÈ]ÜÙ][™ÜÎÂ‚ˆËËÈ™\ÜXÝÛÛ\]Xš[]HÙ][™Èœ›ÛHHY˜][›Ùš[K‚ˆËËÈš\œÝÙH\HÛÛ\]Xš[]H˜[Y\Ë[™Û›HY\ˆ\HÚ[™Ù\Èœ›ÛHHÛÛ™šYË‚ˆ]ÜÙ][™ÜË˜\PÛÛ\]Xš[]TÙ][™Ê
+
+œÙ][™ÜÊVÔÙ][™ÎŽ˜ÛÛ\]Xš[]WJNÂ‚ˆ]ÜÙ][™ÜË›ØYœ›ÛPÛÛ™šYÊ›Y\™ÙWÝ™YH‹ÛÛ™šYÊNÂˆÚ\™YO›Y\™ÙWÝ™YWÜÙ][™ÜË™[\XÙJ]ÜÙ][™ÜÊNÂˆB‚ˆ™]\›ˆ
+œÚ\™YO›Y\™ÙWÝ™YWÜÙ][™ÜÎÂŸB‚˜ÛÛœÝY\™ÙU™YTÙ][™ÜÈ	ˆÛÛ^Ž™Ù]™\XØ]YY\™ÙU™YTÙ][™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœ™\XØ]YÛY\™ÙWÝ™YWÜÙ][™ÜÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂˆY\™ÙU™YTÙ][™ÜÈ]ÜÙ][™ÜÎÂ‚ˆËËÈ™\ÜXÝÛÛ\]Xš[]HÙ][™Èœ›ÛHHY˜][›Ùš[K‚ˆËËÈš\œÝÙH\HÛÛ\]Xš[]H˜[Y\Ë[™Û›HY\ˆ\HÚ[™Ù\Èœ›ÛHHÛÛ™šYË‚ˆ]ÜÙ][™ÜË˜\PÛÛ\]Xš[]TÙ][™Ê
+
+œÙ][™ÜÊVÔÙ][™ÎŽ˜ÛÛ\]Xš[]WJNÂ‚ˆ]ÜÙ][™ÜË›ØYœ›ÛPÛÛ™šYÊ›Y\™ÙWÝ™YH‹ÛÛ™šYÊNÂˆ]ÜÙ][™ÜË›ØYœ›ÛPÛÛ™šYÊœ™\XØ]YÛY\™ÙWÝ™YH‹ÛÛ™šYÊNÂˆÚ\™YOœ™\XØ]YÛY\™ÙWÝ™YWÜÙ][™ÜË™[\XÙJ]ÜÙ][™ÜÊNÂˆB‚ˆ™]\›ˆ
+œÚ\™YOœ™\XØ]YÛY\™ÙWÝ™YWÜÙ][™ÜÎÂŸB‚˜ÛÛœÝ]X˜\ÙT™\XØ]YÙ][™ÜÈ	ˆÛÛ^Ž™Ù]]X˜\ÙT™\XØ]YÙ][™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO™]X˜\ÙWÜ™\XØ]YÜÙ][™ÜÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂˆ]X˜\ÙT™\XØ]YÙ][™ÜÈ—Ü™\XØ]YÜÙ][™ÜÎÂ‚ˆ—Ü™\XØ]YÜÙ][™ÜË›ØYœ›ÛPÛÛ™šYÊ™]X˜\ÙWÜ™\XØ]Y‹ÛÛ™šYÊNÂˆÚ\™YO™]X˜\ÙWÜ™\XØ]YÜÙ][™ÜË™[\XÙJ—Ü™\XØ]YÜÙ][™ÜÊNÂˆB‚ˆ™]\›ˆ
+œÚ\™YO™]X˜\ÙWÜ™\XØ]YÜÙ][™ÜÎÂŸB‚˜ÛÛœÝ\ÝšX]YÙ][™ÜÈ	ˆÛÛ^Ž™Ù]\ÝšX]YÙ][™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YO™\ÝšX]YÜÙ][™ÜÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂˆ\ÝšX]YÙ][™ÜÈ\ÝšX]YÜÙ][™ÜÎÂˆ\ÝšX]YÜÙ][™ÜË›ØYœ›ÛPÛÛ™šYÊ™\ÝšX]Y‹ÛÛ™šYÊNÂˆÚ\™YO™\ÝšX]YÜÙ][™ÜË™[\XÙJ\ÝšX]YÜÙ][™ÜÊNÂˆB‚ˆ™]\›ˆ
+œÚ\™YO™\ÝšX]YÜÙ][™ÜÎÂŸB‚˜ÛÛœÝÌÔÙ][™ÜÐžQ[™Ú[	ˆÛÛ^Ž™Ù]ÝÜ˜YÙTÌÔÙ][™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÝÜ˜YÙWÜÌ×ÜÙ][™ÜÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂˆÚ\™YOœÝÜ˜YÙWÜÌ×ÜÙ][™ÜË™[\XÙJ
+K›ØYœ›ÛPÛÛ™šYÊÛÛ™šYËœÌÈ‹Ù]Ù][™ÜÔ™YŠ
+JNÂˆB‚ˆ™]\›ˆ
+œÚ\™YOœÝÜ˜YÙWÜÌ×ÜÙ][™ÜÎÂŸB‚˜ÛÛœÝ^\™TÙ][™ÜÐžQ[™Ú[	ˆÛÛ^Ž™Ù]ÝÜ˜YÙP^\™TÙ][™ÜÊ
+HÛÛœÝžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+\Ú\™YOœÝÜ˜YÙWØ^\™WÜÙ][™ÜÊBˆÂˆÛÛœÝ]]È	ˆÛÛ™šYÈHÚ\™YO™Ù]ÛÛ™šYÔ™Y•Ú]ØÚÊØÚÊNÂˆÚ\™YOœÝÜ˜YÙWØ^\™WÜÙ][™ÜË™[\XÙJ
+K›ØYœ›ÛPÛÛ™šYÊÛÛ™šYËœÝÜ˜YÙWØÛÛ™šYÝ\˜][Û‹™\ÚÜÈ‹Ù]Ù][™ÜÔ™YŠ
+JNÂˆB‚ˆ™]\›ˆ
+œÚ\™YOœÝÜ˜YÙWØ^\™WÜÙ][™ÜÎÂŸB‚›ÚYÛÛ^Ž˜ÚXÚÐØ[™Q›ÜY
+ÛÛœÝÝš[™È	ˆ]X˜\ÙKÛÛœÝÝš[™È	ˆX›KÛÛœÝÚ^™WÝ	ˆÚ^™KÛÛœÝÚ^™WÝ	ˆX^ÜÚ^™WÝ×Ù›Ü
+HÛÛœÝžÂˆYˆ
+[X^ÜÚ^™WÝ×Ù›ÜÚ^™HHX^ÜÚ^™WÝ×Ù›Ü
+Bˆ™]\›ŽÂ‚ˆœÎŽœ]›Ü˜ÙWÙš[JÙ]›YÜÔ]
+
+H
+È™›Ü˜ÙWÙ›ÜÝX›HŠNÂˆ›ÛÛ›Ü˜ÙWÙš[WÙ^\ÝÈHœÎŽ™^\ÝÊ›Ü˜ÙWÙš[JNÂ‚ˆYˆ
+›Ü˜ÙWÙš[WÙ^\ÝÊBˆÂˆžBˆÂˆœÎŽœ™[[Ý™J›Ü˜ÙWÙš[JNÂˆ™]\›ŽÂˆBˆØ]Ú
+‹‹ŠBˆÂˆËËÈ\Ù\ˆÚÝ[™XÜ™X]H›Ü˜ÙHš[HÛˆXXÚ›Ü]ÚÝ[‰Ý™H›ÝXÝYˆžSÙÐÝ\œ™[^Ù\[ÛŠ‘›ÜX›HÚXÚÈ‹Ø[‰Ý™[[Ý™H›Ü˜ÙHš[HÈ[˜X›HX›HÜˆ\][Ûˆ›ÜŠNÂˆBˆB‚ˆÝš[™ÈÚ^™WÜÝˆH›Ü›X]™XYX›TÚ^™UÚ]XÚ[X[ÝY™š^
+Ú^™JNÂˆÝš[™ÈX^ÜÚ^™WÝ×Ù›ÜÜÝˆH›Ü›X]™XYX›TÚ^™UÚ]XÚ[X[ÝY™š^
+X^ÜÚ^™WÝ×Ù›Ü
+NÂˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•P“WÔÒV‘WÑVÑQQ×ÓPVÑ“ÔÔÒV‘WÓSRUˆ•X›HÜˆ\][Ûˆ[ˆßKžßHØ\È›Ý›ÜY—”™X\ÛÛŽ—ˆ‚ˆŒKˆÚ^™H
+ßJH\ÈÜ™X]\ˆ[ˆX^ÖÝX›KÜ\][Û—WÜÚ^™WÝ×Ù›Ü
+ßJWˆ‚ˆŒ‹ˆš[H	ÞßIÈ[[™YÈ›Ü˜ÙH“ÔßWˆ‚ˆ’ÝÈÈš^\Î—ˆ‚ˆŒKˆZ]\ˆ[˜Ü™X\ÙH
+ÜˆÙ]È™\›ÊHX^ÖÝX›KÜ\][Û—WÜÚ^™WÝ×Ù›Ü[ˆÙ\™\ˆÛÛ™šY×ˆ‚ˆŒ‹ˆZ]\ˆ\ÜÈHšYÙÙ\ˆ
+ÜˆÙ]È™\›ÊHX^ÖÝX›KÜ\][Û—WÜÚ^™WÝ×Ù›Ü›ÝYÚ]Y\žHÙ][™Ü×ˆ‚ˆŒËˆZ]\ˆÜ™X]H›Ü˜Ú[™Èš[HßH[™XZÙHÝ\™H]ÛXÚÒÝ\ÙH\ÈÜš]H\›Z\ÜÚ[Ûˆ›Üˆ]—ˆ‚ˆ‘^[\N—œÝYÈÝXÚ	ÞßIÈ	‰ˆÝYÈÚ[Ùˆ	ÞßIÈ‹ˆ˜XÚÔ][ÝRY“™YY
+]X˜\ÙJK˜XÚÔ][ÝRY“™YY
+X›JKˆÚ^™WÜÝ‹X^ÜÚ^™WÝ×Ù›ÜÜÝ‹ˆ›Ü˜ÙWÙš[KœÝš[™Ê
+K›Ü˜ÙWÙš[WÙ^\ÝÈÈ™^\ÝÈ]›ÝÜš]XX›H
+ÛÝ[›Ý™H™[[Ý™Y
+Hˆˆ™Ù\Û‰Ý^\Ý‹ˆ›Ü˜ÙWÙš[KœÝš[™Ê
+Kˆ›Ü˜ÙWÙš[KœÝš[™Ê
+K›Ü˜ÙWÙš[KœÝš[™Ê
+JNÂŸB‚‚›ÚYÛÛ^ŽœÙ]X^X›TÚ^™UÑ›Ü
+Ú^™WÝX^ÜÚ^™JBžÂˆËÈ\È[š]X[^™Y]Ù\™\ˆÝ\\[™\]Y]ÛÛ™šYÈ™[ØYˆÚ\™YO›X^ÝX›WÜÚ^™WÝ×Ù›ÜœÝÜ™JX^ÜÚ^™KÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]X^X›TÚ^™UÑ›Ü
+
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO›X^ÝX›WÜÚ^™WÝ×Ù›Ü›ØY
+
+NÂŸB‚›ÚYÛÛ^Ž˜ÚXÚÕX›PØ[™Q›ÜY
+ÛÛœÝÝš[™È	ˆ]X˜\ÙKÛÛœÝÝš[™È	ˆX›KÛÛœÝÚ^™WÝ	ˆX›WÜÚ^™JHÛÛœÝžÂˆÚ^™WÝX^ÝX›WÜÚ^™WÝ×Ù›ÜHÚ\™YO›X^ÝX›WÜÚ^™WÝ×Ù›Ü›ØY
+
+NÂ‚ˆÚXÚÐØ[™Q›ÜY
+]X˜\ÙKX›KX›WÜÚ^™KX^ÝX›WÜÚ^™WÝ×Ù›Ü
+NÂŸB‚›ÚYÛÛ^Ž˜ÚXÚÕX›PØ[™Q›ÜY
+ÛÛœÝÝš[™È	ˆ]X˜\ÙKÛÛœÝÝš[™È	ˆX›KÛÛœÝÚ^™WÝ	ˆX›WÜÚ^™KÛÛœÝÚ^™WÝ	ˆX^ÝX›WÜÚ^™WÝ×Ù›Ü
+HÛÛœÝžÂˆÚXÚÐØ[™Q›ÜY
+]X˜\ÙKX›KX›WÜÚ^™KX^ÝX›WÜÚ^™WÝ×Ù›Ü
+NÂŸB‚›ÚYÛÛ^ŽœÙ]X^\][Û”Ú^™UÑ›Ü
+Ú^™WÝX^ÜÚ^™JBžÂˆËÈ\È[š]X[^™Y]Ù\™\ˆÝ\\[™\]Y]ÛÛ™šYÈ™[ØYˆÚ\™YO›X^Ü\][Û—ÜÚ^™WÝ×Ù›ÜœÝÜ™JX^ÜÚ^™KÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]X^\][Û”Ú^™UÑ›Ü
+
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO›X^Ü\][Û—ÜÚ^™WÝ×Ù›Ü›ØY
+
+NÂŸB‚›ÚYÛÛ^Ž˜ÚXÚÔ\][ÛØ[™Q›ÜY
+ÛÛœÝÝš[™È	ˆ]X˜\ÙKÛÛœÝÝš[™È	ˆX›KÛÛœÝÚ^™WÝ	ˆ\][Û—ÜÚ^™JHÛÛœÝžÂˆÚ^™WÝX^Ü\][Û—ÜÚ^™WÝ×Ù›ÜHÚ\™YO›X^Ü\][Û—ÜÚ^™WÝ×Ù›Ü›ØY
+
+NÂ‚ˆÚXÚÐØ[™Q›ÜY
+]X˜\ÙKX›K\][Û—ÜÚ^™KX^Ü\][Û—ÜÚ^™WÝ×Ù›Ü
+NÂŸB‚›ÚYÛÛ^Ž˜ÚXÚÔ\][ÛØ[™Q›ÜY
+ÛÛœÝÝš[™È	ˆ]X˜\ÙKÛÛœÝÝš[™È	ˆX›KÛÛœÝÚ^™WÝ	ˆ\][Û—ÜÚ^™KÛÛœÝÚ^™WÝ	ˆX^Ü\][Û—ÜÚ^™WÝ×Ù›Ü
+HÛÛœÝžÂˆÚXÚÐØ[™Q›ÜY
+]X˜\ÙKX›K\][Û—ÜÚ^™KX^Ü\][Û—ÜÚ^™WÝ×Ù›Ü
+NÂŸB‚›ÚYÛÛ^ŽœÙ]]]][ÛœÕ\ÙP[˜[^™\“Ý™\œšYJÝŽ›Ü[Û˜[›ÛÛˆ˜[YJBžÂˆ[Ý[˜ÛÙYH]˜[YKš\×Ý˜[YJ
+HÈ[ÝËL_Hˆ
+
+˜[YHÈ[ÝÌ_Hˆ[ÝÌJNÂˆÚ\™YO›]]][Ûœ×Ý\ÙWØ[˜[^™\—ÛÝ™\œšYKœÝÜ™J[˜ÛÙYÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸB‚œÝŽ›Ü[Û˜[›ÛÛˆÛÛ^Ž™Ù]]]][ÛœÕ\ÙP[˜[^™\“Ý™\œšYJ
+HÛÛœÝžÂˆ[Ý[˜ÛÙYHÚ\™YO›]]][Ûœ×Ý\ÙWØ[˜[^™\—ÛÝ™\œšYK›ØY
+ÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂˆYˆ
+[˜ÛÙY
+Bˆ™]\›ˆÝŽ›[ÜÂˆ™]\›ˆ[˜ÛÙYOHÂŸB‚›ÚYÛÛ^ŽœÙ]ÛÛ™šYÔ™[ØY\’[\˜[
+Ú^™WÝ˜[YWÛ\ÊBžÂˆÚ\™YO˜ÛÛ™šY×Ü™[ØYÚ[\˜[Û\ËœÝÜ™J˜[YWÛ\ËÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸB‚œÚ^™WÝÛÛ^Ž™Ù]ÛÛ™šYÔ™[ØY\’[\˜[
+
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO˜ÛÛ™šY×Ü™[ØYÚ[\˜[Û\Ë›ØY
+ÝŽ›Y[[ÜžWÛÜ™\—Ü™[^Y
+NÂŸB‚’[œ]›Ü›X]ˆÛÛ^Ž™Ù][œ]›Ü›X]
+ˆÛÛœÝÝš[™È	ˆ˜[YKˆ™XYY™™\ˆ	ˆY‹ˆÛÛœÝ›ØÚÈ	ˆØ[\KˆR[X^Ø›ØÚ×ÜÚ^™KˆÛÛœÝÝŽ›Ü[Û˜[›Ü›X]Ù][™ÜÏˆ	ˆ›Ü›X]ÜÙ][™ÜËˆÛÛœÝÝŽ›Ü[Û˜[R[ˆ	ˆX^Ø›ØÚ×ÜÚ^™WØž]\ËˆÛÛœÝÝŽ›Ü[Û˜[R[ˆ	ˆZ[—Ø›ØÚ×ÜÚ^™WÜ›ÝÜËˆÛÛœÝÝŽ›Ü[Û˜[R[ˆ	ˆZ[—Ø›ØÚ×ÜÚ^™WØž]\ÊHÛÛœÝžÂˆ™]\›ˆ›Ü›X]˜XÝÜžNŽš[œÝ[˜ÙJ
+K™Ù][œ]
+ˆ˜[YKˆY‹ˆØ[\KˆÚ\™YÙœ›ÛWÝ\Ê
+KˆX^Ø›ØÚ×ÜÚ^™Kˆ›Ü›X]ÜÙ][™ÜËˆ[‹ˆ[‹ˆ˜[ÙKˆÛÛ\™\ÜÚ[Û“Y]ÙŽ“›Û™Kˆ˜[ÙKˆX^Ø›ØÚ×ÜÚ^™WØž]\ËˆZ[—Ø›ØÚ×ÜÚ^™WÜ›ÝÜËˆZ[—Ø›ØÚ×ÜÚ^™WØž]\ÊNÂŸB‚“Ý]]›Ü›X]ˆÛÛ^Ž™Ù]Ý]]›Ü›X]
+ÛÛœÝÝš[™È	ˆ˜[YKÜš]PY™™\ˆ	ˆY‹ÛÛœÝ›ØÚÈ	ˆØ[\KÛÛœÝÝŽ›Ü[Û˜[›Ü›X]Ù][™ÜÏˆ	ˆ›Ü›X]ÜÙ][™ÜÊHÛÛœÝžÂˆ™]\›ˆ›Ü›X]˜XÝÜžNŽš[œÝ[˜ÙJ
+K™Ù]Ý]]›Ü›X]
+˜[YKY‹Ø[\KÚ\™YÙœ›ÛWÝ\Ê
+K›Ü›X]ÜÙ][™ÜÊNÂŸB‚“Ý]]›Ü›X]ˆÛÛ^Ž™Ù]Ý]]›Ü›X]\˜[[Y”ÜÜÚX›JÛÛœÝÝš[™È	ˆ˜[YKÜš]PY™™\ˆ	ˆY‹ÛÛœÝ›ØÚÈ	ˆØ[\KÛÛœÝÝŽ›Ü[Û˜[›Ü›X]Ù][™ÜÏˆ	ˆ›Ü›X]ÜÙ][™ÜÊHÛÛœÝžÂˆ™]\›ˆ›Ü›X]˜XÝÜžNŽš[œÝ[˜ÙJ
+K™Ù]Ý]]›Ü›X]\˜[[Y”ÜÜÚX›J˜[YKY‹Ø[\KÚ\™YÙœ›ÛWÝ\Ê
+K›Ü›X]ÜÙ][™ÜÊNÂŸB‚‚™ÝX›HÛÛ^Ž™Ù]\[YTÙXÛÛ™Ê
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO\[YWÝØ]Ú™[\ÙYÙXÛÛ™Ê
+NÂŸB‚‚›ÚYÛÛ^ŽœÙ]ÛÛ™šYÔ™[ØYØ[˜XÚÊÛÛ™šYÔ™[ØYØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆËËÈ\È[š]X[^™Y]Ù\™\ˆÝ\\ÛÈØÚÈ\Û‰Ý™\]Z\™YˆÝ\Ú\ÙH\ÙH]]^‚ˆÚ\™YO˜ÛÛ™šY×Ü™[ØYØØ[˜XÚÈHÝŽ›[Ý™JØ[˜XÚÊNÂŸB‚›ÚYÛÛ^Žœ™[ØYÛÛ™šYÊ
+HÛÛœÝžÂˆËËÈ\ÙH]]^YˆØ[˜XÚÈX^H™HÚ[™ÙYY\ˆÝ\\‚ˆYˆ
+\Ú\™YO˜ÛÛ™šY×Ü™[ØYØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹Ø[‰Ý™[ØYÛÛ™šYÈ™XØ]\ÙHÛÛ™šY×Ü™[ØYØØ[˜XÚÈ\È›ÝÙ]ˆŠNÂ‚ˆÚ\™YO˜ÛÛ™šY×Ü™[ØYØØ[˜XÚÊ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\Ù\™\œÐØ[˜XÚÊÝ\ÝÜÙ\™\œÐØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆËËÈ\È[š]X[^™Y]Ù\™\ˆÝ\\ÛÈØÚÈ\Û‰Ý™\]Z\™YˆÝ\Ú\ÙH\ÙH]]^‚ˆÚ\™YOœÝ\ÜÙ\™\œ×ØØ[˜XÚÈHÝŽ›[Ý™JØ[˜XÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]ÝÜÙ\™\œÐØ[˜XÚÊÝ\ÝÜÙ\™\œÐØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆËËÈ\È[š]X[^™Y]Ù\™\ˆÝ\\ÛÈØÚÈ\Û‰Ý™\]Z\™YˆÝ\Ú\ÙH\ÙH]]^‚ˆÚ\™YOœÝÜÜÙ\™\œ×ØØ[˜XÚÈHÝŽ›[Ý™JØ[˜XÚÊNÂŸB‚›ÚYÛÛ^ŽœÝ\Ù\™\œÊÛÛœÝÙ\™\•\H	ˆÙ\™\—Ý\JHÛÛœÝžÂˆËËÈ\ÙH]]^YˆØ[˜XÚÈX^H™HÚ[™ÙYY\ˆÝ\\‚ˆYˆ
+\Ú\™YOœÝ\ÜÙ\™\œ×ØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹Ø[‰ÝÝ\Ù\™\œÈ™XØ]\ÙHÝ\ÜÙ\™\œ×ØØ[˜XÚÈ\È›ÝÙ]ˆŠNÂ‚ˆÚ\™YOœÝ\ÜÙ\™\œ×ØØ[˜XÚÊÙ\™\—Ý\JNÂŸB‚›ÚYÛÛ^ŽœÝÜÙ\™\œÊÛÛœÝÙ\™\•\H	ˆÙ\™\—Ý\JHÛÛœÝžÂˆËËÈ\ÙH]]^YˆØ[˜XÚÈX^H™HÚ[™ÙYY\ˆÝ\\‚ˆYˆ
+\Ú\™YOœÝÜÜÙ\™\œ×ØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹Ø[‰ÝÝÜÙ\™\œÈ™XØ]\ÙHÝÜÜÙ\™\œ×ØØ[˜XÚÈ\È›ÝÙ]ˆŠNÂ‚ˆÚ\™YOœÝÜÜÙ\™\œ×ØØ[˜XÚÊÙ\™\—Ý\JNÂŸB‚‚›ÚYÛÛ^ŽœÚ]ÝÛŠ
+HÐWÓ“×Õ‘PQÔÐQ‘UWÐSSTÒTÂžÂˆÚ\™YOœÚ]ÝÛŠ
+NÂŸB‚‚ÛÛ^Ž\XØ][Û•\HÛÛ^Ž™Ù]\XØ][Û•\J
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO˜\XØ][Û—Ý\NÂŸB‚›ÚYÛÛ^ŽœÙ]\XØ][Û•\J\XØ][Û•\H\JBžÂˆËËÈØÚÈ\Û‰Ý™\]Z\™Y[ÝHÚÝ[Ù]]]Ý\ˆÚ\™YO˜\XØ][Û—Ý\HH\NÂ‚ˆYˆ
+\HOH\XØ][Û•\NŽ“ÐÐSˆ\HOH\XØ][Û•\NŽ”ÑT•‘T‚ˆ\HOH\XØ][Û•\NŽ’ÑQTT‚ˆ\HOH\XØ][Û•\NŽ‘TÒÔÊBˆÂˆËËÈ\ÙHHÛÛ^	ÜÈÝÛˆÛÛ™šYÈÚ[ˆ]\È™Y[ˆÙ]
+K™ËˆÙY\\‹X™[˜ÚÚXÚ[œÂˆËËÈÚ]Ý]HØÛÎŽ•][Ž\XØ][ÛŠK˜[[™È˜XÚÈÈHÛØ˜[\XØ][ÛˆÛÛ™šYË‚ˆÚ\™YOœÙ\™\—ÜÙ][™ÜË›ØYÙ][™ÜÑœ›ÛPÛÛ™šYÊÙ]ÛÛ™šYÔ™YŠ
+JNÂ‚ˆËËÈ[š]X[^™HHX^ÊˆZ\œ›ÜœÈœ›ÛHÙ\™\—ÜÙ][™ÜÂˆËËÈ\È[œÝ\™\È[Z]È\™H[™›Ü˜ÙY]™[ˆÚ[ˆÛÛ™šYÔ™[ØY\ˆ\È›Ý[›š[™È
+K™Ë‹ÛXÚÚÝ\ÙK[ØØ[
+BˆÚ\™YO›X^ÝX›WÜÚ^™WÝ×Ù›ÜHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^ÝX›WÜÚ^™WÝ×Ù›ÜNÂˆÚ\™YO›X^Ü\][Û—ÜÚ^™WÝ×Ù›ÜHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü\][Û—ÜÚ^™WÝ×Ù›ÜNÂˆÚ\™YO›X^Ü\Û[WÝ×ÝØ\›ˆHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü\Û[WÝ×ÝØ\›—NÂˆÙYš[™HS’UPSV‘WÑS•UWÓSRUÕÒUÕÐT“’S‘Ê[˜[YKS˜[YKØ\›—ÙY˜][Ø\›—ÜÙ][™ËØ\›—ÜÙ][™×Û˜[YJHˆÚ\™YO›X^ÈÈÙ[˜[YHÈ×Û[WÝ×ÝØ\›ˆHÚ\™YOœÙ\™\—ÜÙ][™ÜË™Ù]
+Ø\›—ÜÙ][™×Û˜[YJKœØY™QÙ]R[Š
+NÂˆTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕÐT“’S‘ÊS’UPSV‘WÑS•UWÓSRUÕÒUÕÐT“’S‘ÊBˆÝ[™YˆS’UPSV‘WÑS•UWÓSRUÕÒUÕÐT“’S‘ÂˆÙYš[™HS’UPSV‘WÑS•UWÓSRUÕÒUÕ“ÕÊ[˜[YKS˜[YK›Ý×ÙY˜][›Ý×ÜÙ][™Ë›Ý×ÜÙ][™×Û˜[YJHˆÚ\™YO›X^ÈÈÙ[˜[YHÈ×Û[WÝ×Ý›ÝÈHÚ\™YOœÙ\™\—ÜÙ][™ÜË™Ù]
+›Ý×ÜÙ][™×Û˜[YJKœØY™QÙ]R[Š
+NÂˆTWÑ“Ô—ÐÓÓ•VÓSRUQÑS•UQT×ÕÒUÕ“ÕÊS’UPSV‘WÑS•UWÓSRUÕÒUÕ“ÕÊBˆÝ[™YˆS’UPSV‘WÑS•UWÓSRUÕÒUÕ“ÕÂˆBŸB‚˜›ÛÛÛÛ^ŽœÚÝ[™\ÝšXÝ\Ù\”]Y\žTÌÐÜ™Y[X[Ê›ÛÛ[Ý×ÜÙ\™\—ØÜ™Y[X[×Ú[—Ý\Ù\—Ü]Y\šY\ÊHÛÛœÝžÂˆËËÈÛ›HHÙ\™\ˆ[œÈ[\ÝY\Ù\ˆÔSYØZ[œÝÚ\™Y[™œ˜\ÝXÝ\™Kˆ[ˆÛXÚÚÝ\ÙK[ØØ[BˆËËÈ\Ù\ˆ\ÈHÜ\˜]Ü‹ÛÈÙ\™\‹[X[˜YÙYÜ™Y[X[È
+K™Ëˆ[ˆ[œÝ[˜ÙH›Ùš[JH\™HZ\œÈÈ\ÙK‚ˆYˆ
+Ù]\XØ][Û•\J
+HOH\XØ][Û•\NŽ”ÑT•‘TŠBˆ™]\›ˆ˜[ÙNÂ‚ˆ™]\›ˆX[Ý×ÜÙ\™\—ØÜ™Y[X[×Ú[—Ý\Ù\—Ü]Y\šY\ÎÂŸB‚˜›ÛÛÛÛ^ŽœÚÝ[™\ÝšXÝ\Ù\”]Y\žTÌÐÜ™Y[X[Ê
+HÛÛœÝžÂˆËËÈHÙ\ÜÚ[ÛˆÙ][™ËÛÈH\ÝYYZ[š\Ý˜]]™HÛY[Ø[ˆ[˜X›H]›Üˆ]ÈÝÛˆÜ\˜][ÛœÈÚ[HBˆËËÈÙ][™ÜÈÛÛœÝ˜Z[ÙY\È]\ØX›Y›Üˆ[\ÝY\Ù\œË‚ˆ™]\›ˆÚÝ[™\ÝšXÝ\Ù\”]Y\žTÌÐÜ™Y[X[ÊÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽœÌ×Ø[Ý×ÜÙ\™\—ØÜ™Y[X[×Ú[—Ý\Ù\—Ü]Y\šY\×JNÂŸB‚›ÚYÛÛ^ŽœÙ]Y˜][›Ùš[\ÊÛÛœÝØÛÎŽ•][ŽXœÝ˜XÝÛÛ™šYÝ\˜][Ûˆ	ˆÛÛ™šYÊBžÂˆÚ\™YO™Y˜][Ü›Ùš[WÛ˜[YHHÛÛ™šYË™Ù]Ýš[™Ê™Y˜][Ü›Ùš[H‹™Y˜][ŠNÂˆÙ]XØÙ\ÜÐÛÛ›Û
+
+KœÙ]Y˜][›Ùš[S˜[YJÚ\™YO™Y˜][Ü›Ùš[WÛ˜[YJNÂ‚ˆÚ\™YOœÞ\Ý[WÜ›Ùš[WÛ˜[YHHÛÛ™šYË™Ù]Ýš[™ÊœÞ\Ý[WÜ›Ùš[H‹Ú\™YO™Y˜][Ü›Ùš[WÛ˜[YJNÂ‚ˆËËÈÛ‰ÝÚXÚÈ›ÜˆÛÛœÝ˜Z[ÈÛˆš\œÝØYˆ\ÈXZÙ\ÈHY˜][›Ùš[HÛÛœÚ\Ý[Ú]Ý\ˆ\Ù\œËÚ\™BˆËËÈHY˜][˜[YHÙ][ˆHÛÛ™šYÈZYÚ™HÝ]ÚYHÙˆHÛÛœÝ˜Z[È˜[™ÙBˆËËÈ]XZÙ\È]ÜÜÚX›HÈÚ[™ÙHH˜[YHÙˆ^\š[Y[[Ù][™ÜÈÚ][Ý×Ù™X]\™WÝY\˜OH‚ˆ›ÛÛÚXÚ×ØÛÛœÝ˜Z[ÈH˜[ÙNÂˆÙ]Ý\œ™[›Ùš[JÚ\™YOœÞ\Ý[WÜ›Ùš[WÛ˜[YKÚXÚ×ØÛÛœÝ˜Z[ÊNÂ‚ˆ\TÙ][™ÜÔ]Z\šÜÊ
+œÙ][™ÜËÙ]ÙÙÙ\Š”Ù][™ÜÔ]Z\šÜÈŠJNÂˆÔÙ][™ÜÔØ[š]PÚXÚÐÛ[\
+
+œÙ][™ÜËÙ]ÙÙÙ\Š”Ù][™ÜÔØ[š]HŠJNÂ‚ˆXZÙP˜XÚÙÜ›Ý[™ÛÛ^
+ÛÛ™šYÊNÂ‚ˆÚ\™YO˜Y™™\—Ü›Ùš[WÛ˜[YHHÛÛ™šYË™Ù]Ýš[™Ê˜Y™™\—Ü›Ùš[H‹Ú\™YOœÞ\Ý[WÜ›Ùš[WÛ˜[YJNÂˆY™™\—ØÛÛ^HÛÛ^Ž˜Ü™X]PÛÜJÚ\™YÙœ›ÛWÝ\Ê
+JNÂˆY™™\—ØÛÛ^OœÙ]Ý\œ™[›Ùš[JÚ\™YO˜Y™™\—Ü›Ùš[WÛ˜[YJNÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]Y˜][›Ùš[S˜[YJ
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO™Y˜][Ü›Ùš[WÛ˜[YNÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]Þ\Ý[T›Ùš[S˜[YJ
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœÞ\Ý[WÜ›Ùš[WÛ˜[YNÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]›Ü›X]ØÚ[XT]
+
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO™›Ü›X]ÜØÚ[XWÜ]ÂŸB‚›ÚYÛÛ^ŽœÙ]›Ü›X]ØÚ[XT]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÚ\™YO™›Ü›X]ÜØÚ[XWÜ]H]ÂŸB‚”Ýš[™ÈÛÛ^Ž™Ù]ÛÛÙÛT›ÝÜÔ]
+
+HÛÛœÝžÂˆ™]\›ˆÚ\™YO™ÛÛÙÛWÜ›ÝÜ×Ü]ÂŸB‚›ÚYÛÛ^ŽœÙ]ÛÛÙÛT›ÝÜÔ]
+ÛÛœÝÝš[™È	ˆ]
+BžÂˆÚ\™YO™ÛÛÙÛWÜ›ÝÜ×Ü]H]ÂŸB‚œÝŽœZ\ÛÛ^Ž”Ø[\P›ØÚÐØXÚH
+‹ÝŽ[š\]YWÛØÚÏÝŽ›]]^ˆÛÛ^Ž™Ù]Ø[\P›ØÚÐØXÚJ
+HÛÛœÝžÂˆÚ\ÜÙ\
+\Ô]Y\žPÛÛ^
+
+JNÂˆ™]\›ˆÝŽ›XZÙWÜZ\Š	™Ù]]Y\žPÛÛ^
+
+KOœØ[\WØ›ØÚ×ØØXÚKÝŽ[š\]YWÛØÚÊÙ]]Y\žPÛÛ^
+
+KOœØ[\WØ›ØÚ×ØØXÚWÛ]]^
+JNÂŸB‚”]Y\žSY]Y]PØXÚTˆÛÛ^Ž™Ù]]Y\žSY]Y]PØXÚJ
+HÛÛœÝžÂˆÚ\ÜÙ\
+\Ô]Y\žPÛÛ^
+
+JNÂˆ™]\›ˆÙ]]Y\žPÛÛ^
+
+KOœ]Y\žWÛY]Y]WØØXÚK›ØÚÊ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]]Y\žSY]Y]PØXÚJÛÛœÝ]Y\žSY]Y]PØXÚTˆ	ˆ]Y\žWÛY]Y]WØØXÚWÊBžÂˆ]Y\žWÛY]Y]WØØXÚHH]Y\žWÛY]Y]WØØXÚWÎÂŸB‚˜›ÛÛÛÛ^Žš\Ô]Y\žT\˜[Y]\œÊ
+HÛÛœÝžÂˆ™]\›ˆ\]Y\žWÜ\˜[Y]\œË™[\J
+NÂŸB‚‚˜ÛÛœÝ˜[YUÓ˜[YSX\	ˆÛÛ^Ž™Ù]]Y\žT\˜[Y]\œÊ
+HÛÛœÝžÂˆ™]\›ˆ]Y\žWÜ\˜[Y]\œÎÂŸB‚‚›ÚYÛÛ^ŽœÙ]]Y\žT\˜[Y]\ŠÛÛœÝÝš[™È	ˆ˜[YKÛÛœÝÝš[™È	ˆ˜[YJBžÂˆYˆ
+\]Y\žWÜ\˜[Y]\œË™[\XÙJ˜[YK˜[YJKœÙXÛÛ™
+Bˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽQÐT‘ÕSQS•Ë‘\XØ]H˜[YHßHÙˆ]Y\žH\˜[Y]\ˆ‹˜XÚÔ][ÝJ˜[YJJNÂŸB‚›ÚYÛÛ^Ž˜Y]Y\žT\˜[Y]\œÊÛÛœÝ˜[YUÓ˜[YSX\	ˆ\˜[Y]\œÊBžÂˆ›Üˆ
+ÛÛœÝ]]È	ˆÛ˜[YK˜[YWHˆ\˜[Y]\œÊBˆ]Y\žWÜ\˜[Y]\œËš[œÙ\ÛÜ—Ø\ÜÚYÛŠ˜[YK˜[YJNÂŸB‚‚’RÜÝÛÛ^ˆ	ˆÛÛ^Ž™Ù]ÜÝÛÛ^
+
+BžÂˆ™]\›ˆÜÝØÛÛ^ÂŸB‚‚˜ÛÛœÝRÜÝÛÛ^ˆ	ˆÛÛ^Ž™Ù]ÜÝÛÛ^
+
+HÛÛœÝžÂˆ™]\›ˆÜÝØÛÛ^ÂŸB‚‚œÝŽœÚ\™YÜXÝ[Û“ØÚÜÓX[˜YÙ\ˆÛÛ^Ž™Ù]XÝ[Û“ØÚÜÓX[˜YÙ\Š
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YO˜XÝ[Û—ÛØÚÜ×ÛX[˜YÙ\—Ú[š]X[^™YÉ—HÂˆÚ\™YO˜XÝ[Û—ÛØÚÜ×ÛX[˜YÙ\ˆHÝŽ›XZÙWÜÚ\™YXÝ[Û“ØÚÜÓX[˜YÙ\ŠÚ\™YÙœ›ÛWÝ\Ê
+JNÂˆJNÂ‚ˆ™]\›ˆÚ\™YO˜XÝ[Û—ÛØÚÜ×ÛX[˜YÙ\ŽÂŸB‚‚›ÚYÛÛ^ŽœÙ]^\›˜[X›\Ò[š]X[^™\Š^\›˜[X›\Ò[š]X[^™\ˆ	‰ˆ[š]X[^™\ŠBžÂˆYˆ
+^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘^\›˜[X›\È[š]X[^™\ˆ\È[™XYHÙ]ŠNÂ‚ˆ^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÈHÝŽ›[Ý™J[š]X[^™\ŠNÂŸB‚›ÚYÛÛ^Žš[š]X[^™Q^\›˜[X›\ÒY”Ù]
+
+BžÂˆYˆ
+^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÊBˆÂˆ^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÊÚ\™YÙœ›ÛWÝ\Ê
+JNÂˆËËÈ™\Ù]Ø[˜XÚÂˆ^\›˜[ÝX›\×Ú[š]X[^™\—ØØ[˜XÚÈHßNÂˆBŸB‚›ÚYÛÛ^ŽœÙ]]Y\žT[‘\Ù\šX[^˜][ÛØ[˜XÚÊ]Y\žT[‘\Ù\šX[^˜][ÛØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆ]Y\žWÜ[—Ù\Ù\šX[^˜][Û—ØØ[˜XÚÈHÝŽ›[Ý™JØ[˜XÚÊNÂŸB‚œÝŽœÚ\™YÜ]Y\žT[[™Ù]ÏˆÛÛ^Ž™Ù]\Ù\šX[^™Y]Y\žT[Š
+BžÂˆYˆ
+\]Y\žWÜ[—Ù\Ù\šX[^˜][Û—ØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹”]Y\žH[ˆ\Ù\šX[^˜][ÛˆØ[˜XÚÈ\È›ÝÙ]ŠNÂ‚ˆ™]\›ˆ]Y\žWÜ[—Ù\Ù\šX[^˜][Û—ØØ[˜XÚÊ
+NÂŸB‚›ÚYÛÛ^ŽœÙ][œ][š]X[^™\Š[œ][š]X[^™\ˆ	‰ˆ[š]X[^™\ŠBžÂˆYˆ
+[œ]Ú[š]X[^™\—ØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[œ][š]X[^™\ˆ\È[™XYHÙ]ŠNÂ‚ˆ[œ]Ú[š]X[^™\—ØØ[˜XÚÈHÝŽ›[Ý™J[š]X[^™\ŠNÂŸB‚‚›ÚYÛÛ^Žš[š]X[^™R[œ]
+ÛÛœÝÝÜ˜YÙTˆ	ˆ[œ]ÜÝÜ˜YÙJBžÂˆYˆ
+Z[œ]Ú[š]X[^™\—ØØ[˜XÚÊBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[œ][š]X[^™\ˆ\È›ÝÙ]ŠNÂ‚ˆ[œ]Ú[š]X[^™\—ØØ[˜XÚÊÚ\™YÙœ›ÛWÝ\Ê
+K[œ]ÜÝÜ˜YÙJNÂˆËËÈ™\Ù]Ø[˜XÚÂˆ[œ]Ú[š]X[^™\—ØØ[˜XÚÈHßNÂŸB‚‚›ÚYÛÛ^ŽœÙ][œ]›ØÚÜÔ™XY\Ø[˜XÚÊ[œ]›ØÚÜÔ™XY\ˆ	‰ˆ™XY\ŠBžÂˆYˆ
+[œ]Ø›ØÚÜ×Ü™XY\ŠBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹’[œ]›ØÚÜÈ™XY\ˆ\È[™XYHÙ]ŠNÂ‚ˆ[œ]Ø›ØÚÜ×Ü™XY\ˆHÝŽ›[Ý™J™XY\ŠNÂŸB‚‚’[œ]›ØÚÜÔ™XY\ˆÛÛ^Ž™Ù][œ]›ØÚÜÔ™XY\Ø[˜XÚÊ
+HÛÛœÝžÂˆ™]\›ˆ[œ]Ø›ØÚÜ×Ü™XY\ŽÂŸB‚‚›ÚYÛÛ^Žœ™\Ù][œ]Ø[˜XÚÜÊ
+BžÂˆYˆ
+[œ]Ú[š]X[^™\—ØØ[˜XÚÊBˆ[œ]Ú[š]X[^™\—ØØ[˜XÚÈHßNÂ‚ˆYˆ
+[œ]Ø›ØÚÜ×Ü™XY\ŠBˆ[œ]Ø›ØÚÜ×Ü™XY\ˆHßNÂŸB‚›ÚYÛÛ^Ž˜ÛX\•X›Q[˜Ý[Û”™\Ý[Ê
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊX›WÙ[˜Ý[Û—Ü™\Ý[×Û]]^
+NÂˆX›WÙ[˜Ý[Û—Ü™\Ý[Ë˜ÛX\Š
+NÂŸB‚‚›ÚYÛÛ^ŽœÙ]ÛY[[™›ÊÛÛœÝÛY[[™›È	ˆÛY[Ú[™›×ÊBžÂˆÛY[Ú[™›ÈHÛY[Ú[™›×ÎÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]ÛY[˜[YJÛÛœÝÝš[™È	ˆÛY[Û˜[YJBžÂˆÛY[Ú[™›Ë˜ÛY[Û˜[YHHÛY[Û˜[YNÂŸB‚›ÚYÛÛ^ŽœÙ]ÛY[[\™˜XÙJÛY[[™›ÎŽ’[\™˜XÙH[\™˜XÙJBžÂˆÛY[Ú[™›Ëš[\™˜XÙHH[\™˜XÙNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]ÛY[™\œÚ[ÛŠR[ÛY[Ý™\œÚ[Û—ÛXZ›Ü‹R[ÛY[Ý™\œÚ[Û—ÛZ[›Ü‹R[ÛY[Ý™\œÚ[Û—Ü]Ú[œÚYÛ™YÛY[ÝÜÜ›ÝØÛÛÝ™\œÚ[ÛŠBžÂˆÛY[Ú[™›Ë˜ÛY[Ý™\œÚ[Û—ÛXZ›ÜˆHÛY[Ý™\œÚ[Û—ÛXZ›ÜŽÂˆÛY[Ú[™›Ë˜ÛY[Ý™\œÚ[Û—ÛZ[›ÜˆHÛY[Ý™\œÚ[Û—ÛZ[›ÜŽÂˆÛY[Ú[™›Ë˜ÛY[Ý™\œÚ[Û—Ü]ÚHÛY[Ý™\œÚ[Û—Ü]ÚÂˆÛY[Ú[™›Ë˜ÛY[ÝÜÜ›ÝØÛÛÝ™\œÚ[ÛˆHÛY[ÝÜÜ›ÝØÛÛÝ™\œÚ[ÛŽÂŸB‚›ÚYÛÛ^ŽœÙ]ØÜš\]Y\žP[™[™S[X™\ŠZ[Ì—Ý]Y\žWÛ[X™\‹Z[Ì—Ý[™WÛ[X™\ŠBžÂˆÛY[Ú[™›ËœØÜš\Ü]Y\žWÛ[X™\ˆH]Y\žWÛ[X™\ŽÂˆÛY[Ú[™›ËœØÜš\Û[™WÛ[X™\ˆH[™WÛ[X™\ŽÂŸB‚›ÚYÛÛ^ŽœÙ]ÛY[ÛÛ›™XÝ[Û’Y
+Z[Ì—ÝÛÛ›™XÝ[Û—ÚYÊBžÂˆÛY[Ú[™›Ë˜ÛÛ›™XÝ[Û—ÚYHÛÛ›™XÝ[Û—ÚYÎÂŸB‚›ÚYÛÛ^ŽœÙ]ÛY[[™›ÊÛÛœÝØÛÎŽ“™]Ž’™\]Y\Ý	ˆ™\]Y\Ý
+BžÂˆÛY[Ú[™›ËœÙ]œ›ÛR™\]Y\Ý
+™\]Y\Ý
+NÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]›ÜØ\™Y›ÜŠÛÛœÝÝš[™È	ˆ›ÜØ\™YÙ›ÜŠBžÂˆÛY[Ú[™›Ë™›ÜØ\™YÙ›ÜˆH›ÜØ\™YÙ›ÜŽÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]]Y\žRÚ[™
+ÛY[[™›ÎŽ”]Y\žRÚ[™]Y\žWÚÚ[™
+BžÂˆÛY[Ú[™›Ëœ]Y\žWÚÚ[™H]Y\žWÚÚ[™ÂŸB‚›ÚYÛÛ^ŽœÙ]]Y\žRÚ[™[š]X[
+
+BžÂˆËËÈÑÎˆžHÈÛÛXš[™H\È[˜Ý[ÛˆÚ]Ù]]Y\žRÚ[™
+
+K‚ˆÛY[Ú[™›ËœÙ][š]X[]Y\žJ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]]Y\žRÚ[™™\XØ]Y]X˜\ÙR[\›˜[
+
+BžÂˆËËÈÑÎˆžHÈÛÛXš[™H\È[˜Ý[ÛˆÚ]Ù]]Y\žRÚ[™
+
+K‚ˆÛY[Ú[™›Ëš\×Ü™\XØ]YÙ]X˜\ÙWÚ[\›˜[HYNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[\Ù\“˜[YJÛÛœÝÝš[™È	ˆÝ\œ™[Ý\Ù\—Û˜[YJBžÂˆËËÈÑÎˆžHÈÛÛXš[™H\È[˜Ý[ÛˆÚ]Ù]\Ù\Š
+K‚ˆÛY[Ú[™›Ë˜Ý\œ™[Ý\Ù\ˆHÝ\œ™[Ý\Ù\—Û˜[YNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[Y™\ÜÊÛÛœÝØÛÎŽ“™]Ž”ÛØÚÙ]Y™\ÜÈ	ˆÝ\œ™[ØY™\ÜÊBžÂˆÛY[Ú[™›Ë˜Ý\œ™[ØY™\ÜÈHØÛÎŽ“™]Ž”ÛØÚÙ]Y™\ÜÊÝ\œ™[ØY™\ÜÊNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ][š]X[\Ù\“˜[YJÛÛœÝÝš[™È	ˆ[š]X[Ý\Ù\—Û˜[YJBžÂˆÛY[Ú[™›Ëš[š]X[Ý\Ù\ˆH[š]X[Ý\Ù\—Û˜[YNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]]][XØ]Y\Ù\“˜[YJÛÛœÝÝš[™È	ˆ]][XØ]YÝ\Ù\—Û˜[YJBžÂˆÛY[Ú[™›Ë˜]][XØ]YÝ\Ù\ˆH]][XØ]YÝ\Ù\—Û˜[YNÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ][š]X[Y™\ÜÊÛÛœÝØÛÎŽ“™]Ž”ÛØÚÙ]Y™\ÜÈ	ˆ[š]X[ØY™\ÜÊBžÂˆÛY[Ú[™›Ëš[š]X[ØY™\ÜÈHØÛÎŽ“™]Ž”ÛØÚÙ]Y™\ÜÊ[š]X[ØY™\ÜÊNÂŸB‚›ÚYÛÛ^ŽœÙ][š]X[]Y\žRY
+ÛÛœÝÝš[™È	ˆ[š]X[Ü]Y\žWÚY
+BžÂˆÛY[Ú[™›Ëš[š]X[Ü]Y\žWÚYH[š]X[Ü]Y\žWÚYÂŸB‚›ÚYÛÛ^ŽœÙ][š]X[]Y\žTÝ\[YJÝŽ˜Ú›Û›ÎŽ[YWÜÚ[ÝŽ˜Ú›Û›ÎŽœÞ\Ý[WØÛØÚÏˆ[š]X[Ü]Y\žWÜÝ\Ý[YJBžÂˆÛY[Ú[™›Ëš[š]X[Ü]Y\žWÜÝ\Ý[YHH[YR[”ÙXÛÛ™Ê[š]X[Ü]Y\žWÜÝ\Ý[YJNÂˆÛY[Ú[™›Ëš[š]X[Ü]Y\žWÜÝ\Ý[YWÛZXÜ›ÜÙXÛÛ™ÈH[YR[“ZXÜ›ÜÙXÛÛ™Ê[š]X[Ü]Y\žWÜÝ\Ý[YJNÂŸB‚›ÚYÛÛ^ŽœÙ]][ÝPÛY[Ù^JÛÛœÝÝš[™È	ˆ][ÝWÚÙ^WÊBžÂˆÛY[Ú[™›Ëœ][ÝWÚÙ^HH][ÝWÚÙ^WÎÂˆ™YYÜ™XØ[Ý[]WØXØÙ\ÜÈHYNÂŸB‚›ÚYÛÛ^ŽœÙ]ÛÛ›™XÝ[ÛÛY[™\œÚ[ÛŠR[ÛY[Ý™\œÚ[Û—ÛXZ›Ü‹R[ÛY[Ý™\œÚ[Û—ÛZ[›Ü‹R[ÛY[Ý™\œÚ[Û—Ü]Ú[œÚYÛ™YÛY[ÝÜÜ›ÝØÛÛÝ™\œÚ[ÛŠBžÂˆÛY[Ú[™›Ë˜ÛÛ›™XÝ[Û—ØÛY[Ý™\œÚ[Û—ÛXZ›ÜˆHÛY[Ý™\œÚ[Û—ÛXZ›ÜŽÂˆÛY[Ú[™›Ë˜ÛÛ›™XÝ[Û—ØÛY[Ý™\œÚ[Û—ÛZ[›ÜˆHÛY[Ý™\œÚ[Û—ÛZ[›ÜŽÂˆÛY[Ú[™›Ë˜ÛÛ›™XÝ[Û—ØÛY[Ý™\œÚ[Û—Ü]ÚHÛY[Ý™\œÚ[Û—Ü]ÚÂˆÛY[Ú[™›Ë˜ÛÛ›™XÝ[Û—ÝÜÜ›ÝØÛÛÝ™\œÚ[ÛˆHÛY[ÝÜÜ›ÝØÛÛÝ™\œÚ[ÛŽÂŸB‚›ÚYÛÛ^Žš[˜Ü™X\ÙQ\ÝšX]Y\
+
+BžÂˆ
+ÊØÛY[Ú[™›Ë™\ÝšX]YÙ\ÂŸB‚‚”ÝÜ˜YÙRQÛÛ^Žœ™\ÛÛ™TÝÜ˜YÙRQ
+ÝÜ˜YÙRQÝÜ˜YÙWÚYÝÜ˜YÙS˜[Y\ÜXÙHÚ\™JHÛÛœÝžÂˆYˆ
+ÝÜ˜YÙWÚY]ZYOHURQ[\œÎŽ“š[
+Bˆ™]\›ˆÝÜ˜YÙWÚYÂ‚ˆÝÜ˜YÙRQ™\ÛÛ™YHÝÜ˜YÙRQŽ˜Ü™X]Q[\J
+NÂˆÝŽ›Ü[Û˜[^Ù\[Ûˆ^ÎÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆ™\ÛÛ™YH™\ÛÛ™TÝÜ˜YÙRQ[\
+ÝŽ›[Ý™JÝÜ˜YÙWÚY
+KÚ\™K	™^ÊNÂˆBˆYˆ
+^ÊBˆ›ÝÈ^Ù\[ÛŠ
+™^ÊNÂˆYˆ
+\™\ÛÛ™Yš\ÕURQ
+
+H	‰ˆ™\ÛÛ™Y™]X˜\ÙWÛ˜[YHOH]X˜\ÙPØ][ÙÎŽ•STÔT–WÑUPTÑJBˆ™\ÛÛ™Y]ZYH]X˜\ÙPØ][ÙÎŽš[œÝ[˜ÙJ
+K™Ù]]X˜\ÙJ™\ÛÛ™Y™]X˜\ÙWÛ˜[YJKOžQÙ]X›UURQ
+™\ÛÛ™YX›WÛ˜[YJNÂˆ™]\›ˆ™\ÛÛ™YÂŸB‚”ÝÜ˜YÙRQÛÛ^ŽžT™\ÛÛ™TÝÜ˜YÙRQ
+ÝÜ˜YÙRQÝÜ˜YÙWÚYÝÜ˜YÙS˜[Y\ÜXÙHÚ\™JHÛÛœÝžÂˆYˆ
+ÝÜ˜YÙWÚY]ZYOHURQ[\œÎŽ“š[
+Bˆ™]\›ˆÝÜ˜YÙWÚYÂ‚ˆÝÜ˜YÙRQ™\ÛÛ™YHÝÜ˜YÙRQŽ˜Ü™X]Q[\J
+NÂˆÂˆÚ\™YØÚÑÝX\™ØÚÊ]]^
+NÂˆ™\ÛÛ™YH™\ÛÛ™TÝÜ˜YÙRQ[\
+ÝŽ›[Ý™JÝÜ˜YÙWÚY
+KÚ\™K[ŠNÂˆBˆYˆ
+™\ÛÛ™Y	‰ˆ\™\ÛÛ™Yš\ÕURQ
+
+H	‰ˆ™\ÛÛ™Y™]X˜\ÙWÛ˜[YHOH]X˜\ÙPØ][ÙÎŽ•STÔT–WÑUPTÑJBˆÂˆ]]ÈˆH]X˜\ÙPØ][ÙÎŽš[œÝ[˜ÙJ
+KžQÙ]]X˜\ÙJ™\ÛÛ™Y™]X˜\ÙWÛ˜[YJNÂˆYˆ
+ŠBˆ™\ÛÛ™Y]ZYH‹OžQÙ]X›UURQ
+™\ÛÛ™YX›WÛ˜[YJNÂˆBˆ™]\›ˆ™\ÛÛ™YÂŸB‚”ÝÜ˜YÙRQÛÛ^Žœ™\ÛÛ™TÝÜ˜YÙRQ[\
+ÝÜ˜YÙRQÝÜ˜YÙWÚYÝÜ˜YÙS˜[Y\ÜXÙHÚ\™KÝŽ›Ü[Û˜[^Ù\[Ûˆ
+ˆ^Ù\[ÛŠHÛÛœÝžÂˆYˆ
+ÝÜ˜YÙWÚY]ZYOHURQ[\œÎŽ“š[
+Bˆ™]\›ˆÝÜ˜YÙWÚYÂ‚ˆYˆ
+\ÝÜ˜YÙWÚY
+BˆÂˆYˆ
+^Ù\[ÛŠBˆ^Ù\[Û‹O™[\XÙJ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÕP“K›ÝX›H˜[YH[™URQ\™H[\HŠJNÂˆ™]\›ˆÝÜ˜YÙWÚYÂˆB‚ˆ›ÛÛÛÚ×Ù›Ü—Ù^\›˜[ÝX›HHÚ\™H	ˆÝÜ˜YÙS˜[Y\ÜXÙNŽ”™\ÛÛ™Q^\›˜[ÂˆËËÈÛØ˜[ÛÛ^ÚÝ[›ÝÛÛZ[ˆ[\Ü˜\žHX›\ÂˆYˆ
+\ÑÛØ˜[ÛÛ^
+
+JBˆÛÚ×Ù›Ü—Ù^\›˜[ÝX›HH˜[ÙNÂ‚ˆ›ÛÛ[—ØÝ\œ™[Ù]X˜\ÙHHÚ\™H	ˆÝÜ˜YÙS˜[Y\ÜXÙNŽ”™\ÛÛ™PÝ\œ™[]X˜\ÙNÂˆ›ÛÛ[—ÜÜXÚYšYYÙ]X˜\ÙHHÚ\™H	ˆÝÜ˜YÙS˜[Y\ÜXÙNŽ”™\ÛÛ™QÛØ˜[Â‚ˆYˆ
+\ÝÜ˜YÙWÚY™]X˜\ÙWÛ˜[YK™[\J
+JBˆÂˆYˆ
+[—ÜÜXÚYšYYÙ]X˜\ÙJBˆ™]\›ˆÝÜ˜YÙWÚYÈËËÈ“ÕH\™H\È›ÈÝX\˜[Y\È]X›HXÝX[H^\ÝÈ[ˆ]X˜\ÙK‚ˆYˆ
+^Ù\[ÛŠBˆ^Ù\[Û‹O™[\XÙJ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÕP“K‘^\›˜[[™[\Ü˜\žHX›\È]™H›È]X˜\ÙK]ßH\ÈÜXÚYšYY‹ˆÝÜ˜YÙWÚY™]X˜\ÙWÛ˜[YJJNÂˆ™]\›ˆÝÜ˜YÙRQŽ˜Ü™X]Q[\J
+NÂˆB‚ˆËËÈ]X˜\ÙH˜[YH\È›ÝÜXÚYšYYˆ]	ÜÈ[\Ü˜\žHX›HÜˆX›H[ˆÝ\œ™[]X˜\ÙK‚‚ˆYˆ
+ÛÚ×Ù›Ü—Ù^\›˜[ÝX›JBˆÂˆ]]È™\ÛÛ™YÚYHÝÜ˜YÙRQŽ˜Ü™X]Q[\J
+NÂˆ]]ÈžWÜ™\ÛÛ™HHÉ—JÛÛ^ˆÛÛ^
+HOˆ›ÛÛˆÂˆÛÛœÝ]]È	ˆX›\ÈHÛÛ^O™^\›˜[ÝX›\×ÛX\[™ÎÂˆ]]È]HX›\Ë™š[™
+ÝÜ˜YÙWÚY™Ù]X›S˜[YJ
+JNÂˆYˆ
+]OHX›\Ë™[™
+
+JBˆ™]\›ˆ˜[ÙNÂˆ™\ÛÛ™YÚYH]OœÙXÛÛ™O™Ù]ÛØ˜[X›RQ
+
+NÂˆ™]\›ˆYNÂˆNÂ‚ˆËËÈš\œÝHÛÚÈ›Üˆ[\Ü˜\žHX›H[ˆÝ\œ™[ÛÛ^ˆYˆ
+žWÜ™\ÛÛ™JÚ\™YÙœ›ÛWÝ\Ê
+JJBˆ™]\›ˆ™\ÛÛ™YÚYÂ‚ˆËËÈYˆ›Ý›Ý[™[™Ý\œ™[ÛÛ^Ø\ÈÜ™X]Yœ›ÛHÛÛYH]Y\žHÛÛ^ÛÚÈ›Üˆ[\Ü˜\žHX›H[ˆ]Y\žHÛÛ^ˆ]]È]Y\žWØÛÛ^ÜˆH]Y\žWØÛÛ^›ØÚÊ
+NÂˆ›ÛÛ\×ÛØØ[ØÛÛ^H]Y\žWØÛÛ^Üˆ	‰ˆ]Y\žWØÛÛ^Ü‹™Ù]
+
+HOH\ÎÂˆYˆ
+\×ÛØØ[ØÛÛ^	‰ˆžWÜ™\ÛÛ™J]Y\žWØÛÛ^ÜŠJBˆ™]\›ˆ™\ÛÛ™YÚYÂ‚ˆËËÈYˆ›Ý›Ý[™[™Ý\œ™[ÛÛ^Ø\ÈÜ™X]Yœ›ÛHÛÛYHÙ\ÜÚ[ÛˆÛÛ^ÛÚÈ›Üˆ[\Ü˜\žHX›H[ˆÙ\ÜÚ[ÛˆÛÛ^ˆ]]ÈÙ\ÜÚ[Û—ØÛÛ^ÜˆHÙ\ÜÚ[Û—ØÛÛ^›ØÚÊ
+NÂˆ›ÛÛ\×ÛØØ[ÛÜ—Ü]Y\žWØÛÛ^HÙ\ÜÚ[Û—ØÛÛ^Üˆ	‰ˆÙ\ÜÚ[Û—ØÛÛ^Ü‹™Ù]
+
+HOH\ÎÂˆYˆ
+\×ÛØØ[ÛÜ—Ü]Y\žWØÛÛ^	‰ˆžWÜ™\ÛÛ™JÙ\ÜÚ[Û—ØÛÛ^ÜŠJBˆ™]\›ˆ™\ÛÛ™YÚYÂˆB‚ˆËËÈ[\Ü˜\žHX›H›Ý›Ý[™ˆ]	ÜÈX›H[ˆÝ\œ™[]X˜\ÙK‚‚ˆYˆ
+[—ØÝ\œ™[Ù]X˜\ÙJBˆÂˆYˆ
+Ý\œ™[Ù]X˜\ÙK™[\J
+JBˆÂˆYˆ
+^Ù\[ÛŠBˆ^Ù\[Û‹O™[\XÙJ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÑUPTÑK‘Y˜][]X˜\ÙH\È›ÝÙ[XÝYŠJNÂˆ™]\›ˆÝÜ˜YÙRQŽ˜Ü™X]Q[\J
+NÂˆBˆÝÜ˜YÙWÚY™]X˜\ÙWÛ˜[YHHÝ\œ™[Ù]X˜\ÙNÂˆËËÈ“ÕH\™H\È›ÈÝX\˜[Y\È]X›HXÝX[H^\ÝÈ[ˆ]X˜\ÙK‚ˆ™]\›ˆÝÜ˜YÙWÚYÂˆB‚ˆYˆ
+^Ù\[ÛŠBˆ^Ù\[Û‹O™[\XÙJ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—ÕP“KØ[››Ý™\ÛÛ™H]X˜\ÙH˜[YH›ÜˆX›HßH‹ÝÜ˜YÙWÚY™Ù]˜[YQ›Ü“ÙÜÊ
+JJNÂˆ™]\›ˆÝÜ˜YÙRQŽ˜Ü™X]Q[\J
+NÂŸB‚›ÚYÛÛ^Žš[š]›ÛÒÙY\\“Y]Y]U˜[œØXÝ[ÛŠ›ÛÒÙY\\“Y]Y]U˜[œØXÝ[Û”ˆ‹ÖÛX^X™WÝ[\ÙYWH›ÛÛ]XÚÙ^\Ý[™ÊBžÂˆÚ\ÜÙ\
+[Y]Y]WÝ˜[œØXÝ[ÛŠNÂˆÚ\ÜÙ\
+]XÚÙ^\Ý[™È]Y\žWØÛÛ^›ØÚÊ
+K™Ù]
+
+HOH\ÊNÂˆY]Y]WÝ˜[œØXÝ[ÛˆHÝŽ›[Ý™JŠNÂŸB‚–›ÛÒÙY\\“Y]Y]U˜[œØXÝ[Û”ˆÛÛ^Ž™Ù]›ÛÒÙY\\“Y]Y]U˜[œØXÝ[ÛŠ
+HÛÛœÝžÂˆÚ\ÜÙ\
+[Y]Y]WÝ˜[œØXÝ[Ûˆ\Ô]Y\žPÛÛ^
+
+JNÂˆ™]\›ˆY]Y]WÝ˜[œØXÝ[ÛŽÂŸB‚›ÚYÛÛ^ŽœÙ]\™[X›JURQ]ZY
+BžÂˆÚ\ÜÙ\
+\\™[ÝX›WÝ]ZYš\×Ý˜[YJ
+JNÂˆ\™[ÝX›WÝ]ZYH]ZYÂŸB‚œÝŽ›Ü[Û˜[URQˆÛÛ^Ž™Ù]\™[X›J
+HÛÛœÝžÂˆ™]\›ˆ\™[ÝX›WÝ]ZYÂŸB‚›ÚYÛÛ^ŽœÙ]]Y\žPØ[˜Ù[][ÛŠÝÜÚÙ[ˆØ[˜Ù[
+BžÂˆÚ\ÜÙ\
+YÜ]Y\žWØØ[˜Ù[][Û‹œÝÜÜÜÜÚX›J
+JNÂˆÜ]Y\žWØØ[˜Ù[][ÛˆHØ[˜Ù[ÂŸB‚”ÝÜÚÙ[ˆÛÛ^Ž™Ù]]Y\žPØ[˜Ù[][ÛŠ
+HÛÛœÝžÂˆ™]\›ˆÜ]Y\žWØØ[˜Ù[][ÛŽÂŸB‚›ÚYÛÛ^ŽœÙ]Y][Û˜[ÚXÚÜÓÛ‘[œ]Y]YJÛÛÜ™[˜][ÛŽŽ”™\]Y\ÝÈ™\]Y\ÝÊBžÂˆØY][Û˜[ØÚXÚÜ×ÛÛ—Ù[œ]Y]YHH™\]Y\ÝÎÂŸB‚ÛÛÜ™[˜][ÛŽŽ”™\]Y\ÝÈÛÛ^Ž™Ù]Y][Û˜[ÚXÚÜÓÛ‘[œ]Y]YJ
+HÛÛœÝžÂˆ™]\›ˆØY][Û˜[ØÚXÚÜ×ÛÛ—Ù[œ]Y]YNÂŸB‚‚›ÚYÛÛ^Ž˜ÚXÚÕ˜[œØXÝ[ÛœÐ\™P[ÝÙY
+›ÛÛ^XÚ]ÝÛÜ]Y\žHÊˆH˜[ÙH
+‹ÊHÛÛœÝžÂˆYˆ
+Ù]ÛÛ™šYÔ™YŠ
+K™Ù][
+˜[Ý×Ù^\š[Y[[Ý˜[œØXÝ[ÛœÈ‹
+JBˆ™]\›ŽÂ‚ˆYˆ
+^XÚ]ÝÛÜ]Y\žJBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ““ÕÒSTSQS•Q•˜[œØXÝ[ÛœÈ\™H›ÝÝ\ÜYŠNÂ‚ˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹‘^\š[Y[[Ý\Ü›Üˆ˜[œØXÝ[ÛœÈ\È\ØX›Y‚ˆšÝÙ]™\‹ÛÛYH]Y\žHÜˆ˜XÚÙÜ›Ý[™\ÚÈšYYÈXØÙ\ÜÈ˜[œØXÝ[Û“ÙËˆ‚ˆ’Yˆ[ÝH]™H›Ý[˜X›Y\È™X]\™H^XÚ]K[ˆ]	ÜÈHYËˆŠNÂŸB‚›ÚYÛÛ^Žš[š]Ý\œ™[˜[œØXÝ[ÛŠY\™ÙU™YU˜[œØXÝ[Û”ˆŠBžÂˆY\™ÙWÝ™YWÝ˜[œØXÝ[Û—ÚÛ\ˆHY\™ÙU™YU˜[œØXÝ[Û’Û\Š‹˜[ÙK\ÊNÂˆÙ]Ý\œ™[˜[œØXÝ[ÛŠÝŽ›[Ý™JŠJNÂŸB‚›ÚYÛÛ^ŽœÙ]Ý\œ™[˜[œØXÝ[ÛŠY\™ÙU™YU˜[œØXÝ[Û”ˆŠBžÂˆÚ\ÜÙ\
+[Y\™ÙWÝ™YWÝ˜[œØXÝ[Ûˆ]ŠNÂˆÚ\ÜÙ\
+\ÈOHÙ\ÜÚ[Û—ØÛÛ^›ØÚÊ
+K™Ù]
+
+H\ÈOH]Y\žWØÛÛ^›ØÚÊ
+K™Ù]
+
+JNÂˆY\™ÙWÝ™YWÝ˜[œØXÝ[ÛˆHÝŽ›[Ý™JŠNÂˆYˆ
+[Y\™ÙWÝ™YWÝ˜[œØXÝ[ÛŠBˆY\™ÙWÝ™YWÝ˜[œØXÝ[Û—ÚÛ\ˆHßNÂŸB‚“Y\™ÙU™YU˜[œØXÝ[Û”ˆÛÛ^Ž™Ù]Ý\œ™[˜[œØXÝ[ÛŠ
+HÛÛœÝžÂˆ™]\›ˆY\™ÙWÝ™YWÝ˜[œØXÝ[ÛŽÂŸB‚˜›ÛÛÛÛ^Žš\ÔÙ\™\ÛÛ\][TÝ\Y
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\ÜÙ\
+Ù]\XØ][Û•\J
+HOH\XØ][Û•\NŽ”ÑT•‘TŠNÂˆ™]\›ˆÚ\™YOš\×ÜÙ\™\—ØÛÛ\][WÜÝ\YÂŸB‚›ÚYÛÛ^ŽœÙ]Ù\™\ÛÛ\][TÝ\Y
+
+BžÂˆÂˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YOž›ÛÚÙY\\—Û]]^
+NÂˆYˆ
+Ú\™YOž›ÛÚÙY\\ŠBˆÚ\™YOž›ÛÚÙY\\‹OœÙ]Ù\™\ÛÛ\][TÝ\Y
+
+NÂˆB‚ˆÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œ×Û]]^
+NÂˆ›Üˆ
+]]È	ˆšÈˆÚ\™YO˜]^[X\žWÞ›ÛÚÙY\\œÊBˆšËœÙXÛÛ™OœÙ]Ù\™\ÛÛ\][TÝ\Y
+
+NÂˆBˆB‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂˆÚ\ÜÙ\
+ÛØ˜[ØÛÛ^›ØÚÊ
+K™Ù]
+
+HOH\ÊNÂˆÚ\ÜÙ\
+\Ú\™YOš\×ÜÙ\™\—ØÛÛ\][WÜÝ\Y
+NÂˆÚ\ÜÙ\
+Ù]\XØ][Û•\J
+HOH\XØ][Û•\NŽ”ÑT•‘TŠNÂˆÚ\™YOš\×ÜÙ\™\—ØÛÛ\][WÜÝ\YHYNÂŸB‚Û\Ý\‘[˜Ý[Û”™XY\ÚÐØ[˜XÚÈÛÛ^Ž™Ù]Û\Ý\‘[˜Ý[Û”™XY\ÚÐØ[˜XÚÊ
+HÛÛœÝžÂˆYˆ
+[™^Ý\Ú×ØØ[˜XÚËš\×Ý˜[YJ
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹“™^\ÚÈØ[˜XÚÈ\È›ÝÙ]›Üˆ]Y\žHßH‹Ù][š]X[]Y\žRY
+
+JNÂˆ™]\›ˆ™^Ý\Ú×ØØ[˜XÚË˜[YJ
+NÂŸB‚‚›ÚYÛÛ^ŽœÙ]Û\Ý\‘[˜Ý[Û”™XY\ÚÐØ[˜XÚÊÛ\Ý\‘[˜Ý[Û”™XY\ÚÐØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆ™^Ý\Ú×ØØ[˜XÚÈHØ[˜XÚÎÂŸB‚‚˜›ÛÛÛÛ^Žš\ÐÛ\Ý\‘[˜Ý[Û”™XY\ÚÐØ[˜XÚÊ
+HÛÛœÝžÂˆ™]\›ˆ™^Ý\Ú×ØØ[˜XÚËš\×Ý˜[YJ
+NÂŸB‚‚“Y\™ÙU™YT™XY\ÚÐØ[˜XÚÈÛÛ^Ž™Ù]Y\™ÙU™YT™XY\ÚÐØ[˜XÚÊ
+HÛÛœÝžÂˆYˆ
+[Y\™ÙWÝ™YWÜ™XYÝ\Ú×ØØ[˜XÚËš\×Ý˜[YJ
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹“™^\ÚÈØ[˜XÚÈ›Üˆ\È›ÝÙ]›Üˆ]Y\žHßH‹Ù][š]X[]Y\žRY
+
+JNÂ‚ˆ™]\›ˆY\™ÙWÝ™YWÜ™XYÝ\Ú×ØØ[˜XÚË˜[YJ
+NÂŸB‚›ÚYÛÛ^ŽœÙ]Y\™ÙU™YT™XY\ÚÐØ[˜XÚÊY\™ÙU™YT™XY\ÚÐØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆY\™ÙWÝ™YWÜ™XYÝ\Ú×ØØ[˜XÚÈHØ[˜XÚÎÂŸB‚˜›ÛÛÛÛ^Žš\ÓY\™ÙU™YP[˜[™Ù\ÐØ[˜XÚÊ
+HÛÛœÝžÂˆ™]\›ˆY\™ÙWÝ™YWØ[Ü˜[™Ù\×ØØ[˜XÚËš\×Ý˜[YJ
+NÂŸB‚“Y\™ÙU™YP[˜[™Ù\ÐØ[˜XÚÈÛÛ^Ž™Ù]Y\™ÙU™YP[˜[™Ù\ÐØ[˜XÚÊ
+HÛÛœÝžÂˆYˆ
+[Y\™ÙWÝ™YWØ[Ü˜[™Ù\×ØØ[˜XÚËš\×Ý˜[YJ
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ“ÑÒPÐSÑT”“Ô‹“™^\ÚÈØ[˜XÚÈ\È›ÝÙ]›Üˆ]Y\žHÚ]YˆßH‹Ù][š]X[]Y\žRY
+
+JNÂ‚ˆ™]\›ˆY\™ÙWÝ™YWØ[Ü˜[™Ù\×ØØ[˜XÚË˜[YJ
+NÂŸB‚‚›ÚYÛÛ^ŽœÙ]Y\™ÙU™YP[˜[™Ù\ÐØ[˜XÚÊY\™ÙU™YP[˜[™Ù\ÐØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆY\™ÙWÝ™YWØ[Ü˜[™Ù\×ØØ[˜XÚÈHØ[˜XÚÎÂŸB‚›ØÚÓX\œÚ[[™ÐØ[˜XÚÈÛÛ^Ž™Ù]›ØÚÓX\œÚ[[™ÐØ[˜XÚÊ
+HÛÛœÝžÂˆ™]\›ˆ›ØÚ×ÛX\œÚ[[™×ØØ[˜XÚÎÂŸB‚›ÚYÛÛ^ŽœÙ]›ØÚÓX\œÚ[[™ÐØ[˜XÚÊ›ØÚÓX\œÚ[[™ÐØ[˜XÚÈ	‰ˆØ[˜XÚÊBžÂˆ›ØÚ×ÛX\œÚ[[™×ØØ[˜XÚÈHÝŽ›[Ý™JØ[˜XÚÊNÂŸB‚›ÚYÛÛ^ŽœÙ]\˜[[™\XØ\ÑÜ›Ý\URQ
+URQ]ZY
+BžÂˆ\˜[[Ü™\XØ\×ÙÜ›Ý\Ý]ZYH]ZYÂŸB‚•URQÛÛ^Ž™Ù]\˜[[™\XØ\ÑÜ›Ý\URQ
+
+HÛÛœÝžÂˆ™]\›ˆ\˜[[Ü™\XØ\×ÙÜ›Ý\Ý]ZYÂŸB‚\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YH
+ˆÛÛ^ŽžQÙ]\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YJ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜\Þ[˜×Ú[œÙ\Ü]Y]YK™Ù]
+
+NÂŸB‚›ÚYÛÛ^ŽœÙ]\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YJÛÛœÝÝŽœÚ\™YÜ\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YOˆ	ˆŠBžÂˆ\Þ[˜Ú›Û›Ý\Ò[œÙ\]Y]YNŽ˜[Y]TÙ][™ÜÊ
+œÙ][™ÜËÙ]ÙÙÙ\ŠÛÛ^ŠJNÂ‚ˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO›]]^
+NÂ‚ˆYˆ
+ÝŽ˜Ú›Û›ÎŽ›Z[\ÙXÛÛ™ÊÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ˜\Þ[˜×Ú[œÙ\ÜÛÝ[Y[Ý]Û\×KÝ[Z[\ÙXÛÛ™Ê
+JHOHÝŽ˜Ú›Û›ÎŽ›Z[\ÙXÛÛ™ÎŽž™\›Ê
+JBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ’S•SQÔÑUS‘×ÕSQK”Ù][™È\Þ[˜×Ú[œÙ\ÜÛÝ[Y[Ý]Û\ÈØ[‰Ý™H™\›ÈŠNÂ‚ˆÚ\™YO˜\Þ[˜×Ú[œÙ\Ü]Y]YHHŽÂŸB‚›ÚYÛÛ^Žš[š]X[^™P˜XÚÙÜ›Ý[™^XÝ]ÜœÒY“™YYY
+
+BžÂˆÝŽ›ØÚ×ÙÝX\™ØÚÊÚ\™YO˜˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂ‚ˆYˆ
+Ú\™YO˜\™WØ˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Ú[š]X[^™Y
+Bˆ™]\›ŽÂ‚ˆÛÛœÝÙ\™\”Ù][™ÜÈ	ˆÙ\™\—ÜÙ][™ÜÈHÚ\™YOœÙ\™\—ÜÙ][™ÜÎÂˆÚ^™WÝ˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™HHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™WNÂˆ]]È˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ÈHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][×NÂ‚ˆËËÈÛˆÝË[Y[[ÜžHÞ\Ý[\Ë[Z]ÛÛ˜Ý\œ™[Y\™Ù\ÈÈ]›ÚYÓÓK‚ˆËËÈXXÚY\™ÙHØ[ˆ\ÙHNZPŽÈÚ]HY˜][ÛÛÜÚ^™OLMˆ[™˜][ÏL‹ˆËËÈÌˆÛÛ˜Ý\œ™[Y\™Ù\ÈÛÝ[™YYKŒËL‹ˆÚPˆ\Ý›ÜˆY\™ÙHY™™\œË‚ˆËËÈÛ›H\H\ÈØ\Ú[ˆH\Ù\ˆ\Û‰Ý^XÚ]HÛÛ™šYÝ\™Y˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™X‚ˆ›ÛÛ˜XÚÙÜ›Ý[™ÜÛÛØ]]×ÛÝÙ\™YH˜[ÙNÂˆÚ^™WÝ]˜Z[X›WÛY[[ÜžHHÙ]Y[[ÜžP[[Ý[
+
+NÂˆYˆ
+]˜Z[X›WÛY[[ÜžHˆ	‰ˆ]˜Z[X›WÛY[[ÜžH
+[Ì
+Bˆ	‰ˆ\Ù\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™WK˜Ú[™ÙY
+BˆÂˆÚ^™WÝX^ÜÛÛHÝŽ›X^Ú^™WÝŠK]˜Z[X›WÛY[[ÜžHÈ
+][Ì
+JNÈËËÈH\ˆÚP‚ˆYˆ
+˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™HˆX^ÜÛÛ
+BˆÂˆÑ×ÒS‘“ÊÙ]ÙÙÙ\ŠÛÛ^ŠKˆ“ÝÙ\™Y˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™Hœ›ÛHßHÈßH™XØ]\ÙHHÞ\Ý[H\È[Z]YSH
+ßJH‹ˆ˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™KX^ÜÛÛ›Ü›X]™XYX›TÚ^™UÚ]š[˜\žTÝY™š^
+]˜Z[X›WÛY[[ÜžJJNÂˆ˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™HHX^ÜÛÛÂˆËËÈÛ[\HÛÛ˜Ý\œ™[˜ÞH˜][ÈÈ][ÜÝHÈ]›ÚY[˜Ü™X\Ú[™È]™^[Û™Ú]H\Ù\ˆÛÛ™šYÝ\™Y‚ˆYˆ
+\Ù\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][×K˜Ú[™ÙY
+Bˆ˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ÈHÝŽ›Z[ŠÝ]X×ØØ\Ý›Ø]Š˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ÊKKŒŠNÂˆ˜XÚÙÜ›Ý[™ÜÛÛØ]]×ÛÝÙ\™YHYNÂˆËËÈ\]HÚ\™YÙ][™ÜÈÛÈHY\™ÙU™YHØ[š]HÚXÚÈÙY\ÈHÝÙ\™Y˜[Y\Ë‚ˆËËÈÜš]\ÈÈÚ\™YOœÙ\™\—ÜÙ][™ÜÈ]\Ý™HÞ[˜Ú›Ûš^™YÚ]Ý\ˆ™XY\œÈšXHÚ\™YO›]]^‚ˆÂˆÝŽ›ØÚ×ÙÝX\™Ú\™YÛØÚÊÚ\™YO›]]^
+NÂˆÚ\™YOœÙ\™\—ÜÙ][™ÜËœÙ]
+˜˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™H‹X^ÜÛÛ
+NÂˆÚ\™YOœÙ\™\—ÜÙ][™ÜËœÙ]
+˜˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][È‹Ý]X×ØØ\ÝÝX›OŠ˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ÊJNÂˆÚ\™YO˜˜XÚÙÜ›Ý[™ÜÛÛØ]]×ÛÝÙ\™YHYNÂˆBˆBˆBˆÚ^™WÝ˜XÚÙÜ›Ý[™ÜÛÛÛX^Ý\ÚÜ×ØÛÝ[HÝ]X×ØØ\ÝÚ^™WÝŠÝ]X×ØØ\ÝÝX›OŠ˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™JH
+ˆÝ]X×ØØ\ÝÝX›OŠ˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][ÊJNÂˆËËÈY\ˆ]]Ë[ÝÙ\š[™ËHÛX[˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™XÛÛXš[™YÚ]H\Ù\‹XÛÛ™šYÝ\™YˆËËÈœ˜XÝ[Û˜[˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ØÛÛ˜Ý\œ™[˜ÞWÜ˜][Ø
+K™ËˆH
+ˆHH
+HØ[‚ˆËËÈ›ÙXÙH™\›È\ÚÈÛÝ[ÚXÚ˜Z[ÈHY\™ÙU™YP˜XÚÙÜ›Ý[™^XÝ]Ü˜Ý\\ÚXÚË‚ˆËËÈÛ[\È]X\ÝH[ˆH]]Ë[ÝÙ\™Y]ÛÈHÙ\™\ˆØ[ˆÝ[Ý\‚ˆYˆ
+˜XÚÙÜ›Ý[™ÜÛÛØ]]×ÛÝÙ\™Y	‰ˆ˜XÚÙÜ›Ý[™ÜÛÛÛX^Ý\ÚÜ×ØÛÝ[OH
+Bˆ˜XÚÙÜ›Ý[™ÜÛÛÛX^Ý\ÚÜ×ØÛÝ[HNÂˆÝš[™È˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ÜØÚY[[™×ÜÛXÞHHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ÜØÚY[[™×ÜÛXÞWNÂˆÚ^™WÝ˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™HHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™WNÂˆÚ^™WÝ˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™HHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™WNÂˆÚ^™WÝ˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™HHÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ˜˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™WNÂ‚ˆËËÈÚ]\È^XÝ]ÜˆÙHØ[ˆ^XÝ]H[Ü™H\ÚÜÈ[ˆ™XYÈÙH]™BˆÚ\™YO›Y\™ÙWÛ]]]WÙ^XÝ]ÜˆHÝŽ›XZÙWÜÚ\™YY\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü‚ˆ
+ˆ™XY˜[YNŽ“QT‘ÑWÓUUUKˆÊ›X^Ý™XY×ØÛÝ[
+‹Ø˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™KˆÊ›X^Ý\ÚÜ×ØÛÝ[
+‹Ø˜XÚÙÜ›Ý[™ÜÛÛÛX^Ý\ÚÜ×ØÛÝ[ˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Y\™Ù\Ð[™]]][ÛœÔÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™Y\™Ù\Ð[™]]][ÛœÔÛÛÚ^™Kˆ›Ùš[Q]™[ÎŽ“Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ“Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ“Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ“Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™Ëˆ˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ÜØÚY[[™×ÜÛXÞBˆ
+NÂˆÑ×ÒS‘“ÊÚ\™YO›ÙË’[š]X[^™Y˜XÚÙÜ›Ý[™^XÝ]Üˆ›ÜˆY\™Ù\È[™]]][ÛœÈÚ][WÝ™XYÏ^ßK[WÝ\ÚÜÏ^ßKØÚY[[™×ÜÛXÞO^ßH‹ˆ˜XÚÙÜ›Ý[™ÜÛÛÜÚ^™K˜XÚÙÜ›Ý[™ÜÛÛÛX^Ý\ÚÜ×ØÛÝ[˜XÚÙÜ›Ý[™ÛY\™Ù\×Û]]][Ûœ×ÜØÚY[[™×ÜÛXÞJNÂ‚ˆÚ\™YO›[Ý™\×Ù^XÝ]ÜˆHÝŽ›XZÙWÜÚ\™YÜ™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü‚ˆ
+ˆ™XY˜[YNŽ“QT‘ÑU‘QWÓSÕ‘Kˆ˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™Kˆ˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™KˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™[Ý™TÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™[Ý™TÛÛÚ^™Kˆ›Ùš[Q]™[ÎŽ“[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ“[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ“[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ“[Ý™P˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™Âˆ
+NÂˆÑ×ÒS‘“ÊÚ\™YO›ÙË’[š]X[^™Y˜XÚÙÜ›Ý[™^XÝ]Üˆ›Üˆ[Ý™HÜ\˜][ÛœÈÚ][WÝ™XYÏ^ßK[WÝ\ÚÜÏ^ßH‹˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™K˜XÚÙÜ›Ý[™Û[Ý™WÜÛÛÜÚ^™JNÂ‚ˆÚ\™YO™™]ÚÙ^XÝ]ÜˆHÝŽ›XZÙWÜÚ\™YÜ™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü‚ˆ
+ˆ™XY˜[YNŽ“QT‘ÑU‘QWÑ‘UÒˆ˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™Kˆ˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™KˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™™]Ú\ÔÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™™]Ú\ÔÛÛÚ^™Kˆ›Ùš[Q]™[ÎŽ‘™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ‘™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ‘™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽ‘™]Ú˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™Âˆ
+NÂˆÑ×ÒS‘“ÊÚ\™YO›ÙË’[š]X[^™Y˜XÚÙÜ›Ý[™^XÝ]Üˆ›Üˆ™]Ú\ÈÚ][WÝ™XYÏ^ßK[WÝ\ÚÜÏ^ßH‹˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™K˜XÚÙÜ›Ý[™Ù™]Ú\×ÜÛÛÜÚ^™JNÂ‚ˆÚ\™YO˜ÛÛ[[Û—Ù^XÝ]ÜˆHÝŽ›XZÙWÜÚ\™YÜ™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü‚ˆ
+ˆ™XY˜[YNŽ“QT‘ÑU‘QWÐÓÓSSÓ‹ˆ˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™Kˆ˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™KˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™ÛÛ[[Û”ÛÛ\ÚËˆÝ\œ™[Y]šXÜÎŽ˜XÚÙÜ›Ý[™ÛÛ[[Û”ÛÛÚ^™Kˆ›Ùš[Q]™[ÎŽÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÑ^XÝ]TÝ\ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÐØ[˜Ù[ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•\ÚÔ™\Ù]ZXÜ›ÜÙXÛÛ™Ëˆ›Ùš[Q]™[ÎŽÛÛ[[Û˜XÚÙÜ›Ý[™^XÝ]Ü•ØZ]ZXÜ›ÜÙXÛÛ™Âˆ
+NÂˆÑ×ÒS‘“ÊÚ\™YO›ÙË’[š]X[^™Y˜XÚÙÜ›Ý[™^XÝ]Üˆ›ÜˆÛÛ[[ÛˆÜ\˜][ÛœÈ
+K™ËˆÛX\š[™ÈÛ\ÊHÚ][WÝ™XYÏ^ßK[WÝ\ÚÜÏ^ßH‹˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™K˜XÚÙÜ›Ý[™ØÛÛ[[Û—ÜÛÛÜÚ^™JNÂ‚ˆÚ\™YO˜\™WØ˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Ú[š]X[^™YHYNÂŸB‚˜›ÛÛÛÛ^Ž˜\™P˜XÚÙÜ›Ý[™^XÝ]ÜœÒ[š]X[^™Y
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO˜˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆ™]\›ˆÚ\™YO˜\™WØ˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Ú[š]X[^™YÂŸB‚˜›ÛÛÛÛ^ŽØ\Ð˜XÚÙÜ›Ý[™ÛÛ]]ÓÝÙ\™Y
+
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YO˜˜XÚÙÜ›Ý[™ÜÛÛØ]]×ÛÝÙ\™YÂŸB‚“Y\™ÙS]]]P˜XÚÙÜ›Ý[™^XÝ]Ü”ˆÛÛ^Ž™Ù]Y\™ÙS]]]Q^XÝ]ÜŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO˜˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆ™]\›ˆÚ\™YO›Y\™ÙWÛ]]]WÙ^XÝ]ÜŽÂŸB‚“Ü™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü”ˆÛÛ^Ž™Ù][Ý™\Ñ^XÝ]ÜŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO˜˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆ™]\›ˆÚ\™YO›[Ý™\×Ù^XÝ]ÜŽÂŸB‚“Ü™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü”ˆÛÛ^Ž™Ù]™]Ú\Ñ^XÝ]ÜŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO˜˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆ™]\›ˆÚ\™YO™™]ÚÙ^XÝ]ÜŽÂŸB‚“Ü™[˜\žP˜XÚÙÜ›Ý[™^XÝ]Ü”ˆÛÛ^Ž™Ù]ÛÛ[[Û‘^XÝ]ÜŠ
+HÛÛœÝžÂˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO˜˜XÚÙÜ›Ý[™Ù^XÝ]Üœ×Û]]^
+NÂˆ™]\›ˆÚ\™YO˜ÛÛ[[Û—Ù^XÝ]ÜŽÂŸB‚’P\Þ[˜Ú›Û›Ý\Ô™XY\ˆ	ˆÛÛ^Ž™Ù]™XYÛÛ™XY\Šš[\Þ\Ý[T™XY\•\H\JHÛÛœÝžÂˆØ[Û˜ÙJˆÚ\™YOœ™XY\œ×Ú[š]X[^™YˆÉ—BˆÂˆÛÛœÝ]]È	ˆÙ\™\—ÜÙ][™ÜÈHÙ]Ù\™\”Ù][™ÜÊ
+NÂˆÚ\™YO˜\Þ[˜Ú›Û›Ý\×Ü™[[ÝWÙœ×Ü™XY\‚ˆHÜ™X]U™XYÛÛ™XY\Šš[\Þ\Ý[T™XY\•\NŽTÖSÒ“Ó“ÕT×Ô‘SSÕWÑ”×Ô‘PQT‹Ù\™\—ÜÙ][™ÜÊNÂˆÚ\™YO˜\Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\‚ˆHÜ™X]U™XYÛÛ™XY\Šš[\Þ\Ý[T™XY\•\NŽTÖSÒ“Ó“ÕT×ÓÐÐSÑ”×Ô‘PQT‹Ù\™\—ÜÙ][™ÜÊNÂˆÚ\™YOœÞ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\‚ˆHÜ™X]U™XYÛÛ™XY\Šš[\Þ\Ý[T™XY\•\NŽ”ÖSÒ“Ó“ÕT×ÓÐÐSÑ”×Ô‘PQT‹Ù\™\—ÜÙ][™ÜÊNÂˆJNÂ‚ˆÝÚ]Ú
+\JBˆÂˆØ\ÙHš[\Þ\Ý[T™XY\•\NŽTÖSÒ“Ó“ÕT×Ô‘SSÕWÑ”×Ô‘PQTŽ‚ˆ™]\›ˆ
+œÚ\™YO˜\Þ[˜Ú›Û›Ý\×Ü™[[ÝWÙœ×Ü™XY\ŽÂˆØ\ÙHš[\Þ\Ý[T™XY\•\NŽTÖSÒ“Ó“ÕT×ÓÐÐSÑ”×Ô‘PQTŽ‚ˆ™]\›ˆ
+œÚ\™YO˜\Þ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\ŽÂˆØ\ÙHš[\Þ\Ý[T™XY\•\NŽ”ÖSÒ“Ó“ÕT×ÓÐÐSÑ”×Ô‘PQTŽ‚ˆ™]\›ˆ
+œÚ\™YOœÞ[˜Ú›Û›Ý\×ÛØØ[Ùœ×Ü™XY\ŽÂˆBŸB‚ˆÚYˆTÑWÓP•T’S‘Â’SÕ\š[™Ô™XY\ˆ	ˆÛÛ^Ž™Ù]SÕ\š[™Ô™XY\Š
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YOš[×Ý\š[™×Ü™XY\—Ú[š]X[^™YÉ—HÂˆÚ\™YOš[×Ý\š[™×Ü™XY\ˆHÜ™X]RSÕ\š[™Ô™XY\Š
+NÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YOš[×Ý\š[™×Ü™XY\ŽÂŸBˆÙ[™Y‚‚•™XYÛÛ	ˆÛÛ^Ž™Ù]™XYÛÛÜš]\Š
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YO™XYÛÛÝÜš]\—Ú[š]X[^™YÉ—HÂˆ]]ÈÛÛÜÚ^™HHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ™XYÛÛÝÜš]\—ÜÛÛÜÚ^™WNÂˆ]]È]Y]YWÜÚ^™HHÚ\™YOœÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ™XYÛÛÝÜš]\—Ü]Y]YWÜÚ^™WNÂ‚ˆÚ\™YO™XYÛÛÝÜš]\ˆHÝŽ›XZÙWÝ[š\]YO™XYÛÛŠˆÝ\œ™[Y]šXÜÎŽ’SÕÜš]\•™XYËÝ\œ™[Y]šXÜÎŽ’SÕÜš]\•™XYÐXÝ]™KÝ\œ™[Y]šXÜÎŽ’SÕÜš]\•™XYÔØÚY[YÛÛÜÚ^™KÛÛÜÚ^™K]Y]YWÜÚ^™JNÂˆJNÂ‚ˆ™]\›ˆ
+œÚ\™YO™XYÛÛÝÜš]\ŽÂŸB‚œÝŽœÚ\™YÜÛ™ÐÛÛ›™XÝ[Û“[Z]ˆÛÛ^Ž™Ù]Û™ÐÛÛ›™XÝ[Û“[Z]
+
+HÛÛœÝžÂˆØ[Û˜ÙJÚ\™YO›Û™×ØÛÛ›™XÝ[Û—Û[Z]Ú[š]X[^™YÉ—BˆÂˆÛÛœÝ]]È	ˆÙ\™\—ÜÙ][™ÜÈHÙ]Ù\™\”Ù][™ÜÊ
+NÂˆÚ\™YO›Û™×ØÛÛ›™XÝ[Û—Û[Z]ˆHÝŽ›XZÙWÜÚ\™YÛ™ÐÛÛ›™XÝ[Û“[Z]ŠÙ\™\—ÜÙ][™ÜÖÔÙ\™\”Ù][™ÎŽ›X^Ü™[[ÝWÜ™XYØÛÛ›™XÝ[Ûœ×JNÂˆJNÂˆ™]\›ˆÚ\™YO›Û™×ØÛÛ›™XÝ[Û—Û[Z]ÂŸB‚›ÚYÛÛ^Žœ™[ØYÛ™ÐÛÛ›™XÝ[Û“[Z]ÛÛ™šYÊÚ^™WÝX^Ü™[[ÝWÜ™XYØÛÛ›™XÝ[ÛœÊHÛÛœÝžÂˆËËÈ›Ý]Y›ÝYÚÙ]Û™ÐÛÛ›™XÝ[Û“[Z]ÛÈ\™H\ÈHÚ[™ÛHÜ™X][Ûˆ][™Hš\œÝ\ÙBˆËËÈ˜XÚ[™ÈH™[ØYØ[ˆ™]™\ˆ›ÝÛÛœÝXÝH[Z]‚ˆÙ]Û™ÐÛÛ›™XÝ[Û“[Z]
+
+KOœÙ]Ø\XÚ]JX^Ü™[[ÝWÜ™XYØÛÛ›™XÝ[ÛœÊNÂŸB‚”™XYÙ][™ÜÈÛÛ^Ž™Ù]™XYÙ][™ÜÊ
+HÛÛœÝžÂˆ™XYÙ][™ÜÈ™\ÎÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂ‚ˆÝŽœÝš[™×ÝšY]È™XYÛY]ÙÜÝˆHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›ØØ[Ùš[\Þ\Ý[WÜ™XYÛY]ÙK˜[YNÂ‚ˆYˆ
+]]ÈÜÛY]ÙHXYÚX×Ù[[NŽ™[[WØØ\ÝØØ[”Ô™XYY]ÙŠ™XYÛY]ÙÜÝŠJBˆ™\Ë›ØØ[Ùœ×ÜÙ][™ÜË›Y]ÙH
+›ÜÛY]ÙÂˆ[ÙBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—Ô‘PQÓQUÑ•[šÛ›ÝÛˆ™XYY]Ù	ÞßIÈ›ÜˆØØ[š[\Þ\Ý[H‹™XYÛY]ÙÜÝŠNÂ‚ˆ™XYÛY]ÙÜÝˆHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽœ™[[ÝWÙš[\Þ\Ý[WÜ™XYÛY]ÙK˜[YNÂ‚ˆYˆ
+]]ÈÜÛY]ÙHXYÚX×Ù[[NŽ™[[WØØ\Ý™[[ÝQ”Ô™XYY]ÙŠ™XYÛY]ÙÜÝŠJBˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË›Y]ÙH
+›ÜÛY]ÙÂˆ[ÙBˆ›ÝÈ^Ù\[ÛŠ\œ›ÜÛÙ\ÎŽ•S’Ó“ÕÓ—Ô‘PQÓQUÑ•[šÛ›ÝÛˆ™XYY]Ù	ÞßIÈ›Üˆ™[[ÝHš[\Þ\Ý[H‹™XYÛY]ÙÜÝŠNÂ‚ˆ™\Ë›ØØ[Ùœ×ÜÙ][™ÜËœ™Y™]ÚHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›ØØ[Ùš[\Þ\Ý[WÜ™XYÜ™Y™]ÚNÂˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜËœ™Y™]ÚHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™[[ÝWÙš[\Þ\Ý[WÜ™XYÜ™Y™]ÚNÂ‚ˆ™\Ë™[˜X›WÙš[\Þ\Ý[WÜ™XYÜ™Y™]Ú\×ÛÙÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WÙš[\Þ\Ý[WÜ™XYÜ™Y™]Ú\×ÛÙ×NÂ‚ˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË›X^Ø˜XÚÛÙ™—Û\ÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™[[ÝWÙœ×Ü™XYÛX^Ø˜XÚÛÙ™—Û\×NÂˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË›X^Ü™]šY\ÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™[[ÝWÙœ×Ü™XYØ˜XÚÛÙ™—ÛX^ÝšY\×NÂˆ™\Ë™[˜X›WÙš[\Þ\Ý[WØØXÚHHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WÙš[\Þ\Ý[WØØXÚWNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜËœ™XYÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\ÜÂˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™XYÙœ›ÛWÙš[\Þ\Ý[WØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚWNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜË™[˜X›WÛÙÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WÙš[\Þ\Ý[WØØXÚWÛÙ×NÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜËœÙYÛY[×Ø˜]ÚÜÚ^™HHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÜÙYÛY[×Ø˜]ÚÜÚ^™WNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜËœ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™ÂˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÜ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™×NÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜË˜[Ý×Ø˜XÚÙÜ›Ý[™ÙÝÛ›ØYHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWØ[Ý×Ø˜XÚÙÜ›Ý[™ÙÝÛ›ØYNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜË˜[Ý×Ø˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ›Ü—ÛY]Y]WÙš[\×Ú[—ÜXÚÙYÜÝÜ˜YÙBˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÙ[˜X›WØ˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ›Ü—ÛY]Y]WÙš[\×Ú[—ÜXÚÙYÜÝÜ˜YÙWNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜË˜[Ý×Ø˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ\š[™×Ù™]ÚˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÙ[˜X›WØ˜XÚÙÜ›Ý[™ÙÝÛ›ØYÙ\š[™×Ù™]ÚNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜËœ™Y™\—ØšYÙÙ\—ØY™™\—ÜÚ^™HHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÜ™Y™\—ØšYÙÙ\—ØY™™\—ÜÚ^™WNÂ‚ˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜË›X^ÙÝÛ›ØYÜÚ^™WÜ\—Ü]Y\žHHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÛX^ÙÝÛ›ØYÜÚ^™WNÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜÙ][™ÜËœÚÚ\ÙÝÛ›ØYÚY—Ù^ÙYY×Ü\—Ü]Y\žWØØXÚWÝÜš]WÛ[Z]ˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÜÚÚ\ÙÝÛ›ØYÚY—Ù^ÙYY×Ü\—Ü]Y\žWØØXÚWÝÜš]WÛ[Z]NÂ‚ˆ™\ËœYÙWØØXÚWÜÙ][™ÜË˜ØXÚHHÙ]YÙPØXÚJ
+NÂˆ™\Ë\ÙWÜYÙWØØXÚWÙ›Ü—Ù\ÚÜ×ÝÚ]Ý]Ùš[WØØXÚHHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ\ÙWÜYÙWØØXÚWÙ›Ü—Ù\ÚÜ×ÝÚ]Ý]Ùš[WØØXÚWNÂˆ™\Ë\ÙWÜYÙWØØXÚWÝÚ]Ù\ÝšX]YØØXÚHHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ\ÙWÜYÙWØØXÚWÝÚ]Ù\ÝšX]YØØXÚWNÂˆ™\Ë\ÙWÜYÙWØØXÚWÙ›Ü—ÛØØ[Ù\ÚÜÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ\ÙWÜYÙWØØXÚWÙ›Ü—ÛØØ[Ù\ÚÜ×NÂˆ™\Ë\ÙWÜYÙWØØXÚWÙ›Ü—ÛØš™XÝÜÝÜ˜YÙHHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ\ÙWÜYÙWØØXÚWÙ›Ü—ÛØš™XÝÜÝÜ˜YÙWNÂˆ™\Ëœ™XY\—Ù^XÝ]Ü‹™[˜X›YHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ\ÙWÜ™XY\—Ù^XÝ]Ü—NÂˆ™\Ëœ™XY\—Ù^XÝ]Ü‹\ÙWÛÛ™×ØÛÛ›™XÝ[ÛœÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™XY\—Ù^XÝ]Ü—Ý\ÙWÛÛ™×ØÛÛ›™XÝ[Ûœ×NÂˆ™\Ëœ™XY\—Ù^XÝ]Ü‹›Z[—Øž]\×Ù›Ü—ÜÙYZÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™XY\—Ù^XÝ]Ü—ÛZ[—Øž]\×Ù›Ü—ÜÙYZ×NÂˆ™\Ëœ™XY\—Ù^XÝ]Ü‹›X^ÝZ[Ù›Ü—Ù˜Z[ˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™XY\—Ù^XÝ]Ü—ÛX^ÝZ[Ù›Ü—Ù˜Z[—NÂˆ™\ËœYÙWØØXÚWÜÙ][™ÜËœ™XYÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\ÜÂˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™XYÙœ›ÛWÜYÙWØØXÚWÚY—Ù^\Ý×ÛÝ\Ú\ÙWØž\\Ü×ØØXÚWNÂˆ™\ËœYÙWØØXÚWÜÙ][™ÜËœ˜[™ÛWÙ]šXÝ[Û—Ù›Ü—Ý\ÝÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœYÙWØØXÚWÚ[š™XÝÙ]šXÝ[Û—NÂˆ™\ËœYÙWØØXÚWÜÙ][™ÜË˜›ØÚ×ÜÚ^™HHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœYÙWØØXÚWØ›ØÚ×ÜÚ^™WNÂˆ™\ËœYÙWØØXÚWÜÙ][™ÜË›ÛÚØZXYØ›ØÚÜÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœYÙWØØXÚWÛÛÚØZXYØ›ØÚÜ×NÂˆ™\ËœYÙWØØXÚWÜÙ][™ÜË›X^ØÛØ[\ØÙYØž]\ÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœYÙWØØXÚWÛX^ØÛØ[\ØÙYØž]\×NÂ‚ˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË›Z[—Øž]\×Ù›Ü—ÜÙYZÈHÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽœ™[[ÝWÜ™XYÛZ[—Øž]\×Ù›Ü—ÜÙYZ×NÂ‚ˆËËÈ™\›È™XYY™™\ˆÚ[›ÝXZÙH›ÙÜ™\ÜË‚ˆYˆ
+YÙ]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WJBˆÂˆ›ÝÈ^Ù\[ÛŠˆ\œ›ÜÛÙ\ÎŽ’S•SQÔÑUS‘×ÕSQK’[˜[Y˜[YH	ÞßIÈ›ÜˆX^Ü™XYØY™™\—ÜÚ^™H‹Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WK˜[YJNÂˆB‚ˆ™\Ë›ØØ[Ùœ×ÜÙ][™ÜË˜Y™™\—ÜÚ^™BˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WÛØØ[Ùœ×HÈÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WÛØØ[Ùœ×HˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WNÂˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË˜Y™™\—ÜÚ^™BˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WÜ™[[ÝWÙœ×HÈÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WÜ™[[ÝWÙœ×HˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™XYØY™™\—ÜÚ^™WNÂˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË›\™ÙWØY™™\—ÜÚ^™HHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™Y™]ÚØY™™\—ÜÚ^™WNÂˆ™\Ë›ØØ[Ùœ×ÜÙ][™ÜË™\™XÝÚ[×Ý™\ÚÛHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›Z[—Øž]\×Ý×Ý\ÙWÙ\™XÝÚ[×NÂˆ™\Ë›ØØ[Ùœ×ÜÙ][™ÜË›[X\Ý™\ÚÛHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›Z[—Øž]\×Ý×Ý\ÙWÛ[X\Ú[×NÂˆ™\Ëœš[Üš]HHš[Üš]^ÜÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ™XYÜš[Üš]W_NÂ‚ˆ™\Ëœ™[[ÝWÝ›Ý\ˆHÙ]™[[ÝT™XY›Ý\Š
+NÂˆ™\Ë›ØØ[Ý›Ý\ˆHÙ]ØØ[™XY›Ý\Š
+NÂ‚ˆ™\ËšÜÙ][™ÜË›X^ÝšY\ÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽšÛX^ÝšY\×NÂˆ™\ËšÜÙ][™ÜËœ™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\ÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽšÜ™]žWÚ[š]X[Ø˜XÚÛÙ™—Û\×NÂˆ™\ËšÜÙ][™ÜËœ™]žWÛX^Ø˜XÚÛÙ™—Û\ÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽšÜ™]žWÛX^Ø˜XÚÛÙ™—Û\×NÂˆ™\ËšÜÙ][™ÜËœÚÚ\Û›ÝÙ›Ý[™Ý\›Ù›Ü—ÙÛØœÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽšÜÚÚ\Û›ÝÙ›Ý[™Ý\›Ù›Ü—ÙÛØœ×NÂˆ™\ËšÜÙ][™ÜË›XZÙWÚXYÜ™\]Y\ÝHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽšÛXZÙWÚXYÜ™\]Y\ÝNÂ‚ˆ™\Ë›ØØ[Ùœ×ÜÙ][™ÜË›[X\ØØXÚHHÙ]SX\Yš[PØXÚJ
+K™Ù]
+
+NÂˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË™[˜X›WÚœ×Ü™XYHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WÚœ×Ü™XYNÂˆ™\Ëœ™[[ÝWÙœ×ÜÙ][™ÜË™[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WØ›Ø—ÜÝÜ˜YÙWÛÙ×Ù›Ü—Ü™XYÛÜ\˜][Ûœ×NÂ‚ˆ™]\›ˆ™\ÎÂŸB‚•Üš]TÙ][™ÜÈÛÛ^Ž™Ù]Üš]TÙ][™ÜÊ
+HÛÛœÝžÂˆÜš]TÙ][™ÜÈ™\ÎÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂ‚ˆ™\Ë™[˜X›WÙš[\Þ\Ý[WØØXÚWÛÛ—ÝÜš]WÛÜ\˜][ÛœÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WÙš[\Þ\Ý[WØØXÚWÛÛ—ÝÜš]WÛÜ\˜][Ûœ×NÂˆ™\Ë™[˜X›WÙš[\Þ\Ý[WØØXÚWÛÙÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™[˜X›WÙš[\Þ\Ý[WØØXÚWÛÙ×NÂˆ™\Ë›Ý×ÛÛ—Ù\œ›Ü—Ùœ›ÛWØØXÚHHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›Ý×ÛÛ—Ù\œ›Ü—Ùœ›ÛWØØXÚWÛÛ—ÝÜš]WÛÜ\˜][Ûœ×NÂˆ™\Ë™š[\Þ\Ý[WØØXÚWÜ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™ÂˆHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ™š[\Þ\Ý[WØØXÚWÜ™\Ù\™WÜÜXÙWÝØZ]ÛØÚ×Ý[Y[Ý]ÛZ[\ÙXÛÛ™×NÂ‚ˆ™\ËœÌ×Ø[Ý×Ü\˜[[Ü\Ý\ØYHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœÌ×Ø[Ý×Ü\˜[[Ü\Ý\ØYNÂˆ™\Ë˜^\™WØ[Ý×Ü\˜[[Ü\Ý\ØYHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ˜^\™WØ[Ý×Ü\˜[[Ü\Ý\ØYNÂ‚ˆ™\Ëœ™[[ÝWÝ›Ý\ˆHÙ]™[[ÝUÜš]U›Ý\Š
+NÂˆ™\Ë›ØØ[Ý›Ý\ˆHÙ]ØØ[Üš]U›Ý\Š
+NÂ‚ˆ™]\›ˆ™\ÎÂŸB‚œÝŽœÚ\™YÜ\Þ[˜Ô™XYÛÝ[\œÏˆÛÛ^Ž™Ù]\Þ[˜Ô™XYÛÝ[\œÊ
+HÛÛœÝžÂˆ™]\›ˆ\Þ[˜×Ü™XYØÛÝ[\œÎÂŸB‚˜›ÛÛÛÛ^Ž˜Ø[•\ÙU\ÚÐ˜\ÙY\˜[[™\XØ\Ê
+HÛÛœÝžÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂ‚ˆYˆ
+\Ù][™Ü×Ü™Y–ÔÙ][™ÎŽ˜[Ý×Ù^\š[Y[[Ø[˜[^™\—H	‰ˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×ÛÛ›WÝÚ]Ø[˜[^™\—JBˆ™]\›ˆ˜[ÙNÂ‚ˆ™]\›ˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ˜[Ý×Ù^\š[Y[[Ü\˜[[Ü™XY[™×Ùœ›ÛWÜ™\XØ\×Hˆˆ	‰ˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Û[ÙWHOH\˜[[™\XØ\Ó[ÙNŽ”‘PQÕTÒÔÂˆ	‰ˆ
+Ù][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü\˜[[Ü™\XØ\×HˆBˆ\Ù][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Ü™Y™\—ÛØØ[Ü™\XØWJBˆ	‰ˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ˜]]ÛX]X×Ü\˜[[Ü™\XØ\×Û[ÙWHOHÂŸB‚˜›ÛÛÛÛ^Ž˜Ø[•\ÙT\˜[[™\XØ\ÓÛ’[š]X]ÜŠ
+HÛÛœÝžÂˆ™]\›ˆØ[•\ÙU\ÚÐ˜\ÙY\˜[[™\XØ\Ê
+H	‰ˆYÙ]ÛY[[™›Ê
+K˜ÛÛX›Ü˜]WÝÚ]Ú[š]X]ÜŽÂŸB‚˜›ÛÛÛÛ^Ž˜Ø[•\ÙT\˜[[™\XØ\ÓÛ‘›ÛÝÙ\Š
+HÛÛœÝžÂˆ™]\›ˆØ[•\ÙU\ÚÐ˜\ÙY\˜[[™\XØ\Ê
+H	‰ˆÙ]ÛY[[™›Ê
+K˜ÛÛX›Ü˜]WÝÚ]Ú[š]X]ÜŽÂŸB‚˜›ÛÛÛÛ^Ž˜Ø[•\ÙT\˜[[™\XØ\ÐÝ\ÝÛRÙ^J
+HÛÛœÝžÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂ‚ˆÛÛœÝ›ÛÛ\×Ù[›ÝYÚÜÙ\™\œÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü\˜[[Ü™\XØ\×HˆNÂˆÛÛœÝ›ÛÛ\˜[[Ü™\XØ\×Ù[˜X›YHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ˜[Ý×Ù^\š[Y[[Ü\˜[[Ü™XY[™×Ùœ›ÛWÜ™\XØ\×HˆÂˆÛÛœÝ›ÛÛ\×Ü\˜[[Ü™\XØ\×ÝÚ]ØÝ\ÝÛWÚÙ^HBˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Û[ÙWHOH\˜[[™\XØ\Ó[ÙNŽÕTÕÓWÒÑVWÔÐSTS‘ÈˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Û[ÙWHOH\˜[[™\XØ\Ó[ÙNŽÕTÕÓWÒÑVWÔS‘ÑNÂ‚ˆ™]\›ˆ\×Ù[›ÝYÚÜÙ\™\œÈ	‰ˆ\˜[[Ü™\XØ\×Ù[˜X›Y	‰ˆ\×Ü\˜[[Ü™\XØ\×ÝÚ]ØÝ\ÝÛWÚÙ^NÂŸB‚˜›ÛÛÛÛ^Ž˜Ø[•\ÙT\˜[[™\XØ\ÐÝ\ÝÛRÙ^Q›ÜÛ\Ý\ŠÛÛœÝÛ\Ý\ˆ	ˆÛ\Ý\ŠHÛÛœÝžÂˆ™]\›ˆØ[•\ÙT\˜[[™\XØ\ÐÝ\ÝÛRÙ^J
+H	‰ˆÛ\Ý\‹™Ù]Ú\™ÛÝ[
+
+HOHH	‰ˆÛ\Ý\‹™Ù]Ú\™Ò[™›Ê
+VÌK™Ù][›ÙPÛÝ[
+
+HˆNÂŸB‚˜›ÛÛÛÛ^Ž˜Ø[•\ÙSÙ™œÙ]\˜[[™\XØ\Ê
+HÛÛœÝžÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂ‚ˆÊŠ‚ˆ
+ˆÙ™œÙ]\˜[[™\XØ\È[ÛÜš]H\È›ÝÛ›HHÛ™HÚXÚ™[Y\ÈÛˆ˜]]™HÐSTS‘ÈÑVKˆ
+ˆ][ÛÈÜÙHÚXÚ™[HÛˆÝ\ÝÛY\‹\›ÝšYY˜Ý\ÝÛHˆÙ^K‚ˆ
+ˆÙHÛÛXš[™H[HÙÙ]\ˆ[ÈÛ™HÜ›Ý\›ÜˆÛÛ™[šY[˜ÙK‚ˆ
+‹ÂˆÛÛœÝ›ÛÛ\×Ù[›ÝYÚÜÙ\™\œÈHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü\˜[[Ü™\XØ\×HˆNÂˆÛÛœÝ›ÛÛ\˜[[Ü™\XØ\×Ù[˜X›YHÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ˜[Ý×Ù^\š[Y[[Ü\˜[[Ü™XY[™×Ùœ›ÛWÜ™\XØ\×HˆÂˆÛÛœÝ›ÛÛ\×Ü\˜[[Ü™\XØ\×ÝÚ]ØÝ\ÝÛWÚÙ^WÛÜ—Û˜]]™WÜØ[\[™×ÚÙ^HBˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Û[ÙWHOH\˜[[™\XØ\Ó[ÙNŽ”ÐSTS‘×ÒÑVHˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Û[ÙWHOH\˜[[™\XØ\Ó[ÙNŽÕTÕÓWÒÑVWÔÐSTS‘ÈˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽœ\˜[[Ü™\XØ\×Û[ÙWHOH\˜[[™\XØ\Ó[ÙNŽÕTÕÓWÒÑVWÔS‘ÑNÂˆ™]\›ˆÙ™œÙ]Ü\˜[[Ü™\XØ\×Ù[˜X›Y	‰‚ˆ\×Ù[›ÝYÚÜÙ\™\œÈ	‰‚ˆ\˜[[Ü™\XØ\×Ù[˜X›Y	‰‚ˆ\×Ü\˜[[Ü™\XØ\×ÝÚ]ØÝ\ÝÛWÚÙ^WÛÜ—Û˜]]™WÜØ[\[™×ÚÙ^NÂŸB‚›ÚYÛÛ^Ž™\ØX›SÙ™œÙ]\˜[[™\XØ\Ê
+BžÂˆÙ™œÙ]Ü\˜[[Ü™\XØ\×Ù[˜X›YH˜[ÙNÂŸB‚Û\Ý\”ˆÛÛ^Ž™Ù]Û\Ý\‘›Ü”\˜[[™\XØ\Ê
+HÛÛœÝžÂˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂˆËËÈÚXÚÈÛ\Ý\ˆ›Üˆ\˜[[™\XØ\ÂˆYˆ
+Ù][™Ü×Ü™Y–ÔÙ][™ÎŽ˜Û\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\×K˜[YK™[\J
+JBˆ›ÝÈ^Ù\[ÛŠˆ\œ›ÜÛÙ\ÎŽÓTÕT—ÑÑTÓ•ÑVTÕˆ”™XY[™È[ˆ\˜[[œ›ÛH™\XØ\È\È[˜X›Y]Û\Ý\ˆÈ^XÝ]H]Y\žH\È›Ý›ÝšYYˆX\ÙHÙ]‚ˆ‰ØÛ\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\ÉÈÙ][™ÈŠNÂ‚ˆ™]\›ˆÙ]Û\Ý\ŠÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ˜Û\Ý\—Ù›Ü—Ü\˜[[Ü™\XØ\×JNÂŸB‚›ÚYÛÛ^ŽœÙ]™\\™YÙ]ÐØXÚJÛÛœÝ™\\™YÙ]ÐØXÚTˆ	ˆØXÚJBžÂˆ™\\™YÜÙ]×ØØXÚHHØXÚNÂŸB‚”™\\™YÙ]ÐØXÚTˆÛÛ^Ž™Ù]™\\™YÙ]ÐØXÚJ
+HÛÛœÝžÂˆ™]\›ˆ™\\™YÜÙ]×ØØXÚNÂŸB‚”™]™\œÙSÛÚÝ\ØXÚH	ˆÛÛ^Ž™Ù]™]™\œÙSÛÚÝ\ØXÚJ
+HÛÛœÝžÂˆ]]È]Y\žWØÛÛ^HÙ]]Y\žPÛÛ^
+
+NÂ‚ˆÛÛœÝ]]È	ˆÙ][™Ü×Ü™YˆHÙ]Ù][™ÜÔ™YŠ
+NÂ‚ˆÝŽ›ØÚ×ÙÝX\™ÛÛ^Ú\™Y]]^ˆØÚÊ]Y\žWØÛÛ^O›]]^
+NÂˆYˆ
+\]Y\žWØÛÛ^Oœ™]™\œÙWÛÛÚÝ\ØØXÚJBˆÂˆ]Y\žWØÛÛ^Oœ™]™\œÙWÛÛÚÝ\ØØXÚHHÝŽ›XZÙWÜÚ\™Y™]™\œÙSÛÚÝ\ØXÚOŠˆ“•H‹ˆÝ\œ™[Y]šXÜÎŽ™[™
+
+KˆÝ\œ™[Y]šXÜÎŽ™[™
+
+KˆÙ][™Ü×Ü™Y–ÔÙ][™ÎŽ›X^Ü™]™\œÙWÙXÝ[Û˜\žWÛÛÚÝ\ØØXÚWÜÚ^™WØž]\×Kˆ™]™\œÙSÛÚÝ\ØXÚNŽ““×ÓPVÐÓÕS•ˆ™]™\œÙSÛÚÝ\ØXÚNŽ‘QUSÔÒV‘WÔUSÊNÂˆBˆ™]\›ˆ
+œ]Y\žWØÛÛ^Oœ™]™\œÙWÛÛÚÝ\ØØXÚNÂŸB‚›ÚYÛÛ^ŽœÙ][[YQš[\“ÛÚÝ\
+ÛÛœÝ[[YQš[\“ÛÚÝ\ˆ	ˆš[\—ÛÛÚÝ\
+BžÂˆ[[YWÙš[\—ÛÛÚÝ\Hš[\—ÛÛÚÝ\ÂŸB‚”[[YQš[\“ÛÚÝ\ˆÛÛ^Ž™Ù][[YQš[\“ÛÚÝ\
+
+HÛÛœÝžÂˆ™]\›ˆ[[YWÙš[\—ÛÛÚÝ\ÂŸB‚•R[ÛÛ^Ž™Ù]ÛY[›ÝØÛÛ™\œÚ[ÛŠ
+HÛÛœÝžÂˆ™]\›ˆÛY[Ü›ÝØÛÛÝ™\œÚ[ÛŽÂŸB‚›ÚYÛÛ^ŽœÙ]ÛY[›ÝØÛÛ™\œÚ[ÛŠR[™\œÚ[ÛŠBžÂˆÛY[Ü›ÝØÛÛÝ™\œÚ[ÛˆH™\œÚ[ÛŽÂŸB‚›ÚYÛÛ^ŽœÙ]\][Û’YÓX^›ØÚÊÛÛœÝURQ	ˆX›WÝ]ZY\][Û’YÓX^›ØÚÔˆ\][ÛœÊBžÂˆ\][Û—ÚYÝ×ÛX^Ø›ØÚÖÝX›WÝ]ZYHHÝŽ›[Ý™J\][ÛœÊNÂŸB‚”\][Û’YÓX^›ØÚÔˆÛÛ^Ž™Ù]\][Û’YÓX^›ØÚÊÛÛœÝURQ	ˆX›WÝ]ZY
+HÛÛœÝžÂˆ]]È]H\][Û—ÚYÝ×ÛX^Ø›ØÚË™š[™
+X›WÝ]ZY
+NÂˆ™]\›ˆ]OH\][Û—ÚYÝ×ÛX^Ø›ØÚË™[™
+
+HÈ]OœÙXÛÛ™ˆ[ŽÂŸB‚˜ÛÛœÝÙ\™\”Ù][™ÜÈ	ˆÛÛ^Ž™Ù]Ù\™\”Ù][™ÜÊ
+HÛÛœÝžÂˆ™]\›ˆÚ\™YOœÙ\™\—ÜÙ][™ÜÎÂŸB‚”Ù\™\”Ù][™ÜÈÛÛ^Ž™Ù]Ù\™\”Ù][™ÜÐÛÜJ
+HÛÛœÝžÂˆËËÈÞ[˜Ú›Ûš^™HÚ]H[[YHÜš]\œÈÙˆÚ\™YOœÙ\™\—ÜÙ][™ÜØˆËËÈ
+K™ËˆÙ]ÌÔ]Y]YQ\ØX›TÝ™X[Z[™ØÙ]Y\ÜØYÙT]Y]YQ\ØX›R[œÙ\[Û˜
+KÚXÚÜš]H[™\ˆÚ\™YO›]]^‚ˆÚ\™YØÚÑÝX\™ØÚÊÚ\™YO›]]^
+NÂˆ™]\›ˆÚ\™YOœÙ\™\—ÜÙ][™ÜÎÂŸB‚Z[ÝÛÛ^Ž™Ù]X^ÝÐYÙJ
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÝ×ÛX^ØYÙWNÂŸB‚ˆZ[ÝÛÛ^Ž™Ù]X^\šTÚ^™J
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÛX^Ý\šWÜÚ^™WNÂŸB‚Z[ÝÛÛ^Ž™Ù]X^šY[Ê
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÛX^ÙšY[×NÂŸB‚Z[ÝÛÛ^Ž™Ù]X^šY[˜[YTÚ^™J
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÛX^ÙšY[Û˜[YWÜÚ^™WNÂŸB‚Z[ÝÛÛ^Ž™Ù]X^šY[˜[YTÚ^™J
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÛX^ÙšY[Ý˜[YWÜÚ^™WNÂŸB‚Z[ÝÛÛ^Ž™Ù]X^™\]Y\ÝXY\”Ú^™J
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÛX^Ü™\]Y\ÝÚXY\—ÜÚ^™WNÂŸB‚”ØÛÎŽ•[Y\Ü[ˆÛÛ^Ž™Ù]XY\œÔ™XY[Y[Ý]
+
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÚXY\œ×Ü™XYÝ[Y[Ý]NÂŸB‚”ØÛÎŽ•[Y\Ü[ˆÛÛ^Ž™Ù]™XÙZ]™U[Y[Ý]
+
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÜ™XÙZ]™WÝ[Y[Ý]NÂŸB‚”ØÛÎŽ•[Y\Ü[ˆÛÛ^Ž™Ù]Ù[™[Y[Ý]
+
+HÛÛœÝžÂˆ™]\›ˆÛÛ^O™Ù]Ù][™ÜÔ™YŠ
+VÔÙ][™ÎŽšÜÙ[™Ý[Y[Ý]NÂŸB‚ŸB

@@ -1316,7 +1316,11 @@ void InsertDependenciesBuilder::collectAllDependencies()
         {
             // Destination tables for StorageMaterializedView does not have id in inner_tables
             for (auto & child : DatabaseCatalog::instance().getDependentViews(id))
+            {
+                if (id == init_table_id && !init_storage->shouldPushToMaterializedView(child, init_context))
+                    continue;
                 expand(child);
+            }
         }
     };
 

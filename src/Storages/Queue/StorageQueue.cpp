@@ -2,28 +2,37 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/ISource.h>
+#include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
@@ -36,12 +45,17 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_queue_table_engine;
+    extern const SettingsBool queue_commit_on_select;
+    extern const SettingsString queue_consumer_offset;
+    extern const SettingsString queue_consumer_group;
+    extern const SettingsUInt64 queue_max_batch_size;
+    extern const SettingsBool queue_reset_consumer_offset;
 }
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
+    extern const int QUERY_NOT_ALLOWED;
     extern const int UNKNOWN_STORAGE;
 }
 
@@ -55,6 +69,18 @@ namespace
     constexpr UInt64 DEFAULT_RETENTION_SECONDS = 7 * 24 * 60 * 60;
     constexpr UInt64 DEFAULT_MAX_BATCH_SIZE = 65536;
     constexpr UInt64 DEFAULT_POLLING_INTERVAL_MS = 100;
+
+    bool startsAtLatest(const String & offset)
+    {
+        if (offset == "earliest")
+            return false;
+        if (offset == "latest")
+            return true;
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `queue_consumer_offset` must be `earliest` or `latest`, got '{}'",
+            offset);
+    }
 
     ASTPtr parseCreateQuery(const String & query)
     {
@@ -88,18 +114,204 @@ namespace
         return insert;
     }
 
+    Block makeAcknowledgementBlock(const Block & block)
+    {
+        Block acknowledgement;
+        acknowledgement.insert(block.getByName(String(ID_COLUMN)));
+        acknowledgement.insert(ColumnWithTypeAndName{
+            ColumnUInt64::create(block.rows(), 2),
+            block.getByName(String(VERSION_COLUMN)).type,
+            String(VERSION_COLUMN)});
+        acknowledgement.insert(ColumnWithTypeAndName{
+            ColumnUInt8::create(block.rows(), 1),
+            block.getByName(String(IS_DELETED_COLUMN)).type,
+            String(IS_DELETED_COLUMN)});
+        acknowledgement.insert(block.getByName(String(CREATED_AT_COLUMN)));
+        return acknowledgement;
+    }
+
+    struct QueueReadState
+    {
+        explicit QueueReadState(std::shared_mutex & consumer_groups_mutex)
+            : consumer_groups_lock(consumer_groups_mutex)
+        {
+        }
+
+        std::shared_lock<std::shared_mutex> consumer_groups_lock;
+        Blocks acknowledgement_blocks;
+    };
+
+    class QueueSource final : public ISource, WithContext
+    {
+    public:
+        QueueSource(
+            SharedHeader header_,
+            Names output_columns_,
+            const StorageID & consumer_table_id_,
+            UInt64 batch_size_,
+            ContextPtr context_,
+            std::shared_ptr<QueueReadState> state_)
+            : ISource(std::move(header_))
+            , WithContext(context_)
+            , output_columns(std::move(output_columns_))
+            , consumer_table_id(consumer_table_id_)
+            , batch_size(batch_size_)
+            , state(std::move(state_))
+        {
+        }
+
+        ~QueueSource() override
+        {
+            if (select_io && !select_finished)
+            {
+                if (reader)
+                {
+                    reader->cancel();
+                    reader.reset();
+                }
+                select_io->onCancelOrConnectionLoss();
+            }
+        }
+
+        String getName() const override { return "QueueSource"; }
+
+    protected:
+        Chunk generate() override
+        {
+            try
+            {
+                initialize();
+
+                Block block;
+                if (!reader->pull(block))
+                {
+                    reader.reset();
+                    select_io->onFinish();
+                    select_finished = true;
+                    return {};
+                }
+
+                if (!block.rows())
+                    return {};
+
+                state->acknowledgement_blocks.emplace_back(makeAcknowledgementBlock(block));
+
+                Columns output;
+                output.reserve(output_columns.size());
+                for (const auto & name : output_columns)
+                    output.emplace_back(block.getByName(name).column);
+                return Chunk(std::move(output), block.rows());
+            }
+            catch (...)
+            {
+                if (select_io && !select_finished)
+                {
+                    if (reader)
+                    {
+                        reader->cancel();
+                        reader.reset();
+                    }
+                    select_io->onException();
+                    select_finished = true;
+                }
+                throw;
+            }
+        }
+
+    private:
+        void initialize()
+        {
+            if (reader)
+                return;
+
+            Names select_columns = output_columns;
+            select_columns.emplace_back(ID_COLUMN);
+            select_columns.emplace_back(VERSION_COLUMN);
+            select_columns.emplace_back(IS_DELETED_COLUMN);
+            select_columns.emplace_back(CREATED_AT_COLUMN);
+
+            Strings quoted_columns;
+            quoted_columns.reserve(select_columns.size());
+            for (const auto & name : select_columns)
+                quoted_columns.emplace_back(backQuoteIfNeed(name));
+
+            const String select_query = fmt::format(
+                "SELECT {} FROM {} FINAL ORDER BY (`{}`, `{}`) LIMIT {}",
+                fmt::join(quoted_columns, ", "),
+                quoteTable(consumer_table_id),
+                CREATED_AT_COLUMN,
+                ID_COLUMN,
+                batch_size);
+
+            auto select_context = Context::createCopy(getContext());
+            select_io.emplace(executeQuery(select_query, select_context, QueryFlags{.internal = true}).second);
+            reader = std::make_unique<PullingPipelineExecutor>(select_io->pipeline);
+        }
+
+        const Names output_columns;
+        const StorageID consumer_table_id;
+        const UInt64 batch_size;
+        const std::shared_ptr<QueueReadState> state;
+
+        std::optional<BlockIO> select_io;
+        std::unique_ptr<PullingPipelineExecutor> reader;
+        bool select_finished = false;
+    };
+
+    class ReadFromQueue final : public ISourceStep
+    {
+    public:
+        ReadFromQueue(
+            SharedHeader header_,
+            Names output_columns_,
+            const StorageID & consumer_table_id_,
+            UInt64 batch_size_,
+            ContextPtr context_,
+            std::shared_ptr<QueueReadState> state_)
+            : ISourceStep(std::move(header_))
+            , output_columns(std::move(output_columns_))
+            , consumer_table_id(consumer_table_id_)
+            , batch_size(batch_size_)
+            , context(context_)
+            , state(std::move(state_))
+        {
+        }
+
+        String getName() const override { return "ReadFromQueue"; }
+
+        void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override
+        {
+            pipeline.init(Pipe(std::make_shared<QueueSource>(
+                getOutputHeader(),
+                output_columns,
+                consumer_table_id,
+                batch_size,
+                context,
+                state)));
+        }
+
+    private:
+        const Names output_columns;
+        const StorageID consumer_table_id;
+        const UInt64 batch_size;
+        const ContextPtr context;
+        const std::shared_ptr<QueueReadState> state;
+    };
+
     class QueueSink final : public SinkToStorage, WithContext
     {
     public:
         QueueSink(
-            const StorageID & inner_table_id_,
+            const StorageID & main_table_id_,
             const Block & header_,
             ContextPtr context_,
-            bool async_insert_)
+            bool async_insert_,
+            std::shared_mutex & consumer_groups_mutex_)
             : SinkToStorage(std::make_shared<const Block>(header_))
             , WithContext(context_)
-            , inner_table_id(inner_table_id_)
+            , main_table_id(main_table_id_)
             , async_insert(async_insert_)
+            , consumer_groups_mutex(consumer_groups_mutex_)
         {
         }
 
@@ -122,11 +334,13 @@ namespace
 
         void onStart() override
         {
+            consumer_groups_lock.emplace(consumer_groups_mutex);
+
             auto insert_context = Context::createCopy(getContext());
             insert_context->makeQueryContext();
 
             InterpreterInsertQuery interpreter(
-                makeInsertQuery(inner_table_id, getHeader().getNames()),
+                makeInsertQuery(main_table_id, getHeader().getNames()),
                 insert_context,
                 /* allow_materialized */ true,
                 /* no_squash */ false,
@@ -151,6 +365,7 @@ namespace
             executor.reset();
             block_io.onFinish();
             block_io = {};
+            consumer_groups_lock.reset();
         }
 
         void onException(std::exception_ptr) override
@@ -160,18 +375,21 @@ namespace
             executor.reset();
             block_io.onException();
             block_io = {};
+            consumer_groups_lock.reset();
         }
 
     private:
-        const StorageID inner_table_id;
+        const StorageID main_table_id;
         const bool async_insert;
+        std::shared_mutex & consumer_groups_mutex;
+        std::optional<std::shared_lock<std::shared_mutex>> consumer_groups_lock;
         BlockIO block_io;
         std::unique_ptr<PushingPipelineExecutor> executor;
     };
 }
 
 
-String StorageQueue::getInnerTableName(const StorageID & queue_table_id)
+String StorageQueue::getMainTableName(const StorageID & queue_table_id)
 {
     if (queue_table_id.hasUUID())
         return ".inner_id.queue." + toString(queue_table_id.uuid);
@@ -179,46 +397,59 @@ String StorageQueue::getInnerTableName(const StorageID & queue_table_id)
 }
 
 
-StorageID StorageQueue::createInnerTable(
+String StorageQueue::getConsumerTableName(const StorageID & queue_table_id, const String & consumer_group)
+{
+    return getMainTableName(queue_table_id) + ".group." + sipHash128String(consumer_group);
+}
+
+
+String StorageQueue::getConsumerViewName(const StorageID & queue_table_id, const String & consumer_group)
+{
+    return getMainTableName(queue_table_id) + ".group_view." + sipHash128String(consumer_group);
+}
+
+
+StorageID StorageQueue::createDataTable(
     const ASTCreateQuery & outer_query,
-    const StorageID & queue_table_id,
+    const StorageID & table_id,
     ContextPtr local_context,
     LoadingStrictnessLevel mode,
-    UInt64 retention_seconds)
+    UInt64 retention_seconds,
+    bool consumer_table)
 {
-    StorageID inner_table_id{
-        queue_table_id.getDatabaseName(),
-        getInnerTableName(queue_table_id)};
-
     if (mode > LoadingStrictnessLevel::SECONDARY_CREATE)
-        return inner_table_id;
+        return table_id;
 
     const auto internal_definition = fmt::format(
         "CREATE TABLE queue_inner ("
-        "`{}` UUID DEFAULT generateUUIDv4(), "
+        "`{}` UUID DEFAULT generateUUIDv7(), "
         "`{}` UInt64 DEFAULT 1, "
         "`{}` UInt8 DEFAULT 0, "
         "`{}` DateTime64(6) DEFAULT now64(6)) "
-        "ENGINE = ReplacingMergeTree(`{}`, `{}`) "
+        "ENGINE = {} "
         "PARTITION BY toYYYYMM(`{}`) "
-        "ORDER BY `{}` "
-        "TTL `{}` + toIntervalSecond({}) DELETE "
-        "SETTINGS clean_deleted_rows = 'Always', allow_experimental_replacing_merge_with_cleanup = 1",
+        "ORDER BY (`{}`, `{}`) "
+        "TTL `{}` + toIntervalSecond({}) DELETE{}",
         ID_COLUMN,
         VERSION_COLUMN,
         IS_DELETED_COLUMN,
         CREATED_AT_COLUMN,
-        VERSION_COLUMN,
-        IS_DELETED_COLUMN,
+        consumer_table
+            ? String(fmt::format("ReplacingMergeTree(`{}`, `{}`)", VERSION_COLUMN, IS_DELETED_COLUMN))
+            : String("MergeTree"),
+        CREATED_AT_COLUMN,
         CREATED_AT_COLUMN,
         ID_COLUMN,
         CREATED_AT_COLUMN,
-        retention_seconds);
+        retention_seconds,
+        consumer_table
+            ? String(" SETTINGS clean_deleted_rows = 'Always', allow_experimental_replacing_merge_with_cleanup = 1")
+            : String());
 
     auto inner_query = parseCreateQuery(internal_definition);
     auto & inner_create = inner_query->as<ASTCreateQuery &>();
-    inner_create.setDatabase(inner_table_id.getDatabaseName());
-    inner_create.setTable(inner_table_id.getTableName());
+    inner_create.setDatabase(table_id.getDatabaseName());
+    inner_create.setTable(table_id.getTableName());
 
     const auto * outer_columns = outer_query.columns_list ? outer_query.columns_list->columns : nullptr;
     if (!outer_columns)
@@ -235,7 +466,7 @@ StorageID StorageQueue::createInnerTable(
     InterpreterCreateQuery interpreter(inner_query, create_context);
     interpreter.setInternal(true);
     interpreter.execute();
-    return inner_table_id;
+    return table_id;
 }
 
 
@@ -251,7 +482,15 @@ StorageQueue::StorageQueue(
     UInt64 polling_interval_ms_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
-    , inner_table_id(createInnerTable(query_, table_id_, context_, mode_, retention_seconds_))
+    , outer_create_query(query_.clone())
+    , main_table_id(createDataTable(
+        query_,
+        StorageID{table_id_.getDatabaseName(), getMainTableName(table_id_)},
+        context_,
+        mode_,
+        retention_seconds_,
+        /* consumer_table */ false))
+    , retention_seconds(retention_seconds_)
     , max_batch_size(max_batch_size_)
     , polling_interval_ms(polling_interval_ms_)
     , log(getLogger("StorageQueue (" + table_id_.getFullTableName() + ")"))
@@ -284,7 +523,175 @@ StorageQueue::~StorageQueue()
 
 StoragePtr StorageQueue::getInnerTable(ContextPtr local_context) const
 {
-    return DatabaseCatalog::instance().getTable(inner_table_id, local_context);
+    return DatabaseCatalog::instance().getTable(main_table_id, local_context);
+}
+
+
+std::pair<String, bool> StorageQueue::getConsumerSettingsForView(
+    const StorageID & view_id,
+    ContextPtr query_context) const
+{
+    auto view = DatabaseCatalog::instance().getTable(view_id, query_context);
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        materialized_view && materialized_view->isRefreshable())
+        return {};
+
+    auto metadata = view->getInMemoryMetadataPtr(query_context, false);
+    auto view_context = Context::createCopy(query_context);
+    view_context->setSetting("queue_consumer_group", String());
+    view_context->setSetting("queue_consumer_offset", String("earliest"));
+    InterpreterSetQuery::applySettingsFromQuery(metadata->getSelectQuery().select_query, view_context);
+
+    String consumer_group = view_context->getSettingsRef()[Setting::queue_consumer_group];
+    if (consumer_group.empty())
+        consumer_group = view_id.getFullTableName();
+    return {
+        std::move(consumer_group),
+        startsAtLatest(view_context->getSettingsRef()[Setting::queue_consumer_offset])};
+}
+
+
+std::unordered_map<String, bool> StorageQueue::getConsumerGroups(
+    const std::vector<StorageID> & view_ids,
+    ContextPtr query_context) const
+{
+    std::unordered_map<String, bool> consumer_groups;
+    for (const auto & view_id : view_ids)
+    {
+        auto [consumer_group, start_at_latest] = getConsumerSettingsForView(view_id, query_context);
+        if (!consumer_group.empty())
+        {
+            const auto [it, inserted] = consumer_groups.emplace(std::move(consumer_group), start_at_latest);
+            if (!inserted && it->second != start_at_latest)
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Materialized views in consumer group '{}' specify different `queue_consumer_offset` values",
+                    it->first);
+            }
+        }
+    }
+    return consumer_groups;
+}
+
+
+bool StorageQueue::shouldPushToMaterializedView(const StorageID & view_id, ContextPtr query_context) const
+{
+    const String requested_group = query_context->getSettingsRef()[Setting::queue_consumer_group];
+    const String view_group = getConsumerSettingsForView(view_id, query_context).first;
+    return !requested_group.empty() && !view_group.empty() && requested_group == view_group;
+}
+
+
+void StorageQueue::createConsumerView(
+    const StorageID & consumer_table_id,
+    const StorageID & consumer_view_id,
+    ContextPtr query_context) const
+{
+    const String query = fmt::format(
+        "CREATE MATERIALIZED VIEW {} TO {} AS SELECT * FROM {}",
+        quoteTable(consumer_view_id),
+        quoteTable(consumer_table_id),
+        quoteTable(main_table_id));
+
+    auto create_query = parseCreateQuery(query);
+    auto create_context = Context::createCopy(query_context);
+    InterpreterCreateQuery interpreter(create_query, create_context);
+    interpreter.setInternal(true);
+    interpreter.execute();
+}
+
+
+StorageID StorageQueue::ensureConsumerGroup(
+    const String & consumer_group,
+    bool start_at_latest)
+{
+    std::unique_lock lock(consumer_groups_mutex);
+    auto internal_context = Context::createCopy(getContext());
+    internal_context->makeQueryContext();
+
+    const StorageID consumer_table_id{
+        getStorageID().getDatabaseName(),
+        getConsumerTableName(getStorageID(), consumer_group)};
+    const StorageID consumer_view_id{
+        getStorageID().getDatabaseName(),
+        getConsumerViewName(getStorageID(), consumer_group)};
+
+    auto & catalog = DatabaseCatalog::instance();
+    const bool has_consumer_table = catalog.tryGetTable(consumer_table_id, internal_context) != nullptr;
+    const bool has_consumer_view = catalog.tryGetTable(consumer_view_id, internal_context) != nullptr;
+
+    if (!has_consumer_table)
+    {
+        createDataTable(
+            outer_create_query->as<const ASTCreateQuery &>(),
+            consumer_table_id,
+            internal_context,
+            LoadingStrictnessLevel::CREATE,
+            retention_seconds,
+            /* consumer_table */ true);
+    }
+
+    if (!has_consumer_view)
+    {
+        if (!start_at_latest)
+        {
+            const String populate_query = fmt::format(
+                "INSERT INTO {} SELECT * FROM {}",
+                quoteTable(consumer_table_id),
+                quoteTable(main_table_id));
+            auto populate_io = executeQuery(populate_query, internal_context, QueryFlags{.internal = true}).second;
+            CompletedPipelineExecutor populate_executor(populate_io.pipeline);
+            populate_executor.execute();
+            populate_io.onFinish();
+        }
+
+        createConsumerView(consumer_table_id, consumer_view_id, internal_context);
+    }
+
+    return consumer_table_id;
+}
+
+
+StorageID StorageQueue::resetConsumerGroup(
+    const String & consumer_group,
+    bool start_at_latest)
+{
+    std::unique_lock lock(consumer_groups_mutex);
+    auto internal_context = Context::createCopy(getContext());
+    internal_context->makeQueryContext();
+
+    const StorageID consumer_table_id{
+        getStorageID().getDatabaseName(),
+        getConsumerTableName(getStorageID(), consumer_group)};
+    const StorageID consumer_view_id{
+        getStorageID().getDatabaseName(),
+        getConsumerViewName(getStorageID(), consumer_group)};
+
+    dropInternalTableIfAny(consumer_view_id, /* sync */ true, internal_context);
+    dropInternalTableIfAny(consumer_table_id, /* sync */ true, internal_context);
+    createDataTable(
+        outer_create_query->as<const ASTCreateQuery &>(),
+        consumer_table_id,
+        internal_context,
+        LoadingStrictnessLevel::CREATE,
+        retention_seconds,
+        /* consumer_table */ true);
+
+    if (!start_at_latest)
+    {
+        const String populate_query = fmt::format(
+            "INSERT INTO {} SELECT * FROM {}",
+            quoteTable(consumer_table_id),
+            quoteTable(main_table_id));
+        auto populate_io = executeQuery(populate_query, internal_context, QueryFlags{.internal = true}).second;
+        CompletedPipelineExecutor populate_executor(populate_io.pipeline);
+        populate_executor.execute();
+        populate_io.onFinish();
+    }
+
+    createConsumerView(consumer_table_id, consumer_view_id, internal_context);
+    return consumer_table_id;
 }
 
 
@@ -316,19 +723,33 @@ void StorageQueue::threadFunc()
     try
     {
         const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
-        const bool has_ready_views
-            = !DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext()).empty();
+        const auto ready_views = DatabaseCatalog::instance().getReadyDependentViews(getStorageID(), getContext());
 
         if (!shutdown_called
-            && has_ready_views
+            && !ready_views.empty()
             && stream_control.claimCycle(last_seen_refresh_epoch))
         {
-            while (!shutdown_called
-                && !stream_control.isCancelRequested(cycle_epoch)
-                && streamToViews(cycle_epoch))
+            for (const auto & [consumer_group, start_at_latest] : getConsumerGroups(ready_views, getContext()))
             {
-                if (stream_control.isBlocked())
-                    break;
+                try
+                {
+                    const auto consumer_table_id = ensureConsumerGroup(
+                        consumer_group,
+                        start_at_latest);
+                    while (!shutdown_called
+                        && !stream_control.isCancelRequested(cycle_epoch)
+                        && streamToViews(consumer_group, consumer_table_id, cycle_epoch))
+                    {
+                        if (stream_control.isBlocked())
+                            break;
+                    }
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        log,
+                        fmt::format("Failed to consume from `Queue` consumer group '{}'", consumer_group));
+                }
             }
         }
     }
@@ -342,12 +763,17 @@ void StorageQueue::threadFunc()
 }
 
 
-bool StorageQueue::streamToViews(UInt64 cycle_epoch)
+bool StorageQueue::streamToViews(
+    const String & consumer_group,
+    const StorageID & consumer_table_id,
+    UInt64 cycle_epoch)
 {
     std::lock_guard lock(consume_mutex);
+    std::shared_lock consumer_groups_lock(consumer_groups_mutex);
 
     auto queue_context = Context::createCopy(getContext());
     queue_context->makeQueryContext();
+    queue_context->setSetting("queue_consumer_group", consumer_group);
 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = getStorageID();
@@ -373,9 +799,10 @@ bool StorageQueue::streamToViews(UInt64 cycle_epoch)
         quoted_columns.emplace_back(backQuoteIfNeed(name));
 
     const String select_query = fmt::format(
-        "SELECT {} FROM {} FINAL ORDER BY `{}` LIMIT {}",
+        "SELECT {} FROM {} FINAL ORDER BY (`{}`, `{}`) LIMIT {}",
         fmt::join(quoted_columns, ", "),
-        quoteTable(inner_table_id),
+        quoteTable(consumer_table_id),
+        CREATED_AT_COLUMN,
         ID_COLUMN,
         max_batch_size);
 
@@ -436,7 +863,7 @@ bool StorageQueue::streamToViews(UInt64 cycle_epoch)
         if (stream_control.isCancelRequested(cycle_epoch))
             return false;
 
-        acknowledge(acknowledgement_blocks, queue_context);
+        acknowledge(consumer_table_id, acknowledgement_blocks, queue_context);
     }
     catch (...)
     {
@@ -448,12 +875,15 @@ bool StorageQueue::streamToViews(UInt64 cycle_epoch)
         throw;
     }
 
-    LOG_DEBUG(log, "Delivered and acknowledged {} queued rows", rows);
+    LOG_DEBUG(log, "Delivered and acknowledged {} queued rows for consumer group '{}'", rows, consumer_group);
     return true;
 }
 
 
-void StorageQueue::acknowledge(const Blocks & blocks, ContextMutablePtr queue_context)
+void StorageQueue::acknowledge(
+    const StorageID & consumer_table_id,
+    const Blocks & blocks,
+    ContextMutablePtr queue_context)
 {
     const Names columns{
         String(ID_COLUMN),
@@ -462,7 +892,7 @@ void StorageQueue::acknowledge(const Blocks & blocks, ContextMutablePtr queue_co
         String(CREATED_AT_COLUMN)};
 
     InterpreterInsertQuery interpreter(
-        makeInsertQuery(inner_table_id, columns),
+        makeInsertQuery(consumer_table_id, columns),
         queue_context,
         /* allow_materialized */ true,
         /* no_squash */ true,
@@ -489,18 +919,113 @@ void StorageQueue::acknowledge(const Blocks & blocks, ContextMutablePtr queue_co
 
 
 void StorageQueue::read(
-    QueryPlan &,
-    const Names &,
-    const StorageSnapshotPtr &,
-    SelectQueryInfo &,
-    ContextPtr,
-    QueryProcessingStage::Enum,
-    size_t,
-    size_t)
+    QueryPlan & query_plan,
+    const Names & column_names,
+    const StorageSnapshotPtr & storage_snapshot,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
+    QueryProcessingStage::Enum processed_stage,
+    size_t max_block_size,
+    size_t num_streams)
 {
-    throw Exception(
-        ErrorCodes::NOT_IMPLEMENTED,
-        "Direct `SELECT` from a `Queue` table is not supported yet; attach a materialized view");
+    const auto & settings = local_context->getSettingsRef();
+    const String consumer_group = settings[Setting::queue_consumer_group];
+    const bool commit_on_select = settings[Setting::queue_commit_on_select];
+    const bool reset_consumer_offset = settings[Setting::queue_reset_consumer_offset];
+
+    if (reset_consumer_offset && consumer_group.empty())
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting `queue_consumer_group` must be specified when `queue_reset_consumer_offset` is enabled");
+    }
+
+    std::optional<StorageID> consumer_table_id;
+    if (!consumer_group.empty())
+    {
+        const bool start_at_latest = startsAtLatest(settings[Setting::queue_consumer_offset]);
+        consumer_table_id = reset_consumer_offset
+            ? resetConsumerGroup(consumer_group, start_at_latest)
+            : ensureConsumerGroup(consumer_group, start_at_latest);
+    }
+
+    if (commit_on_select)
+    {
+        if (consumer_group.empty())
+        {
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Setting `queue_consumer_group` must be specified when `queue_commit_on_select` is enabled");
+        }
+
+        if (query_info.need_aggregate || query_info.has_aggregates)
+        {
+            throw Exception(
+                ErrorCodes::QUERY_NOT_ALLOWED,
+                "Aggregation is not allowed for a committing `SELECT` from `Queue`; "
+                "set `queue_commit_on_select = 0` to run a noncommitting aggregation");
+        }
+
+        const UInt64 requested_batch_size = settings[Setting::queue_max_batch_size];
+        const UInt64 batch_size = requested_batch_size ? requested_batch_size : max_batch_size;
+        auto state = std::make_shared<QueueReadState>(consumer_groups_mutex);
+        auto storage = std::static_pointer_cast<StorageQueue>(shared_from_this());
+
+        local_context->addSuccessfulQueryCallback(
+            [storage, state, consumer_table_id = *consumer_table_id]
+            {
+                if (state->acknowledgement_blocks.empty())
+                    return;
+
+                auto acknowledge_context = Context::createCopy(storage->getContext());
+                acknowledge_context->makeQueryContext();
+                storage->acknowledge(consumer_table_id, state->acknowledgement_blocks, acknowledge_context);
+            });
+
+        query_info.optimize_trivial_count = false;
+        query_plan.addStep(std::make_unique<ReadFromQueue>(
+            std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names)),
+            column_names,
+            *consumer_table_id,
+            batch_size,
+            local_context,
+            std::move(state)));
+        return;
+    }
+
+    const StorageID source_table_id = consumer_table_id.value_or(main_table_id);
+    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, local_context);
+    auto source_lock = source_table->lockForShare(
+        local_context->getCurrentQueryId(),
+        local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto source_metadata = source_table->getInMemoryMetadataPtr(local_context, false);
+    auto source_snapshot = source_table->getStorageSnapshot(source_metadata, local_context);
+    auto source_query_info = query_info;
+    source_query_info.initial_storage_snapshot = storage_snapshot;
+
+    if (!consumer_group.empty())
+    {
+        source_query_info.query = query_info.query->clone();
+        source_query_info.query->as<ASTSelectQuery &>().setFinal();
+        if (source_query_info.query_tree)
+        {
+            if (!source_query_info.table_expression_modifiers)
+                source_query_info.table_expression_modifiers.emplace();
+            source_query_info.table_expression_modifiers->setHasFinal(true);
+        }
+    }
+
+    source_table->read(
+        query_plan,
+        column_names,
+        source_snapshot,
+        source_query_info,
+        local_context,
+        processed_stage,
+        max_block_size,
+        num_streams);
+    query_plan.addStorageHolder(source_table);
+    query_plan.addTableLock(std::move(source_lock));
 }
 
 
@@ -511,7 +1036,12 @@ SinkToStoragePtr StorageQueue::write(
     bool async_insert)
 {
     const Block header = metadata_snapshot->getSampleBlockNonMaterialized();
-    return std::make_shared<QueueSink>(inner_table_id, header, local_context, async_insert);
+    return std::make_shared<QueueSink>(
+        main_table_id,
+        header,
+        local_context,
+        async_insert,
+        consumer_groups_mutex);
 }
 
 
@@ -523,15 +1053,45 @@ void StorageQueue::drop()
 
 void StorageQueue::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
-    if (!DatabaseCatalog::instance().tryGetTable(inner_table_id, local_context))
+    std::unique_lock lock(consumer_groups_mutex);
+
+    for (const auto & table_id : getInternalTables(local_context, getMainTableName(getStorageID()) + ".group_view."))
+        dropInternalTableIfAny(table_id, sync, local_context);
+    for (const auto & table_id : getInternalTables(local_context, getMainTableName(getStorageID()) + ".group."))
+        dropInternalTableIfAny(table_id, sync, local_context);
+    dropInternalTableIfAny(main_table_id, sync, local_context);
+}
+
+
+std::vector<StorageID> StorageQueue::getInternalTables(
+    ContextPtr query_context,
+    std::string_view name_prefix) const
+{
+    std::vector<StorageID> result;
+    auto database = DatabaseCatalog::instance().getDatabase(getStorageID().getDatabaseName());
+    for (auto iterator = database->getTablesIterator(query_context); iterator->isValid(); iterator->next())
+    {
+        if (iterator->name().starts_with(name_prefix))
+            result.emplace_back(getStorageID().getDatabaseName(), iterator->name());
+    }
+    return result;
+}
+
+
+void StorageQueue::dropInternalTableIfAny(
+    const StorageID & table_id,
+    bool sync,
+    ContextPtr query_context) const
+{
+    if (!DatabaseCatalog::instance().tryGetTable(table_id, query_context))
         return;
 
-    const bool may_lock_ddl_guard = getStorageID().getQualifiedName() < inner_table_id.getQualifiedName();
+    const bool may_lock_ddl_guard = getStorageID().getQualifiedName() < table_id.getQualifiedName();
     InterpreterDropQuery::executeDropQuery(
         ASTDropQuery::Kind::Drop,
         getContext(),
-        local_context,
-        inner_table_id,
+        query_context,
+        table_id,
         sync,
         /* ignore_sync_setting */ true,
         may_lock_ddl_guard);
@@ -540,8 +1100,14 @@ void StorageQueue::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 
 void StorageQueue::checkTableSizeBelowDropLimit(ContextPtr query_context) const
 {
-    if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_table_id, query_context))
-        inner->checkTableSizeBelowDropLimit(query_context);
+    if (auto main = DatabaseCatalog::instance().tryGetTable(main_table_id, query_context))
+        main->checkTableSizeBelowDropLimit(query_context);
+
+    for (const auto & table_id : getInternalTables(query_context, getMainTableName(getStorageID()) + ".group."))
+    {
+        if (auto table = DatabaseCatalog::instance().tryGetTable(table_id, query_context))
+            table->checkTableSizeBelowDropLimit(query_context);
+    }
 }
 
 
@@ -551,12 +1117,24 @@ void StorageQueue::truncate(
     ContextPtr local_context,
     TableExclusiveLockHolder &)
 {
+    std::unique_lock lock(consumer_groups_mutex);
+
     InterpreterDropQuery::executeDropQuery(
         ASTDropQuery::Kind::Truncate,
         getContext(),
         local_context,
-        inner_table_id,
+        main_table_id,
         /* sync */ true);
+
+    for (const auto & table_id : getInternalTables(local_context, getMainTableName(getStorageID()) + ".group."))
+    {
+        InterpreterDropQuery::executeDropQuery(
+            ASTDropQuery::Kind::Truncate,
+            getContext(),
+            local_context,
+            table_id,
+            /* sync */ true);
+    }
 }
 
 
@@ -637,8 +1215,9 @@ void registerStorageQueue(StorageFactory & factory)
         },
         {},
         Documentation{
-            .description = "Experimental native persistent queue backed by an internal `ReplacingMergeTree`. "
-                "Rows are delivered asynchronously to attached materialized views and acknowledged with tombstone versions only after delivery succeeds.",
+            .description = "Experimental native persistent queue backed by an immutable `MergeTree` log and "
+                "a `ReplacingMergeTree` pending-message table for each consumer group. Rows are acknowledged "
+                "only in the consumer group's table after delivery succeeds.",
             .syntax = "ENGINE = Queue([retention_seconds[, max_batch_size[, polling_interval_ms]]])"});
 }
 
