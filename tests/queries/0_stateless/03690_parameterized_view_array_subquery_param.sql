@@ -110,15 +110,43 @@ SELECT 'direct literal param, EXPLAIN SYNTAX';
 SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_lc(nm = 'a\tb')) WHERE explain LIKE '%a\\tb%';
 SELECT count() FROM (EXPLAIN SYNTAX SELECT * FROM pv_str_scalar(ss = 'p\tq')) WHERE explain LIKE '%p\\tq%';
 
+-- Analyzer header inference (`getSampleBlock`, only-analyze mode, e.g. `CREATE TABLE ... AS
+-- SELECT`) must resolve a subquery-valued parameter to its real value, not a default
+-- placeholder. When the projected type depends on the parameter value the default (empty
+-- array, length 0) made `toFixedString` throw `size must be positive`, so `CREATE TABLE ...
+-- AS SELECT` failed while real execution produced `FixedString(3)`. See issue #68041.
+SELECT 'analyzer-only header inference, value-dependent type (Array)';
+DROP VIEW IF EXISTS pv_fixed;
+CREATE VIEW pv_fixed AS SELECT toFixedString('v', length({p : Array(Int32)})) AS s;
+DROP TABLE IF EXISTS pv_cts_fixed;
+CREATE TABLE pv_cts_fixed ENGINE = Memory AS SELECT s FROM pv_fixed(p = (SELECT groupArray(AccountId) FROM pv_ids));
+-- the header-inferred column type must equal the execution type
+SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'pv_cts_fixed' AND name = 's';
+SELECT toTypeName(s) FROM pv_fixed(p = (SELECT groupArray(AccountId) FROM pv_ids)) LIMIT 1;
+
+-- Same only-analyze header path (`CREATE TABLE ... AS SELECT`) across the Tuple /
+-- LowCardinality subquery-argument matrix.
+SELECT 'analyzer-only header inference across type matrix (Tuple, LowCardinality)';
+DROP TABLE IF EXISTS pv_cts_tuple;
+CREATE TABLE pv_cts_tuple ENGINE = Memory AS SELECT id FROM pv_tuple(p = (SELECT toInt32(10), toInt32(20)));
+SELECT id FROM pv_cts_tuple ORDER BY id;
+DROP TABLE IF EXISTS pv_cts_lc;
+CREATE TABLE pv_cts_lc ENGINE = Memory AS SELECT id FROM pv_lc(nm = (SELECT toLowCardinality('y')));
+SELECT id FROM pv_cts_lc ORDER BY id;
+
 DROP VIEW pv_array;
 DROP VIEW pv_str;
 DROP VIEW pv_tuple;
 DROP VIEW pv_lc;
 DROP VIEW pv_lc_arr;
 DROP VIEW pv_str_scalar;
+DROP VIEW pv_fixed;
 DROP TABLE pv_data;
 DROP TABLE pv_ids;
 DROP TABLE pv_tuple_data;
 DROP TABLE pv_lc_data;
 DROP TABLE pv_str_data;
 DROP TABLE pv_self;
+DROP TABLE pv_cts_fixed;
+DROP TABLE pv_cts_tuple;
+DROP TABLE pv_cts_lc;

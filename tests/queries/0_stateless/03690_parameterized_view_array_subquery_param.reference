@@ -43,3 +43,9 @@ direct literal param, legacy analyzer
 direct literal param, EXPLAIN SYNTAX
 1
 1
+analyzer-only header inference, value-dependent type (Array)
+FixedString(3)
+FixedString(3)
+analyzer-only header inference across type matrix (Tuple, LowCardinality)
+1
+2

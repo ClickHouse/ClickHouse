@@ -97,13 +97,16 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
     auto & context = scope.context;
 
-    /// Scalar subqueries in table function arguments are executed even in only-analyze mode.
-    /// The table function is resolved into a storage during analysis (its header is needed),
-    /// so it requires real argument values rather than type-only placeholders. Otherwise
-    /// a placeholder would be passed to the table function, e.g. an empty URL to `s3`:
+    /// Scalar subqueries in table function or parameterized view arguments are executed even in
+    /// only-analyze mode. The table function / view is resolved into a storage during analysis
+    /// (its header is needed), so it requires real argument values rather than type-only
+    /// placeholders. Otherwise a placeholder would be passed, e.g. an empty URL to `s3`:
     /// CREATE TABLE t ENGINE = MergeTree ORDER BY () AS
     /// WITH (SELECT path FROM table_with_paths) AS path SELECT * FROM s3(path, NOSIGN);
-    const bool only_analyze_subquery = only_analyze && !table_function_arguments_in_resolve_process;
+    /// or a default (empty) value substituted for a parameterized view parameter.
+    const bool only_analyze_subquery = only_analyze
+        && !table_function_arguments_in_resolve_process
+        && !parameterized_view_arguments_in_resolve_process;
 
     Block scalar_block;
 
