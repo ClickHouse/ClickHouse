@@ -40,7 +40,7 @@ namespace DB::ServerSetting
 
 namespace DB::ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -114,7 +114,9 @@ public:
 
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & /*ctx*/)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "TestUnreadableStep must not be built");
+        /// Not LOGICAL_ERROR: debug and sanitizer builds turn that into an abort, and this throw
+        /// is the point of the step rather than a bug.
+        throw Exception(ErrorCodes::INCORRECT_DATA, "TestUnreadableStep must not be built");
     }
 };
 
