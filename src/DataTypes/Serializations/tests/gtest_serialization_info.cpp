@@ -4,6 +4,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/ProtocolDefines.h>
@@ -86,6 +87,19 @@ void expectMalformedKindFails([[maybe_unused]] const std::string & kind)
         },
         DB::Exception);
 #endif
+}
+
+bool hasStringSizesStream(const SerializationPtr & serialization)
+{
+    bool result = false;
+    serialization->enumerateAllStreams([&](const ISerialization::SubstreamPath & path)
+    {
+        result = result || std::any_of(path.begin(), path.end(), [](const auto & substream)
+        {
+            return substream.type == ISerialization::Substream::StringSizes;
+        });
+    });
+    return result;
 }
 }
 
@@ -342,6 +356,45 @@ TEST(SerializationInfoTuple, StructureIgnoresElementNames)
     EXPECT_EQ(
         tuple_info->getElementKindStack(0),
         ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+}
+
+TEST(SerializationInfoTuple, ElementTypeSettingsDoNotDependOnPropagation)
+{
+    auto type = DataTypeFactory::instance().get("Tuple(s String)");
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+    settings.propagate_types_serialization_versions_to_nested_types = false;
+
+    auto info = type->createSerializationInfo(settings);
+    EXPECT_TRUE(hasStringSizesStream(type->getSerialization(*info)));
+}
+
+TEST(SerializationInfoTuple, NativeKeepsSparseElementsForSupportedRevision)
+{
+    constexpr size_t rows = 4;
+    auto values = ColumnString::create();
+    values->insertDefault();
+    values->insertData("value", 5);
+    auto offsets = ColumnUInt64::create();
+    offsets->getData().push_back(0);
+
+    Columns elements;
+    elements.emplace_back(ColumnSparse::create(
+        MutableColumnPtr(std::move(values)), MutableColumnPtr(std::move(offsets)), rows));
+
+    ColumnWithTypeAndName column;
+    column.name = "t";
+    column.type = DataTypeFactory::instance().get("Tuple(s String)");
+    column.column = ColumnTuple::create(std::move(elements));
+
+    auto supported_result = NativeWriter::getSerializationAndColumn(
+        DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION - 1, column);
+    EXPECT_TRUE(recursiveHasSparse(std::get<2>(supported_result)));
+
+    auto old_result = NativeWriter::getSerializationAndColumn(
+        DBMS_MIN_REVISION_WITH_SPARSE_SERIALIZATION - 1, column);
+    EXPECT_FALSE(recursiveHasSparse(std::get<2>(old_result)));
 }
 
 TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)

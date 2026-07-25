@@ -388,13 +388,10 @@ SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info,
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
-    bool use_nested_type_serialization_settings
-        = use_type_serialization_settings && info.getSettings().propagate_types_serialization_versions_to_nested_types;
-
     for (size_t i = 0; i < elems.size(); ++i)
     {
         String elem_name = has_explicit_names ? names[i] : toString(i + 1);
-        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i), use_nested_type_serialization_settings);
+        auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i), use_type_serialization_settings);
         serializations[i] = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(serialization, elem_name, SubstreamType::TupleElement));
     }
 
@@ -450,7 +447,7 @@ bool DataTypeTuple::hasSparseSerializationSubcolumns(const SerializationInfoSett
 {
     return std::any_of(elems.begin(), elems.end(), [&](const auto & elem)
     {
-        return settings.canUseSparseSerialization(*elem) || elem->hasSparseSerializationSubcolumns(settings);
+        return elem->hasSparseSerializationSubcolumns(settings);
     });
 }
 
