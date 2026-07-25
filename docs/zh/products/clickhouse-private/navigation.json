@@ -1,0 +1,64 @@
+{
+  "item": "ClickHouse Private",
+  "pages": [
+    "zh/products/clickhouse-private/index",
+    {
+      "group": "教程",
+      "icon": "graduation-cap",
+      "pages": [
+        "zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks",
+        "zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-gcp-gke",
+        "zh/products/clickhouse-private/tutorials/deploy-clickhouse-on-bare-metal",
+        "zh/products/clickhouse-private/tutorials/deploy-clickhouse-with-fips-compliance-government",
+        "zh/products/clickhouse-private/tutorials/install-the-clickhouse-private-api"
+      ]
+    },
+    {
+      "group": "操作指南",
+      "icon": "wrench",
+      "pages": [
+        "zh/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual",
+        "zh/products/clickhouse-private/guides/manage-backups-via-the-private-api",
+        "zh/products/clickhouse-private/guides/vertically-scale-a-clickhouse-cluster",
+        "zh/products/clickhouse-private/guides/reset-user-passwords",
+        "zh/products/clickhouse-private/guides/configure-cert-manager-for-clickhouse-certificates",
+        "zh/products/clickhouse-private/guides/configure-remote_servers-for-distributed-queries",
+        "zh/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse",
+        "zh/products/clickhouse-private/guides/integrate-teleport-with-clickhouse-private",
+        "zh/products/clickhouse-private/guides/configure-alerting-for-clickhouse",
+        "zh/products/clickhouse-private/guides/set-up-prometheus-monitoring",
+        "zh/products/clickhouse-private/guides/run-preflight-checks",
+        "zh/products/clickhouse-private/guides/collect-a-support-bundle-for-troubleshooting",
+        "zh/products/clickhouse-private/guides/migrate-to-shared-catalog",
+        "zh/products/clickhouse-private/guides/set-up-hydra-compute-compute-separation",
+        "zh/products/clickhouse-private/guides/upgrade-clickhouse-private"
+      ]
+    },
+    {
+      "group": "参考",
+      "icon": "book",
+      "pages": [
+        "zh/products/clickhouse-private/reference/breaking-changes",
+        "zh/products/clickhouse-private/reference/changelog",
+        "zh/products/clickhouse-private/reference/component-versions",
+        "zh/products/clickhouse-private/reference/clickhouse-private-api-reference",
+        "zh/products/clickhouse-private/reference/infrastructure-requirements-reference",
+        "zh/products/clickhouse-private/reference/metrics-and-alerts-reference",
+        "zh/products/clickhouse-private/reference/glossary"
+      ]
+    },
+    {
+      "group": "说明",
+      "icon": "lightbulb",
+      "pages": [
+        "zh/products/clickhouse-private/explanation/clickhouse-operator-architecture",
+        "zh/products/clickhouse-private/explanation/hydra-compute-separation",
+        "zh/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private",
+        "zh/products/clickhouse-private/explanation/fips-140-2-compliance-for-clickhouse-private",
+        "zh/products/clickhouse-private/explanation/backup-strategy-for-clickhouse-private",
+        "zh/products/clickhouse-private/explanation/faq-troubleshooting",
+        "zh/products/clickhouse-private/explanation/troubleshooting-guide"
+      ]
+    }
+  ]
+}
