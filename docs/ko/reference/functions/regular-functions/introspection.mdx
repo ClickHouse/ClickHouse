@@ -71,7 +71,7 @@ SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- `trace` 필드에는 샘플링 시점의 스택 트레이스가 포함됩니다.
+-- The `trace` field contains the stack trace at the moment of sampling.
 Row 1:
 ──────
 event_date:              2019-11-19
@@ -99,8 +99,8 @@ addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadP
 **전체 스택 트레이스에 함수 적용하기**
 
 ```sql title=Query
--- 이 예시에서 arrayMap 함수는 trace 배열의 각 요소를 addressToLine 함수로 처리합니다.
--- 처리 결과는 출력의 trace_source_code_lines 컬럼에서 확인할 수 있습니다.
+-- The arrayMap function in this example processing each individual element of the trace array by the addressToLine function.
+-- The result of this processing is seen in the trace_source_code_lines column of output.
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines

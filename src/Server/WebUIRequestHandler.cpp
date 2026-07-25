@@ -1,4 +1,5 @@
 #include <Server/WebUIRequestHandler.h>
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTPResponseHeaderWriter.h>
 
 #include <Common/re2.h>
@@ -103,9 +104,9 @@ static void handle(HTTPServerRequest & request, HTTPServerResponse & response, s
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto buf = responseWriteBuffer(request, response);
+    buf.get()->write(html.data(), html.size());
+    buf.get()->finalize();
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
