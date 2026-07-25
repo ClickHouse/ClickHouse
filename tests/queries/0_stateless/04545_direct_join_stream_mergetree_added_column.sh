@@ -37,18 +37,34 @@ $CLICKHOUSE_CLIENT --enable_analyzer=1 --join_algorithm=direct -q "
     SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r ON l.id = r.id ORDER BY l.id"
 
 # Only the STREAM form takes the changed snapshot path: the planner disables parts-snapshot removal
-# for a direct-join lookup (`PlannerJoinTree`, "not to remove parts snapshot"), and
-# `ReadFromMergeTree` re-enables it only for `isStream`. So the streaming query below is what
-# exercises the fix. A STREAM read is continuous and does not terminate on its own; the
-# use-of-uninitialized-value is hit while the lookup pipeline is (re)built at query start, so a short
-# window per query is enough and we just repeat it. `max_block_size=1` maximises the per-block
-# pipeline rebuilds that create the overlap. On the pre-fix server this aborts under MSan in the loop.
+# for a direct-join lookup (`PlannerJoinTree`, "not to remove parts snapshot"), and `ReadFromMergeTree`
+# re-enables it only for `isStream`, so the streaming query below is what exercises the fix.
+# `max_block_size=1` maximises the per-block direct-join pipeline rebuilds that create the overlap.
 query="SELECT l.id, r.value, r.new_col FROM t_djs_left AS l INNER JOIN t_djs_right AS r STREAM ON l.id = r.id"
 for _ in {1..25}; do
-    timeout 1 $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 --query_id="djs_${CLICKHOUSE_DATABASE}_$RANDOM" -q "$query" >/dev/null 2>&1
-    # Stop early if the server went down (the pre-fix binary aborts under MSan); the post-loop liveness
-    # check turns that into a fast, clean failure. Bounded so a wedged (dying, mid-sanitizer-report)
-    # server cannot block the loop here.
+    # A STREAM read is continuous and never returns on its own. Run it in the background and only tear it
+    # down once it appears in `system.processes`: that registration proves the query actually reached
+    # execution (`ReadFromMergeTree::initializePipeline`, the fixed path) instead of dying in the client
+    # handshake/planning on a slow server. This is where the pre-fix binary aborts under MSan.
+    qid="djs_${CLICKHOUSE_DATABASE}_$RANDOM"
+    $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 --query_id="$qid" -q "$query" >/dev/null 2>&1 &
+    q_pid=$!
+    # Bounded wait for execution to start. A probe that times out means the server is wedged or gone, so
+    # stop waiting; the liveness checks below turn that into a fast, clean failure.
+    started=""
+    q_start=$EPOCHSECONDS
+    while :; do
+        started=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$qid'" 2>/dev/null) || break
+        [ "$started" = "1" ] && break
+        (( EPOCHSECONDS - q_start > 30 )) && break
+        sleep 0.1
+    done
+    # Deterministically stop the query now that it has provably run (bounded so a wedged live server
+    # cannot hang here), then reap the background client.
+    timeout 30 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$qid' SYNC FORMAT Null" >/dev/null 2>&1
+    kill "$q_pid" 2>/dev/null
+    wait "$q_pid" 2>/dev/null
+    # Stop early if the server went down (the pre-fix binary aborts under MSan).
     timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1 || break
 done
 
