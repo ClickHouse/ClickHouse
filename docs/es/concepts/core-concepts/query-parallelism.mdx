@@ -27,7 +27,7 @@ Cuando ClickHouse ① ejecuta una consulta de agregación con un filtro en la cl
   ### Distribución del trabajo entre lanes de procesamiento
 </div>
 
-Los datos seleccionados se distribuyen luego [dinámicamente](#load-balancing-across-processing-lanes) entre `n` [lanes de procesamiento](/es/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) en paralelo, que transfieren y procesan los datos [block](/es/resources/develop-contribute/introduction/architecture#block) a block hasta obtener el resultado final:
+Los datos seleccionados se distribuyen luego [dinámicamente](#load-balancing-across-processing-lanes) entre `n` [lanes de procesamiento](/es/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) en paralelo, que transfieren y procesan los datos [bloque](/es/resources/develop-contribute/introduction/architecture#block) a bloque hasta obtener el resultado final:
 
 <Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 lanes de procesamiento en paralelo" />
 
@@ -96,7 +96,7 @@ SETTINGS send_logs_level='trace';
 Podemos ver que
 
 * ① ClickHouse necesita leer 3.609 gránulos (indicados como marks en los logs de traza) a lo largo de 3 rangos de datos.
-* ② Con 59 núcleos de CPU, distribuye este trabajo en 59 flujos de procesamiento paralelos, uno por cada lane.
+* ② Con 59 núcleos de CPU, distribuye este trabajo en 59 stream de procesamiento paralelos, uno por cada lane.
 
 Como alternativa, podemos usar la cláusula [EXPLAIN](/es/reference/statements/explain#explain-pipeline) para inspeccionar el [plan físico de operadores](/es/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), también conocido como el &quot;pipeline de consulta&quot;, de la consulta de agregación:
 
