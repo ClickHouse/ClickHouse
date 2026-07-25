@@ -2,7 +2,7 @@
 -- The settings randomizer injects an explicit `max_insert_threads`, which marks the setting as
 -- changed and prevents the `compatibility` setting from restoring its previous default below.
 
--- Since 26.7, `max_insert_threads` defaults to auto (the number of CPU cores) instead of 1,
+-- Since 26.8, `max_insert_threads` defaults to auto (the number of CPU cores) instead of 1,
 -- so `INSERT SELECT` is parallelized by default.
 
 -- The default is `auto(N)`; the exact N depends on the machine, so only check the `auto` marker.
@@ -15,4 +15,4 @@ SELECT value LIKE '%auto(%' FROM system.settings WHERE name = 'max_insert_thread
 SELECT value FROM system.settings WHERE name = 'max_insert_threads' SETTINGS max_insert_threads = 1;
 
 -- The `compatibility` setting restores the previous default of 1 (single-threaded).
-SELECT value FROM system.settings WHERE name = 'max_insert_threads' SETTINGS compatibility = '26.6';
+SELECT value FROM system.settings WHERE name = 'max_insert_threads' SETTINGS compatibility = '26.7';
