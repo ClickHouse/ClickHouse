@@ -883,6 +883,14 @@ public:
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
+    /// Under `leader_election`, throws `TABLE_IS_READ_ONLY` if the leader lease is no longer
+    /// fresh (`mayMutateSharedStorage`). `DROP DETACHED` and `ATTACH` mutate the shared
+    /// `detached/` namespace (prefix renames, `txn_version.txt*` removals, directory deletion)
+    /// before the commit-time epoch fence, so each such side effect is re-fenced individually:
+    /// a node that loses the lease mid-command must not keep mutating directories the new
+    /// leader now owns. No-op for tables without `leader_election`.
+    void assertLeaseFreshForDetachedOperation(std::string_view action, const String & dir_name) const;
+
     /// Execute a merge of the specified parts to a temporary directory without committing.
     /// Used by OPTIMIZE ... DRY RUN PARTS.
     void optimizeDryRun(

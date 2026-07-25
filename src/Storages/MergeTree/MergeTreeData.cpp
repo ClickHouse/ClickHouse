@@ -421,6 +421,7 @@ namespace FailPoints
     /// strict takeover scan, right before it would replay a skipped detach/remove of a
     /// broken/duplicate part on shared storage.
     extern const char merge_tree_leader_election_stale_lease_during_takeover_scan[];
+    extern const char merge_tree_leader_election_stale_lease_detached_ddl[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -9163,6 +9164,17 @@ void MergeTreeData::validateDetachedPartName(const String & name)
                             "most likely it is used by another DROP or ATTACH query.", name);
 }
 
+void MergeTreeData::assertLeaseFreshForDetachedOperation(std::string_view action, const String & dir_name) const
+{
+    bool lease_is_fresh = mayMutateSharedStorage();
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_detached_ddl, { lease_is_fresh = false; });
+    if (!lease_is_fresh)
+        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+            "The leader lease was not renewed within the session timeout; refusing to {} detached part "
+            "directory {} as a possibly stale leader",
+            action, dir_name);
+}
+
 void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
 {
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
@@ -9189,10 +9201,21 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     LOG_DEBUG(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
 
+    /// Re-fence right before the first shared-storage side effect: the admission-level check in
+    /// `alterPartition` may have passed long ago (partition resolution and the detached-parts scan
+    /// above take arbitrary time). A failure here (or below) leaves the temporary `deleting_`
+    /// renames to be rolled back by the `PartsTemporaryRename` destructor.
+    if (!renamed_parts.old_and_new_names.empty())
+        assertLeaseFreshForDetachedOperation("rename for deletion", renamed_parts.old_and_new_names.front().old_dir);
+
     renamed_parts.tryRenameAll();
 
     for (auto & [_, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
+        /// The deletion is irreversible, so re-check the lease before EACH removed directory:
+        /// once the lease goes stale mid-sequence, the remaining (still renamed) directories are
+        /// rolled back instead of deleted by a possibly stale leader.
+        assertLeaseFreshForDetachedOperation("drop", old_dir);
         bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
         old_dir.clear();
@@ -9391,6 +9414,10 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
             {
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
+                /// The `ignored_` rename permanently mutates the shared `detached/` namespace and
+                /// happens before the commit-time epoch fence in `attachPartition`, so re-check
+                /// the lease before each one.
+                assertLeaseFreshForDetachedOperation("rename to ignored_", part_info.dir_name);
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
             }
@@ -9422,14 +9449,23 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             LOG_DEBUG(log, "Found containing part {} for part {}", containing_part, part_info.dir_name);
 
             if (containing_part != part_info.dir_name)
+            {
+                /// Same as the `ignored_` rename above: permanent, pre-fence, shared-namespace.
+                assertLeaseFreshForDetachedOperation("rename to inactive_", part_info.dir_name);
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
+            }
             else
                 renamed_parts.addPart(part_info.dir_name, part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
     }
 
     /// Try to rename all parts before attaching to prevent race with DROP DETACHED and another ATTACH.
+    /// Re-fence first: a stale leader must not take `attaching_` ownership of directories the new
+    /// leader may be operating on. A failure here or below rolls the temporary renames back via
+    /// the caller's `PartsTemporaryRename` destructor.
+    if (!renamed_parts.old_and_new_names.empty())
+        assertLeaseFreshForDetachedOperation("rename to attaching_", renamed_parts.old_and_new_names.front().old_dir);
     renamed_parts.tryRenameAll();
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
@@ -9445,6 +9481,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         /// transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as `Outdated`.
         /// Remove the temporary file first so the cleanup is fail-closed: a failure between the two
         /// removals leaves a valid `txn_version.txt` rather than the dangerous tmp-only state.
+        /// The removals are irreversible shared-storage side effects, so re-check the lease per part.
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 

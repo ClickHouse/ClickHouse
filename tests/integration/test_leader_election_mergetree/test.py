@@ -1538,3 +1538,90 @@ def test_takeover_scan_aborts_on_stale_lease_before_cleanup(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DETACHED_DDL = "12345678-abcd-abcd-abcd-12345678ab14"
+
+
+def test_detached_ddl_rejected_on_stale_lease(started_cluster):
+    """
+    Regression for per-operation lease fencing inside the detached-namespace helpers: the
+    dispatcher-level admission check in `alterPartition` only fences command entry, but
+    `DROP DETACHED` deletes shared `detached/` directories and `ATTACH PARTITION` renames them
+    (`attaching_`/`ignored_`/`inactive_`) and strips `txn_version.txt*` BEFORE the commit-time
+    epoch fence. A node whose lease goes stale mid-command must stop mutating the shared
+    `detached/` namespace and roll temporary renames back.
+
+    The `merge_tree_leader_election_stale_lease_detached_ddl` failpoint makes the per-operation
+    lease check report a stale lease, so both commands must fail leaving the detached set intact.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_detached_ddl"
+    table = "test_detached_ddl_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DETACHED_DDL}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+
+        def detached_names():
+            return sorted(
+                node1.query(
+                    f"SELECT name FROM system.detached_parts"
+                    f" WHERE database = currentDatabase() AND table = '{table}'"
+                )
+                .strip()
+                .splitlines()
+            )
+
+        detached_before = detached_names()
+        assert detached_before, "DETACH PARTITION did not produce detached parts"
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="possibly stale leader"):
+                node1.query(
+                    f"ALTER TABLE {table} DROP DETACHED PARTITION 1",
+                    settings={"allow_drop_detached": 1},
+                )
+            assert detached_names() == detached_before, (
+                "The rejected DROP DETACHED did not leave the detached set intact"
+                " (a temporary deleting_ rename was not rolled back, or a directory was deleted)"
+            )
+
+            with pytest.raises(Exception, match="possibly stale leader"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+            assert detached_names() == detached_before, (
+                "The rejected ATTACH did not leave the detached set intact"
+                " (a temporary attaching_ rename was not rolled back)"
+            )
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared the same commands succeed.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        node1.query(
+            f"ALTER TABLE {table} DROP DETACHED PARTITION 1",
+            settings={"allow_drop_detached": 1},
+        )
+        assert detached_names() == []
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
