@@ -120,6 +120,24 @@ def test_alter_metadata_across_versions(start_cluster):
     check_replication("t_parens_altered", start=10)
 
 
+def test_reverse_key_old_replica_joins_new_table(start_cluster):
+    """`ORDER BY (a) DESC` keeps the `parenthesized` flag on the expression wrapped inside
+    `ASTStorageOrderByElement`, one level below the key expression list. The current version
+    must nevertheless serialize the canonical `a DESC` into the ZooKeeper `/metadata` node,
+    because an old replica compares that field as text against its canonical local form and
+    would fail to join with METADATA_MISMATCH."""
+    create = """
+        CREATE TABLE t_parens_reverse (a UInt32, b UInt32, c UInt32, d DateTime)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_parens_reverse', '{replica}')
+        ORDER BY (a) DESC
+        SETTINGS allow_experimental_reverse_key = 1
+        """
+    node_new.query(create.format(replica="r1"))
+    node_old.query(create.format(replica="r2"))
+
+    check_replication("t_parens_reverse")
+
+
 def test_upgrade_and_attach_partition_from(start_cluster):
     """A table created by the old version must load after an upgrade and be compatible with a
     freshly created parenthesized table in `ATTACH PARTITION FROM`. Must be the last test in the

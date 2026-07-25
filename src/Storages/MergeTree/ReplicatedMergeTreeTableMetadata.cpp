@@ -6,6 +6,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -42,9 +43,18 @@ static void stripArtificialParens(IAST & ast)
 {
     ast.setParenthesized(false);
     if (auto * list = ast.as<ASTExpressionList>())
+    {
         for (auto & child : list->children)
-            if (child)
-                child->setParenthesized(false);
+        {
+            if (!child)
+                continue;
+            child->setParenthesized(false);
+            /// A reverse key element (`ORDER BY (a) DESC`) wraps the actual expression,
+            /// and the `parenthesized` flag lives on the wrapped expression.
+            if (child->as<ASTStorageOrderByElement>() && !child->children.empty() && child->children.front())
+                child->children.front()->setParenthesized(false);
+        }
+    }
 }
 
 static String formattedASTNormalized(const ASTPtr & ast)
