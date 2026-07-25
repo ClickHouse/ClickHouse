@@ -144,9 +144,9 @@ String detectClientAgent()
 
 ClientInfo::ClientInfo()
 {
-    connection_address = std::make_shared<Poco::Net::SocketAddress>();
-    current_address = std::make_shared<Poco::Net::SocketAddress>();
-    initial_address = std::make_shared<Poco::Net::SocketAddress>();
+    connection_address = Poco::Net::SocketAddress();
+    current_address = Poco::Net::SocketAddress();
+    initial_address = Poco::Net::SocketAddress();
 }
 
 std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
@@ -326,7 +326,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     if (!parsed_address && query_kind == QueryKind::SECONDARY_QUERY)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Malformed initial_address received over the network: expected an IP literal with a numeric port");
-    initial_address = std::make_shared<Poco::Net::SocketAddress>(parsed_address.value_or(Poco::Net::SocketAddress{}));
+    initial_address = Poco::Net::SocketAddress(parsed_address.value_or(Poco::Net::SocketAddress{}));
 
     if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
     {
