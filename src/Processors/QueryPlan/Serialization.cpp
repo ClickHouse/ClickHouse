@@ -182,17 +182,36 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     std::vector<String> payloads;
     UInt64 min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
 
-    /// Pre-order walk (children pushed in reverse); Delayed* steps are elided as in the legacy walk.
-    std::stack<Node *> stack;
-    stack.push(root);
+    /// Left-to-right post-order: children are emitted before their parent, so a reader builds each
+    /// step as its payload arrives and never has to hold the whole envelope. Delayed* steps are
+    /// elided as in the legacy walk.
+    struct Frame
+    {
+        Node * node = {};
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    stack.push(Frame{.node = root});
     while (!stack.empty())
     {
-        Node * node = stack.top();
-        stack.pop();
+        auto & frame = stack.top();
 
-        while (typeid_cast<DelayedCreatingSetsStep *>(node->step.get())
-            || typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
-            node = node->children.front();
+        while (typeid_cast<DelayedCreatingSetsStep *>(frame.node->step.get())
+            || typeid_cast<DelayedMaterializingCTEsStep *>(frame.node->step.get()))
+            frame.node = frame.node->children.front();
+
+        Node * node = frame.node;
+
+        if (frame.next_child < node->children.size())
+        {
+            Node * child = node->children[frame.next_child];
+            ++frame.next_child;
+            stack.push(Frame{.node = child});
+            continue;
+        }
+
+        stack.pop();
 
         PlanOutline::Node outline_node;
         outline_node.child_count = node->children.size();
@@ -243,9 +262,6 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         outline.nodes.push_back(std::move(outline_node));
         /// `payload` is finalized and goes out of scope here, so its bytes move rather than copy.
         payloads.push_back(std::move(payload.str()));
-
-        for (auto it = node->children.rbegin(); it != node->children.rend(); ++it)
-            stack.push(*it);
     }
 
     std::vector<String> set_payloads;
@@ -323,36 +339,14 @@ static void skipQueryPlanEnvelope(ReadBuffer & in, const ContextPtr & context)
 QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
 {
     const UInt64 envelope_size = readEnvelopeSize(in, context);
+    const size_t envelope_start = in.count();
 
-    /// Parsing reads the envelope through pointers into these bytes and never touches `in` again,
-    /// so when the whole envelope is already buffered it can be read in place. A nested plan always
-    /// takes this path: it reads from the parent envelope, which is memory this call outlives.
-    String envelope_storage;
-    const char * envelope_data = nullptr;
-    if (envelope_size <= in.available())
-    {
-        envelope_data = in.position();
-        in.ignore(envelope_size);
-    }
-    else
-    {
-        envelope_storage.resize(envelope_size);
-        try
-        {
-            in.readStrict(envelope_storage.data(), envelope_storage.size());
-        }
-        catch (Exception & e)
-        {
-            /// A stream that ends before the declared envelope size is a malformed plan, not an I/O
-            /// condition of the connection.
-            e.addMessage(fmt::format("while reading a query plan envelope of {} bytes", envelope_size));
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
-        }
-        envelope_data = envelope_storage.data();
-    }
+    auto outline = readQueryPlanOutline(in, max_type_complexity, envelope_size);
 
-    ReadBufferFromMemory envelope_buffer(envelope_data, envelope_size);
-    auto outline = readQueryPlanOutline(envelope_buffer, max_type_complexity, envelope_size);
+    size_t consumed = in.count() - envelope_start;
+    if (consumed > envelope_size)
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            "Query plan outline of {} bytes does not fit the envelope of {}", consumed, envelope_size);
 
     /// One pass over the outline reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
@@ -361,35 +355,37 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan cannot be deserialized: {}", validation.describe());
 
-    size_t node_count = outline.nodes.size();
+    const size_t node_count = outline.nodes.size();
 
-    /// Payload offsets in the envelope (Section B starts where the outline ended) and the
-    /// children lists reconstructed from the pre-order child counts.
-    std::vector<size_t> payload_offsets(node_count);
-    std::vector<std::vector<size_t>> children_indices(node_count);
-    size_t offset = envelope_buffer.count();
+    /// Validation already reported any structural issue; rebuilding here must therefore succeed.
+    auto shape = reconstructOutlineShape(outline);
+    if (!shape.ok())
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+            "Query plan cannot be deserialized: {}", shape.issues.front());
+    const auto & children_indices = shape.children;
+
+    /// Every declared frame is checked against the envelope before a single step is built, so a
+    /// plan whose sizes do not add up is rejected without constructing anything. Subtracting from
+    /// the budget keeps a hostile size from overflowing.
     {
-        std::vector<std::pair<size_t, UInt64>> parents; /// (node index, remaining child slots)
-        for (size_t i = 0; i < node_count; ++i)
+        UInt64 budget = envelope_size - consumed;
+        for (const auto & outline_node : outline.nodes)
         {
-            const auto & outline_node = outline.nodes[i];
-
-            payload_offsets[i] = offset;
-            /// Subtraction, not addition: `offset + payload_size` could wrap around on a hostile size.
-            if (outline_node.payload_size > envelope_size - offset)
+            if (outline_node.payload_size > budget)
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Query plan payload of step '{}' extends past the envelope", outline_node.step_name);
-            offset += outline_node.payload_size;
-
-            if (i > 0)
-            {
-                children_indices[parents.back().first].push_back(i);
-                if (--parents.back().second == 0)
-                    parents.pop_back();
-            }
-            if (outline_node.child_count > 0)
-                parents.emplace_back(i, outline_node.child_count);
+            budget -= outline_node.payload_size;
         }
+        for (const auto & set : outline.sets)
+        {
+            if (set.payload_size > budget)
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Serialized set {}_{} extends past the envelope", set.hash.low64, set.hash.high64);
+            budget -= set.payload_size;
+        }
+        if (budget != 0)
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                "Query plan envelope has {} bytes that no frame accounts for", budget);
     }
 
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
@@ -398,11 +394,12 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
     QueryPlan plan;
     std::vector<Node *> nodes_by_index(node_count);
 
-    /// In pre-order all descendants of a node follow it, so iterating backwards constructs every
-    /// child before its parent. Parents receive the constructed children's output headers (the
-    /// same contract as the legacy stream: serialized headers do not carry constants, steps
-    /// refill them, and e.g. `UnionStep` depends on child header constness).
-    for (size_t idx = node_count; idx-- > 0;)
+    /// Nodes arrive children-first, so a forward walk always has the children of the node it is
+    /// building. Parents receive the constructed children's output headers (the same contract as
+    /// the legacy stream: serialized headers do not carry constants, steps refill them, and e.g.
+    /// `UnionStep` depends on child header constness).
+    String payload_bytes;
+    for (size_t idx = 0; idx < node_count; ++idx)
     {
         const auto & outline_node = outline.nodes[idx];
 
@@ -423,7 +420,20 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
         QueryPlanSerializationSettings settings;
         settings.applyEntries(outline_node.settings);
 
-        ReadBufferFromMemory payload(envelope_data + payload_offsets[idx], outline_node.payload_size);
+        /// One frame at a time: the buffer is reused, so only the largest payload is ever held.
+        payload_bytes.resize(outline_node.payload_size);
+        try
+        {
+            in.readStrict(payload_bytes.data(), payload_bytes.size());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while reading the payload of step '{}' (node #{}, {} bytes)",
+                outline_node.step_name, idx, outline_node.payload_size));
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+        }
+
+        ReadBufferFromMemory payload(payload_bytes.data(), payload_bytes.size());
         IQueryPlanStep::Deserialization ctx{
             payload, sets_registry, {}, context, input_headers, output_header, settings,
             max_type_complexity, flags.version, flags.skip_data, outline_node.step_format_version};
@@ -463,15 +473,18 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
             plan.addStorageHolder(storage);
     }
 
-    plan.root = nodes_by_index[0];
+    /// Children-first order puts the root last.
+    plan.root = nodes_by_index[node_count - 1];
 
-    ReadBufferFromMemory sets_buffer(envelope_data + offset, envelope_size - offset);
     auto res = deserializeEnvelopeSets(
-        std::move(plan), sets_registry, outline, sets_buffer, flags, context, max_type_complexity);
+        std::move(plan), sets_registry, outline, in, flags, context, max_type_complexity);
 
-    if (!sets_buffer.eof())
+    /// The budget above proved the declared frames fill the envelope exactly; this proves the
+    /// reader consumed exactly those frames and nothing else.
+    const size_t total_consumed = in.count() - envelope_start;
+    if (total_consumed != envelope_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan envelope has {} trailing bytes after the sets section", sets_buffer.available());
+            "Query plan envelope declared {} bytes but {} were read", envelope_size, total_consumed);
 
     return res;
 }

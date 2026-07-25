@@ -315,6 +315,40 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     EXPECT_EQ(cachedPlanBytes(plan, current + 100), current_bytes);
 }
 
+TEST(QueryPlanSerialization, ChildOrderSurvivesTheRoundTrip)
+{
+    registerStepsOnce();
+
+    /// Nodes are written children-first, and the two orders that satisfy that (post-order and
+    /// reverse pre-order) differ in how siblings come out. Children are positional for binary
+    /// steps, so pin that the left child stays the left child. The two children are given
+    /// different shapes, since identical ones would hide a swap.
+    std::vector<std::unique_ptr<QueryPlan>> plans;
+    SharedHeaders input_headers;
+
+    plans.push_back(std::make_unique<QueryPlan>(makeSourcePlan()));
+
+    auto deeper_child = std::make_unique<QueryPlan>(makeSourcePlan());
+    deeper_child->addStep(std::make_unique<LimitStep>(deeper_child->getCurrentHeader(), 10, 1));
+    plans.push_back(std::move(deeper_child));
+
+    for (const auto & child : plans)
+        input_headers.push_back(child->getCurrentHeader());
+
+    QueryPlan plan;
+    plan.unitePlans(std::make_unique<UnionStep>(std::move(input_headers)), std::move(plans));
+
+    auto restored = deserializePlan(serializePlan(plan));
+    const auto explain = debugExplainPlan(restored);
+
+    /// The plain source is the left child, so it must appear before the `Limit` subtree.
+    const auto source = explain.find("TestSource");
+    const auto limit = explain.find("Limit");
+    ASSERT_NE(source, std::string::npos) << explain;
+    ASSERT_NE(limit, std::string::npos) << explain;
+    EXPECT_LT(source, limit) << "children came back swapped:\n" << explain;
+}
+
 TEST(QueryPlanSerialization, SkippingDrainsThePlanWithoutBuildingIt)
 {
     registerStepsOnce();
@@ -451,18 +485,10 @@ namespace
 {
 
 /// A two-node outline: root "Expression" with one "TestSource" child.
+/// Children-first, so the leaf comes first and the root is the last node.
 PlanOutline makeTestOutline()
 {
     PlanOutline outline;
-
-    PlanOutline::Node root;
-    root.child_count = 1;
-    root.step_name = "Expression";
-    root.step_format_version = 1;
-    root.min_reader_plan_version = 4;
-    root.has_output_header = true;
-    root.header = makeTestHeader();
-    outline.nodes.push_back(std::move(root));
 
     PlanOutline::Node leaf;
     leaf.child_count = 0;
@@ -473,6 +499,15 @@ PlanOutline makeTestOutline()
     leaf.header = makeTestHeader();
     leaf.payload_size = 0;
     outline.nodes.push_back(std::move(leaf));
+
+    PlanOutline::Node root;
+    root.child_count = 1;
+    root.step_name = "Expression";
+    root.step_format_version = 1;
+    root.min_reader_plan_version = 4;
+    root.has_output_header = true;
+    root.header = makeTestHeader();
+    outline.nodes.push_back(std::move(root));
 
     return outline;
 }
@@ -491,9 +526,9 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
 {
     registerStepsOnce();
     auto outline = makeTestOutline();
-    outline.nodes[0].step_description = "test description";
-    outline.nodes[1].settings.push_back({.name = "max_block_size", .flags = 0, .value = "\x01"});
-    outline.nodes[1].payload_size = 42;
+    outline.nodes[1].step_description = "test description";
+    outline.nodes[0].settings.push_back({.name = "max_block_size", .flags = 0, .value = "\x01"});
+    outline.nodes[0].payload_size = 42;
 
     auto bytes = writeOutlineToString(outline);
 
@@ -502,14 +537,15 @@ TEST(QueryPlanOutline, WriteReadRoundTrip)
     EXPECT_TRUE(in.eof());
 
     ASSERT_EQ(restored.nodes.size(), 2u);
-    EXPECT_EQ(restored.nodes[0].step_name, "Expression");
-    EXPECT_EQ(restored.nodes[0].child_count, 1u);
-    EXPECT_EQ(restored.nodes[0].step_description, "test description");
-    ASSERT_TRUE(restored.nodes[0].has_output_header);
-    EXPECT_EQ(restored.nodes[0].header->columns(), 2u);
-    EXPECT_EQ(restored.nodes[1].payload_size, 42u);
-    ASSERT_EQ(restored.nodes[1].settings.size(), 1u);
-    EXPECT_EQ(restored.nodes[1].settings[0].name, "max_block_size");
+    /// The root is the last node, its child the first.
+    EXPECT_EQ(restored.nodes[1].step_name, "Expression");
+    EXPECT_EQ(restored.nodes[1].child_count, 1u);
+    EXPECT_EQ(restored.nodes[1].step_description, "test description");
+    ASSERT_TRUE(restored.nodes[1].has_output_header);
+    EXPECT_EQ(restored.nodes[1].header->columns(), 2u);
+    EXPECT_EQ(restored.nodes[0].payload_size, 42u);
+    ASSERT_EQ(restored.nodes[0].settings.size(), 1u);
+    EXPECT_EQ(restored.nodes[0].settings[0].name, "max_block_size");
 
     /// Re-write must reproduce identical bytes.
     EXPECT_EQ(writeOutlineToString(restored), bytes);
@@ -520,10 +556,10 @@ TEST(QueryPlanOutline, ValidationCollectsAllIssues)
     registerStepsOnce();
     auto outline = makeTestOutline();
 
-    outline.nodes[1].step_name = "NoSuchStep";
-    outline.nodes[1].has_output_header = false;
-    outline.nodes[1].header = nullptr;
-    outline.nodes[0].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
+    outline.nodes[0].step_name = "NoSuchStep";
+    outline.nodes[0].has_output_header = false;
+    outline.nodes[0].header = nullptr;
+    outline.nodes[1].settings.push_back({.name = "no_such_setting", .flags = 0, .value = ""});
 
     auto result = validateQueryPlanOutline(outline, /*plan_version=*/4, /*head_min_reader_plan_version=*/4);
     ASSERT_FALSE(result.ok());
@@ -615,9 +651,9 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     registerStepsOnce();
     auto outline = makeTestOutline();
 
-    outline.nodes[0].child_count = 2;  /// Declares two children, only one node follows.
+    outline.nodes[1].child_count = 2;  /// Declares two children, only one subtree precedes it.
     EXPECT_FALSE(validateQueryPlanOutline(outline, 4, 4).ok());
-    outline.nodes[0].child_count = 1;
+    outline.nodes[1].child_count = 1;
 
     PlanOutline::SetEntry set1;
     set1.hash.low64 = 10;
@@ -632,6 +668,67 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     auto result = validateQueryPlanOutline(outline, 4, 4);
     ASSERT_FALSE(result.ok());
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
+}
+
+TEST(QueryPlanSerialization, OutlineFrameCannotEscapeTheEnvelope)
+{
+    registerStepsOnce();
+
+    /// A tiny declared envelope with a huge outline frame inside it. The frame must be rejected
+    /// on its declared size, before anything is allocated and before the reader can take bytes
+    /// that belong to whatever follows the plan on the connection.
+    WriteBufferFromOwnString head;
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), head);
+    writeVarUInt(UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE), head);
+    writeVarUInt(UInt64(4), head);
+    writeVarUInt(UInt64(32) << 20, head);
+    head.finalize();
+
+    const std::string bytes = head.str() + "bytes that belong to the protocol";
+
+    ReadBufferFromString in(bytes);
+    EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+    EXPECT_LE(in.count(), head.str().size()) << "the reader consumed past the declared envelope";
+}
+
+TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)
+{
+    registerStepsOnce();
+
+    /// Nothing to be the root.
+    EXPECT_FALSE(validateQueryPlanOutline(PlanOutline{}, 4, 4).ok());
+
+    /// The first node cannot have children: nothing precedes it.
+    auto under_run = makeTestOutline();
+    under_run.nodes[0].child_count = 1;
+    EXPECT_FALSE(validateQueryPlanOutline(under_run, 4, 4).ok());
+
+    /// Two leaves leave two unattached subtrees, so there is no single root.
+    auto two_roots = makeTestOutline();
+    two_roots.nodes[1].child_count = 0;
+    auto result = validateQueryPlanOutline(two_roots, 4, 4);
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.describe().find("single root"), std::string::npos) << result.describe();
+}
+
+TEST(QueryPlanOutline, ShapeRestoresChildrenLeftToRight)
+{
+    registerStepsOnce();
+
+    /// Two leaves then their parent: the parent's children must come back in the order written.
+    PlanOutline outline;
+    outline.nodes.push_back(makeTestOutline().nodes[0]);
+    outline.nodes.push_back(makeTestOutline().nodes[0]);
+    outline.nodes.push_back(makeTestOutline().nodes[1]);
+    outline.nodes[2].child_count = 2;
+
+    auto shape = reconstructOutlineShape(outline);
+    ASSERT_TRUE(shape.ok()) << (shape.issues.empty() ? String{} : shape.issues.front());
+    EXPECT_TRUE(shape.children[0].empty());
+    EXPECT_TRUE(shape.children[1].empty());
+    ASSERT_EQ(shape.children[2].size(), 2u);
+    EXPECT_EQ(shape.children[2][0], 0u);
+    EXPECT_EQ(shape.children[2][1], 1u);
 }
 
 TEST(QueryPlanOutline, TruncatedOutlineIsRejected)
@@ -690,8 +787,8 @@ TEST(QueryPlanOutline, FormatShowsShapeWithUnknownSteps)
 {
     registerStepsOnce();
     auto outline = makeTestOutline();
-    outline.nodes[1].step_name = "StepFromTheFuture";
-    outline.nodes[1].payload_size = 128;
+    outline.nodes[0].step_name = "StepFromTheFuture";
+    outline.nodes[0].payload_size = 128;
 
     auto text = formatQueryPlanOutline(outline);
     EXPECT_NE(text.find("Expression"), std::string::npos);

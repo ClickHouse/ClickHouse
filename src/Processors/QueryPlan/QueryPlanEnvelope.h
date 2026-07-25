@@ -23,8 +23,7 @@ class ReadBuffer;
 ///    payload byte — see validateQueryPlanOutline;
 ///  - the plan shape can be rendered even when some steps are unknown or carry a newer format
 ///    version — see formatQueryPlanOutline;
-///  - payloads become independently addressable byte ranges (offsets are prefix sums of
-///    payload_size in outline order).
+///  - payloads become independently framed byte ranges, read one at a time in outline order.
 ///
 /// The outline wire layout is frozen append-only: future additions go into each node's
 /// extension_bytes bytes, which older readers skip, so shape rendering keeps working across plan
@@ -51,7 +50,8 @@ struct PlanOutline
         String extension_bytes;                      /// empty in v4; skipped by readers that do not know it
     };
 
-    /// Nodes in pre-order over the serialized tree (Delayed* steps elided, as in the plan walk).
+    /// Nodes in left-to-right post-order over the serialized tree (Delayed* steps elided, as in
+    /// the plan walk), so every child precedes its parent and the root is the last node.
     std::vector<Node> nodes;
 
     struct SetEntry
@@ -70,11 +70,26 @@ void writeQueryPlanOutline(const PlanOutline & outline, WriteBuffer & out);
 
 /// Reads Section A written by writeQueryPlanOutline. Bounded: never reads past outline_size,
 /// rejects trailing bytes inside the frame and any size that exceeds the declared bounds.
-/// `max_payload_bytes` caps the payload sizes a node or a set may declare; pass the size of the
-/// envelope holding them, since no payload can be larger than that.
+/// `max_frame_bytes` caps the outline frame itself and every payload size it declares; pass the
+/// size of the envelope holding them, since nothing inside it can be larger than that.
 /// Frame-layer violations throw CANNOT_PARSE_QUERY_PLAN; errors from nested codecs (e.g. header
 /// type decoding) keep their own codes and surface at the frame boundary.
-PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_payload_bytes);
+PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes);
+
+/// The tree rebuilt from the outline's child counts.
+struct PlanOutlineShape
+{
+    /// Per node, its children left to right. Meaningful only when `ok()`.
+    std::vector<std::vector<size_t>> children;
+    std::vector<String> issues;
+
+    bool ok() const { return issues.empty(); }
+};
+
+/// Rebuilds the tree from `child_count`. Nodes are in left-to-right post-order, so every child
+/// precedes its parent: each node takes the `child_count` most recent subtrees that nothing has
+/// claimed yet, and the single subtree left at the end is the root (the last node).
+PlanOutlineShape reconstructOutlineShape(const PlanOutline & outline);
 
 struct QueryPlanOutlineValidationResult
 {

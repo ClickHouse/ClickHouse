@@ -274,6 +274,7 @@ QueryPlanAndSets deserializeEnvelopeSets(
     QueryPlanAndSets res;
     res.plan = std::move(plan);
 
+    String frame_bytes;
     for (const auto & entry : outline.sets)
     {
         auto it = registry.sets.find(entry.hash);
@@ -284,16 +285,23 @@ QueryPlanAndSets deserializeEnvelopeSets(
         if (columns.empty())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Serialized set {}_{} is serialized twice", entry.hash.low64, entry.hash.high64);
 
-        /// A hostile size must not read past the end of the envelope.
-        if (entry.payload_size > in.available())
-            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-                "Serialized set {}_{} declares {} payload bytes but only {} remain",
-                entry.hash.low64, entry.hash.high64, entry.payload_size, in.available());
+        /// One frame at a time, into a reused buffer: only the largest set is ever held. Decoding
+        /// through a reader bounded to the frame keeps a nested plan from reading past its own
+        /// bytes into the next set or the outer protocol. The caller has already checked every
+        /// declared size against the envelope.
+        frame_bytes.resize(entry.payload_size);
+        try
+        {
+            in.readStrict(frame_bytes.data(), frame_bytes.size());
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while reading the payload of set {}_{} ({} bytes)",
+                entry.hash.low64, entry.hash.high64, entry.payload_size));
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+        }
 
-        /// The check above proves the frame is present in the current buffer, so it can be read in
-        /// place. Copying it out first would double the memory a large set needs while decoding.
-        ReadBufferFromMemory body(in.position(), entry.payload_size);
-        in.ignore(entry.payload_size);
+        ReadBufferFromMemory body(frame_bytes.data(), frame_bytes.size());
 
         if (entry.kind == UInt8(SetSerializationKind::StorageSet))
         {

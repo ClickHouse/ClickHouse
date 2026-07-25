@@ -97,7 +97,7 @@ String readCappedSizedBytes(ReadBuffer & in, UInt64 cap, const char * what)
     return bytes;
 }
 
-PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 max_payload_bytes)
+PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes)
 {
     PlanOutline outline;
 
@@ -133,7 +133,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
             node.settings.push_back(std::move(entry));
         }
 
-        node.payload_size = readCappedVarUInt(in, max_payload_bytes, "step payload bytes");
+        node.payload_size = readCappedVarUInt(in, max_frame_bytes, "step payload bytes");
 
         /// Future outline layouts append data here; a v4 reader skips it, which is what keeps
         /// shape rendering working for plans of newer versions.
@@ -149,7 +149,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
         PlanOutline::SetEntry entry;
         readBinary(entry.hash, in);
         readIntBinary(entry.kind, in);
-        entry.payload_size = readCappedVarUInt(in, max_payload_bytes, "set payload bytes");
+        entry.payload_size = readCappedVarUInt(in, max_frame_bytes, "set payload bytes");
         outline.sets.push_back(entry);
     }
 
@@ -168,9 +168,13 @@ void writeQueryPlanOutline(const PlanOutline & outline, WriteBuffer & out)
     out.write(body.str().data(), body.str().size());
 }
 
-PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_payload_bytes)
+PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UInt64 max_frame_bytes)
 {
-    UInt64 outline_size = readCappedVarUInt(in, MAX_OUTLINE_BYTES, "outline bytes");
+    /// Capped by the envelope as well as by the absolute limit: the outline lives inside the
+    /// envelope, so a frame larger than that must be rejected before anything is allocated or read,
+    /// or a small declared envelope could still make the reader take bytes belonging to the
+    /// protocol after it.
+    UInt64 outline_size = readCappedVarUInt(in, std::min(MAX_OUTLINE_BYTES, max_frame_bytes), "outline bytes");
 
     /// Copy the frame and parse from memory: parsing can then never read past the declared size,
     /// and trailing bytes inside the frame are detectable.
@@ -181,7 +185,7 @@ PlanOutline readQueryPlanOutline(ReadBuffer & in, size_t max_type_complexity, UI
     ReadBufferFromMemory body(outline_bytes.data(), outline_bytes.size());
     try
     {
-        auto outline = readOutlineBody(body, max_type_complexity, max_payload_bytes);
+        auto outline = readOutlineBody(body, max_type_complexity, max_frame_bytes);
 
         if (!body.eof())
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
@@ -205,6 +209,46 @@ String QueryPlanOutlineValidationResult::describe() const
     return fmt::format("{}", fmt::join(issues, "; "));
 }
 
+PlanOutlineShape reconstructOutlineShape(const PlanOutline & outline)
+{
+    PlanOutlineShape shape;
+    const size_t node_count = outline.nodes.size();
+    shape.children.resize(node_count);
+
+    /// Subtrees that no parent has claimed yet, in the order they were completed.
+    std::vector<size_t> unclaimed;
+    unclaimed.reserve(node_count);
+
+    for (size_t i = 0; i < node_count; ++i)
+    {
+        const UInt64 child_count = outline.nodes[i].child_count;
+        if (child_count > unclaimed.size())
+        {
+            shape.issues.push_back(fmt::format(
+                "node #{} ('{}') declares {} children but only {} subtrees precede it",
+                i, outline.nodes[i].step_name, child_count, unclaimed.size()));
+            return shape;
+        }
+
+        /// Popping walks the children right to left, so fill the list from the back.
+        auto & children = shape.children[i];
+        children.resize(child_count);
+        for (size_t position = child_count; position-- > 0;)
+        {
+            children[position] = unclaimed.back();
+            unclaimed.pop_back();
+        }
+
+        unclaimed.push_back(i);
+    }
+
+    if (unclaimed.size() != 1)
+        shape.issues.push_back(fmt::format(
+            "plan tree does not have a single root: {} subtrees are unattached", unclaimed.size()));
+
+    return shape;
+}
+
 QueryPlanOutlineValidationResult validateQueryPlanOutline(
     const PlanOutline & outline, UInt64 plan_version, UInt64 head_min_reader_plan_version)
 {
@@ -217,21 +261,17 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
         return result;
     }
 
-    /// Pre-order structural walk: each node consumes one pending slot and opens child_count new
-    /// ones. The counts are consistent iff no node arrives with nothing pending and nothing stays
-    /// pending at the end.
-    UInt64 pending_child_slots = 1;
+    /// Structural issues are collected first but do not stop the metadata scan below: a caller
+    /// upgrading versions wants every unknown step and setting named, not just the first problem.
+    auto shape = reconstructOutlineShape(outline);
+    for (const auto & issue : shape.issues)
+        result.issues.push_back(issue);
+
+    const size_t root_index = outline.nodes.size() - 1;
+
     for (size_t i = 0; i < outline.nodes.size(); ++i)
     {
         const auto & node = outline.nodes[i];
-
-        if (pending_child_slots == 0)
-        {
-            result.issues.push_back(fmt::format("node #{} ('{}') is not reachable from the root", i, node.step_name));
-            break;
-        }
-        pending_child_slots -= 1;
-        pending_child_slots += node.child_count;
 
         if (!registry.hasStep(node.step_name))
         {
@@ -272,7 +312,8 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                 node.step_name, i, node.min_reader_plan_version, head_min_reader_plan_version));
 
         /// Parents read their input headers from their children, so only the root may lack one.
-        if (i != 0 && !node.has_output_header)
+        /// In post-order the root is the last node.
+        if (i != root_index && !node.has_output_header)
             result.issues.push_back(fmt::format("non-root step '{}' (node #{}) has no output header", node.step_name, i));
 
         for (const auto & setting : node.settings)
@@ -280,9 +321,6 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
                 && !(setting.flags & PlanOutline::SettingEntry::FLAG_IGNORABLE))
                 result.issues.push_back(fmt::format("unknown plan setting '{}' (not marked ignorable)", setting.name));
     }
-
-    if (pending_child_slots != 0)
-        result.issues.push_back(fmt::format("plan tree is incomplete: {} declared children have no nodes", pending_child_slots));
 
     for (size_t i = 0; i < outline.sets.size(); ++i)
     {
@@ -317,13 +355,34 @@ String formatQueryPlanOutline(const PlanOutline & outline)
 
     WriteBufferFromOwnString out;
 
-    /// Depth per node from the pre-order child counts.
-    std::vector<UInt64> remaining_children_stack;
-    for (const auto & node : outline.nodes)
+    /// Nodes are stored children-first, so depth cannot be counted while scanning them: rebuild
+    /// the tree and walk it from the root instead. A malformed tree still renders, flat.
+    auto shape = reconstructOutlineShape(outline);
+
+    std::vector<std::pair<size_t, size_t>> to_print; /// (node index, depth)
+    if (shape.ok() && !outline.nodes.empty())
     {
-        size_t depth = remaining_children_stack.size();
-        if (!remaining_children_stack.empty())
-            --remaining_children_stack.back();
+        std::vector<std::pair<size_t, size_t>> stack{{outline.nodes.size() - 1, 0}};
+        while (!stack.empty())
+        {
+            auto [index, depth] = stack.back();
+            stack.pop_back();
+            to_print.emplace_back(index, depth);
+
+            const auto & children = shape.children[index];
+            for (size_t position = children.size(); position-- > 0;)
+                stack.emplace_back(children[position], depth + 1);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < outline.nodes.size(); ++i)
+            to_print.emplace_back(i, 0);
+    }
+
+    for (const auto & [index, depth] : to_print)
+    {
+        const auto & node = outline.nodes[index];
 
         for (size_t i = 0; i < depth; ++i)
             writeString("  ", out);
@@ -351,11 +410,6 @@ String formatQueryPlanOutline(const PlanOutline & outline)
             }
         }
         writeChar('\n', out);
-
-        while (!remaining_children_stack.empty() && remaining_children_stack.back() == 0)
-            remaining_children_stack.pop_back();
-        if (node.child_count > 0)
-            remaining_children_stack.push_back(node.child_count);
     }
 
     if (!outline.sets.empty())
