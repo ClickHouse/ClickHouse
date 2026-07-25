@@ -716,7 +716,8 @@ async function main() {
             { v: 'ftp://host/image.png', link: false, preview: false, why: 'a non-http(s) scheme' },
             { v: 'not a url at all', link: false, preview: false, why: 'plain text' },
         ];
-        const previewTitle = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
+        /// The tooltip is the only affordance for an opt-in gesture, so pin its exact text.
+        const previewTitle = 'Ctrl/Cmd for preview';
         for (const c of cases) {
             const page = await bootPage(js);
             const res = JSON.parse(page.run(`
@@ -743,9 +744,11 @@ async function main() {
             check('url-gate', `${c.why} is ${c.link ? '' : 'not '}linkified`, res.link === c.link, res);
             check('url-gate', `${c.why} ${c.preview ? 'previews' : 'does not preview'} on Ctrl+hover`,
                 res.fetched === c.preview, res);
-            if (c.preview) {
-                check('url-gate', `${c.why} advertises the gesture in its title`,
-                    res.title === previewTitle, res);
+            if (c.link) {
+                /// A link that does not preview must not advertise the gesture either, or the
+                /// tooltip would promise a preview that never appears.
+                check('url-gate', `${c.why} ${c.preview ? 'advertises' : 'does not advertise'} the gesture in its title`,
+                    res.title === (c.preview ? previewTitle : ''), res);
             }
         }
     }
