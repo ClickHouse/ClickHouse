@@ -8,6 +8,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/TableZnodeInfo.h>
 
+#include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
@@ -47,6 +48,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_deprecated_syntax_for_merge_tree;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_experimental_unique_key;
     extern const SettingsBool allow_suspicious_primary_key;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -71,8 +73,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsString default_compression_codec;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsString disk;
+    extern const MergeTreeSettingsString marks_compression_codec;
+    extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsString storage_policy;
 }
 
@@ -718,7 +723,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// If primary key explicitly defined, than get it from AST
         if (args.storage_def->primary_key)
         {
-            metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, metadata.virtuals, context);
+            metadata.primary_key = KeyDescription::getPrimaryKeyFromAST(
+                args.storage_def->primary_key->ptr(), metadata.sorting_key, metadata.columns, metadata.virtuals, context);
         }
         else /// Otherwise we don't have explicit primary key and copy it from order by.
         {
@@ -751,11 +757,41 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
+            ///
+            /// Also reject a UK element that names a non-stored column: an existing
+            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
+            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
+            /// dense-index rebuild (`part->getColumns()`) both read the stored
+            /// block, so such a column would be absent at runtime. `getKeyFromAST`
+            /// below resolves against physical + virtual columns, so it would let a
+            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
+            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
+            /// gives a clear reason. A name that matches no column at all (not
+            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
-                auto is_plain_identifier = [](const ASTPtr & node) -> bool
+                auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
                 {
-                    return node && node->as<ASTIdentifier>() != nullptr;
+                    return node ? node->as<ASTIdentifier>() : nullptr;
+                };
+                auto reject_non_physical = [&](const ASTIdentifier & ident)
+                {
+                    const String & name = ident.name();
+                    /// Virtual columns (`_part`, `_part_offset`, ...) are not in
+                    /// `metadata.columns` but ARE resolvable by `getKeyFromAST`
+                    /// (it sees physical + virtual), so a virtual UK element would
+                    /// pass DDL and then crash the first INSERT on
+                    /// `block.getByName(...)`. Reject it here.
+                    if (metadata.virtuals.has(name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY columns must be real stored columns; "
+                            "virtual columns such as `{}` are not allowed",
+                            name);
+                    if (metadata.columns.has(name) && !metadata.columns.hasPhysical(name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` must be a physical (stored) column; "
+                            "ALIAS and EPHEMERAL columns are not allowed",
+                            name);
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -765,7 +801,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     {
                         for (const auto & child : as_function->arguments->children)
                         {
-                            if (!is_plain_identifier(child))
+                            const auto * ident = is_plain_identifier(child);
+                            if (!ident)
                             {
                                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "UNIQUE KEY must be a list of column identifiers. "
@@ -773,10 +810,15 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                                     "only bare column names are allowed.",
                                     child ? child->formatForErrorMessage() : String("<null>"));
                             }
+                            reject_non_physical(*ident);
                         }
                     }
                 }
-                else if (!is_plain_identifier(uk_ast))
+                else if (const auto * ident = is_plain_identifier(uk_ast))
+                {
+                    reject_non_physical(*ident);
+                }
+                else
                 {
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "UNIQUE KEY must be a list of column identifiers. "
@@ -833,6 +875,50 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
+        }
+
+        /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
+        /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use, so an
+        /// experimental codec (e.g. `ZXC`) could slip in through `SETTINGS default_compression_codec = ...`.
+        /// For freshly introduced definitions the merged value (explicit or inherited from the current
+        /// `<merge_tree>` config defaults) is checked against `allow_experimental_codecs`. A full-definition
+        /// `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like user input that also runs
+        /// under `LoadingStrictnessLevel::ATTACH`, so it counts as fresh too. Definitions read back from
+        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart) are
+        /// marked with `attach_short_syntax` (see `createTableFromAST`); for those (and for
+        /// `SECONDARY_CREATE`: DDL replay in `Replicated` databases, `RESTORE`) values written in the stored
+        /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
+        /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
+        /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
+        /// introduce an experimental codec into existing tables via a config default plus a restart, without
+        /// anyone enabling `allow_experimental_codecs` (at startup the check runs against the default
+        /// profile, which is where such a config default can be legitimately allowed). `FORCE_RESTORE` is
+        /// documented to skip all sanity checks and is left alone.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE && !local_settings[Setting::allow_experimental_codecs])
+        {
+            const auto is_stored_in_definition = [&](std::string_view name)
+            {
+                if (!args.storage_def->settings)
+                    return false;
+                for (const auto & change : args.storage_def->settings->changes)
+                    if (change.name == name)
+                        return true;
+                return false;
+            };
+
+            const auto validate_codec_setting = [&](std::string_view name, const String & codec)
+            {
+                if (codec.empty())
+                    return;
+                if (is_fresh_definition || !is_stored_in_definition(name))
+                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+            };
+
+            validate_codec_setting("marks_compression_codec", (*storage_settings)[MergeTreeSetting::marks_compression_codec].value);
+            validate_codec_setting("primary_key_compression_codec", (*storage_settings)[MergeTreeSetting::primary_key_compression_codec].value);
+            validate_codec_setting("default_compression_codec", (*storage_settings)[MergeTreeSetting::default_compression_codec].value);
         }
 
         /// UNIQUE KEY tables must reside on local-only storage policies.
