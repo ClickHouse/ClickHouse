@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
-import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
 
@@ -15,12 +15,12 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
   ## 什么是计算-计算分离？
 </div>
 
-在讨论计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
+在讨论什么是计算-计算分离之前，先了解 ClickHouse Cloud 中的**服务**是什么，会很有帮助。
 
 每个 ClickHouse Cloud 服务都包括：
 
 * 具有专用 CPU 和内存集群的 ClickHouse 计算节点 (称为**副本**)
-* 用于连接该服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
+* 用于连接服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
 * 一个对象存储文件夹，服务会在其中存储所有数据以及部分元数据：
 
 <Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 中的单个服务" />
@@ -29,7 +29,7 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 
 *图 1 - ClickHouse Cloud 中的单个服务*
 
-除了使用单个服务外，你还可以创建多个可访问同一共享存储的服务，这样就能为特定工作负载分配专用资源，而无需复制数据。
+你不仅可以使用单个服务，也可以创建多个可访问同一共享存储的服务，从而为特定工作负载分配专用资源，而无需复制数据。
 这一概念称为**计算-计算分离**。
 
 计算-计算分离意味着，每个服务都有自己的一组副本和一个端点，但共用同一个对象存储文件夹，并访问相同的表、视图等。
@@ -75,8 +75,8 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
   ### 数据库凭据
 </div>
 
-由于一个仓库中的所有服务共享同一组表，因此这些服务之间也共享访问控制。
-这意味着，在服务 1 中创建的所有数据库用户，也都可以用相同的权限 (针对表、视图等的授权) 使用服务 2，反之亦然。
+由于同一仓库中的所有服务共享同一组表，因此它们在服务之间也共享访问控制。
+这意味着，在服务 1 中创建的所有数据库用户，也都可以使用服务 2，并且拥有相同的权限 (针对表、视图等的授权) ，反之亦然。
 每个服务使用不同的端点，但所有服务共用相同的用户名和密码。换句话说，**使用相同存储的服务之间，用户是共享的**，如下图所示：
 
 <Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="共享相同数据的服务之间的用户访问" />
@@ -90,7 +90,7 @@ import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge
 </div>
 
 若要限制其他应用或临时用户对特定服务的访问，可以配置网络限制。
-为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务标签页，然后选择 **设置**。
+为此，请在 ClickHouse Cloud 控制台中，进入你希望限制访问的目标服务的服务选项卡，然后选择 **设置**。
 
 IP 过滤设置可针对每个服务单独配置，这意味着你可以控制哪些应用可以访问哪些服务。
 这样，你就可以限制用户使用特定服务。
@@ -103,7 +103,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 *图 5 - 由于网络访问控制设置，Alice 无法访问服务 2*
 
-当用户以个人身份连接、而非使用&#95;默认&#95;用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
+当用户以个人身份连接、而非使用 *default* 用户时，也可以使用 ClickHouse 角色和授权来控制其对数据的访问。
 
 <div id="read-vs-read-write">
   ### 只读与读写服务
@@ -111,11 +111,11 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 服务可以是以下类型之一：
 
-* **read-write**
+* **读写**
   * 可以读取和写入 ClickHouse 中的数据
   * 执行后台合并操作 (例如，数据 insert 后合并 parts) ，这会消耗 CPU 和内存
   * 可以将数据导出到外部
-* **read-only**
+* **只读**
   * 只能读取数据；不能在 ClickHouse 中写入或修改数据
   * 除系统表外，不执行后台合并操作，因此其资源可完全集中用于读取查询
   * 仍然可以将数据导出到外部 (例如，通过表函数) ，但不能更改 ClickHouse 内部的数据

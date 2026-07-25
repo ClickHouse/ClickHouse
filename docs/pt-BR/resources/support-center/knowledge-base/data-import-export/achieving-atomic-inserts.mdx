@@ -43,9 +43,7 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
 </div>
 
 <Steps>
-  <Step>
-    ### Crie uma tabela de staging
-
+  <Step title="Crie uma tabela de staging" id="create-staging-table">
     Use o mesmo esquema, a mesma chave de partição, `ORDER BY` e a mesma política de armazenamento da tabela de produção.
 
     ```sql
@@ -53,9 +51,7 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     ```
   </Step>
 
-  <Step>
-    ### Insira dados na tabela de staging
-
+  <Step title="Insira dados na tabela de staging" id="insert-into-staging">
     Execute o insert na tabela de staging em vez da tabela de produção.
 
     ```sql
@@ -63,9 +59,7 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     ```
   </Step>
 
-  <Step>
-    ### Se o insert falhar, trunque e tente novamente
-
+  <Step title="Se o insert falhar, trunque e tente novamente" id="on-failure">
     Trunque a tabela de staging e execute a carga novamente. Nenhum dado de produção terá sido afetado.
 
     ```sql
@@ -73,9 +67,7 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     ```
   </Step>
 
-  <Step>
-    ### Se o insert for bem-sucedido, mova as partições para produção
-
+  <Step title="Se o insert for bem-sucedido, mova as partições para produção" id="on-success">
     Para mover os dados para produção e removê-los da tabela de staging, use `MOVE PARTITION`.
 
     ```sql
@@ -91,9 +83,7 @@ Em vez de inserir diretamente em tabelas de produção e tentar corrigir o probl
     Ambas as operações são alterações no nível dos metadados na mesma política de armazenamento e são concluídas quase instantaneamente.
   </Step>
 
-  <Step>
-    ### Limpe a tabela de staging
-
+  <Step title="Limpe a tabela de staging" id="clean-up">
     Quando todas as partições tiverem sido movidas, trunque a tabela de staging para deixá-la vazia para a próxima carga.
 
     ```sql
