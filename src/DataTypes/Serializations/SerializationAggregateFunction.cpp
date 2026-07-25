@@ -152,8 +152,8 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
 /// single-quoted `String`-like and `Enum` elements with the quoted serialization (the native form) and everything
 /// else with the CSV serialization (the released form; the scalar CSV parse itself accepts both quote kinds).
 /// `Variant` and `Dynamic` arguments also take this path: their `deserializeTextCSV` reads a whole CSV field
-/// and tries the variants (or infers the type) from it, so released input accepted double-quoted strings,
-/// barewords and `NULL` for them too. Composite argument types stay on the unified path: their quoted
+/// and tries the variants (or infers the type) from it, so released input accepted double-quoted strings and
+/// bareword scalars for them too. Composite argument types stay on the unified path: their quoted
 /// elements start with `[`, `(` or `{`, which the released per-element CSV parse could not handle anyway
 /// (the CSV string parse stops at the first comma), so no released form is lost for them.
 bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
@@ -191,8 +191,9 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     /// dispatch: the released CSV element parse accepted arbitrary unquoted words as string values,
     /// including ones starting with `N`/`n` (`[NaN,"a"]` produced the string 'NaN', and `[NULL,"a"]`
     /// produced the STRING 'NULL', not a null), so they always take the CSV branch too.
-    /// `Variant` and `Dynamic` elements use the CSV parse (the released form: double-quoted strings,
-    /// bareword scalars and bareword `NULL` — the CSV null check — all worked) except when the element
+    /// `Variant` and `Dynamic` elements use the CSV parse (the released form: double-quoted strings and
+    /// bareword scalars worked, and bareword `NULL` parsed as the STRING 'NULL' when a `String`-like
+    /// variant is present) except when the element
     /// starts with `'` (the native single-quoted string form, mirroring the `String` dispatch above) or
     /// with `[`, `(` or `{` (native composite forms, which the released CSV field parse always rejected
     /// because it stops at the first comma, so taking the quoted parse is purely additive). A bareword
