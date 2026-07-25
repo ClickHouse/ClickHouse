@@ -8170,8 +8170,13 @@ function renderTabBar() {
     /// fresh page can be backgrounded: the user needs the `[+]` button to open a second tab (or
     /// switch away) while that first query is still in flight.
     tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran) && !anyInFlight());
-    /// With a single tab there are no "other" tabs to close; show it only for 2+.
+    /// With a single tab there are no "other" tabs to close; show it only for 2+. Hiding a
+    /// focused element strands keyboard focus (same problem `syncConnectionUI` solves for the
+    /// 🔑 button): activating this button with Enter/Space on exactly two tabs hides it in the
+    /// resulting rerender, so hand focus to the query area — always visible — before hiding.
+    const closeOthersHadFocus = document.activeElement === tab_close_others_elem;
     tab_close_others_elem.hidden = tabs.length < 2;
+    if (closeOthersHadFocus && tab_close_others_elem.hidden) query_area.focus();
     syncConnectionUI();
 
     tabs_elem.textContent = '';
