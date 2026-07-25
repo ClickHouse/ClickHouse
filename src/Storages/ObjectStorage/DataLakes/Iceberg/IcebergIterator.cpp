@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+//#include <base/scope_guard.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
@@ -178,12 +179,20 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
         if (!prefetched_manifest.has_value())
             return std::nullopt;
 
-        // Get the downloaded manifest file. Call move() and reset()
-        // before future.get() to keep the future in a valid state.
+        /// Take ownership of the in-flight prefetch: move it out of the member and reset the
+        /// optional (a moved-from optional is still engaged, so schedulePrefetchIfPossible would
+        /// otherwise see an occupied slot and never start the next fetch).
         auto curr_prefetched = std::move(prefetched_manifest);
         prefetched_manifest.reset();
+        /// While the future lives only in this local, the destructor's wait no longer covers it,
+        /// so the task capturing `this` could outlive the iterator if anything below throws
+        /// (for example scheduling the next prefetch while the pool is shutting down).
+        SCOPE_EXIT({
+            if (curr_prefetched.has_value() && curr_prefetched->future.valid())
+                curr_prefetched->future.wait();
+        });
 
-        // Start scheduling the next prefetch before we block and parse.
+        /// Start scheduling the next prefetch before we block and parse.
         schedulePrefetchIfPossible();
 
         auto manifest_file_cacheable_part = curr_prefetched->future.get();
