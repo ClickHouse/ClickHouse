@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/ProtocolDefines.h>
@@ -691,6 +692,47 @@ TEST(QueryPlanSerialization, OutlineFrameCannotEscapeTheEnvelope)
     ReadBufferFromString in(bytes);
     EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
     EXPECT_LE(in.count(), head.str().size()) << "the reader consumed past the declared envelope";
+}
+
+TEST(QueryPlanSerialization, SetRowCountCannotExceedItsFrame)
+{
+    registerStepsOnce();
+
+    /// A set frame holding only two varints, whose row count claims far more rows than a frame
+    /// that size could ever carry.
+    WriteBufferFromOwnString set_frame;
+    writeVarUInt(UInt64(1), set_frame);          /// one column
+    writeVarUInt(UInt64(1) << 40, set_frame);    /// ... with a trillion rows
+    set_frame.finalize();
+
+    PlanOutline outline;
+    PlanOutline::SetEntry entry;
+    entry.hash.low64 = 1;
+    entry.hash.high64 = 0;
+    entry.kind = UInt8(SetSerializationKind::TupleValues);
+    entry.payload_size = set_frame.str().size();
+    outline.sets.push_back(entry);
+
+    auto column_set = ColumnSet::create(1, nullptr);
+    DeserializedSetsRegistry registry;
+    registry.sets[entry.hash].push_back(column_set.get());
+
+    QueryPlan::SerializationFlags flags;
+    flags.version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+
+    ReadBufferFromString in(set_frame.str());
+    try
+    {
+        deserializeEnvelopeSets(
+            QueryPlan{}, registry, outline, in, flags, getContext().context, /*max_type_complexity=*/0);
+        FAIL() << "the row count should have been rejected";
+    }
+    catch (const Exception & e)
+    {
+        /// Checking the message, not just that it threw: reading on past the counts hits the end
+        /// of the frame and throws anyway, which would pass with the row count never looked at.
+        EXPECT_NE(e.message().find("rows but only"), std::string::npos) << e.message();
+    }
 }
 
 TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)

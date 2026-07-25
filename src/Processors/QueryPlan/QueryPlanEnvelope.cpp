@@ -101,8 +101,9 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
 {
     PlanOutline outline;
 
+    /// Counts come from the peer: the vectors grow as elements are read, so a frame that ends
+    /// early only pays for what it delivered.
     UInt64 node_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "plan nodes");
-    outline.nodes.reserve(node_count);
 
     for (UInt64 i = 0; i < node_count; ++i)
     {
@@ -123,7 +124,6 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
             node.header = std::make_shared<const Block>(deserializeQueryPlanHeader(in, max_type_complexity));
 
         UInt64 settings_count = readCappedVarUInt(in, MAX_OUTLINE_SETTINGS_PER_NODE, "settings");
-        node.settings.reserve(settings_count);
         for (UInt64 s = 0; s < settings_count; ++s)
         {
             PlanOutline::SettingEntry entry;
@@ -143,7 +143,6 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
     }
 
     UInt64 set_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "sets");
-    outline.sets.reserve(set_count);
     for (UInt64 i = 0; i < set_count; ++i)
     {
         PlanOutline::SetEntry entry;

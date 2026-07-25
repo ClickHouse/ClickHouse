@@ -317,8 +317,14 @@ QueryPlanAndSets deserializeEnvelopeSets(
             readVarUInt(num_rows, body);
             checkSetColumnsCount(num_columns, entry.hash);
 
+            /// Without this a few bytes could ask for an arbitrary allocation: `NativeReader::readData`
+            /// sizes the column from the row count before reading it, and a row costs at least a byte.
+            if (num_rows > body.available())
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Serialized set {}_{} declares {} rows but only {} bytes of its frame remain",
+                    entry.hash.low64, entry.hash.high64, num_rows, body.available());
+
             ColumnsWithTypeAndName set_columns;
-            set_columns.reserve(num_columns);
 
             FormatSettings format_settings;
             format_settings.binary.max_binary_type_complexity = max_type_complexity;

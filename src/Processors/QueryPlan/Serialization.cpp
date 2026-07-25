@@ -61,12 +61,16 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
             "Serialized query plan header declares {} columns which exceeds the limit of {}",
             num_columns, MAX_QUERY_PLAN_HEADER_COLUMNS);
 
-    ColumnsWithTypeAndName columns(num_columns);
+    /// The count comes from the peer: columns are built as they are read, so a header that ends
+    /// early only pays for what it delivered.
+    ColumnsWithTypeAndName columns;
 
-    for (auto & column : columns)
+    for (UInt64 i = 0; i < num_columns; ++i)
     {
+        ColumnWithTypeAndName column;
         readStringBinary(column.name, in, MAX_QUERY_PLAN_STRING_BYTES);
         column.type = decodeDataType(in, max_type_complexity);
+        columns.push_back(std::move(column));
     }
 
     /// Fill columns in header. Some steps expect them to be not empty.
