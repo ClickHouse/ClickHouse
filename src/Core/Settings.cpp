@@ -2099,7 +2099,7 @@ Priority of the query. 1 - the highest, higher value - lower priority; 0 - do no
     DECLARE(Bool, log_queries, true, R"(
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../../reference/settings/server-settings/settings/query#query_log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](/reference/settings/server-settings/settings/query#query_log) server configuration parameter.
 
 Example:
 

@@ -139,13 +139,13 @@ Timezone agnostic Unix timestamp is stored in tables, and the timezone is used t
 
 A list of supported time zones can be found in the [IANA Time Zone Database](https://www.iana.org/time-zones) and also can be queried by `SELECT * FROM system.time_zones`. [The list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) is also available at Wikipedia.
 
-You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](../../reference/settings/server-settings/settings/other#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
+You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](/reference/settings/server-settings/settings/other#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
 The [clickhouse-client](../../interfaces/client.md) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](../../reference/settings/formats/date-time#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatDateTime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](/reference/settings/formats/date-time#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatDateTime) function.
 
-When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../reference/settings/formats/date-time#date_time_input_format) setting.
+When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format) setting.
 
 ## Examples {#examples}
 
@@ -251,7 +251,7 @@ Time shifts for multiple days. Some pacific islands changed their timezone offse
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 
-- [`date_time_output_format`](../../reference/settings/formats/date-time#date_time_output_format) is set to `simple`.
+- [`date_time_output_format`](/reference/settings/formats/date-time#date_time_output_format) is set to `simple`.
 - Clocks move backward ("Fall Back"), causing a one-hour overlap.
 - Clocks move forward ("Spring Forward"), causing a one-hour gap.
 
@@ -293,10 +293,10 @@ In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
 - [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
-- [The `date_time_input_format` setting](../../reference/settings/formats/date-time#date_time_input_format)
-- [The `date_time_output_format` setting](../../reference/settings/formats/date-time#date_time_output_format)
-- [The `timezone` server configuration parameter](../../reference/settings/server-settings/settings/other#timezone)
-- [The `session_timezone` setting](../../reference/settings/session-settings/other#session_timezone)
+- [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
+- [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
+- [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
+- [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
 - [The `Date` data type](../../sql-reference/data-types/date.md)
 )DOCS_MD",
@@ -435,10 +435,10 @@ FROM dt64;
 
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [The `date_time_input_format` setting](../../reference/settings/formats/date-time#date_time_input_format)
-- [The `date_time_output_format` setting](../../reference/settings/formats/date-time#date_time_output_format)
-- [The `timezone` server configuration parameter](../../reference/settings/server-settings/settings/other#timezone)
-- [The `session_timezone` setting](../../reference/settings/session-settings/other#session_timezone)
+- [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
+- [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
+- [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
+- [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
 - [`Date` data type](../../sql-reference/data-types/date.md)
 - [`DateTime` data type](../../sql-reference/data-types/datetime.md)
@@ -627,10 +627,10 @@ See [Date and Time Addition](../operators/index.md#date-time-addition) for detai
 - [Type conversion functions](../functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../functions/date-time-functions.md)
 - [Functions for working with arrays](../functions/array-functions.md)
-- [The `date_time_input_format` setting](../../reference/settings/formats/date-time#date_time_input_format)
-- [The `date_time_output_format` setting](../../reference/settings/formats/date-time#date_time_output_format)
-- [The `timezone` server configuration parameter](../../reference/settings/server-settings/settings/other#timezone)
-- [The `session_timezone` setting](../../reference/settings/session-settings/other#session_timezone)
+- [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
+- [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
+- [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
+- [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
 - [The `DateTime` data type](datetime.md)
 - [The `Date` data type](date.md)
 )DOCS_MD",
@@ -772,10 +772,10 @@ See [Date and Time Addition](../operators/index.md#date-time-addition) for detai
 
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [The `date_time_input_format` setting](../../reference/settings/formats/date-time#date_time_input_format)
-- [The `date_time_output_format` setting](../../reference/settings/formats/date-time#date_time_output_format)
-- [The `timezone` server configuration parameter](../../reference/settings/server-settings/settings/other#timezone)
-- [The `session_timezone` setting](../../reference/settings/session-settings/other#session_timezone)
+- [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
+- [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
+- [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
+- [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
 - [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
 - [`Date` data type](../../sql-reference/data-types/date.md)
 - [`Time` data type](../../sql-reference/data-types/time.md)

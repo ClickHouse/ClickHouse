@@ -266,7 +266,7 @@ ClickHouse supports the following syntaxes for `count`:
 **Details**
 
 ClickHouse supports the `COUNT(DISTINCT ...)` syntax.
-The behavior of this construction depends on the [`count_distinct_implementation`](../../../reference/settings/session-settings/count-distinct#count_distinct_implementation) setting.
+The behavior of this construction depends on the [`count_distinct_implementation`](/reference/settings/session-settings/count-distinct#count_distinct_implementation) setting.
 It defines which of the [uniq*](/sql-reference/aggregate-functions/reference/uniq) functions is used to perform the operation.
 The default is the [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact) function.
 

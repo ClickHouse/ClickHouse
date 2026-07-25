@@ -137,7 +137,7 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 
     FunctionDocumentation::Description description_filesystemCapacity = R"(
 Returns the capacity of the filesystem in bytes.
-Needs the [path](../../reference/settings/server-settings/settings/other#path) to the data directory to be configured.
+Needs the [path](/reference/settings/server-settings/settings/other#path) to the data directory to be configured.
 )";
     FunctionDocumentation::Syntax syntax_filesystemCapacity = "filesystemCapacity([disk_name])";
     FunctionDocumentation::Arguments arguments_filesystemCapacity = {

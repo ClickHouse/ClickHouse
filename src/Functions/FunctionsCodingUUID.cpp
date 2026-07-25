@@ -618,7 +618,7 @@ Returns the timestamp component of a UUID version 7.
     FunctionDocumentation::Syntax syntax_UUIDv7ToDateTime = "UUIDv7ToDateTime(uuid[, timezone])";
     FunctionDocumentation::Arguments arguments_UUIDv7ToDateTime = {
         {"uuid", "A UUID version 7.", {"String"}},
-        {"timezone", "Optional. [Timezone name](../../reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
+        {"timezone", "Optional. [Timezone name](/reference/settings/server-settings/settings/other#timezone) for the returned value.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_UUIDv7ToDateTime = {"Returns a timestamp with milliseconds precision. If the UUID is not a valid version 7 UUID, it returns `1970-01-01 00:00:00.000`.", {"DateTime64(3)"}};
     FunctionDocumentation::Examples examples_UUIDv7ToDateTime = {
