@@ -451,7 +451,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine_file_truncate_on_insert](/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert)                     | allows to truncate file before insert into it. Disabled by default.                                                                                                         |
 | [engine_file_allow_create_multiple_files](/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) | allows to create a new file on each insert if format has suffix. Disabled by default.                                                                                       |
 | [engine_file_skip_empty_files](/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                       | allows to skip empty files while reading. Disabled by default.                                                                                                              |
-| [storage_file_read_method](/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists)                          | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
+| [storage_file_read_method](/reference/settings/session-settings/storage#storage_file_read_method)                                      | method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local. |
 
 ## Related {#related}
 

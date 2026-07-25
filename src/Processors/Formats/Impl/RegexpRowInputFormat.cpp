@@ -206,7 +206,7 @@ Lines of the imported data must be separated by newline character `'\n'` or DOS-
 
 The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/reference/settings/formats/format-regexp#format_regexp_escaping_rule) setting.
 
-If the regular expression does not match the line and [format_regexp_skip_unmatched](/reference/settings/formats/format-regexp#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
+If the regular expression does not match the line and [format_regexp_skip_unmatched](/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
 
 ## Example usage {#example-usage}
 

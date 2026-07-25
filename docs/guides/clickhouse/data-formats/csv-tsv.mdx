@@ -107,7 +107,7 @@ When using the `file()` function, with ClickHouse Cloud you will need to run the
 
 ### Treating NULL values in CSV files {#treating-null-values-in-csv-files}
 
-Null values can be encoded differently depending on the application that generated the file. By default, ClickHouse uses `\N` as a Null value in CSV. But we can change that using the [format_csv_null_representation](/reference/settings/formats/format#format_tsv_null_representation) option.
+Null values can be encoded differently depending on the application that generated the file. By default, ClickHouse uses `\N` as a Null value in CSV. But we can change that using the [format_csv_null_representation](/reference/settings/formats/format-csv#format_csv_null_representation) option.
 
 Suppose we have the following CSV file:
 

@@ -26,7 +26,7 @@ Users, in this case, have a few options.
 ### Aggregations {#aggregations}
 For memory-intensive aggregations or sorting scenarios, users can use the settings
 [`max_bytes_before_external_group_by`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by)
-and [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_sort) respectively.
+and [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort) respectively.
 The former of which is discussed extensively [here](/reference/statements/select/group-by#group-by-in-external-memory).
 
 In summary, this ensures any aggregations can “spill” out to disk if a memory
@@ -35,7 +35,7 @@ help ensure queries do not OOM. The latter sorting setting helps address similar
 issues with memory-intensive sorts. This can be particularly important in
 distributed environments where a coordinating node receives sorted responses
 from child shards. In this case, the coordinating server can be asked to sort a
-dataset larger than its available memory. With [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_sort),
+dataset larger than its available memory. With [`max_bytes_before_external_sort`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort),
 sorting can be allowed to spill over to disk. This setting is also helpful for
 cases where the user has an `ORDER BY` after a `GROUP BY` with a `LIMIT`,
 especially in cases where the query is distributed.

@@ -1393,7 +1393,7 @@ Possible values:
 Limits the maximum speed of data exchange over the network in bytes per
 second for [replicated](../../engines/table-engines/mergetree-family/replication.md)
 fetches. This setting is applied to a particular table, unlike the
-[`max_replicated_fetches_network_bandwidth_for_server`](/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+[`max_replicated_fetches_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but for
@@ -1419,7 +1419,7 @@ new nodes.
 Limits the maximum speed of data exchange over the network in bytes per
 second for [replicated](/engines/table-engines/mergetree-family/replacingmergetree)
 sends. This setting is applied to a particular table, unlike the
-[`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+[`max_replicated_sends_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but
