@@ -24,9 +24,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 要限制哪些客户端可以调用你的查询 API 端点：
 
 <Steps>
-  <Step>
-    #### 打开 API 密钥设置
-
+  <Step title="打开 API 密钥设置" id="open-settings">
     1. 前往 ClickHouse Cloud 控制台 → **Organization** → **API Keys**
 
     <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API 密钥" />
@@ -36,9 +34,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="编辑" />
   </Step>
 
-  <Step>
-    #### 添加允许的 IP 地址
-
+  <Step title="添加允许的 IP 地址" id="add-ips">
     1. 在 **Allow access to this API Key** 部分，选择 **Specific locations**
     2. 输入 IP 地址或 CIDR 范围 (例如 `203.0.113.1` 或 `203.0.113.0/24`)
     3. 根据需要添加多条记录

@@ -2,21 +2,21 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: 'Scaling'
 title: 'Scaling'
-description: 'Scale your Postgres managed by ClickHouse instance vertically with flexible VM types and independent resource scaling'
+description: 'Scale your ClickHouse Managed Postgres instance vertically with flexible VM types and independent resource scaling'
 keywords: ['postgres scaling', 'vertical scaling', 'vm types', 'nvme scaling', 'instance types', 'performance scaling']
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres provides flexible scaling options to match your workload requirements. With 50+ NVMe-backed instance types to choose from, you can independently scale CPU, memory, and storage to optimize performance and cost for your specific use case.
+ClickHouse Managed Postgres provides flexible scaling options to match your workload requirements. With 50+ NVMe-backed instance types to choose from, you can independently scale CPU, memory, and storage to optimize performance and cost for your specific use case.
 
 ## Instance types and flexibility {#instance-types}
 
-Managed Postgres offers a wide range of instance types, each optimized for different workload characteristics:
+ClickHouse Managed Postgres offers a wide range of instance types, each optimized for different workload characteristics:
 
 - **50+ instance types** available across compute, memory, and storage-optimized configurations
 - **NVMe-backed storage** on all instance types for consistent, high-performance disk I/O
@@ -40,7 +40,7 @@ For safety reasons, you may not be able to switch to instance types whose storag
 
 ## How scaling works {#how-scaling-works}
 
-When you change instance types, Managed Postgres performs a vertical scaling operation that provisions new infrastructure and migrates your database with minimal downtime.
+When you change instance types, ClickHouse Managed Postgres performs a vertical scaling operation that provisions new infrastructure and migrates your database with minimal downtime.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="Scaling Settings" size="md" border/>
 
@@ -83,7 +83,7 @@ Your application will experience approximately 30 seconds of downtime during the
 
 ### Parallel restore with WAL-G {#parallel-restore}
 
-Managed Postgres uses [WAL-G](https://github.com/wal-g/wal-g) to accelerate backup restoration during scaling operations. Notably, the creator of WAL-G is part of the Ubicloud team who we have partnered with, bringing deep expertise to the restoration process.
+ClickHouse Managed Postgres uses [WAL-G](https://github.com/wal-g/wal-g) to accelerate backup restoration during scaling operations. Notably, the creator of WAL-G is part of the Ubicloud team who we have partnered with, bringing deep expertise to the restoration process.
 
 WAL-G provides:
 
@@ -96,7 +96,7 @@ These optimizations significantly reduce the time required to bring up the new s
 
 ### Initiating a scaling operation {#initiating-scaling}
 
-To scale your Managed Postgres instance:
+To scale your ClickHouse Managed Postgres instance:
 
 1. Navigate to the **Settings** tab of your instance
 2. In the **Scaling** section, scroll to **Service size**
@@ -107,7 +107,7 @@ To scale your Managed Postgres instance:
 
 ### Vertical scaling {#vertical-scaling}
 
-Vertical scaling (changing instance types) is the primary method for adjusting resources in Managed Postgres. This approach provides:
+Vertical scaling (changing instance types) is the primary method for adjusting resources in ClickHouse Managed Postgres. This approach provides:
 
 - **Granular control**: Choose from 50+ instance types to fine-tune CPU, memory, and storage
 - **Workload optimization**: Select configurations optimized for your specific workload (compute, memory, or storage-intensive)
