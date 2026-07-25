@@ -10,7 +10,7 @@ integration:
   - category: 'clickpipes'
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
@@ -99,7 +99,7 @@ Timescale hypertable 本身不会存储插入其中的数据。相反，数据�
    CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
 ```
 
-`clickpipes` publication 将包含从指定表生成的一组变更事件，后续会用于摄取复制流。
+`clickpipes` publication 定义了将流式传输到 ClickPipes 的变更事件所对应的一组表。除非你打算复制每一张表，否则我们不建议使用 `FOR ALL TABLES`，因为包含不必要的表会增加从 Postgres 到 ClickPipes 的 WAL 流量，并降低整体复制效率。
 
 <Info>
   某些托管服务不会向其管理员用户授予为整个 schema 创建 publication 所需的权限。如果遇到这种情况，请向你的提供商提交支持工单。或者，你也可以跳过这一步 (以及后续步骤) ，改为对数据执行一次性加载。
