@@ -79,6 +79,16 @@ public:
         return to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
     }
 
+    /** Whether this node produces the final query result rather than a mergeable state to be merged
+      * further (i.e. it is the initiating server or a non-distributed query, not a shard/replica).
+      * Only the finalizing node may apply operators that must run once over the fully merged stream,
+      * such as ORDER BY ... WITH FILL / INTERPOLATE.
+      */
+    bool isFinalizingStage() const
+    {
+        return to_stage == QueryProcessingStage::Complete;
+    }
+
     bool isFromAggregationState() const
     {
         return from_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;

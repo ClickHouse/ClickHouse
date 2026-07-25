@@ -2640,8 +2640,8 @@ void Planner::buildPlanForQueryNode()
         /// shard also materializes the interpolate output column, which the initiator then re-adds under
         /// the same name - the FillingTransform locates interpolate columns by name, leaves the second
         /// same-named column unpopulated, and the resulting ragged chunk trips the row-count check
-        /// ("Invalid number of rows in Chunk"). Mirror the "Project names" guard below.
-        if (query_node.hasOrderBy() && !query_processing_info.isToAggregationState())
+        /// ("Invalid number of rows in Chunk").
+        if (query_node.hasOrderBy() && query_processing_info.isFinalizingStage())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 
         const bool apply_limit = query_processing_info.getToStage() != QueryProcessingStage::WithMergeableStateAfterAggregation;
