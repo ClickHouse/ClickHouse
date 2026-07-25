@@ -571,6 +571,11 @@ def test_redact_default_categories_empty_array(started_cluster):
         settings=AI_SETTINGS,
     )
     assert result.strip() == "some text with pii"
+    # The mock just echoes the input, so check the documented default category set is what
+    # actually reaches the provider.
+    system_prompt = json.loads(last_request()["body"])["messages"][0]["content"]
+    for category in ("NAME", "EMAIL", "PHONE_NUMBER", "ADDRESS", "CREDIT_CARD", "IP_ADDRESS"):
+        assert category in system_prompt, f"default category {category} missing from prompt"
 
 
 def test_redact_replacement_forwarded(started_cluster):
