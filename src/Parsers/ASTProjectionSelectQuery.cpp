@@ -233,7 +233,21 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
     /// produced by `ParserProjectionSelectQuery` (see the ordering comment in `clone`).
     setExpr("where", Expression::WHERE);
     setExprList("group_by", Expression::GROUP_BY);
-    setExpr("order_by", Expression::ORDER_BY);
+
+    /// `ParserProjectionSelectQuery` stores `ORDER BY` either as a single expression or as a
+    /// `tuple(...)` function whose arguments carry the comma-separated keys — never as a bare
+    /// `ASTExpressionList` or a sort-wrapper node. Such shapes would format as an ordinary
+    /// `ORDER BY a, b` but later fail in projection analysis when `cloneToASTSelect` splices the
+    /// node into the synthetic `SELECT` list, so reject them at the JSON boundary.
+    if (auto order_by_child = r.readChild("order_by"))
+    {
+        if (order_by_child->as<ASTExpressionList>() || order_by_child->as<ASTOrderByElement>()
+            || order_by_child->as<ASTStorageOrderByElement>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected node type for key 'order_by' during AST JSON deserialization: "
+                "projection ORDER BY must be a single expression or a 'tuple' function");
+        setExpression(Expression::ORDER_BY, std::move(order_by_child));
+    }
 }
 
 }
