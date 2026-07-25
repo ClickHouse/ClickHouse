@@ -3143,6 +3143,39 @@ def test_aggregation_operators():
         [],
     )
 
+    # A runtime scalar phi (a scalar subquery instead of a literal) must follow the same
+    # out-of-range rules; its value is not known when the query is converted to SQL,
+    # so the out-of-range check happens at runtime.
+    do_query_test(
+        "quantile(scalar(vector(-0.5)), bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(1.5)), bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    # An in-range runtime scalar phi must keep behaving exactly like the literal phi:
+    # bar at t=120 is [8, 9, 16, 40], so the inclusive median is 12.5.
+    do_query_test(
+        "quantile(0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(0.5)), bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
     # FIXME: quantile with phi depending on timestamp is not implemented yet.
     # phi = scalar(time()) / 200 varies per subquery step: 0.55, 0.60, 0.65, 0.70, 0.75.
     # do_query_test(
