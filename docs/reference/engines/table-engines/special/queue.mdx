@@ -128,8 +128,10 @@ SETTINGS
 ```
 
 The engine records the input message IDs while the query runs and writes their tombstones only after the complete query pipeline succeeds.
-Acknowledgement applies to queue rows read into the consumer query, including rows later removed by `WHERE` or `LIMIT`.
-Use `queue_max_batch_size`, not an outer `LIMIT`, to define the maximum source batch.
+Until post-query message identity tracking is available, a committing query that can exclude source rows is rejected.
+This includes `WHERE`, `PREWHERE`, joins, `DISTINCT`, aggregation, and `LIMIT`.
+Use `queue_max_batch_size` to define the maximum source batch.
+Filtered noncommitting queries remain unrestricted and never acknowledge messages.
 Cancellation or an exception leaves the batch pending.
 `queue_max_batch_size = 0` uses the table engine's `max_batch_size`.
 
@@ -216,5 +218,6 @@ SYSTEM REFRESH events_queue;
 ## Current limitations {#current-limitations}
 
 - Delivery is at-least-once, not exactly-once.
+- Committing filtered queries and filtered materialized views currently fail closed so excluded messages cannot be acknowledged.
 - Replicated internal queue state is not supported.
 - Altering the queue schema or engine arguments is not supported.

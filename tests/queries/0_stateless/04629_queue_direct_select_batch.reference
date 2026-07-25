@@ -1,2 +1,5 @@
-0
+filtered direct commit: rejected
+pending after filtered direct commit: 3
+filtered mv target rows: 0
+pending after filtered mv: 3
 reset and commit: rejected

@@ -82,6 +82,31 @@ namespace
             offset);
     }
 
+    bool queryMayExcludeSourceRows(const ASTPtr & query)
+    {
+        if (!query)
+            return false;
+
+        if (const auto * select = query->as<ASTSelectQuery>();
+            select
+            && (select->hasFiltration()
+                || select->distinct
+                || select->limitLength()
+                || select->limitBy()
+                || select->join()
+                || select->groupBy()
+                || select->having()
+                || select->qualify()))
+            return true;
+
+        for (const auto & child : query->children)
+        {
+            if (queryMayExcludeSourceRows(child))
+                return true;
+        }
+        return false;
+    }
+
     ASTPtr parseCreateQuery(const String & query)
     {
         ParserCreateQuery parser;
@@ -545,6 +570,16 @@ std::pair<String, bool> StorageQueue::getConsumerSettingsForView(
     String consumer_group = view_context->getSettingsRef()[Setting::queue_consumer_group];
     if (consumer_group.empty())
         consumer_group = view_id.getFullTableName();
+
+    if (queryMayExcludeSourceRows(metadata->getSelectQuery().select_query))
+    {
+        throw Exception(
+            ErrorCodes::QUERY_NOT_ALLOWED,
+            "Materialized view '{}' cannot consume from `Queue` with filters, joins, `DISTINCT`, aggregation, or `LIMIT` "
+            "until post-query message identity tracking is available; excluded messages must remain pending",
+            view_id.getFullTableName());
+    }
+
     return {
         std::move(consumer_group),
         startsAtLatest(view_context->getSettingsRef()[Setting::queue_consumer_offset])};
@@ -947,15 +982,6 @@ void StorageQueue::read(
             "Settings `queue_reset_consumer_offset` and `queue_commit_on_select` cannot be enabled together");
     }
 
-    std::optional<StorageID> consumer_table_id;
-    if (!consumer_group.empty())
-    {
-        const bool start_at_latest = startsAtLatest(settings[Setting::queue_consumer_offset]);
-        consumer_table_id = reset_consumer_offset
-            ? resetConsumerGroup(consumer_group, start_at_latest)
-            : ensureConsumerGroup(consumer_group, start_at_latest);
-    }
-
     if (commit_on_select)
     {
         if (consumer_group.empty())
@@ -973,6 +999,27 @@ void StorageQueue::read(
                 "set `queue_commit_on_select = 0` to run a noncommitting aggregation");
         }
 
+        if (queryMayExcludeSourceRows(query_info.query))
+        {
+            throw Exception(
+                ErrorCodes::QUERY_NOT_ALLOWED,
+                "A committing `SELECT` from `Queue` cannot use filters, joins, `DISTINCT`, aggregation, or `LIMIT` "
+                "until post-query message identity tracking is available; "
+                "set `queue_commit_on_select = 0` to run the query without acknowledging messages");
+        }
+    }
+
+    std::optional<StorageID> consumer_table_id;
+    if (!consumer_group.empty())
+    {
+        const bool start_at_latest = startsAtLatest(settings[Setting::queue_consumer_offset]);
+        consumer_table_id = reset_consumer_offset
+            ? resetConsumerGroup(consumer_group, start_at_latest)
+            : ensureConsumerGroup(consumer_group, start_at_latest);
+    }
+
+    if (commit_on_select)
+    {
         const UInt64 requested_batch_size = settings[Setting::queue_max_batch_size];
         const UInt64 batch_size = requested_batch_size ? requested_batch_size : max_batch_size;
         auto state = std::make_shared<QueueReadState>(consumer_groups_mutex);
