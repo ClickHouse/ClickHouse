@@ -30,6 +30,7 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Joins.h>
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -50,6 +51,7 @@ namespace Setting
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsBool transform_null_in;
+    extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
@@ -497,6 +499,43 @@ bool generatedInSetIsSafeToInject(
     return true;
 }
 
+/// Returns true if `type` is or contains (e.g. inside `Nullable`,
+/// `LowCardinality`, `Array`, `Tuple`, `Map`) a floating-point type
+/// (`Float32` / `Float64` / `BFloat16`).
+bool typeInvolvesFloatingPoint(const DataTypePtr & type)
+{
+    if (WhichDataType(*type).isFloat())
+        return true;
+
+    bool result = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (WhichDataType(child).isFloat())
+            result = true;
+    });
+    return result;
+}
+
+/// Returns true if any of the enabled join algorithms compares keys by value
+/// through `compareAt` rather than matching them on the raw representation.
+/// For floating-point keys the two disagree: `compareAt` treats `+0.` and
+/// `-0.` as equal and all NaNs as equal, while the raw representation (used
+/// by the hash-family joins — `hash`, `parallel_hash`, `grace_hash`,
+/// `direct` — and by the generated `IN` set) distinguishes both. `auto` is
+/// value-comparing because it may fall back to `partial_merge` at runtime.
+bool joinAlgorithmsMayCompareFloatsByValue(const std::vector<JoinAlgorithm> & join_algorithms)
+{
+    for (const auto algorithm : join_algorithms)
+    {
+        if (algorithm == JoinAlgorithm::AUTO
+            || algorithm == JoinAlgorithm::PARTIAL_MERGE
+            || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+            || algorithm == JoinAlgorithm::FULL_SORTING_MERGE)
+            return true;
+    }
+    return false;
+}
+
 /// Conjoin a list of predicate nodes into a single `and(...)` expression.
 QueryTreeNodePtr conjoinPredicates(std::vector<QueryTreeNodePtr> predicates, const ContextPtr & context)
 {
@@ -769,6 +808,25 @@ private:
             /// Other branches keep theirs: each generated predicate is
             /// independently semantics-preserving.
             if (max_in_filter_cardinality == 0)
+                continue;
+
+            /// The generated `IN` matches keys on their raw representation,
+            /// exactly like the hash-family join algorithms: `-0. IN (0.)` is
+            /// `0` and NaNs with different payloads do not match. The
+            /// sort/merge-based algorithms (`full_sorting_merge`,
+            /// `partial_merge`, `prefer_partial_merge`, and `auto`, which may
+            /// fall back to `partial_merge`) instead compare floating-point
+            /// keys by value through `compareAt`, where `+0.` equals `-0.`
+            /// and all NaNs are equal. Under such an algorithm the prefilter
+            /// could drop a table row (e.g. keyed `-0.`) that the join itself
+            /// (probed with a `+0.` frontier value) would still match —
+            /// losing a recursion branch. Fail closed: skip injection for a
+            /// floating-point join key unless every join algorithm the
+            /// branch may use matches keys on the raw representation, the way
+            /// the `IN` does. Integer/string/etc. keys compare identically
+            /// under both schemes and stay optimized for all algorithms.
+            if ((typeInvolvesFloatingPoint(key.cte_column_type) || typeInvolvesFloatingPoint(key.real_column_node->getColumnType()))
+                && joinAlgorithmsMayCompareFloatsByValue(containing_settings[Setting::join_algorithm]))
                 continue;
 
             /// Reading the frontier values and materializing the RHS tuple must

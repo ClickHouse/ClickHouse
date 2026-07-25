@@ -738,6 +738,109 @@ WITH RECURSIVE float_walk AS
     FROM float_edges AS e
     INNER JOIN float_walk AS w ON e.from_id = w.cur
 )
-SELECT cur FROM float_walk ORDER BY reinterpretAsUInt64(cur);
+SELECT cur FROM float_walk ORDER BY reinterpretAsUInt64(cur)
+SETTINGS join_algorithm = 'hash'; -- pinned: this proof is about raw-bit hash-join semantics
 
 DROP TABLE float_edges;
+
+-- The sort/merge-based join algorithms (`full_sorting_merge`, `partial_merge`,
+-- `prefer_partial_merge`, and `auto`, which may fall back to `partial_merge`)
+-- compare floating-point keys by value: `+0.` equals `-0.` and all NaNs are
+-- equal. The generated `IN` prefilter matches on the raw representation
+-- (`-0. IN (0.)` is `0`), so injecting it under such an algorithm would filter
+-- out the `-0.`-keyed edge row that the join itself (probed with the `+0.`
+-- frontier value) still matches — silently losing the rest of the recursion
+-- (only the seed `0` would be returned instead of `0, 5, 7`). The optimization
+-- must fail closed for floating-point keys under these algorithms: plain scan,
+-- complete results.
+DROP TABLE IF EXISTS float_edges_mj;
+CREATE TABLE float_edges_mj (from_id Float64, to_id Float64) ENGINE = MergeTree ORDER BY from_id;
+INSERT INTO float_edges_mj VALUES (-0., 5.), (5., 7.);
+
+WITH RECURSIVE float_walk_fsm AS
+(
+    SELECT toFloat64(0.) AS cur
+  UNION ALL
+    SELECT e.to_id AS cur
+    FROM float_edges_mj AS e
+    INNER JOIN float_walk_fsm AS w ON e.from_id = w.cur
+)
+SELECT cur FROM float_walk_fsm ORDER BY cur
+SETTINGS join_algorithm = 'full_sorting_merge';
+
+WITH RECURSIVE float_walk_pm AS
+(
+    SELECT toFloat64(0.) AS cur
+  UNION ALL
+    SELECT e.to_id AS cur
+    FROM float_edges_mj AS e
+    INNER JOIN float_walk_pm AS w ON e.from_id = w.cur
+)
+SELECT cur FROM float_walk_pm ORDER BY cur
+SETTINGS join_algorithm = 'partial_merge';
+
+DROP TABLE float_edges_mj;
+
+-- Converse proofs on a larger table: a floating-point join key stays optimized
+-- under a hash-family algorithm (raw-bit semantics match the `IN`, low
+-- `read_rows`), and falls back to a plain scan under a value-comparing one
+-- (high `read_rows`) — with identical, complete results in both cases.
+DROP TABLE IF EXISTS float_chain;
+CREATE TABLE float_chain (from_id Float64, to_id Float64) ENGINE = MergeTree ORDER BY from_id SETTINGS index_granularity = 128;
+INSERT INTO float_chain SELECT number, number + 1 FROM numbers(10);
+INSERT INTO float_chain SELECT number + 1000, number + 1000000 FROM numbers(5000);
+OPTIMIZE TABLE float_chain FINAL;
+
+WITH RECURSIVE float_traverse_hash AS
+(
+    SELECT to_id AS current_id
+    FROM float_chain
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM float_chain AS e
+    INNER JOIN float_traverse_hash AS t ON e.from_id = t.current_id
+)
+SELECT current_id FROM float_traverse_hash ORDER BY current_id
+SETTINGS join_algorithm = 'hash';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    read_rows < 10000 AS float_key_hash_join_optimized
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE float_traverse_hash%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+WITH RECURSIVE float_traverse_merge AS
+(
+    SELECT to_id AS current_id
+    FROM float_chain
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM float_chain AS e
+    INNER JOIN float_traverse_merge AS t ON e.from_id = t.current_id
+)
+SELECT current_id FROM float_traverse_merge ORDER BY current_id
+SETTINGS join_algorithm = 'full_sorting_merge';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    read_rows > 10000 AS float_key_merge_join_plain_scan
+FROM system.query_log
+WHERE
+    current_database = currentDatabase()
+    AND query LIKE '%RECURSIVE float_traverse_merge%'
+    AND query NOT LIKE '%system.query_log%'
+    AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+DROP TABLE float_chain;
