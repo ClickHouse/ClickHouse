@@ -53,12 +53,12 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
         generator,
         metadata_info.path,
         parent_snapshot_id,
-        /*added_files=*/ 1,
-        /*added_records=*/ 1,
-        /*added_files_size=*/ 100,
-        /*num_partitions=*/ 1,
-        /*added_delete_files=*/ 0,
-        /*num_deleted_rows=*/ 0);
+        Iceberg::SnapshotSummaryUpdateAppend{
+            .added_files = 1,
+            .added_records = 1,
+            .added_files_size = 100,
+            .num_partitions = 1,
+        });
 }
 
 }

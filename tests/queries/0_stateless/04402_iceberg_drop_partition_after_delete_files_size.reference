@@ -1,0 +1,8 @@
+--- operation counts (expect APPEND 1, OVERWRITE 1, DELETE 1) ---
+APPEND	1
+OVERWRITE	1
+DELETE	1
+--- snapshots with negative total-files-size (expect 0) ---
+0
+--- surviving rows (expect 1) ---
+1

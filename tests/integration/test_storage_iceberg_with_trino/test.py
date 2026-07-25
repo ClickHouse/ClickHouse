@@ -49,6 +49,7 @@ def started_cluster_with_trino():
         logging.info("Starting cluster with Trino...")
         cluster.start()
         _wait_for_trino_ready(cluster, timeout_seconds=120)
+        _trino_exec(cluster, f'CREATE SCHEMA IF NOT EXISTS "{NAMESPACE}"')
 
         yield cluster
     finally:
@@ -544,3 +545,222 @@ def test_optimize_manifest_trino_field_ids(iceberg_db):
     assert after == expected, (
         f"Trino read of renamed column after OPTIMIZE MANIFEST: expected {expected!r}, got {after!r}"
     )
+
+
+def test_drop_partition(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"drop_partition_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, region String, value Int64)
+        {_engine_clause(table_name)}
+        PARTITION BY identity(region)
+        SETTINGS iceberg_format_version = 2
+        """,
+        settings=WRITE_SETTINGS,
+    )
+
+    # The first snapshot has one manifest shared by three partitions, so removing
+    # `us` rewrites that manifest and preserves the other two partitions.
+    node.query(
+        f"""
+        INSERT INTO {full} VALUES
+            (1, 'us', 10),
+            (2, 'eu', 20),
+            (3, 'asia', 30)
+        """,
+        settings=WRITE_SETTINGS,
+    )
+    # This second manifest contains only the target partition and is removed whole.
+    node.query(
+        f"INSERT INTO {full} VALUES (4, 'us', 40)",
+        settings=WRITE_SETTINGS,
+    )
+
+    node.query(
+        f"ALTER TABLE {full} DROP PARTITION 'us'",
+        settings=WRITE_SETTINGS,
+    )
+
+    clickhouse_rows = node.query(
+        f"SELECT id, region, value FROM {full} ORDER BY id"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT id, region, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    expected = "2\teu\t20\n3\tasia\t30\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
+
+    snapshots = _trino_exec(
+        cluster,
+        f'SELECT count(*) FROM "{NAMESPACE}"."{table_name}$snapshots"',
+    )
+    assert snapshots.strip() == "3"
+
+    files = _trino_exec(
+        cluster,
+        f'SELECT count(*), sum(record_count) FROM "{NAMESPACE}"."{table_name}$files"',
+    )
+    assert files.strip() == "2\t2"
+
+    _trino_exec(
+        cluster,
+        f'INSERT INTO "{NAMESPACE}"."{table_name}" VALUES (5, \'africa\', 50)',
+    )
+
+    clickhouse_rows = node.query(
+        f"SELECT id, region, value FROM {full} ORDER BY id"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT id, region, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    expected = "2\teu\t20\n3\tasia\t30\n5\tafrica\t50\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
+
+
+def test_drop_partition_with_evolved_spec_is_rejected(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"drop_partition_evolved_spec_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    node.query(
+        f"""
+        CREATE TABLE {full} (id Int32, region String, value Int64)
+        {_engine_clause(table_name)}
+        PARTITION BY identity(region)
+        SETTINGS iceberg_format_version = 2
+        """,
+        settings=WRITE_SETTINGS,
+    )
+    node.query(
+        f"INSERT INTO {full} VALUES (1, 'us', 10), (2, 'eu', 20)",
+        settings=WRITE_SETTINGS,
+    )
+
+    _trino_exec(
+        cluster,
+        f"""
+        ALTER TABLE "{NAMESPACE}"."{table_name}"
+        SET PROPERTIES partitioning = ARRAY['region', 'bucket(id, 4)']
+        """,
+    )
+    _trino_exec(
+        cluster,
+        f'INSERT INTO "{NAMESPACE}"."{table_name}" VALUES (3, \'asia\', 30)',
+    )
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {full} DROP PARTITION 'us'",
+        settings=WRITE_SETTINGS,
+    )
+    assert "NOT_IMPLEMENTED" in error, error
+    assert "evolved partition specs" in error, error
+
+    clickhouse_rows = node.query(
+        f"SELECT id, region, value FROM {full} ORDER BY id"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT id, region, value FROM "{NAMESPACE}"."{table_name}" ORDER BY id',
+    )
+    expected = "1\tus\t10\n2\teu\t20\n3\tasia\t30\n"
+    assert clickhouse_rows == expected
+    assert trino_rows == expected
+
+
+def test_drop_partition_preserves_trino_file_metadata(iceberg_db):
+    cluster = iceberg_db
+    node = cluster.instances["node1"]
+
+    table_name = f"drop_partition_metadata_{_get_uuid_str()}"
+    full = f"{CATALOG_DATABASE}.`{NAMESPACE}.{table_name}`"
+
+    _trino_exec(
+        cluster,
+        f"""
+        CREATE TABLE "{NAMESPACE}"."{table_name}" (
+            tag INTEGER,
+            k VARCHAR,
+            v INTEGER,
+            d DOUBLE
+        )
+        WITH (
+            format = 'PARQUET',
+            format_version = 2,
+            partitioning = ARRAY['tag'],
+            sorted_by = ARRAY['k']
+        )
+        """,
+    )
+    _trino_exec(
+        cluster,
+        f"""
+        INSERT INTO "{NAMESPACE}"."{table_name}" VALUES
+            (1, 'a', 10, 1.0),
+            (1, 'b', 11, 2.0),
+            (2, 'c', 20, 3.0),
+            (3, 'd', 30, 4.0)
+        """,
+    )
+
+    def trino_metadata_by_path():
+        output = _trino_exec(
+            cluster,
+            f"""
+            SELECT
+                file_path,
+                sort_order_id,
+                cardinality(column_sizes),
+                cardinality(null_value_counts),
+                cardinality(split_offsets)
+            FROM "{NAMESPACE}"."{table_name}$files"
+            WHERE content = 0
+            ORDER BY file_path
+            """,
+        )
+        rows = [row.split("\t") for row in output.strip().splitlines()]
+        return {row[0]: row[1:] for row in rows}
+
+    metadata_before = trino_metadata_by_path()
+    assert len(metadata_before) == 3
+    for metadata in metadata_before.values():
+        _sort_order_id, column_sizes, _null_value_counts, _split_offsets = map(int, metadata)
+        assert column_sizes > 0
+
+    node.query(
+        f"ALTER TABLE {full} DROP PARTITION 1",
+        settings=WRITE_SETTINGS,
+    )
+
+    metadata_after = trino_metadata_by_path()
+    assert len(metadata_after) == 2
+    for path, metadata in metadata_after.items():
+        assert metadata == metadata_before[path]
+
+    clickhouse_rows = node.query(
+        f"SELECT tag, k, v, d FROM {full} ORDER BY tag, k"
+    )
+    trino_rows = _trino_exec(
+        cluster,
+        f'SELECT tag, k, v, d FROM "{NAMESPACE}"."{table_name}" ORDER BY tag, k',
+    )
+    def parse_rows(output):
+        result = []
+        for line in output.strip().splitlines():
+            tag, key, value, double_value = line.split("\t")
+            result.append((int(tag), key, int(value), float(double_value)))
+        return result
+
+    expected = [(2, "c", 20, 3.0), (3, "d", 30, 4.0)]
+    assert parse_rows(clickhouse_rows) == expected
+    assert parse_rows(trino_rows) == expected
