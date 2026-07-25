@@ -1052,6 +1052,28 @@ def test_show_table_status_matches_information_schema(started_cluster):
         assert status["Engine"] == "MergeTree"
         assert status["Rows"] == 2
         assert status["Collation"] == "utf8mb4_0900_ai_ci"
+
+        # Engine must be reported for real table engines that don't store data
+        # on disk (classified as FOREIGN TABLE), not only for BASE TABLE rows;
+        # only view-like objects report a NULL Engine, as in MySQL.
+        cursor.execute(
+            "CREATE TABLE default.table_status_memory (n UInt64) ENGINE = Memory"
+        )
+        try:
+            cursor.execute("SHOW TABLE STATUS LIKE 'table_status_memory'")
+            memory_rows = cursor.fetchall()
+            assert len(memory_rows) == 1, memory_rows
+            assert memory_rows[0]["Engine"] == "Memory", memory_rows[0]
+
+            cursor.execute(
+                "SELECT table_type, engine FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE table_schema = 'default' AND table_name = 'table_status_memory'"
+            )
+            memory_info = cursor.fetchall()[0]
+            assert memory_info["table_type"] == "FOREIGN TABLE", memory_info
+            assert memory_info["engine"] == "Memory", memory_info
+        finally:
+            cursor.execute("DROP TABLE default.table_status_memory")
     finally:
         cursor.execute("DROP TABLE default.table_status_consistency")
         client.close()

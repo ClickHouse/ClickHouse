@@ -71,9 +71,10 @@ AS SELECT
     table_collation      AS TABLE_COLLATION,
     table_comment        AS TABLE_COMMENT,
     -- MySQL-compatibility columns, appended after the standard columns to preserve their ordinal positions
-    -- In MySQL, ENGINE is a real storage engine and is NULL for views; report it only for
-    -- BASE TABLE rows so MySQL-aware tools don't see internal names like 'View' or 'System...'
-    if(table_type = 'BASE TABLE', t.engine, NULL)
+    -- In MySQL, ENGINE is a real storage engine and is NULL for views; suppress it only for
+    -- view-like rows so MySQL-aware tools don't see internal names like 'View' or 'System...',
+    -- while real table engines that don't store data on disk (e.g. Memory) keep their name
+    if(table_type IN ('VIEW', 'SYSTEM VIEW'), NULL, t.engine)
                          AS engine,            -- MySQL-specific
     NULL                 AS version,           -- MySQL-specific
     NULL                 AS row_format,        -- MySQL-specific

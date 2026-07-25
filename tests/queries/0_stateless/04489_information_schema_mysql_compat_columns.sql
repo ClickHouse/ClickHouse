@@ -43,6 +43,16 @@ SELECT table_type, engine
 FROM information_schema.tables
 WHERE table_schema = 'system' AND table_name = 'one';
 
+DROP TABLE IF EXISTS test_infoschema_compat_memory;
+CREATE TABLE test_infoschema_compat_memory (id UInt32) ENGINE = Memory;
+
+SELECT '-- tables: ENGINE is kept for real table engines that do not store data on disk';
+SELECT table_type, engine, ENGINE
+FROM information_schema.tables
+WHERE table_schema = currentDatabase() AND table_name = 'test_infoschema_compat_memory';
+
+DROP TABLE test_infoschema_compat_memory;
+
 SELECT '-- columns: MySQL-specific columns (lowercase)';
 SELECT column_name, column_key, privileges, generation_expression, srs_id
 FROM information_schema.columns

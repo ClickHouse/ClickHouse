@@ -45,7 +45,7 @@ information_schema	information_schema	default	\N	\N	\N	\N	information_schema	inf
 default	default	kcu1	BASE TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	kcu1	BASE TABLE	0	0	0	utf8mb4_0900_ai_ci		MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 default	default	kcu2	BASE TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	kcu2	BASE TABLE	0	0	0	utf8mb4_0900_ai_ci		MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 default	default	mv	VIEW	0	0	0	utf8mb4_0900_ai_ci		default	default	mv	VIEW	0	0	0	utf8mb4_0900_ai_ci		\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
-default	default	t	FOREIGN TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	t	FOREIGN TABLE	0	0	0	utf8mb4_0900_ai_ci		\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
+default	default	t	FOREIGN TABLE	0	0	0	utf8mb4_0900_ai_ci		default	default	t	FOREIGN TABLE	0	0	0	utf8mb4_0900_ai_ci		Memory	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	Memory	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 default	default	v	VIEW	\N	\N	0	utf8mb4_0900_ai_ci		default	default	v	VIEW	\N	\N	0	utf8mb4_0900_ai_ci		\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 -- information_schema.views
 default	default	mv	SELECT * FROM system.one	NONE	NO	YES	NO	NO	NO	default	default	mv	SELECT * FROM system.one	NONE	NO	YES	NO	NO	NO

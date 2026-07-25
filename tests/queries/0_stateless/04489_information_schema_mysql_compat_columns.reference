@@ -8,6 +8,8 @@ MergeTree	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N	\N
 VIEW	\N	\N
 -- tables: ENGINE is NULL for system views too
 SYSTEM VIEW	\N
+-- tables: ENGINE is kept for real table engines that do not store data on disk
+FOREIGN TABLE	Memory	Memory
 -- columns: MySQL-specific columns (lowercase)
 a			id + 1	\N
 id	PRI			\N
