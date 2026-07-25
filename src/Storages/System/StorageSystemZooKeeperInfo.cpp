@@ -267,13 +267,14 @@ void StorageSystemZooKeeperInfo::fillData(MutableColumns & res_columns, ContextP
                 }
 
                 /// Keeper reports -1 for the file descriptor counts it could not determine.
+                /// Otherwise the values are unsigned: `max_file_descriptor_count` is printed as a `size_t`
+                /// and equals 2^64 - 1 (`RLIM_INFINITY`) when the limit is unlimited, so it must not be parsed as `Int64`.
                 auto insert_if_non_negative = [](IColumn & column, std::string_view value)
                 {
-                    Int64 parsed = parse<Int64>(value);
-                    if (parsed >= 0)
-                        column.insert(static_cast<UInt64>(parsed));
-                    else
+                    if (value == "-1")
                         column.insertDefault();
+                    else
+                        column.insert(parse<UInt64>(value));
                 };
 
                 // /* 22 */ {"open_file_descriptor_count", std::make_shared<DataTypeUInt64>(), "The open file descriptor count. Only available on Unix platforms."},

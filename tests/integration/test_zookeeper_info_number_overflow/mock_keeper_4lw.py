@@ -13,8 +13,8 @@ RESPONSES = {
         "zk_avg_latency\t0\n"
         "zk_packets_received\t3000000000\n"
         "zk_packets_sent\t3000000000\n"
-        "zk_open_file_descriptor_count\t100\n"
-        "zk_max_file_descriptor_count\t-1\n"
+        "zk_open_file_descriptor_count\t-1\n"
+        "zk_max_file_descriptor_count\t18446744073709551615\n"
     ),
     b"srvr": (
         "ClickHouse Keeper version: v26.6.1.1-testing\n"

@@ -49,8 +49,9 @@ def started_cluster():
 
 
 def test_zookeeper_info_number_overflow(started_cluster):
-    # The current version returns values above 2^31 - 1 correctly, and turns
-    # the -1 reported for an unknown file descriptor count into NULL.
+    # The current version returns values above 2^31 - 1 correctly, turns
+    # the -1 reported for an unknown file descriptor count into NULL, and
+    # accepts 2^64 - 1 (RLIM_INFINITY, an unlimited file descriptor limit).
     assert (
         keeper.query(
             "SELECT zxid, node_count, packets_received, open_file_descriptor_count,"
@@ -58,6 +59,6 @@ def test_zookeeper_info_number_overflow(started_cluster):
             " last_log_idx, last_committed_idx"
             " FROM system.zookeeper_info WHERE port = 9998"
         )
-        == "2147483648\t5\t3000000000\t100\t\\N\t3000000000\t4000000000"
+        == "2147483648\t5\t3000000000\t\\N\t18446744073709551615\t3000000000\t4000000000"
         "\t5000000000\t5000000000\n"
     )
