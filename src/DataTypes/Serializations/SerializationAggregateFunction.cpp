@@ -195,8 +195,10 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     /// bareword scalars worked, and bareword `NULL` parsed as the STRING 'NULL' when a `String`-like
     /// variant is present) except when the element
     /// starts with `'` (the native single-quoted string form, mirroring the `String` dispatch above) or
-    /// with `[`, `(` or `{` (native composite forms, which the released CSV field parse always rejected
-    /// because it stops at the first comma, so taking the quoted parse is purely additive). A bareword
+    /// with `[`, `(` or `{` (native composite forms: the released CSV field parse stops at the first comma,
+    /// so it either threw or silently split them into fragment strings such as '[1' and '2]' when a
+    /// `String`-like variant could absorb the pieces — the quoted parse deliberately replaces that
+    /// degenerate behavior with the native composite form). A bareword
     /// starting with `N`/`n` must stay on the CSV branch: for a `Variant` with a `String`-like variant
     /// (and for `Dynamic`), released input parsed e.g. `[NaN,"a"]` as the string 'NaN'.
     const auto unwrapped_type = removeNullable(removeLowCardinality(value_type));
