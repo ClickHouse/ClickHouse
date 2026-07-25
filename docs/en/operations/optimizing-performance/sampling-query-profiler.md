@@ -36,10 +36,10 @@ Use `clusterAllReplicas(default, system.trace_log)` to select from all nodes of 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), symbols, lines), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM clusterAllReplicas(default, system.trace_log)
 WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
-GROUP BY sym
+GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
 ```
@@ -50,10 +50,10 @@ LIMIT 10
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), symbols, lines), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
-GROUP BY sym
+GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
 ```
@@ -309,15 +309,15 @@ The code snippet below:
 - Reads the pre-symbolized `symbols` and `lines` columns to build a report of:
   - The names of symbols and corresponding source code functions.
   - The source code locations of these functions.
-- Aggregates by the resulting symbolized stack trace.
+- Aggregates by the raw stack trace (the `trace` column), using the symbolized columns only for display, so that distinct stack traces are never collapsed by best-effort symbolization.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), symbols, lines), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), any(symbols), any(lines)), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
-GROUP BY sym
+GROUP BY trace
 ORDER BY count() DESC
 LIMIT 10
 ```
