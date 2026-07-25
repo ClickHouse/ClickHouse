@@ -1,9 +1,10 @@
 import argparse
+import gzip
 import json
 import os
 import random
+import re
 import subprocess
-import zlib
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -15,9 +16,28 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
 from ci.praktika.result import Result
+from ci.praktika.settings import Settings
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
+
+# Test file extensions stripped to obtain a stable test identity. Kept in sync
+# with `TEST_FILE_EXTENSIONS`/`test_identity` in `tests/clickhouse-test`; `.sql.j2`
+# precedes `.sql` since the first matching suffix wins, and `.gen.sql` (rendered
+# from a template) maps back to the template's base name.
+_TEST_FILE_EXTENSIONS = (".gen.sql", ".sql.j2", ".sql", ".sh", ".py", ".expect")
+
+
+def test_identity(name):
+    """Normalize a test name to the same identity `clickhouse-test --list-tests`
+    and `--test-list-file` use (base name, extension stripped), so names from the
+    duration statistics match the listed tests."""
+    base = os.path.basename(name.strip())
+    for ext in _TEST_FILE_EXTENSIONS:
+        if base.endswith(ext):
+            return base[: -len(ext)]
+    return base
+
 
 # Substrings identifying a sanitizer build in a build type ("amd_asan_ubsan"),
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
@@ -105,9 +125,17 @@ def run_tests(
     random_order=False,
     global_time_limit=0,
     build_type=None,
+    test_list_file=None,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
-    if batch_num and batch_total:
+    if test_list_file:
+        # The caller precomputed the exact set of tests to run and wrote them to
+        # `test_list_file` (see `assign_tests_to_batches`/`write_batch_test_list`).
+        # Hand that file to `clickhouse-test` instead of letting it hash-batch the
+        # whole suite, so `functional_tests.py` fully controls which tests run.
+        # `--test-list-file` supersedes `--run-by-hash-*`.
+        extra_args += f" --test-list-file {test_list_file}"
+    elif batch_num and batch_total:
         extra_args += (
             f" --run-by-hash-total {batch_total} --run-by-hash-num {batch_num-1}"
         )
@@ -151,6 +179,128 @@ def run_tests(
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
     outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
     return Shell.run(command, verbose=True, timeout=outer_timeout)
+
+
+def list_selected_tests(runner_options):
+    """Ask `clickhouse-test` which tests it would select under `runner_options`.
+
+    `clickhouse-test --list-tests FILE` writes the candidate test identities to
+    FILE (the same normalized names `--test-list-file` reads back). This is the
+    pre-skip set: it honors suite selection and the parallel/sequential flavor
+    flags in `runner_options`, but not the per-test runtime skips (build-flag/tag
+    skips such as `no-asan`, `--no-long`, skip lists, cloud filters) that need a
+    running server. That is fine for distribution: a test a lane would skip is
+    still assigned to a batch and simply reported SKIPPED when run. Returns the
+    full list, or `None` if listing failed (the caller then fails the job
+    explicitly rather than silently changing the distribution). Runs no test and
+    needs no running server.
+    """
+    list_file = f"{temp_dir}/all_selected_tests.txt"
+    command = (
+        f"clickhouse-test --queries ./tests/queries {runner_options} "
+        f"--list-tests {list_file}"
+    )
+    exit_code = Shell.run(command, verbose=True)
+    if exit_code != 0 or not Path(list_file).is_file():
+        print(f"WARNING: --list-tests failed with exit code {exit_code}")
+        return None
+    with open(list_file, "r", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip()]
+
+
+# The nightly `collect_test_duration_statistics` job (see
+# ci/jobs/collect_test_duration_statistics.py) publishes median per-test
+# durations for every CI job to this public URL, as a gzipped JSON mapping of
+# job name (batch suffix stripped) -> [{test_name: median_ms}, ...]. Fetched
+# over plain HTTP so it also works locally without AWS credentials.
+TEST_DURATION_STATISTICS_URL = (
+    f"https://{Settings.S3_BUCKET_TO_HTTP_ENDPOINT[Settings.S3_REPORT_BUCKET]}"
+    "/statistics/test_statistics.json.gz"
+)
+
+
+def load_test_durations(job_name):
+    """Return {test_identity: median_duration_ms} for `job_name`.
+
+    Downloads the nightly per-test duration statistics and returns the entry for
+    this job (with the trailing ", N/M" batch suffix stripped, matching how the
+    statistics are keyed). Returns an empty dict when the statistics are
+    unavailable or have no data for this job; the distribution then degrades to
+    balancing by test count rather than failing - stale/missing timing data must
+    not block the run.
+    """
+    # Strip the ", N/M" batch suffix so it matches the merged key in the file.
+    merged_job_name = re.sub(r",\s*\d+/\d+\)", ")", job_name)
+    archive = f"{temp_dir}/test_statistics.json.gz"
+    if Shell.run(f"curl -sSfL -o {archive} {TEST_DURATION_STATISTICS_URL}", verbose=True) != 0:
+        print(
+            "WARNING: could not download test duration statistics from "
+            f"{TEST_DURATION_STATISTICS_URL}; distributing by test count"
+        )
+        return {}
+    try:
+        with gzip.open(archive, "rt", encoding="utf-8") as f:
+            statistics = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"WARNING: could not parse test duration statistics: {e}")
+        return {}
+    rows = statistics.get(merged_job_name)
+    if not rows:
+        print(
+            f"WARNING: no test duration statistics for job '{merged_job_name}'; "
+            "distributing by test count"
+        )
+        return {}
+    durations = {}
+    for row in rows:
+        for name, ms in row.items():
+            durations[test_identity(name)] = int(ms)
+    print(f"Loaded durations for {len(durations)} test(s) of job '{merged_job_name}'")
+    return durations
+
+
+def assign_tests_to_batches(all_tests, batch_total, durations):
+    """Split `all_tests` into `batch_total` groups balanced by duration.
+
+    Batching is done here (in the job), not by `clickhouse-test`'s
+    `--run-by-hash-*`, so the job controls the distribution. Tests are assigned
+    with the greedy longest-processing-time (LPT) heuristic: process tests from
+    longest to shortest and add each to the currently least-loaded batch. This
+    keeps the batches' total durations close so all parallel jobs finish at about
+    the same time. Tests with no recorded duration use the median of the known
+    ones (or 1 when none are known), so an empty statistics file degrades
+    gracefully to balancing by test count. Deterministic: ties are broken by test
+    name, so every job computes the same split (and therefore agrees on which
+    batch owns a given test). Each group is ordered longest-test first, and
+    `clickhouse-test --test-list-file` preserves that order. Returns
+    `(batches, loads_ms)` - the list of `batch_total` test groups and their
+    estimated total durations in milliseconds.
+    """
+    known = sorted(durations.values())
+    default_ms = known[len(known) // 2] if known else 1
+
+    def weight(test):
+        return durations.get(test, default_ms)
+
+    ordered = sorted(all_tests, key=lambda t: (-weight(t), t))
+    batches = [[] for _ in range(batch_total)]
+    loads = [0] * batch_total
+    for test in ordered:
+        target = min(range(batch_total), key=lambda b: (loads[b], b))
+        batches[target].append(test)
+        loads[target] += weight(test)
+    return batches, loads
+
+
+def write_batch_test_list(batch_tests, batch_num, batch_total):
+    """Write this job's test group to a file for `--test-list-file`. Returns the
+    path, or `None` when the group is empty."""
+    if not batch_tests:
+        return None
+    test_list_file = f"{temp_dir}/test_list_batch_{batch_num}_{batch_total}.txt"
+    with open(test_list_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(batch_tests) + "\n")
+    return test_list_file
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
@@ -328,6 +478,13 @@ def main():
     is_excluded_from_llvm = False
     is_per_test_coverage = False
     is_distributed_plan = False
+    # Identities of the changed tests this job would run, when the PR only
+    # touches test files. `None` means "no such constraint" (not a test-only PR,
+    # or the changes could not be resolved to concrete tests) - in that case the
+    # batch is never skipped for missing changed tests. A set (possibly checked
+    # against the computed distribution below) enables the early skip of batches
+    # that own none of the changed tests.
+    changed_test_identities = None
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -444,19 +601,19 @@ def main():
                     status=Result.Status.SKIPPED,
                     info="Only test files changed in this PR and none of the changed tests apply to this job's parallel/sequential flavor",
                 ).complete_job()
-            if (
-                hash_batch_files is not None
-                and batch_num
-                and total_batches > 1
-                and not any(
-                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
+            if hash_batch_files:
+                # Record the changed tests as identities (base names, matching
+                # what `--list-tests`/`--test-list-file` use). The decision of
+                # whether this batch owns any of them is made later, against the
+                # duration-balanced distribution (see below), so the batch-skip
+                # stays consistent with what actually runs. `hash_batch_files is
+                # None` (a change that could not be resolved to a concrete test)
+                # leaves `changed_test_identities` as `None`, i.e. run normally.
+                changed_test_identities = {
+                    Targeting._derive_test_name(f)
                     for f in hash_batch_files
-                )
-            ):
-                Result.create_from(
-                    status=Result.Status.SKIPPED,
-                    info="Only test files changed in this PR and none of the changed tests fall into this batch",
-                ).complete_job()
+                    if Targeting._derive_test_name(f) is not None
+                }
 
     if is_llvm_coverage:
         # Pin random-by-default fault injection seeds server-side (in the default
@@ -764,6 +921,60 @@ def main():
         is_per_test_coverage=is_per_test_coverage,
     )
 
+    # Compute this job's batch of tests up front (before the expensive
+    # install/start/stateful setup) so we can skip the whole job early when a
+    # test-only PR changed nothing this batch owns, and reuse the exact same
+    # batch in the TEST stage. The batch-skip decision uses the duration-balanced
+    # distribution (see `assign_tests_to_batches`), the same assignment that
+    # actually runs, so it can never diverge and false-green by skipping the
+    # batch that owns a changed test. Only for plain hash-batched runs;
+    # flaky/targeted/bugfix jobs have their own test selection.
+    batch_test_list_file = None
+    if (
+        batch_num
+        and total_batches
+        and not tests
+        and not is_bugfix_validation
+        and not is_flaky_check
+        and not is_targeted_check
+    ):
+        all_tests = list_selected_tests(runner_options)
+        if not all_tests:
+            Result.create_from(
+                status=Result.Status.ERROR,
+                info="Could not list selectable tests for batch distribution: "
+                "'clickhouse-test --list-tests' returned no tests",
+            ).complete_job()
+        durations = load_test_durations(info.job_name)
+        batches, loads = assign_tests_to_batches(all_tests, total_batches, durations)
+        this_batch = batches[batch_num - 1]
+        print(
+            f"Distributed {len(all_tests)} test(s) into {total_batches} batch(es) "
+            f"by duration; batch {batch_num} has {len(this_batch)} test(s), "
+            f"estimated {loads[batch_num - 1] / 1000:.0f}s (per-batch estimate: "
+            f"{[round(load / 1000) for load in loads]}s)"
+        )
+        # Test-only PR: skip this job unless the distribution assigns it one of
+        # the changed tests. Replaces the old crc32 batch-skip; consistent with
+        # the run because it uses the same assignment.
+        if changed_test_identities is not None and not (
+            set(this_batch) & changed_test_identities
+        ):
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="Only test files changed in this PR and none of the changed "
+                "tests fall into this batch",
+            ).complete_job()
+        batch_test_list_file = write_batch_test_list(
+            this_batch, batch_num, total_batches
+        )
+        if not batch_test_list_file:
+            Result.create_from(
+                status=Result.Status.ERROR,
+                info=f"No tests distributed into batch {batch_num}/{total_batches} "
+                f"out of {len(all_tests)} selectable test(s)",
+            ).complete_job()
+
     job_info = ""
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
@@ -1009,15 +1220,21 @@ def main():
             )
 
         else:
+            # Plain hash-batched run: `batch_test_list_file` was computed up front
+            # (see the duration-balanced distribution before the install stage)
+            # and carries this job's share of tests. When it is set,
+            # `--test-list-file` supersedes `--run-by-hash-*`; when it is not (not
+            # a batched run), the whole selected suite runs.
             runner_exit_code = run_tests(
-                batch_num=batch_num,
-                batch_total=total_batches,
+                batch_num=0,
+                batch_total=0,
                 tests=list(tests) if tests else tests,
                 extra_args=runner_options,
                 random_order=is_bugfix_validation,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
                 build_type=build_types[0] if is_bugfix_validation else None,
+                test_list_file=batch_test_list_file,
             )
 
         test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
