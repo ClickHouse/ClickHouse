@@ -814,6 +814,10 @@ private:
         DiskPtr replaced_disk,
         String replaced_part_path);
 
+    /// Removes the named parts from `detached`, skipping those that are not there. Pass only parts
+    /// this query itself renamed there.
+    void removeDetachedPartsCreatedByFetch(const NameSet & part_names);
+
     /// Required only to avoid races between executeLogEntry and fetchPartition
     std::unordered_set<String> currently_fetching_parts;
     mutable std::mutex currently_fetching_parts_mutex;
