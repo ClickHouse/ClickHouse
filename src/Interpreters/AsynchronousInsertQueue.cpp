@@ -1312,9 +1312,9 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     const String & insert_format = key.query->as<const ASTInsertQuery &>().format;
     std::string_view current_entry_data;
     format->setParseErrorDiagnosticProvider(
-        [&current_entry_data, insert_format, &header, insert_context]() -> String
+        [&current_entry_data, insert_format, &header, insert_context](std::optional<size_t> rows_reached_by_parser) -> String
         {
-            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, insert_context);
+            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, insert_context, rows_reached_by_parser);
         });
 
     if (insert_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && insert_context->hasInsertionTableColumnsDescription())

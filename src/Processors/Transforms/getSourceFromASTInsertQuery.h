@@ -50,8 +50,15 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, 
 /// the mismatch, or an empty string when the structures correspond or nothing can be inferred. A
 /// structure mismatch between the inserted data and the destination is a common and confusing cause
 /// of parse errors (see https://github.com/ClickHouse/ClickHouse/issues/110622).
+/// `rows_reached_by_parser` is the 1-based number of the row the parser had reached when it threw
+/// (see IInputFormat::getRowsReachedOnParseError); when known, inference samples only that many rows,
+/// so a row the parser never reached cannot contaminate the diagnosis of an earlier failure.
 String getInsertDataSchemaMismatchDescription(
-    std::string_view data, const String & format_name, const Block & expected_header, const ContextPtr & context);
+    std::string_view data,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context,
+    std::optional<size_t> rows_reached_by_parser = std::nullopt);
 
 /// Same as getInsertDataSchemaMismatchDescription, but reads a bounded prefix of the data from a file,
 /// decompressing it the same way `INSERT ... FROM INFILE` itself would. Used for the client-side INFILE

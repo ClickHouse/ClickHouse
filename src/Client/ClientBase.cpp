@@ -2312,9 +2312,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         setInsertSchemaMismatchDiagnostic(*source, parsed_query, sample, client_context);
     else
         source->setParseErrorDiagnosticProvider(
-            [&capturing_buf, current_format, expected_header = sample, context = client_context]() -> String
+            [&capturing_buf, current_format, expected_header = sample, context = client_context](
+                std::optional<size_t> rows_reached_by_parser) -> String
             {
-                return getInsertDataSchemaMismatchDescription(capturing_buf->getCapturedPrefix(), current_format, expected_header, context);
+                return getInsertDataSchemaMismatchDescription(
+                    capturing_buf->getCapturedPrefix(), current_format, expected_header, context, rows_reached_by_parser);
             });
 
     Pipe pipe(source);

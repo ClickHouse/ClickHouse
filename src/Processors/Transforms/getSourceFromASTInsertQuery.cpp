@@ -58,7 +58,11 @@ namespace ErrorCodes
 }
 
 String getInsertDataSchemaMismatchDescription(
-    std::string_view data, const String & format_name, const Block & expected_header, const ContextPtr & context)
+    std::string_view data,
+    const String & format_name,
+    const Block & expected_header,
+    const ContextPtr & context,
+    std::optional<size_t> rows_reached_by_parser)
 {
     if (data.empty())
         return {};
@@ -66,7 +70,16 @@ String getInsertDataSchemaMismatchDescription(
     if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
         return {};
 
-    const auto format_settings = getFormatSettings(context);
+    auto format_settings = getFormatSettings(context);
+
+    /// Infer only from the rows the parser had reached, including the row whose parsing failed.
+    /// Sampling the whole payload would let a row the parser never got to contaminate the diagnosis
+    /// of an earlier failure — e.g. `TSV` rows `1\t1.5` and `2\ttext` into `(a UInt8, b UInt8)` fail
+    /// on the first row, but the second one would widen the inferred type of `b` to `String` and turn
+    /// a value-level error into a bogus structure mismatch.
+    if (rows_reached_by_parser)
+        format_settings.max_rows_to_read_for_schema_inference
+            = std::min<UInt64>(format_settings.max_rows_to_read_for_schema_inference, *rows_reached_by_parser);
 
     /// Ask the format's own schema reader how the real parser identifies columns and validates types,
     /// so the comparison below follows the parser instead of a fixed heuristic. The defaults describe a
@@ -693,7 +706,7 @@ void setInsertSchemaMismatchDiagnostic(
     IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context)
 {
     format.setParseErrorDiagnosticProvider(
-        [ast, expected_header, context]() -> String
+        [ast, expected_header, context](std::optional<size_t> rows_reached_by_parser) -> String
         {
             /// Only the inline part of the query can be re-read here. The streamed tail (network /
             /// HTTP body) is consumed while parsing and cannot be inspected a second time.
@@ -701,7 +714,11 @@ void setInsertSchemaMismatchDiagnostic(
             if (!insert || !insert->data)
                 return {};
             return getInsertDataSchemaMismatchDescription(
-                std::string_view(insert->data, insert->end - insert->data), insert->format, expected_header, context);
+                std::string_view(insert->data, insert->end - insert->data),
+                insert->format,
+                expected_header,
+                context,
+                rows_reached_by_parser);
         });
 }
 
@@ -831,10 +848,11 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     {
         if (captured_prefix_buffer)
             format->setParseErrorDiagnosticProvider(
-                [captured_prefix_buffer, expected_header = header, format_name = ast_insert_query->format, context]() -> String
+                [captured_prefix_buffer, expected_header = header, format_name = ast_insert_query->format, context](
+                    std::optional<size_t> rows_reached_by_parser) -> String
                 {
                     return getInsertDataSchemaMismatchDescription(
-                        captured_prefix_buffer->getCapturedPrefix(), format_name, expected_header, context);
+                        captured_prefix_buffer->getCapturedPrefix(), format_name, expected_header, context, rows_reached_by_parser);
                 });
         else
             setInsertSchemaMismatchDiagnostic(*format, ast, header, context);

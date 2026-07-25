@@ -43,7 +43,7 @@ Chunk IInputFormat::generate()
         /// For a genuine parse error, attach the schema-mismatch explanation if one is available.
         if (parse_error_diagnostic_provider && isParseError(e.code()))
         {
-            if (String diagnostic = parse_error_diagnostic_provider(); !diagnostic.empty())
+            if (String diagnostic = parse_error_diagnostic_provider(getRowsReachedOnParseError()); !diagnostic.empty())
                 e.addMessage(diagnostic);
         }
 
