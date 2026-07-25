@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "إعدادات جداول MergeTree",
   "pages": [
+    "ar/reference/settings/merge-tree-settings",
     "ar/reference/settings/merge-tree-settings/add-minmax",
     "ar/reference/settings/merge-tree-settings/allow",
     "ar/reference/settings/merge-tree-settings/allow-experimental",
@@ -84,6 +85,5 @@
     "ar/reference/settings/merge-tree-settings/write-ahead",
     "ar/reference/settings/merge-tree-settings/zero-copy",
     "ar/reference/settings/merge-tree-settings/other"
-  ],
-  "root": "ar/reference/settings/merge-tree-settings"
+  ]
 }

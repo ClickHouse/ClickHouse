@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualisations et tableaux de bord avec ClickStack'
-sidebarTitle: 'Tableaux de bord'
+sidebarTitle: 'Vue d’ensemble'
 description: 'Visualisations et tableaux de bord avec ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'tableaux de bord', 'visualisation', 'monitoring', 'observabilité']
@@ -306,7 +306,7 @@ Ce tableau de bord utilise des onglets pour distinguer le suivi de **Selects**, 
 <Info>
   **Accès requis aux tables système**
 
-  Ce tableau de bord interroge les [tables système](/fr/reference/system-tables/index) de ClickHouse pour afficher les principales métriques. Les autorisations suivantes sont requises :
+  Ce tableau de bord interroge les [tables système](/fr/reference/system-tables/overview) de ClickHouse pour afficher les principales métriques. Les autorisations suivantes sont requises :
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

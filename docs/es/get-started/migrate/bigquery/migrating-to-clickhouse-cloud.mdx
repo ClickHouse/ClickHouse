@@ -153,7 +153,7 @@ No conservamos ningún valor NULL en nuestro nuevo esquema. La inserción anteri
   ## ¿En qué se diferencian las claves primarias de ClickHouse?
 </div>
 
-Como se describe [aquí](/es/get-started/migrate/bigquery/index), al igual que en BigQuery, ClickHouse no impone unicidad sobre los valores de la columna de clave primaria de una tabla.
+Como se describe [aquí](/es/get-started/migrate/bigquery/overview), al igual que en BigQuery, ClickHouse no impone unicidad sobre los valores de la columna de clave primaria de una tabla.
 
 De forma similar al clustering en BigQuery, los datos de una tabla de ClickHouse se almacenan en disco ordenados por las columnas de la clave primaria. El optimizador de consultas aprovecha este orden para evitar reordenamientos, minimizar el uso de memoria en los joins y permitir la finalización anticipada de las cláusulas LIMIT.
 A diferencia de BigQuery, ClickHouse crea automáticamente [un índice primario (disperso)](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) a partir de los valores de las columnas de la clave primaria. Este índice se utiliza para acelerar todas las consultas que contienen filtros sobre las columnas de la clave primaria. En concreto:

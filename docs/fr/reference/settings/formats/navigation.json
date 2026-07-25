@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "Paramètres de format",
   "pages": [
+    "fr/reference/settings/formats",
     "fr/reference/settings/formats/bool",
     "fr/reference/settings/formats/date-time",
     "fr/reference/settings/formats/format",
@@ -19,6 +20,5 @@
     "fr/reference/settings/formats/show-create",
     "fr/reference/settings/formats/type-json",
     "fr/reference/settings/formats/other"
-  ],
-  "root": "fr/reference/settings/formats"
+  ]
 }

@@ -12,7 +12,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁移到 Managed Postgres 服务。这项内置集成简化了整个流程，帮助您连接源数据库、导出 schema、将其导入 Managed Postgres，并设置持续复制。
+ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁移到 ClickHouse Managed Postgres 服务。这项内置集成简化了整个流程，帮助您连接源数据库、导出 schema、将其导入 ClickHouse Managed Postgres，并设置持续复制。
 
 <div id="prerequisites">
   ## 前置条件
@@ -35,21 +35,21 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
   ## 迁移前注意事项
 </div>
 
-* **DDL 传播**：持续复制 (CDC) 会捕获 DML 操作和 `ADD COLUMN`。其他 DDL 更改 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会自动传播，必须在目标端手动执行。
+* **DDL 传播**：持续复制 (CDC (变更数据捕获) ) 会捕获 DML 操作和 `ADD COLUMN`。其他 DDL 变更 (如 `DROP COLUMN` 和 `ALTER COLUMN`) 不会传播，必须在目标端手动应用。
 
 <Note>
-  如果您在迁移过程中遇到问题，请查看 [Managed Postgres Migrations FAQ](/zh/products/managed-postgres/migrations/faq)，了解常见错误及其解决方案。
+  如果您在迁移过程中遇到问题，请查看 [ClickHouse Managed Postgres Migrations FAQ](/zh/products/managed-postgres/migrations/faq) 以了解常见错误及其解决方案。
 </Note>
 
 <Steps>
   <Step title="连接到源数据库" id="step-1-connect">
-    打开 [ClickHouse Cloud 控制台](https://clickhouse.cloud)，选择您的 Managed Postgres 服务。
+    打开 [ClickHouse Cloud 控制台](https://clickhouse.cloud)，选择您的 ClickHouse Managed Postgres 服务。
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 服务列表中的 Managed Postgres 服务卡片" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 服务列表中的 ClickHouse Managed Postgres 服务卡片" size="lg" border />
 
     在左侧边栏中，点击 **数据源**。
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres 服务侧边栏中的数据源条目" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="ClickHouse Managed Postgres 服务侧边栏中的数据源条目" size="lg" border />
 
     点击 **开始导入**。
 
@@ -91,10 +91,10 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
     点击 **下一步**。
   </Step>
 
-  <Step title="将 schema 导入您的 Managed Postgres 服务" id="step-3-import-schema">
+  <Step title="将 schema 导入您的 ClickHouse Managed Postgres 服务" id="step-3-import-schema">
     从下拉列表中选择目标数据库，或点击 **Create a new database** 来创建新数据库。
 
-    向导会显示一条 `psql` 命令，用于将 schema 转储导入您的 Managed Postgres 服务。在终端中运行它：
+    向导会显示一条 `psql` 命令，用于将 schema 转储导入您的 ClickHouse Managed Postgres 服务。在终端中运行它：
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="步骤 3：用于导入 schema 的 psql 命令" size="lg" border />
 
@@ -155,7 +155,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
   ## 迁移后任务
 </div>
 
-初始加载完成后，如果使用 CDC，且复制延迟几乎为零：
+初始加载完成后，如果使用 CDC (变更数据捕获) ，且复制延迟几乎为零：
 
 **验证行数。** 在切换流量之前，对源端和目标端的关键表进行抽查：
 
@@ -172,7 +172,7 @@ ALTER DATABASE <source_db> SET default_transaction_read_only = on;
 **确认复制已追上。** 比较源端和目标端的最新一行：
 
 ```sql
--- 在源端和目标端均执行
+-- Run on both source and target
 SELECT MAX(id), MAX(updated_at) FROM public.orders;
 ```
 
@@ -206,9 +206,9 @@ BEGIN
 END $$;
 ```
 
-**切换应用流量。** 将读写流量切换到你的 Managed Postgres 服务，并监控错误、约束冲突以及复制状态是否正常。
+**切换应用流量。** 将读写流量切换到你的 ClickHouse Managed Postgres 服务，并监控错误、约束冲突以及复制状态是否正常。
 
-**清理。**  完成切换并确认新服务运行正常后，从**数据源**中删除此次迁移。如果你使用了 CDC，请从源端删除 replication slot 以释放资源：
+**清理。**  完成切换并确认新服务运行正常后，从**数据源**中删除此次迁移。如果你使用了 CDC (变更数据捕获) ，请从源端删除 replication slot 以释放资源：
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
@@ -218,6 +218,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## 后续步骤
 </div>
 
-* [Managed Postgres 快速入门](/zh/products/managed-postgres/quickstart)
-* [Managed Postgres 连接信息](/zh/products/managed-postgres/connection)
+* [ClickHouse Managed Postgres 快速入门](/zh/products/managed-postgres/quickstart)
+* [ClickHouse Managed Postgres 连接信息](/zh/products/managed-postgres/connection)
 * [ClickPipes Postgres FAQ](/zh/integrations/clickpipes/postgres/faq)

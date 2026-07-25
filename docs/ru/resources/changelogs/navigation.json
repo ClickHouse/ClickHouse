@@ -3,6 +3,7 @@
     {
       "group": "Cloud",
       "pages": [
+        "ru/resources/changelogs/cloud/index",
         "ru/resources/changelogs/cloud/2026",
         {
           "group": "Архив",
@@ -17,6 +18,7 @@
         {
           "group": "Журнал изменений релизов базы данных Cloud",
           "pages": [
+            "ru/resources/changelogs/cloud/release-notes-index",
             "ru/resources/changelogs/cloud/release-notes/26_02",
             "ru/resources/changelogs/cloud/release-notes/25_12",
             "ru/resources/changelogs/cloud/release-notes/25_10",
@@ -29,11 +31,9 @@
             "ru/resources/changelogs/cloud/release-notes/24_06",
             "ru/resources/changelogs/cloud/release-notes/24_05",
             "ru/resources/changelogs/cloud/release-notes/24_02"
-          ],
-          "root": "ru/resources/changelogs/cloud/release-notes-index"
+          ]
         }
-      ],
-      "root": "ru/resources/changelogs/cloud/index"
+      ]
     },
     {
       "group": "Самоуправляемое развертывание",

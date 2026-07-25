@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Визуализации и панели мониторинга в ClickStack'
-sidebarTitle: 'Панели мониторинга'
+sidebarTitle: 'Обзор'
 description: 'Визуализации и панели мониторинга в ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'панели мониторинга', 'визуализация', 'мониторинг', 'обсервабилити']
@@ -306,7 +306,7 @@ HyperDX поставляется с готовыми панелями монит
 <Info>
   **Требуемый доступ к системным таблицам**
 
-  Эта панель мониторинга обращается к [системным таблицам](/ru/reference/system-tables/index) ClickHouse, чтобы показывать ключевые метрики. Требуются следующие привилегии:
+  Эта панель мониторинга обращается к [системным таблицам](/ru/reference/system-tables/overview) ClickHouse, чтобы показывать ключевые метрики. Требуются следующие привилегии:
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

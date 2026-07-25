@@ -3,6 +3,7 @@
     {
       "group": "Cloud",
       "pages": [
+        "ko/resources/changelogs/cloud/index",
         "ko/resources/changelogs/cloud/2026",
         {
           "group": "아카이브",
@@ -17,6 +18,7 @@
         {
           "group": "Cloud 데이터베이스 릴리스 변경 로그",
           "pages": [
+            "ko/resources/changelogs/cloud/release-notes-index",
             "ko/resources/changelogs/cloud/release-notes/26_02",
             "ko/resources/changelogs/cloud/release-notes/25_12",
             "ko/resources/changelogs/cloud/release-notes/25_10",
@@ -29,11 +31,9 @@
             "ko/resources/changelogs/cloud/release-notes/24_06",
             "ko/resources/changelogs/cloud/release-notes/24_05",
             "ko/resources/changelogs/cloud/release-notes/24_02"
-          ],
-          "root": "ko/resources/changelogs/cloud/release-notes-index"
+          ]
         }
-      ],
-      "root": "ko/resources/changelogs/cloud/index"
+      ]
     },
     {
       "group": "자가 관리형",

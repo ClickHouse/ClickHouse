@@ -16,7 +16,7 @@ ClickHouse は、いくつかの種類のユーザー定義関数 (UDFs) をサ�
 * [実行可能 UDF](#executable-user-defined-functions) は、外部プログラムやスクリプト (Python、Bash など) を起動し、STDIN / STDOUT を介してデータのブロックをストリーミングします。ClickHouse を再コンパイルすることなく、既存のコードやツールを統合するために使用できます。インプロセスの選択肢と比べると呼び出しごとのオーバーヘッドは大きく、より重いロジックや別のランタイムが必要な場合に適しています。
 * [SQL UDFs](#sql-user-defined-functions) は、`CREATE FUNCTION` を使って SQL のみで定義されます。これらはクエリプランにインライン展開されるため (プロセス境界はありません) 、軽量で、式ロジックの再利用や複雑な計算カラムの簡略化に適しています。
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) は、WebAssembly にコンパイルされたコードを、サーバープロセス内のサンドボックスで実行します。外部の実行可能ファイルよりも呼び出しごとのオーバーヘッドが低く、ネイティブ拡張機能よりも優れた分離性を備えているため、WASM をターゲットにできる言語 (例: C/C++/Rust) で記述されたカスタムアルゴリズムに適しています。
-* [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) では、オペレーターが提供する &quot;ドライバー&quot; により、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたコードスニペットを、関数作成時に実行可能 UDF に変換できます (たとえばコンパイルして)。これは実行可能 UDF をベースとしており、サーバー側のドライバー設定が必要です。
+* [Experimental ドライバーベースの実行可能 UDF](#driver-based-executable-user-defined-functions) では、オペレーターが提供する &quot;ドライバー&quot; により、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたコードスニペットを、関数作成時に実行可能 UDF に変換できます (たとえばコンパイルして)。これは実行可能 UDF をベースとしており、サーバー側のドライバー設定が必要です。
 
 <div id="executable-user-defined-functions">
   ## 実行可能ユーザー定義関数

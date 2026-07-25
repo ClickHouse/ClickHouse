@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/clickhouse-cloud
 sidebarTitle: 'ClickHouse Cloud'
-title: ClickHouse Cloud を使用して Managed Postgres へ移行する
+title: ClickHouse Cloud を使用して ClickHouse Managed Postgres へ移行する
 description: 'ClickHouse Cloud に組み込まれている Data sources のインポートウィザードを使用して、PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を紹介します。'
 keywords: ['postgres', 'postgresql', '論理レプリケーション', '移行', 'データ転送', 'Managed Postgres', 'Data sources', 'インポート']
 doc_type: 'guide'
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge />
 
-ClickHouse Cloud には、外部 PostgreSQL データベースを Managed Postgres サービスに移行するための組み込みのインポートウィザードが用意されています。このウィザードでは、接続元の設定、スキーマのエクスポートとインポート、レプリケーション設定、テーブルの選択を、5 つのガイド付きステップで行います。
+ClickHouse Cloud には、外部 PostgreSQL データベースを ClickHouse Managed Postgres サービスに移行するための組み込みのインポートウィザードが用意されています。このウィザードでは、接続元の設定、スキーマのエクスポートとインポート、レプリケーション設定、テーブルの選択を、5 つのガイド付きステップで行います。
 
 <div id="prerequisites">
   ## 前提条件
@@ -30,13 +30,13 @@ ClickHouse Cloud には、外部 PostgreSQL データベースを Managed Postgr
 
 <Steps>
   <Step title="ソースデータベースに接続する" id="step-1-connect">
-    [ClickHouse Cloud コンソール](https://clickhouse.cloud) を開き、Managed Postgres サービスを選択します。
+    [ClickHouse Cloud コンソール](https://clickhouse.cloud) を開き、ClickHouse Managed Postgres サービスを選択します。
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧にある Managed Postgres サービスカード" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧にある ClickHouse Managed Postgres サービスカード" size="lg" border />
 
     左側のサイドバーで **Data sources** をクリックします。
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres サービスのサイドバーにある Data sources エントリ" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="ClickHouse Managed Postgres サービスのサイドバーにある Data sources エントリ" size="lg" border />
 
     **Start import** をクリックします。
 
@@ -78,10 +78,10 @@ ClickHouse Cloud には、外部 PostgreSQL データベースを Managed Postgr
     **Next** をクリックします。
   </Step>
 
-  <Step title="Managed Postgres サービスにスキーマをインポートする" id="step-3-import-schema">
+  <Step title="ClickHouse Managed Postgres サービスにスキーマをインポートする" id="step-3-import-schema">
     ドロップダウンから宛先データベースを選択するか、**Create a new database** をクリックして新しく作成します。
 
-    ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
+    ウィザードには、スキーマダンプを ClickHouse Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ 3: スキーマのインポート用 `psql` コマンド" size="lg" border />
 
@@ -159,7 +159,7 @@ ALTER DATABASE <source_db> SET default_transaction_read_only = on;
 **レプリケーションが同期していることを確認します。** 移行元と移行先で最新の行を比較します。
 
 ```sql
--- ソースとターゲットの両方で実行
+-- Run on both source and target
 SELECT MAX(id), MAX(updated_at) FROM public.orders;
 ```
 
@@ -193,7 +193,7 @@ BEGIN
 END $$;
 ```
 
-**アプリケーションのトラフィックを切り替えます。** 読み取り先と書き込み先を Managed Postgres サービスに向け、エラー、制約違反、レプリケーションの健全性を監視します。
+**アプリケーションのトラフィックを切り替えます。** 読み取り先と書き込み先を ClickHouse Managed Postgres サービスに向け、エラー、制約違反、レプリケーションの健全性を監視します。
 
 **クリーンアップします。**  切り替え後、新しいサービスが正常であることを確認したら、**Data sources** から移行を削除します。CDC (変更データキャプチャ)  を使用した場合は、リソースを解放するため、ソース側のレプリケーションスロットを削除します:
 
@@ -205,6 +205,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## 次のステップ
 </div>
 
-* [Managed Postgres のクイックスタート](/ja/products/managed-postgres/quickstart)
-* [Managed Postgres の接続情報](/ja/products/managed-postgres/connection)
+* [ClickHouse Managed Postgres のクイックスタート](/ja/products/managed-postgres/quickstart)
+* [ClickHouse Managed Postgres の接続情報](/ja/products/managed-postgres/connection)
 * [ClickPipes Postgres のよくある質問](/ja/integrations/clickpipes/postgres/faq)

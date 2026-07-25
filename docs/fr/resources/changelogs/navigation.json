@@ -3,9 +3,10 @@
     {
       "group": "Cloud",
       "pages": [
+        "fr/resources/changelogs/cloud/index",
         "fr/resources/changelogs/cloud/2026",
         {
-          "group": "Archives",
+          "group": "Archive",
           "pages": [
             "fr/resources/changelogs/cloud/archive/2025",
             "fr/resources/changelogs/cloud/archive/2024",
@@ -17,6 +18,7 @@
         {
           "group": "Changelog des versions de la base de données Cloud",
           "pages": [
+            "fr/resources/changelogs/cloud/release-notes-index",
             "fr/resources/changelogs/cloud/release-notes/26_02",
             "fr/resources/changelogs/cloud/release-notes/25_12",
             "fr/resources/changelogs/cloud/release-notes/25_10",
@@ -29,11 +31,9 @@
             "fr/resources/changelogs/cloud/release-notes/24_06",
             "fr/resources/changelogs/cloud/release-notes/24_05",
             "fr/resources/changelogs/cloud/release-notes/24_02"
-          ],
-          "root": "fr/resources/changelogs/cloud/release-notes-index"
+          ]
         }
-      ],
-      "root": "fr/resources/changelogs/cloud/index"
+      ]
     },
     {
       "group": "Auto-hébergé",

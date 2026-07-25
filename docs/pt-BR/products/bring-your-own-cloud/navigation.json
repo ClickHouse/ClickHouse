@@ -31,10 +31,10 @@
         {
           "group": "Rede",
           "pages": [
+            "pt-BR/products/bring-your-own-cloud/onboarding/network",
             "pt-BR/products/bring-your-own-cloud/onboarding/network-aws",
             "pt-BR/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "pt-BR/products/bring-your-own-cloud/onboarding/network"
+          ]
         },
         "pt-BR/products/bring-your-own-cloud/onboarding/new-region",
         "pt-BR/products/bring-your-own-cloud/onboarding/azure-private-preview"

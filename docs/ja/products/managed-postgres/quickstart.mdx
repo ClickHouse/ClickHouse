@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/quickstart
 sidebarTitle: 'クイックスタート'
-title: 'Managed Postgres のクイックスタート'
+title: 'ClickHouse Managed Postgres のクイックスタート'
 description: 'NVMe による Postgres のパフォーマンスを体験し、ネイティブな ClickHouse 連携でリアルタイム分析を実現'
 keywords: ['managed postgres', 'クイックスタート', '使い始める', 'データベースを作成', 'nvme', 'パフォーマンス', 'clickhousectl', 'CLI', '自動化', 'AI エージェント']
 doc_type: 'guide'
@@ -32,7 +32,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
     * **第1部:** NVMe Postgres を使い始め、そのパフォーマンスを体感する
     * **第2部:** ClickHouse と統合してリアルタイム分析を実現する
 
-    Managed Postgres は現在、AWS の複数のリージョンで利用可能であり、パブリックベータ版として提供されています。
+    ClickHouse Managed Postgres は現在、AWS の複数のリージョンで利用可能であり、パブリックベータ版として提供されています。
 
     **このクイックスタートでは、以下を行います：**
 
@@ -46,21 +46,21 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     ### データベースを作成する
 
-    新しい Managed Postgres サービスを作成するには、Cloud Console のサービス一覧にある **New service** ボタンをクリックします。その後、データベースタイプとして Postgres を選択できます。
+    新しい ClickHouse Managed Postgres サービスを作成するには、Cloud Console のサービス一覧にある **New service** ボタンをクリックします。その後、データベースタイプとして Postgres を選択できます。
 
-    <Image img="/images/managed-postgres/create-service.webp" alt="Managed Postgres サービスを作成する" size="md" border />
+    <Image img="/images/managed-postgres/create-service.webp" alt="ClickHouse Managed Postgres サービスを作成する" size="md" border />
 
     データベースインスタンスの名前を入力し、**Create service** をクリックします。概要ページに移動します。
 
-    <Image img="/images/managed-postgres/overview.webp" alt="Managed Postgres の概要" size="md" border />
+    <Image img="/images/managed-postgres/overview.webp" alt="ClickHouse Managed Postgres の概要" size="md" border />
 
-    Managed Postgres インスタンスは 3～5 分で準備が完了し、使用できるようになります。
+    ClickHouse Managed Postgres インスタンスは 3～5 分で準備が完了し、使用できるようになります。
 
     ### データベースに接続する
 
     左側のサイドバーに [**Connect** ボタン](/ja/products/managed-postgres/connection) が表示されます。クリックすると、接続の詳細と複数のフォーマットの接続文字列を確認できます。
 
-    <Image img="/images/managed-postgres/connect-modal.webp" alt="Managed Postgres の「Connect」モーダル" size="md" border />
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="ClickHouse Managed Postgres の「Connect」モーダル" size="md" border />
 
     `psql` の接続文字列をコピーして、データベースに接続します。DBeaver などの Postgres 互換クライアントや、任意のアプリケーションライブラリを使用することもできます。
 
@@ -252,7 +252,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     Postgres にテーブルとデータが揃ったので、分析のためにテーブルを ClickHouse にレプリケートしましょう。まず、サイドバーの **ClickHouse 連携** をクリックします。次に、**Replicate data in ClickHouse** をクリックします。
 
-    <Image img="/images/managed-postgres/integration-landing.webp" alt="Managed Postgres インテグレーションが空です" size="md" border />
+    <Image img="/images/managed-postgres/integration-landing.webp" alt="ClickHouse Managed Postgres インテグレーションが空です" size="md" border />
 
     次のフォームでは、インテグレーションの名前を入力し、レプリケート先となる既存の ClickHouse インスタンスを選択できます。ClickHouse インスタンスをまだお持ちでない場合は、このフォームから直接作成することもできます。
 
@@ -262,7 +262,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
       次に進む前に、選択した ClickHouse service が Running 状態であることを確認してください。
     </Info>
 
-    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="Managed Postgres インテグレーション フォーム" size="md" border />
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="ClickHouse Managed Postgres のインテグレーションフォーム" size="md" border />
 
     **次へ**をクリックすると、テーブルピッカーに移動します。ここで必要な操作は以下のとおりです：
 
@@ -270,7 +270,7 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
     * **public** スキーマを展開し、先ほど作成した users テーブルと events テーブルを選択します。
     * **Replicate data to ClickHouse** をクリックします。
 
-    <Image img="/images/managed-postgres/table-picker.webp" alt="Managed Postgres テーブル選択" size="md" border />
+    <Image img="/images/managed-postgres/table-picker.webp" alt="ClickHouse Managed Postgres テーブル選択" size="md" border />
 
     レプリケーションプロセスが開始され、インテグレーションの概要ページに移動します。初回のインテグレーションでは、初期インフラストラクチャのセットアップに 2〜3 分かかる場合があります。その間に、新しい **pg&#95;clickhouse** 拡張機能を確認してみましょう。
 
@@ -321,11 +321,11 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
 
     インテグレーションページに戻って確認してみましょう。初期レプリケーションが完了していることが確認できるはずです。詳細を表示するには、インテグレーション名をクリックしてください。
 
-    <Image img="/images/managed-postgres/analytics-list.webp" alt="Managed Postgres 分析一覧" size="md" border />
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="ClickHouse Managed Postgres 分析一覧" size="md" border />
 
     サービス名をクリックして ClickHouse コンソールを開き、レプリケートテーブルを確認します。
 
-    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse の Managed Postgres レプリケートテーブル" size="md" border />
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="ClickHouse 内の ClickHouse Managed Postgres レプリケートテーブル" size="md" border />
 
     ### Postgres と ClickHouse のパフォーマンスを比較する
 
@@ -417,6 +417,6 @@ import QuickstartCLI from "/snippets/ja/managed-postgres/_quickstart_cli.mdx";
     このクイックスタートで作成したリソースを削除するには：
 
     1. まず、ClickHouse サービスから ClickPipe インテグレーションを削除します
-    2. 次に、Cloud Console から Managed Postgres インスタンスを削除します
+    2. 次に、Cloud Console から ClickHouse Managed Postgres インスタンスを削除します
   </View>
 </Visibility>

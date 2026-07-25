@@ -7,7 +7,8 @@ doc_type: 'guide'
 ---
 
 ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) 账户 (AWS S3、Google Cloud Storage 或 Azure Blob 存储) 中。
-有关 ClickHouse Cloud 备份工作方式的更多详情，包括“全量备份”备份与“增量”备份的区别，请参阅[备份](/zh/products/cloud/guides/backups/review-and-restore-backups)文档。
+有关 ClickHouse Cloud 备份工作方式的更多详情，包括“全量备份”备份与“增量”备份的区别，请参阅[备份](/zh/products/cloud/guides/backups/review-and-restore-backups)文档。请注意，
+导出到您自己的云账户的备份与原位 Cloud 备份有一个重要区别：它们无法使用原生复制 (请参见下方说明) 。
 
 本指南将通过示例说明如何将全量备份和增量备份导出到 AWS、GCP 和 Azure 对象存储，以及如何从这些备份中恢复。
 
@@ -17,9 +18,20 @@ ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) �
   跨云备份仅支持通过本页列出的 BACKUP/RESTORE 命令执行，不支持通过 UI 操作。
 </Note>
 
+<Warning>
+  **与原位备份相比的性能影响**
+  导出到您自己的存储桶的备份无法使用原生 (服务器端) 复制。原生复制要求源和目标端共享相同的凭据，而这里并非如此：
+  源是由 ClickHouse 管理的存储桶，而目标端是您自己的存储桶，并使用单独的凭据进行身份验证。
+
+  由于无法使用原生复制，数据会从源下载后再重新上传到您的存储桶 (“经由缓冲区复制”) 。因此，导出到您自己的存储桶 的
+  备份比标准的原位 Cloud 备份更慢，并且会消耗更多资源。
+</Warning>
+
 <div id="requirements">
   ## 要求
 </div>
+
+在运行 `BACKUP` 命令之前，请确保您的 ClickHouse 用户拥有 `BACKUP` 权限。ClickHouse Cloud 中的 `default_role` 不包含此权限。请在导出备份之前联系 [ClickHouse 支持团队](https://clickhouse.com/support/program) 申请该权限。
 
 要将备份导出到您自己的 CSP 存储桶或从中恢复，您需要以下信息。
 

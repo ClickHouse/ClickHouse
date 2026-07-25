@@ -3,6 +3,7 @@
     {
       "group": "Cloud",
       "pages": [
+        "es/resources/changelogs/cloud/index",
         "es/resources/changelogs/cloud/2026",
         {
           "group": "Archivo",
@@ -15,8 +16,9 @@
         },
         "es/resources/changelogs/cloud/release-status",
         {
-          "group": "Registro de cambios de las versiones de la base de datos de Cloud",
+          "group": "Registro de cambios de las versiones de la base de datos en Cloud",
           "pages": [
+            "es/resources/changelogs/cloud/release-notes-index",
             "es/resources/changelogs/cloud/release-notes/26_02",
             "es/resources/changelogs/cloud/release-notes/25_12",
             "es/resources/changelogs/cloud/release-notes/25_10",
@@ -29,11 +31,9 @@
             "es/resources/changelogs/cloud/release-notes/24_06",
             "es/resources/changelogs/cloud/release-notes/24_05",
             "es/resources/changelogs/cloud/release-notes/24_02"
-          ],
-          "root": "es/resources/changelogs/cloud/release-notes-index"
+          ]
         }
-      ],
-      "root": "es/resources/changelogs/cloud/index"
+      ]
     },
     {
       "group": "Autogestionado",

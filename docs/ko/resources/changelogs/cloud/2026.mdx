@@ -80,9 +80,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
   자세한 내용은 [ClickHouse Agents 문서](/ko/products/cloud/features/ai-ml/agents/index)를 참조하십시오.
 
-  ### ClickHouse Postgres (퍼블릭 베타)
+  ### ClickHouse Managed Postgres (퍼블릭 베타)
 
-  로컬 NVMe 스토리지 기반의 완전 관리형 Postgres가 현재 퍼블릭 베타로 제공되며, AWS RDS 대비 5배 이상의 TPS를 제공하고 하나의 관리형 스택에서 OLTP와 OLAP를 통합합니다. 네이티브 CDC 파이프라인은 중간 인프라 없이 데이터를 ClickHouse로 직접 스트리밍하며, 오픈소스 `pg_clickhouse` 확장 기능을 통해 표준 Postgres 세션에서 ClickHouse 테이블을 쿼리할 수 있습니다.
+  ClickHouse Managed Postgres는 로컬 NVMe 스토리지 기반의 완전 관리형 Postgres로, 현재 퍼블릭 베타로 제공됩니다. AWS RDS 대비 5배 이상의 TPS를 제공하고 하나의 관리형 스택에서 OLTP와 OLAP를 통합합니다. 네이티브 CDC 파이프라인은 중간 인프라 없이 데이터를 ClickHouse로 직접 스트리밍하며, 오픈소스 `pg_clickhouse` 확장 기능을 통해 표준 Postgres 세션에서 ClickHouse 테이블을 쿼리할 수 있습니다.
 
   자세한 내용은 [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements)를 참조하십시오.
 
@@ -177,7 +177,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 <Update label="2026년 5월 8일">
   ### Postgres 쿼리 인사이트 (비공개 프리뷰)
 
-  [ClickHouse Cloud Managed Postgres](/ko/products/managed-postgres/overview)(비공개 프리뷰)에서 새로운 **쿼리 인사이트** 탭을 이제 사용할 수 있습니다. 이 탭은 모든 쿼리 패턴의 영향도를 기준으로 순위를 매기고, 다음 3가지 화면에서 각 패턴이 느린 이유를 보여줍니다.
+  [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview)(비공개 프리뷰)에서 새로운 **쿼리 인사이트** 탭을 이제 사용할 수 있습니다. 이 탭은 모든 쿼리 패턴의 영향도를 기준으로 순위를 매기고, 다음 3가지 화면에서 각 패턴이 느린 이유를 보여줍니다.
 
   * **Overview** — 한 화면에서 보는 데이터베이스 상태
   * **Patterns** — 실행 시간, CPU, 오류, P95를 기준으로 정렬할 수 있는 테이블

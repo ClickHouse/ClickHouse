@@ -215,7 +215,7 @@ Para usar um serviço existente, defina `CH_ID` a partir de `clickhousectl cloud
   ### Replique as tabelas para o ClickHouse
 </div>
 
-Crie um Postgres CDC ClickPipe no serviço do ClickHouse, apontando para o hostname do Managed Postgres. O pipe copia as linhas existentes e, em seguida, mantém o ClickHouse sincronizado com as alterações contínuas:
+Crie um Postgres CDC ClickPipe no serviço do ClickHouse, apontando para o hostname do ClickHouse Managed Postgres. O pipe copia as linhas existentes e, em seguida, mantém o ClickHouse sincronizado com as alterações contínuas:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

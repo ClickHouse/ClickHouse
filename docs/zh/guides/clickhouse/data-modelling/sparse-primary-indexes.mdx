@@ -354,7 +354,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 
     因此，示例表中的所有粒度 (最后一个除外) 大小都相同。
 
-  * 对于启用了 自适应索引粒度 的表 (默认情况下 index granularity 是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes)) ，某些粒度的大小可能会因行数据大小不同而少于 8192 行。
+  * 对于启用了自适应索引粒度的表 (默认情况下 index granularity 是自适应的，参见 [default](/zh/reference/settings/merge-tree-settings#index_granularity_bytes))，某些粒度的大小可能会因行数据大小不同而少于 8192 行。
 
   * 我们将主键列 (`UserID`、`URL`) 中的一些列值标记为橙色。
     这些橙色标记的列值，就是每个粒度第一行的主键列值。

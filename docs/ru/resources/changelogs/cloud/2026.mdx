@@ -80,9 +80,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
   Подробнее см. в [документации ClickHouse Agents](/ru/products/cloud/features/ai-ml/agents/index).
 
-  ### ClickHouse Postgres (публичная бета)
+  ### ClickHouse Managed Postgres (публичная бета)
 
-  Полностью управляемый Postgres на локальном NVMe-хранилище теперь доступен в публичной бета-версии: производительность превышает показатели AWS RDS более чем в 5 раз по TPS, а OLTP и OLAP объединены в одном управляемом стеке. Нативный CDC-конвейер передаёт данные напрямую в ClickHouse без промежуточной инфраструктуры, а расширение `pg_clickhouse` с открытым исходным кодом позволяет выполнять запросы к таблицам ClickHouse из стандартных сеансов Postgres.
+  ClickHouse Managed Postgres — полностью управляемый Postgres на локальном NVMe-хранилище — теперь доступен в публичной бета-версии: производительность превышает показатели AWS RDS более чем в 5 раз по TPS, а OLTP и OLAP объединены в одном управляемом стеке. Нативный CDC-конвейер передаёт данные напрямую в ClickHouse без промежуточной инфраструктуры, а расширение `pg_clickhouse` с открытым исходным кодом позволяет выполнять запросы к таблицам ClickHouse из стандартных сеансов Postgres.
 
   Подробнее читайте в [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
@@ -177,7 +177,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 <Update label="8 мая 2026">
   ### Query insights для Postgres (закрытая предварительная версия)
 
-  Новая вкладка **Query insights** теперь доступна в [ClickHouse Cloud Managed Postgres](/ru/products/managed-postgres/overview) (закрытая предварительная версия). Она ранжирует каждый шаблон запроса по влиянию и показывает, почему он работает медленно, в трех разделах:
+  Новая вкладка **Query insights** теперь доступна в [ClickHouse Managed Postgres](/ru/products/managed-postgres/overview) (закрытая предварительная версия). Она ранжирует каждый шаблон запроса по влиянию и показывает, почему он работает медленно, в трех разделах:
 
   * **Overview** — общее состояние базы данных на одном экране
   * **Patterns** — таблица с сортировкой по времени выполнения, CPU, ошибкам и P95

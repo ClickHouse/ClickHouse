@@ -23,10 +23,10 @@
         {
           "group": "pg_clickhouse",
           "pages": [
+            "pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction",
             "pt-BR/products/managed-postgres/extensions/pg_clickhouse/reference",
             "pt-BR/products/managed-postgres/extensions/pg_clickhouse/tutorial"
-          ],
-          "root": "pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction"
+          ]
         },
         "pt-BR/products/managed-postgres/upgrades",
         "pt-BR/products/managed-postgres/openapi",
@@ -82,5 +82,5 @@
     }
   ],
   "icon": "/images/icons/icon-postgres.svg",
-  "item": "Managed Postgres"
+  "item": "ClickHouse Managed Postgres"
 }

@@ -17,7 +17,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 
 클러스터에 여러 레플리카가 있는 경우, 삽입을 병렬화하기 위해 대신 [s3Cluster 함수](/ko/reference/functions/table-functions/s3Cluster)를 사용할 수 있습니다.
 
-[`INSERT INTO...SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select)와 함께 `s3 table function`을 사용하면 데이터가 스트리밍 방식으로 읽히고 삽입됩니다. 일부 데이터 블록만 메모리에 유지되며, 블록은 S3에서 계속 읽혀 대상 테이블로 전달됩니다.
+[`INSERT INTO...SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select)와 함께 `s3 테이블 함수`를 사용하면 데이터가 스트리밍 방식으로 읽히고 삽입됩니다. 일부 데이터 블록만 메모리에 유지되며, 블록은 S3에서 계속 읽혀 대상 테이블로 전달됩니다.
 
 <div id="syntax">
   ## 구문

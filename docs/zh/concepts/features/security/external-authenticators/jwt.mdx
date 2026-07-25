@@ -10,9 +10,9 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 <CloudOnlyBadge />
 
-ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与其他外部身份验证器 (如 [LDAP](/zh/concepts/features/security/external-authenticators/ldap) 或 [Kerberos](/zh/concepts/features/security/external-authenticators/kerberos)) 不同，JWT 身份验证不会验证预先存在用户的身份。相反，它会根据嵌入在每个令牌中的声明动态创建**临时用户**。这些用户仅存在于内存中，其访问权限由令牌声明派生，并会在令牌过期后自动移除。
+ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与其他外部身份验证器 (如 [LDAP](/zh/concepts/features/security/external-authenticators/ldap) 或 [Kerberos](/zh/concepts/features/security/external-authenticators/kerberos)) 不同，JWT 身份验证不会验证预先存在用户的身份。相反，它会根据嵌入在每个标记中的声明动态创建**临时用户**。这些用户仅存在于内存中，其访问权限由标记声明派生，并会在标记过期后自动移除。
 
-这使得 JWT 身份验证与基于密码或证书的方法有本质区别：不存在 `CREATE USER ... IDENTIFIED WITH jwt` 语句，尝试这样做会引发异常。JWT 用户完全由令牌的生命周期管理。
+这使得 JWT 身份验证与基于密码或证书的方法有本质区别：不存在 `CREATE USER ... IDENTIFIED WITH jwt` 语句，尝试这样做会引发异常。JWT 用户完全由标记的生命周期管理。
 
 <div id="overview">
   ## 概览

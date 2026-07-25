@@ -344,7 +344,7 @@ Cela signifie qu&#39;au lieu de lire des lignes individuelles, ClickHouse lit to
 Le schéma suivant montre comment les (valeurs de colonnes des) 8,87 millions de lignes de notre table
 sont organisées en 1083 granules, du fait que l&#39;instruction DDL de la table contient le paramètre `index_granularity` (défini sur sa valeur par défaut de 8192).
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="Indices primaires creux 02" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="index primaire clairsemé 02" />
 
 Les 8192 premières lignes (d&#39;après l&#39;ordre physique sur le disque) — et leurs valeurs de colonnes — appartiennent logiquement au granule 0, puis les 8192 lignes suivantes (et leurs valeurs de colonnes) appartiennent au granule 1, et ainsi de suite.
 

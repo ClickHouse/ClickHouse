@@ -3,6 +3,7 @@
     {
       "group": "Cloud",
       "pages": [
+        "ja/resources/changelogs/cloud/index",
         "ja/resources/changelogs/cloud/2026",
         {
           "group": "アーカイブ",
@@ -17,6 +18,7 @@
         {
           "group": "Cloudデータベースのリリース変更履歴",
           "pages": [
+            "ja/resources/changelogs/cloud/release-notes-index",
             "ja/resources/changelogs/cloud/release-notes/26_02",
             "ja/resources/changelogs/cloud/release-notes/25_12",
             "ja/resources/changelogs/cloud/release-notes/25_10",
@@ -29,11 +31,9 @@
             "ja/resources/changelogs/cloud/release-notes/24_06",
             "ja/resources/changelogs/cloud/release-notes/24_05",
             "ja/resources/changelogs/cloud/release-notes/24_02"
-          ],
-          "root": "ja/resources/changelogs/cloud/release-notes-index"
+          ]
         }
-      ],
-      "root": "ja/resources/changelogs/cloud/index"
+      ]
     },
     {
       "group": "セルフマネージド",

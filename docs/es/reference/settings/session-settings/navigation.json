@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "Configuración de la sesión",
   "pages": [
+    "es/reference/settings/session-settings",
     "es/reference/settings/session-settings/additional",
     "es/reference/settings/session-settings/aggregate",
     "es/reference/settings/session-settings/aggregation",
@@ -255,6 +256,5 @@
     "es/reference/settings/session-settings/window-view",
     "es/reference/settings/session-settings/write-through-distributed-cache",
     "es/reference/settings/session-settings/other"
-  ],
-  "root": "es/reference/settings/session-settings"
+  ]
 }

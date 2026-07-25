@@ -3,6 +3,7 @@
     {
       "group": "Cloud",
       "pages": [
+        "zh/resources/changelogs/cloud/index",
         "zh/resources/changelogs/cloud/2026",
         {
           "group": "归档",
@@ -15,8 +16,9 @@
         },
         "zh/resources/changelogs/cloud/release-status",
         {
-          "group": "Cloud 数据库版本更新日志",
+          "group": "Cloud 数据库发布更新日志",
           "pages": [
+            "zh/resources/changelogs/cloud/release-notes-index",
             "zh/resources/changelogs/cloud/release-notes/26_02",
             "zh/resources/changelogs/cloud/release-notes/25_12",
             "zh/resources/changelogs/cloud/release-notes/25_10",
@@ -29,11 +31,9 @@
             "zh/resources/changelogs/cloud/release-notes/24_06",
             "zh/resources/changelogs/cloud/release-notes/24_05",
             "zh/resources/changelogs/cloud/release-notes/24_02"
-          ],
-          "root": "zh/resources/changelogs/cloud/release-notes-index"
+          ]
         }
-      ],
-      "root": "zh/resources/changelogs/cloud/index"
+      ]
     },
     {
       "group": "自管理",

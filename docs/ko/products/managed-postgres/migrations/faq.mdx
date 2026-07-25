@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'Managed Postgres 마이그레이션 FAQ'
+title: 'ClickHouse Managed Postgres 마이그레이션 FAQ'
 description: 'ClickHouse Managed Postgres로 데이터를 마이그레이션할 때 자주 묻는 질문입니다.'
 keywords: ['postgres', '마이그레이션', 'faq', 'Managed Postgres', '논리적 복제', 'enum', '고유 제약 조건']
 doc_type: '참고'
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-`TOAST` 컬럼, replication slot, publication, 스키마 변경, 데이터 타입 매핑 등 Postgres 복제의 작동 방식과 관련된 많은 질문은 [ClickPipes for Postgres FAQ](/ko/integrations/clickpipes/postgres/faq)에서 다룹니다. 해당 정보는 Managed Postgres 마이그레이션에도 적용됩니다.
+`TOAST` 컬럼, replication slot, publication, 스키마 변경, 데이터 타입 매핑 등 Postgres 복제의 작동 방식과 관련된 많은 질문은 [ClickPipes for Postgres FAQ](/ko/integrations/clickpipes/postgres/faq)에서 다룹니다. 해당 정보는 ClickHouse Managed Postgres 마이그레이션에도 적용됩니다.
 
 <div id="invalid-enum-value">
   ### 복제 중 &quot;enum의 입력 값이 잘못되었습니다&quot; 오류가 표시됩니다
 </div>
 
-이 오류는 원본 Postgres에 있는 enum 값이 대상 Managed Postgres에는 없을 때 발생합니다. 논리적 복제는 `ALTER TYPE ... ADD VALUE` 명령을 자동으로 전파하지 않으므로, 초기 스키마 설정 후 원본에 추가된 새 enum 값 때문에 대상에서 삽입이 실패합니다.
+이 오류는 원본 Postgres에 있는 enum 값이 대상 ClickHouse Managed Postgres에는 없을 때 발생합니다. 논리적 복제는 `ALTER TYPE ... ADD VALUE` 명령을 자동으로 전파하지 않으므로, 초기 스키마 설정 후 원본에 추가된 새 enum 값 때문에 대상에서 삽입이 실패합니다.
 
 이 문제를 해결하려면 대상 Postgres의 enum 유형에 누락된 값을 추가하십시오:
 

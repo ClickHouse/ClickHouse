@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/scaling
 sidebarTitle: '스케일링'
 title: '스케일링'
-description: '유연한 VM 유형과 독립적인 리소스 스케일링을 통해 ClickHouse가 관리하는 Postgres 인스턴스를 수직으로 확장합니다'
+description: '유연한 VM 유형과 독립적인 리소스 스케일링을 통해 ClickHouse Managed Postgres 인스턴스를 수직으로 확장합니다'
 keywords: ['postgres scaling', 'vertical scaling', 'vm types', 'nvme scaling', 'instance types', 'performance scaling']
 doc_type: 'guide'
 ---
@@ -12,13 +12,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
-Managed Postgres는 워크로드 요구 사항에 맞는 유연한 스케일링 옵션을 제공합니다. 50개가 넘는 NVMe 기반 인스턴스 유형 중에서 선택할 수 있으며, CPU, 메모리, 스토리지를 각각 독립적으로 스케일링해 사용 사례에 맞게 성능과 비용을 최적화할 수 있습니다.
+ClickHouse Managed Postgres는 워크로드 요구 사항에 맞는 유연한 스케일링 옵션을 제공합니다. 50개가 넘는 NVMe 기반 인스턴스 유형 중에서 선택할 수 있으며, CPU, 메모리, 스토리지를 각각 독립적으로 스케일링해 사용 사례에 맞게 성능과 비용을 최적화할 수 있습니다.
 
 <div id="instance-types">
   ## 인스턴스 유형 및 유연성
 </div>
 
-Managed Postgres는 각기 다른 워크로드 특성에 맞게 최적화된 다양한 인스턴스 유형을 제공합니다.
+ClickHouse Managed Postgres는 각기 다른 워크로드 특성에 맞게 최적화된 다양한 인스턴스 유형을 제공합니다.
 
 * **50개 이상의 인스턴스 유형**을 제공하며, 컴퓨트, 메모리, 스토리지 최적화 구성 전반에서 선택할 수 있습니다
 * **모든 인스턴스 유형에서 NVMe 기반 스토리지**를 제공해 일관된 고성능 디스크 I/O를 지원합니다
@@ -46,7 +46,7 @@ Managed Postgres는 각기 다른 워크로드 특성에 맞게 최적화된 다
   ## 스케일링 작동 방식
 </div>
 
-인스턴스 유형을 변경하면 Managed Postgres는 새 인프라를 프로비저닝하고 데이터베이스를 마이그레이션하는 수직 스케일링을 수행하며, 이 과정에서 다운타임은 최소화됩니다.
+인스턴스 유형을 변경하면 ClickHouse Managed Postgres는 새 인프라를 프로비저닝하고 데이터베이스를 마이그레이션하는 수직 스케일링을 수행하며, 이 과정에서 다운타임은 최소화됩니다.
 
 <Image img="/images/managed-postgres/scaling-settings.webp" alt="스케일링 설정" size="md" border />
 
@@ -95,22 +95,22 @@ Managed Postgres는 각기 다른 워크로드 특성에 맞게 최적화된 다
   ### WAL-G를 사용한 병렬 복원
 </div>
 
-Managed Postgres는 스케일링 작업 중 백업 복원을 가속하기 위해 [WAL-G](https://github.com/wal-g/wal-g)를 사용합니다. 특히 WAL-G 개발자가 협력 관계에 있는 Ubicloud 팀의 일원이라서 복원 과정에 깊은 전문성이 반영됩니다.
+ClickHouse Managed Postgres는 스케일링 작업 중 백업 복원을 가속하기 위해 [WAL-G](https://github.com/wal-g/wal-g)를 사용합니다. 특히 WAL-G 개발자가 협력 관계에 있는 Ubicloud 팀의 일원이라서 복원 과정에 깊은 전문성이 반영됩니다.
 
 WAL-G는 다음과 같은 이점을 제공합니다.
 
 * **병렬 다운로드 및 압축 해제**: 여러 백업 세그먼트를 S3에서 가져와 동시에 압축 해제합니다
-* **효율적인 WAL 재생**: 증분 WAL 변경 사항을 가능한 범위에서 병렬로 적용합니다
+* **효율적인 WAL 리플레이**: 증분 WAL 변경 사항을 가능한 범위에서 병렬로 적용합니다
 * **최적화된 스트리밍**: 중간 복사본 없이 S3 storage에서 직접 스트리밍합니다
 * **빠른 복원**: 전체 소요 시간은 데이터 크기에 따라 달라지지만, 병렬화된 방식 덕분에 복원이 상당히 빠르게 진행됩니다
 
-이러한 최적화는 새 대기 인스턴스를 기동하는 데 필요한 시간을 크게 줄여 줍니다. 무엇보다 중요한 점은 복원이 전적으로 백그라운드에서 수행된다는 것입니다. 즉, 애플리케이션은 약 30초 내외의 짧은 failover 구간에서만 다운타임을 겪습니다.
+이러한 최적화는 새 대기 인스턴스를 기동하는 데 필요한 시간을 크게 줄여 줍니다. 무엇보다 중요한 점은 복원이 전적으로 백그라운드에서 수행된다는 것입니다. 즉, 애플리케이션은 약 30초 내외의 짧은 페일오버 구간에서만 다운타임을 겪습니다.
 
 <div id="initiating-scaling">
   ### 스케일링 시작하기
 </div>
 
-Managed Postgres 인스턴스를 스케일링하려면:
+ClickHouse Managed Postgres 인스턴스를 스케일링하려면:
 
 1. 인스턴스의 **설정** 탭으로 이동합니다
 2. **스케일링** 섹션에서 아래로 스크롤하여 **서비스 크기**로 이동합니다
@@ -125,7 +125,7 @@ Managed Postgres 인스턴스를 스케일링하려면:
   ### 수직 스케일링
 </div>
 
-수직 스케일링(인스턴스 유형 변경)은 Managed Postgres에서 리소스를 조정하는 주된 방법입니다. 이 방식은 다음과 같은 이점을 제공합니다.
+수직 스케일링(인스턴스 유형 변경)은 ClickHouse Managed Postgres에서 리소스를 조정하는 주된 방법입니다. 이 방식은 다음과 같은 이점을 제공합니다.
 
 * **세밀한 제어**: 50개가 넘는 인스턴스 유형 중에서 선택하여 CPU, 메모리, 스토리지를 세부적으로 조정할 수 있습니다
 * **워크로드 최적화**: 특정 워크로드에 맞게 최적화된 구성(컴퓨트, 메모리 또는 스토리지 집약형)을 선택할 수 있습니다

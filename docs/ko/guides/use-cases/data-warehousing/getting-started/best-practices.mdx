@@ -3,11 +3,11 @@ title: '데이터 레이크 모범 사례'
 sidebarTitle: '모범 사례'
 slug: /use-cases/data-lake/best-practices
 description: 'ClickHouse에서 오픈 테이블 포맷을 쿼리하기 위한 운영 환경 지침: 통합 패턴, 성능 튜닝, 카탈로그 설정, 디버깅.'
-keywords: ['데이터 레이크', '레이크하우스', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', '파티션 프루닝', '메타데이터 캐시', 'Delta Kernel', 'change data feed', 'Parquet']
+keywords: ['데이터 레이크', '레이크하우스', 'Iceberg', 'Delta Lake', 'DataLakeCatalog', '파티션 프루닝', '메타데이터 캐시', 'Delta Kernel', '변경 데이터 피드', 'Parquet']
 doc_type: 'guide'
 ---
 
-[시작하기 가이드](/ko/use-cases/data-lake/getting-started)에서는 [Apache Iceberg](/ko/engines/table-engines/integrations/iceberg), [Delta Lake](/ko/engines/table-engines/integrations/deltalake), [Apache Hudi](/ko/engines/table-engines/integrations/hudi), [Apache Paimon](/ko/sql-reference/table-functions/paimon)을 처음 쿼리하는 방법을 안내합니다. 초기 설정을 마친 후에는 이 페이지를 참고하여 적절한 액세스 패턴을 선택하고, 쿼리 성능을 튜닝하고, 운영 환경에서 데이터 레이크 쿼리를 디버깅하십시오.
+[시작하기 가이드](/ko/use-cases/data-lake/getting-started)에서는 [Apache Iceberg](/ko/engines/table-engines/integrations/iceberg), [Delta Lake](/ko/engines/table-engines/integrations/deltalake), [Apache Hudi](/ko/engines/table-engines/integrations/hudi), [Apache Paimon](/ko/sql-reference/table-functions/paimon)을 처음 쿼리하는 방법을 안내합니다. 초기 설정을 마친 후에는 이 페이지를 참고하여 적절한 액세스 패턴을 선택하고, 쿼리 성능을 튜닝하고, 운영 환경에서 레이크 쿼리를 디버깅하십시오.
 
 <div id="choose-access-method">
   ## 액세스 방법 선택

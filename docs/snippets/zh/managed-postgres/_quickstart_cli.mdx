@@ -215,7 +215,7 @@ done
   ### 将表复制到 ClickHouse
 </div>
 
-在 ClickHouse 服务上创建一个 Postgres CDC ClickPipe，并将其指向 Managed Postgres 的主机名。该管道会先复制现有行，然后持续将后续变更同步到 ClickHouse：
+在 ClickHouse 服务上创建一个 Postgres CDC ClickPipe，并将其指向 ClickHouse Managed Postgres 的主机名。该管道会先复制现有行，然后持续将后续变更同步到 ClickHouse：
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

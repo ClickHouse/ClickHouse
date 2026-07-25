@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualizações e dashboards com ClickStack'
-sidebarTitle: 'Dashboards'
+sidebarTitle: 'Visão geral'
 description: 'Visualizações e dashboards com ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualização', 'monitoramento', 'observabilidade']
@@ -306,7 +306,7 @@ Este dashboard usa abas para separar o monitoramento de **Selects**, **Inserts**
 <Info>
   **Acesso obrigatório às tabelas de sistema**
 
-  Este dashboard consulta as [tabelas de sistema](/pt-BR/reference/system-tables/index) do ClickHouse para expor as principais métricas. Os seguintes grants são necessários:
+  Este dashboard consulta as [tabelas de sistema](/pt-BR/reference/system-tables/overview) do ClickHouse para expor as principais métricas. Os seguintes grants são necessários:
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

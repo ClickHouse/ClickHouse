@@ -80,9 +80,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   详情请参阅 [ClickHouse 智能体文档](/zh/products/cloud/features/ai-ml/agents/index)。
 
-  ### ClickHouse Postgres (Public Beta)
+  ### ClickHouse Managed Postgres (公开测试版)
 
-  本地 NVMe 存储上的全托管 Postgres 现已进入 Public Beta 阶段，其 TPS 比 AWS RDS 高出 5 倍以上，并在一个托管技术栈中实现了 OLTP 与 OLAP 的融合。原生 CDC 管道可将数据直接流式传输至 ClickHouse，无需任何中间基础设施；开源的 `pg_clickhouse` 扩展则允许您在标准 Postgres 会话中查询 ClickHouse 表。
+  ClickHouse Managed Postgres (本地 NVMe 存储上的全托管 Postgres) 现已进入 Public Beta 阶段，其 TPS 比 AWS RDS 高出 5 倍以上，并在一个托管技术栈中实现了 OLTP 与 OLAP 的融合。原生 CDC 管道可将数据直接流式传输至 ClickHouse，无需任何中间基础设施；开源的 `pg_clickhouse` 扩展则允许您在标准 Postgres 会话中查询 ClickHouse 表。
 
   详情请参阅 [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements)。
 
@@ -177,7 +177,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Update label="2026年5月8日">
   ### Postgres 查询洞察 (私有预览)
 
-  [ClickHouse Cloud Managed Postgres](/zh/products/managed-postgres/overview) (私有预览) 现已新增 **Query insights** 选项卡。它会按影响程度对每种查询模式进行排序，并通过以下三个界面展示每种查询变慢的原因：
+  [ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) (私有预览) 现已新增 **Query insights** 选项卡。它会按影响程度对每种查询模式进行排序，并通过以下三个界面展示每种查询变慢的原因：
 
   * **Overview** — 一屏总览数据库健康状况
   * **Patterns** — 可按运行时长、CPU、错误和 P95 排序的表格

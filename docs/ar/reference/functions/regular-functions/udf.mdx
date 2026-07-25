@@ -13,10 +13,10 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 يدعم ClickHouse عدة أنواع من الدوال المعرّفة من قبل المستخدم (UDFs):
 
-* تبدأ [Executable UDFs](#executable-user-defined-functions) برنامجًا خارجيًا أو برنامجًا نصيًا (بايثون، Bash، إلخ)، وتُمرِّر إليه blocks من البيانات عبر STDIN / STDOUT. استخدمها لدمج التعليمات البرمجية أو الأدوات الحالية دون الحاجة إلى إعادة تجميع ClickHouse. وهي تفرض overhead أعلى لكل استدعاء مقارنةً بالخيارات التي تعمل داخل العملية، لذا فهي الأنسب للمنطق الأثقل أو عند الحاجة إلى runtime مختلف.
+* تبدأ [UDFs القابلة للتنفيذ](#executable-user-defined-functions) برنامجًا خارجيًا أو برنامجًا نصيًا (بايثون، Bash، إلخ)، وتُمرِّر إليه blocks من البيانات عبر STDIN / STDOUT. استخدمها لدمج التعليمات البرمجية أو الأدوات الحالية دون الحاجة إلى إعادة تجميع ClickHouse. وهي تفرض overhead أعلى لكل استدعاء مقارنةً بالخيارات التي تعمل داخل العملية، لذا فهي الأنسب للمنطق الأثقل أو عند الحاجة إلى runtime مختلف.
 * تُعرَّف [SQL UDFs](#sql-user-defined-functions) باستخدام `CREATE FUNCTION` بالكامل ضمن SQL. وتُضمَّن/تُوسَّع داخل query plan (من دون حدٍّ فاصل على مستوى العملية)، مما يجعلها lightweight ومثالية لإعادة استخدام منطق expression أو تبسيط columns المحسوبة المعقدة.
 * تُشغِّل [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) تعليمات برمجية مُجمَّعة إلى WebAssembly داخل sandbox ضمن server process. وهي توفّر overhead أقل لكل استدعاء مقارنةً بالبرامج التنفيذية الخارجية، مع عزل أفضل من الامتدادات native، مما يجعلها مناسبة للخوارزميات المخصّصة المكتوبة بلغات يمكنها الاستهداف إلى WASM (مثل C/C++/Rust).
-* تتيح [Experimental driver-based executable UDFs](#driver-based-executable-user-defined-functions) لـ operator يوفّره المشغّل أن يحوّل مقطع شيفرة مُقدَّمًا في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى executable UDF عند وقت إنشاء الدالة (على سبيل المثال، عن طريق تجميعه). وهي تستند إلى executable UDFs وتتطلب إعداد driver على جانب server.
+* تتيح [Experimental UDFs القابلة للتنفيذ المعتمدة على برامج التشغيل](#driver-based-executable-user-defined-functions) لـ برنامج التشغيل يوفّره المشغّل أن يحوّل مقطع شيفرة مُقدَّمًا في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى UDF قابلة للتنفيذ عند وقت إنشاء الدالة (على سبيل المثال، عن طريق تجميعه). وهي تستند إلى UDFs القابلة للتنفيذ وتتطلب إعداد برنامج التشغيل على جانب server.
 
 <div id="executable-user-defined-functions">
   ## الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ

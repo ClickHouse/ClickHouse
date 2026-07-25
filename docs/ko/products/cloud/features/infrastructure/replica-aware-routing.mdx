@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 session affinity라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. [임시 테이블](/ko/sql-reference/statements/create/table#temporary-tables) 또는 [이름이 지정된 세션 상태](/ko/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)가 여러 쿼리에서 계속 접근 가능해야 하거나, 관련 쿼리가 동일한 레플리카의 로컬 캐시를 재사용하도록 하려는 경우 사용하십시오.
+Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 동일한 ClickHouse 레플리카로 라우팅합니다. [임시 테이블](/ko/sql-reference/statements/create/table#temporary-tables) 또는 [이름이 지정된 세션 상태](/ko/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)가 여러 쿼리에서 계속 접근 가능해야 하거나, 관련 쿼리가 동일한 레플리카의 로컬 캐시를 재사용하도록 하려는 경우 사용하십시오.
 
 이 기능은 최선의 노력(best-effort) 방식으로 동작하며 격리를 보장하지는 않습니다. 스케일링, 업그레이드, 재시작이 발생하면 특정 `session_id`가 연결되는 레플리카가 다시 매핑될 수 있습니다.
 

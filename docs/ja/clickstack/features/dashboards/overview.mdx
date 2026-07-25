@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack の可視化とダッシュボード'
-sidebarTitle: 'ダッシュボード'
+sidebarTitle: '概要'
 description: 'ClickStack の可視化とダッシュボード'
 doc_type: 'guide'
 keywords: ['clickstack', 'ダッシュボード', '可視化', '監視', 'オブザーバビリティ']
@@ -306,7 +306,7 @@ HyperDX には、すぐに使えるダッシュボードがあらかじめ用意
 <Info>
   **必要なシステムテーブルへのアクセス権**
 
-  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/index) をクエリします。次の権限が必要です。
+  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/overview) をクエリします。次の権限が必要です。
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

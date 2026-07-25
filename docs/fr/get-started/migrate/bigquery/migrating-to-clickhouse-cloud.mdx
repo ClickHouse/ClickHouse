@@ -153,7 +153,7 @@ Nous ne conservons aucune valeur NULL dans notre nouveau schéma. L&#39;insertio
   ## En quoi les clés primaires de ClickHouse sont-elles différentes ?
 </div>
 
-Comme décrit [ici](/fr/get-started/migrate/bigquery/index), à l’instar de BigQuery, ClickHouse n’impose pas l’unicité des valeurs des colonnes de clé primaire d’une table.
+Comme décrit [ici](/fr/get-started/migrate/bigquery/overview), à l’instar de BigQuery, ClickHouse n’impose pas l’unicité des valeurs des colonnes de clé primaire d’une table.
 
 Comme pour le clustering dans BigQuery, les données d’une table ClickHouse sont stockées sur disque dans l’ordre des colonnes de la clé primaire. Cet ordre de tri est utilisé par l’optimiseur de requêtes pour éviter de retraiter le tri, minimiser l’utilisation de la mémoire pour les jointures et permettre une exécution anticipée des clauses LIMIT.
 Contrairement à BigQuery, ClickHouse crée automatiquement [un index primaire (sparse)](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) à partir des valeurs des colonnes de la clé primaire. Cet index sert à accélérer toutes les requêtes qui contiennent des filtres sur les colonnes de la clé primaire. Plus précisément :
