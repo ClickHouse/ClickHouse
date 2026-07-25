@@ -150,7 +150,9 @@ public:
                 first_array_col_concrete = array_col_concrete;
             }
 
-            ColumnWithTypeAndName data_type_name(array_col_concrete->getDataPtr(), recursiveRemoveLowCardinality(array_type_concrete->getNestedType()), array_with_type_and_name.name);
+            /// Unwrap LowCardinality from the column in lockstep with the type (below); a
+            /// LowCardinality column carrying a non-LowCardinality type mismatches in the lambda.
+            ColumnWithTypeAndName data_type_name(recursiveRemoveLowCardinality(array_col_concrete->getDataPtr()), recursiveRemoveLowCardinality(array_type_concrete->getNestedType()), array_with_type_and_name.name);
             arrays_data_with_type_and_name.push_back(data_type_name);
         }
 

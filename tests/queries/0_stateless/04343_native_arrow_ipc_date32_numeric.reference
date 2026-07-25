@@ -1,0 +1,13 @@
+--- date32 -> Int32 numeric target: raw day numbers, native == library ---
+0
+19000
+-25567
+3000000
+-3000000
+0
+19000
+-25567
+3000000
+-3000000
+--- date32 -> Date32 target: out-of-range day is still rejected (native) ---
+VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE

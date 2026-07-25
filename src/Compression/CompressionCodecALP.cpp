@@ -131,9 +131,9 @@ class CompressionCodecALP final : public ICompressionCodec
 public:
     enum class Variant : UInt8
     {
-        DEFAULT = 0, // Default ALP variant (AUTO)
-        AUTO = 1, // Auto-select variant per block based on estimated compressed size (default)
-        STD = 2, // Standard ALP variant with decimal-based integerization
+        DEFAULT = 0, // No explicit argument, behaves as AUTO.
+        AUTO = 1, // Selects STD or RD per compress block based on the estimated compressed size.
+        STD = 2, // Standard ALP variant with decimal-based integerization.
         RD = 3 // Real Doubles ALP variant with bit-split and dictionary encoding of the high bits.
     };
 
@@ -662,7 +662,8 @@ private:
                 }
             }
 
-            best_size = std::min(best_size, sample_best_size);
+            /// Scale partial tail samples s.t. comparison against RD_SIZE_THRESHOLD_LIMIT below does not favour STD because the sample was short.
+            best_size = std::min(best_size, sample_best_size * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS / sample_float_count);
 
             const UInt16 key = static_cast<UInt16>((best_estimation.params.exponent << 8) | best_estimation.params.fraction);
             auto it = estimations_map.find(key);
@@ -1205,7 +1206,7 @@ private:
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,
                 "Cannot decompress ALP(RD)-encoded data, incomplete RD header");
 
-        // Read left bit-width and check for unencoded block marker
+        // Read left bit-width
         dict_params.left_bits = static_cast<UInt8>(*source++);
         if (unlikely(dict_params.left_bits == 0 || dict_params.left_bits > ALP_RD_CUTTING_LIMIT))
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS,

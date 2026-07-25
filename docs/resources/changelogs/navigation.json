@@ -1,12 +1,9 @@
 {
-  "item": "Changelogs",
-  "icon": "/images/icons/icon-changelogs.svg",
-  "root": "resources/changelogs/cloud/2026",
   "groups": [
     {
       "group": "Cloud",
-      "root": "resources/changelogs/cloud/index",
       "pages": [
+        "resources/changelogs/cloud/index",
         "resources/changelogs/cloud/2026",
         {
           "group": "Archive",
@@ -20,8 +17,8 @@
         "resources/changelogs/cloud/release-status",
         {
           "group": "Cloud database release changelog",
-          "root": "resources/changelogs/cloud/release-notes-index",
           "pages": [
+            "resources/changelogs/cloud/release-notes-index",
             "resources/changelogs/cloud/release-notes/26_02",
             "resources/changelogs/cloud/release-notes/25_12",
             "resources/changelogs/cloud/release-notes/25_10",
@@ -54,5 +51,8 @@
         "resources/changelogs/security-changelog"
       ]
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-changelogs.svg",
+  "item": "Changelogs",
+  "root": "resources/changelogs/cloud/2026"
 }

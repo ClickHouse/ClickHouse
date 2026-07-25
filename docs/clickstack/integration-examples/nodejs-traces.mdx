@@ -30,13 +30,11 @@ If you would like to test the integration before configuring your own existing s
 - ClickStack hostname or IP address
 
 <Steps>
-<Step>
-#### Install and configure OpenTelemetry {#install-configure}
+<Step title="Install and configure OpenTelemetry" id="install-configure">
 
 Install the `@hyperdx/node-opentelemetry` package and initialize it at the start of your application. See the [Node.js SDK guide](/clickstack/ingesting-data/sdks/nodejs#getting-started) for detailed installation steps.
 </Step>
-<Step>
-#### Get ClickStack API key {#get-api-key}
+<Step title="Get ClickStack API key" id="get-api-key">
 
 An API key to send traces to ClickStack's OTLP endpoint.
 
@@ -47,8 +45,7 @@ An API key to send traces to ClickStack's OTLP endpoint.
 
 <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
 </Step>
-<Step>
-#### Run your application {#run-application}
+<Step title="Run your application" id="run-application">
 
 Start your Node.js application with the environment variables set:
 
@@ -57,8 +54,7 @@ export CLICKSTACK_API_KEY=your-api-key-here
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 </Step>
-<Step>
-#### Generate some traffic {#generate-traffic}
+<Step title="Generate some traffic" id="generate-traffic">
 
 Make requests to your application to generate traces:
 
@@ -72,8 +68,7 @@ curl http://localhost:3000/api/products
 for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
 ```
 </Step>
-<Step>
-#### Verify traces in HyperDX {#verify-traces}
+<Step title="Verify traces in HyperDX" id="verify-traces">
 
 Once configured, log into HyperDX and verify traces are flowing. You should see something like this. If you don't see traces, try adjusting your time range:
 
@@ -90,8 +85,7 @@ Click on any trace to see the detailed view with spans, timing, and attributes:
 For users who want to test Node.js tracing with ClickStack before instrumenting their production applications, we provide a sample dataset of pre-generated Node.js application traces with realistic traffic patterns.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample traces file:
 
@@ -99,8 +93,7 @@ Download the sample traces file:
 curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
 ```
 </Step>
-<Step>
-#### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 If you don't have ClickStack running yet, start it with:
 ```bash
@@ -111,8 +104,7 @@ docker run -d --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Get ClickStack API key {#get-api-key-demo}
+<Step title="Get ClickStack API key" id="get-api-key-demo">
 
 An API key to send traces to ClickStack's OTLP endpoint.
 
@@ -129,8 +121,7 @@ Set your API key as an environment variable:
 export CLICKSTACK_API_KEY=your-api-key-here
 ```
 </Step>
-<Step>
-#### Send the traces to ClickStack {#send-traces}
+<Step title="Send the traces to ClickStack" id="send-traces">
 
 ```bash
 curl -X POST http://localhost:4318/v1/traces \
@@ -141,8 +132,7 @@ curl -X POST http://localhost:4318/v1/traces \
 
 You should see a response like `{"partialSuccess":{}}` indicating the traces were successfully sent.
 </Step>
-<Step>
-#### Verify traces in HyperDX {#verify-demo-traces}
+<Step title="Verify traces in HyperDX" id="verify-demo-traces">
 
 1. Open [HyperDX](http://localhost:8080/) and log in to your account (you may need to create an account first)
 2. Navigate to the **Search** view and set the source to **Traces**
@@ -165,11 +155,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring Node.js application performance, we provide a pre-built dashboard with essential trace visualizations.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download-dashboard}
+<Step title="Download the dashboard configuration" id="download-dashboard">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the **Dashboards** section
 2. Click **Import Dashboard** in the upper right corner (under the ellipses)
@@ -180,8 +170,7 @@ To help you get started monitoring Node.js application performance, we provide a
 
 <Image img="/images/clickstack/nodejs/finish-import.webp" alt="Finish import"/>
 </Step>
-<Step>
-#### The dashboard will be created with all visualizations pre-configured {#created-dashboard}
+<Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
 <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Example dashboard"/>
 

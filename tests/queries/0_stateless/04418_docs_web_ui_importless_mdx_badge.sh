@@ -7,11 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The built-in `/docs` page renders Markdown from `system.documentation`. Some embedded entries open
 # with an MDX status badge that the text does not `import` locally (for example `transactionID`,
 # `transactionLatestSnapshot`, and `transactionOldestSnapshot` start with a bare `<ExperimentalBadge/>`
-# / `<CloudNotSupportedBadge/>`). A self-closing custom tag like `<ExperimentalBadge/>` is parsed by
-# the HTML parser as an *unclosed* non-void element that swallows the rest of the document; the
-# sanitizer then drops that whole subtree and the entity renders as an empty page. `preprocessMarkdown`
-# therefore strips a known allowlist of MDX components (`MDX_COMPONENTS`) whether or not they were
-# imported, not only the imported ones.
+# / `<CloudNotSupportedBadge/>`). A self-closing custom tag like `<ExperimentalBadge/>` is otherwise
+# parsed by the HTML parser as an *unclosed* non-void element that swallows the rest of the document;
+# the sanitizer then drops that whole subtree and the entity renders as an empty page. Such a badge
+# also carries real availability information, so `preprocessMarkdown` renders any `*Badge` component as
+# a readable label via `badgeLabel` (see the `04493` test). It matches the `*Badge` name directly, not
+# a collected `import` name, so an importless badge is handled just like an imported one.
 
 URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}"
 
@@ -20,11 +21,10 @@ PAGE="$(${CLICKHOUSE_CURL} -sS "${URL}/docs")"
 # The page is served.
 echo "$PAGE" | grep -oF 'ClickHouse <span class="accent">Reference</span>' | head -n1
 
-# `preprocessMarkdown` seeds its strip set with the known MDX component names ...
-echo "$PAGE" | grep -oF 'const MDX_COMPONENTS = [' | head -n1
-echo "$PAGE" | grep -oF "'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge'," | head -n1
-# ... so they are stripped even without a local import.
-echo "$PAGE" | grep -oF 'const components = new Set(MDX_COMPONENTS);' | head -n1
+# `preprocessMarkdown` renders each `*Badge` as a readable label via `badgeLabel` ...
+echo "$PAGE" | grep -oF 'function badgeLabel(name) {' | head -n1
+# ... matching the `*Badge` name directly, so an importless badge is handled the same as an imported one.
+echo "$PAGE" | grep -oF '[A-Z][A-Za-z0-9]*Badge' | head -n1
 
 # The regression target exists in the corpus: an entity whose embedded documentation uses MDX badges
 # as self-closing tags *without* importing them (so the empty-page bug could occur). `transactionID`
