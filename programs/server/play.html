@@ -491,8 +491,9 @@
         }
 
         /* Styled like a tab (same border, height and bottom-line alignment) and placed
-           directly after the last tab. */
-        #tab-add
+           directly after the last tab. `#tab-close-others` closes every tab except the
+           active one; it is shown only when there are at least two tabs (see `renderTabBar`). */
+        #tab-add, #tab-close-others
         {
             flex-shrink: 0;
             align-self: flex-end;
@@ -516,10 +517,15 @@
             border-bottom: none; /* sits on the strip line like the tabs (no second line) */
         }
 
-        #tab-add:hover, #tab-add:focus
+        #tab-add:hover, #tab-add:focus, #tab-close-others:hover, #tab-close-others:focus
         {
             background: var(--button-color);
             color: var(--button-text-color);
+        }
+
+        #tab-close-others[hidden]
+        {
+            display: none; /* the shared display:flex above would otherwise defeat [hidden] */
         }
 
         /* Each tab owns one persistent result panel; only the active one is shown, the
@@ -1731,6 +1737,7 @@
         <div id="tab-bar" hidden>
             <div id="tabs"></div>
             <button id="tab-add" type="button" title="New query (open a new tab)">+</button>
+            <button id="tab-close-others" type="button" title="Close other tabs" hidden>×</button>
             <div id="connection-menu">
                 <button id="connection-key" type="button" title="Connection settings" aria-expanded="false" hidden>🔑</button>
                 <div id="connection-dropdown" hidden></div>
@@ -7578,6 +7585,7 @@ appendTextareaResizer();
 
 const tab_bar_elem = document.getElementById('tab-bar');
 const tabs_elem = document.getElementById('tabs');
+const tab_close_others_elem = document.getElementById('tab-close-others');
 
 /// The connection parameters (url/user/password) live in the `#inputs` element. When the tab
 /// bar is shown they clutter the top of every tab, so we relocate that same element into a
@@ -8084,6 +8092,23 @@ function closeTab(id) {
     scheduleSave();
 }
 
+/// Close every tab except the active one: abort the other tabs' in-flight queries and drop their panels.
+function closeOtherTabs() {
+    markBootstrapDirty();
+
+    for (const tab of tabs) {
+        if (tab.id === activeTabId) continue;
+        abortTabQuery(tab);
+        if (tab.panel) tab.panel.remove();
+    }
+
+    tabs = tabs.filter(t => t.id === activeTabId);
+    renderTabBar();
+    refreshFavicon();   /// closed background tabs may have held the last running query
+
+    scheduleSave();
+}
+
 /// Begin inline editing of the active tab's title. The title `span` itself becomes
 /// editable (rather than swapping in an `input`), so it grows with its content and the
 /// tab width does not jump when editing starts.
@@ -8151,6 +8176,8 @@ function renderTabBar() {
     /// fresh page can be backgrounded: the user needs the `[+]` button to open a second tab (or
     /// switch away) while that first query is still in flight.
     tab_bar_elem.hidden = (tabs.length <= 1 && !(active && active.result && active.result.ran) && !anyInFlight());
+    /// With a single tab there are no "other" tabs to close; show it only for 2+.
+    tab_close_others_elem.hidden = tabs.length < 2;
     syncConnectionUI();
 
     tabs_elem.textContent = '';
@@ -8273,6 +8300,7 @@ function updateTabIndicator(tab) {
 }
 
 document.getElementById('tab-add').addEventListener('click', addTab);
+tab_close_others_elem.addEventListener('click', closeOtherTabs);
 
 /// Mouse wheel over the tab panel switches tabs: scrolling up or left -> previous (left)
 /// tab, down or right -> next (right) tab. The dominant axis is used, so both vertical and
