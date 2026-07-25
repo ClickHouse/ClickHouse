@@ -151,7 +151,7 @@ void QueryMetricLog::collectMetric(const ProcessList & process_list, String quer
 
     auto elem = query_status.createLogMetricElement(query_id, *query_info, current_time);
     if (elem)
-        add(std::move(elem.value()));
+        add([&](QueryMetricLogElement & element) { element = elem.value(); });
 }
 
 /// We use TSA_NO_THREAD_SAFETY_ANALYSIS to prevent TSA complaining that we're modifying the query_status fields
@@ -224,7 +224,7 @@ void QueryMetricLog::finishQuery(const String & query_id, TimePoint finish_time,
     {
         auto elem = query_status.createLogMetricElement(query_id, *query_info, finish_time, /* is_final = */ true);
         if (elem)
-            add(std::move(elem.value()));
+            add([&](QueryMetricLogElement & element) { element = elem.value(); });
     }
 
     /// The task has an `exec_mutex` locked while being executed. This same mutex is locked when
