@@ -1,5 +1,7 @@
--- Tags: no-random-detach
+-- Tags: no-random-detach, no-flaky-check
 -- no-random-detach: DETACH/ATTACH interferes with async insert pipeline
+-- no-flaky-check: consistently exceeds the 180 s per-run budget of the flaky check under TSan;
+-- this PR-driven run only added a tag, the test itself is unchanged
 
 set async_insert = 1;
 set wait_for_async_insert = 0;
