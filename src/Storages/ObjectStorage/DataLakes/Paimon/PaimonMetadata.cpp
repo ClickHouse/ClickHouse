@@ -631,7 +631,19 @@ ObjectIterator PaimonMetadata::iterate(
         data_files = collectIncrementalDataFiles(state, partition_pruner, max_consume_snapshots, last_consumed_snapshot_id);
 
         if (last_consumed_snapshot_id)
+        {
+            /// Re-validate table identity before persisting the watermark.  The check at the top
+            /// of iterate() does not cover an external DROP + re-CREATE that starts after it:
+            /// such a recreate can delete old `snapshot-N` files while collectIncrementalDataFiles
+            /// is scanning, making them indistinguishable from compaction gaps for the existence
+            /// probe in getSnapshotsBetween, so the old table's progress could otherwise be
+            /// committed under the reused keeper_path.  Recreating a Paimon table rewrites
+            /// `schema-0` (its `timeMillis` changes), so this throws and the watermark stays put
+            /// (fail-close); the collected batch is discarded and re-read after the user recreates
+            /// the ClickHouse table.
+            validateTableIdentity();
             stream_state->setCommittedSnapshot(*last_consumed_snapshot_id);
+        }
     }
     else
     {
