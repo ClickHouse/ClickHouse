@@ -57,3 +57,14 @@ SELECT toTime(CAST(-1e38 AS BFloat16));
 SELECT toTime(CAST('nan' AS BFloat16)); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toTime(CAST('inf' AS BFloat16)); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toTime(CAST('-inf' AS BFloat16)); -- { serverError CANNOT_CONVERT_TYPE }
+
+-- UInt64 values above Int64::max must also saturate: the conversion to time_t
+-- wraps them to a negative number, which would otherwise escape the clamp.
+SELECT toDateTime32(toUInt64(9223372036854775808), 'UTC');
+SELECT toDateTime32(toUInt64(18446744073709551615), 'UTC');
+SELECT toDateTime(toUInt64(9223372036854775808), 'UTC');
+SELECT toDateTime32(toUInt64(9223372036854775808), 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
+SELECT toDate(toUInt64(9223372036854775808), 'UTC');
+SELECT toDate(toUInt64(18446744073709551615), 'UTC');
+SELECT toTime(toUInt64(9223372036854775808));
+SELECT toTime(toUInt64(18446744073709551615));
