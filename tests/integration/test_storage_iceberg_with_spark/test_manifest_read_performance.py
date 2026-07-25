@@ -22,6 +22,12 @@ def elapsed(node, query, **kwargs):
 
 def test_manifest_read_performance(started_cluster_iceberg_with_spark):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    # The assertion is a wall-clock bound, which sanitizers inflate far past the
+    # threshold regardless of whether the manifests are read concurrently.
+    if instance.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers: the wall-clock bound is not meaningful there")
+
     spark = started_cluster_iceberg_with_spark.spark_session
     TABLE_NAME = "test_manifest_read_performance_" + get_uuid_str()
 
