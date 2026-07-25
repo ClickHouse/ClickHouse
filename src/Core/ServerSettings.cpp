@@ -1392,8 +1392,10 @@ The maximum size in bytes of a serialized query plan this server accepts in a Qu
 Applies to plans in the framed format (serialization version 4 and above), which declare their size
 up front: a plan above this limit is rejected with `CANNOT_PARSE_QUERY_PLAN` before any of it is
 buffered, so the sender cannot make this server allocate an arbitrary amount of memory for one plan.
-A plan from a pre-v4 peer declares no size and is read field by field as it arrives, so the limit
-does not apply to it.
+A plan from a pre-v4 peer declares no size and is read field by field as it arrives, so its total
+is not checked against this limit. It still bounds the parts of such a plan that are sized from the
+stream: a set may not claim more rows than a plan of this size could hold, since a row costs at
+least a byte.
 
 It is a server setting on purpose: a query setting would travel with the query, letting the sender
 pick its own limit. Raise it in the server config, on every node that reads plans, if an extreme

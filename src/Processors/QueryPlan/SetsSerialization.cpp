@@ -16,6 +16,7 @@
 #include <Analyzer/Identifier.h>
 #include <Analyzer/TableNode.h>
 #include <Columns/ColumnSet.h>
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/NativeReader.h>
@@ -33,6 +34,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int CANNOT_PARSE_QUERY_PLAN;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_serialized_query_plan_size;
 }
 
 namespace Setting
@@ -405,8 +411,15 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             readVarUInt(num_rows, in);
             checkSetColumnsCount(num_columns, hash);
 
+            /// Without this the row count could ask for an arbitrary allocation. A legacy stream
+            /// has no frame, so the bound is the accepted plan size: a row costs at least a byte.
+            const UInt64 max_plan_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+            if (num_rows > max_plan_bytes)
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Serialized set {}_{} declares {} rows, more than the {} bytes a plan may have",
+                    hash.low64, hash.high64, num_rows, max_plan_bytes);
+
             ColumnsWithTypeAndName set_columns;
-            set_columns.reserve(num_columns);
 
             /// The set data comes from the same plan stream, so it carries the plan's resolved type-complexity
             /// limit (the effective setting for client packets, 0 for trusted server-to-server plans). Pass it
