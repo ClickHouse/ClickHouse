@@ -14,7 +14,7 @@ ClickHouse® is a high-performance, column-oriented SQL database management syst
 
 ## What are analytics? {#what-are-analytics}
 
-Analytics, also known as OLAP (Online Analytical Processing), refers to SQL queries with complex calculations (e.g., aggregations, string processing, arithmetic) over massive datasets.
+Analytics, also known as OLAP (Online Analytical Processing), refers to SQL queries with complex calculations such as aggregations, string processing, arithmetic) over massive datasets.
 
 Unlike transactional queries (or OLTP, Online Transaction Processing) that read and write just a few rows per query and, therefore, complete in milliseconds, analytics queries routinely process billions and trillions of rows.
 
@@ -22,11 +22,11 @@ In many use cases, [analytics queries must be "real-time"](https://clickhouse.co
 
 ## Row-oriented vs. column-oriented storage {#row-oriented-vs-column-oriented-storage}
 
-Such a level of performance can only be achieved with the right data "orientation".
+Databases store data in either a [row-orientation or column-orientation](https://clickhouse.com/engineering-resources/what-is-columnar-database). "Real-time" performance can only be achieved with the right data "orientation".
 The difference is best explained with an example query running over 100 million rows of [real-world anonymized web analytics data](/get-started/sample-datasets/anon-web-analytics-metrica).
 
 <Tip>
-Press the **Run** button below to execute the query against the [ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ&run_query=true)
+Press the **Run** button below to execute the query live against the [ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ&run_query=true)
 This query processes nearly 60 million rows in around 150-200 milliseconds.
 </Tip>
 
@@ -46,17 +46,15 @@ LIMIT 8;
 ```
 </RunnableCode>
 
-Databases store data in either a [row-orientation or column-orientation](https://clickhouse.com/engineering-resources/what-is-columnar-database).
-
-In a database, data is stored on disk in chunks called <Tooltip headline="Blocks" tip="Blocks are the smallest units of data read from disk to memory. Usually fixed sizes such as 4 KB or 8 KB." cta="Read more" href="https://en.wikipedia.org/wiki/Block_(data_storage)">blocks</Tooltip>.
-When an application or database requests data, the operating system's disk I/O subsystem reads the required blocks from disk into memory.
+Data in a database is stored on disk in chunks called <Tooltip headline="Blocks" tip="Blocks are the smallest units of data read from disk to memory. Usually fixed sizes such as 4 KB or 8 KB." cta="Read more" href="https://en.wikipedia.org/wiki/Block_(data_storage)">blocks</Tooltip>.
+When the database fetches that data, the operating system's disk I/O subsystem reads the required blocks from disk into memory.
 
 In a row-oriented database, consecutive table rows are sequentially stored one after the other.
-This layout allows the database to retrieve rows quickly, as the column values of each row are stored together, however column operations common in analytical queries such as filters or aggregation are much slower than in a column-oriented database.
+This layout allows the database to retrieve rows quickly, as the column values of each row are stored together. Column operations common in analytical queries such as filters or aggregation are however much slower than in a column-oriented database.
 Even if only part of a block is needed for the query above, a row-oriented database would read the entire block into memory from disk.
 
 In a column-oriented DBMS like ClickHouse, values of each column are stored sequentially one after the other on disk.
-Because the block-wise storage and transfer from disk to memory is aligned with the data access pattern of analytical queries, only the columns required for a query are read from disk, avoiding unnecessary I/O for unused data.
+Because the block-wise storage and transfer from disk to memory is aligned with the data access pattern of analytical queries, only the columns actually required for the query are read from disk, which avoids unnecessary I/O for unused data.
 This is [much faster](https://benchmark.clickhouse.com/) compared to row-based storage, where entire rows, including irrelevant columns, are read.
 
 This difference is illustrated below:
@@ -68,6 +66,8 @@ This difference is illustrated below:
 
 ## What features does ClickHouse offer? {#features-clickhouse}
 
+These are some ClickHouse's main features:
+
 <AccordionGroup>
 
     <Accordion title="Performance" id="superior-query-performance">
@@ -75,7 +75,7 @@ This difference is illustrated below:
         Query caches, and advanced skip indices can be used to further accelerate performance.
 
         Inserts are streamed row by row or in batches, with writes optimized through part sorting and separation of reads and writes, delivering throughput without slowing queries.
-        A parallelized, vectorized engine filters and aggregates data efficiently across a single server or hundreds of nodes using partial states, and there is support for sharding and shared processing across replicas.
+        A parallelized, vectorized engine filters and aggregates data efficiently across a single server or hundreds of nodes using partial states.
     </Accordion>
 
     <Accordion title="Scalability" id="data-replication-and-integrity">
@@ -87,15 +87,16 @@ This difference is illustrated below:
 
     </Accordion>
 
-    <Accordion title="Data operations" id="powerful-data-operations">
+    <Accordion title="Advanced data operations" id="powerful-data-operations">
         ClickHouse offers advanced features to manipulate, filter, and transform data efficiently.
         [Materialized views](/concepts/features/materialized-views) can be refreshable or incremental, with incremental views shifting compute from query time to insert time and dramatically accelerating repeated queries.
 
-        Projections let you maintain the same data sorted in different ways, enabling ClickHouse to optimize for multiple access patterns and deliver consistently fast queries.
+        [Projections](/concepts/features/projections/projections) let you maintain the same data sorted in different ways, enabling ClickHouse to optimize for multiple access patterns and deliver consistently fast queries.
     </Accordion>
 
     <Accordion title="SQL support" id="sql-support">
-        ClickHouse supports a [declarative query language based on SQL](/reference/home) that is identical to the ANSI SQL standard in many cases but massively extends it with [thousands of functions](/reference/functions). Supported query clauses include [`GROUP BY`](/reference/statements/select/group-by), [`ORDER BY`](/reference/statements/select/order-by), subqueries in [`FROM`](/reference/statements/select/from), [`JOIN`](/reference/statements/select/join) clause, [`IN`](/reference/statements/in) operator, [window functions](/reference/functions/window-functions/index) and scalar subqueries.
+        ClickHouse supports a [declarative query language based on SQL](/reference/home) that is identical to the ANSI SQL standard in many cases but enriches it with [thousands of additional functions](/reference/functions).
+        Supported query clauses include [`GROUP BY`](/reference/statements/select/group-by), [`ORDER BY`](/reference/statements/select/order-by), subqueries in [`FROM`](/reference/statements/select/from), [`JOIN`](/reference/statements/select/join) clause, [`IN`](/reference/statements/in) operator, [window functions](/reference/functions/window-functions/index) and scalar subqueries.
     </Accordion>
 
     <Accordion title="Full JOIN support" id="full-join-support">
@@ -113,8 +114,6 @@ This difference is illustrated below:
     <Accordion title="High-reliability" id="fts">
         ClickHouse ensures reliability through its replication model, which uses Raft-based coordination via Keeper and provides either immediate or eventual consistency depending on requirements. This lightweight design enables replication across availability zones or even regions with high latencies, delivering high durability without heavy overhead.
         For long-term protection, backups can be written to object storage, giving teams confidence their data is safe and recoverable.
-
-        Snapshots offer a lightweight means to create a point in time of your data.
     </Accordion>
 
     <Accordion title="Interoperability" id="integrations">
@@ -130,4 +129,4 @@ This difference is illustrated below:
 Now that you know what ClickHouse is, you might want to:
 - [Set up ClickHouse](/get-started/setup/install)
 - [Learn about ClickHouse's use cases](/get-started/use-cases/overview)
-- [Explore through sample datasets](/get-started/sample-datasets/index)
+- [Learn ClickHouse through sample datasets](/get-started/sample-datasets/index)
