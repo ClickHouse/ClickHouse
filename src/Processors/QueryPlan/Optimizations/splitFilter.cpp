@@ -19,11 +19,11 @@ static size_t trySplitJoin(QueryPlan::Node * node, QueryPlan::Nodes & nodes)
     {
         auto & child_node = *node->children.at(idx);
         const auto & header = child_node.step->getOutputHeader();
-        auto fitler_dag = join_step->getFilterActions(side, header);
-        if (!fitler_dag)
+        auto filter_dag = join_step->getFilterActions(side, header);
+        if (!filter_dag)
             continue;
-        const auto & filter_column_name = fitler_dag->dag.getOutputs()[fitler_dag->filter_pos]->result_name;
-        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(fitler_dag->dag), filter_column_name, fitler_dag->remove_filter);
+        const auto & filter_column_name = filter_dag->dag.getOutputs()[filter_dag->filter_pos]->result_name;
+        QueryPlanStepPtr step = std::make_unique<FilterStep>(header, std::move(filter_dag->dag), filter_column_name, filter_dag->remove_filter);
         step->setStepDescription("Join filter");
 
         auto * new_node = &nodes.emplace_back(std::move(child_node));
@@ -50,14 +50,14 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     if (expr.hasStatefulFunctions())
         return 0;
 
-    bool filter_name_clashs_with_input = false;
+    bool filter_name_clashes_with_input = false;
     if (filter_step->removesFilterColumn())
     {
         for (const auto * input : expr.getInputs())
         {
             if (input->result_name == filter_column_name)
             {
-                filter_name_clashs_with_input = true;
+                filter_name_clashes_with_input = true;
                 break;
             }
         }
@@ -79,7 +79,7 @@ size_t trySplitFilter(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const Op
     node->children.push_back(&filter_node);
 
     std::string split_filter_name = filter_column_name;
-    if (filter_name_clashs_with_input)
+    if (filter_name_clashes_with_input)
     {
         split_filter_name = "__split_filter";
 
