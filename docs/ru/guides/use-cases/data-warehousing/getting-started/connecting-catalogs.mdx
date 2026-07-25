@@ -8,7 +8,7 @@ keywords: ['озера данных', 'lakehouse', 'каталог', 'glue', 'un
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 В [предыдущем разделе](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly) вы выполняли запросы к открытым табличным форматам, напрямую указывая пути в хранилище. На практике большинство организаций управляют метаданными таблиц через **каталог данных** — централизованный реестр, в котором отслеживаются местоположения таблиц, схемы и партиции. Когда вы подключаете ClickHouse к каталогу с помощью движка базы данных [`DataLakeCatalog`](/ru/reference/engines/database-engines/datalake), весь каталог становится доступен как база данных ClickHouse. Каждая таблица в каталоге появляется автоматически, и к ней можно выполнять запросы, используя все возможности ClickHouse SQL, — не нужно знать пути к отдельным таблицам или управлять учетными данными для каждой таблицы.
 
