@@ -104,11 +104,15 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 --dynamic_disk_allow_from_env=
 # Reaching that path there aborts the server (SIGILL) and takes unrelated tests in the same shard down with it,
 # so run this positive control only in release-type builds. The rejection logic it guards is build-independent
 # AST processing (`getDiskConfigurationFromAST.cpp`) fully covered by release/coverage/arm CI runs.
-debug_or_sanitizer=$($CLICKHOUSE_CLIENT -q "
-    SELECT (SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE') = 'Debug'
-        OR (SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS') LIKE '%sanitize%'")
+#
+# The gate must fail closed: run the positive control only when the server definitively reported a
+# release-type build. Under the stress runner the detection query can fail transiently (server
+# overload), and an empty result must not send a sanitizer build into the trapping path.
+release_build=$($CLICKHOUSE_CLIENT -q "
+    SELECT (SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE') != 'Debug'
+        AND (SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS') NOT LIKE '%sanitize%'" 2>/dev/null)
 
-if [ "${debug_or_sanitizer}" = "1" ]; then
+if [ "${release_build}" != "1" ]; then
     echo "inline_key: pass"
 else
     out="$($CLICKHOUSE_CLIENT -q "
