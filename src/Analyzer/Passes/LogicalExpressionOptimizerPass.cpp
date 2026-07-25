@@ -1048,6 +1048,14 @@ static void convertNotEqualsChainToNotIn(
             continue;
         }
 
+        /// `notIn` rejects arguments with a dynamic structure outright, and resolving the function is
+        /// what would throw, so this must be checked before building it.
+        if (expression.node->getResultType()->hasDynamicStructure())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
         size_t min_index = not_equals_entries.front().first;
         Tuple args;
         args.reserve(not_equals_entries.size());
@@ -1081,10 +1089,9 @@ static void convertNotEqualsChainToNotIn(
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
         not_in_function->resolveAsFunction(not_in_function_resolver);
 
-        /// The caller bails out on a nullable AND, so every replaced notEquals is non-nullable. If
-        /// `notIn` is nullable (a Variant expression resolves through the variant adaptor to
-        /// Nullable(UInt8)), the rewrite would change the type ancestors already captured; keep the
-        /// original notEquals chain.
+        /// `notIn` may be nullable where the notEquals it replaces was not (a Variant expression
+        /// resolves through the variant adaptor to Nullable(UInt8)). Ancestors already captured the
+        /// old type, so keep the original notEquals chain instead of changing it.
         if (removeLowCardinality(not_in_function->getResultType())->isNullable())
         {
             std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));

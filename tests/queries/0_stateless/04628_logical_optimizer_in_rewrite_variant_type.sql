@@ -8,8 +8,6 @@
 -- build aborts in the query-tree ValidationChecker. Reproducer shape from AST fuzzer STID 0250-20a8.
 
 SET enable_analyzer = 1;
-SET allow_experimental_variant_type = 1;
-SET allow_experimental_dynamic_type = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
 SET optimize_min_equality_disjunction_chain_length = 3;
 SET optimize_min_inequality_conjunction_chain_length = 3;
@@ -35,17 +33,34 @@ SETTINGS optimize_rewrite_has_to_in = 1;
 -- Dynamic OR-chain: `in` rejects Dynamic outright, so the rewrite must be skipped (previously threw).
 SELECT (d = '1') OR (d = '2') OR (d = '3') FROM (SELECT materialize('1')::Dynamic AS d);
 
+-- Same for `notIn`, and for the wider set of types that merely *contain* a dynamic structure
+-- (Array(Dynamic), JSON): those get no nullability adaptor, so the comparisons stay UInt8 and only a
+-- check made before the function is built can keep the chain.
+SELECT ad, x FROM (SELECT ['1']::Array(Dynamic) AS ad, materialize(toUInt8(1)) AS x)
+WHERE (ad != ['2']::Array(Dynamic)) AND (ad != ['3']::Array(Dynamic)) AND (ad != ['4']::Array(Dynamic)) AND (x = 1);
+SELECT (ad = ['2']::Array(Dynamic)) OR (ad = ['3']::Array(Dynamic)) OR (ad = ['4']::Array(Dynamic))
+FROM (SELECT ['1']::Array(Dynamic) AS ad);
+SELECT j, x FROM (SELECT '{"a":1}'::JSON AS j, materialize(toUInt8(1)) AS x)
+WHERE (j != '{"a":2}'::JSON) AND (j != '{"a":3}'::JSON) AND (j != '{"a":4}'::JSON) AND (x = 1);
+SELECT (j = '{"a":2}'::JSON) OR (j = '{"a":3}'::JSON) OR (j = '{"a":4}'::JSON) FROM (SELECT '{"a":1}'::JSON AS j);
+
 -- Optimization-preservation: the guard must skip only the Variant-under-adaptor case, and keep
 -- firing for every type where `in`/`notIn` preserves the result type.
--- OR -> IN skipped for Variant (setting = 0):
+-- OR -> IN skipped for Variant only while equals is not nullable (setting = 0):
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b = '1') OR (b = '2') OR (b = '3') FROM t_var) WHERE explain ILIKE '%function_name: in%';
+-- ... and still fires for the same Variant column once equals is nullable too (setting = 1), so the
+-- guard must key on the drift and not on the type:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b = '1') OR (b = '2') OR (b = '3') FROM t_var
+    SETTINGS use_variant_default_implementation_for_comparisons = 1) WHERE explain ILIKE '%function_name: in%';
 -- ... but still fires for plain String:
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (materialize('1') = '1') OR (materialize('1') = '2') OR (materialize('1') = '3')) WHERE explain ILIKE '%function_name: in%';
 -- ... and still fires for a Nullable column:
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (n = 1) OR (n = 2) OR (n = 3) FROM (SELECT materialize(CAST(1, 'Nullable(UInt8)')) AS n)) WHERE explain ILIKE '%function_name: in%';
 -- ... and still fires for a LowCardinality column:
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (l = '1') OR (l = '2') OR (l = '3') FROM (SELECT materialize(CAST('1', 'LowCardinality(String)')) AS l)) WHERE explain ILIKE '%function_name: in%';
--- notEquals -> NOT IN skipped for Variant (setting = 0):
+-- notEquals -> NOT IN skipped for Variant (setting = 0). With the setting ON, notEquals is nullable,
+-- so the AND is nullable and the caller returns before any conversion - `notIn` never fires for that
+-- configuration regardless of this change, so only the setting = 0 state is asserted here:
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b != '1') AND (b != '2') AND (b != '3') AND (x = 1) FROM t_var) WHERE explain ILIKE '%function_name: notIn%';
 -- ... but still fires for plain String:
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (s != '1') AND (s != '2') AND (s != '3') AND (y = 1) FROM (SELECT materialize('0') AS s, materialize(toUInt8(1)) AS y)) WHERE explain ILIKE '%function_name: notIn%';
