@@ -51,7 +51,9 @@ struct IdentifierLookup
     /// expression. So when the qualifier binds to a table expression but the rest of the
     /// identifier does not name a column, the lookup may return an empty result instead of
     /// throwing: the caller still has the table expression interpretation to try.
-    /// Like `original_ast_node`, this flag does not participate in comparison and hashing.
+    /// Unlike `original_ast_node`, this flag participates in comparison and hashing: it changes
+    /// the outcome of a lookup (empty result instead of an exception), so a matcher qualifier
+    /// lookup must not share an identifier resolve cache entry with an ordinary expression lookup.
     bool is_matcher_qualifier = false;
 
     bool isExpressionLookup() const
@@ -78,7 +80,8 @@ struct IdentifierLookup
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
     return lhs.identifier.getFullName() == rhs.identifier.getFullName()
-        && lhs.lookup_context == rhs.lookup_context;
+        && lhs.lookup_context == rhs.lookup_context
+        && lhs.is_matcher_qualifier == rhs.is_matcher_qualifier;
 }
 
 [[maybe_unused]] inline bool operator!=(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
@@ -91,7 +94,8 @@ struct IdentifierLookupHash
     size_t operator()(const IdentifierLookup & identifier_lookup) const
     {
         return std::hash<std::string>()(identifier_lookup.identifier.getFullName())
-            ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+            ^ static_cast<uint8_t>(identifier_lookup.lookup_context)
+            ^ (static_cast<size_t>(identifier_lookup.is_matcher_qualifier) << 8);
     }
 };
 

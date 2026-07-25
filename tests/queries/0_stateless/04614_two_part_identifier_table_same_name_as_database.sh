@@ -58,3 +58,12 @@ $CLICKHOUSE_CLIENT --query "
 SELECT t.\`${DB}.x\` FROM ${DB}.${DB}, (SELECT 1 AS \`${DB}.x\`) AS t
 SETTINGS enable_analyzer = 1;
 "
+
+# Mixing a qualified matcher with a plain two-part identifier of the same name must not let the
+# matcher-qualifier lookup poison the identifier resolve cache: the matcher qualifier \`db.db\` is
+# allowed to fall through to the sibling dotted column, but the later plain \`db.db\` must still
+# throw \`UNKNOWN_IDENTIFIER\` instead of returning the cached column.
+$CLICKHOUSE_CLIENT --query "
+SELECT ${DB}.${DB}.*, ${DB}.${DB} FROM ${DB}.${DB}, (SELECT tuple(1) AS \`${DB}.${DB}\`) AS t
+SETTINGS enable_analyzer = 1;
+" 2>&1 | grep -o -m1 'UNKNOWN_IDENTIFIER'
