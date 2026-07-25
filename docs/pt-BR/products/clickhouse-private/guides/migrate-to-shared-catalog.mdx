@@ -24,15 +24,11 @@ No entanto, isso exige uma migração se a sua instância não tiver sido config
 Antes de iniciar a migração, verifique os seguintes pré-requisitos:
 
 <Steps>
-  <Step>
-    ### 1. Pelo menos 2 réplicas do servidor
-
-    O Operator executa uma atualização gradual para migrar os bancos de dados para o novo Shared database engine. Defina o valor `server.replicas` do helm como 2 ou mais.
+  <Step title="1. Pelo menos 2 réplicas do servidor" id="1-at-least-2-server-replicas">
+    O Operator executa uma atualização gradual para migrar os bancos de dados para o novo engine de banco de dados Shared. Defina o valor `server.replicas` do helm como 2 ou mais.
   </Step>
 
-  <Step>
-    ### 2. Todos os bancos de dados usam o engine Replicated
-
+  <Step title="2. Todos os bancos de dados usam o engine Replicated" id="2-all-databases-use-the-replicated-engine">
     Todos os bancos de dados (exceto `system`) devem usar o engine de banco de dados Replicated. Verifique com:
 
     ```sql
@@ -47,9 +43,7 @@ Antes de iniciar a migração, verifique os seguintes pré-requisitos:
     A consulta não deve retornar nenhuma linha.
   </Step>
 
-  <Step>
-    ### 3. Todas as tabelas usam motores de tabela não replicados
-
+  <Step title="3. Todas as tabelas usam motores de tabela não replicados" id="3-all-tables-use-non-replicated-table-engines">
     Nenhuma tabela (exceto em `system`) deve usar motores de tabela replicados ou legados. Verifique com:
 
     ```sql
@@ -65,9 +59,7 @@ Antes de iniciar a migração, verifique os seguintes pré-requisitos:
     A consulta não deve retornar nenhuma linha.
   </Step>
 
-  <Step>
-    ### 4. Não há tabelas desanexadas
-
+  <Step title="4. Não há tabelas desanexadas" id="4-no-detached-tables-exist">
     ```sql
     SELECT * FROM system.detached_tables
     ```
@@ -87,15 +79,11 @@ Antes de iniciar a migração, verifique os seguintes pré-requisitos:
 </Warning>
 
 <Steps>
-  <Step>
-    ### 1. Habilite a configuração do Shared Catalog
-
+  <Step title="1. Habilite a configuração do Shared Catalog" id="1-enable-shared-catalog-configuration">
     Defina `featureFlags.enableSharedCatalog` como `true` nos valores do Helm. Isso habilita a configuração, mas não aciona a migração dos bancos de dados. Implantar um ClickHouse Cluster com essa flag definida como `true`, sem migrar os bancos de dados `Replicated` existentes, fará com que o ClickHouse Cluster não consiga iniciar.
   </Step>
 
-  <Step>
-    ### 2. Adicione os marcadores de migração
-
+  <Step title="2. Adicione os marcadores de migração" id="2-add-the-migration-markers">
     Defina `featureFlags.migrateToSharedCatalog` como `true` nos valores do Helm. Isso:
 
     * Adiciona a configuração `shared_database_catalog.migration_from_database_replicated` ao ClickHouse, informando que ele deve esperar bancos de dados `Replicated` existentes enquanto opera no modo Shared Catalog
@@ -104,23 +92,17 @@ Antes de iniciar a migração, verifique os seguintes pré-requisitos:
     Depois da implantação, o Operator acionará uma atualização gradual dos nós do servidor. Isso também alterará os tipos de todos os bancos de dados para `Shared`.
   </Step>
 
-  <Step>
-    ### 3. Aguarde até que o status seja Ready
-
+  <Step title="3. Aguarde até que o status seja Ready" id="3-wait-for-the-status-to-be-ready">
     ```bash
     kubectl get ClickHouseCluster <instance-name>
     ```
   </Step>
 
-  <Step>
-    ### 4. Remova os marcadores de migração
-
+  <Step title="4. Remova os marcadores de migração" id="4-remove-the-migration-markers">
     Quando o status estiver Ready, defina `featureFlags.migrateToSharedCatalog` como `false` nos valores do Helm. Como todos os bancos de dados já foram migrados para o tipo `Shared`, em vez de `Replicated`, as configurações de migração não são mais relevantes.
   </Step>
 
-  <Step>
-    ### 5. Verifique se todos os bancos de dados foram migrados
-
+  <Step title="5. Verifique se todos os bancos de dados foram migrados" id="5-verify-all-databases-are-migrated">
     Confirme que todos os bancos de dados que não são do sistema usam o engine `Shared`:
 
     ```sql
@@ -143,21 +125,15 @@ Antes de iniciar a migração, verifique os seguintes pré-requisitos:
 Se houver qualquer problema com o Shared Catalog, você pode reverter para o estado anterior:
 
 <Steps>
-  <Step>
-    ### 1. Remova os marcadores de migração
-
+  <Step title="1. Remova os marcadores de migração" id="1-remove-the-migration-markers">
     Defina `featureFlags.migrateToSharedCatalog` como `false` nos valores do Helm.
   </Step>
 
-  <Step>
-    ### 2. Remova as configurações do Shared Catalog
-
+  <Step title="2. Remova as configurações do Shared Catalog" id="2-remove-the-shared-catalog-settings">
     Defina `featureFlags.enableSharedCatalog` como `false` nos valores do Helm. Isso fará com que o Operator reverta as alterações.
   </Step>
 
-  <Step>
-    ### 3. Remova o catálogo no Keeper
-
+  <Step title="3. Remova o catálogo no Keeper" id="3-remove-the-catalog-in-keeper">
     Crie um redirecionamento de porta para o Keeper e inicie uma sessão do keeper-client (usando `clickhouse keeper-client`).
 
     Depois que a sessão for iniciada, execute os seguintes comandos:
@@ -174,9 +150,7 @@ Se houver qualquer problema com o Shared Catalog, você pode reverter para o est
     Isso limpará todo o estado do Shared Catalog no Keeper.
   </Step>
 
-  <Step>
-    ### 4. Verifique a reversão
-
+  <Step title="4. Verifique a reversão" id="4-verify-rollback">
     Confirme que todos os bancos de dados que não são do sistema estão usando o engine Replicated novamente:
 
     ```sql
