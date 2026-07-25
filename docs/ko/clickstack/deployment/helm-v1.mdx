@@ -48,17 +48,13 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
 <br />
 
 <Steps>
-  <Step>
-    ### 사전 요구 사항
-
+  <Step title="사전 요구 사항" id="prerequisites">
     * [Helm](https://helm.sh/) v3+
     * Kubernetes 클러스터(v1.20+ 권장)
     * 클러스터와 상호 작용하도록 구성된 `kubectl`
   </Step>
 
-  <Step>
-    ### ClickStack Helm 리포지토리 추가
-
+  <Step title="ClickStack Helm 리포지토리 추가" id="add-the-clickstack-helm-repository">
     ClickStack Helm 리포지토리를 추가하세요:
 
     ```shell
@@ -67,9 +63,7 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
     ```
   </Step>
 
-  <Step>
-    ### ClickStack 설치
-
+  <Step title="ClickStack 설치" id="installing-clickstack">
     기본 values를 사용해 ClickStack 차트를 설치하려면:
 
     ```shell
@@ -77,9 +71,7 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
     ```
   </Step>
 
-  <Step>
-    ### 설치 확인
-
+  <Step title="설치 확인" id="verify-the-installation">
     설치가 올바르게 완료되었는지 확인합니다:
 
     ```shell
@@ -89,9 +81,7 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
     모든 파드가 준비되면 다음 단계로 진행하세요.
   </Step>
 
-  <Step>
-    ### 포트 포워딩
-
+  <Step title="포트 포워딩" id="forward-ports">
     포트 포워딩을 사용하면 HyperDX에 접속하여 설정할 수 있습니다. 프로덕션 환경에 배포하는 경우에는 적절한 네트워크 접근, TLS 종료, 확장성을 보장할 수 있도록 대신 인그레스 또는 로드 밸런서를 통해 서비스를 외부에 노출해야 합니다. 포트 포워딩은 로컬 개발이나 일회성 관리 작업에 가장 적합하며, 장기 운영 환경이나 고가용성 환경에는 적합하지 않습니다.
 
     ```shell
@@ -107,9 +97,7 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
     </Tip>
   </Step>
 
-  <Step>
-    ### UI로 이동
-
+  <Step title="UI로 이동" id="navigate-to-the-ui">
     HyperDX UI에 접속하려면 [http://localhost:8080](http://localhost:8080)으로 이동하십시오.
 
     요구 사항을 충족하는 사용자 이름과 비밀번호를 입력하여 사용자를 생성하십시오.
@@ -125,9 +113,7 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
     </Info>
   </Step>
 
-  <Step>
-    ### values 사용자 지정(선택 사항)
-
+  <Step title="values 사용자 지정(선택 사항)" id="customizing-values">
     `--set` 플래그를 사용해 설정을 사용자 지정할 수 있습니다. 예를 들면 다음과 같습니다:
 
     ```shell
@@ -167,9 +153,7 @@ ClickStack용 helm 차트는 [여기](https://github.com/ClickHouse/ClickStack-h
     ```
   </Step>
 
-  <Step>
-    ### 시크릿 사용(선택 사항)
-
+  <Step title="시크릿 사용(선택 사항)" id="using-secrets">
     API Key 또는 데이터베이스 자격 증명과 같은 민감한 데이터를 처리하려면 Kubernetes 시크릿을 사용하세요. HyperDX Helm 차트에는 수정한 뒤 클러스터에 적용할 수 있는 기본 시크릿 파일이 포함되어 있습니다.
 
     #### 미리 구성된 시크릿 사용

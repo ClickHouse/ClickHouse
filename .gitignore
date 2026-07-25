@@ -1,6 +1,9 @@
 # local CI environment overrides (see ci/local.env.example)
 ci/local.env
 
+# scratch / temporary working files
+/tmp/
+
 # emacs files
 *~
 *\#
