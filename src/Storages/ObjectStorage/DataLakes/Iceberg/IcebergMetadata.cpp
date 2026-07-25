@@ -1165,14 +1165,14 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
     /// Reaching this point means some manifest list row counts are missing or the snapshot
-    /// has delete manifests. The summary hint may only be used as a last resort in format v1,
-    /// where the row counts in the manifest list are legitimately optional. In format v2+
-    /// they are required, so their absence means the metadata is malformed and the summary
-    /// (produced by the same writer) must not be trusted either -- fall through to the
-    /// manifest scan, which derives the counts from the manifest files themselves.
+    /// has delete manifests. Missing counts can only be a legitimate v1 absence: for v2+
+    /// manifest lists getManifestList() throws on missing counts, keyed off the manifest
+    /// list's own format version rather than the table's `format-version` (an externally
+    /// upgraded table may still reference v1 manifest lists). So the summary hint may be
+    /// used as the last resort for such v1 snapshots without delete manifests.
     /// Snapshots with delete manifests never use the summary: it is maintained incrementally
     /// by writers just like `total-records`, so a corrupted commit poisons it the same way.
-    if (!has_delete_manifests && persistent_components.format_version < 2 && summary_total_rows.has_value())
+    if (!has_delete_manifests && summary_total_rows.has_value())
     {
         ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
         return summary_total_rows;

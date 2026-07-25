@@ -8,6 +8,11 @@
 -- trivial count optimization must NOT be applied and count() must fall back to a real
 -- scan that applies the equality delete transformers.
 
+-- Warm up the Iceberg metadata and delete-file state with a plain column read first:
+-- the assertions below must not depend on cold-cache first-read behavior of the scan
+-- layer under heavy parallel load, which is not what this test guards.
+SELECT count(name) FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') FORMAT Null;
+
 -- Must return the live row count, not 1010 (summary) and not 980 (data rows minus
 -- position deletes only). The setting is pinned because the test runner randomizes it.
 SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') SETTINGS optimize_trivial_count_query = 1;
