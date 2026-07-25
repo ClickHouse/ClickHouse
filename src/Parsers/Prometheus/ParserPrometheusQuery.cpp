@@ -76,6 +76,8 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     table_exp->table_function = table_function;
     table_exp->children.emplace_back(table_exp->table_function);
     table->table_expression = table_exp;
+    /// AST visitors traverse children, not members, so the table expression must be linked as a child too.
+    table->children.push_back(table->table_expression);
     tables->children.push_back(table);
     select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
