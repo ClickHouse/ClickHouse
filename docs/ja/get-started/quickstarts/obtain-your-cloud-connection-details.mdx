@@ -15,7 +15,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">リアルタイムアナリティクス</Badge>
+  <Badge size="lg" color="blue">リアルタイム分析</Badge>
   <Badge size="lg" color="blue">データウェアハウジング</Badge>
   <Badge size="lg" color="blue">オブザーバビリティ</Badge>
   <Badge size="lg" color="blue">AI/ML</Badge>
@@ -40,17 +40,13 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 完了する頃には、Cloud console のどこでこれらの情報を確認できるか、また簡単な `curl` コマンドで接続を確認する方法がわかり、`clickhouse-local`、`clickhouse-client`、または任意の ClickHouse ドライバーから接続する準備が整います。
 
 <Steps titleSize="h3">
-  <Step>
-    ### Cloud console を開く
-
+  <Step title="Cloud console を開く" id="open-the-cloud-console">
     [ClickHouse Cloud console](https://console.clickhouse.cloud/) にアクセスし、アカウントにサインインします。
 
     メインのダッシュボードで、接続したいサービスを探します。サービスが idled 状態の場合は、そのサービスをクリックして再開するまで待ってから次に進んでください。後のステップで接続を確認するには、サービスが Running になっている必要があります。
   </Step>
 
-  <Step>
-    ### 接続情報を確認する
-
+  <Step title="接続情報を確認する" id="find-your-connection-details">
     サービスをクリックして詳細ページを開き、左側のサイドバーにある **Connect** ボタンをクリックします。
 
     <img className="block dark:hidden w-2/3 mx-auto" src="/images/get-started/quickstarts/connect-light.webp" alt="ClickHouse Cloud console の Connect ボタン（ライトモード）" />
@@ -59,9 +55,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 
     このボタンを初めてクリックすると、認証情報を表示するダイアログが表示されます。
 
-    | 詳細           | 説明                        |
-    | ------------ | ------------------------- |
-    | **ユーザー名** | ユーザー名 (通常は `default`)  |
+    | 詳細        | 説明                    |
+    | --------- | --------------------- |
+    | **ユーザー名** | ユーザー名 (通常は `default`) |
     | **パスワード** | サービス用に生成されたパスワード      |
 
     また、異なるプロトコルやインターフェイス (例: `clickhouse-client`、HTTPS、JDBC など) 向けにあらかじめ整形された Example の接続文字列を選べるドロップダウンもあり、そこから直接コピーできます。
@@ -70,30 +66,26 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
       認証情報 ファイルをダウンロードするか、パスワード をコピーして安全な場所に保存してください。このダイアログを閉じると、パスワード は再表示できません。
     </Warning>
 
-    サービスの詳細ページには、サービスの **ホスト名** (例: `abc123.us-east-1.aws.clickhouse.cloud`) も表示されます。認証情報 とあわせてコピーしてください。以降のステップや後続の quickstarts で必要になります。
+    サービスの詳細ページには、サービスの **ホスト名** (例: `abc123.us-east-1.aws.clickhouse.cloud`) も表示されます。認証情報 とあわせてコピーしてください。以降のステップや後続の クイックスタート で必要になります。
 
     <Note>
       パスワード を紛失した場合は、Cloud console のサービスの **Settings** タブからリセットできます。
     </Note>
   </Step>
 
-  <Step>
-    ### 接続プロトコルを理解する
-
+  <Step title="接続プロトコルを理解する" id="understand-the-connection-protocols">
     ClickHouse Cloud では、主要なネットワークプロトコルが 2 つ提供されており、それぞれ専用のポートを使用します。
 
-    * **ネイティブプロトコル (port 9440)&#x20;**&#x20;- `clickhouse-client`、`clickhouse-local`、およびほとんどの言語向けドライバーで使われるバイナリプロトコルです。最も高速で、ClickHouse のすべての機能を利用できます。Cloud では TLS が必須です。
-    * **HTTPS プロトコル (port 8443)&#x20;**&#x20;- REST クライアント、`curl`、Web ベースのツール、HTTP を優先するドライバーに適した HTTP ベースのインターフェイスです。こちらも Cloud では TLS が必須です。
+    * **ネイティブプロトコル (port 9440)** - `clickhouse-client`、`clickhouse-local`、およびほとんどの言語向けドライバーで使われるバイナリプロトコルです。最も高速で、ClickHouse のすべての機能を利用できます。Cloud では TLS が必須です。
+    * **HTTPS プロトコル (port 8443)** - REST クライアント、`curl`、Web ベースのツール、HTTP を優先するドライバーに適した HTTP ベースのインターフェイスです。こちらも Cloud では TLS が必須です。
 
     ClickHouse Cloud に接続する際は、どちらのプロトコルでも TLS 暗号化が必須で、平文では接続できません。多くのツールは正しいポートを指定すれば自動的に処理しますが、クライアントによっては `--secure` フラグの指定や `ssl=true` の設定が必要になる場合があります。
 
-    このシリーズのほとんどの quickstarts と CLI ワークフローでは、**port 9440 のネイティブプロトコル** を使用します。
+    このシリーズのほとんどの クイックスタート と CLI ワークフローでは、**port 9440 のネイティブプロトコル** を使用します。
   </Step>
 
-  <Step>
-    ### 再利用できるように接続情報を保存する
-
-    これらの接続情報は quickstarts 全体で頻繁に使用します。毎回入力し直さなくて済むように、ターミナルセッションで環境変数として export できます。
+  <Step title="再利用できるように接続情報を保存する" id="save-your-connection-details-for-reuse">
+    これらの接続情報は クイックスタート 全体で頻繁に使用します。毎回入力し直さなくて済むように、ターミナルセッションで環境変数として export できます。
 
     ```bash
     export CLICKHOUSE_HOST=YOUR_HOST.clickhouse.cloud
@@ -111,7 +103,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## 次のステップ
+<div id="next-steps">
+  ## 次のステップ
+</div>
 
 これで、任意の外部ツールから ClickHouse Cloud サービスに接続するために必要な接続情報がすべて揃いました。ここで確認したホスト名、ポート、ユーザー名、パスワードは、この後のクイックスタート全体で使用します。
 
