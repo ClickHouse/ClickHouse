@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTWatchQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <algorithm>
@@ -94,6 +95,11 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
 bool queryRequiresMutatingMethod(const IAST & query)
 {
     if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+        return false;
+    /// `ASTWatchQuery` reports `QueryKind::Create`, but WATCH is a read-only streaming query:
+    /// `InterpreterWatchQuery` checks only `SELECT` access, so it is runnable under `readonly = 2`
+    /// (the mode a safe HTTP method such as `GET` sets) and must not require a mutating method.
+    if (query.as<ASTWatchQuery>())
         return false;
     return queryKindRequiresMutatingMethod(query.getQueryKind());
 }
