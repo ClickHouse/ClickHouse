@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -606,6 +607,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
 #if USE_AVRO
     mutable IcebergMetadataFilesCachePtr iceberg_metadata_files_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized iceberg metadata files.
+    mutable PaimonMetadataFilesCachePtr paimon_metadata_files_cache TSA_GUARDED_BY(mutex);     /// Cache of deserialized paimon metadata files.
 #endif
 #if USE_PARQUET
     mutable ParquetMetadataCachePtr parquet_metadata_cache TSA_GUARDED_BY(mutex);   /// Cache of deserialized parquet metadata files.
@@ -699,7 +701,7 @@ struct ContextSharedPart : boost::noncopyable
     /// Only for system.server_settings, actually value stored in reloader itself
     std::atomic_size_t config_reload_interval_ms = ConfigReloader::DEFAULT_RELOAD_INTERVAL.count();
 
-    /// Optional server-wide override for the new analyzer in mutations.
+    /// Optional server-wide override for the analyzer in mutations.
     /// Encoded as a tri-state: -1 = unset (use session setting), 0 = force off, 1 = force on.
     /// Refreshed on config reload.
     std::atomic<int8_t> mutations_use_analyzer_override = -1;
@@ -743,8 +745,10 @@ struct ContextSharedPart : boost::noncopyable
     RemoteHostFilter remote_host_filter;                    /// Allowed URL from config.xml
     HTTPHeaderFilter http_header_filter;                    /// Forbidden HTTP headers from config.xml
 
-    /// No lock required for trace_collector modified only during initialization
     std::optional<TraceCollector> trace_collector;          /// Thread collecting traces from threads executing queries
+    /// Presence flag read concurrently by worker threads (ThreadStatus::initGlobalProfiler)
+    /// while shutdown() destroys trace_collector, so it must be atomic rather than optional::has_value().
+    std::atomic<bool> has_trace_collector = false;
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -1130,6 +1134,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_access_control = std::move(access_control);
 
             /// Stop trace collector if any
+            has_trace_collector = false;
             trace_collector.reset();
         }
 
@@ -1194,7 +1199,7 @@ struct ContextSharedPart : boost::noncopyable
 
     bool hasTraceCollector() const
     {
-        return trace_collector.has_value();
+        return has_trace_collector.load();
     }
 
     void initializeTraceCollector(std::shared_ptr<TraceLog> trace_log)
@@ -1207,10 +1212,11 @@ struct ContextSharedPart : boost::noncopyable
 
     void createTraceCollector()
     {
-        if (hasTraceCollector())
+        if (trace_collector.has_value())
             return;
 
         trace_collector.emplace();
+        has_trace_collector = true;
     }
 
     void addOrUpdateWarningMessage(Context::WarningType warning, const PreformattedMessage & message) TSA_REQUIRES(mutex)
@@ -1801,7 +1807,7 @@ void Context::setFilesystemCachesPath(const String & path)
     shared->filesystem_caches_path = path;
 }
 
-void Context::setFilesystemCacheUser(const String & user)
+void Context::setFilesystemCacheUser(const String & user) const
 {
     std::lock_guard lock(shared->mutex);
     shared->filesystem_cache_user = user;
@@ -2811,6 +2817,20 @@ void Context::addQueryAccessInfo(
         query_access_info->columns.emplace(full_quoted_table_name + "." + backQuoteIfNeed(column_name));
 }
 
+void Context::removeQueryAccessInfoTable(const String & full_quoted_table_name)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard lock(query_access_info->mutex);
+    query_access_info->tables.erase(full_quoted_table_name);
+
+    /// Also drop any columns recorded under this table. The internal temporary table is normally recorded
+    /// without columns, so this is defensive.
+    const String prefix = full_quoted_table_name + ".";
+    std::erase_if(query_access_info->columns, [&](const String & column) { return column.starts_with(prefix); });
+}
+
 void Context::addQueryAccessInfo(const Names & partition_names)
 {
     if (isGlobalContext())
@@ -2979,7 +2999,17 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
 
             ASTCreateQuery create;
             create.set(create.select, query);
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, getQueryContext());
+
+            /// The sample block must be analyzed under the view's SQL security context, not the
+            /// invoker's (mirrors buildParameterizedViewStorage).
+            auto sql_security = make_intrusive<ASTSQLSecurity>();
+            sql_security->type = view_metadata->sql_security_type;
+            if (view_metadata->definer)
+                sql_security->definer = make_intrusive<ASTUserNameWithHost>(*view_metadata->definer);
+            create.set(create.sql_security, sql_security);
+
+            auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
@@ -4915,6 +4945,49 @@ std::shared_ptr<IcebergMetadataFilesCache> Context::getIcebergMetadataFilesCache
 void Context::clearIcebergMetadataFilesCache() const
 {
     auto cache = getIcebergMetadataFilesCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->paimon_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache has been already created.");
+
+    shared->paimon_metadata_files_cache = std::make_shared<PaimonMetadataFilesCache>(cache_policy, max_size_in_bytes, max_entries, size_ratio);
+}
+
+void Context::updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->paimon_metadata_files_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Paimon metadata cache was not created yet.");
+
+    size_t size = config.getUInt64("paimon_metadata_files_cache_size", DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("paimon_metadata_files_cache_max_entries", DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->paimon_metadata_files_cache->setMaxSizeInBytes(size);
+    shared->paimon_metadata_files_cache->setMaxCount(max_entries);
+}
+
+std::shared_ptr<PaimonMetadataFilesCache> Context::getPaimonMetadataFilesCache() const
+{
+    std::lock_guard lock(shared->mutex);
+    return shared->paimon_metadata_files_cache;
+}
+
+void Context::clearPaimonMetadataFilesCache() const
+{
+    auto cache = getPaimonMetadataFilesCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -7628,7 +7701,7 @@ void Context::setCurrentUserName(const String & current_user_name)
 
 void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
 {
-    client_info.current_address = std::make_shared<Poco::Net::SocketAddress>(current_address);
+    client_info.current_address = Poco::Net::SocketAddress(current_address);
     need_recalculate_access = true;
 }
 
@@ -7646,7 +7719,7 @@ void Context::setAuthenticatedUserName(const String & authenticated_user_name)
 
 void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
 {
-    client_info.initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address);
+    client_info.initial_address = Poco::Net::SocketAddress(initial_address);
 }
 
 void Context::setInitialQueryId(const String & initial_query_id)

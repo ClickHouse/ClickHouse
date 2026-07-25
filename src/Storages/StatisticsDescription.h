@@ -17,6 +17,7 @@ enum class StatisticsType : UInt8
     CountMinSketch = 2,
     MinMax = 3,
     Basic = 4, /// Min, max, string-length min/max, and null count, depending on the column type.
+    UniqV2 = 5,
 
     Max = 63,
 };

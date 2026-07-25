@@ -18,7 +18,9 @@ The ClickHouse data source defaults to the public read-only demo cluster, so the
 
 Open [http://localhost:5001](http://localhost:5001). You will see a year selector, summary statistics, an activity chart, top users and domains tables, and a search box. Click around: switch years, drill into stories.
 
-<Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="The HackerNews Analyzer application running locally"/>
+<Frame>
+  <img src="/images/clickstack/getting-started/hackernews_main.webp" alt="The HackerNews Analyzer application running locally" />
+</Frame>
 
 At this point the application is running but uninstrumented. ClickStack shows no data: it is waiting for telemetry. This is the "before" state.
 </Step>
@@ -101,15 +103,21 @@ Open the ClickStack UI:
 
 1. Go to **Search** and filter to the last 5 minutes. Logs for `hn-analyzer-api` stream in.
 
-<Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack Logs"/>
+<Frame>
+  <img src="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="ClickStack Logs" />
+</Frame>
 
 2. Click into a request and walk up the trace. You will see the Express handler span, a child HTTP span pointing at the ClickHouse cluster with real network duration, and correlated `console.log` records on the same trace.
 
-<Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack Traces"/>
+<Frame>
+  <img src="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="ClickStack Traces" />
+</Frame>
 
 3. Open **Session Replay** to play back a scrubbable video of a browser session, synced to the trace timeline.
 
-<Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack Sessions"/>
+<Frame>
+  <img src="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="ClickStack Sessions" />
+</Frame>
 
 Logs, metrics, traces, and session replays all land in the same UI, share the same query language, and are correlated automatically.
 </Step>
