@@ -948,9 +948,9 @@ ENGINE = MergeTree()
 ORDER BY key
 TTL toDateTime(CAST(state, 'Dynamic')); -- { serverError BAD_TTL_EXPRESSION }
 
--- A carrier computed purely from non-suspect inputs keeps the fail-closed static enumeration (its
--- runtime payloads can be data-dependent): here the runtime payload is always `UInt32`, which
--- `finalizeAggregation` cannot consume, so the rejection is also the correct outcome.
+-- A typed CAST of a non-suspect column propagates its actual output domain: here the runtime payload
+-- is always `UInt32` (the cast picks the matching alternative), which `finalizeAggregation` cannot
+-- consume, so the TTL is rejected against the real domain.
 CREATE TABLE test_ttl_agg_untainted_carrier_reject
 (
     key UInt64,
@@ -1021,3 +1021,55 @@ TTL toDateTime(if(cond, CAST(state, 'Dynamic'), CAST(0, 'Dynamic')));
 DROP TABLE test_ttl_agg_selected_carrier_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- A typed CAST of an ordinary column to Dynamic can only ever store the payload type derived from the
+-- source type (here `String`), so its consumer must not be probed with synthetic AggregateFunction
+-- payloads the cast can never produce.
+CREATE TABLE test_ttl_cast_plain_string_accept
+(
+    s String,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE length(CAST(s, 'Dynamic')) > 3;
+
+DROP TABLE test_ttl_cast_plain_string_accept;
+
+-- The representative source value for the cast probe is non-NULL, so a Nullable source still exercises
+-- the consumer on the actual payload type instead of a NULL row that would short-circuit it.
+CREATE TABLE test_ttl_cast_nullable_string_accept
+(
+    ns Nullable(String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE length(CAST(ns, 'Dynamic')) > 3;
+
+DROP TABLE test_ttl_cast_nullable_string_accept;
+
+-- Containers are materialized with one element for the cast probe, so element-level consumers of the
+-- cast result are validated against the actual element payload type (accepted: `length` of a `String`
+-- element works) instead of an empty default that would hide them.
+CREATE TABLE test_ttl_cast_array_accept
+(
+    arr Array(String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE arrayExists(x -> length(x) > 3, CAST(arr, 'Array(Dynamic)'));
+
+DROP TABLE test_ttl_cast_array_accept;
+
+-- A consumer that cannot handle the cast's actual payload type is still rejected: the runtime payload
+-- of `CAST(s, 'Dynamic')` is `String`, which `finalizeAggregation` cannot consume.
+CREATE TABLE test_ttl_cast_plain_string_reject
+(
+    s String,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY tuple()
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(CAST(s, 'Dynamic'))); -- { serverError BAD_TTL_EXPRESSION }
