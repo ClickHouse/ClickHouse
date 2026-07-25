@@ -32,6 +32,14 @@
     "destination": "/get-started/migrate/postgres/overview"
   },
   {
+    "source": "/get-started/migrate/bigquery",
+    "destination": "/get-started/migrate/bigquery/overview"
+  },
+  {
+    "source": "/get-started/migrate/bigquery/index",
+    "destination": "/get-started/migrate/bigquery/overview"
+  },
+  {
     "source": "/products/cloud/features/admin-features/api",
     "destination": "/products/cloud/features/admin-features/api/api-overview"
   },
@@ -4730,10 +4738,6 @@
   {
     "destination": "/integrations/language-clients/java/date-time-guide",
     "source": "/integrations/language-clients/java/jdbc_date_time_guide"
-  },
-  {
-    "destination": "/integrations/language-clients/java/index",
-    "source": "/integrations/language-clients/java/r2dbc"
   },
   {
     "destination": "/integrations/language-clients/js/index",
@@ -9572,7 +9576,7 @@
     "source": "/jp/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/ja/integrations/language-clients/java",
+    "destination": "/ja/integrations/language-clients/java/r2dbc",
     "source": "/jp/integrations/language-clients/java/r2dbc"
   },
   {
@@ -20332,10 +20336,6 @@
     "source": "/ko/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/ko/integrations/language-clients/java",
-    "source": "/ko/integrations/language-clients/java/r2dbc"
-  },
-  {
     "destination": "/ko/integrations/language-clients/js",
     "source": "/ko/integrations/language-clients/javascript"
   },
@@ -26872,7 +26872,7 @@
     "source": "/merges"
   },
   {
-    "destination": "/get-started/migrate/bigquery",
+    "destination": "/get-started/migrate/bigquery/overview",
     "source": "/migrations/bigquery"
   },
   {
@@ -32446,10 +32446,6 @@
   {
     "destination": "/ru/integrations/language-clients/java/date-time-guide",
     "source": "/ru/integrations/language-clients/java/jdbc_date_time_guide"
-  },
-  {
-    "destination": "/ru/integrations/language-clients/java",
-    "source": "/ru/integrations/language-clients/java/r2dbc"
   },
   {
     "destination": "/ru/integrations/language-clients/js",
@@ -46010,10 +46006,6 @@
   {
     "destination": "/zh/integrations/language-clients/java/date-time-guide",
     "source": "/zh/integrations/language-clients/java/jdbc_date_time_guide"
-  },
-  {
-    "destination": "/zh/integrations/language-clients/java",
-    "source": "/zh/integrations/language-clients/java/r2dbc"
   },
   {
     "destination": "/zh/integrations/language-clients/js",
