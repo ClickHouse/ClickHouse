@@ -46,10 +46,11 @@ Notes on data coverage:
   * `binary_sizes` is complete on both sides; `binary_symbols` is complete on
     the PR side and on master builds since this check was introduced.
 
-Local run (bypasses AWS SSM secrets and GitHub):
+Local run (no AWS SSM secrets and no PR comment; `gh` is still required, to
+enumerate master history from the provided baseline):
   CI_LOGS_HOST=... CI_LOGS_PASSWORD=... CI_LOGS_USER=default \\
   python3 -m ci.jobs.build_profile_diff_job \\
-      --local --pr-sha <sha> --pr-number <n> [--base-sha <sha>]
+      --local --pr-sha <sha> --pr-number <n> --base-sha <sha>
 """
 
 import argparse
@@ -413,6 +414,19 @@ def extend_master_shas(master_shas: List[str], days: int = TU_BASE_DAYS, list_pa
     # the window under normal merge rates), unlike the unbounded API failure.
     print(f"WARNING: the master chain still does not span {days} days after {EXTEND_MAX_PAGES} pages ({len(shas)} commits)")
     return shas
+
+
+def seed_master_shas(anchor_sha: str, list_page=_list_commits_page) -> List[str]:
+    """The master chain for a local run, anchored at the provided baseline.
+
+    Local runs have no `master_track_commits_sha` kv metadata (`LocalInfo`
+    carries none), so the chain is seeded with the first ~100 ancestors of the
+    `--base-sha` commit from the GitHub API - the same shape, and the same
+    anchoring guarantee (every sha is an ancestor of the baseline), that the
+    store_data hook records in CI. `extend_master_shas` then grows it further
+    back for the per-TU window as usual.
+    """
+    return [commit["sha"] for commit in list_page(anchor_sha, 1)]
 
 
 def find_baseline(db: Db, master_shas: List[str], pr_sha: str) -> Optional[str]:
@@ -1101,7 +1115,7 @@ def main():
     parser.add_argument("--local", action="store_true", help="local run: no GH comment, print to stdout")
     parser.add_argument("--pr-sha", help="override the PR-side commit sha")
     parser.add_argument("--pr-number", type=int, help="override the PR number")
-    parser.add_argument("--base-sha", help="override the baseline master sha")
+    parser.add_argument("--base-sha", help="override the baseline master sha (required with --local)")
     args = parser.parse_args()
 
     info = LocalInfo() if args.local else Info()
@@ -1133,6 +1147,13 @@ def main():
         return
 
     master_shas = get_master_shas(info)
+    if args.local and not master_shas:
+        # Local runs have no CI kv metadata: without a chain the warmup and
+        # per-TU baseline lookups find nothing and `commit_sha IN ()` is not
+        # even a valid query, so anchor the chain on the provided baseline.
+        if not args.base_sha:
+            raise RuntimeError("A local run has no CI master-chain metadata - pass --base-sha to anchor the baseline")
+        master_shas = seed_master_shas(args.base_sha)
     base_sha = args.base_sha or find_baseline(db, master_shas, pr_sha)
     if not base_sha:
         # Fail-close: no baseline means no comparison, not a comparison against

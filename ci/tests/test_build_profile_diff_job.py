@@ -523,6 +523,31 @@ def test_extend_master_shas_pages_past_the_anchored_chain():
     assert job.extend_master_shas([], list_page=failing_list_page) == []
 
 
+def test_seed_master_shas_anchors_the_local_chain_on_the_baseline():
+    """A local run seeds the master chain from ``--base-sha``.
+
+    ``LocalInfo`` carries no ``master_track_commits_sha`` kv metadata, so
+    without seeding the warmup and per-TU baseline lookups see an empty
+    candidate set and ``compare_compile_times`` builds ``commit_sha IN ()``.
+    The seed is the first page of the baseline's ancestors - anchored, like
+    the CI chain, so it never contains commits the PR does not have.
+    """
+    calls = []
+
+    def fake_list_page(anchor, page):
+        calls.append((anchor, page))
+        return [{"sha": "basesha", "date": "2026-01-01T00:00:00Z"}] + [
+            {"sha": f"c{i}", "date": "2026-01-01T00:00:00Z"} for i in range(99)
+        ]
+
+    shas = job.seed_master_shas("basesha", list_page=fake_list_page)
+    assert calls == [("basesha", 1)]
+    # The baseline itself leads the chain, so `find_warmup_baseline` and the
+    # per-TU baseline consider it and everything behind it.
+    assert shas[0] == "basesha"
+    assert len(shas) == 100
+
+
 def test_comment_attributes_only_object_sizes_to_the_warmup_sha():
     """The header must not pin compile times to the object-size warmup commit.
 
