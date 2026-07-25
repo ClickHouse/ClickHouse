@@ -1164,20 +1164,14 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         return static_cast<size_t>(manifest_list_rows);
     }
 
-    /// Reaching this point means some manifest list row counts are missing or the snapshot
-    /// has delete manifests. Missing counts can only be a legitimate v1 absence: for v2+
-    /// manifest lists getManifestList() throws on missing counts, keyed off the manifest
-    /// list's own format version rather than the table's `format-version` (an externally
-    /// upgraded table may still reference v1 manifest lists). So the summary hint may be
-    /// used as the last resort for such v1 snapshots without delete manifests.
-    /// Snapshots with delete manifests never use the summary: it is maintained incrementally
-    /// by writers just like `total-records`, so a corrupted commit poisons it the same way.
-    if (!has_delete_manifests && summary_total_rows.has_value())
-    {
-        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-        return summary_total_rows;
-    }
-
+    /// Reaching this point means some manifest list row counts are missing (legitimate in
+    /// v1 manifest lists, malformed metadata in v2+) or the snapshot has delete manifests.
+    /// Either way the snapshot summary hint is not used as a data source: it is maintained
+    /// incrementally by writers just like `total-records`, so a corrupted commit in the
+    /// table history poisons it silently -- the very bug this code guards against. Instead,
+    /// scan the manifest files: their file-level `record_count` is required in all format
+    /// versions, so the result is exact at the cost of opening the manifest files (which
+    /// are served from the Iceberg metadata cache on repeated queries).
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {

@@ -218,30 +218,21 @@ ManifestFileCacheKeys getManifestList(
                 manifest_list_deserializer.getValueFromRowByName(i, f_partition_spec_id, TypeIndex::Int32).safeGet<Int32>());
 
             /// Row counts let totalRows() compute an exact count without opening manifest
-            /// files. They are required in v2+ manifest lists and optional in v1, and like
-            /// the `sequence_number`/`content` columns above this is governed by the manifest
-            /// list's own format version, not the table's `format-version`: an externally
-            /// upgraded table may still reference v1 manifest lists. Missing, null or
-            /// negative values in v2+ violate the spec (like the other required fields
-            /// checked in this loop), so after this point std::nullopt counts can only mean
-            /// a legitimate v1 absence and totalRows() may fall back to the summary hint.
+            /// files. They are required in v2+ manifest lists and optional in v1 (per the
+            /// manifest list's own format version: an externally upgraded table may still
+            /// reference v1 manifest lists). Missing, null or negative values are parsed as
+            /// absent rather than rejected -- they are only needed for the count shortcut,
+            /// so their absence must not make the table unreadable. totalRows() falls back
+            /// to scanning the manifest files, whose file-level `record_count` is required
+            /// in all format versions, and never trusts the snapshot summary hint.
             auto read_rows_count = [&](const String & field) -> std::optional<UInt64>
             {
-                if (manifest_list_deserializer.hasPath(field))
-                {
-                    auto value = manifest_list_deserializer.getValueFromRowByName(i, field);
-                    if (!value.isNull() && value.safeGet<Int64>() >= 0)
-                        return static_cast<UInt64>(value.safeGet<Int64>());
-                }
-                if (manifest_list_format_version > 1)
-                    throw Exception(
-                        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                        "Manifest list entry at index {} has missing, null or negative value for field '{}', "
-                        "but it is required in format v{}",
-                        i,
-                        field,
-                        manifest_list_format_version);
-                return std::nullopt;
+                if (!manifest_list_deserializer.hasPath(field))
+                    return std::nullopt;
+                auto value = manifest_list_deserializer.getValueFromRowByName(i, field);
+                if (value.isNull() || value.safeGet<Int64>() < 0)
+                    return std::nullopt;
+                return static_cast<UInt64>(value.safeGet<Int64>());
             };
             std::optional<UInt64> added_rows_count = read_rows_count(f_added_rows_count);
             std::optional<UInt64> existing_rows_count = read_rows_count(f_existing_rows_count);
