@@ -38,6 +38,11 @@ namespace DB::ServerSetting
     extern const ServerSettingsUInt64 max_serialized_query_plan_size;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
 
@@ -93,6 +98,26 @@ private:
     UInt64 declared_format_version;
 };
 
+/// Its deserializer throws, so any reader that actually builds the plan fails on it.
+class TestUnreadableStep : public ISourceStep
+{
+public:
+    explicit TestUnreadableStep(SharedHeader header_) : ISourceStep(std::move(header_)) { }
+
+    String getName() const override { return "TestUnreadableStep"; }
+
+    void initializePipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings & /*settings*/) override { }
+
+    bool isSerializable() const override { return true; }
+
+    void serialize(Serialization & /*ctx*/) const override { }
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & /*ctx*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "TestUnreadableStep must not be built");
+    }
+};
+
 void registerStepsOnce()
 {
     static std::once_flag flag;
@@ -111,6 +136,8 @@ void registerStepsOnce()
 
         /// Known up to payload format 1, so a tail is only acceptable above that.
         QueryPlanStepRegistry::instance().registerStep("TestTailStep", TestTailStep::deserialize);
+
+        QueryPlanStepRegistry::instance().registerStep("TestUnreadableStep", TestUnreadableStep::deserialize);
     });
 }
 
@@ -148,6 +175,15 @@ std::string serializePlan(const QueryPlan & plan, size_t version = DBMS_QUERY_PL
 {
     WriteBufferFromOwnString out;
     plan.serialize(out, version);
+    out.finalize();
+    return out.str();
+}
+
+/// The cached bytes for a version, as they would go on the wire.
+std::string cachedPlanBytes(const QueryPlan & plan, size_t version)
+{
+    WriteBufferFromOwnString out;
+    plan.writeSerializedTo(out, version);
     out.finalize();
     return out.str();
 }
@@ -265,8 +301,8 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     plan.ensureSerialized(older);
     EXPECT_TRUE(plan.isSerialized(older));
 
-    auto current_bytes = plan.getSerializedData(current);
-    auto older_bytes = plan.getSerializedData(older);
+    auto current_bytes = cachedPlanBytes(plan, current);
+    auto older_bytes = cachedPlanBytes(plan, older);
 
     /// The stream starts with the version varint, so the leading byte must differ.
     ASSERT_FALSE(current_bytes.empty());
@@ -276,7 +312,31 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
 
     /// Requests above the supported version clamp to the current one.
     plan.ensureSerialized(current + 100);
-    EXPECT_EQ(plan.getSerializedData(current + 100), current_bytes);
+    EXPECT_EQ(cachedPlanBytes(plan, current + 100), current_bytes);
+}
+
+TEST(QueryPlanSerialization, SkippingDrainsThePlanWithoutBuildingIt)
+{
+    registerStepsOnce();
+
+    QueryPlan plan;
+    plan.addStep(std::make_unique<TestUnreadableStep>(makeTestHeader()));
+    const std::string bytes = serializePlan(plan) + "sentinel";
+
+    /// Building the plan reaches the step and fails.
+    {
+        ReadBufferFromString in(bytes);
+        EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+    }
+
+    /// Draining takes the envelope off the stream without constructing anything, and stops exactly
+    /// at its end, so whatever the protocol put after it is still readable.
+    ReadBufferFromString in(bytes);
+    EXPECT_NO_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0, /*skip_data=*/true));
+
+    String rest;
+    readStringUntilEOF(rest, in);
+    EXPECT_EQ(rest, "sentinel");
 }
 
 TEST(QueryPlanSerialization, EnvelopeIsCopiedWhenTheStreamIsNotFullyBuffered)
@@ -371,7 +431,7 @@ TEST(QueryPlanSerialization, ConcurrentSendersGetTheWholePlan)
                     std::this_thread::yield();
 
                 plan.ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-                sent[i] = plan.getSerializedData(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+                sent[i] = cachedPlanBytes(plan, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
             });
         }
 

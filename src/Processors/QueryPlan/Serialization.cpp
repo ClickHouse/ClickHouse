@@ -90,15 +90,24 @@ static UInt64 effectiveSerializationVersion(size_t max_supported_version)
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = effectiveSerializationVersion(max_supported_version);
-    writeVarUInt(version, out);
 
     SerializationFlags flags;
     flags.version = version;
 
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
-        serializeEnvelope(out, flags);
-    else
-        serialize(out, flags);
+    {
+        auto chunks = serializeEnvelopeToChunks(flags);
+        /// Each chunk is released once it has been written, so the plan is not held twice.
+        for (auto & chunk : chunks)
+        {
+            out.write(chunk.data(), chunk.size());
+            String{}.swap(chunk);
+        }
+        return;
+    }
+
+    writeVarUInt(version, out);
+    serialize(out, flags);
 }
 
 void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) const
@@ -162,7 +171,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
     serializeSets(registry, out, flags);
 }
 
-void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & flags) const
+QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const SerializationFlags & flags) const
 {
     checkInitialized();
 
@@ -246,9 +255,8 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
     /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate.
     chassert(min_reader_plan_version <= flags.version);
 
-    /// Only the outline is materialized here: its size plus the payload sizes give the envelope
-    /// size the reader needs up front, so the payloads go straight to `out`. Assembling the whole
-    /// envelope first would hold another full copy of a plan that can carry large `IN` sets.
+    /// The payload sizes are known, so the envelope size the reader needs up front can be summed
+    /// without joining the payloads together.
     WriteBufferFromOwnString outline_bytes;
     writeQueryPlanOutline(outline, outline_bytes);
     outline_bytes.finalize();
@@ -259,19 +267,31 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
     for (const auto & payload : set_payloads)
         envelope_size += payload.size();
 
-    writeVarUInt(min_reader_plan_version, out);
-    writeVarUInt(envelope_size, out);
-    out.write(outline_bytes.str().data(), outline_bytes.str().size());
-    for (const auto & payload : payloads)
-        out.write(payload.data(), payload.size());
-    for (const auto & payload : set_payloads)
-        out.write(payload.data(), payload.size());
+    /// The head carries the stream version, the "needed to read" version, the envelope size and
+    /// the outline; every payload then stays the chunk it was serialized into.
+    SerializedChunks chunks;
+    chunks.reserve(1 + payloads.size() + set_payloads.size());
+
+    WriteBufferFromOwnString head;
+    writeVarUInt(flags.version, head);
+    writeVarUInt(min_reader_plan_version, head);
+    writeVarUInt(envelope_size, head);
+    head.write(outline_bytes.str().data(), outline_bytes.str().size());
+    head.finalize();
+    chunks.push_back(std::move(head.str()));
+
+    for (auto & payload : payloads)
+        chunks.push_back(std::move(payload));
+    for (auto & payload : set_payloads)
+        chunks.push_back(std::move(payload));
+
+    return chunks;
 }
 
-QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
+/// Bounds the memory one plan can take before anything is buffered. A server setting, not a query
+/// one: a query setting arrives from the sender, who could then pick its own limit.
+static UInt64 readEnvelopeSize(ReadBuffer & in, const ContextPtr & context)
 {
-    /// Bounds the memory one plan can take before anything is buffered. A server setting, not a
-    /// query one: a query setting arrives from the sender, who could then pick its own limit.
     const UInt64 max_envelope_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
 
     UInt64 envelope_size = 0;
@@ -280,6 +300,29 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan envelope declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
             envelope_size, max_envelope_bytes);
+
+    return envelope_size;
+}
+
+/// Takes the whole envelope off the stream without decoding any of it. The frame is self-delimiting,
+/// so a plan that will be discarded costs no allocation and no step construction.
+static void skipQueryPlanEnvelope(ReadBuffer & in, const ContextPtr & context)
+{
+    const UInt64 envelope_size = readEnvelopeSize(in, context);
+    try
+    {
+        in.ignore(envelope_size);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("while skipping a query plan envelope of {} bytes", envelope_size));
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+    }
+}
+
+QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
+{
+    const UInt64 envelope_size = readEnvelopeSize(in, context);
 
     /// Parsing reads the envelope through pointers into these bytes and never touches `in` again,
     /// so when the whole envelope is already buffered it can be read in place. A nested plan always
@@ -442,25 +485,46 @@ void QueryPlan::ensureSerialized(size_t max_supported_version) const
         return;  // Already serialized for this version
 
     /// The entry is published only once it is complete, so a concurrent sender either does not
-    /// see it and waits here, or gets the whole plan. Nothing is cached if `serialize` throws.
-    auto buffer = std::make_unique<WriteBufferFromOwnString>();
-    serialize(*buffer, version);
-    buffer->finalize();
-    serialized_plans.plans.emplace(version, std::move(buffer));
+    /// see it and waits here, or gets the whole plan. Nothing is cached if serializing throws.
+    SerializationFlags flags;
+    flags.version = version;
+
+    SerializedChunks chunks;
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
+    {
+        chunks = serializeEnvelopeToChunks(flags);
+    }
+    else
+    {
+        /// A legacy stream is written in one pass, so it is cached as a single chunk.
+        WriteBufferFromOwnString buffer;
+        writeVarUInt(version, buffer);
+        serialize(buffer, flags);
+        buffer.finalize();
+        chunks.push_back(std::move(buffer.str()));
+    }
+
+    serialized_plans.plans.emplace(version, std::make_shared<const SerializedChunks>(std::move(chunks)));
 }
 
-std::string_view QueryPlan::getSerializedData(size_t max_supported_version) const
+void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_version) const
 {
     UInt64 version = effectiveSerializationVersion(max_supported_version);
 
-    std::lock_guard lock(serialized_plans.mutex);
-    auto it = serialized_plans.plans.find(version);
-    if (it == serialized_plans.plans.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Query plan is not serialized for version {}. Call ensureSerialized() first.", version);
+    std::shared_ptr<const SerializedChunks> chunks;
+    {
+        std::lock_guard lock(serialized_plans.mutex);
+        auto it = serialized_plans.plans.find(version);
+        if (it == serialized_plans.plans.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Query plan is not serialized for version {}. Call ensureSerialized() first.", version);
+        chunks = it->second;
+    }
 
-    /// Cached buffers are never rewritten or dropped, so the view outlives the lock.
-    return it->second->stringView();
+    /// Written outside the lock: the entry is immutable once published, and a slow peer must not
+    /// hold up the other senders.
+    for (const auto & chunk : *chunks)
+        out.write(chunk.data(), chunk.size());
 }
 
 bool QueryPlan::isSerialized(size_t max_supported_version) const
@@ -485,6 +549,15 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         /// knowledge is ignorable, which the writer's fold guarantees for min_reader <= supported.
         UInt64 min_reader_plan_version = 0;
         readVarUInt(min_reader_plan_version, in);
+
+        /// The plan is only being drained off the connection, so the envelope frame is consumed
+        /// without parsing it: no steps are built and no set data is decoded. A plan too new to
+        /// read is drained the same way, which leaves the connection usable.
+        if (flags.skip_data)
+        {
+            skipQueryPlanEnvelope(in, context);
+            return {};
+        }
 
         if (min_reader_plan_version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,

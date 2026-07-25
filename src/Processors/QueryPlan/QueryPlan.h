@@ -113,14 +113,19 @@ public:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
+    /// A serialized plan held as the pieces it was built from. Joining them into one buffer would
+    /// hold a second full copy of a plan that can carry large `IN` sets, so they stay apart and go
+    /// to the wire one after another.
+    using SerializedChunks = std::vector<String>;
+
     /// Serializes the query plan and caches the result, keyed by the effective version
     /// (min of `max_supported_version` and the current one). The cache is per version: bytes
     /// produced for one negotiated version must not be sent to a peer that advertised an older
     /// one, and different replicas may advertise different versions within one query.
     void ensureSerialized(size_t max_supported_version) const;
 
-    /// Get cached serialized data for the effective version derived from `max_supported_version`
-    std::string_view getSerializedData(size_t max_supported_version) const;
+    /// Writes the cached bytes for the effective version derived from `max_supported_version`.
+    void writeSerializedTo(WriteBuffer & out, size_t max_supported_version) const;
 
     /// Check if already serialized for the effective version derived from max_supported_version
     bool isSerialized(size_t max_supported_version) const;
@@ -217,7 +222,7 @@ public:
 
 private:
     void serialize(WriteBuffer & out, const SerializationFlags & flags) const;
-    void serializeEnvelope(WriteBuffer & out, const SerializationFlags & flags) const;
+    SerializedChunks serializeEnvelopeToChunks(const SerializationFlags & flags) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
     static QueryPlanAndSets deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version);
 
@@ -260,7 +265,9 @@ private:
     struct SerializedPlanCache
     {
         std::mutex mutex;
-        std::map<UInt64, std::unique_ptr<WriteBufferFromOwnString>> plans;
+        /// Shared so a sender can take its entry under the lock and write it to the wire without
+        /// holding the lock across the network.
+        std::map<UInt64, std::shared_ptr<const SerializedChunks>> plans;
 
         SerializedPlanCache() = default;
 
