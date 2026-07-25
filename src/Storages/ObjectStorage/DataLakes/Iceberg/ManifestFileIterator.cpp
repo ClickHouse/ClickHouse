@@ -160,25 +160,13 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
     return true;
 }
 
-std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
+Int64 ManifestFileIterator::ManifestFileEntriesHandle::getRowsCountInAllFilesExcludingDeleted(FileContentType content) const
 {
     Int64 result = 0;
+    /// `record_count` is a required file-level field in all format versions, so the sum is
+    /// always exact: no fallback to optional per-column statistics is needed.
     for (const auto & file : getFilesWithoutDeleted(content))
-    {
-        /// Have at least one column with rows count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.rows_count.has_value())
-            {
-                result += *column_info.rows_count;
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            return std::nullopt;
-    }
+        result += file->parsed_entry->record_count;
     return result;
 }
 

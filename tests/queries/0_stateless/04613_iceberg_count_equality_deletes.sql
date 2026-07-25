@@ -9,11 +9,12 @@
 -- scan that applies the equality delete transformers.
 
 -- Must return the live row count, not 1010 (summary) and not 980 (data rows minus
--- position deletes only).
-SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table');
+-- position deletes only). The setting is pinned because the test runner randomizes it.
+SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') SETTINGS optimize_trivial_count_query = 1;
 
 -- Sanity check: same result as a full scan.
 SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') SETTINGS optimize_trivial_count_query = 0;
 
--- The trivial count optimization must not be applied when equality deletes are present.
-SELECT count() FROM (EXPLAIN SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')) WHERE explain LIKE '%Optimized trivial count%';
+-- The trivial count optimization must not be applied when equality deletes are present,
+-- even when explicitly enabled.
+SELECT count() FROM (EXPLAIN SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') SETTINGS optimize_trivial_count_query = 1) WHERE explain LIKE '%Optimized trivial count%';

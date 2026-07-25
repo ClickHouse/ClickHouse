@@ -1191,12 +1191,10 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
             return {};
 
-        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
-        if (!data_count.has_value() || !position_deletes_count.has_value())
-            return {};
-
-        result += data_count.value() - position_deletes_count.value();
+        /// `record_count` is required for every manifest entry in all format versions, so
+        /// both sums are exact and this scan cannot fail once equality deletes are ruled out.
+        result += manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA)
+            - manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
     }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);

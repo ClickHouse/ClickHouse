@@ -10,11 +10,12 @@
 -- The corrupted summary makes the server log an expected warning; keep it out of stderr.
 SET send_logs_level = 'fatal';
 
--- Trivial count enabled (default): must return the real row count, not 100.
-SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test');
+-- Trivial count enabled (pinned: the test runner randomizes this setting): must return
+-- the real row count, not 100.
+SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test') SETTINGS optimize_trivial_count_query = 1;
 
 -- Sanity check: same result as a full scan.
 SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test') SETTINGS optimize_trivial_count_query = 0;
 
 -- The optimization itself must still be applied (the fix must not silently disable it).
-SELECT count() FROM (EXPLAIN SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test')) WHERE explain LIKE '%Optimized trivial count%';
+SELECT count() FROM (EXPLAIN SELECT count() FROM icebergS3(s3_conn, filename='iceberg_corrupted_summary_test') SETTINGS optimize_trivial_count_query = 1) WHERE explain LIKE '%Optimized trivial count%';

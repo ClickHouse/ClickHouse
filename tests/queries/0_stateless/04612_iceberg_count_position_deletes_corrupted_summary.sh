@@ -60,8 +60,13 @@ with open(latest, "w") as f:
     json.dump(metadata, f)
 EOF
 
-# Trivial count must not trust the corrupted summary.
-${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --query "SELECT count() FROM ${TABLE}"
+# Trivial count must not trust the corrupted summary. The setting is pinned because the
+# test runner randomizes it, and a real scan would also print 3, hiding a regression.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=1 --query "SELECT count() FROM ${TABLE}"
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=0 --query "SELECT count() FROM ${TABLE}"
+
+# Prove the count above came from the trivial count path (manifest scan), not a data scan.
+${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=1 --query \
+    "SELECT count() FROM (EXPLAIN SELECT count() FROM ${TABLE}) WHERE explain LIKE '%Optimized trivial count%'"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"

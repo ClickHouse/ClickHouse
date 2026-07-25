@@ -56,7 +56,8 @@ public:
 
         bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
-        std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+        /// Exact: sums the required file-level `record_count` of the entries.
+        Int64 getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
@@ -90,9 +91,7 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    /// Fields with rows count in manifest files are optional
-    /// they can be absent.
-    std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
+    /// Fields with bytes count in manifest files are optional, they can be absent.
     std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
