@@ -1081,6 +1081,16 @@ static void convertNotEqualsChainToNotIn(
         not_in_function->getArguments().getNodes() = std::move(not_in_arguments);
         not_in_function->resolveAsFunction(not_in_function_resolver);
 
+        /// The caller bails out on a nullable AND, so every replaced notEquals is non-nullable. If
+        /// `notIn` is nullable (a Variant expression resolves through the variant adaptor to
+        /// Nullable(UInt8)), the rewrite would change the type ancestors already captured; keep the
+        /// original notEquals chain.
+        if (removeLowCardinality(not_in_function->getResultType())->isNullable())
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
+        }
+
         output.emplace_back(min_index, std::move(not_in_function));
     }
 }
@@ -2421,6 +2431,14 @@ private:
                 continue;
             }
 
+            /// `in` rejects Dynamic-structure arguments outright, so building it would turn a working
+            /// OR chain into an error. Keep the original comparisons.
+            if (expression.node->getResultType()->hasDynamicStructure())
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
+
             bool is_any_nullable = false;
             Tuple args;
             args.reserve(equals_functions.size());
@@ -2465,6 +2483,15 @@ private:
             const auto * type_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
             if (type_low_cardinality)
                 result_type = type_low_cardinality->getDictionaryType();
+            /// The replacement must not be more nullable than the equals it replaces: for a Variant
+            /// expression `in` resolves through the variant adaptor to Nullable(UInt8) while the
+            /// original equals resolved to UInt8. Ancestors already captured the OR's result type, so
+            /// keep the original chain rather than change it.
+            if (result_type->isNullable() && !is_any_nullable)
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
+            }
             /** For `k :: UInt8`, expression `k = 1 OR k = NULL` with result type Nullable(UInt8)
               * is replaced with `k IN (1, NULL)` with result type UInt8.
               * Convert it back to Nullable(UInt8).
