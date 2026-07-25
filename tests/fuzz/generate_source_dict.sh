@@ -69,8 +69,9 @@ grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
 # in src/Functions/array/arrayDistance.cpp is pasted into arrayCosineDistance
 # (and its siblings in arrayNorm.cpp into arrayL1Norm, ...). A kernel is
 # recognizable mechanically: the struct is named <fragment><Suffix> for the
-# composition suffix - L1Norm carries "L1", CosineDistance carries "Cosine" -
-# while real name carriers are not: NameEditDistance carries "editDistance",
+# composition suffix - L1Norm carries "L1", CosineDistance carries "Cosine",
+# ZeroTransform in src/Functions/DateTimeTransforms.h carries "Zero" - while
+# real name carriers are not: NameEditDistance carries "editDistance",
 # L1DistanceTraits carries the complete name "L1Distance".
 { grep -rhozE 'struct [A-Za-z_0-9]+[[:space:]]*(:[[:space:]]*[A-Za-z_0-9]+[[:space:]]*)?\{[^{}"]*static constexpr auto name = "[^"]+";' \
     "$SOURCE_ROOT/src/Functions" \
@@ -80,7 +81,7 @@ grep -rhozE 'struct [A-Za-z_0-9]*Label[[:space:]]*\{[^{}]*"[^"]+"[^{}]*\}' \
 do
     kernel_struct=$(sed -E 's/^struct ([A-Za-z_0-9]+).*/\1/' <<< "${kernel_chunk//$'\n'/ }")
     kernel_fragment=$(grep -aoE '"[^"]+"' <<< "${kernel_chunk//$'\n'/ }" | head -1 | tr -d '"')
-    for kernel_suffix in Distance Norm
+    for kernel_suffix in Distance Norm Transform
     do
         if [ "$kernel_struct" == "${kernel_fragment}${kernel_suffix}" ]
         then
@@ -129,8 +130,14 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # AssemblyScript runtime exports "__new" / "__pin" / "__unpin" in
     # src/Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.cpp) or hold
     # display literals (the month_names / day_names tables of dateName in
-    # src/Functions/dateName.cpp).
-    grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]+[Nn]ames?(\[\])?[[:space:]]*[={][^;]*;' \
+    # src/Functions/dateName.cpp). The variable must be a bare name / names or
+    # a CamelCase *Name(s) trait constant: a snake_case compound qualifies the
+    # name with another entity kind, so it does not carry a registered name -
+    # e.g. the argument-name tables mandatory_argument_names /
+    # optional_argument_names of makeDate* ("year", "month", "fraction", ...)
+    # in src/Functions/makeDate.cpp, or the tuple element labels element_names
+    # ("min_x", "max_lat", ...) in src/Functions/MVTBoundingBox.cpp.
+    grep -rhozE '\bconst(expr)?[[:space:]]+[a-zA-Z_0-9,:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ames?(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
@@ -144,11 +151,27 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # e.g. the in/notIn/globalIn/nullIn family (src/Functions/in.cpp):
     #     String full_name_in = "in";
     #     factory.registerFunction(full_name_in, ...);
-    grep -rhozE '\bString [A-Za-z_]*[Nn]ame[A-Za-z_]*[[:space:]]*=[[:space:]]*"[^"]+"' \
+    # The variable must flow into a register* call in the same file: a *name*
+    # local that is never registered carries no registered name, e.g. the dummy
+    # column label
+    #     String column_name = "c";
+    # in src/Functions/FunctionGenerateRandomStructure.cpp.
+    grep -rlE '\bString [A-Za-z_]*[Nn]ame[A-Za-z_]*[[:space:]]*=[[:space:]]*"[^"]+"' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"' | identifiers_only
+        | while IFS= read -r name_local_file
+    do
+        grep -ohE '\bString [A-Za-z_]*[Nn]ame[A-Za-z_]*[[:space:]]*=[[:space:]]*"[^"]+"' "$name_local_file" \
+            | while IFS= read -r name_local_decl
+        do
+            name_local_var=$(sed -E 's/^String ([A-Za-z_]+).*/\1/' <<< "$name_local_decl")
+            if grep -qE "register[A-Za-z]*[[:space:]]*\([[:space:]]*$name_local_var\b" "$name_local_file"
+            then
+                grep -oE '"[^"]+"' <<< "$name_local_decl" | tr -d '"'
+            fi
+        done
+    done | identifiers_only
 
     # Names carried by an alias list registered in a loop, e.g.
     #     static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
@@ -179,8 +202,12 @@ done >> "$LABEL_FRAGMENTS_FILE"
     # internal function classes ("FunctionExpression", "FunctionCapture",
     # "GeneratorJSONPath"), getFactoryName ("FunctionFactory",
     # "AggregateFunctionFactory"), getStorageEngineName ("Loop", "FuzzQuery") -
-    # so they are deliberately not matched.
-    grep -rhozE '[A-Za-z_]*[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}' \
+    # so they are deliberately not matched. The helper's own name must say it
+    # returns a *function* name (getName, or a free helper ending in
+    # FunctionName): a helper naming another entity kind returns a name from a
+    # different namespace, e.g. getDatabaseName of ITableFunction returns the
+    # internal pseudo-database "_table_function".
+    grep -rhozE '\bget[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}|\b[A-Za-z_]*[Ff]unction[Nn]ame[[:space:]]*\([^()]*\)[[:space:]]*\{[^{}"]*"[^{}]*\}' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
@@ -232,7 +259,7 @@ done >> "$LABEL_FRAGMENTS_FILE"
     aggregate_names=$(
         {
             grep -rhozE --exclude-dir=Combinators \
-                '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]+[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
+                '\bconst(expr)?[[:space:]]+[a-zA-Z_:<> *]*([^A-Za-z_0-9][Nn]|[A-Za-z0-9]N)ame(\[\])?[[:space:]]*[={][^;]*;' \
                 "$SOURCE_ROOT/src/AggregateFunctions" \
                 | { grep -zvE '\+|map<|string_view' || true; }
             grep -rhozE --exclude-dir=Combinators \
