@@ -22,7 +22,6 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorageTransaction.h>
 #include <Disks/DiskObjectStorage/Replication/BlobKillerThread.h>
 #include <Disks/DiskObjectStorage/Replication/BlobCopierThread.h>
-#include <Disks/FakeDiskTransaction.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Util/AbstractConfiguration.h>

@@ -7,7 +7,6 @@
 
 #include <Disks/IDisk.h>
 #include <Common/MultiVersion.h>
-#include <Disks/FakeDiskTransaction.h>
 #include <Disks/DiskEncryptedTransaction.h>
 #include <Disks/MetadataStorageWithPathWrapper.h>
 
