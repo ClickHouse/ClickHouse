@@ -1,6 +1,8 @@
 experimental gate: passed
 argument validation: passed
 rows before refresh: 0
+rows after first batch: 2
+rows after second batch: 4
 [(1,'one'),(2,'two'),(3,'three'),(4,'four'),(5,'five')]
 rows after second refresh: 5
 1

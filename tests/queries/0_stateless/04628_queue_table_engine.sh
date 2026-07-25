@@ -14,6 +14,7 @@ cleanup()
         DROP TABLE IF EXISTS queue_target;
         DROP TABLE IF EXISTS queue_failed_target;
         DROP TABLE IF EXISTS queue_source;
+        DROP TABLE IF EXISTS queue_retry_source;
         DROP TABLE IF EXISTS queue_disabled;" >/dev/null 2>&1
 }
 
@@ -83,6 +84,14 @@ $CLICKHOUSE_CLIENT $queue_settings -q "
 echo "rows before refresh: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM queue_target")"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM REFRESH queue_source"
+wait_for_count queue_target 2
+echo "rows after first batch: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM queue_target")"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM REFRESH queue_source"
+wait_for_count queue_target 4
+echo "rows after second batch: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM queue_target")"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM REFRESH queue_source"
 wait_for_count queue_target 5
 
 $CLICKHOUSE_CLIENT -q "
@@ -107,14 +116,14 @@ $CLICKHOUSE_CLIENT -q "
     DROP TABLE queue_source;"
 
 $CLICKHOUSE_CLIENT $queue_settings -q "
-    CREATE TABLE queue_source
+    CREATE TABLE queue_retry_source
     (
         id UInt64,
         value UInt64
     )
     ENGINE = Queue(3600, 100, 60000);
 
-    SYSTEM STOP queue_source;
+    SYSTEM STOP queue_retry_source;
 
     CREATE TABLE queue_failed_target
     (
@@ -126,10 +135,10 @@ $CLICKHOUSE_CLIENT $queue_settings -q "
     ORDER BY id;
 
     CREATE MATERIALIZED VIEW queue_failed_mv TO queue_failed_target
-    AS SELECT id, value FROM queue_source;
+    AS SELECT id, value FROM queue_retry_source;
 
-    INSERT INTO queue_source VALUES (1, 1), (2, 2), (3, 3);
-    SYSTEM REFRESH queue_source;"
+    INSERT INTO queue_retry_source VALUES (1, 1), (2, 2), (3, 3);
+    SYSTEM REFRESH queue_retry_source;"
 
 sleep 0.2
 echo "rows after failed delivery: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM queue_failed_target")"
@@ -146,9 +155,9 @@ $CLICKHOUSE_CLIENT -q "
     ENGINE = Memory;
 
     CREATE MATERIALIZED VIEW queue_mv TO queue_target
-    AS SELECT id, value FROM queue_source;
+    AS SELECT id, value FROM queue_retry_source;
 
-    SYSTEM REFRESH queue_source;"
+    SYSTEM REFRESH queue_retry_source;"
 
 wait_for_count queue_target 3
 echo "rows after retry: $($CLICKHOUSE_CLIENT -q "SELECT count() FROM queue_target")"

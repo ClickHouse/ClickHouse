@@ -13,6 +13,9 @@
 namespace DB
 {
 
+class ASTCreateQuery;
+class ColumnsDescription;
+
 class StorageQueue final : public IStreamingStorage, WithContext
 {
 public:
