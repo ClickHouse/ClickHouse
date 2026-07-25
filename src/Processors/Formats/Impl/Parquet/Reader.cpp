@@ -659,9 +659,24 @@ void Reader::initializePrefetches()
             /// filter and only falls back to the bloom filter for that case; the only extra cost here is
             /// the small bloom-filter header read, since the filter blocks are prefetched lazily
             /// (`likely_to_be_used=false`) and read only if the fallback is actually taken.
+            /// The bloom filter is built only from the chunk's non-null values, so on a chunk that may
+            /// contain nulls read into a non-nullable output it cannot be used at all: with
+            /// `input_format_null_as_default` disabled, pruning would suppress the
+            /// `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` exception the read must raise; with it enabled,
+            /// nulls decode to the type's default value, which the filter does not contain, so a row
+            /// group whose only matches come from nulls would be wrongly skipped. The exact dictionary
+            /// filter models both cases (see `hashDictionaryValues`), the probabilistic bloom filter
+            /// can't, so keep it disabled for such chunks - both standalone and as the dictionary
+            /// filter's fallback.
+            bool nullable = primitive_columns[column_idx].levels.back().def > 0;
+            bool can_be_null = !column.meta->meta_data.statistics.__isset.null_count
+                || column.meta->meta_data.statistics.null_count != 0;
+            bool bloom_filter_null_safe = !nullable || !can_be_null || primitive_columns[column_idx].output_nullable;
+
             if (options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
                 !primitive_columns[column_idx].bloom_filter_hashes.empty() &&
+                bloom_filter_null_safe &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
             {
                 /// Have to guess the header size upper bound.
