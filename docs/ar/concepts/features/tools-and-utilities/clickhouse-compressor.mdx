@@ -5,7 +5,7 @@ title: 'clickhouse-compressor'
 doc_type: 'reference'
 ---
 
-برنامج بسيط لضغط البيانات وفك ضغطها.
+برنامج بسيط لضغط البيانات وفك الضغط.
 
 <div id="examples">
   ### أمثلة
@@ -17,19 +17,19 @@ doc_type: 'reference'
 $ ./clickhouse-compressor < input_file > output_file
 ```
 
-فك ضغط البيانات من صيغة LZ4:
+فك ضغط البيانات من تنسيق LZ4:
 
 ```bash
 $ ./clickhouse-compressor --decompress < input_file > output_file
 ```
 
-اضغط البيانات باستخدام ZSTD بالمستوى 5:
+اضغط البيانات باستخدام ZSTD بمستوى 5:
 
 ```bash
 $ ./clickhouse-compressor --codec 'ZSTD(5)' < input_file > output_file
 ```
 
-اضغط البيانات باستخدام Delta بأربعة بايتات وZSTD بالمستوى 10.
+اضغط البيانات باستخدام دلتا بحجم أربعة بايتات وZSTD بالمستوى 10.
 
 ```bash
 $ ./clickhouse-compressor --codec 'Delta(4)' --codec 'ZSTD(10)' < input_file > output_file

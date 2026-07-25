@@ -59,10 +59,10 @@ ClickHouse prend en charge plusieurs algorithmes de JOIN, chacun offrant un comp
 <Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — vitesse vs mémoire" />
 
 <Note>
-  La prise en charge des types de JOIN varie selon l’algorithme. La liste complète des types de jointure pris en charge par chaque algorithme est disponible [ici](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+  La prise en charge des types de JOIN varie selon l’algorithme. La liste complète des types de JOIN pris en charge par chaque algorithme est disponible [ici](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 </Note>
 
-Vous pouvez laisser ClickHouse choisir le meilleur algorithme en définissant `join_algorithm = 'auto'` (par défaut), ou le contrôler explicitement selon votre charge de travail. Si vous devez sélectionner un algorithme de JOIN pour optimiser les performances ou réduire le surcoût mémoire, nous vous recommandons [ce guide](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
+Vous pouvez laisser ClickHouse choisir le meilleur algorithme en définissant `join_algorithm = 'auto'`, ou le contrôler explicitement selon votre charge de travail. La valeur par défaut est `direct,parallel_hash,hash`, de sorte que ClickHouse utilise une jointure directe lorsque le côté droit est un dictionnaire ou un moteur clé-valeur, puis se rabat sinon sur `parallel_hash`, puis `hash`. Si vous devez sélectionner un algorithme de JOIN pour optimiser les performances ou réduire le surcoût mémoire, nous vous recommandons [ce guide](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).
 
 Pour des performances optimales :
 

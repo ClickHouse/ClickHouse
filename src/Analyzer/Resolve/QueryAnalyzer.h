@@ -339,6 +339,12 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// True while arguments of a table function are resolved. Table functions are resolved
+    /// into storages even in only-analyze mode (the storage is required to infer the query
+    /// header), so scalar subqueries in their arguments must be executed for real instead of
+    /// being replaced with type-only placeholders. See evaluateScalarSubqueryIfNeeded.
+    bool table_function_arguments_in_resolve_process = false;
 };
 
 }

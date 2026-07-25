@@ -27,9 +27,7 @@ doc_type: 'guide'
 你既可以在 Python REPL 中执行以下步骤，也可以通过脚本执行。
 
 <Steps>
-  <Step>
-    ## 安装库
-
+  <Step title="安装库" id="install-libraries">
     运行以下命令安装 Claude Agent SDK 库：
 
     ```python
@@ -39,9 +37,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 设置凭据
-
+  <Step title="设置凭据" id="setup-credentials">
     接下来，你需要提供 Anthropic API key：
 
     ```python
@@ -66,9 +62,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 MCP 服务器和 Claude Agent SDK agent
-
+  <Step title="初始化 MCP 服务器和 Claude Agent SDK agent" id="initialize-mcp-and-agent">
     现在将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground，
     然后初始化 agent 并向它提一个问题：
 
