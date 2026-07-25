@@ -9,7 +9,8 @@
 # The fractional check is done on the literal text: the parsed Float64 has already been rounded
 # to the nearest double, so above 2^53 the fraction would vanish before any check on the value
 # (9007199254740992.5 rounds to 9007199254740992.0). An exponent moving all fractional digits
-# into the integer part (1.5e1 = 15) keeps the literal integral and accepted.
+# into the integer part (1.5e1 = 15) keeps the literal integral and accepted. Digit separators
+# are stripped before the analysis, as the number parser strips them (1_5e-1 denotes 1.5).
 # Quoted (string-literal) limits go through a size-suffix parse that used to skip overflow checking,
 # so an out-of-range quoted value silently wrapped around before the range checks; it must throw now.
 # Note: a `--` comment attached to a hinted query would shadow its test hint, so the queries below carry no leading SQL comments.
@@ -39,6 +40,8 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5; -- { clientError BAD_
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 9007199254740992.5; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5e-400; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 15e-1; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1.5_0; -- { clientError BAD_ARGUMENTS }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1_5e-1; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1e20; -- { clientError CANNOT_CONVERT_TYPE }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = inf; -- { clientError CANNOT_CONVERT_TYPE }
 
@@ -54,6 +57,11 @@ SHOW CREATE QUOTA $QUOTA;
 CREATE QUOTA ${QUOTA}_e FOR INTERVAL 1 hour MAX queries = 1.5e1;
 SHOW CREATE QUOTA ${QUOTA}_e;
 
+-- Digit separators are stripped before the integrality analysis, as the number parser strips them.
+CREATE QUOTA ${QUOTA}_u FOR INTERVAL 1 hour MAX queries = 1_5.0e1;
+SHOW CREATE QUOTA ${QUOTA}_u;
+
 DROP QUOTA $QUOTA;
 DROP QUOTA ${QUOTA}_e;
+DROP QUOTA ${QUOTA}_u;
 " | sed "s/$QUOTA/q_04617/g"

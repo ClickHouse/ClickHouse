@@ -263,7 +263,10 @@ namespace
         /// ParserNumber consumes an optional sign token before the number token.
         if (literal_pos->type == TokenType::Minus || literal_pos->type == TokenType::Plus)
             ++literal_pos;
-        std::string_view literal_text(literal_pos->begin, literal_pos->size());
+        /// ParserNumber strips '_' digit separators from the token before conversion; do the same
+        /// so that e.g. 1_5e-1 is analyzed as 15e-1 and not dismissed as an unknown literal form.
+        std::string literal_text(literal_pos->begin, literal_pos->size());
+        std::erase(literal_text, '_');
 
         const Field & max_field = ast->as<ASTLiteral &>().value;
         const auto & type_info = QuotaTypeInfo::get(quota_type);
