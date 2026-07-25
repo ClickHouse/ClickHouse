@@ -2331,7 +2331,13 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            executeWithFill(query_plan);
+            /// WITH FILL (and its INTERPOLATE) must run only on the node producing the final result,
+            /// not on a shard that emits a mergeable-after-aggregation state. Otherwise the fill rows
+            /// are generated per shard and duplicated after the merge, and INTERPOLATE additionally
+            /// yields a broken chunk once the per-shard interpolate column is merged on the initiator.
+            /// Same condition as the projection guard below.
+            if (!to_aggregation_stage)
+                executeWithFill(query_plan);
 
             /// If we have 'WITH TIES', we need execute limit before projection,
             /// because in that case columns from 'ORDER BY' are used.
