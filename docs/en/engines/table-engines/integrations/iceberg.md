@@ -88,7 +88,7 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 | `float` | `Float32` | |
 | `double` | `Float64` | |
 | `date` | `Date32` | |
-| `time` | `Int64` | Microseconds since midnight |
+| `time` | `Time64(6)` | Microseconds since midnight |
 | `timestamp` | `DateTime64(6)` | Microseconds, no timezone |
 | `timestamptz` | `DateTime64(6, 'UTC')` | Microseconds, UTC timezone |
 | `timestamp_ns` | `DateTime64(9)` | Nanoseconds, no timezone (since Iceberg v3 only) |
