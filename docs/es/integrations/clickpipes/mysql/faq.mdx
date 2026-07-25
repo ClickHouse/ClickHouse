@@ -16,6 +16,27 @@ integration:
 
 Sí, el ClickPipe para MySQL es compatible con MariaDB 10.0 y versiones posteriores. Su configuración es muy similar a la de MySQL y utiliza replicación GTID de forma predeterminada.
 
+<div id="mariadb-compressed-column-unsupported">
+  ### ¿Por qué falló mi pipe con una columna COMPRESSED no admitida de MariaDB?
+</div>
+
+Si tu pipe falla con un error similar a:
+
+```text
+table <database>.<table> has MariaDB COMPRESSED column(s) [<columns>], which cannot be replicated via CDC;
+convert them to a non-compressed type or remove the table from the mirror
+```
+
+significa que la tabla tiene una o más columnas que usan la [compresión de columnas](https://mariadb.com/kb/en/storage-engine-independent-column-compression/) de MariaDB (`COLUMN_FORMAT COMPRESSED`). No podemos descomprimir estos valores a partir del binlog, por lo que la tabla afectada no se puede replicar mediante CDC.
+
+Para resolverlo:
+
+* **Convierta las columnas comprimidas a un tipo no comprimido** en el origen (o elimine una tabla del pipe):
+  ```sql
+  ALTER TABLE <table> MODIFY <column> <type>; -- sin COLUMN_FORMAT COMPRESSED
+  ```
+* vuelva a resincronizar la tabla o el pipe
+
 <div id="does-the-clickpipe-support-planetscale-vitess">
   ### ¿El ClickPipe para MySQL es compatible con PlanetScale, Vitess o TiDB?
 </div>
