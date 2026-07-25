@@ -3426,15 +3426,40 @@ bool MutateTask::prepare()
             && source_ttl_infos.moves_ttl.empty() && source_ttl_infos.recompression_ttl.empty()
             && source_ttl_infos.group_by_ttl.empty();
 
+        /// The delta proof below interprets both the part's stored TTL expression and the new one
+        /// under the CURRENT column definitions, and shifts the part's stored TTL timestamps by the
+        /// proven constant. That is only sound when those timestamps were computed under the same
+        /// column semantics: a part can legitimately lag metadata-only alters (its `metadata_version`
+        /// is older than the table's), so with any outstanding on-the-fly conversion - a rename, an
+        /// on-the-fly mutation, or a patch part - the data the TTL reads is not what is physically
+        /// stored, and the fast path must not be attempted.
+        const bool part_lags_conversions = !alter_conversions->getRenameMap().empty()
+            || alter_conversions->hasMutations() || alter_conversions->hasPatches();
+
         std::optional<time_t> delta;
         String new_ttl_expression;
-        if (part_has_only_rows_ttl && ctx->metadata_snapshot->hasRowsTTL())
+        if (part_has_only_rows_ttl && !part_lags_conversions && ctx->metadata_snapshot->hasRowsTTL())
         {
             auto rows_ttl = ctx->metadata_snapshot->getRowsTTL();
             new_ttl_expression = rows_ttl.result_column;
             delta = tryComputeConstantTTLDelta(
                 source_ttl_infos.table_ttl_expression, rows_ttl,
                 ctx->metadata_snapshot->getColumns(), ctx->metadata_snapshot->getPrimaryKey(), ctx->context);
+
+            /// A successful proof references exactly one source column (checked inside the proof).
+            /// The part must physically store that column with exactly its current type. Otherwise
+            /// the stored TTL bounds may have been computed under different column semantics than the
+            /// current metadata describes - e.g. the column is synthesized from a DEFAULT that a later
+            /// metadata-only `MODIFY COLUMN` changed, or a metadata-only type change (such as a
+            /// `DateTime` time-zone change) altered the meaning of the stored values - and shifting
+            /// them by a delta proven under the new semantics would expire the wrong rows.
+            if (delta)
+            {
+                const auto & ttl_column = rows_ttl.expression_columns.front();
+                auto part_column = ctx->source_part->tryGetColumn(ttl_column.name);
+                if (!part_column || !part_column->type->equals(*ttl_column.type))
+                    delta.reset();
+            }
         }
 
         /// The whole part is expired under the new TTL: replace it with an empty part.

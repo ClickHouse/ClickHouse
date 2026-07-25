@@ -24,5 +24,9 @@ Batched ALTER adding the column the new TTL references falls back instead of thr
 Batched ALTER changing the default of the TTL column falls back to the regular rewrite
 0
 0
+Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back
+1000
+1000
+0
 Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows
 1000

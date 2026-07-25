@@ -123,6 +123,30 @@ SELECT count() FROM t_ttl_batch4;
 SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch4';
 DROP TABLE t_ttl_batch4;
 
+SELECT 'Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back';
+DROP TABLE IF EXISTS t_ttl_lag_default;
+-- `materialize_ttl_recalculate_only` keeps every `MATERIALIZE TTL` a metadata-only recalculation, so
+-- the part never gets rewritten and never stores `d2` physically: it is synthesized from the DEFAULT
+-- on every read, and its stored TTL bounds were computed under whatever DEFAULT was current then.
+CREATE TABLE t_ttl_lag_default (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id
+    SETTINGS materialize_ttl_recalculate_only = 1;
+INSERT INTO t_ttl_lag_default SELECT number, now('UTC') - INTERVAL 1000 DAY FROM numbers(1000);
+ALTER TABLE t_ttl_lag_default ADD COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 900 DAY;
+-- Recalculates the part's TTL bounds under the old DEFAULT: d + 900 + 200 days = now + 100 days.
+ALTER TABLE t_ttl_lag_default MODIFY TTL d2 + INTERVAL 200 DAY;
+SELECT count() FROM t_ttl_lag_default;
+-- Standalone metadata-only DEFAULT change: `d2` now reads as d + 2000 days, but the part's stored
+-- TTL bounds still reflect the old DEFAULT, under the very same surface TTL expression.
+ALTER TABLE t_ttl_lag_default MODIFY COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 2000 DAY;
+-- The TTL change (200 -> 50 days) is a provable constant -150 day shift of the same expression, but
+-- applying it to the stored bounds would declare the part fully expired (now + 100 - 150 days) and
+-- replace it with an empty part, while the true expiry is d + 2000 + 50 = now + 1050 days. The fast
+-- path must reject a part that does not physically store the TTL source column and fall back.
+ALTER TABLE t_ttl_lag_default MODIFY TTL d2 + INTERVAL 50 DAY;
+SELECT count() FROM t_ttl_lag_default;
+SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_lag_default';
+DROP TABLE t_ttl_lag_default;
+
 SELECT 'Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows';
 DROP TABLE IF EXISTS t_ttl_stale;
 CREATE TABLE t_ttl_stale (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id TTL d + INTERVAL 1 DAY;
