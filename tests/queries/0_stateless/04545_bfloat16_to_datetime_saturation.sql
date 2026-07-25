@@ -33,6 +33,21 @@ SELECT toDateTime32(CAST('-inf' AS BFloat16), 'UTC'); -- { serverError CANNOT_CO
 SELECT toDateTime(nan, 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
 SELECT toDateTime(CAST('inf' AS Float32), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
 
+-- The toDate float path follows the same contract: non-finite values throw,
+-- huge finite values saturate to the upper boundary instead of hitting an
+-- undefined float-to-integer cast.
+SELECT toDate(CAST(100 AS BFloat16), 'UTC');
+SELECT toDate(CAST(1e10 AS BFloat16), 'UTC');
+SELECT toDate(CAST(1e38 AS BFloat16), 'UTC');
+SELECT toDate(CAST(1e300 AS Float64), 'UTC');
+SELECT toDate(CAST(-100 AS BFloat16), 'UTC');
+SELECT toDate(CAST(1e300 AS Float64), 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
+SELECT toDate(CAST('nan' AS BFloat16), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toDate(CAST('inf' AS BFloat16), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toDate(CAST('-inf' AS BFloat16), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toDate(nan, 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT toDate(CAST('inf' AS Float32), 'UTC'); -- { serverError CANNOT_CONVERT_TYPE }
+
 -- The same branch handles conversion of BFloat16 to Time: saturate to the Time range.
 SET use_legacy_to_time = 0;
 SELECT toTime(CAST(1e10 AS BFloat16));
