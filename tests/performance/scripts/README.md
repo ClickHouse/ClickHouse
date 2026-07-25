@@ -150,7 +150,7 @@ More stages are available, e.g. restart servers or run the tests. See the code.
 
 #### Run a single test on the already configured servers
 ```
-tests/performance/scripts/perf.py --host=localhost --port=9000 --runs=1 tests/performance/logical_functions_small.xml
+tests/performance/scripts/perf.py --host=localhost --port=9000 tests/performance/logical_functions_small.xml
 ```
 
 #### Run all tests on some custom configuration
