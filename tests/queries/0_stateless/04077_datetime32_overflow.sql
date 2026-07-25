@@ -191,3 +191,21 @@ ALTER TABLE t_ttl_tumble MODIFY TTL tumbleStart(ts, INTERVAL 1 HOUR) + INTERVAL 
 OPTIMIZE TABLE t_ttl_tumble FINAL;
 SELECT count() FROM t_ttl_tumble;
 DROP TABLE t_ttl_tumble;
+
+-- Case 13: a bare `LowCardinality(DateTime)` column as the whole TTL expression
+-- (found by AST fuzzer). Analysis widens it to `DateTime64` (dropping `LowCardinality`),
+-- so the `CREATE` is accepted, but the runtime block still holds the original
+-- `LowCardinality` column and takes the shortcut path in `executeExpressionAndGetColumn`
+-- (the result column is present in the block, so the expression does not run). Without
+-- a cast to the expression's result type there, the `INSERT` threw a logical error
+-- `Unexpected type (LowCardinality(UInt32)) of result TTL column` when computing the
+-- part TTL info.
+DROP TABLE IF EXISTS t_ttl_lc_bare;
+SET allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_ttl_lc_bare (id UInt64, ts LowCardinality(DateTime)) ENGINE = MergeTree ORDER BY id TTL ts;
+INSERT INTO t_ttl_lc_bare SELECT number, toDateTime('2106-01-01 00:00:00', 'UTC') FROM numbers(3);
+INSERT INTO t_ttl_lc_bare SELECT number + 10, toDateTime(1, 'UTC') FROM numbers(2);
+OPTIMIZE TABLE t_ttl_lc_bare FINAL;
+-- The two rows from 1970 are expired and dropped by the merge; the 2106 rows survive.
+SELECT count() FROM t_ttl_lc_bare;
+DROP TABLE t_ttl_lc_bare;

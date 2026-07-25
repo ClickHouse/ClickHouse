@@ -39,7 +39,18 @@ ColumnPtr ITTLAlgorithm::executeExpressionAndGetColumn(
         return nullptr;
 
     if (block.has(result_column))
-        return block.getByName(result_column).column->convertToFullColumnIfSparse();
+    {
+        /// When the TTL expression is a bare source column (e.g. `TTL ts`), the block holds
+        /// it in the original type, which may differ from the type the analyzed expression
+        /// produces: the analysis widens `Date`/`DateTime` sources to `Date32`/`DateTime64`
+        /// and looks through `LowCardinality`. Cast to the expression's result type so the
+        /// consumers see the same column type in both paths (a no-op for matching types).
+        const auto & ttl_column = block.getByName(result_column);
+        const auto & expected_type = expression->getSampleBlock().getByName(result_column).type;
+        if (!ttl_column.type->equals(*expected_type))
+            return castColumn(ttl_column, expected_type)->convertToFullColumnIfSparse();
+        return ttl_column.column->convertToFullColumnIfSparse();
+    }
 
     /// `Date`/`DateTime` source columns are widened to `Date32`/`DateTime64` at TTL
     /// analysis time so the arithmetic in the expression cannot silently 16/32-bit wrap
