@@ -1,10 +1,10 @@
 -- Tags: no-fasttest
 -- no-fasttest: requires the JSON data type.
 
--- Regression test for the ColumnObject (JSON) shared-data comparison optimization: sorting a JSON
--- column whose paths live in shared data used to materialize a temporary ColumnDynamic and run a
--- full binary deserialization for BOTH sides of every comparison. This pins the comparison ORDER
--- so it stays identical to the materializing implementation, and guards that ORDER BY over a
+-- Regression test for the `ColumnObject` (JSON) shared-data comparison optimization: sorting a JSON
+-- column whose paths live in shared data used to materialize a temporary `ColumnDynamic` and run a
+-- full binary deserialization for BOTH sides of every comparison. This pins the comparison order so
+-- it stays identical to the materializing implementation, and guards that `ORDER BY` over a
 -- shared-data-heavy JSON column completes quickly instead of spending minutes in the compare storm.
 
 SET enable_json_type = 1;
@@ -34,8 +34,8 @@ SELECT id, json FROM t_json_shared ORDER BY json ASC, id ASC;
 SELECT 'desc';
 SELECT id, json FROM t_json_shared ORDER BY json DESC, id ASC;
 
--- Equality / DISTINCT rely on compare()==0; the byte-equality fast path must return 0 only for
--- identical serializations (rows 1, 15 and their reordering with row 3).
+-- Equality-sensitive operations (e.g. `DistinctSorted`) rely on `compareAt` returning 0; the
+-- byte-equality fast path must return 0 only for identical serializations (rows 1, 15 and row 3).
 SELECT 'distinct';
 SELECT DISTINCT json FROM t_json_shared ORDER BY json, toString(json);
 
@@ -65,12 +65,31 @@ SELECT 'mixed';
 SELECT id, json FROM t_json_mixed ORDER BY json ASC, id ASC;
 DROP TABLE t_json_mixed;
 
--- 4. Performance regression guard: sorting a shared-data-heavy JSON column that shares a long path
--- prefix (so each comparison walks deep, the worst case) must complete quickly. Pre-fix this took
--- minutes under debug/sanitizer builds (the compare storm); post-fix it is well under a second.
--- ORDER BY ... FORMAT Null runs the full sort and discards the output; we only assert it finishes
--- (the test times out otherwise). max_threads is pinned so timing does not depend on the randomized
--- thread count.
+-- 3b. Same path stored DYNAMIC in one part and SHARED in another, compared across parts. Path `a` is
+-- the sole path in part 1 (so it takes a dynamic slot), while in part 2 twenty leading `{p, q}` rows
+-- claim both dynamic slots first, so the later `a` rows spill into shared data. `a` sorts before
+-- `p`, so the cross-part merge reaches the `a` value comparison with one side DYNAMIC and the other
+-- SHARED -> the UNCHANGED materializing fallback (not the optimized both-shared path). Values
+-- interleave across parts (10, 20, 30, 40, 50) so adjacent-in-order pairs are cross-part.
+DROP TABLE IF EXISTS t_json_mixed_kind;
+CREATE TABLE t_json_mixed_kind (id UInt32, json JSON(max_dynamic_paths = 2)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+INSERT INTO t_json_mixed_kind VALUES (1, '{"a": 10}'), (3, '{"a": 30}'), (5, '{"a": 50}');
+INSERT INTO t_json_mixed_kind
+    SELECT number + 100, '{"p": 1, "q": 1}' FROM numbers(20)
+    UNION ALL SELECT 200, '{"a": 20}'
+    UNION ALL SELECT 201, '{"a": 40}';
+SELECT 'mixed_kind';
+SELECT id, json FROM t_json_mixed_kind WHERE has(JSONDynamicPaths(json), 'a') OR has(JSONSharedDataPaths(json), 'a')
+ORDER BY json ASC, id ASC SETTINGS max_threads = 2, max_block_size = 4;
+DROP TABLE t_json_mixed_kind;
+
+-- 4. Completion guard: sorting a shared-data-heavy JSON column that shares a long path prefix (so
+-- each comparison walks deep, the worst case) must complete quickly. Sorting this shape was roughly
+-- 30-40x slower before the optimization (tens of seconds on a debug build at this size, minutes at
+-- fuzzer scale under sanitizers, which is the CI hung-check sample). This section only guards that
+-- the sort completes quickly; the precise optimization-regression detector is
+-- tests/performance/json_order_by_shared_data.xml. ORDER BY ... FORMAT Null runs the full sort and
+-- discards the output. max_threads is pinned so timing does not depend on the randomized thread count.
 DROP TABLE IF EXISTS t_json_perf;
 CREATE TABLE t_json_perf (json JSON(max_dynamic_paths = 0)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t_json_perf

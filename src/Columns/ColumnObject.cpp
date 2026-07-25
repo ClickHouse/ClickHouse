@@ -2205,12 +2205,9 @@ int ColumnObject::SortedPathsIterator::compare(const SortedPathsIterator & rhs, 
         return path < rhs_path ? -1 : 1;
 
     /// If paths are equal, compare their values. When both values live in shared data they are
-    /// already serialized in Dynamic binary form, so compare the serialized bytes directly instead
-    /// of materializing a temporary ColumnDynamic per value per comparison (the dominant cost of
-    /// sorting JSON columns whose paths are in shared data). This mirrors the both-shared branch of
-    /// ColumnDynamic::doCompareAt via the shared ColumnDynamic::compareSerializedValues helper.
-    /// Any other combination (typed/dynamic, or mixed shared-vs-non-shared from cross-instance
-    /// merges) keeps the materializing path unchanged.
+    /// already serialized in Dynamic binary form, so compare them directly via
+    /// ColumnDynamic::compareSerializedValues (same order as the materializing path). Any other
+    /// combination keeps the materializing path unchanged.
     if (current_path_type == PathType::SHARED_DATA && rhs.current_path_type == PathType::SHARED_DATA)
         return ColumnDynamic::compareSerializedValues(getCurrentSharedDataValue(), rhs.getCurrentSharedDataValue(), nan_direction_hint);
 
