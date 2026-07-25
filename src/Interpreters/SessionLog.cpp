@@ -74,13 +74,6 @@ void fillCertificateInfo(SessionLogElement & log_entry, const std::optional<Clie
 namespace DB
 {
 
-SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
-    : auth_id(auth_id_),
-      type(type_)
-{
-    std::tie(event_time, event_time_microseconds) = eventTime();
-}
-
 ColumnsDescription SessionLogElement::getColumnsDescription()
 {
     auto event_type = std::make_shared<DataTypeEnum8>(
@@ -264,32 +257,35 @@ void SessionLog::addLoginSuccess(const UUID & auth_id,
                                  const AuthenticationData & user_authenticated_with,
                                  const std::optional<ClientCertificateInfo> & certificate_info)
 {
-    SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
-    log_entry.client_info = client_info;
-    fillCertificateInfo(log_entry, certificate_info);
-
-    if (login_user)
+    add([&](SessionLogElement & log_entry)
     {
-        log_entry.user = login_user->getName();
-        log_entry.user_identified_with = user_authenticated_with.getType();
-    }
+        log_entry.auth_id = auth_id;
+        log_entry.type = SESSION_LOGIN_SUCCESS;
+        std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
 
-    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+        log_entry.client_info = client_info;
+        fillCertificateInfo(log_entry, certificate_info);
 
+        if (login_user)
+        {
+            log_entry.user = login_user->getName();
+            log_entry.user_identified_with = user_authenticated_with.getType();
+        }
 
-    log_entry.session_id = session_id;
+        log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
 
-    if (const auto roles_info = access->getRolesInfo())
-        log_entry.roles = roles_info->getCurrentRolesNames();
+        log_entry.session_id = session_id;
 
-    if (const auto profile_info = access->getDefaultProfileInfo())
-        log_entry.profiles = profile_info->getProfileNames();
+        if (const auto roles_info = access->getRolesInfo())
+            log_entry.roles = roles_info->getCurrentRolesNames();
 
-    SettingsChanges changes = settings.changes();
-    for (const auto & change : changes)
-        log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+        if (const auto profile_info = access->getDefaultProfileInfo())
+            log_entry.profiles = profile_info->getProfileNames();
 
-    add(std::move(log_entry));
+        SettingsChanges changes = settings.changes();
+        for (const auto & change : changes)
+            log_entry.settings.emplace_back(change.name, Settings::valueToStringUtil(change.name, change.value));
+    });
 }
 
 void SessionLog::addLoginFailure(
@@ -299,15 +295,18 @@ void SessionLog::addLoginFailure(
         const Exception & reason,
         const std::optional<ClientCertificateInfo> & certificate_info)
 {
-    SessionLogElement log_entry(auth_id, SESSION_LOGIN_FAILURE);
+    add([&](SessionLogElement & log_entry)
+    {
+        log_entry.auth_id = auth_id;
+        log_entry.type = SESSION_LOGIN_FAILURE;
+        std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
 
-    log_entry.user = user;
-    log_entry.auth_failure_reason = reason.message();
-    log_entry.client_info = info;
-    log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
-    fillCertificateInfo(log_entry, certificate_info);
-
-    add(std::move(log_entry));
+        log_entry.user = user;
+        log_entry.auth_failure_reason = reason.message();
+        log_entry.client_info = info;
+        log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
+        fillCertificateInfo(log_entry, certificate_info);
+    });
 }
 
 void SessionLog::addLogOut(
@@ -317,17 +316,21 @@ void SessionLog::addLogOut(
     const ClientInfo & client_info,
     const std::optional<ClientCertificateInfo> & certificate_info)
 {
-    auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
-    if (login_user)
+    add([&](SessionLogElement & log_entry)
     {
-        log_entry.user = login_user->getName();
-        log_entry.user_identified_with = user_authenticated_with.getType();
-    }
-    log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
-    log_entry.client_info = client_info;
-    fillCertificateInfo(log_entry, certificate_info);
+        log_entry.auth_id = auth_id;
+        log_entry.type = SESSION_LOGOUT;
+        std::tie(log_entry.event_time, log_entry.event_time_microseconds) = eventTime();
 
-    add(std::move(log_entry));
+        if (login_user)
+        {
+            log_entry.user = login_user->getName();
+            log_entry.user_identified_with = user_authenticated_with.getType();
+        }
+        log_entry.external_auth_server = user_authenticated_with.getLDAPServerName();
+        log_entry.client_info = client_info;
+        fillCertificateInfo(log_entry, certificate_info);
+    });
 }
 
 }
