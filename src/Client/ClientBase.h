@@ -217,6 +217,11 @@ protected:
     /// regular client and clickhouse-local. For any other specific option
     /// please use processOptions method.
     void addOptionsToTheClientConfiguration(const CommandLineOptions & options);
+    /// Remap the underscore XML spellings of some boolean keys (e.g. <echo_query_id/>) to the
+    /// dashed keys the read sites use, unless the dashed key is already set (e.g. by a CLI
+    /// flag). Call it right after the config file is merged into the client configuration,
+    /// before validateClientConfiguration.
+    void remapClientConfigurationAliases();
     /// Fail-fast validation of option values that may come from the client config file rather
     /// than the command line. The config file is loaded after the command line is processed,
     /// so the CLI-side validation in `addOptionsToTheClientConfiguration` never sees these

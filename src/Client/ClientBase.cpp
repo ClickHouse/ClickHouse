@@ -4143,6 +4143,29 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     }
 }
 
+void ClientBase::remapClientConfigurationAliases()
+{
+    auto & config = getClientConfiguration();
+
+    /// XML configuration idiomatically uses underscores while the CLI options (and thus the
+    /// configuration keys the read sites use) are dashed. Accept the underscore spellings in
+    /// the config file, unless the corresponding dashed key is already set (e.g. by a CLI flag).
+    /// ConfigHelper::getBool treats the self-closing (empty) tag form (e.g. <echo_query_id/>)
+    /// as `true`, which raw Poco boolean parsing would reject.
+    static constexpr std::pair<const char *, const char *> boolean_aliases[] =
+    {
+        {"echo_formatted", "echo-formatted"},
+        {"echo_query_id", "echo-query-id"},
+        {"enable_progress_table_toggle", "enable-progress-table-toggle"},
+    };
+
+    for (const auto & [underscore_key, dashed_key] : boolean_aliases)
+    {
+        if (!config.has(dashed_key) && config.has(underscore_key))
+            config.setBool(dashed_key, ConfigHelper::getBool(config, underscore_key));
+    }
+}
+
 void ClientBase::validateClientConfiguration()
 {
     auto & config = getClientConfiguration();

@@ -350,19 +350,9 @@ void Client::initialize(Poco::Util::Application & self)
     if (!config().has("no-warnings") && !config().getBool("warnings", true))
         config().setBool("no-warnings", true);
 
-    /// Use <echo_formatted/> unless --echo-formatted is specified.
-    /// ConfigHelper::getBool treats the self-closing (empty) tag form as `true`,
-    /// which raw Poco boolean parsing would reject.
-    if (!config().has("echo-formatted") && config().has("echo_formatted"))
-        config().setBool("echo-formatted", ConfigHelper::getBool(config(), "echo_formatted"));
-
-    /// Use <echo_query_id/> unless --echo-query-id is specified
-    if (!config().has("echo-query-id") && config().has("echo_query_id"))
-        config().setBool("echo-query-id", ConfigHelper::getBool(config(), "echo_query_id"));
-
-    /// Use <enable_progress_table_toggle/> unless --enable-progress-table-toggle is specified
-    if (!config().has("enable-progress-table-toggle") && config().has("enable_progress_table_toggle"))
-        config().setBool("enable-progress-table-toggle", ConfigHelper::getBool(config(), "enable_progress_table_toggle"));
+    /// Use <echo_formatted/>, <echo_query_id/>, <enable_progress_table_toggle/> unless the
+    /// corresponding dashed CLI option is specified. Shared with `clickhouse-local`.
+    remapClientConfigurationAliases();
 
     /// The config file is loaded after the command line is processed, so the option parser
     /// never sees values that come only from the file. Validate them now, before any query
