@@ -1528,6 +1528,64 @@ def test_join_with_different_naming_settings_is_rejected(started_cluster):
         pg_query("DROP SCHEMA IF EXISTS naming_schema CASCADE")
 
 
+def test_single_table_engine_cannot_join_database_engine_keeper_path(started_cluster):
+    # The /naming fingerprint carries the PostgreSQL source identity, not only the ClickHouse-side
+    # naming settings. A coordinated single-table engine on `db.table` and a coordinated database
+    # engine with materialized_postgresql_tables_list = 'table' derive the same table set, but
+    # different PostgreSQL slot/publication names (`db_table_*` vs `db_*`): sharing one keeper path
+    # they would share the /leader and /replicas bookkeeping without sharing the underlying
+    # slot/publication, so dropping one setup could tear down or leak the other's PostgreSQL objects.
+    # Such a CREATE must be rejected synchronously.
+    identity_keeper_path = "/clickhouse/mat_pg/{shard}/source_identity_test"
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        f"materialized_postgresql_keeper_path = '{identity_keeper_path}'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=settings,
+        )
+        check_tables_are_synchronized(instance, "test_table")
+
+        # The database engine has published its source identity (an empty source table name) at
+        # /naming. The single-table engine replicating postgres_database.test_table would derive a
+        # different slot and publication, so it must not join the same keeper path.
+        error = instance2.query_and_get_error(
+            f"CREATE TABLE test_single_table_identity (key Int64, value Int64) "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+            f"PRIMARY KEY key "
+            f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+            f"materialized_postgresql_keeper_path = '{identity_keeper_path}', "
+            f"materialized_postgresql_replica_name = '{{replica}}'",
+            settings={"allow_experimental_materialized_postgresql_table": 1},
+        )
+        assert "source identity" in error
+        assert (
+            "test_single_table_identity"
+            not in instance2.query("SHOW TABLES").split()
+        )
+
+        # A database engine with the identical source identity still joins.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=settings,
+        )
+        check_tables_are_synchronized(instance2, "test_table")
+    finally:
+        pg_manager.drop_materialized_db()
+        pg_manager2.drop_materialized_db()
+
+
 def test_bad_macro_in_coordination_settings_is_rejected_at_create(started_cluster):
     # A misspelled or unsupported macro in materialized_postgresql_keeper_path or
     # materialized_postgresql_replica_name must fail the CREATE synchronously. Without CREATE-time

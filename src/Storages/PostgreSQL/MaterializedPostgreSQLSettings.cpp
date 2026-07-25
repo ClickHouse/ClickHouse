@@ -54,8 +54,10 @@ namespace ErrorCodes
         "{replica} macro is rejected: put the per-replica part in `materialized_postgresql_replica_name`. " \
         "All replicas of one coordinated setup must agree on the naming-affecting settings " \
         "(`materialized_postgresql_table_engine`, `materialized_postgresql_schema`, " \
-        "`materialized_postgresql_schema_list`, `materialized_postgresql_tables_list_with_schema`); " \
-        "a replica that disagrees with the settings published under this path is rejected.", 0) \
+        "`materialized_postgresql_schema_list`, `materialized_postgresql_tables_list_with_schema`) " \
+        "and must replicate the same PostgreSQL source (the same source database and, for the single-table " \
+        "engine, the same source table - the single-table and the database engine can never share one path); " \
+        "a replica that disagrees with the identity published under this path is rejected.", 0) \
     DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
         "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
         "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica: " \

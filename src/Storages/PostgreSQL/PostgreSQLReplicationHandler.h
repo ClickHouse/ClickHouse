@@ -51,12 +51,18 @@ struct NestedTableEngineSpec
 /// as the replication handler will expand them later, so an invalid macro fails at CREATE time.
 /// When the coordinated setup already exists in Keeper, the naming-affecting settings of this replica
 /// are also checked against it, so a replica that would derive different ClickHouse table names from
-/// the shared publication is rejected synchronously.
+/// the shared publication is rejected synchronously. `postgres_database` and `postgres_table` carry the
+/// PostgreSQL source identity of the engine being created (the table name is empty for the database
+/// engine); they are part of that check, because the names of the shared replication slot and
+/// publication are derived from them - a setup replicating a different source must not join the same
+/// keeper path even when every ClickHouse-side setting matches.
 void validateMaterializedPostgreSQLCoordinationSettings(
     const MaterializedPostgreSQLSettings & settings,
     ContextPtr context,
     const String & clickhouse_database_name,
-    const UUID & clickhouse_uuid);
+    const UUID & clickhouse_uuid,
+    const String & postgres_database,
+    const String & postgres_table);
 
 class PostgreSQLReplicationHandler : WithContext
 {

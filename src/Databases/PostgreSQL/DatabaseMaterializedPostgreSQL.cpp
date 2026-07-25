@@ -964,7 +964,9 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             postgresql_replica_settings->loadFromQuery(*engine_define);
 
         if (!args.create_query.attach)
-            validateMaterializedPostgreSQLCoordinationSettings(*postgresql_replica_settings, args.context, args.database_name, args.uuid);
+            validateMaterializedPostgreSQLCoordinationSettings(
+                *postgresql_replica_settings, args.context, args.database_name, args.uuid,
+                configuration.database, /* postgres_table */ "");
 
         return std::make_shared<DatabaseMaterializedPostgreSQL>(
             args.context, args.metadata_path, args.uuid, args.create_query.attach,

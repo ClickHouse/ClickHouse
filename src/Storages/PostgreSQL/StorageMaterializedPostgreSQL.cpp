@@ -815,7 +815,8 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 
         if (args.mode <= LoadingStrictnessLevel::CREATE)
             validateMaterializedPostgreSQLCoordinationSettings(
-                *postgresql_replication_settings, args.getContext(), args.table_id.database_name, args.table_id.uuid);
+                *postgresql_replication_settings, args.getContext(), args.table_id.database_name, args.table_id.uuid,
+                configuration.database, configuration.table_or_query.getTableName());
 
         /// For the table engine the user declares the column types explicitly, so this setting cannot
         /// affect anything (it would be a silent no-op). It is only meaningful for the database engine,

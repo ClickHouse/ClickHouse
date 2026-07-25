@@ -270,25 +270,41 @@ namespace
         return slot_name;
     }
 
-    /// The canonical form of the settings through which a coordinated replica derives the ClickHouse names
+    /// The canonical form of the identity through which a coordinated replica derives the ClickHouse names
     /// of the shared nested tables (and the names of the shared PostgreSQL slot and publication) from the
     /// shared publication. Stored at <keeper_path>/naming by the first replica and checked by every joining
     /// one (see `ensureCoordinatedNamingCompatible`): replicas that disagree on any of these would build
     /// disjoint replicated nested trees - or even separate slots/publications - on the same keeper path.
     /// The nested table engine is included because mixing Replicated and Shared nested engines on one
     /// shared tree is equally incoherent.
-    String coordinatedNamingFingerprint(const MaterializedPostgreSQLSettings & settings)
+    ///
+    /// Besides the ClickHouse-side settings, the fingerprint carries the remote source identity that
+    /// getPublicationName()/getReplicationSlotName() derive the shared PostgreSQL objects from: the source
+    /// database name and the source table name (empty for the database engine, so this also separates a
+    /// single-table engine from a database engine). Without it, a coordinated single-table engine on
+    /// `db.table` and a coordinated database engine with `materialized_postgresql_tables_list = 'table'`
+    /// would pass the ClickHouse-side checks and the /table_set fence on one keeper path, yet still work
+    /// against DIFFERENT PostgreSQL slots/publications (`db_table_*` vs `db_*`) - sharing /leader and
+    /// /replicas bookkeeping without sharing the replicated object, so a drop of one setup would tear down
+    /// or leak the other's PostgreSQL objects. The connection endpoint (host:port) is deliberately NOT
+    /// part of the identity: replicas of one setup may legitimately reach the same PostgreSQL server
+    /// through different addresses.
+    String coordinatedNamingFingerprint(
+        const MaterializedPostgreSQLSettings & settings, const String & postgres_database, const String & postgres_table)
     {
         const String schema = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema];
         const String schema_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list];
         const bool schema_as_a_part_of_table_name
             = !schema_list.empty() || settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema];
         return fmt::format(
-            "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\n",
+            "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\n"
+            "postgres_database: {}\npostgres_table: {}\n",
             settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine].value,
             schema,
             schema_list,
-            schema_as_a_part_of_table_name);
+            schema_as_a_part_of_table_name,
+            postgres_database,
+            postgres_table);
     }
 
     /// The identity stored in this replica's <keeper_path>/replicas/<name> registration node. The registration
@@ -310,7 +326,9 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     const MaterializedPostgreSQLSettings & settings,
     ContextPtr context,
     const String & clickhouse_database_name,
-    const UUID & clickhouse_uuid)
+    const UUID & clickhouse_uuid,
+    const String & postgres_database,
+    const String & postgres_table)
 {
     const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
     const bool is_plain = engine == "ReplacingMergeTree";
@@ -477,19 +495,20 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     /// without Keeper anyway, and joining an existing setup on an unverified guess must not happen.
     if (coordination_enabled)
     {
-        const String local_fingerprint = coordinatedNamingFingerprint(settings);
+        const String local_fingerprint = coordinatedNamingFingerprint(settings, postgres_database, postgres_table);
         String published_fingerprint;
         if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/naming", published_fingerprint)
             && published_fingerprint != local_fingerprint)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "A coordinated MaterializedPostgreSQL setup already exists at Keeper path '{}', and its "
-                "naming-affecting settings differ from the ones of this CREATE query. All replicas of one "
-                "coordinated setup must agree on materialized_postgresql_table_engine, "
+                "naming-affecting settings or source identity differ from the ones of this CREATE query. All "
+                "replicas of one coordinated setup must agree on materialized_postgresql_table_engine, "
                 "materialized_postgresql_schema, materialized_postgresql_schema_list and "
-                "materialized_postgresql_tables_list_with_schema: they determine how the ClickHouse names of "
-                "the shared nested tables (and the names of the shared replication slot and publication) are "
-                "derived from the shared publication, so a disagreeing replica would build a disjoint "
-                "replicated tree that never receives the other replicas' data. Existing setup:\n{}\nThis "
+                "materialized_postgresql_tables_list_with_schema, and must replicate the same PostgreSQL "
+                "source (the same source database and, for the single-table engine, the same source table): "
+                "these determine how the ClickHouse names of the shared nested tables (and the names of the "
+                "shared replication slot and publication) are derived, so a disagreeing replica would share "
+                "the coordination bookkeeping without sharing the replicated data. Existing setup:\n{}\nThis "
                 "query:\n{}\n(If the existing setup was dropped incompletely, remove the leftover Keeper "
                 "path manually.)",
                 expanded_keeper_path, published_fingerprint, local_fingerprint);
@@ -606,7 +625,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
             coordination_replica_name = macros->expand(raw_replica_name, info);
         }
 
-        coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings);
+        coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings, postgres_database_, postgres_table_);
         coordination_replica_owner = coordinationReplicaOwnerId(clickhouse_uuid_);
 
         LOG_INFO(log, "Replica coordination enabled: keeper path '{}', replica name '{}', nested table engine '{}'",
@@ -1662,12 +1681,14 @@ void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
     if (published_fingerprint != coordination_naming_fingerprint)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' was created with "
-            "naming-affecting settings that differ from this replica's. All replicas of one coordinated "
-            "setup must agree on materialized_postgresql_table_engine, materialized_postgresql_schema, "
-            "materialized_postgresql_schema_list and materialized_postgresql_tables_list_with_schema: they "
+            "naming-affecting settings or a source identity that differ from this replica's. All replicas "
+            "of one coordinated setup must agree on materialized_postgresql_table_engine, "
+            "materialized_postgresql_schema, materialized_postgresql_schema_list and "
+            "materialized_postgresql_tables_list_with_schema, and must replicate the same PostgreSQL source "
+            "(the same source database and, for the single-table engine, the same source table): these "
             "determine how the ClickHouse names of the shared nested tables (and the names of the shared "
-            "replication slot and publication) are derived from the shared publication, so a disagreeing "
-            "replica would build a disjoint replicated tree that never receives the other replicas' data. "
+            "replication slot and publication) are derived, so a disagreeing replica would share the "
+            "coordination bookkeeping without sharing the replicated data. "
             "Existing setup:\n{}\nThis replica:\n{}\n(If the existing setup was dropped incompletely, "
             "remove the leftover Keeper path manually.)",
             coordination_keeper_path, published_fingerprint, coordination_naming_fingerprint);
