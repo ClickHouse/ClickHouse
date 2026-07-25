@@ -18,13 +18,17 @@
 
   // Inkeep integration API keys. These are client-side/public keys (they ship
   // in the browser bundle), so committing them is expected. Staging covers any
-  // *.mintlify.app host (preview/staging deploys); every other host (localhost,
-  // mint dev, a future prod domain) uses the local-dev key.
+  // *.mintlify.app and *.mintlify.site hosts (preview/staging deploys); every
+  // other host (localhost, mint dev, a future prod domain) uses the local-dev
+  // key.
   var INKEEP_API_KEY_STAGING = 'd3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54';
   var INKEEP_API_KEY_LOCAL = 'b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b';
-  var INKEEP_API_KEY = /\.mintlify\.app$/.test(window.location.hostname)
+  var INKEEP_API_KEY = /\.mintlify\.(?:app|site)$/.test(window.location.hostname)
     ? INKEEP_API_KEY_STAGING
     : INKEEP_API_KEY_LOCAL;
+  // The legacy *.mintlify.app source exposed pages at the host root, while
+  // the *.mintlify.site source includes a /docs prefix.
+  var INKEEP_PREVIEW_URL_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/;
 
   // cxkit-mintlify CDN bundle. @0.5 resolves to the latest 0.5.x; pin a full
   // version (e.g. @0.5.119) when deploying for reproducible builds.
@@ -173,10 +177,10 @@
         // overwrite tabs with the result.
         transformSource: function (source) {
           var url = source.url || '';
-          var isPreview = url.indexOf('private-7c7dfe99.mintlify.app') !== -1;
+          var isPreview = INKEEP_PREVIEW_URL_RE.test(url);
           if (isPreview) {
             // Rewrite preview links to the canonical clickhouse.com/docs domain.
-            url = url.replace(/^https?:\/\/private-7c7dfe99\.mintlify\.app\//, 'https://clickhouse.com/docs/');
+            url = url.replace(INKEEP_PREVIEW_URL_RE, 'https://clickhouse.com/docs/');
           }
           // Do NOT tag sources with 'All' — 'All' is Inkeep's reserved built-in
           // tab (shows every result automatically); tagging sources with it

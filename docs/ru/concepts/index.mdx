@@ -4,14 +4,21 @@ slug: /concepts
 description: 'Обзорная страница с концепциями'
 keywords: ['концепции', 'OLAP', 'быстрый']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-В этом разделе документации мы подробнее рассмотрим концепции, объясняющие, почему ClickHouse настолько быстрый и эффективный.
+В этом разделе документации мы рассмотрим концепции, благодаря которым ClickHouse работает так быстро и эффективно.
 
-| Страница                                                                         | Описание                                                                    |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Почему ClickHouse такой быстрый?](/ru/get-started/about/why-clickhouse-is-so-fast) | Узнайте, что делает ClickHouse таким быстрым.                               |
-| [Что такое OLAP?](/concepts/olap)                                                     | Узнайте, что такое онлайн-аналитическая обработка.                          |
-| [Чем ClickHouse уникален?](/ru/get-started/about/distinctive-features)              | Узнайте, что делает ClickHouse уникальным.                                  |
-| [Глоссарий](/ru/concepts/core-concepts/glossary)                                    | На этой странице собраны термины, которые часто встречаются в документации. |
-| [FAQ](/ru/resources/support-center/knowledge-base/general-faqs/faq-index)           | Подборка наиболее частых вопросов о ClickHouse.                             |
+<CardGroup cols={2}>
+  <Card title="Основы" icon="cubes" href="/ru/concepts/core-concepts/index">
+    Изучите основные принципы работы ClickHouse, включая части таблиц, партиции, слияния и первичные индексы.
+  </Card>
+
+  <Card title="Концепции ClickHouse" icon="lightbulb" href="/ru/concepts/features/index">
+    Изучите концепции ClickHouse, включая materialized views, Dictionaries, настройку производительности, Operations, конфигурацию и безопасность.
+  </Card>
+
+  <Card title="Лучшие практики" icon="list-check" href="/ru/concepts/best-practices/index">
+    Лучшие практики при использовании ClickHouse.
+  </Card>
+</CardGroup>
