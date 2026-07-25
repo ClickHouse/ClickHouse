@@ -1,4 +1,4 @@
--- Empty polygon must round-trip through WKB/WKT canonically: numRings = 0, not a spurious
+-- Empty polygon must round-trip through WKB canonically: numRings = 0, not a spurious
 -- single zero-point ring. See https://github.com/ClickHouse/ClickHouse/issues/110701
 
 -- WKT source: canonical WKB of POLYGON EMPTY is type 3 with numRings = 0.

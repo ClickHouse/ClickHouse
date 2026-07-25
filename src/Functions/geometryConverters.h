@@ -386,7 +386,7 @@ public:
 
     void add(const Polygon<Point> & polygon)
     {
-        /// An empty polygon (no outer ring, no holes) is stored with zero rings, so that a WKB/WKT
+        /// An empty polygon (no outer ring, no holes) is stored with zero rings, so that a WKB
         /// round-trip stays canonical (numRings = 0) instead of gaining a spurious empty outer ring.
         if (polygon.outer().empty() && polygon.inners().empty())
         {
