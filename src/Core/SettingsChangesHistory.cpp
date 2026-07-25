@@ -42,6 +42,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.8",
         {
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
+            {"read_in_order_max_primary_key_ratio", 1.0, 0.5, "Disable read-in-order optimization when primary key selectivity is poor to preserve parallelism"},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -93,7 +94,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
             {"enable_join_runtime_filters_index_analysis", false, false, "New setting to enable join filtering using dynamic index analysis"},
             {"vector_search_use_quantized_codes", false, false, "New setting to opt into the two-stage approximate vector-search optimization over a Quantize(...) column codec; queries stay exact by default."},
-            {"read_in_order_max_primary_key_ratio", 1.0, 0.5, "Disable read-in-order optimization when primary key selectivity is poor to preserve parallelism"},
             {"reader_executor_use_long_connections", false, false, "New experimental ReaderExecutor setting (off by default): reuse a held source connection across sequential windows."},
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},
