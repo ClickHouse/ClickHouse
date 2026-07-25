@@ -898,12 +898,30 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
         return;
 
-    auto * query_node = table_expression_node->as<QueryNode>();
-    auto * union_node = table_expression_node->as<UnionNode>();
+    /** A join operand can be a derived table wrapped in `ARRAY JOIN`: in an explicit join the
+      * `ARRAY JOIN` binds to the preceding table expression, as in `(SELECT [1] AS arr, 2 AS x)
+      * ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true`. The `ARRAY JOIN` carries the inner
+      * columns through to the enclosing join, so the unaliased inner subquery / table function
+      * introduces the same kind of unreachable-column ambiguity as a bare one and needs the same
+      * validation. Unwrap the (possibly nested) `ARRAY JOIN` chain to find the node that would have to
+      * carry the alias; the collision set of this side stays the outer `ARRAY JOIN`'s exposed columns
+      * (inner columns plus the `ARRAY JOIN` output columns). (In a comma join the `ARRAY JOIN` instead
+      * wraps the whole cross join, and the enclosing-`ARRAY JOIN` handling above applies.)
+      */
+    QueryTreeNodePtr unaliased_expression_node = table_expression_node;
+    while (auto * array_join_node = unaliased_expression_node->as<ArrayJoinNode>())
+    {
+        unaliased_expression_node = array_join_node->getTableExpression();
+        if (unaliased_expression_node->hasAlias())
+            return;
+    }
+
+    auto * query_node = unaliased_expression_node->as<QueryNode>();
+    auto * union_node = unaliased_expression_node->as<UnionNode>();
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
-    auto table_expression_node_type = table_expression_node->getNodeType();
+    auto table_expression_node_type = unaliased_expression_node->getNodeType();
 
     if (table_expression_node_type != QueryTreeNodeType::TABLE_FUNCTION &&
         table_expression_node_type != QueryTreeNodeType::QUERY &&
@@ -961,7 +979,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     NameSet table_expression_columns;
     NameSet sibling_columns;
     bool columns_are_known = getColumnsFromTableExpression(
-        table_expression_node, table_expression_columns, JoinVirtualColumnsPolicy::ExcludeUniversal, GetColumnsOptions::All);
+        table_expression_node, table_expression_columns, JoinVirtualColumnsPolicy::ExcludeUniversal, GetColumnsOptions::All,
+        true /*collect_array_join_columns*/);
 
     QueryTreeNodes sibling_table_expressions;
     if (const auto * join = join_node->as<JoinNode>())
@@ -1039,7 +1058,7 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
                     "JOIN {} no alias for subquery or table function {}. "
                     "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
                     join_node->formatASTForErrorMessage(),
-                    table_expression_node->formatASTForErrorMessage(),
+                    unaliased_expression_node->formatASTForErrorMessage(),
                     scope.scope_node->formatASTForErrorMessage());
 }
 

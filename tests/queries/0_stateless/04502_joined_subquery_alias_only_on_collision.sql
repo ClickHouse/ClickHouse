@@ -173,6 +173,29 @@ SELECT x AS x FROM numbers(1), (SELECT 2 AS x);
 -- `number`), so the subquery output `x` is unreachable without an alias, which is therefore required.
 SELECT number AS x FROM numbers(1), (SELECT 2 AS x); -- { serverError ALIAS_REQUIRED }
 
+-- A join operand can itself be a derived table wrapped in `ARRAY JOIN` (in an explicit join the
+-- `ARRAY JOIN` binds to the preceding table expression). The `ARRAY JOIN` carries the inner columns
+-- through to the enclosing join, so the unaliased inner subquery is validated like a bare one: a
+-- collision with a sibling column (`x`) requires the alias.
+SELECT x FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true; -- { serverError ALIAS_REQUIRED }
+
+-- With an alias on the inner derived table the collision is resolvable, so the query is allowed.
+SELECT lhs.x, rhs.x, arr FROM (SELECT [1] AS arr, 2 AS x) AS lhs ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true;
+
+-- Without a collision the missing alias is harmless, exactly as for a bare derived table.
+SELECT y, x, arr FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS y) AS rhs ON true;
+
+-- The `ARRAY JOIN` output alias is part of this side's exposed columns, so it collides with a sibling
+-- column of the same name and requires the alias too.
+SELECT x FROM (SELECT [1] AS arr) ARRAY JOIN arr AS x INNER JOIN (SELECT 0 AS x) AS rhs ON true; -- { serverError ALIAS_REQUIRED }
+
+-- A plain table wrapped in `ARRAY JOIN` never needs an alias, like a plain table itself, even when its
+-- columns collide with a sibling (the table name can always qualify them).
+SELECT arr_t.id, rhs.id, elem FROM arr_t ARRAY JOIN arr1 AS elem INNER JOIN (SELECT 0 AS id) AS rhs ON true;
+
+-- Disabling the setting keeps the pre-existing permissive behavior for the wrapped case as well.
+SELECT x FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true SETTINGS joined_subquery_requires_alias = 0;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
