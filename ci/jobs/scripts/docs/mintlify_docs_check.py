@@ -65,8 +65,13 @@ SNIPPET_IMPORTS_CHECK = (
     "Check snippet imports",
     "python3 ../ci/jobs/scripts/docs/snippet_component_imports_check.py .",
 )
+CLOUD_RELEASE_NOTES_CHECK = (
+    "Check Cloud release notes",
+    "python3 ../ci/jobs/scripts/docs/cloud_release_notes_check.py .",
+)
 DEFAULT_CHECKS = [
     SNIPPET_IMPORTS_CHECK,
+    CLOUD_RELEASE_NOTES_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
