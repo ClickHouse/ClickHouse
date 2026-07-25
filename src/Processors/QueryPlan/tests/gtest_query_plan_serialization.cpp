@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/ServerSettings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -28,6 +30,11 @@
 #include <thread>
 
 using namespace DB;
+
+namespace DB::ServerSetting
+{
+    extern const ServerSettingsUInt64 max_serialized_query_plan_size;
+}
 
 namespace
 {
@@ -270,20 +277,24 @@ TEST(QueryPlanSerialization, PerVersionSerializedPlanCache)
     EXPECT_EQ(plan.getSerializedData(current + 100), current_bytes);
 }
 
-TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheSetting)
+TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheServerSetting)
 {
     registerStepsOnce();
     const std::string bytes = serializePlan(makeChainPlan(4));
 
-    /// A limit below the plan size rejects it instead of buffering the envelope.
-    auto limited_context = Context::createCopy(getContext().context);
-    limited_context->setSetting("max_serialized_query_plan_size", UInt64(8));
-    ReadBufferFromString limited_in(bytes);
-    EXPECT_THROW(QueryPlan::deserialize(limited_in, limited_context, /*max_type_complexity=*/0), Exception);
-
-    /// The same plan passes at the default limit, so it is the setting doing the rejecting.
+    /// The plan passes at the default limit.
     ReadBufferFromString in(bytes);
     EXPECT_NO_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0));
+
+    /// Server settings live in the shared context, so the old value has to come back for the
+    /// other tests in this binary.
+    const UInt64 old_limit = getContext().context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
+    getContext().context->setServerSetting("max_serialized_query_plan_size", UInt64(8));
+    SCOPE_EXIT({ getContext().context->setServerSetting("max_serialized_query_plan_size", old_limit); });
+
+    /// A limit below the plan size rejects it instead of buffering the envelope.
+    ReadBufferFromString limited_in(bytes);
+    EXPECT_THROW(QueryPlan::deserialize(limited_in, getContext().context, /*max_type_complexity=*/0), Exception);
 }
 
 TEST(QueryPlanSerialization, PayloadTailIsRejectedAtAKnownStepFormat)

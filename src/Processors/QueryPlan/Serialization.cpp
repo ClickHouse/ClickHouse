@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -21,9 +22,9 @@
 namespace DB
 {
 
-namespace Setting
+namespace ServerSetting
 {
-    extern const SettingsUInt64 max_serialized_query_plan_size;
+    extern const ServerSettingsUInt64 max_serialized_query_plan_size;
 }
 
 namespace ErrorCodes
@@ -268,9 +269,9 @@ void QueryPlan::serializeEnvelope(WriteBuffer & out, const SerializationFlags & 
 
 QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
 {
-    /// Bounds the memory one plan can take before anything is buffered. The initiator's value
-    /// travels with the query, so every reader of this plan applies the same limit.
-    const UInt64 max_envelope_bytes = context->getSettingsRef()[Setting::max_serialized_query_plan_size];
+    /// Bounds the memory one plan can take before anything is buffered. A server setting, not a
+    /// query one: a query setting arrives from the sender, who could then pick its own limit.
+    const UInt64 max_envelope_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
 
     UInt64 envelope_size = 0;
     readVarUInt(envelope_size, in);

@@ -1386,6 +1386,21 @@ Disabled by default to avoid possible security issues which can be caused by bug
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 )", 0) \
+    DECLARE(UInt64, max_serialized_query_plan_size, 2_GiB, R"(
+The maximum size in bytes of a serialized query plan this server accepts in a QueryPlan packet.
+
+A plan above this size is rejected with `CANNOT_PARSE_QUERY_PLAN` before any of it is buffered, so
+the sender cannot make this server allocate an arbitrary amount of memory for one plan. It is a
+server setting on purpose: a query setting would travel with the query, letting the sender pick its
+own limit. Raise it in the server config, on every node that reads plans, if an extreme plan needs
+it.
+
+**Example**
+
+```xml
+<max_serialized_query_plan_size>4294967296</max_serialized_query_plan_size>
+```
+)", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, true, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
     DECLARE(UInt64, startup_mv_delay_ms, 0, R"(Debug parameter to simulate materizlied view creation delay)", 0) \
     DECLARE(UInt64, os_cpu_busy_time_threshold, 1'000'000, "Threshold of OS CPU busy time in microseconds (OSCPUVirtualTimeMicroseconds metric) to consider CPU doing some useful work, no CPU overload would be considered if busy time was below this value.", 0) \
