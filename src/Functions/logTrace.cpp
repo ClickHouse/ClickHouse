@@ -62,7 +62,10 @@ namespace
         /// (e.g. from a subquery or view boundary) into one `and(...)` filter, which would evaluate the stateful
         /// predicate on the inner filter's input instead of its output, and keeps `tryPushDownLimit` from setting
         /// the `DistinctStep` limit hint when a stateful expression sits below the distinct, because the distinct
-        /// transforms stop reading input once the hint is reached. The AST-side detectors behind the trivial-`LIMIT`
+        /// transforms stop reading input once the hint is reached, and keeps the lazy `FINAL`
+        /// optimization (`optimizeLazyFinal`) from cloning a stateful `WHERE` / `PREWHERE` / row-level
+        /// filter into its hidden non-FINAL set-building read, which would evaluate the predicate a
+        /// second time on the pre-FINAL duplicate stream. The AST-side detectors behind the trivial-`LIMIT`
         /// fast paths and `MergeTreeWhereOptimizer` also descend into SQL UDF bodies, so wrapping a stateful
         /// function (or `arrayJoin`) in `CREATE FUNCTION` does not bypass these fences.
         /// This mirrors other functions with block-level semantics such as `neighbor`.

@@ -462,6 +462,17 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     if (!filter_step && !reading_step->getPrewhereInfo() && !reading_step->getRowLevelFilter())
         return;
 
+    /// A stateful predicate (e.g. `logTrace`, `neighbor`) must run exactly once, on the row stream of
+    /// the query as written. The rewrite below clones the WHERE filter, the prewhere, and the row-level
+    /// filter into a hidden non-FINAL set-building read (and the non-intersecting split replays them on
+    /// a plain non-FINAL read), and then evaluates them again on the result branch. A stateful predicate
+    /// would therefore execute twice and observe the pre-FINAL duplicate stream, so the key set could
+    /// differ from what the unoptimized query would select. Keep the regular FINAL read.
+    if ((filter_step && filter_step->getExpression().hasStatefulFunctions())
+        || (reading_step->getPrewhereInfo() && reading_step->getPrewhereInfo()->prewhere_actions.hasStatefulFunctions())
+        || (reading_step->getRowLevelFilter() && reading_step->getRowLevelFilter()->actions.hasStatefulFunctions()))
+        return;
+
     const auto & metadata_snapshot = reading_step->getStorageMetadata();
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
 
