@@ -1320,6 +1320,27 @@ bool mainTableExistenceRequired(const IAST & ast)
     return true;
 }
 
+/// Whether the query's interpreter actually touches an existing table its main-table reference names, so
+/// detaching and attaching that table exercises a code path the query really takes. Plain `CREATE`/`ATTACH
+/// TABLE dst` and `CREATE ... IF NOT EXISTS dst` never touch an existing `dst`: `InterpreterCreateQuery`
+/// either throws `TABLE_ALREADY_EXISTS` or turns the statement into a no-op before reaching the table's
+/// storage. The same holds for `UNDROP TABLE dst`: `InterpreterUndropQuery::executeToTable` throws
+/// `TABLE_ALREADY_EXISTS` when an active `dst` already exists. A `DETACH`/`ATTACH` of such a target would
+/// give a no-op or failing query a side effect on a table it never touches, breaking the side-effect-free
+/// invariant this hook keeps for failing queries, so those targets are not eligible. Only the
+/// `CREATE OR REPLACE`/`REPLACE` forms replace an existing object, so only they keep the target eligible
+/// (the `AS src` source of any `CREATE` form stays eligible independently — the interpreter reads the
+/// source's structure before the destination existence check, see the `ASTCreateQuery` branch in
+/// `collectTablesInQuery`).
+bool mainTableTouchedIfExists(const IAST & ast)
+{
+    if (const auto * create = ast.as<ASTCreateQuery>())
+        return create->replace_table || create->replace_view;
+    if (ast.as<ASTUndropQuery>())
+        return false;
+    return true;
+}
+
 /// The object kind the query's main-table reference demands (see `ExpectedObjectKind`). Everything not
 /// enumerated here — including `SHOW CREATE TABLE`, `EXISTS TABLE` and plain `DROP`/`DETACH TABLE`, which
 /// accept any object kind — places no constraint on the resolved storage. The kind-specific `DROP`/`DETACH`
@@ -1551,7 +1572,11 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// `SHOW CREATE TEMPORARY TABLE t`) names a session-local temporary table, and its name is
         /// unqualified. Resolving it through the persistent catalog would detach an unrelated persistent
         /// table of the same name that the query never touches, so skip temporary-table references.
-        if (!query_with_output->isTemporary())
+        ///
+        /// Targets whose query never touches an existing table of that name (plain `CREATE`/`ATTACH`,
+        /// `CREATE ... IF NOT EXISTS`, `UNDROP` — see `mainTableTouchedIfExists`) are skipped too:
+        /// resolving them would detach a table the statement is about to fail on or no-op against.
+        if (!query_with_output->isTemporary() && mainTableTouchedIfExists(*ast))
             data.addTableIfNotEmpty(query_with_output->getDatabase(), query_with_output->getTable(), active_ctes, mainTableResolveNamespace(*ast), requiredAccessForTableQuery(*ast), mainTableExistenceRequired(*ast), mainTableExpectedObjectKind(*ast));
 
         /// Some `ASTQueryWithTableAndOutput` classes reference additional real tables that live neither in the
