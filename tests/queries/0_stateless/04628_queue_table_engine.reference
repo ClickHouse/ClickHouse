@@ -1,0 +1,8 @@
+experimental gate: passed
+argument validation: passed
+rows before refresh: 0
+[(1,'one'),(2,'two'),(3,'three'),(4,'four'),(5,'five')]
+rows after second refresh: 5
+1
+rows after failed delivery: 0
+rows after retry: 3

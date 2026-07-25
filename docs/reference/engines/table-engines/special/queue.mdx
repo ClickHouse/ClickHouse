@@ -1,0 +1,122 @@
+---
+description: 'A native persistent queue that delivers inserted rows to materialized views.'
+sidebarTitle: 'Queue'
+slug: /engines/table-engines/special/queue
+title: 'Queue table engine'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
+The `Queue` table engine stores inserted rows in ClickHouse and asynchronously delivers them to attached materialized views.
+It does not require an external message broker.
+
+<Info>
+The `Queue` table engine is experimental and may change in backwards-incompatible ways.
+Enable it with the [`allow_experimental_queue_table_engine`](/reference/settings/session-settings#allow_experimental_queue_table_engine) setting.
+</Info>
+
+## Syntax {#syntax}
+
+```sql
+CREATE TABLE queue_name
+(
+    column1 Type1,
+    column2 Type2,
+    ...
+)
+ENGINE = Queue([retention_seconds[, max_batch_size[, polling_interval_ms]]])
+```
+
+Engine arguments:
+
+- `retention_seconds` — how long messages and their acknowledgement records are retained. Default: `604800` (7 days).
+- `max_batch_size` — maximum number of messages delivered in one batch. Default: `65536`.
+- `polling_interval_ms` — delay between background polling attempts. Default: `100`.
+
+All arguments must be positive integer literals.
+
+## Consumption with materialized views {#consumption-with-materialized-views}
+
+Attach one or more materialized views to consume queued rows:
+
+```sql
+SET allow_experimental_queue_table_engine = 1;
+
+CREATE TABLE events_queue
+(
+    event_id UInt64,
+    payload String
+)
+ENGINE = Queue(86400, 10000, 100);
+
+CREATE TABLE events_target
+(
+    event_id UInt64,
+    payload String
+)
+ENGINE = MergeTree
+ORDER BY event_id;
+
+CREATE MATERIALIZED VIEW events_consumer TO events_target
+AS SELECT event_id, payload
+FROM events_queue;
+
+INSERT INTO events_queue VALUES (1, 'hello');
+```
+
+An insert into a `Queue` table only persists the message.
+The background consumer sends a bounded batch to all attached materialized views and acknowledges each message after the complete view pipeline succeeds.
+If delivery fails, the message remains available for a later retry.
+
+The engine provides at-least-once delivery.
+A server failure after a view insert succeeds but before the acknowledgement is persisted can deliver the same message again.
+Target tables should therefore use an idempotent design when duplicates are not acceptable.
+
+## Consumer groups {#consumer-groups}
+
+A `Queue` table represents one consumer group.
+All materialized views attached to the table are delivery targets in that group: a batch is acknowledged only after every attached view accepts it.
+Independent consumer groups are not supported by this initial experimental version.
+
+## Storage and acknowledgement {#storage-and-acknowledgement}
+
+The engine owns an internal `ReplacingMergeTree(version, is_deleted)` table.
+Each message receives an internal UUID when it is inserted.
+Successful delivery appends a higher-version row with `is_deleted = 1` for that message.
+This gives the engine a persistent per-message acknowledgement without running a mutation for each consumed row.
+
+The internal table uses `FINAL` while selecting a batch and enables cleanup of deleted replacement rows during merges.
+The implementation and internal schema are experimental and should not be accessed directly.
+
+## Retention and TTL {#retention-and-ttl}
+
+The internal table applies a TTL based on the original enqueue time.
+The live row and its acknowledgement tombstone use the same timestamp, so TTL does not remove a tombstone before the message version it hides.
+
+TTL cleanup is asynchronous and occurs during merges.
+Retention is a storage bound and expiration fallback; it is not the acknowledgement mechanism.
+
+## Background controls {#background-controls}
+
+The `Queue` engine supports the common streaming-storage controls:
+
+```sql
+SYSTEM STOP events_queue;
+SYSTEM START events_queue;
+SYSTEM PAUSE events_queue;
+SYSTEM CANCEL events_queue;
+SYSTEM REFRESH events_queue;
+```
+
+`SYSTEM REFRESH` schedules an out-of-order consumption cycle, including while the queue is stopped.
+
+## Current limitations {#current-limitations}
+
+- Direct `SELECT` from a `Queue` table is not supported; use a materialized view.
+- Delivery is at-least-once, not exactly-once.
+- A table currently represents one consumer group.
+- Replicated internal queue state is not supported.
+- Altering the queue schema or engine arguments is not supported.
