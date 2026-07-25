@@ -167,7 +167,10 @@ public:
     void onEntryDestroy(const Parent::Entry & entry) override
     {
         if (isTTLMergeType(entry->merge_type))
-            --merges_with_ttl_counter;
+        {
+            [[maybe_unused]] const size_t prev = merges_with_ttl_counter.fetch_sub(1);
+            chassert(prev > 0);
+        }
     }
 
     void cancelPartMutations(const StorageID & table_id, const String & partition_id, Int64 mutation_version)
@@ -217,7 +220,8 @@ public:
 
     void cancelMergeWithTTL()
     {
-        --merges_with_ttl_counter;
+        [[maybe_unused]] const size_t prev = merges_with_ttl_counter.fetch_sub(1);
+        chassert(prev > 0);
     }
 
     size_t getMergesWithTTLCount() const
