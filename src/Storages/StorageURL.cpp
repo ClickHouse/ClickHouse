@@ -1854,6 +1854,11 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
     /// A scheme is [A-Za-z][A-Za-z0-9+.-]*: per RFC 3986.
     /// We check that the colon appears before any '/', '?', or '#' to avoid false positives
     /// from embedded URLs in query parameters (e.g. "data.csv?next=https://other/a").
+    /// The scheme must be followed by "//": a name whose first path segment contains a colon
+    /// (e.g. `report:2026.csv`) technically parses as a URI with the scheme `report`, but every
+    /// scheme supported here uses the `scheme://` form, so such a name is not a usable absolute
+    /// URL. Per RFC 3986 it would have to be written as `./report:2026.csv` to be a relative
+    /// reference; instead of demanding that, it is resolved against the base as a relative path.
     if (!url.empty() && std::isalpha(static_cast<unsigned char>(url[0])))
     {
         auto colon_pos = url.find(':');
@@ -1871,7 +1876,7 @@ String StorageURL::resolveURLBase(const String & url, const String & base, const
                     break;
                 }
             }
-            if (valid_scheme)
+            if (valid_scheme && url.compare(colon_pos + 1, 2, "//") == 0)
                 return url;
         }
     }

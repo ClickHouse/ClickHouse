@@ -66,11 +66,16 @@ bool hasURLScheme(const String & url)
 /// name, so without an extra check an INSERT would write to the external source without the
 /// corresponding WRITE source grant. This proxy intercepts every write entry point (INSERT,
 /// async insert, a materialized view target) and repeats the source-access check in write mode.
+///
+/// The proxy also carries the logical storage ID (`db`.`name`): the table function creates the
+/// nested storage under the internal `_table_function` database, and privilege checks against the
+/// storage ID (e.g. the SELECT check in `InterpreterSelectQuery`) must see the name the user's
+/// grants refer to.
 class StorageURLDatabaseTable final : public StorageProxy
 {
 public:
-    StorageURLDatabaseTable(StoragePtr nested_, TableFunctionPtr table_function_)
-        : StorageProxy(nested_->getStorageID())
+    StorageURLDatabaseTable(const StorageID & storage_id_, StoragePtr nested_, TableFunctionPtr table_function_)
+        : StorageProxy(storage_id_)
         , nested(std::move(nested_))
         , table_function(std::move(table_function_))
     {
@@ -132,12 +137,6 @@ DatabaseURL::DatabaseURL(const String & name_, const String & base_url_, Context
 String DatabaseURL::getTableURL(const String & name) const
 {
     String resolved = StorageURL::resolveURLBase(name, base_url, "base URL of the URL database");
-
-    /// A plain name with a ':' in its first segment (e.g. `report:2026.csv`) is not a valid relative
-    /// reference per RFC 3986 -- it parses as a URI with a scheme -- so `resolveURLBase` returns it
-    /// unchanged. It is not a usable URL either, so resolve it against the base as a relative path.
-    if (!base_url.empty() && !hasURLScheme(resolved) && resolved == name)
-        resolved = StorageURL::resolveURLBase("./" + name, base_url, "base URL of the URL database");
 
     if (!hasURLScheme(resolved))
         return {};
@@ -214,11 +213,22 @@ StoragePtr DatabaseURL::getTableImpl(const String & name, ContextPtr context_, b
     /// resource is unreachable). Such errors are not swallowed as "table does not exist" even from
     /// `tryGetTable`, because they are more informative. The tables are intentionally not cached:
     /// the remote data (and the inferred schema) can change between queries.
-    auto storage = table_function->execute(ast_function_ptr, context_copy, name);
+    ///
+    /// The table is referenced by an identifier and governed by the grants on this database and
+    /// the source access, so the `CREATE TEMPORARY TABLE` privilege required for a table function
+    /// call written in a query does not apply here.
+    auto storage = table_function->execute(
+        ast_function_ptr,
+        context_copy,
+        name,
+        /* cached_columns_ */ {},
+        /* use_global_context */ false,
+        /* is_insert_query */ false,
+        /* check_create_temporary_table */ false);
     if (!storage)
         return nullptr;
 
-    return std::make_shared<StorageURLDatabaseTable>(std::move(storage), std::move(table_function));
+    return std::make_shared<StorageURLDatabaseTable>(StorageID(getDatabaseName(), name), std::move(storage), std::move(table_function));
 }
 
 bool DatabaseURL::isTableExist(const String & name, ContextPtr context_) const
