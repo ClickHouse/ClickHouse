@@ -294,6 +294,74 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
         return command;
     }
 
+    /// The JDBC driver opens every connection with `SET extra_float_digits = 3` and
+    /// `SET application_name = '...'`. Neither parameter has a ClickHouse counterpart, so these two -
+    /// and only these two - are acknowledged as no-ops. The statement must be exactly a single
+    /// well-formed `SET` of one of these parameters: anything else (another parameter, a trailing
+    /// statement, a query merely containing such text as a literal) falls through to normal
+    /// processing, where it is executed or fails with a proper error.
+    if (command == "SET")
+    {
+        /// PostgreSQL allows an optional `SESSION` or `LOCAL` scope keyword.
+        String name = take_identifier(/* allow_dots = */ false);
+        if (name == "SESSION" || name == "LOCAL")
+            name = take_identifier(/* allow_dots = */ false);
+        if (name != "EXTRA_FLOAT_DIGITS" && name != "APPLICATION_NAME")
+            return std::nullopt;
+
+        /// `SET name = value` or `SET name TO value`.
+        if (!has_more())
+            return std::nullopt;
+        if (prefix[pos] == '=')
+        {
+            ++pos;
+        }
+        else
+        {
+            if (take_word() != "TO")
+                return std::nullopt;
+        }
+
+        /// The value: a single-quoted string literal (with `''` escapes), or a single unquoted
+        /// token such as a number, `DEFAULT`, or a bare identifier.
+        if (!has_more())
+            return std::nullopt;
+        if (prefix[pos] == '\'')
+        {
+            ++pos;
+            while (pos < prefix.size())
+            {
+                if (prefix[pos] == '\'')
+                {
+                    if (pos + 1 < prefix.size() && prefix[pos + 1] == '\'')
+                    {
+                        pos += 2;
+                        continue;
+                    }
+                    break;
+                }
+                ++pos;
+            }
+            if (pos >= prefix.size())
+                return std::nullopt;
+            ++pos;
+        }
+        else
+        {
+            const size_t start = pos;
+            while (pos < prefix.size()
+                && ((prefix[pos] >= 'A' && prefix[pos] <= 'Z') || (prefix[pos] >= '0' && prefix[pos] <= '9')
+                    || prefix[pos] == '_' || prefix[pos] == '$' || prefix[pos] == '.' || prefix[pos] == '+'
+                    || prefix[pos] == '-'))
+                ++pos;
+            if (pos == start)
+                return std::nullopt;
+        }
+        if (has_more())
+            return std::nullopt;
+        return command;
+    }
+
     if (command == "DISCARD")
     {
         /// PostgreSQL accepts only `DISCARD { ALL | PLANS | SEQUENCES | TEMP | TEMPORARY }`
@@ -1028,8 +1096,7 @@ void PostgreSQLHandler::processQuery()
         }
 
         bool transaction_control_cond = isTransactionControlQuery(query->query); // clients wrap statements in BEGIN/COMMIT/ROLLBACK etc.
-        bool jdbc_cond = query->query.contains("SET extra_float_digits") || query->query.contains("SET application_name"); // jdbc starts with setting this parameter
-        if (transaction_control_cond || jdbc_cond)
+        if (transaction_control_cond)
         {
             message_transport->send(
                 PostgreSQLProtocol::Messaging::CommandComplete(
@@ -1037,8 +1104,9 @@ void PostgreSQLHandler::processQuery()
             return;
         }
 
-        /// Accept driver-specific session-management commands (e.g. `RESET ALL`,
-        /// `UNLISTEN *`) as no-ops instead of failing them with a syntax error.
+        /// Accept driver-specific session-management commands (e.g. `RESET ALL`, `UNLISTEN *`, the
+        /// JDBC handshake's `SET application_name` / `SET extra_float_digits`) as no-ops instead of
+        /// failing them with a syntax error.
         if (auto noop_command_tag = classifyNoOpDriverCommand(query->query))
         {
             message_transport->send(PostgreSQLProtocol::Messaging::CommandComplete(std::move(*noop_command_tag)), true);
@@ -1634,7 +1702,8 @@ SELECT * FROM VALUES(
     /// (namespaces above 1e9, relations above 2e9) to avoid colliding with the small built-in OIDs. In addition, when no real database named `public` exists, tables of the
     /// connected database are also exposed under the default `public` schema (OID 2200), so that clients
     /// that do not qualify a table with a schema - which is what `fetchPostgreSQLTableStructure` does by
-    /// default - still resolve it in the current database.
+    /// default - still resolve it in the current database. Each such alias row is a distinct relation
+    /// identity with its own OID (see `pg_class_entries` below), keeping `pg_class.oid` unique per row.
     /// The name-fallback identities hex-encode the names: hex output cannot contain the `:` separator, so
     /// `(database, name)` pairs like `('a', 'b.c')` and `('a.b', 'c')` cannot collide, and neither fallback
     /// can collide with a `uuid:` identity.
@@ -1678,6 +1747,31 @@ FROM
     FROM system.databases
 ) AS databases
 INNER JOIN pg_namespace_oids_data AS oids ON databases.identity = oids.identity)");
+    /// One row per exposed relation, shared by `pg_class` and `pg_attribute` so their `oid` /
+    /// `attrelid` values always agree. Tables of the connected database are exposed a second time under
+    /// the synthetic `public` schema (see `pg_namespace` below), and that alias row is a distinct
+    /// relation identity with its own OID (the real OID offset by 1e9, deterministically derived and
+    /// thus equally stable): PostgreSQL clients treat `pg_class.oid` as the unique relation identifier
+    /// (e.g. `JOIN pg_attribute ON attrelid = pg_class.oid`), so two `pg_class` rows sharing one OID
+    /// would duplicate every column of a current-database table in such joins. Relation OIDs start
+    /// above 2e9 and `UInt32` holds ~4.29e9, so the offset cannot overflow before ~1.29e9 tables.
+    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class_entries AS
+SELECT
+    oids.database AS database,
+    oids.name AS name,
+    oids.oid AS oid,
+    ns.oid AS relnamespace
+FROM pg_class_oids AS oids
+INNER JOIN pg_namespace_oids AS ns ON oids.database = ns.name
+UNION ALL
+SELECT
+    database,
+    name,
+    toUInt32(oid + 1000000000) AS oid,
+    toUInt32(2200) AS relnamespace
+FROM pg_class_oids
+WHERE database = currentDatabase()
+    AND (SELECT count() FROM system.databases WHERE name = 'public') = 0)");
     /// The synthetic `public` schema (OID 2200), which aliases the connected database, is emitted only when
     /// no real ClickHouse database named `public` exists; otherwise the real database wins and is listed
     /// like any other, so that `postgresql(..., schema='public')` reaches it instead of silently resolving
@@ -1716,21 +1810,11 @@ SELECT oid, relname, relnamespace, relkind FROM VALUES(
 )
 UNION ALL
 SELECT
-    oids.oid,
-    oids.name AS relname,
-    ns.oid AS relnamespace,
-    'r' AS relkind
-FROM pg_class_oids AS oids
-INNER JOIN pg_namespace_oids AS ns ON oids.database = ns.name
-UNION ALL
-SELECT
     oid,
     name AS relname,
-    2200 AS relnamespace,
+    relnamespace,
     'r' AS relkind
-FROM pg_class_oids
-WHERE database = currentDatabase()
-    AND (SELECT count() FROM system.databases WHERE name = 'public') = 0)");
+FROM pg_class_entries)");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_proc AS
 SELECT * FROM VALUES(
@@ -1914,7 +1998,7 @@ FROM (
     /// the stream carries and row decoding goes out of sync.
     WHERE default_kind NOT IN ('MATERIALIZED', 'ALIAS', 'EPHEMERAL')
 ) AS cols
-INNER JOIN pg_class_oids AS oids ON cols.database = oids.database AND cols.table = oids.name)");
+INNER JOIN pg_class_entries AS oids ON cols.database = oids.database AND cols.table = oids.name)");
 
     execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_enum AS
 SELECT * FROM VALUES(

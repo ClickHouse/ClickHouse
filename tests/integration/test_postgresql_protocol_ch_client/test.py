@@ -1364,3 +1364,67 @@ def test_catalog_refresh_per_statement(started_cluster):
         conn.close()
         node.query("DROP TABLE IF EXISTS refresh_prepare_probe SYNC")
         node.query("DROP TABLE IF EXISTS refresh_multi_probe SYNC")
+
+
+def test_pg_class_oid_is_unique_per_row(started_cluster):
+    # A current-database table is exposed twice in `pg_class` - under its real namespace and under the
+    # synthetic `public` alias - and the two rows must carry distinct OIDs: clients treat `pg_class.oid`
+    # as the unique relation identifier, so a shared OID would duplicate every column in joins that
+    # follow it (e.g. `pg_attribute.attrelid = pg_class.oid`).
+    node.query("DROP TABLE IF EXISTS oid_unique_probe SYNC")
+    node.query(
+        "CREATE TABLE oid_unique_probe (a UInt32, b String) ENGINE = MergeTree ORDER BY a"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT oid FROM pg_class WHERE relname = 'oid_unique_probe'")
+        oids = [row[0] for row in cur.fetchall()]
+        assert len(oids) == 2, oids
+        assert len(set(oids)) == 2, oids
+
+        # Following either OID through the `attrelid` join must yield each column exactly once.
+        for oid in oids:
+            cur.execute(
+                "SELECT a.attname FROM pg_class c "
+                "JOIN pg_attribute a ON a.attrelid = c.oid "
+                f"WHERE c.oid = {oid} ORDER BY a.attnum"
+            )
+            assert [row[0] for row in cur.fetchall()] == ["a", "b"]
+    finally:
+        conn.close()
+        node.query("DROP TABLE IF EXISTS oid_unique_probe SYNC")
+
+
+def test_jdbc_set_noop_requires_exact_statement(started_cluster):
+    # The JDBC handshake's `SET extra_float_digits` / `SET application_name` are acknowledged as no-ops
+    # only when the packet is exactly such a single statement. A query merely containing that text as a
+    # literal must be executed, not swallowed with a fake `CommandComplete`.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # The handshake forms stay accepted as no-ops.
+        cur.execute("SET extra_float_digits = 3")
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name = 'PostgreSQL JDBC Driver'")
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name TO 'probe'")
+        assert cur.statusmessage == "SET", cur.statusmessage
+
+        # A query containing the magic text as a literal is executed, not swallowed.
+        cur.execute("SELECT 'SET application_name'")
+        assert cur.fetchall() == [("SET application_name",)]
+
+        # A multi-statement packet is not acknowledged by the fast path: it falls through to normal
+        # processing, where the unsupported `SET` fails loudly instead of silently dropping the trailing
+        # statement.
+        with pytest.raises(Exception):
+            cur.execute("SET application_name TO 'x'; SELECT 1")
+    finally:
+        conn.close()
