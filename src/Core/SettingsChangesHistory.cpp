@@ -1322,6 +1322,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
             {"exclude_data_from_backup", false, false, "New setting to exclude a table's data (but keep its DDL) from BACKUP"},
+            {"exclude_from_backup", false, false, "New setting to fully exclude a table (DDL and data) from BACKUP"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",

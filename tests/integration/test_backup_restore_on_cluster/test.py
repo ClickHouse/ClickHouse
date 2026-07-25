@@ -1056,6 +1056,31 @@ def test_table_in_replicated_database_with_not_synced_def():
     ) == TSV([["x", "String"], ["y", "String"]])
 
 
+def test_table_in_replicated_database_with_exclude_data_from_backup_not_synced():
+    node1.query(
+        "CREATE DATABASE mydb ON CLUSTER 'cluster' ENGINE=Replicated('/clickhouse/path/','{shard}','{replica}')"
+    )
+    node1.query(
+        "CREATE TABLE mydb.tbl (x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY tuple()"
+    )
+    node1.query("INSERT INTO mydb.tbl VALUES (1, 'a'), (2, 'b')")
+    node1.query("ALTER TABLE mydb.tbl MODIFY SETTING exclude_data_from_backup=1")
+    backup_name = new_backup_name()
+    # Backup is taken from node2 right after node1's ALTER. node2's own local
+    # replica may not have reloaded/reprocessed the DDL queue entry yet, so
+    # its live storage object could still report exclude_data_from_backup=0.
+    # The exclusion decision must come from the Keeper-snapshotted metadata
+    # (ASTCreateQuery/settings_changes), not node2's possibly-stale storage
+    # object -- this is exactly the blocker the review bot flagged.
+    node2.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
+    node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
+    node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name}")
+    assert node1.query("SELECT count() FROM mydb.tbl") == "0\n"
+    assert node1.query(
+        "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
+    ) == TSV([["x", "UInt8"], ["y", "String"]])
+
+
 def has_mutation_in_backup(mutation_id, backup_name, database, table):
     return (
         os.path.exists(

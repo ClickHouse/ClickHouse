@@ -13,6 +13,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -548,6 +549,20 @@ void BackupEntriesCollector::gatherTablesMetadata()
             const auto & create_table_query = db_table.first;
             const auto & storage = db_table.second;
             const auto & create = create_table_query->as<const ASTCreateQuery &>();
+            if (create.storage && create.storage->settings)
+            {
+                bool exclude_table = false;
+                for (const auto & change : create.storage->settings->changes)
+                {
+                    if (change.name == "exclude_from_backup" && change.value.safeGet<bool>())
+                    {
+                        exclude_table = true;
+                        break;
+                    }
+                }
+                if (exclude_table)
+                    continue;
+            }
             String table_name = create.getTable();
 
             fs::path metadata_path_in_backup;
@@ -593,7 +608,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
     /// partition-related constraints.
     for (auto & [qualified_name, res_table_info] : table_infos)
     {
-        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, rmv_replace_target_ids);
+        res_table_info.should_backup_data = shouldBackupTableData(qualified_name, res_table_info.storage, res_table_info.create_table_query, rmv_replace_target_ids);
 
         if (!res_table_info.should_backup_data)
             continue;
@@ -895,14 +910,29 @@ bool BackupEntriesCollector::shouldBackupTableData(
     const QualifiedTableName & table_name,
     /// Used in the Cloud build.
     [[maybe_unused]] const StoragePtr & storage,
+    const ASTPtr & create_table_query,
     const std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> & rmv_replace_target_ids) const
 {
     if (backup_settings.structure_only)
         return false;
-    if (auto merge_tree_data = std::dynamic_pointer_cast<MergeTreeData>(storage); merge_tree_data && (*merge_tree_data->getSettings())[MergeTreeSetting::exclude_data_from_backup])
+    /// Read exclude_data_from_backup from the already-gathered CREATE TABLE metadata
+    /// (which for DatabaseReplicated is a consistent snapshot taken from Keeper), not
+    /// from the live storage object, since a lagging replica's local storage settings
+    /// can disagree with the DDL actually being written into the backup.
+    if (create_table_query)
     {
-        LOG_TRACE(log, "Skipping table data for {} (exclude_data_from_backup is enabled)", table_name.getFullName());
-        return false;
+        const auto & create = create_table_query->as<const ASTCreateQuery &>();
+        if (create.storage && create.storage->settings)
+        {
+            for (const auto & change : create.storage->settings->changes)
+            {
+                if (change.name == "exclude_data_from_backup" && change.value.safeGet<bool>())
+                {
+                    LOG_TRACE(log, "Skipping table data for {} (exclude_data_from_backup is enabled)", table_name.getFullName());
+                    return false;
+                }
+            }
+        }
     }
 
     if (!backup_settings.backup_data_from_refreshable_materialized_view_targets
