@@ -7934,7 +7934,21 @@ function captureActiveTab() {
     /// write in that window would pair the new draft with the tab's saved binding for the removed
     /// placeholder, and the activation that follows supersedes both the restore's tail and the
     /// edit's rebuild, leaving the stale entry unrepaired.
-    const source = params_restore_pending_token === null ? getParamValues() : (tab.params || {});
+    ///
+    /// Outside the restore window the live inputs are the primary source, but they are not always
+    /// COMPLETE: when a restore could not rebuild them at all (`updateQueryParams` returned false —
+    /// no WASM lexer, or a text too large to tokenize), `restoreEditor` cleared the stale inputs
+    /// and kept the authoritative bindings only in the tab-owned snapshot. `getParamValues()` is
+    /// `{}` then, so snapshotting the inputs alone would erase the saved bindings on the next
+    /// structural capture, and `refreshCurrentHistoryEntry`/`persist` would propagate the loss
+    /// into the entry, the URL and `IndexedDB`. Merge the tab-owned snapshot BEHIND the live
+    /// inputs — the same fallback the run path applies (`postOne`/`postAll` merge `tab.params`
+    /// under the launch snapshot) — so a live input always wins while a binding with no surviving
+    /// input outlives the capture; the prune below still drops any merged binding whose
+    /// placeholder is certainly gone from the captured text.
+    const source = params_restore_pending_token === null
+        ? Object.assign({}, tab.params || {}, getParamValues())
+        : (tab.params || {});
     const pruned = {};
     for (const name of Object.keys(source)) {
         if (queryMentionsParam(tab.query, name)) pruned[name] = source[name];

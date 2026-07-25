@@ -58,4 +58,10 @@ leave during pending restore: the entry carries the new draft
 leave during pending restore: the superseded tails leave the pruned map
 leave during pending restore: the entry stays clean after the tails bail
 leave during pending restore: the home tab is restored intact
+unrebuildable restore: the fallback keeps the saved snapshot
+unrebuildable restore: no live input was rebuilt
+unrebuildable restore: a structural leave preserves the saved bindings
+unrebuildable restore: the saved binding stays in the left tab's entry
+unrebuildable restore: the recovered rebuild seeds the input from the snapshot
+unrebuildable restore: a live input overrides the merged snapshot
 OK

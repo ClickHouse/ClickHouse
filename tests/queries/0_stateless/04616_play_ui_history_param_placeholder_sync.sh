@@ -577,6 +577,41 @@ function reset()
     assert_eq('leave during pending restore: the entry stays clean after the tails bail', sandbox.history.stack[revisit_idx].url.includes('param_y'), false);
     assert_eq('leave during pending restore: the home tab is restored intact', active().query, 'SELECT 1');
 
+    /// A saved tab whose parameter inputs could NOT be rebuilt (`updateQueryParams` returned
+    /// false: no WASM lexer, or a text too large to tokenize): `restoreEditor` clears the stale
+    /// inputs and keeps the authoritative bindings only in the tab-owned snapshot. A structural
+    /// leave (switch/add/close) then captures the tab with NO live `param_*` inputs — the capture
+    /// must merge the tab-owned snapshot behind the (empty) live values, or it rewrites
+    /// `tab.params`, the history entry and the `IndexedDB` copy to `{}`, and the next run loses a
+    /// binding the user never touched. Once a later rebuild recreates the input, a live value
+    /// still OVERRIDES the merged snapshot, so the merge cannot resurrect an edited-away value.
+    reset();
+    await run('SELECT 1');
+    const lexerless_home = active();
+    const lexerless_tab = sandbox.makeTab();
+    lexerless_tab.query = 'SELECT {y:Int32}';
+    lexerless_tab.params = { y: '2' };
+    sandbox.tabs.push(lexerless_tab);
+    sandbox.tokenize = async () => { throw new Error('lexer unavailable'); };   /// every rebuild fails -> params_ok == false
+    /// The failed rebuild logs the expected diagnostic through `console.error`; swallow exactly
+    /// that message so the test's stderr stays clean, while a genuine failure still reaches it.
+    const real_console_error = console.error;
+    console.error = (...a) => { if (!String(a[0]).startsWith('Tokenization failed')) real_console_error(...a); };
+    await sandbox.switchToTab(lexerless_tab.id);           /// the restore commits the fallback: inputs cleared
+    assert_params('unrebuildable restore: the fallback keeps the saved snapshot', active().params, { y: '2' });
+    assert_eq('unrebuildable restore: no live input was rebuilt', param_dom['param-y'], undefined);
+    await sandbox.switchToTab(lexerless_home.id);          /// structural leave: capture with no live inputs
+    assert_params('unrebuildable restore: a structural leave preserves the saved bindings', lexerless_tab.params, { y: '2' });
+    const lexerless_entry = sandbox.history.stack.find(e => e.state && e.state.tabId === lexerless_tab.id);
+    assert_eq('unrebuildable restore: the saved binding stays in the left tab\'s entry', lexerless_entry.url.includes('param_y=2'), true);
+    sandbox.tokenize = real_tokenize;                      /// the lexer is back: the next restore rebuilds the input
+    console.error = real_console_error;
+    await sandbox.switchToTab(lexerless_tab.id);
+    assert_eq('unrebuildable restore: the recovered rebuild seeds the input from the snapshot', param_dom['param-y'] && param_dom['param-y'].value, '2');
+    setTrustedParam('y', '5');
+    await sandbox.switchToTab(lexerless_home.id);
+    assert_params('unrebuildable restore: a live input overrides the merged snapshot', lexerless_tab.params, { y: '5' });
+
     console.log('OK');
 })().catch(e => { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });
 EOF
