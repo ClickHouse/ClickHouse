@@ -7658,7 +7658,7 @@ Enables delta-kernel writes feature.
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
     DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
-Default partition strategy for file like engines.
+Default partition strategy for file like engines. Applied only when the path does not contain a `{_partition_id}` placeholder: such a path is compatible only with the `wildcard` strategy, so it always implies `wildcard`.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -8794,6 +8794,9 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// Dumps profile events to column of type Map(String, String)
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
+    /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
+    std::map<String, String> changedToMap() const;
+
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
@@ -8892,6 +8895,22 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     }
 
     offsets.push_back(offsets.back() + size);
+}
+
+std::map<String, String> SettingsImpl::changedToMap() const
+{
+    std::map<String, String> result;
+
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); ++i)
+        if (accessor.isValueChanged(*this, i))
+            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+
+    for (const auto & custom : custom_settings_map)
+        if (custom.second.changed)
+            result.emplace(custom.first, custom.second.toString());
+
+    return result;
 }
 
 void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
@@ -9211,6 +9230,11 @@ void Settings::dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params
 void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
 {
     impl->dumpToMapColumn(column, changed_only);
+}
+
+std::map<String, String> Settings::changedToMap() const
+{
+    return impl->changedToMap();
 }
 
 void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
