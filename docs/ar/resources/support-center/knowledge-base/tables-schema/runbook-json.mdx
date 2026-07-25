@@ -1,0 +1,280 @@
+---
+title: 'دليل تشغيل: مخطط JSON'
+description: 'اختر نهج المخطط المناسب لبيانات JSON في ClickHouse — الأعمدة ذات الأنواع المحددة، أو النهج الهجين، أو JSON الأصلي، أو التخزين بصيغة String'
+date: 2026-03-20
+tags: ['أدلة التشغيل', 'نمذجة البيانات']
+keywords: ['JSON', 'JSON type', 'تصميم المخطط', 'تلميحات الأنواع', 'max_dynamic_paths', 'بيانات شبه مهيكلة', 'مخطط ديناميكي', 'JSONAsObject']
+---
+
+<Note>
+  نوع العمود JSON جاهز للاستخدام في بيئات الإنتاج بدءًا من ClickHouse 25.3+. ولا يُنصح باستخدام الإصدارات الأقدم في بيئات الإنتاج.
+</Note>
+
+تصل بياناتك بصيغة JSON. يوفّر ClickHouse عدة طرق لتخزينها، بدءًا من الأعمدة ذات الأنواع المحددة بالكامل وصولًا إلى String الخام. ويعتمد الاختيار المناسب على مدى ثبات مخططك، وما إذا كنت تحتاج إلى استعلامات على مستوى الحقول.
+
+**النطاق:** تغطي هذه الصفحة قرارات تصميم المخطط الخاصة بتخزين بيانات JSON. ولا تغطي [تنسيقات إدخال/إخراج JSON](/ar/reference/formats/JSON/JSON)، أو [دوال JSON](/ar/reference/functions/regular-functions/json-functions)، أو بنية الاستعلام. وللاطلاع على مزيد من المعلومات حول نوع العمود JSON نفسه، راجع [استخدم JSON حيثما كان مناسبًا](/ar/concepts/best-practices/json-type).
+
+**يفترض:** الإلمام بـ [إنشاء جداول ClickHouse](/ar/reference/statements/create/table)، وأساسيات [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، وبنية أنواع الأعمدة.
+
+<div id="quick-decision">
+  ## قرار سريع
+</div>
+
+* **إذا** كان لكل حقل نوع معروف ومستقر، وكان المخطط نادر التغيّر
+  **→** [أعمدة محددة النوع](#typed-columns)
+* **إذا** كانت معظم الحقول مستقرة، لكن بعض الأجزاء ديناميكيًا أو غير متوقع
+  **→** [هجين (أعمدة محددة النوع + JSON)](#hybrid)
+* **إذا** كانت البنية بأكملها ديناميكية، مع مفاتيح تظهر وتختفي بين السجلات
+  **→** [عمود JSON أصلي](#native-json)
+* **إذا** كانت الحقول الديناميكية أزواج مفتاح-قيمة ذات نوع قيمة متسق (مثل tags النصية وmetrics الرقمية)
+  **→** [`Map`](#when-map-fits-better) بدلًا من JSON
+* **إذا** كنت تخزّن وتسترجع blob ‏JSON فقط من دون استعلامات على مستوى الحقل
+  **→** [تخزين String غير مُفسَّر](#opaque-storage)
+
+<Note>
+  لا تخلط بين *تنسيق* JSON و*نوع عمود* JSON. يمكنك إدراج بيانات منسّقة بصيغة JSON (عبر `JSONEachRow` وغيرها) في أعمدة محددة النوع من دون استخدام نوع العمود `JSON` على الإطلاق. القرار هنا يتعلق بأنواع الأعمدة، لا بتنسيقات الإدخال.
+</Note>
+
+<div id="approach-details">
+  ## تفاصيل النهج
+</div>
+
+<div id="typed-columns">
+  ### أعمدة محددة النوع
+</div>
+
+**متى تُستخدم:** تكون بنية JSON معروفة بالكامل وقت التصميم. ولا تتغير الحقول والأنواع من سجل إلى آخر. ويمكن حتى تمثيل البُنى المتداخلة المعقدة (مثل مصفوفات الكائنات والخرائط المتداخلة) باستخدام الأنواع [`Array`](/ar/reference/data-types/array) و[`Tuple`](/ar/reference/data-types/tuple) و[`Nested`](/ar/reference/data-types/nested-data-structures/index).
+
+**الاعتبارات:** تتطلب تغييرات المخطط استخدام `ALTER TABLE`. كما تُهمَل الحقول غير المتوقعة بصمت عند الإدراج ما لم يتم تحديث المخطط.
+
+<Accordion title="الإعداد والتحقق والمحاذير">
+  **الإعداد**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp` DateTime,
+      `service`   LowCardinality(String),
+      `level`     Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`   String,
+      `host`      LowCardinality(String),
+      `duration_ms` UInt32
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **التحقق**
+
+  ```sql
+  -- تأكد من أن أنواع الأعمدة تطابق المتوقع
+  DESCRIBE TABLE events FORMAT Vertical
+
+  -- أدرِج بيانات واستعلم للتحقق من أن المخطط يتعامل مع بياناتك
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42}
+
+  SELECT service, level, duration_ms FROM events WHERE service = 'api'
+  ```
+
+  **انتبه إلى**
+
+  * إذا أدرجت بيانات JSON باستخدام `JSONEachRow` وكان JSON يحتوي على حقول غير موجودة في المخطط، فإن ClickHouse يتجاهلها بصمت افتراضيًا. اضبط [`input_format_skip_unknown_fields`](/ar/reference/settings/formats#input_format_skip_unknown_fields) على `0` إذا كنت تريد ظهور أخطاء بدلًا من ذلك.
+</Accordion>
+
+***
+
+<div id="hybrid">
+  ### هجين (أعمدة محددة النوع + JSON)
+</div>
+
+**متى يُستخدم:** عندما تكون هناك مجموعة أساسية مستقرة من الحقول (الطوابع الزمنية، والمعرّفات، ورموز الحالة)، بينما يكون جزء من الحمولة ديناميكيًا. فكّر في السمات المعرّفة من المستخدم، أو الوسوم، أو البيانات الوصفية، أو حقول الامتداد التي تختلف من سجل إلى آخر.
+
+**المفاضلات:** تحصل على الأداء الكامل في الأعمدة محددة النوع، مع مرونة في عمود JSON. لكن عمود JSON يظل يضيف عبئًا عند insert وتكلفة تخزين لجزئه الديناميكي.
+
+<Accordion title="الإعداد والتحقق والمحاذير">
+  **الإعداد**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp`  DateTime,
+      `service`    LowCardinality(String),
+      `level`      Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`    String,
+      `host`       LowCardinality(String),
+      `duration_ms` UInt32,
+      `attributes` JSON(
+          max_dynamic_paths = 256,
+          `http.status_code` UInt16,
+          `http.method` LowCardinality(String),
+          SKIP REGEXP 'debug\..*'
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **التحقق**
+
+  ```sql
+  -- أدرج بيانات نموذجية وافحص المسارات المستنتجة
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42,"attributes":{"http.status_code":200,"http.method":"GET","user.region":"eu-west","custom_tag":"abc"}}
+
+  SELECT JSONAllPathsWithTypes(attributes)
+  FROM events
+  FORMAT PrettyJSONEachRow
+  ```
+
+  **انتبه إلى**
+
+  * استخدم [تلميحات الأنواع](/ar/reference/data-types/newjson) لمسارات JSON التي تعرفها مسبقًا. تتجاوز هذه التلميحات عمود التمييز وتخزّن المسار مثل أي عمود محدد النوع عادي، بالأداء نفسه ومن دون عبء إضافي.
+  * استخدم `SKIP` أو `SKIP REGEXP` للمسارات التي لا تستعلم عنها مطلقًا (مثل بيانات debug الوصفية ومعرّفات tracing الداخلية) لتوفير مساحة التخزين وتقليل عدد الأعمدة الفرعية.
+  * اضبط `max_dynamic_paths` بما يتناسب مع عدد المسارات الفريدة التي تستعلم عنها فعليًا. تعمل القيمة الافتراضية (1024) في معظم الحالات. خفّضها إذا كان القسم الديناميكي لديك محدودًا.
+  * لا تضبط `max_dynamic_paths` على قيمة تتجاوز 10,000. فالقيم المرتفعة تزيد استهلاك الموارد وتقلل الكفاءة.
+
+  <Info>
+    **المفاتيح المنقوطة**
+
+    تُعامل المفاتيح التي تحتوي على نقاط (مثل `http.status_code`) على أنها مسارات متداخلة افتراضيًا، لذا يُخزَّن `{"http.status_code": 200}` بالطريقة نفسها التي يُخزَّن بها `{"http": {"status_code": 200}}`. وهذا شائع في سمات OTel. استخدم تلميحات الأنواع للتحكم في كيفية تخزين المسارات المنقوطة، أو فعّل `json_type_escape_dots_in_keys` (25.8+).
+  </Info>
+</Accordion>
+
+***
+
+<div id="native-json">
+  ### عمود JSON الأصلي
+</div>
+
+**متى يُستخدم:** عندما تكون البنية غير قابلة للتنبؤ فعلًا، مع مفاتيح تظهر وتختفي بين السجلات. مثل المخططات التي ينشئها المستخدمون، أو أنظمة الملحقات، أو استيعاب البيانات في data lake عندما لا تتحكم في المخطط upstream.
+
+**المفاضلات:** تكون عمليات الإدراج أبطأ من الأعمدة محددة النوع. كما أن قراءات الكائن الكامل أبطأ من String. وهناك عبء تخزيني إضافي ناتج عن إدارة الأعمدة الفرعية. لكنه يعمل جيدًا مع الاستعلامات على مستوى الحقول لمسارات محددة.
+
+<Accordion title="الإعداد والتحقق والمحاذير">
+  **الإعداد**
+
+  ```sql
+  CREATE TABLE dynamic_events
+  (
+      `id`   UInt64,
+      `ts`   DateTime DEFAULT now(),
+      `data` JSON(
+          max_dynamic_paths = 512,
+          `event_type` LowCardinality(String),
+          `version` UInt8
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (data.event_type, ts)
+  ```
+
+  استخدم تنسيق [`JSONAsObject`](/ar/reference/formats/JSON/JSONAsObject) عند إدراج مستندات JSON كاملة في عمود JSON. فهو يتعامل مع كل سطر إدخال على أنه كائن JSON كامل يُربَط بالعمود.
+
+  **التحقق**
+
+  ```sql
+  INSERT INTO dynamic_events (id, data) FORMAT JSONEachRow
+  {"id": 1, "data": {"event_type": "click", "version": 2, "page": "/home", "button_id": "cta-1"}}
+  {"id": 2, "data": {"event_type": "purchase", "version": 1, "item_id": "SKU-99", "amount": 49.99, "currency": "USD"}}
+
+  -- تحقّق من المسارات التي اكتشفها ClickHouse وأنواعها
+  SELECT JSONAllPathsWithTypes(data) FROM dynamic_events FORMAT PrettyJSONEachRow
+
+  -- الاستعلام عن مسار محدد
+  SELECT data.page FROM dynamic_events WHERE data.event_type = 'click'
+  ```
+
+  **انتبه إلى**
+
+  * من دون تلميحات للأنواع، يستنتج ClickHouse الأنواع لكل مسار استنادًا إلى أول القيم التي يراها. فإذا وصلت `score` على شكل `"10"` (سلسلة نصية) في سجل، و`10` (عدد صحيح) في سجل آخر، فسيُنشئ المسار discriminator column وتصبح الاستعلامات أبطأ. أضف تلميحات للمسارات ذات الأنواع المعروفة.
+  * عندما يتجاوز عدد المسارات `max_dynamic_paths`، تنتقل قيم overflow إلى [بنية بيانات مشتركة](/ar/reference/data-types/newjson#shared-data-structure) مع تراجع في query performance. راقب ذلك باستخدام [`JSONDynamicPaths()`](/ar/reference/data-types/newjson#introspection-functions)، وأبقِ الحد أقل من 10,000.
+  * يدعم كل مسار ديناميكي حتى `max_dynamic_types` (القيمة الافتراضية 32) من data types المميزة. وإذا تجاوز مسار واحد هذا الحد، فستعود الأنواع الإضافية تلقائيًا إلى تخزين متغير مشترك. ونادرًا ما يكون هذا مهمًا إلا إذا كانت بياناتك تحتوي على أنواع شديدة التباين للحقل نفسه.
+</Accordion>
+
+***
+
+<div id="opaque-storage">
+  ### تخزين String غير مُفسَّر
+</div>
+
+**متى يُستخدم:** تُخزَّن مستندات JSON وتُسترجَع كاملةً، ثم تُمرَّر إلى تطبيق، أو تُؤرشف، أو تُوجَّه إلى أنظمة لاحقة. لا توجد تصفية على مستوى الحقول أو تجميع داخل ClickHouse.
+
+**المفاضلات:** أسرع عمليات إدراج وأبسط مخطط. لا توجد استعلامات على مستوى الحقول من دون تحليل وقت التشغيل (عائلة `JSONExtract`)، وهذا يكون بطيئًا عند التوسّع.
+
+<Accordion title="الإعداد والتحقق والمحاذير">
+  **الإعداد**
+
+  ```sql
+  CREATE TABLE raw_events
+  (
+      `id`        UInt64,
+      `received`  DateTime DEFAULT now(),
+      `payload`   String
+  )
+  ENGINE = MergeTree
+  ORDER BY (received)
+  ```
+
+  **التحقق**
+
+  ```sql
+  INSERT INTO raw_events (id, payload) VALUES
+  (1, '{"type":"click","page":"/home"}'),
+  (2, '{"type":"purchase","item":"SKU-99","amount":49.99}')
+
+  -- تأكيد سلامة البيانات بعد الكتابة ثم القراءة
+  SELECT payload FROM raw_events WHERE id = 1
+
+  -- التحقق من أنه لا يزال بإمكانك تحليل الحقول عند الحاجة بشكل مخصص
+  SELECT JSONExtractString(payload, 'type') AS event_type FROM raw_events
+  ```
+
+  **انتبه إلى**
+
+  * إذا تغيّرت المتطلبات واحتجت لاحقًا إلى استعلامات على مستوى الحقول، فستحتاج إلى إنشاء table جديدة تضم columns محددة النوع أو JSON columns، ثم backfill للبيانات. إذا كان هناك أي احتمال لأن تستعلم عن حقول منفردة، فابدأ باستخدام [النهج الهجين](#hybrid) بدلًا من ذلك.
+  * تُحلِّل دوال `JSONExtract` السلسلة في كل query. هذا مقبول للاستكشاف المخصص، لكنه غير مناسب لـ dashboards في بيئة production أو workloads ذات QPS مرتفع.
+  * فكّر في استخدام codecs للضغط (`ZSTD`) على عمود String إذا كانت payloads الخاصة بـ JSON كبيرة، إذ يضغطها بكفاءة.
+</Accordion>
+
+<div id="comparison">
+  ## المقارنة
+</div>
+
+| المعيار                          | الأعمدة محددة النوع     | هجين                                       | JSON أصلي                        | String                            |
+| -------------------------------- | ----------------------- | ------------------------------------------ | -------------------------------- | --------------------------------- |
+| **سرعة الإدراج**                 | الأسرع                  | سريع                                       | متوسطة                           | الأسرع                            |
+| **الاستعلامات على مستوى الحقول** | الأسرع                  | سريعة (محددة النوع)؛ جيدة (JSON مع `hint`) | جيدة (مع `hint`)؛ أبطأ (Dynamic) | بطيئة (التحليل أثناء وقت التشغيل) |
+| **قراءة الكائن بالكامل**         | سريعة                   | متوسطة                                     | بطيئة                            | الأسرع                            |
+| **كفاءة التخزين**                | الأفضل                  | جيدة                                       | متوسطة                           | جيدة (ينضغط بكفاءة)               |
+| **مرونة المخطط**                 | لا توجد (`ALTER TABLE`) | جزئية (نواة ثابتة، وذيل مرن)               | كاملة                            | كاملة                             |
+| **التعقيد**                      | منخفض                   | متوسط                                      | متوسط–مرتفع                      | منخفض                             |
+
+<div id="when-map-fits-better">
+  ## متى يكون Map خيارًا أفضل
+</div>
+
+إذا كانت حقولك الديناميكية تتكوّن من أزواج مفتاح-قيمة متجانسة — أي إن جميع القيم من النوع نفسه — فإن [`Map(String, T)`](/ar/reference/data-types/map) أبسط وأكثر كفاءة من عمود JSON. ومن الأمثلة الشائعة: الوسوم النصية (`Map(String, String)`)، والمقاييس العددية (`Map(String, Float64)`)، أو مفاتيح تفعيل الميزات (`Map(String, Bool)`).
+
+```sql
+CREATE TABLE tagged_events
+(
+    `timestamp` DateTime,
+    `service`   LowCardinality(String),
+    `tags`      Map(String, String)  -- e.g., {"env": "prod", "region": "us-east-1", "team": "platform"}
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+يدعم `Map` التصفية على مستوى المفاتيح (`tags['env'] = 'prod'`)، وتكلفة تخزينه أقل من JSON، كما يتجنب الكلفة الإضافية للأعمدة الفرعية في نوع JSON. لاحظ أن عمليات البحث عن المفاتيح تفحص الخريطة خطيًا افتراضيًا — وهذا مناسب لمجموعات الوسوم الصغيرة، ولكن إذا كانت خرائط `Map` تحتوي على أكثر من 100 مفتاح، ففكّر في استخدام [تسلسل `with_buckets`](/ar/reference/data-types/map#bucketed-map-serialization). استخدم JSON عندما تكون القيم من أنواع مختلطة أو عندما تكون البنية متداخلة — واستخدم `Map` عندما تكون البيانات أزواج مفتاح-قيمة مسطحة ذات نوع قيم موحّد.
+
+<div id="related-resources">
+  ## موارد ذات صلة
+</div>
+
+* [استخدم JSON حيثما كان مناسبًا](/ar/concepts/best-practices/json-type) — متى تستخدم نوع عمود JSON بدلًا من الخيارات الأخرى
+* [مرجع نوع بيانات JSON](/ar/reference/data-types/newjson) — الصياغة الكاملة لتلميحات الأنواع، وSKIP، وmax&#95;dynamic&#95;paths، ودوال الاستبطان
+* [اختيار أنواع البيانات](/ar/concepts/best-practices/select-data-type) — إرشادات عامة لاختيار النوع المناسب
+* [A New Powerful JSON Data Type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse) — شرح متعمق لمعمارية تخزين نوع JSON
+* [مرجع تنسيقات JSON](/ar/reference/formats/JSON/JSON) — تنسيقات الإدخال/الإخراج لبيانات JSON ‏(JSONEachRow وJSONAsObject وما إلى ذلك)

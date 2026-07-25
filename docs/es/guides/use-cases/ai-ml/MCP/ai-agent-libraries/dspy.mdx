@@ -28,9 +28,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
 </Info>
 
 <Steps>
-  <Step>
-    ## Instale las bibliotecas
-
+  <Step title="Instale las bibliotecas" id="install-libraries">
     Ejecute los siguientes comandos con `pip` para instalar las bibliotecas necesarias:
 
     ```shell
@@ -40,9 +38,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Configura las credenciales
-
+  <Step title="Configura las credenciales" id="setup-credentials">
     A continuación, deberás proporcionar tu clave de API de Anthropic:
 
     ```python
@@ -70,9 +66,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializar el servidor MCP
-
+  <Step title="Inicializar el servidor MCP" id="initialize-mcp">
     Ahora configura el servidor MCP de ClickHouse para que apunte al Playground de SQL de ClickHouse.
 
     ```python
@@ -93,9 +87,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializar el LLM
-
+  <Step title="Inicializar el LLM" id="initialize-llm">
     A continuación, inicialice el LLM con la siguiente línea:
 
     ```python
@@ -103,9 +95,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Ejecutar el agente
-
+  <Step title="Ejecutar el agente" id="run-the-agent">
     Por último, inicialice y ejecute el agente:
 
     ```python
@@ -142,7 +132,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
 
     📍 STEP 1
     ----------------------------------------
-    🧠 THINKING: Necesito encontrar información sobre las categorías de productos de Amazon y determinar cuál es la más popular. Primero, debería explorar qué bases de datos están disponibles para ver si hay algún dato relacionado con Amazon.
+    🧠 THINKING: I need to find information about Amazon product categories and determine which one is most popular. First, I should explore what databases are available to see if there's any Amazon-related data.
 
     🔧 TOOL: list_databases
 
@@ -180,7 +170,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
 
     📍 STEP 2
     ----------------------------------------
-    🧠 THINKING: ¡Excelente! Puedo ver que hay una base de datos "amazon" disponible. Esto es exactamente lo que necesito para encontrar información sobre las categorías de productos de Amazon. Voy a explorar las tablas de la base de datos amazon para ver qué datos están disponibles.
+    🧠 THINKING: Great! I can see there's an "amazon" database available. This is exactly what I need to find information about Amazon product categories. Let me explore the tables in the amazon database to see what data is available.
 
     🔧 TOOL: list_tables
        Args: {'database': 'amazon'}
@@ -199,7 +189,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
 
     📍 STEP 3
     ----------------------------------------
-    🧠 THINKING: ¡Perfecto! Encontré la tabla amazon_reviews, que contiene una columna product_category. Esta tabla tiene más de 150 millones de filas de datos de reseñas de Amazon, lo que debería darme una buena representación de la popularidad de los productos. Para encontrar la categoría de productos de Amazon más popular, necesito contar el número de reseñas por categoría y ordenarlas por recuento en orden descendente. La categoría con más reseñas se considerará la más popular.
+    🧠 THINKING: Perfect! I found the amazon_reviews table which contains a product_category column. This table has over 150 million rows of Amazon review data, which should give me a good representation of product popularity. To find the most popular Amazon product category, I need to count the number of reviews per category and order them by count in descending order. The category with the most reviews would be considered the most popular.
 
     🔧 TOOL: run_select_query
        Args: {'query': 'SELECT product_category, COUNT(*) as review_count FROM amazon.amazon_reviews GROUP BY product_category ORDER BY review_count DESC LIMIT 10'}
@@ -214,7 +204,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
 
     📍 STEP 4
     ----------------------------------------
-    🧠 THINKING: ¡Perfecto! He encontrado la respuesta a la pregunta del usuario. A partir de los datos de reseñas de Amazon, puedo ver claramente que "Books" es la categoría de productos de Amazon más popular con 19.530.930 reseñas, seguida de "Digital_Ebook_Purchase" con 17.622.107 reseñas. Los datos muestran una clasificación clara de las categorías de productos por popularidad según el número de reseñas que ha recibido cada categoría. Ahora tengo toda la información necesaria para responder a la pregunta del usuario.
+    🧠 THINKING: Perfect! I have found the answer to the user's question. Based on the Amazon reviews data, I can clearly see that "Books" is the most popular Amazon product category with 19,530,930 reviews, followed by "Digital_Ebook_Purchase" with 17,622,107 reviews. The data shows a clear ranking of product categories by popularity based on the number of reviews each category has received. I now have all the information needed to answer the user's question.
 
     🔧 TOOL: finish
 
@@ -223,13 +213,13 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
 
     🎯 REASONING
     ----------------------------------------
-    Para responder a la pregunta sobre la categoría de productos de Amazon más popular, accedí a la base de datos de Amazon y encontré una tabla llamada "amazon_reviews" con más de 150 millones de registros de reseñas. Esta tabla contiene una columna "product_category" que me permite analizar la popularidad de los productos en función del volumen de reseñas. Ejecuté una consulta para contar el número de reseñas por categoría de producto y las ordené por recuento en orden descendente. La hipótesis aquí es que las categorías con más reseñas indican mayor popularidad, ya que un mayor número de reseñas suele correlacionarse con más compras y mayor interacción de los clientes.
+    To answer the question about the most popular Amazon product category, I accessed the Amazon database and found a table called "amazon_reviews" with over 150 million review records. This table contains a "product_category" column that allows me to analyze product popularity based on review volume. I ran a query to count the number of reviews per product category and ordered them by count in descending order. The assumption here is that categories with more reviews indicate higher popularity, as more reviews typically correlate with more purchases and customer engagement.
 
     ✅ FINAL RESULT
     ----------------------------------------
-    Según los datos de reseñas de Amazon que contienen más de 150 millones de registros, la categoría de productos de Amazon más popular es **Books** con 19.530.930 reseñas.
+    Based on Amazon review data containing over 150 million records, the most popular Amazon product category is **Books** with 19,530,930 reviews. 
 
-    Estas son las 10 categorías de productos de Amazon más populares por número de reseñas:
+    Here are the top 10 most popular Amazon product categories by review count:
 
     1. **Books** - 19,530,930 reviews
     2. **Digital_Ebook_Purchase** - 17,622,107 reviews  
@@ -242,7 +232,7 @@ Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un scrip
     9. **Video DVD** - 5,069,014 reviews
     10. **Mobile_Apps** - 5,033,164 reviews
 
-    Es interesante destacar que Books y Digital Ebook Purchase (categorías relacionadas entre sí) suman juntas más de 37 millones de reseñas, lo que refleja la gran popularidad de los materiales de lectura en la plataforma de Amazon.
+    It's interesting to note that Books and Digital Ebook Purchase (which are related categories) together account for over 37 million reviews, showing the strong popularity of reading materials on Amazon's platform.
     ================================================================================
     ```
   </Step>

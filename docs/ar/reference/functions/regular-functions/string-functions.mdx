@@ -324,7 +324,7 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 
 أُضيف في: v22.7.0
 
-يُشفِّر سلسلة نصية باستخدام ترميز [Base58](https://tools.ietf.org/id/draft-msporny-base58-01.html).
+يُشفِّر سلسلة نصية باستخدام ترميز [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58-01).
 
 **الصيغة**
 
@@ -361,6 +361,7 @@ SELECT base58Encode('ClickHouse');
 أُضيفت في: v18.16.0
 
 يفك ترميز سلسلة من تنسيق [Base64](https://en.wikipedia.org/wiki/Base64) وفقًا لـ RFC 4648.
+بدءًا من الإصدار 26.7، يتم تجاهل محارف المسافة البيضاء: المسافة، وعلامة الجدولة (`\t`)، ومحرف line feed (`\n`)، ومحرف الإرجاع (`\r`)، ومحرف form feed (`\f`) في الإدخال (كانت الإصدارات الأقدم ترفض الإدخال الذي يحتوي عليها). ويُرفض محرف الجدولة العمودية (`\v`) وأي محارف أخرى خارج أبجدية Base64.
 يُثير استثناءً عند حدوث خطأ.
 
 **الصيغة**
@@ -369,9 +370,9 @@ SELECT base58Encode('ClickHouse');
 base64Decode(encoded)
 ```
 
-**الأسماء المستعارة**: `FROM_BASE64`
+**اسم بديل**: `FROM_BASE64`
 
-**المعاملات**
+**الوسائط**
 
 * `encoded` — عمود أو ثابت من نوع String لفك ترميزه. إذا لم تكن السلسلة النصية مرمّزة بترميز Base64 ترميزًا صالحًا، فسيتم إطلاق استثناء. [`String`](/ar/reference/data-types/string)
 
@@ -438,6 +439,8 @@ SELECT base64Encode('clickhouse')
 أُضيف في: v24.6.0
 
 يفك ترميز سلسلة من تمثيل [Base64](https://en.wikipedia.org/wiki/Base64) باستخدام أبجدية آمنة لعناوين URL، وفقًا للمعيار RFC 4648.
+كما تُقبل أيضًا الأبجدية القياسية (`+` و `/`) عند فك الترميز.
+اعتبارًا من الإصدار 26.7، تُتجاهل في الإدخال محارف المسافة، والجدولة (`\t`)، وتغذية السطر (`\n`)، والعودة إلى أول السطر (`\r`)، وتغذية الصفحة (`\f`) (أما الإصدارات الأقدم فكانت ترفض الإدخال الذي يحتوي عليها). ويُرفض محرف الجدولة العمودية (`\v`) وأي محارف أخرى خارج أبجدية Base64.
 يؤدي إلى إطلاق استثناء في حال حدوث خطأ.
 
 **الصيغة**
@@ -615,7 +618,7 @@ SELECT byteHammingDistance('karolin', 'kathrin')
 يطبّق طيّ حالة Unicode القياسي. ويحافظ على محارف التوافق التي لا تتأثر بطيّ الحالة
 (مثل الأرقام الرومانية والأرقام داخل دوائر)، ولكن تجدر الإشارة إلى أن بعض الروابط الطباعية مثل `ﬃ` لا تزال تُفكَّك لأن طيّ حالة Unicode نفسه يوسّعها.
 
-**الصياغة**
+**الصيغة**
 
 ```sql
 caseFoldUTF8(str)
@@ -639,8 +642,8 @@ SELECT caseFoldUTF8('Straße')
 
 ```response title=Response
 ┌─caseFoldUTF8('Straße')─┐
-│ strasse                 │
-└─────────────────────────┘
+│ strasse                │
+└────────────────────────┘
 ```
 
 <div id="compareSubstrings">
@@ -1165,13 +1168,13 @@ editDistanceUTF8(s1, s2)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT editDistanceUTF8('我是谁', '我是我')
+SELECT editDistanceUTF8('我是谁', '我是我') AS distance
 ```
 
 ```response title=Response
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
 ```
 
 <div id="encodeXMLComponent">
@@ -1499,7 +1502,7 @@ SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')
 
 قُدِّم في: v24.1.0
 
-يعيد التمثيل بصيغة ASCII (خوارزمية ToASCII) لاسم نطاق وفقًا لآلية [أسماء النطاقات الدولية في التطبيقات](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) ‏(IDNA).
+يعيد التمثيل بصيغة ASCII (خوارزمية ToASCII) لاسم نطاق وفقًا لآلية [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) ‏(IDNA).
 يجب أن تكون سلسلة الإدخال بترميز UTF وقابلة للتحويل إلى سلسلة ASCII، وإلا فسيتم طرح استثناء.
 
 <Note>
@@ -1659,9 +1662,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2100,7 +2100,7 @@ SELECT s FROM t ORDER BY naturalSortKey(s)
 ```response title=Response
 ┌─s───┐
 │ a1  │
-| a02 │
+│ a02 │
 └─────┘
 ```
 
@@ -2200,11 +2200,11 @@ normalizeUTF8NFKC(str)
 
 **الوسائط**
 
-* `str` — السلسلة النصية المُدخلة والمشفَّرة بترميز UTF-8. [`String`](/ar/reference/data-types/string)
+* `str` — سلسلة الإدخال المرمّزة بترميز UTF-8. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد الصيغة المعيارية NFKC لسلسلة UTF-8 النصية. [`String`](/ar/reference/data-types/string)
+تُعيد الصيغة المُطبَّعة NFKC لسلسلة UTF-8 النصية. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -2212,13 +2212,13 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
 ┌─original─┬─nfkc_normalized─┐
-│ ① ② ③  │ 1 2 3           │
+│ ① ② ③    │ 1 2 3           │
 └──────────┴─────────────────┘
 ```
 
@@ -2277,11 +2277,11 @@ normalizeUTF8NFKD(str)
 
 **الوسيطات**
 
-* `str` — سلسلة إدخال مرمّزة بترميز UTF-8. [`سلسلة`](/ar/reference/data-types/string)
+* `str` — سلسلة الإدخال المرمّزة بترميز UTF-8. [`سلسلة`](/ar/reference/data-types/string)
 
 **القيمة المعادة**
 
-تُرجع الشكل المُطبَّع وفق NFKD لسلسلة UTF-8. [`سلسلة`](/ar/reference/data-types/string)
+تُرجع الصيغة المُطبَّعة وفق NFKD لسلسلة UTF-8. [`سلسلة`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -2289,8 +2289,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -2510,8 +2510,8 @@ SELECT removeDiacriticsUTF8('café résumé naïve')
 
 ```response title=Response
 ┌─removeDiacriticsUTF8('café résumé naïve')─┐
-│ cafe resume naive                          │
-└────────────────────────────────────────────┘
+│ cafe resume naive                         │
+└───────────────────────────────────────────┘
 ```
 
 <div id="repeat">
@@ -3286,24 +3286,24 @@ stringJaccardIndexUTF8(s1, s2)
 
 **القيمة المعادة**
 
-تعيد معامل تشابه Jaccard بين سلسلتي UTF8 النصيتين. [`Float64`](/ar/reference/data-types/float)
+تعيد مؤشر تشابه جاكارد بين سلسلتي UTF8 النصيتين. [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
+SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index
 ```
 
 ```response title=Response
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
 ```
 
 <div id="substring">
-  ## substring
+  ## السلسلة الفرعية
 </div>
 
 مُتاحة منذ: v1.1.0
@@ -3316,6 +3316,8 @@ SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')
 
 يحدد الوسيط الاختياري `length` الحد الأقصى لعدد البايتات التي يمكن أن تتضمنها السلسلة الفرعية المعادة.
 
+انظر أيضًا إلى الدالة [`digits`](/ar/reference/functions/regular-functions/other-functions#digits)، التي تُجري العملية المناظرة على أرقام العدد.
+
 **الصيغة**
 
 ```sql
@@ -3326,13 +3328,13 @@ substring(s, offset[, length])
 
 **الوسائط**
 
-* `s` — السلسلة المُراد استخراج مقطع فرعي منها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Enum`](/ar/reference/data-types/enum)
-* `offset` — موضع بداية المقطع الفرعي في `s`. [`(U)Int*`](/ar/reference/data-types/int-uint)
-* `length` — اختياري. الحد الأقصى لطول المقطع الفرعي. [`(U)Int*`](/ar/reference/data-types/int-uint)
+* `s` — السلسلة المُراد استخراج سلسلة فرعية منها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Enum`](/ar/reference/data-types/enum)
+* `offset` — موضع بداية السلسلة الفرعية في `s`. [`(U)Int*`](/ar/reference/data-types/int-uint)
+* `length` — اختياري. الحد الأقصى لطول السلسلة الفرعية. [`(U)Int*`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
-تُرجع مقطعًا فرعيًا من `s` بطول `length` بايتًا، بدءًا من الفهرس `offset`. [`String`](/ar/reference/data-types/string)
+تُرجع سلسلة فرعية من `s` بطول `length` بايتًا، بدءًا من الفهرس `offset`. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -3441,7 +3443,7 @@ www.straßen-in-europa
 يحدِّد الوسيط الاختياري `length` الحد الأقصى لعدد نقاط الترميز التي يمكن أن تحتويه السلسلة الفرعية المُعادة.
 
 <Note>
-  تفترض هذه الدالة أن السلسلة تحتوي على نص بترميز UTF-8 صحيح.
+  تفترض هذه الدالة أن السلسلة تحتوي على نص صالح مُرمَّز بترميز UTF-8.
   وإذا لم يتحقق هذا الافتراض، فلا يُطرَح أي استثناء وتكون النتيجة غير معرّفة.
 </Note>
 
