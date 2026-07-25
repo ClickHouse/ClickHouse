@@ -1,0 +1,5 @@
+create_rejected
+attach_rejected
+append_allowed
+atomic_allowed
+restore_rejected
