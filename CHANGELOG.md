@@ -21,6 +21,58 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release 693a303c1017477fc39aaa7706af0ec078e13fbc (693a303c101) FIXME as compared to 18de9dbe6d4afbd4a16b3af5f567ceeb838ad509 (18de9dbe6d4)
+
+#### Improvement
+* Added `ConstantJoin` for cartesian joins and analyzer-planned constant-predicate joins, so these queries no longer fail because of an incompatible `join_algorithm` setting when the analyzer is used. [#108289](https://github.com/ClickHouse/ClickHouse/pull/108289) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+* Functions `bitmaskToArray` and `bitmaskToList` now support `(U)Int128` and `(U)Int256` arguments. Function `bitPositionsToArray` now runs in time proportional to the number of set bits for big integer arguments, instead of the position of the highest set bit. [#110743](https://github.com/ClickHouse/ClickHouse/pull/110743) ([Manuel](https://github.com/raimannma)).
+* Fix a server crash when a JIT-compiled expression is evaluated on native from-source macOS/aarch64 builds, caused by the LLVM host triple not reflecting the host OS. [#111591](https://github.com/ClickHouse/ClickHouse/pull/111591) ([Raúl Marín](https://github.com/Algunenano)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed `ALTER MODIFY COLUMN` failing when converting a `Nullable` column to a different type with a `DEFAULT` (e.g. `Nullable(UInt8)` → `String`,`LowCardinality(String)`, or `Array(UInt8)`). [#102156](https://github.com/ClickHouse/ClickHouse/pull/102156) ([DQ](https://github.com/il9ue)).
+* Fix BAD_ARGUMENTS "Dictionary not found" on dictGet after a DETACH DICTIONARY ... PERMANENTLY that was rejected by the dependency check (HAVE_DEPENDENT_OBJECTS). The dictionary now remains fully usable when the detach is rejected. [#105259](https://github.com/ClickHouse/ClickHouse/pull/105259) ([Groene AI](https://github.com/groeneai)).
+* Data files written by ClickHouse into Iceberg tables now embed Iceberg field IDs for the Avro (`field-id`) and ORC (`iceberg.id`/`iceberg.required` type attributes) formats, and ORC `String` columns are written as ORC `string` instead of binary. Previously only Parquet embedded field IDs, so spec-compliant readers (e.g. Spark/iceberg-java) silently returned NULLs from ClickHouse-written Avro rows after a column rename, and could not read ClickHouse-written ORC files at all. [#109994](https://github.com/ClickHouse/ClickHouse/pull/109994) ([Groene AI](https://github.com/groeneai)).
+* Fix reading files on `plain_rewritable` disks after an existing path was rewritten with content of a different size: the in-memory metadata kept the stale file size, which could fail reads with `UNEXPECTED_END_OF_FILE`. [#110304](https://github.com/ClickHouse/ClickHouse/pull/110304) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Fixed drift of the per-user memory tracker caused by system log records (e.g. `query_log`, `query_views_log`) being accounted to the query that produced them but freed later by a background thread, which could eventually trigger a false `max_memory_usage_for_user` limit for users with continuous workloads. [#110708](https://github.com/ClickHouse/ClickHouse/pull/110708) ([Raúl Marín](https://github.com/Algunenano)).
+* Fixed an out-of-range read in the native ORC reader during schema inference of a corrupt ORC file whose type tree declares more columns than the stripe footer has column encodings. It is now rejected with `CANNOT_EXTRACT_TABLE_STRUCTURE` instead of aborting the server in debug/sanitizer builds. [#110967](https://github.com/ClickHouse/ClickHouse/pull/110967) ([Groene AI](https://github.com/groeneai)).
+* Fixed a rare race where a comment-only or settings-only `ALTER` of a `ReplicatedMergeTree` table could silently drop a column added by a concurrent `ALTER ... ADD COLUMN`, leaving a replica on an outdated table structure. [#111029](https://github.com/ClickHouse/ClickHouse/pull/111029) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fix incorrect pruning from primary key index analysis on tables with a reverse (descending) sorting key (`ORDER BY (g, r DESC)`). A granule spanning a change of a leading key column followed by a descending key column could be pruned incorrectly, dropping matching rows. [#111059](https://github.com/ClickHouse/ClickHouse/pull/111059) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* Fix a memory leak of the peer certificate on every TLS handshake with certificate verification enabled: `SecureSocketImpl::verifyPeerCertificateImpl` did not free the certificate returned by `SSL_get1_peer_certificate`. [#111425](https://github.com/ClickHouse/ClickHouse/pull/111425) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Fix mutations with a query parameter as the partition (`ALTER TABLE ... UPDATE/DELETE ... IN PARTITION {param:Type}`): the substituted partition value was serialized into the mutation entry in a form that could not be parsed back, which broke loading of the table (for replicated tables, on every replica). Mutation commands are now also verified to be parseable back before they are written to ZooKeeper or disk, so that a similar mismatch would fail the `ALTER` query instead of breaking the table. [#111518](https://github.com/ClickHouse/ClickHouse/pull/111518) ([Michael Kolupaev](https://github.com/al13n321)).
+* Fixed a server crash on macOS (aarch64) when a stack trace was captured (for example by the memory profiler) while running on a coroutine/fiber stack. [#111656](https://github.com/ClickHouse/ClickHouse/pull/111656) ([Raúl Marín](https://github.com/Algunenano)).
+
+#### Build/Testing/Packaging Improvement
+* Not required. [#111431](https://github.com/ClickHouse/ClickHouse/pull/111431) ([Raúl Marín](https://github.com/Algunenano)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Replicated access storage in stateless tests. [#67954](https://github.com/ClickHouse/ClickHouse/pull/67954) ([pufit](https://github.com/pufit)).
+* ### Description. [#109944](https://github.com/ClickHouse/ClickHouse/pull/109944) ([Groene AI](https://github.com/groeneai)).
+* Extract a consume-on-advance cursor for system-table catalog iteration. [#109970](https://github.com/ClickHouse/ClickHouse/pull/109970) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* Fix UBSan null-pointer member call in ASTRenameQuery::formatQueryImpl (RENAME DATABASE). [#110253](https://github.com/ClickHouse/ClickHouse/pull/110253) ([Groene AI](https://github.com/groeneai)).
+* Add `CompressionCodecAdaptive` with per-block codec selection. [#111134](https://github.com/ClickHouse/ClickHouse/pull/111134) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* Fix flaky 03309_json_with_progress_exception: timeout in pending state. [#111208](https://github.com/ClickHouse/ClickHouse/pull/111208) ([Raúl Marín](https://github.com/Algunenano)).
+* Merge all Sync PRs for a merge-queue batch, not just the latest. [#111415](https://github.com/ClickHouse/ClickHouse/pull/111415) ([Max Kainov](https://github.com/maxknv)).
+* Fix flaky 02417_opentelemetry_insert_on_distributed_table. [#111419](https://github.com/ClickHouse/ClickHouse/pull/111419) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test 01661_extract_all_groups_throw_fast under memory pressure. [#111513](https://github.com/ClickHouse/ClickHouse/pull/111513) ([Groene AI](https://github.com/groeneai)).
+* Reuse the merge-queue enqueue helper for the release changelog PR. [#111520](https://github.com/ClickHouse/ClickHouse/pull/111520) ([Alexei Fedotov](https://github.com/leshikus)).
+* clickhouse-test: fix lldb backtrace collection on hung/dead server. [#111569](https://github.com/ClickHouse/ClickHouse/pull/111569) ([Raúl Marín](https://github.com/Algunenano)).
+* Add a regression test for NOT_FOUND_COLUMN_IN_BLOCK with LEFT JOIN and a constant predicate. [#111608](https://github.com/ClickHouse/ClickHouse/pull/111608) ([Groene AI](https://github.com/groeneai)).
+* Add a regression test for DROP COLUMN with a complex SQL-UDF ALIAS. [#111613](https://github.com/ClickHouse/ClickHouse/pull/111613) ([Groene AI](https://github.com/groeneai)).
+* Increase coverage for text index postprocessor fast path for [#111509](https://github.com/ClickHouse/ClickHouse/issues/111509). [#111649](https://github.com/ClickHouse/ClickHouse/pull/111649) ([Robert Schulze](https://github.com/rschu1ze)).
+* Fix `04341_group_format_sparse`: the test asserted that `groupFormat` output follows the exact input order, but the query never ordered its input, and `groupFormat` row order is unspecified in that case. On the `Stateless tests (amd_llvm_coverage, ParallelReplicas, s3 storage, parallel)` shard the read is split across replicas and the merge order of aggregation states does not follow the input order, so the first formatted rows can be all-default values and the test fails with a reference mismatch:. [#111666](https://github.com/ClickHouse/ClickHouse/pull/111666) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Move join_runtime_filter_min_probe_rows settings-history entry from 26.7 to 26.8. [#111671](https://github.com/ClickHouse/ClickHouse/pull/111671) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky test_kafka_formats_with_broken_message. [#111701](https://github.com/ClickHouse/ClickHouse/pull/111701) ([Groene AI](https://github.com/groeneai)).
+* The internal `ALTER TABLE ... MODIFY SETTING table_readonly` that marks a rotated system log table as readonly no longer fails with `QUERY_IS_TOO_LARGE` when the table's metadata exceeds `max_query_size` (as `system.metric_log`'s metadata now does). [#111703](https://github.com/ClickHouse/ClickHouse/pull/111703) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Trim verbose comments in 04549_text_index_prewhere_where_dup_over_merge_distributed. [#111716](https://github.com/ClickHouse/ClickHouse/pull/111716) ([Groene AI](https://github.com/groeneai)).
+* Derive `DATA_PATH` only after the detach gate in `04624_part_loading_tree_rollback_startup_recovery`. [#111730](https://github.com/ClickHouse/ClickHouse/pull/111730) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Update version_date.tsv and changelog after v26.5.6.64-stable. [#111737](https://github.com/ClickHouse/ClickHouse/pull/111737) ([robot-clickhouse](https://github.com/robot-clickhouse)).
+* Remove `rolling-out` backport skip. [#111774](https://github.com/ClickHouse/ClickHouse/pull/111774) ([Max Kainov](https://github.com/maxknv)).
+* This patch introduces a way to close all tabs except the current one in play. [#111835](https://github.com/ClickHouse/ClickHouse/pull/111835) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* Fix flaky test_hedged_requests::test_async_connect. [#111836](https://github.com/ClickHouse/ClickHouse/pull/111836) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="268"></a> ClickHouse release 26.8, FIXME (in progress)
 
 #### New Feature
