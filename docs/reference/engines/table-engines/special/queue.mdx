@@ -129,7 +129,7 @@ SETTINGS
 
 The engine records the input message IDs while the query runs and writes their tombstones only after the complete query pipeline succeeds.
 Until post-query message identity tracking is available, a committing query that can exclude source rows is rejected.
-This includes `WHERE`, `PREWHERE`, joins, `DISTINCT`, aggregation, and `LIMIT`.
+This includes `WHERE`, `PREWHERE`, joins, `DISTINCT`, and `LIMIT`.
 Use `queue_max_batch_size` to define the maximum source batch.
 Filtered noncommitting queries remain unrestricted and never acknowledge messages.
 Cancellation or an exception leaves the batch pending.

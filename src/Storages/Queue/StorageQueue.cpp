@@ -94,7 +94,6 @@ namespace
                 || select->limitLength()
                 || select->limitBy()
                 || select->join()
-                || select->groupBy()
                 || select->having()
                 || select->qualify()))
             return true;
@@ -575,7 +574,7 @@ std::pair<String, bool> StorageQueue::getConsumerSettingsForView(
     {
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED,
-            "Materialized view '{}' cannot consume from `Queue` with filters, joins, `DISTINCT`, aggregation, or `LIMIT` "
+            "Materialized view '{}' cannot consume from `Queue` with filters, joins, `DISTINCT`, or `LIMIT` "
             "until post-query message identity tracking is available; excluded messages must remain pending",
             view_id.getFullTableName());
     }
@@ -1003,7 +1002,7 @@ void StorageQueue::read(
         {
             throw Exception(
                 ErrorCodes::QUERY_NOT_ALLOWED,
-                "A committing `SELECT` from `Queue` cannot use filters, joins, `DISTINCT`, aggregation, or `LIMIT` "
+                "A committing `SELECT` from `Queue` cannot use filters, joins, `DISTINCT`, or `LIMIT` "
                 "until post-query message identity tracking is available; "
                 "set `queue_commit_on_select = 0` to run the query without acknowledging messages");
         }
