@@ -716,3 +716,28 @@ DROP TABLE two_hop;
 DROP TABLE t_a;
 DROP TABLE t_b;
 DROP TABLE pairs;
+
+-- The frontier deduplication must distinguish values by their raw
+-- representation, the way the hash `JOIN` and the generated `IN` set do —
+-- not by SQL-style `Field` comparison, which collapses `+0.` with `-0.` (and
+-- all NaN payloads). The seed produces both `+0.` and `-0.`; each joins a
+-- different edge row (a hash join matches float keys on raw bits, so `+0.`
+-- only matches the `+0.` row and `-0.` only the `-0.` row). If the dedup
+-- collapsed them, the injected `IN` prefilter would contain only one of the
+-- two zeros and silently drop the other branch's edge row before the join.
+-- Ordering by the raw bits keeps `+0.` and `-0.` in a deterministic order.
+DROP TABLE IF EXISTS float_edges;
+CREATE TABLE float_edges (from_id Float64, to_id Float64) ENGINE = MergeTree ORDER BY from_id;
+INSERT INTO float_edges VALUES (0., 1.), (-0., 2.);
+
+WITH RECURSIVE float_walk AS
+(
+    SELECT arrayJoin([toFloat64(0.), toFloat64(-0.)]) AS cur
+  UNION ALL
+    SELECT e.to_id AS cur
+    FROM float_edges AS e
+    INNER JOIN float_walk AS w ON e.from_id = w.cur
+)
+SELECT cur FROM float_walk ORDER BY reinterpretAsUInt64(cur);
+
+DROP TABLE float_edges;

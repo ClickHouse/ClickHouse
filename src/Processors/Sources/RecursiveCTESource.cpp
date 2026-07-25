@@ -34,10 +34,12 @@
 
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Common/Arena.h>
 #include <Common/assert_cast.h>
 
 #include <optional>
-#include <set>
+#include <string_view>
+#include <unordered_set>
 
 namespace DB
 {
@@ -282,7 +284,21 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
     if (!snapshot_data.blocks)
         return std::vector<Field>{};
 
-    std::set<Field> unique_values;
+    /// Deduplicate by the value's serialized raw representation, NOT by
+    /// `Field` ordering: `Field` compares floats SQL-style (`+0.` and `-0.`
+    /// are equal, and all NaNs are equivalent regardless of payload), while
+    /// the hash `JOIN` this filter guards and the generated `IN` set both
+    /// match keys on the raw representation (`-0. IN (0.)` is `0`, and a hash
+    /// join does not match a `-0.` probe against a `+0.` build key). A
+    /// `Field`-based dedup of a frontier holding both `+0.` and `-0.` would
+    /// keep only one of them, and the injected `IN` prefilter would then drop
+    /// the row that joins with the other — losing a recursion branch.
+    /// `serializeValueIntoArena` is the same raw representation generic
+    /// hash-join and aggregation keys use, so raw-distinct values stay
+    /// distinct here exactly when the join distinguishes them.
+    Arena arena;
+    std::unordered_set<std::string_view> unique_values;
+    std::vector<Field> values;
     size_t accumulated_bytes = 0;
 
     for (const auto & block : *snapshot_data.blocks)
@@ -293,21 +309,29 @@ std::optional<std::vector<Field>> readColumnValuesFromMemoryStorage(
         const auto & column = block.getByName(column_name).column;
         for (size_t i = 0; i < column->size(); ++i)
         {
-            Field value;
-            column->get(i, value);
-            if (unique_values.insert(std::move(value)).second)
+            const char * begin = nullptr;
+            const auto serialized = column->serializeValueIntoArena(i, arena, begin, nullptr);
+            if (!unique_values.insert(serialized).second)
             {
-                accumulated_bytes += column->byteSizeAt(i);
-                if (max_bytes != 0 && accumulated_bytes > max_bytes)
-                    return std::nullopt;
+                /// A duplicate: return its serialized bytes to the arena (only
+                /// the most recent allocation is rolled back, so the stored
+                /// view of the first occurrence stays valid).
+                arena.rollback(serialized.size());
+                continue;
             }
 
-            if (unique_values.size() > max_cardinality)
+            values.push_back((*column)[i]);
+
+            accumulated_bytes += column->byteSizeAt(i);
+            if (max_bytes != 0 && accumulated_bytes > max_bytes)
+                return std::nullopt;
+
+            if (values.size() > max_cardinality)
                 return std::nullopt;
         }
     }
 
-    return std::vector<Field>(unique_values.begin(), unique_values.end());
+    return values;
 }
 
 /// Build the RHS tuple constant for the generated `IN`.
