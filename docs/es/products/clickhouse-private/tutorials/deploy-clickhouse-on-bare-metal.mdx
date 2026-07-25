@@ -27,9 +27,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
 ***
 
 <Steps>
-  <Step>
-    ## Fase 1: Instalar Terraform
-
+  <Step title="Fase 1: Instalar Terraform" id="phase-1-install-terraform">
     ```text
     dnf install -y unzip git
     ```
@@ -62,9 +60,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 2: Descargar scripts de ejemplo
-
+  <Step title="Fase 2: Descargar scripts de ejemplo" id="phase-2-download-example-scripts">
     Descarga y extrae los scripts de ejemplo proporcionados por ClickHouse:
 
     ```text
@@ -77,9 +73,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 3: Configurar las credenciales de AWS
-
+  <Step title="Fase 3: Configurar las credenciales de AWS" id="phase-3-configure-aws-credentials">
     Cree un archivo de credenciales con la clave de acceso y la clave secreta de AWS IAM:
 
     ```bash
@@ -101,9 +95,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 4: Inicializar y aplicar Terraform
-
+  <Step title="Fase 4: Inicializar y aplicar Terraform" id="phase-4-initialize-and-apply-terraform">
     Inicializa el módulo de Terraform para RKE2. Añade `-migrate-state` si mueves el estado del entorno local a S3.
 
     ```text
@@ -129,9 +121,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 5: Instalar las dependencias de Ansible
-
+  <Step title="Fase 5: Instalar las dependencias de Ansible" id="phase-5-install-ansible-dependencies">
     Vaya al directorio de Ansible e instale los roles y las colecciones de Galaxy necesarios:
 
     ```bash
@@ -149,9 +139,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 6: Aprovisionar RKE2
-
+  <Step title="Fase 6: Aprovisionar RKE2" id="phase-6-provision-rke2">
     ### Verificar que los nodos estén listos
 
     ```text
@@ -189,9 +177,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 7: Configurar cert-manager y los certificados
-
+  <Step title="Fase 7: Configurar cert-manager y los certificados" id="phase-7-configure-cert-manager-and-certificates">
     Instale cert-manager, trust-manager y genere los certificados para ClickHouse con el playbook de Ansible:
 
     ```bash
@@ -220,9 +206,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 8: Instalar almacenamiento local
-
+  <Step title="Fase 8: Instalar almacenamiento local" id="phase-8-install-local-storage">
     ### Instalar local-path-provisioner
 
     ```bash
@@ -268,9 +252,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 9: Etiquetar los nodos
-
+  <Step title="Fase 9: Etiquetar los nodos" id="phase-9-label-nodes">
     Etiquete los nodos con las etiquetas de grupo de ClickHouse y de zona topológica requeridas por el operator:
 
     ```bash
@@ -286,9 +268,7 @@ Para consultar las especificaciones detalladas de infraestructura, vea [referenc
     ***
   </Step>
 
-  <Step>
-    ## Fase 10: Instalar ClickHouse Operator y el clúster
-
+  <Step title="Fase 10: Instalar ClickHouse Operator y el clúster" id="phase-10-install-clickhouse-operator-and-cluster">
     ### Configurar variables de entorno
 
     Cree y ejecute el script de variables de Helm. Actualice todos los valores de marcadores de posición:
