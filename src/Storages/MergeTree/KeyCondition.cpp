@@ -5213,33 +5213,32 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
         /// The monotonicity check already verified that the values fit in the target type.
         bool skip_apply = functionIsIntegerCastPreservingFieldRepresentation(func, current_type, result_type);
 
+        /// Injective step maps an open interval to an open interval, anything else can collapse it to
+        /// empty one (toYYYYMM maps ('2020-01-03', '2020-01-20') to ('202001', '202001'))
+        const bool include_boundaries = !func->isInjective({{nullptr, current_type, ""}});
+
         if (!skip_apply)
         {
-            /// If we apply function to open interval, we can get empty intervals in result.
-            /// E.g. for ('2020-01-03', '2020-01-20') after applying 'toYYYYMM' we will get ('202001', '202001').
-            /// To avoid this we make range left and right included.
             /// Any function that treats NULL specially is not monotonic.
             /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
             if (!key_range.left.isNull())
             {
                 key_range.left = applyFunction(func, current_type, key_range.left);
-                key_range.left_included = true;
+                key_range.left_included |= include_boundaries;
             }
 
             if (!key_range.right.isNull())
             {
                 key_range.right = applyFunction(func, current_type, key_range.right);
-                key_range.right_included = true;
+                key_range.right_included |= include_boundaries;
             }
         }
         else
         {
-            /// Even though we skip the function application, we still need to make bounds included
-            /// (the function could map open bounds to the same point).
             if (!key_range.left.isNull())
-                key_range.left_included = true;
+                key_range.left_included |= include_boundaries;
             if (!key_range.right.isNull())
-                key_range.right_included = true;
+                key_range.right_included |= include_boundaries;
         }
 
         current_type = result_type;

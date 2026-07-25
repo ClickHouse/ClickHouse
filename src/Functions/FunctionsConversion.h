@@ -3007,6 +3007,21 @@ bool convertIsCompilableImpl(const DataTypes & types, const DataTypePtr & result
 llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type);
 #endif
 
+/// True if the conversion gives every value of from a distinct value of to. Widening between integers
+/// keeps the value, everything else may map several inputs to one
+inline bool isValuePreservingIntegerConversion(const IDataType & from, const IDataType & to)
+{
+    if (!isInteger(from) || !isInteger(to))
+        return false;
+
+    /// Same signedness fits as soon as the target is at least as wide
+    if (isUInt(from) == isUInt(to))
+        return to.getSizeOfValueInMemory() >= from.getSizeOfValueInMemory();
+
+    /// Unsigned to signed needs a bit for the sign, signed to unsigned wraps negatives
+    return isUInt(from) && to.getSizeOfValueInMemory() > from.getSizeOfValueInMemory();
+}
+
 template <typename ToDataType, typename Name, typename MonotonicityImpl>
 class FunctionConvert final : public IFunction
 {
@@ -3045,7 +3060,19 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override
+    {
+        if constexpr (std::is_same_v<Name, NameToString>)
+            return true;
+        else if constexpr (IsDataTypeNumber<ToDataType>)
+        {
+            /// Needs the argument type, callers passing no sample columns get the conservative answer
+            return sample_columns.size() == 1 && sample_columns[0].type
+                && isValuePreservingIntegerConversion(*sample_columns[0].type, ToDataType{});
+        }
+        else
+            return false;
+    }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
     {
         return !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type));
@@ -4807,6 +4834,17 @@ public:
     String getName() const override { return cast_name; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const override
+    {
+        /// accurateCastOrNull sends everything out of range to NULL
+        if (cast_type == CastType::accurateOrNull)
+            return false;
+
+        /// The second argument, when there is one, is the constant name of the target type
+        return !argument_types.empty()
+            && isValuePreservingIntegerConversion(*argument_types[0], *return_type);
+    }
 
     bool hasInformationAboutMonotonicity() const override
     {

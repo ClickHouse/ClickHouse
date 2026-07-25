@@ -1,0 +1,24 @@
+wide integer cast on the leading key column
+1
+1
+1
+Granules: 1/250
+1
+Granules: 1/250
+1
+1
+the same on a reverse sorting key
+1
+1
+1
+Granules: 1/250
+three key columns, single-row granules
+3
+3
+Granules: 4/20
+a chain that loses information keeps the widened bounds
+7
+7
+a non-strict chain still needs the widened bounds
+10
+10
