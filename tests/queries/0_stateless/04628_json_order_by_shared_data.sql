@@ -65,19 +65,22 @@ SELECT 'mixed';
 SELECT id, json FROM t_json_mixed ORDER BY json ASC, id ASC;
 DROP TABLE t_json_mixed;
 
--- 3b. Same path stored DYNAMIC in one part and SHARED in another, compared across parts. Path `a` is
--- the sole path in part 1 (so it takes a dynamic slot), while in part 2 twenty leading `{p, q}` rows
--- claim both dynamic slots first, so the later `a` rows spill into shared data. `a` sorts before
--- `p`, so the cross-part merge reaches the `a` value comparison with one side DYNAMIC and the other
--- SHARED -> the UNCHANGED materializing fallback (not the optimized both-shared path). Values
+-- 3b. Same path stored DYNAMIC in one part and SHARED in another, compared across parts. Dynamic-path
+-- slots are claimed in parse order (first-come) as an inline VALUES block is built, so in part 2 the
+-- first literal row `{p, q}` pins both dynamic slots and the later `a` rows spill into shared data;
+-- `a` is the sole path in part 1, so it takes a dynamic slot there. Merges are stopped so the two
+-- parts and their placement survive to the SELECTs, and the `placement` assertion pins that premise
+-- (if a future change re-homes `a`, the test fails loudly instead of silently losing this coverage).
+-- `a` sorts before `p`, so the cross-part merge reaches the `a` value comparison with one side DYNAMIC and
+-- the other SHARED -> the UNCHANGED materializing fallback (not the optimized both-shared path). Values
 -- interleave across parts (10, 20, 30, 40, 50) so adjacent-in-order pairs are cross-part.
 DROP TABLE IF EXISTS t_json_mixed_kind;
 CREATE TABLE t_json_mixed_kind (id UInt32, json JSON(max_dynamic_paths = 2)) ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP MERGES t_json_mixed_kind;
 INSERT INTO t_json_mixed_kind VALUES (1, '{"a": 10}'), (3, '{"a": 30}'), (5, '{"a": 50}');
-INSERT INTO t_json_mixed_kind
-    SELECT number + 100, '{"p": 1, "q": 1}' FROM numbers(20)
-    UNION ALL SELECT 200, '{"a": 20}'
-    UNION ALL SELECT 201, '{"a": 40}';
+INSERT INTO t_json_mixed_kind VALUES (100, '{"p": 1, "q": 1}'), (200, '{"a": 20}'), (201, '{"a": 40}');
+SELECT 'placement';
+SELECT countIf(has(JSONDynamicPaths(json), 'a')) AS a_dynamic, countIf(has(JSONSharedDataPaths(json), 'a')) AS a_shared FROM t_json_mixed_kind;
 SELECT 'mixed_kind';
 SELECT id, json FROM t_json_mixed_kind WHERE has(JSONDynamicPaths(json), 'a') OR has(JSONSharedDataPaths(json), 'a')
 ORDER BY json ASC, id ASC SETTINGS max_threads = 2, max_block_size = 4;
