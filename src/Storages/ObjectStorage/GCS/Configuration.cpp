@@ -28,6 +28,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString server_side_encryption_customer_key_base64;
+    extern const S3AuthSettingsString http_client;
+    extern const S3AuthSettingsString metadata_service;
+    extern const S3AuthSettingsString request_token_path;
 }
 
 ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
@@ -69,13 +72,26 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "S3 server-side encryption settings are not supported by the native GCS backend. "
             "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
+    /// The metadata-service OAuth mechanism of the S3-compatibility path (`http_client = gcp_oauth`
+    /// with `service_account`, `metadata_service`, `request_token_path`) requests a token for the
+    /// *named* service account from a configurable metadata endpoint. Application Default Credentials
+    /// only ever use the VM's default service account on the standard metadata server, so falling
+    /// through to ADC would silently change the requested identity. Fail close like the checks above.
+    if (!auth[S3AuthSetting::http_client].value.empty()
+        || !auth[S3AuthSetting::service_account].value.empty()
+        || !auth[S3AuthSetting::metadata_service].value.empty()
+        || !auth[S3AuthSetting::request_token_path].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Metadata-service OAuth settings (`http_client`, `service_account`, `metadata_service`, `request_token_path`) "
+            "are not supported by the native GCS backend; it can use Application Default Credentials "
+            "(which cover the default service account of the metadata server), `google_adc_*` settings, "
+            "a service account key, or `NOSIGN`. "
+            "Remove them or disable `use_native_gcs` to access the bucket through the S3-compatibility API");
 
     gcs_settings.no_sign_request = auth[S3AuthSetting::no_sign_request];
     gcs_settings.google_adc_client_id = auth[S3AuthSetting::google_adc_client_id];
     gcs_settings.google_adc_client_secret = auth[S3AuthSetting::google_adc_client_secret];
     gcs_settings.google_adc_refresh_token = auth[S3AuthSetting::google_adc_refresh_token];
-    /// `service_account` (metadata-service SA) has no dedicated native factory: Application Default
-    /// Credentials already cover the GCE/GKE metadata server, so it falls through to the default path.
 
     resolveGCSCredentialsToken(gcs_settings, context);
 
