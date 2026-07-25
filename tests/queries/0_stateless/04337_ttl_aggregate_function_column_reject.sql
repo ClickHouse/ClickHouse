@@ -1051,7 +1051,9 @@ DROP TABLE test_ttl_cast_nullable_string_accept;
 
 -- Containers are materialized with one element for the cast probe, so element-level consumers of the
 -- cast result are validated against the actual element payload type (accepted: `length` of a `String`
--- element works) instead of an empty default that would hide them.
+-- element works) instead of an empty default that would hide them. Note this holds for direct
+-- consumers only: a lambda body (e.g. inside `arrayExists`) is validated through the captured DAG,
+-- where the element is a plain `Dynamic` input, so it keeps the fail-closed static enumeration.
 CREATE TABLE test_ttl_cast_array_accept
 (
     arr Array(String),
@@ -1059,7 +1061,7 @@ CREATE TABLE test_ttl_cast_array_accept
 )
 ENGINE = MergeTree()
 ORDER BY tuple()
-TTL d + INTERVAL 1 DAY DELETE WHERE arrayExists(x -> length(x) > 3, CAST(arr, 'Array(Dynamic)'));
+TTL d + INTERVAL 1 DAY DELETE WHERE length(arrayElement(CAST(arr, 'Array(Dynamic)'), 1)) > 3;
 
 DROP TABLE test_ttl_cast_array_accept;
 
