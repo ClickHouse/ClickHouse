@@ -116,3 +116,109 @@ def test_parse_failure_logical_error_name_drops_dangling_stack_trace_marker(tmp_
     assert "(STID:" in result_name
     # The frames are still preserved in the separate stack-trace section of the info.
     assert "abortOnFailedAssertion" in info
+
+
+def test_parse_failure_names_watchdog_signal_death(tmp_path):
+    # The only crash evidence in the #109951 arm_asan_ubsan s3 stress job was this
+    # single watchdog line: no BaseDaemon fault stack, no sanitizer report, no core.
+    # The old parser matched only signal 9, so signal 11 fell through to "Unknown error".
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    server_log.write_text(
+        "2026.07.24 16:18:55.143201 [ 4177 ] {} <Fatal> Application: "
+        "Child process was terminated by signal 11.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name == "Child process was terminated by signal 11 (STID: None)"
+    assert "<Fatal> Application: " not in result_name
+    assert "Child process was terminated by signal 11" in info
+
+
+def test_parse_failure_watchdog_signal9_kill_still_matches(tmp_path):
+    # Signal 9 (the long KILL/OOM-hint form) must still be named. OOM allowance is
+    # decided elsewhere (stress_job.is_oom, computed independently of this parser),
+    # so naming a signal-9 death here does not change job-OK semantics.
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    server_log.write_text(
+        "2026.07.24 16:18:55.143201 [ 4177 ] {} <Fatal> Application: "
+        "Child process was terminated by signal 9 (KILL). If it is not done by "
+        "'forcestop' command or manually, the possible cause is OOM Killer (see "
+        "'dmesg' and look at the '/var/log/kern.log' for the details).\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name.startswith("Child process was terminated by signal 9 (KILL)")
+    assert "<Fatal> Application: " not in result_name
+
+
+def test_parse_failure_prefers_received_signal_stack_over_watchdog_line(tmp_path):
+    # When a BaseDaemon fault handler DID produce a stack, the broadened watchdog
+    # pattern must not override it: the fault line is named from the crash itself
+    # ("Segmentation fault"), not from the terse "terminated by signal N" record.
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    server_log.write_text(
+        "2026.07.24 16:18:50.000000 [ 4200 ] {} <Fatal> BaseDaemon: "
+        "(version 26.8.1.1, build id: X, git hash: Y) (from thread 4200) (no query) "
+        "Received signal Segmentation fault (11)\n"
+        "2026.07.24 16:18:50.000001 [ 4200 ] {} <Fatal> BaseDaemon: "
+        "Address: 0x0. Access: read. Address not mapped to object.\n"
+        "2026.07.24 16:18:50.000002 [ 4200 ] {} <Fatal> BaseDaemon: Stack trace: 0x1 0x2\n"
+        "2026.07.24 16:18:55.143201 [ 4177 ] {} <Fatal> Application: "
+        "Child process was terminated by signal 11.\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name.startswith("Segmentation fault (11)")
+    assert "Child process was terminated" not in result_name
+
+
+def test_parse_failure_ignores_shellcommand_child_signal_exception(tmp_path):
+    # ShellCommand (executable UDF/dictionary/bridge child) throws
+    # "Child process was terminated by signal N" as an <Error> exception while the
+    # server stays alive. The watchdog-record anchor keeps it out of the Signal
+    # branch (the old unanchored ".*signal 9.*" would have mislabeled it).
+    server_log = tmp_path / "clickhouse-server.err.log"
+
+    server_log.write_text(
+        "2026.07.24 16:18:55.000000 [ 4177 ] {abc} <Error> executeQuery: Code: 460. "
+        "DB::Exception: Child process was terminated by signal 9. "
+        "(CHILD_WAS_NOT_EXITED_NORMALLY) (version 26.8.1.1)\n",
+        encoding="utf-8",
+    )
+
+    parser = FuzzerLogParser(
+        server_log=str(server_log),
+        stderr_log="",
+        fuzzer_log="",
+    )
+
+    result_name, info, files = parser.parse_failure()
+
+    assert result_name == "Unknown error"
