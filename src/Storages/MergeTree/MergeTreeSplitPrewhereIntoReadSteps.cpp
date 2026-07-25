@@ -25,7 +25,21 @@ struct NodeInfo
     /// Column names resolved to their physical storage names (subcolumn suffix stripped).
     /// Used for grouping: conditions on subcolumns of the same storage column are placed into one step.
     NameSet required_storage_columns;
+    /// True if computing this node may throw an exception, so it must not be evaluated on rows
+    /// that a preceding condition rejects.
+    bool may_throw = false;
 };
+
+/// Returns the argument types of a function node, as expected by
+/// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
+DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::Node * node)
+{
+    DataTypesWithConstInfo types;
+    types.reserve(node->children.size());
+    for (const auto & child : node->children)
+        types.push_back({child->result_type, child->column != nullptr});
+    return types;
+}
 
 /// Resolves a column name to its storage (physical) name.
 /// For subcolumns like `map.key_k0`, returns `map`.
@@ -64,7 +78,15 @@ void fillRequiredColumns(
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
         node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
+        node_info.may_throw = node_info.may_throw || child_info.may_throw;
     }
+
+    /// Reuse the predicate that the short-circuit machinery uses to decide which nodes must be
+    /// guarded (see ExpressionActions::findLazyExecutedNodes). IFunctionBase::canThrow delegates
+    /// to it as well. It is conservative: it also reports true for merely expensive functions.
+    if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
+        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node)))
+        node_info.may_throw = true;
 }
 
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
@@ -258,21 +280,29 @@ bool tryBuildPrewhereSteps(
     /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
     /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
     ///
-    /// For the WHERE-to-PREWHERE path this is not a problem: `MergeTreeWhereOptimizer` already groups
-    /// conditions by their physical storage columns, so subcolumns of the same column arrive here adjacent.
+    /// Adjacency alone is not enough: all conditions of one step are evaluated on the same unfiltered
+    /// block, so a condition that may throw must never share a step with a preceding condition.
+    /// `MergeTreeWhereOptimizer` groups conditions by their physical storage columns, which makes a
+    /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
+    /// what keeps the guard effective.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
+    /// Indices of groups that start a new step only because the condition may throw. The preceding
+    /// step must materialize its filter, otherwise the throwing condition still sees rejected rows.
+    std::unordered_set<size_t> groups_requiring_filtered_input;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
         if (!condition_groups.empty()
             && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
         {
-            condition_groups.back().push_back(node);
+            if (!node_info.may_throw)
+            {
+                condition_groups.back().push_back(node);
+                continue;
+            }
+            groups_requiring_filtered_input.insert(condition_groups.size());
         }
-        else
-        {
-            condition_groups.push_back({node});
-        }
+        condition_groups.push_back({node});
     }
 
     /// 5. Build DAGs for each step
@@ -376,7 +406,9 @@ bool tryBuildPrewhereSteps(
                 /// Don't remove if it's in the list of original outputs
                 .remove_filter_column =
                     step.original_node && !all_outputs.contains(step.original_node) && node_to_step[step.original_node] <= step_index,
-                .need_filter = force_short_circuit_execution,
+                /// A step that precedes a may_throw condition must materialize its filter, so that
+                /// the throwing condition is not evaluated on the rows this step rejects.
+                .need_filter = force_short_circuit_execution || groups_requiring_filtered_input.contains(step_index + 1),
                 .perform_alter_conversions = true,
                 .columns_overwritten_by_chain = {},
                 .mutation_version = std::nullopt,
