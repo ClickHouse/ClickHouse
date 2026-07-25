@@ -43,3 +43,5 @@ export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
         </div>
     )
 }
+
+export default BetaBadge;
