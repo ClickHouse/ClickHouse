@@ -1390,6 +1390,16 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
             /// MEMORY_LIMIT_EXCEEDED as it is accumulated, exactly like the old single-arena path -
             /// a plain std::string would only be counted (via the non-throwing new/delete tracking),
             /// not refused, and could stage past max_memory_usage before failing at EOF.
+            ///
+            /// Known tradeoff: at the final hand-off the staged chunks and the freshly allocated
+            /// arena buffer briefly coexist, so the tracked peak on this path is about twice the
+            /// payload (the staged copy is freed right after). This is inherent to any scheme that
+            /// stages untrusted bytes before committing them to a single arena allocation: trusting
+            /// the declared size upfront is the original bug, and growing the arena allocation in
+            /// place (Arena::allocContinue) strands every superseded copy in the arena until the
+            /// query ends - a permanent overhead larger than this transient one. The path is rare:
+            /// it is taken only when a value spans more than one read-buffer refill (e.g. a state
+            /// larger than the 64 KiB compressed block), while the common case above is unchanged.
             VectorWithMemoryTracking<StringWithMemoryTracking> chunks;
             UInt32 bytes_read = 0;
             while (bytes_read < bytes_to_read)
