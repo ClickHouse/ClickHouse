@@ -1169,26 +1169,29 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     /// Either way the snapshot summary hint is not used as a data source: it is maintained
     /// incrementally by writers just like `total-records`, so a corrupted commit in the
     /// table history poisons it silently -- the very bug this code guards against. Instead,
-    /// scan the manifest files: their file-level `record_count` is required in all format
-    /// versions, so the result is exact at the cost of opening the manifest files (which
-    /// are served from the Iceberg metadata cache on repeated queries).
+    /// scan the manifest files: the file-level `record_count` is required in all format
+    /// versions, so summing it over the data files is exact at the cost of opening the
+    /// manifest files (served from the Iceberg metadata cache on repeated queries).
     Int64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
 
-        /// Equality deletes remove an unknown number of rows: the record count of an equality
-        /// delete file is the number of delete predicates, not the number of data rows they
-        /// match, so no metadata can produce an exact count. Bail out to a real scan, which
-        /// applies the equality delete transformers and counts the surviving rows.
-        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty())
+        /// Live delete files make an exact metadata-only count impossible:
+        /// - the record count of an equality delete file is the number of delete predicates,
+        ///   not the number of data rows they match;
+        /// - position delete records may be duplicated across delete files (the scan
+        ///   deduplicates matching (file_path, pos) pairs) and may reference data files that
+        ///   are no longer part of the snapshot, so subtracting their raw record count can
+        ///   miscount in both directions.
+        /// Bail out to a real scan, which applies the delete transformers and counts the
+        /// surviving rows exactly.
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
 
-        /// `record_count` is required for every manifest entry in all format versions, so
-        /// both sums are exact and this scan cannot fail once equality deletes are ruled out.
-        result += manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA)
-            - manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
+        result += manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
     }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);

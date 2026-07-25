@@ -3,13 +3,16 @@
 
 # The snapshot summary's total-records hint is maintained incrementally by writers
 # (parent total + added), so a corrupted commit in the table history poisons it for
-# all subsequent snapshots. When the snapshot has delete manifests, the count cannot
-# be derived from the manifest list either, so totalRows() must fall back to scanning
-# the manifests instead of trusting the (possibly corrupted) summary hint.
+# all subsequent snapshots. When the snapshot has live delete files, no metadata can
+# produce an exact count (position delete records may be duplicated across delete
+# files and the scan deduplicates them), so totalRows() must refuse the trivial count
+# instead of trusting the (possibly corrupted) summary hint, and count() must fall
+# back to a real scan.
 #
 # This test creates a merge-on-read table with position deletes (5 rows - 2 deleted),
-# corrupts total-records from 5 to 100 and checks that count() returns 3, derived
-# from the manifests (the summary-trusting code returned 100 - 2 = 98).
+# corrupts total-records from 5 to 100 and checks that count() returns 3 via a real
+# scan (the summary-trusting code returned 100 - 2 = 98), and that the trivial count
+# optimization is not applied.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -60,12 +63,13 @@ with open(latest, "w") as f:
     json.dump(metadata, f)
 EOF
 
-# Trivial count must not trust the corrupted summary. The setting is pinned because the
-# test runner randomizes it, and a real scan would also print 3, hiding a regression.
+# count() must not trust the corrupted summary. The setting is pinned because the
+# test runner randomizes it.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=1 --query "SELECT count() FROM ${TABLE}"
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=0 --query "SELECT count() FROM ${TABLE}"
 
-# Prove the count above came from the trivial count path (manifest scan), not a data scan.
+# With live position delete files no metadata count is exact, so the trivial count
+# optimization must not be applied even when explicitly enabled.
 ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --optimize_trivial_count_query=1 --query \
     "SELECT count() FROM (EXPLAIN SELECT count() FROM ${TABLE}) WHERE explain LIKE '%Optimized trivial count%'"
 
