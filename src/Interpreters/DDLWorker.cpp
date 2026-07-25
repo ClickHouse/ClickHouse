@@ -1435,7 +1435,25 @@ void DDLWorker::markReplicasActive(bool reinitialized)
         LOG_INFO(log, "Self host_id ({}) = {}", host_id, is_self_host);
         if (is_self_host)
         {
-            local_host_ids.emplace(host_id);
+            /// Claim the host only if it is still allowed to run ON CLUSTER DDL. A replica excluded
+            /// via skip_distributed_ddl must not be reclaimed even if its old znode still exists.
+            if (all_host_ids.contains(host_id))
+            {
+                local_host_ids.emplace(host_id);
+                continue;
+            }
+
+            /// Self but excluded: drop the active node we hold so we stop claiming the host on reload.
+            /// (On restart, active_node_holders was already cleared above.)
+            if (!reinitialized)
+            {
+                auto it = active_node_holders.find(host_id);
+                if (it != active_node_holders.end())
+                {
+                    it->second.second.reset();   /// removes the ephemeral node
+                    active_node_holders.erase(it);
+                }
+            }
             continue;
         }
 

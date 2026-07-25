@@ -1,0 +1,27 @@
+<clickhouse>
+    <remote_servers>
+        <!-- Regular cluster with node1 as a normal replica. Used to dispatch a real ON CLUSTER
+             query that wakes the DDLWorker so it re-runs markReplicasActive after a config reload. -->
+        <main_cluster>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </main_cluster>
+        <!-- common_cluster's replica points at localhost, which node1 resolves to itself: the same
+             effect as another cluster replica sharing this physical host. The test flips
+             skip_distributed_ddl from 0 to 1 and checks that node1 stops claiming localhost as an
+             active replica after both SYSTEM RELOAD CONFIG and restart. -->
+        <common_cluster>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                    <skip_distributed_ddl>0</skip_distributed_ddl>
+                </replica>
+            </shard>
+        </common_cluster>
+    </remote_servers>
+</clickhouse>
