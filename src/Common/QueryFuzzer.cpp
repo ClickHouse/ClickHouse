@@ -3484,7 +3484,11 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
         /// arbitrary expressions — doing so breaks the order_by_all formatting invariant
         /// (ASTSelectQuery::formatImpl assumes children[0] is ASTOrderByElement when
         /// order_by_all == true) and causes a null-pointer crash in format().
-        if (!typeid_cast<ASTOrderByElement *>(child.get()))
+        /// `WINDOW` lists likewise contain `ASTWindowListElement` nodes: the analyzer and query
+        /// tree builder cast every `window()` child to `ASTWindowListElement`, so replacing one
+        /// with a plain expression breaks that node-type invariant. We still recurse into the
+        /// element below (via `fuzz(child)`) so the window definition is fuzzed in place.
+        if (!typeid_cast<ASTOrderByElement *>(child.get()) && !typeid_cast<ASTWindowListElement *>(child.get()))
         {
             if (auto * /*literal*/ _ = typeid_cast<ASTLiteral *>(child.get()))
             {

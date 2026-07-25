@@ -39,6 +39,7 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/UniqueKey/SSTIndexWriter.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <base/JSON.h>
@@ -73,6 +74,7 @@
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <ranges>
 
 
 namespace CurrentMetrics
@@ -335,6 +337,38 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
     }
 }
 
+Names IMergeTreeDataPart::MinMaxIndex::getProbablyWrittenFiles(const IMergeTreeDataPart & part) const
+{
+    if (hyperrectangle.empty())
+        return {};
+
+    const auto metadata_snapshot = part.getMetadataSnapshot();
+    const auto & partition_key = metadata_snapshot->getPartitionKey();
+    const auto data_settings = part.storage.getSettings();
+    const auto & data_part_storage = part.getDataPartStorage();
+
+    auto to_file_names = [&](const NamesAndTypesList & minmax_columns)
+    {
+        return minmax_columns.getNames()
+            | std::views::transform([&](const auto & column_name) { return "minmax_" + getFileColumnName(column_name, data_settings, data_part_storage) + ".idx"; })
+            | std::ranges::to<Names>();
+    };
+
+    {
+        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+        if (hyperrectangle.size() == minmax_columns.size())
+            return to_file_names(minmax_columns);
+    }
+
+    {
+        auto minmax_columns = MergeTreeData::getMinMaxColumns(partition_key, data_settings, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET);
+        if (hyperrectangle.size() == minmax_columns.size())
+            return to_file_names(minmax_columns);
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Part level Min-Max index was constructed from unexpected columns set.");
+}
+
 String IMergeTreeDataPart::MinMaxIndex::getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage)
 {
     return replaceFileNameToHashIfNeeded(escapeForFileName(column_name), *storage_settings_, &data_part_storage);
@@ -359,6 +393,10 @@ IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
     if (minmax_idx)
         return minmax_idx;
 
+    /// Build the lazily-materialized index in the parts arena. Reloaded parts and the zero-level path
+    /// that resets a virtual minmax column to null (see MergeTreeDataWriter) first create it here.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     if (is_temp || isEmpty())
     {
         minmax_idx = std::make_shared<MinMaxIndex>();
@@ -374,6 +412,15 @@ IMergeTreeDataPart::MinMaxIndexPtr IMergeTreeDataPart::getMinMaxIndex() const
 
 void IMergeTreeDataPart::setMinMaxIndex(MinMaxIndexPtr minmax_index) const
 {
+    /// Re-home the index into the parts arena (deep copy under the scope, then adopt), same rationale as
+    /// `setColumns`. The index is one of the larger part-lifetime metadata structures and is built outside
+    /// the arena on the insert and mutation paths.
+    if (minmax_index && JemallocMergeTreeArena::isEnabled())
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        minmax_index = std::make_shared<MinMaxIndex>(*minmax_index);
+    }
+
     std::lock_guard lock(minmax_idx_mutex);
     minmax_idx = std::move(minmax_index);
 }
@@ -471,7 +518,8 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
     Type part_type_,
-    const IMergeTreeDataPart * parent_part_)
+    const IMergeTreeDataPart * parent_part_,
+    bool part_may_exist_on_disk)
     : DataPartStorageHolder(data_part_storage_)
     , storage(storage_)
     , name(mutable_name)
@@ -500,7 +548,11 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
 
-    initializeIndexGranularityInfo(storage_settings);
+    if (part_may_exist_on_disk)
+        initializeIndexGranularityInfo(storage_settings);
+
+    /// By default set the order of common metadata files. Later on it can be changed by the part itself.
+    getDataPartStorage().setPreferredFileOrder(COMMON_METADATA_FILES);
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -587,6 +639,10 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     if (index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The index of data part can be set only once");
 
+    /// The primary index lives for the part's whole lifetime, so build the `Index` object in the
+    /// dedicated arena, like `setColumns` / `setMinMaxIndex`. This covers every caller (insert / merge
+    /// write finalize and the mutation path) in one place.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     optimizeIndexColumns(index_granularity->getMarksCount(), index_columns);
     index = std::make_shared<Index>(std::move(index_columns));
 }
@@ -1264,18 +1320,24 @@ Estimates IMergeTreeDataPart::getEstimates() const
     if (estimates.has_value())
         return *estimates;
 
-    Estimates new_estimates;
+    /// The raw statistics are transient, so load them in the default arena; only the cached
+    /// estimates map is long-lived (kept on the part until reload), so build it in the dedicated
+    /// arena, like the rest of the part's metadata.
     auto statistics = loadStatistics();
 
-    for (const auto & [column_name, stats] : statistics)
-        new_estimates.emplace(column_name, stats->getEstimate());
-
-    estimates = std::move(new_estimates);
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        Estimates new_estimates;
+        for (const auto & [column_name, stats] : statistics)
+            new_estimates.emplace(column_name, stats->getEstimate());
+        estimates = std::move(new_estimates);
+    }
     return *estimates;
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(estimates_mutex);
     estimates = new_estimates;
 }
@@ -1287,13 +1349,17 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    /// Everything loaded here (columns, substreams, checksums, index granularity, primary index,
-    /// per-column sizes, rows count, partition / minmax index, TTL infos, projections, default
-    /// compression codec, source parts set) lives for the whole part lifetime. Route the heap
-    /// allocations into the dedicated parts arena. This block is on the hot server-startup path
-    /// (`MergeTreeData::loadDataPart` → `loadColumnsChecksumsIndexes`), so per-part metadata
-    /// allocated at boot also lands in the arena from the start.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    /// Long-lived per-part metadata (columns substreams, checksums, index granularity, primary
+    /// index, per-column sizes, partition / minmax index, TTL infos, projections) is routed into
+    /// the dedicated parts arena by the inner block below. Deliberately kept OUT of that arena:
+    ///   - `loadColumns`: its file read and text/JSON parsing are short-lived scratch; the
+    ///     persistent columns/serializations it produces are arena-scoped inside `setColumns`.
+    ///   - `checkConsistency`: pure file-existence/size verification, allocates nothing persistent.
+    ///   - `loadDefaultCompressionCodec`: a tiny per-part codec pointer.
+    /// (`loadSourcePartsSet` runs after this block but scopes itself into the arena, as its
+    /// patch-part metadata is part-lifetime.)
+    /// These paths churn many short-lived allocations; keeping them in the default per-CPU arenas
+    /// avoids serializing that churn on the single arena's locks under many concurrent merges.
 
     try
     {
@@ -1301,37 +1367,46 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
 
         loadColumns(require_columns_checksums, load_metadata_version);
-        loadColumnsSubstreams();
-        loadChecksums(require_columns_checksums);
-        loadIndexGranularity();
 
-        /// It's important to load index after index granularity.
-        if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
-            index = loadIndex();
+        bool has_broken_projections = false;
+        {
+            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
+            loadColumnsSubstreams();
+            loadChecksums(require_columns_checksums);
+            loadIndexGranularity();
+
+            /// It's important to load index after index granularity.
+            if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
+                index = loadIndex();
+
+            loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
+
+            /// For constant granularity parts (non-adaptive marks), the last mark granularity
+            /// is assumed to be a full granule because the mark file does not store per-granule
+            /// row counts, and the final mark is not distinguished from data marks.
+            /// Now that we know the actual rows_count, fix the last mark and detect the final mark.
+            if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
+                constant_granularity->fixFromRowsCount(rows_count);
+
+            loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
+            loadPartitionAndMinMaxIndex();
+
+            if (!parent_part && !isStoredOnReadonlyDisk())
+                loadTTLInfos();
+        }
+
+        /// Projections are full sub-parts; loading each one runs its own `loadColumnsChecksumsIndexes`,
+        /// so keep it outside the arena scope above (each child re-enters the arena for its own
+        /// persistent metadata, and its transient load scratch stays on the default per-CPU arenas).
+        if (!parent_part)
+            loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
+
+        /// Kept out of the dedicated arena scope above on purpose: the size computation is heavy
+        /// short-lived churn (a sample column per column/substream). The finished, part-lifetime maps
+        /// are re-homed into the arena inside `calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked`.
         if (!(*storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
             calculateColumnsAndSecondaryIndicesSizesOnDisk();
-
-        loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
-
-        /// For constant granularity parts (non-adaptive marks), the last mark granularity
-        /// is assumed to be a full granule because the mark file does not store per-granule
-        /// row counts, and the final mark is not distinguished from data marks.
-        /// Now that we know the actual rows_count, fix the last mark and detect the final mark.
-        if (auto * constant_granularity = dynamic_cast<MergeTreeIndexGranularityConstant *>(index_granularity.get()))
-            constant_granularity->fixFromRowsCount(rows_count);
-
-        loadExistingRowsCount(); /// Must be called after loadRowsCount() as it uses the value of `rows_count`.
-        loadPartitionAndMinMaxIndex();
-        bool has_broken_projections = false;
-
-        if (!parent_part)
-        {
-            if (!isStoredOnReadonlyDisk())
-                loadTTLInfos();
-
-            loadProjections(require_columns_checksums, check_consistency, has_broken_projections, false /* if_not_loaded */);
-        }
 
         if (check_consistency && !has_broken_projections)
             checkConsistency(require_columns_checksums);
@@ -1377,7 +1452,13 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection)
 {
     const char * projection_extension = is_temp_projection ? ".tmp_proj" : ".proj";
-    auto projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+    /// The projection storage is stored on the resulting projection part for its lifetime, so create
+    /// it in the dedicated arena (this is the part-lifetime projection-storage creation site).
+    MutableDataPartStoragePtr projection_storage;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        projection_storage = getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+    }
     MergeTreeDataPartBuilder builder(storage, projection_name, projection_storage, getReadSettings());
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
@@ -1392,20 +1473,20 @@ void IMergeTreeDataPart::addProjectionPart(
     if (projection_name != projection_part->name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The name of projection part ({}) is inconsistent with the name of projection ({})", projection_part->name, projection_name);
 
+    /// The parent keeps this map node (and the copied projection name key) for its whole lifetime,
+    /// so build it in the dedicated arena. Scoping here covers every caller (insert, merge,
+    /// projection merge, load).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     projection_parts[projection_name] = std::move(projection_part);
 }
 
 void IMergeTreeDataPart::loadProjections(
     bool require_columns_checksums, bool check_consistency, bool & has_broken_projection, bool if_not_loaded, bool only_metadata)
 {
-    /// Each loaded projection becomes its own `IMergeTreeDataPart` (via `getProjectionPartBuilder().build()`)
-    /// and is stored in the parent's `projection_parts` map. Both the map node insertion in
-    /// `addProjectionPart` and any allocation paths reached during build/load that aren't already
-    /// scoped by their own helpers belong in the parts arena. This is also the entry point used
-    /// directly by `MutateTask`, where the surrounding `loadColumnsChecksumsIndexes` scope is not
-    /// in effect; without this guard those calls would land in the default arena.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
+    /// Each loaded projection becomes its own `IMergeTreeDataPart` whose part-lifetime allocations are
+    /// already routed into the arena by their own helpers (`build()`, `addProjectionPart`, and the
+    /// child's own `loadColumnsChecksumsIndexes`). The projection load's transient scratch is
+    /// deliberately left on the default per-CPU arenas, so no arena scope is taken here.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     for (const auto & projection : metadata_snapshot->projections)
     {
@@ -1425,7 +1506,12 @@ void IMergeTreeDataPart::loadProjections(
                 try
                 {
                     if (only_metadata)
+                    {
+                        /// The metadata-only path does not go through `loadColumnsChecksumsIndexes`, so
+                        /// route the projection's part-lifetime checksums into the arena here.
+                        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                         part->loadChecksums(require_columns_checksums);
+                    }
                     else
                         part->loadColumnsChecksumsIndexes(require_columns_checksums, check_consistency);
                 }
@@ -1511,12 +1597,10 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
     /// Memory for index must not be accounted as memory usage for query, because it belongs to a table.
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-    /// The loaded primary-index `Columns` live for the part's lifetime when stored on the part
-    /// (`primary_key_lazy_load=0`, or lazy load with `use_primary_key_cache=0`), or for the
-    /// cache entry's lifetime when the result is handed to `PrimaryIndexCache`. `loadIndex` is
-    /// reachable from `loadColumnsChecksumsIndexes` (already wrapped) but also from `getIndex`
-    /// and `loadIndexToCache` on the lazy-load path; wrapping inside `loadIndex` itself covers
-    /// every entry point.
+    /// The loaded primary-index `Columns` are long-lived (kept on the part or handed to
+    /// `PrimaryIndexCache`), so route them into the dedicated parts arena. Keeping cache-owned indices
+    /// here too (rather than the cache arena) is deliberate: re-homing on the prewarm path would run
+    /// after the part is committed and could fail the INSERT, so the primary index lives in one arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     auto metadata_snapshot = getMetadataSnapshot();
@@ -1591,7 +1675,26 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(COLUMNS_SUBSTREAMS_FILE_NAME))
         result.emplace(COLUMNS_SUBSTREAMS_FILE_NAME);
 
+    /// UNIQUE KEY per-part SST. Enumerated based on the part's own on-disk
+    /// presence (a part property), not table metadata, so `MergeTreeData::backupParts`
+    /// and `DataPartsExchange::sendPart` transfer it — both build the transferred
+    /// file set from `checksums ∪ getFileNamesWithoutChecksums()`, not by globbing
+    /// the part directory.
+    if (getDataPartStorage().existsFile(SSTIndexWriter::FILE_NAME))
+        result.emplace(SSTIndexWriter::FILE_NAME);
+
     return result;
+}
+
+std::optional<String> IMergeTreeDataPart::getDenseIndexBackingPath() const
+{
+    /// Neutral name for the on-disk dense-index file. The concrete on-disk
+    /// format is owned by the dense-index backend (currently SST);
+    /// cross-module callers treat this as "is there an on-disk dense index
+    /// for this part?" and let backend code open + verify the file.
+    if (!getDataPartStorage().existsFile(SSTIndexWriter::FILE_NAME))
+        return std::nullopt;
+    return getDataPartStorage().getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
 }
 
 std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
@@ -1644,6 +1747,10 @@ void IMergeTreeDataPart::loadSourcePartsSet()
 {
     if (!info.isPatch())
         return;
+
+    /// For patch parts `source_parts_set` (`min_max_versions_by_part` / `source_parts_by_version`)
+    /// is part-lifetime metadata, so route it into the dedicated arena like the other loaders.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
         source_parts_set.readBinary(*in);
@@ -1815,10 +1922,9 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    /// `MergeTreeDataPartChecksums` is a `std::map<String, MergeTreeDataPartChecksum>` that lives as
-    /// long as the part. Its tree-node allocations belong in the parts arena.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
+    /// Arena-agnostic: the real part-load callers (`loadColumnsChecksumsIndexes`, the projection load)
+    /// already run inside the parts-arena scope, while transient checksum-only probes must stay on the
+    /// default arenas. So the caller picks the arena rather than pinning it here.
     if (auto buf = readFileIfExists("checksums.txt"))
     {
         if (checksums.read(*buf))
@@ -2177,6 +2283,26 @@ void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_
 
     columns_substreams_.validateColumns(getColumns().getNames());
     columns_substreams = columns_substreams_;
+}
+
+void IMergeTreeDataPart::moveMetadataToDedicatedArena()
+{
+    /// Every member below is already stored; the copies exist only to move them between arenas. When the
+    /// feature is off `ScopedJemallocThreadArena` is a no-op, so skip the copies entirely to avoid the cost.
+    if (!JemallocMergeTreeArena::isEnabled())
+        return;
+
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    /// Re-home the members built outside the arena into it (copy under the scope, then adopt).
+    reallocateByCopy(partition);
+    reallocateByCopy(ttl_infos);
+    reallocateByCopy(expired_columns);
+    /// The minmax index is re-homed at its population sites instead (`setMinMaxIndex`, the lazy
+    /// `getMinMaxIndex` build, and the in-place merge/update sites in MergeTask): here it is either not
+    /// yet populated (merge/mutation) or would be reset again later (zero-level virtual columns).
+    if (info.isPatch())
+        reallocateByCopy(source_parts_set);
 }
 
 void IMergeTreeDataPart::loadColumnsSubstreams()
@@ -2680,9 +2806,25 @@ void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk() const
 
 void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const
 {
+    /// The computation must run outside the dedicated arena: `calculateEachColumnSizes` resolves a
+    /// stream name and builds a sample column for every column and substream, which is heavy
+    /// short-lived churn that must stay out of the shared arena. All callers (the eager load path
+    /// and every lazy getter) reach this from the default arenas.
     calculateColumnsSizesOnDisk();
     calculateSecondaryIndicesSizesOnDisk();
     are_columns_and_secondary_indices_sizes_calculated = true;
+
+    /// The size maps are cached on the part for its whole lifetime, so re-home the finished maps into
+    /// the dedicated arena. Done here (not in the public wrapper) so the lazy getters, which call this
+    /// directly, re-home too.
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        if (columns_sizes)
+            columns_sizes = std::make_shared<const ColumnSizeByName>(*columns_sizes);
+        if (secondary_index_sizes)
+            secondary_index_sizes = std::make_shared<const IndexSizeByName>(*secondary_index_sizes);
+    }
 }
 
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk() const
@@ -3153,9 +3295,20 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 {
     constexpr size_t size_hint = 4096; /// These files are small.
     auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+
     /// Default read method is pread_threadpool, but there is not much point in it here.
     read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-    auto res = getDataPartStorage().readFile(file_name, read_settings, size_hint);
+
+    const auto & data_part_storage = getDataPartStorage();
+
+    if (isPackedPartStorage(data_part_storage)
+        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
+    {
+        /// We do not want background download to read too much extra data during parts load/fetch.
+        read_settings.filesystem_cache_settings.allow_background_download = false;
+    }
+
+    auto res = data_part_storage.readFile(file_name, read_settings, size_hint);
 
     if (isCompressedFromFileName(file_name))
         return std::make_unique<CompressedReadBufferFromFile>(std::move(res));
@@ -3165,8 +3318,22 @@ std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFile(const String & file_nam
 
 std::unique_ptr<ReadBuffer> IMergeTreeDataPart::readFileIfExists(const String & file_name) const
 {
-    constexpr size_t size_hint = 4096;  /// These files are small.
-    if (auto res = getDataPartStorage().readFileIfExists(file_name, getReadSettings().adjustBufferSize(size_hint), size_hint))
+    constexpr size_t size_hint = 4096; /// These files are small.
+    auto read_settings = getReadSettings().adjustBufferSize(size_hint);
+
+    /// Default read method is pread_threadpool, but there is not much point in it here.
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+
+    const auto & data_part_storage = getDataPartStorage();
+
+    if (isPackedPartStorage(data_part_storage)
+        && !read_settings.filesystem_cache_settings.allow_background_download_for_metadata_files_in_packed_storage)
+    {
+        /// We do not want background download to read too much extra data during parts load/fetch.
+        read_settings.filesystem_cache_settings.allow_background_download = false;
+    }
+
+    if (auto res = data_part_storage.readFileIfExists(file_name, read_settings, size_hint))
     {
         if (isCompressedFromFileName(file_name))
             return std::make_unique<CompressedReadBufferFromFile>(std::move(res));

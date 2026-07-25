@@ -1488,7 +1488,7 @@ static void finalizeMutatedPart(
 
     new_data_part->rows_count = source_part->rows_count;
     new_data_part->index_granularity = source_part->index_granularity;
-    new_data_part->setMinMaxIndex(std::make_shared<IMergeTreeDataPart::MinMaxIndex>(*source_part->getMinMaxIndex()));
+    new_data_part->setMinMaxIndex(source_part->getMinMaxIndex());
     new_data_part->modification_time = time(nullptr);
 
     if ((*new_data_part->storage.getSettings())[MergeTreeSetting::enable_index_granularity_compression])
@@ -1514,6 +1514,21 @@ static void finalizeMutatedPart(
         new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     new_data_part->default_codec = codec;
+
+    /// This hardlink / mutate-some-columns path assembles the checksums and index granularity in the
+    /// default arenas (the full-rewrite path re-homes them in `MergedBlockOutputStream::finalizePartAsync`).
+    /// Re-home the finished part-lifetime maps into the dedicated arena. The primary index set above is
+    /// already routed by `setIndex`; the minmax index by `setMinMaxIndex`.
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        reallocateByCopy(new_data_part->checksums);
+        /// TTL-recalculating mutations rebuild `ttl_infos` during execution (in the default arenas),
+        /// so re-home the final maps here, mirroring `MergedBlockOutputStream::finalizePartAsync`.
+        reallocateByCopy(new_data_part->ttl_infos);
+        if (new_data_part->index_granularity)
+            new_data_part->index_granularity = new_data_part->index_granularity->clone();
+    }
 }
 
 }
@@ -1895,10 +1910,36 @@ void PartMergerWriter::createBuildTextIndexesTask()
 
 void PartMergerWriter::calculateProjection(size_t projection_idx, const Block & block, UInt64 starting_offset)
 {
+    const auto & projection = *ctx->projections_to_build[projection_idx];
+
+    /// When mutations like CLEAR COLUMN do not include all columns in the pipeline output,
+    /// projections that depend on those columns still need to be rebuilt (e.g., for non-full
+    /// part storage). Add any missing required columns with default values so that projection
+    /// calculation does not fail with "Not found column in block".
+    Block block_for_projection;
+    bool added_missing_columns = false;
+    for (const auto & col_name : projection.required_columns)
+    {
+        if (!block.has(col_name))
+        {
+            if (!added_missing_columns)
+            {
+                block_for_projection = block;
+                added_missing_columns = true;
+            }
+            auto column_desc = ctx->metadata_snapshot->getColumns().getPhysical(col_name);
+            block_for_projection.insert(
+                {column_desc.type->createColumnConstWithDefaultValue(block.rows())->convertToFullColumnIfConst(),
+                 column_desc.type,
+                 col_name});
+        }
+    }
+    const Block & projection_input = added_missing_columns ? block_for_projection : block;
+
     Chunk squashed_chunk;
     {
         ProfileEventTimeIncrement<Microseconds> projection_watch(ProfileEvents::MutateTaskProjectionsCalculationMicroseconds);
-        Block block_to_squash = ctx->projections_to_build[projection_idx]->calculate(block, starting_offset, ctx->context);
+        Block block_to_squash = projection.calculate(projection_input, starting_offset, ctx->context);
 
         /// Everything is deleted by lightweight delete
         if (block_to_squash.rows() == 0)
@@ -3493,11 +3534,15 @@ bool MutateTask::prepare()
         }
     }
 
-    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` and the
-    /// resulting `IMergeTreeDataPart` constructed below live for the mutated part's lifetime.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-    auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    /// Same rationale as `MergeTreeData::loadDataPart`: the per-part `SingleDiskVolume` lives for the
+    /// mutated part's lifetime, so create it in the dedicated arena. `build()` re-enters the arena for
+    /// the part object; the mutation planning below (column transforms, projection/statistics
+    /// collections, file lists, task construction) is transient and stays on the default per-CPU arenas.
+    VolumePtr single_disk_volume;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
+    }
     ctx->disk = single_disk_volume->getDisk();
 
     std::string prefix;
@@ -3506,6 +3551,20 @@ bool MutateTask::prepare()
 
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
+
+    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
+    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
+    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
+    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
+    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
+    {
+        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
+        if (ctx->disk->existsDirectory(relative_tmp_dir))
+        {
+            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
+            ctx->disk->removeRecursive(relative_tmp_dir);
+        }
+    }
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);
@@ -3529,6 +3588,11 @@ bool MutateTask::prepare()
     if (!new_columns_substreams.empty())
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
+
+    /// Re-home the part-lifetime metadata assigned above (partition, ttl_infos) into the dedicated
+    /// arena; `setColumns` / `setColumnsSubstreams` already self-scope. Everything below is transient
+    /// mutation planning and deliberately stays on the default per-CPU arenas.
+    ctx->new_data_part->moveMetadataToDedicatedArena();
 
     /// Don't change granularity type while mutating subset of columns
     ctx->mrk_extension = ctx->source_part->index_granularity_info.mark_type.getFileExtension();

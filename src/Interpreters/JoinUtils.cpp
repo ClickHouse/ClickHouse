@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
@@ -9,19 +10,24 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NullableUtils.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 
 #include <IO/WriteHelpers.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTracker.h>
+#include <Common/typeid_cast.h>
 
 #include <Core/BlockNameMap.h>
 
 #include <base/FnTraits.h>
 #include <algorithm>
 #include <ranges>
+#include <unordered_map>
 
 namespace DB
 {
@@ -99,6 +105,58 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 
 namespace JoinCommon
 {
+
+Int64 getCurrentQueryMemoryUsage()
+{
+    /// Use query-level memory tracker.
+    if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = memory_tracker_child->getParent())
+            return memory_tracker->get();
+    return 0;
+}
+
+Block materializeColumnsFromRightBlock(Block block, const Block & sample_block)
+{
+    std::unordered_map<std::string_view, std::vector<ColumnWithTypeAndName *>> block_index;
+    for (auto & column : block)
+        block_index[column.name].push_back(&column);
+
+    for (const auto & sample_column : sample_block.getColumnsWithTypeAndName())
+    {
+        for (auto * column_ptr : block_index[sample_column.name])
+        {
+            auto & column = *column_ptr;
+
+            /// There's no optimization for right side const columns. Remove constness if any.
+            column.column = column.column->convertToFullColumnIfConst();
+            auto actual_column = column.column;
+
+            /// We support replicated columns on the right side.
+            const auto * replicated_column = typeid_cast<const ColumnReplicated *>(actual_column.get());
+            if (replicated_column)
+                actual_column = replicated_column->getNestedColumn();
+
+            /// Sparse columns are not supported on the right side.
+            actual_column = recursiveRemoveSparse(actual_column);
+
+            if (actual_column->lowCardinality() && !sample_column.column->lowCardinality())
+            {
+                actual_column = actual_column->convertToFullColumnIfLowCardinality();
+                column.type = removeLowCardinality(column.type);
+            }
+
+            column.column = actual_column;
+
+            if (sample_column.column->isNullable())
+                JoinCommon::convertColumnToNullable(column);
+
+            if (replicated_column)
+                column.column = ColumnReplicated::create(column.column, replicated_column->getIndexesColumn());
+        }
+    }
+
+    return block;
+}
 
 void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
 {

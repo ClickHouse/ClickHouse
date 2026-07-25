@@ -85,23 +85,6 @@ private:
     std::unordered_set<std::string> created_directories;
 };
 
-void UncommittedState::useDirectory(const std::string & path) const
-{
-    const auto info = tx_snapshot->getDirectoryRemoteInfo(path);
-    if (!info)
-        return;
-
-    const auto snapshot_path = path_resolver->resolveToSnapshotPath(normalizePath(path));
-    if (snapshot_path && !path_resolver->isCreatedByTransaction(*snapshot_path))
-        preconditions->checkDirectoryPresent(*snapshot_path, info->remote_path);
-}
-
-void UncommittedState::useMissingDirectory(const std::string & path) const
-{
-    if (const auto snapshot_path = path_resolver->resolveToSnapshotPath(normalizePath(path)))
-        preconditions->checkDirectoryMissing(*snapshot_path);
-}
-
 UncommittedState::UncommittedState(std::shared_ptr<FsSnapshot> tx_snapshot_)
     : tx_snapshot(std::move(tx_snapshot_))
     , preconditions(std::make_shared<Preconditions>())
@@ -109,55 +92,66 @@ UncommittedState::UncommittedState(std::shared_ptr<FsSnapshot> tx_snapshot_)
 {
 }
 
+void UncommittedState::useDirectory(const std::string & path) const
+{
+    const auto info = tx_snapshot->getDirectoryRemoteInfo(path);
+    if (!info)
+        return;
+
+    const auto snapshot_path = path_resolver->resolveToSnapshotPath(normalizePath(path));
+    if (!snapshot_path)
+        return;
+
+    if (path_resolver->isCreatedByTransaction(*snapshot_path))
+        preconditions->checkDirectoryMissing(*snapshot_path);
+    else
+        preconditions->checkDirectoryPresent(*snapshot_path, info->remote_path);
+}
+
+void UncommittedState::useMissingDirectory(const std::string & path) const
+{
+    const auto info = tx_snapshot->getDirectoryRemoteInfo(path);
+    if (info)
+        return;
+
+    const auto snapshot_path = path_resolver->resolveToSnapshotPath(normalizePath(path));
+    if (snapshot_path)
+        preconditions->checkDirectoryMissing(*snapshot_path);
+}
+
 void UncommittedState::createDirectory(const std::string & path)
 {
     if (tx_snapshot->getDirectoryRemoteInfo(path))
-    {
-        useDirectory(path);
         return;
-    }
 
-    useMissingDirectory(path);
     path_resolver->recordCreate(normalizePath(path));
     tx_snapshot->recordDirectoryPath(path, DirectoryRemoteInfo{ .remote_path = getRandomASCIIString(32), .etag = "", .files = {}});
 }
 
 void UncommittedState::removeDirectory(const std::string & path)
 {
-    if (!tx_snapshot->existsDirectory(path).first)
-    {
-        useMissingDirectory(path);
+    if (!tx_snapshot->existsDirectory(path))
         return;
-    }
 
-    useDirectory(path);
     path_resolver->recordRemove(normalizePath(path));
     tx_snapshot->removeDirectory(path);
 }
 
 void UncommittedState::moveDirectory(const std::string & path_from, const std::string & path_to)
 {
-    if (!tx_snapshot->existsDirectory(path_from).first)
-    {
-        useMissingDirectory(path_from);
+    if (!tx_snapshot->existsDirectory(path_from))
         return;
-    }
 
-    if (tx_snapshot->existsDirectory(path_to).first || tx_snapshot->existsFile(path_to))
-    {
-        useDirectory(path_to);
+    if (tx_snapshot->existsDirectory(path_to) || tx_snapshot->existsFile(path_to))
         return;
-    }
 
-    useDirectory(path_from);
     path_resolver->recordMove(normalizePath(path_from), normalizePath(path_to));
     tx_snapshot->moveDirectory(path_from, path_to);
 }
 
-std::pair<bool, std::optional<DirectoryRemoteInfo>> UncommittedState::lookupDirectory(const std::string & path) const
+std::optional<DirectoryRemoteInfo> UncommittedState::getDirectoryRemoteInfo(const std::string & path) const
 {
-    useDirectory(path);
-    return tx_snapshot->existsDirectory(path);
+    return tx_snapshot->getDirectoryRemoteInfo(path);
 }
 
 std::shared_ptr<Preconditions> UncommittedState::getTxPreconditions() const
