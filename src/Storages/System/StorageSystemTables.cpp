@@ -661,7 +661,7 @@ protected:
             /// skip per-table checks, and the names-only fast path below (which never resolves the
             /// source storage) cannot be taken.
             const bool need_to_check_access_for_overlay_sources
-                = need_to_check_access_for_databases && DatabaseOverlay::isReadonlyFacade(database.get());
+                = need_to_check_access_for_databases && DatabaseOverlay::isReadonlyFacade(databases_cursor.getDatabase().get());
 
             /// This is for queries similar to 'show tables', where only name of the table is needed
             auto needed_columns = getPort().getHeader().getColumnsWithTypeAndName();
