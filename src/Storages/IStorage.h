@@ -431,6 +431,10 @@ public:
         size_t /*max_block_size*/,
         size_t /*num_streams*/);
 
+    /// Gives a storage a chance to observe rows after WHERE has been applied.
+    /// The default implementation does nothing.
+    virtual void addPostFilterStep(QueryPlan &, ContextPtr) {}
+
     /** Writes the data to a table.
       * Receives a description of the query, which can contain information about the data write method.
       * Returns an object by which you can write data sequentially.

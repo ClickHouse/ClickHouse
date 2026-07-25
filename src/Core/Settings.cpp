@@ -8257,9 +8257,9 @@ For a materialized view, specify this setting in the view's `SELECT` query.
 An empty value gives each materialized view an independent group.
 )", EXPERIMENTAL) \
     DECLARE(Bool, queue_commit_on_select, false, R"(
-Whether a successful direct `SELECT` from an experimental `Queue` table acknowledges its queue source batch.
-Committing queries that can exclude source rows, including queries with filters or `LIMIT`, are rejected so excluded messages remain pending.
-Acknowledgements are written only to the selected consumer group's state.
+Whether a successful direct `SELECT` from an experimental `Queue` table acknowledges queue rows selected by the query.
+Rows excluded by a `WHERE` filter remain pending. Acknowledgements are written only to the selected consumer group's state.
+Committing queries with joins, `DISTINCT`, or `LIMIT` are rejected until their message identity can be tracked safely.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, queue_max_batch_size, 0, R"(
 Maximum number of messages read by a direct committing `SELECT` from an experimental `Queue` table.

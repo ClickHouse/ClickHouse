@@ -69,8 +69,9 @@ INSERT INTO events_queue VALUES (1, 'hello');
 ```
 
 An insert into a `Queue` table persists the message in the main queue log and fans it out to the pending-message table for each existing consumer group.
-The background consumer sends a bounded batch to the materialized views in one group and acknowledges each message after the complete view pipeline succeeds.
-If delivery fails, the message remains available for a later retry.
+The background consumer sends a bounded batch to the materialized views in one group and acknowledges each selected message after the complete view pipeline succeeds.
+Rows excluded by a materialized view's `WHERE` filter are not acknowledged and remain available to that consumer group.
+If delivery fails, the selected messages remain available for a later retry.
 
 The engine provides at-least-once delivery.
 A server failure after a view insert succeeds but before the acknowledgement is persisted can deliver the same message again.
@@ -127,10 +128,10 @@ SETTINGS
     queue_max_batch_size = 1000;
 ```
 
-The engine records the input message IDs while the query runs and writes their tombstones only after the complete query pipeline succeeds.
-Until post-query message identity tracking is available, a committing query that can exclude source rows is rejected.
-This includes `WHERE`, `PREWHERE`, joins, `DISTINCT`, and `LIMIT`.
+The engine carries each input message ID through the query's `WHERE` step and writes tombstones only for rows that survive the filter and only after the complete query pipeline succeeds.
+Rows excluded by the filter remain pending in the consumer-group table.
 Use `queue_max_batch_size` to define the maximum source batch.
+Committing queries with joins, `DISTINCT`, or `LIMIT` are rejected until their message identity can be tracked safely.
 Filtered noncommitting queries remain unrestricted and never acknowledge messages.
 Cancellation or an exception leaves the batch pending.
 `queue_max_batch_size = 0` uses the table engine's `max_batch_size`.
@@ -218,6 +219,6 @@ SYSTEM REFRESH events_queue;
 ## Current limitations {#current-limitations}
 
 - Delivery is at-least-once, not exactly-once.
-- Committing filtered queries and filtered materialized views currently fail closed so excluded messages cannot be acknowledged.
+- A filter that permanently excludes a message leaves it pending; use a different consumer group or a later consumer query to process it.
 - Replicated internal queue state is not supported.
 - Altering the queue schema or engine arguments is not supported.

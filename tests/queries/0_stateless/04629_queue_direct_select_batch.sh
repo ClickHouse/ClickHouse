@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT $queue_settings -q "
 
     INSERT INTO queue_direct_batch VALUES (1), (2), (3);"
 
-if $CLICKHOUSE_CLIENT -q "
+$CLICKHOUSE_CLIENT -q "
     SELECT id
     FROM queue_direct_batch
     WHERE id = 1
@@ -33,12 +33,7 @@ if $CLICKHOUSE_CLIENT -q "
         queue_consumer_group = 'filtered',
         queue_commit_on_select = 1,
         queue_max_batch_size = 3
-    FORMAT Null" >/dev/null 2>&1
-then
-    echo "filtered direct commit: failed"
-else
-    echo "filtered direct commit: rejected"
-fi
+    FORMAT Null"
 
 echo "pending after filtered direct commit: $($CLICKHOUSE_CLIENT -q "
     SELECT count()

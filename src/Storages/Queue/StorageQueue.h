@@ -7,6 +7,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStreamingStorage.h>
 
+#include <functional>
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
@@ -52,6 +53,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    void addPostFilterStep(QueryPlan & query_plan, ContextPtr query_context) override;
+
     SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & metadata_snapshot,
@@ -70,7 +73,11 @@ public:
     StoragePtr getInnerTable(ContextPtr local_context) const;
     const StorageID & getInnerTableID() const { return main_table_id; }
 
+    Names getMaterializedViewSourceTrackingColumns(ContextPtr query_context) const;
+    void trackMaterializedViewSourceRows(const StorageID & view_id, const Block & block, ContextPtr query_context);
+
 private:
+    struct ViewAcknowledgementState;
     void scheduleStreamingTasksImpl() override;
     void threadFunc();
     bool streamToViews(const String & consumer_group, const StorageID & consumer_table_id, UInt64 cycle_epoch);
@@ -109,6 +116,12 @@ private:
     LoggerPtr log;
     std::mutex consume_mutex;
     mutable std::shared_mutex consumer_groups_mutex;
+
+    std::mutex post_filter_steps_mutex;
+    std::unordered_map<String, std::function<void(QueryPlan &)>> post_filter_steps;
+
+    mutable std::mutex view_acknowledgement_mutex;
+    std::shared_ptr<ViewAcknowledgementState> view_acknowledgement_state;
 };
 
 }
