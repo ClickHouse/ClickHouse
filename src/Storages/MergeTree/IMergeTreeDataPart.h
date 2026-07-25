@@ -560,6 +560,12 @@ public:
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
+    /// UNIQUE KEY — real filesystem path of the part's dense-index backing
+    /// file, or `std::nullopt` if absent (legacy part, not-yet-written, or
+    /// non-UK table). Treat as an opaque "is there an on-disk dense index
+    /// for this part?" probe; the backend code owns the format.
+    std::optional<String> getDenseIndexBackingPath() const;
+
     /// UNIQUE KEY — cache-key identity for this part. Prefers the part's
     /// UUID when set (stable across ATTACH / rename); falls back to
     /// disk:path otherwise (unique within the process, sufficient for an
