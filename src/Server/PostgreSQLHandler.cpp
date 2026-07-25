@@ -1110,30 +1110,32 @@ void PostgreSQLHandler::processQuery()
     }
 }
 
-std::function<void(const Progress&)> PostgreSQLHandler::createProgressCallback(
-    ContextMutablePtr query_context,
-    std::atomic<UInt64>& result_rows,
-    std::atomic<UInt64>& written_rows)
-{
-    auto prev_callback = query_context->getProgressCallback();
-    return [&, my_prev = prev_callback](const Progress & progress)
-    {
-        if (my_prev)
-            my_prev(progress);
-        result_rows += progress.result_rows;   // For SELECT
-        written_rows += progress.written_rows; // For INSERT
-    };
-}
-
 UInt64 PostgreSQLHandler::executeQueryWithTracking(
     String && sql_query,
     ContextMutablePtr query_context,
     PostgreSQLProtocol::Messaging::CommandComplete::Command command)
 {
-    // Track affected rows using progress callback (similar to MySQL handler)
-    std::atomic<UInt64> result_rows {0};
-    std::atomic<UInt64> written_rows {0};
-    query_context->setProgressCallback(createProgressCallback(query_context, result_rows, written_rows));
+    /// Track affected rows using a progress callback (similar to the MySQL handler). The callback must
+    /// own the counters: `processQuery` reuses one query context for every statement of a multipart
+    /// query, so a callback left installed on the context outlives this frame and may be invoked (as the
+    /// chained previous callback) by a later statement running on a pipeline thread. Stack-local counters
+    /// captured by reference would then be a use-after-return. The previous callback is restored on exit
+    /// for the same reason - otherwise every statement would chain another dead lambda onto the context.
+    struct Counters
+    {
+        std::atomic<UInt64> result_rows {0};  /// For SELECT
+        std::atomic<UInt64> written_rows {0}; /// For INSERT
+    };
+    auto counters = std::make_shared<Counters>();
+    auto prev_callback = query_context->getProgressCallback();
+    query_context->setProgressCallback([prev_callback, counters](const Progress & progress)
+    {
+        if (prev_callback)
+            prev_callback(progress);
+        counters->result_rows += progress.result_rows;
+        counters->written_rows += progress.written_rows;
+    });
+    SCOPE_EXIT({ query_context->setProgressCallback(prev_callback); });
 
     // Execute query with PostgreSQLWire output format
     auto read_buf = std::make_unique<ReadBufferFromOwnString>(std::move(sql_query));
@@ -1141,8 +1143,8 @@ UInt64 PostgreSQLHandler::executeQueryWithTracking(
 
     // Determine affected rows based on command type
     return (command == PostgreSQLProtocol::Messaging::CommandComplete::Command::INSERT)
-        ? written_rows.load()
-        : result_rows.load();
+        ? counters->written_rows.load()
+        : counters->result_rows.load();
 }
 
 bool PostgreSQLHandler::processPrepareStatement(const String & query)
