@@ -49,23 +49,26 @@ for _ in {1..25}; do
     qid="djs_${CLICKHOUSE_DATABASE}_$RANDOM"
     $CLICKHOUSE_CLIENT --enable_streaming_queries=1 --enable_analyzer=1 --join_algorithm=direct --max_block_size=1 --query_id="$qid" -q "$query" >/dev/null 2>&1 &
     q_pid=$!
-    # Bounded wait for execution to start. A probe that times out means the server is wedged or gone, so
-    # stop waiting; the liveness checks below turn that into a fast, clean failure.
-    started=""
+    # Bounded wait for the query to REGISTER in `system.processes`: that registration is the proof it
+    # reached execution (`ReadFromMergeTree::initializePipeline`, the fixed path). A probe that times out
+    # means the server is wedged or gone, so stop and let the liveness checks below fail fast.
+    registered=0
     q_start=$EPOCHSECONDS
-    while :; do
-        started=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$qid'" 2>/dev/null) || break
-        [ "$started" = "1" ] && break
-        (( EPOCHSECONDS - q_start > 30 )) && break
+    while (( EPOCHSECONDS - q_start <= 30 )); do
+        cnt=$(timeout 5 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id = '$qid'" 2>/dev/null) || break
+        [ "$cnt" = "1" ] && { registered=1; break; }
         sleep 0.1
     done
-    # Deterministically stop the query now that it has provably run (bounded so a wedged live server
-    # cannot hang here), then reap the background client.
+    # Deterministically stop the query now that it has run (bounded so a wedged live server cannot hang
+    # here), then reap the background client.
     timeout 30 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$qid' SYNC FORMAT Null" >/dev/null 2>&1
     kill "$q_pid" 2>/dev/null
     wait "$q_pid" 2>/dev/null
     # Stop early if the server went down (the pre-fix binary aborts under MSan).
     timeout 5 $CLICKHOUSE_CLIENT -q "SELECT 1" >/dev/null 2>&1 || break
+    # Live server but the query never registered within the wait window: this iteration proved nothing,
+    # so fail loudly instead of falling through as a successful run.
+    [ "$registered" = "1" ] || { echo "stream query did not start"; break; }
 done
 
 # Cleanup strictness is gated on server liveness, mirroring `clickhouse-test`'s own `_cleanup_database`
