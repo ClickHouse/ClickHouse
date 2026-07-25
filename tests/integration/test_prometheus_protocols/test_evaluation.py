@@ -1751,6 +1751,22 @@ def test_clamp():
         "",
     )
 
+    # Non-constant bounds with max < min must return an empty vector even if the vector argument
+    # is backed by a scalar (i.e. it isn't stored as a vector grid).
+    do_query_test(
+        "clamp(vector(5), time() * 0 + 1, -1)",
+        180,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
+    do_query_test(
+        "clamp(vector(5), time() * 0, time() * 0 + 10)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "5"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 5]],
+    )
+
     do_query_test(
         "clamp_min(deltas, 0)[700:100]",
         700,

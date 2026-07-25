@@ -4,6 +4,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
 #include <cmath>
 #include <limits>
@@ -90,6 +91,9 @@ SQLQueryPiece applyClampFunction(
     bool const_nan_bound = (min_is_const && std::isnan(arguments[min_index].scalar_value))
         || (max_is_const && std::isnan(arguments[max_index].scalar_value));
 
+    /// If the bounds aren't constant then the check for `max < min` is done in the SQL expression (see below).
+    bool check_max_less_min_in_sql = has_min && has_max && !(min_is_const && max_is_const) && !const_nan_bound;
+
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {
         chassert(args.size() == num_arguments);
@@ -144,7 +148,7 @@ SQLQueryPiece applyClampFunction(
 
         /// If the bounds aren't constant then the check for `max < min` is done in the SQL expression:
         /// if(max < min, NULL, <res>)
-        if (has_min && has_max && !(min_is_const && max_is_const))
+        if (check_max_less_min_in_sql)
         {
             res = makeASTFunction("if",
                 makeASTFunction("less", max_ast->clone(), min_ast->clone()),
@@ -154,6 +158,11 @@ SQLQueryPiece applyClampFunction(
 
         return res;
     };
+
+    /// Since the `max < min` check in the SQL expression may convert values to NULL we always need VECTOR_GRID
+    /// to represent the result. So we cast the vector argument to VECTOR_GRID to enforce that.
+    if (check_max_less_min_in_sql)
+        arguments[0] = toVectorGrid(std::move(arguments[0]), context);
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));
     return dropMetricName(std::move(res), context);
