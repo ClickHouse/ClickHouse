@@ -1080,6 +1080,74 @@ class GH:
                 os.unlink(temp_file_path)
         return None
 
+    @classmethod
+    def get_pr_url_by_branch(cls, branch, repo=None):
+        """URL of the PR whose head is `branch`, or '' if there genuinely is none.
+
+        On the rerun-safety path (changelog / version-bump PR reuse), a transient
+        `gh pr list` failure must NOT be mistaken for "no PR exists" — that would
+        create a duplicate PR or let merge_prs run with an empty URL after the
+        release is already published. So the lookup is retried and raises on a
+        persistent failure. A successful `gh pr list --json` always prints at
+        least `[]`, so an empty result from the retried read means the command
+        itself failed; genuinely no PR is an empty JSON array.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("open", "merged"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            prs = json.loads(raw)
+            if prs:
+                return prs[0]["url"]
+            print(f"No {state} PR found for branch [{branch}]")
+        return ""
+
+    @classmethod
+    def get_pr_state_by_branch(cls, branch, repo=None):
+        """'MERGED' / 'OPEN' / '' for the PR whose head is `branch`.
+
+        Merged takes priority: an already-merged PR means the change is in master,
+        so the caller should stop even if a stray open PR also exists. (This is
+        the opposite order from `get_pr_url_by_branch`, which checks open first;
+        they agree unless one branch has both an open and a merged PR - which the
+        release flow's "never recreate once present" invariant prevents for the
+        `auto/<tag>` / `bump_version_<version>` branches this is used with.) Same
+        retry / fail-close semantics as `get_pr_url_by_branch` - a failed lookup
+        raises rather than being mistaken for 'no PR' (which would recreate a PR
+        or skip a needed merge after the release is already published).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("merged", "open"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            if json.loads(raw):
+                return state.upper()
+        return ""
+
     _STATUS_TO_GH = {
         Result.Status.OK: Result.GHStatus.SUCCESS,
         Result.Status.FAIL: Result.GHStatus.FAILURE,
