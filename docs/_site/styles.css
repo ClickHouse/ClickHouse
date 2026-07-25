@@ -1660,14 +1660,14 @@ button.rounded-xl {
    query for <img>-loaded SVGs while Blink ignores it — so the same icon paints a
    different grey in Safari vs Chrome. Force a deterministic grey keyed to the
    SITE theme instead: brightness(0) collapses whatever colour the SVG picked to
-   black, then invert() sets an exact grey — identical in every browser. The five
-   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp, server) are
-   not part of this grey family and are excluded. */
-img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+   black, then invert() sets an exact grey — identical in every browser. The four
+   colourful brand icons (clickhouse, cloud-oss, language-picker, mcp) are not
+   part of this grey family and are excluded. */
+img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.31); /* rgb(79,79,79) — matches the SVGs' light value */
 }
-.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]),
-:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]):not([src*="icon-server.svg"]) {
+.dark img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]),
+:is(.dark) img[src*="/images/icons/icon-"]:not([src*="icon-clickhouse.svg"]):not([src*="icon-cloud-oss.svg"]):not([src*="icon-language-picker.svg"]):not([src*="icon-mcp.svg"]) {
     filter: brightness(0) invert(0.78); /* rgb(199,199,199) — matches the SVGs' dark value */
 }
 
