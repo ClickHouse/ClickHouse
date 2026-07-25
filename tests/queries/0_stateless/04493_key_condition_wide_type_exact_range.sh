@@ -102,9 +102,40 @@ SET enable_analyzer = 0;
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;
 SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%_exact_count_projection%';
+-- The native x = 3 atom must keep the leading key at POINT (binary search); the redundant widened-cast
+-- atom must not overwrite it into a RANGE. Generic exclusion also yields exact ranges, so assert the
+-- search algorithm directly, otherwise the count/exact-count assertions pass even if the point were lost.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z)) WHERE explain ILIKE '%binary search%';
 SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt256(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = 3) AND (x = toInt256(3)) AND (y = 55) AND (5786 >= z);
 SELECT count() FROM pk WHERE (x = 3) AND (x = toUInt128(3)) AND (y = 55) AND (5786 >= z);
 "
 
 rm -rf "${DB_DIR2}"
+
+# Same wider-typed cast on the leading key, now with a DESCending key column (ORDER BY (g, r DESC)):
+# the fix is order-independent, so this must also return the native count (10), not abort.
+DB_DIR3="${CLICKHOUSE_TMP}/04493c_${CLICKHOUSE_DATABASE}"
+rm -rf "${DB_DIR3}"
+mkdir -p "${DB_DIR3}"
+
+${CLICKHOUSE_LOCAL} --path="${DB_DIR3}" --multiquery --query "
+CREATE TABLE t_rev (g UInt32, r UInt32) ENGINE = MergeTree ORDER BY (g, r DESC) SETTINGS index_granularity = 4;
+INSERT INTO t_rev SELECT number % 10, 1000 - number FROM numbers(1000);
+"
+
+${CLICKHOUSE_LOCAL} --path="${DB_DIR3}" --multiquery --query "
+SET optimize_use_projections = 1;
+SET optimize_use_implicit_projections = 1;
+-- Exact-count projection path live (the abort path) and generic-exclusion index search (leading key
+-- demoted POINT -> RANGE by the fix); the second assertion distinguishes fixed from reverted code in release too.
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t_rev WHERE (g = toUInt256(5)) AND (toInt64(r) >= 900)) WHERE explain ILIKE '%_exact_count_projection%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_rev WHERE (g = toUInt256(5)) AND (toInt64(r) >= 900)) WHERE explain ILIKE '%generic exclusion search%';
+SELECT count() FROM t_rev WHERE (g = 5) AND (toInt64(r) >= 900);
+SELECT count() FROM t_rev WHERE (g = toUInt256(5)) AND (toInt64(r) >= 900);
+SELECT count() FROM t_rev WHERE (g = toInt256(5)) AND (toInt64(r) >= 900);
+SELECT count() FROM t_rev WHERE (g = toUInt128(5)) AND (toInt64(r) >= 900);
+SELECT count() FROM t_rev WHERE (g = toUInt256(5)) AND (toInt64(r) >= 900) SETTINGS optimize_use_implicit_projections = 0;
+"
+
+rm -rf "${DB_DIR3}"
