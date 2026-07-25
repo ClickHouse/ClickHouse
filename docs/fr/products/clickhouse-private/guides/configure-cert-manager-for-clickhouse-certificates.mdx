@@ -21,9 +21,7 @@ Générez des certificats TLS pour ClickHouse Server et Keeper à l’aide de Ce
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Créez un émetteur de certificats
-
+  <Step title="1. Créez un émetteur de certificats" id="1-create-a-certificate-issuer">
     Créez un `Issuer` auto-signé pour servir d’autorité de certification :
 
     ```yaml
@@ -39,9 +37,7 @@ Générez des certificats TLS pour ClickHouse Server et Keeper à l’aide de Ce
     > **Remarque :** L’`Issuer` est propre à un espace de noms et doit se trouver dans le même espace de noms que les ressources `Certificate` qui le référencent. Un émetteur auto-signé convient aux tests. Pour la production, consultez la [liste des options d’émetteur](https://cert-manager.io/docs/configuration/issuers/).
   </Step>
 
-  <Step>
-    ### 2. Créez des ressources `Certificate`
-
+  <Step title="2. Créez des ressources `Certificate`" id="2-create-certificate-resources">
     Créez une ressource `Certificate` pour ClickHouse Server :
 
     ```yaml
@@ -64,9 +60,7 @@ Générez des certificats TLS pour ClickHouse Server et Keeper à l’aide de Ce
     Répétez l’opération avec les `dnsNames` et le `secretName` appropriés pour Keeper si nécessaire.
   </Step>
 
-  <Step>
-    ### 3. Configurez les valeurs Helm pour utiliser les clés du secret Cert Manager
-
+  <Step title="3. Configurez les valeurs Helm pour utiliser les clés du secret Cert Manager" id="3-configure-helm-values-to-use-cert-manager-secret-keys">
     Par défaut, le chart Helm `onprem-clickhouse-cluster` s’attend à trouver dans le secret des clés nommées `ca.crt`, `server.crt` et `server.key`. Cert Manager produit `ca.crt`, `tls.crt` et `tls.key`. Redéfinissez les noms de clés dans vos valeurs Helm :
 
     ```yaml
