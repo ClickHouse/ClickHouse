@@ -34,6 +34,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -300,6 +301,50 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
     return {};
 }
 
+/// Build a single-row representative value of a non-suspect type for executing a typed `CAST` during the
+/// DDL-time probe. The plain default value is degenerate for wrappers that would hide the payload structure
+/// from the consumers of the cast result: a `Nullable` default row is NULL (the `Variant`/`Dynamic`
+/// adaptors short-circuit on it) and an `Array`/`Map` default is empty (element-level consumers never
+/// run), so recurse through them, materializing a non-NULL row and one-element containers instead.
+ColumnPtr makeRepresentativeColumn(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested = makeRepresentativeColumn(nullable_type->getNestedType());
+        return ColumnNullable::create(IColumn::mutate(std::move(nested)), ColumnUInt8::create(1, UInt8(0)));
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested = makeRepresentativeColumn(array_type->getNestedType());
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->getData().push_back(1);
+        return ColumnArray::create(IColumn::mutate(std::move(nested)), std::move(offsets));
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()); tuple_type && !tuple_type->getElements().empty())
+    {
+        const auto & element_types = tuple_type->getElements();
+        Columns elements(element_types.size());
+        for (size_t i = 0; i < element_types.size(); ++i)
+            elements[i] = makeRepresentativeColumn(element_types[i]);
+        return ColumnTuple::create(std::move(elements));
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+        return ColumnMap::create(IColumn::mutate(makeRepresentativeColumn(map_type->getNestedType())));
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        auto nested = makeRepresentativeColumn(low_cardinality_type->getDictionaryType());
+        auto column = type->createColumn();
+        column->insert((*nested)[0]);
+        return column;
+    }
+
+    return type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+}
+
 /// Reject TTL expressions that feed an AggregateFunction state into a function which cannot consume it
 /// (e.g. `toDateTime(state)`), while still accepting state-aware functions like `finalizeAggregation`.
 ///
@@ -360,6 +405,15 @@ std::vector<ColumnPtr> collectSuspectMaterializations(const DataTypePtr & type, 
 ///   `if(cond, CAST(state, 'Dynamic'), CAST(0, 'Dynamic'))` the probes run with the default `cond = 0`
 ///   and only ever record the second branch, hiding the aggregate-state payload of the first one.
 /// When either condition fails, the node keeps the fail-closed static enumeration of its result type.
+///
+/// A typed `CAST` is the exception to the first condition: its output payload type is fixed by the
+/// *source type* alone (the cast wrapper fills a single discriminator derived from it), independent of
+/// the values. So `CAST(s, 'Dynamic')` with `s String` can only ever store the `String` payload, and
+/// probing its consumer with the static enumeration would reject a valid TTL such as
+/// `DELETE WHERE length(CAST(s, 'Dynamic')) > 3` over synthetic `AggregateFunction`/`UInt64` payloads
+/// the cast can never produce. An untainted `CAST` is instead executed once on a representative source
+/// value (non-NULL, one-element containers - the plain default would hide nested payload structure) and
+/// its actual output is propagated to the consumers.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     /// Per-node "candidate" materializations: the single-row columns whose payloads the node can produce
@@ -451,8 +505,36 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                 /// No argument carries a suspect payload, so there is nothing to probe this node with.
                 /// If its *result* is a carrier computed from non-suspect inputs, its runtime payloads
                 /// may be data-dependent (see above), so consumers get the fail-closed static enumeration.
+                /// The exception is a typed CAST, whose output payload type is fixed by the source type
+                /// alone: execute it once on a representative source value and propagate the actual
+                /// output domain instead (see above).
                 if (result_in_scope)
-                    candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                {
+                    const auto & function_name = node->function_base->getName();
+                    if (function_name == "CAST" || function_name == "_CAST")
+                    {
+                        ColumnsWithTypeAndName representative_arguments = arguments;
+                        for (size_t i = 0; i < node->children.size(); ++i)
+                            if (!node->children[i]->column)
+                                representative_arguments[i].column = makeRepresentativeColumn(node->children[i]->result_type);
+
+                        try
+                        {
+                            ColumnPtr cast_result = node->function_base->execute(
+                                representative_arguments, node->result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
+                            candidates.push_back(cast_result->convertToFullColumnIfConst());
+                        }
+                        catch (...)
+                        {
+                            /// The cast failed on the synthetic representative value (a data-dependent
+                            /// error, e.g. an unparseable default string). The node itself needs no
+                            /// validation - fail closed to the static enumeration for its consumers.
+                            candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                        }
+                    }
+                    else
+                        candidates = collectSuspectMaterializations(node->result_type, expression_kind);
+                }
             }
             else
             {
