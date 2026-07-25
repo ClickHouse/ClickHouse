@@ -222,12 +222,12 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// implementation: a step restricted to e.g. `full_sorting_merge` or `partial_merge` never
     /// consumes either setting, so its fragment stays readable by older receivers.
     /// The compression case is additionally keyed on the step's join kind
-    /// (join_kind_consumes_in_memory_compression): a CROSS JOIN executes as a HashJoin whatever
-    /// `join_algorithm` says, but explicitly keeps its own threshold-based compression path and
-    /// never consults `enable_join_in_memory_compression` - raising its fragment to version 4 for
+    /// (join_kind_consumes_in_memory_compression): a CROSS JOIN executes as a ConstantJoin whatever
+    /// `join_algorithm` says, and that implementation keeps its own threshold-based compression path
+    /// and never consults `enable_join_in_memory_compression` - raising its fragment to version 4 for
     /// it would only make older receivers reject a stream whose extra setting they would ignore
     /// anyway. The step-local `max_memory_usage` case is not keyed on the kind: a cross join's
-    /// HashJoin still consumes `max_memory_usage` as its plain shrink trigger.
+    /// ConstantJoin still consumes `max_memory_usage` as its plain shrink trigger.
     bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
         && join_kind_consumes_in_memory_compression;
     if ((compression_matters || max_memory_usage_is_step_local)
