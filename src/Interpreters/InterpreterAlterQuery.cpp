@@ -134,6 +134,11 @@ void materializeUUIDTypeVersion(ASTAlterQuery & alter, UInt64 uuid_type_version)
         auto & col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
         if (auto type_ast = col_decl.getType())
             col_decl.setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
+        /// A bare `UUID` can also hide inside a DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression as a cast
+        /// type literal (`CAST(x, 'UUID')`), and the column type is inferred from that expression when no
+        /// explicit type is given.
+        if (auto default_ast = col_decl.getDefaultExpression())
+            col_decl.setDefaultExpression(applyUUIDTypeVersion(default_ast, uuid_type_version));
     }
 }
 

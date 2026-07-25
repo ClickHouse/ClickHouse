@@ -39,7 +39,7 @@ SET uuid_type_version = 2;
 CREATE TABLE tab (uuid UUID) ENGINE = MergeTree ORDER BY uuid; -- `uuid` is materialized as `UUID2`
 ```
 
-The resolved concrete type is materialized in the table definition, so reading an existing table does not depend on the value of the setting.
+The resolved concrete type is materialized in the table definition, so reading an existing table does not depend on the value of the setting. This includes type names inside cast expressions (`CAST(x AS UUID)`, `x::UUID`) in column default expressions and in the query of `CREATE TABLE ... AS SELECT` and view definitions, from which column types may be inferred.
 
 The explicit type names are not affected by the setting:
 

@@ -165,7 +165,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getDefaultExpression())
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.getDefaultExpression();
+            command.default_expression = applyUUIDTypeVersion(ast_col_decl.getDefaultExpression(), uuid_type_version);
         }
 
         if (ast_col_decl.getComment())
@@ -224,7 +224,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         if (ast_col_decl.getDefaultExpression())
         {
             command.default_kind = toColumnDefaultKind(ast_col_decl.default_specifier);
-            command.default_expression = ast_col_decl.getDefaultExpression();
+            command.default_expression = applyUUIDTypeVersion(ast_col_decl.getDefaultExpression(), uuid_type_version);
         }
 
         if (ast_col_decl.getComment())

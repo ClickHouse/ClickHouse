@@ -780,13 +780,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     if (create.is_time_series_table && (mode <= LoadingStrictnessLevel::SECONDARY_CREATE))
         normalizeTimeSeriesDefinition(create, getContext(), mode, is_restore_from_backup);
 
-    /// Materialize the `uuid_type_version` setting into dictionary attribute types on the initiator. Dictionary
-    /// attributes live in `dictionary_attributes_list` rather than `columns_list`, so they are not covered by
-    /// `getColumnsDescription`; without this a bare `UUID` dictionary attribute would ignore the setting. This is
-    /// gated exactly like the column path (a primary, user-issued CREATE only), so a normalized query re-executed
-    /// on a DDL worker or restored from a backup keeps its already-materialized types.
-    if (create.is_dictionary
-        && mode < LoadingStrictnessLevel::SECONDARY_CREATE
+    /// Materialize the `uuid_type_version` setting into the CREATE query AST on the initiator: column and
+    /// dictionary attribute types, and cast type literals inside column default expressions and the
+    /// `AS SELECT` / view definition, from which column types may be inferred. This is gated to a primary,
+    /// user-issued CREATE only, so a normalized query re-executed on a DDL worker or restored from a backup
+    /// keeps its already-materialized types.
+    if (mode < LoadingStrictnessLevel::SECONDARY_CREATE
         && !getContext()->isDDLOrOnClusterInternal()
         && !is_restore_from_backup)
     {
@@ -2877,14 +2876,15 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 namespace
 {
 
-/** Materialize the `uuid_type_version` setting into the column-declaration ASTs of a `CREATE` query.
+/** Materialize the `uuid_type_version` setting into a `CREATE` query AST: column-declaration types, cast type
+  * literals inside column default expressions and the `AS SELECT` / view definition (from which column types may
+  * be inferred), and dictionary attribute types.
   *
-  * The modern `ON CLUSTER` path (`distributed_ddl_entry_format_version >= NORMALIZE_CREATE_ON_INITIATOR_VERSION`) and
-  * `Replicated` databases normalize the query on the initiator via `getTablePropertiesAndNormalizeCreateQuery`, which
-  * already bakes the concrete column types (including `UUID2`) into the enqueued AST. The legacy `ON CLUSTER` path,
-  * however, enqueues the query verbatim before normalization runs, and workers treat it as already-normalized internal
-  * DDL - so a bare `UUID` would be created as historical `UUID` regardless of the initiator's `uuid_type_version`.
-  * Materializing the setting here, on the initiator, closes that gap and mirrors the `ALTER` handling.
+  * This runs on the initiator, from `getTablePropertiesAndNormalizeCreateQuery`, for a primary user-issued
+  * `CREATE` only. It is also called explicitly on the legacy `ON CLUSTER` path
+  * (`distributed_ddl_entry_format_version < NORMALIZE_CREATE_ON_INITIATOR_VERSION`), which enqueues the query
+  * verbatim before normalization runs while workers treat it as already-normalized internal DDL - so without it
+  * a bare `UUID` would be created as historical `UUID` there regardless of the initiator's `uuid_type_version`.
   */
 void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version)
 {
@@ -2900,7 +2900,22 @@ void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_versio
                 continue;
             if (auto type_ast = col_decl->getType())
                 col_decl->setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
+            /// A bare `UUID` can also hide inside a DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression as a cast
+            /// type literal (the parser canonicalizes `CAST(x AS UUID)` and `x::UUID` into `CAST(x, 'UUID')`),
+            /// and the column type is inferred from that expression when no explicit type is given.
+            if (auto default_ast = col_decl->getDefaultExpression())
+                col_decl->setDefaultExpression(applyUUIDTypeVersion(default_ast, uuid_type_version));
         }
+    }
+
+    /// `CREATE ... AS SELECT` and view definitions infer the table structure from the SELECT expressions,
+    /// where a bare `UUID` likewise survives only inside cast type literals.
+    if (create.select)
+    {
+        ASTPtr old_select = create.select->ptr();
+        auto new_select = applyUUIDTypeVersion(old_select, uuid_type_version);
+        if (new_select != old_select)
+            create.set(create.select, new_select);
     }
 
     /// Dictionaries keep their typed attributes in a separate `dictionary_attributes_list`, so a bare `UUID`

@@ -23,11 +23,15 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
-/** Materialize the `uuid_type_version` setting into a data-type AST.
+/** Materialize the `uuid_type_version` setting into a data-type or expression AST.
   *
   * When `uuid_type_version == 2`, every occurrence of the bare type name `UUID` (case-insensitive), including nested
   * ones such as `Array(UUID)` or `Nullable(UUID)`, is replaced by `UUID2`. The explicit names `UUID1` and `UUID2` are
   * never touched. For any other version value the AST is returned unchanged.
+  *
+  * The AST may also be an expression: type names inside the string-literal argument of cast functions
+  * (`CAST(x, 'UUID')` - the canonical form the parser produces for `CAST(x AS UUID)` and `x::UUID`) are
+  * rewritten too, so the setting reaches column types inferred from `DEFAULT` expressions and `AS SELECT`.
   *
   * The input AST is not modified: a clone is returned when a substitution is performed, otherwise the original pointer.
   */
