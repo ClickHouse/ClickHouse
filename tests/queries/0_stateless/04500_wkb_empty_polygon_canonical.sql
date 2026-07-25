@@ -3,7 +3,7 @@
 
 -- WKT source: canonical WKB of POLYGON EMPTY is type 3 with numRings = 0.
 SELECT hex(wkb(readWKTPolygon('POLYGON EMPTY')));
--- Column representation of an empty polygon is an empty array of rings.
+-- The in-memory column shape is unchanged (one empty ring); only wkb() is canonicalized.
 SELECT readWKTPolygon('POLYGON EMPTY');
 
 -- WKB source (canonical numRings = 0) round-trips to itself (identity-preserving).

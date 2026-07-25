@@ -238,9 +238,8 @@ String WKBPolygonTransform::dumpObject(const Field & geo_object)
     UInt32 geom_type = static_cast<UInt32>(geometry_type);
     writeBinaryEndian<endian_for_dumping>(geom_type, out_buffer);
 
-    // An empty polygon can reach here as the non-canonical [[]] shape (one empty
-    // outer ring, no inners) from older data or a direct [[]]::Polygon literal.
-    // Emit zero rings so the WKB matches the canonical empty-polygon encoding.
+    // An empty polygon is stored as a single empty outer ring ([[]]). Emit zero rings
+    // so the WKB matches the canonical empty-polygon encoding (010300000000000000).
     const bool is_empty = polygon.size() == 1 && polygon.front().safeGet<Array>().empty();
 
     UInt32 num_rings = is_empty ? 0 : static_cast<UInt32>(polygon.size());
