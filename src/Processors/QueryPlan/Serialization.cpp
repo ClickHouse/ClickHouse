@@ -499,6 +499,9 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             "Query plan serialization version {} is not supported. The last supported version is {}",
             version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 
+    /// A legacy stream declares no size, so `max_serialized_query_plan_size` does not apply here:
+    /// the reader consumes the plan field by field as it arrives, with per-field caps, rather than
+    /// buffering it whole. Only a peer older than v4 sends one.
     return deserialize(in, context, flags, max_type_complexity);
 }
 

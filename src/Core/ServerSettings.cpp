@@ -1389,11 +1389,15 @@ Disabled by default to avoid possible security issues which can be caused by bug
     DECLARE(UInt64, max_serialized_query_plan_size, 2_GiB, R"(
 The maximum size in bytes of a serialized query plan this server accepts in a QueryPlan packet.
 
-A plan above this size is rejected with `CANNOT_PARSE_QUERY_PLAN` before any of it is buffered, so
-the sender cannot make this server allocate an arbitrary amount of memory for one plan. It is a
-server setting on purpose: a query setting would travel with the query, letting the sender pick its
-own limit. Raise it in the server config, on every node that reads plans, if an extreme plan needs
-it.
+Applies to plans in the framed format (serialization version 4 and above), which declare their size
+up front: a plan above this limit is rejected with `CANNOT_PARSE_QUERY_PLAN` before any of it is
+buffered, so the sender cannot make this server allocate an arbitrary amount of memory for one plan.
+A plan from a pre-v4 peer declares no size and is read field by field as it arrives, so the limit
+does not apply to it.
+
+It is a server setting on purpose: a query setting would travel with the query, letting the sender
+pick its own limit. Raise it in the server config, on every node that reads plans, if an extreme
+plan needs it.
 
 **Example**
 
