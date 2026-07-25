@@ -21,7 +21,7 @@ You can use setting [`allow_deprecated_error_prone_window_functions`](/reference
 
 The result of the function depends on the affected data blocks and the order of data in the block.
 The order of rows during calculation of `runningDifference()` can differ from the order of rows returned to the user.
-To prevent that you can create a subquery with [`ORDER BY`](../../sql-reference/statements/select/order-by.md) and call the function from outside the subquery.
+To prevent that you can create a subquery with [`ORDER BY`](/reference/statements/select/order-by) and call the function from outside the subquery.
 Please note that the block size affects the result.
 The internal state of `runningDifference` state is reset for each new block.
 )";

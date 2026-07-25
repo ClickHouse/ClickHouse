@@ -176,7 +176,7 @@ REGISTER_FUNCTION(SnowflakeIDToDateTime)
 {
     /// snowflakeIDToDateTime documentation
     FunctionDocumentation::Description description_snowflakeIDToDateTime = R"(
-Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](../data-types/datetime.md).
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime](/reference/data-types/datetime).
     )";
     FunctionDocumentation::Syntax syntax_snowflakeIDToDateTime = "snowflakeIDToDateTime(value[, epoch[, time_zone]])";
     FunctionDocumentation::Arguments arguments_snowflakeIDToDateTime = {
@@ -206,7 +206,7 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
 
     /// snowflakeIDToDateTime64 documentation
     FunctionDocumentation::Description description_snowflakeIDToDateTime64 = R"(
-Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](../data-types/datetime64.md).
+Returns the timestamp component of a [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) as a value of type [DateTime64](/reference/data-types/datetime64).
     )";
     FunctionDocumentation::Syntax syntax_snowflakeIDToDateTime64 = "snowflakeIDToDateTime64(value[, epoch[, time_zone]])";
     FunctionDocumentation::Arguments arguments_snowflakeIDToDateTime64 = {

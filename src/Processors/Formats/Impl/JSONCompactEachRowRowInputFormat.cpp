@@ -353,7 +353,7 @@ The output will be in JSON format:
 
 ## Description {#description}
 
-Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](../TabSeparated/TabSeparatedWithNames.md) format.
+Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
 
 ## Example usage {#example-usage}
 
@@ -438,7 +438,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints two header rows with column names and types, similar to the [TabSeparatedWithNamesAndTypes](../TabSeparated/TabSeparatedWithNamesAndTypes.md) format.
+Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints two header rows with column names and types, similar to the [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format.
 
 ## Example usage {#example-usage}
 
@@ -604,7 +604,7 @@ The output will be in JSON format:
 
 ## Description {#description}
 
-Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [TabSeparatedWithNames](../TabSeparated/TabSeparatedWithNames.md) format.
+Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
 
 ## Example usage {#example-usage}
 

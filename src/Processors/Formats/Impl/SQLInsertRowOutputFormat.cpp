@@ -133,7 +133,7 @@ INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
 INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 ```
 
-To read data output by this format you can use [MySQLDump](../formats/MySQLDump.md) input format.
+To read data output by this format you can use [MySQLDump](/reference/formats/MySQLDump) input format.
 
 ## Format settings {#format-settings}
 

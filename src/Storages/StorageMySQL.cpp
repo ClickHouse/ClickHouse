@@ -522,7 +522,7 @@ See a detailed description of the [CREATE TABLE](/sql-reference/statements/creat
 The table structure can differ from the original MySQL table structure:
 
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
+- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](/reference/engines/database-engines/mysql#data_types-support) values to the ClickHouse data types.
 - The [external_table_functions_use_nulls](/reference/settings/session-settings/external-table#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
@@ -728,7 +728,7 @@ SETTINGS enable_compression = 1;
 
 ## See also {#see-also}
 
-- [The mysql table function](../../../sql-reference/table-functions/mysql.md)
+- [The mysql table function](/reference/functions/table-functions/mysql)
 - [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
 )DOCS_MD",
         .syntax = "ENGINE = MySQL('host:port', 'database', 'table', 'user', 'password'[, replace_query, on_duplicate_clause])",

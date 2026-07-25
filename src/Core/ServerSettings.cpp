@@ -660,14 +660,14 @@ The amount of data in mapped files does not consume memory directly and is not a
 This setting can be modified at runtime and will take effect immediately.
 :::
 )", 0) \
-    DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
+    DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](/concepts/features/performance/caches/caches).)", 0) \
     \
-    DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
+    DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](/concepts/features/performance/caches/caches).)", 0) \
     DECLARE(UInt64, point_in_polygon_cache_size, DEFAULT_POINT_IN_POLYGON_CACHE_MAX_SIZE, R"(
 Maximum size in bytes of the cache of preprocessed polygons used by the function `pointInPolygon` with a constant polygon argument.
 Entries above the limit are evicted in least recently used order.
 Setting it to `0` disables the cache: all cached polygons are evicted, and every subsequent query preprocesses its constant polygon anew.
-The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](../../sql-reference/statements/system#drop-point-in-polygon-cache) query.
+The cache can also be cleared manually, without changing this limit, with the [`SYSTEM DROP POINT IN POLYGON CACHE`](/reference/statements/system#drop-point-in-polygon-cache) query.
 :::note
 This setting can be modified at runtime and will take effect immediately.
 :::
@@ -697,7 +697,7 @@ Stop further attempts to update a hostname's DNS cache after this number of cons
 
 **See also**
 
-- [`SYSTEM DROP DNS CACHE`](../../sql-reference/statements/system#drop-dns-cache)
+- [`SYSTEM DROP DNS CACHE`](/reference/statements/system#drop-dns-cache)
 )", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv4, true, "Allows resolve names to ipv4 addresses.", 0) \
     DECLARE(Bool, dns_allow_resolve_names_to_ipv6, true, "Allows resolve names to ipv6 addresses.", 0) \
@@ -705,7 +705,7 @@ Stop further attempts to update a hostname's DNS cache after this number of cons
     DECLARE(UInt64, max_table_size_to_drop, 50000000000lu, R"(
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](../../sql-reference/statements/drop.md) query or [`TRUNCATE`](../../sql-reference/statements/truncate.md) query.
+If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a [`DROP`](/reference/statements/drop) query or [`TRUNCATE`](/reference/statements/truncate) query.
 
 :::note
 A value of `0` means that you can delete all tables without any restrictions.
@@ -722,7 +722,7 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
     DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
 Restriction on dropping partitions.
 
-If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+If the size of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](/reference/statements/alter/partition#drop-partitionpart) query.
 This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
 :::note
@@ -1032,7 +1032,7 @@ Asynchronous loading of system tables. Helpful if there is a high amount of log 
 Enables or disables showing secrets in `SHOW` and `SELECT` queries for tables, databases, table functions, and dictionaries.
 
 User wishing to see secrets must also have
-[`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
+[`format_display_secrets_in_show_and_select` format setting](/reference/settings/formats/format#format_display_secrets_in_show_and_select)
 turned on and a
 [`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
@@ -1070,7 +1070,7 @@ Maximal number of requests through a single keep-alive connection until it will 
     DECLARE(Seconds, replicated_fetches_http_receive_timeout, 0, R"(HTTP receive timeout for fetch part requests. Inherited from default profile `http_receive_timeout` if not set explicitly.)", 0) \
     DECLARE(UInt64, total_memory_profiler_step, 0, R"(Whenever server memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stack trace. Zero means disabled memory profiler. Values lower than a few megabytes will slow down server.)", 0) \
     DECLARE(Double, total_memory_tracker_sample_probability, 0, R"(
-Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](/reference/settings/server-settings/settings/total-memory#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](/reference/system-tables/trace_log) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](/reference/settings/server-settings/settings/total-memory#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
 
 Possible values:
 

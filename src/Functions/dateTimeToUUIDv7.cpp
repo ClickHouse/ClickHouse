@@ -99,7 +99,7 @@ REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
     /// dateTimeToUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
+Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
 

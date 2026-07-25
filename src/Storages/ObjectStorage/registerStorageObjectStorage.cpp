@@ -321,7 +321,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 - `path` — Bucket url with path to file. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings. For more information see [below](#wildcards-in-path).
 - `NOSIGN` - If this keyword is provided in place of credentials, all the requests will not be signed.
 - `format` — The [format](/interfaces/formats#formats-overview) of the file.
-- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](../mergetree-family/mergetree.md#table_engine-mergetree-s3).
+- `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file. For more information see [Using S3 for Data Storage](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
 - `compression` — Compression type. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Parameter is optional. By default, it will auto-detect compression by file extension.
 - `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise).
 - `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
@@ -518,7 +518,7 @@ Note that rows can only be inserted into new files. There are no merge cycles or
 - `_etag` — ETag of the file. Type: `LowCardinality(String)`. If the etag is unknown, the value is `NULL`.
 - `_tags` — Tags of the file. Type: `Map(String, String)`. If no tag exist, the value is an empty map `{}'.
 
-For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
+For more information about virtual columns see [here](/reference/engines/table-engines/index#table_engines-virtual_columns).
 
 ## Implementation details {#implementation-details}
 
@@ -526,7 +526,7 @@ For more information about virtual columns see [here](../../../engines/table-eng
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.
-  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not supported.
+  - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not supported.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -542,7 +542,7 @@ Zero-copy replication is disabled by default in ClickHouse version 22.8 and high
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
-Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
+Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
 
 :::note
 If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
@@ -718,7 +718,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
 ## See also {#see-also}
 
-- [s3 table function](../../../sql-reference/table-functions/s3.md)
+- [s3 table function](/reference/functions/table-functions/s3)
 - [Integrating S3 with ClickHouse](/integrations/s3)
 )DOCS_MD";
     }
@@ -859,7 +859,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 - Not supported:
   - `ALTER` and `SELECT...SAMPLE` operations.
   - Indexes.
-  - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
+  - [Zero-copy](/concepts/features/configuration/server-config/storing-data#zero-copy) replication is possible, but not recommended.
 
 :::note Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
@@ -874,7 +874,7 @@ Multiple path components can have globs. For being processed file should exists 
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
+Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
 
 **Example**
 
@@ -1036,7 +1036,7 @@ libhdfs3 support HDFS namenode HA.
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 )DOCS_MD",
         .syntax = "ENGINE = HDFS(uri [, format] [, compression])",
         .related = {"S3", "AzureBlobStorage"}});
@@ -1165,7 +1165,7 @@ Description of the arguments coincides with description of arguments in engines 
 
 For `IcebergS3`, an optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/cloud/data-sources/secure-s3) for configuration steps.
 
-Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections)
 
 ### Example {#example}
 
@@ -1462,7 +1462,7 @@ CREATE TABLE example_table ENGINE = Iceberg(
 
 ## Data cache {#data-cache}
 
-`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
+`Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](/reference/engines/table-engines/integrations/s3#data-cache).
 
 ## Metadata cache {#metadata-cache}
 
@@ -1752,7 +1752,7 @@ CREATE TABLE paimon_table_local
 Description of the arguments coincides with description of arguments in engines `S3`, `AzureBlobStorage`, `HDFS` and `File` correspondingly.
 `format` stands for the format of data files in the Paimon table.
 
-Engine parameters can be specified using [Named Collections](../../../operations/named-collections.md)
+Engine parameters can be specified using [Named Collections](/concepts/features/configuration/server-config/named-collections)
 
 ### Example {#example}
 
@@ -2332,11 +2332,11 @@ Writes to Azure are not yet supported but work for S3 and GCS.
 
 ### Data cache {#data-cache}
 
-The `DeltaLake` table engine and table function support data caching, the same as `S3`, `AzureBlobStorage`, `HDFS` storages. See ["S3 table engine"](../../../engines/table-engines/integrations/s3.md#data-cache) for more details.
+The `DeltaLake` table engine and table function support data caching, the same as `S3`, `AzureBlobStorage`, `HDFS` storages. See ["S3 table engine"](/reference/engines/table-engines/integrations/s3#data-cache) for more details.
 
 ## See also {#see-also}
 
-- [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
+- [deltaLake table function](/reference/functions/table-functions/deltalake)
 )DOCS_MD",
             .syntax = "ENGINE = DeltaLake(url [, access_key_id, secret_access_key])",
             .related = {"DeltaLakeS3", "DeltaLakeAzure", "DeltaLakeLocal", "Iceberg", "Hudi"}});

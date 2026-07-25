@@ -77,7 +77,7 @@ REGISTER_FUNCTION(GenerateUUIDv7)
 {
     /// generateUUIDv7 documentation
     FunctionDocumentation::Description description = R"(
-Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](../data-types/uuid.md).
+Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) [UUID](/reference/data-types/uuid).
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
 

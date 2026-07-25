@@ -188,7 +188,7 @@ void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
 ## Description {#description}
 
 The `SimpleAggregateFunction` data type stores the intermediate state of an
-aggregate function, but not its full state as the [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md)
+aggregate function, but not its full state as the [`AggregateFunction`](/reference/data-types/aggregatefunction)
 type does.
 
 This optimization can be applied to functions for which the following property
@@ -235,8 +235,8 @@ The following aggregate functions are supported:
 - [`groupBitOr`](/sql-reference/aggregate-functions/reference/groupBitOr.md)
 - [`groupBitXor`](/sql-reference/aggregate-functions/reference/groupBitXor.md)
 - [`groupArrayArray`](/sql-reference/aggregate-functions/reference/groupArrayArray.md)
-- [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupUniqArray.md)
-- [`groupUniqArrayArrayMap`](../../sql-reference/aggregate-functions/combinators#-map)
+- [`groupUniqArrayArray`](/reference/functions/aggregate-functions/groupUniqArray)
+- [`groupUniqArrayArrayMap`](/reference/functions/aggregate-functions/combinators#-map)
 - [`sumMap` (`sumMappedArrays`)](/sql-reference/aggregate-functions/reference/sumMappedArrays.md)
 - [`minMap` (`minMappedArrays`)](/sql-reference/aggregate-functions/reference/minMappedArrays.md)
 - [`maxMap` (`maxMappedArrays`)](/sql-reference/aggregate-functions/reference/maxMappedArrays.md)

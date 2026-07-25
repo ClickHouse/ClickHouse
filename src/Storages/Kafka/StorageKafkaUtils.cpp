@@ -385,7 +385,7 @@ Required parameters:
 - `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 - `kafka_topic_list` — A list of Kafka topics.
 - `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
-- `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+- `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 
 Optional parameters:
 
@@ -756,7 +756,7 @@ The produced Kafka message has payload `{"event_json":"{\"a\":1}"}`, key `sessio
 
 ## Data formats support {#data-formats-support}
 
-Kafka engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
+Kafka engine supports all [formats](/reference/formats/index) supported in ClickHouse.
 The number of rows in one Kafka message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
@@ -791,9 +791,9 @@ As the new engine is experimental, it is not production ready yet. There are few
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 - [background_message_broker_schedule_pool_size](/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
-- [system.kafka_consumers](../../../operations/system-tables/kafka_consumers.md)
+- [system.kafka_consumers](/reference/system-tables/kafka_consumers)
 )DOCS_MD",
             .syntax = "ENGINE = Kafka() SETTINGS kafka_broker_list = 'host:port', kafka_topic_list = 'topic', kafka_group_name = 'group', kafka_format = 'format', ...",
             .related = {"RabbitMQ", "NATS", "FileLog"}});

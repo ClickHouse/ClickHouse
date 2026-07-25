@@ -288,7 +288,7 @@ SELECT * FROM yt_saurus;
 
 **See Also**
 
-- [ytsaurus](../../../sql-reference/table-functions/ytsaurus.md) table function
+- [ytsaurus](/reference/functions/table-functions/ytsaurus) table function
 - [ytsaurus data schema](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
 - [ytsaurus data types](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)
 )DOCS_MD",

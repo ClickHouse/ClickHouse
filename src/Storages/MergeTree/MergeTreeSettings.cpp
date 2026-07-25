@@ -622,7 +622,7 @@ Do fsync for part directory after all part operations (writes, renames, etc.).
 )", 0) \
     DECLARE(UInt64, non_replicated_deduplication_window, 0, R"(
 The number of the most recently inserted blocks in the non-replicated
-[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table
+[MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table
 for which hash sums are stored to check for duplicates.
 
 Possible values:
@@ -1170,7 +1170,7 @@ Possible values:
 - Any positive integer.
 - 0 (disable deduplication)
 
-For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md),
+For [insert deduplication](/reference/engines/table-engines/mergetree-family/replication),
 when writing into replicated tables, ClickHouse writes deduplication hash sums into
 ClickHouse Keeper. Hash sums are stored only for the most recent
 `replicated_deduplication_window` blocks. The oldest hash sums are removed from
@@ -1391,7 +1391,7 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, max_replicated_fetches_network_bandwidth, 0, R"(
 Limits the maximum speed of data exchange over the network in bytes per
-second for [replicated](../../engines/table-engines/mergetree-family/replication.md)
+second for [replicated](/reference/engines/table-engines/mergetree-family/replication)
 fetches. This setting is applied to a particular table, unlike the
 [`max_replicated_fetches_network_bandwidth_for_server`](/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 setting, which is applied to the server.

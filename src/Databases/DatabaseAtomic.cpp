@@ -920,7 +920,7 @@ CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 
 ### Table UUID {#table-uuid}
 
-Each table in the `Atomic` database has a persistent [UUID](../../sql-reference/data-types/uuid.md) and stores its data in the following directory:
+Each table in the `Atomic` database has a persistent [UUID](/reference/data-types/uuid) and stores its data in the following directory:
 
 ```text
 /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
@@ -942,7 +942,7 @@ You can use the [show_table_uuid_in_table_create_query_if_not_nil](/reference/se
 
 ### RENAME TABLE {#rename-table}
 
-[`RENAME`](../../sql-reference/statements/rename.md) queries do not modify the UUID or move table data. These queries execute immediately and do not wait for other queries that are using the table to complete.
+[`RENAME`](/reference/statements/rename) queries do not modify the UUID or move table data. These queries execute immediately and do not wait for other queries that are using the table to complete.
 
 ### DROP/DETACH TABLE {#drop-detach-table}
 
@@ -951,7 +951,7 @@ You can specify synchronous mode using `SYNC` modifier. Use the [`database_atomi
 
 ### EXCHANGE TABLES/DICTIONARIES {#exchange-tables}
 
-The [`EXCHANGE`](../../sql-reference/statements/exchange.md) query swaps tables or dictionaries atomically. For instance, instead of this non-atomic operation:
+The [`EXCHANGE`](/reference/statements/exchange) query swaps tables or dictionaries atomically. For instance, instead of this non-atomic operation:
 
 ```sql title="Non-atomic"
 RENAME TABLE new_table TO tmp, old_table TO new_table, tmp TO old_table;
@@ -977,7 +977,7 @@ If unspecified, the disk defined in `database_disk.disk` is used by default.
 
 ## See also {#see-also}
 
-- [system.databases](../../operations/system-tables/databases.md) system table
+- [system.databases](/reference/system-tables/databases) system table
 )DOCS_MD",
         .syntax = "ENGINE = Atomic",
         .related = {"Replicated", "Ordinary"}});

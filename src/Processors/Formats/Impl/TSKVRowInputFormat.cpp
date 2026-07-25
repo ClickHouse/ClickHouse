@@ -336,7 +336,7 @@ x=1    y=\N
 
 :::note
 When there are a large number of small columns, this format is ineffective, and there is generally no reason to use it. 
-Nevertheless, it is no worse than the [`JSONEachRow`](../JSON/JSONEachRow.md) format in terms of efficiency.
+Nevertheless, it is no worse than the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format in terms of efficiency.
 :::
 
 For parsing, any order is supported for the values of the different columns. 

@@ -911,7 +911,7 @@ Required parameters:
 
 - `nats_url` – host:port (for example, `localhost:4222`)..
 - `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
-- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
+- `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](/reference/formats/index) section.
 
 Optional parameters:
 
@@ -990,7 +990,7 @@ More specifically you can add your password for the NATS engine:
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
 
 1.  Use the engine to create a NATS consumer and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -1042,7 +1042,7 @@ Note: `_raw_message` and `_error` virtual columns are filled only in case of exc
 
 ## Data formats support {#data-formats-support}
 
-NATS engine supports all [formats](../../../interfaces/formats.md) supported in ClickHouse.
+NATS engine supports all [formats](/reference/formats/index) supported in ClickHouse.
 The number of rows in one NATS message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one NATS message can be controlled by setting `nats_max_rows_per_message`.

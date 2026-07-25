@@ -2240,7 +2240,7 @@ void registerStorageDistributed(StorageFactory & factory)
     Documentation{
         .description = R"DOCS_MD(
 :::warning Distributed engine in Cloud
-To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](../../../sql-reference/table-functions/remote) table functions.
+To create a distributed table engine in ClickHouse Cloud, you can use the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions.
 The `Distributed(...)` syntax cannot be used in ClickHouse Cloud.
 :::
 
@@ -2306,7 +2306,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 **See Also**
 
 - [distributed_foreground_insert](/reference/settings/session-settings/distributed#distributed_foreground_insert) setting
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+- [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) for the examples
 ### Distributed settings {#distributed-settings}
 
 | Setting                                    | Description                                                                                                                                                                                                                           | Default value |
@@ -2354,7 +2354,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
+Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
 
 ```xml
 <remote_servers>
@@ -2420,7 +2420,7 @@ The parameters `host`, `port`, and optionally `user`, `password`, `secure`, `com
 |---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
 | `host`        | The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server does not start. If you change the DNS record, restart the server. | -            |
 | `port`        | The TCP port for messenger activity (`tcp_port` in the config, usually set to 9000). Not to be confused with `http_port`.                                                                                                                                                                                                                | -            |
-| `user`        | Name of the user for connecting to a remote server. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](../../../guides/sre/user-management/index.md).                                                                    | `default`    |
+| `user`        | Name of the user for connecting to a remote server. This user must have access to connect to the specified server. Access is configured in the `users.xml` file. For more information, see the section [Access rights](/concepts/features/security/access-rights).                                                                    | `default`    |
 | `password`    | The password for connecting to a remote server (not masked).                                                                                                                                                                                                                                                                             | ''           |
 | `secure`      | Whether to use a secure SSL/TLS connection. Usually also requires specifying the port (the default secure port is `9440`). The server should listen on `<tcp_port_secure>9440</tcp_port_secure>` and be configured with correct certificates.                                                                                            | `false`      |
 | `compression` | Use data compression.                                                                                                                                                                                                                                                                                                                    | `true`       |
@@ -2436,7 +2436,7 @@ To view your clusters, use the `system.clusters` table.
 
 The `Distributed` engine allows working with a cluster like a local server. However, the cluster's configuration cannot be specified dynamically, it has to be configured in the server config file. Usually, all servers in a cluster will have the same cluster config (though this is not required). Clusters from the config file are updated on the fly, without restarting the server.
 
-If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](../../../sql-reference/table-functions/index.md).
+If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](/reference/functions/table-functions/index).
 
 ## Writing data {#distributed-writing-data}
 
@@ -2479,17 +2479,17 @@ To learn more about how distributed `in` and `global in` queries are processed, 
 
 #### _Shard_num {#_shard_num}
 
-`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+`_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](/reference/data-types/int-uint).
 
 :::note
-Since [`remote`](../../../sql-reference/table-functions/remote.md) and [`cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
+Since [`remote`](/reference/functions/table-functions/remote) and [`cluster](/reference/functions/table-functions/cluster) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 :::
 
 **See Also**
 
-- [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
+- [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns) description
 - [`background_distributed_schedule_pool_size`](/reference/settings/server-settings/settings/background#background_distributed_schedule_pool_size) setting
-- [`shardNum()`](../../../sql-reference/functions/other-functions.md#shardNum) and [`shardCount()`](../../../sql-reference/functions/other-functions.md#shardCount) functions
+- [`shardNum()`](/reference/functions/regular-functions/other-functions#shardNum) and [`shardCount()`](/reference/functions/regular-functions/other-functions#shardCount) functions
 )DOCS_MD",
         .syntax = "ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])",
         .related = {"Merge"}});

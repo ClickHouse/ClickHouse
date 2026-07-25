@@ -706,7 +706,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../formats/TabSeparatedWithNamesAndTypes).
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes).
 
 ## Example usage {#example-usage}
 

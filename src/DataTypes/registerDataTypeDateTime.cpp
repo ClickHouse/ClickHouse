@@ -141,9 +141,9 @@ A list of supported time zones can be found in the [IANA Time Zone Database](htt
 
 You can explicitly set a time zone for `DateTime`-type columns when creating a table. Example: `DateTime('UTC')`. If the time zone isn't set, ClickHouse uses the value of the [timezone](/reference/settings/server-settings/settings/other#timezone) parameter in the server settings or the operating system settings at the moment of the ClickHouse server start.
 
-The [clickhouse-client](../../interfaces/client.md) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
+The [clickhouse-client](/concepts/features/interfaces/client) applies the server time zone by default if a time zone isn't explicitly set when initializing the data type. To use the client time zone, run `clickhouse-client` with the `--use_client_time_zone` parameter.
 
-ClickHouse outputs values depending on the value of the [date_time_output_format](/reference/settings/formats/date-time#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](../../sql-reference/functions/date-time-functions.md#formatDateTime) function.
+ClickHouse outputs values depending on the value of the [date_time_output_format](/reference/settings/formats/date-time#date_time_output_format) setting. `YYYY-MM-DD hh:mm:ss` text format by default. Additionally, you can change the output with the [formatDateTime](/reference/functions/regular-functions/date-time-functions#formatDateTime) function.
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](/reference/settings/formats/date-time#date_time_input_format) setting.
 
@@ -290,15 +290,15 @@ In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back
 
 ## See Also {#see-also}
 
-- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
-- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [Functions for working with arrays](../../sql-reference/functions/array-functions.md)
+- [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
+- [Functions for working with dates and times](/reference/functions/regular-functions/date-time-functions)
+- [Functions for working with arrays](/reference/functions/regular-functions/array-functions)
 - [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
 - [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
 - [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
 - [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
-- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
-- [The `Date` data type](../../sql-reference/data-types/date.md)
+- [Operators for working with dates and times](/reference/operators/index#operators-for-working-with-dates-and-times)
+- [The `Date` data type](/reference/data-types/date)
 )DOCS_MD",
             .syntax = "DateTime([timezone])",
             .related = {"DateTime64", "Date"},
@@ -327,7 +327,7 @@ Default value: 3 (milliseconds).
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as a number of 'ticks' since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed ('2020-01-01 05:00:01.000'). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](../../sql-reference/data-types/datetime.md).
+Internally, stores data as a number of 'ticks' since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed ('2020-01-01 05:00:01.000'). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](/reference/data-types/datetime).
 
 Supported range of values: \[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999\]
 
@@ -433,15 +433,15 @@ FROM dt64;
 
 **See Also**
 
-- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
-- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+- [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
+- [Functions for working with dates and times](/reference/functions/regular-functions/date-time-functions)
 - [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
 - [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
 - [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
 - [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
-- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
-- [`Date` data type](../../sql-reference/data-types/date.md)
-- [`DateTime` data type](../../sql-reference/data-types/datetime.md)
+- [Operators for working with dates and times](/reference/operators/index#operators-for-working-with-dates-and-times)
+- [`Date` data type](/reference/data-types/date)
+- [`DateTime` data type](/reference/data-types/datetime)
 )DOCS_MD",
             .syntax = "DateTime64(precision, [timezone])",
             .related = {"DateTime"},
@@ -620,13 +620,13 @@ SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
 └─────────────────────┘
 ```
 
-See [Date and Time Addition](../operators/index.md#date-time-addition) for details on all supported combinations and result types.
+See [Date and Time Addition](/reference/operators/index#date-time-addition) for details on all supported combinations and result types.
 
 ## See Also {#see-also}
 
-- [Type conversion functions](../functions/type-conversion-functions.md)
-- [Functions for working with dates and times](../functions/date-time-functions.md)
-- [Functions for working with arrays](../functions/array-functions.md)
+- [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
+- [Functions for working with dates and times](/reference/functions/regular-functions/date-time-functions)
+- [Functions for working with arrays](/reference/functions/regular-functions/array-functions)
 - [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
 - [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
 - [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
@@ -657,7 +657,7 @@ The tick resolution is determined by the `precision` parameter.
 Time zones are not supported: specifying a time zone with `Time64` will throw an error.
 
 Unlike `DateTime64`, `Time64` does not store a date component.
-See also [`Time`](../../sql-reference/data-types/time.md).
+See also [`Time`](/reference/data-types/time).
 
 Text representation range: [-999:59:59.000, 999:59:59.999] for `precision = 3`. In general, the minimum is `-999:59:59` and the maximum is `999:59:59` with up to `precision` fractional digits (for `precision = 9`, the minimum is `-999:59:59.999999999`).
 
@@ -766,20 +766,20 @@ SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(d
 └────────────────────────────┴────────────────┘
 ```
 
-See [Date and Time Addition](../operators/index.md#date-time-addition) for details on all supported combinations and result types.
+See [Date and Time Addition](/reference/operators/index#date-time-addition) for details on all supported combinations and result types.
 
 **See Also**
 
-- [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
-- [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
+- [Type conversion functions](/reference/functions/regular-functions/type-conversion-functions)
+- [Functions for working with dates and times](/reference/functions/regular-functions/date-time-functions)
 - [The `date_time_input_format` setting](/reference/settings/formats/date-time#date_time_input_format)
 - [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
 - [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
 - [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
-- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-for-working-with-dates-and-times)
-- [`Date` data type](../../sql-reference/data-types/date.md)
-- [`Time` data type](../../sql-reference/data-types/time.md)
-- [`DateTime` data type](../../sql-reference/data-types/datetime.md)
+- [Operators for working with dates and times](/reference/operators/index#operators-for-working-with-dates-and-times)
+- [`Date` data type](/reference/data-types/date)
+- [`Time` data type](/reference/data-types/time)
+- [`DateTime` data type](/reference/data-types/datetime)
 )DOCS_MD",
             .syntax = "Time64(precision)",
             .related = {"Time"},

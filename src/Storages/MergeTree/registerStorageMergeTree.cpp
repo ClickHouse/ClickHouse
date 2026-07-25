@@ -1299,7 +1299,7 @@ For more details, see [TTL for columns and tables](#table_engine-mergetree-ttl)
 
 #### SETTINGS {#settings}
 
-See [MergeTree Settings](../../../operations/settings/merge-tree-settings.md).
+See [MergeTree Settings](/reference/settings/merge-tree-settings).
 
 **Example of Sections Setting**
 
@@ -2593,7 +2593,7 @@ ALTER TABLE tab MODIFY COLUMN document RESET SETTING min_compress_block_size;
         .description = R"DOCS_MD(
 ## Description {#description}
 
-The `CollapsingMergeTree` engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
+The `CollapsingMergeTree` engine inherits from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)
 and adds logic for collapsing rows during the merge process.
 The `CollapsingMergeTree` table engine asynchronously deletes (collapses)
 pairs of rows if all the fields in a sorting key (`ORDER BY`) are equivalent except for the special field `Sign`,
@@ -2653,8 +2653,8 @@ ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, ke
 
 </details>
 
-- For a description of query parameters, see [query description](../../../sql-reference/statements/create/table.md).
-- When creating a `CollapsingMergeTree` table, the same [query clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+- For a description of query parameters, see [query description](/reference/statements/create/table).
+- When creating a `CollapsingMergeTree` table, the same [query clauses](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 ## Collapsing {#table_engine-collapsingmergetree-collapsing}
 
@@ -2757,7 +2757,7 @@ because `CollapsingMergeTree` does not save the history of the collapsed states.
 :::note
 If you need to extract data without aggregation
 (for example, to check whether rows whose newest values match certain conditions are present),
-you can use the [`FINAL`](../../../sql-reference/statements/select/from.md#final-modifier) modifier for the `FROM` clause. It will merge the data before returning the result.
+you can use the [`FINAL`](/reference/statements/select/from#final-modifier) modifier for the `FROM` clause. It will merge the data before returning the result.
 For CollapsingMergeTree, only the latest state row for each key is returned.
 :::
 
@@ -2954,7 +2954,7 @@ SELECT * FROM UAct
 
     factory.registerStorage("ReplacingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine differs from [MergeTree](/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
+The engine differs from [MergeTree](/engines/table-engines/mergetree-family/mergetree) in that it removes duplicate entries with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
 Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, do not count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
@@ -2980,7 +2980,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [statement description](../../../sql-reference/statements/create/table.md).
+For a description of request parameters, see [statement description](/reference/statements/create/table).
 
 :::note
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
@@ -3097,7 +3097,7 @@ select * from myThirdReplacingMT final;
 
 ## Query clauses {#query-clauses}
 
-When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `ReplacingMergeTree` table the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -3179,7 +3179,7 @@ For further details on `FINAL`, including how to optimize `FINAL` performance, w
 This table engine is available from version 25.6 and higher in both OSS and Cloud.
 :::
 
-This engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row that contains the latest non-NULL values for each column.
+This engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The key difference is in how data parts are merged: for `CoalescingMergeTree` tables, ClickHouse replaces all rows with the same primary key (or more precisely, the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row that contains the latest non-NULL values for each column.
 
 This enables column-level upserts, meaning you can update only specific columns rather than entire rows.
 
@@ -3200,7 +3200,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../../sql-reference/statements/create/table.md).
+For a description of request parameters, see [request description](/reference/statements/create/table).
 
 ### Parameters of CoalescingMergeTree {#parameters-of-coalescingmergetree}
 
@@ -3210,7 +3210,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 ### Query clauses {#query-clauses}
 
-When creating a `CoalescingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `CoalescingMergeTree` table the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -3344,7 +3344,7 @@ SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tupl
 
     factory.registerStorage("AggregatingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
@@ -3355,8 +3355,8 @@ You can see an example of how to use the AggregatingMergeTree and Aggregate func
 
 The engine processes all columns with the following types:
 
-- [`AggregateFunction`](../../../sql-reference/data-types/aggregatefunction.md)
-- [`SimpleAggregateFunction`](../../../sql-reference/data-types/simpleaggregatefunction.md)
+- [`AggregateFunction`](/reference/data-types/aggregatefunction)
+- [`SimpleAggregateFunction`](/reference/data-types/simpleaggregatefunction)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -3376,11 +3376,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../../sql-reference/statements/create/table.md).
+For a description of request parameters, see [request description](/reference/statements/create/table).
 
 **Query clauses**
 
-When creating an `AggregatingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
+When creating an `AggregatingMergeTree` table, the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree) are required as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -3404,7 +3404,7 @@ All of the parameters have the same meaning as in `MergeTree`.
 
 ## SELECT and INSERT {#select-and-insert}
 
-To insert data, use [INSERT SELECT](../../../sql-reference/statements/insert-into.md) query with aggregate -State- functions.
+To insert data, use [INSERT SELECT](/reference/statements/insert-into) query with aggregate -State- functions.
 When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using the `-Merge` suffix.
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
@@ -3570,7 +3570,7 @@ SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY 
 
     factory.registerStorage("SummingMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](/reference/engines/table-engines/mergetree-family/mergetree)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
 We recommend using the engine together with `MergeTree`. Store complete data in `MergeTree` table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
 
@@ -3589,7 +3589,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of request parameters, see [request description](../../../sql-reference/statements/create/table.md).
+For a description of request parameters, see [request description](/reference/statements/create/table).
 
 ### Parameters of SummingMergeTree {#parameters-of-summingmergetree}
 
@@ -3602,7 +3602,7 @@ If `columns` is not specified, ClickHouse summarizes the values in all columns w
 
 ### Query clauses {#query-clauses}
 
-When creating a `SummingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
+When creating a `SummingMergeTree` table the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -3678,7 +3678,7 @@ The values are not summed for columns in the primary key.
 
 ### The summation in the AggregateFunction columns {#the-summation-in-the-aggregatefunction-columns}
 
-For columns of [AggregateFunction type](../../../sql-reference/data-types/aggregatefunction.md) ClickHouse behaves as [AggregatingMergeTree](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine aggregating according to the function.
+For columns of [AggregateFunction type](/reference/data-types/aggregatefunction) ClickHouse behaves as [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) engine aggregating according to the function.
 
 ### Nested structures {#nested-structures}
 
@@ -3747,7 +3747,7 @@ ARRAY JOIN
 └──────┴─────────┴─────────────┴────────┘
 ```
 
-When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/sumMappedArrays.md) function for aggregation of `Map`.
+When requesting data, use the [sumMap(key, value)](/reference/functions/aggregate-functions/sumMap) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
@@ -3808,7 +3808,7 @@ This engine is designed for thinning and aggregating/averaging (rollup) [Graphit
 
 You can use any ClickHouse table engine to store the Graphite data if you do not need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
 
-The engine inherits properties from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md).
+The engine inherits properties from [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree).
 
 ## Creating a table {#creating-table}
 
@@ -3847,7 +3847,7 @@ The names of these columns should be set in the rollup configuration.
 
 **Query clauses**
 
-When creating a `GraphiteMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+When creating a `GraphiteMergeTree` table, the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -4062,7 +4062,7 @@ Valid values:
 ```
 
 :::note
-Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
+Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](/reference/statements/optimize). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
 :::
 )DOCS_MD",
         .syntax = "ENGINE = GraphiteMergeTree(config_section) ORDER BY expr",
@@ -4077,7 +4077,7 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](/reference/engines/table-engines/mergetree-family/collapsingmergetree) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a table {#creating-a-table}
 
@@ -4094,7 +4094,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see the [query description](../../../sql-reference/statements/create/table.md).
+For a description of query parameters, see the [query description](/reference/statements/create/table).
 
 ### Engine parameters {#engine-parameters}
 
@@ -4109,7 +4109,7 @@ VersionedCollapsingMergeTree(sign, version)
 
 ### Query clauses {#query-clauses}
 
-When creating a `VersionedCollapsingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
+When creating a `VersionedCollapsingMergeTree` table, the same [clauses](/reference/engines/table-engines/mergetree-family/mergetree) are required as when creating a `MergeTree` table.
 
 <details markdown="1">
 

@@ -475,7 +475,7 @@ void registerInputFormatCustomSeparated(FormatFactory & factory)
 
 ## Description {#description}
 
-Similar to [Template](../Template/Template.md), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/reference/settings/formats/format-custom#format_custom_escaping_rule) setting and delimiters from the following settings:
+Similar to [Template](/reference/formats/Template/Template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](/reference/settings/formats/format-custom#format_custom_escaping_rule) setting and delimiters from the following settings:
 
 - [format_custom_field_delimiter](/reference/settings/formats/format-custom#format_custom_field_delimiter)
 - [format_custom_row_before_delimiter](/reference/settings/formats/format-custom#format_custom_row_before_delimiter)
@@ -488,7 +488,7 @@ Similar to [Template](../Template/Template.md), but it prints or reads all names
 It does not use escaping rules settings and delimiters from format strings.
 :::
 
-There is also the [`CustomSeparatedIgnoreSpaces`](../CustomSeparated/CustomSeparatedIgnoreSpaces.md) format, which is similar to [TemplateIgnoreSpaces](../Template//TemplateIgnoreSpaces.md).
+There is also the [`CustomSeparatedIgnoreSpaces`](/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces) format, which is similar to [TemplateIgnoreSpaces](/reference/formats/Template/TemplateIgnoreSpaces).
 
 ## Example usage {#example-usage}
 
@@ -672,7 +672,7 @@ INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparatedIgnoreSpac
 
 ## Description {#description}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](../TabSeparated/TabSeparatedWithNames.md).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames).
 
 ## Example usage {#example-usage}
 
@@ -744,7 +744,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../TabSeparated/TabSeparatedWithNamesAndTypes.md).
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes).
 
 ## Example usage {#example-usage}
 
