@@ -286,6 +286,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -1307,6 +1308,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
+    current_database_has_table_prefix(o.current_database_has_table_prefix),
     can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
@@ -2096,6 +2098,35 @@ ConfigurationPtr Context::getUsersConfig()
     return shared->users_config;
 }
 
+namespace
+{
+
+/// A dotted current database selects a namespace ("db.ns") unless a database with that exact name exists
+CurrentDatabaseInfo validateCurrentDatabaseName(const String & name, bool allow_table_namespaces, ContextPtr context)
+{
+    const auto info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
+    if (info.table_prefix.empty())
+        return info;
+    if (!allow_table_namespaces)
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(name));
+    Names parts;
+    splitInto<'.'>(parts, info.table_prefix);
+    DatabaseCatalog::instance().getDatabase(info.database)->validateTableNamespace(parts, context);
+    return info;
+}
+
+/// The split decision is frozen when the current database is set, no catalog lookups here
+CurrentDatabaseInfo splitCurrentDatabaseName(const String & name, bool has_table_prefix)
+{
+    if (!has_table_prefix)
+        return {name, ""};
+    const auto dot = name.find('.');
+    chassert(dot != String::npos && dot != 0);
+    return {name.substr(0, dot), name.substr(dot + 1)};
+}
+
+}
+
 void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_roles_)
 {
     /// Prepare lists of user's profiles, constraints, settings, roles.
@@ -2110,21 +2141,25 @@ void Context::setUser(const UUID & user_id_, const std::vector<UUID> & external_
     auto enabled_profiles = access_control.getEnabledSettingsInfo(user_id_, user->settings, enabled_roles->enabled_roles, enabled_roles->settings_from_enabled_roles);
     const auto & database = user->default_database;
 
-    /// Apply user's profiles, constraints, settings, roles.
-    std::lock_guard lock(mutex);
+    {
+        /// Apply user's profiles, constraints, settings, roles.
+        std::lock_guard lock(mutex);
 
-    setUserIDWithLock(user_id_, lock);
+        setUserIDWithLock(user_id_, lock);
 
-    /// A profile can specify a value and a readonly constraint for same setting at the same time,
-    /// so we shouldn't check constraints here.
-    setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
+        /// A profile can specify a value and a readonly constraint for same setting at the same time,
+        /// so we shouldn't check constraints here.
+        setCurrentProfilesWithLock(*enabled_profiles, /* check_constraints= */ false, lock);
 
-    setCurrentRolesWithLock(default_roles, lock);
-    setExternalRolesWithLock(external_roles_, lock);
+        setCurrentRolesWithLock(default_roles, lock);
+        setExternalRolesWithLock(external_roles_, lock);
+    }
 
     /// It's optional to specify the DEFAULT DATABASE in the user's definition.
+    /// A dotted name may select a namespace; validate it with the user's own profiles
+    /// already applied, and never under the mutex (the validation may query a catalog).
     if (!database.empty())
-        setCurrentDatabaseWithLock(database, lock);
+        setCurrentDatabase(database);
 }
 
 std::shared_ptr<const User> Context::getUser() const
@@ -2975,6 +3010,7 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
     String database_name = getCurrentDatabase();
     String table_name = function->name;
 
+    bool view_name_is_qualified = false;
     if (function->isCompoundName())
     {
         std::vector<std::string> parts;
@@ -2984,8 +3020,15 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
         {
             database_name = std::move(parts[0]);
             table_name = std::move(parts[1]);
+            view_name_is_qualified = true;
         }
     }
+
+    /// an unqualified (param view) name would bind to the parent database, ignoring the selected namespace
+    if (!view_name_is_qualified && !getCurrentDatabaseInfo().table_prefix.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Parameterized views and unqualified table functions are not supported while a table "
+            "namespace is selected; qualify the name with its database");
 
     StoragePtr table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, getQueryContext());
     if (table)
@@ -3509,6 +3552,13 @@ String Context::getCurrentDatabase() const
     return current_database;
 }
 
+CurrentDatabaseInfo Context::getCurrentDatabaseInfo() const
+{
+    /// the current database is stored as the logical name ("db.ns" when scoped)
+    SharedLockGuard lock(mutex);
+    return splitCurrentDatabaseName(current_database, current_database_has_table_prefix);
+}
+
 
 String Context::getInitialQueryId() const
 {
@@ -3531,22 +3581,40 @@ void Context::setCurrentDatabaseNameInGlobalContext(const String & name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Default database name cannot be changed in global context without server restart");
 
     current_database = name;
+    current_database_has_table_prefix = false;
 }
 
-void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> &)
+void Context::setCurrentDatabaseWithLock(const String & name, bool has_table_prefix, const std::lock_guard<ContextSharedMutex> &)
 {
     if (name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
 
-    DatabaseCatalog::instance().assertDatabaseExists(name);
+    DatabaseCatalog::instance().assertDatabaseExists(splitCurrentDatabaseName(name, has_table_prefix).database);
     current_database = name;
+    current_database_has_table_prefix = has_table_prefix;
     need_recalculate_access = true;
 }
 
 void Context::setCurrentDatabase(const String & name)
 {
+    setCurrentDatabase(name, getSettingsRef()[Setting::allow_experimental_table_namespaces]);
+}
+
+void Context::setCurrentDatabase(const String & name, bool allow_table_namespaces)
+{
+    const auto info = validateCurrentDatabaseName(name, allow_table_namespaces, shared_from_this());
+
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, lock);
+    setCurrentDatabaseWithLock(name, !info.table_prefix.empty(), lock);
+}
+
+void Context::setCurrentDatabase(const CurrentDatabaseInfo & database_info)
+{
+    const bool has_table_prefix = !database_info.table_prefix.empty();
+    const String name = has_table_prefix ? database_info.database + "." + database_info.table_prefix : database_info.database;
+
+    std::lock_guard lock(mutex);
+    setCurrentDatabaseWithLock(name, has_table_prefix, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)
@@ -3556,6 +3624,7 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
+    current_database_has_table_prefix = false;
     need_recalculate_access = true;
 }
 
@@ -7863,6 +7932,14 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
             return StorageID::createEmpty();
         }
         storage_id.database_name = current_database;
+        /// the current database may be a logical namespace path, fold it into the table name
+        if (current_database_has_table_prefix)
+        {
+            storage_id = DatabaseCatalog::foldNamespaceIntoTableName(
+                std::move(storage_id), splitCurrentDatabaseName(current_database, current_database_has_table_prefix), exception);
+            if (!storage_id)
+                return StorageID::createEmpty();
+        }
         /// NOTE There is no guarantees that table actually exists in database.
         return storage_id;
     }

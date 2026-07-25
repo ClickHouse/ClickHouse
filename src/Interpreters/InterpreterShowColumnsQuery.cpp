@@ -41,9 +41,16 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     const bool remap_fixed_string_as_text = settings[Setting::mysql_map_fixed_string_to_text_in_show_columns];
 
     WriteBufferFromOwnString buf_database;
-    String resolved_database = getContext()->resolveDatabase(query.database);
+
+    StorageID storage_id{query.database, query.table};
+    if (storage_id.database_name.empty())
+        storage_id = getContext()->resolveStorageID(storage_id, Context::ResolveOrdinary);
+    else if (auto resolved = getContext()->tryResolveStorageID(storage_id, Context::ResolveOrdinary))
+        storage_id = resolved;
+
+    String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
-    String table = escapeString(query.table);
+    String table = escapeString(storage_id.table_name);
 
     String rewritten_query;
     if (use_mysql_types)
@@ -173,10 +180,15 @@ WHERE
 BlockIO InterpreterShowColumnsQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowColumnsQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    String database = query.database;
+    if (database.empty())
+        database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
+
+    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
         query_context->setSetting("show_remote_databases_in_system_tables", true);
 
@@ -190,7 +202,7 @@ void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowColumnsQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowColumnsQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

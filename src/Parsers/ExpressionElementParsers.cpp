@@ -43,6 +43,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
+
+#include <algorithm>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 
@@ -464,9 +466,13 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 {
     auto element_parser = std::make_unique<ParserIdentifier>(allow_query_parameter, highlight_type);
     std::vector<std::pair<ParserPtr, SpecialDelimiter>> delimiter_parsers;
-    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
-    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
-    delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::At}), SpecialDelimiter::JSON_PATH_COMBINED);
+    /// JSON subcolumn delimiters make no sense in table path, leave them unconsumed
+    if (!(table_name_with_optional_uuid && pos.allow_multipart_table_paths))
+    {
+        delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Colon}), SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE);
+        delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::Caret}), SpecialDelimiter::JSON_PATH_PREFIX);
+        delimiter_parsers.emplace_back(std::make_unique<ParserTokenSequence>(std::vector<TokenType>{TokenType::Dot, TokenType::At}), SpecialDelimiter::JSON_PATH_COMBINED);
+    }
     delimiter_parsers.emplace_back(std::make_unique<ParserToken>(TokenType::Dot), SpecialDelimiter::NONE);
     ParserArrayOfJSONIdentifierAddition array_of_json_identifier_addition;
 
@@ -496,7 +502,8 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             parts.push_back(getIdentifierName(element));
             /// Check if we have Array of JSON subcolumn additioon after identifier
             /// and replace it with corresponding type subcolumn.
-            if (!is_first && array_of_json_identifier_addition.check(pos, expected))
+            if (!is_first && !(table_name_with_optional_uuid && pos.allow_multipart_table_paths)
+                && array_of_json_identifier_addition.check(pos, expected))
                 parts.push_back(array_of_json_identifier_addition.getLastArrayOfJSONSubcolumnIdentifier());
         }
 
@@ -529,9 +536,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
     if (table_name_with_optional_uuid)
     {
-        if (parts.size() > 2)
-            return false;
-
         if (s_uuid.ignore(pos, expected))
         {
             ParserStringLiteral uuid_p;
@@ -542,8 +546,26 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
-        if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
-        else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
+        if (parts.size() > 2)
+        {
+            /// hierarchical table path: fold db.ns1.ns2.table into
+            /// (db, `ns1.ns2.table`), two-part form db.`ns.t` stays as written
+            if (!pos.allow_multipart_table_paths)
+                return false;
+            /// no query parameters inside a path, and no quoted components with a
+            /// literal dot, a substituted or quoted dot would alias another path
+            for (size_t i = 1; i < parts.size(); ++i)
+                if (parts[i].empty() || parts[i].find('.') != String::npos)
+                    return false;
+            String table_name = parts[1];
+            for (size_t i = 2; i < parts.size(); ++i)
+                table_name += "." + parts[i];
+            node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(table_name), std::move(params));
+        }
+        else if (parts.size() == 1)
+            node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
+        else
+            node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
         node->as<ASTTableIdentifier>()->has_uuid = has_uuid_clause;
     }

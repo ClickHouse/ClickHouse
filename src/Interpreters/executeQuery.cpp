@@ -138,6 +138,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_kusto_dialect;
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -1272,7 +1273,8 @@ static BlockIO executeQueryImpl(
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks],
+                settings[Setting::allow_experimental_table_namespaces]);
 
 #ifndef NDEBUG
             try
@@ -1314,7 +1316,8 @@ static BlockIO executeQueryImpl(
                         "",
                         new_max_query_size,
                         settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                        settings[Setting::max_parser_backtracks],
+                        settings[Setting::allow_experimental_table_namespaces]);
                 }
                 catch (const Exception & e)
                 {
@@ -1786,7 +1789,7 @@ static BlockIO executeQueryImpl(
             {
                 if (out_ast && can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabaseInfo(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles(), /* is_subquery = */ false);
                     QueryResultCacheReader reader = query_result_cache->createReader(key);
 
                     if (reader.hasCacheEntryForKey())
@@ -1913,7 +1916,7 @@ static BlockIO executeQueryImpl(
                             auto expires_at = created_at + std::chrono::seconds(settings[Setting::query_cache_ttl].totalSeconds());
 
                             QueryResultCache::Key key(
-                                out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getSharedHeader(),
+                                out_ast, context->getCurrentDatabaseInfo(), *settings_copy, res.pipeline.getSharedHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
                                 settings[Setting::query_cache_share_between_users],

@@ -449,7 +449,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -1773,6 +1773,481 @@ def test_iceberg_file_progress_callback(started_cluster):
         f"`IcebergIterator::next` did not invoke the file-progress callback "
         f"(regression of PR #105413 wiring)."
     )
+
+
+def test_deterministic_two_part_resolution(started_cluster):
+    """
+    A two-part name always means database.table, never namespace.table.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_two_part_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "priority_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    data = [generate_record() for _ in range(5)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # without a database named like the namespace, a two-part name is an unknown database
+    _, err = node.query_and_get_answer_with_error(
+        f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}",
+        settings=ns_settings,
+    )
+    assert "UNKNOWN_DATABASE" in err, f"two-part name must mean database.table: {err}"
+
+    # with such a database, the rule picks it - deterministically, not by precedence
+    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+    node.query(f"CREATE DATABASE `{namespace}`")
+    node.query(f"CREATE TABLE `{namespace}`.{table_name} (id UInt64) ENGINE = Memory")
+    node.query(f"INSERT INTO `{namespace}`.{table_name} VALUES (1), (2), (3)")
+
+    count = int(
+        node.query(
+            f"USE {CATALOG_NAME}; SELECT count() FROM {namespace}.{table_name}",
+            settings=ns_settings,
+        )
+    )
+    assert count == 3, f"Expected 3 rows from the regular database, got {count}"
+
+    # the iceberg table is reachable through the quoted canonical name or the full path
+    count_iceberg = int(
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+    )
+    assert count_iceberg == 5, f"Expected 5 rows from iceberg table, got {count_iceberg}"
+
+    node.query(f"DROP DATABASE IF EXISTS `{namespace}`")
+
+
+def test_use_database_with_namespace(started_cluster):
+    """
+    Test USE db.namespace syntax for DataLakeCatalog databases
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_use_ns_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "use_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+
+    data = [generate_record() for _ in range(5)]
+    df = pa.Table.from_pylist(data)
+    iceberg_table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Test USE db.namespace syntax - after this, short table names get namespace prefix
+    count = int(
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; SELECT count() FROM {table_name}",
+            settings=ns_settings,
+        )
+    )
+    assert count == 5, f"Expected 5 rows after USE db.namespace, got {count}"
+
+    # Verify we can also use the full path
+    count_full = int(
+        node.query(
+            f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}",
+            settings=ns_settings,
+        )
+    )
+    assert count_full == 5, f"Expected 5 rows with full path, got {count_full}"
+
+    # check that prefix is cleared when switching to regular db
+    _, error = node.query_and_get_answer_with_error(
+        f"USE {CATALOG_NAME}.{namespace}; USE default; SELECT 1 FROM {table_name}",
+        settings=ns_settings,
+    )
+    assert "UNKNOWN_TABLE" in error or "doesn't exist" in error, f"Expected UNKNOWN_TABLE error, got: {error}"
+
+    # USE of a namespace that does not exist in the catalog must fail
+    _, error = node.query_and_get_answer_with_error(
+        f"USE {CATALOG_NAME}.no_such_namespace_{test_ref}",
+        settings=ns_settings,
+    )
+    assert "BAD_ARGUMENTS" in error or "has no namespace" in error, f"Expected namespace validation error, got: {error}"
+
+    # while the setting is off, multipart USE stays a syntax error (master behavior)
+    _, error = node.query_and_get_answer_with_error(f"USE {CATALOG_NAME}.{namespace}")
+    assert "SYNTAX_ERROR" in error or "Syntax error" in error, f"Expected syntax error with the setting off, got: {error}"
+
+
+def test_three_part_identifier(started_cluster):
+    """
+    Test 3-part compound identifier syntax: db.namespace.table
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_three_part_identifier_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    namespace = f"{test_ref}_ns"  # Single-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    table = create_table(catalog, namespace, table_name)
+
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # This should work the same as demo.`namespace.table`
+    count_3part = int(
+        node.query(f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+    )
+    assert count_3part == num_rows, f"Expected {num_rows} rows, got {count_3part}"
+
+    # compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"))
+    assert count_3part == count_backtick, "3-part and backtick syntax should return same results"
+
+    # EXISTS TABLE with 3-part identifier
+    exists_result = node.query(
+        f"EXISTS TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings
+    ).strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # DESCRIBE with 3-part identifier
+    desc_3part = node.query(f"DESCRIBE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+    desc_backtick = node.query(f"DESCRIBE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert desc_3part == desc_backtick, "DESCRIBE output should match between syntaxes"
+
+    # SHOW CREATE TABLE with 3-part identifier
+    show_create_3part = node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings
+    )
+    show_create_backtick = node.query(f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`")
+    assert show_create_3part == show_create_backtick, "SHOW CREATE TABLE output should match between syntaxes"
+
+    # SHOW COLUMNS with 3-part identifier
+    cols = node.query(f"SHOW COLUMNS FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+    assert "symbol" in cols and "bid" in cols, f"dotted SHOW COLUMNS failed: {cols}"
+
+    # non-existent table with 3-part identifier
+    try:
+        node.query(f"SELECT * FROM {CATALOG_NAME}.{namespace}.nonexistent_table", settings=ns_settings)
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+    # without the setting, the multipart path stays a syntax error (master behavior)
+    _, err = node.query_and_get_answer_with_error(
+        f"SELECT count() FROM {CATALOG_NAME}.{namespace}.{table_name}"
+    )
+    assert "SYNTAX_ERROR" in err or "Syntax error" in err, f"Expected syntax error with the setting off, got: {err}"
+
+
+def test_multi_level_namespace(started_cluster):
+    """
+    Test N-part compound identifier syntax with multiple namespace levels: db.ns1.ns2.table
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_multi_ns_{uuid.uuid4().hex[:8]}"
+    table_name = f"{test_ref}_table"
+    ns_level1 = f"{test_ref}_l1"
+    ns_level2 = f"{test_ref}_l2"
+    multi_namespace = f"{ns_level1}.{ns_level2}"  # Two-level namespace
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(multi_namespace)
+
+    table = create_table(catalog, multi_namespace, table_name)
+
+    num_rows = 5
+    data = [generate_record() for _ in range(num_rows)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # 4-part identifier SELECT (db.ns1.ns2.table)
+    count_4part = int(
+        node.query(
+            f"SELECT count() FROM {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}",
+            settings=ns_settings,
+        )
+    )
+    assert count_4part == num_rows, f"Expected {num_rows} rows, got {count_4part}"
+
+    # compare with backtick syntax - should give same result
+    count_backtick = int(node.query(f"SELECT count() FROM {CATALOG_NAME}.`{multi_namespace}.{table_name}`"))
+    assert count_4part == count_backtick, "4-part and backtick syntax should return same results"
+
+    # USE with the nested namespace
+    count_use = int(
+        node.query(
+            f"USE {CATALOG_NAME}.{ns_level1}.{ns_level2}; SELECT count() FROM {table_name}",
+            settings=ns_settings,
+        )
+    )
+    assert count_use == num_rows, f"Expected {num_rows} rows under nested USE, got {count_use}"
+
+    # EXISTS TABLE with 4-part identifier
+    exists_result = node.query(
+        f"EXISTS TABLE {CATALOG_NAME}.{ns_level1}.{ns_level2}.{table_name}", settings=ns_settings
+    ).strip()
+    assert exists_result == "1", f"EXISTS TABLE should return 1, got {exists_result}"
+
+    # non-existent table with 4-part identifier
+    try:
+        node.query(
+            f"SELECT * FROM {CATALOG_NAME}.{ns_level1}.{ns_level2}.nonexistent_table",
+            settings=ns_settings,
+        )
+        assert False, "Should have raised exception for non-existent table"
+    except Exception as e:
+        assert "doesn't exist" in str(e) or "UNKNOWN_TABLE" in str(e)
+
+
+def test_namespace_prefix_query_cache_isolation(started_cluster):
+    """
+    The same unqualified query under different USE db.namespace prefixes must not
+    share query cache entries (the prefix is part of the cache key).
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_qcache_{uuid.uuid4().hex[:8]}"
+    ns_1 = f"ns1_{test_ref}"
+    ns_2 = f"ns2_{test_ref}"
+    table_name = "qcache_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns_1)
+    catalog.create_namespace(ns_2)
+
+    table_1 = create_table(catalog, ns_1, table_name)
+    table_2 = create_table(catalog, ns_2, table_name)
+
+    table_1.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+    table_2.append(pa.Table.from_pylist([generate_record() for _ in range(5)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    query = f"SELECT count() FROM {table_name} SETTINGS use_query_cache = 1"
+    count_1 = int(node.query(f"USE {CATALOG_NAME}.{ns_1}; {query}", settings=ns_settings))
+    count_2 = int(node.query(f"USE {CATALOG_NAME}.{ns_2}; {query}", settings=ns_settings))
+    assert count_1 == 2, f"Expected 2 rows in {ns_1}, got {count_1}"
+    assert count_2 == 5, f"Expected 5 rows in {ns_2} (cache must not leak across namespaces), got {count_2}"
+
+
+def test_namespace_prefix_distributed_join(started_cluster):
+    """
+    A bare table name in the JOIN section of a query shipped to remote servers
+    must keep the namespace prefix (remote servers have no session prefix).
+    The analyzer ships resolved canonical names, so this works only with it.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1, "enable_analyzer": 1}
+
+    test_ref = f"test_ns_dist_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "dist_join_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(3)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # 127.0.0.2 forces the query through the remote path on the same server.
+    count = int(
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"SELECT count() FROM remote('127.0.0.2', system.one) AS o CROSS JOIN {table_name} AS r",
+            settings=ns_settings,
+        )
+    )
+    assert count == 3, f"expected 3 rows via distributed JOIN, got {count}"
+
+    # the legacy analyzer cannot ship the prefix, so it cannot even enter a scope
+    _, err = node.query_and_get_answer_with_error(
+        f"USE {CATALOG_NAME}.{namespace}; SELECT count() FROM {table_name}",
+        settings={"allow_experimental_table_namespaces": 1, "enable_analyzer": 0},
+    )
+    assert "SUPPORT_IS_DISABLED" in err, f"the legacy analyzer must not enter a namespace scope: {err}"
+
+
+def test_namespace_prefix_show_columns(started_cluster):
+    """
+    SHOW COLUMNS/INDEXES must honor the namespace scope for bare names.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_showcols_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "showcols_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Bare name under the USE prefix.
+    cols = node.query(
+        f"USE {CATALOG_NAME}.{namespace}; SHOW COLUMNS FROM {table_name}",
+        settings=ns_settings,
+    )
+    assert "symbol" in cols and "bid" in cols, f"SHOW COLUMNS lost the namespace: {cols}"
+
+    # Dotted form without USE.
+    cols_dotted = node.query(
+        f"SHOW COLUMNS FROM {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings
+    )
+    assert "symbol" in cols_dotted and "bid" in cols_dotted, f"dotted SHOW COLUMNS failed: {cols_dotted}"
+
+
+def test_namespace_scope_rejects_ddl(started_cluster):
+    """
+    While a namespace is selected, DDL is rejected instead of silently targeting
+    the database without the namespace. DDL over an explicit path still works.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_createdrop_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "create_drop_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    try:
+        # CREATE under a scope is rejected: it cannot honor the namespace
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"CREATE TABLE {table_name} (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}')",
+            settings=ns_settings,
+        )
+        assert "NOT_IMPLEMENTED" in err, f"CREATE under a namespace scope must be rejected: {err}"
+
+        # CREATE and DROP through an explicit path work outside the scope
+        node.query(
+            f"CREATE TABLE {CATALOG_NAME}.{namespace}.{table_name} (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/', '{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_table_namespaces": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
+
+        node.query(f"DROP TABLE {CATALOG_NAME}.{namespace}.{table_name}", settings=ns_settings)
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
+
+        # A two-part CREATE under plain USE catalog must not silently create a dotted
+        # table when the qualifier is not a real database.
+        _, err = node.query_and_get_answer_with_error(
+            f"USE {CATALOG_NAME}; CREATE TABLE {namespace}.{table_name} (x String) ENGINE = Memory",
+            settings=ns_settings,
+        )
+        assert "UNKNOWN_DATABASE" in err, f"two-part CREATE must be rejected: {err}"
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {full_name}")
+
+
+def test_namespace_prefix_show_tables_scope(started_cluster):
+    """
+    SHOW TABLES under USE db.namespace lists only the direct children of the
+    selected namespace, by their stored (namespace-qualified) names.
+    """
+    node = started_cluster.instances["node1"]
+    ns_settings = {"allow_experimental_table_namespaces": 1}
+
+    test_ref = f"test_ns_scope_{uuid.uuid4().hex[:8]}"
+    ns_1 = f"ns1_{test_ref}"
+    ns_2 = f"ns2_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(ns_1)
+    catalog.create_namespace(ns_2)
+    catalog.create_namespace(f"{ns_1}.sub")
+    create_table(catalog, ns_1, "scoped_table")
+    create_table(catalog, ns_2, "other_table")
+    create_table(catalog, f"{ns_1}.sub", "nested_table")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    tables = node.query(f"USE {CATALOG_NAME}.{ns_1}; SHOW TABLES", settings=ns_settings)
+    assert f"{ns_1}.scoped_table" in tables, f"missing namespace table: {tables}"
+    assert ns_2 not in tables, f"SHOW TABLES leaked other namespaces: {tables}"
+    assert "nested_table" not in tables, f"nested namespaces are not direct children: {tables}"
+
+    tables = node.query(f"SHOW TABLES FROM {CATALOG_NAME}.{ns_1}", settings=ns_settings)
+    assert f"{ns_1}.scoped_table" in tables, f"missing namespace table: {tables}"
+    assert ns_2 not in tables, f"SHOW TABLES FROM leaked other namespaces: {tables}"
+
+
+def test_namespace_nested_sql_ddl(started_cluster):
+    """
+    CREATE and DROP through SQL in a nested namespace must address the namespace
+    as components in REST requests, not as one dotted string.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_nested_ddl_{uuid.uuid4().hex[:8]}"
+    root = f"ns_{test_ref}"
+    table_name = "nested_ddl_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root)
+    catalog.create_namespace(f"{root}.sub")
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"CREATE TABLE {CATALOG_NAME}.{root}.sub.{table_name} (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{test_ref}/{table_name}/', 'minio', '{minio_secret_key}')",
+        settings={
+            "allow_experimental_table_namespaces": 1,
+            "allow_experimental_database_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+        },
+    )
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 1
+    ), "table must exist in the nested namespace"
+
+    node.query(
+        f"DROP TABLE {CATALOG_NAME}.{root}.sub.{table_name}",
+        settings={"allow_experimental_table_namespaces": 1},
+    )
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.`{root}.sub.{table_name}`").strip()) == 0
+    ), "table must be dropped from the nested namespace"
+
+    # a name without a namespace is an existence probe, not an error
+    assert (
+        int(node.query(f"EXISTS TABLE {CATALOG_NAME}.name_without_namespace").strip()) == 0
+    ), "EXISTS on a non-namespaced name must return 0"
 
 
 def test_alter_database_settings_not_supported(started_cluster):

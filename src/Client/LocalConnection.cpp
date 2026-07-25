@@ -37,6 +37,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsDialect dialect;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -269,7 +270,8 @@ void LocalConnection::sendQuery(
                 /*allow_multi_statements*/ false,
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks]);
+                settings[Setting::max_parser_backtracks],
+                settings[Setting::allow_experimental_table_namespaces]);
 
         if (const auto * insert = parsed_query->as<ASTInsertQuery>())
         {

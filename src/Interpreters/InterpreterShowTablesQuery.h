@@ -28,6 +28,7 @@ private:
     ASTPtr query_ptr;
 
     String getRewrittenQuery();
+    CurrentDatabaseInfo getFromInfo() const;
 };
 
 

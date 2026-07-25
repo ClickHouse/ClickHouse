@@ -245,8 +245,6 @@ void HTTPHandler::processQuery(
         context->setCurrentRoles(roles);
 
     std::string database = request.get("X-ClickHouse-Database", params.get("database", ""));
-    if (!database.empty())
-        context->setCurrentDatabase(database);
 
     std::string default_format = request.get("X-ClickHouse-Format", params.get("default_format", ""));
     if (!default_format.empty())
@@ -312,6 +310,10 @@ void HTTPHandler::processQuery(
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
+
+    /// After the settings, so a logical name ("db.ns") is validated under the request's settings
+    if (!database.empty())
+        context->setCurrentDatabase(database);
 
     /// Initialize query scope, once query_id is initialized.
     /// (To track as much allocations as possible)

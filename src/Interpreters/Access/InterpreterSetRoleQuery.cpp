@@ -77,7 +77,7 @@ void registerInterpreterSetRoleQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSetRoleQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterSetRoleQuery", create_fn);
+    factory.registerInterpreter("InterpreterSetRoleQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

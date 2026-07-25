@@ -371,6 +371,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    bool current_database_has_table_prefix = false;
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -1122,12 +1123,17 @@ public:
     StoragePtr getViewSource() const;
 
     String getCurrentDatabase() const;
+    /// current database together with the namespace prefix selected by `USE db.namespace`
+    CurrentDatabaseInfo getCurrentDatabaseInfo() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
+    void setCurrentDatabase(const String & name, bool allow_table_namespaces);
+    /// Transfer an already validated binding from another context, without re-validation
+    void setCurrentDatabase(const CurrentDatabaseInfo & database_info);
     /// Set current_database without validating that database exists.
     /// Use during bootstrap/restore scenarios where database may not be loaded yet.
     void setCurrentDatabaseUnchecked(const String & name);
@@ -1958,7 +1964,7 @@ private:
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentDatabaseWithLock(const String & name, bool has_table_prefix, const std::lock_guard<ContextSharedMutex> & lock);
 
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 

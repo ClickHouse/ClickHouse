@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
@@ -97,6 +98,12 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 
     if (args.size() == 1)
     {
+        /// the regexp would match table names of the parent database, ignoring the namespace
+        if (!context->getCurrentDatabaseInfo().table_prefix.empty())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The one-argument form of the merge table function is not supported while a table "
+                "namespace is selected; pass the database explicitly");
+
         database_is_regexp = false;
         source_database_name_or_regexp = context->getCurrentDatabase();
 

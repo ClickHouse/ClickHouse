@@ -6,14 +6,18 @@
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Databases/IDatabase.h>
+#include <base/find_symbols.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/Macros.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Core/Settings.h>
 
 
@@ -23,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_DATABASE;
 }
 
 
@@ -30,6 +35,31 @@ InterpreterShowTablesQuery::InterpreterShowTablesQuery(const ASTPtr & query_ptr_
     : WithMutableContext(context_)
     , query_ptr(query_ptr_)
 {
+}
+
+CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
+{
+    const auto & query = query_ptr->as<ASTShowTablesQuery &>();
+
+    /// `FROM db.ns`- first part is the database, the rest is namespace path
+    if (const auto * identifier = query.from ? query.from->as<ASTIdentifier>() : nullptr;
+        identifier && identifier->name_parts.size() > 1)
+    {
+        CurrentDatabaseInfo info;
+        info.database = identifier->name_parts[0];
+        info.table_prefix = identifier->name_parts[1];
+        for (size_t i = 2; i < identifier->name_parts.size(); ++i)
+            info.table_prefix += "." + identifier->name_parts[i];
+        return info;
+    }
+
+    if (const auto from = query.getFrom(); !from.empty())
+        return {from, ""};
+
+    auto info = getContext()->getCurrentDatabaseInfo();
+    if (info.database.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
+    return info;
 }
 
 String InterpreterShowTablesQuery::getRewrittenQuery()
@@ -162,26 +192,47 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.getFrom().empty())
         throw Exception(ErrorCodes::SYNTAX_ERROR, "The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`");
 
-    String database = getContext()->resolveDatabase(query.getFrom());
+    /// FROM may carry a namespace path, SHOW TABLES FROM db.namespace
+    /// With no FROM, the session scope applies, including `USE db.namespace` prefix
+    const auto database_info = getFromInfo();
+    const String & database = database_info.database;
+    const String & table_namespace = database_info.table_prefix;
     DatabaseCatalog::instance().assertDatabaseExists(database);
+
+    /// dictionaries have no namespaces
+    if (query.dictionaries && !table_namespace.empty())
+        throw Exception(ErrorCodes::UNKNOWN_DATABASE, "There is no database {} to show dictionaries from",
+            backQuoteIfNeed(query.getFrom()));
+
+    /// validate explicit FROM names like USE does
+    if (!query.getFrom().empty() && !table_namespace.empty())
+    {
+        Names namespace_parts;
+        splitInto<'.'>(namespace_parts, table_namespace);
+        DatabaseCatalog::instance().getDatabase(database)->validateTableNamespace(namespace_parts, getContext());
+    }
 
     WriteBufferFromOwnString rewritten_query;
 
+    /// inside a namespace show names relative to it, and only direct children,
+    /// projection is a subquery so LIKE and WHERE both see the relative name
+    const bool scoped = !table_namespace.empty() && !query.dictionaries && !query.temporary;
+
     if (query.full)
     {
-        rewritten_query << "SELECT name, engine FROM system.";
+        rewritten_query << "SELECT name, engine FROM ";
     }
     else
     {
-        rewritten_query << "SELECT name FROM system.";
+        rewritten_query << "SELECT name FROM ";
     }
 
     if (query.dictionaries)
-        rewritten_query << "dictionaries ";
+        rewritten_query << "system.dictionaries";
     else
-        rewritten_query << "tables ";
+        rewritten_query << "system.tables";
 
-    rewritten_query << "WHERE ";
+    rewritten_query << " WHERE ";
 
     if (query.temporary)
     {
@@ -190,7 +241,15 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
         rewritten_query << "is_temporary";
     }
     else
+    {
         rewritten_query << "database = " << DB::quote << database;
+        if (scoped)
+        {
+            /// tables of the namespace itself, not of nested namespaces
+            rewritten_query << " AND startsWith(name, " << DB::quote << (table_namespace + ".")
+                            << ") AND position(name, '.', " << (table_namespace.size() + 2) << ") = 0";
+        }
+    }
 
     if (!query.like.empty())
         rewritten_query
@@ -231,7 +290,7 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = getContext()->resolveDatabase(query.getFrom());
+    String database = getFromInfo().database;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
@@ -262,7 +321,7 @@ void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowTablesQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowTablesQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowTablesQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

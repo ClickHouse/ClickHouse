@@ -320,6 +320,12 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
+bool ICatalog::existsNamespace(const std::string & namespace_name) const
+{
+    const auto namespaces = getNamespaces();
+    return std::find(namespaces.begin(), namespaces.end(), namespace_name) != namespaces.end();
+}
+
 CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
 {
     switch (filter.kind)

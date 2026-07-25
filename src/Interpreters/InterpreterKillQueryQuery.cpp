@@ -495,7 +495,7 @@ void registerInterpreterKillQueryQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterKillQueryQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterKillQueryQuery", create_fn);
+    factory.registerInterpreter("InterpreterKillQueryQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

@@ -21,6 +21,8 @@ namespace DB
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
+    TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::Lexical; }
+
     DatabaseAtomic(
         String name_,
         String metadata_path_,

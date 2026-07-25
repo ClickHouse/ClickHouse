@@ -18,7 +18,6 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr from1;
     ASTPtr from2;
 
-    String from2_str;
 
     auto query = make_intrusive<ASTShowColumnsQuery>();
 
@@ -45,16 +44,32 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     const auto * table_id = from1->as<ASTIdentifier>();
     if (!table_id)
         return false;
-    query->table = table_id->shortName();
-    if (table_id->compound())
-        query->database = table_id->name_parts[0];
+    if (table_id->compound() && table_id->name_parts.size() > 2 && pos.allow_multipart_table_paths)
+    {
+        /// a quoted component with a literal dot would alias another path, reject
+        const auto & parts = table_id->name_parts;
+        query->database = parts[0];
+        for (size_t i = 1; i < parts.size(); ++i)
+            if (parts[i].find('.') != String::npos)
+                return false;
+        query->table = parts[1];
+        for (size_t i = 2; i < parts.size(); ++i)
+            query->table += "." + parts[i];
+    }
     else
     {
-        if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
-            if (!ParserIdentifier().parse(pos, from2, expected))
-                return false;
-        tryGetIdentifierNameInto(from2, from2_str);
-        query->database = from2_str;
+        query->table = table_id->shortName();
+        if (table_id->compound())
+        {
+            query->database = table_id->name_parts[0];
+        }
+        else
+        {
+            if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
+                if (!ParserIdentifier().parse(pos, from2, expected))
+                    return false;
+            tryGetIdentifierNameInto(from2, query->database);
+        }
     }
 
     if (ParserKeyword(Keyword::NOT).ignore(pos, expected))

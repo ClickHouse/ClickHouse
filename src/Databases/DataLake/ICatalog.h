@@ -217,6 +217,8 @@ public:
     /// return every nested level; flat catalogs their single-level names).
     virtual Namespaces getNamespaces() const = 0;
 
+    virtual bool existsNamespace(const std::string & namespace_name) const;
+
     /// Fetch the list of tables restricted by the `name` predicate (see `TableNameFilter`);
     /// each entry carries an `is_readable` flag like getTables(). Default impl prunes
     /// namespaces via `getNamespaces()`.

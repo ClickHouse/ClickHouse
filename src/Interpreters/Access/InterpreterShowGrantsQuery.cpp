@@ -240,7 +240,7 @@ void registerInterpreterShowGrantsQuery(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterShowGrantsQuery>(args.query, args.context);
     };
-    factory.registerInterpreter("InterpreterShowGrantsQuery", create_fn);
+    factory.registerInterpreter("InterpreterShowGrantsQuery", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

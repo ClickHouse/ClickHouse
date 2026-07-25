@@ -428,7 +428,7 @@ void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
     {
         return std::make_unique<InterpreterSelectQueryAnalyzer>(args.query, args.context, args.options);
     };
-    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn);
+    factory.registerInterpreter("InterpreterSelectQueryAnalyzer", create_fn, /*supports_table_namespace_scope*/ true);
 }
 
 }

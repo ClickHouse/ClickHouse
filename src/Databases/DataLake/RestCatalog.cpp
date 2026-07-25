@@ -132,6 +132,17 @@ std::string correctAPIURI(const std::string & uri)
     return std::filesystem::path(uri) / "v1";
 }
 
+/// REST request bodies represent a nested namespace as an array of components
+Poco::JSON::Array::Ptr namespaceComponents(const String & namespace_name)
+{
+    Poco::JSON::Array::Ptr components = new Poco::JSON::Array;
+    std::vector<std::string> parts;
+    splitInto<'.'>(parts, namespace_name);
+    for (const auto & part : parts)
+        components->add(part);
+    return components;
+}
+
 String encodeNamespaceForURI(const String & namespace_name)
 {
     String encoded;
@@ -954,6 +965,15 @@ CatalogTables RestCatalog::getTables() const
     return result;
 }
 
+bool RestCatalog::existsNamespace(const std::string & namespace_name) const
+{
+    /// missing parent means the namespace doesn't exist either
+    const auto pos = namespace_name.rfind('.');
+    const auto parent = pos == std::string::npos ? std::string{} : namespace_name.substr(0, pos);
+    const auto children = listChildNamespaces(parent, /*missing_parent_is_empty*/ true);
+    return std::find(children.begin(), children.end(), namespace_name) != children.end();
+}
+
 RestCatalog::Namespaces RestCatalog::getNamespaces() const
 {
     /// Enumerate the whole namespace tree (every node at every level). Used by
@@ -1030,7 +1050,7 @@ bool RestCatalog::hasFlatNamespaces() const
         || type == DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
 }
 
-RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
+RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace, bool missing_parent_is_empty) const
 {
     const auto state_snapshot = state.get();
 
@@ -1089,6 +1109,10 @@ RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & bas
     }
     catch (const DB::HTTPException & e)
     {
+        /// for an existence probe a missing parent just means "does not exist"
+        if (missing_parent_is_empty && e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            return {};
+
         std::string message = fmt::format(
             "Received error while fetching list of namespaces from iceberg catalog `{}`. ",
             warehouse);
@@ -1469,11 +1493,7 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        request_body->set("namespace", namespaces);
-    }
+    request_body->set("namespace", namespaceComponents(namespace_name));
     {
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
         properties->set("location", location);
@@ -1543,9 +1563,7 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceComponents(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -1615,9 +1633,7 @@ bool RestCatalog::updateSchema(
     {
         Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
         identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
+        identifier->set("namespace", namespaceComponents(namespace_name));
 
         request_body->set("identifier", identifier);
     }
@@ -1667,7 +1683,9 @@ bool RestCatalog::updateSchema(
 void RestCatalog::dropTable(const String & namespace_name, const String & table_name) const
 {
     const auto state_snapshot = state.get();
-    const std::string endpoint = fmt::format("{}/namespaces/{}/tables/{}?purgeRequested=False", base_url, namespace_name, table_name);
+    const std::string endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string()
+        + "?purgeRequested=False";
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try

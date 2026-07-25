@@ -48,6 +48,9 @@ struct ReplicasInfo
 class DatabaseReplicated : public DatabaseAtomic
 {
 public:
+    /// replicated DDL has no namespace semantics yet; don't inherit the Atomic lexical opt-in
+    TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::None; }
+
     static constexpr auto ALL_GROUPS_CLUSTER_PREFIX = "all_groups.";
     static constexpr auto REPLICA_UNSYNCED_MARKER = "\tUNSYNCED";
     static constexpr auto BROKEN_TABLES_SUFFIX = "_broken_tables";

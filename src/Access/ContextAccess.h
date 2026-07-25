@@ -11,6 +11,7 @@
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
+#include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 
@@ -158,6 +159,11 @@ private:
 
     template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
     bool checkAccessImpl(const ContextPtr & context, const AccessFlags & flags, std::string_view database, const Args &... args) const;
+
+    template <bool throw_if_denied, bool grant_option, bool wildcard, typename... Args>
+    bool checkAccessImplWithTablePrefix(
+        const ContextPtr & context, const AccessFlags & flags, const CurrentDatabaseInfo & database_info,
+        std::string_view table, const Args &... args) const;
 
     template <bool throw_if_denied, bool grant_option, bool wildcard>
     bool checkAccessImpl(const ContextPtr & context, const AccessRightsElement & element) const;

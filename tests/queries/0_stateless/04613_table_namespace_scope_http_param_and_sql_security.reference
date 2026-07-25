@@ -1,0 +1,5 @@
+-- the HTTP database parameter can select a namespace with per-request settings
+1
+1
+-- reading a SQL SECURITY NONE view under a scope survives the rebuilt context
+1

@@ -52,6 +52,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/quoteString.h>
 
 namespace DB
 {
@@ -619,10 +620,22 @@ bool DatabaseDataLake::empty() const
     return getCatalog()->empty();
 }
 
+void DatabaseDataLake::validateTableNamespace(const Names & namespace_parts, ContextPtr /*context*/) const
+{
+    /// one targeted catalog call, also recognizes empty namespaces
+    const String requested = resolveTableNamePath(namespace_parts);
+    if (!getCatalog()->existsNamespace(requested))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Catalog {} has no namespace {}",
+            backQuote(getDatabaseName()), backQuote(requested));
+}
+
 bool DatabaseDataLake::isTableExist(const String & name, ContextPtr /* context_ */) const
 {
-    const auto [namespace_name, table_name] = DataLake::parseTableName(name);
-    return getCatalog()->existsTable(namespace_name, table_name);
+    /// an existence probe must not throw on a name without a namespace
+    const auto parsed = DataLake::tryParseTableName(name);
+    if (!parsed)
+        return false;
+    return getCatalog()->existsTable(parsed->first, parsed->second);
 }
 
 StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context_)  const
@@ -632,6 +645,12 @@ StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context
 
 StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight, bool ignore_if_not_iceberg) const
 {
+    auto parsed = DataLake::tryParseTableName(name);
+    if (!parsed)
+        return nullptr;
+
+    auto [namespace_name, table_name] = *parsed;
+
     const auto settings_version = database_settings.get();
     const DatabaseDataLakeSettings & settings = *settings_version;
 
@@ -662,8 +681,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
-
-    auto [namespace_name, table_name] = DataLake::parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
@@ -1180,6 +1197,15 @@ void DatabaseDataLake::checkDatabase() const
 
 
     LOG_TEST(log, "Database '{}' is OK", getDatabaseName());
+}
+
+void DatabaseDataLake::checkMetadataFilenameAvailability(const String & table_name) const
+{
+    /// runs before storage creation on CREATE, before any object-storage write,
+    /// validate the name so no side effect can target an unrepresentable table
+    if (!DataLake::tryParseTableName(table_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table name {} must be namespace-qualified (namespace.table)", backQuote(table_name));
 }
 
 void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr /*query_context*/)
