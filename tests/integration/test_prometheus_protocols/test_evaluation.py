@@ -3176,6 +3176,66 @@ def test_aggregation_operators():
         [["[]", "1970-01-01 00:02:00.000", "12.5"]],
     )
 
+    # The `scalar(vector(<literal>))` phi above is converted to a constant before the
+    # query runs (`vector` and `scalar` pass a constant literal through unchanged), so
+    # those tests exercise the same constant path as a plain literal phi. Binary scalar
+    # arithmetic, however, is never constant-folded by the converter - it always becomes
+    # a scalar subquery - so the following tests provably execute the runtime
+    # out-of-range check.
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 - 0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 + 1.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "inf"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 + NaN, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "NaN"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "quantile(scalar(vector(time())) * 0 + 0.5, bar)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    # A phi computed from stored data cannot be known before the query runs:
+    # http_errors{http_code="404"} is a single series with value 5 at t=120,
+    # so phi = 5 - 5.5 = -0.5 (out of range) and phi = 5 / 10 = 0.5 (in range).
+    do_query_test(
+        'quantile(scalar(http_errors{http_code="404"}) - 5.5, bar)',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "-inf"]],
+    )
+
+    do_query_test(
+        'quantile(scalar(http_errors{http_code="404"}) / 10, bar)',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "12.5"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", "12.5"]],
+    )
+
+    # The runtime out-of-range check must also keep the input time grid when the
+    # quantile is evaluated at multiple steps (same grid as the phi NaN test above).
+    do_query_test(
+        "quantile(0 - 0.5, last_over_time(bar[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "-Inf"], [120, "-Inf"], [130, "-Inf"], [140, "-Inf"], [150, "-Inf"]]}]}',
+        [["[]", "[('1970-01-01 00:01:50.000',-inf),('1970-01-01 00:02:00.000',-inf),('1970-01-01 00:02:10.000',-inf),('1970-01-01 00:02:20.000',-inf),('1970-01-01 00:02:30.000',-inf)]"]],
+    )
+
     # FIXME: quantile with phi depending on timestamp is not implemented yet.
     # phi = scalar(time()) / 200 varies per subquery step: 0.55, 0.60, 0.65, 0.70, 0.75.
     # do_query_test(

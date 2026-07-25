@@ -190,7 +190,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
                 make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()),
                 makeASTFunction("less", phi->clone(), make_intrusive<ASTLiteral>(0.)),
                 make_intrusive<ASTLiteral>(-std::numeric_limits<Float64>::infinity()),
-                makeASTFunction("greater", std::move(phi), make_intrusive<ASTLiteral>(1.)),
+                makeASTFunction("greater", phi->clone(), make_intrusive<ASTLiteral>(1.)),
                 make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::infinity()),
                 make_intrusive<ASTIdentifier>("x"));
 
