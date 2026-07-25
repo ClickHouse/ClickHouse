@@ -1569,6 +1569,14 @@ button.rounded-xl {
     border-radius: 4px !important;
 }
 
+/* Match navigation division dropdowns to the sidebar's 4px radius. Mintlify
+   uses an arbitrary radius on the trigger and `rounded-2xl` on the menu, so
+   neither is covered by the shared `rounded-xl` override above. */
+.nav-dropdown-trigger,
+.nav-dropdown-content {
+    border-radius: 4px !important;
+}
+
 /* Override topbar CTA button styling */
 
 #topbar-cta-button {
@@ -2872,7 +2880,7 @@ div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) {
 
 /* Match clickhouse.com/clickhouse navbar dropdown panel radius (8px instead
    of Mintlify's default 16px). Targets the panel that wraps `.nav-dropdown-item`. */
-div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div {
+div[data-radix-popper-content-wrapper]:has([role="menu"] > .nav-dropdown-item) > div:not(.nav-dropdown-content) {
     border-radius: 8px !important;
 }
 
