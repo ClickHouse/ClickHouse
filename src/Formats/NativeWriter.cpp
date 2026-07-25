@@ -113,7 +113,7 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
         if (client_revision < DBMS_MIN_REVISION_WITH_JSON_TYPED_PATHS_SERIALIZATION)
         {
             info_settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-            if (column.type->hasSparseSerializationSubcolumns() && recursiveHasSparse(result_column))
+            if (column.type->hasSparseSerializationSubcolumns(info_settings) && recursiveHasSparse(result_column))
                 result_column = recursiveRemoveSparse(result_column);
         }
 

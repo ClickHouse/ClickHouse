@@ -9,6 +9,7 @@ class SerializationInfoTuple final : public SerializationInfoNamed
 public:
     SerializationInfoTuple(MutableSerializationInfos elems_, Names names_, const Settings & settings_ = {});
 
+    bool structureEquals(const SerializationInfo & rhs) const override;
     void add(const IColumn & column) override;
 
     MutableSerializationInfoPtr clone() const override;

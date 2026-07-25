@@ -10,6 +10,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <DataTypes/Serializations/SerializationInfoObject.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
@@ -322,6 +323,92 @@ TEST(SerializationInfoObject, CreateWithChangedTypedPathStructure)
     check_evolution(
         "JSON(t Tuple(a Tuple(b String)), max_dynamic_paths=0)",
         "JSON(t Tuple(a Tuple(b String, c UInt64)), max_dynamic_paths=0)");
+}
+
+TEST(SerializationInfoTuple, StructureIgnoresElementNames)
+{
+    auto old_type = DataTypeFactory::instance().get("Tuple(a String)");
+    auto new_type = DataTypeFactory::instance().get("Tuple(b String)");
+    auto settings = defaultSettings();
+
+    auto old_info = old_type->createSerializationInfo(settings);
+    auto new_info = new_type->createSerializationInfo(settings);
+    EXPECT_TRUE(old_info->structureEquals(*new_info));
+
+    old_info->addDefaults(100);
+    auto evolved_info = old_info->createWithType(*old_type, *new_type, settings);
+    const auto * tuple_info = typeid_cast<const SerializationInfoTuple *>(evolved_info.get());
+    ASSERT_NE(tuple_info, nullptr);
+    EXPECT_EQ(
+        tuple_info->getElementKindStack(0),
+        ISerialization::KindStack({ISerialization::Kind::DEFAULT, ISerialization::Kind::SPARSE}));
+}
+
+TEST(SerializationInfoObject, DoesNotScanDefaultsForOuterColumn)
+{
+    auto type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    auto settings = defaultSettings();
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto info = type->createSerializationInfo(settings);
+    auto column = type->createColumn();
+    type->insertDefaultInto(*column);
+    info->add(*column);
+
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(info.get());
+    ASSERT_NE(object_info, nullptr);
+    EXPECT_EQ(object_info->getData().num_rows, 1);
+    EXPECT_EQ(object_info->getData().num_defaults, 0);
+    EXPECT_EQ(object_info->getTypedPathInfo("x")->getData().num_defaults, 1);
+}
+
+TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
+{
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+
+    auto uint_type = DataTypeFactory::instance().get("UInt64");
+    EXPECT_EQ(
+        SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
+        MergeTreeSerializationInfoVersion::BASIC);
+
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
+    EXPECT_EQ(
+        SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
+        MergeTreeSerializationInfoVersion::WITH_TYPES);
+
+    settings.string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
+    auto ineligible_json = DataTypeFactory::instance().get("JSON(x Array(String), max_dynamic_paths=0)");
+    EXPECT_EQ(
+        SerializationInfoByName(NamesAndTypesList{{"j", ineligible_json}}, settings).getVersion(),
+        MergeTreeSerializationInfoVersion::BASIC);
+
+    auto eligible_json = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    SerializationInfoByName eligible_infos(NamesAndTypesList{{"j", eligible_json}}, settings);
+    EXPECT_EQ(eligible_infos.getVersion(), MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS);
+    EXPECT_NE(eligible_infos.tryGet("j"), nullptr);
+}
+
+TEST(SerializationInfoObject, RejectsUnexpectedSerialization)
+{
+    auto object_type = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
+    auto string_type = DataTypeFactory::instance().get("String");
+
+    EXPECT_THROW(
+        {
+            try
+            {
+                object_type->createColumn(*string_type->getDefaultSerialization());
+            }
+            catch (const DB::Exception & e)
+            {
+                EXPECT_EQ(e.code(), DB::ErrorCodes::LOGICAL_ERROR);
+                throw;
+            }
+        },
+        DB::Exception);
 }
 
 TEST(SerializationInfoObject, NativeRevisionGate)

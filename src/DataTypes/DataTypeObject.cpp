@@ -60,6 +60,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int LOGICAL_ERROR;
 }
 
 DataTypeObject::DataTypeObject(
@@ -145,36 +146,48 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    return getSerializationImpl(settings, nullptr);
+    return getSerializationImpl(settings, nullptr, true);
 }
 
 SerializationPtr DataTypeObject::getSerialization(const SerializationInfo & info) const
 {
+    return getSerialization(info, true);
+}
+
+SerializationPtr DataTypeObject::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
+{
     const auto * object_info = typeid_cast<const SerializationInfoObject *>(&info);
-    auto kinds = info.getKindStack();
-    std::erase(kinds, ISerialization::Kind::SPARSE);
-    return wrapSerializationBasedOnKindStack(getSerializationImpl(info.getSettings(), object_info), kinds, info.getSettings());
+    return wrapSerializationBasedOnKindStack(
+        getSerializationImpl(info.getSettings(), object_info, use_type_serialization_settings),
+        info.getKindStack(),
+        info.getSettings());
 }
 
 SerializationPtr DataTypeObject::getSerializationImpl(
     const SerializationInfoSettings & settings,
-    const SerializationInfoObject * serialization_info) const
+    const SerializationInfoObject * serialization_info,
+    bool use_type_serialization_settings) const
 {
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
     {
         if (serialization_info)
-            typed_paths_serializations[path] = type->getSerialization(*serialization_info->getTypedPathInfo(path));
+        {
+            bool use_nested_type_serialization_settings
+                = use_type_serialization_settings && settings.propagate_types_serialization_versions_to_nested_types;
+            typed_paths_serializations[path]
+                = type->getSerialization(*serialization_info->getTypedPathInfo(path), use_nested_type_serialization_settings);
+        }
         else
         {
-            typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types
+            typed_paths_serializations[path] = use_type_serialization_settings && settings.propagate_types_serialization_versions_to_nested_types
                 ? type->getSerialization(settings)
                 : type->getDefaultSerialization();
         }
     }
 
-    SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
+    SerializationPtr dynamic_serialization = use_type_serialization_settings && settings.propagate_types_serialization_versions_to_nested_types
         ? getDynamicType()->getSerialization(settings)
         : getDynamicType()->getDefaultSerialization();
 
@@ -235,6 +248,14 @@ MutableSerializationInfoPtr DataTypeObject::createSerializationInfo(const Serial
         infos.push_back(typed_paths.at(path)->createSerializationInfo(settings));
 
     return std::make_shared<SerializationInfoObject>(std::move(infos), std::move(paths), settings);
+}
+
+bool DataTypeObject::hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const
+{
+    return std::any_of(typed_paths.begin(), typed_paths.end(), [&](const auto & path)
+    {
+        return settings.canUseSparseSerialization(*path.second) || path.second->hasSparseSerializationSubcolumns(settings);
+    });
 }
 
 SerializationInfoPtr DataTypeObject::getSerializationInfo(
@@ -382,7 +403,10 @@ MutableColumnPtr DataTypeObject::createColumn(const ISerialization & serializati
     }
     else
     {
-        typed_path_serializations = &assert_cast<const SerializationObject &>(*current_serialization).getTypedPathsSerializations();
+        const auto * object_serialization = typeid_cast<const SerializationObject *>(current_serialization);
+        if (!object_serialization)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected serialization to create column of type Object");
+        typed_path_serializations = &object_serialization->getTypedPathsSerializations();
     }
 
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;

@@ -69,7 +69,7 @@ bool SerializationInfoSettings::canUseSparseSerialization(const IDataType & type
 bool SerializationInfoSettings::shouldCollectSerializationInfo(const IDataType & type) const
 {
     return canUseSparseSerialization(type)
-        || (version >= MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS && type.hasSparseSerializationSubcolumns());
+        || (version >= MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS && type.hasSparseSerializationSubcolumns(*this));
 }
 
 void SerializationInfoSettings::updateHash(SipHash & hash) const

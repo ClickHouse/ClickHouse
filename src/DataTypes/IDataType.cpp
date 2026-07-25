@@ -370,7 +370,13 @@ SerializationPtr IDataType::wrapSerializationBasedOnKindStack(SerializationPtr s
 
 SerializationPtr IDataType::getSerialization(const SerializationInfo & info) const
 {
-    return wrapSerializationBasedOnKindStack(getSerialization(info.getSettings()), info.getKindStack(), info.getSettings());
+    return getSerialization(info, true);
+}
+
+SerializationPtr IDataType::getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const
+{
+    auto serialization = use_type_serialization_settings ? getSerialization(info.getSettings()) : getDefaultSerialization();
+    return wrapSerializationBasedOnKindStack(std::move(serialization), info.getKindStack(), info.getSettings());
 }
 
 SerializationPtr IDataType::getSerialization(const SerializationInfoSettings & settings) const

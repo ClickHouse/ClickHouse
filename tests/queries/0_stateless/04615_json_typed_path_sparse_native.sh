@@ -6,7 +6,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 table="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS ${table};
     CREATE TABLE ${table}
     (
@@ -36,7 +36,7 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+j+FROM+${table}+FORMAT+Na
     | ${CLICKHOUSE_LOCAL} --input-format Native --query \
         "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense'), countIf(length(JSONSharedDataPaths(j)) > 0) FROM table"
 
-${CLICKHOUSE_CLIENT} --multiquery --query "
+${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS ${table}_remote;
     CREATE TABLE ${table}_remote AS ${table};
     INSERT INTO ${table}_remote SELECT * FROM remote('127.0.0.1', currentDatabase(), '${table}');

@@ -60,7 +60,7 @@ bool SerializationInfoNamed::structureEquals(const SerializationInfo & rhs) cons
 
 void SerializationInfoNamed::add(const IColumn & column)
 {
-    SerializationInfo::add(column);
+    data.num_rows += column.size();
 }
 
 void SerializationInfoNamed::add(const SerializationInfo & other)

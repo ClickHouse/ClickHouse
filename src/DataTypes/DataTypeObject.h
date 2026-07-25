@@ -53,7 +53,7 @@ public:
     bool isParametric() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
-    bool hasSparseSerializationSubcolumns() const override { return !typed_paths.empty(); }
+    bool hasSparseSerializationSubcolumns(const SerializationInfoSettings & settings) const override;
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }
     bool isComparableForEquality() const override { return true; }
@@ -71,6 +71,7 @@ public:
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
     SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    SerializationPtr getSerialization(const SerializationInfo & info, bool use_type_serialization_settings) const override;
     MutableSerializationInfoPtr createSerializationInfo(const SerializationInfoSettings & settings) const override;
     using IDataType::getSerializationInfo;
     SerializationInfoPtr getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const override;
@@ -93,7 +94,8 @@ public:
 private:
     SerializationPtr getSerializationImpl(
         const SerializationInfoSettings & settings,
-        const SerializationInfoObject * serialization_info) const;
+        const SerializationInfoObject * serialization_info,
+        bool use_type_serialization_settings) const;
 
     /// Don't change these constants, it can break backward compatibility.
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
