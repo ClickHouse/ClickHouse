@@ -33,6 +33,19 @@ OPTIMIZE TABLE buf;
 
 SELECT 'buffer_flush', x, s FROM buf_mv_dst;
 
+-- The invariant is about what the *receiving* server observes: it gates compatibility decisions
+-- (e.g. disabling the analyzer for a pre-23.3 initiator, `TCPHandler::receiveQuery`) on the
+-- `client_version_*` it reads from the forwarded `ClientInfo`. A synthesized server-side context
+-- keeps the default `ClientInfo::Interface::TCP`, which is exactly the interface for which
+-- `ClientInfo::write` serializes the version, so a zero version is what the shard used to see.
+-- Check the version of the forwarded sub-query as recorded on the receiving side.
+SYSTEM FLUSH LOGS query_log;
+
+SELECT 'remote_version', count() > 0, min(client_version_major) > 0
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
+    AND query LIKE concat('%`', currentDatabase(), '`.`agg_src`%');
+
 DROP TABLE buf;
 DROP TABLE buf_mv;
 DROP TABLE buf_mv_dst;
