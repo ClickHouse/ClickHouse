@@ -37,6 +37,18 @@ $CLICKHOUSE_LOCAL --query "
         (
             SELECT name FROM file('${VALUE_DRIFT_IGNORE}', 'LineAsString', 'name String')
         ),
+        -- Settings whose compiled default differs in Cloud. The frozen baseline holds the OSS
+        -- value and these have no history row, so on a Cloud build their default legitimately
+        -- differs from the baseline; exclude them from the value comparison there (as 02995 did).
+        -- On OSS this list is empty, so they are checked normally.
+        cloud_divergent_settings AS
+        (
+            SELECT arrayJoin(if(
+                (SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD') = '1',
+                ['max_table_size_to_drop', 'max_partition_size_to_drop', 'min_bytes_for_wide_part'],
+                emptyArrayString()
+            )) AS name
+        ),
         session_documented AS
         (
             SELECT DISTINCT arrayJoin(tupleElement(changes, 'name')) AS name
@@ -126,6 +138,7 @@ $CLICKHOUSE_LOCAL --query "
           AND s.default NOT LIKE 'auto(%'   -- runtime-derived value, not comparable
           AND s.type != 'Map'               -- avoid '{}' vs '' rendering differences
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
+          AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
           AND if(s.type = 'Bool',
                  -- history may store true/false, system.settings shows 1/0
                  transform(e.expected, ['true', 'false'], ['1', '0'], e.expected) != s.default,
@@ -145,6 +158,7 @@ $CLICKHOUSE_LOCAL --query "
           AND s.default NOT LIKE 'auto(%'
           AND s.type != 'Map'
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
+          AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
           AND if(s.type = 'Bool',
                  transform(e.expected, ['true', 'false'], ['1', '0'], e.expected) != s.default,
               if(s.type = 'Float',
@@ -167,6 +181,7 @@ $CLICKHOUSE_LOCAL --query "
           AND s.default != b.default
           AND s.name NOT IN (SELECT name FROM session_documented)
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
+          AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
 
         UNION ALL
 
@@ -180,6 +195,7 @@ $CLICKHOUSE_LOCAL --query "
           AND s.default != b.default
           AND s.name NOT IN (SELECT name FROM mergetree_documented)
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
+          AND s.name NOT IN (SELECT name FROM cloud_divergent_settings)
     )
     ORDER BY message
 "
