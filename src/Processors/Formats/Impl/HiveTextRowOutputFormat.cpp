@@ -30,18 +30,44 @@ namespace
 /// Hive table could have. The walk must descend through every wrapper whose serializeTextHive is
 /// a transparent pass-through (Nullable), otherwise an unsupported type hidden inside, e.g.,
 /// Nullable(Tuple(Map(Array(UInt8), UInt8))) would slip past the check and still be written.
-void assertTypeIsSupported(const DataTypePtr & type)
+///
+/// The walk also tracks the Hive separator nesting level, because Hive's LazySimpleSerDe has a
+/// fixed list of 8 separators indexed by nesting depth (see getHiveTextDelimiter): a collection
+/// at level N separates its elements with separator N, and a Map additionally separates keys
+/// from values with separator N + 1. A type tree deep enough to need a separator beyond that
+/// list could not be declared by any Hive schema either, and it has to be rejected upfront for
+/// the same reason as the unsupported leaf types: an empty over-deep collection serializes
+/// successfully because the deeper serializers are never reached, so without this check the
+/// first non-empty value would fail only after formatting has already started. The top-level
+/// columns are separated by the fields delimiter (level 0), so the outermost collection of a
+/// column uses level 1, matching the FormatSettings::HiveText::nesting_level default.
+void assertTypeIsSupported(const DataTypePtr & type, size_t nesting_level)
 {
+    /// getHiveTextDelimiter supports levels 0..7. Keep its message for consistency: this is the
+    /// same error the per-value serialization throws when a non-empty value reaches this depth.
+    static constexpr size_t max_nesting_level = 7;
+    auto assert_nesting_level_is_supported = [](size_t level)
+    {
+        if (level > max_nesting_level)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The data is nested too deeply for the HiveText output format, which supports at "
+                "most 8 nesting levels of separators (matching Apache Hive's LazySimpleSerDe)");
+    };
+
     if (const auto * type_nullable = typeid_cast<const DataTypeNullable *>(type.get()))
     {
-        assertTypeIsSupported(type_nullable->getNestedType());
+        assertTypeIsSupported(type_nullable->getNestedType(), nesting_level);
     }
     else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        assertTypeIsSupported(type_array->getNestedType());
+        assert_nesting_level_is_supported(nesting_level);
+        assertTypeIsSupported(type_array->getNestedType(), nesting_level + 1);
     }
     else if (const auto * type_map = typeid_cast<const DataTypeMap *>(type.get()))
     {
+        /// A Map at level N uses separator N between entries and separator N + 1 between a key
+        /// and its value, so it needs one more level than an Array or a Tuple at the same depth.
+        assert_nesting_level_is_supported(nesting_level + 1);
         /// Hive declares maps as MAP<primitive_type, data_type>: a map key cannot be a nested
         /// (ARRAY/MAP/STRUCT) type, so no Hive schema could read such values back. ClickHouse
         /// allows composite Map keys whose elements would serialize fine on their own, so they
@@ -51,13 +77,14 @@ void assertTypeIsSupported(const DataTypePtr & type)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Type {} is not supported by the HiveText output format: Hive supports only primitive types as Map keys",
                 type_map->getName());
-        assertTypeIsSupported(type_map->getKeyType());
-        assertTypeIsSupported(type_map->getValueType());
+        assertTypeIsSupported(type_map->getKeyType(), nesting_level + 2);
+        assertTypeIsSupported(type_map->getValueType(), nesting_level + 2);
     }
     else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
     {
+        assert_nesting_level_is_supported(nesting_level);
         for (const auto & element : type_tuple->getElements())
-            assertTypeIsSupported(element);
+            assertTypeIsSupported(element, nesting_level + 1);
     }
     else
     {
@@ -125,7 +152,7 @@ HiveTextRowOutputFormat::HiveTextRowOutputFormat(WriteBuffer & out_, SharedHeade
     : IRowOutputFormat(header_, out_), format_settings(format_settings_)
 {
     for (const auto & column : *header_)
-        assertTypeIsSupported(column.type);
+        assertTypeIsSupported(column.type, /* nesting_level = */ 1);
 }
 
 void HiveTextRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
@@ -314,7 +341,10 @@ delimiter, [`input_format_hive_text_collection_items_delimiter`](#format-setting
 (`\x02` by default, used for array elements, map entries and tuple elements) and
 [`input_format_hive_text_map_keys_delimiter`](#format-settings) (`\x03` by default,
 used between a map key and its value); deeper levels default to consecutive control
-characters (`\x04`, `\x05`, and so on, up to eight levels). Data types that have no natural
+characters (`\x04`, `\x05`, and so on, up to eight levels). A type tree nested
+deeply enough to need a separator beyond those eight levels is rejected with a
+`NOT_IMPLEMENTED` exception, since Hive's `LazySimpleSerDe` has no separator for
+it either. Data types that have no natural
 Hive text representation are not supported for output and raise a
 `NOT_IMPLEMENTED` exception. This includes `AggregateFunction`, `Dynamic`,
 `Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types

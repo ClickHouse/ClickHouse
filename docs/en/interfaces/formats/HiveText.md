@@ -131,7 +131,10 @@ delimiter, [`input_format_hive_text_collection_items_delimiter`](#format-setting
 (`\x02` by default, used for array elements, map entries and tuple elements) and
 [`input_format_hive_text_map_keys_delimiter`](#format-settings) (`\x03` by default,
 used between a map key and its value); deeper levels default to consecutive control
-characters (`\x04`, `\x05`, and so on, up to eight levels). Data types that have no natural
+characters (`\x04`, `\x05`, and so on, up to eight levels). A type tree nested
+deeply enough to need a separator beyond those eight levels is rejected with a
+`NOT_IMPLEMENTED` exception, since Hive's `LazySimpleSerDe` has no separator for
+it either. Data types that have no natural
 Hive text representation are not supported for output and raise a
 `NOT_IMPLEMENTED` exception. This includes `AggregateFunction`, `Dynamic`,
 `Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types
