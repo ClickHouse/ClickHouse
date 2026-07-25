@@ -333,17 +333,21 @@ def _run_submodule_state_changes(monkeypatch, raw_diff):
     calls = []
 
     def fake_get_output(cmd, **kwargs):
-        calls.append(cmd)
+        calls.append((cmd, kwargs))
         return raw_diff
 
     monkeypatch.setattr(job.Shell, "get_output", staticmethod(fake_get_output))
     changed = job.get_submodule_state_changes("mergebase123", "checkouthead456")
 
     assert len(calls) == 1
-    cmd = calls[0]
+    cmd, kwargs = calls[0]
     # `diff.ignoreSubmodules=all` in the environment would otherwise silently
     # drop every gitlink change and the guard would never fire.
     assert "--ignore-submodules=none" in cmd
+    # The guard must fail CLOSE on a failed diff: without strict, Shell.get_output
+    # swallows a non-zero git exit (missing object in the shallow checkout, transient
+    # error) into an empty string and the guard would silently disable itself.
+    assert kwargs.get("strict") is True
     # The diff endpoints are exactly the two commits the caller chose — the
     # merge-base and the checkout whose submodule trees are actually copied.
     assert "mergebase123" in cmd and "checkouthead456" in cmd
@@ -399,6 +403,57 @@ def test_submodule_state_changes_ignores_malformed_lines(monkeypatch):
         ":160000 160000 3333333 4444444 M\tcontrib/zstd\n"
     )
     assert _run_submodule_state_changes(monkeypatch, raw_diff) == ["contrib/zstd"]
+
+
+def test_submodule_state_changes_raises_on_diff_failure(monkeypatch):
+    # A failed `git diff` must propagate (fail close), not be treated as "no
+    # changes": with strict=True, Shell.get_output raises on a non-zero exit,
+    # and the guard must not catch it.
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    def fake_get_output(cmd, **kwargs):
+        if kwargs.get("strict"):
+            raise RuntimeError("command failed with, exit_code 128")
+        return ""
+
+    monkeypatch.setattr(job.Shell, "get_output", staticmethod(fake_get_output))
+    with pytest.raises(RuntimeError):
+        job.get_submodule_state_changes("mergebase123", "checkouthead456")
+
+
+# --------------------------------------------------------------------------
+# submodule_worktree_populated: a submodule directory holding only the
+# bookkeeping `.git` entry has no sources — git can leave exactly that state
+# after a plain `git submodule update` when the cached gitdir exists but the
+# working-tree files were removed. A bare `os.listdir` non-empty check would
+# accept it and the hardlink copy would propagate an unbuildable tree.
+# --------------------------------------------------------------------------
+def test_submodule_worktree_populated_rejects_git_only_dir(tmp_path):
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    sub = tmp_path / "contrib" / "abseil-cpp"
+    sub.mkdir(parents=True)
+    (sub / ".git").write_text("gitdir: ../../.git/modules/contrib/abseil-cpp\n")
+    assert job.submodule_worktree_populated(str(sub)) is False
+
+
+def test_submodule_worktree_populated_rejects_empty_dir(tmp_path):
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    sub = tmp_path / "contrib" / "zstd"
+    sub.mkdir(parents=True)
+    assert job.submodule_worktree_populated(str(sub)) is False
+
+
+def test_submodule_worktree_populated_accepts_real_content(tmp_path):
+    import ci.jobs.unit_tests_bugfix_validation_job as job
+
+    sub = tmp_path / "contrib" / "zstd"
+    sub.mkdir(parents=True)
+    (sub / ".git").write_text("gitdir: ../../.git/modules/contrib/zstd\n")
+    (sub / "lib").mkdir()
+    (sub / "lib" / "zstd.h").write_text("// header\n")
+    assert job.submodule_worktree_populated(str(sub)) is True
 
 
 def test_main_guard_compares_merge_base_against_checkout_head(monkeypatch):

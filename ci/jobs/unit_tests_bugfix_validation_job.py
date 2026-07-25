@@ -226,10 +226,14 @@ def get_submodule_state_changes(merge_base, checkout_sha):
     """
     # `--ignore-submodules=none` is essential: a `diff.ignoreSubmodules=all` config (set
     # in some environments) would otherwise silently drop every gitlink change from the
-    # diff and this guard would never fire.
+    # diff and this guard would never fire. `strict=True` is equally essential: a failed
+    # diff (missing object in the partial/shallow checkout, transient git error) must
+    # raise rather than yield an empty string — otherwise the guard would fail open and
+    # the validator would proceed against potentially wrong submodule content.
     diff = Shell.get_output(
         "git diff --raw --ignore-submodules=none "
-        f"{shlex.quote(merge_base)} {shlex.quote(checkout_sha)}"
+        f"{shlex.quote(merge_base)} {shlex.quote(checkout_sha)}",
+        strict=True,
     )
     changed = []
     for line in diff.splitlines():
@@ -244,6 +248,17 @@ def get_submodule_state_changes(merge_base, checkout_sha):
         if old_mode == "160000" or new_mode == "160000" or path == ".gitmodules":
             changed.append(path)
     return sorted(set(changed))
+
+
+def submodule_worktree_populated(path):
+    """True iff `path` contains real working-tree content, not just the bookkeeping
+    `.git` entry. After the working-tree files of a cached submodule are removed, git
+    can leave the directory holding exactly `['.git']` (a plain `git submodule update`
+    exits 0 in that state), so a bare `os.listdir` non-empty check would accept a
+    sourceless tree and the hardlink copy would propagate it into the before-worktree,
+    reintroducing the misleading cmake "cannot find source file" failure.
+    """
+    return any(entry != ".git" for entry in os.listdir(path))
 
 
 def ensure_primary_submodules():
@@ -327,12 +342,13 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
         path = path.strip()
         if not path or not os.path.isdir(path):
             continue
-        if not os.listdir(path):
-            # The primary checkout left this submodule empty. There is nothing to
-            # hardlink, and the build needs its sources, so record it as a hard failure
-            # instead of silently skipping it: a silent skip previously surfaced as a
-            # misleading cmake "cannot find source file" error rather than the
-            # infrastructure error it really is (see ensure_primary_submodules).
+        if not submodule_worktree_populated(path):
+            # The primary checkout left this submodule empty (possibly holding only the
+            # bookkeeping `.git` entry). There is nothing to hardlink, and the build
+            # needs its sources, so record it as a hard failure instead of silently
+            # skipping it: a silent skip previously surfaced as a misleading cmake
+            # "cannot find source file" error rather than the infrastructure error it
+            # really is (see ensure_primary_submodules).
             failures.append(f"{path}: empty in the primary checkout, cannot hardlink it")
             continue
         dst = os.path.join(BEFORE_SRC, path)
@@ -358,14 +374,14 @@ def prepare_before_worktree(merge_base, pr_sha, test_files):
             shlex.quote(os.path.dirname(dst)),
         )
         # cp -al = recursive hardlink copy (instant, no data duplication). Check the exit
-        # status AND that the destination ended up non-empty: an unchecked failed copy
-        # (e.g. cross-device link, ENOSPC) would otherwise leave the submodule empty and
-        # only fail much later inside cmake.
+        # status AND that the destination ended up with real content (not just a stray
+        # `.git` entry): an unchecked failed copy (e.g. cross-device link, ENOSPC) would
+        # otherwise leave the submodule empty and only fail much later inside cmake.
         ok = Shell.check(
             f"rm -rf -- {q_dst} && mkdir -p -- {q_dst_parent} && cp -al -- {q_path} {q_dst}",
             verbose=False,
         )
-        if not ok or not (os.path.isdir(dst) and os.listdir(dst)):
+        if not ok or not (os.path.isdir(dst) and submodule_worktree_populated(dst)):
             failures.append(f"{path}: hardlink copy into the before-worktree failed")
 
     if failures:
