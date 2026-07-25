@@ -151,9 +151,11 @@ void deserializeFromValues(IColumn & column, ReadBuffer & istr, const FormatSett
 /// `deserializeTextQuoted`, which rejects double quotes, so single-argument text arrays are parsed here instead:
 /// single-quoted `String`-like and `Enum` elements with the quoted serialization (the native form) and everything
 /// else with the CSV serialization (the released form; the scalar CSV parse itself accepts both quote kinds).
-/// Composite argument types stay on the unified path: their quoted elements start with `[`, `(` or `{`,
-/// which the released per-element CSV parse could not handle anyway (the CSV string parse stops at the
-/// first comma), so no released form is lost for them.
+/// `Variant` and `Dynamic` arguments also take this path: their `deserializeTextCSV` reads a whole CSV field
+/// and tries the variants (or infers the type) from it, so released input accepted double-quoted strings,
+/// barewords and `NULL` for them too. Composite argument types stay on the unified path: their quoted
+/// elements start with `[`, `(` or `{`, which the released per-element CSV parse could not handle anyway
+/// (the CSV string parse stops at the first comma), so no released form is lost for them.
 bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
 {
     if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Array)
@@ -165,7 +167,7 @@ bool useLegacyTextArrayParsing(const AggregateFunctionPtr & function, const Form
 
     WhichDataType which(removeNullable(removeLowCardinality(argument_types[0])));
     return !(which.isArray() || which.isTuple() || which.isMap() || which.isObject()
-        || which.isVariant() || which.isDynamic() || which.isAggregateFunction() || which.isNothing());
+        || which.isAggregateFunction() || which.isNothing());
 }
 
 void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const AggregateFunctionPtr & function)
@@ -189,8 +191,16 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     /// dispatch: the released CSV element parse accepted arbitrary unquoted words as string values,
     /// including ones starting with `N`/`n` (`[NaN,"a"]` produced the string 'NaN', and `[NULL,"a"]`
     /// produced the STRING 'NULL', not a null), so they always take the CSV branch too.
+    /// `Variant` and `Dynamic` elements use the CSV parse (the released form: double-quoted strings,
+    /// bareword scalars and bareword `NULL` — the CSV null check — all worked) except when the element
+    /// starts with `'` (the native single-quoted string form, mirroring the `String` dispatch above) or
+    /// with `[`, `(` or `{` (native composite forms, which the released CSV field parse always rejected
+    /// because it stops at the first comma, so taking the quoted parse is purely additive). A bareword
+    /// starting with `N`/`n` must stay on the CSV branch: for a `Variant` with a `String`-like variant
+    /// (and for `Dynamic`), released input parsed e.g. `[NaN,"a"]` as the string 'NaN'.
     const auto unwrapped_type = removeNullable(removeLowCardinality(value_type));
     const bool quoted_form_is_string = isStringOrFixedString(unwrapped_type) || isEnum(unwrapped_type);
+    const bool is_variant_or_dynamic = isVariant(unwrapped_type) || isDynamic(unwrapped_type);
     const bool is_nullable = value_type->isNullable() || value_type->isLowCardinalityNullable();
 
     assertChar('[', istr);
@@ -207,7 +217,9 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
         }
         first = false;
         const char first_char = istr.eof() ? 0 : *istr.position();
-        if ((quoted_form_is_string && first_char == '\'') || (!quoted_form_is_string && is_nullable && (first_char == 'N' || first_char == 'n')))
+        if ((quoted_form_is_string && first_char == '\'')
+            || (is_variant_or_dynamic && (first_char == '\'' || first_char == '[' || first_char == '(' || first_char == '{'))
+            || (!quoted_form_is_string && !is_variant_or_dynamic && is_nullable && (first_char == 'N' || first_char == 'n')))
             elem_serialization->deserializeTextQuoted(*tmp_column, istr, settings);
         else
             elem_serialization->deserializeTextCSV(*tmp_column, istr, settings);
