@@ -134,9 +134,10 @@ Each detected PII span is replaced with a redaction token (`[REDACTED]` by defau
 `replacement` parameter). The `categories` array restricts which PII types are redacted; an empty array
 falls back to a default set of common categories (name, email, phone number, address, credit card, IP address).
 
-Text outside the redacted spans is otherwise left unchanged, except that control characters other than tab,
-newline, and carriage return are normalized to spaces before the request, so the output is not guaranteed to
-be byte-identical to the input.
+`aiRedact` instructs the model to change only the detected PII spans, but preserving the surrounding text is
+best-effort, the model may still alter it (see the warning above). Control characters other than tab,
+newline, and carriage return are also normalized to spaces before the request, so the output is not
+byte-identical to inputs that contain them.
 
 Because `aiRedact` returns the whole input text with PII replaced, the output is about as long as the input.
 Set `max_tokens` (default `1024`) above the input length in tokens; a reply truncated by a too-low limit
