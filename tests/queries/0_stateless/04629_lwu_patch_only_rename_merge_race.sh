@@ -3,6 +3,10 @@
 # Tag no-parallel: uses the server-wide `mt_select_parts_to_mutate_no_free_threads` failpoint and
 # then relies on the pending RENAME mutation materializing after it is disabled; a concurrent test
 # toggling the same global failpoint could postpone that mutation and make the final read flaky.
+# Tag no-random-settings, no-random-merge-tree-settings: the regression requires a deterministic
+# mutation/merge interleaving under the failpoint and a part layout where the updated column stays
+# patch-only; randomized part-format/lifecycle settings would vary both. Randomized coverage of the
+# fix mechanism is provided by 04628.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -51,6 +55,24 @@ ${CLICKHOUSE_CLIENT} --query="UPDATE t_patch_only_rename_race SET acol = 42 WHER
 ${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_patch_only_rename_race RENAME COLUMN acol TO bcol SETTINGS alter_sync = 0"
 ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_patch_only_rename_race FINAL SETTINGS optimize_throw_if_noop = 1"
+
+# The value oracle alone can pass vacuously: if the merge skipped the patch, the result part
+# would not claim the patch version and the later rename mutation would apply the still-live
+# patch. Assert the merged (non-patch) part physically carries the column while the rename is
+# still pending. Accept either name: in the DatabaseReplicated suite the failpoint does not pin
+# the interleaving (it is a StorageMergeTree code path), so the merge may run before the rename
+# registers and the merged part then carries acol instead of bcol.
+merged_cols=$(${CLICKHOUSE_CLIENT} --query="
+    SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_patch_only_rename_race'
+      AND active AND column IN ('acol', 'bcol') AND part_name NOT LIKE 'patch-%'")
+if [ "$merged_cols" != "1" ]; then
+    echo "FAIL: expected exactly 1 active non-patch part column among acol/bcol after the merge, got '${merged_cols}'"
+    ${CLICKHOUSE_CLIENT} --query="SELECT part_name, column FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_patch_only_rename_race' AND active ORDER BY part_name, column"
+    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_patch_only_rename_race"
+    exit 1
+fi
+
 disable_failpoint
 wait_mutation t_patch_only_rename_race
 
