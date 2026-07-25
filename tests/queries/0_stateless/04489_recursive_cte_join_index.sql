@@ -278,9 +278,12 @@ SETTINGS max_rows_in_set = 1, set_overflow_mode = 'break';
 -- branches, where a *single branch* carries a stricter `max_rows_in_set`. The
 -- recursive part is then a synthetic `UnionNode` whose context is unlimited,
 -- but the planner lowers the injected `IN` using the branch's own `QueryNode`
--- context. The set-limit preflight must therefore use the containing branch's
--- context, not the outer recursive one; otherwise the strict branch would inject
--- an oversized `IN` and throw `SET_SIZE_LIMIT_EXCEEDED` / truncate the set.
+-- context (`Planner::buildPlanForUnionNode` plans each branch with a child
+-- `Planner` whose planner context is seeded from that branch's context, and
+-- the branch's `CollectSets` runs under it). The set-limit preflight must
+-- therefore use the containing branch's context, not the outer recursive one;
+-- otherwise the strict branch would inject an oversized `IN` and throw
+-- `SET_SIZE_LIMIT_EXCEEDED` / truncate the set.
 WITH RECURSIVE walk_tree AS
 (
     SELECT child AS current_id FROM tree WHERE parent = 0
@@ -310,6 +313,49 @@ WITH RECURSIVE walk_tree AS
     SETTINGS max_rows_in_set = 1, set_overflow_mode = 'break'
 )
 SELECT current_id FROM walk_tree ORDER BY current_id;
+
+-- The converse: the *outer* query carries the strict limit while the branches
+-- carry a loose branch-local one. Because each branch is planned by its own
+-- child `Planner` seeded from the branch's context, the branch-local
+-- `max_rows_in_set = 10000` (which overrides the inherited outer `1`) is what
+-- the planner materializes the injected `IN` under — so injection is safe and
+-- the result must match the plain scan exactly (no `SET_SIZE_LIMIT_EXCEEDED`
+-- under `'throw'`, no silent truncation under `'break'`). This pins down that
+-- the preflight checking the branch's own context is *consistent* with the
+-- planner: neither a stricter nor a looser outer limit may change the result.
+WITH RECURSIVE walk_tree AS
+(
+    SELECT child AS current_id FROM tree WHERE parent = 0
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+    SETTINGS max_rows_in_set = 10000
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+    SETTINGS max_rows_in_set = 10000
+)
+SELECT current_id FROM walk_tree ORDER BY current_id
+SETTINGS max_rows_in_set = 1, set_overflow_mode = 'throw';
+
+WITH RECURSIVE walk_tree AS
+(
+    SELECT child AS current_id FROM tree WHERE parent = 0
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+    SETTINGS max_rows_in_set = 10000
+  UNION ALL
+    SELECT e.child AS current_id
+    FROM tree AS e
+    INNER JOIN walk_tree AS t ON e.parent = t.current_id
+    SETTINGS max_rows_in_set = 10000
+)
+SELECT current_id FROM walk_tree ORDER BY current_id
+SETTINGS max_rows_in_set = 1, set_overflow_mode = 'break';
 
 DROP TABLE tree;
 
