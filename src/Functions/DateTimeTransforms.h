@@ -1490,7 +1490,9 @@ struct ToYearImpl
         if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year = point.safeGet<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return nullptr;
+        /// The year DATE_LUT_MAX_REPRESENTABLE_YEAR is excluded because the exclusive upper endpoint of its
+        /// preimage would be the first moment of the next year, which is not representable.
+        if (year >= DATE_LUT_MAX_REPRESENTABLE_YEAR) return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -2484,7 +2486,9 @@ struct ToYYYYMMImpl
         auto year = year_month / 100;
         auto month = year_month % 100;
 
-        if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
+        /// The month DATE_LUT_MAX_REPRESENTABLE_YEAR-12 is excluded because the exclusive upper endpoint of its
+        /// preimage would be the first moment of the next month, which is not representable.
+        if (year > DATE_LUT_MAX_REPRESENTABLE_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_REPRESENTABLE_YEAR && month == 12))
             return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
