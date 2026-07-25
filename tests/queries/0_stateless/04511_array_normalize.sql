@@ -94,3 +94,14 @@ SELECT toTypeName(LpDistance(materialize([1, 2]), materialize([3, 4]), 'aa')); -
 SELECT toTypeName(LpNormalize(materialize((1, 2)), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(LpNorm(materialize((1, 2)), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(LpDistance(materialize((1, 2)), materialize((3, 4)), 'aa')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- A `Decimal` `p` is rejected at execution time (the `p` column is not `isNumeric`), so it must be
+-- rejected during return-type inference as well. The tuple carriers used to type-check `p` only by
+-- building `pow`, which accepts `Decimal` exponents, so analysis-only paths advertised a return type
+-- while execution threw.
+SELECT toTypeName(LpNormalize(materialize([1, 2]), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpNorm(materialize([1, 2]), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpDistance(materialize([1, 2]), materialize([3, 4]), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpNormalize(materialize((1, 2)), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpNorm(materialize((1, 2)), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(LpDistance(materialize((1, 2)), materialize((3, 4)), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

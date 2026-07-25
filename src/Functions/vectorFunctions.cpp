@@ -1103,6 +1103,13 @@ public:
         if (tuple_size == 0)
             return std::make_shared<DataTypeUInt8>();
 
+        /// Validate the type of `p` explicitly, consistently with the array carriers. Building `pow`
+        /// below is not enough: `pow` accepts `Decimal` exponents, while the execute-time
+        /// `extractLpNormPArgument` does not, so analysis-only paths (e.g. `toTypeName`) would
+        /// advertise a return type for a `Decimal` `p` that execution rejects. The check is skipped
+        /// for empty tuples above, because execution never touches `p` for them either.
+        checkLpNormPArgumentType(*arguments[1].type, getName());
+
         const auto & p_column = arguments[1];
         auto abs = FunctionFactory::instance().get("abs", context);
         auto pow = FunctionFactory::instance().get("pow", context);
