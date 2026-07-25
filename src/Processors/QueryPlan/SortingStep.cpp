@@ -91,6 +91,7 @@ namespace Setting
     extern const SettingsOverflowMode sort_overflow_mode;
     extern const SettingsString temporary_files_codec;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const SettingsBool allow_experimental_codecs;
 }
 
 namespace QueryPlanSerializationSetting
@@ -107,6 +108,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsOverflowMode sort_overflow_mode;
     extern const QueryPlanSerializationSettingsString temporary_files_codec;
     extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
 }
 
 namespace ErrorCodes
@@ -163,6 +165,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
+    allow_experimental_codecs = settings[Setting::allow_experimental_codecs];
 }
 
 SortingStep::Settings::Settings(size_t max_block_size_)
@@ -187,6 +190,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
 
     temporary_files_codec = settings[QueryPlanSerializationSetting::temporary_files_codec];
     temporary_files_buffer_size = settings[QueryPlanSerializationSetting::temporary_files_buffer_size];
+    allow_experimental_codecs = settings[QueryPlanSerializationSetting::allow_experimental_codecs];
 }
 
 void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -203,6 +207,7 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
+    settings[QueryPlanSerializationSetting::allow_experimental_codecs] = allow_experimental_codecs;
     settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = temporary_files_buffer_size;
 }
 
@@ -431,7 +436,7 @@ void SortingStep::mergeSorting(
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
             .num_files = ProfileEvents::ExternalSortWritePart},
-            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec);
+            sort_settings.temporary_files_buffer_size, sort_settings.temporary_files_codec, sort_settings.allow_experimental_codecs);
 
     if (sort_settings.max_bytes_in_block_before_external_sort && tmp_data_on_disk == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for external sorting is not provided");

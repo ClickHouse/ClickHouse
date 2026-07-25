@@ -77,18 +77,20 @@ inline CompressionCodecPtr getCodec(const TemporaryDataOnDiskSettings & settings
 
     auto codec = CompressionCodecFactory::instance().get(settings.compression_codec);
 
-    /// Temporary files hold raw serialized data with no column type, which bypasses the
-    /// `allow_experimental_codecs` gate and the per-column type checks of column-level codecs. An
-    /// experimental codec, or a codec that requires the column type to compress (e.g. `PCO`), would
-    /// otherwise be accepted here and only fail later, at the first external sort/join/aggregation
-    /// spill, with a confusing message. Reject such codecs up front, mirroring the validation of the
-    /// `marks_compression_codec` / `primary_key_compression_codec` MergeTree settings, which are
-    /// likewise applied to untyped streams.
-    if (codec->isExperimental())
+    /// Temporary files hold raw serialized data with no column type, which bypasses the per-column
+    /// type checks of column-level codecs. A codec that requires the column type to compress
+    /// (e.g. `PCO`) would otherwise be accepted here and only fail later, at the first external
+    /// sort/join/aggregation spill, with a confusing message. Reject such codecs up front, mirroring
+    /// the validation of the `marks_compression_codec` / `primary_key_compression_codec` MergeTree
+    /// settings, which are likewise applied to untyped streams. Experimental codecs are a session-gated
+    /// policy: they are allowed when the query that set `temporary_files_codec` had
+    /// `allow_experimental_codecs` enabled (the flag is carried in the settings because the query
+    /// settings are no longer available at spill time).
+    if (codec->isExperimental() && !settings.allow_experimental_codecs)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting 'temporary_files_codec' cannot use the experimental codec {}. Experimental codecs can only be "
-            "specified per column (with the 'allow_experimental_codecs' setting enabled)",
+            "Setting 'temporary_files_codec' cannot use the experimental codec {} without the "
+            "'allow_experimental_codecs' setting enabled",
             settings.compression_codec);
     if (codec->requiresColumnTypeToCompress())
         throw Exception(
@@ -381,14 +383,18 @@ TemporaryFileProvider createTemporaryFileProvider(DistributedCacheTag)
 }
 #endif
 
-TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_)
+TemporaryDataOnDiskScopePtr TemporaryDataOnDiskScope::childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_, String compression_codec_, bool allow_experimental_codecs_)
 {
     TemporaryDataOnDiskSettings child_settings = settings;
     child_settings.metrics = metrics_;
     if (buffer_size_)
         child_settings.buffer_size = buffer_size_;
     if (!compression_codec_.empty())
+    {
+        /// The experimental-codecs opt-in travels together with the codec it applied to.
         child_settings.compression_codec = compression_codec_;
+        child_settings.allow_experimental_codecs = allow_experimental_codecs_;
+    }
     return std::make_shared<TemporaryDataOnDiskScope>(shared_from_this(), child_settings);
 }
 

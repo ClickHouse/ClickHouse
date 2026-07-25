@@ -172,6 +172,7 @@ namespace Setting
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
     extern const SettingsString temporary_files_codec;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
 }
 
@@ -649,7 +650,11 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
 
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
-        tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+        tmp_data_scope = tmp_data_scope->childScope(
+            /* metrics */ {},
+            settings[Setting::temporary_files_buffer_size],
+            settings[Setting::temporary_files_codec],
+            settings[Setting::allow_experimental_codecs]);
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,

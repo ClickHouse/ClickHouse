@@ -56,6 +56,7 @@ public:
         bool read_in_order_use_virtual_row_per_block = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
+        bool allow_experimental_codecs = false;
 
         explicit Settings(const DB::Settings & settings);
         explicit Settings(size_t max_block_size_);

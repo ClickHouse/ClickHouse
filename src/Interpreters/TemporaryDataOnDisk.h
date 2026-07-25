@@ -54,6 +54,11 @@ struct TemporaryDataOnDiskSettings
     /// Compression codec for temporary data, if empty no compression will be used. LZ4 by default
     String compression_codec = {};
 
+    /// Whether the session that provided `compression_codec` had `allow_experimental_codecs` enabled.
+    /// The codec string is resolved lazily at the first spill, when the query settings are no longer
+    /// available, so the opt-in has to be carried along with the codec.
+    bool allow_experimental_codecs = false;
+
     /// Read/Write internal buffer size
     size_t buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
 
@@ -105,7 +110,7 @@ public:
         , settings(std::move(settings_))
     {}
 
-    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {});
+    TemporaryDataOnDiskScopePtr childScope(TemporaryDataMetrics metrics_, UInt64 buffer_size_ = 0, String compression_codec_ = {}, bool allow_experimental_codecs_ = false);
 
     const TemporaryDataOnDiskSettings & getSettings() const { return settings; }
 
