@@ -1,7 +1,7 @@
 -- A valid AggregateFunction(max, String) state larger than a single compressed block spans
--- multiple read-buffer refills when read back from a table. It must round-trip unchanged
--- through the incremental read path in SingleValueDataString::read
--- (which must not preallocate the declared size upfront, see #110632).
+-- multiple read-buffer refills when read back from a table. Check that it round-trips
+-- unchanged through SingleValueDataString::read - the other tests for that function
+-- (02477, 02481) only read states that fit into a single buffer.
 
 DROP TABLE IF EXISTS t_single_value_multi_refill;
 CREATE TABLE t_single_value_multi_refill (x AggregateFunction(max, String)) ENGINE = MergeTree ORDER BY tuple();
