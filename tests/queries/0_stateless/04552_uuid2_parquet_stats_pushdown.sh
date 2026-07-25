@@ -30,12 +30,20 @@ ${CLICKHOUSE_CLIENT} --query="
 "
 
 echo 'row group pruning'
-query_id="${CLICKHOUSE_DATABASE}_04552_uuid2_row_group_prune_$RANDOM"
-${CLICKHOUSE_CLIENT} --query_id="${query_id}" --query="
+# Prove that the matching row group is kept and the non-matching one is actually pruned.
+# The profile events are printed by the client (summed across the possibly-multiple
+# per-thread lines) instead of going through the query log: `SYSTEM FLUSH LOGS` is too
+# heavy for the flaky check, which runs many copies of the test in parallel.
+${CLICKHOUSE_CLIENT} --print-profile-events --profile-events-delay-ms=-1 --query="
     SELECT count() FROM file('${FILE_ROW_GROUPS}', Parquet, 'u UUID2')
     WHERE u = '30000000-0000-4000-8000-200000000000'::UUID2
     SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1;
-"
+" 2>&1 | awk '
+    /\] ParquetReadRowGroups:/   { read   += $(NF-1); next }
+    /\] ParquetPrunedRowGroups:/ { pruned += $(NF-1); next }
+    !/^\[/ { print }
+    END { print read+0 "\t" pruned+0 }
+'
 ${CLICKHOUSE_CLIENT} --query="
     SELECT count() FROM file('${FILE_ROW_GROUPS}', Parquet, 'u UUID2')
     WHERE u >= '80000000-0000-4000-8000-000000000000'::UUID2
@@ -46,14 +54,6 @@ ${CLICKHOUSE_CLIENT} --query="
     SELECT count() FROM file('${FILE_ROW_GROUPS}', Parquet, 'u UUID')
     WHERE u = toUUID('30000000-0000-4000-8000-200000000000')
     SETTINGS input_format_parquet_filter_push_down = 1, input_format_parquet_page_filter_push_down = 1;
-"
-
-# Prove that the matching row group is kept and the non-matching one is actually pruned.
-${CLICKHOUSE_CLIENT} --query="SYSTEM FLUSH LOGS query_log;"
-${CLICKHOUSE_CLIENT} --query="
-    SELECT ProfileEvents['ParquetReadRowGroups'], ProfileEvents['ParquetPrunedRowGroups']
-    FROM system.query_log
-    WHERE event_date >= yesterday() AND query_id = '${query_id}' AND type = 'QueryFinish' AND current_database = currentDatabase();
 "
 
 echo 'plain fixed-length byte array'
