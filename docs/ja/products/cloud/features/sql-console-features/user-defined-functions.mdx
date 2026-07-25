@@ -76,9 +76,7 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
 前回は SQL を使って作成しましたが、今回は Python で実装し、UI から設定します。
 
 <Steps>
-  <Step>
-    ### Python ファイルを作成する
-
+  <Step title="Python ファイルを作成する" id="create-python-file">
     ローカルで新しいファイル `main.py` を作成します。
 
     ```python
@@ -107,9 +105,7 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     </Note>
   </Step>
 
-  <Step>
-    ### 依存関係パッケージとローカルファイルをまとめる
-
+  <Step title="依存関係パッケージとローカルファイルをまとめる" id="bundle-dependencies">
     依存関係パッケージや追加のローカルファイル (wheel ファイル、設定ファイル、データファイルなど) を含めるには、`main.py` と `requirements.txt` と同じディレクトリに配置します。ZIP アーカイブを作成する際は、すべてのファイルを含めてください。
 
     ```bash
@@ -145,9 +141,7 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     </Warning>
   </Step>
 
-  <Step>
-    ### UI で UDF を作成する
-
+  <Step title="UI で UDF を作成する" id="create-udf-via-ui">
     1. Cloud コンソールのホームページで、左下のメニューにある組織名をクリックします。
     2. メニューから **ユーザー定義関数** を選択します。
     3. ユーザー定義関数ページで **UDF を設定** をクリックします。画面右側に設定パネルが開きます。
@@ -165,9 +159,7 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
         * 完了すると、ステータスは **deployed** に変わります。
   </Step>
 
-  <Step>
-    ### UDFをテストする
-
+  <Step title="UDFをテストする" id="test-your-udf">
     1. ページ左上の **Settings - return to your service view** をクリックして、**SQL Console** のホーム画面に戻ります
     2. 左側のメニューで **SQL Console** をクリックします
     3. 次のクエリを入力します:
@@ -183,9 +175,7 @@ ClickHouse Cloud では、UI からユーザー定義関数を作成できます
     ```
   </Step>
 
-  <Step>
-    ### 新しいバージョンを作成する
-
+  <Step title="新しいバージョンを作成する" id="create-new-version">
     UDF のコードを変更するには、新しいバージョンを作成します。**Edit** パネルで管理できるのは、UDF をどのサービスに割り当てるかだけです。そこでファイルをアップロードしても、デプロイ済みのコードは置き換えられません。
 
     1. Cloud Console のホーム画面で、左下のメニューにある組織名をクリックします。

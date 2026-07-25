@@ -64,7 +64,7 @@ ORDER BY c DESC
 └────────────┴─────────┘
 
 5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
-Пиковое потребление памяти: 4.41 MiB.
+Peak memory usage: 4.41 MiB.
 ```
 
 Текущие партиции можно посмотреть с помощью простого запроса к системной таблице:
@@ -91,10 +91,10 @@ WHERE `table` = 'otel_logs'
 
 ```sql
 CREATE TABLE otel_logs_archive AS otel_logs
---переместить данные в архивную таблицу
+--move data to archive table
 ALTER TABLE otel_logs
         (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
---убедиться, что данные перемещены
+--confirm data has been moved
 SELECT
         Timestamp::Date AS day,
         count() AS c
