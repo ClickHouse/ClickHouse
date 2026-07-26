@@ -40,8 +40,10 @@ STATE_SUCCESS = 1
 STATE_FAILURE = 2
 
 # How many times the profiler-race instance is restarted. Each restart is one chance for the
-# profiler signal to land while the loader thread publishes the new per-user Counters.
-PROFILER_RACE_RESTARTS = 12
+# profiler signal to land while the loader thread publishes the new per-user Counters. One restart
+# samples that window thousands of times and reports the race on its own, so the repetitions are
+# margin only and a handful of them keeps the cost of a sanitizer run bounded.
+PROFILER_RACE_RESTARTS = 6
 
 
 @pytest.fixture(scope="module")
@@ -150,6 +152,13 @@ def test_reload_config_does_not_rerun_startup_scripts(start_cluster):
 
 
 def restart_profiler_race_instance():
+    # `SETTINGS(dictionary_lazy_load = 0)` is stored in the dictionary metadata, so a surviving
+    # dictionary is loaded again while its table is attached, before the startup script runs. That
+    # earlier load creates the source user's ProcessListForUser, leaving the startup script with the
+    # existing-user branch, which is not the racing scenario. Dropping it makes the startup script
+    # the only creator.
+    profiler_race.query("DROP DICTIONARY IF EXISTS profiler_race_dict")
+
     # The thread log survives the restart, so return the server's own clock reading first: it scopes
     # the queries below to the run that is about to start. Python's clock is not interchangeable here
     # because the container may be skewed against the host.
@@ -176,14 +185,19 @@ def test_profiler_vs_processlist_publication(start_cluster):
     if not profiler_race.is_built_with_thread_sanitizer():
         pytest.skip("the race is only observable under ThreadSanitizer")
 
-    def dictionary_source_logins():
-        # zcat -f reads the current log and the gzipped rotations left by earlier restarts.
+    def dictionary_source_logins(current_run_only):
+        # `rotateOnOpen` is set for these instances, so every start moves the previous log aside and
+        # the un-globbed file covers exactly the current run. The glob adds the gzipped rotations of
+        # earlier runs, which is what the cumulative check at the end of the test wants.
+        path = "/var/log/clickhouse-server/clickhouse-server.log"
+        if not current_run_only:
+            path += "*"
         return int(
             profiler_race.exec_in_container(
                 [
                     "bash",
                     "-c",
-                    "zcat -f /var/log/clickhouse-server/clickhouse-server.log* "
+                    f"zcat -f {path} "
                     "| grep -ac \"Authenticating user 'dict_source_user'\" || true",
                 ],
                 user="root",
@@ -258,11 +272,21 @@ def test_profiler_vs_processlist_publication(start_cluster):
             "Counters were published into a chain that thread never walks and the cross-thread "
             "publication this test targets was not exercised"
         )
+        # Only the FIRST insert for a user constructs the ProfileEvents::Counters this test races
+        # against; later ones find the entry and publish an address that has long been visible. A
+        # dictionary left over from the previous run is loaded once more at attach time, ahead of the
+        # startup script, which would silently reduce the script to that second case.
+        logins = dictionary_source_logins(current_run_only=True)
+        assert logins == 1, (
+            f"the dictionary source user logged in {logins} times in this run instead of once, so "
+            "something loaded the dictionary before the startup script did and the first-time "
+            "per-user Counters construction was not exercised on the startup path"
+        )
 
     # Log rotation keeps a bounded number of files, so this cannot be compared against the restart
     # count directly. What matters is that the startup script really ran on the restarts that are
     # still on disk.
-    assert dictionary_source_logins() > 0, (
+    assert dictionary_source_logins(current_run_only=False) > 0, (
         "the dictionary source query never ran, so the startup path this test is meant to "
         "exercise was not exercised at all"
     )
