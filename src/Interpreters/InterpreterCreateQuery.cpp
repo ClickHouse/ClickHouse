@@ -1847,17 +1847,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database)
         database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-    /// Non-APPEND refreshable MVs only work in Atomic/Replicated databases (uncoordinated refresh
-    /// would diverge across replicas, and the view needs a real UUID for parent-table tracking in
-    /// Replicated DDL). Stored definitions (attach_short_syntax) were validated when first
-    /// introduced and must keep loading; plain Replicated-DDL replay re-executes an already
-    /// validated initiator query. A full-definition ATTACH is fresh input and is validated like
-    /// CREATE. A RESTORE counts as fresh only when the backed-up definition carried a UUID: such a
-    /// view lived in a UUID database, so landing it in a non-UUID one loses the UUID and is what
-    /// must be rejected. `has_uuid` reflects the backup's own metadata (RESTORE overwrites `uuid`
-    /// with a freshly generated one before this point, but never `has_uuid`), so a UUID-less backup
-    /// is a definition that already lived without a UUID: it stays restorable under any name, and
-    /// the Nil guard in checkParentTableExists keeps its refresh failing cleanly.
+    /// Non-APPEND refreshable MVs only work in Atomic/Replicated databases. Validate only definitions
+    /// the user supplies now: a stored definition (attach_short_syntax) and a Replicated-DDL replay
+    /// were already validated, and rejecting them would make existing metadata unloadable.
+    /// `has_uuid` is the backup's own metadata, not the UUID this restore generated, so it tells a
+    /// view that had a UUID (about to lose it here) from one that never had one.
     const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
     const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
         || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax)
