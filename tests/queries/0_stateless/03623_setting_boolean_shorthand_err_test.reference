@@ -10,3 +10,5 @@ ok
 -- Test with normal syntax works
 4
 ok
+-- An unknown setting is still reported as unknown
+ok

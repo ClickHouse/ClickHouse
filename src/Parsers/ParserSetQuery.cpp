@@ -10,7 +10,6 @@
 #include <Parsers/FieldFromAST.h>
 
 #include <Core/Names.h>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -322,22 +321,15 @@ bool ParserSetQuery::parseNameValuePairWithParameterOrDefault(
     }
     else
     {
-        try
-        {
-            Field type_test = Settings::castValueUtil(name, true);
-            if (type_test.getType() == Field::Types::Which::Bool)
-                node = make_intrusive<ASTLiteral>(Field(true));
-            else
-                return false;
-        }
-        catch (const Exception &)
-        {
-            return false;
-        }
+        /// A setting name with no value is shorthand for `= true`. Only a Bool setting can be
+        /// written this way, but the parser does not know the settings schema, so it records that
+        /// the value was omitted and leaves the check to `BaseSettings::applyChange`.
+        node = make_intrusive<ASTLiteral>(Field(true));
     }
 
     change.name = name;
     change.value = node->as<ASTLiteral &>().value;
+    change.shorthand = !have_eq;
 
     return true;
 }

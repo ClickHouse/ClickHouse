@@ -1,6 +1,5 @@
 #include <Parsers/ASTAlterQuery.h>
 
-#include <Core/ServerSettings.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <base/scope_guard.h>

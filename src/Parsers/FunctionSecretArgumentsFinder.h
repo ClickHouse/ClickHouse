@@ -3,7 +3,6 @@
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
-#include <Common/re2.h>
 #include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
@@ -451,8 +450,7 @@ protected:
 
         if (!url_arg.starts_with("http"))
         {
-            static re2::RE2 account_key_pattern = "AccountKey=.*?(;|$)";
-            if (RE2::Replace(&url_arg, account_key_pattern, "AccountKey=[HIDDEN]\\1"))
+            if (maskConnectionStringKey(url_arg, "AccountKey="))
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
                 result.start = url_arg_idx;
@@ -462,8 +460,7 @@ protected:
                 return true;
             }
 
-            static re2::RE2 sas_signature_pattern = "SharedAccessSignature=.*?(;|$)";
-            if (RE2::Replace(&url_arg, sas_signature_pattern, "SharedAccessSignature=[HIDDEN]\\1"))
+            if (maskConnectionStringKey(url_arg, "SharedAccessSignature="))
             {
                 chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
                 result.start = url_arg_idx;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <absl/container/flat_hash_map.h>
+#include <unordered_map>
 
 namespace DB
 {
@@ -28,8 +28,6 @@ struct LiteralTokenInfo
 };
 
 /// Map from ASTLiteral pointer to its token position in the query string.
-/// Uses flat_hash_map for better performance with small maps that are created
-/// and destroyed frequently during parsing.
 ///
 /// NOTE: The map uses ASTLiteral pointers as keys. During parsing, the memory allocator
 /// may reuse the same address for different ASTLiteral objects as intermediate nodes
@@ -37,11 +35,12 @@ struct LiteralTokenInfo
 /// use insert_or_assign to ensure the last literal at each address has its token info
 /// recorded (which is the one that survives in the final AST).
 ///
-/// This is a struct (not a type alias) so it can be forward-declared,
-/// avoiding the heavy `absl/container/flat_hash_map.h` include in `IParser.h`.
-struct LiteralTokenMap : absl::flat_hash_map<const ASTLiteral *, LiteralTokenInfo>
+/// This is a struct (not a type alias) so it can be forward-declared, keeping the map out of
+/// `IParser.h`. It is only populated when a caller asks for literal positions, so a plain
+/// `std::unordered_map` is enough and keeps the parser free of abseil.
+struct LiteralTokenMap : std::unordered_map<const ASTLiteral *, LiteralTokenInfo>
 {
-    using absl::flat_hash_map<const ASTLiteral *, LiteralTokenInfo>::flat_hash_map;
+    using std::unordered_map<const ASTLiteral *, LiteralTokenInfo>::unordered_map;
 };
 
 }
