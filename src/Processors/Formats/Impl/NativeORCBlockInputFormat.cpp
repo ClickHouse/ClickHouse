@@ -1978,11 +1978,31 @@ static bool orcTimestampTargetHasExplicitTimeZone(const DataTypePtr & type)
     return timezone && timezone->hasExplicitTimeZone();
 }
 
+/// Whether a ClickHouse numeric type is a widening of an ORC integer branch whose values occupy
+/// `orc_size` bytes: a strictly wider integer, or a float that represents every value of that width
+/// exactly. The ordinary (non-union) ORC column path gets these conversions for free from the final
+/// cast in `orcColumnsToCHChunk`; a union branch has to request them as a per-branch hint, because
+/// the final cast of a union column is a `Variant` -> `Variant` cast, which only extends the set of
+/// alternatives by exact type name and cannot widen an alternative. Equal-width targets are listed
+/// explicitly by the caller (they include the writer's own mappings, such as the unsigned and `Enum`
+/// types), so only strictly wider integers are accepted here.
+static bool orcIntegerBranchWidensTo(const DataTypePtr & type, size_t orc_size)
+{
+    const WhichDataType which(type);
+    if (which.isFloat32())
+        return orc_size <= 2;
+    if (which.isFloat64())
+        return orc_size <= 4;
+    return which.isInteger() && type->getSizeOfValueInMemory() > orc_size;
+}
+
 /// Whether a ClickHouse type can serve as the per-branch type hint for an ORC union branch of the
 /// given ORC type. The correspondence is structural (up to Nullable and LowCardinality wrappers),
 /// extended with the explicit-schema conversions the reader supports: the integer targets the
 /// ordinary column path accepts through the final cast (the unsigned and Enum types of the
-/// matching width - they are what the ORC writer maps to these ORC types - and int -> IPv4) and
+/// matching width - they are what the ORC writer maps to these ORC types - int -> IPv4, and the
+/// widenings of `orcIntegerBranchWidensTo`, e.g. `Variant(Int64, String)` over
+/// `uniontype<int,string>`) and
 /// the special binary readers (binary -> IPv6/Int128/UInt128/Int256/UInt256/Decimal256,
 /// char -> big integers and Decimal256). Custom type names matter here: `Bool` is a custom-named
 /// `UInt8`, but the writer maps it to BOOLEAN while a plain `UInt8` goes to BYTE, so only BOOLEAN
@@ -2015,17 +2035,18 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
     switch (orc_branch_type->getKind())
     {
         case orc::TypeKind::BOOLEAN:
-            return which.isUInt8() || which.isEnum8();
+            /// A boolean holds only 0 and 1, so every integer type is a widening of it.
+            return which.isUInt8() || which.isEnum8() || orcIntegerBranchWidensTo(type, 0);
         case orc::TypeKind::BYTE:
-            return which.isInt8() || (which.isUInt8() && !isBool(type)) || which.isEnum8();
+            return which.isInt8() || (which.isUInt8() && !isBool(type)) || which.isEnum8() || orcIntegerBranchWidensTo(type, 1);
         case orc::TypeKind::SHORT:
-            return which.isInt16() || which.isUInt16() || which.isEnum16();
+            return which.isInt16() || which.isUInt16() || which.isEnum16() || orcIntegerBranchWidensTo(type, 2);
         case orc::TypeKind::INT:
-            return which.isInt32() || which.isUInt32() || which.isIPv4();
+            return which.isInt32() || which.isUInt32() || which.isIPv4() || orcIntegerBranchWidensTo(type, 4);
         case orc::TypeKind::LONG:
-            return which.isInt64() || which.isUInt64();
+            return which.isInt64() || which.isUInt64() || orcIntegerBranchWidensTo(type, 8);
         case orc::TypeKind::FLOAT:
-            return which.isFloat32();
+            return which.isFloat32() || which.isFloat64();
         case orc::TypeKind::DOUBLE:
             return which.isFloat64();
         case orc::TypeKind::DATE:
@@ -2123,6 +2144,12 @@ static bool orcUnionBranchMatchesType(const orc::Type * orc_branch_type, const D
 /// so a LowCardinality-wrapped alternative (inferred from a dictionary-encoded stripe) pairs the
 /// same way. BINARY deliberately has no preference: it is the conversion-rich kind (IPv6, big
 /// integers, Decimal256), so a preference could steal a String alternative from a STRING branch.
+///
+/// The numeric kinds are tie-broken the same way, for the same reason: they match their widenings
+/// too (see `orcIntegerBranchWidensTo`), so e.g. `uniontype<tinyint,bigint>` with the explicit
+/// schema `Variant(Int8, Int64)` leaves the `BYTE` branch with two candidates. Preferring the
+/// natural pairing keeps the exact-width alternative with its own branch and lets the wider
+/// alternative go to the branch that needs it.
 static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const DataTypePtr & target_type)
 {
     const DataTypePtr type = removeLowCardinality(removeNullableOrLowCardinalityNullable(target_type));
@@ -2130,6 +2157,20 @@ static bool orcUnionBranchPrefersType(const orc::Type * orc_branch_type, const D
 
     switch (orc_branch_type->getKind())
     {
+        case orc::TypeKind::BOOLEAN:
+            return isBool(type);
+        case orc::TypeKind::BYTE:
+            return which.isInt8();
+        case orc::TypeKind::SHORT:
+            return which.isInt16();
+        case orc::TypeKind::INT:
+            return which.isInt32();
+        case orc::TypeKind::LONG:
+            return which.isInt64();
+        case orc::TypeKind::FLOAT:
+            return which.isFloat32();
+        case orc::TypeKind::DOUBLE:
+            return which.isFloat64();
         case orc::TypeKind::CHAR:
             return which.isFixedString()
                 && assert_cast<const DataTypeFixedString &>(*type).getN() == orc_branch_type->getMaximumLength();
