@@ -21,6 +21,10 @@ echo "$PAGE" | grep -oF 'so drop a trailing slash before stripping the extension
 echo "$PAGE" | grep -oF "'dictionaries': '/sql-reference/dictionaries'," | head -n1
 # ... and maps the standalone `merge-tree-settings` page to its canonical route.
 echo "$PAGE" | grep -oF "'merge-tree-settings': '/operations/settings/merge-tree-settings'," | head -n1
+# The page-load compatibility assertion feeds both original link shapes to the real `toDocsURL`.
+echo "$PAGE" | grep -oF "'merge-tree-settings.md/#materialize_skip_indexes_on_merge': 'https://clickhouse.com/docs/operations/settings/merge-tree-settings#materialize_skip_indexes_on_merge'," | head -n1
+echo "$PAGE" | grep -oF "'../dictionaries#embedded-dictionaries': 'https://clickhouse.com/docs/sql-reference/dictionaries#embedded-dictionaries'," | head -n1
+echo "$PAGE" | grep -oF 'verifyDocsURLCompatibility();' | head -n1
 
 # `materialize_skip_indexes_on_insert` is a core setting and `regionToPopulation` is a core
 # embedded-dictionary function, so both are present even in the minimal `Fast test` build

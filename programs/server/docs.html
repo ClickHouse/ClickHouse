@@ -1324,6 +1324,26 @@
         return base;
     }
 
+    /// Keep the legacy-link compatibility branches exercised after the embedded documentation has
+    /// migrated to site-root absolute routes. These inputs are the real relative-link shapes that
+    /// originally required `DOCS_SECTION_ROUTE`, `DOCS_PAGE_ROUTE`, extension stripping, and preservation
+    /// of fragments. Run the assertions in every page load so a compatibility regression fails immediately.
+    const DOCS_URL_COMPATIBILITY_CASES = {
+        '../data-types/int-uint.md': 'https://clickhouse.com/docs/sql-reference/data-types/int-uint',
+        'type-conversion-functions.md#parseDateTime64BestEffort': 'https://clickhouse.com/docs/sql-reference/functions/type-conversion-functions#parseDateTime64BestEffort',
+        '../syntax.md#string': 'https://clickhouse.com/docs/sql-reference/syntax#string',
+        'merge-tree-settings.md/#materialize_skip_indexes_on_merge': 'https://clickhouse.com/docs/operations/settings/merge-tree-settings#materialize_skip_indexes_on_merge',
+        '../dictionaries#embedded-dictionaries': 'https://clickhouse.com/docs/sql-reference/dictionaries#embedded-dictionaries',
+    };
+
+    function verifyDocsURLCompatibility() {
+        for (const [legacy, expected] of Object.entries(DOCS_URL_COMPATIBILITY_CASES)) {
+            const actual = toDocsURL(legacy);
+            if (actual !== expected)
+                throw new Error(`Legacy docs URL compatibility failed for ${legacy}: ${actual} != ${expected}`);
+        }
+    }
+
     /// Turn an inline `code` element into an in-app link when its text is a documented entity.
     function linkifyCode(code) {
         /// A `Related:`/`Alias of` reference carries no target route, so only an unambiguous (single)
@@ -1750,6 +1770,7 @@
        ---------------------------------------------------------------------------------------- */
 
     (async function init() {
+        verifyDocsURLCompatibility();
         /// Load the set of documented names in the background; it is only needed for link rewriting.
         loadAllNames();
 

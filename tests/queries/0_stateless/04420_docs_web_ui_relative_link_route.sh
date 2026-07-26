@@ -21,6 +21,8 @@ echo "$PAGE" | grep -oF 'const DOCS_SECTION_ROUTE = {' | head -n1
 echo "$PAGE" | grep -oF "'data-types': '/sql-reference/data-types'," | head -n1
 # ... and treats an already-rooted leading segment as a full route.
 echo "$PAGE" | grep -oF 'const DOCS_ROUTE_ROOTS = new Set([' | head -n1
+# The page-load compatibility assertion feeds the original relative link to `toDocsURL`.
+echo "$PAGE" | grep -oF "'../data-types/int-uint.md': 'https://clickhouse.com/docs/sql-reference/data-types/int-uint'," | head -n1
 
 # `mortonEncode` is a core function, so it is present even in the minimal `Fast test` build
 # (`ENABLE_LIBRARIES=0`). Its embedded documentation uses the current site-root absolute route and no
