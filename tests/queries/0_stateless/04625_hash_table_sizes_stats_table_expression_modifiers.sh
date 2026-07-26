@@ -29,6 +29,11 @@ run_pair()
     $CLICKHOUSE_CLIENT "$@" --query_id="${query_id_prefix}_${name}-prealloc" -q "$query"
 }
 
+# External aggregation must stay off: when the first run of a pair spills, Aggregator resets the
+# hash table after every flush to a temporary file, so the sizes updateStatistics() records at the
+# end are the post-spill remainder rather than the real group count. The cache entry then falls
+# below the 500e3 lower bound of getSizeHint and the -prealloc run preallocates nothing. The
+# randomizer picks either the byte- or the ratio-based threshold, so pin both.
 settings=(
     --max_threads=1
     --enable_analyzer=1
@@ -36,6 +41,8 @@ settings=(
     --max_size_to_preallocate_for_aggregation=1000000000000
     --serialize_query_plan=1
     --prefer_localhost_replica=0
+    --max_bytes_before_external_group_by=0
+    --max_bytes_ratio_before_external_group_by=0
 )
 
 mod_prefix="${CLICKHOUSE_DATABASE}_04625_mod_$RANDOM$RANDOM"
