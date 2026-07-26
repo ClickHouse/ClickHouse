@@ -13,6 +13,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -60,6 +61,9 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
     extern const QueryPlanSerializationSettingsBool enable_producing_buckets_out_of_order_in_aggregation;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsString temporary_files_codec;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 temporary_files_buffer_size;
+    extern const QueryPlanSerializationSettingsBool allow_experimental_codecs;
 }
 
 namespace ErrorCodes
@@ -993,6 +997,20 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
+
+    /// External aggregation on a remote shard has to spill exactly like it would on the initiator:
+    /// with the initiator's `temporary_files_codec`, buffer size, and the `allow_experimental_codecs`
+    /// opt-in that the codec was accepted under. The temporary data scope is not part of the plan
+    /// payload, so the settings it was built from travel with the step and are re-applied in
+    /// `deserialize`; otherwise the shard would silently fall back to the server-level temporary
+    /// data settings, and an experimental codec would be rejected there.
+    if (params.tmp_data_scope)
+    {
+        const auto & tmp_data_settings = params.tmp_data_scope->getSettings();
+        settings[QueryPlanSerializationSetting::temporary_files_codec] = tmp_data_settings.compression_codec;
+        settings[QueryPlanSerializationSetting::temporary_files_buffer_size] = tmp_data_settings.buffer_size;
+        settings[QueryPlanSerializationSetting::allow_experimental_codecs] = tmp_data_settings.allow_experimental_codecs;
+    }
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -1110,6 +1128,15 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    /// Re-apply the initiator's temporary data settings, see `serializeSettings`.
+    auto tmp_data_scope = Context::getGlobalContextInstance()->getTempDataOnDisk();
+    if (tmp_data_scope)
+        tmp_data_scope = tmp_data_scope->childScope(
+            /* metrics */ {},
+            ctx.settings[QueryPlanSerializationSetting::temporary_files_buffer_size],
+            ctx.settings[QueryPlanSerializationSetting::temporary_files_codec],
+            ctx.settings[QueryPlanSerializationSetting::allow_experimental_codecs]);
+
     Aggregator::Params params{
         keys,
         aggregates,
@@ -1120,7 +1147,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
-        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+        tmp_data_scope,
         0, //settings[QueryPlanSerializationSetting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data],
         ctx.settings[QueryPlanSerializationSetting::compile_aggregate_expressions],
