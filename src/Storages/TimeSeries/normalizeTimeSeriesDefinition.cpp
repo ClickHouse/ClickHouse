@@ -82,7 +82,7 @@ namespace
 
     void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query)
     {
-        pullUpTupleElementDefaultsInColumnList(create_query.columns_list.get());
+        pullUpTupleElementDefaultsInColumnList(create_query.columns_list);
 
         for (auto kind : getTargetKinds())
             pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind));
