@@ -86,6 +86,29 @@ public:
     StoragePtr getNested() const override { return nested; }
     String getName() const override { return nested->getName(); }
 
+    /// Forward the delegate's planner-visible capability contracts. `StorageProxy` forwards only a
+    /// part of them (e.g. `supportsPrewhere`, `supportsSubcolumns`), so without these overrides the
+    /// wrapper would silently fall back to the `IStorage` defaults and a table of a `URL` database
+    /// would behave differently from the same data read directly through `file`/`s3` or through
+    /// `ENGINE = URL(...)` (whose wrapper, `StorageURLSchemeDispatch`, carries the same overrides):
+    ///
+    /// * `supportsOptimizationToSubcolumns` defaults to `supportsSubcolumns` (true for the
+    ///   delegates), while `StorageFile`, `StorageObjectStorage` and plain `StorageURL` return
+    ///   `false`, so `FunctionToSubcolumnsPass` would apply rewrites the backend disables;
+    /// * `supportedPrewhereColumns` defaults to `std::nullopt` (unrestricted) and
+    ///   `canMoveConditionsToPrewhere` to `supportsPrewhere`, while the delegates keep `PREWHERE`
+    ///   away from columns not materialized at `PREWHERE` time (default expressions, hive-partition
+    ///   columns);
+    /// * `supportsTrivialCountOptimization` defaults to `false`, while the delegates return `true`,
+    ///   so `SELECT count()` would parse the external data instead of using the optimized count path.
+    bool supportsOptimizationToSubcolumns() const override { return nested->supportsOptimizationToSubcolumns(); }
+    std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
+    bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
+    {
+        return nested->supportsTrivialCountOptimization(storage_snapshot, query_context);
+    }
+
     /// Read through a snapshot of the nested storage (like `StorageTableFunctionProxy` does):
     /// the storage may downcast `storage_snapshot->storage` to its own type.
     void read(
@@ -101,6 +124,15 @@ public:
         const auto nested_metadata = nested->getInMemoryMetadataPtr(context, false);
         auto nested_snapshot = nested->getStorageSnapshot(nested_metadata, context);
         nested->read(query_plan, column_names, nested_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
+    }
+
+    /// Checked on the initiator, before the query is executed or queued for asynchronous insertion:
+    /// with `async_insert = 1` the sink below is created in a background flush, after the query has
+    /// already reported success to the user (`wait_for_async_insert = 0`) and possibly with
+    /// different privileges than the ones the user had when the query was issued.
+    void checkInsertIsAllowed(ContextPtr context) const override
+    {
+        table_function->checkSourceAccess(context, /* is_insert_query */ true);
     }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override
