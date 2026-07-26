@@ -490,7 +490,7 @@ Any settings changes should be tested. We recommend monitoring Kafka consumer la
 
 Aside from the settings discussed above, the following may be of interest:
 
-* [Kafka_max_wait_ms](/reference/settings/session-settings/kafka#kafka_max_wait_ms) - The wait time in milliseconds for reading messages from Kafka before retry. Set at a user profile level and defaults to 5000.
+* [kafka_max_wait_ms](/reference/settings/session-settings/kafka#kafka_max_wait_ms) - The wait time in milliseconds for reading messages from Kafka before retry. Set at a user profile level and defaults to 5000.
 
 [All settings ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)from the underlying librdkafka can also be placed in the ClickHouse configuration files inside a _kafka_ element - setting names should be XML elements with periods replaced with underscores e.g.
 
