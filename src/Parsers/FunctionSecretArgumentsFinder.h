@@ -1,12 +1,12 @@
 #pragma once
 
+#include <Common/StringUtils.h>
 #include <algorithm>
 
 #include <Common/KnownObjectNames.h>
 #include <Common/maskURIPassword.h>
 #include <Core/QualifiedTableName.h>
 #include <base/defines.h>
-#include <boost/algorithm/string/predicate.hpp>
 
 namespace DB
 {
@@ -147,7 +147,7 @@ protected:
             /// encrypt('mode', 'plaintext', 'key' [, iv, aad])
             findEncryptionFunctionSecretArguments();
         }
-        else if (boost::iequals(function->name(), "HMAC"))
+        else if (equalsCaseInsensitive(function->name(), "HMAC"))
         {
             /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
             findHMACSecretArguments();
@@ -372,7 +372,7 @@ protected:
             String second_arg;
             if (tryGetStringFromArgument(url_arg_idx + 1, &second_arg))
             {
-                if (boost::iequals(second_arg, "NOSIGN"))
+                if (equalsCaseInsensitive(second_arg, "NOSIGN"))
                     return; /// The argument after 'url' is "NOSIGN".
 
                 if (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg))
@@ -722,7 +722,7 @@ protected:
             String second_arg;
             if (tryGetStringFromArgument(1, &second_arg))
             {
-                if (boost::iequals(second_arg, "NOSIGN"))
+                if (equalsCaseInsensitive(second_arg, "NOSIGN"))
                     return; /// The argument after 'url' is "NOSIGN".
 
                 if (count == 3)
