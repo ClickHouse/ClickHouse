@@ -422,6 +422,12 @@ namespace FailPoints
     /// broken/duplicate part on shared storage.
     extern const char merge_tree_leader_election_stale_lease_during_takeover_scan[];
     extern const char merge_tree_leader_election_stale_lease_detached_ddl[];
+
+    /// Deterministically simulates a leadership lease that goes stale in the MIDDLE of publishing
+    /// a batch of parts (`Transaction::renameParts`): the first part is renamed to its persistent
+    /// name and the fence rejects the rest, so the undo of the already published renames is
+    /// exercised.
+    extern const char merge_tree_leader_election_stale_lease_mid_batch_rename[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -9481,9 +9487,13 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         /// transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as `Outdated`.
         /// Remove the temporary file first so the cleanup is fail-closed: a failure between the two
         /// removals leaves a valid `txn_version.txt` rather than the dangerous tmp-only state.
-        /// The removals are irreversible shared-storage side effects, so re-check the lease per part.
+        /// The removals are irreversible shared-storage side effects, so re-check the lease before
+        /// EACH of them: the lease may go stale between the two removals, and stripping only the
+        /// main `txn_version.txt` of a part whose attach is then rolled back would silently turn
+        /// detached transactional data into non-transactional data for the next leader.
         assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         /// The per-part `SingleDiskVolume` lives for the part's lifetime, so create it in the dedicated
@@ -9964,8 +9974,64 @@ void MergeTreeData::Transaction::clear()
 
 void MergeTreeData::Transaction::renameParts()
 {
+    /// Parts published by this call, with the temporary directory each of them came from, so that
+    /// an aborted batch can be undone. Only tracked when the publish fence is armed
+    /// (`leader_election`); for every other engine the behaviour of this method is unchanged.
+    std::vector<std::pair<MutableDataPartPtr, String>> published_in_this_call;
+
+    /// Rename the parts published so far back to the temporary directories they came from. The
+    /// batch is aborted, so nothing of it may stay visible under a persistent name: otherwise the
+    /// next leader would load parts of a DDL that failed. The temporary names are process-scoped
+    /// under `leader_election` (`getPostfixForTempInsertName`), so restoring them cannot collide
+    /// with the new leader's own work. Best effort: a failure here is logged, not propagated, so
+    /// that the original rejection reaches the client.
+    auto undo_published_renames = [&]
+    {
+        for (auto it = published_in_this_call.rbegin(); it != published_in_this_call.rend(); ++it)
+        {
+            try
+            {
+                LOG_DEBUG(data.log, "Renaming part {} back to {}: the batch was aborted", it->first->name, it->second);
+                it->first->renameTo(it->second, true);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(data.log, "Cannot rename part " + it->first->name + " back to " + it->second);
+            }
+        }
+    };
+
     for (const auto & part_need_rename : precommitted_parts_need_rename)
     {
+        if (publish_fence_epoch)
+        {
+            /// Publishing a batch is not atomic: the lease can expire between two renames, and
+            /// everything renamed so far is already visible under its persistent name. Re-check
+            /// the fence before each rename, and undo the renames already done in this call.
+            try
+            {
+                /// Test hook: fail only after the first part of the batch has been published,
+                /// which is exactly the window this fence closes.
+                if (!published_in_this_call.empty())
+                {
+                    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_mid_batch_rename,
+                    {
+                        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                            "Simulated leadership loss in the middle of publishing a batch of parts (leader_election)");
+                    });
+                }
+
+                data.assertWritableLeaderAtEpoch(*publish_fence_epoch);
+            }
+            catch (...)
+            {
+                undo_published_renames();
+                throw;
+            }
+
+            published_in_this_call.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
+        }
+
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);
         part_need_rename->renameTo(part_need_rename->name, true);
     }

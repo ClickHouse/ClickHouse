@@ -3088,6 +3088,12 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
 
+    /// The covering empty parts are published one rename at a time; arm the fence so that each
+    /// individual rename is checked and a lease lost in the middle of the batch undoes the
+    /// renames already done (see `Transaction::renameParts`).
+    if (leader_election_ptr)
+        transaction.setPublishFenceEpoch(admission_epoch);
+
     auto timeout_ms = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     Stopwatch watch;
     do
@@ -3136,6 +3142,10 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     try
     {
         assertWritableLeaderAtEpoch(admission_epoch);
+        /// Inside the batch the fence is re-checked before each rename, and the renames already
+        /// done are undone if the lease goes stale in the middle, so on a failure here nothing of
+        /// this DDL is left under a persistent name either.
+        transaction.renameParts();
     }
     catch (...)
     {
@@ -3153,7 +3163,6 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
         throw;
     }
 
-    transaction.renameParts();
     transaction.commit();
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
@@ -3942,6 +3951,14 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         Transaction dest_transaction(*dest_table_storage, txn.get());
         Transaction src_transaction(*this, txn.get());
 
+        /// Both sides publish batches of parts one rename at a time; arm the fence so that every
+        /// individual rename is checked against the epoch captured at admission and a lease lost
+        /// in the middle of a batch undoes the renames already done (see `Transaction::renameParts`).
+        if (dest_table_storage->leader_election_ptr)
+            dest_transaction.setPublishFenceEpoch(dest_admission_epoch);
+        if (leader_election_ptr)
+            src_transaction.setPublishFenceEpoch(src_admission_epoch);
+
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
             auto src_data_parts_lock = lockParts();
@@ -3967,6 +3984,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             {
                 dest_table_storage->assertWritableLeaderAtEpoch(dest_admission_epoch);
                 assertWritableLeaderAtEpoch(src_admission_epoch);
+
+                /// Publish both sides before committing either of them: the renames are the
+                /// irreversible part, they re-check the fence per rename, and they undo what they
+                /// already published if the lease goes stale in the middle of a batch. Both parts
+                /// locks are held for the whole scope, so the reordering is not observable.
+                dest_transaction.renameParts();
+                src_transaction.renameParts();
             }
             catch (...)
             {
@@ -3993,10 +4017,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
                 throw;
             }
 
-            dest_transaction.renameParts();
             dest_transaction.commit(dest_data_parts_lock);
-
-            src_transaction.renameParts();
             src_transaction.commit(src_data_parts_lock);
         }
 

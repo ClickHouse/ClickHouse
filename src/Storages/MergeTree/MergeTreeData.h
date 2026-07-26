@@ -377,6 +377,14 @@ public:
         /// bound, while data parts lock is the bottleneck)
         void renameParts();
 
+        /// Under `leader_election`, publish the batch under the leadership epoch captured at the
+        /// operation's admission: `renameParts` then re-checks the fence before EACH rename and
+        /// renames the parts it already published back to their temporary directories if the
+        /// lease goes stale in the middle of the batch. Without it, a lease lost after the first
+        /// rename would still leave the remaining parts of an aborted DDL under their persistent
+        /// names on shared storage, where the new leader can load them.
+        void setPublishFenceEpoch(UInt64 admission_epoch) { publish_fence_epoch = admission_epoch; }
+
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
         void rollback(DataPartsLock * acquired_lock = nullptr);
@@ -403,6 +411,9 @@ public:
 
         MutableDataParts precommitted_parts;
         MutableDataParts precommitted_parts_need_rename;
+
+        /// Set by `setPublishFenceEpoch` under `leader_election`; empty otherwise.
+        std::optional<UInt64> publish_fence_epoch;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;
@@ -701,6 +712,14 @@ public:
     /// has not yet acquired the lease) loads and refreshes its part view strictly read-only and
     /// never mutates shared object-storage metadata owned by the current leader.
     virtual bool mayMutateSharedStorage() const { return true; }
+
+    /// Re-check, immediately before an irreversible rename that publishes a part under its
+    /// persistent name, that this node is still the writable leader in the same leadership epoch
+    /// that admitted the operation. A no-op for every engine but `StorageMergeTree` with
+    /// `leader_election` (see the override there). Declared here so that
+    /// `Transaction::renameParts` — which publishes a whole batch of parts, one rename at a
+    /// time — can fence each individual rename.
+    virtual void assertWritableLeaderAtEpoch(UInt64 /*admission_epoch*/) const {}
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);

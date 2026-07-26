@@ -247,7 +247,9 @@ private:
     /// check before the rename (rather than only inside `commit`) prevents a node that lost — or lost
     /// and reacquired — leadership from publishing a part prepared under a stale lease, which a new
     /// leader could otherwise activate via `loadNewlyAppearedParts`.
-    void assertWritableLeaderAtEpoch(UInt64 admission_epoch) const;
+    /// Also called by `MergeTreeData::Transaction::renameParts` before each rename of a batched
+    /// publish, via `Transaction::setPublishFenceEpoch`.
+    void assertWritableLeaderAtEpoch(UInt64 admission_epoch) const override;
 
     /// Under `leader_election`, partition commands inside a user transaction are rejected: the
     /// transactional branch stages removals (persisting `removal_tid` to shared part metadata)

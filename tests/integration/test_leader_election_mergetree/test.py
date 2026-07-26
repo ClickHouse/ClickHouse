@@ -1625,3 +1625,82 @@ def test_detached_ddl_rejected_on_stale_lease(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_MID_BATCH_RENAME = "12345678-abcd-abcd-abcd-12345678ab15"
+
+
+def test_batch_publish_undone_when_lease_goes_stale_mid_rename(started_cluster):
+    """
+    Regression for the per-rename fence inside `MergeTreeData::Transaction::renameParts`:
+    partition DDL and `MOVE PARTITION TO TABLE` publish a whole BATCH of parts, one rename at a
+    time. Fencing only the start of the batch is not enough — if the lease expires after the
+    first rename, the remaining parts are still published under their persistent names and only
+    `commit` notices, by which time the batch can no longer be undone. A new leader would then
+    load the covering empty parts of a `TRUNCATE` that failed, and the data would silently
+    disappear.
+
+    The `merge_tree_leader_election_stale_lease_mid_batch_rename` failpoint rejects the batch
+    exactly after its first part has been published, so the undo of the already published
+    renames is exercised. Reloading the table from shared storage afterwards must still see all
+    the data: nothing of the aborted `TRUNCATE` may be left under a persistent name.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_mid_batch_rename"
+    table = "test_mid_batch_rename_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_MID_BATCH_RENAME}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        # Two partitions, so `TRUNCATE` publishes a batch of two covering empty parts.
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="middle of publishing a batch"):
+                node1.query(f"TRUNCATE TABLE {table}")
+
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+                "TRUNCATE was rejected but part of the batch still took effect"
+            )
+            active_empty = int(
+                node1.query(
+                    f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                    f" AND table = '{table}' AND active AND rows = 0"
+                ).strip()
+            )
+            assert active_empty == 0, (
+                "A covering empty part of the aborted TRUNCATE stayed active"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The decisive check: reload the part set from shared storage. If the first rename of the
+        # aborted batch had not been undone, the covering empty part would be picked up here and
+        # would outdate the data of its partition.
+        node1.query(f"DETACH TABLE {table}")
+        node1.query(f"ATTACH TABLE {table}")
+        wait_for_leader([node1], table_name=table)
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
+            "A covering empty part of the aborted TRUNCATE was left on shared storage"
+        )
+
+        # With the failpoint cleared the same DDL succeeds.
+        node1.query(f"TRUNCATE TABLE {table}")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
