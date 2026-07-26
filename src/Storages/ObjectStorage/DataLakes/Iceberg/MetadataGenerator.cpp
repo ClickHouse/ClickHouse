@@ -468,11 +468,17 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     }
 
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
-    metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
+    /// The new top-level field takes the next id; nested tuple/array/map
+    /// children (when `type` is complex) take the ids after it via the shared
+    /// `iter`. After getIcebergType `iter` is the max assigned id, which is what
+    /// last-column-id must record so every added child gets a globally unique id.
+    Int32 new_field_id = last_column_id + 1;
+    Int32 iter = new_field_id;
+    auto new_type = Iceberg::getIcebergType(type, iter);
+    metadata_object->set(Iceberg::f_last_column_id, iter);
 
-    auto new_type = Iceberg::getIcebergType(type, last_column_id);
     Poco::JSON::Object::Ptr new_field = new Poco::JSON::Object;
-    new_field->set(Iceberg::f_id, last_column_id + 1);
+    new_field->set(Iceberg::f_id, new_field_id);
     new_field->set(Iceberg::f_name, column_name);
     new_field->set(Iceberg::f_required, new_type.second);
     new_field->set(Iceberg::f_type, new_type.first);
