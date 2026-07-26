@@ -76,17 +76,17 @@ ClickPipes는 Postgres 버전 12 이상을 지원합니다.
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication에는 지정된 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+`clickpipes` publication은 변경 이벤트가 ClickPipes로 스트리밍될 테이블 집합을 정의합니다. 모든 테이블을 복제할 계획이 아니라면 `FOR ALL TABLES` 사용은 권장하지 않습니다. 불필요한 테이블이 포함되면 Postgres에서 ClickPipes로 전송되는 WAL 트래픽이 증가하고 전체 복제 효율이 저하되기 때문입니다.
 
 <div id="add-clickpipes-ips-to-firewall">
   ## ClickPipes IP를 방화벽에 추가
 </div>
 
-아래 단계에 따라 네트워크에 [ClickPipes IP](/ko/integrations/clickpipes/home#list-of-static-ips)를 추가하십시오.
+아래 단계에 따라 네트워크에 [ClickPipes IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 추가하십시오.
 
-1. **Networking** 탭으로 이동한 다음 [ClickPipes IP](/ko/integrations/clickpipes/home#list-of-static-ips)를 Azure Flexible Server Postgres의 방화벽 또는 SSH 터널링을 사용하는 경우 점프 서버/배스천의 방화벽에 추가하십시오.
+1. **Networking** 탭으로 이동한 다음 [ClickPipes IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 Azure Flexible Server Postgres의 방화벽에 추가하거나, SSH 터널링을 사용하는 경우 점프 서버/배스천의 방화벽에 추가하십시오.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Azure Flexible Server for Postgres의 방화벽에 ClickPipes IP 추가" size="lg" />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Azure Flexible Server for Postgres의 방화벽에 ClickPipes IPs 추가" size="lg" />
 
 <div id="whats-next">
   ## 다음 단계
