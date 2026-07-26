@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS u2;
 DROP TABLE IF EXISTS s1;
 DROP TABLE IF EXISTS m1;
 DROP TABLE IF EXISTS m2;
+DROP TABLE IF EXISTS p1;
+DROP TABLE IF EXISTS p2;
 
 CREATE TABLE t1 (a UInt64) ENGINE = Memory;
 CREATE TABLE t2 (x UInt64, y UInt64) ENGINE = Memory;
@@ -55,6 +57,9 @@ CREATE TABLE ar2 (x UInt64, arr Array(UInt64)) ENGINE = Memory;
 INSERT INTO ar2 VALUES (1, [7]);
 SELECT t1.a, arrayMap(z -> tuple(b.arr), [1]) AS r, toTypeName(r) FROM t1 LEFT JOIN ar2 AS b ON t1.a = b.x ORDER BY t1.a SETTINGS join_use_nulls = 1;
 SELECT t1.a, arrayMap(z -> tuple(b.* EXCEPT x), [1]) AS r, toTypeName(r) FROM t1 LEFT JOIN ar2 AS b ON t1.a = b.x ORDER BY t1.a SETTINGS join_use_nulls = 1;
+
+-- 8. intentionally absent: the explicit-column equivalence oracle is paired with every matcher
+-- case above rather than being asserted as a section of its own.
 
 SELECT '-- 9. controls: unpromoted sides and settings must be unchanged';
 SELECT t1.a, arrayMap(z -> sipHash64(b.*), [1]) AS r, toTypeName(r) FROM t1 RIGHT JOIN t2 AS b ON t1.a = b.x ORDER BY t1.a SETTINGS join_use_nulls = 1;
@@ -117,6 +122,24 @@ SELECT '-- 12c. a subquery nested in PREWHERE keeps its own join_use_nulls handl
 SELECT count() FROM m1 PREWHERE m1.a IN (SELECT arrayMap(z -> sipHash64(b.x, b.y), [1])[1] % 2 FROM t1 LEFT JOIN t2 AS b ON t1.a = b.x) SETTINGS join_use_nulls = 1;
 SELECT count() FROM m1 PREWHERE m1.a IN (SELECT arrayMap(z -> sipHash64(b.*), [1])[1] % 2 FROM t1 LEFT JOIN t2 AS b ON t1.a = b.x) SETTINGS join_use_nulls = 1;
 
+SELECT '-- 12d. USING join, unqualified matcher in a lambda, RIGHT/FULL: with and without PREWHERE';
+CREATE TABLE p1 (a UInt8, v UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE p2 (a UInt8, w UInt64) ENGINE = MergeTree ORDER BY a;
+INSERT INTO p1 VALUES (1, 10), (9, 90);
+INSERT INTO p2 VALUES (1, 11);
+SELECT arrayMap(z -> tuple(a, v), [1]) AS r, toTypeName(r) FROM p1 RIGHT JOIN p2 USING (a) PREWHERE p1.v > 0 ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 RIGHT JOIN p2 USING (a) PREWHERE p1.v > 0 ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(a, v), [1]) AS r, toTypeName(r) FROM p1 FULL JOIN p2 USING (a) PREWHERE p1.v > 0 ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 FULL JOIN p2 USING (a) PREWHERE p1.v > 0 ORDER BY r SETTINGS join_use_nulls = 1;
+-- The PREWHERE above is not what makes these abort on the unfixed analyzer: the same queries
+-- abort without it, so the pre-join-type rollback of 12. is not the mechanism under test here.
+SELECT arrayMap(z -> tuple(a, v), [1]) AS r, toTypeName(r) FROM p1 RIGHT JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 RIGHT JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(a, v), [1]) AS r, toTypeName(r) FROM p1 FULL JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 FULL JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 RIGHT JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 0;
+SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 LEFT JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 1;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
@@ -127,3 +150,5 @@ DROP TABLE u2;
 DROP TABLE s1;
 DROP TABLE m1;
 DROP TABLE m2;
+DROP TABLE p1;
+DROP TABLE p2;

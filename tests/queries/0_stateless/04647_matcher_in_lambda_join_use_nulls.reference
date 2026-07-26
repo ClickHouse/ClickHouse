@@ -128,3 +128,19 @@
 -- 12c. a subquery nested in PREWHERE keeps its own join_use_nulls handling
 1
 1
+-- 12d. USING join, unqualified matcher in a lambda, RIGHT/FULL: with and without PREWHERE
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(9,90)]	Array(Tuple(Nullable(UInt8), Nullable(UInt64)))
+[(1,10)]	Array(Tuple(UInt8, UInt64))
+[(1,10)]	Array(Tuple(UInt8, UInt64))
+[(9,90)]	Array(Tuple(UInt8, UInt64))
