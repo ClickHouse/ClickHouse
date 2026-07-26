@@ -175,13 +175,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes(Aggregat
         return;
     }
 
-    size_t res = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
+    const auto estimate = variant.aggregator->estimateSizeOfCompressedState(variant, bucket);
 
     auto & statistics = output_bytes_statistics[OutputStatisticsType::AggregationState];
     std::lock_guard lock(statistics.mutex);
-    statistics.bytes += res;
-    statistics.sample_bytes += res;
-    statistics.compressed_bytes += res;
+    statistics.bytes += estimate.bytes;
+    statistics.sample_bytes += estimate.sample_bytes;
+    statistics.compressed_bytes += estimate.compressed_bytes;
     statistics.elapsed_microseconds += watch.elapsedMicroseconds();
 }
 

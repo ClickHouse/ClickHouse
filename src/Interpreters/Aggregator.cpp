@@ -238,16 +238,18 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
-size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
+Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
     auto estimate_size_of_compressed_state = [&](auto & table)
     {
-        size_t res = 0;
+        CompressedStateSizeEstimate res;
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
             /// We only interested in the size of compressed state, not the serialized representation itself.
-            NullWriteBuffer wb;
-            CompressedWriteBuffer wbuf(wb);
+            /// The states have to be serialized through `compressed_buf` and not into `null_buf` directly,
+            /// otherwise nothing gets compressed and we measure the serialized size instead of the compressed one.
+            NullWriteBuffer null_buf;
+            CompressedWriteBuffer compressed_buf(null_buf);
 
             /// In single-level case (bucket == -1) we need to choose smaller sampling periods, because we have only one hash table.
             /// In two-level case we sample across 256 buckets, so we can use a larger period.
@@ -260,15 +262,22 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                     chassert(place);
                     if (it++ % period == 0)
                     {
-                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
-                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        is_simple_count ? writeVarUInt(getInlineCountState(place), compressed_buf)
+                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], compressed_buf);
                     }
                     /// A hundred samples should be enough to get a good estimate.
                     return it < 100 * period;
                 });
 
-            wbuf.finalize();
-            res += it ? static_cast<size_t>(table.size() * wb.count() / ((it + period - 1) / period)) : 0;
+            compressed_buf.finalize();
+            if (it)
+            {
+                /// `compressed_buf.count()` is the size of the sample before compression, `null_buf.count()`
+                /// is the size of the compressed data that reached the underlying buffer.
+                res.bytes += static_cast<size_t>(table.size() * compressed_buf.count() / ((it + period - 1) / period));
+                res.sample_bytes += compressed_buf.count();
+                res.compressed_bytes += null_buf.count();
+            }
         }
         return res;
     };
@@ -282,15 +291,17 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         if (!result.without_key)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty without_key data passed to Aggregator::applyToAllStates");
 
-        size_t res = 0;
+        CompressedStateSizeEstimate res;
         for (size_t j = 0; j < params.aggregates_size; ++j)
         {
-            NullWriteBuffer wb;
-            CompressedWriteBuffer wbuf(wb);
-            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
-                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
-            wbuf.finalize();
-            res += wb.count();
+            NullWriteBuffer null_buf;
+            CompressedWriteBuffer compressed_buf(null_buf);
+            is_simple_count ? writeVarUInt(getCountState(result.without_key), compressed_buf)
+                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], compressed_buf);
+            compressed_buf.finalize();
+            res.bytes += compressed_buf.count();
+            res.sample_bytes += compressed_buf.count();
+            res.compressed_bytes += null_buf.count();
         }
         return res;
     }
