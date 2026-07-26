@@ -6,7 +6,8 @@ namespace DB::tests
 {
 
 /// Adapts a span-probe MOCK to the step interface: the mock keeps its whole
-/// residency logic in `buildProbeView` (the old `planResidencyView` shape) and
+/// residency logic in `buildProbeView` (sorted hits + one-cell misses tiling
+/// a requested span) and
 /// this base steps a memoized chunk of it through `lookAt`. Test-only - the
 /// real providers run native cursors.
 class SpanProbeMockBase : public ICacheProvider

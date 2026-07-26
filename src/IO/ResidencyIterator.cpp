@@ -52,9 +52,9 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
             {
                 if (t.current.kind == ICacheProvider::Resolution::Kind::Hit)
                 {
-                    /// Store span-clamped, as the batch probe (asked with
-                    /// exactly the span) reported hits; the reader may serve
-                    /// wider - the executor clamps.
+                    /// Store span-clamped: geometry never exceeds the
+                    /// probed span; the reader may serve wider - the executor
+                    /// clamps.
                     const size_t lo = std::max(t.current.range.offset, probed_span.offset);
                     const size_t hi = std::min(t.current.range.end(), probed_span.end());
                     if (lo < hi)

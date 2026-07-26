@@ -694,7 +694,7 @@ size_t DiskCacheProvider::optimalFillCell() const
 /// forward on exit. `hits` are the committed pieces (segment runs split at the
 /// writer frontier); `cells` are the chunk's raw miss runs boundary-aligned,
 /// merged, and tiled into optimal fill cells on the absolute grid - the same
-/// shapes the batch probe produced, derived per chunk. The holder pins the
+/// shapes, derived per chunk on the absolute grid. The holder pins the
 /// chunk's segments; the touch book carries the deferred LRU bump with the
 /// handed-out readers.
 class DiskCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor

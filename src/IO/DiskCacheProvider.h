@@ -52,8 +52,8 @@ struct StreamingReaderSlot
 
 /// Shared deferred-LRU-bump context of one probe: every hit reader records the
 /// sub-ranges it served, and the LAST owner's destruction runs the bump over
-/// the pinned holder - the probe view for a batch probe, the final handed-out
-/// reader (the slide's release point) for a stepped one.
+/// the pinned holder - the probe cursor while the walk runs, then the final
+/// handed-out reader (the slide's release point).
 struct DiskCacheTouchBook
 {
     DiskCacheTouchBook(std::shared_ptr<FileSegmentsHolder> holder_, size_t object_file_offset_)

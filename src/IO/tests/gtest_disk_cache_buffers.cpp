@@ -301,7 +301,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
 /// (d) the residency probe (`lookAt`) is READ-ONLY: over an uncached range it creates NO
 /// segments (a later getOrSet/openWriteBuffers sees them still empty); misses
 /// carry writer==nullptr and cache-aligned ranges.
-TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
+TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
 {
     auto provider = makeProvider();
     const size_t object_size = 3 * kSegmentSize;

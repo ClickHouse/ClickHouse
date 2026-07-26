@@ -1,11 +1,11 @@
-/// Equivalence harness for the residency iterator (the rolling-plan S0 gate):
-/// walking a span with `ResidencyIterator::lookAt` and folding the resolutions
-/// must reproduce EXACTLY the geometry `observeAndSchedule`'s flat batch probe
-/// builds - same resident runs, same surviving miss cells, same prune - over
-/// real providers (FileCache tiling, partial segments, page blocks) and
-/// randomized layouts. The iterator probes first (read-only), the executor
-/// probes the same untouched cache state after, and the two observations are
-/// compared entry by entry.
+/// Equivalence harness for the residency iterator: an independent
+/// `ResidencyIterator` walk folded by `ResolutionFold` must reproduce EXACTLY
+/// the geometry `observeAndSchedule` publishes - same resident runs, same
+/// surviving miss cells, same prune - over real providers (FileCache tiling,
+/// partial segments, page blocks) and randomized layouts. The harness walks
+/// first (read-only), the executor observes the same untouched cache state
+/// after, and the two are compared entry by entry - the regression net for
+/// the probe cursors, the fold, and the plan build.
 
 #include <IO/ResidencyIterator.h>
 

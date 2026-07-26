@@ -218,7 +218,7 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
 
 /// (e) the residency probe (`lookAt`) is READ-ONLY: over an uncached range it creates no cells
 /// (a subsequent probe still reports misses).
-TEST(PageCacheBuffers, PlanResidencyViewIsReadOnly)
+TEST(PageCacheBuffers, ProbeIsReadOnly)
 {
     auto cache = makeCache();
     auto file = makeFile("buffers-plan-readonly");
@@ -356,7 +356,7 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
 }
 
 /// (i) hit/miss interleaving: a 3-block file with ONLY the middle block resident
-/// drives `buildView`'s kind-flip coalescing (miss → hit → miss), which the all-hit
+/// drives the probe's kind-flip coalescing (miss → hit → miss), which the all-hit
 /// and all-miss tests never exercise.
 TEST(PageCacheBuffers, HitMissInterleavedTiling)
 {

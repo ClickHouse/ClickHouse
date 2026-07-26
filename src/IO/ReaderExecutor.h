@@ -270,7 +270,7 @@ private:
     using StatTimer = ReaderExecutorStatTimer;
 
     /// One (object-piece, tier) entry of the FOREGROUND-PRIVATE half of a
-    /// plan: the provider/object identity, the read-only `planResidencyView`
+    /// plan: the provider/object identity, the read-only probe
     /// `view` (its hits own the held pinning read buffers; its misses carry
     /// NULL writers and are never dereferenced), and the AUTHORITATIVE
     /// `writers` opened over the aligned miss ranges. 1:1 POSITIONAL with
@@ -519,7 +519,7 @@ private:
     // ─── Plan build ──────────────────────────────────────────────────────
 
     /// Query cache residency ONCE over the look-ahead span via the read-only
-    /// `planResidencyView`, stash the geometry and the held buffers. While the
+    /// probe walk, stash the geometry and the held buffers. While the
     /// plan is held, resident bytes stream straight from the held read buffers
     /// - no per-window `getOrSet`. Rebuilt lazily whenever the cursor leaves
     /// the planned span. Resets the in-flight pin before discarding the old
