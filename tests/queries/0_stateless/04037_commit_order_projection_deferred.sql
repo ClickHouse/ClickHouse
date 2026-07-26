@@ -19,7 +19,7 @@ settings enable_block_number_column=1, enable_block_offset_column=1, allow_commi
 insert into mt_deferred(a) values (3) (1) (2);
 insert into mt_deferred(a) values (6) (4) (5);
 
--- Level-0 parts should NOT have the projection
+-- Level-0 parts already have the projection (it is materialized on insert)
 select 'before merge: projection parts count';
 select count() from system.projection_parts
     where database = currentDatabase() and table = 'mt_deferred' and active;

@@ -53,9 +53,9 @@ for _ in {1..30}; do
     sleep 1.0
 done
 
-# Check part_log ProfileEvents to verify rebuild vs merge behavior
+# Check part_log ProfileEvents: projections are merged, never rebuilt
 ${CLICKHOUSE_CLIENT} --query "
-select 'part_log: rebuild merges';
+select 'part_log: level-1 merges';
 select part_name, ProfileEvents['RebuiltProjections'] as rebuilt, ProfileEvents['MergedProjections'] as merged
 from system.part_log
 where database = currentDatabase() and table = 'mt_merge_levels' and event_type = 'MergeParts' and part_name in ('all_1_2_1', 'all_3_4_1')

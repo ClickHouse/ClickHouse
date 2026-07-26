@@ -652,7 +652,7 @@ static void validateUpdateColumns(
                 else if (auto virtual_column = virtual_columns.tryGet(key_column, VirtualsKind::All, VirtualsMaterializationPlace::All))
                 {
                     if (column_name == virtual_column->name)
-                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because its subcolumn {} is a key column", backQuote(column_name), backQuote(key_column));
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Cannot UPDATE column {} because the virtual column {} is a key column", backQuote(column_name), backQuote(key_column));
                 }
                 else
                 {

@@ -51,12 +51,13 @@ select 'index lookup partition 1 explain';
 explain indexes=1 select p, a from rmtqp1 where (_block_number, _block_offset) = (0, 1);
 
 select '';
+-- A tuple that exists only in partition `p = 2` (the third insert went there).
 select 'index lookup partition 2';
-select p, a from rmtqp1 where (_block_number, _block_offset) = (0, 1) order by p;
+select p, a from rmtqp1 where (_block_number, _block_offset) = (2, 0) order by p;
 
 select '';
 select 'index lookup partition 2 explain';
-explain indexes=1 select p, a from rmtqp1 where (_block_number, _block_offset) = (0, 1);
+explain indexes=1 select p, a from rmtqp1 where (_block_number, _block_offset) = (2, 0);
 
 -- Merge within each partition and verify
 optimize table rmtqp1 final;
