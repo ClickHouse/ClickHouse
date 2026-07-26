@@ -46,6 +46,7 @@
 #include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -135,6 +136,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_min_number_of_rows_per_replica;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool query_cache_compress_entries;
     extern const SettingsUInt64 query_cache_max_entries;
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
@@ -1897,12 +1899,9 @@ static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree
         throw Exception(ErrorCodes::TOO_DEEP_SUBQUERIES, "Too deep subqueries. Maximum: {}", max_subquery_depth);
 
     const auto & client_info = mutable_context->getClientInfo();
-    auto min_major = static_cast<UInt64>(DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
-    auto min_minor = static_cast<UInt64>(DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD);
 
     bool need_to_disable_two_level_aggregation = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        client_info.connection_client_version_major < min_major &&
-        client_info.connection_client_version_minor < min_minor;
+        client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
     if (need_to_disable_two_level_aggregation)
     {
@@ -1975,6 +1974,7 @@ void Planner::buildQueryPlanIfNeeded()
         buildPlanForUnionNode();
     else
         buildPlanForQueryNode();
+
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 

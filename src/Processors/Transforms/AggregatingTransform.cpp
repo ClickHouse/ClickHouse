@@ -1,6 +1,7 @@
 #include <bit>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnDecimal.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
 #include <Common/CurrentThread.h>
@@ -16,6 +17,7 @@
 #include <Common/logger_useful.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadPool.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
@@ -548,6 +550,7 @@ public:
             inputs.emplace_back(out.getHeader(), this);
             connect(out, inputs.back());
             inputs.back().setNeeded();
+            source->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
         }
 
         return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
@@ -1019,6 +1022,17 @@ AggregatingTransform::AggregatingTransform(
 
 AggregatingTransform::~AggregatingTransform() = default;
 
+size_t AggregatingTransform::getGeneratingStepGroup() const
+{
+    /// After consumption finishes, this transform generates the child processors that perform
+    /// the merge / final part of aggregation. Those children belong to the corresponding
+    /// generating stage, not to the AggregatingTransform's own (partial) aggregation stage,
+    /// which is why we map the current group to its generating counterpart here.
+    return AggregatingStep::AggregatingStage::PartialAggregation == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup())
+        ? static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
+        : static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
+}
+
 IProcessor::Status AggregatingTransform::prepare()
 {
     /// There are one or two input ports.
@@ -1120,6 +1134,9 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     inputs.emplace_back(out.getHeader(), this);
     connect(out, inputs.back());
     is_pipeline_created = true;
+    for (auto & proc : processors)
+        proc->inheritQueryPlanStepFromParent(*this, getGeneratingStepGroup());
+
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
@@ -1171,7 +1188,7 @@ void AggregatingTransform::initGenerate()
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = variants.sizeWithoutOverflowRow();
 
-    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {} sec. ({:.3f} rows/sec., {}/sec.)",
+    LOG_TRACE(log, "Aggregated. {} to {} rows (from {}) in {:.3f} sec. ({:.3f} rows/sec., {}/sec.)",
         src_rows, rows, ReadableSize(src_bytes),
         elapsed_seconds, static_cast<double>(src_rows) / elapsed_seconds,
         ReadableSize(static_cast<double>(src_bytes) / elapsed_seconds));
