@@ -317,6 +317,19 @@ inline std::string toUpperCopyASCII(std::string_view str)
     return res;
 }
 
+/// Replace every occurrence of `what` with `with`, in place. Does nothing if `what` is empty.
+inline void replaceAll(std::string & str, std::string_view what, std::string_view with)
+{
+    if (what.empty())
+        return;
+
+    for (size_t position = str.find(what); position != std::string::npos; position = str.find(what, position))
+    {
+        str.replace(position, what.length(), with);
+        position += with.length();
+    }
+}
+
 
 template <typename F>
 std::string trim(const std::string & str, F && predicate)
