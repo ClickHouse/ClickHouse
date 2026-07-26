@@ -953,40 +953,34 @@ std::unique_ptr<ICacheProvider::IProbeCursor> DiskCacheProvider::probe()
     return std::make_unique<ProbeCursor>(*this);
 }
 
-void DiskCacheProvider::openWriteBuffers(
+CacheWriterPtr DiskCacheProvider::openWriter(
     const StoredObject & object,
     size_t object_file_offset,
-    CacheView & view)
+    ByteRange cell)
 {
     if (!populatesOnMiss())
-        return;
+        return nullptr;
 
     auto resolved_key = custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
     auto resolved_origin = custom_origin.value_or(cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
-    for (auto & entry : view.miss_entries)
-    {
-        const ByteRange aligned_file = entry.range;
-        chassert(aligned_file.offset >= object_file_offset);
-        const size_t obj_offset = aligned_file.offset - object_file_offset;
+    chassert(cell.offset >= object_file_offset);
+    auto holder = cache->getOrSet(
+        resolved_key,
+        cell.offset - object_file_offset,
+        cell.size,
+        object.bytes_size,
+        CreateFileSegmentSettings{},
+        /*file_segments_limit=*/0,
+        resolved_origin,
+        cache_settings.boundary_alignment);
 
-        auto holder = cache->getOrSet(
-            resolved_key,
-            obj_offset,
-            aligned_file.size,
-            object.bytes_size,
-            CreateFileSegmentSettings{},
-            /*file_segments_limit=*/0,
-            resolved_origin,
-            cache_settings.boundary_alignment);
-
-        entry.writer = std::make_unique<DiskCacheWriter>(
-            cache,
-            object_file_offset,
-            cache_settings,
-            std::move(holder),
-            aligned_file);
-    }
+    return std::make_unique<DiskCacheWriter>(
+        cache,
+        object_file_offset,
+        cache_settings,
+        std::move(holder),
+        cell);
 }
 
 }

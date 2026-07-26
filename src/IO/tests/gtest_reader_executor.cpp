@@ -593,10 +593,9 @@ protected:
     }
 
 public:
-    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
+    CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override
     {
-        for (auto & entry : view.miss_entries)
-            entry.writer = std::make_unique<MockCacheWriter>(entry.range, storage, block_size);
+        return std::make_unique<MockCacheWriter>(cell, storage, block_size);
     }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index) > 0; }
@@ -1840,9 +1839,9 @@ protected:
     CacheViewPtr buildProbeView(const StoredObject &, size_t, ByteRange range_in_file) override;
 
 public:
-    /// One held write buffer per aligned (segment) miss range; each appends into its
+    /// The held write buffer for one aligned (segment) miss cell; it appends into its
     /// segment append-only (mirroring the old `put`) and pins it via `pin`.
-    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override;
+    CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override;
 
     String name() const override { return "EvictableSegmentMock"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
@@ -2086,17 +2085,14 @@ inline CacheViewPtr EvictableSegmentMockCache::buildProbeView(
     return view;
 }
 
-inline void EvictableSegmentMockCache::openWriteBuffers(
-    const StoredObject &, size_t, CacheView & view)
+inline CacheWriterPtr EvictableSegmentMockCache::openWriter(
+    const StoredObject &, size_t, ByteRange cell)
 {
-    for (auto & entry : view.miss_entries)
-    {
-        /// Each miss cell lies within a single segment (one miss entry per segment
-        /// in `buildProbeView`); derive its index from the offset.
-        const size_t seg_idx = entry.range.offset / segment_size;
-        ++open_count[seg_idx];
-        entry.writer = std::make_unique<EvictableSegmentWriteBuffer>(entry.range, seg_idx, *this);
-    }
+    /// Each miss cell lies within a single segment (one miss entry per segment
+    /// in `buildProbeView`); derive its index from the offset.
+    const size_t seg_idx = cell.offset / segment_size;
+    ++open_count[seg_idx];
+    return std::make_unique<EvictableSegmentWriteBuffer>(cell, seg_idx, *this);
 }
 
 } // anonymous namespace
@@ -3143,10 +3139,9 @@ protected:
     }
 
 public:
-    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
+    CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override
     {
-        for (auto & entry : view.miss_entries)
-            entry.writer = std::make_unique<WideGranularityWriteBuffer>(entry.range, storage, put_log, block_size);
+        return std::make_unique<WideGranularityWriteBuffer>(cell, storage, put_log, block_size);
     }
 
     bool hasBlock(size_t block_index) const { return storage.contains(block_index); }
@@ -3506,10 +3501,9 @@ namespace
         }
 
     public:
-        void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
+        CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override
         {
-            for (auto & entry : view.miss_entries)
-                entry.writer = std::make_unique<TrackingWriteBuffer>(entry.range);
+            return std::make_unique<TrackingWriteBuffer>(cell);
         }
 
         std::vector<TrackedLookup> log;

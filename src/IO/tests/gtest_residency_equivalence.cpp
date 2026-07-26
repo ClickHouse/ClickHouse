@@ -288,7 +288,8 @@ public:
     {
         auto view = std::make_unique<CacheView>();
         view->miss_entries.push_back(MissEntry{cell, nullptr});
-        provider.openWriteBuffers(objects.front(), /*object_file_offset=*/0, *view);
+        for (auto & e : view->miss_entries)
+            e.writer = provider.openWriter(objects.front(), /*object_file_offset=*/0, e.range);
         ASSERT_EQ(view->misses().size(), 1u);
         auto & writer = *view->misses().front().writer;
         auto claim = writer.claim(writer.range());

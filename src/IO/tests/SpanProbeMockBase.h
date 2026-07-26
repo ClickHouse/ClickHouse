@@ -1,6 +1,7 @@
 #pragma once
 
 #include <IO/ICacheProvider.h>
+#include <IO/ResidencyIterator.h>
 
 namespace DB::tests
 {

@@ -3,6 +3,7 @@
 #include <IO/ChainedBuffers.h>
 #include <IO/OffsetMap.h>
 #include <IO/ICacheProvider.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/IntervalSet.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LongConnectionLimit.h>
@@ -723,7 +724,7 @@ private:
 
     /// Translate an observation into 1:1 `GeometryEntry`/`PlanTier` pairs
     /// (pushed BOTH-or-NEITHER, cache-major fastest-first): the fold's prune is
-    /// applied to the held view before `openWriteBuffers` upgrades the
+    /// applied to the held view before the writer upgrade opens the
     /// survivors in place (`[CF-plan-rebuild]`); a bypass tier keeps its probed
     /// miss entries untouched; records that are neither resident nor a
     /// populatable gap are dropped.

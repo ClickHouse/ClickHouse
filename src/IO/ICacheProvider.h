@@ -21,10 +21,11 @@ enum class CacheTier
     FilesystemCache,
 };
 
-/// Per-range buffer API: `lookAt` steps + `openWriteBuffers` decompose a read
-/// into HIT ranges (each owning a held `CacheReader`) and MISS ranges (each
-/// owning a held `CacheWriter`). The buffers are held by the executor's plan
-/// across many read windows. Coordinates are FILE-LEVEL throughout.
+/// Per-range buffer API: `lookAt` steps decompose a read into HIT ranges (each
+/// owning a held `CacheReader`) and MISS cells; `openWriter` opens the held
+/// `CacheWriter` for a cell the plan decides to fill. The buffers are held by
+/// the executor's plan across many read windows. Coordinates are FILE-LEVEL
+/// throughout.
 
 /// Held, re-readable view of ONE resident (hit) file-level range. Owns the pin
 /// that keeps its bytes alive; holds NO cursor (the executor's ChainedBuffers owns it).
@@ -153,41 +154,6 @@ public:
 using CacheReaderPtr = std::unique_ptr<CacheReader>;
 using CacheWriterPtr = std::unique_ptr<CacheWriter>;
 
-/// One resident range + its held read buffer.
-struct HitEntry { ByteRange range; CacheReaderPtr reader; };
-/// One miss CELL. The writer carries the entry's lifecycle: null as probed
-/// (the probe observes only), opened by `openWriteBuffers` for the misses
-/// that survive the plan's prune (null on a read-only/bypass tier).
-struct MissEntry { ByteRange range; CacheWriterPtr writer; };
-
-/// Decomposed lookup result, held by the plan across windows - the tier's
-/// plan-state object: hit readers, miss cells, and (after the prune/upgrade)
-/// the write handles. Its destructor is the SINGLE place the deferred LRU
-/// bump runs, after every owned write buffer is finalized.
-class CacheView
-{
-public:
-    virtual ~CacheView() = default;
-
-    const VectorWithMemoryTracking<HitEntry> & hits() const { return hit_entries; }
-    const VectorWithMemoryTracking<MissEntry> & misses() const { return miss_entries; }
-
-    bool allHit() const { return miss_entries.empty(); }
-    bool allMiss() const { return hit_entries.empty(); }
-
-    /// PRUNE step: drop the miss at `index` (a cell the plan will not fill in
-    /// this tier - e.g. fully covered by a faster tier). Runs between the probe
-    /// and `openWriteBuffers`, so no write handle is ever opened for it.
-    void dropMiss(size_t index) { miss_entries.erase(miss_entries.begin() + index); }
-
-    /// Sorted, disjoint; hits + misses tile the lookup range (clamped to EOF /
-    /// object end). EACH MISS RANGE IS ONE CELL. The probe assembly writes
-    /// these directly.
-    VectorWithMemoryTracking<HitEntry> hit_entries;
-    VectorWithMemoryTracking<MissEntry> miss_entries;
-};
-using CacheViewPtr = std::unique_ptr<CacheView>;
-
 /// Cache provider interface. `ReadPipeline` configures the chain.
 class ICacheProvider
 {
@@ -209,12 +175,11 @@ public:
 
     virtual String name() const = 0;
 
-    /// UPGRADE step: open a write buffer into each of the view's surviving miss
-    /// entries (the plan's `dropMiss` prune already ran), without re-probing
-    /// residency. A no-op when `!populatesOnMiss()` - the writers stay null and
-    /// every fill site skips null-writer entries.
-    virtual void openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset, CacheView & view) = 0;
+    /// UPGRADE step: open the held write buffer for ONE miss cell the plan
+    /// decided to fill (the prune already ran), without re-probing residency.
+    /// Null when `!populatesOnMiss()` - fill sites skip null writers.
+    virtual CacheWriterPtr openWriter(
+        const StoredObject & object, size_t object_file_offset, ByteRange cell) = 0;
 
     /// One step of the residency walk (the executor's iterator consumes this).
     struct Resolution

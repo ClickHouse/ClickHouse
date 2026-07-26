@@ -1,5 +1,5 @@
 /// Unit grid for the NEW per-range cache-buffer API on `DiskCacheProvider`
-/// (`lookAt` / `openWriteBuffers` + `DiskCacheReader` /
+/// (`lookAt` / `openWriter` + `DiskCacheReader` /
 /// `DiskCacheWriter` / `CacheView`). Backed by a REAL `FileCache` over a
 /// temp dir, mirroring `RealDiskCacheSequentialEvictionKeepsConnection` in
 /// `gtest_reader_executor.cpp` (same `ThreadStatus` + `QueryScope` machinery so
@@ -162,7 +162,8 @@ CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
         view->miss_entries.push_back(MissEntry{c, nullptr});
-    provider.openWriteBuffers(object, object_file_offset, *view);
+    for (auto & e : view->miss_entries)
+        e.writer = provider.openWriter(object, object_file_offset, e.range);
     return view;
 }
 
@@ -174,7 +175,7 @@ StoredObject makeObject(const String & name, size_t size)
 }
 
 
-/// (a) openWriteBuffers over an empty miss range → fill across TWO window-by-window
+/// (a) openWriter over an empty miss range → fill across TWO window-by-window
 /// write() calls into ONE held buffer; the segment stays PARTIALLY_DOWNLOADED
 /// between calls and the second write appends from the grown cwo (no re-getOrSet);
 /// committed() grows; complete() true at the end; a later probeView reports
@@ -299,7 +300,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
 
 
 /// (d) the residency probe (`lookAt`) is READ-ONLY: over an uncached range it creates NO
-/// segments (a later getOrSet/openWriteBuffers sees them still empty); misses
+/// segments (a later getOrSet/openWriter sees them still empty); misses
 /// carry writer==nullptr and cache-aligned ranges.
 TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
 {
@@ -319,7 +320,7 @@ TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
         EXPECT_EQ(m.range.size % kSegmentSize, 0u);
     }
 
-    // Read-only: a subsequent openWriteBuffers over the same aligned range sees a
+    // Read-only: a subsequent openWriter over the same aligned range sees a
     // fresh EMPTY segment (the probe did not create or fill anything).
     auto view_misses = openWriters(*provider, object, 0, {ByteRange{0, kSegmentSize}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
@@ -335,7 +336,7 @@ TEST_F(DiskCacheBuffers, ProbeIsReadOnly)
 
 
 /// (e) bypass: a DiskCacheProvider with read_if_exists_otherwise_bypass=true →
-/// openWriteBuffers returns empty; `lookAt` misses carry writer==nullptr.
+/// openWriter returns nullptr; `lookAt` misses carry writer==nullptr.
 TEST_F(DiskCacheBuffers, BypassNoWriters)
 {
     auto provider = makeProvider(/*bypass=*/true);
@@ -707,7 +708,7 @@ TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
 }
 
 /// Virgin miss runs are TILED into optimal fill cells, one MissEntry per cell,
-/// so the cells `openWriteBuffers` creates coincide with the fetch tail grid.
+/// so the cells `openWriter` opens coincide with the fetch tail grid.
 /// In this fixture boundary == max segment == 4 KiB, so the optimal cell is one
 /// segment and a 3-segment virgin probe yields exactly 3 single-segment tiles.
 TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
@@ -727,7 +728,8 @@ TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
     }
 
     /// Upgrade in place: one writer per tile; each writer's range is its own cell.
-    provider->openWriteBuffers(object, /*object_file_offset=*/0, *view);
+    for (auto & e : view->miss_entries)
+        e.writer = provider->openWriter(object, /*object_file_offset=*/0, e.range);
     ASSERT_EQ(view->misses().size(), 3u);
     for (size_t i = 0; i < 3; ++i)
         EXPECT_EQ(view->misses()[i].writer->range().offset, i * kSegmentSize);

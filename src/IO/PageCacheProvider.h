@@ -131,8 +131,8 @@ public:
     std::unique_ptr<IProbeCursor> probe() override;
 
     /// Cells are created lazily on the first `write` of each block.
-    void openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset, CacheView & view) override;
+    CacheWriterPtr openWriter(
+        const StoredObject & object, size_t object_file_offset, ByteRange cell) override;
 
 private:
     /// Defined in the .cpp; nested for private-member access.

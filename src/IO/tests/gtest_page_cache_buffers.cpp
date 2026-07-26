@@ -23,7 +23,8 @@ CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
         view->miss_entries.push_back(MissEntry{c, nullptr});
-    provider.openWriteBuffers(object, object_file_offset, *view);
+    for (auto & e : view->miss_entries)
+        e.writer = provider.openWriter(object, object_file_offset, e.range);
     return view;
 }
 
@@ -72,7 +73,7 @@ std::string flatten(const ChainedBuffers & chain, size_t offset, size_t size)
 
 }
 
-/// (a) openWriteBuffers over a miss range, write a whole block => complete() true,
+/// (a) openWriter over a miss range, write a whole block => complete() true,
 /// committed() spans the range, probeView afterward reports a hit, and
 /// read() round-trips the bytes.
 TEST(PageCacheBuffers, WriteWholeBlockThenHit)
@@ -84,7 +85,7 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    /// One openWriteBuffers over the aligned miss block.
+    /// One openWriter over the aligned miss block.
     auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
@@ -175,8 +176,8 @@ TEST(PageCacheBuffers, EofTailBlockShort)
     EXPECT_EQ(flatten(chain, tail_off, tail_size), std::string(tail_size, 'T'));
 }
 
-/// (d) bypass: a provider with bypass_if_missing=true => openWriteBuffers returns
-/// empty; `lookAt` misses carry writer == nullptr; a direct write on a
+/// (d) bypass: a provider with bypass_if_missing=true => openWriter returns
+/// nullptr; `lookAt` misses carry writer == nullptr; a direct write on a
 /// bypass write buffer returns 0 and creates no registered cell.
 TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
 {
@@ -274,7 +275,7 @@ TEST(PageCacheBuffers, FirstWriterWins)
 }
 
 /// (g) multi-block write + read-back per block: a range spanning >= 2 blocks, one
-/// openWriteBuffers, write all, complete() true, each block round-trips (mirrors
+/// openWriter, write all, complete() true, each block round-trips (mirrors
 /// DiskCache's WriteAcrossTwoSegments).
 TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
 {

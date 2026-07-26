@@ -3236,9 +3236,10 @@ namespace
         }
 
     public:
-        void openWriteBuffers(const StoredObject &, size_t, CacheView &) override
+        CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange) override
         {
             /// The configured range is fully resident - nothing to upgrade.
+            return nullptr;
         }
         String name() const override { return "Recording"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }

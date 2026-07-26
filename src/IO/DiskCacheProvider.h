@@ -100,7 +100,7 @@ private:
 };
 
 /// `CacheWriter` over one cache-aligned miss range. Owns its OWN
-/// `FileSegmentsHolder` (one `getOrSet`, built by `openWriteBuffers`), appends
+/// `FileSegmentsHolder` (one `getOrSet`, built by `openWriter`), appends
 /// across windows and is finalized at destruction - the holder's destructor
 /// shrinks a partial segment to its downloaded size.
 class DiskCacheWriter : public CacheWriter
@@ -178,7 +178,7 @@ public:
     /// and misses only the tail. Miss runs are TILED into optimal fill cells
     /// (`optimalFillCell`) on the absolute grid; a cut never falls inside an
     /// EXISTING segment, so each emitted range maps to whole cells and
-    /// `openWriteBuffers` never hands two writers the same segment.
+    /// the writer upgrade never hands two writers the same segment.
     std::unique_ptr<IProbeCursor> probe() override;
 
 private:
@@ -188,8 +188,8 @@ private:
 public:
 
     /// One `getOrSet` per surviving miss cell; the held holder is owned by each writer.
-    void openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset, CacheView & view) override;
+    CacheWriterPtr openWriter(
+        const StoredObject & object, size_t object_file_offset, ByteRange cell) override;
 
 private:
 

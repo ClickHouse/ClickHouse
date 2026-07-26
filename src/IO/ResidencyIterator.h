@@ -9,6 +9,40 @@
 namespace DB
 {
 
+/// One resident range + its held read buffer.
+struct HitEntry { ByteRange range; CacheReaderPtr reader; };
+/// One miss CELL. The writer carries the entry's lifecycle: null as probed
+/// (the probe observes only), opened via `openWriter` for the misses that
+/// survive the plan's prune (null on a read-only/bypass tier).
+struct MissEntry { ByteRange range; CacheWriterPtr writer; };
+
+/// One tier's held plan buffers, ASSEMBLED BY THE ITERATOR from the walked
+/// resolutions: hit readers, miss cells, and (after the prune/upgrade) the
+/// write handles. Held by the plan across windows; destruction releases the
+/// pins and finalizes the writers.
+class CacheView
+{
+public:
+    virtual ~CacheView() = default;
+
+    const VectorWithMemoryTracking<HitEntry> & hits() const { return hit_entries; }
+    const VectorWithMemoryTracking<MissEntry> & misses() const { return miss_entries; }
+
+    bool allHit() const { return miss_entries.empty(); }
+    bool allMiss() const { return hit_entries.empty(); }
+
+    /// PRUNE step: drop the miss at `index` (a cell the plan will not fill in
+    /// this tier - e.g. fully covered by a faster tier). Runs before the
+    /// writer upgrade, so no write handle is ever opened for it.
+    void dropMiss(size_t index) { miss_entries.erase(miss_entries.begin() + index); }
+
+    /// Sorted, disjoint; hits + misses tile the walked range (clamped to EOF /
+    /// object end). EACH MISS RANGE IS ONE CELL.
+    VectorWithMemoryTracking<HitEntry> hit_entries;
+    VectorWithMemoryTracking<MissEntry> miss_entries;
+};
+using CacheViewPtr = std::unique_ptr<CacheView>;
+
 /// Chain-level residency resolution at a position: one stride over which every
 /// tier's classification is constant, with the per-tier column (fastest-first,
 /// positional with the chain the iterator was built over). A `Resident` slice

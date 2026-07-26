@@ -660,7 +660,8 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & [cache, view] : populate_views)
         {
-            cache->openWriteBuffers(pieces.front().object, /*object_file_offset=*/0, *view);
+            for (auto & m : view->miss_entries)
+                m.writer = cache->openWriter(pieces.front().object, /*object_file_offset=*/0, m.range);
             for (const auto & m : view->misses())
             {
                 if (!m.writer)
@@ -1201,7 +1202,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
             openLongConnectionIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
-        /// `getOrSet` segment-aligned the miss at plan build, in `openWriteBuffers`).
+        /// `getOrSet` segment-aligned the miss at plan build, in `openWriter`).
         auto blocks = allocateBlocks(pr.size, window_block_size);
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
@@ -2618,8 +2619,8 @@ void ReaderExecutor::emitObservation(
                         view->dropMiss(i);
                 }
                 chassert(k == kept.size());
-                if (!view->misses().empty())
-                    caches_[ci]->openWriteBuffers(piece.object, piece.object_file_offset, *view);
+                for (auto & m : view->miss_entries)
+                    m.writer = caches_[ci]->openWriter(piece.object, piece.object_file_offset, m.range);
             }
 
             PlanTier plan_tier;
@@ -2637,7 +2638,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// Machine-check the threading invariant: the held read/write buffers are
     /// foreground-private and must never be torn down / rebuilt while a prefetch worker
     /// is in flight (the worker co-owns only the immutable geometry), so a segment is
-    /// never aliased by a machine-held writer and a fresh `openWriteBuffers` of the next
+    /// never aliased by a machine-held writer and a fresh writer upgrade of the next
     /// plan (`[CF-plan-rebuild]`). The cache fill is inline on the read thread, so there
     /// is nothing deferred to drain here.
     chassert(!machine);
@@ -2646,7 +2647,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// (`[CF-plan-rebuild]`): the pin aliases a held write buffer's own bare segment ref,
     /// so dropping it first makes `~DiskCacheWriter` the LAST owner and
     /// `FileSegment::complete` effective (otherwise a PARTIALLY_DOWNLOADED segment would
-    /// stay un-shrunk and the next `openWriteBuffers` would alias the same segment in two
+    /// stay un-shrunk and the next writer upgrade would alias the same segment in two
     /// buffers). The pin is re-established through the NEW buffer at the next collect.
     fill_lane.pin.reset();
 
@@ -2748,7 +2749,7 @@ void ReaderExecutor::extendPlan(size_t position_phys)
 
     /// A cell straddling the old `plan_end` is already owned by an old entry's
     /// view (its writer was opened there); the extension derives the same
-    /// absolute-grid cell and must not own it twice - a second `openWriteBuffers`
+    /// absolute-grid cell and must not own it twice - a second `openWriter`
     /// would alias the segment in two buffers. Overlap implies identity: cells
     /// tile on the absolute grid and an existing segment reports its true extent.
     VectorWithMemoryTracking<std::pair<CacheTier, ByteRange>> straddlers;

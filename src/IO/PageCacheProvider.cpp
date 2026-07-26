@@ -233,25 +233,24 @@ PageCacheProvider::PageCacheProvider(
 {
 }
 
-void PageCacheProvider::openWriteBuffers(
+CacheWriterPtr PageCacheProvider::openWriter(
     const StoredObject & /*object*/,
     size_t /*object_file_offset*/,
-    CacheView & view)
+    ByteRange cell)
 {
     if (!populatesOnMiss())
-        return;
+        return nullptr;
 
     /// PageCache is file-level - `object` / `object_file_offset` are ignored.
     /// Cells are created lazily on the first `write` of each block.
-    for (auto & entry : view.miss_entries)
-        entry.writer = std::make_unique<PageCacheWriter>(
-            cache,
-            file,
-            block_size,
-            file_size_in_bytes,
-            inject_eviction,
-            bypass_if_missing,
-            entry.range);
+    return std::make_unique<PageCacheWriter>(
+        cache,
+        file,
+        block_size,
+        file_size_in_bytes,
+        inject_eviction,
+        bypass_if_missing,
+        cell);
 }
 
 /// The page tier's residency walk: stateless per step (block probes are cheap
