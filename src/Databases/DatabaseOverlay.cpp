@@ -131,6 +131,14 @@ void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextP
     }
 }
 
+void DatabaseOverlay::checkSourceTableAccessIfFacade(const StorageID & table_id, ContextPtr context_, AccessType access_to_check)
+{
+    if (!table_id.hasDatabase())
+        return;
+    if (const auto * facade = asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+        facade->checkSourceTableAccess(table_id.table_name, context_, access_to_check);
+}
+
 std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage)
 {
     if (!storage || !written_id.hasDatabase())

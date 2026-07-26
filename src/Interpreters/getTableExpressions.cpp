@@ -1,4 +1,5 @@
 #include <Interpreters/getTableExpressions.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -115,6 +116,14 @@ static NamesAndTypesList getColumnsFromTableExpression(
     else if (table_expression.database_and_table_name)
     {
         auto table_id = context->resolveStorageID(table_expression.database_and_table_name);
+        /// This is the shared column-metadata lookup of the old analyzer, reached for every table
+        /// expression of the query, including the joined ones. It loads the table, so the
+        /// fail-closed source-side precheck of a read-only `Overlay` facade must run first: without
+        /// it a user granted on the facade but not on the source could make a hidden broken source
+        /// surface its own error, turning the facade into an existence oracle. `SHOW_TABLES` is
+        /// required because any grant on the source table implies it; the precise privilege on both
+        /// the facade and the source is still verified against the loaded storage later.
+        DatabaseOverlay::checkSourceTableAccessIfFacade(table_id, context, AccessType::SHOW_TABLES);
         const auto & table = DatabaseCatalog::instance().getTable(table_id, context);
         auto table_metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
         const auto & columns = table_metadata_snapshot->getColumns();

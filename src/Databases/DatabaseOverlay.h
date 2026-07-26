@@ -156,6 +156,14 @@ public:
     /// denied healthy one stay indistinguishable.
     void checkSourceTableAccess(const String & table_name, ContextPtr context, AccessType access_to_check) const;
 
+    /// Convenience wrapper of `checkSourceTableAccess` for the catalog-lookup sites: when
+    /// `table_id` names a table reached through a read-only `Overlay` facade, requires
+    /// `access_to_check` on the underlying source name before the caller resolves and loads the
+    /// source table; does nothing for plain databases and temporary tables. Every lookup that can
+    /// load a table behind a facade must run this first, otherwise the source's own startup /
+    /// metadata / remote error reaches a user with no grant on the source.
+    static void checkSourceTableAccessIfFacade(const StorageID & table_id, ContextPtr context, AccessType access_to_check);
+
     /// When `written_id` refers to a table reached through a read-only `Overlay` facade — the
     /// database of `written_id` is a read-only `Overlay` while `storage` belongs to a different
     /// table (the underlying source) — returns the id of that source table, so the caller can

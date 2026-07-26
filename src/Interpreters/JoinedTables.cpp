@@ -270,8 +270,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
     /// are not over-denied here; the precise column-level `SELECT` on both the facade and the
     /// source is still verified against the loaded storage in `checkAccessRightsForSelect`,
     /// which also closes the resolution race.
-    if (const auto * facade = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
-        facade->checkSourceTableAccess(table_id.table_name, context, AccessType::SHOW_TABLES);
+    DatabaseOverlay::checkSourceTableAccessIfFacade(table_id, context, AccessType::SHOW_TABLES);
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
     return DatabaseCatalog::instance().getTable(table_id, context);
@@ -361,6 +360,10 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
+        /// The right-hand side of the join is looked up here to recognize the special storages
+        /// (`Join`, `Dictionary`, key-value): the same fail-closed source-side precheck as for the
+        /// left table must run before this lookup can load a table behind a read-only `Overlay`.
+        DatabaseOverlay::checkSourceTableAccessIfFacade(joined_table_id, context, AccessType::SHOW_TABLES);
         StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
         if (storage)
         {
