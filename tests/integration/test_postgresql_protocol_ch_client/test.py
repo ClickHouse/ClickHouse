@@ -441,8 +441,12 @@ def test_datetime_scale_roundtrip(started_cluster):
     # `DateTime` and `DateTime64` must not collapse to `DateTime64(6)` through self-connect schema
     # inference: the fractional-second precision is carried in the `timestamp` type modifier (as
     # PostgreSQL does), `format_type` renders it as `timestamp(p) without time zone`, and the reader maps
-    # p = 0 back to `DateTime` and 1..6 to `DateTime64(p)`. A scale above 6 does not fit PostgreSQL's
-    # `timestamp` at all, so such a column falls back to text and is read as `String` (value preserved).
+    # `timestamp(p)` back to `DateTime64(p)`. A scale above 6 does not fit PostgreSQL's `timestamp` at
+    # all, so such a column falls back to text and is read as `String` (value preserved).
+    #
+    # A 32-bit `DateTime` column comes back as `DateTime64(0)`: `timestamp(0)` is a native PostgreSQL
+    # type with a far wider range, so it must not be narrowed to `DateTime` for real PostgreSQL
+    # sources. The second-resolution values are identical, only the type is wider.
     node.query("DROP TABLE IF EXISTS test_dt_scales SYNC")
     node.query(
         "CREATE TABLE test_dt_scales "
@@ -459,7 +463,7 @@ def test_datetime_scale_roundtrip(started_cluster):
     assert node.query(
         "SELECT toTypeName(dt), toTypeName(dt3), toTypeName(dt6), toTypeName(dt9), toTypeName(adt3) "
         f"FROM {pg_source('default', 'test_dt_scales')} LIMIT 1"
-    ) == "DateTime\tDateTime64(3)\tDateTime64(6)\tString\tArray(DateTime64(3))\n"
+    ) == "DateTime64(0)\tDateTime64(3)\tDateTime64(6)\tString\tArray(DateTime64(3))\n"
 
     assert node.query(
         f"SELECT dt, dt3, dt6, dt9, adt3 FROM {pg_source('default', 'test_dt_scales')} ORDER BY dt"
@@ -764,11 +768,12 @@ def test_datetime_with_timezone_stays_text(started_cluster):
         "(1, '2024-01-02 03:04:05', '2024-01-02 03:04:05.123', '2024-01-02 03:04:05')"
     )
 
-    # Timezone-bearing columns fall back to text (String); a plain DateTime still round-trips natively.
+    # Timezone-bearing columns fall back to text (String); a plain DateTime still round-trips natively
+    # as the `timestamp(0)` it is advertised as, which the reader maps to `DateTime64(0)`.
     assert node.query(
         "SELECT toTypeName(dt_utc), toTypeName(dt64_tz), toTypeName(dt) "
         f"FROM {pg_source('default', 'test_dt_tz')} LIMIT 1"
-    ) == "String\tString\tDateTime\n"
+    ) == "String\tString\tDateTime64(0)\n"
 
     # The values are the exact rendering in each column's own time zone - nothing is reinterpreted.
     assert node.query(
@@ -955,6 +960,66 @@ def test_copy_from_stdin_abort_leaves_no_partial_rows(started_cluster):
 
     assert node.query("SELECT count() FROM test_copy_abort_multiblock") == "3\n"
     node.query("DROP TABLE test_copy_abort_multiblock SYNC")
+
+
+class _SourceWithBadRowAtEnd:
+    # A file-like object that streams more rows than fit in one insert block and then a row that cannot
+    # be parsed into the target column, so the payload is valid until well past the point where the
+    # server would have flushed its first block if it inserted while parsing.
+    def __init__(self, chunks=60, rows_per_chunk=25000):
+        self._remaining = chunks
+        self._chunk = "7\n" * rows_per_chunk
+        self._tail_sent = False
+
+    def read(self, size=-1):
+        if self._remaining > 0:
+            self._remaining -= 1
+            return self._chunk
+        if not self._tail_sent:
+            self._tail_sent = True
+            return "not_a_number\n"
+        return ""
+
+
+def test_copy_from_stdin_bad_row_leaves_no_partial_rows(started_cluster):
+    # The same all-or-nothing guarantee must hold for a server-side parse error, not only for a
+    # client-initiated `CopyFail`: the whole staged payload is parsed before anything is pushed to the
+    # insert pipeline, because the sink commits parts as the data streams through it and `cancel` is not
+    # a rollback. Here the payload exceeds one insert block and the unparsable row comes last, so an
+    # implementation that parsed and inserted in one pass would leave the earlier rows visible and
+    # duplicate them on the client's retry.
+    node.query("DROP TABLE IF EXISTS test_copy_bad_row SYNC")
+    node.query(
+        "CREATE TABLE test_copy_bad_row (id UInt32) ENGINE = MergeTree ORDER BY id"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        with pytest.raises(py_psql.Error, match="COPY FROM STDIN failed"):
+            cur.copy_expert(
+                "COPY test_copy_bad_row FROM STDIN WITH (FORMAT csv)",
+                _SourceWithBadRowAtEnd(),
+            )
+        conn.rollback()
+
+        # Nothing from the failed copy was committed.
+        assert node.query("SELECT count() FROM test_copy_bad_row") == "0\n"
+
+        # The failure is an ordinary query error, so the connection stays usable and a retry of a valid
+        # payload succeeds without duplicates.
+        cur.copy_expert(
+            "COPY test_copy_bad_row FROM STDIN WITH (FORMAT csv)",
+            io.StringIO("1\n2\n3\n"),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert node.query("SELECT count() FROM test_copy_bad_row") == "3\n"
+    node.query("DROP TABLE test_copy_bad_row SYNC")
 
 
 def test_copy_rejects_unsupported_endpoints(started_cluster):

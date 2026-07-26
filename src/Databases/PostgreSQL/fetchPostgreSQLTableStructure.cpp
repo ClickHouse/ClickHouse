@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -103,11 +102,17 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
     else if (type.starts_with("timestamp"))
     {
         /// PostgreSQL renders an explicit fractional-second precision as `timestamp(p) ...`
-        /// (`format_type` decodes it from the type modifier). Honor it so that a `timestamp(0)`
-        /// becomes `DateTime` and a `timestamp(p)` becomes `DateTime64(p)` - in particular, a
-        /// self-connected `DateTime` / `DateTime64(p)` column round-trips with its scale intact.
-        /// A bare `timestamp` (no precision specified) keeps the historical `DateTime64(6)`
-        /// mapping, which covers PostgreSQL's default microsecond precision.
+        /// (`format_type` decodes it from the type modifier). Honor it, so that a self-connected
+        /// `DateTime` / `DateTime64(p)` column round-trips with its scale intact. A bare `timestamp`
+        /// (no precision specified) keeps the historical `DateTime64(6)` mapping, which covers
+        /// PostgreSQL's default microsecond precision.
+        ///
+        /// Every precision, including 0, maps to `DateTime64`: `timestamp` is a native PostgreSQL
+        /// type whose range is much wider than that of the 32-bit `DateTime`, so mapping
+        /// `timestamp(0)` to `DateTime` would narrow it for real PostgreSQL sources - a value before
+        /// 1970 or after 2106 would be clamped or truncated on read. `DateTime64(0)` has the same
+        /// second resolution without that loss; a self-connected `DateTime` column therefore comes
+        /// back as `DateTime64(0)` - a wider type holding exactly the same values.
         UInt32 precision = 6;
         auto open_bracket_pos = type.find('(');
         if (open_bracket_pos != std::string::npos)
@@ -121,10 +126,7 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
             }
         }
 
-        if (precision == 0)
-            res = std::make_shared<DataTypeDateTime>();
-        else
-            res = std::make_shared<DataTypeDateTime64>(precision);
+        res = std::make_shared<DataTypeDateTime64>(precision);
     }
     else if (type == "date")
         res = std::make_shared<DataTypeDate32>();

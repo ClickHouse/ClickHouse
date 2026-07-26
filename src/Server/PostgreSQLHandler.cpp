@@ -1049,40 +1049,107 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             throw;
         }
 
-        /// Reassemble the staged payload as one read stream: the in-memory part, then the spilled part.
-        ConcatReadBuffer staged_stream;
-        for (auto & staged_buf : staged_out.getResultBuffers())
+        /// The staged payload has to be read twice - once to parse it in full, once to insert it (see
+        /// below) - so keep it in a re-readable form. A spilled part lives in a temporary file that can
+        /// be reopened for every pass, while `MemoryWriteBuffer`'s read buffer is one-shot and consumes
+        /// the buffer, so materialize the in-memory part (bounded by `max_staged_bytes_in_memory`) into a
+        /// string of our own.
+        String staged_in_memory;
+        TemporaryDataBuffer * staged_spilled = nullptr;
+        /// The result buffers own the spilled temporary file, so hold on to them: `staged_spilled` below
+        /// points into this vector and is read from twice.
+        auto staged_result_buffers = staged_out.getResultBuffers();
+        for (auto & staged_buf : staged_result_buffers)
         {
             if (auto * spilled = dynamic_cast<TemporaryDataBuffer *>(staged_buf.get()))
             {
-                if (auto reread_buf = spilled->read())
-                    staged_stream.appendBuffer(std::move(reread_buf));
+                staged_spilled = spilled;
             }
             else if (auto * readable = dynamic_cast<IReadableWriteBuffer *>(staged_buf.get()))
             {
                 if (auto reread_buf = readable->tryGetReadBuffer())
-                    staged_stream.appendBuffer(std::move(reread_buf));
+                {
+                    WriteBufferFromString in_memory_out(staged_in_memory);
+                    copyData(*reread_buf, in_memory_out);
+                    in_memory_out.finalize();
+                }
             }
         }
 
-        /// The executor is created only after the payload is staged in full: creating it earlier would
-        /// leave an unfinished pushing executor behind on the abort return path above.
+        /// Reassemble the staged payload as one read stream: the in-memory part, then the spilled part.
+        const auto make_staged_stream = [&]
+        {
+            auto stream = std::make_unique<ConcatReadBuffer>();
+            if (!staged_in_memory.empty())
+                stream->appendBuffer(std::make_unique<ReadBufferFromString>(staged_in_memory));
+            if (staged_spilled)
+            {
+                if (auto reread_buf = staged_spilled->read())
+                    stream->appendBuffer(std::move(reread_buf));
+            }
+            return stream;
+        };
+
+        const auto make_input_format = [&](ReadBuffer & stream)
+        {
+            return FormatFactory::instance().getInput(
+                format,
+                stream,
+                io.pipeline.getHeader(),
+                query_context,
+                settings[Setting::max_insert_block_size],
+                std::nullopt,
+                nullptr,
+                nullptr,
+                false,
+                CompressionMethod::None,
+                false,
+                settings[Setting::max_insert_block_size_bytes],
+                settings[Setting::min_insert_block_size_rows],
+                settings[Setting::min_insert_block_size_bytes]);
+        };
+
+        /// Parse the whole staged payload before a single row reaches the insert pipeline. A malformed
+        /// row - or a value that does not fit its target column - can appear anywhere in the payload,
+        /// and the sink commits parts as the data streams through it, which `cancel` cannot roll back.
+        /// Detecting such an error only on the way in would leave the rows before it visible, while the
+        /// client is told the `COPY` failed: PostgreSQL clients treat `COPY FROM STDIN` as all-or-nothing
+        /// and would duplicate that prefix when they retry. Parsing everything up front costs one extra
+        /// pass over the staged bytes and keeps the durable commit boundary after the whole payload has
+        /// been accepted.
+        ///
+        /// This covers the parsing and the conversion to the target columns, that is, everything decided
+        /// by the payload itself. An error raised deeper in the insert pipeline - a materialized view, a
+        /// storage error - is still not rolled back, because a ClickHouse `INSERT` is not transactional;
+        /// such a `COPY` behaves exactly like a plain `INSERT` of the same data.
+        try
+        {
+            auto validation_stream = make_staged_stream();
+            auto validation_format = make_input_format(*validation_stream);
+            while (!validation_format->generate().empty())
+            {
+            }
+        }
+        catch (...)
+        {
+            /// The payload has been received in full, so the copy sub-protocol is complete and the
+            /// connection is in a clean state: report the failure the way PostgreSQL does - an
+            /// `ErrorResponse` for a handled query, after which the run loop sends `ReadyForQuery` - and
+            /// keep the connection usable. The target table has not been touched.
+            tryLogCurrentException(log, "Failed to parse the payload of COPY FROM STDIN");
+            message_transport->send(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                    PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "22P04",
+                    fmt::format("COPY FROM STDIN failed: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false))),
+                true);
+            return true;
+        }
+
+        /// The executor is created only after the payload is staged and parsed in full: creating it
+        /// earlier would leave an unfinished pushing executor behind on the return paths above.
+        auto insert_stream = make_staged_stream();
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
-        auto format_ptr = FormatFactory::instance().getInput(
-            format,
-            staged_stream,
-            io.pipeline.getHeader(),
-            query_context,
-            settings[Setting::max_insert_block_size],
-            std::nullopt,
-            nullptr,
-            nullptr,
-            false,
-            CompressionMethod::None,
-            false,
-            settings[Setting::max_insert_block_size_bytes],
-            settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+        auto format_ptr = make_input_format(*insert_stream);
 
         executor->start();
         try
