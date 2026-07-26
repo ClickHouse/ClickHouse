@@ -885,8 +885,12 @@ try
         /// (e.g. from scalar subqueries evaluated during query analysis on the server,
         /// or with parallel replicas on small tables where reading can complete before
         /// any data blocks are sent).
+        /// Note that we replay any non-empty progress, not only progress with non-zero `read_rows`/`read_bytes`:
+        /// the server legitimately sends totals-only packets such as `Progress{0, 0, total_rows_to_read}`
+        /// when the first estimate of the total amount of data becomes known before any data block is sent,
+        /// and progress-aware formats such as `JSONEachRowWithProgress` have to see them.
         auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
-        if (replayed.read_rows || replayed.read_bytes)
+        if (!replayed.empty())
             output_format->onProgress(replayed);
 
         if ((!select_into_file || select_into_file_and_stdout)
