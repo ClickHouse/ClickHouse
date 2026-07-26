@@ -45,13 +45,14 @@ struct DistributionLimits
     Float64 max_parameter;
 };
 
-/// The distributions of the standard library are sampled with rejection loops that cannot be interrupted.
-/// For extreme enough parameters those loops never terminate, so the query ignores `max_execution_time`
-/// and `KILL QUERY` and occupies a thread until the server is restarted. Constant folding executes the
-/// function during query analysis, so even a plain `SELECT randChiSquared(1.7976931348623157e308)` hangs
-/// before a pipeline exists. The `max_rand_distribution_parameter` and `max_rand_distribution_trials`
-/// settings only bound the computation time and may be switched off with 0, therefore the bounds below,
-/// which delimit the domain where the samplers terminate at all, apply unconditionally.
+/// The distributions of the standard library are sampled with loops that cannot be interrupted. For
+/// extreme enough parameters those loops either never terminate or need a number of iterations
+/// proportional to the argument, so the query ignores `max_execution_time` and `KILL QUERY` and occupies
+/// a thread until the server is restarted. Constant folding executes the function during query analysis,
+/// so even a plain `SELECT randChiSquared(1.7976931348623157e308)` hangs before a pipeline exists. The
+/// `max_rand_distribution_parameter` and `max_rand_distribution_trials` settings only bound the
+/// computation time and may be switched off with 0, therefore the bounds below, which delimit the domain
+/// where the samplers are usable at all, apply unconditionally.
 
 /// `std::gamma_distribution`, which backs the chi-squared, Student's t and Fisher's F distributions,
 /// draws candidates as `sqrt((3 * shape - 0.75) / w) * (u - 0.5)` where `w = u * (1 - u)` never exceeds
@@ -61,14 +62,18 @@ struct DistributionLimits
 /// for the rounding of the intermediate products, which by itself makes the exact quotient hang.
 constexpr Float64 max_degrees_of_freedom = std::numeric_limits<Float64>::max() / 12;
 
-/// `std::binomial_distribution` derives the probability of the mode from differences of `lgamma(t + 1)`
-/// evaluated in `double`. The terms grow as `t * ln(t)`, so their cancellation loses all precision for a
-/// large number of trials; the probability then underflows to zero and the sampler walks away from the
-/// mode one trial at a time, which needs O(t) iterations. Whether it underflows or overflows depends on
-/// the rounding, so the transition is not monotonic in `t` - hangs start to appear around 10^13 for some
-/// probabilities - and the bound below stays an order of magnitude away from it. Note that the result is
-/// already a deterministic value rather than a sample well before that.
-constexpr UInt64 max_number_of_trials = 1ULL << 40;
+/// `std::binomial_distribution` starts at the mode and walks outwards one trial at a time, subtracting the
+/// probability of every visited value from a uniform draw, so a single sample costs O(t) in the worst case.
+/// It derives the probability of the mode from differences of `lgamma(t + 1)` evaluated in `double`, whose
+/// terms grow as `t * ln(t)`; cancelling them therefore loses a relative accuracy of about
+/// `t * ln(t) * epsilon`. Every probability the walk accumulates inherits that error, so with roughly that
+/// same probability their total stays below 1, the draw lands above the total, and the walk traverses all
+/// `t` values instead of the few around the mode it normally needs. Measured for `p = 0.999`, the total
+/// falls short of 1 by 3.5e-7 at 10^9 trials, by 1.9e-5 at 10^10, by 2.9e-4 at 10^11 and by 3.2e-3 at
+/// 10^12, while the runaway walk itself takes seconds at 10^9 trials and hours at 10^12. Nothing above the
+/// default of `max_rand_distribution_trials` is therefore safe, and that default is exactly what this
+/// bound keeps: the setting can still lower the limit for `randBinomial`, but no longer raise it.
+constexpr UInt64 max_number_of_trials = 1'000'000'000;
 
 /// The settings bound the computation time and are disabled by 0; the hard bounds above always hold.
 Float64 effectiveMaxDegreesOfFreedom(const DistributionLimits & limits)
