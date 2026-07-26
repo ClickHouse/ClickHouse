@@ -29,6 +29,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <Interpreters/StorageID.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <base/unit.h>
@@ -658,12 +659,38 @@ String getInsertDataSchemaMismatchDescription(
         format_name, format_structure(inferred), format_structure(expected));
 }
 
+std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message)
+{
+    static constexpr std::string_view prefix = "(at row ";
+
+    size_t pos = message.find(prefix);
+    if (pos == std::string_view::npos)
+        return {};
+
+    pos += prefix.size();
+    size_t rows = 0;
+    size_t digits = 0;
+    for (; pos < message.size() && isNumericASCII(message[pos]); ++pos, ++digits)
+    {
+        if (digits > 18) /// Do not overflow on a bogus message.
+            return {};
+        rows = rows * 10 + (message[pos] - '0');
+    }
+
+    if (digits == 0 || pos == message.size() || message[pos] != ')')
+        return {};
+
+    /// The counter is incremented for the failing row itself, but be defensive about a zero.
+    return std::max<size_t>(rows, 1);
+}
+
 String getInsertDataSchemaMismatchDescriptionFromFile(
     const String & file_path,
     const String & compression_method,
     const String & format_name,
     const Block & expected_header,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    std::optional<size_t> rows_reached_by_parser)
 {
     if (format_name.empty() || !FormatFactory::instance().checkIfFormatHasSchemaReader(format_name))
         return {};
@@ -696,7 +723,7 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
         return {};
     }
 
-    return getInsertDataSchemaMismatchDescription(prefix, format_name, expected_header, context);
+    return getInsertDataSchemaMismatchDescription(prefix, format_name, expected_header, context, rows_reached_by_parser);
 }
 
 size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context)

@@ -156,6 +156,7 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsBool input_format_parallel_parsing;
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
@@ -2230,8 +2231,17 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             /// prefix of the file.
             if (isParseError(e.code()))
             {
+                /// Bound the inference by the row the parser had reached, so that a row it never read
+                /// cannot contaminate the diagnosis of an earlier failure. The row number is only
+                /// available from the message here; under parallel parsing it counts rows within a
+                /// chunk rather than the whole file, so it is not a valid bound and sampling stays
+                /// unbounded, exactly as for the other paths driven by a parallel input format.
+                std::optional<size_t> rows_reached_by_parser;
+                if (!client_context->getSettingsRef()[Setting::input_format_parallel_parsing])
+                    rows_reached_by_parser = getRowsReachedFromParseErrorMessage(e.message());
+
                 String description = getInsertDataSchemaMismatchDescriptionFromFile(
-                    in_file, compression_method, current_format, sample, client_context);
+                    in_file, compression_method, current_format, sample, client_context, rows_reached_by_parser);
                 if (!description.empty())
                     e.addMessage(description);
             }

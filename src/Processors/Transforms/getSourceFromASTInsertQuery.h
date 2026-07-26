@@ -8,6 +8,7 @@
 #include <IO/SnappyMode.h>
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 
@@ -69,7 +70,15 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     const String & compression_method,
     const String & format_name,
     const Block & expected_header,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    std::optional<size_t> rows_reached_by_parser = std::nullopt);
+
+/// Extracts the 1-based number of the row the parser had reached from a parse-error message, i.e. the
+/// `(at row N)` part `IRowInputFormat` appends before rethrowing. Returns nullopt when the message does
+/// not carry it. Used by the `INSERT ... FROM INFILE` path, where the input format lives deep inside a
+/// `StorageFile` pipeline and cannot be asked for IInputFormat::getRowsReachedOnParseError directly.
+/// Note that under parallel parsing the number is local to a chunk, so it is not a valid global bound.
+std::optional<size_t> getRowsReachedFromParseErrorMessage(std::string_view message);
 
 /// The bound for the prefix of a streamed (network / HTTP body / stdin) insert captured eagerly for the
 /// parse-error diagnostic above. Unlike the inline and INFILE paths, which re-read the data only on the
