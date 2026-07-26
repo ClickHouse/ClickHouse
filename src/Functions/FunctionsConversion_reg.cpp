@@ -1160,6 +1160,7 @@ toTypeName(value): Date32
     FunctionDocumentation::Description description_toTime = R"(
 Converts an input value to type [Time](/sql-reference/data-types/time).
 Supports conversion from String, FixedString, DateTime, DateTime64, or numeric types representing seconds since midnight.
+Numeric values outside of the range of the type (`-999:59:59` to `999:59:59`, that is `-3599999` to `3599999` seconds) are saturated to the range boundaries, and non-finite floating-point values (`NaN`, `inf`, `-inf`) cannot be converted and result in an exception.
     )";
     FunctionDocumentation::Syntax syntax_toTime = "toTime(x)";
     FunctionDocumentation::Arguments arguments_toTime = {
