@@ -805,6 +805,21 @@ size_t countOutputStreams(
     return std::max(streams, max_source_streams);
 }
 
+/// The rows a column has to be SYNTHESIZED for: only the rows of the source parts that do not physically
+/// store it. The rows of the parts that do store the column are read by the merge, so the bytes written for
+/// them are already covered by the input-volume bound; charging the whole merge's row count for such a
+/// column would count those rows twice and almost double the writer-side bound on the upgrade path (one tiny
+/// pre-ALTER part merged with many large post-ALTER ones), rejecting the merge for the very starvation
+/// reason this estimate exists.
+UInt64 countRowsMissingColumn(const MergeTreeDataPartsVector & parts, const String & column_name)
+{
+    UInt64 missing_rows = 0;
+    for (const auto & part : parts)
+        if (!part->tryGetColumn(column_name))
+            missing_rows += part->rows_count;
+    return missing_rows;
+}
+
 }
 
 UInt64 estimateNeededMemoryForMerge(
@@ -822,7 +837,31 @@ UInt64 estimateNeededMemoryForMerge(
     /// filesystem than for remote (object storage).
     const auto read_settings = context->getReadSettings();
     const UInt64 local_read_buffer_size = read_settings.local_fs_settings.buffer_size;
+
+    /// On a cache-backed object storage disk the reader does NOT use remote_fs_settings.buffer_size as it
+    /// stands: to avoid cache fragmentation DiskObjectStorage::prepareReadPipeline promotes it to
+    /// max(buffer_size, large_buffer_size = prefetch_buffer_size) whenever the filesystem cache is active
+    /// for that disk, and the merge readers get that promoted size. Mirror the same rule, so a raised
+    /// prefetch_buffer_size is not under-reserved. Whether a disk really has a cache is known per part
+    /// (getCacheName), so the promotion is applied per part below; with default settings
+    /// prefetch_buffer_size == max_read_buffer_size, so the promoted size equals the plain one and nothing
+    /// changes.
     const UInt64 remote_read_buffer_size = read_settings.remote_fs_settings.buffer_size;
+    const bool cache_promotes_read_buffer = read_settings.enable_filesystem_cache
+        && read_settings.filesystem_cache_settings.prefer_bigger_buffer_size
+        && !read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass;
+    const UInt64 cached_remote_read_buffer_size = cache_promotes_read_buffer
+        ? std::max<UInt64>(remote_read_buffer_size, read_settings.remote_fs_settings.large_buffer_size)
+        : remote_read_buffer_size;
+
+    /// The size a single reader of this part costs: local parts read through the local buffer, remote parts
+    /// through the remote one, promoted when the part's disk is cache-backed (see above).
+    auto part_read_buffer_size = [&](const auto & part)
+    {
+        if (!part->isStoredOnRemoteDisk())
+            return local_read_buffer_size;
+        return part->getDataPartStorage().getCacheName() ? cached_remote_read_buffer_size : remote_read_buffer_size;
+    };
 
     /// Per-stream write buffer size on a local disk: a writer stream keeps the compressor block and the
     /// file buffer, both sized by max_compress_block_size.
@@ -1026,7 +1065,7 @@ UInt64 estimateNeededMemoryForMerge(
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreamsForColumns(*part, input_columns)
             : 1;
-        const UInt64 read_buffer_size = part->isStoredOnRemoteDisk() ? remote_read_buffer_size : local_read_buffer_size;
+        const UInt64 read_buffer_size = part_read_buffer_size(part);
         const ColumnSize read_bytes = partReadBytes(*part, input_columns);
         input_memory += std::min<UInt64>(streams * read_buffer_size, read_bytes.data_compressed + read_bytes.data_uncompressed);
         sum_input_bytes_uncompressed += read_bytes.data_uncompressed;
@@ -1036,7 +1075,7 @@ UInt64 estimateNeededMemoryForMerge(
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreams(*part)
             : 1;
-        const UInt64 read_buffer_size = part->isStoredOnRemoteDisk() ? remote_read_buffer_size : local_read_buffer_size;
+        const UInt64 read_buffer_size = part_read_buffer_size(part);
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
         input_memory += std::min<UInt64>(streams * read_buffer_size, part_bytes);
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
@@ -1184,9 +1223,10 @@ UInt64 estimateNeededMemoryForMerge(
     /// sound for it; a variable-size type's default expression is arbitrary, so its streams are priced at
     /// their per-stream remnant with the growth left to the reactive tracker (see remote_stream_remnant
     /// above - the ceiling alternative is a proven starvation regression). A column present in only SOME
-    /// parts is default-filled for the other parts' rows, so the whole column is priced here (its read
-    /// bytes stay in the input sum - double-counting is the safe direction). Outside the
-    /// ADD COLUMN ... DEFAULT upgrade window the extra term is zero.
+    /// parts is synthesized for the OTHER parts' rows alone, so only those rows are priced here
+    /// (countRowsMissingColumn): the rows of the parts that do store the column are read, and their written
+    /// bytes are already inside sum_input_bytes_uncompressed. Outside the ADD COLUMN ... DEFAULT upgrade
+    /// window the extra term is zero.
     NamesAndTypesList default_filled_output_columns;
     UInt64 default_filled_value_bytes = 0;
     UInt64 sum_rows = 0;
@@ -1198,7 +1238,8 @@ UInt64 estimateNeededMemoryForMerge(
             continue;
         default_filled_output_columns.push_back(column);
         if (column.type->haveMaximumSizeOfValue())
-            default_filled_value_bytes += sum_rows * column.type->getMaximumSizeOfValueInMemory();
+            default_filled_value_bytes
+                += countRowsMissingColumn(future_part.parts, column.name) * column.type->getMaximumSizeOfValueInMemory();
     }
 
     size_t default_filled_output_streams = 0;
@@ -1498,7 +1539,9 @@ UInt64 estimateNeededMemoryForMerge(
                 /// tracks no per-column sizes (a Compact part, whose each_columns_size is left empty) - an
                 /// over-approximation bounded by bytes that part really stores. Rows of parts that lack a
                 /// required column get it synthesized from its default: a fixed-size type writes exactly
-                /// rows * value size, so add that; a variable-size default's volume is unknowable, so its
+                /// (rows of those parts alone, see countRowsMissingColumn) * value size, so add that - the
+                /// rows of the parts that do store it are already counted through their own projected column
+                /// bytes above; a variable-size default's volume is unknowable, so its
                 /// streams stay priced at the per-stream remnant below with the growth left to the reactive
                 /// tracker - the same accounting as the base path's default_filled_term.
                 UInt64 projection_uncompressed_bytes = 0;
@@ -1521,14 +1564,12 @@ UInt64 estimateNeededMemoryForMerge(
                 }
                 for (const auto & required_column : required_columns)
                 {
-                    const bool missing_from_some_part = std::any_of(
-                        future_part.parts.begin(), future_part.parts.end(),
-                        [&](const auto & part) { return !part->tryGetColumn(required_column); });
-                    if (!missing_from_some_part)
+                    const UInt64 missing_rows = countRowsMissingColumn(future_part.parts, required_column);
+                    if (missing_rows == 0)
                         continue;
                     const auto column = columns_description.tryGetColumn(GetColumnsOptions::AllPhysical, required_column);
                     if (column && column->type->haveMaximumSizeOfValue())
-                        projection_uncompressed_bytes += projection_rows * column->type->getMaximumSizeOfValueInMemory();
+                        projection_uncompressed_bytes += missing_rows * column->type->getMaximumSizeOfValueInMemory();
                 }
 
                 const auto temp_projection_format = future_part.parts.front()->storage.choosePartFormat(
@@ -1556,7 +1597,12 @@ UInt64 estimateNeededMemoryForMerge(
                 /// it can hold that many reader-buffer sets open at once. A rebuild that squashes into more
                 /// than one temporary part therefore reads back through several readers simultaneously; size
                 /// the read-back for that worst case rather than a single reader set.
-                const UInt64 projection_read_buffer_size = output_on_remote_disk ? remote_read_buffer_size : local_read_buffer_size;
+                /// The temporary parts are read back from the destination disk, whose cache state is not
+                /// resolvable here (only whether it is remote), so price a remote read-back at the
+                /// cache-promoted buffer size - the same size the readers get on a cache-backed disk, and
+                /// identical to the plain one under default settings.
+                const UInt64 projection_read_buffer_size
+                    = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
                 const UInt64 projection_worst_case = projection_streams * write_buffer_size;
                 const UInt64 projection_data_bound = projection_streams * remote_stream_remnant
                     + 3 * 2 * projection_uncompressed_bytes;
