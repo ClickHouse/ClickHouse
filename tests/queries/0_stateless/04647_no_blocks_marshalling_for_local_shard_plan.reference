@@ -1,0 +1,12 @@
+-- local shard plan, several grouping sets: with and without marshalling
+1007	10083376534861865471
+1007	10083376534861865471
+-- parallel replicas local plan, several grouping sets: with and without marshalling
+1007	16998005863169288206
+1007	16998005863169288206
+-- single grouping set
+7	13874850128157539051
+-- initial query
+1007	10083376534861865471
+-- BlocksMarshalling steps: total, and how many appear before ReadFromRemote
+1	0
