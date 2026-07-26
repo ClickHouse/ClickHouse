@@ -35,7 +35,7 @@ namespace
             return access_type_to_flags_mapping[static_cast<size_t>(type)];
         }
 
-        Flags keywordToFlags(std::string_view keyword) const
+        bool tryKeywordToFlags(std::string_view keyword, Flags & result) const
         {
             auto it = keyword_to_flags_map.find(keyword);
             if (it == keyword_to_flags_map.end())
@@ -44,9 +44,18 @@ namespace
                 boost::to_upper(uppercased_keyword);
                 it = keyword_to_flags_map.find(uppercased_keyword);
                 if (it == keyword_to_flags_map.end())
-                    throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
+                    return false;
             }
-            return it->second;
+            result = it->second;
+            return true;
+        }
+
+        Flags keywordToFlags(std::string_view keyword) const
+        {
+            Flags result;
+            if (!tryKeywordToFlags(keyword, result))
+                throw Exception(ErrorCodes::UNKNOWN_ACCESS_TYPE, "Unknown access type: {}", String(keyword));
+            return result;
         }
 
         Flags keywordsToFlags(const std::vector<std::string_view> & keywords) const
@@ -449,6 +458,12 @@ AccessFlags::ParameterType AccessFlags::getParameterType() const
 
 AccessFlags::AccessFlags(AccessType type) : flags(Helper::instance().accessTypeToFlags(type)) {}
 AccessFlags::AccessFlags(std::string_view keyword) : flags(Helper::instance().keywordToFlags(keyword)) {}
+
+bool AccessFlags::tryFromKeyword(std::string_view keyword, AccessFlags & result)
+{
+    return Helper::instance().tryKeywordToFlags(keyword, result.flags);
+}
+
 AccessFlags::AccessFlags(const std::vector<std::string_view> & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 AccessFlags::AccessFlags(const Strings & keywords) : flags(Helper::instance().keywordsToFlags(keywords)) {}
 String AccessFlags::toString() const { return Helper::instance().flagsToString(flags); }
