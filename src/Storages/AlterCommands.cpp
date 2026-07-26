@@ -327,6 +327,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.index_decl = command_ast->index_decl->clone();
         if (command_ast->index_decl->as<ASTExpressionList>())
         {
+            if (command_ast->first || command_ast->index)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lookup `INDEX (...)` does not support `FIRST` or `AFTER`");
             command.type = AlterCommand::ADD_LOOKUP_INDEX;
             command.lookup_index = command_ast->index_decl->clone();
             command.if_not_exists = command_ast->if_not_exists;
@@ -1708,6 +1710,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
+
+        if ((command.type == AlterCommand::ADD_LOOKUP_INDEX || command.type == AlterCommand::DROP_LOOKUP_INDEX)
+            && !StorageFactory::instance().getStorageFeatures(table->getName()).supports_lookup_indexes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support lookup `INDEX (...)`", table->getName());
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());

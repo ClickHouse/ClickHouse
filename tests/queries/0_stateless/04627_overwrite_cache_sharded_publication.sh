@@ -20,7 +20,9 @@ cleanup()
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_pause_during_index_build" >/dev/null 2>&1 ||:
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_pause_during_lookup" >/dev/null 2>&1 ||:
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_pause_after_lookup_catalog_snapshot" >/dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_pause_after_lookup_ids" >/dev/null 2>&1 ||:
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_pause_after_drop_index_publication" >/dev/null 2>&1 ||:
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_pause_before_rollback" >/dev/null 2>&1 ||:
     if [[ -n "$writer_pid" ]]; then
         wait "$writer_pid" >/dev/null 2>&1 ||:
     fi
@@ -160,6 +162,31 @@ $CLICKHOUSE_CLIENT -q "SYSTEM NOTIFY FAILPOINT overwrite_cache_pause_after_looku
 wait "$writer_pid"
 writer_pid=""
 $CLICKHOUSE_CLIENT -q "SELECT 'add-during-insert-prep', payload FROM $table WHERE key = 4001"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_throw_during_publish"
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_pause_before_rollback"
+$CLICKHOUSE_CLIENT -q "INSERT INTO $table VALUES (5000, 79, 1, 'rollback-reader')" >/dev/null 2>&1 &
+writer_pid=$!
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT overwrite_cache_pause_before_rollback PAUSE"
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_pause_after_lookup_ids"
+$CLICKHOUSE_CLIENT -q "SELECT 'rollback-old-reader', count() FROM $table WHERE tag = 79" > "$reader_output" &
+reader_pid=$!
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT overwrite_cache_pause_after_lookup_ids PAUSE"
+$CLICKHOUSE_CLIENT -q "SYSTEM NOTIFY FAILPOINT overwrite_cache_pause_before_rollback"
+if timeout 1 tail --pid="$writer_pid" -f /dev/null; then
+    echo "Rollback completed before a reader released its entry identifier" >&2
+    exit 1
+fi
+$CLICKHOUSE_CLIENT -q "SYSTEM NOTIFY FAILPOINT overwrite_cache_pause_after_lookup_ids"
+wait "$reader_pid"
+reader_pid=""
+if wait "$writer_pid"; then
+    echo "Expected injected publication failure" >&2
+    exit 1
+fi
+writer_pid=""
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT overwrite_cache_throw_during_publish"
+cat "$reader_output"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_pause_during_lookup"
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT overwrite_cache_pause_after_drop_index_publication"

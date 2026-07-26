@@ -1,5 +1,6 @@
 DROP TABLE IF EXISTS overwrite_cache;
 DROP TABLE IF EXISTS overwrite_cache_small;
+DROP TABLE IF EXISTS bad_lookup_alter;
 
 CREATE TABLE overwrite_cache
 (
@@ -162,6 +163,12 @@ CREATE TABLE duplicate_lookup_column (key UInt64, other UInt64, version UInt64) 
 CREATE TABLE canonical_duplicate_lookup (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, other) INDEX (key, other), (other, key); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE primary_lookup (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, other) INDEX (key, other); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad_lookup_engine (key UInt64, version UInt64) ENGINE = Memory INDEX (key); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE overwrite_cache ADD INDEX (user_id) FIRST; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE overwrite_cache ADD INDEX (user_id) AFTER tag; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad_lookup_alter (key UInt64) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE bad_lookup_alter ADD INDEX (key); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE bad_lookup_alter DROP INDEX (key); -- { serverError BAD_ARGUMENTS }
+DROP TABLE bad_lookup_alter;
 CREATE TABLE old_lookup_settings (key UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key) SETTINGS secondary_index_columns = 'key'; -- { serverError UNKNOWN_SETTING }
 
 DROP TABLE overwrite_cache_small;

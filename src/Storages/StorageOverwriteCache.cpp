@@ -53,7 +53,9 @@ extern const int UNKNOWN_SETTING;
 namespace FailPoints
 {
 extern const char overwrite_cache_pause_after_lookup_catalog_snapshot[];
+extern const char overwrite_cache_pause_after_lookup_ids[];
 extern const char overwrite_cache_pause_after_drop_index_publication[];
+extern const char overwrite_cache_pause_before_rollback[];
 extern const char overwrite_cache_pause_before_commit[];
 extern const char overwrite_cache_pause_during_index_build[];
 extern const char overwrite_cache_pause_during_lookup[];
@@ -1075,6 +1077,7 @@ void StorageOverwriteCache::insertBlock(const Block & block)
     }
     catch (...)
     {
+        FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_before_rollback);
         UInt64 retained_bytes = entries_capacity_delta;
         for (const UInt64 bucket_delta : primary_bucket_bytes_delta)
             retained_bytes += bucket_delta;
@@ -1116,13 +1119,27 @@ void StorageOverwriteCache::insertBlock(const Block & block)
             std::unique_lock lock(shard.mutex);
             shard.entries.erase(mutation.key);
         }
+
+        total_size_bytes.fetch_add(retained_bytes, std::memory_order_relaxed);
+        for (size_t index = 0; index < retained_lookup_bytes.size(); ++index)
+            lookup_indexes[index]->accounted_bytes.fetch_add(retained_lookup_bytes[index], std::memory_order_relaxed);
+
+        if (new_entries != 0)
+        {
+            /// A reader may have copied an identifier from a posting before rollback removed it.
+            /// Keep the dense entry slots alive until every such reader has left its epoch.
+            const UInt8 old_epoch = active_reader_epoch.fetch_xor(1, std::memory_order_acq_rel);
+            UInt64 active = active_readers[old_epoch].load(std::memory_order_acquire);
+            while (active != 0)
+            {
+                active_readers[old_epoch].wait(active, std::memory_order_relaxed);
+                active = active_readers[old_epoch].load(std::memory_order_acquire);
+            }
+        }
         {
             std::unique_lock lock(entries_by_id_mutex);
             entries_by_id.resize(old_entries_by_id_size);
         }
-        total_size_bytes.fetch_add(retained_bytes, std::memory_order_relaxed);
-        for (size_t index = 0; index < retained_lookup_bytes.size(); ++index)
-            lookup_indexes[index]->accounted_bytes.fetch_add(retained_lookup_bytes[index], std::memory_order_relaxed);
         throw;
     }
 
@@ -1294,6 +1311,8 @@ StorageOverwriteCache::ReadResult StorageOverwriteCache::getRowsForLookupRequest
         if (index != driver)
             intersectPostingIds(entry_ids, requests[index].index, requests[index].serialized_keys);
     }
+
+    FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_ids);
 
     result.rows.reserve(entry_ids.size());
     for (size_t position = 0; position < entry_ids.size(); ++position)
