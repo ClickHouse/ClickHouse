@@ -295,21 +295,14 @@ bool canExcludePartByIndexAnalysis(
 
         inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate_node, context, /*boolean_context=*/true);
     }
-    catch (const Exception & e)
+    catch (...)
     {
         /// An interruption or a resource limit is not a "cannot analyze this predicate" answer, so it
         /// must not be turned into extra work on the fallback path.
-        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+        const int code = getCurrentExceptionCode();
+        if (code == ErrorCodes::QUERY_WAS_CANCELLED || code == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
             throw;
 
-        tryLogCurrentException(
-            getLogger("MutationsInterpreter"),
-            "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
-            LogsLevel::debug);
-        return false;
-    }
-    catch (...)
-    {
         tryLogCurrentException(
             getLogger("MutationsInterpreter"),
             "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
