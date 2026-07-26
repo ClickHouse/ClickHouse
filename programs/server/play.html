@@ -5946,8 +5946,20 @@ document.addEventListener('pointerdown', (event) => {
 document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
 document.addEventListener('pointercancel', () => { pointer_down_inside_inputs = false; });
 let connection_edited = false;
-function onCredentialInput() {
-    connection_edited = true;
+/// `connection_edited` means "the user has changed the connection in this editing session", and it is
+/// what licenses the commit below to authenticate against the server. Only a real interaction may set
+/// it: `window.onpopstate` replays synthetic `input` events on these fields to reproduce the side
+/// effects of a connection change when a Back/Forward restores a different connection, and that
+/// replay clears the password (it is never persisted to history). Latching on it would leave the
+/// session marked as edited without the user having touched anything, so a later glance at the
+/// connection UI — merely focusing a field and leaving again — would commit and probe the restored
+/// server with an empty password: an authentication attempt the user never asked for, logged as a
+/// failed login there. Untrusted events still invalidate: they bump the generation (dropping any
+/// probe armed against the connection being navigated away from) and clear the stale badge, exactly
+/// as the replay intends; they just do not arm a commit. The restored connection's credentials are
+/// reported once the user re-enters the password, which is a real edit.
+function onCredentialInput(event) {
+    if (event.isTrusted) { connection_edited = true; }
     ++connection_generation;
     resetCredentialsStatus();
 }
@@ -6008,7 +6020,8 @@ password_elem.addEventListener('input', onCredentialInput);
 /// re-check the credentials against the new server even when only the `url` changed. (Registered
 /// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL(true)`
 /// call above never reaches this before the counter exists.)
-url_elem.addEventListener('input', () => { connection_edited = true; ++connection_generation; resetCredentialsStatus(); });
+/// Shares `onCredentialInput`'s handling, including its `isTrusted` gate on `connection_edited`.
+url_elem.addEventListener('input', onCredentialInput);
 
 
 function queryToColor(str) {
@@ -9032,8 +9045,10 @@ window.onpopstate = function(event) {
         /// the input listeners, so dispatch synthetic `input` events on the connection inputs — every
         /// registered listener (`checkURL`, `updateDocsURL`, `resetCredentialsStatus` and
         /// `resetConnectionScopedState`) then runs exactly as it would for a typed edit. These carry
-        /// `isTrusted === false`, so `markBootstrapDirty` ignores them; this navigation already marked
-        /// the workspace dirty above.
+        /// `isTrusted === false`, so `markBootstrapDirty` ignores them (this navigation already marked
+        /// the workspace dirty above), and so does the `connection_edited` latch in
+        /// `onCredentialInput` — the restore is not a user edit, and treating it as one would let a
+        /// later focus change commit and probe the restored server with the password cleared above.
         ///
         /// Guard the replay so `resetConnectionScopedState` skips its history restamp: the target tab
         /// state is not installed yet (`activeTabId`/`tab.query` are rebound below) and `history.state`
