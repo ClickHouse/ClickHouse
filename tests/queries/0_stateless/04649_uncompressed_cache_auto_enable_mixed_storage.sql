@@ -65,9 +65,9 @@ FROM
 WHERE explain LIKE '%LazilyRead%'
    OR explain LIKE '%Lazily read columns:%';
 
--- No `SYSTEM DROP UNCOMPRESSED CACHE` here: the assertions below are about whether the cache is
--- touched at all, not about hits versus misses, so the test does not need (and must not force) a
--- cold cache - that would disturb tests running in parallel.
+-- The cache is deliberately not dropped here: the assertions below are about whether the
+-- uncompressed cache is touched at all, not about hits versus misses, so the test needs no cold
+-- cache - and dropping the server-wide cache would disturb tests running in parallel.
 SELECT id, payload
 FROM uc_cache_mixed_storage
 ORDER BY score
