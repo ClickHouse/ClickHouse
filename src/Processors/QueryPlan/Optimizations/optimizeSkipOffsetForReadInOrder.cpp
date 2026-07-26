@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -25,6 +26,26 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
     /// Only forward read-in-order can have leading granules cleanly skipped.
     if (const auto & input_order_info = reading->getInputOrder(); !input_order_info || input_order_info->direction != 1)
         return;
+
+    /// A stateful function (`rowNumberInAllBlocks`, `neighbor`, `runningDifference`) derives a row's result from
+    /// the rows preceding it in its stream, and skipping granules changes both those rows and the block
+    /// boundaries they are batched into. That is visible even above the offset, where the trimmed read shifts
+    /// what the offset step passes on, so bail out on a stateful function anywhere on the path to the root.
+    for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
+    {
+        auto * step = iter->node->step.get();
+
+        if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
+        {
+            if (expression_step->getExpression().hasStatefulFunctions())
+                return;
+        }
+        else if (auto * filter_step = typeid_cast<FilterStep *>(step))
+        {
+            if (filter_step->getExpression().hasStatefulFunctions())
+                return;
+        }
+    }
 
     auto apply = [&](size_t offset, auto && set_offset)
     {
