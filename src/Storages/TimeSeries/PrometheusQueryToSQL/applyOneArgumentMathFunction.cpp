@@ -102,31 +102,17 @@ namespace
                      /// PromQL round(v, to_nearest=1) resolves ties by rounding up.
                      /// Use the same reciprocal formula as Prometheus because decimal
                      /// cases such as round(0.15, 0.1) can differ from v / to_nearest.
-                     ASTPtr value = std::move(args[0]);
                      ASTPtr to_nearest = (args.size() == 2) ? std::move(args[1]) : make_intrusive<ASTLiteral>(1.0);
                      ASTPtr to_nearest_inverse = makeASTFunction("divide", make_intrusive<ASTLiteral>(1.0), std::move(to_nearest));
-                     ASTPtr rounded = makeASTFunction(
+                     return makeASTFunction(
                          "divide",
                          makeASTFunction(
                              "floor",
                              makeASTFunction(
                                  "plus",
-                                 makeASTFunction("multiply", value->clone(), to_nearest_inverse->clone()),
+                                 makeASTFunction("multiply", std::move(args[0]), to_nearest_inverse->clone()),
                                  make_intrusive<ASTLiteral>(0.5))),
                          std::move(to_nearest_inverse));
-
-                     /// A Prometheus stale marker is a `NaN` with the exact payload 0x7ff0000000000002, and it is
-                     /// recognized by that bit pattern only at finalization. Arithmetic quiets the payload into an
-                     /// ordinary `NaN`, which would make a stale sample survive as a `NaN` value instead of being
-                     /// dropped, so stale samples are passed through unchanged here.
-                     return makeASTFunction(
-                         "if",
-                         makeASTFunction(
-                             "equals",
-                             makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", value->clone())),
-                             make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)),
-                         value->clone(),
-                         std::move(rounded));
                  },
              }},
         };
@@ -136,6 +122,23 @@ namespace
             return nullptr;
 
         return &it->second;
+    }
+
+    /// A Prometheus stale marker is a `NaN` with the exact payload 0x7ff0000000000002, and it is recognized
+    /// by that bit pattern only at finalization. Math functions either quiet the payload into an ordinary
+    /// `NaN` (for example `floor` or `sqrt`) or replace it with a number (for example `sign`), which would
+    /// make a stale sample survive instead of being dropped. Prometheus drops stale samples before it
+    /// evaluates a function, so here such samples are passed through unchanged and dropped later.
+    ASTPtr keepStaleMarker(const ASTPtr & value, ASTPtr transformed_value)
+    {
+        return makeASTFunction(
+            "if",
+            makeASTFunction(
+                "equals",
+                makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", value->clone())),
+                make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)),
+            value->clone(),
+            std::move(transformed_value));
     }
 }
 
@@ -157,11 +160,21 @@ SQLQueryPiece applyOneArgumentMathFunction(
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {
-        if (impl_info->transform_ast)
-            return impl_info->transform_ast(std::move(args));
+        /// The first argument is always an instant vector, so keeping a copy of it is cheap.
+        ASTPtr value = args[0]->clone();
 
-        chassert(args.size() == 1);
-        return makeASTFunction(impl_info->ch_function_name, std::move(args[0]));
+        ASTPtr transformed_value;
+        if (impl_info->transform_ast)
+        {
+            transformed_value = impl_info->transform_ast(std::move(args));
+        }
+        else
+        {
+            chassert(args.size() == 1);
+            transformed_value = makeASTFunction(impl_info->ch_function_name, std::move(args[0]));
+        }
+
+        return keepStaleMarker(value, std::move(transformed_value));
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));

@@ -1281,6 +1281,22 @@ def test_conversion_functions():
         [],
     )
 
+    # Behavior: the same holds for the other one-argument math functions - `floor` quiets the
+    # stale-marker payload into an ordinary `NaN` and `sgn` replaces it with a number.
+    do_query_test(
+        "floor(stale_test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        "sgn(stale_test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
     # Behavior: `timestamp` over a computed vector also drops stale positions, so a stale
     # series routed through `round` reports no timestamp.
     do_query_test(
