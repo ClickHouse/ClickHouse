@@ -6,7 +6,14 @@
 1007	16998005863169288206
 -- single grouping set
 7	13874850128157539051
--- initial query
+-- initial query (control)
 1007	10083376534861865471
--- BlocksMarshalling steps: total, and how many appear before ReadFromRemote
-1	0
+-- Merge table over a local and a distributed table
+2000	11251509125014382908
+2000	11251509125014382908
+-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps
+1	0	1
+-- BlocksMarshalling steps for parallel replicas: total, above the remote step, remote steps
+2	0	1
+-- BlocksMarshalling steps for a serialized plan: total, above ReadFromRemote, ReadFromRemote steps
+1	0	1
