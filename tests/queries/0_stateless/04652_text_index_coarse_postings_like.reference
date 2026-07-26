@@ -1,0 +1,8 @@
+token is coarsened	1
+like	8167
+ilike	8167
+not like	25
+like, no dictionary scan	8167
+like, no direct read	8167
+like keeps the predicate	1
+ilike keeps the predicate	1

@@ -1,0 +1,10 @@
+8192
+25
+insert coarsened tokens	1
+coarse index adds a hint	1
+coarse index keeps the predicate	1
+exact token also keeps the predicate	1
+exact index removes the predicate	0
+no hint, no direct read	0
+8192
+25
