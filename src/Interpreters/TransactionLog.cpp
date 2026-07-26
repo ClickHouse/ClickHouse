@@ -42,12 +42,13 @@ try
     if (!system_log)
         return;
 
-    TransactionsInfoLogElement elem;
-    elem.type = type;
-    elem.tid = tid;
-    elem.csn = csn;
-    elem.fillCommonFields(nullptr);
-    system_log->add(std::move(elem));
+    system_log->add([&](TransactionsInfoLogElement & element)
+    {
+        element.type = type;
+        element.tid = tid;
+        element.csn = csn;
+        element.fillCommonFields(nullptr);
+    });
 }
 catch (...)
 {
