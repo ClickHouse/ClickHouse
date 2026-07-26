@@ -1,6 +1,8 @@
 #pragma once
 
 #include <IO/ChainedBuffers.h>
+#include <condition_variable>
+#include <mutex>
 #include <IO/FetchMachine.h>
 #include <IO/ICacheProvider.h>
 #include <IO/LongConnection.h>
@@ -74,6 +76,26 @@ struct ReaderExecutorFetchMachine : MachineBase
     /// reads them from the display. Capped at one (pressure-scaled) window by the
     /// fetch step: when nothing commits, the lead stops instead of ballooning in memory.
     ChainedBuffers fetched;
+    /// The worker's PUBLISHED residue preview: a read-only copy of the tiles no
+    /// cell accepted, refreshed per tile under the mutex, so the foreground
+    /// display can serve them while the flight is still in progress (without it,
+    /// a cacheless consumer must JOIN the machine for bytes the worker already
+    /// fetched - chopping the producer at every swing of an interleaved read).
+    /// The display only slice-copies - never consumes - so the preview is
+    /// idempotent with the collect that delivers the same bytes to the bank,
+    /// and it dies with the payload on cancel/revoke.
+    std::mutex published_mutex;
+    ChainedBuffers published;
+    /// Signalled under the mutex after each tile's publication and once at the
+    /// worker's exit (`publish_done`), so a consumer can WAIT for the next tile
+    /// (the cacheless analogue of waiting on a live cell) instead of
+    /// interrupting the flight.
+    std::condition_variable published_cv;
+    /// Worker lifecycle marks under the mutex: a consumer may only WAIT on a
+    /// STARTED worker (an unstarted one may never run - a queued cancel, a
+    /// stashed machine - and would never signal); `publish_done` ends the wait.
+    bool publish_started = false;
+    bool publish_done = false;
     /// The PHYSICAL frontier the fetch actually reached (end of the last fetched run),
     /// independent of what `fetched` retains - the pin and the attempted accounting
     /// anchor here. `physical_window.offset` when nothing was fetched.

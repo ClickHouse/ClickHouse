@@ -147,6 +147,7 @@ ReaderExecutor::ReaderExecutor(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "reader_executor_window_size and reader_executor_block_size must be > 0, "
             "got window_size={}, block_size={}", window_size, block_size);
+    fill_lane.bank_keep_behind = min_bytes_for_seek;
 
     offset_map.build(stored_objects);
     creator_query_id = String(CurrentThread::getQueryId());
@@ -402,7 +403,10 @@ void ReaderExecutor::seek(size_t new_position)
     /// prefetch hit, and the serve's pump interrupt-collects it lazily - and
     /// partially - only when it actually blocks a needed job. An eager
     /// collect-on-seek here costs a completed-then-relaunched fetch per swing.
-    /// The estimators still see the jump: they model the consumer, not the plan.
+    /// The estimators are NOT fed: an absorbed jump is not a break in the fetch
+    /// trajectory - recording it collapses the consume reach, the allowance
+    /// falls back to the stepped extent, the producer never runs ahead and the
+    /// published residue stays empty, so every swing degrades to a one-shot.
     const size_t cur_physical = toPhys(position);
     const size_t seek_distance
         = new_physical >= cur_physical ? new_physical - cur_physical : cur_physical - new_physical;
@@ -412,8 +416,6 @@ void ReaderExecutor::seek(size_t new_position)
     {
         LOG_TRACE(log, "seek: target within plan (physical [{}, {})), reusing plan",
             g->plan_start, g->plan_end);
-        fetch_tracker.recordSeek(new_physical);
-        consume_tracker.recordSeek(new_physical);
         position = new_position;
         reached_eof = false;
         prefetch();
@@ -713,6 +715,18 @@ size_t ReaderExecutor::totalSize() const
 
 // ─── Window serve path - collect ────────────────────────────────────────────
 
+bool ReaderExecutor::waitPublishedTile(FetchMachine & m, size_t phys)
+{
+    StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
+    std::unique_lock lock(m.published_mutex);
+    if (!m.publish_started)
+        return false;   /// may never run (queued cancel, stashed) - the interrupt path owns it
+    const auto covered = [&] { return m.published.covers(ByteRange{phys, 1}); };
+    while (!m.publish_done && !covered())
+        m.published_cv.wait(lock);
+    return covered();
+}
+
 void ReaderExecutor::collectInFlightInto()
 {
     const size_t ri = machine->retrieve_index;
@@ -1000,7 +1014,16 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// the claims' destructors - the downloader release - run FIRST on scope exit: the
     /// collect must never observe bytes whose segments this thread still holds DOWNLOADING.
     ChainedBuffers led_bytes;
+    {
+        std::lock_guard lock(m.published_mutex);
+        m.publish_started = true;
+    }
     SCOPE_EXIT_SAFE({ m.fetched = std::move(led_bytes); });
+    SCOPE_EXIT_SAFE({
+        std::lock_guard lock(m.published_mutex);
+        m.publish_done = true;
+        m.published_cv.notify_all();
+    });
 
     /// Claim the FileCache downloader roles over the window's fill-target writers (recorded
     /// at launch). Runs WE win (`to_fetch`) this worker fetches+writes inline below while the
@@ -1107,6 +1130,16 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
                 m.fetched_end = std::max(m.fetched_end, run.range().end());
             for (const auto & keep : uncommittedIn(m.writer_views, piece))
                 led_bytes.append(run.slice(keep));
+            if (!led_bytes.empty())
+            {
+                /// Refresh the published preview (a slice-copy of the whole
+                /// residue: nodes share the payload blocks, so this is pointer
+                /// work) - the display serves from it while the flight runs.
+                ChainedBuffers preview = led_bytes.slice(led_bytes.range());
+                std::lock_guard lock(m.published_mutex);
+                m.published = std::move(preview);
+                m.published_cv.notify_all();
+            }
             residue_full = led_bytes.totalBytes() >= residue_cap;
             if (residue_full || m.interrupt_requested.load(std::memory_order_relaxed))
                 break;  /// stop-short; the scope guard still finishes every elected segment
@@ -2131,10 +2164,20 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     if (waitSiblingFills(window))
         return true;
 
-    /// The wait landed nothing servable at the cursor with our own machine still in flight:
-    /// the worker is done or stuck - join it (a done one's refused bytes overflow-bank here).
+    /// The wait landed nothing servable at the cursor with our own machine still in flight.
+    /// If it LEADS this window, wait for its next PUBLISHED tile first - the cacheless
+    /// analogue of waiting on a live cell; interrupting here would abort the producer at
+    /// every consumer ask and restart the connection per window. A machine that finishes
+    /// without covering the byte (or a stuck one) falls through to the join.
     if (machine)
     {
+        /// Only when the residue is the pipe (no cell writers): cell-backed
+        /// machines already deliver per tile through the cells and
+        /// `waitSiblingFills` above is their wait.
+        const bool residue_piped = std::none_of(machine->writer_views.begin(), machine->writer_views.end(),
+            [](const auto & v) { return v.writer != nullptr; });
+        if (machineFor(ri) && residue_piped && waitPublishedTile(*machine, window.offset))
+            return true;
         interruptAndCollectMachine();
         return true;
     }
@@ -2272,6 +2315,18 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
             }
         }
     lane.addBankCoverage(cov, window_phys);
+    /// The in-flight machine's published residue preview (see the payload doc).
+    if (machine)
+    {
+        std::lock_guard lock(machine->published_mutex);
+        for (const auto & iv : machine->published.getIntervals())
+        {
+            const size_t lo = std::max(iv.offset, window_phys.offset);
+            const size_t hi = std::min(iv.end(), window_phys.end());
+            if (lo < hi)
+                cov.add(ByteRange{lo, hi - lo});
+        }
+    }
     return cov;
 }
 
@@ -2358,18 +2413,50 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
                 covered.add(g);
             }
         }
+    /// 4) The in-flight machine's PUBLISHED residue preview - tiles the worker fetched
+    ///    that no cell accepted, visible before the collect delivers them to the bank.
+    ///    Slice-copies only: the preview is read-only and dies with the payload, so a
+    ///    byte can serve from here now and from the bank after the collect - the same
+    ///    bytes either way. No cache counters - counted at fetch, like the bank's.
+    if (machine)
+    {
+        std::lock_guard lock(machine->published_mutex);
+        if (!machine->published.empty())
+            for (const auto & iv : machine->published.getIntervals())
+            {
+                const size_t lo = std::max(iv.offset, window_phys.offset);
+                const size_t hi = std::min(iv.end(), window_phys.end());
+                if (lo >= hi)
+                    continue;
+                for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
+                {
+                    ChainedBuffers slice = machine->published.slice(g);
+                    if (!slice.covers(g))
+                        continue;
+                    out.append(std::move(slice));
+                    covered.add(g);
+                }
+            }
+    }
+
     /// Serving CONSUMES the contiguous covered prefix - the display's contract is that a read
     /// DELIVERS exactly that prefix, so the bank trims below it. Banked bytes beyond the first
     /// uncovered hole stay banked - they serve a later window once the hole is fetched - while
     /// bytes below the prefix are delivered or held by a faster holder, so the banked footprint
     /// still stays ~one window.
+    /// ...but never above the REUSE reach behind the cursor: a near seek may swing
+    /// back within `bank_keep_behind` (one policy with the reuse gate and the slide
+    /// line), and trimming those bytes would discard the producer's work at every
+    /// alternation of an interleaved pattern, refetching backward per cycle.
     const size_t prefix_end_phys = coveredPrefixEnd(covered, window_phys);
-    if (prefix_end_phys > window_phys.offset && !bank.empty())
+    const size_t trim_line = std::min(prefix_end_phys,
+        window_phys.offset > lane.bank_keep_behind ? window_phys.offset - lane.bank_keep_behind : 0);
+    if (trim_line > window_phys.offset && !bank.empty())
     {
         const ByteRange held = bank.range();
-        if (prefix_end_phys > held.offset)
-            bank = prefix_end_phys < held.end()
-                ? bank.slice(ByteRange{prefix_end_phys, held.end() - prefix_end_phys})
+        if (trim_line > held.offset)
+            bank = trim_line < held.end()
+                ? bank.slice(ByteRange{trim_line, held.end() - trim_line})
                 : ChainedBuffers{};
     }
 }

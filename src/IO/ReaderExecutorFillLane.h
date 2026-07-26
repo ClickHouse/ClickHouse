@@ -61,6 +61,11 @@ public:
     /// identity carries nothing. Plan-epoch scoped, reset with the ahead cursor.
     ChainedBuffers bank;
 
+    /// How far behind the serve cursor banked bytes are RETAINED instead of trimmed:
+    /// the REUSE reach (`min_bytes_for_seek`, set at executor construction) - a near
+    /// seek may swing back into it. 0 = trim to the served prefix (the pre-reuse rule).
+    size_t bank_keep_behind = 0;
+
     /// FULL-CACHE BACKPRESSURE: raised when a collect banked the still-refused residue
     /// of a POPULATING window (the cells took nothing - cache full or sibling-claimed);
     /// while it holds bytes the launcher runs no new lead (more fetch would only grow

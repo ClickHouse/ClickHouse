@@ -569,7 +569,8 @@ private:
     class Display
     {
     public:
-        Display(const ReadPlan & plan_, FillLane & lane_) : plan(plan_), lane(lane_) {}
+        Display(const ReadPlan & plan_, FillLane & lane_, const std::shared_ptr<FetchMachine> & machine_)
+            : plan(plan_), lane(lane_), machine(machine_) {}
 
         /// What is servable of `window_phys` right now (union of the three holders).
         IntervalSet coverage(ByteRange window_phys) const;
@@ -602,6 +603,9 @@ private:
             IntervalSet & covered, Stats & out_stats);
         const ReadPlan & plan;
         FillLane & lane;
+        /// The in-flight machine (may be null): its published residue preview is
+        /// the display's fourth holder.
+        const std::shared_ptr<FetchMachine> & machine;
     };
 
 
@@ -635,6 +639,9 @@ private:
     bool waitSiblingFills(ByteRange window);
     /// Interrupt the in-flight machine (bounds the join to its next tile) and collect it.
     void interruptAndCollectMachine();
+    /// Block until the machine's published residue covers `phys` or the worker exits
+    /// (`publish_done`). TRUE = the display can serve the byte from the preview now.
+    bool waitPublishedTile(FetchMachine & m, size_t phys);
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
     /// handed fills from the served bytes. The serve tail shared by the hit step and the
     /// banked bypass step; physical like all serve verbs (`finishWindow` rebases to logical).
@@ -874,7 +881,7 @@ private:
     /// connection, the in-flight pin, the ahead cursor and the bank.
     FillLane fill_lane;
     /// The display (see the class doc): holds only back-references, safe to initialize here.
-    Display display{read_plan, fill_lane};
+    Display display{read_plan, fill_lane, machine};
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the

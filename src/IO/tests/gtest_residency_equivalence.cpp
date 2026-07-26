@@ -15,6 +15,7 @@
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/PageCacheProvider.h>
+#include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/tests/ReaderExecutorInspector.h>
@@ -584,6 +585,67 @@ TEST_F(ResidencyEquivalence, InPlanSeeksReusePlan)
     EXPECT_EQ(inspect(executor).observationCount(), 1u) << "in-plan seeks must reuse the plan";
     EXPECT_EQ(inspect(executor).prefetchCancelledCount(), 0u) << "in-plan seeks must not cancel prefetches";
     EXPECT_EQ(inspect(executor).prefetchDiscardedCount(), 0u) << "in-plan seeks must not discard running prefetches";
+}
+
+/// The residue-publication gate: a CACHELESS executor (no populating tier -
+/// the machine's residue is the only producer-to-consumer pipe) serving an
+/// interleaved two-stream pattern with merge-shaped extent stepping. The
+/// worker's published preview lets the display serve the swings without
+/// joining the machine, so the whole pattern runs on one plan with a handful
+/// of source requests instead of one per swing.
+TEST_F(ResidencyEquivalence, CachelessInterleavedStreamsServeFromPublishedResidue)
+{
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+
+    auto options = makeOptions();
+    options.min_bytes_for_seek = PLAN_WINDOW;
+    options.prefetch_pool = std::make_shared<PrefetchThreadPool>(2);
+
+    auto src = std::make_shared<MemBoundedSource>(data);
+    ReaderExecutor executor(src, objects, std::move(caches), std::move(options));
+
+    /// Two streams one ALIGNMENT apart (inside the one-window residue cap),
+    /// consumed in extent-stepped chunks like a merge's granule advances.
+    const size_t stream_b = ALIGNMENT;
+    const size_t chunk = ALIGNMENT / 2;
+    String got_a;
+    String got_b;
+    for (size_t step = 0; step + chunk <= 4 * WINDOW; step += chunk)
+    {
+        for (const bool b : {false, true})
+        {
+            const size_t pos = (b ? stream_b : 0) + step;
+            String & got = b ? got_b : got_a;
+            if (static_cast<size_t>(executor.getPosition()) != pos)
+                executor.seek(pos);
+            executor.setReadExtent(pos + chunk);
+            size_t need = chunk;
+            while (need > 0)
+            {
+                auto chain = executor.readNextWindow();
+                ASSERT_FALSE(chain.empty()) << "pos " << pos;
+                for (const auto & node : chain.getNodes())
+                    got.append(node.data(), node.size);
+                need -= std::min(need, chain.range().size);
+            }
+        }
+        executor.setReadExtent(FILE_SIZE);
+    }
+    /// Each stream's consumed chunks are contiguous per stream but interleaved
+    /// between them; verify byte identity chunk by chunk.
+    for (size_t step = 0; step + chunk <= 4 * WINDOW; step += chunk)
+    {
+        EXPECT_EQ(got_a.substr(step, chunk), content.substr(step, chunk)) << "stream A at " << step;
+        EXPECT_EQ(got_b.substr(step, chunk), content.substr(stream_b + step, chunk)) << "stream B at " << step;
+    }
+
+    EXPECT_EQ(inspect(executor).observationCount(), 1u) << "the interleave must stay on one plan";
+    EXPECT_EQ(inspect(executor).prefetchDiscardedCount(), 0u) << "no producer work may be wasted";
+    /// 18 today (was 32 without the preview + bank retention): the producer still
+    /// relaunches per window and its reach grows only as the consumed run warms.
+    /// The launch-cadence/allowance follow-up is what turns this into ~8.
+    EXPECT_LE(inspect(executor).sourceRequests(), 20u)
+        << "swings must serve from the published residue and the retained bank";
 }
 
 /// Randomized layout matrix: deterministic pseudo-randomness on purpose.

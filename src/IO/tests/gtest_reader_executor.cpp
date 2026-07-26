@@ -257,11 +257,14 @@ TEST(ReaderExecutor, DisplayServesHoleyBankPrefix)
     ASSERT_EQ(r2.range().offset, 512u);
     ASSERT_EQ(r2.range().size, 100u);
 
-    /// The chunk beyond the hole is still banked - the trim consumed only the delivered prefix.
+    /// The chunk beyond the hole is still banked; the DELIVERED prefix is now also
+    /// retained (the bank keeps the reuse reach behind the cursor for swing-backs),
+    /// so the trim may leave both chunks.
     const auto ivs = inspect(executor).bankIntervals();
-    ASSERT_EQ(ivs.size(), 1u);
-    EXPECT_EQ(ivs.front().offset, 700u);
-    EXPECT_EQ(ivs.front().size, 100u);
+    ASSERT_GE(ivs.size(), 1u);
+    ASSERT_LE(ivs.size(), 2u);
+    EXPECT_EQ(ivs.back().offset, 700u);
+    EXPECT_EQ(ivs.back().size, 100u);
 
     /// The rest of the file reads back intact: the hole is fetched, the banked tail is served
     /// from the bank (not re-fetched), and the bytes match.
