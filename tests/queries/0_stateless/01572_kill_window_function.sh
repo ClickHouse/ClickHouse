@@ -11,11 +11,16 @@ function wait_for_query_to_start()
     while [[ $($CLICKHOUSE_CURL -sS "$CLICKHOUSE_URL" -d "SELECT count() FROM system.processes WHERE query_id = '$1'") == 0 ]]; do sleep 0.1; done
 }
 
-# Run a test query that takes very long to run.
-# max_memory_usage=0: CI randomizes max_memory_usage low, so this memory-heavy window query
-# could fail with MEMORY_LIMIT_EXCEEDED before the KILL lands, instead of QUERY_WAS_CANCELLED.
+# Run a test query that takes very long to run, but does not need much memory.
+# The frame starts at the current row, so `WindowTransform` recalculates the aggregate over the
+# whole frame for every row. A frame covering a single partition of a million rows makes it
+# ~10^11 additions, which is about a minute and a half in a release build and longer in a
+# sanitizer build, while only a million numbers are kept in memory (~20 MiB at the peak).
+# The single partition is deliberate: with `PARTITION BY` the partitions are calculated in
+# parallel and the frames are smaller, so the query becomes faster the higher `max_threads` is,
+# and the test runner randomizes it.
 query_id="01572_kill_window_function-$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (PARTITION BY number % 10 ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 99999 FOLLOWING) FROM numbers(0, 10000000) SETTINGS max_memory_usage = 0 format Null;" >/dev/null 2>&1 &
+$CLICKHOUSE_CLIENT --query_id="$query_id" --query "SELECT sum(number) OVER (ORDER BY number DESC NULLS FIRST ROWS BETWEEN CURRENT ROW AND 999999 FOLLOWING) FROM numbers(0, 1000000) format Null;" >/dev/null 2>&1 &
 client_pid=$!
 echo Started
 
