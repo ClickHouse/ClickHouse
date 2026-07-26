@@ -11,7 +11,6 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
 
-
 namespace DB
 {
 
