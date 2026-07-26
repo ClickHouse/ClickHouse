@@ -1042,6 +1042,40 @@ def test_create_tables_under_same_namespace(started_cluster):
     )
 
 
+def test_create_table_namespace_creation_error(started_cluster):
+    """An unexpected failure of the "create namespace" request must abort CREATE TABLE.
+
+    Only `HTTP 409 Conflict` means "the namespace is already there"; every other error
+    leaves it unknown whether the namespace exists, so it must not be swallowed.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_table_namespace_creation_error_{uuid.uuid4()}"
+    root_namespace = f"{test_ref}_namespace"
+    table_name = f"{test_ref}_table"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query("SYSTEM ENABLE FAILPOINT rest_catalog_create_namespace_http_error")
+    try:
+        error = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{root_namespace}.{table_name}` (x String) "
+            f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', "
+            f"'{minio_access_key}', '{minio_secret_key}')",
+            settings={
+                "allow_experimental_database_iceberg": 1,
+                "write_full_path_in_iceberg_metadata": 1,
+            },
+        )
+        assert "Injecting fault when creating namespace" in error, error
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT rest_catalog_create_namespace_http_error")
+
+    # The namespace was not created behind the user's back.
+    existing = [name for namespace in list_namespaces(started_cluster)["namespaces"] for name in namespace]
+    assert root_namespace not in existing
+
+
 def test_create_gzip_metadata(started_cluster):
     # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
     # compression exercises IcebergMetadata::createInitial and the

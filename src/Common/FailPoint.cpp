@@ -222,6 +222,7 @@ static struct InitFiu
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
     REGULAR(check_database_datalake_negative) \
+    REGULAR(rest_catalog_create_namespace_http_error) \
     REGULAR(restart_replica_fail_after_detach) \
     REGULAR(database_replicated_force_metadata_digest_check) \
     ONCE(oom_canary_force_oom_evidence) \

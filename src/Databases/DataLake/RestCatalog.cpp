@@ -70,6 +70,7 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char rest_catalog_create_namespace_http_error[];
 }
 
 namespace DB::DatabaseDataLakeSetting
@@ -1489,6 +1490,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
+        fiu_do_on(DB::FailPoints::rest_catalog_create_namespace_http_error,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::FAULT_INJECTED,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR,
+                "Injecting fault when creating namespace",
+                "");
+        });
+
         sendRequest(
             *state_snapshot,
             endpoint,
@@ -1499,16 +1510,14 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     }
     catch (const DB::HTTPException & e)
     {
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_CONFLICT)
-        {
-            LOG_DEBUG(log, "Namespace '{}' already exists, skipping creation", namespace_name);
-            return;
-        }
-        DB::tryLogCurrentException(log);
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log);
+        /// `HTTP_CONFLICT` is how the REST catalog reports that the namespace is already there,
+        /// which is exactly the outcome this method asks for, so it is the only consumed error.
+        /// Any other failure means the namespace may not exist and must not be hidden behind
+        /// whatever the subsequent "create table" request happens to answer.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTP_CONFLICT)
+            throw;
+
+        LOG_DEBUG(log, "Namespace '{}' already exists, skipping creation", namespace_name);
     }
 }
 
