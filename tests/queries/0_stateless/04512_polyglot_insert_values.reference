@@ -27,3 +27,8 @@ counts towards max_query_size
 counts towards max_query_size
 --- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---
 0
+--- HTTP polyglot inline INSERT with an empty body (expect: 107 6) ---
+107	6
+NOT_IMPLEMENTED
+--- no insert when an HTTP body accompanies a polyglot INSERT (expect: 107 6) ---
+107	6

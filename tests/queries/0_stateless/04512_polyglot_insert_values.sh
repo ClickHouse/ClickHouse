@@ -105,5 +105,22 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 echo "--- oversized query in multiquery mode is rejected on the client, without a server round trip (expect: 0) ---"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.query_log WHERE query_id = '$oversized_id'"
 
+# Over the HTTP interface a streaming INSERT (`input_format_connection_handling` +
+# `input_format_max_block_wait_ms`) keeps the request
+# body separate from the URL `query` parameter, so the body is available to the INSERT as external
+# data. For a foreign dialect that would mix two parsing rules in a single INSERT: the inline data
+# is transpiled and counted towards `max_query_size`, while the body is neither. The server rejects
+# a non-empty body instead of reading it, mirroring the client-side rule for stdin and INFILE.
+poly_url="${CLICKHOUSE_URL}&allow_experimental_polyglot_dialect=1&dialect=polyglot&polyglot_dialect=postgresql&input_format_connection_handling=1&input_format_max_block_wait_ms=1000"
+
+# An empty body is the normal way to run a polyglot INSERT over HTTP and must keep working.
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(7)" -d ''
+echo "--- HTTP polyglot inline INSERT with an empty body (expect: 107 6) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(8)" -d '(9)' 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+echo "--- no insert when an HTTP body accompanies a polyglot INSERT (expect: 107 6) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE b"
