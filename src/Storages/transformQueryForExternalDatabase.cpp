@@ -1,4 +1,5 @@
 #include <Common/typeid_cast.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -369,6 +370,37 @@ bool removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList
     return removeUnknownSubexpressions(node, known_names);
 }
 
+/// The SELECT list is evaluated locally, and the LIMIT of the original query is applied to its
+/// result, not to the rows read from the external table. So the push-down is only correct when
+/// every expression in the SELECT list maps one source row to one result row. Aggregate functions
+/// (`SELECT sum(column) FROM t LIMIT 1` reads the whole table and returns a single row), window
+/// functions (they are computed over a whole partition of the source rows) and `arrayJoin` (it
+/// multiplies the rows) all break this, so they disable the push-down. Note that a subquery in the
+/// SELECT list is scalar and could not change the number of rows, but it is traversed as well -
+/// rejecting such a query merely loses the optimization.
+bool isRowPreservingExpression(const ASTPtr & node)
+{
+    if (const auto * function = node->as<ASTFunction>())
+    {
+        if (function->isWindowFunction() || function->window_definition || !function->window_name.empty())
+            return false;
+
+        if (function->name == "arrayJoin")
+            return false;
+
+        if (AggregateFunctionFactory::instance().isAggregateFunctionName(function->name))
+            return false;
+    }
+
+    for (const auto & child : node->children)
+    {
+        if (!isRowPreservingExpression(child))
+            return false;
+    }
+
+    return true;
+}
+
 /// An explicit allow-list of query shapes for which the LIMIT can be pushed down to the
 /// external database: a plain single-table SELECT, optionally with a WHERE clause (which
 /// must additionally be copied to the external query without changes - checked separately)
@@ -393,6 +425,11 @@ bool isLimitPushDownSafe(const ASTSelectQuery & query)
             && child != query.limitLength() && child != query.settings())
             return false;
     }
+
+    /// The SELECT list may also change the number of rows or aggregate them, even when the query
+    /// has no other clauses at all.
+    if (query.select() && !isRowPreservingExpression(query.select()))
+        return false;
 
     return true;
 }

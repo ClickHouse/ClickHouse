@@ -490,6 +490,29 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "SELECT column FROM table GROUP BY ALL LIMIT 10",
         R"(SELECT "column" FROM "test"."table")");
 
+    /// The SELECT list is evaluated locally and the LIMIT is applied to its result, so expressions
+    /// that do not map one source row to one result row must disable the push-down as well.
+    check(state, 1, {"column"},
+        "SELECT sum(column) FROM table LIMIT 1",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT sum(column) + 1 FROM table LIMIT 1",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT sum(column) OVER () FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT arrayJoin(range(column)) FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// A plain projection expression does not change the number of rows, so it is still pushed down.
+    check(state, 1, {"column"},
+        "SELECT column + 1 FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
     /// When the WHERE clause is copied to the external query only partially,
     /// the rest of it is applied locally, so the LIMIT must not be pushed down either.
     /// (Range comparisons on UUID columns are not compatible with external databases.)
