@@ -1,5 +1,7 @@
 #include <Parsers/ASTJSONReadHelpers.h>
 #include <Parsers/ASTFromJSON.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
@@ -21,6 +23,39 @@ ASTPtr JSONObjectReader::readIdentifierChild(const char * key) const
     if (child && !dynamic_cast<const ASTIdentifier *>(child.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Expected an identifier for key '{}' during AST JSON deserialization", key);
+    return child;
+}
+
+ASTPtr JSONObjectReader::readSpecialFunctionChild(const char * key, const char * function_name) const
+{
+    ASTPtr child = readChild(key);
+    if (!child)
+        return nullptr;
+
+    const std::string_view expected_name(function_name);
+    const ASTFunction::Kind expected_kind
+        = expected_name == "CODEC" ? ASTFunction::Kind::CODEC : ASTFunction::Kind::STATISTICS;
+
+    const auto * function = child->as<ASTFunction>();
+    if (!function || function->name != expected_name || function->getKind() != expected_kind)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected a `{}` function for key '{}' during AST JSON deserialization", expected_name, key);
+
+    /// `ParserCodec`/`ParserStatisticsType` parse the argument list with `ParserList` disallowing an empty
+    /// list, so the `arguments` slot is always a non-empty expression list.
+    if (!function->arguments || !function->arguments->as<ASTExpressionList>() || function->arguments->children.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A `{}` function for key '{}' requires a non-empty list of arguments during AST JSON deserialization",
+            expected_name, key);
+
+    /// Every element comes from `ParserIdentifierWithOptionalParameters`, which produces an `ASTFunction`
+    /// even for a bare identifier such as `LZ4` or `tdigest`.
+    for (const auto & argument : function->arguments->children)
+        if (!argument || !argument->as<ASTFunction>())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Every argument of a `{}` function for key '{}' must be a function during AST JSON deserialization",
+                expected_name, key);
+
     return child;
 }
 

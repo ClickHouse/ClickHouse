@@ -120,9 +120,16 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
         }
     }
 
-    recompression_codec = r.readChild("recompression_codec");
+    /// `RECOMPRESS` is not a free-form expression slot: `ParserTTLElement` always fills it through
+    /// `ParserCodec`, so it is a `CODEC(...)` function with a non-empty argument list, and
+    /// `TTLDescription::getTTLFromAST` hands the node to `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`,
+    /// which assumes that shape. Only `RECOMPRESS` carries a codec; `formatImpl` drops it for every other
+    /// mode, so a codec on a non-`RECOMPRESS` element would be silently lost.
+    recompression_codec = r.readSpecialFunctionChild("recompression_codec", "CODEC");
     if (mode == TTLMode::RECOMPRESS && !recompression_codec)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'recompression_codec' is missing for RECOMPRESS mode during AST JSON deserialization");
+    if (mode != TTLMode::RECOMPRESS && recompression_codec)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'recompression_codec' is only valid for TTL RECOMPRESS during AST JSON deserialization");
 
     /// Only `TTL ... TO DISK/VOLUME '<name>'` (mode `MOVE`) carries a destination. `ParserTTLElement`
     /// produces exactly `DISK` or `VOLUME` with a non-empty name there; every other mode leaves the

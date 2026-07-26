@@ -268,12 +268,13 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
 
     /// These sub-slots are parser-produced as fixed concrete types and are downcast later
     /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`;
-    /// the compression/statistics factories take the `CODEC`/`STATISTICS` `ASTFunction`s). Validate them
+    /// the compression/statistics factories take the parser-shaped `CODEC`/`STATISTICS` `ASTFunction`s,
+    /// which `readSpecialFunctionChild` validates down to their argument list). Validate them
     /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
     /// `ttl`/`default_expression` are arbitrary expressions and stay untyped.
     setComment(r.readStringLiteralChild("comment"));
-    setCodec(r.readChildOfType<ASTFunction>("codec"));
-    setStatisticsDesc(r.readChildOfType<ASTFunction>("statistics_desc"));
+    setCodec(r.readSpecialFunctionChild("codec", "CODEC"));
+    setStatisticsDesc(r.readSpecialFunctionChild("statistics_desc", "STATISTICS"));
     setTTL(r.readChild("ttl"));
     setCollation(r.readChildOfType<ASTCollation>("collation"));
     setSettings(r.readChildOfType<ASTSetQuery>("settings"));
