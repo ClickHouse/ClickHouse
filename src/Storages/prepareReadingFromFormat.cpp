@@ -1,15 +1,19 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
+#include <Storages/VirtualColumnUtils.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <base/scope_guard.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 
 namespace DB
 {
@@ -282,6 +286,14 @@ ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, con
     /// don't need to replace subcolumns with their nested columns etc.
     new_info.source_header = new_info.format_header;
 
+    /// Hive partition columns come from the file path, not the data file, so prewhere column
+    /// pruning above does not concern them. Carry them over and keep their position before the
+    /// virtual columns (as in prepareReadingFromFormat), otherwise the source skips appending them
+    /// to the chunk and selecting a hive column while filtering a real one fails.
+    new_info.hive_partition_columns_to_read_from_file_path = info.hive_partition_columns_to_read_from_file_path;
+    for (const auto & column_from_file_path : new_info.hive_partition_columns_to_read_from_file_path)
+        new_info.source_header.insert({column_from_file_path.type->createColumn(), column_from_file_path.type, column_from_file_path.name});
+
     new_info.requested_virtual_columns = info.requested_virtual_columns;
     for (const auto & requested_virtual_column : new_info.requested_virtual_columns)
         new_info.source_header.insert({requested_virtual_column.type->createColumn(), requested_virtual_column.type, requested_virtual_column.name});
@@ -391,6 +403,45 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     ctx.in >> "\n";
 
     return result;
+}
+
+Block buildAllowedFilterInputs(
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter)
+{
+    Block base = storage_snapshot->metadata->getSampleBlock();
+    for (const auto & col : source_header)
+        if (!base.has(col.name))
+            base.insert(col);
+    return FormatFilterInfo::buildKeyConditionInputs(std::move(base), prewhere_info, row_level_filter);
+}
+
+void prepareEagerKeyConditionSets(
+    const std::shared_ptr<const ActionsDAG> & filter_actions_dag,
+    const StorageSnapshotPtr & storage_snapshot,
+    const Block & source_header,
+    const PrewhereInfoPtr & prewhere_info,
+    const FilterDAGInfoPtr & row_level_filter,
+    const ContextPtr & context)
+{
+    if (!filter_actions_dag)
+        return;
+
+    auto allowed_inputs = buildAllowedFilterInputs(
+        storage_snapshot, source_header, prewhere_info, row_level_filter);
+    if (auto split = VirtualColumnUtils::splitFilterDagForAllowedInputs(
+            filter_actions_dag->getOutputs().at(0), &allowed_inputs, context,
+            /*allow_partial_result=*/ true))
+        VirtualColumnUtils::buildSetsForDAGExcludingGlobalIn(*split, context);
+}
+
+size_t clampClusterFunctionNumStreams(UInt64 num_streams)
+{
+    /// 256 * cores is the ceiling max_threads gets in Context::setSetting; reuse it so a *Cluster
+    /// read step never reserves/resizes a pipe vector for a pathological user-supplied value.
+    return std::min<UInt64>(num_streams, 256 * getNumberOfCPUCoresToUse());
 }
 
 }

@@ -8,6 +8,7 @@
 
 #include <Core/Settings.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ShuffleHost.h>
@@ -54,6 +55,11 @@ namespace Setting
     extern const SettingsFloat opentelemetry_start_trace_probability;
     extern const SettingsFloatAuto opentelemetry_start_keeper_trace_probability;
 }
+
+namespace FailPoints
+{
+    extern const char keeper_fault_on_watch_request[];
+}
 }
 
 
@@ -62,6 +68,16 @@ namespace zkutil
 
 namespace
 {
+    /// Fail point that fails all requests with watches but allows requests without watches.
+    bool shouldInjectWatchFault(const Coordination::WatchCallbackPtrOrEventPtr & watch_callback)
+    {
+        if (!watch_callback)
+            return false;
+        bool inject = false;
+        fiu_do_on(DB::FailPoints::keeper_fault_on_watch_request, { inject = true; });
+        return inject;
+    }
+
     float calculateOpenTelemetryProbability()
     {
         const auto global_context = DB::Context::getGlobalContextInstance();
@@ -377,6 +393,11 @@ bool ZooKeeper::configChanged(const Poco::Util::AbstractConfiguration & config, 
     new_args.enforce_component_tracking = args.enforce_component_tracking;
     new_args.send_receive_os_threads_nice_value = args.send_receive_os_threads_nice_value;
 
+    /// last_zxid_seen is runtime session state propagated by startNewSession, not configuration,
+    /// so it is always 0 in new_args. Without this, the first config reload after any
+    /// expiry-driven session replacement recreates the session even if the config is unchanged.
+    new_args.last_zxid_seen = args.last_zxid_seen;
+
     return args != new_args;
 }
 
@@ -387,6 +408,9 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    bool with_stat,
                                    bool with_data)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -685,6 +709,9 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -747,6 +774,9 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 Coordination::Error ZooKeeper::getImpl(
     const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallbackPtrOrEventPtr watch_callback)
 {
+    if (shouldInjectWatchFault(watch_callback))
+        return Coordination::Error::ZCONNECTIONLOSS;
+
     std::optional<DB::OpenTelemetry::SpanHolder> maybe_span;
     if (sampleForOpenTelemetryTracing())
     {
@@ -1354,7 +1384,7 @@ namespace
     using WaitForDisappearStatePtr = std::shared_ptr<WaitForDisappearState>;
 }
 
-bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition)
+bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition & condition, ProfileEvents::Event triggered_event)
 {
     WaitForDisappearStatePtr state = std::make_shared<WaitForDisappearState>();
 
@@ -1378,6 +1408,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
             }
         };
     });
+    watch.setTriggeredEvent(triggered_event);
 
     /// do-while control structure to allow using this function in non-blocking
     /// fashion with a wait condition which returns false by the time this
@@ -2104,34 +2135,30 @@ Coordination::RequestPtr makeGetRequest(const std::string & path, Coordination::
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    // Keeper server that support MultiRead also support FilteredList
-    auto request = std::make_shared<Coordination::ZooKeeperFilteredListRequest>();
+    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
     request->path = path;
-    request->list_request_type = list_request_type;
     request->watch_callback = watch;
     request->has_watch = static_cast<bool>(watch);
+
+    if (list_request_type != Coordination::ListRequestType::ALL)
+        request->list_request_type = list_request_type;
+
     return request;
 }
 
 Coordination::RequestPtr makeListRequest(const std::string & path, Coordination::ListRequestType list_request_type, bool with_stat, bool with_data, Coordination::WatchCallbackPtrOrEventPtr watch)
 {
-    // Use the derived request class when stats or data are requested
-    if (with_stat || with_data)
-    {
-        auto request = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataRequest>();
-        request->path = path;
-        request->list_request_type = list_request_type;
-        request->with_stat = with_stat;
-        request->with_data = with_data;
-        request->watch_callback = watch;
-        request->has_watch = static_cast<bool>(watch);
-        return request;
-    }
-    else
-    {
-        // Fall back to base request if no extra data needed
+    if (!with_stat && !with_data)
         return makeListRequest(path, list_request_type, watch);
-    }
+
+    auto request = std::make_shared<Coordination::ZooKeeperListRequest>();
+    request->path = path;
+    request->list_request_type = list_request_type;
+    request->with_stat = with_stat;
+    request->with_data = with_data;
+    request->watch_callback = watch;
+    request->has_watch = static_cast<bool>(watch);
+    return request;
 }
 
 Coordination::RequestPtr makeSimpleListRequest(const std::string & path, Coordination::WatchCallbackPtrOrEventPtr watch)
@@ -2199,6 +2226,18 @@ String extractZooKeeperPath(const String & path, bool check_starts_with_slash, L
         return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
     }
     return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+}
+
+String extractZooKeeperPathAndCollapseTrailingSlashes(const String & path, bool check_starts_with_slash, LoggerPtr log)
+{
+    String result = extractZooKeeperPath(path, check_starts_with_slash, log);
+    /// extractZooKeeperPath (via normalizeZooKeeperPath) strips only a single trailing slash, so a path
+    /// like "/a//" keeps a leftover one. Collapse all of them (keeping the leading root '/') to get a
+    /// canonical form: the interpreter concatenates "path + /replicas", and comparisons must treat
+    /// "/a", "/a/" and "/a//" as the same keeper path.
+    while (result.size() > 1 && result.back() == '/')
+        result.pop_back();
+    return result;
 }
 
 String getSequentialNodeName(const String & prefix, UInt64 number)

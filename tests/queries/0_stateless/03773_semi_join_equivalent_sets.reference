@@ -55,10 +55,8 @@ Positions: 4 0 1 2
         Filter column: equals(__table2.number, 1_UInt8) (removed)
         Actions: INPUT : 0 -> number UInt64 : 0
                  COLUMN Const(UInt8) -> 1_UInt8 UInt8 : 1
-                 ALIAS number : 0 -> __table3.number UInt64 : 2
+                 ALIAS number : 0 -> __table2.number UInt64 : 2
                  FUNCTION equals(number :: 0, 1_UInt8 :: 1) -> equals(__table2.number, 1_UInt8) UInt8 : 3
-                 ALIAS __table3.number :: 2 -> number UInt64 : 1
-                 ALIAS number :: 1 -> __table2.number UInt64 : 2
         Positions: 3 2
           ReadFromSystemNumbers
     Type: LEFT

@@ -1,0 +1,309 @@
+---
+slug: /data-compression/compression-in-clickhouse
+title: 'Сжатие в ClickHouse'
+description: 'Выбор алгоритмов сжатия в ClickHouse'
+keywords: ['compression', 'codec', 'encoding']
+doc_type: 'reference'
+---
+
+Один из секретов высокой производительности запросов к ClickHouse — сжатие.
+
+Меньше данных на диске означает меньше операций ввода-вывода и более быстрые запросы и вставки. Нагрузка на CPU от любого алгоритма сжатия в большинстве случаев с лихвой окупается уменьшением объема ввода-вывода. Поэтому при работе над ускорением запросов к ClickHouse в первую очередь стоит обратить внимание на улучшение сжатия данных.
+
+> Чтобы понять, почему ClickHouse так хорошо сжимает данные, рекомендуем прочитать [эту статью](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema). Вкратце: наша столбцовая база данных записывает значения по столбцам. Когда эти значения отсортированы, одинаковые значения оказываются рядом друг с другом, и алгоритмы сжатия эффективно используют повторяющиеся последовательности в данных. Кроме того, в ClickHouse есть кодеки и точные типы данных, которые позволяют легко дополнительно настроить сжатие.
+
+На сжатие в ClickHouse влияют 3 основных фактора:
+
+* Ключ сортировки
+* Типы данных
+* Используемые кодеки
+
+Все они настраиваются через схему.
+
+<div id="choose-the-right-data-type-to-optimize-compression">
+  ## Выберите подходящий тип данных для оптимизации сжатия
+</div>
+
+В качестве примера возьмём набор данных Stack Overflow. Сравним статистику сжатия для следующих схем таблицы `posts`:
+
+* `posts` - Схема без оптимизации типов и без ключа сортировки.
+* `posts_v3` -  Схема с оптимизированными типами, где для каждого столбца выбран подходящий тип и битность, с ключом сортировки `(PostTypeId, toDate(CreationDate), CommentCount)`.
+
+С помощью следующих запросов можно измерить текущий сжатый и несжатый размер каждого столбца. Рассмотрим размер исходной схемы `posts` без ключа сортировки.
+
+```sql
+SELECT name,
+   formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+   formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+   round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio────┐
+│ Body                  │ 46.14 GiB       │ 127.31 GiB        │ 2.76       │
+│ Title                 │ 1.20 GiB        │ 2.63 GiB          │ 2.19       │
+│ Score                 │ 84.77 MiB       │ 736.45 MiB        │ 8.69       │
+│ Tags                  │ 475.56 MiB      │ 1.40 GiB          │ 3.02       │
+│ ParentId              │ 210.91 MiB      │ 696.20 MiB        │ 3.3        │
+│ Id                    │ 111.17 MiB      │ 736.45 MiB        │ 6.62       │
+│ AcceptedAnswerId      │ 81.55 MiB       │ 736.45 MiB        │ 9.03       │
+│ ClosedDate            │ 13.99 MiB       │ 517.82 MiB        │ 37.02      │
+│ LastActivityDate      │ 489.84 MiB      │ 964.64 MiB        │ 1.97       │
+│ CommentCount          │ 37.62 MiB       │ 565.30 MiB        │ 15.03      │
+│ OwnerUserId           │ 368.98 MiB      │ 736.45 MiB        │ 2          │
+│ AnswerCount           │ 21.82 MiB       │ 622.35 MiB        │ 28.53      │
+│ FavoriteCount         │ 280.95 KiB      │ 508.40 MiB        │ 1853.02    │
+│ ViewCount             │ 95.77 MiB       │ 736.45 MiB        │ 7.69       │
+│ LastEditorUserId      │ 179.47 MiB      │ 736.45 MiB        │ 4.1        │
+│ ContentLicense        │ 5.45 MiB        │ 847.92 MiB        │ 155.5      │
+│ OwnerDisplayName      │ 14.30 MiB       │ 142.58 MiB        │ 9.97       │
+│ PostTypeId            │ 20.93 MiB       │ 565.30 MiB        │ 27         │
+│ CreationDate          │ 314.17 MiB      │ 964.64 MiB        │ 3.07       │
+│ LastEditDate          │ 346.32 MiB      │ 964.64 MiB        │ 2.79       │
+│ LastEditorDisplayName │ 5.46 MiB        │ 124.25 MiB        │ 22.75      │
+│ CommunityOwnedDate    │ 2.21 MiB        │ 509.60 MiB        │ 230.94     │
+└───────────────────────┴─────────────────┴───────────────────┴────────────┘
+```
+
+<Accordion title="Примечание о компактных и широких частях">
+  Если вы видите значения `compressed_size` или `uncompressed_size`, равные `0`, это может быть связано с тем, что тип
+  частей — `compact`, а не `wide` (см. описание `part_type` в [`system.parts`](/ru/reference/system-tables/parts)).
+  Формат части задаётся настройками [`min_bytes_for_wide_part`](/ru/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
+  и [`min_rows_for_wide_part`](/ru/reference/settings/merge-tree-settings#min_rows_for_wide_part), то есть если вставленные
+  данные приводят к созданию части, которая не превышает значения вышеупомянутых настроек, часть будет компактной, а не
+  широкой, и вы не увидите значений `compressed_size` или `uncompressed_size`.
+
+  Чтобы продемонстрировать это:
+
+  ```sql title="Запрос"
+  -- Создайте таблицу с компактными частями
+  CREATE TABLE compact (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number 
+  AS SELECT * FROM numbers(100000); -- Недостаточно большой объём, чтобы превысить значение по умолчанию min_bytes_for_wide_part = 10485760
+
+  -- Проверьте тип частей
+  SELECT table, name, part_type from system.parts where table = 'compact';
+
+  -- Получите сжатый и несжатый размеры столбцов для компактной таблицы
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'compact'
+  GROUP BY name;
+
+  -- Создайте таблицу с широкими частями 
+  CREATE TABLE wide (
+    number UInt32
+  )
+  ENGINE = MergeTree()
+  ORDER BY number
+  SETTINGS min_bytes_for_wide_part=0
+  AS SELECT * FROM numbers(100000);
+
+  -- Проверьте тип частей
+  SELECT table, name, part_type from system.parts where table = 'wide';
+
+  -- Получите сжатый и несжатый размеры для широкой таблицы
+  SELECT name,
+     formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+     formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+     round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE table = 'wide'
+  GROUP BY name;
+  ```
+
+  ```response title="Ответ"
+     ┌─table───┬─name──────┬─part_type─┐
+  1. │ compact │ all_1_1_0 │ Compact   │
+     └─────────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 0.00 B          │ 0.00 B            │   nan │
+     └────────┴─────────────────┴───────────────────┴───────┘
+     ┌─table─┬─name──────┬─part_type─┐
+  1. │ wide  │ all_1_1_0 │ Wide      │
+     └───────┴───────────┴───────────┘
+     ┌─name───┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  1. │ number │ 392.31 KiB      │ 390.63 KiB        │     1 │
+     └────────┴─────────────────┴───────────────────┴───────┘
+  ```
+</Accordion>
+
+Здесь мы показываем как сжатый, так и несжатый размер. Оба показателя важны. Сжатый размер соответствует объёму данных, который нужно считывать с диска, а его желательно минимизировать ради производительности запросов (и снижения стоимости хранения). Перед чтением эти данные нужно распаковать. В данном случае величина несжатого размера зависит от используемого типа данных. Уменьшение этого размера снижает накладные расходы на память при выполнении запросов и объём данных, которые запросу нужно обработать, улучшает использование кэша и в итоге сокращает время выполнения запросов.
+
+> Приведённый выше запрос использует таблицу `columns` в системной базе данных. Этой базой данных управляет ClickHouse, и она представляет собой настоящий кладезь полезной информации: от метрик производительности запросов до фоновых журналов кластера. Если вам интересно, рекомендуем статью [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) и связанные с ней статьи[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse).
+
+Чтобы получить суммарный размер таблицы, можно упростить приведённый выше запрос:
+
+```sql
+SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table = 'posts'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 50.16 GiB       │ 143.47 GiB        │  2.86 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+Повторив этот запрос для `posts_v3` — таблицы с оптимизированным типом и ключом сортировки, — мы увидим значительное уменьшение размера данных в сжатом и несжатом виде.
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+```
+
+```response
+┌─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ 25.15 GiB       │ 68.87 GiB         │  2.74 │
+└─────────────────┴───────────────────┴───────┘
+```
+
+Подробная разбивка по столбцам показывает, что для столбцов `Body`, `Title`, `Tags` и `CreationDate` удалось добиться значительной экономии за счёт упорядочивания данных перед сжатием и использования подходящих типов.
+
+```sql
+SELECT
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE `table` = 'posts_v3'
+GROUP BY name
+```
+
+```response
+┌─name──────────────────┬─compressed_size─┬─uncompressed_size─┬───ratio─┐
+│ Body                  │ 23.10 GiB       │ 63.63 GiB         │    2.75 │
+│ Title                 │ 614.65 MiB      │ 1.28 GiB          │    2.14 │
+│ Score                 │ 40.28 MiB       │ 227.38 MiB        │    5.65 │
+│ Tags                  │ 234.05 MiB      │ 688.49 MiB        │    2.94 │
+│ ParentId              │ 107.78 MiB      │ 321.33 MiB        │    2.98 │
+│ Id                    │ 159.70 MiB      │ 227.38 MiB        │    1.42 │
+│ AcceptedAnswerId      │ 40.34 MiB       │ 227.38 MiB        │    5.64 │
+│ ClosedDate            │ 5.93 MiB        │ 9.49 MiB          │     1.6 │
+│ LastActivityDate      │ 246.55 MiB      │ 454.76 MiB        │    1.84 │
+│ CommentCount          │ 635.78 KiB      │ 56.84 MiB         │   91.55 │
+│ OwnerUserId           │ 183.86 MiB      │ 227.38 MiB        │    1.24 │
+│ AnswerCount           │ 9.67 MiB        │ 113.69 MiB        │   11.76 │
+│ FavoriteCount         │ 19.77 KiB       │ 147.32 KiB        │    7.45 │
+│ ViewCount             │ 45.04 MiB       │ 227.38 MiB        │    5.05 │
+│ LastEditorUserId      │ 86.25 MiB       │ 227.38 MiB        │    2.64 │
+│ ContentLicense        │ 2.17 MiB        │ 57.10 MiB         │   26.37 │
+│ OwnerDisplayName      │ 5.95 MiB        │ 16.19 MiB         │    2.72 │
+│ PostTypeId            │ 39.49 KiB       │ 56.84 MiB         │ 1474.01 │
+│ CreationDate          │ 181.23 MiB      │ 454.76 MiB        │    2.51 │
+│ LastEditDate          │ 134.07 MiB      │ 454.76 MiB        │    3.39 │
+│ LastEditorDisplayName │ 2.15 MiB        │ 6.25 MiB          │    2.91 │
+│ CommunityOwnedDate    │ 824.60 KiB      │ 1.34 MiB          │    1.66 │
+└───────────────────────┴─────────────────┴───────────────────┴─────────┘
+```
+
+<div id="choosing-the-right-column-compression-codec">
+  ## Выбор подходящего кодека сжатия для столбца
+</div>
+
+С помощью кодеков сжатия столбцов можно изменить алгоритм (и его настройки), используемый для кодирования и сжатия каждого столбца.
+
+Кодирование и сжатие работают немного по-разному, но преследуют одну и ту же цель: уменьшить объём данных. Кодирование применяет к данным преобразование, изменяя значения на основе функции и используя свойства типа данных. Сжатие же использует универсальный алгоритм, который сжимает данные на уровне байтов.
+
+Обычно сначала применяется кодирование, а затем — сжатие. Поскольку разные кодировки и алгоритмы сжатия эффективны для разных распределений значений, важно понимать особенности своих данных.
+
+ClickHouse поддерживает большое количество кодеков и алгоритмов сжатия. Ниже приведены некоторые рекомендации в порядке важности:
+
+| Рекомендация                                              | Обоснование                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ZSTD` прежде всего**                                   | Сжатие `ZSTD` обеспечивает наилучшие показатели. Для большинства распространённых типов значением по умолчанию должен быть `ZSTD(1)`. Более высокие степени сжатия можно попробовать, изменяя числовое значение. Для значений выше 3 выигрыш обычно недостаточен, чтобы оправдать возросшую стоимость сжатия (более медленная вставка).                                                                                                                                       |
+| **`Delta` для дат и целочисленных последовательностей**   | Кодеки на основе `Delta` хорошо работают, когда есть монотонные последовательности или небольшие разницы между соседними значениями. Точнее, кодек `Delta` эффективен, если производные дают небольшие числа. Если это не так, стоит попробовать `DoubleDelta` (обычно он даёт мало пользы, если производная первого уровня после `Delta` и так уже очень мала). Последовательности с равномерным монотонным приращением будут сжиматься ещё лучше, например поля `DateTime`. |
+| **`Delta` улучшает `ZSTD`**                               | `ZSTD` хорошо работает с данными после `Delta`; и наоборот, Delta-кодирование может улучшить сжатие `ZSTD`. При использовании `ZSTD` другие кодеки редко дают дополнительный выигрыш.                                                                                                                                                                                                                                                                                         |
+| **`LZ4` вместо `ZSTD`, если возможно**                    | Если `LZ4` и `ZSTD` дают сопоставимый уровень сжатия, лучше выбрать `LZ4`, поскольку он обеспечивает более быструю распаковку и требует меньше CPU. Однако в большинстве случаев `ZSTD` будет заметно превосходить `LZ4`. Некоторые из этих кодеков могут работать быстрее в сочетании с `LZ4`, обеспечивая при этом сжатие, сопоставимое с `ZSTD` без дополнительного кодека. Но это зависит от конкретных данных и требует тестирования.                                    |
+| **`T64` для разреженных данных или небольших диапазонов** | `T64` может быть эффективен для разреженных данных или когда диапазон значений в блоке невелик. Не используйте `T64` для случайных чисел.                                                                                                                                                                                                                                                                                                                                     |
+| **`Gorilla` и `T64` для неизвестных шаблонов?**           | Если у данных нет очевидного шаблона, возможно, стоит попробовать `Gorilla` и `T64`.                                                                                                                                                                                                                                                                                                                                                                                          |
+| **`Gorilla` для данных типа Gauge**                       | `Gorilla` может быть эффективен для данных с плавающей точкой, особенно если они представляют показания типа Gauge, то есть случайные всплески.                                                                                                                                                                                                                                                                                                                               |
+
+Дополнительные варианты см. [здесь](/ru/reference/statements/create/table#column_compression_codec).
+
+Ниже мы указываем кодек `Delta` для `Id`, `ViewCount` и `AnswerCount`, предполагая, что они будут линейно коррелировать с ключом сортировки и, следовательно, выиграют от Delta-кодирования.
+
+```sql
+CREATE TABLE posts_v4
+(
+        `Id` Int32 CODEC(Delta, ZSTD),
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta, ZSTD),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC'),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta, ZSTD),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+Ниже показаны улучшения сжатия для этих столбцов:
+
+```sql
+SELECT
+    `table`,
+    name,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+    round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE (name IN ('Id', 'ViewCount', 'AnswerCount')) AND (`table` IN ('posts_v3', 'posts_v4'))
+GROUP BY
+    `table`,
+    name
+ORDER BY
+    name ASC,
+    `table` ASC
+```
+
+```response
+┌─table────┬─name────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ posts_v3 │ AnswerCount │ 9.67 MiB        │ 113.69 MiB        │ 11.76 │
+│ posts_v4 │ AnswerCount │ 10.39 MiB       │ 111.31 MiB        │ 10.71 │
+│ posts_v3 │ Id          │ 159.70 MiB      │ 227.38 MiB        │  1.42 │
+│ posts_v4 │ Id          │ 64.91 MiB       │ 222.63 MiB        │  3.43 │
+│ posts_v3 │ ViewCount   │ 45.04 MiB       │ 227.38 MiB        │  5.05 │
+│ posts_v4 │ ViewCount   │ 52.72 MiB       │ 222.63 MiB        │  4.22 │
+└──────────┴─────────────┴─────────────────┴───────────────────┴───────┘
+
+6 rows in set. Elapsed: 0.008 sec
+```
+
+<div id="compression-in-clickhouse-cloud">
+  ### Сжатие в ClickHouse Cloud
+</div>
+
+В ClickHouse Cloud мы по умолчанию используем алгоритм сжатия `ZSTD` (с уровнем по умолчанию 1). Хотя скорость сжатия у этого алгоритма может варьироваться в зависимости от уровня сжатия (чем он выше, тем медленнее сжатие), его преимущество в том, что распаковка стабильно остаётся быстрой (разброс около 20%), а сам алгоритм хорошо распараллеливается. Наши многолетние тесты также показывают, что этот алгоритм часто оказывается достаточно эффективным и может даже превосходить `LZ4` в сочетании с кодеком. Он хорошо работает для большинства типов данных и их распределений, поэтому является разумным универсальным выбором по умолчанию — именно поэтому даже исходное сжатие без дополнительной оптимизации уже даёт отличные результаты.

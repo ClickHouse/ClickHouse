@@ -117,6 +117,16 @@ S3RequestSettings::S3RequestSettings(
         auto path = fmt::format("{}.{}{}", config_prefix, setting_name_prefix, field.getName());
 
         bool updated = S3::setValueFromConfig(config, path, field);
+
+        /// The storage class option has two interchangeable names: `storage_class_name` (the canonical
+        /// request setting) and `storage_class` (used by the BACKUP command and historical disk configs,
+        /// e.g. `s3_storage_class`). Accept both so configurations are interchangeable. See issue #68551.
+        if (!updated && field.getName() == "storage_class_name")
+        {
+            auto legacy_path = fmt::format("{}.{}storage_class", config_prefix, setting_name_prefix);
+            updated = S3::setValueFromConfig(config, legacy_path, field);
+        }
+
         if (!updated)
         {
             auto setting_name = "s3_" + field.getName();
@@ -133,7 +143,12 @@ S3RequestSettings::S3RequestSettings(const NamedCollection & collection, const D
     auto values = impl->allMutable();
     for (auto & field : values)
     {
-        const auto path = field.getName();
+        auto path = field.getName();
+
+        /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
+        if (!collection.has(path) && field.getName() == "storage_class_name" && collection.has("storage_class"))
+            path = "storage_class";
+
         if (collection.has(path))
         {
             auto which = field.getValue().getType();
@@ -221,11 +236,11 @@ void S3RequestSettings::validateUploadSettings()
                             (*this)[S3RequestSetting::upload_part_size_multiply_factor].value, ReadableSize((*this)[S3RequestSetting::max_upload_part_size].value));
     }
 
-    NameSet storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
+    NameSet storage_class_names {"STANDARD", "REDUCED_REDUNDANCY", "STANDARD_IA", "ONEZONE_IA", "INTELLIGENT_TIERING", "GLACIER_IR", "EXPRESS_ONEZONE"};
     if (!(*this)[S3RequestSetting::storage_class_name].value.empty() && !storage_class_names.contains((*this)[S3RequestSetting::storage_class_name]))
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting storage_class has invalid value {} which only supports STANDARD and INTELLIGENT_TIERING",
+            "Setting storage_class has invalid value {}: this storage class is not supported for ClickHouse S3 disks",
             (*this)[S3RequestSetting::storage_class_name].value);
 
     /// TODO: it's possible to set too small limits.
@@ -302,6 +317,14 @@ S3RequestSettings S3RequestSettings::deserialize(ReadBuffer & in, ContextPtr con
     result.finishInit(context->getSettingsRef(), false);
     /// TODO Proxy Configuration
     return result;
+}
+
+std::map<String, String> S3RequestSettings::getSettingsRepresentation() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+{
+    std::map<String, String> res; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    for (const auto & field : impl->all())
+        res[String{field.getName()}] = field.getValueString();
+    return res;
 }
 
 }

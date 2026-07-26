@@ -1,0 +1,48 @@
+name	String
+type	Enum8(\'Function\' = 1, \'Aggregate Function\' = 2, \'Table Function\' = 3, \'Table Engine\' = 4, \'Database Engine\' = 5, \'Data Type\' = 6, \'Dictionary Layout\' = 7, \'Dictionary Source\' = 8, \'Aggregate Function Combinator\' = 9, \'Data Skipping Index\' = 10, \'Disk Type\' = 11, \'Setting\' = 12, \'MergeTree Setting\' = 13, \'Server Setting\' = 14, \'Format\' = 15, \'Compression Codec\' = 16, \'Profile Event\' = 17, \'Current Metric\' = 18, \'Asynchronous Metric\' = 19, \'System Table\' = 20)
+description	String
+source	String
+Aggregate Function
+Aggregate Function Combinator
+Asynchronous Metric
+Compression Codec
+Current Metric
+Data Skipping Index
+Data Type
+Database Engine
+Dictionary Layout
+Dictionary Source
+Disk Type
+Format
+Function
+MergeTree Setting
+Profile Event
+Server Setting
+Setting
+System Table
+Table Engine
+Table Function
+Aggregate Function	count
+Aggregate Function Combinator	If
+Data Skipping Index	minmax
+Data Type	String
+Database Engine	Atomic
+Dictionary Layout	flat
+Dictionary Source	file
+Disk Type	local
+Format	CSV
+Function	plus
+MergeTree Setting	index_granularity
+Server Setting	max_server_memory_usage
+Setting	max_threads
+Table Engine	MergeTree
+Table Function	numbers
+1
+1
+1
+Alias of `timeSeriesSamples`.
+0
+1
+0
+Alias of `allow_experimental_analyzer`.
+Alias of `enable_block_number_column`.

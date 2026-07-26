@@ -1,0 +1,43 @@
+A.1
+a	10
+b	30
+A.2
+2024-01-01	3600
+2024-01-02	7200
+A.3
+['CVE-001']	host1
+A.4
+c1	app1	100
+c2	app1	300
+A.5
+2024-01-01 00:00:00	a	1
+2024-01-01 00:00:00	b	1
+A.6
+s1	d1	3
+s2	d2	5
+A.1 legacy parity
+a	10
+b	30
+A.1 legacy parity
+a	10
+b	30
+A.1 legacy parity
+a	10
+b	30
+no-aggregation no-op
+3
+A.7 non-deterministic conjunct stays in HAVING
+a	10
+b	30
+A.8 grouping predicate stays in HAVING
+a	30
+b	30
+A.9 grouping conjunct stays, sibling moves to WHERE
+a	10
+b	30
+A.10 nested AND with parens
+a	10
+b	30
+A.11 deeply nested AND chain
+a	10
+b	30

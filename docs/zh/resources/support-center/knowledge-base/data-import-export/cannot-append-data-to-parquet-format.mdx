@@ -1,0 +1,78 @@
+---
+title: 解决 ClickHouse 中的“Cannot Append Data in Parquet Format”错误
+description: 如果你在 ClickHouse 中遇到“Cannot append data in format Parquet to file”错误，本文将介绍如何解决。
+date: 2023-03-25
+tags: ['错误与异常', '数据格式']
+keywords: ['Parquet', 'Cannot Append Data']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-cannot-append-data-in-parquet-format-error-in-clickhouse">
+  ## 解决 ClickHouse 中的 &quot;Cannot Append Data in Parquet Format&quot; 错误
+</div>
+
+你是否在 ClickHouse 中遇到过 &quot;Cannot append data in format Parquet to file&quot; 错误？
+
+该错误通常显示为：
+
+`DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. (CANNOT_APPEND_TO_FILE)`
+
+假设你创建了一个使用 `File` 表引擎且格式为 Parquet 的表。
+
+```sql
+CREATE TABLE parquet_test
+(
+    `x` UInt32,
+    `y` String
+)
+ENGINE = File(Parquet)
+```
+
+你可以向该表写入一次：
+
+```sql
+INSERT INTO parquet_test VALUES
+   (1, 'Hello'),
+   (2, 'Hi')
+```
+
+这会在 `data/default/parquet_test` 文件夹中创建一个名为 `data.Parquet` 的文件。如果你再插入一个批次：
+
+```sql
+INSERT INTO parquet_test VALUES
+   (3, 'World'),
+   (4, 'Bye')
+```
+
+……你会看到以下错误：
+
+```response
+Code: 641. DB::Exception: Received from localhost:9000. DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. You can allow to create a new file on each insert by enabling setting engine_file_allow_create_multiple_files. (CANNOT_APPEND_TO_FILE)
+```
+
+在 ClickHouse 中，不能向 Parquet 文件追加数据。不过，你可以启用 [`engine_file_allow_create_multiple_files` 设置](/zh/reference/settings/session-settings#engine_file_allow_create_multiple_files)，让 ClickHouse 在每次 `INSERT` 时都创建一个新文件。启用后，每次插入都会创建一个按以下模式命名的新文件：
+
+`data.Parquet` -&gt; `data.1.Parquet` -&gt; `data.2.Parquet`，以此类推：
+
+我们来试一下。将这两条命令放到一个名为 `parquet.sql` 的文件中：
+
+```sql
+SET engine_file_allow_create_multiple_files = 1;
+
+INSERT INTO default.parquet_test VALUES  (3, 'World'), (4, 'Bye');
+```
+
+使用 `clickhouse-client` 运行：
+
+```bash
+./clickhouse client --queries-file parquet.sql
+```
+
+现在，你会在 `data/default/parquet_test` 中看到两个文件 (此后每次插入都会新增一个新文件) 。
+
+<Note>
+  `engine_file_allow_create_multiple_files` 设置也适用于其他无法追加写入的数据格式，例如 JSON 和 ORC。
+</Note>

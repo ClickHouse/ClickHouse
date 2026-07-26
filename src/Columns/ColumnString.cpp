@@ -1,6 +1,7 @@
 #include <Columns/ColumnString.h>
 
 #include <Columns/Collator.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsNumber.h>
@@ -8,7 +9,6 @@
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 
 #if USE_EMBEDDED_COMPILER
@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 
@@ -106,26 +107,25 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
-WeakHash32 ColumnString::getWeakHash32() const
+void ColumnString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    auto s = offsets.size();
-    WeakHash32 hash(s);
+    /// Each row seeds with `WEAK_HASH32_INITIAL_VALUE` and combines its finalized hash via
+    /// `combineWeakHash32`. CRC32C is a hardware dependency chain with no packed form, so a
+    /// plain scalar loop is used. See IColumn::computeHashInto.
+    Offset prev_offset = row_begin == 0 ? 0 : offsets[row_begin - 1];
+    const UInt8 * pos = chars.data() + prev_offset;
 
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-    Offset prev_offset = 0;
-
-    for (const auto & offset : offsets)
+    for (size_t i = row_begin; i < row_end; ++i)
     {
-        auto str_size = offset - prev_offset;
-        *hash_data = ::updateWeakHash32(pos, str_size, *hash_data);
+        const auto offset = offsets[i];
+        const auto str_size = offset - prev_offset;
+        const UInt32 h = ::updateWeakHash32(pos, str_size, WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[i - row_begin];
+        out = initial ? h : combineWeakHash32(h, out);
 
         pos += str_size;
         prev_offset = offset;
-        ++hash_data;
     }
-
-    return hash;
 }
 
 
@@ -144,7 +144,21 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Parameter out of bound in ColumnString::insertRangeFrom method.");
 
     size_t nested_offset = src_concrete.offsetAt(start);
-    size_t nested_length = src_concrete.offsetAt(start + length) - nested_offset;
+    size_t nested_end = src_concrete.offsetAt(start + length);
+
+    /// Diagnostic guard: the source column must keep offsets consistent with its chars array
+    /// (the same invariant the copy constructor enforces). Validate the end offset before computing
+    /// the length: the offsets must be monotonic (nested_end >= nested_offset) and must stay within
+    /// chars, otherwise the memcpy below would read out of bounds. Computing nested_length first would
+    /// underflow for decreasing offsets and wrap nested_offset + nested_length back below chars.size(),
+    /// silently bypassing the check.
+    if (nested_end < nested_offset || nested_end > src_concrete.chars.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+            "nested_offset: {}, nested_end: {}, source chars size: {}",
+            nested_offset, nested_end, src_concrete.chars.size());
+
+    size_t nested_length = nested_end - nested_offset;
 
     /// Reserve offsets before to make it more exception safe (in case of MEMORY_LIMIT_EXCEEDED)
     offsets.reserve(offsets.size() + length);
@@ -159,12 +173,27 @@ void ColumnString::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
     }
     else
     {
-        size_t old_size = offsets.size();
-        size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
+        const size_t old_size = offsets.size();
+        const size_t prev_max_offset = offsets.back();    /// -1th index is Ok, see PaddedPODArray
         offsets.resize(old_size + length);
 
+        size_t prev_src_offset = nested_offset;
         for (size_t i = 0; i < length; ++i)
-            offsets[old_size + i] = src_concrete.offsets[start + i] - nested_offset + prev_max_offset;
+        {
+            const size_t src_offset = src_concrete.offsets[start + i];
+
+            // Intermediate offsets can still be non-monotonic
+            /// A copied offset that dips below the previous one (in particular below nested_offset) would underflow the subtraction and
+            /// store a corrupt destination offset, so reject it here.
+            if (src_offset < prev_src_offset)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ColumnString::insertRangeFrom: source offsets inconsistent with chars array. "
+                    "non-monotonic offset {} at position {} (previous offset {})",
+                    src_offset, start + i, prev_src_offset);
+
+            offsets[old_size + i] = src_offset - nested_offset + prev_max_offset;
+            prev_src_offset = src_offset;
+        }
     }
 }
 
@@ -771,6 +800,22 @@ int ColumnString::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
         reinterpret_cast<const char *>(&rhs.chars[rhs.offsetAt(m)]), rhs.sizeAt(m));
 }
 
+size_t ColumnString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    if (begin >= end)
+        return begin;
+
+    /// Compare length first then bytes if needed.
+    const size_t ref_size = sizeAt(begin);
+    const UInt8 * ref_data = chars.data() + offsetAt(begin);
+    auto equals = [&](size_t i)
+    { return sizeAt(i) == ref_size && 0 == memcmpSmallAllowOverflow15(chars.data() + offsetAt(i), ref_data, ref_size); };
+
+    /// A string comparison reads offsets and bytes, which is relatively expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
+}
+
 void ColumnString::protect()
 {
     getChars().protect();
@@ -804,7 +849,12 @@ void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     size_t chars_begin = offsetAt(begin);
     size_t chars_end = offsetAt(end);
     hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
-    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = offsets[i] - chars_begin;
+        hash.update(relative_offset);
+    }
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

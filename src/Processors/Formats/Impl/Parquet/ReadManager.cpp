@@ -1127,7 +1127,18 @@ ReadManager::ReadResult ReadManager::read()
     ///       ISource::progress()/addTotalRowsApprox instead.
     ///       For (4) and (5), either add things to struct Progress or make progress bar use
     ///       ProfileEvents instead of Progress.
-    size_t virtual_bytes_read = size_t(row_group.meta->total_compressed_size) * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
+    /// Sum compressed sizes of selected columns only. `reader.primitive_columns[i].column_idx`
+    /// indexes into the parquet row group's `columns` array, so we pick exactly the column
+    /// chunks that the query reads. Using `row_group.meta->total_compressed_size` here would
+    /// inflate `read_bytes` by `total_columns / selected_columns`.
+    size_t selected_columns_compressed_bytes = 0;
+    for (const auto & primitive_column : reader.primitive_columns)
+    {
+        size_t parquet_column_idx = primitive_column.column_idx;
+        if (parquet_column_idx < row_group.meta->columns.size())
+            selected_columns_compressed_bytes += size_t(row_group.meta->columns[parquet_column_idx].meta_data.total_compressed_size);
+    }
+    size_t virtual_bytes_read = selected_columns_compressed_bytes * row_subgroup.filter.rows_total / std::max(size_t(1), size_t(row_group.meta->num_rows));
 
     /// This updates `memory_usage` of previous stages, which may allow more tasks to be scheduled.
     MemoryUsageDiff diff(ReadStage::Deliver);

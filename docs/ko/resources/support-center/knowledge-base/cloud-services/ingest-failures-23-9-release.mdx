@@ -1,0 +1,35 @@
+---
+title: ClickHouse 23.9 릴리스 이후 발생하는 수집 실패는 어떻게 해결하나요?
+description: "ClickHouse 23.9에서 `async_inserts`를 사용하는 테이블에 대해 더 엄격한 권한 부여 검사가 도입되면서 발생하는 수집 실패를 해결하는 방법을 알아보세요. 오류를 해결하려면 권한 부여를 업데이트하세요."
+date: 2022-11-17
+tags: ['오류 및 예외']
+keywords: ['GRANT', '권한 오류']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## ClickHouse 23.9 릴리스 이후 수집 실패 해결
+</div>
+
+이러한 권한 오류의 근본 원인은 확인되었으며, 새 릴리스에서 [`async_inserts`](/ko/concepts/features/operations/insert/asyncinserts)에 대한 권한 부여를 더 엄격하게 검사하는 것이 원인입니다.
+
+이 문제를 해결하려면 서비스가 정상적으로 작동하도록 권한 부여를 업데이트해야 합니다. 누락된 권한 부여를 나타내는 오류 메시지를 확인한 후, 필요한 권한 부여를 수동으로 추가하십시오. `async_inserts`를 사용하는 테이블에 추가로 필요한 권한 부여는 `SELECT` 또는 `dictGet` 권한 부여입니다.
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## 영향받는 테이블과 딕셔너리에 필요한 GRANT 추가
+</div>
+
+```
+-- SELECT 권한 추가
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- dictGet 권한 추가
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+`GRANT` 명령에 관해 자세히 알아보려면 [이 페이지](/ko/reference/statements/grant)를 참조하십시오.
+
+이 변경을 수행할 수 없다면 [ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하여 도움을 받으십시오.

@@ -1,0 +1,200 @@
+---
+sidebarTitle: 'Segurança'
+slug: /cloud/security
+title: 'Segurança'
+description: 'Saiba mais sobre como proteger o ClickHouse Cloud e o BYOC'
+doc_type: 'reference'
+keywords: ['segurança', 'segurança na nuvem', 'controle de acesso', 'conformidade', 'proteção de dados']
+---
+
+Este documento detalha as opções de segurança e as melhores práticas disponíveis para proteger a organização e os serviços do ClickHouse.
+O ClickHouse se dedica a fornecer soluções seguras de banco de dados analítico; por isso, proteger os dados e a integridade dos serviços é uma prioridade.
+As informações aqui apresentadas abrangem vários métodos desenvolvidos para ajudar os usuários a proteger seus ambientes ClickHouse.
+
+<div id="cloud-console-auth">
+  ## Autenticação no Cloud Console
+</div>
+
+<div id="password-auth">
+  ### Autenticação por senha
+</div>
+
+As senhas do console do ClickHouse Cloud seguem os padrões NIST 800-63B, com no mínimo 12 caracteres e 3 de 4 requisitos de complexidade: letras maiúsculas, letras minúsculas, números e/ou caracteres especiais.
+
+Saiba mais sobre [autenticação por senha](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account#email-and-password).
+
+<div id="social-sso">
+  ### Single Sign-On (SSO) social
+</div>
+
+O ClickHouse Cloud oferece suporte à autenticação social do Google ou da Microsoft para Single Sign-On (SSO).
+
+Saiba mais sobre [SSO social](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account#social-sso).
+
+<div id="mfa">
+  ### Autenticação multifator
+</div>
+
+Usuários que usam e-mail e senha ou SSO social também podem configurar a autenticação multifator com um aplicativo autenticador, como Authy ou Google Authenticator.
+
+Saiba mais sobre [autenticação multifator](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa).
+
+<div id="saml-auth">
+  ### Autenticação com Security Assertion Markup Language (SAML)
+</div>
+
+Clientes Enterprise podem configurar a autenticação via SAML.
+
+Saiba mais sobre a [autenticação via SAML](/pt-BR/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+
+<div id="api-auth">
+  ### Autenticação da API
+</div>
+
+Os clientes podem configurar chaves de API para usar com o OpenAPI, o Terraform e os endpoints da Query API.
+
+Saiba mais sobre a [autenticação da API](/pt-BR/products/cloud/features/admin-features/api/openapi).
+
+<div id="database-auth">
+  ## Autenticação de banco de dados
+</div>
+
+<div id="db-password-auth">
+  ### Autenticação de banco de dados por senha
+</div>
+
+As senhas de usuários de banco de dados do ClickHouse seguem os padrões NIST 800-63B, com no mínimo 12 caracteres e requisitos de complexidade: letras maiúsculas, letras minúsculas, números e/ou caracteres especiais.
+
+Saiba mais sobre a [autenticação de banco de dados por senha](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#database-user-id--password).
+
+<div id="ssh-auth">
+  ### Autenticação de banco de dados via Secure Shell (SSH)
+</div>
+
+Os usuários de banco de dados do ClickHouse podem ser configurados para usar autenticação SSH.
+
+Saiba mais sobre a [autenticação SSH](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#database-ssh).
+
+<div id="access-control">
+  ## Controle de Acesso
+</div>
+
+<div id="console-rbac">
+  ### Controle de Acesso Baseado em Funções (RBAC) no Console
+</div>
+
+O ClickHouse Cloud oferece suporte à atribuição de funções para permissões de organização, serviço e banco de dados. As permissões de banco de dados atribuídas por esse método têm suporte apenas no SQL Console.
+
+Saiba mais sobre o [RBAC no Console](/pt-BR/products/cloud/reference/security/console-roles).
+
+<div id="database-user-grants">
+  ### Privilégios de usuários de banco de dados
+</div>
+
+Os bancos de dados ClickHouse oferecem suporte ao gerenciamento granular de permissões e ao controle de acesso baseado em funções por meio de privilégios concedidos a usuários.
+
+Saiba mais sobre [privilégios de usuários de banco de dados](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-database-users#database-permissions).
+
+<div id="network-security">
+  ## Segurança de rede
+</div>
+
+<div id="ip-filters">
+  ### Filtros de IP
+</div>
+
+Configure filtros de IP para limitar as conexões de entrada com o seu serviço ClickHouse.
+
+Saiba mais sobre [filtros de IP](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="private-connectivity">
+  ### Conectividade privada
+</div>
+
+Conecte-se aos seus clusters do ClickHouse pela AWS, GCP ou Azure usando conectividade privada.
+
+Saiba mais sobre [conectividade privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking/index).
+
+<div id="encryption">
+  ## Criptografia
+</div>
+
+<div id="storage-encryption">
+  ### Criptografia em Nível de Armazenamento
+</div>
+
+O ClickHouse Cloud criptografa os dados em repouso por padrão usando chaves AES 256 gerenciadas pelo provedor de nuvem.
+
+Saiba mais sobre a [criptografia em nível de armazenamento](/pt-BR/products/cloud/guides/security/cmek#storage-encryption).
+
+<div id="tde">
+  ### Criptografia Transparente de Dados
+</div>
+
+Além da criptografia de armazenamento, os clientes do ClickHouse Cloud Enterprise podem habilitar a criptografia transparente de dados no nível do banco de dados para obter proteção adicional.
+
+Saiba mais sobre a [criptografia transparente de dados](/pt-BR/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+
+<div id="cmek">
+  ### Chaves de Criptografia Gerenciadas pelo Cliente
+</div>
+
+cliente do ClickHouse Cloud Enterprise pode usar sua própria chave para criptografia no nível do banco de dados.
+
+Saiba mais sobre [chaves de criptografia gerenciadas pelo cliente](/pt-BR/products/cloud/guides/security/cmek#customer-managed-encryption-keys-cmek).
+
+<div id="auditing-logging">
+  ## Auditoria e logging
+</div>
+
+<div id="console-audit-log">
+  ### Log de auditoria do Console
+</div>
+
+As atividades no Console são registradas. Os logs podem ser consultados e exportados.
+
+Saiba mais sobre [logs de auditoria do Console](/pt-BR/products/cloud/guides/security/audit-logging/console-audit-log).
+
+<div id="database-audit-logs">
+  ### Logs de auditoria do banco de dados
+</div>
+
+As atividades no banco de dados são registradas em logs. Os logs podem ser revisados e exportados.
+
+Saiba mais sobre [logs de auditoria do banco de dados](/pt-BR/products/cloud/guides/security/audit-logging/database-audit-log).
+
+<div id="byoc-security-playbook">
+  ### Guia de segurança do BYOC
+</div>
+
+Exemplos de consultas de detecção para equipes de segurança que gerenciam instâncias BYOC do ClickHouse.
+
+Saiba mais sobre o [guia de segurança do BYOC](/pt-BR/products/cloud/guides/security/audit-logging/byoc-security-playbook).
+
+<div id="compliance">
+  ## Conformidade
+</div>
+
+<div id="compliance-reports">
+  ### Relatórios de Segurança e Compliance
+</div>
+
+A ClickHouse mantém um sólido programa de segurança e compliance. Consulte esta página periodicamente para ver novos relatórios de auditoria de terceiros.
+
+Saiba mais sobre [relatórios de segurança e compliance](/pt-BR/products/cloud/reference/security/compliance-overview).
+
+<div id="hipaa-compliance">
+  ### Serviços em conformidade com HIPAA
+</div>
+
+Clientes do ClickHouse Cloud Enterprise podem implantar serviços que armazenam informações de saúde protegidas (PHI) em regiões em conformidade com HIPAA após assinar um Business Associate Agreement (BAA).
+
+Saiba mais sobre a [conformidade com a HIPAA](/pt-BR/products/cloud/guides/security/compliance/hipaa-onboarding).
+
+<div id="pci-compliance">
+  ### Serviços compatíveis com PCI
+</div>
+
+cliente do ClickHouse Cloud Enterprise pode implantar serviços que armazenam informações de cartão de crédito em regiões compatíveis com PCI.
+
+Saiba mais sobre [conformidade com PCI](/pt-BR/products/cloud/guides/security/compliance/pci-onboarding).

@@ -14,18 +14,30 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-const std::vector<std::vector<OutFormat>> QueryOracle::oracleFormats
-    = {{OutFormat::OUT_CSV}, {OutFormat::OUT_TabSeparated}, {OutFormat::OUT_Values}};
+const DB::Strings QueryOracle::oracleFormats = {"CSV", "TabSeparated", "Values"};
 
 static void finishSettings(SettingValues * svs)
 {
-    /// Wait for mutations to finish
+    /// Wait for mutations to finish. Also reset lake time travel: a session-level
+    /// `SET iceberg_snapshot_id/iceberg_timestamp_ms` (or the DeltaLake/Paimon version pins)
+    /// makes every read see an old snapshot, so an oracle comparing counts before/after an
+    /// INSERT gets a false mismatch (and the pinned id is unreplayable - snapshot ids are
+    /// random per run). The Iceberg pins trigger on the setting's `changed` flag, so the
+    /// reset must be the `DEFAULT` keyword - assigning the default value would keep the
+    /// setting `changed` and pin a nonexistent snapshot. Delta/Paimon pins are value-based
+    /// (-1 = latest), where `DEFAULT` works as well.
     static const std::unordered_map<String, String> toSet
         = {{"alter_sync", "2"},
            {"apply_deleted_mask", "1"},
            {"apply_patch_parts", "1"},
+           {"delta_lake_snapshot_end_version", "DEFAULT"},
+           {"delta_lake_snapshot_start_version", "DEFAULT"},
+           {"delta_lake_snapshot_version", "DEFAULT"},
+           {"iceberg_snapshot_id", "DEFAULT"},
+           {"iceberg_timestamp_ms", "DEFAULT"},
            {"lightweight_deletes_sync", "2"},
-           {"mutations_sync", "2"}};
+           {"mutations_sync", "2"},
+           {"paimon_target_snapshot_id", "DEFAULT"}};
     for (const auto & [key, val] : toSet)
     {
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -177,47 +189,125 @@ void QueryOracle::backupRestoreSteps(
 }
 
 /// Correctness query oracle
-/// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
-/// (GROUP BY / HAVING variant is TODO — see `combination` below)
+/// WHERE_ONLY:       SELECT count() FROM T WHERE pred = TRUE
+/// HAVING_ONLY:      SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T GROUP BY g HAVING pred(g) = TRUE) sub
+/// WHERE_AND_HAVING: SELECT ifNull(SUM(cnt),0) FROM (SELECT count() AS cnt FROM T WHERE pred1 = TRUE GROUP BY g HAVING pred2(g) = TRUE) sub
 void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1)
 {
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();
     SelectStatementCore * ssc = sel->mutable_select_core();
-    /// TODO fix this 0 WHERE, 1 HAVING, 2 WHERE + HAVING
-    const uint32_t combination = 0;
+    FromStatement temp_from;
 
+    oracle_combination = static_cast<OracleCombination>(rg.randomInt<uint32_t>(0, 2));
     can_test_oracle_result = fc.compare_success_results && rg.nextBool();
     gen.setAllowEngineUDF(!can_test_oracle_result);
     gen.setAllowNotDetermistic(false);
     gen.enforceFinal(true);
     gen.resetAliasCounter();
     gen.levels[gen.current_level] = QueryLevel(gen.current_level);
-    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc->mutable_from());
+    gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), &temp_from);
 
-    UNUSED(u);
     const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
     const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
-    if (combination != 1)
-    {
-        BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
+    if (oracle_combination != OracleCombination::WHERE_ONLY)
+    {
+        bool has_available_cols = false;
+        for (const auto & entry : gen.levels[gen.current_level].rels)
+        {
+            if (!entry.cols.empty())
+            {
+                has_available_cols = true;
+                break;
+            }
+        }
+        if (!has_available_cols)
+            oracle_combination = OracleCombination::WHERE_ONLY;
+    }
+
+    /// In the GROUP BY/HAVING combinations the first query references the GROUP BY
+    /// key columns while the second (flat) rewrite references only the predicate
+    /// columns. So a column that fails analysis only in the first query (e.g. a
+    /// group key that cannot be resolved) makes the two queries differ in success
+    /// without any result divergence - a false positive. Only the result is
+    /// comparable here, not the success status. WHERE_ONLY keeps the same column
+    /// footprint in both queries, so its success comparison stays meaningful.
+    can_test_success &= oracle_combination == OracleCombination::WHERE_ONLY;
+
+    if (oracle_combination == OracleCombination::WHERE_ONLY)
+    {
+        /// WHERE-only path: SELECT count() AS s0 FROM T WHERE pred = TRUE
+        ssc->mutable_from()->Swap(&temp_from);
+
+        BinaryExpr * bexpr = ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
         bexpr->set_op(BinaryOperator::BINOP_EQ);
         bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
             SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
         gen.generateWherePredicate(rg, bexpr->mutable_lhs());
+
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+        eca->mutable_col_alias()->set_column("s0");
     }
-    if (combination != 0)
+    else
     {
-        gen.generateGroupBy(rg, 1, true, true, ssc);
+        /// GROUP BY HAVING path: wrap inner SELECT in a subquery
+        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+        Select * inner_sel = jtf->mutable_tof()->mutable_select()->mutable_inner_query()->mutable_select()->mutable_sel();
+        SelectStatementCore * inner_ssc = inner_sel->mutable_select_core();
+        jtf->mutable_table_alias()->set_value("sub");
+
+        inner_ssc->mutable_from()->Swap(&temp_from);
+
+        if (oracle_combination == OracleCombination::WHERE_AND_HAVING)
+        {
+            BinaryExpr * bexpr = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+            bexpr->set_op(BinaryOperator::BINOP_EQ);
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+                SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+            gen.generateWherePredicate(rg, bexpr->mutable_lhs());
+        }
+
+        gen.generateGroupBy(rg, 1, false, false, inner_ssc);
+        BinaryExpr * bexpr = inner_ssc->mutable_groupby()
+                                 ->mutable_having_expr()
+                                 ->mutable_expr()
+                                 ->mutable_expr()
+                                 ->mutable_comp_expr()
+                                 ->mutable_binary_expr();
+        bexpr->set_op(BinaryOperator::BINOP_EQ);
+        bexpr->mutable_rhs()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+        gen.generateWherePredicate(rg, bexpr->mutable_lhs());
+
+        /// Inner result: count() AS cnt
+        ExprColAlias * inner_eca = inner_ssc->add_result_columns()->mutable_eca();
+        inner_eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+        inner_eca->mutable_col_alias()->set_column("cnt");
+
+        /// Outer result: ifNull(SUM(cnt), 0) AS s0
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        SQLFuncCall * ifnull_func = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        ifnull_func->mutable_func()->set_catalog_func("ifNull");
+        SQLFuncCall * sum_func = ifnull_func->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        sum_func->mutable_func()->set_catalog_func("sum");
+        sum_func->add_args()
+            ->mutable_expr()
+            ->mutable_comp_expr()
+            ->mutable_expr_stc()
+            ->mutable_col()
+            ->mutable_path()
+            ->mutable_col()
+            ->set_column("cnt");
+        ifnull_func->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+            SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
+        eca->mutable_col_alias()->set_column("s0");
     }
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
-
-    ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        "count");
     gen.levels.clear();
     gen.ctes.clear();
     gen.setAllowNotDetermistic(true);
@@ -225,50 +315,70 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.setAllowEngineUDF(true);
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(OutFormat::OUT_CSV);
-    /// If the file fails to be removed due to a legitimate way, the oracle will fail anyway
+    ts->set_format("CSV");
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
 
-/// SELECT ifNull(SUM(PRED),0) FROM <FROM_CLAUSE>;
-/// (or ifNull(SUM(PRED2),0) FROM <FROM_CLAUSE> WHERE <PRED1> GROUP BY … when sq1 has a GROUP BY,
-///  but that path is currently unreachable because combination=0 in generateCorrectnessTestFirstQuery)
+/// WHERE_ONLY:       SELECT ifNull(SUM(pred = TRUE), 0) FROM T
+/// HAVING_ONLY:      SELECT ifNull(SUM(having_pred = TRUE), 0) FROM T
+/// WHERE_AND_HAVING: SELECT ifNull(SUM(having_pred = TRUE), 0) FROM T WHERE where_pred = TRUE
 void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & sq2)
 {
     TopSelect * ts = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
-    Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
-    SelectStatementCore & ssc1 = *sel1.mutable_select_core();
     Select * sel2 = ts->mutable_sel();
     SelectStatementCore * ssc2 = sel2->mutable_select_core();
-    SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    ExprColAlias * eca = ssc2->add_result_columns()->mutable_eca();
+    SQLFuncCall * sfc1 = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
+    eca->mutable_col_alias()->set_column("s0");
     sfc1->mutable_func()->set_catalog_func("ifNull");
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
     sfc2->mutable_func()->set_catalog_func("sum");
 
-    ssc2->set_allocated_from(ssc1.release_from());
-    if (ssc1.has_groupby())
+    if (oracle_combination == OracleCombination::WHERE_ONLY)
     {
-        ExprComparisonHighProbability & expr = *ssc1.mutable_groupby()->mutable_having_expr()->mutable_expr();
+        /// WHERE-only: extract pred and FROM from sq1's SSC
+        Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+        SelectStatementCore & ssc1 = *sel1.mutable_select_core();
 
-        sfc2->add_args()->set_allocated_expr(expr.release_expr());
-        ssc2->set_allocated_groupby(ssc1.release_groupby());
-        ssc2->set_allocated_where(ssc1.release_where());
-        ssc2->set_allocated_pre_where(ssc1.release_pre_where());
+        ssc2->set_allocated_from(ssc1.release_from());
+        sfc2->add_args()->set_allocated_expr(ssc1.mutable_where()->mutable_expr()->release_expr());
+        sel2->set_allocated_setting_values(sel1.release_setting_values());
     }
     else
     {
-        ExprComparisonHighProbability & expr = *ssc1.mutable_where()->mutable_expr();
+        /// GROUP BY HAVING: extract FROM, WHERE, and HAVING pred from the inner subquery
+        SelectStatementCore & inner_ssc = *sq1.mutable_single_query()
+                                               ->mutable_explain()
+                                               ->mutable_inner_query()
+                                               ->mutable_select()
+                                               ->mutable_sel()
+                                               ->mutable_select_core()
+                                               ->mutable_from()
+                                               ->mutable_tos()
+                                               ->mutable_join_clause()
+                                               ->mutable_tos()
+                                               ->mutable_joined_table()
+                                               ->mutable_tof()
+                                               ->mutable_select()
+                                               ->mutable_inner_query()
+                                               ->mutable_select()
+                                               ->mutable_sel()
+                                               ->mutable_select_core();
+        ssc2->set_allocated_from(inner_ssc.release_from());
+        sfc2->add_args()->set_allocated_expr(inner_ssc.mutable_groupby()->mutable_having_expr()->mutable_expr()->release_expr());
+        if (inner_ssc.has_where())
+            ssc2->set_allocated_where(inner_ssc.release_where());
 
-        sfc2->add_args()->set_allocated_expr(expr.release_expr());
+        Select & sel1 = *sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel();
+        sel2->set_allocated_setting_values(sel1.release_setting_values());
     }
-    sel2->set_allocated_setting_values(sel1.release_setting_values());
     ts->set_format(sq1.single_query().explain().inner_query().select().format());
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
@@ -308,58 +418,46 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
     const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc1->mutable_from());
     UNUSED(u);
 
-    /// Collect all columns from all available relations and pick one for the predicate
-    String val;
-    String col_ref;
-    std::vector<const SQLRelationCol *> all_cols;
+    /// Generate a random expression and serialize it to SQL
+    Expr rand_expr;
+    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+    gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
+    gen.generateExpression(rg, &rand_expr);
+    gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
+    gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
 
-    for (const auto & rel : gen.levels[gen.current_level].rels)
-        for (const auto & c : rel.cols)
-            all_cols.push_back(&c);
-    if (!all_cols.empty())
-    {
-        const SQLRelationCol & rel_col = *rg.pickRandomly(all_cols);
-
-        /// Build a backtick-quoted SQL column reference from the SQLRelationCol
-        if (!rel_col.rel_name.empty())
-            col_ref = fmt::format("`{}`.", escapeSQLString(rel_col.rel_name, '`'));
-        for (size_t i = 0; i < rel_col.path.size(); ++i)
-        {
-            if (i > 0)
-                col_ref += ".";
-            col_ref += "`" + escapeSQLString(rel_col.path[i], '`') + "`";
-        }
-
-        /// For String/FixedString: apply roundtrip directly.
-        /// For all other types (or unknown type): wrap in `toString` so hex/base64 receive a String.
-        const bool is_string = rel_col.tp != nullptr && rel_col.tp->getTypeClass() == SQLTypeClass::STRING;
-        val = is_string ? col_ref : fmt::format("toString({})", col_ref);
-    }
-    else
-    {
-        col_ref = val = "1";
-    }
     gen.levels.clear();
     gen.ctes.clear();
+    gen.enforceFinal(false);
+    gen.setAllowNotDetermistic(true);
+
+    String col_ref;
+    SQLExprToString(col_ref, rand_expr);
+    const String val = fmt::format("toString({})", col_ref);
 
     /// Choose roundtrip function pair
     String roundtrip_pred;
-    switch (rg.randomInt<uint32_t>(0, 3))
+    switch (rg.randomInt<uint32_t>(0, 4))
     {
         case 0:
-            /// hex/unhex — exercises hex encoding path
+            /// hex/unhex
             roundtrip_pred = fmt::format("unhex(hex({0})) = {0}", val);
             break;
         case 1:
-            /// baseEncode/Decode
-            roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.nextBool() ? "58" : "64", val);
+            /// bin/unbin
+            roundtrip_pred = fmt::format("unbin(bin({0})) = {0}", val);
             break;
         case 2:
-            /// reverse/reverseUTF8 — exercises byte and codepoint-aware string reversal (must use matching pair)
+            /// baseEncode/Decode
             {
-                const String rev = rg.nextBool() ? "UTF8" : "";
-                roundtrip_pred = fmt::format("reverse{0}(reverse{0}({1})) = {1}", rev, val);
+                static const std::vector<String> base_variants = {"32", "58", "64"};
+                roundtrip_pred = fmt::format("base{0}Decode(base{0}Encode({1})) = {1}", rg.pickRandomly(base_variants), val);
             }
+            break;
+        case 3:
+            /// reverse (byte-level only; reverseUTF8 has undefined behavior on invalid UTF-8)
+            roundtrip_pred = fmt::format("reverse(reverse({0})) = {0}", val);
             break;
         default: {
             /// AES encrypt/decrypt — exercises all cipher modes, key sizes, and IV requirements
@@ -416,12 +514,13 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
         }
     }
 
-    /// Build sq1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
-    ssc1->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        "count");
+    /// Build sq1: SELECT count() AS c0 FROM <from_clause> WHERE col IS NOT NULL (baseline)
+    ExprColAlias * eca = ssc1->add_result_columns()->mutable_eca();
+    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+    eca->mutable_col_alias()->set_column("s0");
     ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
     finishSettings(sel1->mutable_setting_values());
-    ts1->set_format(OutFormat::OUT_CSV);
+    ts1->set_format("CSV");
     const auto err1 = std::filesystem::remove(qcfile);
     UNUSED(err1);
     sif1->set_path(qcfile.generic_string());
@@ -439,8 +538,102 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
         ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(
             fmt::format("{} IS NOT NULL AND {}", col_ref, roundtrip_pred));
     }
+}
+
+/// ARRAY JOIN oracle: compares the ARRAY JOIN clause with the `arrayJoin` function.
+///
+/// Query 1 (sq1):
+///   SELECT s0 FROM <from_clause> [PREWHERE pred] [WHERE pred]
+///   ARRAY JOIN expr AS s0 [GROUP BY s0] ORDER BY ALL INTO OUTFILE ... FORMAT CSV
+///
+/// Query 2 (sq2):
+///   SELECT arrayJoin(expr) AS s0 FROM <from_clause> [PREWHERE pred] [WHERE pred]
+///   [GROUP BY s0] ORDER BY ALL INTO OUTFILE ... FORMAT CSV
+///
+/// Both must produce identical sorted result sets.
+void QueryOracle::generateArrayJoinOracleQueries(RandomGenerator & rg, StatementGenerator & gen, SQLQuery & sq1, SQLQuery & sq2)
+{
+    can_test_oracle_result = fc.compare_success_results;
+    can_test_success = false;
+
+    gen.setAllowNotDetermistic(false);
+    gen.enforceFinal(true);
+    gen.resetAliasCounter();
+    gen.levels[gen.current_level] = QueryLevel(gen.current_level);
+
+    TopSelect * ts1 = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
+    SelectIntoFile * sif1 = ts1->mutable_intofile();
+    Select * sel1 = ts1->mutable_sel();
+    SelectStatementCore * ssc1 = sel1->mutable_select_core();
+
+    const auto u = gen.generateFromStatement(rg, std::numeric_limits<uint32_t>::max(), ssc1->mutable_from());
+    UNUSED(u);
+
+    /// Generate a random expression for the ARRAY JOIN operand
+    JoinClauseCore * jcc = ssc1->mutable_from()->mutable_tos()->mutable_join_clause()->add_clauses();
+    ArrayJoin * aj = jcc->mutable_arr();
+    aj->set_left(false);
+    ExprColAlias * aj_eca = aj->mutable_constraint();
+    aj_eca->mutable_col_alias()->set_column("s0");
+    const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
+    const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
+    gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
+    Expr * arr_expr = aj_eca->mutable_expr();
+    gen.generateExpression(rg, arr_expr);
+    gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
+    gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
+
+    SQLRelation rel("");
+    rel.cols.emplace_back(SQLRelationCol("", {"s0"}));
+    gen.levels[gen.current_level].rels.emplace_back(rel);
+
+    /// Optionally add PREWHERE / WHERE (must be generated while relations are still available)
+    if (rg.nextSmallNumber() < 4)
+        gen.generateWherePredicate(rg, ssc1->mutable_pre_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 4)
+        gen.generateWherePredicate(rg, ssc1->mutable_where()->mutable_expr()->mutable_expr());
+    if (rg.nextSmallNumber() < 3)
+        gen.generateGroupBy(rg, 1, rg.nextSmallNumber() < 4, true, ssc1);
+
+    gen.levels.clear();
+    gen.ctes.clear();
     gen.enforceFinal(false);
     gen.setAllowNotDetermistic(true);
+
+    ssc1->mutable_orderby()->set_oall(true);
+    ssc1->add_result_columns()
+        ->mutable_eca()
+        ->mutable_expr()
+        ->mutable_comp_expr()
+        ->mutable_expr_stc()
+        ->mutable_col()
+        ->mutable_path()
+        ->mutable_col()
+        ->set_column("s0");
+
+    finishSettings(sel1->mutable_setting_values());
+    ts1->set_format("CSV");
+    const auto err1 = std::filesystem::remove(qcfile);
+    UNUSED(err1);
+    sif1->set_path(qcfile.generic_string());
+    sif1->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
+
+    /// Build sq2: SELECT arrayJoin(col_ref) AS s0 FROM <from_clause> ORDER BY ALL
+    sq2.CopyFrom(sq1);
+    {
+        SelectStatementCore * ssc2
+            = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select()->mutable_sel()->mutable_select_core();
+
+        /// Replace SELECT s0 with SELECT arrayJoin(expr) AS s0
+        ExprColAlias * eca2 = ssc2->mutable_result_columns(0)->mutable_eca();
+        SQLFuncCall * aj_func = eca2->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+        aj_func->mutable_func()->set_catalog_func("arrayJoin");
+        aj_func->add_args()->mutable_expr()->CopyFrom(*arr_expr);
+        eca2->mutable_col_alias()->set_column("s0");
+
+        /// Remove only the ARRAY JOIN clause (the last one we appended) from sq2
+        ssc2->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_clauses()->RemoveLast();
+    }
 }
 
 /// Row policy correctness oracle.
@@ -482,7 +675,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
         const SQLTable & t = gen.lookupTable(policy.table_key);
 
         t.setName(jtf2->mutable_tof()->mutable_est(), false);
-        jtf2->set_final(t.supportsFinal());
+        jtf2->set_final(t.supportsFinal(true));
     }
     else
     {
@@ -492,8 +685,9 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
         jtf2->mutable_tof()->mutable_est()->mutable_table()->set_value("one");
     }
     // count() result column
-    ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
-        "count");
+    ExprColAlias * eca = ssc2->add_result_columns()->mutable_eca();
+    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+    eca->mutable_col_alias()->set_column("s0");
     // WHERE pred — copied from the stored USING predicate of the catalog policy.
     // In the fallback path (table gone, querying system.one) we cannot reuse column references
     // from the original table; use a constant TRUE predicate instead so the result is always 1.
@@ -504,7 +698,7 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
             SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ONE);
 
     finishSettings(sel2->mutable_setting_values());
-    ts2->set_format(OutFormat::OUT_CSV);
+    ts2->set_format("CSV");
     const auto err2 = std::filesystem::remove(qcfile);
     UNUSED(err2);
     ts2->mutable_intofile()->set_path(qcfile.generic_string());
@@ -549,8 +743,10 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
     const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
-    SQLFuncCall * sfc1 = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+    SQLFuncCall * sfc1 = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    eca->mutable_col_alias()->set_column("s0");
     sfc1->mutable_func()->set_catalog_func("ifNull");
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
@@ -572,7 +768,7 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     sv->set_property("count_distinct_implementation");
     sv->set_value("'uniqExact'");
     finishSettings(svs);
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format("CSV");
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -594,15 +790,10 @@ void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq
     SelectIntoFile * sif2 = ts2->mutable_intofile();
     Select * sel2 = ts2->mutable_sel();
     SelectStatementCore * outer_ssc = sel2->mutable_select_core();
+    ExprColAlias * eca = outer_ssc->add_result_columns()->mutable_eca();
 
-    outer_ssc->add_result_columns()
-        ->mutable_eca()
-        ->mutable_expr()
-        ->mutable_comp_expr()
-        ->mutable_func_call()
-        ->mutable_func()
-        ->set_catalog_func("count");
-
+    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+    eca->mutable_col_alias()->set_column("s0");
     JoinedTableOrFunction * outer_jtf
         = outer_ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
@@ -621,13 +812,14 @@ void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq
                           ->mutable_func_call()
                           ->mutable_args(0)
                           ->release_expr();
-    ExprColAlias * eca = inner_ssc->add_result_columns()->mutable_eca();
-    eca->set_allocated_expr(arg_expr);
-    eca->mutable_col_alias()->set_column("cx");
+    ExprColAlias * eca2 = inner_ssc->add_result_columns()->mutable_eca();
+    eca2->set_allocated_expr(arg_expr);
+    eca2->mutable_col_alias()->set_column("cx");
 
     /// ifNull(COUNT(DISTINCT expr), 0) skips NULLs; filter them from the inner DISTINCT subquery
     /// to keep COUNT(*) equivalent:  WHERE isNotNull(expr)
-    ExprNullTests * null_test = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_expr_null_tests();
+    ExprTruthTests * null_test
+        = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_expr_truth_tests();
     null_test->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column("cx");
     null_test->set_not_(true);
 
@@ -681,24 +873,35 @@ void QueryOracle::dumpTableContent(
     JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
     switch (strategy)
     {
-        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::REINSERT_TABLE:
         case DumpOracleStrategy::OPTIMIZE:
         case DumpOracleStrategy::REATTACH:
-        case DumpOracleStrategy::BACKUP_RESTORE: {
+        case DumpOracleStrategy::BACKUP_RESTORE:
+        case DumpOracleStrategy::RENAME_BACK:
+        case DumpOracleStrategy::FREEZE_UNFREEZE:
+        case DumpOracleStrategy::MOVE_PARTITION:
+        case DumpOracleStrategy::REPLACE_PARTITION:
+        case DumpOracleStrategy::ALTER_COLUMN:
+        case DumpOracleStrategy::ALTER_TABLE: {
             /// Dump entire table and compare contents
             bool first = true;
+            uint32_t col_idx = 0;
             OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
             gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
             for (const auto & entry : gen.entries)
             {
                 ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+                const String alias = "a" + std::to_string(col_idx++);
 
-                gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-                gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
+                ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+                gen.columnPathRef(entry, eca->mutable_expr());
+                eca->mutable_col_alias()->set_column(alias);
+                eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
+                    alias);
                 if (rg.nextBool())
                 {
                     eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -714,32 +917,43 @@ void QueryOracle::dumpTableContent(
             gen.entries.clear();
         }
         break;
-        case DumpOracleStrategy::ALTER_UPDATE:
+        case DumpOracleStrategy::ALTER_UPDATE: {
             /// Just match the count
-            ssc->add_result_columns()
-                ->mutable_eca()
-                ->mutable_expr()
-                ->mutable_comp_expr()
-                ->mutable_func_call()
-                ->mutable_func()
-                ->set_catalog_func("count");
-            break;
+            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+            eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+            eca->mutable_col_alias()->set_column("s0");
+        }
+        break;
+        case DumpOracleStrategy::TRUNCATE_COUNT: {
+            /// After truncation or deletion, count should be 0
+            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+            BinaryExpr * bexpr = eca->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+
+            bexpr->set_op(BinaryOperator::BINOP_STAR);
+            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+            bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(0);
+            eca->mutable_col_alias()->set_column("s0");
+        }
+        break;
         case DumpOracleStrategy::INSERT_COUNT: {
             /// On the first step get the current count plus the rows to be inserted
-            BinaryExpr * bexpr = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+            BinaryExpr * bexpr = eca->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
             nrows = rows_dist(rg.generator);
             bexpr->set_op(BinaryOperator::BINOP_PLUS);
             bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
             bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
+            eca->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     if (test_content)
     {
         finishSettings(sel->mutable_setting_values());
     }
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -747,14 +961,21 @@ void QueryOracle::dumpTableContent(
     /// Prepare second query
     switch (strategy)
     {
-        case DumpOracleStrategy::DUMP_TABLE:
+        case DumpOracleStrategy::REINSERT_TABLE:
         case DumpOracleStrategy::OPTIMIZE:
         case DumpOracleStrategy::REATTACH:
         case DumpOracleStrategy::BACKUP_RESTORE:
-        case DumpOracleStrategy::ALTER_UPDATE:
+        case DumpOracleStrategy::RENAME_BACK:
+        case DumpOracleStrategy::FREEZE_UNFREEZE:
+        case DumpOracleStrategy::MOVE_PARTITION:
+        case DumpOracleStrategy::REPLACE_PARTITION:
+        case DumpOracleStrategy::ALTER_COLUMN:
+        case DumpOracleStrategy::ALTER_TABLE:
             /// Second step equal as the first one
             sq2.CopyFrom(sq1);
             break;
+        case DumpOracleStrategy::ALTER_UPDATE:
+        case DumpOracleStrategy::TRUNCATE_COUNT:
         case DumpOracleStrategy::INSERT_COUNT: {
             /// In the second step, just get the total count
             sq2.CopyFrom(sq1);
@@ -765,15 +986,12 @@ void QueryOracle::dumpTableContent(
                                              ->mutable_sel()
                                              ->mutable_select_core();
             scc.clear_result_columns();
-            scc.add_result_columns()
-                ->mutable_eca()
-                ->mutable_expr()
-                ->mutable_comp_expr()
-                ->mutable_func_call()
-                ->mutable_func()
-                ->set_catalog_func("count");
+            ExprColAlias * eca2 = scc.add_result_columns()->mutable_eca();
+            eca2->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+            eca2->mutable_col_alias()->set_column("s0");
         }
         break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
 }
 
@@ -826,7 +1044,7 @@ void QueryOracle::generateExportQuery(
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
     }
     gen.entries.clear();
-    ff->set_outformat(rg.pickRandomly(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : outFormats)));
+    ff->set_format(rg.pickRandomly(can_test_oracle_result ? QueryOracle::oracleFormats : fc.out_formats));
     if (rg.nextSmallNumber() < 4)
     {
         ff->set_fcomp(rg.pickRandomly(compressionMethods));
@@ -855,7 +1073,7 @@ void QueryOracle::generateExportQuery(
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
     insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-    jtf->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal(true));
 }
 
 void QueryOracle::dumpOracleIntermediateSteps(
@@ -871,70 +1089,74 @@ void QueryOracle::dumpOracleIntermediateSteps(
 
     intermediate_queries.clear();
     gen.setAllowNotDetermistic(false);
+
+    auto maybeSetClusterAndSettings = [&](auto * msg)
+    {
+        if (cluster.has_value())
+            msg->mutable_cluster()->set_cluster(cluster.value());
+        if (rg.nextSmallNumber() < 3)
+            gen.generateSettingValues(rg, formatSettings, msg->mutable_setting_values());
+    };
+    auto dumpTableSteps = [&](const SQLTable & tbl)
+    {
+        SQLQuery sq_export;
+        SQLQuery sq_trunc;
+        SQLQuery sq_import;
+
+        generateExportQuery(rg, gen, test_content, t, sq_export);
+        Truncate * trunc = sq_trunc.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+        t.setName(trunc->mutable_est(), false);
+        maybeSetClusterAndSettings(trunc);
+        generateImportQuery(rg, gen, tbl, sq_export, sq_import);
+
+        intermediate_queries.emplace_back(sq_export);
+        intermediate_queries.emplace_back(sq_trunc);
+        intermediate_queries.emplace_back(sq_import);
+    };
+
     switch (strategy)
     {
-        case DumpOracleStrategy::DUMP_TABLE: {
-            SQLQuery next2;
-            SQLQuery next3;
+        case DumpOracleStrategy::REINSERT_TABLE: {
             const auto & t2
                 = test_content ? t : rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_to_test_format)).get();
-
-            /// Export data
-            generateExportQuery(rg, gen, test_content, t, next);
-            /// Truncate table, then insert everything again
-            Truncate * trunc = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
-
-            t.setName(trunc->mutable_est(), false);
-            if (cluster.has_value())
-            {
-                trunc->mutable_cluster()->set_cluster(cluster.value());
-            }
-            /// Import data again
-            generateImportQuery(rg, gen, t2, next, next3);
-
-            intermediate_queries.emplace_back(next);
-            intermediate_queries.emplace_back(next2);
-            intermediate_queries.emplace_back(next3);
+            dumpTableSteps(t2);
         }
         break;
         case DumpOracleStrategy::OPTIMIZE: {
             OptimizeTable * ot = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_opt();
 
             gen.generateNextOptimizeTableInternal(rg, t, true, ot);
-            if (rg.nextSmallNumber() < 3)
-            {
-                gen.generateSettingValues(rg, formatSettings, ot->mutable_setting_values());
-            }
+            maybeSetClusterAndSettings(ot);
             intermediate_queries.emplace_back(next);
         }
         break;
-        case DumpOracleStrategy::REATTACH:
-            reattachSteps(rg, gen, t, SQLObject::TABLE, intermediate_queries);
-            break;
-        case DumpOracleStrategy::BACKUP_RESTORE:
-            backupRestoreSteps(rg, gen, fc, t, SQLObject::TABLE, intermediate_queries);
-            break;
-        case DumpOracleStrategy::ALTER_UPDATE: {
-            if (!t.areInsertsAppends() || rg.nextBool())
-            {
-                std::optional<String> acluster;
-                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+        case DumpOracleStrategy::REATTACH: reattachSteps(rg, gen, t, SQLObject::TABLE, intermediate_queries); break;
+        case DumpOracleStrategy::BACKUP_RESTORE: backupRestoreSteps(rg, gen, fc, t, SQLObject::TABLE, intermediate_queries); break;
+        case DumpOracleStrategy::ALTER_TABLE: {
+            Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
 
-                acluster = gen.alterSingleTable(rg, t, 1, false, t.areInsertsAppends(), false, at);
-                if (acluster.has_value())
-                {
-                    at->mutable_cluster()->set_cluster(acluster.value());
-                }
-                if (rg.nextSmallNumber() < 3)
-                {
-                    gen.generateSettingValues(rg, formatSettings, at->mutable_setting_values());
-                }
+            gen.alterSingleTable(rg, t, 1, false, false, at);
+            maybeSetClusterAndSettings(at);
+            intermediate_queries.emplace_back(next);
+        }
+        break;
+        case DumpOracleStrategy::ALTER_UPDATE: {
+            if (rg.nextBool())
+            {
+                /// UPDATE t SET ... WHERE ...
+                LightUpdate * upt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt();
+                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
+                maybeSetClusterAndSettings(upt);
             }
             else
             {
-                LightUpdate * upt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_upt();
-
-                gen.generateNextUpdateOrDeleteOnTable<LightUpdate>(rg, t, upt);
+                /// ALTER TABLE t UPDATE ... WHERE ...
+                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                at->set_is_temp(t.is_temp);
+                at->set_sobject(SQLObject::TABLE);
+                t.setName(at->mutable_object()->mutable_est(), false);
+                gen.generateNextUpdate(rg, t, at->mutable_alter()->mutable_update());
+                maybeSetClusterAndSettings(at);
             }
             intermediate_queries.emplace_back(next);
         }
@@ -950,6 +1172,168 @@ void QueryOracle::dumpOracleIntermediateSteps(
             intermediate_queries.emplace_back(next);
             intermediate_queries.emplace_back(next2);
         }
+        break;
+        case DumpOracleStrategy::RENAME_BACK: {
+            SQLQuery next2;
+            Rename * ren1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_rename();
+            Rename * ren2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_rename();
+            const String tmp_name = "buzzhouse_oracle_tmp_" + std::to_string(gen.table_counter++);
+
+            ren1->set_sobject(SQLObject::TABLE);
+            t.setName(ren1->mutable_old_object()->mutable_est(), true);
+            SQLBase::setName(ren1->mutable_new_object()->mutable_est(), tmp_name, true, t.db);
+            maybeSetClusterAndSettings(ren1);
+
+            ren2->set_sobject(SQLObject::TABLE);
+            SQLBase::setName(ren2->mutable_old_object()->mutable_est(), tmp_name, true, t.db);
+            t.setName(ren2->mutable_new_object()->mutable_est(), true);
+            maybeSetClusterAndSettings(ren2);
+
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::FREEZE_UNFREEZE: {
+            SQLQuery next2;
+            Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            const String fname = rg.nextIdentifier("f", gen.freeze_counter++, false);
+
+            alt1->set_sobject(SQLObject::TABLE);
+            t.setName(alt1->mutable_object()->mutable_est(), false);
+            alt1->mutable_alter()->mutable_freeze_partition()->set_fname(fname);
+            maybeSetClusterAndSettings(alt1);
+
+            alt2->set_sobject(SQLObject::TABLE);
+            t.setName(alt2->mutable_object()->mutable_est(), false);
+            alt2->mutable_alter()->mutable_unfreeze_partition()->set_fname(fname);
+            maybeSetClusterAndSettings(alt2);
+
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::MOVE_PARTITION: {
+            const String dname = t.getDatabaseName();
+            const String tname = t.getBaseName();
+
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
+            {
+                SQLQuery next2;
+                const String part_name = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, false, dname, tname);
+
+                /// ALTER TABLE t DETACH PART part_name
+                Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                alt1->set_sobject(SQLObject::TABLE);
+                t.setName(alt1->mutable_object()->mutable_est(), false);
+                alt1->mutable_alter()->mutable_detach_partition()->mutable_partition()->set_part(part_name);
+                maybeSetClusterAndSettings(alt1);
+
+                /// ALTER TABLE t ATTACH PART part_name
+                Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                alt2->set_sobject(SQLObject::TABLE);
+                t.setName(alt2->mutable_object()->mutable_est(), false);
+                alt2->mutable_alter()->mutable_attach_partition()->mutable_partition()->set_part(part_name);
+                maybeSetClusterAndSettings(alt2);
+
+                intermediate_queries.emplace_back(next);
+                intermediate_queries.emplace_back(next2);
+            }
+            else
+            {
+                dumpTableSteps(t);
+            }
+        }
+        break;
+        case DumpOracleStrategy::REPLACE_PARTITION: {
+            const String dname = t.getDatabaseName();
+            const String tname = t.getBaseName();
+
+            if (t.isMergeTreeFamily(true) && fc.tableHasPartitions(false, dname, tname))
+            {
+                const String partition_id = fc.tableGetRandomPartitionOrPart(rg.nextInFullRange(), false, true, dname, tname);
+
+                /// ALTER TABLE t REWRITE PARTS IN PARTITION partition_id
+                Alter * alt = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                alt->set_sobject(SQLObject::TABLE);
+                t.setName(alt->mutable_object()->mutable_est(), false);
+                alt->mutable_alter()->mutable_rewrite_parts()->mutable_single_partition()->mutable_partition()->set_partition_id(
+                    partition_id);
+                maybeSetClusterAndSettings(alt);
+
+                intermediate_queries.emplace_back(next);
+            }
+            else
+            {
+                dumpTableSteps(t);
+            }
+        }
+        break;
+        case DumpOracleStrategy::ALTER_COLUMN: {
+            SQLQuery next2;
+            const String col_name = "buzzhouse_oracle_col_" + std::to_string(t.col_counter++);
+
+            /// ALTER TABLE t ADD COLUMN col_name UInt8 DEFAULT 0
+            Alter * alt1 = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            alt1->set_sobject(SQLObject::TABLE);
+            t.setName(alt1->mutable_object()->mutable_est(), false);
+            ColumnDef * def = alt1->mutable_alter()->mutable_add_column()->mutable_new_col();
+            def->mutable_col()->mutable_col()->set_column(col_name);
+            def->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(Integers::UInt8);
+            maybeSetClusterAndSettings(alt1);
+
+            /// ALTER TABLE t DROP COLUMN col_name
+            Alter * alt2 = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+            alt2->set_sobject(SQLObject::TABLE);
+            t.setName(alt2->mutable_object()->mutable_est(), false);
+            alt2->mutable_alter()->mutable_drop_column()->mutable_col()->set_column(col_name);
+            maybeSetClusterAndSettings(alt2);
+
+            intermediate_queries.emplace_back(next);
+            intermediate_queries.emplace_back(next2);
+        }
+        break;
+        case DumpOracleStrategy::TRUNCATE_COUNT: {
+            const uint32_t choice = rg.randomInt<uint32_t>(0, 2);
+
+            if (choice == 0)
+            {
+                /// TRUNCATE TABLE t
+                Truncate * trunc = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_trunc();
+                t.setName(trunc->mutable_est(), false);
+                maybeSetClusterAndSettings(trunc);
+                finishSettings(trunc->mutable_setting_values());
+            }
+            else if (choice == 1)
+            {
+                /// DELETE FROM t WHERE true
+                LightDelete * del = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_del();
+                gen.generateNextUpdateOrDeleteOnTable<LightDelete>(rg, t, del);
+                del->mutable_del()->clear_single_partition();
+                del->mutable_del()->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+                    SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+                maybeSetClusterAndSettings(del);
+                finishSettings(del->mutable_setting_values());
+            }
+            else
+            {
+                /// ALTER TABLE t DELETE WHERE true
+                Alter * at = next.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_alter();
+                at->set_is_temp(t.is_temp);
+                at->set_sobject(SQLObject::TABLE);
+                t.setName(at->mutable_object()->mutable_est(), false);
+                Delete * del = at->mutable_alter()->mutable_del();
+                gen.generateNextDelete(rg, t, del);
+                del->clear_single_partition();
+                del->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
+                    SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_TRUE);
+                maybeSetClusterAndSettings(at);
+                finishSettings(at->mutable_setting_values());
+            }
+            intermediate_queries.emplace_back(next);
+        }
+        break;
+        case DumpOracleStrategy::DO_NOTHING: break;
     }
     gen.setAllowNotDetermistic(true);
 }
@@ -976,13 +1360,17 @@ void QueryOracle::dumpDictionaryContent(
     bool first = true;
     OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
+    uint32_t col_idx = 0;
     gen.flatTableColumnPath(0, d.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+        const String alias = "a" + std::to_string(col_idx++);
 
-        gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
-        gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        gen.columnPathRef(entry, eca->mutable_expr());
+        eca->mutable_col_alias()->set_column(alias);
+        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(alias);
         if (rg.nextBool())
         {
             eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -998,7 +1386,7 @@ void QueryOracle::dumpDictionaryContent(
     gen.entries.clear();
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1018,14 +1406,9 @@ void QueryOracle::dumpObjectIntermediateSteps(
     gen.setAllowNotDetermistic(false);
     switch (strategy)
     {
-        case DumpOracleStrategy::REATTACH:
-            reattachSteps(rg, gen, obj, sobject, intermediate_queries);
-            break;
-        case DumpOracleStrategy::BACKUP_RESTORE:
-            backupRestoreSteps(rg, gen, fc, obj, sobject, intermediate_queries);
-            break;
-        default:
-            UNREACHABLE();
+        case DumpOracleStrategy::REATTACH: reattachSteps(rg, gen, obj, sobject, intermediate_queries); break;
+        case DumpOracleStrategy::BACKUP_RESTORE: backupRestoreSteps(rg, gen, fc, obj, sobject, intermediate_queries); break;
+        default: UNREACHABLE();
     }
     gen.setAllowNotDetermistic(true);
 }
@@ -1043,14 +1426,18 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     jtf->set_final(v.supportsFinal());
 
     bool first = true;
+    uint32_t col_idx = 0;
     OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
     for (const auto & col : v.cols)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
+        const String alias = "a" + std::to_string(col_idx++);
 
-        ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
-        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
+        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+        eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
+        eca->mutable_col_alias()->set_column(alias);
+        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(alias);
         if (rg.nextBool())
         {
             eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -1065,7 +1452,7 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     }
 
     finishSettings(sel->mutable_setting_values());
-    ts->set_format(rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats)));
+    ts->set_format(rg.pickRandomly(QueryOracle::oracleFormats));
     const auto err = std::filesystem::remove(qcfile);
     UNUSED(err);
     sif->set_path(qcfile.generic_string());
@@ -1080,9 +1467,9 @@ void QueryOracle::generateImportQuery(
     InsertFromFile * iff = nins->mutable_insert_file();
     const Insert & oins = sq2.single_query().explain().inner_query().insert();
     const FileFunc & ff = oins.tof().tfunc().file();
-    const InFormat & inf = !outIn.contains(ff.outformat()) || (!can_test_oracle_result && rg.nextSmallNumber() < 4)
-        ? rg.pickValueRandomlyFromMap(outIn)
-        : outIn.at(ff.outformat());
+    const std::optional<String> read_back = fc.formatToRead(ff.format());
+    const String inf = !read_back.has_value() || (!can_test_oracle_result && rg.nextSmallNumber() < 4) ? rg.pickRandomly(fc.in_formats)
+                                                                                                       : read_back.value();
 
     insertOnTableOrCluster(rg, gen, t, false, nins->mutable_tof());
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
@@ -1111,7 +1498,7 @@ void QueryOracle::generateImportQuery(
 
         svs->CopyFrom(oins.setting_values());
     }
-    if (can_test_oracle_result && inf == InFormat::IN_CSV)
+    if (can_test_oracle_result && inf == "CSV")
     {
         SettingValues * svs = nins->mutable_setting_values();
         SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
@@ -1239,12 +1626,12 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         sparen = ins->mutable_select();
         FileFunc * ff = ins->mutable_tof()->mutable_tfunc()->mutable_file();
-        OutFormat outf = rg.pickRandomly(rg.pickRandomly(QueryOracle::oracleFormats));
+        const String & outf = rg.pickRandomly(QueryOracle::oracleFormats);
 
         const auto err = std::filesystem::remove(qcfile);
         UNUSED(err);
         ff->set_path(qsfile.generic_string());
-        ff->set_outformat(outf);
+        ff->set_format(outf);
         ff->set_fname(FileFunc_FName::FileFunc_FName_file);
         sel = query = sparen->mutable_select();
     }
@@ -1580,7 +1967,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next2.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select()->mutable_select_core();
 
-        if (t.isMergeTreeFamily() && t.can_run_merges)
+        if (t.isMergeTreeFamily(true) && t.can_run_merges)
         {
             /// Apply delete mask
             SQLQuery next;
@@ -1600,7 +1987,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         insertOnTableOrCluster(rg, gen, t, true, ins->mutable_tof());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
         insertOnTableOrCluster(rg, gen, t, false, jtf->mutable_tof());
-        jtf->set_final(t.supportsFinal());
+        jtf->set_final(t.supportsFinal(true));
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
@@ -1619,6 +2006,7 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_errcode = 0;
     other_steps_success = true;
+    oracle_combination = OracleCombination::WHERE_ONLY;
     can_test_oracle_result = can_test_success = fc.compare_success_results;
     nrows = 0;
     res1 = PerformanceResult();

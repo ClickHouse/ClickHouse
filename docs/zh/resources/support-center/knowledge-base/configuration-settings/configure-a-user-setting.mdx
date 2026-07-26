@@ -1,0 +1,66 @@
+---
+title: 如何在 ClickHouse 中为用户配置设置
+description: 了解如何使用 `SET` 和 `ALTER USER` 命令，在 ClickHouse 中为单个查询、客户端会话或特定用户设置配置。
+date: 2023-03-01
+tags: ['设置']
+keywords: ['SET', 'ALTER', '用户', '查询', '会话']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 简介
+</div>
+
+在 ClickHouse 中，可以通过多种方式为用户定义设置，具体取决于使用场景以及你希望该设置生效多久。下面来看几个场景……
+
+<div id="configure-a-setting-for-a-single-query">
+  ## 为单个查询配置设置
+</div>
+
+`SELECT` 查询可以包含 `SETTINGS` 子句，您可在其中定义任意数量的设置。这些设置仅对该查询生效。例如：
+
+```sql
+SELECT *
+FROM my_table
+SETTINGS max_threads = 8;
+```
+
+对于这个特定查询，最大线程数为 8。
+
+<div id="configure-a-setting-for-a-session">
+  ## 为会话配置设置
+</div>
+
+你可以使用 `SET` 子句为客户端会话的整个持续期间定义一个设置。这很适合临时测试，或者在你希望某个设置只对少数几次查询生效而不再继续生效时使用。
+
+```sql
+SET max_threads = 8;
+
+SELECT *
+FROM my_table;
+```
+
+<div id="configure-a-setting-for-a-particular-user">
+  ## 为特定用户配置某项设置
+</div>
+
+使用 `ALTER USER` 可仅为某个用户定义某项设置。例如：
+
+```sql
+ALTER USER my_user_name SETTINGS max_threads = 8;
+```
+
+你可以先退出客户端并重新登录，然后使用 `getSetting` 函数验证其是否已生效：
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+<Note>
+  以这种方式指定设置会覆盖该用户当前的设置。也就是说，如果你之前为该用户应用了其他设置，但没有在 `ALTER USER` 语句中指定它们，这些设置就会丢失。
+
+  如果你想保留现有设置，请改用 `ALTER USER ... MODIFY SETTING ...`
+</Note>

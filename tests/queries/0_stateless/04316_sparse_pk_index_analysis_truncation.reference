@@ -1,0 +1,46 @@
+-- { echoOn }
+
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_truncation
+WHERE c0 <= 1 AND c0 >= 3
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_truncation)
+        Indexes:
+          PrimaryKey
+            Keys:
+              c0
+            Condition: and((c0 in [3, +Inf)), (c0 in (-Inf, 1]))
+            Parts: 0/1
+            Granules: 0/4
+            Search Algorithm: binary search
+          Ranges: 0
+SELECT count() FROM t_sparse_pk_truncation
+WHERE c0 <= 1 AND c0 >= 3
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+0
+EXPLAIN indexes = 1
+SELECT count() FROM t_sparse_pk_truncation
+WHERE c0 <= 1 AND c0 >= 3
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+Expression ((Project names + Projection))
+  Aggregating
+    Expression (Before GROUP BY)
+      Filter ((WHERE + Change column names to column identifiers))
+        ReadFromMergeTree (default.t_sparse_pk_truncation)
+        Indexes:
+          PrimaryKey
+            Keys:
+              c0
+            Condition: and((c0 in [3, +Inf)), (c0 in (-Inf, 1]))
+            Parts: 0/1
+            Granules: 0/4
+            Search Algorithm: binary search
+          Ranges: 0
+SELECT count() FROM t_sparse_pk_truncation
+WHERE c0 <= 1 AND c0 >= 3
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+0

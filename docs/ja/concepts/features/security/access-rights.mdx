@@ -1,0 +1,580 @@
+---
+slug: /operations/access-rights
+sidebarTitle: 'ユーザーとロール'
+title: 'Access Control and Account Management'
+keywords: ['ClickHouse Cloud', 'アクセス制御', 'ユーザー管理', 'RBAC', 'Security']
+description: 'ClickHouse Cloud におけるアクセス制御とアカウント管理について説明します'
+doc_type: 'guide'
+---
+
+ClickHouse は、[RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) に基づくアクセス制御をサポートしています。
+
+ClickHouse のアクセスエンティティ:
+
+* [ユーザーアカウント](#user-account-management)
+* [ロール](#role-management)
+* [ROW POLICY](#row-policy-management)
+* [SETTINGS PROFILE](#settings-profiles-management)
+* [QUOTA](#quotas-management)
+
+アクセスエンティティは、次の方法で設定できます。
+
+* SQL-driven ワークフロー。
+
+  この機能を[有効にする](#enabling-access-control)必要があります。
+
+* サーバーの[設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files) `users.xml` および `config.xml`。
+
+SQL-driven ワークフローの使用を推奨します。これら 2 つの設定方法は同時に利用できるため、アカウントやアクセス権の管理にサーバー設定ファイルを使用している場合でも、SQL-driven ワークフローへスムーズに移行できます。
+
+<Note>
+  同じアクセスエンティティを、両方の設定方法で同時に管理することはできません。
+</Note>
+
+<Note>
+  ClickHouse Cloud console のユーザーを管理したい場合は、こちらの[ページ](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users)を参照してください
+</Note>
+
+すべてのユーザー、ロール、プロファイルなどと、それらに付与されているすべての grant を確認するには、[`SHOW ACCESS`](/ja/reference/statements/show#show-access) ステートメントを使用します。
+
+<div id="access-control-usage">
+  ## 概要
+</div>
+
+デフォルトでは、ClickHouse server には `default` ユーザーアカウントが用意されています。このアカウントでは SQL ベースのアクセス制御とアカウント管理 は使用できませんが、すべての権限を持っています。`default` ユーザーアカウントは、ユーザー名が定義されていないあらゆる場合に使用されます。たとえば、クライアントからのログイン時や分散クエリで使用されます。分散クエリ処理では、server またはクラスター の設定で [user and password](/ja/reference/engines/table-engines/special/distributed) プロパティが指定されていない場合、デフォルトのユーザーアカウントが使用されます。
+
+ClickHouse を使い始めたばかりであれば、次の手順を検討してください。
+
+1. `default` ユーザーに対して [有効化](#enabling-access-control) し、SQL ベースのアクセス制御とアカウント管理 を有効にします。
+2. `default` ユーザーアカウントにログインし、必要なユーザーをすべて作成します。管理者アカウント (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`) の作成も忘れないでください。
+3. `default` ユーザーの [権限を制限し](/ja/concepts/features/configuration/settings/permissions-for-queries)、そのユーザーに対する SQL ベースのアクセス制御とアカウント管理 を無効にします。
+
+<div id="access-control-properties">
+  ### 現行ソリューションの特性
+</div>
+
+* データベースやテーブルが存在しなくても、それらに対する権限を付与できます。
+* テーブルが削除されても、そのテーブルに対応するすべての権限は取り消されません。つまり、後で同じ名前の新しいテーブルを作成した場合でも、すべての権限は引き続き有効です。削除されたテーブルに対応する権限を取り消すには、たとえば `REVOKE ALL PRIVILEGES ON db.table FROM ALL` クエリを実行する必要があります。
+* 権限に有効期限の設定はありません。
+
+<div id="user-account-management">
+  ### ユーザーアカウント
+</div>
+
+ユーザーアカウントは、ClickHouse でユーザーを認可するためのアクセスエンティティです。ユーザーアカウントには、次の情報が含まれます。
+
+* 識別情報。
+* ユーザーが実行できるクエリの範囲を定義する[権限](/ja/reference/statements/grant#privileges)。
+* ClickHouse server への接続を許可するホスト。
+* 割り当て済みのロールとデフォルトロール。
+* ユーザーログイン時にデフォルトで適用される、制約付きの設定。
+* 割り当てられた設定プロファイル。
+
+ユーザーアカウントには、[GRANT](/ja/reference/statements/grant) クエリまたは[ロール](#role-management)の割り当てによって権限を付与できます。ユーザーから権限を取り消すには、ClickHouse では [REVOKE](/ja/reference/statements/revoke) クエリを使用します。ユーザーの権限を一覧表示するには、[SHOW GRANTS](/ja/reference/statements/show#show-grants) ステートメントを使用します。
+
+管理クエリ:
+
+* [CREATE USER](/ja/reference/statements/create/user)
+* [ALTER USER](/ja/reference/statements/alter/user)
+* [DROP USER](/ja/reference/statements/drop)
+* [SHOW CREATE USER](/ja/reference/statements/show#show-create-user)
+* [SHOW USERS](/ja/reference/statements/show#show-users)
+
+<div id="access-control-settings-applying">
+  ### 適用される設定
+</div>
+
+設定は、ユーザーアカウント、付与されたロール、設定プロファイルごとにそれぞれ異なる内容を構成できます。ユーザーのログイン時に、同じ設定が複数のアクセスエンティティに対して構成されている場合、その設定の値と制約は次の順序で適用されます (優先度の高い順) :
+
+1. ユーザーアカウントの設定。
+2. ユーザーアカウントのデフォルトロールの設定。ある設定が複数のロールで構成されている場合、その設定の適用順序は未定義です。
+3. ユーザーまたはそのデフォルトロールに割り当てられた設定プロファイルの設定。ある設定が複数のプロファイルで構成されている場合、その設定の適用順序は未定義です。
+4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings#default_profile) で適用される設定。
+
+<div id="role-management">
+  ### ロール
+</div>
+
+ロールは、アクセスエンティティをまとめたもので、ユーザーアカウントに付与できます。
+
+ロールには次のものが含まれます。
+
+* [権限](/ja/reference/statements/grant#privileges)
+* 設定と制約
+* 割り当てられたロールの一覧
+
+管理用クエリ:
+
+* [CREATE ROLE](/ja/reference/statements/create/role)
+* [ALTER ROLE](/ja/reference/statements/alter/role)
+* [DROP ROLE](/ja/reference/statements/drop#drop-role)
+* [SET ROLE](/ja/reference/statements/set-role)
+* [SET DEFAULT ROLE](/ja/reference/statements/set-role)
+* [SHOW CREATE ROLE](/ja/reference/statements/show#show-create-role)
+* [SHOW ROLES](/ja/reference/statements/show#show-roles)
+
+権限は、[GRANT](/ja/reference/statements/grant) クエリを使用してロールに付与できます。ロールから権限を取り消すには、ClickHouse では [REVOKE](/ja/reference/statements/revoke) クエリを使用します。
+
+<div id="row-policy-management">
+  #### ROW POLICY
+</div>
+
+ROW POLICY は、ユーザーまたはロールがアクセスできる行を定義するフィルターです。ROW POLICY には、特定のテーブルに対するフィルターに加えて、この ROW POLICY を適用するロールやユーザーの一覧が含まれます。
+
+<Note>
+  ROW POLICY が有効なのは、readonly アクセス権限がある場合に限られます。テーブルを変更したり、テーブル間でパーティションをコピーしたりできる場合、ROW POLICY による制限は実質的に意味をなさなくなります。
+</Note>
+
+管理用クエリ:
+
+* [CREATE ROW POLICY](/ja/reference/statements/create/row-policy)
+* [ALTER ROW POLICY](/ja/reference/statements/alter/row-policy)
+* [DROP ROW POLICY](/ja/reference/statements/drop#drop-row-policy)
+* [SHOW CREATE ROW POLICY](/ja/reference/statements/show#show-create-row-policy)
+* [SHOW POLICIES](/ja/reference/statements/show#show-policies)
+
+<div id="settings-profiles-management">
+  ### SETTINGS PROFILE
+</div>
+
+SETTINGS PROFILE は、[設定](/ja/reference/settings/index)の集合です。SETTINGS PROFILE には、設定や制約に加え、このプロファイルが適用されるロールやユーザーの一覧が含まれます。
+
+管理用クエリ:
+
+* [CREATE SETTINGS PROFILE](/ja/reference/statements/create/settings-profile)
+* [ALTER SETTINGS PROFILE](/ja/reference/statements/alter/settings-profile)
+* [DROP SETTINGS PROFILE](/ja/reference/statements/drop#drop-settings-profile)
+* [SHOW CREATE SETTINGS PROFILE](/ja/reference/statements/show#show-create-settings-profile)
+* [SHOW PROFILES](/ja/reference/statements/show#show-profiles)
+
+<div id="quotas-management">
+  ### QUOTA
+</div>
+
+QUOTA はリソース使用量を制限します。詳細は [Quotas](/ja/concepts/features/configuration/server-config/quotas) を参照してください。
+
+QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用するロールやユーザーの一覧が含まれます。
+
+管理用クエリ:
+
+* [CREATE QUOTA](/ja/reference/statements/create/quota)
+* [ALTER QUOTA](/ja/reference/statements/alter/quota)
+* [DROP QUOTA](/ja/reference/statements/drop#drop-quota)
+* [SHOW CREATE QUOTA](/ja/reference/statements/show#show-create-quota)
+* [SHOW QUOTA](/ja/reference/statements/show#show-quota)
+* [SHOW QUOTAS](/ja/reference/statements/show#show-quotas)
+
+<div id="enabling-access-control">
+  ### SQL ベースのアクセス制御とアカウント管理を有効にする
+</div>
+
+* 設定の保存先となるディレクトリを用意します。
+
+  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
+
+* 少なくとも 1 つのユーザーアカウントで、SQL ベースのアクセス制御とアカウント管理を有効にします。
+
+  デフォルトでは、SQL ベースのアクセス制御とアカウント管理はすべてのユーザーで無効になっています。`users.xml` 設定ファイルで少なくとも 1 人のユーザーを設定し、[`access_management`](/ja/concepts/features/configuration/settings/settings-users#access_management-user-setting)、`named_collection_control`、`show_named_collections`、`show_named_collections_secrets` の各設定を 1 に設定する必要があります。
+
+<div id="defining-sql-users-and-roles">
+  ## SQLユーザーとロールの定義
+</div>
+
+<Tip>
+  ClickHouse Cloud を利用している場合は、[クラウドアクセス管理](/ja/products/cloud/reference/security/console-roles)を参照してください。
+</Tip>
+
+この記事では、SQLユーザーとロールを定義する基本と、それらの権限をデータベース、テーブル、行、カラムに適用する方法を説明します。
+
+<div id="enabling-sql-user-mode">
+  ### SQL ユーザーモードを有効にする
+</div>
+
+1. `users.xml` ファイルの `<default>` ユーザー配下で SQL ユーザーモードを有効にします。
+   ```xml
+   <access_management>1</access_management>
+   <named_collection_control>1</named_collection_control>
+   <show_named_collections>1</show_named_collections>
+   <show_named_collections_secrets>1</show_named_collections_secrets>
+   ```
+
+<Note>
+  `default` ユーザーは、新規インストール時に作成される唯一のユーザーであり、デフォルトではノード間通信に使用されるアカウントでもあります。
+
+  本番環境では、ノード間通信を SQL 管理ユーザーで構成し、`<secret>`、クラスター認証情報、および/またはノード間 HTTP とトランスポートプロトコルの認証情報を設定した後は、このユーザーを無効にすることを推奨します。`default` アカウントはノード間通信に使用されるためです。
+</Note>
+
+2. 変更を適用するため、ノードを再起動します。
+
+3. ClickHouse client を起動します。
+   ```sql
+   clickhouse-client --user default --password <password>
+   ```
+
+<div id="defining-users">
+  ### ユーザーの作成
+</div>
+
+1. SQL 管理者アカウントを作成します。
+   ```sql
+   CREATE USER clickhouse_admin IDENTIFIED BY 'password';
+   ```
+2. 新しいユーザーにすべての管理者権限を付与します。
+   ```sql
+   GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
+   ```
+
+<div id="alter-permissions">
+  ## ALTER の権限
+</div>
+
+この記事では、権限の定義方法と、特権ユーザーが `ALTER` ステートメントを使用する際に権限がどのように機能するかについて理解を深めることを目的としています。
+
+`ALTER` ステートメントはいくつかのカテゴリに分かれており、階層構造を持つものと、持たないため明示的に定義する必要があるものがあります。
+
+**DB、テーブル、およびユーザー設定の例**
+
+1. 管理者ユーザーで、サンプルユーザーを作成します
+
+```sql
+CREATE USER my_user IDENTIFIED BY 'password';
+```
+
+2. サンプルデータベースを作成する
+
+```sql
+CREATE DATABASE my_db;
+```
+
+3. サンプルテーブルを作成する
+
+```sql
+CREATE TABLE my_db.my_table (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+4. 権限の付与と取り消しを行うためのサンプル管理者ユーザーを作成する
+
+```sql
+CREATE USER my_alter_admin IDENTIFIED BY 'password';
+```
+
+<Note>
+  権限を付与または取り消すには、admin ユーザーに `WITH GRANT OPTION` 権限が付与されている必要があります。
+  たとえば、次のようにします。
+
+  ```sql
+  GRANT ALTER ON my_db.* WITH GRANT OPTION
+  ```
+
+  権限を `GRANT` または `REVOKE` するには、まずその権限をユーザー自身が持っている必要があります。
+</Note>
+
+**権限の付与または取り消し**
+
+`ALTER` の階層:
+
+```response
+├── ALTER (テーブルとビューのみ)/
+│   ├── ALTER TABLE/
+│   │   ├── ALTER UPDATE
+│   │   ├── ALTER DELETE
+│   │   ├── ALTER COLUMN/
+│   │   │   ├── ALTER ADD COLUMN
+│   │   │   ├── ALTER DROP COLUMN
+│   │   │   ├── ALTER MODIFY COLUMN
+│   │   │   ├── ALTER COMMENT COLUMN
+│   │   │   ├── ALTER CLEAR COLUMN
+│   │   │   └── ALTER RENAME COLUMN
+│   │   ├── ALTER INDEX/
+│   │   │   ├── ALTER ORDER BY
+│   │   │   ├── ALTER SAMPLE BY
+│   │   │   ├── ALTER ADD INDEX
+│   │   │   ├── ALTER DROP INDEX
+│   │   │   ├── ALTER MATERIALIZE INDEX
+│   │   │   └── ALTER CLEAR INDEX
+│   │   ├── ALTER CONSTRAINT/
+│   │   │   ├── ALTER ADD CONSTRAINT
+│   │   │   └── ALTER DROP CONSTRAINT
+│   │   ├── ALTER TTL/
+│   │   │   └── ALTER MATERIALIZE TTL
+│   │   ├── ALTER SETTINGS
+│   │   ├── ALTER MOVE PARTITION
+│   │   ├── ALTER FETCH PARTITION
+│   │   └── ALTER FREEZE PARTITION
+│   └── ALTER LIVE VIEW/
+│       ├── ALTER LIVE VIEW REFRESH
+│       └── ALTER LIVE VIEW MODIFY QUERY
+├── ALTER DATABASE
+├── ALTER USER
+├── ALTER ROLE
+├── ALTER QUOTA
+├── ALTER [ROW] POLICY
+└── ALTER [SETTINGS] PROFILE
+```
+
+1. ユーザーまたはロールへの `ALTER` 権限の付与
+
+`GRANT ALTER on *.* TO my_user` を実行しても、対象となるのは上位レベルの `ALTER TABLE` と `ALTER VIEW` のみで、その他の `ALTER` ステートメントは個別に付与または取り消す必要があります。
+
+たとえば、基本的な `ALTER` 権限を付与する場合:
+
+```sql
+GRANT ALTER ON my_db.my_table TO my_user;
+```
+
+結果として得られる権限一覧:
+
+```sql
+SHOW GRANTS FOR  my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 706befbc-525e-4ec1-a1a2-ba2508cc09e3
+
+┌─GRANTS FOR my_user───────────────────────────────────────────┐
+│ GRANT ALTER TABLE, ALTER VIEW ON my_db.my_table TO my_user   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+これにより、上記の例にある `ALTER TABLE` と `ALTER VIEW` 配下のすべての権限が付与されますが、`ALTER ROW POLICY` など、その他の一部の `ALTER` 権限は付与されません (階層に戻って確認すると、`ALTER ROW POLICY` は `ALTER TABLE` や `ALTER VIEW` の子ではないことがわかります) 。これらは明示的に付与または取り消す必要があります。
+
+`ALTER` 権限の一部だけが必要な場合は、それぞれを個別に付与できます。また、その権限に下位権限がある場合は、それらも自動的に付与されます。
+
+例えば:
+
+```sql
+GRANT ALTER COLUMN ON my_db.my_table TO my_user;
+```
+
+権限は次のように設定します:
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 47b3d03f-46ac-4385-91ec-41119010e4e2
+
+┌─GRANTS FOR my_user────────────────────────────────┐
+│ GRANT ALTER COLUMN ON default.my_table TO my_user │
+└───────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+これにより、以下のサブ権限も付与されます：
+
+```sql
+ALTER ADD COLUMN
+ALTER DROP COLUMN
+ALTER MODIFY COLUMN
+ALTER COMMENT COLUMN
+ALTER CLEAR COLUMN
+ALTER RENAME COLUMN
+```
+
+2. Users and Roles から `ALTER` 権限を取り消す
+
+`REVOKE` ステートメントは `GRANT` ステートメントと同様に動作します。
+
+ユーザー/ロールにサブ権限が付与されている場合、そのサブ権限を直接取り消すか、継承元の上位権限を取り消すことができます。
+
+例えば、ユーザーに `ALTER ADD COLUMN` 権限が付与されている場合
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 61fe0fdc-1442-4cd6-b2f3-e8f2a853c739
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 27791226-a18f-46c8-b2b4-a9e64baeb683
+
+┌─GRANTS FOR my_user──────────────────────────────────┐
+│ GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user │
+└─────────────────────────────────────────────────────┘
+```
+
+権限は個別に取り消すことができます：
+
+```sql
+REVOKE ALTER ADD COLUMN ON my_db.my_table FROM my_user;
+```
+
+または、上位レベルのいずれかから取り消すこともできます (COLUMNのすべてのサブ権限を取り消す場合) ：
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user;
+```
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user
+
+Query id: b882ba1b-90fb-45b9-b10f-3cda251e2ccc
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: e7d341de-de65-490b-852c-fa8bb8991174
+
+Ok.
+
+0 rows in set. Elapsed: 0.003 sec.
+```
+
+**追加**
+
+権限を付与できるのは、`WITH GRANT OPTION` を持つだけでなく、その権限自体も保有しているユーザーに限られます。
+
+1. adminユーザーにその権限を付与し、さらに複数の権限を管理できるようにするには
+   以下に例を示します：
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+これにより、ユーザーは `ALTER COLUMN` およびすべてのサブ権限を付与または取り消すことができます。
+
+**テスト**
+
+1. `SELECT` 権限を付与します
+
+```sql
+GRANT SELECT ON my_db.my_table TO my_user;
+```
+
+2. ユーザーにカラム追加権限を付与する
+
+```sql
+GRANT ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+3. 権限が制限されたユーザーでログインする
+
+```bash
+clickhouse-client --user my_user --password password --port 9000 --host <your_clickhouse_host>
+```
+
+4. カラムの追加を試す
+
+```sql
+ALTER TABLE my_db.my_table ADD COLUMN column2 String;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    ADD COLUMN `column2` String
+
+Query id: d5d6bfa1-b80c-4d9f-8dcd-d13e7bd401a5
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+```sql
+DESCRIBE my_db.my_table;
+```
+
+```response
+DESCRIBE TABLE my_db.my_table
+
+Query id: ab9cb2d0-5b1a-42e1-bc9c-c7ff351cb272
+
+┌─name────┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ UInt64 │              │                    │         │                  │                │
+│ column1 │ String │              │                    │         │                  │                │
+│ column2 │ String │              │                    │         │                  │                │
+└─────────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+4. カラムの削除を試す
+
+```sql
+ALTER TABLE my_db.my_table DROP COLUMN column2;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    DROP COLUMN column2
+
+Query id: 50ad5f6b-f64b-4c96-8f5f-ace87cea6c47
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_user: Not enough privileges. To execute this query it's necessary to have grant ALTER DROP COLUMN(column2) ON my_db.my_table. (ACCESS_DENIED)
+```
+
+5. 権限を付与して alter admin を検証する
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+6. alter admin ユーザーとしてログインする
+
+```bash
+clickhouse-client --user my_alter_admin --password password --port 9000 --host <my_clickhouse_host>
+```
+
+7. 下位権限を付与する
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 1c7622fa-9df1-4c54-9fc3-f984c716aeba
+
+Ok.
+```
+
+8. alter admin ユーザーが持っておらず、かつ admin ユーザーに付与されている権限の下位権限でもない権限の付与をテストします。
+
+```sql
+GRANT ALTER UPDATE ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER UPDATE ON my_db.my_table TO my_user
+
+Query id: 191690dc-55a6-4625-8fee-abc3d14a5545
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_alter_admin: Not enough privileges. To execute this query it's necessary to have grant ALTER UPDATE ON my_db.my_table WITH GRANT OPTION. (ACCESS_DENIED)
+```
+
+**概要**
+`ALTER` 権限は、テーブルおよびビューに対する `ALTER` では階層的ですが、その他の `ALTER` ステートメントには当てはまりません。権限は細かい粒度で設定することも、まとめて設定することもでき、同様に取り消すこともできます。権限を付与または取り消すユーザーは、自分自身を含むユーザーに権限を設定するための `WITH GRANT OPTION` を持っている必要があり、さらに対象の権限をすでに持っていなければなりません。操作を行うユーザー自身に `WITH GRANT OPTION` がない場合、自分自身の権限を取り消すことはできません。

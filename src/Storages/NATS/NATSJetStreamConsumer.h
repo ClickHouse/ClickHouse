@@ -23,9 +23,13 @@ public:
         uint32_t queue_size,
         const std::atomic<bool> & stopped);
 
-    void subscribe() override;
+    bool needsAck() const override { return true; }
 
 protected:
+    void subscribeImpl() override;
+
+    void nackMessage(natsMsg * msg) override;
+
     NATSSubscriptionPtr subscribeToSubject(const String & subject);
 
     const String stream_name;

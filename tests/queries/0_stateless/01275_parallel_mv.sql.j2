@@ -51,8 +51,13 @@ select count() from testXC;
 
 system flush logs system.query_log;
 
+-- Binarize on saturation: did the pipeline saturate max_threads (=10) or not?
+-- Pre-lazy-CC, every variant reached max_threads (the bug); post-lazy-CC, only
+-- the genuinely parallel variants (parallel_view_processing=1 with
+-- max_insert_threads=5) saturate. The exact sub-10 peak value depends on
+-- timing/scheduling and is not a contract — only saturation vs not is.
 select
-    if(peak_threads_usage >= 10, 1, peak_threads_usage),
+    if(peak_threads_usage >= 10, 1, 0) as saturated_max_threads,
     Settings['max_threads'] as max_threads,
     Settings['max_insert_threads'] as max_insert_threads,
     Settings['parallel_view_processing'] as parallel_view_processing,

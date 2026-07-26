@@ -8,7 +8,7 @@ import subprocess
 import time
 import struct
 from os import path as p
-from typing import Iterable, List, Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union
 
 from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import ConnectionLoss, OperationTimeoutError
@@ -155,7 +155,7 @@ class KeeperClient(object):
         while True:
             events = self.poller.poll(timeout)
             if not events:
-                raise TimeoutError(f"Keeper client returned no output")
+                raise TimeoutError("Keeper client returned no output")
 
             # Process stderr events before stdout to ensure errors are
             # collected before checking the stdout separator.

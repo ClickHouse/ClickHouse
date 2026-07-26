@@ -29,7 +29,10 @@ $STREAMING_CLIENT -q "TRUNCATE t_streaming_test"
 $STREAMING_CLIENT -q "INSERT INTO t_streaming_test VALUES ('started', 0)"
 
 read -r fifo_1 pid_1 < <(spawn $STREAMING_CLIENT -q "SELECT a FROM t_streaming_test UNION ALL SELECT a FROM t_streaming_test STREAM")
-read_until "$fifo_1" "started"
+# Both UNION ALL sides each emit one 'started' row from the pre-existing data;
+# wait until both have produced theirs before triggering inserts to keep
+# downstream output ordering deterministic.
+read_until "$fifo_1" "started" 2
 
 $STREAMING_CLIENT -q "INSERT INTO t_streaming_test select number, number from numbers(1)"
 $STREAMING_CLIENT -q "INSERT INTO t_streaming_test select number, number from numbers(2)"

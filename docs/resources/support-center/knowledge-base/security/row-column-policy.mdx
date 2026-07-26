@@ -1,0 +1,17 @@
+---
+date: 2023-08-13
+title: "Does ClickHouse support row-level and column-level security?"
+description: "Learn about row-level and column-level access restrictions in ClickHouse and ClickHouse Cloud, and how to implement role-based access control (RBAC) with policies."
+tags: ['Security and Authentication']
+keywords: ['Row-Level', 'Column-Level', 'Security']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## ClickHouse and ClickHouse Cloud both support row and column-level access restrictions {#clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions}
+ClickHouse and ClickHouse Cloud both support row and column-level access restrictions for read-only users necessary to achieve a role-based access control (RBAC) model. 
+
+[Row Policies](/concepts/features/security/access-rights#row-policy-management) can be used to specify which rows will be returned to a read-only user when they query a table. ClickHouse Cloud is configured to enable the SQL-driven workflow by default. To leverage this workflow [CREATE](/reference/statements/create/user) a user, [GRANT](/reference/statements/grant) the user privileges on a table, then set the appropriate [ROW POLICY](/concepts/features/security/access-rights#row-policy-management). When the user performs a `SELECT * FROM table`, only rows allowed by the policy will be displayed.
+
+Column-level restrictions may be specified directly using the [GRANT statement](/reference/statements/grant) to enable table-level access for users and roles. Users *may only* include columns for which they have access in a query. Selecting restricted columns from a table in which the user does not have access to all the specified columns, such as in the query `SELECT * FROM table`, will return an error stating the user has insufficient permissions.

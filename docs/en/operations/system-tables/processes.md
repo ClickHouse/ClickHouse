@@ -30,6 +30,7 @@ This system table is used for implementing the `SHOW PROCESSLIST` query.
 - `os_user` ([String](/sql-reference/data-types/string)) — Operating system username who runs clickhouse-client.
 - `client_hostname` ([String](/sql-reference/data-types/string)) — Hostname of the client machine where the clickhouse-client or another TCP client is run.
 - `client_name` ([String](/sql-reference/data-types/string)) — The clickhouse-client or another TCP client name.
+- `client_agent` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — The AI coding agent that invoked the client (for example, `claude-code` or `cursor`), detected from environment variables. Empty if no agent was detected.
 - `client_revision` ([UInt64](/sql-reference/data-types/int-uint)) — Revision of the clickhouse-client or another TCP client.
 - `client_version_major` ([UInt64](/sql-reference/data-types/int-uint)) — Major version of the clickhouse-client or another TCP client.
 - `client_version_minor` ([UInt64](/sql-reference/data-types/int-uint)) — Minor version of the clickhouse-client or another TCP client.

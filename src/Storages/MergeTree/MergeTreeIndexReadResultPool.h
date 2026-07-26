@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
+#include <functional>
 #include <roaring/roaring.hh>
 
 namespace DB
@@ -27,14 +31,25 @@ using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 class MergeTreeSkipIndexReader
 {
 public:
+    /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none.
+    using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &)>;
+
+    /// Whether a dynamic skip index should be applied at read time.
+    using DynamicSkipIndexFilter = std::function<bool(const IMergeTreeIndex &)>;
+
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
-        std::optional<KeyCondition> & key_condition_rpn_template_,
+        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
         bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
         MergeTreeReaderSettings reader_settings_,
+        DynamicPredicateBuilder dynamic_predicate_builder_,
+        bool prune_primary_key_,
+        MergeTreeIndices dynamic_skip_indexes_,
+        DynamicSkipIndexFilter dynamic_skip_index_filter_,
+        ContextPtr context_,
         LoggerPtr log_);
 
     SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
@@ -43,12 +58,18 @@ public:
 
 private:
     UsefulSkipIndexes skip_indexes;
-    std::optional<KeyCondition> key_condition_rpn_template;
+    ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
     bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;
     MergeTreeReaderSettings reader_settings;
+
+    DynamicPredicateBuilder dynamic_predicate_builder;
+    bool prune_primary_key = false;
+    MergeTreeIndices dynamic_skip_indexes;
+    DynamicSkipIndexFilter dynamic_skip_index_filter;
+    ContextPtr context;
     LoggerPtr log;
 
     std::atomic_bool is_cancelled = false;

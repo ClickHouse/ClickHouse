@@ -5,6 +5,7 @@
 #include <limits>
 #include <algorithm>
 #include <bit>
+
 #include <Common/FramePointers.h>
 #include <Common/formatIPv6.h>
 #include <Common/DateLUT.h>
@@ -21,6 +22,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/Concepts.h>
 
+#include <IO/IsTriviallySerializable.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
@@ -109,10 +111,16 @@ inline void writeStringBinary(const char * s, WriteBuffer & buf)
 template <StdVector V>
 void writeVectorBinary(const V & v, WriteBuffer & buf)
 {
+    using T = typename V::value_type;
+
     writeVarUInt(v.size(), buf);
 
-    for (auto it = v.begin(); it != v.end(); ++it)
-        writeBinary(*it, buf);
+    /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
+    if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
+        buf.write(reinterpret_cast<const char *>(v.data()), v.size() * sizeof(T));
+    else
+        for (auto it = v.begin(); it != v.end(); ++it)
+            writeBinary(*it, buf);
 }
 
 
@@ -124,27 +132,35 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 template <typename T>
 requires is_floating_point<T>
-size_t writeFloatTextFastPath(T x, char * buffer);
+size_t writeFloatTextFastPath(T x, char * buffer, bool force_decimal_point);
 
-extern template size_t writeFloatTextFastPath(Float64 x, char * buffer);
-extern template size_t writeFloatTextFastPath(Float32 x, char * buffer);
-extern template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
+extern template size_t writeFloatTextFastPath(Float64 x, char * buffer, bool force_decimal_point);
+extern template size_t writeFloatTextFastPath(Float32 x, char * buffer, bool force_decimal_point);
+extern template size_t writeFloatTextFastPath(BFloat16 x, char * buffer, bool force_decimal_point);
 
 template <typename T>
 requires is_floating_point<T>
-inline void writeFloatText(T x, WriteBuffer & buf)
+inline void writeFloatText(T x, WriteBuffer & buf, bool force_decimal_point = false)
 {
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
-        buf.position() += writeFloatTextFastPath(x, buf.position());
+        buf.position() += writeFloatTextFastPath(x, buf.position(), force_decimal_point);
         return;
     }
 
     Converter::BufferType buffer;
-    size_t result = writeFloatTextFastPath(x, buffer);
+    size_t result = writeFloatTextFastPath(x, buffer, force_decimal_point);
     buf.write(buffer, result);
 }
+
+template <typename T>
+requires is_floating_point<T>
+void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point = false);
+
+extern template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
+extern template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
+extern template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings, bool force_decimal_point);
 
 
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
@@ -481,7 +497,12 @@ void writeJSONNumber(T x, WriteBuffer & ostr, const FormatSettings & settings)
         writeChar('"', ostr);
 
     if (is_finite)
-        writeText(x, ostr);
+    {
+        if constexpr (is_floating_point<T>)
+            writeFloatText(x, ostr, settings);
+        else
+            writeText(x, ostr);
+    }
     else if (!settings.json.quote_denormals)
         writeCString("null", ostr);
     else
@@ -1131,21 +1152,11 @@ inline void writeTimeTextCutTrailingZerosAlignToGroupOfThousands(Time64 time64, 
 }
 
 /// Methods for output in binary format.
-template <typename T>
-requires is_arithmetic_v<T>
+template <is_trivially_serializable T>
 inline void writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(std::string_view x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x.value, buf); }
-inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const LocalTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const IPv4 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const IPv6 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const UUID & x, WriteBuffer & buf)
 {
@@ -1162,7 +1173,7 @@ inline void writeBinary(const FramePointers & x, WriteBuffer & buf) { writePODBi
 
 /// Methods for outputting the value in text form for a tab-separated format.
 
-inline void writeText(is_integer auto x, WriteBuffer & buf)
+inline void writeText(is_integer auto x, WriteBuffer & buf, [[maybe_unused]] bool force_decimal_point = false)
 {
     if constexpr (std::is_same_v<decltype(x), bool>)
         writeBoolText(x, buf);
@@ -1174,7 +1185,7 @@ inline void writeText(is_integer auto x, WriteBuffer & buf)
 
 template <typename T>
 requires is_floating_point<T>
-inline void writeText(T x, WriteBuffer & buf) { writeFloatText(x, buf); }
+inline void writeText(T x, WriteBuffer & buf, bool force_decimal_point = false) { writeFloatText(x, buf, force_decimal_point); }
 
 inline void writeText(is_enum auto x, WriteBuffer & buf) { writeText(magic_enum::enum_name(x), buf); }
 
@@ -1262,7 +1273,8 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 
 template <typename T>
 void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros = false,
-               bool fixed_fractional_length = false, UInt32 fractional_length = 0)
+               bool fixed_fractional_length = false, UInt32 fractional_length = 0,
+               bool force_decimal_point = false)
 {
     T part = DecimalUtils::getWholePart(x, scale);
 
@@ -1273,6 +1285,7 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
 
     writeIntText(part, ostr);
 
+    bool fractional_written = false;
     if (scale || (fixed_fractional_length && fractional_length > 0))
     {
         part = DecimalUtils::getFractionalPart(x, scale);
@@ -1282,8 +1295,13 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                 part *= T(-1);
 
             writeDecimalFractional(part, scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
+            fractional_written = true;
         }
     }
+
+    /// Force a trailing decimal point for whole-number values when no fractional digits were written.
+    if (force_decimal_point && !fractional_written)
+        writeChar('.', ostr);
 }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.

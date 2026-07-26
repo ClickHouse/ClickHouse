@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
-
 -- Tests queries with duplicate tokens against a text index
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

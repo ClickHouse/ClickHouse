@@ -1,5 +1,8 @@
 #pragma once
+#include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunctionDateOrDateTime.h>
+#include <Interpreters/castColumn.h>
 
 namespace DB
 {
@@ -21,6 +24,34 @@ public:
     {
         constexpr bool result_is_date_or_date32 = (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>);
         this->checkArguments(arguments, result_is_date_or_date32);
+
+        /// For Interval operands, validate the kind match here (at type
+        /// analysis) rather than only in `executeImpl`, so an invalid
+        /// expression like `toHour(<IntervalDay>)` is rejected before it can
+        /// be captured in a view's column type. Return the raw stored value
+        /// as `Int64`: the function's natural return type (e.g. `UInt8` for
+        /// `toDayOfMonth`) is sized for a calendar-field range (1..31), not
+        /// for arbitrary interval magnitudes or negative values, so widening
+        /// to `Int64` avoids silent overflow/wrap.
+        if (isInterval(arguments[0].type))
+        {
+            IntervalKind::Kind required = IntervalKind::Kind::Second;
+            if (!IntervalKind::tryParseFromNameOfFunctionExtractTimePart(this->getName(), required))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Function {} does not support Interval arguments",
+                    this->getName());
+
+            const auto & interval_type = static_cast<const DataTypeInterval &>(*arguments[0].type);
+            if (interval_type.getKind() != required)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Cannot extract {} from {}: the interval's unit does not match the requested unit",
+                    IntervalKind(required).toLowercasedKeyword(),
+                    interval_type.getName());
+
+            return std::make_shared<DataTypeInt64>();
+        }
 
         /// For DateTime results, if time zone is specified, attach it to type.
         /// If the time zone is specified but empty, throw an exception.
@@ -75,15 +106,26 @@ public:
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
     {
         /// If result type is DateTime or DateTime64 we don't know the timezone and scale without argument types.
-        if constexpr (!std::is_same_v<ToDataType, DataTypeDateTime> && !std::is_same_v<ToDataType, DataTypeTime> && !std::is_same_v<ToDataType, DataTypeDateTime64> && !std::is_same_v<ToDataType, DataTypeTime64>)
+        /// Keep this branch as the `if constexpr` so `std::make_shared<ToDataType>()` is not instantiated
+        /// for types without a default constructor (e.g. DataTypeDateTime64).
+        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || std::is_same_v<ToDataType, DataTypeTime> || std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
+            return nullptr;
+        else
+        {
+            /// Extract-capable functions widen to Int64 for Interval; the narrow `ToDataType`
+            /// would wrap an out-of-range interval. Int64 fits every supported result.
+            if (this->acceptsIntervalArgument())
+                return std::make_shared<DataTypeInt64>();
             return std::make_shared<ToDataType>();
-        return nullptr;
+        }
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IDataType * from_type = arguments[0].type.get();
 
+        if (isInterval(from_type))
+            return executeOnInterval(arguments, result_type, input_rows_count);
         if (isDate(from_type))
             return DateTimeTransformImpl<DataTypeDate, ToDataType, Transform>::execute(arguments, result_type, input_rows_count);
         if (isDate32(from_type))
@@ -113,6 +155,16 @@ public:
             this->getName());
     }
 
+private:
+    /// PostgreSQL-style `EXTRACT(<unit> FROM INTERVAL ...)`: kind matching is
+    /// validated in `getReturnTypeImpl`, so here we just return the underlying
+    /// Int64 values cast to the function's result type.
+    ColumnPtr executeOnInterval(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const
+    {
+        return castColumn(arguments[0], result_type);
+    }
+
+public:
     bool hasInformationAboutPreimage() const override { return Transform::hasPreimage(); }
 
     FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override

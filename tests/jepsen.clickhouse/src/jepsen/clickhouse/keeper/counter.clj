@@ -4,7 +4,8 @@
    [jepsen
     [checker :as checker]
     [client :as client]
-    [generator :as gen]]
+    [generator :as gen]
+    [history :as h]]
    [jepsen.clickhouse.keeper.utils :refer :all]
    [jepsen.clickhouse.utils :as chu]
    [zookeeper :as zk])
@@ -12,7 +13,7 @@
 
 (def root-path "/counter")
 (defn r   [_ _] {:type :invoke, :f :read})
-(defn add [_ _] {:type :invoke, :f :add, :value (rand-int 5)})
+(defn add [_ _] {:type :invoke, :f :add, :value (long (rand-int 5))})
 
 (defrecord CounterClient [conn nodename]
   client/Client
@@ -31,11 +32,11 @@
       :read (try
              (assoc op
                :type :ok
-               :value (count (zk-list conn root-path)))
+               :value (long (count (zk-list conn root-path))))
              (catch Exception _ (assoc op :type :info, :error :connect-error)))
       :final-read (chu/exec-with-retries 30 (fn [] (assoc op
                                                      :type :ok
-                                                     :value (count (zk-list conn root-path)))))
+                                                     :value (long (count (zk-list conn root-path))))))
       :add (try
              (do
                (zk-multi-create-many-seq-nodes conn (concat-path root-path "seq-") (:value op) :with-acl (:with-auth test))
@@ -47,12 +48,23 @@
   (close! [_ test]
     (zk/close conn)))
 
+(defn counter-checker
+  "jepsen 0.3.11's `checker/counter` asserts that every operation's `:value` is
+  `nil` or a `Long` (checker.clj:801), which trips on nemesis operations that
+  carry non-Long values (partition grudges, node lists, keywords). Restrict the
+  check to client operations so only counter reads and adds are inspected."
+  []
+  (let [c (checker/counter)]
+    (reify checker/Checker
+      (check [_ test history opts]
+        (checker/check c test (h/client-ops history) opts)))))
+
 (defn workload
   "A generator, client, and checker for a set test."
   [opts]
   {:client    (CounterClient. nil nil)
    :checker   (checker/compose
-                {:counter (checker/counter)
+                {:counter (counter-checker)
                  :perf    (checker/perf)})
    :generator (gen/mix [r add])
    :final-generator (gen/once {:type :invoke, :f :final-read, :value nil})})
