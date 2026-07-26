@@ -139,6 +139,15 @@ static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
     return settings;
 }
 
+/// Turn the columns cache off in the reader settings of a pool that must never use it.
+/// See the comment on the projection-index constructor below.
+static MergeTreeReaderSettings disableColumnsCache(MergeTreeReaderSettings settings)
+{
+    settings.enable_columns_cache_reads = false;
+    settings.enable_columns_cache_writes = false;
+    return settings;
+}
+
 
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     RangesInDataParts && parts_,
@@ -182,6 +191,16 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     fillPerPartInfos(context_->getSettingsRef());
 }
 
+/// Constructor for `MergeTreeReadPoolProjectionIndex`, which reads projection index parts.
+///
+/// This pool never uses the columns cache. Projection parts share the projection name
+/// (e.g. `ailog_rule_count`) as their part name, which is not unique across parent parts,
+/// so `MergeTreeReaderWide` rejects them for both cache reads and cache writes. Turning the
+/// cache off here as well makes that invariant explicit at the pool level instead of relying
+/// on a predicate in the reader, and it removes the question of the query-scoped write budget
+/// for this path: the pool builds its tasks in `getTask` rather than in `fillPerPartInfos`,
+/// so it never calls `accountColumnsCacheWriteEstimate`, and `adjustReaderSettingsForColumnsCacheWrites`
+/// would have nothing to budget for a pool that cannot write to the cache in the first place.
 MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     MutationsSnapshotPtr mutations_snapshot_,
     const StorageSnapshotPtr & storage_snapshot_,
@@ -197,13 +216,13 @@ MergeTreeReadPoolBase::MergeTreeReadPoolBase(
     , mutations_snapshot(std::move(mutations_snapshot_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , reader_settings(reader_settings_)
+    , reader_settings(disableColumnsCache(reader_settings_))
     , column_names(column_names_)
     , pool_settings(pool_settings_)
     , block_size_params(block_size_params_)
     , owned_mark_cache(context_->getGlobalContext()->getMarkCache())
     , owned_uncompressed_cache(pool_settings_.use_uncompressed_cache ? context_->getGlobalContext()->getUncompressedCache() : nullptr)
-    , owned_columns_cache(getColumnsCacheIfEnabled(context_, pool_settings_.use_columns_cache))
+    , owned_columns_cache(nullptr)
     , patch_join_cache(std::make_shared<PatchJoinCache>(context_->getSettingsRef()[Setting::apply_patch_parts_join_cache_buckets]))
     , header(storage_snapshot->getSampleBlockForColumns(column_names))
     , ranges_in_patch_parts(context_->getSettingsRef()[Setting::merge_tree_min_read_task_size])
