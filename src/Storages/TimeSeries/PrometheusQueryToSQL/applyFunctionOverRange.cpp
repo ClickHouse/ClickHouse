@@ -50,7 +50,6 @@ namespace
     enum class PostProcessFunction
     {
         None,
-        Increase,
         Deriv,
     };
 
@@ -274,9 +273,8 @@ namespace
 
             {"increase",
              {
-                 "timeSeriesRateToGrid",
+                 "timeSeriesIncreaseToGrid",
                  /* drop_metric_name = */ true,
-                 PostProcessFunction::Increase,
              }},
 
             {"irate",
@@ -614,18 +612,8 @@ SQLQueryPiece applyFunctionOverRange(
 
     if (impl_info && impl_info->post_process_function != PostProcessFunction::None)
     {
-        ASTPtr factor;
-        if (impl_info->post_process_function == PostProcessFunction::Increase)
-        {
-            /// timeSeriesRateToGrid already implements Prometheus counter extrapolation;
-            /// increase() is that per-second rate scaled back to the requested range length.
-            factor = toFloat64(timeSeriesDurationToAST(window, context.timestamp_data_type));
-        }
-        else
-        {
-            /// timeSeriesDerivToGrid returns a slope per timestamp unit; PromQL deriv reports per-second slope.
-            factor = make_intrusive<ASTLiteral>(std::pow(10.0, context.timestamp_scale));
-        }
+        /// timeSeriesDerivToGrid returns a slope per timestamp unit; PromQL deriv reports per-second slope.
+        ASTPtr factor = make_intrusive<ASTLiteral>(std::pow(10.0, context.timestamp_scale));
 
         result_values = makeASTFunction(
             "arrayMap",
