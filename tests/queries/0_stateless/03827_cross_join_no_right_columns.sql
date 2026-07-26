@@ -39,13 +39,17 @@ SETTINGS index_granularity = 1000, index_granularity_bytes = 0;
 INSERT INTO t1_big VALUES (1), (2), (3);
 INSERT INTO t2_big SELECT number + 1, toString(number) FROM numbers(100000);
 
+-- The assertion is on the right pre-join input header, which is empty exactly when the right side
+-- feeds zero columns into the join. The join output header is not a substitute: it says nothing
+-- about which side the surviving column comes from.
+--
 -- The join order has to be pinned identically for the assertion and for the query below it: the
 -- test runner randomizes it, and with t2_big on the left the build side becomes the single block
 -- t1_big, which no longer covers a zero-column right side spanning several blocks.
-SELECT count() > 0 FROM (
-    EXPLAIN header = 1 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
+SELECT countIf(explain ILIKE '%#1 Empty header%') = 1 FROM (
+    EXPLAIN input_headers = 1 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
     SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'
-) WHERE explain ILIKE '%Header: __join_result_dummy UInt8%';
+);
 
 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
 SETTINGS max_block_size = 1000, max_threads = 1,
