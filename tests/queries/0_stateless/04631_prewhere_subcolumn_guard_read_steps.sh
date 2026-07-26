@@ -47,6 +47,7 @@ query_id_nested=nested_$CLICKHOUSE_DATABASE
 query_id_nested_split=nested_split_$CLICKHOUSE_DATABASE
 
 opts=(
+  --enable_analyzer 1
   --optimize_functions_to_subcolumns 1
   --enable_multiple_prewhere_read_steps 1
   --use_query_condition_cache 0

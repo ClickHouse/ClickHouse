@@ -234,10 +234,13 @@ SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayM
 FROM numbers(1000);
 
 SELECT 'non throwing map conditions are rewritten to subcolumns';
+-- enable_parallel_replicas = 0 keeps the plan local: otherwise a ReadFromRemoteParallelReplicas
+-- step embeds the whole remote query in its description and matches the filter a second time.
 SELECT count() = 1 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_prewhere_group_map
     PREWHERE tags['k0'] != '' AND tags['k1'] != '' AND tags['k2'] != '' AND tags['k3'] != ''
+    SETTINGS enable_parallel_replicas = 0
 ) WHERE explain ILIKE '%tags.key_k0%' AND explain ILIKE '%tags.key_k3%';
 
 SELECT count() FROM t_prewhere_group_map
