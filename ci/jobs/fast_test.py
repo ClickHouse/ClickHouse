@@ -97,23 +97,28 @@ def clone_submodules():
 
 def update_path_ch_config(config_file_path=""):
     print("Updating path in clickhouse config")
-    config_file_path = (
-        config_file_path or f"{temp_dir}/etc/clickhouse-server/config.xml"
-    )
-    ssl_config_file_path = f"{temp_dir}/etc/clickhouse-server/config.d/ssl_certs.xml"
+    config_dir = f"{temp_dir}/etc/clickhouse-server"
+    config_file_path = config_file_path or f"{config_dir}/config.xml"
     try:
-        with open(config_file_path, "r", encoding="utf-8") as file:
-            content = file.read()
-
-        with open(ssl_config_file_path, "r", encoding="utf-8") as file:
-            ssl_config_content = file.read()
-        content = content.replace(">/var/", f">{temp_dir}/var/")
-        content = content.replace(">/etc/", f">{temp_dir}/etc/")
-        ssl_config_content = ssl_config_content.replace(">/etc/", f">{temp_dir}/etc/")
-        with open(config_file_path, "w", encoding="utf-8") as file:
-            file.write(content)
-        with open(ssl_config_file_path, "w", encoding="utf-8") as file:
-            file.write(ssl_config_content)
+        # The server is installed under temp_dir, but the config files carry absolute
+        # /var/lib/clickhouse and /etc/clickhouse-server paths. Relocate every such path under
+        # temp_dir so that both data directories (custom local disk base, filesystem cache, backup
+        # disk) and referenced files (TLS certs, dictionaries, SSH keys, ...) resolve to the installed
+        # location instead of one that may not exist (e.g. /var/lib/clickhouse on the macOS runner).
+        # config.d files are symlinked from the repo by install.sh, so materialize each rewritten one
+        # into a real file to avoid modifying the checked-out repo.
+        configs = [Path(config_file_path)] + sorted(
+            Path(f"{config_dir}/config.d").glob("*.xml")
+        )
+        for cfg in configs:
+            text = cfg.resolve().read_text(encoding="utf-8")
+            if ">/var/" not in text and ">/etc/" not in text:
+                continue
+            text = text.replace(">/var/", f">{temp_dir}/var/")
+            text = text.replace(">/etc/", f">{temp_dir}/etc/")
+            if cfg.is_symlink():
+                cfg.unlink()
+            cfg.write_text(text, encoding="utf-8")
     except Exception as e:
         print(f"ERROR: failed to update config, exception: {e}")
         return False
@@ -170,6 +175,7 @@ def main():
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
     clickhouse_se_path = Path(f"{build_dir}/programs/self-extracting/clickhouse")
+    clickhouse_se_stripped_path = Path(f"{build_dir}/programs/self-extracting/clickhouse-stripped")
 
     for path in [
         Path(temp_dir) / "clickhouse",
@@ -193,6 +199,7 @@ def main():
                 "clickhouse-format",
                 "clickhouse-obfuscator",
                 "clickhouse-su",
+                "ch",
             ):
                 Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
@@ -293,15 +300,19 @@ def main():
 
     if res and JobStages.BUILD in stages:
         se_check_path = Path(build_dir) / "clickhouse_se_check"
+        se_stripped_check_path = Path(build_dir) / "clickhouse_se_stripped_check"
         commands = [
             "sccache --show-stats",
             "clickhouse-client --version",
-            # Verify the self-extracting bundle works: copy it so the first-run
-            # in-place decompression does not corrupt the artifact we will upload,
-            # then run --version to trigger extraction and confirm it produces output.
+            # Verify both self-extracting bundles: copy each so the first-run
+            # in-place decompression does not corrupt the artifacts we will upload,
+            # then run --version to trigger extraction and confirm output.
             f"cp {clickhouse_se_path} {se_check_path}",
             f"chmod +x {se_check_path}",
             f"{se_check_path} --version",
+            f"cp {clickhouse_se_stripped_path} {se_stripped_check_path}",
+            f"chmod +x {se_stripped_check_path}",
+            f"{se_stripped_check_path} --version",
         ]
         results.append(
             Result.from_commands_run(
@@ -353,6 +364,13 @@ def main():
         step_name = "Tests"
         print(step_name)
 
+        # Point the custom local disk base dir at the relocated server. shell_config.sh defaults
+        # CLICKHOUSE_DISKS_FILES to /var/lib/clickhouse/disks, which matches the (rewritten) config
+        # but does not exist on the macOS runner. (CLICKHOUSE_USER_FILES is already set by
+        # ClickHouseProc to the server's --user_files_path, so it must not be overridden here.)
+        os.environ["CLICKHOUSE_DISKS_FILES"] = f"{temp_dir}/var/lib/clickhouse/disks"
+        os.makedirs(os.environ["CLICKHOUSE_DISKS_FILES"], exist_ok=True)
+
         # Fast test runs lightweight SQL tests that are not CPU-bound,
         # so we can use more parallelism than the default cpu_count/2.
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
@@ -379,9 +397,12 @@ def main():
             attach_debug = True
         job_info = results[-1].info
 
-    if clickhouse_se_path.is_file():
+    clickhouse_upload_path = (
+        clickhouse_se_path if (attach_debug or not res) else clickhouse_se_stripped_path
+    )
+    if clickhouse_upload_path.is_file():
         # do not reupload clickhouse binary for non-building jobs (e.g. darwin tests)
-        attach_files.append(clickhouse_se_path)
+        attach_files.append(clickhouse_upload_path)
     if attach_debug:
         attach_files.extend(CH.prepare_logs(info=info, all=True))
 

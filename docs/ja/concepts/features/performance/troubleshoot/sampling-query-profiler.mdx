@@ -58,9 +58,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
 セルフマネージド環境でクエリプロファイラを使用するには、以下の手順に従ってください。
 
 <Steps>
-  <Step>
-    ### デバッグ情報付きの ClickHouse をインストールする
-
+  <Step title="デバッグ情報付きの ClickHouse をインストールする" id="debug-info">
     `clickhouse-common-static-dbg` パッケージをインストールします。
 
     1. 手順「[Debian リポジトリをセットアップする](/ja/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository)」の説明に従います
@@ -69,9 +67,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
     4. `clickhouse-client` を実行します。`clickhouse-common-static-dbg` のデバッグシンボルはサーバーで自動的に使用されるため、有効化のために特別な操作は必要ありません
   </Step>
 
-  <Step>
-    ### サーバー設定を確認する
-
+  <Step title="サーバー設定を確認する" id="server-config">
     [サーバー設定ファイル](/ja/concepts/features/configuration/server-config/configuration-files)の [`trace_log`](/ja/reference/settings/server-settings/settings#trace_log) セクションが設定されていることを確認してください。これはデフォルトで有効です。
 
     ```xml
@@ -97,9 +93,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
     サーバーを再起動しても ClickHouse はこのテーブルをクリーンアップしないため、保存されている仮想メモリアドレスはすべて無効になる可能性があります。
   </Step>
 
-  <Step>
-    ### プロファイラのタイマーを設定する
-
+  <Step title="プロファイラのタイマーを設定する" id="configure-profile-timers">
     [`query_profiler_cpu_time_period_ns`](/ja/reference/settings/session-settings#query_profiler_cpu_time_period_ns) または [`query_profiler_real_time_period_ns`](/ja/reference/settings/session-settings#query_profiler_real_time_period_ns) を設定します。
     これら 2 つの設定は同時に使用できます。
 
@@ -111,9 +105,7 @@ ClickHouse Cloud では、クエリプロファイラは自動的に有効にな
     個々のクエリごとにプロファイルを取得する必要がある場合は、より高いサンプリング頻度を使用してください。
   </Step>
 
-  <Step>
-    ### `trace_log` システムテーブルを分析する
-
+  <Step title={<>`trace_log` システムテーブルを分析する</>} id="analyze-trace-log-system-table">
     `trace_log` システムテーブルを分析するには、[`allow_introspection_functions`](/ja/reference/settings/session-settings#allow_introspection_functions) 設定で イントロスペクション関数 を有効にします。
 
     ```sql
