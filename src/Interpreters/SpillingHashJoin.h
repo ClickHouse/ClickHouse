@@ -105,6 +105,13 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    /// Forwarded to the join actually chosen in `onBuildPhaseFinish`, so that an in-memory
+    /// `HashJoin` still gets its post-build optimizations (right-table reranging, conversion to a
+    /// fixed hash map, publishing the shared runtime filter). `GraceHashJoin` reports no post-build
+    /// phase and runs it per bucket itself, so forwarding is correct in that state too.
+    bool hasPostBuildPhase() const override;
+    void runPostBuildPhase() override;
+
     void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
