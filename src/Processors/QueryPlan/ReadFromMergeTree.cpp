@@ -3571,6 +3571,15 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
+    /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
+    /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
+    /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
+    /// whose sorting step still shares the threshold tracker. Losing `top_k_filter_info` here would turn
+    /// the clone into an apparently plain read: it would consult and populate the query condition cache
+    /// under the unsalted condition hash even though its granule-skip decisions depend on the running
+    /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
+    /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
+    cloned_step->top_k_filter_info = top_k_filter_info;
     return cloned_step;
 }
 
@@ -5060,11 +5069,14 @@ void ReadFromMergeTree::setTopKColumn(const TopKFilterInfo & top_k_filter_info_)
 
     /// The query condition cache for `ORDER BY ... LIMIT N` (TopK) reads is gated behind the
     /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, turn the
-    /// cache off at the reader level for this read: a TopK read can drop granules during execution
-    /// depending on the running `__topKFilter` threshold, so writing/consulting threshold-oblivious
-    /// QCC entries is unsound.
+    /// cache off for this read: a TopK read can drop granules during execution depending on the running
+    /// `__topKFilter` threshold, so writing threshold-oblivious QCC entries is unsound.
+    /// Use `allow_query_condition_cache` rather than mutating `reader_settings` directly: it is the
+    /// step's persistent "this read must not use the cache" flag, it is carried over by `clone`, and it
+    /// disables the cache both for index analysis (`selectRangesToReadImpl`) and for the reader
+    /// (`initializePipeline` derives `reader_settings.use_query_condition_cache` from it).
     if (!context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
-        reader_settings.use_query_condition_cache = false;
+        disableQueryConditionCache();
 
     /// A TopK granule-skip decision recorded for one part is computed against the running
     /// `__topKFilter` threshold, which is derived from the rows of *all* parts the query reads.
