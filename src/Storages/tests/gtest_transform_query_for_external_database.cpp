@@ -518,9 +518,9 @@ TEST(TransformQueryForExternalDatabase, Limit)
     /// the rest of it is applied locally, so the LIMIT must not be pushed down either.
     /// (Range comparisons on UUID columns are not compatible with external databases.)
     state.context->setSetting("external_table_strict_query", false);
-    check(state, 1, {"uuid_col"},
-        "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012') LIMIT 10",
-        R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
+    check(state, 1, {"column", "uuid_col"},
+        "SELECT column FROM table WHERE column > 2 AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012') LIMIT 10",
+        R"(SELECT "column", "uuid_col" FROM "test"."table" WHERE "column" > 2)");
 
     /// The SETTINGS clause does not change the data, so it does not prevent the push-down.
     check(state, 1, {"column"},

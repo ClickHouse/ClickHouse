@@ -35,6 +35,8 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
+    bool hasCorrelatedExpressions() const override { return false; }
+
 private:
     void updateOutputHeader() override;
 
