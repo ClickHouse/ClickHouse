@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-merge-tree-settings
+# Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
+# no-parallel-replicas: the ProfileEvents with the expected values are reported on the replicas the query runs in,
+# and the coordinator does not collect all ProfileEvents values.
 # The assertions count PREWHERE read steps through RowsReadByPrewhereReaders, so the part format and
 # the prewhere related settings must be fixed.
 
