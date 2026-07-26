@@ -178,6 +178,18 @@ MergeTreeWhereOptimizer::FilterActionsOptimizeResult MergeTreeWhereOptimizer::op
         for (const auto & n : condition.nodes)
         {
             const ActionsDAG::Node * condition_node = n.getDAGNode();
+
+            /// FINAL merges by physical name, so unwrap an analyzer alias to its input column
+            /// before moving it to PREWHERE (otherwise the alias reaches the merge as a measure).
+            if (is_final)
+            {
+                const ActionsDAG::Node * unwrapped = condition_node;
+                while (unwrapped->type == ActionsDAG::ActionType::ALIAS)
+                    unwrapped = unwrapped->children.front();
+                if (unwrapped->type == ActionsDAG::ActionType::INPUT)
+                    condition_node = unwrapped;
+            }
+
             if (prewhere_conditions.insert(condition_node).second)
                 prewhere_conditions_list.push_back(condition_node);
         }
