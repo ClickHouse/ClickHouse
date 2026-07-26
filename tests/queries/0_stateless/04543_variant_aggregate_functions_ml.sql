@@ -63,4 +63,39 @@ SELECT
     toTypeName(nullable_model),
     evalMLMethod(nullable_model, 10.0, 20.0) = evalMLMethod(plain_model, 10.0, 20.0);
 
+-- A model trained with the -If combinator must predict too: the state type of `...IfState` reconstructs
+-- AggregateFunctionIf, which must forward the prediction hooks to its nested function exactly as the Null
+-- combinator and the Variant adapter do. A filtered Variant model equals the model trained over the plain
+-- WHERE-filtered subset (the If combinator feeds the same row sequence to the nested function).
+SELECT 'linear over Variant with If';
+WITH
+    (SELECT stochasticLinearRegressionState(0.001, 0.1, 5, 'SGD')(target, f1, f2) FROM t_variant_agg_ml WHERE f1 < 50) AS plain_model,
+    (SELECT stochasticLinearRegressionIfState(0.001, 0.1, 5, 'SGD')(
+        CAST(target, 'Variant(Int64, Float64)'),
+        CAST(f1, 'Variant(Int64, Float64)'),
+        CAST(f2, 'Variant(Int64, Float64)'),
+        f1 < 50) FROM t_variant_agg_ml) AS variant_if_model
+SELECT
+    toTypeName(variant_if_model),
+    evalMLMethod(variant_if_model, 10.0, 20.0) = evalMLMethod(plain_model, 10.0, 20.0);
+
+SELECT 'logistic over Variant with If';
+WITH
+    (SELECT stochasticLogisticRegressionState(0.001, 0.1, 5, 'SGD')(toFloat64(target > 150), f1, f2) FROM t_variant_agg_ml WHERE f1 < 50) AS plain_model,
+    (SELECT stochasticLogisticRegressionIfState(0.001, 0.1, 5, 'SGD')(
+        CAST(toFloat64(target > 150), 'Variant(Int64, Float64)'),
+        CAST(f1, 'Variant(Int64, Float64)'),
+        CAST(f2, 'Variant(Int64, Float64)'),
+        f1 < 50) FROM t_variant_agg_ml) AS variant_if_model
+SELECT evalMLMethod(variant_if_model, 10.0, 20.0) = evalMLMethod(plain_model, 10.0, 20.0);
+
+-- The plain -IfState form (no Variant: AggregateFunctionIf wraps AggregateFunctionMLMethod directly).
+SELECT 'linear with If';
+WITH
+    (SELECT stochasticLinearRegressionState(0.001, 0.1, 5, 'SGD')(target, f1, f2) FROM t_variant_agg_ml WHERE f1 < 50) AS plain_model,
+    (SELECT stochasticLinearRegressionIfState(0.001, 0.1, 5, 'SGD')(target, f1, f2, f1 < 50) FROM t_variant_agg_ml) AS if_model
+SELECT
+    toTypeName(if_model),
+    evalMLMethod(if_model, 10.0, 20.0) = evalMLMethod(plain_model, 10.0, 20.0);
+
 DROP TABLE t_variant_agg_ml;
