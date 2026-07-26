@@ -80,6 +80,20 @@ bool containsForbiddenSubquery(const ASTPtr & ast)
     return false;
 }
 
+/// Throw if the `CHECK` constraint expression contains a forbidden subquery.
+/// SQL user-defined functions are inlined by the Analyzer during `analyzeExpressionToActionsDAG`,
+/// so a subquery hidden inside a UDF body would bypass an AST-level check of the expression itself.
+/// Run the check on a copy with SQL UDFs expanded the same way the Analyzer would inline them
+/// (the expansion rejects recursive UDFs, so it always terminates).
+void checkExpressionDoesntContainSubqueries(const ASTPtr & expr, const ContextPtr & context)
+{
+    ASTPtr expanded_expr = expr->clone();
+    UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
+    if (containsForbiddenSubquery(expanded_expr))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Subqueries are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
+}
+
 }
 
 
@@ -206,15 +220,9 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
-            /// SQL user-defined functions are inlined by the Analyzer during `analyzeExpressionToActionsDAG`,
-            /// so a subquery hidden inside a UDF body would bypass an AST-level check of `expr` itself.
-            /// Run the check on a copy with SQL UDFs expanded the same way the Analyzer would inline them
-            /// (the expansion rejects recursive UDFs, so it always terminates).
-            ASTPtr expanded_expr = expr->clone();
-            UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
-            if (containsForbiddenSubquery(expanded_expr))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Subqueries are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
+            /// The DDL paths reject such constraints already (see `validateNoSubqueries`); this covers
+            /// metadata that was created before that validation existed.
+            checkExpressionDoesntContainSubqueries(expr, context);
             /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
             /// compiled while the INSERT pipeline is being constructed (in the
             /// `CheckConstraintsTransform` constructor), before the sample-block handshake.
@@ -233,6 +241,16 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         }
     }
     return res;
+}
+
+void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context)
+{
+    for (const auto & constraint : constraints_)
+    {
+        const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
+        if (constraint_ptr && constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
+            checkExpressionDoesntContainSubqueries(constraint_ptr->expr, context);
+    }
 }
 
 const ComparisonGraph<ASTPtr> & ConstraintsDescription::getGraph() const

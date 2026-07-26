@@ -803,6 +803,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
+
+        /// Do not let a `CHECK` constraint that can never be evaluated (it contains a subquery) into the metadata.
+        /// Only for a fresh `CREATE`: an already existing table must keep loading even if its metadata has one.
+        if (mode <= LoadingStrictnessLevel::CREATE)
+            ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
     }
     else if (!create.as_table.empty())
     {

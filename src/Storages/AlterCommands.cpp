@@ -1696,6 +1696,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             && !context->getSettingsRef()[Setting::allow_statistics])
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Alter table with statistics is disabled. Turn on allow_statistics");
 
+        /// Reject a `CHECK` constraint that can never be evaluated before it gets into the metadata.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            ConstraintsDescription::validateNoSubqueries({command.constraint_decl}, context);
+
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
         {
