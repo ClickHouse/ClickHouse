@@ -49,6 +49,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Processors/Transforms/LazyMaterializingTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -324,6 +325,13 @@ static bool hasNonZeroUncompressedCache(const ContextPtr & context)
 {
     const auto cache = context->getUncompressedCache();
     return cache && cache->maxSizeInBytes() > 0;
+}
+
+/// Whether the first phase of lazy materialization touched parts on a remote disk. Those parts can be
+/// dropped from the second-phase read set, so the flag has to be carried explicitly.
+static bool lazyFirstPhaseTouchedRemoteParts(const LazyMaterializingRowsPtr & lazy_materializing_rows)
+{
+    return lazy_materializing_rows && lazy_materializing_rows->any_source_parts_on_remote_disk;
 }
 
 /// build sort description for output stream
@@ -1022,7 +1030,8 @@ struct PartRangesReadInfo
         const RangesInDataParts & parts,
         bool has_uncompressed_cache,
         const Settings & settings,
-        const MergeTreeSettings & data_settings)
+        const MergeTreeSettings & data_settings,
+        bool extra_parts_on_remote_disk = false)
     {
         /// Count marks for each part.
         sum_marks_in_parts.resize(parts.size());
@@ -1060,7 +1069,7 @@ struct PartRangesReadInfo
             data_settings[MergeTreeSetting::index_granularity], index_granularity_bytes, settings[Setting::merge_tree_min_read_task_size], sum_marks);
 
         use_uncompressed_cache = resolveUseUncompressedCacheForMergeTreeRead(
-            parts, sum_marks, settings, data_settings, has_uncompressed_cache);
+            parts, sum_marks, settings, data_settings, has_uncompressed_cache, extra_parts_on_remote_disk);
     }
 };
 
@@ -1078,7 +1087,8 @@ Pipe ReadFromMergeTree::readByLayers(
 
     LOG_TRACE(log, "Spreading mark ranges among streams (reading by layers)");
 
-    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
+    PartRangesReadInfo info(
+        parts_with_ranges, has_uncompressed_cache, settings, *data_settings, lazyFirstPhaseTouchedRemoteParts(lazy_materializing_rows));
     if (0 == info.sum_marks)
         return {};
 
@@ -1201,7 +1211,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(
 
     LOG_TRACE(log, "Spreading mark ranges among streams (default reading)");
 
-    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
+    PartRangesReadInfo info(
+        parts_with_ranges, has_uncompressed_cache, settings, *data_settings, lazyFirstPhaseTouchedRemoteParts(lazy_materializing_rows));
     Names tmp_column_names(column_names.begin(), column_names.end());
 
     if (0 == info.sum_marks)
@@ -1350,7 +1361,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     LOG_TRACE(log, "Spreading ranges among streams with order");
 
-    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
+    PartRangesReadInfo info(
+        parts_with_ranges, has_uncompressed_cache, settings, *data_settings, lazyFirstPhaseTouchedRemoteParts(lazy_materializing_rows));
 
     Pipes res;
 
@@ -1810,7 +1822,8 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
 
     const auto & settings = context->getSettingsRef();
     const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
-    PartRangesReadInfo info(parts_with_ranges, has_uncompressed_cache, settings, *data_settings);
+    PartRangesReadInfo info(
+        parts_with_ranges, has_uncompressed_cache, settings, *data_settings, lazyFirstPhaseTouchedRemoteParts(lazy_materializing_rows));
 
     chassert(num_streams == requested_num_streams);
     num_streams = std::min<size_t>(num_streams, settings[Setting::max_final_threads]);
@@ -4295,7 +4308,12 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         auto empty_mutations_snapshot = mutations_snapshot->cloneEmpty();
         const auto & query_settings = context->getSettingsRef();
         const bool has_uncompressed_cache = hasNonZeroUncompressedCache(context);
-        PartRangesReadInfo info(result.parts_with_ranges, has_uncompressed_cache, query_settings, *data_settings);
+        PartRangesReadInfo info(
+            result.parts_with_ranges,
+            has_uncompressed_cache,
+            query_settings,
+            *data_settings,
+            lazyFirstPhaseTouchedRemoteParts(lazy_materializing_rows));
         PoolSettings pool_settings{
             .threads = 1,
             .sum_marks = info.sum_marks,

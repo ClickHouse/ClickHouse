@@ -27,7 +27,8 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
     size_t sum_marks,
     const Settings & settings,
     const MergeTreeSettings & data_settings,
-    bool has_uncompressed_cache)
+    bool has_uncompressed_cache,
+    bool extra_parts_on_remote_disk)
 {
     size_t adaptive_parts = 0;
     for (const auto & part : parts)
@@ -46,7 +47,8 @@ bool resolveUseUncompressedCacheForMergeTreeRead(
         data_settings[MergeTreeSetting::index_granularity],
         index_granularity_bytes);
 
-    const bool any_parts_on_remote_disk = analyzePartsOnRemoteFS(parts).any_parts_on_remote_disk;
+    const bool any_parts_on_remote_disk
+        = extra_parts_on_remote_disk || analyzePartsOnRemoteFS(parts).any_parts_on_remote_disk;
 
     /// The uncompressed cache setting is applied to the whole read pool. When the user did not
     /// explicitly override it, keep any query touching remote/object-storage parts opt-in by

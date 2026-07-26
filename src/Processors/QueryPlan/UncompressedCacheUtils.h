@@ -37,11 +37,16 @@ constexpr bool shouldUseUncompressedCacheForMergeTreeRead(
 /// with the second-phase ranges, not the pre-limit scan, so that a large first pass does not
 /// disable caching for a small repeated payload read. An explicit `use_uncompressed_cache`
 /// override always wins.
+///
+/// `extra_parts_on_remote_disk` reports remote parts that are not (or no longer) in `parts` but were
+/// still touched by the same query - for lazy materialization the first-phase scan can read remote
+/// parts whose rows do not survive the limit, and such a mixed read must stay opt-in.
 bool resolveUseUncompressedCacheForMergeTreeRead(
     const RangesInDataParts & parts,
     size_t sum_marks,
     const Settings & settings,
     const MergeTreeSettings & data_settings,
-    bool has_uncompressed_cache);
+    bool has_uncompressed_cache,
+    bool extra_parts_on_remote_disk = false);
 
 }

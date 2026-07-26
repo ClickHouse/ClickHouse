@@ -231,6 +231,9 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     /// Deciding it earlier (in `keepOnlyRequiredColumnsAndCreateLazyReadStep`) would use the pre-limit
     /// scan, which can exceed the cache thresholds even when the lazy phase reads only a small local
     /// payload set. An explicit `use_uncompressed_cache` override is still honored inside the resolver.
+    /// The remote-parts bit, in contrast, must cover the whole query: `filterRangesAndFillRows` drops
+    /// parts with no surviving rows, so a mixed local + remote first phase can leave only local parts
+    /// here. Such a read stays opt-in, hence `any_source_parts_on_remote_disk` from the first phase.
     bool use_uncompressed_cache = false;
     if (!parts.empty())
     {
@@ -241,7 +244,8 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             sum_marks,
             ctx_settings,
             *parts.front().data_part->storage.getSettings(),
-            has_uncompressed_cache);
+            has_uncompressed_cache,
+            lazy_materializing_rows->any_source_parts_on_remote_disk);
     }
 
     MergeTreeReadPoolBase::PoolSettings pool_settings{
