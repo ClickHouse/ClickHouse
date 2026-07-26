@@ -13,18 +13,23 @@ ${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON Memory, TABLE ENGINE ON Null, TAB
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${CLICKHOUSE_DATABASE}_db engine = Replicated('/clickhouse/databases/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${CLICKHOUSE_DATABASE}_db', '{shard}', '{replica}')"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_memory (x UInt32) engine = Memory;"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_null (x UInt32) engine = Null;"
-# Engines with unreplicated local data storage are rejected.
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_mt (x UInt32) engine = MergeTree order by x;" 2>&1 | grep -o "Only tables with a Replicated engine" | head -n 1
-${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_set (x UInt32) engine = Set;" 2>&1 | grep -o "Only tables with a Replicated engine" | head -n 1
+# Engines that keep unreplicated data in local storage are rejected.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_mt (x UInt32) engine = MergeTree order by x;" 2>&1 | grep -o "Only tables that do not keep unreplicated data in local storage" | head -n 1
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_set (x UInt32) engine = Set;" 2>&1 | grep -o "Only tables that do not keep unreplicated data in local storage" | head -n 1
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_mt (x UInt32) engine = MergeTree order by x;"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_rmt (x UInt32) engine = ReplicatedMergeTree order by x;"
-# Distributed is a routing engine without unreplicated local data, so it is allowed.
+# `Distributed` is a routing engine: it keeps no data of its own, so it is allowed. Its background `INSERT`
+# queue is a transient send buffer, not table data, and is not taken into account.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --user "user_${CLICKHOUSE_DATABASE}" --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_dist (x UInt32) engine = Distributed(test_shard_localhost, '${CLICKHOUSE_DATABASE}_db', tab_rmt, x);"
 
 # The CREATE TABLE ... AS ... variant infers the structure from another table and takes
 # a different code path in the interpreter. Run it with the setting passed at the query
 # level (the default user has enough privileges to read the source table's structure).
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_only_replicated_engine=1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_dist_as AS ${CLICKHOUSE_DATABASE}_db.tab_rmt engine = Distributed(test_shard_localhost, '${CLICKHOUSE_DATABASE}_db', tab_rmt, x);"
+
+# The `Remote` and `RemoteSecure` engines are built on the same storage as `Distributed` and are allowed for
+# the same reason.
+${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none --database_replicated_allow_only_replicated_engine=1 --query "CREATE TABLE ${CLICKHOUSE_DATABASE}_db.tab_remote (x UInt32) engine = Remote('127.0.0.1', '${CLICKHOUSE_DATABASE}_db', tab_rmt);"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLICKHOUSE_DATABASE}_db"
 ${CLICKHOUSE_CLIENT} -q "DROP USER user_${CLICKHOUSE_DATABASE}"
 

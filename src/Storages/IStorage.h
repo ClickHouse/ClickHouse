@@ -669,10 +669,12 @@ public:
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }
 
-    /// Returns true unless the Storage has local persistent data on disk that is NOT replicated by the storage engine itself
-    /// (i.e. it either stores no data on disk, or whatever it stores on disk is replicated by the engine).
-    /// Auxiliary files, like routing queues, do not count.
-    virtual bool hasReplicatedLocalDataStorage() const { return !storesDataOnDisk() || supportsReplication(); }
+    /// Returns true if the table keeps its own data in local storage and does not replicate it by itself.
+    /// Such a table cannot be created in a `Replicated` database, because its data would exist on a single
+    /// replica only, while the table metadata is replicated to all of them.
+    /// Only the data of the table itself counts here. Transient auxiliary files, such as the background
+    /// `INSERT` queue of a `Distributed` table, are not table data and are not taken into account.
+    virtual bool hasUnreplicatedLocalTableData() const { return storesDataOnDisk() && !supportsReplication(); }
 
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }

@@ -6163,11 +6163,19 @@ Possible values:
 Execute DETACH TABLE as DETACH TABLE PERMANENTLY if database engine is Replicated
 )", 0) \
     DECLARE(Bool, database_replicated_allow_only_replicated_engine, false, R"(
-Allow creating tables in databases with the `Replicated` engine only if the table
-does not have unreplicated local data storage.
+Allow creating a table in a database with the `Replicated` engine only if the table does not keep
+unreplicated data in local storage.
 
-Tables with replicated engines and metadata-only or routing engines are allowed.
-Engines with unreplicated local data storage are rejected.
+Tables with a replicated engine (such as `ReplicatedMergeTree`) and tables that keep no data of their own -
+metadata-only, routing and remote engines, such as `Distributed`, `Merge`, `Dictionary`, `S3` - are allowed.
+Engines that keep unreplicated data in local storage, such as `MergeTree`, `Log` or `Set`, are rejected,
+because their data would exist on a single replica only, while the table metadata is replicated to all of them.
+
+Only the data of the table itself is taken into account. In particular, the background `INSERT` queue of a
+`Distributed`, `Remote` or `RemoteSecure` table is a transient send buffer rather than table data, so such
+tables are allowed. Note that this queue is local to the node that accepted the `INSERT` and is not
+replicated: set `distributed_foreground_insert = 1` if inserts into such a table must be acknowledged only
+after the data reaches the destination shards.
 
 Cloud default value: `1`.
 )", 0) \

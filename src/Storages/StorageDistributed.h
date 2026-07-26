@@ -126,7 +126,11 @@ public:
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
-    bool hasReplicatedLocalDataStorage() const override { return true; }
+    /// A `Distributed` table (as well as the `Remote`/`RemoteSecure` engines built on this class) keeps no data
+    /// of its own: it only routes queries to the shards of a cluster. What it may keep on the local disk is the
+    /// background `INSERT` queue - a transient send buffer that is drained into the destination shards - and not
+    /// table data. Set `distributed_foreground_insert = 1` to bypass that queue and send the data synchronously.
+    bool hasUnreplicatedLocalTableData() const override { return false; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;

@@ -169,7 +169,7 @@ public:
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
-    bool hasReplicatedLocalDataStorage() const override { return getNested()->hasReplicatedLocalDataStorage(); }
+    bool hasUnreplicatedLocalTableData() const override { return getNested()->hasUnreplicatedLocalTableData(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
