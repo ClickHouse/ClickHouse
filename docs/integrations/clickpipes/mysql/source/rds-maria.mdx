@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 This is a step-by-step guide on how to configure your RDS MariaDB instance for replicating its data via the MySQL ClickPipe.
 <br/>
@@ -99,6 +100,10 @@ Connect to your RDS MariaDB instance as an admin user and execute the following 
     GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
     GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
     ```
+
+### Using IAM authentication (optional) {#iam-authentication}
+
+<IAMAuthentication engine="mysql" service="rds" />
 
 ## Configure network access {#configure-network-access}
 
