@@ -198,7 +198,7 @@ static ActionsAndName splitSingleAndFilter(ActionsDAG & dag, const ActionsDAG::N
 {
     /// avoid_duplicate_inputs: the split promotes the atom into an input of the remainder DAG, copying its
     /// name verbatim. Duplicate names are legal inside a DAG but break the Block invariant, so a colliding
-    /// input has to be renamed (split() adds an ALIAS so the original name stays resolvable).
+    /// input has to be renamed (`split` adds an ALIAS so the original name stays resolvable).
     auto split_result = dag.split({filter_node}, true, true);
     dag = std::move(split_result.second);
 
