@@ -125,6 +125,10 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
+    /// Whether the spill threshold is allowed to trigger a switch at all. A `false` result must be
+    /// treated by callers as "threshold not reached", so the build still ends in the in-memory
+    /// promotion of `onBuildPhaseFinish` and `chosen_join` is always set.
+    bool maySwitchToGraceHashJoin();
     void switchToGraceHashJoin();
     void tryConvertSlots();
 
@@ -151,8 +155,9 @@ private:
     /// wrongly ordered rows; we keep everything in memory instead.
     std::atomic<bool> keep_left_in_order{false};
 
-    /// The suppressed-spill message is worth seeing once, not once per block.
-    bool logged_spill_suppressed{false};
+    /// The suppressed-spill message is worth seeing once, not once per block. Atomic because the
+    /// threshold check runs on every build thread.
+    std::atomic<bool> logged_spill_suppressed{false};
 
     /// HashJoin that stores right-side blocks during COLLECTING phase (single-thread mode).
     std::shared_ptr<HashJoin> hash_join;

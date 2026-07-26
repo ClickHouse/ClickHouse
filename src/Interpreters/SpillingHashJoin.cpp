@@ -127,15 +127,18 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    if (concurrent_join)
+    if (maySwitchToGraceHashJoin())
     {
-        if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToGraceHashJoin();
-    }
-    else
-    {
-        if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-            switchToGraceHashJoin();
+        if (concurrent_join)
+        {
+            if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+                switchToGraceHashJoin();
+        }
+        else
+        {
+            if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
+                switchToGraceHashJoin();
+        }
     }
 
     /// Re-check: we may have just switched.
@@ -169,22 +172,29 @@ void SpillingHashJoin::keepLeftPipelineInOrder()
     keep_left_in_order.store(true, std::memory_order_release);
 }
 
-void SpillingHashJoin::switchToGraceHashJoin()
+bool SpillingHashJoin::maySwitchToGraceHashJoin()
 {
     /// The plan dropped a sort because this join promised to preserve the left order, so we are no
     /// longer allowed to spill: GraceHashJoin scatters rows into buckets by hash and the query
     /// would return wrongly ordered rows. Keep collecting in memory and let the memory tracker
     /// enforce the limit, exactly as it would with no auto-spill threshold configured.
-    if (keep_left_in_order.load(std::memory_order_acquire))
-    {
-        if (!std::exchange(logged_spill_suppressed, true))
-            LOG_DEBUG(
-                log,
-                "Memory spill threshold reached, but the query plan relies on this join preserving "
-                "the left pipeline order; staying in memory instead of switching to GraceHashJoin");
-        return;
-    }
+    ///
+    /// Callers must treat a `false` here as "the threshold was not reached", so that the build
+    /// still finishes through the in-memory promotion in `onBuildPhaseFinish` - returning early
+    /// from `switchToGraceHashJoin` instead would leave `chosen_join` unset.
+    if (!keep_left_in_order.load(std::memory_order_acquire))
+        return true;
 
+    if (!logged_spill_suppressed.exchange(true))
+        LOG_DEBUG(
+            log,
+            "Memory spill threshold reached, but the query plan relies on this join preserving the "
+            "left pipeline order; staying in memory instead of switching to GraceHashJoin");
+    return false;
+}
+
+void SpillingHashJoin::switchToGraceHashJoin()
+{
     const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
     {
         LOG_DEBUG(
@@ -269,7 +279,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
         /// `max_bytes_before_external_join` without a follow-up insert to trigger the switch,
         /// promote it to `GraceHashJoin` here so the configured cap is honored.
         const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
-        if (total_bytes >= max_bytes_before_external_join)
+        if (total_bytes >= max_bytes_before_external_join && maySwitchToGraceHashJoin())
         {
             switchToGraceHashJoin();
         }
