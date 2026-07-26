@@ -11,8 +11,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the block unchanged, so nothing is wrapped into `ColumnBLOB`.
 # `enable_analyzer` is pinned because `BlocksMarshallingStep` is only ever added by the analyzer,
 # and CI runs variants with `allow_experimental_analyzer = 0`.
-CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --query_kind=secondary_query"
-INITIAL_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1"
+# `serialize_query_plan` is pinned to 0 for the queries that are executed: a plan serialized and
+# shipped to a shard legitimately still carries `BlocksMarshalling`, which is not registered in
+# `QueryPlanStepRegistry` on master, so executing one fails with `Unknown query plan step:
+# BlocksMarshalling` independently of this fix. The `distributed plan` CI variants set
+# `serialize_query_plan = 1` in the default profile.
+CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0 --query_kind=secondary_query"
+INITIAL_CLIENT="$CLICKHOUSE_CLIENT --enable_analyzer 1 --compression 1 --serialize_query_plan 0"
 
 MARSHALLING_ON="enable_parallel_blocks_marshalling = 1, prefer_localhost_replica = 1"
 MARSHALLING_OFF="enable_parallel_blocks_marshalling = 0, prefer_localhost_replica = 1"
@@ -44,9 +49,9 @@ marshalling_counts() {
         SETTINGS explain_query_plan_default = 'legacy'"
 }
 
-# GROUPING SETS with 2+ sets, so `MergingAggregatedTransform::addChunk` type-checks
+# `GROUPING SETS` with 2+ sets, so `MergingAggregatedTransform::addChunk` type-checks
 # `__grouping_set` instead of returning early. A `ColumnBLOB` reaching it used to throw
-# "Expected UInt64 column for __grouping_set, got BLOB".
+# `Expected UInt64 column for __grouping_set, got BLOB`.
 GROUPING_SETS_QUERY="
     SELECT count(), sum(cityHash64(x, s)) FROM (
         SELECT x, sum(y) AS s FROM remote('127.0.0.{1,2}', currentDatabase(), tab)
@@ -86,6 +91,7 @@ $INITIAL_CLIENT -q "$GROUPING_SETS_QUERY SETTINGS $MARSHALLING_ON"
 # unites them in this process with no unmarshalling. With a marshalling producer in the set the
 # stage of the `MergeTree` child degrades, so it is planned by the analyzer and used to get its own
 # marshalling step, which then reached `ExpressionActions::executeOnColumns` as a `ColumnBLOB`.
+# Uses $INITIAL_CLIENT on purpose: the secondary context comes from the inner `remote(...)` hop.
 echo '-- Merge table over a local and a distributed table'
 $INITIAL_CLIENT -q "
     CREATE TABLE mrg_local (x UInt64) ENGINE = MergeTree ORDER BY x;
@@ -116,7 +122,7 @@ marshalling_counts "
 
 # A plan that is serialized and shipped to a shard must keep marshalling: the shard sends its blocks
 # back over the network. EXPLAIN only, executing such a plan fails with
-# "Unknown query plan step: BlocksMarshalling" both with and without this fix.
+# `Unknown query plan step: BlocksMarshalling` both with and without this fix.
 echo '-- BlocksMarshalling steps for a serialized plan: total, above ReadFromRemote, ReadFromRemote steps'
 marshalling_counts "
     SELECT x, sum(y) FROM remote('127.0.0.{1,2}', currentDatabase(), tab)
