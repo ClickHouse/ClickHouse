@@ -52578,5 +52578,557 @@
   {
     "destination": "/zh/get-started/sample-datasets/nyc-taxi",
     "source": "/zh/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ar/get-started/migrate/bigquery/overview",
+    "source": "/ar/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/ar/get-started/migrate/bigquery/overview",
+    "source": "/ar/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/ar/get-started/migrate/postgres/overview",
+    "source": "/ar/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/ar/get-started/migrate/postgres/overview",
+    "source": "/ar/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/ar/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ar/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/ar/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ar/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/kinesis/overview",
+    "source": "/ar/integrations/clickpipes/kinesis"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/kinesis/overview",
+    "source": "/ar/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/pubsub/overview",
+    "source": "/ar/integrations/clickpipes/pubsub"
+  },
+  {
+    "destination": "/ar/integrations/clickpipes/pubsub/overview",
+    "source": "/ar/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/ar/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ar/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/ar/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ar/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/billing/billing-overview",
+    "source": "/ar/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/billing/billing-overview",
+    "source": "/ar/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ar/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/ar/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ar/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/ar/reference/system-tables/overview",
+    "source": "/ar/reference/system-tables"
+  },
+  {
+    "destination": "/ar/reference/system-tables/overview",
+    "source": "/ar/reference/system-tables/index"
+  },
+  {
+    "destination": "/es/get-started/migrate/bigquery/overview",
+    "source": "/es/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/es/get-started/migrate/bigquery/overview",
+    "source": "/es/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/es/get-started/migrate/postgres/overview",
+    "source": "/es/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/es/get-started/migrate/postgres/overview",
+    "source": "/es/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/es/guides/oss/deployment-and-scaling/terminology",
+    "source": "/es/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/es/guides/oss/deployment-and-scaling/terminology",
+    "source": "/es/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/kinesis/overview",
+    "source": "/es/integrations/clickpipes/kinesis"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/kinesis/overview",
+    "source": "/es/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/pubsub/overview",
+    "source": "/es/integrations/clickpipes/pubsub"
+  },
+  {
+    "destination": "/es/integrations/clickpipes/pubsub/overview",
+    "source": "/es/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/es/products/cloud/features/admin-features/api/api-overview",
+    "source": "/es/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/es/products/cloud/features/admin-features/api/api-overview",
+    "source": "/es/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/es/products/cloud/reference/billing/billing-overview",
+    "source": "/es/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/es/products/cloud/reference/billing/billing-overview",
+    "source": "/es/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/es/products/cloud/reference/billing/marketplace/overview",
+    "source": "/es/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/es/products/cloud/reference/billing/marketplace/overview",
+    "source": "/es/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/es/reference/system-tables/overview",
+    "source": "/es/reference/system-tables"
+  },
+  {
+    "destination": "/es/reference/system-tables/overview",
+    "source": "/es/reference/system-tables/index"
+  },
+  {
+    "destination": "/fr/get-started/migrate/bigquery/overview",
+    "source": "/fr/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/fr/get-started/migrate/bigquery/overview",
+    "source": "/fr/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/fr/get-started/migrate/postgres/overview",
+    "source": "/fr/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/fr/get-started/migrate/postgres/overview",
+    "source": "/fr/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/fr/guides/oss/deployment-and-scaling/terminology",
+    "source": "/fr/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/fr/guides/oss/deployment-and-scaling/terminology",
+    "source": "/fr/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/kinesis/overview",
+    "source": "/fr/integrations/clickpipes/kinesis"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/kinesis/overview",
+    "source": "/fr/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/pubsub/overview",
+    "source": "/fr/integrations/clickpipes/pubsub"
+  },
+  {
+    "destination": "/fr/integrations/clickpipes/pubsub/overview",
+    "source": "/fr/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/fr/products/cloud/features/admin-features/api/api-overview",
+    "source": "/fr/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/fr/products/cloud/features/admin-features/api/api-overview",
+    "source": "/fr/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/billing/billing-overview",
+    "source": "/fr/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/billing/billing-overview",
+    "source": "/fr/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/billing/marketplace/overview",
+    "source": "/fr/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/fr/products/cloud/reference/billing/marketplace/overview",
+    "source": "/fr/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/fr/reference/system-tables/overview",
+    "source": "/fr/reference/system-tables"
+  },
+  {
+    "destination": "/fr/reference/system-tables/overview",
+    "source": "/fr/reference/system-tables/index"
+  },
+  {
+    "destination": "/ja/get-started/migrate/bigquery/overview",
+    "source": "/ja/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/ja/get-started/migrate/bigquery/overview",
+    "source": "/ja/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/ja/get-started/migrate/postgres/overview",
+    "source": "/ja/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/ja/get-started/migrate/postgres/overview",
+    "source": "/ja/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/ja/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ja/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/ja/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ja/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/kinesis/overview",
+    "source": "/ja/integrations/clickpipes/kinesis"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/kinesis/overview",
+    "source": "/ja/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/pubsub/overview",
+    "source": "/ja/integrations/clickpipes/pubsub"
+  },
+  {
+    "destination": "/ja/integrations/clickpipes/pubsub/overview",
+    "source": "/ja/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/ja/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ja/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/ja/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ja/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/billing/billing-overview",
+    "source": "/ja/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/billing/billing-overview",
+    "source": "/ja/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ja/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/ja/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ja/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/ja/reference/system-tables/overview",
+    "source": "/ja/reference/system-tables"
+  },
+  {
+    "destination": "/ja/reference/system-tables/overview",
+    "source": "/ja/reference/system-tables/index"
+  },
+  {
+    "destination": "/ko/get-started/migrate/bigquery/overview",
+    "source": "/ko/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/ko/get-started/migrate/bigquery/overview",
+    "source": "/ko/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/ko/get-started/migrate/postgres/overview",
+    "source": "/ko/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/ko/get-started/migrate/postgres/overview",
+    "source": "/ko/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/ko/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ko/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/ko/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ko/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/ko/integrations/clickpipes/kinesis/overview",
+    "source": "/ko/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/ko/integrations/clickpipes/pubsub/overview",
+    "source": "/ko/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/ko/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ko/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/ko/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ko/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/ko/products/cloud/reference/billing/billing-overview",
+    "source": "/ko/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/ko/products/cloud/reference/billing/billing-overview",
+    "source": "/ko/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/ko/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ko/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/ko/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ko/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/ko/reference/system-tables/overview",
+    "source": "/ko/reference/system-tables"
+  },
+  {
+    "destination": "/ko/reference/system-tables/overview",
+    "source": "/ko/reference/system-tables/index"
+  },
+  {
+    "destination": "/pt-BR/get-started/migrate/bigquery/overview",
+    "source": "/pt-BR/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/pt-BR/get-started/migrate/bigquery/overview",
+    "source": "/pt-BR/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/pt-BR/get-started/migrate/postgres/overview",
+    "source": "/pt-BR/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/pt-BR/get-started/migrate/postgres/overview",
+    "source": "/pt-BR/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/pt-BR/guides/oss/deployment-and-scaling/terminology",
+    "source": "/pt-BR/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/pt-BR/guides/oss/deployment-and-scaling/terminology",
+    "source": "/pt-BR/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/kinesis/overview",
+    "source": "/pt-BR/integrations/clickpipes/kinesis"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/kinesis/overview",
+    "source": "/pt-BR/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/pubsub/overview",
+    "source": "/pt-BR/integrations/clickpipes/pubsub"
+  },
+  {
+    "destination": "/pt-BR/integrations/clickpipes/pubsub/overview",
+    "source": "/pt-BR/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/admin-features/api/api-overview",
+    "source": "/pt-BR/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/features/admin-features/api/api-overview",
+    "source": "/pt-BR/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/billing/billing-overview",
+    "source": "/pt-BR/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/billing/billing-overview",
+    "source": "/pt-BR/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/billing/marketplace/overview",
+    "source": "/pt-BR/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/pt-BR/products/cloud/reference/billing/marketplace/overview",
+    "source": "/pt-BR/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/pt-BR/reference/system-tables/overview",
+    "source": "/pt-BR/reference/system-tables"
+  },
+  {
+    "destination": "/pt-BR/reference/system-tables/overview",
+    "source": "/pt-BR/reference/system-tables/index"
+  },
+  {
+    "destination": "/ru/get-started/migrate/bigquery/overview",
+    "source": "/ru/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/ru/get-started/migrate/bigquery/overview",
+    "source": "/ru/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/ru/get-started/migrate/postgres/overview",
+    "source": "/ru/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/ru/get-started/migrate/postgres/overview",
+    "source": "/ru/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/ru/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ru/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/ru/guides/oss/deployment-and-scaling/terminology",
+    "source": "/ru/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/ru/integrations/clickpipes/kinesis/overview",
+    "source": "/ru/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/ru/integrations/clickpipes/pubsub/overview",
+    "source": "/ru/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/ru/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ru/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/ru/products/cloud/features/admin-features/api/api-overview",
+    "source": "/ru/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/ru/products/cloud/reference/billing/billing-overview",
+    "source": "/ru/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/ru/products/cloud/reference/billing/billing-overview",
+    "source": "/ru/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/ru/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ru/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/ru/products/cloud/reference/billing/marketplace/overview",
+    "source": "/ru/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/ru/reference/system-tables/overview",
+    "source": "/ru/reference/system-tables"
+  },
+  {
+    "destination": "/ru/reference/system-tables/overview",
+    "source": "/ru/reference/system-tables/index"
+  },
+  {
+    "destination": "/zh/get-started/migrate/bigquery/overview",
+    "source": "/zh/get-started/migrate/bigquery"
+  },
+  {
+    "destination": "/zh/get-started/migrate/bigquery/overview",
+    "source": "/zh/get-started/migrate/bigquery/index"
+  },
+  {
+    "destination": "/zh/get-started/migrate/postgres/overview",
+    "source": "/zh/get-started/migrate/postgres"
+  },
+  {
+    "destination": "/zh/get-started/migrate/postgres/overview",
+    "source": "/zh/get-started/migrate/postgres/index"
+  },
+  {
+    "destination": "/zh/guides/oss/deployment-and-scaling/terminology",
+    "source": "/zh/guides/oss/deployment-and-scaling"
+  },
+  {
+    "destination": "/zh/guides/oss/deployment-and-scaling/terminology",
+    "source": "/zh/guides/oss/deployment-and-scaling/index"
+  },
+  {
+    "destination": "/zh/integrations/clickpipes/kinesis/overview",
+    "source": "/zh/integrations/clickpipes/kinesis/index"
+  },
+  {
+    "destination": "/zh/integrations/clickpipes/pubsub/overview",
+    "source": "/zh/integrations/clickpipes/pubsub/index"
+  },
+  {
+    "destination": "/zh/products/cloud/features/admin-features/api/api-overview",
+    "source": "/zh/products/cloud/features/admin-features/api"
+  },
+  {
+    "destination": "/zh/products/cloud/features/admin-features/api/api-overview",
+    "source": "/zh/products/cloud/features/admin-features/api/index"
+  },
+  {
+    "destination": "/zh/products/cloud/reference/billing/billing-overview",
+    "source": "/zh/products/cloud/reference/billing"
+  },
+  {
+    "destination": "/zh/products/cloud/reference/billing/billing-overview",
+    "source": "/zh/products/cloud/reference/billing/index"
+  },
+  {
+    "destination": "/zh/products/cloud/reference/billing/marketplace/overview",
+    "source": "/zh/products/cloud/reference/billing/marketplace"
+  },
+  {
+    "destination": "/zh/products/cloud/reference/billing/marketplace/overview",
+    "source": "/zh/products/cloud/reference/billing/marketplace/index"
+  },
+  {
+    "destination": "/zh/reference/system-tables/overview",
+    "source": "/zh/reference/system-tables"
+  },
+  {
+    "destination": "/zh/reference/system-tables/overview",
+    "source": "/zh/reference/system-tables/index"
   }
 ]
