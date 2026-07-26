@@ -364,10 +364,18 @@ void Loggers::createAuditLog(Poco::Util::AbstractConfiguration & config, time_t 
 
     bool async = config.getBool("logger.async", true);
     auto queue_size = config.getUInt("logger.async_queue_max_size", 65536);
-    audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
+
+    /// Build the writer in a local variable and publish it only after it is fully initialized.
+    /// Otherwise a failing `configure`/`open` (for example, an unwritable `logger.auditlog` path)
+    /// would leave a half-initialized writer in `audit_log`, and the `if (audit_log)` check above
+    /// would make every subsequent `SYSTEM RELOAD CONFIG` return early, so the operator could not
+    /// recover audit logging by fixing the path without restarting the server.
+    auto new_audit_log = std::make_unique<DB::AuditLog>(async, static_cast<size_t>(queue_size));
     const auto auditlog_path = renderFileNameTemplate(now, auditlog_path_prop);
-    audit_log->configure(config, auditlog_path);
-    audit_log->open();
+    new_audit_log->configure(config, auditlog_path);
+    new_audit_log->open();
+
+    audit_log = std::move(new_audit_log);
     DB::setGlobalAuditLog(audit_log.get());
 }
 

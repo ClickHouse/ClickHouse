@@ -40,6 +40,11 @@ node_reload = cluster.add_instance(
     main_configs=["configs/logger_audit_reload.xml"],
     stay_alive=True,
 )
+node_bad_path = cluster.add_instance(
+    "node_audit_bad_path",
+    main_configs=["configs/logger_audit_bad_path.xml"],
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -651,3 +656,47 @@ def test_audit_log_reload_remove_sink(start_cluster):
         "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
     )
     node_reload.query("SYSTEM RELOAD CONFIG")
+
+
+def test_audit_log_reload_recovers_after_failed_open(start_cluster):
+    """Enabling audit with an unusable `logger.auditlog` path makes the writer fail to open.
+    The failure must not leave a half-initialized writer behind: after the operator fixes the
+    path and reloads again, audit logging must start working without a server restart."""
+
+    config_path = "/etc/clickhouse-server/config.d/logger_audit_bad_path.xml"
+    bad_path = "/var/log/clickhouse-server"
+    good_path = "/var/log/clickhouse-server/clickhouse-server.audit.log"
+
+    # Enable audit while the sink still points at a directory: creating the writer must fail.
+    node_bad_path.replace_in_config(
+        config_path,
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+    )
+    error = node_bad_path.query_and_get_error("SYSTEM RELOAD CONFIG")
+    assert error, "Reload must fail while the audit log path cannot be opened"
+
+    # Fix the path and reload again — the writer must be created this time.
+    node_bad_path.replace_in_config(
+        config_path,
+        f"<auditlog>{bad_path}</auditlog>",
+        f"<auditlog>{good_path}</auditlog>",
+    )
+    node_bad_path.query("SYSTEM RELOAD CONFIG")
+
+    node_bad_path.query("DROP TABLE IF EXISTS test_recovered_audit")
+    node_bad_path.query("CREATE TABLE test_recovered_audit(a int) ENGINE=Memory")
+    assert_audit_log_contain_with_retry(node_bad_path, "test_recovered_audit")
+
+    # Restore the config so reruns of this test start from the same state.
+    node_bad_path.replace_in_config(
+        config_path,
+        f"<auditlog>{good_path}</auditlog>",
+        f"<auditlog>{bad_path}</auditlog>",
+    )
+    node_bad_path.replace_in_config(
+        config_path,
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+    )
+    node_bad_path.query("SYSTEM RELOAD CONFIG")
