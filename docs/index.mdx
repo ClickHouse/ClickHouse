@@ -245,15 +245,6 @@ export const AskAILink = ({ children }) => {
     );
 };
 
-export const mcpJsonConfig = `{
-  "mcpServers": {
-    "clickhouse-docs": {
-      "command": "npx",
-      "args": ["-y", "mcp-remote", "https://private-7c7dfe99.mintlify.app/mcp"]
-    }
-  }
-}`;
-
 export const PageWrapper = ({ children }) => {
     const [visible, setVisible] = useState(false);
     useEffect(() => {
@@ -397,7 +388,7 @@ export const PageWrapper = ({ children }) => {
                 links={[
                     { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
                     { label: "ClickStack", href: "/clickstack" },
-                    { label: "Managed Postgres", href: "/products/managed-postgres/overview" },
+                    { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
                     { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
                     { label: "chDB", href: "/chdb" },
                     { label: "Kubernetes operator", href: "/products/kubernetes-operator/overview" },
@@ -483,7 +474,7 @@ export const PageWrapper = ({ children }) => {
                     />
                     <HeroCard
                         filename="thumbnail-postgres-light.webp"
-                        title="Managed Postgres"
+                        title="ClickHouse Managed Postgres"
                         galaxyEvent="docs.home.managed-postgres"
                         description="Fast, scalable, enterprise-grade Postgres service, natively integrated with ClickHouse. Easily combine Postgres for transactions and ClickHouse for analytics."
                         href="/products/managed-postgres/overview"
@@ -533,19 +524,23 @@ export const PageWrapper = ({ children }) => {
                 <Tabs>
                     <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
-                        <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}</CodeBlock>
+                        <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}</CodeBlock>
                     </Tab>
                     <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>claude_desktop_config.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+                    </Tab>
+                    <Tab title="Codex" icon="/images/logo-codex.svg">
+                        <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
+                        <CodeBlock language="bash">{`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}</CodeBlock>
                     </Tab>
                     <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>.cursor/mcp.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                     <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
                         <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
-                        <CodeBlock language="json">{mcpJsonConfig}</CodeBlock>
+                        <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
                     </Tab>
                 </Tabs>
             </div>
