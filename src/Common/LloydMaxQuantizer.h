@@ -203,32 +203,12 @@ inline constexpr Float32 POSITIVE_PREFIX_CENTROIDS[127] = {
 
 /// Reconstruction values, as `Float32`, keyed directly by the raw code byte (the untransposed `QBit(Int8)` byte, which is
 /// `index XOR 0x80`), for every precision `1..8`. Used by the `...TransposedQuantized` distance functions to dequantize a
-/// `QBit(Int8)` on the fly. For `p < 8`, the Gaussian table uses the conditional-mean centroid of the interval represented by
-/// the retained prefix, while the legacy table preserves the midpoint reconstruction shipped in ClickHouse 26.7. Row `8` is
-/// the exact per-cell level and equals `toFloat32(dequantizeInt8ToBFloat16(code))` bit-for-bit in both tables. Row `0` is unused
-/// (precision `0` is invalid). Built lazily on first use.
-inline const std::array<std::array<Float32, 256>, 9> & transposedDequantLUT(bool use_gaussian_prefix_centroids)
+/// `QBit(Int8)` on the fly. For `p < 8`, row `p` is the conditional-mean centroid of the interval represented by the retained
+/// prefix (the union of its existing fine Lloyd-Max cells), so it is a `2^p`-level embedded/prefix quantizer. Row `8` is the
+/// exact per-cell level and equals `toFloat32(dequantizeInt8ToBFloat16(code))` bit-for-bit. Row `0` is unused (precision `0` is
+/// invalid). Built lazily on first use.
+inline const std::array<std::array<Float32, 256>, 9> & transposedDequantLUT()
 {
-    if (!use_gaussian_prefix_centroids)
-    {
-        static const std::array<std::array<Float32, 256>, 9> legacy_lut = []
-        {
-            std::array<std::array<Float32, 256>, 9> table{};
-            for (size_t precision = 1; precision <= 8; ++precision)
-            {
-                for (size_t raw = 0; raw < 256; ++raw)
-                {
-                    const auto top = static_cast<uint8_t>(raw & (0xFFu << (8 - precision)));
-                    const auto centre = static_cast<uint8_t>(precision < 8 ? (top | (1u << (7 - precision))) : top);
-                    const auto index = static_cast<uint8_t>(centre ^ 0x80u);
-                    table[precision][raw] = static_cast<Float32>(BFloat16(LEVELS[index]));
-                }
-            }
-            return table;
-        }();
-        return legacy_lut;
-    }
-
     static const std::array<std::array<Float32, 256>, 9> lut = []
     {
         std::array<std::array<Float32, 256>, 9> table{};

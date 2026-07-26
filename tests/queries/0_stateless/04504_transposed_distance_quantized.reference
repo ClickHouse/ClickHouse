@@ -52,13 +52,6 @@ The optimize_qbit_distance_function_reads partial-reads pass does not change the
 1	0
 2	1.84
 3	0.19
-Compatibility 26.7 restores midpoint reconstruction with the partial-reads pass on or off
-1	0
-2	1.85
-3	0.2
-1	0
-2	1.85
-3	0.2
 Lower precision reconstructs a coarser embedded quantizer (still stable, less accurate)
 1	0.24	0.01
 2	1.76	1.84

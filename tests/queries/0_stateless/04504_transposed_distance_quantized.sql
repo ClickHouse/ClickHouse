@@ -148,14 +148,6 @@ WITH [0.10, -0.50, 0.30, -0.20, 0.05, -0.90, 1.20, -1.50]::Array(Float32) AS ref
 SELECT id, round(cosineDistanceTransposedQuantized(vec, ref, 6), 2) AS d FROM qbit_q ORDER BY id
 SETTINGS optimize_qbit_distance_function_reads = 1;
 
-SELECT 'Compatibility 26.7 restores midpoint reconstruction with the partial-reads pass on or off';
-WITH [0.10, -0.50, 0.30, -0.20, 0.05, -0.90, 1.20, -1.50]::Array(Float32) AS ref
-SELECT id, round(cosineDistanceTransposedQuantized(vec, ref, 6), 2) AS d FROM qbit_q ORDER BY id
-SETTINGS compatibility = '26.7', optimize_qbit_distance_function_reads = 0;
-WITH [0.10, -0.50, 0.30, -0.20, 0.05, -0.90, 1.20, -1.50]::Array(Float32) AS ref
-SELECT id, round(cosineDistanceTransposedQuantized(vec, ref, 6), 2) AS d FROM qbit_q ORDER BY id
-SETTINGS compatibility = '26.7', optimize_qbit_distance_function_reads = 1;
-
 SELECT 'Lower precision reconstructs a coarser embedded quantizer (still stable, less accurate)';
 WITH [0.10, -0.50, 0.30, -0.20, 0.05, -0.90, 1.20, -1.50]::Array(Float32) AS ref
 SELECT id, round(cosineDistanceTransposedQuantized(vec, ref, 1), 2) AS p1, round(cosineDistanceTransposedQuantized(vec, ref, 4), 2) AS p4

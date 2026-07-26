@@ -76,7 +76,7 @@ TEST(LloydMaxQuantizer, PrefixCentroidsMatchGaussianConditionalMeans)
 
 TEST(LloydMaxQuantizer, TransposedDequantLUTPreservesPrefixContract)
 {
-    const auto & lut = LloydMax::transposedDequantLUT(true);
+    const auto & lut = LloydMax::transposedDequantLUT();
 
     for (size_t precision = 1; precision < 8; ++precision)
     {
@@ -106,20 +106,5 @@ TEST(LloydMaxQuantizer, TransposedDequantLUTPreservesPrefixContract)
     }
 }
 
-TEST(LloydMaxQuantizer, TransposedDequantLUTPreservesLegacyMidpoints)
-{
-    const auto & lut = LloydMax::transposedDequantLUT(false);
-    for (size_t precision = 1; precision <= 8; ++precision)
-    {
-        for (size_t raw = 0; raw < 256; ++raw)
-        {
-            const auto top = static_cast<uint8_t>(raw & (0xFFu << (8 - precision)));
-            const auto centre = static_cast<uint8_t>(precision < 8 ? (top | (1u << (7 - precision))) : top);
-            const auto index = static_cast<uint8_t>(centre ^ 0x80u);
-            const Float32 expected = static_cast<Float32>(BFloat16(LloydMax::LEVELS[index]));
-            EXPECT_EQ(floatBits(lut[precision][raw]), floatBits(expected)) << "precision=" << precision << " raw=" << raw;
-        }
-    }
-}
 }
 }
