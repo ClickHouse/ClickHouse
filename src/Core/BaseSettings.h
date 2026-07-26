@@ -35,6 +35,7 @@ struct BaseSettingsHelpers
 {
     /// Error handling
     [[noreturn]] static void throwSettingNotFound(std::string_view name);
+    [[noreturn]] static void throwValuelessSettingIsNotBool(std::string_view name, std::string_view type);
     static void warningSettingNotFound(std::string_view name);
     static void flushWarnings();
 
@@ -433,6 +434,14 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 template <typename TTraits>
 void BaseSettings<TTraits>::applyChange(const SettingChange & change)
 {
+    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
+    /// setting. This is where the settings schema is known, so this is where it is checked.
+    if (change.shorthand)
+    {
+        if (std::string_view type = getTypeName(change.name); type != "Bool")
+            BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
+    }
+
     set(change.name, change.value);
 }
 

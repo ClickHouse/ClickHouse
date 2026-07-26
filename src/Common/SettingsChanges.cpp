@@ -75,11 +75,11 @@ bool SettingsChanges::removeSetting(std::string_view name)
 String SettingsChanges::namesToString() const
 {
     String result;
-    for (const auto & [name, _] : *this)
+    for (const auto & change : *this)
     {
         if (!result.empty())
             result += ", ";
-        result += name;
+        result += change.name;
     }
     return result;
 }

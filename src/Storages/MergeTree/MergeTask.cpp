@@ -21,7 +21,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
-#include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
