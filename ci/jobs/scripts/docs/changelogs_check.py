@@ -1,31 +1,50 @@
 #!/usr/bin/env python3
-"""Check that generated Cloud release-note cards and navigation are current."""
+"""Check that generated changelog cards, content, and navigation are current."""
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 
-GENERATED_PATHS = (
+STATIC_GENERATED_PATHS = (
     Path("resources/changelogs/cloud/release-notes-index.mdx"),
     Path("resources/changelogs/navigation.json"),
 )
-GENERATOR_COMMAND = "python3 _site/scripts/update_cloud_release_notes.py"
+OSS_YEAR = re.compile(r"^# (\d{4}) Changelog\s*$", re.MULTILINE)
+GENERATOR_COMMAND = "python3 _site/scripts/update_changelogs.py"
+
+
+def generated_paths(docs_root: Path) -> list[Path]:
+    changelog_path = docs_root.parent / "CHANGELOG.md"
+    content = changelog_path.read_text(encoding="utf-8")
+    years = OSS_YEAR.findall(content)
+    if len(years) != 1:
+        raise ValueError(
+            "Expected one current-year heading in CHANGELOG.md, "
+            f"found {len(years)}"
+        )
+    oss_changelog = Path("resources/changelogs/oss") / f"{years[0]}.mdx"
+    return [docs_root / path for path in (*STATIC_GENERATED_PATHS, oss_changelog)]
 
 
 def check_freshness(docs_root: Path) -> list[str]:
-    paths = [docs_root / path for path in GENERATED_PATHS]
+    try:
+        paths = generated_paths(docs_root)
+    except (OSError, ValueError) as error:
+        return [f"cannot determine generated changelog files: {error}"]
+
     missing = [path for path in paths if not path.is_file()]
     if missing:
         return [
-            "missing generated Cloud release-note file(s): "
+            "missing generated changelog file(s): "
             + ", ".join(str(path.relative_to(docs_root)) for path in missing)
         ]
 
     before = {path: path.read_bytes() for path in paths}
-    generator = docs_root / "_site/scripts/update_cloud_release_notes.py"
+    generator = docs_root / "_site/scripts/update_changelogs.py"
     process = subprocess.run(
         [sys.executable, str(generator)],
         cwd=docs_root,
@@ -47,7 +66,7 @@ def check_freshness(docs_root: Path) -> list[str]:
             f"  {path.relative_to(docs_root)}" for path in stale
         )
         return [
-            "Cloud release-note cards or navigation are out of date. Run:\n"
+            "Changelog cards, content, or navigation are out of date. Run:\n"
             f"    {GENERATOR_COMMAND}\n"
             "from the docs/ directory and commit the changes. "
             "Out-of-date files:\n"
@@ -64,12 +83,12 @@ def main() -> int:
 
     errors = check_freshness(docs_root)
     if errors:
-        print(f"FAIL: {len(errors)} Cloud release-note problem(s):")
+        print(f"FAIL: {len(errors)} changelog problem(s):")
         for error in errors:
             print(f"- {error}")
         return 1
 
-    print("OK: Cloud release-note cards and navigation are up to date")
+    print("OK: changelog cards, content, and navigation are up to date")
     return 0
 
 
