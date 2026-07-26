@@ -27,9 +27,10 @@ as the fuzzer's was.
 The script fails closed: it aborts before starting the memory-destructive workload unless every cgroup
 setup step is proven (the memory controller is enabled, the hard limits read back as written, and the
 server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside the cgroup
-and OOM the whole host. The cgroup name and the default port are unique per run, so `cleanup` (which
-tears the cgroup down with `cgroup.kill`) can only ever kill this run's own processes, and concurrent
-invocations do not interfere with each other. It also refuses to run when the scratch data directory
+and OOM the whole host. The cgroup name is unique per run, so `cleanup` (which tears the cgroup down
+with `cgroup.kill`) can only ever kill this run's own processes; the port is one the kernel reports as
+free (and it is re-checked - as is an explicit PORT - before any setup runs, so a collision fails fast
+instead of burning the startup loop), so concurrent invocations do not interfere with each other. It also refuses to run when the scratch data directory
 is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be
 charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
 mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
@@ -40,6 +41,7 @@ import os
 import pwd
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -59,12 +61,28 @@ RUN_USER = os.environ.get("SUDO_USER") or pwd.getpwuid(os.getuid()).pw_name
 # The cgroup name is unique per run: `cleanup` tears the cgroup down with `cgroup.kill`, and with a
 # fixed shared name that write would be host-destructive - it would kill a concurrent run's server, or
 # any unrelated workload someone had placed in a same-named cgroup, as if it were "stale". With a
-# per-run name, `cgroup.kill` can only ever hit processes this run started itself. The default port is
-# derived from the PID for the same reason: concurrent runs must not race for one fixed port (override
-# with PORT if the derived one happens to be taken).
+# per-run name, `cgroup.kill` can only ever hit processes this run started itself.
 CG_NAME = f"ch_merge_oom.{os.getpid()}"
 CG = f"/sys/fs/cgroup/{CG_NAME}"
-PORT = int(os.environ.get("PORT", str(19001 + os.getpid() % 10000)))
+
+
+def reserve_free_port():
+    """Return a TCP port the kernel reports as free right now.
+
+    Binding to port 0 makes the kernel pick a currently-unused ephemeral port, which is what "unique per
+    run" actually requires: any function of the PID (e.g. `19001 + pid % 10000`) aliases as soon as two
+    live PIDs are congruent modulo the range, and the second run would then burn its whole startup loop
+    on `Address already in use`. The socket is closed immediately, so the port is only reserved
+    advisorily - `assert_port_free` re-checks it just before the server is configured, and an explicit
+    PORT is checked the same way, so a collision fails fast with a clear message instead of silently
+    claiming uniqueness.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+PORT = int(os.environ["PORT"]) if os.environ.get("PORT") else reserve_free_port()
 LIMIT_GB = int(os.environ.get("LIMIT_GB", "4"))
 LIMIT_BYTES = LIMIT_GB * 1024 * 1024 * 1024
 
@@ -84,6 +102,19 @@ CLIENT_TIMEOUT_BACKSTOP = 20
 def die(message, code=1):
     print(message, file=sys.stderr)
     sys.exit(code)
+
+
+def assert_port_free(port):
+    """Fail fast if `port` is already taken, instead of looping 40 times on `Address already in use`."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        try:
+            probe.bind(("127.0.0.1", port))
+        except OSError as e:
+            die(
+                f"TCP port {port} is not free ({e}); another server (or a concurrent run of this "
+                "script) is using it - re-run without PORT to let the kernel pick a free port",
+                2,
+            )
 
 
 def read_file(path):
@@ -209,6 +240,9 @@ def main():
         ["stat", "-fc", "%T", "/sys/fs/cgroup"], capture_output=True, text=True
     ).stdout.strip() != "cgroup2fs":
         die("requires cgroup v2", 2)
+    # The port must be free before anything is set up: a taken port would only surface as 40 failed
+    # startup probes, and with an explicit PORT it could also collide with a concurrent run.
+    assert_port_free(PORT)
 
     os.makedirs(BASE_DIR, exist_ok=True)
     base = tempfile.mkdtemp(prefix="ch_oom_repro.", dir=BASE_DIR)
