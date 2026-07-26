@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment/oss
+title: 'Opciones de despliegue de código abierto'
+description: 'Despliegue de ClickStack de código abierto: la pila de observabilidad de ClickHouse'
+doc_type: 'reference'
+keywords: ['ClickStack', 'observabilidad', 'código abierto']
+---
+
+ClickStack de código abierto ofrece múltiples opciones de despliegue para adaptarse a diversos casos de uso.
+
+A continuación se resumen las distintas opciones de despliegue. La [Guía de introducción de Open Source](/es/clickstack/getting-started/oss) muestra específicamente la opción 1, incluida aquí para completar la información.
+
+| Name                | Description                                                                                                                     | Suitable For                                                                             | Limitations                                                                                                                | Example Link                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Todo en uno         | Un único contenedor Docker con todos los componentes de ClickStack integrados.                                                  | Despliegues no productivos, demostraciones, pruebas de concepto                          | No recomendado para producción                                                                                             | [Todo en uno](/es/clickstack/deployment/all-in-one)                  |
+| Helm                | Gráfico de Helm oficial para despliegues basados en Kubernetes. Admite ClickHouse Cloud y escalado para producción.             | Despliegues de producción en Kubernetes                                                  | Se requieren conocimientos de Kubernetes y personalización mediante Helm                                                   | [Helm](/es/clickstack/deployment/helm)                               |
+| Docker Compose      | Despliega cada componente de ClickStack por separado mediante Docker Compose.                                                   | Pruebas locales, pruebas de concepto, producción en un único servidor, ClickHouse propio | Sin tolerancia a fallos; requiere gestionar varios contenedores                                                            | [Docker Compose](/es/clickstack/deployment/docker-compose)           |
+| Solo HyperDX        | Usa HyperDX de forma independiente con tu propio ClickHouse y esquema.                                                          | Usuarios actuales de ClickHouse, pipelines de eventos personalizados                     | No incluye ClickHouse; el usuario debe gestionar la ingestión y el esquema                                                 | [Solo HyperDX](/es/clickstack/deployment/hyperdx-only)               |
+| Solo modo local     | Se ejecuta completamente en el navegador con almacenamiento local. Sin backend ni persistencia.                                 | Demostraciones, depuración, desarrollo con HyperDX                                       | Sin autenticación, sin persistencia, sin alertas, solo para un usuario                                                     | [Solo modo local](/es/clickstack/deployment/local-mode-only)         |
+| ClickHouse Embedded | La UI de ClickStack está integrada directamente en el binario del servidor ClickHouse. No se requieren componentes adicionales. | Probar ClickStack, explorar datos existentes de ClickHouse, demostraciones               | Sin alertas, sin persistencia de dashboards ni búsquedas, sin ajustes de consulta personalizables, sin patrones de eventos | [ClickHouse Embedded](/es/clickstack/deployment/clickhouse-embedded) |

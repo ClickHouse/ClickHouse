@@ -1,0 +1,866 @@
+---
+sidebarTitle: 'データ型'
+keywords: ['clickhouse', 'go', 'golang', 'types', 'data types', 'complex types']
+description: 'Goの型マッピングとclickhouse-goの複合型サポート。'
+slug: /integrations/language-clients/go/data-types
+title: 'データ型'
+doc_type: 'reference'
+---
+
+<div id="type-conversions">
+  ## 型変換
+</div>
+
+このクライアントは、挿入時とレスポンスのマーシャリング時の両方で、できるだけ柔軟にさまざまな変数型を受け入れられるよう設計されています。ほとんどの場合、ClickHouse のカラム型には対応する Golang の型が存在します。たとえば、[UInt64](/ja/reference/data-types/int-uint) には [uint64](https://pkg.go.dev/builtin#uint64) が対応します。こうした論理的な対応関係は常にサポートされるべきです。また、変数や受信データを事前に変換できるのであれば、カラムに挿入できる型やレスポンスの受け取りに使える型として、別の変数型を利用したい場合もあるでしょう。クライアントは、ユーザーが挿入前にデータ型を厳密に合わせるための変換を行わなくて済むようにし、さらにクエリ時の柔軟なマーシャリングを実現するため、これらの変換を透過的にサポートすることを目指しています。ただし、この透過的な変換では精度の損失は許容されません。たとえば、UInt64 カラムのデータを受け取る型として uint32 を使うことはできません。一方、datetime64 フィールドには、フォーマット要件を満たしていれば string を挿入できます。
+
+現在プリミティブ型でサポートされている型変換は、[こちら](https://github.com/ClickHouse/clickhouse-go/blob/main/TYPES.md)にまとめられています。
+
+この対応は現在も進行中で、挿入時 (`Append`/`AppendRow`) と読み取り時 (`Scan` 経由) に分けて考えることができます。特定の変換のサポートが必要な場合は、issue を作成してください。
+
+標準の `database/sql` インターフェイスでは、ClickHouse API と同じ型がサポートされるはずです。いくつか例外はありますが、主に複雑な型に関するもので、以下のセクションで説明しています。ClickHouse API と同様に、このクライアントは、挿入時とレスポンスのマーシャリング時の両方で、できるだけ柔軟にさまざまな変数型を受け入れられるよう設計されています。
+
+<div id="complex-types">
+  ## 複合型
+</div>
+
+<div id="datedatetime">
+  ### Date/DateTime
+</div>
+
+ClickHouse の Go クライアントは、`Date`、`Date32`、`DateTime`、`DateTime64` の日付/日時型をサポートしています。日付は、`2006-01-02` フォーマットの文字列、または Go ネイティブの `time.Time{}` や `sql.NullTime` を使って挿入できます。DateTime でも同様にこれらの型をサポートしていますが、文字列を渡す場合は `2006-01-02 15:04:05` フォーマットを使用し、必要に応じてタイムゾーンオフセット (例: `2006-01-02 15:04:05 +08:00`) を付ける必要があります。読み取り時も `time.Time{}` と `sql.NullTime` の両方がサポートされており、`sql.Scanner` インターフェイスを実装した任意の型も利用できます。
+
+タイムゾーン情報の扱いは、ClickHouse の型と、値を挿入する場合か読み取る場合かによって異なります。
+
+* **DateTime/DateTime64**
+  * **insert** 時には、値は UNIX timestamp フォーマットで ClickHouse に送信されます。タイムゾーンが指定されていない場合、クライアントはクライアントのローカルタイムゾーンを使用します。`time.Time{}` または `sql.NullTime` も、それに応じて epoch に変換されます。
+  * **select** 時には、`time.Time` 値を返す際、設定されていればカラムのタイムゾーンが使用されます。設定されていない場合は、server のタイムゾーンが使用されます。
+* **Date/Date32**
+  * **insert** 時には、日付を unix timestamp に変換する際に、その日付のタイムゾーンが考慮されます。つまり、Date 型は ClickHouse ではロケールを持たないため、日付として保存される前にタイムゾーン分のオフセットが適用されます。文字列の値でこれが指定されていない場合は、ローカルタイムゾーンが使用されます。
+  * **select** 時には、`time.Time{}` または `sql.NullTime{}` のインスタンスにスキャンされた日付は、タイムゾーン情報なしで返されます。
+
+<div id="timetime64-types">
+  ### Time/Time64 型
+</div>
+
+`Time` と `Time64` のカラム型は、日付部分を含まない時刻の値を格納します。どちらも Go の `time.Duration` にマッピングされます。
+
+* `Time` は時刻を秒精度で格納します。
+* `Time64(precision)` は (`DateTime64` と同様に) 秒未満の精度をサポートし、precision は 0〜9 の範囲です。
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        col1 Time,
+        col2 Time64(3)
+    ) Engine Memory
+`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    14*time.Hour+30*time.Minute+15*time.Second,
+    14*time.Hour+30*time.Minute+15*time.Second+500*time.Millisecond,
+); err != nil {
+    return err
+}
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var col1, col2 time.Duration
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != nil {
+    return err
+}
+fmt.Printf("col1=%v, col2=%v\n", col1, col2)
+```
+
+<div id="array">
+  ### Array
+</div>
+
+Array はスライスとして挿入する必要があります。要素の型規則は [プリミティブ型](#type-conversions) の場合と同様で、可能であれば要素は変換されます。
+
+Scan 時には、スライスへのポインタを渡す必要があります。
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i int64
+for i = 0; i < 10; i++ {
+    err := batch.Append(
+        []string{strconv.Itoa(int(i)), strconv.Itoa(int(i + 1)), strconv.Itoa(int(i + 2)), strconv.Itoa(int(i + 3))},
+        [][]int64{{i, i + 1}, {i + 2, i + 3}, {i + 4, i + 5}},
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 []string
+    col2 [][]int64
+)
+rows, err := conn.Query(ctx, "SELECT * FROM example")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
+}
+
+// 注意: rows.Err() のチェックを省略しないこと
+if err := rows.Err(); err != nil {
+    return err
+}
+
+rows.Close()
+```
+
+[完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/array.go)
+
+<div id="map">
+  ### Map
+</div>
+
+Map は、[前述](#type-conversions)の型ルールに従ったキーと値を持つ Golang の map 型として挿入する必要があります。
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i int64
+for i = 0; i < 10; i++ {
+    err := batch.Append(
+        map[string]uint64{strconv.Itoa(int(i)): uint64(i)},
+        map[string][]string{strconv.Itoa(int(i)): {strconv.Itoa(int(i)), strconv.Itoa(int(i + 1)), strconv.Itoa(int(i + 2)), strconv.Itoa(int(i + 3))}},
+        map[string]map[string]uint64{strconv.Itoa(int(i)): {strconv.Itoa(int(i)): uint64(i)}},
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 map[string]uint64
+    col2 map[string][]string
+    col3 map[string]map[string]uint64
+)
+rows, err := conn.Query(ctx, "SELECT * FROM example")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2, &col3); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
+}
+// 注意: rows.Err() のチェックを省略しないこと
+if err := rows.Err(); err != nil {
+    return err
+}
+
+rows.Close()
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/map.go)
+
+<Note>
+  `database/sql` API を使用する場合、Map の値は厳密に型指定する必要があり、値の型として `interface{}` は使用できません。たとえば、`Map(String,String)` フィールドには `map[string]interface{}` を渡せないため、代わりに `map[string]string` を使用する必要があります。一方、`interface{}` 型の変数は常に互換性があるため、より複雑な構造にも使用できます。
+
+  [完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/map.go)
+</Note>
+
+<div id="tuples">
+  ### タプル
+</div>
+
+タプルは、任意の数のカラムをまとめたものです。カラムには明示的に名前を付けることも、型だけを指定することもできます。例えば
+
+```sql
+//名前なし
+Col1 Tuple(String, Int64)
+
+//名前あり
+Col2 Tuple(name String, id Int64, age uint8)
+```
+
+これらの方法の中では、名前付きタプルのほうが柔軟です。名前なしタプルはスライスを使って挿入・読み取りする必要がありますが、名前付きタプルはMap型にも対応しています。
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            Col1 Tuple(name String, age UInt8),
+            Col2 Tuple(String, UInt8),
+            Col3 Tuple(name String, id String)
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+// 名前付き・名前なしのどちらもスライスで追加できます。すべての要素が同じ型の場合は、型付きのリストやマップも使用できます
+if err = batch.Append([]interface{}{"Clicky McClickHouse", uint8(42)}, []interface{}{"Clicky McClickHouse Snr", uint8(78)}, []string{"Dale", "521211"}); err != nil {
+    return err
+}
+if err = batch.Append(map[string]interface{}{"name": "Clicky McClickHouse Jnr", "age": uint8(20)}, []interface{}{"Baby Clicky McClickHouse", uint8(1)}, map[string]string{"name": "Geoff", "id": "12123"}); err != nil {
+    return err
+}
+if err = batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 map[string]interface{}
+    col2 []interface{}
+    col3 map[string]string
+)
+// 名前付きタプルはマップまたはスライスで取得できますが、名前なしタプルはスライスのみです
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3); err != nil {
+    return err
+}
+fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/tuple.go)
+
+注: 型付きのスライスとマップがサポートされています。ただし、named tuple 内のサブカラムはすべて同じ型である必要があります。
+
+<div id="nested">
+  ### Nested
+</div>
+
+Nested フィールドは、名前付き タプル の Array に相当します。使い方は、ユーザーが [flatten&#95;nested](/ja/reference/settings/session-settings#flatten_nested) を 1 に設定しているか 0 に設定しているかによって異なります。
+
+flatten&#95;nested を 0 に設定すると、Nested カラムは単一の タプル の Array のまま保持されます。これにより、挿入や取得に map のスライスを使用できるほか、任意のレベルでネストできます。以下の例に示すように、map のキーはカラム名と一致している必要があります。
+
+注: map は タプル を表すため、その型は `map[string]interface{}` である必要があります。現在、値は厳密には型付けされていません。
+
+```go
+conn, err := GetNativeConnection(clickhouse.Settings{
+    "flatten_nested": 0,
+}, nil, nil)
+if err != nil {
+    return err
+}
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Nested(Col1_1 String, Col1_2 UInt8),
+        Col2 Nested(
+            Col2_1 UInt8,
+            Col2_2 Nested(
+                Col2_2_1 UInt8,
+                Col2_2_2 UInt8
+            )
+        )
+    ) Engine Memory
+`)
+if err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i int64
+for i = 0; i < 10; i++ {
+    err := batch.Append(
+        []map[string]interface{}{
+            {
+                "Col1_1": strconv.Itoa(int(i)),
+                "Col1_2": uint8(i),
+            },
+            {
+                "Col1_1": strconv.Itoa(int(i + 1)),
+                "Col1_2": uint8(i + 1),
+            },
+            {
+                "Col1_1": strconv.Itoa(int(i + 2)),
+                "Col1_2": uint8(i + 2),
+            },
+        },
+        []map[string]interface{}{
+            {
+                "Col2_2": []map[string]interface{}{
+                    {
+                        "Col2_2_1": uint8(i),
+                        "Col2_2_2": uint8(i + 1),
+                    },
+                },
+                "Col2_1": uint8(i),
+            },
+            {
+                "Col2_2": []map[string]interface{}{
+                    {
+                        "Col2_2_1": uint8(i + 2),
+                        "Col2_2_2": uint8(i + 3),
+                    },
+                },
+                "Col2_1": uint8(i + 1),
+            },
+        },
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+var (
+    col1 []map[string]interface{}
+    col2 []map[string]interface{}
+)
+rows, err := conn.Query(ctx, "SELECT * FROM example")
+if err != nil {
+    return err
+}
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%v, col2=%v\n", col1, col2)
+}
+// 注意: rows.Err() のチェックを省略しないこと
+if err := rows.Err(); err != nil {
+    return err
+}
+
+rows.Close()
+```
+
+[完全な例 - `flatten_tested=0`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L28-L118)
+
+`flatten_nested` にデフォルト値の 1 を使用すると、ネストされたカラムはそれぞれ別個の Array にフラット化されます。そのため、挿入と取得にはネストしたスライスを使用する必要があります。任意の深さのネストでも動作する可能性はありますが、これは公式にはサポートされていません。
+
+```go
+conn, err := GetNativeConnection(nil, nil, nil)
+if err != nil {
+    return err
+}
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(ctx, "DROP TABLE IF EXISTS example")
+err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Nested(Col1_1 String, Col1_2 UInt8),
+        Col2 Nested(
+            Col2_1 UInt8,
+            Col2_2 Nested(
+                Col2_2_1 UInt8,
+                Col2_2_2 UInt8
+            )
+        )
+    ) Engine Memory
+`)
+if err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+var i uint8
+for i = 0; i < 10; i++ {
+    col1_1_data := []string{strconv.Itoa(int(i)), strconv.Itoa(int(i + 1)), strconv.Itoa(int(i + 2))}
+    col1_2_data := []uint8{i, i + 1, i + 2}
+    col2_1_data := []uint8{i, i + 1, i + 2}
+    col2_2_data := [][][]interface{}{
+        {
+            {i, i + 1},
+        },
+        {
+            {i + 2, i + 3},
+        },
+        {
+            {i + 4, i + 5},
+        },
+    }
+    err := batch.Append(
+        col1_1_data,
+        col1_2_data,
+        col2_1_data,
+        col2_2_data,
+    )
+    if err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+```
+
+[完全な例 - `flatten_nested=1`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L123-L180)
+
+注: Nested カラムは同じ次元である必要があります。たとえば、上記の例では、`Col_2_2` と `Col_2_1` は同じ数の要素を持つ必要があります。
+
+インターフェイスがよりシンプルで、ネストも公式にサポートされているため、`flatten_nested=0` を推奨します。
+
+<div id="geo-types">
+  ### Geo 型
+</div>
+
+クライアントは、Point、Ring、LineString、Polygon、MultiPolygon、MultiLineString の各 Geo 型をサポートしています。これらの型は、Go では [github.com/paulmach/orb](https://github.com/paulmach/orb) パッケージで表現されます。
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            point Point,
+            ring Ring,
+            lineString LineString,
+            polygon Polygon,
+            mPolygon MultiPolygon,
+            mLineString MultiLineString
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    orb.Point{11, 22},
+    orb.Ring{
+        orb.Point{1, 2},
+        orb.Point{1, 2},
+    },
+    orb.LineString{
+        orb.Point{1, 2},
+        orb.Point{3, 4},
+        orb.Point{5, 6},
+    },
+    orb.Polygon{
+        orb.Ring{
+            orb.Point{1, 2},
+            orb.Point{12, 2},
+        },
+        orb.Ring{
+            orb.Point{11, 2},
+            orb.Point{1, 12},
+        },
+    },
+    orb.MultiPolygon{
+        orb.Polygon{
+            orb.Ring{
+                orb.Point{1, 2},
+                orb.Point{12, 2},
+            },
+            orb.Ring{
+                orb.Point{11, 2},
+                orb.Point{1, 12},
+            },
+        },
+        orb.Polygon{
+            orb.Ring{
+                orb.Point{1, 2},
+                orb.Point{12, 2},
+            },
+            orb.Ring{
+                orb.Point{11, 2},
+                orb.Point{1, 12},
+            },
+        },
+    },
+    orb.MultiLineString{
+        orb.LineString{
+            orb.Point{1, 2},
+            orb.Point{3, 4},
+        },
+        orb.LineString{
+            orb.Point{5, 6},
+            orb.Point{7, 8},
+        },
+    },
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    point       orb.Point
+    ring        orb.Ring
+    lineString  orb.LineString
+    polygon     orb.Polygon
+    mPolygon    orb.MultiPolygon
+    mLineString orb.MultiLineString
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&point, &ring, &lineString, &polygon, &mPolygon, &mLineString); err != nil {
+    return err
+}
+fmt.Printf("point=%v, ring=%v, lineString=%v, polygon=%v, mPolygon=%v, mLineString=%v\n", point, ring, lineString, polygon, mPolygon, mLineString)
+```
+
+[完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/geo.go)
+
+<div id="uuid">
+  ### UUID
+</div>
+
+UUID 型は [github.com/google/uuid](https://github.com/google/uuid) パッケージでサポートされています。UUID は文字列として送信およびマーシャリングできるほか、`sql.Scanner` または `Stringify` を実装した任意の型として扱うこともできます。
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            col1 UUID,
+            col2 UUID
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+col1Data, _ := uuid.NewUUID()
+if err = batch.Append(
+    col1Data,
+    "603966d6-ed93-11ec-8ea0-0242ac120002",
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 uuid.UUID
+    col2 uuid.UUID
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != nil {
+    return err
+}
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/uuid.go)
+
+<div id="decimal">
+  ### Decimal
+</div>
+
+Go には組み込みの Decimal 型がないため、元のクエリを変更せずに Decimal 型をネイティブに扱うには、サードパーティ製パッケージ [github.com/shopspring/decimal](https://github.com/shopspring/decimal) の使用を推奨します。
+
+<Note>
+  サードパーティの依存関係を避けるために、代わりに Float を使いたくなるかもしれません。ただし、[正確な値が必要な場合、ClickHouse の Float 型は推奨されません](/ja/reference/data-types/float) ので注意してください。
+
+  それでもクライアント側で Go の組み込み Float 型を使う場合は、ClickHouse のクエリ内で [toFloat64() 関数](/ja/reference/functions/regular-functions/type-conversion-functions#toFloat64) または [そのバリアント](/ja/reference/functions/regular-functions/type-conversion-functions#toFloat64OrZero) を使用して、Decimal を明示的に Float に変換する必要があります。この変換によって精度が失われる可能性がある点に注意してください。
+</Note>
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Decimal32(3),
+        Col2 Decimal(18,6),
+        Col3 Decimal(15,7),
+        Col4 Decimal128(8),
+        Col5 Decimal256(9)
+    ) Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    decimal.New(25, 4),
+    decimal.New(30, 5),
+    decimal.New(35, 6),
+    decimal.New(135, 7),
+    decimal.New(256, 8),
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 decimal.Decimal
+    col2 decimal.Decimal
+    col3 decimal.Decimal
+    col4 decimal.Decimal
+    col5 decimal.Decimal
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &col4, &col5); err != nil {
+    return err
+}
+fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v\n", col1, col2, col3, col4, col5)
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/decimal.go)
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+Go の値 `Nil` は、ClickHouse の `NULL` を表します。これは、フィールドが `Nullable` として宣言されている場合に使用できます。insert 時には、通常のカラムと `Nullable` カラムの両方に `Nil` を渡せます。前者では、その型のデフォルト値が保存されます。たとえば、`string` であれば空文字列です。`Nullable` 版では、ClickHouse に `NULL 値` が格納されます。
+
+scan 時には、`Nullable` フィールドの `nil` 値を表現するために、ユーザーは `nil` を扱える型へのポインタ (たとえば `*string`) を渡す必要があります。以下の例では、`Nullable(String)` である `col1` は、そのため `**string` を受け取ります。これにより `nil` を表現できます。
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            col1 Nullable(String),
+            col2 String,
+            col3 Nullable(Int8),
+            col4 Nullable(Int64)
+        )
+        Engine Memory
+    `); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+if err = batch.Append(
+    nil,
+    nil,
+    nil,
+    sql.NullInt64{Int64: 0, Valid: false},
+); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 *string
+    col2 string
+    col3 *int8
+    col4 sql.NullInt64
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &col4); err != nil {
+    return err
+}
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nullable.go)
+
+このクライアントは、`sql.NullInt64` などの `sql.Null*` 型にも対応しています。これらは対応する ClickHouse の型と互換性があります。
+
+<div id="big-ints">
+  ### Big Ints
+</div>
+
+64ビットを超える数値型は、Go標準の [big](https://pkg.go.dev/math/big) パッケージで表現されます。
+
+```go
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 Int128,
+        Col2 UInt128,
+        Col3 Array(Int128),
+        Col4 Int256,
+        Col5 Array(Int256),
+        Col6 UInt256,
+        Col7 Array(UInt256)
+    ) Engine Memory`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+col1Data, _ := new(big.Int).SetString("170141183460469231731687303715884105727", 10)
+col2Data := big.NewInt(128)
+col3Data := []*big.Int{
+    big.NewInt(-128),
+    big.NewInt(128128),
+    big.NewInt(128128128),
+}
+col4Data := big.NewInt(256)
+col5Data := []*big.Int{
+    big.NewInt(256),
+    big.NewInt(256256),
+    big.NewInt(256256256256),
+}
+col6Data := big.NewInt(256)
+col7Data := []*big.Int{
+    big.NewInt(256),
+    big.NewInt(256256),
+    big.NewInt(256256256256),
+}
+
+if err = batch.Append(col1Data, col2Data, col3Data, col4Data, col5Data, col6Data, col7Data); err != nil {
+    return err
+}
+
+if err = batch.Send(); err != nil {
+    return err
+}
+
+var (
+    col1 big.Int
+    col2 big.Int
+    col3 []*big.Int
+    col4 big.Int
+    col5 []*big.Int
+    col6 big.Int
+    col7 []*big.Int
+)
+
+if err = conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7); err != nil {
+    return err
+}
+fmt.Printf("col1=%v, col2=%v, col3=%v, col4=%v, col5=%v, col6=%v, col7=%v\n", col1, col2, col3, col4, col5, col6, col7)
+```
+
+[完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/big_int.go)
+
+<div id="bfloat16">
+  ### BFloat16
+</div>
+
+`BFloat16` は、機械学習のワークロードで使用される 16 ビットの brain float 型です。Go では、`BFloat16` の値は `float32` として挿入および読み取りが行われます。Nullable バリアントでは `sql.NullFloat64` を使用します。
+
+```go
+if err := conn.Exec(ctx, `
+    CREATE TABLE example (
+        Col1 BFloat16,
+        Col2 Nullable(BFloat16)
+    ) Engine MergeTree() ORDER BY tuple()
+`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+batch.Append(float32(33.125), sql.NullFloat64{Float64: 34.25, Valid: true})
+if err := batch.Send(); err != nil {
+    return err
+}
+
+var col1 float32
+var col2 sql.NullFloat64
+if err := conn.QueryRow(ctx, "SELECT * FROM example").Scan(&col1, &col2); err != nil {
+    return err
+}
+fmt.Printf("Col1: %v, Col2: %v\n", col1, col2)
+```
+
+[完全な例](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/bfloat16.go)
+
+<div id="qbit">
+  ### QBit
+</div>
+
+`QBit` は、ベクトル埋め込みをビットスライス形式で格納するための実験的なカラム型で、ベクトル類似度検索向けに最適化されています。使用するには、`allow_experimental_qbit_type` 設定を有効にする必要があります。
+
+Go では、`QBit(Float32, N)` カラムは `[]float32` として挿入およびスキャンされます。N はベクトルの次元です。
+
+```go
+ctx = clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+    "allow_experimental_qbit_type": 1,
+}))
+
+if err := conn.Exec(ctx, `
+    CREATE TABLE example (
+        id   UInt32,
+        embedding QBit(Float32, 128)
+    ) Engine MergeTree() ORDER BY id
+`); err != nil {
+    return err
+}
+
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+
+vector := make([]float32, 128)
+// ベクトルの値を設定する...
+if err := batch.Append(uint32(1), vector); err != nil {
+    return err
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+
+rows, err := conn.Query(ctx, "SELECT id, embedding FROM example")
+if err != nil {
+    return err
+}
+defer rows.Close()
+for rows.Next() {
+    var id uint32
+    var embedding []float32
+    rows.Scan(&id, &embedding)
+    fmt.Printf("ID: %d, Vector dim: %d\n", id, len(embedding))
+}
+```
+
+[完全なサンプル](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/qbit.go)

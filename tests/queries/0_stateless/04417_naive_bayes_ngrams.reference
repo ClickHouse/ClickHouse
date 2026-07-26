@@ -1,0 +1,39 @@
+['the','cat','sat']
+['the cat','cat sat']
+['the','cat']
+['a','b','c']
+['a,','b.']
+['the cat','cat sat']
+['a','b','c']
+['ab','bc']
+['abc']
+['C3','A9']
+['c','a','f','é']
+['hé','él','ll','lo']
+['é']
+['日本','本語']
+['🎉','🎈']
+1
+1
+['<s> cat','cat </s>']
+['0178','7879','79FF']
+['0178','7879']
+['7879','79FF']
+['^a','ab','b$']
+1
+1
+1
+[]
+[]
+0
+	[]
+a	[]
+ab	['ab']
+abc	['ab','bc']
+	[]
+one	[]
+one two	['one two']
+one two three	['one two','two three']
+Array(String)
+0
+1

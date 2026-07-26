@@ -1,0 +1,190 @@
+---
+sidebarTitle: '导出备份'
+slug: /cloud/manage/backups/export-backups-to-own-cloud-account
+title: '将备份导出到您自己的云账户'
+description: '介绍如何将备份导出到您自己的 Cloud 账户'
+doc_type: 'guide'
+---
+
+ClickHouse Cloud 支持将备份导出到您自己的云服务提供商 (CSP) 账户 (AWS S3、Google Cloud Storage 或 Azure Blob 存储) 中。
+有关 ClickHouse Cloud 备份工作方式的更多详情，包括“全量备份”备份与“增量”备份的区别，请参阅[备份](/zh/products/cloud/guides/backups/review-and-restore-backups)文档。
+
+本指南将通过示例说明如何将全量备份和增量备份导出到 AWS、GCP 和 Azure 对象存储，以及如何从这些备份中恢复。
+
+<Note>
+  如果将备份导出到同一云提供商的其他区域，则会产生[数据传输](/zh/products/cloud/reference/billing/network-data-transfer)费用。
+
+  跨云备份仅支持通过本页列出的 BACKUP/RESTORE 命令执行，不支持通过 UI 操作。
+</Note>
+
+<div id="requirements">
+  ## 要求
+</div>
+
+要将备份导出到您自己的 CSP 存储桶或从中恢复，您需要以下信息。
+
+<div id="aws">
+  ### AWS
+</div>
+
+1. AWS S3 端点，格式为：
+
+```text
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
+```
+
+例如：
+
+```text
+  s3://testchbackups.s3.amazonaws.com/backups/
+```
+
+其中：
+
+* `testchbackups` 是用于导出备份的 S3 存储桶 名称。
+  * `backups` 是一个可选的子目录。
+
+2. AWS 访问密钥和秘密密钥。也支持基于 AWS Role 的身份验证，可替代 AWS 访问密钥和秘密密钥使用。
+
+<Note>
+  若要使用基于 Role 的身份验证，请遵循安全访问 S3 的[设置](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。此外，您还需要向[此处](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)所述的 IAM 策略添加 `s3:PutObject` 和 `s3:DeleteObject` 权限。
+</Note>
+
+<div id="azure">
+  ### Azure
+</div>
+
+1. Azure 存储的连接字符串。
+2. 存储账户中的 Azure 容器名称。
+3. 容器中的 Azure Blob。
+
+<div id="google-cloud-storage-gcs">
+  ### Google Cloud Storage (GCS)
+</div>
+
+1. GCS 端点，格式如下：
+
+   ```text
+   https://storage.googleapis.com/<bucket_name>/
+   ```
+2. HMAC 访问密钥和 HMAC 密钥。
+
+<hr />
+
+<div id="backup-restore">
+  ## 备份 / 恢复
+</div>
+
+<div id="backup--restore-to-aws-s3-bucket">
+  ## 备份到 AWS S3 存储桶 / 从中恢复
+</div>
+
+<div id="take-a-db-backup">
+  ### 执行数据库备份
+</div>
+
+**全量备份**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+其中，`uuid` 是唯一标识符，用于区分一组备份。
+
+<Note>
+  在此子目录中，每个新备份都需要使用不同的 UUID，否则会报 `BACKUP_ALREADY_EXISTS` 错误。
+  例如，如果你每天执行备份，就需要每天使用一个新的 UUID。
+</Note>
+
+**增量备份**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>') 
+SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
+```
+
+<div id="restore-from-a-backup">
+  ### 从备份中恢复
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored 
+FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+参见：[配置 BACKUP/RESTORE 以使用 S3 端点](/zh/concepts/features/backup-restore/s3-endpoint)了解更多详情。
+
+<div id="backup--restore-to-azure-blob-storage">
+  ## 备份 / 恢复到 Azure Blob 存储
+</div>
+
+<div id="take-a-db-backup">
+  ### 执行数据库备份
+</div>
+
+**全量备份**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>');
+```
+
+其中，`uuid` 是用于区分一组备份的唯一标识符。
+
+**增量备份**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>/my_incremental') 
+SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+<div id="restore-from-a-backup">
+  ### 从备份中恢复
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_azure 
+FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+更多详情，请参阅：[配置 BACKUP/RESTORE 以使用 AzureBlobStorage 端点](/zh/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint)。
+
+<div id="backup--restore-to-google-cloud-storage-gcs">
+  ## 备份到 / 从 Google Cloud Storage (GCS) 恢复
+</div>
+
+<div id="take-a-db-backup">
+  ### 执行数据库备份
+</div>
+
+**全量备份**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/<bucket>/<uuid>', <hmac-key>', <hmac-secret>)
+```
+
+其中，`uuid` 是一个唯一标识符，用于区分一组备份。
+
+**增量备份**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', 'key', 'secret')
+SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```
+
+<div id="restore-from-a-backup">
+  ### 从备份中恢复
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_gcs 
+FROM S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```

@@ -1,0 +1,35 @@
+---
+title: Como resolver falhas de ingestão após o lançamento do ClickHouse 23.9?
+description: "Saiba como resolver falhas de ingestão causadas por uma verificação de grant mais rigorosa introduzida no ClickHouse 23.9 para tabelas que usam `async_inserts`. Atualize o grant para corrigir os erros."
+date: 2022-11-17
+tags: ['Erros e exceções']
+keywords: ['GRANT', 'Erros de permissão']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## Resolvendo falhas de ingestão após o lançamento 23.9 do ClickHouse
+</div>
+
+A causa raiz desses erros de permissão foi identificada e se deve a uma verificação mais rigorosa dos grants no novo lançamento para [`async_inserts`](/pt-BR/concepts/features/operations/insert/asyncinserts).
+
+Para corrigir esse problema, os grants precisam ser atualizados para que seu serviço funcione. Verifique a mensagem de erro, que indica quais grants estão faltando, e adicione manualmente os grants necessários. Os grants adicionais exigidos para as tabelas que usam `async_inserts` serão o grant `SELECT` ou `dictGet`.
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## Adicione os GRANTs necessários às tabelas e dicionários afetados
+</div>
+
+```
+-- Adicionar permissões de GRANT SELECT
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- Adicionar permissões de grant dictGet
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+Para saber mais sobre o comando `GRANT`, consulte [esta página](/pt-BR/reference/statements/grant).
+
+Se você não conseguir fazer essa alteração, entre em contato com o [suporte do ClickHouse](https://clickhouse.com/support/program) para obter ajuda.

@@ -1,0 +1,35 @@
+---
+description: 'ALTER TABLE ... DELETE SQL 문서'
+sidebarTitle: 'DELETE'
+slug: /sql-reference/statements/alter/delete
+title: 'ALTER TABLE ... DELETE SQL 문'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+```
+
+지정된 필터링 표현식과 일치하는 데이터를 삭제합니다. [뮤테이션](/ko/reference/statements/alter/index#mutations)으로 구현됩니다.
+
+<Note>
+  `ALTER TABLE` 접두사 때문에 이 구문은 SQL을 지원하는 대부분의 다른 시스템과 다릅니다. 이는 OLTP 데이터베이스의 유사한 쿼리와 달리, 이 작업이 자주 사용하도록 설계된 작업이 아니라 비용이 큰 작업임을 나타내기 위한 것입니다. `ALTER TABLE`은 삭제 전에 기반 데이터를 먼저 머지해야 하는 heavyweight 작업으로 간주됩니다. MergeTree 테이블에서는 경량한 삭제를 수행하며 훨씬 더 빠를 수 있는 [`DELETE FROM` 쿼리](/ko/reference/statements/delete) 사용을 고려하십시오.
+</Note>
+
+`filter_expr`는 `UInt8` 유형이어야 합니다. 이 표현식의 값이 0이 아닌 테이블의 행이 삭제됩니다.
+
+하나의 쿼리에는 쉼표로 구분된 여러 명령을 포함할 수 있습니다.
+
+쿼리 처리의 동기성은 [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정으로 정의됩니다. 기본값은 비동기입니다.
+
+**관련 항목**
+
+* [뮤테이션](/ko/reference/statements/alter/index#mutations)
+* [ALTER 쿼리의 동기성](/ko/reference/statements/alter/index#synchronicity-of-alter-queries)
+* [mutations&#95;sync](/ko/reference/settings/session-settings#mutations_sync) 설정
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [ClickHouse에서 업데이트와 삭제 처리하기](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

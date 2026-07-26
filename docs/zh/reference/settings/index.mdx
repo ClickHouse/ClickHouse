@@ -1,0 +1,29 @@
+---
+description: '设置目录页面'
+slug: /operations/settings/
+title: '设置'
+doc_type: 'landing-page'
+mode: wide
+---
+
+<CardGroup cols={2}>
+  <Card title="服务器设置" icon="server" href="/zh/reference/settings/server-settings/settings">
+    ClickHouse 服务器配置相关的设置。
+  </Card>
+
+  <Card title="会话设置" icon="user-gear" href="/zh/reference/settings/session-settings">
+    位于 `system.settings` 表中的设置。
+  </Card>
+
+  <Card title="MergeTree 表设置" icon="table" href="/zh/reference/settings/merge-tree-settings">
+    位于 `system.merge_tree_settings` 中的 `MergeTree` 设置。
+  </Card>
+
+  <Card title="格式设置" icon="file-lines" href="/zh/reference/settings/formats">
+    用于控制输入和输出格式的设置。
+  </Card>
+
+  <Card title="Beta 和 Experimental 功能" icon="flask" href="/zh/reference/settings/beta-and-experimental-features">
+    处于 Beta 或 Experimental 状态的设置和功能。
+  </Card>
+</CardGroup>

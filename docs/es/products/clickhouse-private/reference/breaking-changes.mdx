@@ -1,0 +1,48 @@
+---
+noindex: true
+title: "Cambios incompatibles"
+sidebarTitle: "Cambios incompatibles"
+description: "Cambios incompatibles específicos de la versión para los componentes ClickHouse Private."
+---
+
+Cambios incompatibles específicos de la versión para los componentes ClickHouse Private. Revise esta página antes de actualizar.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11245-shared-catalog-and-stateless-servers-enabled-by-default">
+  ## versión `1.1.245` de `helm/onprem-clickhouse-cluster` — Shared Catalog y servidores stateless habilitados de forma predeterminada
+</div>
+
+A partir de la versión `1.1.245` del chart, `featureFlags.enableSharedCatalog` y `featureFlags.disableMetadataPersistentVolumes` tienen el valor `true` de forma predeterminada. Las instalaciones nuevas usarán el motor de base de datos [Shared](https://clickhouse.com/docs/engines/database-engines/shared) y nodos de servidor stateless de forma predeterminada.
+
+**Las instalaciones nuevas** no requieren ninguna acción: los nuevos valores predeterminados se aplican automáticamente.
+
+**Las instalaciones existentes que aún no usan Shared Catalog** deben establecer explícitamente los valores predeterminados anteriores para evitar una migración no deseada durante la actualización:
+
+```yaml
+featureFlags:
+  enableSharedCatalog: false
+  disableMetadataPersistentVolumes: false
+```
+
+Cuando estés listo para migrar, sigue la guía [Migrate to Shared Catalog](/es/products/clickhouse-private/guides/migrate-to-shared-catalog).
+
+**Las instalaciones existentes que ya usan Shared Catalog** no requieren ninguna acción; los nuevos valores predeterminados coinciden con la configuración actual.
+
+***
+
+<div id="helmonprem-clickhouse-cluster-version-11210">
+  ## `helm/onprem-clickhouse-cluster` versión `1.1.210`
+</div>
+
+A partir de la versión `1.1.210` del chart, se incluyen de forma predeterminada nuevas restricciones de configuración. Si está utilizando una versión del servidor ClickHouse **anterior a la 25.10**, debe excluir estas restricciones añadiendo lo siguiente a la configuración del servidor:
+
+```yaml
+server:
+  excludeConfigConstraints:
+    - allow_experimental_qbit_type
+    - rewrite_in_to_join
+    - allow_experimental_alias_table_engine
+```
+
+Sin esta configuración, ClickHouse no podrá iniciarse, ya que las versiones anteriores a la 25.10 no reconocen estos ajustes.

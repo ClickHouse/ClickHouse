@@ -22,3 +22,13 @@ clickhouse_add_executable(wrap_in_nullable wrap_in_nullable.cpp)
 target_link_libraries (wrap_in_nullable PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
+
+clickhouse_add_executable(profile_events profile_events.cpp)
+target_link_libraries (profile_events PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)
+
+clickhouse_add_executable(benchmark_sched_getcpu sched_getcpu.cpp)
+target_link_libraries (benchmark_sched_getcpu PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)

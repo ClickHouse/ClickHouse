@@ -39,7 +39,8 @@ test1() {
         GROUP BY CounterID, URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_group_by_constant_keys = 1, max_rows_to_read = 0"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
+            parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, optimize_group_by_constant_keys = 1, max_rows_to_read = 0"
     check_replicas_read_in_order $query_id
 }
 
@@ -54,7 +55,8 @@ test2() {
         GROUP BY URL, EventDate
         ORDER BY URL, EventDate
         LIMIT 5 OFFSET 10
-        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, max_rows_to_read = 0"
+        SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
+            parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, max_rows_to_read = 0"
     check_replicas_read_in_order $query_id
 }
 
@@ -70,11 +72,37 @@ test3() {
             FROM test.hits
             WHERE CounterID = 1704509 AND UserID = 4322253409885123546
             GROUP BY URL, EventDate
-            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0, parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan=1, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1
+            SETTINGS optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
+                parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan=1, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1
         )
         WHERE explain LIKE '%Aggr%Transform%' OR explain LIKE '%InOrder%'"
+}
+
+test4() {
+    expected=$($CLICKHOUSE_CLIENT -q "
+        SELECT URL, EventDate, count()
+        FROM test.hits
+        WHERE CounterID = 1704509 AND UserID = 4322253409885123546
+        GROUP BY URL, EventDate
+        ORDER BY URL, EventDate")
+
+    actual=$($CLICKHOUSE_CLIENT -q "
+        SELECT URL, EventDate, count()
+        FROM remote(test_cluster_one_shard_three_replicas_localhost, test.hits)
+        WHERE CounterID = 1704509 AND UserID = 4322253409885123546
+        GROUP BY URL, EventDate
+        ORDER BY URL, EventDate
+        SETTINGS max_threads = 16, optimize_aggregation_in_order = 1, enable_memory_bound_merging_of_aggregation_results = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
+            parallel_replicas_for_non_replicated_merge_tree = 1, max_parallel_replicas = 3, parallel_replicas_local_plan = 1, query_plan_aggregation_in_order = 1, optimize_read_in_order = 1, max_rows_to_read = 0")
+
+    if [ "$expected" = "$actual" ]; then
+        echo OK
+    else
+        diff <(echo "$expected") <(echo "$actual") | head -20
+    fi
 }
 
 test1
 test2
 test3
+test4

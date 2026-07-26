@@ -1,0 +1,232 @@
+---
+sidebarTitle: '중복 제거 전략'
+description: '중복 및 삭제된 행을 처리합니다.'
+slug: /integrations/clickpipes/postgres/deduplication
+title: '중복 제거 전략 (CDC 사용)'
+keywords: ['deduplication', 'postgres', 'clickpipes', 'replacingmergetree', 'final']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Postgres에서 ClickHouse로 복제된 업데이트 및 삭제 작업은 ClickHouse의 데이터 저장 구조와 복제 과정으로 인해 ClickHouse에 중복된 행이 생길 수 있습니다. 이 페이지에서는 그 이유와 ClickHouse에서 중복을 처리하기 위한 전략을 설명합니다.
+
+<div id="how-does-data-get-replicated">
+  ## 데이터는 어떻게 복제됩니까?
+</div>
+
+<div id="PostgreSQL-logical-decoding">
+  ### PostgreSQL 논리 디코딩
+</div>
+
+ClickPipes는 Postgres에서 변경 사항이 발생하는 즉시 이를 읽어들이기 위해 [Postgres Logical Decoding](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication)을 사용합니다. Postgres의 Logical Decoding 프로세스를 사용하면 ClickPipes와 같은 클라이언트가 사람이 읽을 수 있는 형식, 즉 일련의 INSERT, UPDATE, DELETE 형태로 변경 사항을 수신할 수 있습니다.
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+ClickPipes는 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 엔진을 사용해 Postgres 테이블을 ClickHouse에 매핑합니다. ClickHouse는 append-only 워크로드에서 가장 뛰어난 성능을 발휘하며, 빈번한 UPDATE는 권장하지 않습니다. 이때 ReplacingMergeTree가 특히 강력합니다.
+
+ReplacingMergeTree에서는 UPDATE를 더 최신 버전(`_peerdb_version`)의 행을 삽입하는 방식으로 모델링하고, DELETE는 더 최신 버전의 행을 삽입하되 `_peerdb_is_deleted`를 true로 표시하는 방식으로 처리합니다. ReplacingMergeTree 엔진은 백그라운드에서 데이터를 중복 제거하고 머지하며, 지정된 프라이머리 키(id)에 대해 가장 최신 버전의 행을 유지합니다. 이를 통해 UPDATE와 DELETE를 버전 기반 삽입으로 효율적으로 처리할 수 있습니다.
+
+아래는 ClickPipes가 ClickHouse에 테이블을 생성하기 위해 실행하는 CREATE TABLE 문의 예시입니다.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+<div id="illustrative-example">
+  ### 이해를 돕기 위한 예시
+</div>
+
+아래 그림은 ClickPipes를 사용해 PostgreSQL과 ClickHouse 사이에서 테이블 `users`가 동기화되는 기본 예시를 보여줍니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 초기 적재" size="lg" />
+
+**1단계**에서는 PostgreSQL의 2개 행에 대한 초기 스냅샷과, ClickPipes가 이 2개 행을 ClickHouse로 초기 적재하는 과정을 보여줍니다. 보시다시피 두 행 모두 변경 없이 그대로 ClickHouse에 복사됩니다.
+
+**2단계**에서는 users 테이블에서 수행된 3가지 작업을 보여줍니다. 새 행 삽입, 기존 행 업데이트, 그리고 다른 행 삭제입니다.
+
+**3단계**에서는 ClickPipes가 INSERT, UPDATE, DELETE 작업을 버전 기반 삽입 형태로 ClickHouse에 복제하는 방식을 보여줍니다. UPDATE는 ID 2인 행의 새 버전으로 나타나고, DELETE는 `_is_deleted`를 사용해 true로 표시된 ID 1의 새 버전으로 나타납니다. 이로 인해 ClickHouse에는 PostgreSQL보다 3개의 행이 더 존재하게 됩니다.
+
+그 결과, `SELECT count(*) FROM users;`와 같은 단순한 쿼리를 실행하면 ClickHouse와 PostgreSQL에서 서로 다른 결과가 나올 수 있습니다. [ClickHouse 머지 문서](/ko/concepts/core-concepts/merges#replacing-merges)에 따르면, 오래된 행 버전은 결국 머지 과정에서 제거됩니다. 하지만 머지가 수행되는 시점은 예측할 수 없으므로, 그전까지는 ClickHouse의 쿼리가 일관되지 않은 결과를 반환할 수 있습니다.
+
+ClickHouse와 PostgreSQL에서 동일한 쿼리 결과를 보장하려면 어떻게 해야 할까요?
+
+<div id="deduplicate-using-final-keyword">
+  ### FINAL 키워드를 사용해 중복 제거
+</div>
+
+ClickHouse 쿼리에서 데이터 중복을 제거하는 권장 방법은 [FINAL 수정자](/ko/reference/statements/select/from#final-modifier)를 사용하는 것입니다. 이렇게 하면 중복 제거된 행만 반환됩니다.
+
+이제 이를 서로 다른 3개의 쿼리에 어떻게 적용하는지 살펴보겠습니다.
+
+*다음 쿼리의 WHERE 절에 유의하십시오. 이 절은 삭제된 행을 걸러내는 데 사용됩니다.*
+
+* **단순 count 쿼리**: Posts의 수를 계산합니다.
+
+동기화가 제대로 이루어졌는지 확인할 때 실행할 수 있는 가장 간단한 쿼리입니다. 두 쿼리는 동일한 개수를 반환해야 합니다.
+
+```sql
+-- PostgreSQL
+SELECT count(*) FROM posts;
+
+-- ClickHouse 
+SELECT count(*) FROM posts FINAL WHERE _peerdb_is_deleted=0;
+```
+
+* **JOIN을 사용한 단순 집계**: 조회 수를 가장 많이 누적한 상위 10명의 사용자
+
+단일 테이블(table)에 대한 집계 예시입니다. 여기에서 중복이 있으면 sum 함수 결과에 큰 영향을 줄 수 있습니다.
+
+```sql highlight={8,22}
+-- PostgreSQL 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts p
+LEFT JOIN users u ON u.id = p.owneruserid
+WHERE p.owneruserid > 0
+GROUP BY user_id, display_name
+ORDER BY viewcount DESC
+LIMIT 10;
+
+-- ClickHouse 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts AS p
+FINAL
+LEFT JOIN users AS u
+FINAL ON (u.id = p.owneruserid) AND (u._peerdb_is_deleted = 0)
+WHERE (p.owneruserid > 0) AND (p._peerdb_is_deleted = 0)
+GROUP BY
+    user_id,
+    display_name
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="final-setting">
+  #### FINAL 설정
+</div>
+
+쿼리에서 각 table 이름에 FINAL 수정자를 추가하는 대신, [FINAL 설정](/ko/reference/settings/session-settings#final)을 사용하면 쿼리의 모든 table에 자동으로 적용할 수 있습니다.
+
+이 설정은 쿼리별로 또는 전체 session에 적용할 수 있습니다.
+
+```sql
+-- 쿼리별 FINAL 설정
+SELECT count(*) FROM posts SETTINGS FINAL = 1;
+
+-- 세션에 FINAL 적용
+SET final = 1;
+SELECT count(*) FROM posts; 
+```
+
+<div id="row-policy">
+  #### ROW policy
+</div>
+
+중복된 `_peerdb_is_deleted = 0` filter를 숨기는 가장 쉬운 방법은 [ROW policy](/ko/concepts/features/security/access-rights#row-policy-management)를 사용하는 것입니다. 아래는 테이블 votes의 모든 쿼리에서 삭제된 행이 제외되도록 ROW policy를 생성하는 예시입니다.
+
+```sql
+-- 모든 사용자에게 행 정책 적용
+CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO ALL;
+```
+
+> 행 정책은 사용자와 역할 목록을 대상으로 적용됩니다. 이 예시에서는 모든 사용자와 역할에 적용됩니다. 필요에 따라 특정 사용자 또는 역할에만 적용하도록 조정할 수 있습니다.
+
+<div id="query-like-with-postgres">
+  ### Postgres처럼 쿼리하기
+</div>
+
+분석용 데이터셋을 PostgreSQL에서 ClickHouse로 마이그레이션할 때는 데이터 처리 방식과 쿼리 실행 방식의 차이로 인해 애플리케이션 쿼리를 수정해야 하는 경우가 많습니다.
+
+이 섹션에서는 기존 쿼리는 그대로 유지하면서 데이터를 중복 제거하는 기법을 살펴봅니다.
+
+<div id="views">
+  #### 뷰
+</div>
+
+[뷰](/ko/reference/statements/create/view#normal-view)는 쿼리에서 FINAL 키워드를 감추는 데 매우 효과적인 방법입니다. 데이터를 저장하지 않고, 액세스할 때마다 다른 테이블을 단순히 읽기만 하기 때문입니다.
+
+아래는 ClickHouse에서 데이터베이스의 각 테이블에 대해 FINAL 키워드와 삭제된 행을 걸러내는 필터를 적용한 뷰를 생성하는 예시입니다.
+
+```sql
+CREATE VIEW posts_view AS SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW users_view AS SELECT * FROM users FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW votes_view AS SELECT * FROM votes FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW comments_view AS SELECT * FROM comments FINAL WHERE _peerdb_is_deleted=0;
+```
+
+그런 다음 PostgreSQL에서 사용하던 것과 동일한 쿼리로 뷰를 조회할 수 있습니다.
+
+```sql
+-- 가장 많이 조회된 게시물
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM posts_view
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="refreshable-material-view">
+  #### 갱신 가능 구체화 뷰
+</div>
+
+또 다른 방법은 [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)를 사용하는 것입니다. 이를 사용하면 행의 중복을 제거하는 쿼리 실행을 예약하고, 그 결과를 대상 테이블에 저장할 수 있습니다. 예약된 갱신이 실행될 때마다 대상 테이블은 최신 쿼리 결과로 대체됩니다.
+
+이 방식의 핵심적인 장점은 `FINAL` 키워드를 사용하는 쿼리가 갱신 시 한 번만 실행된다는 점입니다. 따라서 이후 대상 테이블을 조회하는 쿼리에서는 `FINAL`을 사용할 필요가 없습니다.
+
+하지만 단점은 대상 테이블의 데이터가 가장 최근 갱신 시점까지만 반영된다는 점입니다. 그럼에도 많은 사용 사례에서는 몇 분에서 몇 시간 정도의 갱신 주기로도 충분할 수 있습니다.
+
+```sql
+-- 중복 제거된 posts 테이블 생성 
+CREATE TABLE deduplicated_posts AS posts;
+
+-- Materialized view 생성 및 매시간 실행 예약
+CREATE MATERIALIZED VIEW deduplicated_posts_mv REFRESH EVERY 1 HOUR TO deduplicated_posts AS 
+SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0 
+```
+
+그런 다음 `deduplicated_posts` 테이블에 대해 평소처럼 쿼리할 수 있습니다.
+
+```sql
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM deduplicated_posts
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10;
+```
