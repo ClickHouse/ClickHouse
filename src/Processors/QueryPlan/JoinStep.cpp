@@ -368,6 +368,20 @@ QueryPlanStepPtr JoinStep::clone() const
     /// support clone, throw `NOT_IMPLEMENTED` so callers like
     /// `FutureSetFromSubquery::buildOrderedSetInplace` take their non-clonable
     /// fallback (consume `source` directly) instead of running on shared state.
+    ///
+    /// The contract is deliberately limited to the algorithms that already implement
+    /// `IJoin::clone`: `HashJoin`, `ConcurrentHashJoin`, `ConstantJoin` and `FullSortingMergeJoin`.
+    /// `JoinSwitcher` (`join_algorithm = 'auto'`), `SpillingHashJoin`, `MergeJoin` /
+    /// `PartialMergeJoin` and `GraceHashJoin` inherit `IJoin::isCloneSupported() == false`, so a
+    /// subquery source that uses them keeps the pre-existing destructive behavior — which is exactly
+    /// the behavior of every join shape before this change, not a regression introduced here.
+    /// Widening `isCloneSupported` for those algorithms is out of scope on purpose: the same flag
+    /// also gates plan optimizations (`optimizeJoin`, `convertOuterJoinToInnerJoin`) and
+    /// `QueryPipelineBuilder`, so flipping it would silently enable join swapping and outer-to-inner
+    /// conversion for algorithms that were never validated for them. Those algorithms are also the
+    /// stateful, spilling ones, for which a "fresh instance from the same `TableJoin`" clone is not
+    /// obviously equivalent (`GraceHashJoin` owns temporary buckets, `SpillingHashJoin` owns spilled
+    /// files, `JoinSwitcher` owns whichever algorithm it already switched to).
     if (!join->isCloneSupported())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clone is not supported for {}", join->getName());
 
