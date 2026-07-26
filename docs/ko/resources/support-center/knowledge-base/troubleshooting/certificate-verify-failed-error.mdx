@@ -62,7 +62,7 @@ macOS에서는 python.org에서 제공하는 Python build가 시스템 키체인
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-또는 클라이언트가 certifi 번들을 직접 사용하도록 지정할 수 있습니다. [ClickHouse Connect](/ko/integrations/python)는 자동으로 certifi로 폴백되지 않으므로 번들을 `ca_cert` 매개변수로 전달하십시오:
+또는 클라이언트가 certifi 번들을 직접 사용하도록 지정할 수 있습니다. [ClickHouse Connect](/ko/integrations/language-clients/python)는 자동으로 certifi로 폴백되지 않으므로 번들을 `ca_cert` 매개변수로 전달하십시오:
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## 추가 자료
 </div>
 
-[`clickhouse-client` 구성 문서](/ko/interfaces/client#configuration_files)를 참조하십시오.
+[`clickhouse-client` 구성 문서](/ko/concepts/features/interfaces/client#configuration_files)를 참조하십시오.
