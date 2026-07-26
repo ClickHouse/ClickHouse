@@ -2908,6 +2908,42 @@ StoragePtr InterpreterCreateQuery::getValidatedAtomicPopulateSource(const ASTCre
     return source;
 }
 
+namespace
+{
+
+/// Settings that would take the population read off the pinned local snapshot, see
+/// `fillMaterializedViewAtomically`. They are forced on the population context, but query-local `SETTINGS`
+/// are reapplied on top of the context later - by the analyzer in `QueryTreeBuilder::buildSelectExpression`
+/// and by the old interpreter in `InterpreterSelectQuery::initSettings` - so a view defined as
+/// `... POPULATE AS SELECT ... SETTINGS enable_parallel_replicas = 1` would otherwise re-enable remote
+/// reads for the population. Both the setting name and its alias have to be listed, because a `SETTINGS`
+/// clause keeps the name as it was written and resolves the alias only when the change is applied.
+const std::unordered_set<std::string_view> settings_incompatible_with_pinned_snapshot
+{
+    "allow_experimental_parallel_reading_from_replicas",
+    "enable_parallel_replicas",
+    "parallel_distributed_insert_select",
+    "enable_shared_storage_snapshot_in_query",
+};
+
+/// Drop those settings from every `SETTINGS` clause of the population query (the view's `SELECT` and any
+/// nested subquery), so that the values forced on the population context win at every level.
+void removeSettingsIncompatibleWithPinnedSnapshot(const ASTPtr & ast)
+{
+    if (auto * set_query = ast->as<ASTSetQuery>())
+    {
+        std::erase_if(set_query->changes, [](const SettingChange & change)
+        {
+            return settings_incompatible_with_pinned_snapshot.contains(change.name);
+        });
+    }
+
+    for (const auto & child : ast->children)
+        removeSettingsIncompatibleWithPinnedSnapshot(child);
+}
+
+}
+
 std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(const ASTCreateQuery & create)
 {
     auto source = getValidatedAtomicPopulateSource(create);
@@ -2977,6 +3013,12 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
     insert->select = create.select->clone();
+
+    /// The settings above are forced on `populate_context`, but query-local `SETTINGS` of the view's SELECT
+    /// are applied on top of the context afterwards and could re-enable remote reads, which do not carry the
+    /// pin. Scrub them from the population query - it is a copy, so the view's stored definition (used for
+    /// the live pushes, which are not bound to a pinned snapshot) keeps them.
+    removeSettingsIncompatibleWithPinnedSnapshot(insert->select);
 
     return InterpreterInsertQuery(
                insert,
