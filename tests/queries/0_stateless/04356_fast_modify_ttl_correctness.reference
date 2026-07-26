@@ -27,6 +27,9 @@ Batched ALTER changing the default of the TTL column falls back to the regular r
 Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back
 1000
 1000
-0
+1
 Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows
 1000
+materialize_ttl_recalculate_only must not delete rows, only refresh the TTL metadata
+1000
+1

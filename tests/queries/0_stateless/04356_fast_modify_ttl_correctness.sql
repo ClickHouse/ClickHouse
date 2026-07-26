@@ -7,7 +7,8 @@
 --   * fall back when the rows TTL is not the only TTL in the table (e.g. a column TTL), because the
 --     parts' aggregate TTL bounds cover all TTLs and must not be shifted;
 --   * fall back for parts whose stored TTL info is stale (left by materialize_ttl_after_modify = 0),
---     never deleting rows that are not actually expired.
+--     never deleting rows that are not actually expired;
+--   * never delete rows under materialize_ttl_recalculate_only, which promises a metadata-only refresh.
 -- In every case the resulting row set must be correct.
 
 SET alter_sync = 2;
@@ -96,7 +97,7 @@ CREATE TABLE t_ttl_batch2 (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDE
 INSERT INTO t_ttl_batch2 SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_batch2 ADD COLUMN x String TTL d + INTERVAL 10 DAY, MODIFY TTL d + INTERVAL 200 DAY;
 SELECT count() FROM t_ttl_batch2;
-SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch2';
+SELECT countIf(command LIKE '%MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch2';
 DROP TABLE t_ttl_batch2;
 
 SELECT 'Batched ALTER adding the column the new TTL references falls back instead of throwing';
@@ -108,7 +109,7 @@ CREATE TABLE t_ttl_batch3 (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDE
 INSERT INTO t_ttl_batch3 SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_batch3 ADD COLUMN d2 DateTime('UTC') DEFAULT d, MODIFY TTL d2 + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_batch3;
-SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch3';
+SELECT countIf(command LIKE '%MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch3';
 DROP TABLE t_ttl_batch3;
 
 SELECT 'Batched ALTER changing the default of the TTL column falls back to the regular rewrite';
@@ -120,7 +121,7 @@ CREATE TABLE t_ttl_batch4 (id UInt32, d DateTime('UTC'), d2 DateTime('UTC') DEFA
 INSERT INTO t_ttl_batch4 (id, d) SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_batch4 MODIFY COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 1 DAY, MODIFY TTL d2 + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_batch4;
-SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch4';
+SELECT countIf(command LIKE '%MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_batch4';
 DROP TABLE t_ttl_batch4;
 
 SELECT 'Part lagging a standalone metadata-only DEFAULT change of the TTL column falls back';
@@ -128,8 +129,10 @@ DROP TABLE IF EXISTS t_ttl_lag_default;
 -- `materialize_ttl_recalculate_only` keeps every `MATERIALIZE TTL` a metadata-only recalculation, so
 -- the part never gets rewritten and never stores `d2` physically: it is synthesized from the DEFAULT
 -- on every read, and its stored TTL bounds were computed under whatever DEFAULT was current then.
+-- `min_bytes_for_wide_part` is pinned so that the part stays compact: a wide part takes the
+-- hardlink-and-recalculate path, which does write `d2` out, and then the part is no longer lagging.
 CREATE TABLE t_ttl_lag_default (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id
-    SETTINGS materialize_ttl_recalculate_only = 1;
+    SETTINGS materialize_ttl_recalculate_only = 1, min_bytes_for_wide_part = 1000000000;
 INSERT INTO t_ttl_lag_default SELECT number, now('UTC') - INTERVAL 1000 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_lag_default ADD COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 900 DAY;
 -- Recalculates the part's TTL bounds under the old DEFAULT: d + 900 + 200 days = now + 100 days.
@@ -139,12 +142,16 @@ SELECT count() FROM t_ttl_lag_default;
 -- TTL bounds still reflect the old DEFAULT, under the very same surface TTL expression.
 ALTER TABLE t_ttl_lag_default MODIFY COLUMN d2 DateTime('UTC') DEFAULT d + INTERVAL 2000 DAY;
 -- The TTL change (200 -> 50 days) is a provable constant -150 day shift of the same expression, but
--- applying it to the stored bounds would declare the part fully expired (now + 100 - 150 days) and
--- replace it with an empty part, while the true expiry is d + 2000 + 50 = now + 1050 days. The fast
--- path must reject a part that does not physically store the TTL source column and fall back.
+-- applying it to the stored bounds would declare the part expired (now + 100 - 150 days), so the next
+-- merge would drop every row, while the true expiry is d + 2000 + 50 = now + 1050 days. The fast path
+-- must reject a part that does not physically store the TTL source column and fall back to the regular
+-- recalculation. The ALTER itself is still recorded in the delta form (that decision is table-wide), so
+-- the fallback is asserted on the part's resulting TTL bounds: recalculated from the current DEFAULT
+-- they are far in the future, whereas a blind shift of the stored bounds puts them in the past.
 ALTER TABLE t_ttl_lag_default MODIFY TTL d2 + INTERVAL 50 DAY;
 SELECT count() FROM t_ttl_lag_default;
-SELECT countIf(command LIKE 'MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_lag_default';
+SELECT delete_ttl_info_max > now('UTC') + INTERVAL 1000 DAY FROM system.parts
+WHERE database = currentDatabase() AND table = 't_ttl_lag_default' AND active;
 DROP TABLE t_ttl_lag_default;
 
 SELECT 'Stale part TTL info (materialize_ttl_after_modify = 0) must not delete live rows';
@@ -155,3 +162,17 @@ ALTER TABLE t_ttl_stale MODIFY TTL d + INTERVAL 300 DAY SETTINGS materialize_ttl
 ALTER TABLE t_ttl_stale MODIFY TTL d + INTERVAL 290 DAY;
 SELECT count() FROM t_ttl_stale;
 DROP TABLE t_ttl_stale;
+
+SELECT 'materialize_ttl_recalculate_only must not delete rows, only refresh the TTL metadata';
+DROP TABLE IF EXISTS t_ttl_recalc_only;
+-- With `materialize_ttl_recalculate_only` the regular `MATERIALIZE TTL` never rewrites a part, so
+-- expired rows stay until the next merge. The fast path must behave the same: it may shift the stored
+-- TTL bounds (the mutation is still recorded in the delta form below), but it must not replace a fully
+-- expired part with an empty one.
+CREATE TABLE t_ttl_recalc_only (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id
+    TTL d + INTERVAL 300 DAY SETTINGS materialize_ttl_recalculate_only = 1;
+INSERT INTO t_ttl_recalc_only SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
+ALTER TABLE t_ttl_recalc_only MODIFY TTL d + INTERVAL 10 DAY;
+SELECT count() FROM t_ttl_recalc_only;
+SELECT countIf(command LIKE '%MATERIALIZE TTL %') FROM system.mutations WHERE database = currentDatabase() AND table = 't_ttl_recalc_only';
+DROP TABLE t_ttl_recalc_only;

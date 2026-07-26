@@ -3462,8 +3462,15 @@ bool MutateTask::prepare()
             }
         }
 
+        /// `materialize_ttl_recalculate_only` promises that `MATERIALIZE TTL` only refreshes the parts'
+        /// TTL metadata and never rewrites them, so expired rows survive until the next merge (see
+        /// `drop_expired_parts` in `MutateTask::prepare`). Replacing a fully expired part with an empty
+        /// one would break that promise and delete rows the regular path keeps, so with the setting on
+        /// every eligible part just gets its TTL metadata shifted below.
+        const bool recalculate_only = (*ctx->data->getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only];
+
         /// The whole part is expired under the new TTL: replace it with an empty part.
-        if (delta && source_ttl_infos.table_ttl.max + *delta <= ctx->time_of_mutation)
+        if (delta && !recalculate_only && source_ttl_infos.table_ttl.max + *delta <= ctx->time_of_mutation)
         {
             LOG_TRACE(ctx->log, "Part {} is fully expired after MODIFY TTL, creating empty part with mutation version {}",
                 ctx->source_part->name, ctx->future_part->part_info.mutation);
@@ -3478,11 +3485,12 @@ bool MutateTask::prepare()
             return false;
         }
 
-        /// No row in the part is expired under the new TTL: clone the part and shift its TTL infos.
-        /// Rewriting `ttl.txt` and `checksums.txt` in place is only possible when every file of the part
-        /// is stored separately; a packed part cannot be modified after it is written, so it takes the
-        /// regular rewrite below.
-        if (delta && source_ttl_infos.table_ttl.min + *delta >= ctx->time_of_mutation
+        /// No row in the part is expired under the new TTL (or `materialize_ttl_recalculate_only` asks
+        /// for a metadata-only refresh, which is exactly what the shift does): clone the part and shift
+        /// its TTL infos. Rewriting `ttl.txt` and `checksums.txt` in place is only possible when every
+        /// file of the part is stored separately; a packed part cannot be modified after it is written,
+        /// so it takes the regular rewrite below.
+        if (delta && (recalculate_only || source_ttl_infos.table_ttl.min + *delta >= ctx->time_of_mutation)
             && isFullPartStorage(ctx->source_part->getDataPartStorage()))
         {
             LOG_TRACE(ctx->log, "Part {} is not expired after MODIFY TTL, cloning and shifting TTL by {} seconds to mutation version {}",
