@@ -14,9 +14,8 @@ class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 class PackedFilesWriter;
 
-/// Arms the part-cleanup move failpoints (mergetree_part_cleanup_inject_*_retryable_exception) for the
-/// current thread. The outdated/unexpected part loaders scope this around the cleanup step so those
-/// failpoints fire only for the retry-safe loaders, not for every server rename/remove. Test scaffolding.
+/// Arms the mergetree_part_cleanup_inject_*_retryable_exception failpoints for the current thread. The part
+/// loaders scope it around a directory-moving cleanup step so they do not fire for every rename/remove.
 struct PartCleanupMoveFailpointGuard
 {
     PartCleanupMoveFailpointGuard();

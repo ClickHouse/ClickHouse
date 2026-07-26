@@ -405,6 +405,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 namespace FailPoints
@@ -428,6 +429,11 @@ namespace FailPoints
     extern const char mergetree_load_unexpected_parts_inject_worker_retryable_exception[];
     extern const char mergetree_load_outdated_parts_pause_in_worker_retryable_catch[];
     extern const char mergetree_load_outdated_parts_pause_before_cancel_check[];
+    extern const char mergetree_load_outdated_parts_pause_before_table_lock[];
+    extern const char mergetree_load_outdated_parts_inject_table_lock_timeout[];
+    extern const char mergetree_load_unexpected_parts_inject_build_retryable_exception[];
+    extern const char mergetree_load_unexpected_parts_inject_body_retryable_exception[];
+    extern const char mergetree_load_outdated_parts_inject_body_retryable_exception[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -2416,6 +2422,12 @@ void MergeTreeData::loadUnexpectedDataPart(UnexpectedPartLoadState & state)
             .build();
 
         state.part->loadRowsCountFileForUnexpectedPart();
+
+        /// Injects a retryable error into the build, for the catch below.
+        fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_build_retryable_exception,
+        {
+            throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure while building unexpected part {}", part_name);
+        });
     }
     catch (...)
     {
@@ -3422,6 +3434,12 @@ try
 
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
+    /// Injects a retryable error reaching the function-level catch, past the handlers above.
+    fiu_do_on(FailPoints::mergetree_load_unexpected_parts_inject_body_retryable_exception,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure in the unexpected parts loader body");
+    });
+
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
         unexpected_data_parts_loading_finished = true;
@@ -3469,7 +3487,43 @@ try
     /// Acquire shared lock because 'relative_data_path' is used while loading parts.
     TableLockHolder shared_lock;
     if (is_async)
-        shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    {
+        /// Parks the loader here so a test can raise is_being_restarted before it takes the lock.
+        FailPointInjection::pauseFailPoint(FailPoints::mergetree_load_outdated_parts_pause_before_table_lock);
+
+        /// Failing to take the table lock is transient, never an inconsistent set of parts, so it must not
+        /// reach the terminating catch below. tryLockForShare returns no lock for a table being restarted,
+        /// dropped or detached; it still throws DEADLOCK_AVOIDED if the timed acquisition expires.
+        String cannot_lock_reason;
+        try
+        {
+            fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_table_lock_timeout,
+            {
+                throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "Injected table lock timeout while loading outdated parts");
+            });
+
+            shared_lock = tryLockForShare(
+                RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+            if (!shared_lock)
+                cannot_lock_reason = "the table is being restarted, dropped or detached";
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::DEADLOCK_AVOIDED)
+                throw;
+            cannot_lock_reason = e.message();
+        }
+
+        if (!shared_lock)
+        {
+            /// Rescheduling is safe: scheduleAfter is a no-op once the task is deactivated, and a delayed
+            /// run is cancelled by deactivate(), so this cannot resurrect a cancelled loader.
+            LOG_DEBUG(log, "Cannot lock the table to load outdated data parts: {}. Will retry.", cannot_lock_reason);
+            if (outdated_data_parts_loading_task)
+                outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+            return;
+        }
+    }
 
     std::atomic_size_t num_loaded_parts = 0;
 
@@ -3697,6 +3751,12 @@ try
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
+
+    /// Injects a retryable error reaching the function-level catch, past the handlers above.
+    fiu_do_on(FailPoints::mergetree_load_outdated_parts_inject_body_retryable_exception,
+    {
+        throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable failure in the outdated parts loader body");
+    });
 
     {
         std::lock_guard lock(outdated_data_parts_mutex);

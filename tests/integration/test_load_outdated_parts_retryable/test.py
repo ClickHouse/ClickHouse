@@ -68,11 +68,50 @@ WORKER_RETRYABLE_CATCH_PAUSE = (
     "mergetree_load_outdated_parts_pause_in_worker_retryable_catch"
 )
 BEFORE_CANCEL_CHECK_PAUSE = "mergetree_load_outdated_parts_pause_before_cancel_check"
+# Parks the loader right before it takes the table lock, so a concurrent SYSTEM RESTART REPLICA can raise
+# is_being_restarted while the load is already in flight - the race that made the loader terminate the server.
+BEFORE_TABLE_LOCK_PAUSE = "mergetree_load_outdated_parts_pause_before_table_lock"
+# Models the other way taking the table lock fails: the timed acquisition expires under contention with a
+# writer, which throws DEADLOCK_AVOIDED ("Client should retry") rather than returning no lock.
+TABLE_LOCK_TIMEOUT_FAILPOINT = (
+    "mergetree_load_outdated_parts_inject_table_lock_timeout"
+)
+# Fires INSIDE loadUnexpectedDataPart, while the part is being built / its row count read. A retryable error
+# there must not mark a healthy part broken: the partially built part is dropped and the error rethrown so the
+# caller retries it, rather than detaching it as broken-on-start.
+UNEXPECTED_BUILD_FAILPOINT = (
+    "mergetree_load_unexpected_parts_inject_build_retryable_exception"
+)
+# Logged on ENTRY to loadUnexpectedDataPart, i.e. every time the loader actually (re)builds a part. Counting
+# it proves a retry re-entered the build path, which is what the partial-part reset is for: the worker skips
+# building while load_state.part is still set. The injected exception itself is rethrown rather than logged on
+# the retryable path, so it cannot be counted here.
+BUILD_ENTRY_LOG = "Loading unexpected part"
+# Fire a retryable error from the loader BODY, outside the per-worker and per-scheduling handlers (e.g. a
+# memory-tracked allocation in the bookkeeping after the parts loaded). Only the function-level catch of each
+# loader, the one that used to unconditionally std::terminate, can handle these.
+OUTDATED_BODY_FAILPOINT = "mergetree_load_outdated_parts_inject_body_retryable_exception"
+UNEXPECTED_BODY_FAILPOINT = (
+    "mergetree_load_unexpected_parts_inject_body_retryable_exception"
+)
+# The function-level catches log the interrupt line with an "Exception:" suffix, unlike the in-body reschedule
+# paths, so matching this proves the error was handled by the function-level catch specifically.
+OUTDATED_OUTER_INTERRUPT_LOG = (
+    "Loading of outdated parts was interrupted by a retryable error, will retry. Exception:"
+)
+UNEXPECTED_OUTER_INTERRUPT_LOG = (
+    "Loading of unexpected parts was interrupted by a retryable error, will retry. Exception:"
+)
 
 # Every retryable interrupt in loadOutdatedDataParts logs this single line, regardless of which of the
 # three failpoints fired. loadUnexpectedDataParts logs its own line.
 OUTDATED_INTERRUPT_LOG = "Loading of outdated parts was interrupted by a retryable error"
 UNEXPECTED_INTERRUPT_LOG = "Loading of unexpected parts was interrupted by a retryable error"
+# Logged when the loader cannot take the table lock because the table is being restarted / dropped / detached.
+TABLE_LOCK_RETRY_LOG = "Cannot lock the table to load outdated data parts"
+# Logged by StorageReplicatedMergeTree::flushAndPrepareForShutdown, which RESTART REPLICA calls right after it
+# raises is_being_restarted. Used to observe that the flag is up before resuming the parked loader.
+SHUTDOWN_PREPARE_LOG = "Start preparing for shutdown"
 # Both loaders log this just before std::terminate when they decide to fail fast.
 TERMINATE_LOG = "Will terminate to avoid undefined behaviour due to inconsistent set of parts"
 
@@ -588,6 +627,144 @@ def _make_unexpected_parts(table, zk_path):
     assert deleted >= 2
 
 
+def test_retryable_error_in_outdated_loader_body_reschedules():
+    # The function-level catch of loadOutdatedDataParts is what this PR changed from an unconditional
+    # std::terminate into a reschedule. Every other case here is absorbed by a worker, scheduling or
+    # cleanup handler, so without this test the enclosing catch itself is never exercised and its retry
+    # logic could be removed with the suite still green.
+    table = "t_outdated_body"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+    outdated_before = int(
+        node.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active = 0")
+    )
+    assert outdated_before > 0
+
+    terminates_before = int(node.count_in_log(TERMINATE_LOG))
+    outer_before = int(node.count_in_log(OUTDATED_OUTER_INTERRUPT_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {OUTDATED_BODY_FAILPOINT}")
+    try:
+        node.query(f"DETACH TABLE {table}")
+        node.query(f"ATTACH TABLE {table}")
+
+        try:
+            wait_for_log_count_above(node, OUTDATED_OUTER_INTERRUPT_LOG, outer_before)
+        except AssertionError:
+            assert (
+                int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+            ), "the function-level catch terminated the server on a retryable error"
+            raise
+    finally:
+        # Always clear it: the cases share one server, so a REGULAR failpoint left enabled after a failure
+        # here would make every later outdated-parts case fail too.
+        node.query(f"SYSTEM DISABLE FAILPOINT {OUTDATED_BODY_FAILPOINT}")
+    node.query(f"SYSTEM WAIT LOADING PARTS {table}", timeout=60)
+    assert (
+        int(node.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active = 0"))
+        == outdated_before
+    )
+    assert int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_retryable_error_in_unexpected_loader_body_reschedules():
+    # The same contract for the sibling loader's function-level catch.
+    table = "t_unexpected_body"
+    zk_path = "/clickhouse/tables/t_unexpected_body"
+    _make_unexpected_parts(table, zk_path)
+
+    terminates_before = int(node.count_in_log(TERMINATE_LOG))
+    outer_before = int(node.count_in_log(UNEXPECTED_OUTER_INTERRUPT_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_BODY_FAILPOINT}")
+    try:
+        node.query(f"DETACH TABLE {table}")
+        # ATTACH blocks until unexpected parts finish loading, and the loader keeps rescheduling, so run it
+        # async.
+        attach = node.get_query_request(f"ATTACH TABLE {table}")
+
+        try:
+            wait_for_log_count_above(node, UNEXPECTED_OUTER_INTERRUPT_LOG, outer_before)
+        except AssertionError:
+            assert (
+                int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+            ), "the function-level catch terminated the server on a retryable error"
+            raise
+    finally:
+        # Always clear it, see the outdated-loader case above.
+        node.query(f"SYSTEM DISABLE FAILPOINT {UNEXPECTED_BODY_FAILPOINT}")
+
+    attach.get_answer()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
+    assert int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_retryable_build_error_does_not_detach_unexpected_part():
+    # loadUnexpectedDataPart classifies a failure to build the part / read its row count. A retryable error
+    # (not enough memory, network) there does not mean the part is broken, so it must drop the partially built
+    # part and rethrow for a retry. Without that arm the part is marked is_broken and DETACHED as
+    # broken-on-start, which silently loses a healthy part on a transient error.
+    table = "t_unexpected_build"
+    zk_path = "/clickhouse/tables/t_unexpected_build"
+    _make_unexpected_parts(table, zk_path)
+
+    interrupts_before = int(node.count_in_log(UNEXPECTED_INTERRUPT_LOG))
+    terminates_before = int(node.count_in_log(TERMINATE_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {UNEXPECTED_BUILD_FAILPOINT}")
+    try:
+        node.query(f"DETACH TABLE {table}")
+        # ATTACH blocks until unexpected parts finish loading, and the loader keeps rescheduling while the
+        # failpoint fires, so run it async.
+        attach = node.get_query_request(f"ATTACH TABLE {table}")
+
+        # The retryable build error reschedules instead of terminating.
+        wait_for_log_count_above(node, UNEXPECTED_INTERRUPT_LOG, interrupts_before)
+        assert int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+
+        # Require the rescheduled runs to RE-ENTER the build path, which is what proves the partially built
+        # part was reset. The worker skips loadUnexpectedDataPart while load_state.part is still set, so if
+        # only the reset were dropped the build would happen once, the next attempt would resume past it and
+        # mark the part finished, and a single-interrupt assertion would still pass.
+        builds = int(node.count_in_log(BUILD_ENTRY_LOG))
+        wait_for_log_count_above(node, BUILD_ENTRY_LOG, builds, timeout=60)
+    finally:
+        # Always clear it: the cases share one server, so leaving a REGULAR failpoint enabled after a failure
+        # here would make every later unexpected-parts case fail too.
+        node.query(f"SYSTEM DISABLE FAILPOINT {UNEXPECTED_BUILD_FAILPOINT}")
+
+    # The parts load cleanly now that the transient condition is gone.
+    attach.get_answer()
+    assert node.query(f"SELECT count() FROM {table}").strip() == "3000"
+
+    # checkParts detaches every unexpected part as "ignored" once its sanity check passes, so the assertion
+    # is about the PREFIX: none of them may carry a "broken-on-start" prefix, which is what the loader would
+    # have used had the transient build error been misclassified as a broken part.
+    assert (
+        int(
+            node.query(
+                f"SELECT count() FROM system.detached_parts "
+                f"WHERE table = '{table}' AND reason LIKE '%broken-on-start%'"
+            )
+        )
+        == 0
+    )
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
 def test_nonretryable_worker_error_not_masked_by_retryable_schedule_failure():
     # loadUnexpectedDataParts schedules one worker per unexpected part. If an already-scheduled worker stores
     # a non-retryable (genuinely inconsistent-part) error and then scheduling a LATER worker fails with a
@@ -769,3 +946,147 @@ def test_cancellation_while_worker_requeues_does_not_deadlock():
 
     node.query(f"SYSTEM DISABLE FAILPOINT {WORKER_FAILPOINT}")
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def test_restart_replica_while_loading_outdated_parts_does_not_terminate():
+    # SYSTEM RESTART REPLICA raises is_being_restarted BEFORE flushAndShutdown() cancels the outdated-parts
+    # loading task, so an asynchronous load already in flight sees the flag when it takes the table lock. With
+    # lockForShare that threw TABLE_IS_BEING_RESTARTED into the function-level catch(...), which terminated
+    # the server: the exception is not in isRetryableException, so even the retryable-error handling of this PR
+    # did not cover it. The loader must instead notice the table is unavailable and reschedule.
+    table = "t_outdated_restart"
+    zk_path = "/clickhouse/tables/t_outdated_restart"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (a UInt64, b String)
+        ENGINE = ReplicatedMergeTree('{zk_path}', '1') ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    # Outdated parts to load: the source parts of the merge stay inactive until old_parts_lifetime expires.
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+
+    terminates_before = int(node.count_in_log(TERMINATE_LOG))
+    lock_retries_before = int(node.count_in_log(TABLE_LOCK_RETRY_LOG))
+
+    # Park the loader just before it takes the table lock, then start it with DETACH/ATTACH.
+    node.query(f"SYSTEM ENABLE FAILPOINT {BEFORE_TABLE_LOCK_PAUSE}")
+    node.query(f"DETACH TABLE {table}")
+    node.query(f"ATTACH TABLE {table}")
+    node.query(f"SYSTEM WAIT FAILPOINT {BEFORE_TABLE_LOCK_PAUSE} PAUSE", timeout=60)
+
+    # Baseline the preparing-for-shutdown line only NOW: the DETACH above calls flushAndShutdown() and emits
+    # the very same line, so a baseline taken before it would already be satisfied and the wait below would
+    # return without synchronizing with the restart query at all.
+    shutdowns_before = int(node.count_in_log(SHUTDOWN_PREPARE_LOG))
+
+    # RESTART REPLICA raises is_being_restarted, then blocks in flushAndShutdown() -> deactivate() waiting for
+    # this parked loader run (deactivate takes the task's exec_mutex, which the parked run holds), so run it
+    # async and resume the loader while the flag is up.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        restart = executor.submit(
+            lambda: node.query(f"SYSTEM RESTART REPLICA {table}", timeout=120)
+        )
+        # is_being_restarted is raised just before flushAndShutdown(), which logs this line before it can block,
+        # so seeing the line means the flag is up and the loader will observe it when it takes the lock.
+        wait_for_log_count_above(node, SHUTDOWN_PREPARE_LOG, shutdowns_before, timeout=60)
+
+        # Resume the loader: it now takes the table lock with is_being_restarted set.
+        node.query(f"SYSTEM DISABLE FAILPOINT {BEFORE_TABLE_LOCK_PAUSE}")
+
+        # It must log the retry and let the restart finish, instead of terminating the server.
+        try:
+            wait_for_log_count_above(node, TABLE_LOCK_RETRY_LOG, lock_retries_before)
+        except AssertionError:
+            # Report the pre-fix outcome (std::terminate on TABLE_IS_BEING_RESTARTED) rather than only the
+            # missing retry line, so a regression here is diagnosed from the failure message alone.
+            assert (
+                int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+            ), "the loader terminated the server because the table was being restarted"
+            raise
+        restart.result(timeout=90)
+    finally:
+        executor.shutdown(wait=False)
+
+    assert int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+    assert node.get_process_pid("clickhouse") is not None
+
+    # The restarted table loads its outdated parts normally (the restart re-created the loading task).
+    node.query(f"SYSTEM WAIT LOADING PARTS {table}", timeout=60)
+    assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+    assert (
+        int(node.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active = 0")) > 0
+    )
+    assert (
+        int(node.query(f"SELECT count() FROM system.detached_parts WHERE table = '{table}'")) == 0
+    )
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_table_lock_timeout_while_loading_outdated_parts_does_not_terminate():
+    # The other way taking the table lock fails: the timed acquisition expires while a writer holds the lock
+    # exclusively, which throws DEADLOCK_AVOIDED. Its own message says the client should retry, yet the code is
+    # not in isRetryableException, so it reached the terminating catch too (this is also how a concurrent
+    # restart can present itself, because the lock is taken before is_being_restarted is checked). The loader
+    # must reschedule and load every outdated part once the contention clears.
+    table = "t_outdated_lock_timeout"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+        SETTINGS old_parts_lifetime = 600, merge_tree_clear_old_parts_interval_seconds = 600
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000)")
+    node.query(f"INSERT INTO {table} SELECT number, toString(number) FROM numbers(1000, 1000)")
+    node.query(f"OPTIMIZE TABLE {table} FINAL")
+    outdated_before = int(
+        node.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active = 0")
+    )
+    assert outdated_before > 0
+
+    terminates_before = int(node.count_in_log(TERMINATE_LOG))
+    lock_retries_before = int(node.count_in_log(TABLE_LOCK_RETRY_LOG))
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {TABLE_LOCK_TIMEOUT_FAILPOINT}")
+    try:
+        node.query(f"DETACH TABLE {table}")
+        node.query(f"ATTACH TABLE {table}")
+
+        try:
+            wait_for_log_count_above(node, TABLE_LOCK_RETRY_LOG, lock_retries_before)
+        except AssertionError:
+            assert (
+                int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+            ), "the loader terminated the server on a table lock timeout"
+            raise
+    except Exception:
+        # Always clear it on failure, see the loader-body cases above. The success path disables it below as
+        # part of the assertion that the SAME rescheduled task then loads the deferred parts.
+        node.query(f"SYSTEM DISABLE FAILPOINT {TABLE_LOCK_TIMEOUT_FAILPOINT}")
+        raise
+
+    # The server stayed up, and the parts are still queued rather than dropped.
+    assert node.query(f"SELECT count() FROM {table}").strip() == "2000"
+    assert (
+        int(node.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active = 0")) == 0
+    )
+
+    # Clear the contention: the SAME rescheduled task must load every outdated part it deferred.
+    node.query(f"SYSTEM DISABLE FAILPOINT {TABLE_LOCK_TIMEOUT_FAILPOINT}")
+    node.query(f"SYSTEM WAIT LOADING PARTS {table}", timeout=60)
+    assert (
+        int(node.query(f"SELECT count() FROM system.parts WHERE table = '{table}' AND active = 0"))
+        == outdated_before
+    )
+    assert int(node.count_in_log(TERMINATE_LOG)) == terminates_before
+    assert (
+        int(node.query(f"SELECT count() FROM system.detached_parts WHERE table = '{table}'")) == 0
+    )
+
+    node.query(f"DROP TABLE {table} SYNC")

@@ -48,10 +48,8 @@ namespace FailPoints
     extern const char mergetree_part_cleanup_inject_move_retryable_exception[];
 }
 
-/// The two part-cleanup failpoints above model retryable errors during a part's directory move. They must
-/// only fire for the outdated/unexpected part loaders (which are what this PR makes retry safely), not for
-/// every server rename/remove. The loaders arm this thread-local scope around the cleanup step; the
-/// failpoints check it, so this is internal test scaffolding and needs no change to the rename/remove API.
+/// Set while a part loader runs a directory-moving cleanup step. The failpoints above check it, so they fire
+/// only there and not for every rename/remove on the server.
 thread_local bool part_cleanup_move_failpoints_armed = false;
 
 PartCleanupMoveFailpointGuard::PartCleanupMoveFailpointGuard()

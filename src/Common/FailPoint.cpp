@@ -257,8 +257,13 @@ static struct InitFiu
     REGULAR(mergetree_load_unexpected_parts_inject_worker_retryable_exception) \
     REGULAR(mergetree_part_cleanup_inject_pre_move_retryable_exception) \
     REGULAR(mergetree_part_cleanup_inject_move_retryable_exception) \
+    REGULAR(mergetree_load_outdated_parts_inject_table_lock_timeout) \
+    REGULAR(mergetree_load_unexpected_parts_inject_build_retryable_exception) \
+    REGULAR(mergetree_load_unexpected_parts_inject_body_retryable_exception) \
+    REGULAR(mergetree_load_outdated_parts_inject_body_retryable_exception) \
     PAUSEABLE(mergetree_load_outdated_parts_pause_in_worker_retryable_catch) \
     PAUSEABLE(mergetree_load_outdated_parts_pause_before_cancel_check) \
+    PAUSEABLE(mergetree_load_outdated_parts_pause_before_table_lock) \
     PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
