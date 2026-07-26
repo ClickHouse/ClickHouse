@@ -1,0 +1,22 @@
+left join, right-side ON condition repeated in WHERE
+1	100
+left join, legacy join step
+1	100
+right join, left-side ON condition repeated in WHERE
+1	100
+full join
+1	100
+inner join
+1	100
+left join, non-Bool repeated condition
+1	100
+left join, String repeated condition
+1	100
+left join, LowCardinality repeated condition
+1	100
+left join, LowCardinality(Nullable) repeated condition
+1	100
+left join, already Nullable repeated condition
+1	100
+left join over ReplacingMergeTree with FINAL, prewhere disabled
+1	100
