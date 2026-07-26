@@ -27,14 +27,18 @@ ${CLICKHOUSE_LOCAL} -q "
     -- One small part written BEFORE the ALTER: it does not store d at all.
     INSERT INTO t_merge_mem_partial_default SELECT number, repeat('x', 500) FROM numbers(100);
 
-    -- Metadata-only ALTER, then a projection over the new column: the merge below rebuilds it.
+    -- Metadata-only ALTER: the parts written before it keep no d at all.
     ALTER TABLE t_merge_mem_partial_default ADD COLUMN d UInt64 DEFAULT k * 2;
-    ALTER TABLE t_merge_mem_partial_default ADD PROJECTION p_partial (SELECT d ORDER BY d);
 
     -- Two much larger parts written AFTER the ALTER: they physically store d, so its bytes for their rows are
     -- already accounted as read input and must not be charged a second time as synthesized volume.
     INSERT INTO t_merge_mem_partial_default SELECT number, repeat('x', 500), number * 2 FROM numbers(100, 1450);
     INSERT INTO t_merge_mem_partial_default SELECT number, repeat('x', 500), number * 2 FROM numbers(1550, 1450);
+
+    -- The projection is added last, so no part has it materialized and every part's projection set matches
+    -- (OPTIMIZE refuses to merge parts with different projection sets); the merge below rebuilds it from the
+    -- merged rows, driving the rebuilt-projection sizing for the same partially-present column.
+    ALTER TABLE t_merge_mem_partial_default ADD PROJECTION p_partial (SELECT d ORDER BY d);
     SYSTEM START MERGES t_merge_mem_partial_default;
 
     OPTIMIZE TABLE t_merge_mem_partial_default FINAL SETTINGS optimize_throw_if_noop = 1;
