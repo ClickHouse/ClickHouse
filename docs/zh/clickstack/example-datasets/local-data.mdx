@@ -18,19 +18,17 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     本指南假设您已完成[托管 ClickStack 入门指南](/zh/clickstack/deployment/managed)，并已[记录连接凭据](/zh/clickstack/getting-started/managed#next-steps)。
 
     <Steps>
-      <Step>
-        ### 创建自定义 OpenTelemetry 配置
-
+      <Step title="创建自定义 OpenTelemetry 配置" id="create-otel-configuration">
         创建 `custom-local-config.yaml` 文件，内容如下：
 
         ```yaml
         receivers:
           filelog:
             include:
-              - /host/var/log/**/*.log        # 来自主机的 Linux 日志
+              - /host/var/log/**/*.log        # Linux logs from host
               - /host/var/log/syslog
               - /host/var/log/messages
-              - /host/private/var/log/*.log   # 来自主机的 macOS 日志
+              - /host/private/var/log/*.log   # macOS logs from host
             start_at: beginning
             resource:
               service.name: "system-logs"
@@ -102,9 +100,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         有关 OpenTelemetry (OTel) 配置结构的更多信息，建议参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
       </Step>
 
-      <Step>
-        ### 启动 OpenTelemetry collector
-
+      <Step title="启动 OpenTelemetry collector" id="start-the-otel-collector">
         使用以下命令运行一个独立的 collector：
 
         ```shell
@@ -124,17 +120,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         collector 会立即开始收集本地系统日志和指标。
       </Step>
 
-      <Step>
-        ### 选择服务
-
+      <Step title="选择服务" id="select-your-service">
         在 ClickHouse Cloud 主页面中，选择“托管 ClickStack”服务。
 
         <Image img="/images/clickstack/select_service.webp" alt="选择服务" size="lg" />
       </Step>
 
-      <Step>
-        ### 查看系统日志
-
+      <Step title="查看系统日志" id="navigate-to-the-hyperdx-ui">
         在左侧菜单中选择 `ClickStack`，进入 ClickStack UI 后，系统会自动完成身份验证。
 
         搜索 UI 中应已显示本地系统日志。展开过滤器，选择 `system.log`：
@@ -142,16 +134,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX 本地日志" size="lg" />
       </Step>
 
-      <Step>
-        ### 查看系统指标
-
+      <Step title="探索系统指标" id="explore-system-metrics">
         我们可以使用图表查看指标。
 
         通过左侧菜单进入 Chart Explorer。选择数据源 `Metrics`，并将聚合类型设为 `Maximum`。
 
         在 `Select a Metric` 菜单中，只需输入 `memory`，然后选择 `system.memory.utilization (Gauge)`。
 
-        点击 `运行` 按钮，即可将内存利用率随时间变化的情况可视化。
+        点击运行按钮，即可将内存利用率随时间变化的情况可视化。
 
         <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="内存随时间变化" size="lg" />
 
@@ -169,16 +159,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Tab title="ClickStack 开源版">
     ### 创建自定义 OpenTelemetry 配置
 
-    创建一个 `custom-local-config.yaml` 文件，内容如下：
+    创建 `custom-local-config.yaml` 文件，内容如下：
 
     ```yaml
     receivers:
       filelog:
         include:
-          - /host/var/log/**/*.log        # 来自主机的 Linux 日志
+          - /host/var/log/**/*.log        # Linux logs from host
           - /host/var/log/syslog
           - /host/var/log/messages
-          - /host/private/var/log/*.log   # 来自主机的 macOS 日志
+          - /host/private/var/log/*.log   # macOS logs from host
         start_at: beginning
         resource:
           service.name: "system-logs"
@@ -235,19 +225,19 @@ import { Image } from "/snippets/zh/components/Image.jsx";
             - clickhouse
     ```
 
-    此配置收集 OSX 和 Linux 系统的系统日志与指标，并将结果发送至 ClickStack。该配置通过添加新的接收器和管道来扩展 ClickStack collector——您可以引用已在基础 ClickStack collector 中配置的 `clickhouse` exporter 和处理器 (`memory_limiter`、`batch`) 。
+    此配置会收集 OSX 和 Linux 系统的系统日志和指标，并将结果发送到 ClickStack。该配置通过添加新的 receivers 和 pipelines 来扩展 ClickStack collector——你将引用基础 ClickStack collector 中已配置好的 `clickhouse` exporter 和 processors (`memory_limiter`、`batch`) 。
 
     <Info>
       **摄取时间戳**
 
-      此配置会在摄取时调整时间戳，为每个事件分配更新后的时间值。理想情况下，建议使用 OTel 处理器或日志文件中的 operator 来[预处理或解析时间戳](/zh/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)，以确保保留准确的事件时间。
+      此配置会在摄取时调整时间戳，为每个事件分配更新后的时间值。理想情况下，你应在日志文件中使用 OTel processors 或 operators [预处理或解析时间戳](/zh/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)，以确保保留准确的事件时间。
 
-      在此示例配置中，如果 receiver 或 file processor 被配置为从文件开头开始读取，则所有现有日志条目都会被赋予相同的调整后时间戳——也就是处理时间，而不是原始事件时间。之后追加到文件中的任何新事件，将获得接近其实际生成时间的时间戳。
+      在此示例配置中，如果 receiver 或 file processor 被设置为从文件开头开始读取，则所有现有日志条目都会被赋予相同的调整后时间戳——也就是处理时的时间，而不是原始事件时间。之后追加到文件中的任何新事件，则会获得接近其实际生成时间的时间戳。
 
-      为避免这种情况，你可以在 receiver 配置中将起始位置设为 `end`。这样可确保只摄取新条目，并为其分配接近真实到达时间的时间戳。
+      为避免这种情况，你可以在 receiver 配置中将起始位置设为 `end`。这样可以确保只摄取新条目，并为其赋予接近真实到达时间的时间戳。
     </Info>
 
-    有关 OpenTelemetry (OTel) 配置结构的更多详情，请参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
+    有关 OpenTelemetry (OTel) 配置结构的更多信息，建议参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
 
     ### 使用自定义配置启动 ClickStack
 
@@ -272,7 +262,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       请注意，我们将主机的 `/var/log` 挂载到容器内的 `/host/var/log`，以避免与容器自身的日志文件发生冲突。
     </Info>
 
-    ### 探索系统日志
+    ### 查看系统日志
 
     如果在本地部署，请访问 [http://localhost:8080](http://localhost:8080) 以访问 ClickStack UI。
 
@@ -282,7 +272,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     ### 探索系统指标
 
-    我们可以使用图表来探索指标。
+    我们可以使用图表来查看指标。
 
     通过左侧菜单进入 Chart Explorer。将 source 选择为 `Metrics`，并将聚合类型设置为 `Maximum`。
 
@@ -292,12 +282,12 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="内存随时间变化" size="lg" />
 
-    请注意，该数值以浮点数 `%` 的形式返回。若要使其显示更直观，请选择 `Set number format`。
+    注意，返回的数值是浮点数形式的 `%` 值。为了更清晰地显示，请选择 `Set number format`。
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数字格式" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数值格式" size="lg" />
 
-    在随后出现的菜单中，您可以从 `Output format` 下拉菜单中选择 `Percentage`，然后点击 `Apply`。
+    在随后出现的菜单中，从 `Output format` 下拉菜单里选择 `Percentage`，然后点击 `Apply`。
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="内存时间占比" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="内存百分比随时间变化" size="lg" />
   </Tab>
 </Tabs>
