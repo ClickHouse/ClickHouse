@@ -1870,6 +1870,15 @@ static BlockIO executeQueryImpl(
                         if (herd_wait_process_list_elem)
                             herd_wait_process_list_elem->throwIfKilled();
                         skip_execution = get_result_from_query_result_cache();
+                        if (!skip_execution)
+                            /// The wait ended but the cache is still empty: the executor died or was cancelled without
+                            /// inserting, or the entry was cleared. We are about to compute the result ourselves, so take
+                            /// over as the executor. Otherwise this execution would own no token, a query arriving in the
+                            /// meantime would install a token of its own, and that token's waiters would block on it even
+                            /// though we repopulate the cache first - the same latency problem in a new shape.
+                            /// `tryTakeOverAsyncInsert` never waits: if another query is already the executor, it returns
+                            /// nullptr and we simply execute untokened while that executor wakes its own waiters.
+                            async_insert_token_to_finish = query_result_cache->tryTakeOverAsyncInsert(herd_key);
                     }
                 }
 

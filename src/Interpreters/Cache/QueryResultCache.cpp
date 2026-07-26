@@ -997,6 +997,7 @@ class QueryResultCache::HerdCoalescing
 public:
     HerdCoalescingTokenPtr startAsyncInsert(
         const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled);
+    HerdCoalescingTokenPtr tryTakeOverAsyncInsert(const HerdCoalescingKey & key);
     void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
     /// Wake waiters and drop tokens: all of them when `tag` is unset, only those whose key carries `tag` otherwise.
     void clear(const std::optional<String> & tag);
@@ -1087,6 +1088,16 @@ QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::start
             wake({existing_token});
     }
     return nullptr;
+}
+
+QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::HerdCoalescing::tryTakeOverAsyncInsert(const HerdCoalescingKey & key)
+{
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = tokens.try_emplace(key, nullptr);
+    if (!inserted)
+        return nullptr; /// Another query is the executor for this key already; it wakes its own waiters.
+    it->second = std::make_shared<HerdCoalescingToken>(key);
+    return it->second;
 }
 
 void QueryResultCache::HerdCoalescing::finishAsyncInsert(const TokenPtr & token)
@@ -1233,6 +1244,11 @@ QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::startAsyncInsert(
     const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled)
 {
     return herd_coalescing->startAsyncInsert(key, timeout, is_cancelled);
+}
+
+QueryResultCache::HerdCoalescingTokenPtr QueryResultCache::tryTakeOverAsyncInsert(const HerdCoalescingKey & key)
+{
+    return herd_coalescing->tryTakeOverAsyncInsert(key);
 }
 
 void QueryResultCache::finishAsyncInsert(const HerdCoalescingTokenPtr & token)

@@ -223,6 +223,13 @@ public:
         const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled = {});
     void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
 
+    /// Non-blocking counterpart of startAsyncInsert for a query that finished waiting and found the cache still empty
+    /// (the executor died, was cancelled, or the entry was cleared): it is about to execute the query itself, so let it
+    /// take over as the executor. Returns a fresh token if no other query owns the key, nullptr if one already does (that
+    /// query is the executor and wakes its own waiters). Never waits, so it cannot chain one herd wait onto another. As
+    /// with startAsyncInsert, a non-null token must be passed back to finishAsyncInsert.
+    HerdCoalescingTokenPtr tryTakeOverAsyncInsert(const HerdCoalescingKey & key);
+
     /// For debugging and system tables
     std::vector<QueryResultCache::Cache::KeyMapped> dump() const;
 
