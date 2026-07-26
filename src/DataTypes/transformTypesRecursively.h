@@ -20,6 +20,4 @@ void transformTypesRecursively(
     std::function<void(DataTypes &, TypeIndexesSet &)> transform_complex_types,
     const FormatSettings * format_settings = nullptr);
 
-void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback);
-
 }

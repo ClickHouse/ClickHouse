@@ -73,24 +73,26 @@ public:
 
     bool isVersioned() const;
 
-    /// The explicitly assigned version, if any. Empty means "not set": getVersion() then
+    /// The explicitly assigned version, if any. Empty means "not set": `getVersion` then
     /// falls back to the function's default (latest) version. Version is set only at
-    /// construction (parsed from AST, decoded from binary, or via setVersionToAggregateFunctions).
+    /// construction (parsed from AST, decoded from binary, or via `setVersionToAggregateFunctions`).
     std::optional<size_t> getVersionIfExplicit() const { return version; }
 
     /// Returns a copy of this type with the given version baked in via the constructor.
     /// Used to carry a serialization version without mutating the (shared) type object.
-    std::shared_ptr<const DataTypeAggregateFunction> cloneWithVersion(size_t version_) const
-    {
-        return std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters, version_);
-    }
+    DataTypePtr cloneWithVersion(size_t version_) const;
 };
 
-/// Assigns a serialization version to every nested DataTypeAggregateFunction in `type`,
-/// replacing (never mutating) each versioned leaf with a copy carrying the version, so
-/// concurrent serializations of a shared type object never race on it. `type` may be
-/// rebuilt in place. `if_empty` keeps an already-explicit version; `revision` picks the
-/// version from the server/client revision (nullopt forces version 0).
+/// Assigns a serialization version to every nested DataTypeAggregateFunction in `type`.
+///
+/// Each versioned leaf is replaced by - never mutated into - a copy carrying the version, so that
+/// concurrent serializations of a shared type object do not race on it. A single data type object
+/// is shared between concurrent queries: it lives in the table's column description and is aliased
+/// by the headers of their result blocks. `type` is reassigned only if some leaf actually changes,
+/// and the rebuild preserves custom type names such as `Nested` and `SimpleAggregateFunction`.
+///
+/// `if_empty` keeps an already-explicit version; `revision` picks the version from the
+/// server/client revision (nullopt forces version 0).
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision = std::nullopt);
 
 /// Checks type of any nested type is DataTypeAggregateFunction.

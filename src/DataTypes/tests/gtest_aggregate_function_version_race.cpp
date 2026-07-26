@@ -2,7 +2,9 @@
 
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNested.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <atomic>
@@ -14,8 +16,8 @@ using namespace DB;
 namespace
 {
 
-/// sumMap is a versioned aggregate function (AggregateFunctionMapBase::isVersioned() == true):
-/// getVersionFromRevision(revision) is 1 for revision >= 54452 and 0 otherwise; default is 1.
+/// `sumMap` is a versioned aggregate function (`AggregateFunctionMapBase::isVersioned` returns true):
+/// `getVersionFromRevision` is 1 for revision >= 54452 and 0 otherwise; the default is 1.
 DataTypePtr makeVersionedAggType()
 {
     auto type = DataTypeFactory::instance().get("AggregateFunction(sumMap, Array(UInt64), Array(UInt64))");
@@ -44,7 +46,7 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, SetVersionDoesNotMutateSharedType)
     DataTypePtr shared = makeVersionedAggType();
     const IDataType * shared_ptr_before = shared.get();
 
-    /// Fresh type has no explicit version; getVersion() falls back to the default.
+    /// Fresh type has no explicit version; `getVersion` falls back to the default.
     ASSERT_FALSE(asAgg(shared).getVersionIfExplicit().has_value());
 
     DataTypePtr assigned = shared;
@@ -93,7 +95,7 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, NestedInArrayIsRebuilt)
 }
 
 /// A type with no aggregate function must be left untouched, including its custom name
-/// (callOnNestedSimpleTypes rebuilds wrapper types via make_shared, dropping custom names).
+/// (a make_shared rebuild of the wrapper types would drop custom names).
 /// Point is a custom-named Tuple(Float64, Float64); stripping its name broke GeoJSON output.
 GTEST_TEST(DataTypeAggregateFunctionVersion, PreservesCustomNameOfNonAggregateType)
 {
@@ -115,9 +117,9 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, PreservesCustomNameOfNonAggregateTy
 }
 
 /// A wrapper whose only aggregate child is UNVERSIONED (uniq) must be left untouched:
-/// hasAggregateFunctionType() passes, but the leaf callback replaces nothing, so the outer
-/// Nested/Array/Tuple must NOT be rebuilt (that would drop the Nested custom name and rewrite
-/// the Native type name / ATTACH encoding from Nested(...) to plain Array(Tuple(...))).
+/// no leaf is replaced, so the outer Nested/Array/Tuple must NOT be rebuilt (that would drop the
+/// Nested custom name and rewrite the Native type name / ATTACH encoding from Nested(...) to
+/// plain Array(Tuple(...))).
 GTEST_TEST(DataTypeAggregateFunctionVersion, UnversionedLeafPreservesNestedCustomName)
 {
     tryRegisterAggregateFunctions();
@@ -135,6 +137,69 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, UnversionedLeafPreservesNestedCusto
     ASSERT_EQ(assigned->getName(), name_before);
     ASSERT_EQ(assigned.get(), nested_ptr_before);
     ASSERT_EQ(nested->getName(), name_before);
+}
+
+/// A Nested wrapper whose leaf IS versioned has to be rebuilt, and the rebuild must keep printing
+/// as Nested(...): the type is sent to the client over Native and, on ATTACH, is what ends up in the
+/// table metadata. Rebuilding the Array/Tuple through make_shared would degrade it to
+/// Array(Tuple(...)) and, with it, lose the Nested semantics of the column.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesNestedCustomName)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr nested = DataTypeFactory::instance().get("Nested(x AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+    ASSERT_TRUE(isNested(nested));
+
+    DataTypePtr assigned = nested;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/54451);
+
+    /// The leaf was versioned (54451 resolves to version 0), so the tree was rebuilt ...
+    ASSERT_NE(assigned.get(), nested.get());
+    /// ... but it is still a Nested, and its name reflects the new version of the element.
+    ASSERT_TRUE(isNested(assigned));
+    ASSERT_EQ(assigned->getName(), "Nested(x AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+
+    const auto & nested_elements = typeid_cast<const DataTypeNestedCustomName *>(assigned->getCustomName())->getElements();
+    ASSERT_EQ(nested_elements.size(), 1u);
+    ASSERT_EQ(asAgg(nested_elements[0]).getVersion(), 0u);
+
+    /// The shared source type is untouched: default version 1, still printed with it.
+    ASSERT_EQ(nested->getName(), "Nested(x AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))");
+}
+
+/// `SimpleAggregateFunction(f, T)` is stored as T plus a DataTypeCustomSimpleAggregateFunction name.
+/// When T is itself a versioned AggregateFunction, versioning replaces the leaf - and the custom name
+/// has to come along, because the AggregatingMergeTree and SummingMergeTree merge algorithms
+/// recognise a simple-aggregate column by dynamic_cast on that name. Losing it silently turns the
+/// column into a plain AggregateFunction one, changing how the table merges.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesSimpleAggregateFunctionName)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr simple = DataTypeFactory::instance().get(
+        "SimpleAggregateFunction(anyLast, AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))");
+    ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(simple->getCustomName()), nullptr);
+    const String name_before = simple->getName();
+    ASSERT_EQ(asAgg(simple).getVersion(), 1u);
+
+    /// SimpleAggregateFunction resolves its storage type through the type name, which pins the
+    /// version explicitly. Only a forced assignment therefore replaces the leaf - which is what the
+    /// Native writer does for a client that predates aggregate function versioning.
+    DataTypePtr assigned = simple;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt);
+
+    ASSERT_NE(assigned.get(), simple.get());
+    ASSERT_EQ(asAgg(assigned).getVersion(), 0u);
+
+    /// The custom name came along, so the column is still recognised as a SimpleAggregateFunction
+    /// one, and it prints identically.
+    ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(assigned->getCustomName()), nullptr);
+    ASSERT_EQ(assigned->getName(), name_before);
+
+    /// The shared source type is untouched - this is the race that used to force version 0 onto it
+    /// for every other query as a side effect of serving one old client.
+    ASSERT_EQ(asAgg(simple).getVersion(), 1u);
+    ASSERT_EQ(simple->getName(), name_before);
 }
 
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.

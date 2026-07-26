@@ -1,0 +1,3 @@
+Nested(x AggregateFunction(sumMap, Array(UInt64), Array(UInt64)))	SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
+n	Nested(x AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))
+s	SimpleAggregateFunction(anyLast, AggregateFunction(1, sumMap, Array(UInt64), Array(UInt64)))

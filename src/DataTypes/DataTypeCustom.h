@@ -24,7 +24,9 @@ public:
     virtual String getName() const = 0;
 };
 
-using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
+/// Shared rather than unique so that a data type can be copied together with its
+/// customization - see DataTypeAggregateFunction::cloneWithVersion.
+using DataTypeCustomNamePtr = std::shared_ptr<const IDataTypeCustomName>;
 
 /** Describe a data type customization
  */

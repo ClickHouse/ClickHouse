@@ -10,8 +10,12 @@
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Serializations/SerializationAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/transformTypesRecursively.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorToCastedLiteral.h>
 #include <Parsers/parseFieldFromCastedLiteral.h>
 #include <IO/ReadBufferFromString.h>
@@ -84,6 +88,21 @@ DataTypePtr DataTypeAggregateFunction::getReturnTypeToPredict() const
 bool DataTypeAggregateFunction::isVersioned() const
 {
     return function->isVersioned();
+}
+
+DataTypePtr DataTypeAggregateFunction::cloneWithVersion(size_t version_) const
+{
+    auto result = std::make_shared<DataTypeAggregateFunction>(function, argument_types, parameters, version_);
+
+    /// The customization has to be carried over, not recreated: `SimpleAggregateFunction(f, T)` is
+    /// stored as `T` plus a `DataTypeCustomSimpleAggregateFunction` name, and code as central as the
+    /// AggregatingMergeTree and SummingMergeTree merge algorithms recognises such a column by
+    /// dynamic_cast on that very name object. Dropping it would silently turn the column into a
+    /// plain `AggregateFunction` one.
+    if (auto customization = cloneCustomization())
+        result->setCustomization(std::move(customization));
+
+    return result;
 }
 
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
@@ -330,33 +349,104 @@ static DataTypePtr create(const ASTPtr & arguments)
     return std::make_shared<DataTypeAggregateFunction>(function, argument_types, params_row, version);
 }
 
-void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+namespace
 {
-    /// Cheap early-out when there is nothing to version. callOnNestedSimpleTypes preserves
-    /// `type` (including custom names like Nested or the geometry type Point) whenever the
-    /// callback replaces no leaf, so correctness does not depend on this check; it only avoids
-    /// walking the tree.
-    if (!hasAggregateFunctionType(type))
-        return;
 
-    auto callback = [revision, if_empty](DataTypePtr & column_type)
+/// Returns `type` with the requested version assigned to every nested versioned aggregate function,
+/// or `type` itself when nothing has to change.
+///
+/// This deliberately does not go through `transformTypesRecursively`: that helper rebuilds every
+/// Array/Tuple/Map wrapper through make_shared and so drops custom type names. Since here the leaf
+/// is replaced rather than mutated, the rebuilt tree is what the caller ends up with, and losing the
+/// names would rewrite `Nested(...)` into `Array(Tuple(...))` - a type that is not only sent to the
+/// client but also stored in the table metadata on ATTACH.
+///
+/// Only the wrappers that `transformTypesRecursively` used to descend into are handled, so nothing
+/// that was reached before is skipped now. Nullable is not among them: an aggregate function state
+/// cannot be inside Nullable, as DataTypeNullable's constructor rejects it.
+DataTypePtr withVersionedAggregateFunctions(const DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    /// Rewrites `elements` in place and reports whether any of them changed.
+    auto update_elements = [&](DataTypes & elements)
     {
-        const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
-        if (!aggregate_function_type || !aggregate_function_type->isVersioned())
-            return;
+        bool changed = false;
+        for (auto & element : elements)
+        {
+            auto updated = withVersionedAggregateFunctions(element, if_empty, revision);
+            changed |= updated.get() != element.get();
+            element = std::move(updated);
+        }
+        return changed;
+    };
+
+    if (const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+    {
+        if (!aggregate_function_type->isVersioned())
+            return type;
 
         /// Keep an already-explicit version when if_empty is requested.
         if (if_empty && aggregate_function_type->getVersionIfExplicit())
-            return;
+            return type;
 
         const size_t version = revision ? aggregate_function_type->getFunction()->getVersionFromRevision(*revision) : 0;
+        if (aggregate_function_type->getVersionIfExplicit() == version)
+            return type;
 
-        /// Replace the leaf with a copy carrying the version instead of mutating the
-        /// (possibly shared) type object, which would race with concurrent serializations.
-        column_type = aggregate_function_type->cloneWithVersion(version);
-    };
+        return aggregate_function_type->cloneWithVersion(version);
+    }
 
-    callOnNestedSimpleTypes(type, callback);
+    /// Nested has to be matched before Array: it *is* an Array(Tuple(...)), and its custom name
+    /// embeds the element types, so the name has to be rebuilt along with them to stay in sync.
+    if (const auto * nested_name = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName()))
+    {
+        DataTypes elements = nested_name->getElements();
+        if (!update_elements(elements))
+            return type;
+
+        /// Built directly rather than through createNested, which derives the type from the printed
+        /// name: version 0 is deliberately not printed, so a name round trip would turn a leaf
+        /// explicitly pinned to version 0 back into an unversioned one using the latest version.
+        const auto & names = nested_name->getNames();
+        auto rebuilt = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(elements, names));
+        rebuilt->setCustomization(std::make_unique<DataTypeCustomDesc>(
+            std::make_shared<DataTypeNestedCustomName>(elements, names)));
+        return rebuilt;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto nested_type = withVersionedAggregateFunctions(array_type->getNestedType(), if_empty, revision);
+        if (nested_type.get() == array_type->getNestedType().get())
+            return type;
+        return std::make_shared<DataTypeArray>(std::move(nested_type));
+    }
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple_type->getElements();
+        if (!update_elements(elements))
+            return type;
+        return tuple_type->hasExplicitNames()
+            ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
+            : std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        DataTypes elements = {map_type->getKeyType(), map_type->getValueType()};
+        if (!update_elements(elements))
+            return type;
+        return std::make_shared<DataTypeMap>(elements[0], elements[1]);
+    }
+
+    return type;
+}
+
+}
+
+void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
+{
+    type = withVersionedAggregateFunctions(type, if_empty, revision);
 }
 
 

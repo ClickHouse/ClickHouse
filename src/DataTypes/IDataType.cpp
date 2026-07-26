@@ -325,6 +325,14 @@ void IDataType::setCustomization(DataTypeCustomDescPtr custom_desc_) const
         custom_serialization = std::move(custom_desc_->serialization);
 }
 
+DataTypeCustomDescPtr IDataType::cloneCustomization() const
+{
+    if (!custom_name && !custom_serialization)
+        return nullptr;
+
+    return std::make_unique<DataTypeCustomDesc>(custom_name, custom_serialization);
+}
+
 MutableSerializationInfoPtr IDataType::createSerializationInfo(const SerializationInfoSettings & settings) const
 {
     return std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, settings);

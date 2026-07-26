@@ -185,26 +185,4 @@ void transformTypesRecursively(
     transform_simple_types(types, type_indexes);
 }
 
-void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr &)> callback)
-{
-    DataTypes types = {type};
-    bool replaced = false;
-    transformTypesRecursively(
-        types,
-        [&callback, &replaced](auto & data_types, TypeIndexesSet &)
-        {
-            const IDataType * before = data_types[0].get();
-            callback(data_types[0]);
-            if (data_types[0].get() != before)
-                replaced = true;
-        },
-        {});
-    /// transformTypesRecursively rebuilds wrapper types (Array/Tuple/Map/Nullable) via
-    /// make_shared, which drops custom type names (e.g. Nested, the geometry type Point).
-    /// Only propagate the rebuilt tree when the callback actually replaced a leaf; otherwise
-    /// keep the original object so custom names survive a no-op walk.
-    if (replaced)
-        type = types[0];
-}
-
 }
