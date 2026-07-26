@@ -153,12 +153,15 @@ public:
                 data_type_val->getName(),
                 getName());
 
-        /// Reject `Dynamic`/`Variant` anywhere inside the `val` type, not only at the top level:
-        /// nested runtime-typed values would reintroduce mixed-type comparisons into heap maintenance
-        /// and final sorting. This mirrors the recursive guard in `argMin`/`argMax` and `min`/`max`.
-        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        /// Reject `Dynamic`/`Variant`/`Object` anywhere inside the `val` type, not only at the top
+        /// level: `val` is stored and ranked as a plain `Field`, and these types can hold values of
+        /// different data types in a single column, so `Field` ordering (which compares by
+        /// `Field::Types::Which` first) does not agree with the column semantics used by
+        /// `argMin`/`argMax`, `min`/`max` and `ORDER BY`. This is the same set of types that
+        /// `canUseFieldForValueData` (`SingleValueData.cpp`) excludes from the `Field`-based path.
+        auto check_val_type = [&](const IDataType & type)
         {
-            if (isDynamic(type) || isVariant(type))
+            if (isDynamic(type) || isVariant(type) || isObject(type))
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
@@ -166,8 +169,8 @@ public:
                     data_type_val->getName(),
                     getName());
         };
-        check_not_dynamic_or_variant(*data_type_val);
-        data_type_val->forEachChild(check_not_dynamic_or_variant);
+        check_val_type(*data_type_val);
+        data_type_val->forEachChild(check_val_type);
 
         /// Reject `Variant` anywhere inside the `arg` type. `arg` values are stored in the state
         /// as plain `Field`s, and `SerializationVariant` does not implement `Field`-based binary
@@ -381,7 +384,7 @@ Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/
     };
     FunctionDocumentation::Arguments arguments_argMaxMany = {
         {"arg", "Argument values to collect. Any type except `Variant` (also when nested inside another type).", {"Any"}},
-        {"val", "Values used to determine the top N rows.", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
+        {"val", "Values used to determine the top N rows. Any comparable type except `Dynamic`, `Variant` and `JSON` (also when nested inside another type).", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMaxMany = {
         "Array of `arg` values corresponding to the N largest `val` values, in descending order of `val`.",
@@ -436,7 +439,7 @@ Rows with `NULL` in either `arg` or `val` are skipped (consistent with `argMax`/
     };
     FunctionDocumentation::Arguments arguments_argMinMany = {
         {"arg", "Argument values to collect. Any type except `Variant` (also when nested inside another type).", {"Any"}},
-        {"val", "Values used to determine the bottom N rows.", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
+        {"val", "Values used to determine the bottom N rows. Any comparable type except `Dynamic`, `Variant` and `JSON` (also when nested inside another type).", {"(U)Int*", "Float*", "String", "Date", "DateTime", "Tuple"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_argMinMany = {
         "Array of `arg` values corresponding to the N smallest `val` values, in ascending order of `val`.",
