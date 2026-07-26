@@ -3159,8 +3159,8 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// read-in-order kills parallelism: each part is read by a single stream instead of many.
     /// In such cases, full parallel reading with sorting is much faster.
     /// This guard only applies when `apply_pk_selectivity_check` is set, which is the case
-    /// for the `SortingStep` and window-function paths that use read-in-order purely to
-    /// skip a separate sort. For `optimizeAggregationInOrder` and `optimizeDistinctInOrder`,
+    /// for the query-plan `SortingStep` paths that use read-in-order purely to skip a separate
+    /// sort. For `optimizeAggregationInOrder` and `optimizeDistinctInOrder`,
     /// read-in-order changes the underlying algorithm to a streaming one (memory bound),
     /// so we never disable it based on PK selectivity.
     /// Also skip for parallel replicas to avoid coordination mismatches, when reading from

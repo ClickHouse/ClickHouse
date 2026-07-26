@@ -347,7 +347,9 @@ public:
     /// read-in-order when it is used purely to avoid a separate sort and the index does not reduce
     /// the granule count enough. It must stay `false` for `optimizeAggregationInOrder` and
     /// `optimizeDistinctInOrder` — those paths request read-in-order for streaming algorithm
-    /// reasons (memory bound), and disabling it can cause `MEMORY_LIMIT_EXCEEDED`.
+    /// reasons (memory bound), and disabling it can cause `MEMORY_LIMIT_EXCEEDED`. It must also stay
+    /// `false` for `tryReuseStorageOrderingForWindowFunctions`, which runs only on the legacy planner
+    /// path that `read_in_order_max_primary_key_ratio` documents as unaffected by the guard.
     /// `check_only` performs the PK-selectivity check without committing any state. It returns the
     /// same boolean that a full call would, but does not switch the step to read-in-order. This is
     /// used by `ReadFromMerge::requestReadingInOrder` to verify all children would accept before

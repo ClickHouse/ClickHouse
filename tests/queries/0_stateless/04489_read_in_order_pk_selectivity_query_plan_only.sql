@@ -61,4 +61,32 @@ SELECT
     ) WHERE explain LIKE '%PartialSortingTransform%'
 );
 
+-- The window-function storage-ordering reuse pass
+-- (`query_plan_reuse_storage_ordering_for_window_functions`) runs only with the old analyzer and
+-- only when `query_plan_read_in_order = 0`, i.e. it is part of the same legacy path, so it must not
+-- consult the setting either. `ScatterByPartitionTransform` appears exactly when the reuse fails and
+-- the window has to repartition, so its count must be the same for ratio 0.0 and 1.0.
+-- `enable_analyzer` cannot be changed inside a subquery, so it is set for the whole statement.
+SET enable_analyzer = 0, query_plan_read_in_order = 0, query_plan_reuse_storage_ordering_for_window_functions = 1;
+
+SELECT 'legacy_window_path_ignores_setting';
+SELECT
+(
+    SELECT count() FROM (
+        EXPLAIN PIPELINE SELECT path, value, ROW_NUMBER() OVER (PARTITION BY path ORDER BY value DESC)
+        FROM t_read_in_order_pk_qp_only
+        SETTINGS read_in_order_max_primary_key_ratio = 0.0
+    ) WHERE explain LIKE '%ScatterByPartitionTransform%'
+)
+=
+(
+    SELECT count() FROM (
+        EXPLAIN PIPELINE SELECT path, value, ROW_NUMBER() OVER (PARTITION BY path ORDER BY value DESC)
+        FROM t_read_in_order_pk_qp_only
+        SETTINGS read_in_order_max_primary_key_ratio = 1.0
+    ) WHERE explain LIKE '%ScatterByPartitionTransform%'
+);
+
+SET enable_analyzer = DEFAULT, query_plan_read_in_order = DEFAULT, query_plan_reuse_storage_ordering_for_window_functions = DEFAULT;
+
 DROP TABLE t_read_in_order_pk_qp_only;

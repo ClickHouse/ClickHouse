@@ -1908,9 +1908,15 @@ size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, 
 
     if (order_info)
     {
+        /// No PK-selectivity guard here: this pass runs only on the legacy planner path
+        /// (`query_plan_read_in_order = 0`, old analyzer), which `read_in_order_max_primary_key_ratio`
+        /// documents as keeping the previous read-in-order behavior regardless of primary key
+        /// selectivity. The guard would also be dead code here anyway: it needs a filter that reached
+        /// index analysis, and any filter step above the read step breaks the
+        /// `WindowStep <- SortingStep <- [Expression] <- ReadFromMergeTree` pattern matched above.
         bool can_read = read_from_merge_tree->requestReadingInOrder(
             order_info->used_prefix_of_sorting_key_size, order_info->direction, order_info->limit, sort_limit,
-            /* apply_pk_selectivity_check */ true);
+            /* apply_pk_selectivity_check */ false);
         if (!can_read)
             return 0;
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, false, false);
