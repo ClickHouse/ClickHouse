@@ -61,6 +61,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"http_allow_table_as_file", false, false, "New setting to recognize a table name in the URL path of HTTP requests, with optional format/compression extensions."},
             {"http_allow_filters_as_path", false, false, "New setting to recognize hive-style `name=value` filters in the URL path of HTTP requests."},
             {"http_allow_filters_as_unrecognized_url_parameters", false, false, "New setting to treat unrecognized URL parameters as filter expressions in HTTP requests."},
+            {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
