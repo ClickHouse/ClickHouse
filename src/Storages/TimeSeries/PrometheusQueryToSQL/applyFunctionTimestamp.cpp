@@ -259,6 +259,9 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
 
             /// Computed vectors have samples at the evaluation timestamp.
             /// Keep NULL positions so the normal vector-grid finalizer preserves PromQL sparsity.
+            /// Positions still carrying a Prometheus stale marker (0x7ff0000000000002) are dropped too,
+            /// because the finalizer recognizes the marker in the value and here the value is replaced
+            /// with a timestamp.
             builder.select_list.push_back(makeASTFunction(
                 "arrayMap",
                 makeASTFunction(
@@ -266,7 +269,15 @@ SQLQueryPiece applyFunctionTimestamp(const PQT::Function * function_node, std::v
                     makeASTFunction("tuple", make_intrusive<ASTIdentifier>("value"), make_intrusive<ASTIdentifier>("timestamp")),
                     makeASTFunction(
                         "if",
-                        makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("value")),
+                        makeASTFunction(
+                            "and",
+                            makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("value")),
+                            makeASTFunction(
+                                "notEquals",
+                                makeASTFunction(
+                                    "reinterpretAsUInt64",
+                                    makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("value"))),
+                                make_intrusive<ASTLiteral>(0x7ff0000000000002ULL))),
                         make_intrusive<ASTIdentifier>("timestamp"),
                         make_intrusive<ASTLiteral>(Field{} /* NULL */))),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values),

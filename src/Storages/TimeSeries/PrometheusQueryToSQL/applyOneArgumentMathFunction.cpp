@@ -102,17 +102,31 @@ namespace
                      /// PromQL round(v, to_nearest=1) resolves ties by rounding up.
                      /// Use the same reciprocal formula as Prometheus because decimal
                      /// cases such as round(0.15, 0.1) can differ from v / to_nearest.
+                     ASTPtr value = std::move(args[0]);
                      ASTPtr to_nearest = (args.size() == 2) ? std::move(args[1]) : make_intrusive<ASTLiteral>(1.0);
                      ASTPtr to_nearest_inverse = makeASTFunction("divide", make_intrusive<ASTLiteral>(1.0), std::move(to_nearest));
-                     return makeASTFunction(
+                     ASTPtr rounded = makeASTFunction(
                          "divide",
                          makeASTFunction(
                              "floor",
                              makeASTFunction(
                                  "plus",
-                                 makeASTFunction("multiply", std::move(args[0]), to_nearest_inverse->clone()),
+                                 makeASTFunction("multiply", value->clone(), to_nearest_inverse->clone()),
                                  make_intrusive<ASTLiteral>(0.5))),
                          std::move(to_nearest_inverse));
+
+                     /// A Prometheus stale marker is a `NaN` with the exact payload 0x7ff0000000000002, and it is
+                     /// recognized by that bit pattern only at finalization. Arithmetic quiets the payload into an
+                     /// ordinary `NaN`, which would make a stale sample survive as a `NaN` value instead of being
+                     /// dropped, so stale samples are passed through unchanged here.
+                     return makeASTFunction(
+                         "if",
+                         makeASTFunction(
+                             "equals",
+                             makeASTFunction("reinterpretAsUInt64", makeASTFunction("assumeNotNull", value->clone())),
+                             make_intrusive<ASTLiteral>(0x7ff0000000000002ULL)),
+                         value->clone(),
+                         std::move(rounded));
                  },
              }},
         };

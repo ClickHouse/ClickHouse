@@ -1201,6 +1201,32 @@ def test_conversion_functions():
         [],
     )
 
+    # Behavior: a stale marker survives value-transforming functions - Prometheus drops the
+    # stale sample before evaluating `round`, so the result is empty rather than a `NaN` sample.
+    do_query_test(
+        "round(stale_test)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: the same holds for `round` with an explicit `to_nearest` argument.
+    do_query_test(
+        "round(stale_test, 0.1)",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Behavior: `timestamp` over a computed vector also drops stale positions, so a stale
+    # series routed through `round` reports no timestamp.
+    do_query_test(
+        "timestamp(round(stale_test))",
+        160,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
     # Behavior: Prometheus `scalar` returns the only float sample value.
     do_query_test(
         "scalar(vector(1))",
