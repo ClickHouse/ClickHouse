@@ -528,10 +528,23 @@ def test_select(started_cluster):
     )
 
     assert num_rows == int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        node.query(
+            # Regression test: a session temp table used to be pinned by the query context
+            # captured in the S3 client refresher and cached with the manifest file in the
+            # global IcebergMetadataFilesCache, crashing the graceful restart below with a
+            # use-after-free. The SELECT * is required: it reads a manifest file (count()
+            # alone is served from the snapshot summary). All statements must stay in one
+            # node.query call = one session.
+            f"CREATE TEMPORARY TABLE pin_me (x UInt8) ENGINE = Memory;"
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` FORMAT Null;"
+            f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
     )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
+
+    # Replays the graceful shutdown; the teardown sanitizer check catches the UAF if it regresses.
+    node.restart_clickhouse()
 
 
 def test_hide_sensitive_info(started_cluster):

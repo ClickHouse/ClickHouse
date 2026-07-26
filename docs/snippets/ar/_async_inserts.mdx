@@ -12,7 +12,9 @@ title: عمليات الإدراج غير المتزامنة
 
 يُتحكَّم في السلوك الأساسي عبر الإعداد [`async_insert`](/ar/reference/settings/session-settings#async_insert).
 
-<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="عمليات الإدراج غير المتزامنة" />
+<Frame>
+  <img src="/images/bestpractices/async_inserts.webp" alt="عمليات الإدراج غير المتزامنة" />
+</Frame>
 
 تدعم عمليات الإدراج غير المتزامنة كلًّا من واجهتَي HTTP وnative TCP.
 
@@ -20,11 +22,11 @@ title: عمليات الإدراج غير المتزامنة
 
 * يصل المخزن المؤقت إلى حجم بيانات محدد ([`async_insert_max_data_size`](/ar/reference/settings/session-settings#async_insert_max_data_size)، والقيمة الافتراضية 100 MiB).
 * انقضاء حد زمني ([`async_insert_busy_timeout_ms`](/ar/reference/settings/session-settings#async_insert_busy_timeout_max_ms)، والقيمة الافتراضية 200 ms أو 1000 ms على Cloud).
-* تراكم عدد أقصى من استعلامات insert ([`async_insert_max_query_number`](/ar/reference/settings/session-settings#async_insert_max_query_number)، والقيمة الافتراضية 450).
+* تراكم عدد أقصى من استعلامات الإدراج ([`async_insert_max_query_number`](/ar/reference/settings/session-settings#async_insert_max_query_number)، والقيمة الافتراضية 450).
 
 وأي حد يتم بلوغه أولًا يؤدي إلى تشغيل عملية التفريغ.
 
-تكون عملية التجميع هذه غير مرئية للعملاء، وتساعد ClickHouse على دمج حركة insert بكفاءة من مصادر متعددة. ومع ذلك، وحتى حدوث التفريغ، لا يمكن الاستعلام عن البيانات. ومن المهم ملاحظة وجود عدة مخازن مؤقتة لكل تركيبة من شكل insert والإعدادات، وفي clusters، تُحفَظ هذه المخازن لكل عقدة على حدة—مما يتيح تحكمًا دقيقًا في البيئات متعددة المستأجرين. وبخلاف ذلك، تبقى آليات insert مطابقة لما هو موصوف في [عمليات الإدراج المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
+تكون عملية التجميع هذه غير مرئية للعملاء، وتساعد ClickHouse على دمج حركة الإدراج بكفاءة من مصادر متعددة. ومع ذلك، وحتى حدوث التفريغ، لا يمكن الاستعلام عن البيانات. ومن المهم ملاحظة وجود عدة مخازن مؤقتة لكل تركيبة من شكل الإدراج والإعدادات، وفي clusters، تُحفَظ هذه المخازن لكل node على حدة—مما يتيح تحكمًا دقيقًا في البيئات متعددة المستأجرين. وبخلاف ذلك، تبقى آليات الإدراج مطابقة لما هو موصوف في [عمليات الإدراج المتزامنة](/ar/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default).
 
 <div id="choosing-a-return-mode">
   ### اختيار وضع الإرجاع
