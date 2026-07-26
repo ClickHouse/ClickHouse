@@ -62,8 +62,8 @@ SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) AND EXISTS (SELECT 1 FROM k
 SELECT '--- The TopK read of the same predicate still writes no QCC entry';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
-SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04646_topk_write_1';
-SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04646_topk_write_2';
+SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04647_topk_write_1';
+SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04647_topk_write_2';
 
 -- Expected: 0 entries - every write side is gated off for a TopK read while the gate is off.
 SELECT count() FROM system.query_condition_cache;
@@ -78,17 +78,17 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND log_comment IN ('04646_topk_write_1', '04646_topk_write_2')
+    AND log_comment IN ('04647_topk_write_1', '04647_topk_write_2')
 ORDER BY event_time_microseconds;
 
 SELECT '--- A TopK read must not reuse an entry primed by the cloned-subplan query';
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 -- The cloned subplan read is a plain read, so it primes and then reuses its own entry as usual.
-SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) AND EXISTS (SELECT 1 FROM keys WHERE keys.k = tab.id) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04646_clone_prime';
+SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) AND EXISTS (SELECT 1 FROM keys WHERE keys.k = tab.id) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04647_clone_prime';
 -- The TopK read of the same predicate must not consult that entry with the gate off.
-SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04646_topk_after_clone_prime';
-SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) AND EXISTS (SELECT 1 FROM keys WHERE keys.k = tab.id) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04646_clone_reuse';
+SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04647_topk_after_clone_prime';
+SELECT v1 FROM tab WHERE v2 IN (10000, 11000, 12000) AND EXISTS (SELECT 1 FROM keys WHERE keys.k = tab.id) ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS log_comment = '04647_clone_reuse';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -100,7 +100,7 @@ FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
     AND current_database = currentDatabase()
-    AND log_comment IN ('04646_clone_prime', '04646_topk_after_clone_prime', '04646_clone_reuse')
+    AND log_comment IN ('04647_clone_prime', '04647_topk_after_clone_prime', '04647_clone_reuse')
 ORDER BY event_time_microseconds;
 
 DROP TABLE keys;
