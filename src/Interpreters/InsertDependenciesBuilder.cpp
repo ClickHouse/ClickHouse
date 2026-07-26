@@ -633,13 +633,9 @@ public:
 private:
     void transform(Chunk & chunk) override
     {
-        const size_t rows = chunk.getNumRows();
         Block block = input_header->cloneWithColumns(chunk.detachColumns());
-
-        Block tracking_block;
-        for (const auto & column_name : tracking_columns)
-            tracking_block.insert(block.getByName(column_name));
-        queue_storage->trackMaterializedViewSourceRows(view_id, tracking_block, context);
+        queue_storage->trackMaterializedViewSourceRows(view_id, block, context);
+        const size_t rows = block.rows();
 
         Columns output_columns;
         const auto & output_header = getOutputPort().getHeader();

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
+#include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -32,6 +33,7 @@
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/ISimpleTransform.h>
@@ -46,6 +48,7 @@
 #include <base/scope_guard.h>
 
 #include <algorithm>
+#include <unordered_set>
 
 
 namespace DB
@@ -282,14 +285,12 @@ namespace
             SharedHeader header_,
             Names output_columns_,
             const StorageID & consumer_table_id_,
-            UInt64 batch_size_,
             ContextPtr context_,
             std::shared_ptr<QueueReadState> state_)
             : ISource(std::move(header_))
             , WithContext(context_)
             , output_columns(std::move(output_columns_))
             , consumer_table_id(consumer_table_id_)
-            , batch_size(batch_size_)
             , state(std::move(state_))
         {
         }
@@ -364,12 +365,11 @@ namespace
                 quoted_columns.emplace_back(backQuoteIfNeed(name));
 
             const String select_query = fmt::format(
-                "SELECT {} FROM {} FINAL ORDER BY (`{}`, `{}`) LIMIT {}",
+                "SELECT {} FROM {} FINAL ORDER BY (`{}`, `{}`)",
                 fmt::join(quoted_columns, ", "),
                 quoteTable(consumer_table_id),
                 CREATED_AT_COLUMN,
-                ID_COLUMN,
-                batch_size);
+                ID_COLUMN);
 
             auto select_context = Context::createCopy(getContext());
             select_io.emplace(executeQuery(select_query, select_context, QueryFlags{.internal = true}).second);
@@ -378,7 +378,6 @@ namespace
 
         const Names output_columns;
         const StorageID consumer_table_id;
-        const UInt64 batch_size;
         const std::shared_ptr<QueueReadState> state;
 
         std::optional<BlockIO> select_io;
@@ -393,13 +392,11 @@ namespace
             SharedHeader header_,
             Names output_columns_,
             const StorageID & consumer_table_id_,
-            UInt64 batch_size_,
             ContextPtr context_,
             std::shared_ptr<QueueReadState> state_)
             : ISourceStep(std::move(header_))
             , output_columns(std::move(output_columns_))
             , consumer_table_id(consumer_table_id_)
-            , batch_size(batch_size_)
             , context(context_)
             , state(std::move(state_))
         {
@@ -413,7 +410,6 @@ namespace
                 getOutputHeader(),
                 output_columns,
                 consumer_table_id,
-                batch_size,
                 context,
                 state)));
         }
@@ -421,7 +417,6 @@ namespace
     private:
         const Names output_columns;
         const StorageID consumer_table_id;
-        const UInt64 batch_size;
         const ContextPtr context;
         const std::shared_ptr<QueueReadState> state;
     };
@@ -910,10 +905,72 @@ void StorageQueue::threadFunc()
 
 struct StorageQueue::ViewAcknowledgementState
 {
-    void add(Block block)
+    explicit ViewAcknowledgementState(size_t max_batch_size_)
+        : max_batch_size(max_batch_size_)
+    {
+    }
+
+    static Block filterBlock(const Block & block, const IColumn::Filter & filter, size_t result_size)
+    {
+        Block result;
+        for (const auto & column : block)
+        {
+            result.insert(ColumnWithTypeAndName{
+                column.column->filter(filter, result_size),
+                column.type,
+                column.name});
+        }
+        return result;
+    }
+
+    void filterAndAdd(Block & block)
     {
         std::lock_guard lock(mutex);
-        acknowledgement_blocks.emplace_back(std::move(block));
+
+        const size_t rows = block.rows();
+        if (!rows)
+            return;
+
+        const auto & ids = assert_cast<const ColumnUUID &>(
+            *block.getByName(String(ID_COLUMN)).column).getData();
+
+        IColumn::Filter output_filter(rows, 0);
+        IColumn::Filter acknowledgement_filter(rows, 0);
+        size_t output_rows = 0;
+        size_t acknowledgement_rows = 0;
+
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const auto & id = ids[row];
+            const bool already_selected = selected_message_ids.contains(id);
+            if (!already_selected && selected_message_ids.size() >= max_batch_size)
+                continue;
+
+            output_filter[row] = 1;
+            ++output_rows;
+
+            if (!already_selected)
+            {
+                selected_message_ids.emplace(id);
+                acknowledgement_filter[row] = 1;
+                ++acknowledgement_rows;
+            }
+        }
+
+        if (acknowledgement_rows)
+        {
+            acknowledgement_blocks.emplace_back(makeAcknowledgementBlock(
+                filterBlock(block, acknowledgement_filter, acknowledgement_rows)));
+        }
+
+        if (output_rows != rows)
+            block = filterBlock(block, output_filter, output_rows);
+    }
+
+    bool isFull()
+    {
+        std::lock_guard lock(mutex);
+        return selected_message_ids.size() >= max_batch_size;
     }
 
     Blocks take()
@@ -924,7 +981,9 @@ struct StorageQueue::ViewAcknowledgementState
         return result;
     }
 
+    const size_t max_batch_size;
     std::mutex mutex;
+    std::unordered_set<UUID> selected_message_ids;
     Blocks acknowledgement_blocks;
 };
 
@@ -948,7 +1007,7 @@ Names StorageQueue::getMaterializedViewSourceTrackingColumns(ContextPtr query_co
 
 void StorageQueue::trackMaterializedViewSourceRows(
     const StorageID &,
-    const Block & block,
+    Block & block,
     ContextPtr query_context)
 {
     if (query_context->getSettingsRef()[Setting::queue_consumer_group].value.empty() || !block.rows())
@@ -961,7 +1020,7 @@ void StorageQueue::trackMaterializedViewSourceRows(
     }
 
     if (state)
-        state->add(makeAcknowledgementBlock(block));
+        state->filterAndAdd(block);
 }
 
 
@@ -977,7 +1036,7 @@ bool StorageQueue::streamToViews(
     queue_context->makeQueryContext();
     queue_context->setSetting("queue_consumer_group", consumer_group);
 
-    auto view_state = std::make_shared<ViewAcknowledgementState>();
+    auto view_state = std::make_shared<ViewAcknowledgementState>(max_batch_size);
     {
         std::lock_guard state_lock(view_acknowledgement_mutex);
         view_acknowledgement_state = view_state;
@@ -1013,12 +1072,11 @@ bool StorageQueue::streamToViews(
         quoted_columns.emplace_back(backQuoteIfNeed(name));
 
     const String select_query = fmt::format(
-        "SELECT {} FROM {} FINAL ORDER BY (`{}`, `{}`) LIMIT {}",
+        "SELECT {} FROM {} FINAL ORDER BY (`{}`, `{}`)",
         fmt::join(quoted_columns, ", "),
         quoteTable(consumer_table_id),
         CREATED_AT_COLUMN,
-        ID_COLUMN,
-        max_batch_size);
+        ID_COLUMN);
 
     auto select_io = executeQuery(select_query, queue_context, QueryFlags{.internal = true}).second;
     PullingPipelineExecutor reader(select_io.pipeline);
@@ -1026,6 +1084,7 @@ bool StorageQueue::streamToViews(
     writer.start();
 
     size_t rows = 0;
+    bool source_exhausted = true;
 
     bool view_query_finished = false;
     bool select_query_finished = false;
@@ -1043,22 +1102,26 @@ bool StorageQueue::streamToViews(
             writer.push(std::move(payload));
 
             rows += block.rows();
-        }
-
-        if (!rows)
-        {
-            writer.finish();
-            select_io.onFinish();
-            select_query_finished = true;
-            view_io.onFinish();
-            view_query_finished = true;
-            return false;
+            if (view_state->isFull())
+            {
+                source_exhausted = false;
+                break;
+            }
         }
 
         writer.finish();
         view_io.onFinish();
         view_query_finished = true;
-        select_io.onFinish();
+
+        if (source_exhausted)
+        {
+            select_io.onFinish();
+        }
+        else
+        {
+            reader.cancel();
+            select_io.onCancelOrConnectionLoss();
+        }
         select_query_finished = true;
 
         if (stream_control.isCancelRequested(cycle_epoch))
@@ -1221,8 +1284,9 @@ void StorageQueue::read(
             std::lock_guard lock(post_filter_steps_mutex);
             const auto [_, inserted] = post_filter_steps.emplace(
                 local_context->getCurrentQueryId(),
-                [state](QueryPlan & plan)
+                [state, batch_size](QueryPlan & plan)
                 {
+                    plan.addStep(std::make_unique<LimitStep>(plan.getCurrentHeader(), batch_size, 0));
                     plan.addStep(std::make_unique<QueueAcknowledgementStep>(plan.getCurrentHeader(), state));
                 });
             if (!inserted)
@@ -1246,7 +1310,6 @@ void StorageQueue::read(
             std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(read_columns)),
             read_columns,
             *consumer_table_id,
-            batch_size,
             local_context,
             std::move(state)));
         return;

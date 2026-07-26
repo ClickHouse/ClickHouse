@@ -74,7 +74,7 @@ public:
     const StorageID & getInnerTableID() const { return main_table_id; }
 
     Names getMaterializedViewSourceTrackingColumns(ContextPtr query_context) const;
-    void trackMaterializedViewSourceRows(const StorageID & view_id, const Block & block, ContextPtr query_context);
+    void trackMaterializedViewSourceRows(const StorageID & view_id, Block & block, ContextPtr query_context);
 
 private:
     struct ViewAcknowledgementState;

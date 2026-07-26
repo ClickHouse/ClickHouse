@@ -8262,8 +8262,8 @@ Rows excluded by a `WHERE` filter remain pending. Acknowledgements are written o
 Committing queries with joins, `DISTINCT`, or `LIMIT` are rejected until their message identity can be tracked safely.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, queue_max_batch_size, 0, R"(
-Maximum number of messages read by a direct committing `SELECT` from an experimental `Queue` table.
-A value of `0` uses the table engine's `max_batch_size`.
+Maximum number of post-filter result rows returned and acknowledged by a direct committing `SELECT` from an experimental `Queue` table.
+Filtered-out rows do not consume the batch quota. A value of `0` uses the table engine's `max_batch_size`.
 )", EXPERIMENTAL) \
     DECLARE(String, queue_consumer_offset, "earliest", R"(
 Initial offset for a new experimental `Queue` consumer group.

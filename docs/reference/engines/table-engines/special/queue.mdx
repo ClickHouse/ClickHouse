@@ -33,7 +33,7 @@ ENGINE = Queue([retention_seconds[, max_batch_size[, polling_interval_ms]]])
 Engine arguments:
 
 - `retention_seconds` — how long messages and their acknowledgement records are retained. Default: `604800` (7 days).
-- `max_batch_size` — maximum number of messages delivered in one batch. Default: `65536`.
+- `max_batch_size` — maximum number of messages selected by a consumer query and delivered in one batch. Default: `65536`.
 - `polling_interval_ms` — delay between background polling attempts. Default: `100`.
 
 All arguments must be positive integer literals.
@@ -130,7 +130,8 @@ SETTINGS
 
 The engine carries each input message ID through the query's `WHERE` step and writes tombstones only for rows that survive the filter and only after the complete query pipeline succeeds.
 Rows excluded by the filter remain pending in the consumer-group table.
-Use `queue_max_batch_size` to define the maximum source batch.
+Use `queue_max_batch_size` to limit the post-filter result batch.
+The engine scans the finite pending-message snapshot until that many rows survive the filter or the snapshot is exhausted, so excluded messages do not block matching messages behind them.
 Committing queries with joins, `DISTINCT`, or `LIMIT` are rejected until their message identity can be tracked safely.
 Filtered noncommitting queries remain unrestricted and never acknowledge messages.
 Cancellation or an exception leaves the batch pending.
