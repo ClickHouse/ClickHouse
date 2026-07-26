@@ -64,6 +64,13 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (l = '1') OR (l = '2') OR (l 
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b != '1') AND (b != '2') AND (b != '3') AND (x = 1) FROM t_var) WHERE explain ILIKE '%function_name: notIn%';
 -- ... but still fires for plain String:
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (s != '1') AND (s != '2') AND (s != '3') AND (y = 1) FROM (SELECT materialize('0') AS s, materialize(toUInt8(1)) AS y)) WHERE explain ILIKE '%function_name: notIn%';
+-- has() -> in skipped for a Variant needle. Asserted on the plan, not only on the result: the result
+-- above is protected by the ValidationChecker only in debug and sanitizer builds.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT has([1::UInt256::Variant(UInt256), 2::UInt256::Variant(UInt256)], b) FROM t_var
+    SETTINGS optimize_rewrite_has_to_in = 1) WHERE explain ILIKE '%function_name: in%';
+-- ... but still fires for a plain UInt8 needle:
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT has([1, 2], x) FROM t_var
+    SETTINGS optimize_rewrite_has_to_in = 1) WHERE explain ILIKE '%function_name: in%';
 
 -- The NOT IN tuple must keep the resolved constant types. Building it from the `Field` values alone
 -- re-derives them and collapses DateTime to UInt32, so the rewritten predicate compares a date
