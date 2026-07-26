@@ -153,6 +153,20 @@
             <default_session_user>proto_pg_user</default_session_user>
             <description>postgres protocol with its own default session user</description>
         </postgres_defuser>
+        <mysql_no_anonymous>
+            <type>mysql</type>
+            <host>0.0.0.0</host>
+            <port>9111</port>
+            <default_session_user></default_session_user>
+            <description>mysql protocol that rejects connections without a user name</description>
+        </mysql_no_anonymous>
+        <postgres_no_anonymous>
+            <type>postgres</type>
+            <host>0.0.0.0</host>
+            <port>9112</port>
+            <default_session_user></default_session_user>
+            <description>postgres protocol that rejects connections without a user name</description>
+        </postgres_no_anonymous>
         <prometheus_defuser>
             <type>prometheus</type>
             <host>0.0.0.0</host>

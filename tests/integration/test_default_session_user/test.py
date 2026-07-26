@@ -305,18 +305,24 @@ def test_native_default_session_user():
     assert native_hello(9104, "") == exception
 
 
-def test_mysql_default_session_user():
-    # pymysql substitutes the OS user name for an empty user name on the client
-    # side, so trick it into sending a genuinely empty user name.
+def mysql_connect_without_user(port):
+    """Connect over the MySQL wire protocol with a genuinely empty user name.
+    pymysql substitutes the OS user name for an empty user name on the client
+    side, so trick it into sending an empty one."""
     connection = pymysql.connect(
         user="placeholder",
         password="",
         host=node1.ip_address,
-        port=9106,
+        port=port,
         defer_connect=True,
     )
     connection.user = b""
     connection.connect()
+    return connection
+
+
+def test_mysql_default_session_user():
+    connection = mysql_connect_without_user(9106)
     with connection:
         with connection.cursor() as cursor:
             cursor.execute("SELECT currentUser()")
@@ -330,9 +336,35 @@ def test_mysql_default_session_user():
             assert cursor.fetchall() == (("explicit_user",),)
 
 
+def test_mysql_anonymous_logins_disabled():
+    # An empty `default_session_user` on a MySQL listener prohibits connections
+    # without a user name: the empty user name is not substituted by anything, so
+    # authentication fails and the server answers with an error packet.
+    with pytest.raises(pymysql.err.Error):
+        mysql_connect_without_user(9111)
+
+    # An explicitly specified user works as usual.
+    connection = pymysql.connect(user="explicit_user", password="", host=node1.ip_address, port=9111)
+    with connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT currentUser()")
+            assert cursor.fetchall() == (("explicit_user",),)
+
+
 def test_postgres_default_session_user():
     with assert_login_success("proto_pg_user", "PostgreSQL"):
         assert postgres_login(9107, "")
+
+
+def test_postgres_anonymous_logins_disabled():
+    # An empty `default_session_user` on a PostgreSQL listener prohibits connections
+    # without a user name: the startup message with an empty user name is answered
+    # with an error response instead of an authentication request.
+    assert not postgres_login(9112, "")
+
+    # An explicitly specified user works as usual.
+    with assert_login_success("explicit_user", "PostgreSQL"):
+        assert postgres_login(9112, "explicit_user")
 
 
 def test_interserver_connections_do_not_use_default_session_user():
