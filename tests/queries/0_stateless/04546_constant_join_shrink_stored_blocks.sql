@@ -22,12 +22,16 @@ WHERE (event_date >= yesterday())
 AND (event_time >= (now() - 600))
 AND (query_id IN
 (
+    -- Newest matching query only: `clickhouse-test --database` reuses the database across runs,
+    -- so an earlier run's row must not satisfy the assertion for the current one.
     SELECT query_id
         FROM system.query_log
         WHERE (log_comment = '04546_constant_join_shrink')
         AND (current_database = currentDatabase())
         AND (type = 'QueryFinish')
         AND (event_date >= yesterday())
+        ORDER BY event_time_microseconds DESC
+        LIMIT 1
     )
 )
 AND (logger_name = 'ConstantJoin')
