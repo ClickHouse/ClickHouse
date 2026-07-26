@@ -287,6 +287,24 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     return collectReadsToDistribute(node->children.at(0));
 }
 
+/// FINAL is incompatible with parallel-replica reading (the FINAL merge path requires the read not to be
+/// in parallel-reading mode). Classic parallel replicas disables PR for the whole query when FINAL is
+/// present; do the same here, so a plan with any FINAL MergeTree read is executed locally.
+/// TODO: distribute the non-FINAL reads and keep only the FINAL ones local.
+/// Union with a mix of local and distributed branches currently is not supported,
+/// it can produce wrong results
+static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()); read && read->isQueryWithFinal())
+        return true;
+    for (const auto * child : node->children)
+        if (planHasFinalMergeTreeRead(child))
+            return true;
+    return false;
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -294,6 +312,9 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
 {
     auto * root = query_plan.getRootNode();
     if (!root)
+        return;
+
+    if (planHasFinalMergeTreeRead(root))
         return;
 
     std::unordered_set<const QueryPlan::Node *> eligible;
