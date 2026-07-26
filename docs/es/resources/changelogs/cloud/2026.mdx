@@ -5,6 +5,7 @@ title: 'Registro de cambios de Cloud - 2026'
 description: 'Registro de cambios de ClickHouse Cloud que describe las novedades de cada versión de ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud']
+rss: true
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
@@ -14,9 +15,9 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 <Update label="13 de julio de 2026">
   Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de object storage.
 
-  ### Enrutamiento sticky de réplicas a través de HTTPS (private preview)
+  ### Enrutamiento sticky de réplicas a través de HTTPS (vista previa privada)
 
-  Ahora puedes fijar las queries a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre queries los objetos con alcance de session, como las tablas temporales, y ayuda a que las queries repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en private preview para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/products/cloud/features/infrastructure/replica-aware-routing).
+  Ahora puedes fijar las queries a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre queries los objetos con alcance de session, como las tablas temporales, y ayuda a que las queries repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/manage/replica-aware-routing).
 
   ### Fechas de inicio personalizadas para el período de facturación
 

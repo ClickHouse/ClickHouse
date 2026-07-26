@@ -5,6 +5,7 @@ title: 'Changelog Cloud - 2026'
 description: 'Changelog de ClickHouse Cloud présentant les nouveautés de chaque version de ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['changelog', 'notes de version', 'mises à jour', 'nouvelles fonctionnalités', 'changements Cloud']
+rss: true
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
@@ -16,7 +17,7 @@ En plus de ce changelog ClickHouse Cloud, veuillez consulter la page [Cloud Comp
 
   ### Routage sticky des réplicas via HTTPS (aperçu privé)
 
-  Vous pouvez désormais épingler les queries sur une replica spécifique via HTTPS standard en ajoutant un paramètre `?session_id=` à votre URL de service habituelle, sans qu’aucun nom d’hôte spécial ni aucune modification DNS ne soient nécessaires. Cela permet de conserver d’une query à l’autre les objets de session, comme les tables temporaires, et aide les queries répétées à atteindre des caches locaux de replica déjà chauds. Le déploiement est en cours en aperçu privé pour tous les clients Enterprise, ainsi que pour les clients Scale sur demande. Le routage existant basé sur les sous-domaines continue de fonctionner, mais migrera à terme vers cette approche. Consultez la documentation [replica-aware routing](/fr/products/cloud/features/infrastructure/replica-aware-routing).
+  Vous pouvez désormais épingler les queries sur une replica spécifique via HTTPS standard en ajoutant un paramètre `?session_id=` à votre URL de service habituelle, sans qu’aucun nom d’hôte spécial ni aucune modification DNS ne soient nécessaires. Cela permet de conserver d’une query à l’autre les objets de session, comme les tables temporaires, et aide les queries répétées à atteindre des caches locaux de replica déjà chauds. Le déploiement est en cours en aperçu privé pour tous les clients Enterprise, ainsi que pour les clients Scale sur demande. Le routage existant basé sur les sous-domaines continue de fonctionner, mais migrera à terme vers cette approche. Consultez la documentation [replica-aware routing](/fr/manage/replica-aware-routing).
 
   ### Dates de début de période de facturation personnalisées
 
