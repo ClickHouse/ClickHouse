@@ -92,6 +92,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char keepermap_fail_drop_data[];
+    extern const char keepermap_create_pause_before_drop_lock_version[];
 }
 
 namespace ErrorCodes
@@ -530,7 +531,17 @@ StorageKeeperMap::StorageKeeperMap(
                         /// Backward compatibility: tables created before 25.1 don't have
                         /// the drop_lock_version node. Create it if missing so the set below
                         /// doesn't fail with ZNONODE (same pattern as drop() uses).
-                        client->createIfNotExists(zk_dropped_lock_version_path, "");
+                        /// A concurrent drop can remove the whole metadata subtree between the
+                        /// exists() check above and this create, so ZNONODE here means the leftover
+                        /// nodes are already gone: retry from the top instead of failing the CREATE.
+                        FailPointInjection::pauseFailPoint(FailPoints::keepermap_create_pause_before_drop_lock_version);
+                        if (auto create_code
+                            = client->tryCreate(zk_dropped_lock_version_path, "", zkutil::CreateMode::Persistent);
+                            create_code == Coordination::Error::ZNONODE)
+                        {
+                            LOG_INFO(log, "Someone else removed leftover nodes");
+                            return;
+                        }
 
                         Coordination::Requests drop_lock_requests{
                             zkutil::makeCreateRequest(zk_dropped_lock_path, "", zkutil::CreateMode::Ephemeral),
