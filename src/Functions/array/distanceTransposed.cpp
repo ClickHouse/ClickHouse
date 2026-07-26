@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
 
+#include <Core/Settings.h>
+
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/LloydMaxQuantizer.h>
@@ -33,6 +35,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsBool qbit_use_gaussian_prefix_centroids;
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -192,8 +199,8 @@ struct DotProductTransposed
 
 /// When `Quantized` is true the function operates on a `QBit(Int8)` whose codes were produced by the `quantizeBFloat16ToInt8`
 /// Lloyd-Max codec. Because that quantizer is non-linear, the distance cannot be computed on the `Int8` codes directly: each
-/// reconstructed code is dequantized to a precision-specific Float32 prefix centroid on the fly (the conditional mean of the
-/// retained prefix interval for `p < 8`, or the exact BFloat16 reconstruction at `p = 8`) and the distance is
+/// reconstructed code is dequantized to a configured Float32 reconstruction value on the fly (a conditional-mean prefix centroid
+/// by default, the ClickHouse 26.7 midpoint in compatibility mode, or the exact BFloat16 reconstruction at `p = 8`) and the distance is
 /// computed against the reference (query) vector. The reference vector is polymorphic: a `Float` reference is the query, compared
 /// directly (asymmetric distance) and cast to `Float32` -- the reconstruction precision of the dequantized codes -- exactly as the
 /// non-quantized transposed functions cast the reference to the QBit element type (so a `BFloat16` query widens to `Float32`
@@ -207,6 +214,11 @@ template <typename Kernel, bool Quantized = false>
 class FunctionArrayDistance : public IFunction
 {
 public:
+    explicit FunctionArrayDistance(bool use_gaussian_prefix_centroids_)
+        : use_gaussian_prefix_centroids(use_gaussian_prefix_centroids_)
+    {
+    }
+
     String getName() const override
     {
         if constexpr (Quantized)
@@ -214,7 +226,10 @@ public:
         else
             return Kernel::name;
     }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayDistance>(context->getSettingsRef()[Setting::qbit_use_gaussian_prefix_centroids]);
+    }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -491,7 +506,7 @@ public:
         if constexpr (Quantized)
         {
             /// The QBit is Int8 (Lloyd-Max codes) and the reference vector is Float32. Reconstruct each code with the
-            /// precision-specific prefix centroid and compute the distance against the reference. See
+            /// configured precision-specific LUT and compute the distance against the reference. See
             /// executeQuantizedDistanceCalculation.
             const bool ref_is_const = arguments.back().column->isConst();
             return ref_is_const
@@ -566,6 +581,8 @@ public:
 
 
 private:
+    const bool use_gaussian_prefix_centroids;
+
     static ColumnPtr extractFromConst(const ColumnPtr & column)
     {
         return column->isConst() ? assert_cast<const ColumnConst *>(column.get())->getDataColumnPtr() : column;
@@ -910,9 +927,9 @@ private:
     /// a quantized Array(Int8) query.
     /// `planes` holds `num_groups * precision` FixedString bit-plane columns in group-major order (plane[g * precision + b]).
     /// Each stride group is untransposed into a contiguous slice of a `used_dims`-element buffer of raw code bytes, which is then
-    /// dequantized to Float32 prefix centroids before the Float32 distance kernel runs. For `p < 8`, each centroid is the
-    /// Gaussian conditional mean over the union of fine Lloyd-Max cells represented by the retained prefix; at `p = 8` the
-    /// existing `dequantizeInt8ToBFloat16` reconstruction is preserved exactly.
+    /// dequantized through the configured Float32 reconstruction LUT before the distance kernel runs. For `p < 8`, the default is
+    /// the Gaussian conditional mean over the union of fine Lloyd-Max cells represented by the retained prefix; compatibility with
+    /// ClickHouse 26.7 restores midpoint reconstruction. At `p = 8`, `dequantizeInt8ToBFloat16` is preserved exactly in both modes.
     /// An Array(Int8) reference is a complete (not partially read) quantized query, so it is dequantized at full precision (row 8 of
     /// the LUT, i.e. `dequantizeInt8ToBFloat16`) before the kernel runs; a Float32 reference is used verbatim.
     template <bool ref_is_const>
@@ -944,7 +961,7 @@ private:
         else
         {
             const auto & ref_codes = assert_cast<const ColumnVector<Int8> &>(ref_data_column).getData();
-            const std::array<Float32, 256> & dequant_ref = LloydMax::transposedDequantLUT()[8];
+            const std::array<Float32, 256> & dequant_ref = LloydMax::transposedDequantLUT(use_gaussian_prefix_centroids)[8];
             ref_dequantized.resize(ref_codes.size());
             for (size_t i = 0; i < ref_codes.size(); ++i)
                 ref_dequantized[i] = dequant_ref[static_cast<uint8_t>(ref_codes[i])];
@@ -956,9 +973,8 @@ private:
         auto col_res = ColumnVector<Float64>::create(input_rows_count);
         auto & result_data = col_res->getData();
 
-        /// Reconstruction table for this precision: maps a raw code byte to its Float32 prefix centroid (or the exact
-        /// BFloat16 Lloyd-Max reconstruction at precision 8).
-        const std::array<Float32, 256> & dequant = LloydMax::transposedDequantLUT()[precision];
+        /// Reconstruction table for this precision: maps a raw code byte to its configured Float32 reconstruction value.
+        const std::array<Float32, 256> & dequant = LloydMax::transposedDequantLUT(use_gaussian_prefix_centroids)[precision];
 
         /// We process 32 rows per iteration, mirroring executeDistanceCalculation.
         constexpr size_t block_size = 32;
@@ -1001,7 +1017,7 @@ private:
                 }
             }
 
-            /// Dequantize the reconstructed codes to precision-specific Float32 prefix centroids. Only the first `used_dims`
+            /// Dequantize the reconstructed codes through the configured precision-specific Float32 LUT. Only the first `used_dims`
             /// entries are meaningful:
             /// strided groups pack contiguously, and for the single non-strided group the trailing entries are padding.
             for (size_t r = 0; r < rows_in_block; ++r)

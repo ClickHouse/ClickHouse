@@ -6576,6 +6576,11 @@ Use in-memory buffer for correlated subquery input to avoid its repeated evaluat
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
+    DECLARE(Bool, qbit_use_gaussian_prefix_centroids, true, R"(
+Use Gaussian conditional-mean centroids when `...DistanceTransposedQuantized` functions reconstruct truncated `QBit(Int8)` codes produced by `quantizeBFloat16ToInt8`.
+
+When disabled, the functions use the midpoint reconstruction shipped in ClickHouse 26.7. Full 8-bit reconstruction is identical in both modes.
+)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/sql-reference/functions/string-search-functions#extractAllGroupsHorizontal) function.

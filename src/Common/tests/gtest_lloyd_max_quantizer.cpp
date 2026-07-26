@@ -26,7 +26,7 @@ uint32_t ulpDistance(Float32 lhs, Float32 rhs)
     return std::max(lhs_bits, rhs_bits) - std::min(lhs_bits, rhs_bits);
 }
 
-long double normalPdf(long double value)
+long double normalPDF(long double value)
 {
     if (std::isinf(value))
         return 0;
@@ -35,7 +35,7 @@ long double normalPdf(long double value)
     return std::exp(-value * value / 2) * inverse_sqrt_two_pi;
 }
 
-long double normalCdf(long double value)
+long double normalCDF(long double value)
 {
     if (value == -std::numeric_limits<long double>::infinity())
         return 0;
@@ -54,7 +54,7 @@ Float32 conditionalMean(size_t precision, size_t positive_prefix)
                                                : static_cast<long double>(LloydMax::BOUNDARIES[first_index - 1]);
     const long double upper
         = last_index == 255 ? std::numeric_limits<long double>::infinity() : static_cast<long double>(LloydMax::BOUNDARIES[last_index]);
-    return static_cast<Float32>((normalPdf(lower) - normalPdf(upper)) / (normalCdf(upper) - normalCdf(lower)));
+    return static_cast<Float32>((normalPDF(lower) - normalPDF(upper)) / (normalCDF(upper) - normalCDF(lower)));
 }
 
 TEST(LloydMaxQuantizer, PrefixCentroidsMatchGaussianConditionalMeans)
@@ -76,7 +76,7 @@ TEST(LloydMaxQuantizer, PrefixCentroidsMatchGaussianConditionalMeans)
 
 TEST(LloydMaxQuantizer, TransposedDequantLUTPreservesPrefixContract)
 {
-    const auto & lut = LloydMax::transposedDequantLUT();
+    const auto & lut = LloydMax::transposedDequantLUT(true);
 
     for (size_t precision = 1; precision < 8; ++precision)
     {
@@ -106,5 +106,20 @@ TEST(LloydMaxQuantizer, TransposedDequantLUTPreservesPrefixContract)
     }
 }
 
+TEST(LloydMaxQuantizer, TransposedDequantLUTPreservesLegacyMidpoints)
+{
+    const auto & lut = LloydMax::transposedDequantLUT(false);
+    for (size_t precision = 1; precision <= 8; ++precision)
+    {
+        for (size_t raw = 0; raw < 256; ++raw)
+        {
+            const auto top = static_cast<uint8_t>(raw & (0xFFu << (8 - precision)));
+            const auto centre = static_cast<uint8_t>(precision < 8 ? (top | (1u << (7 - precision))) : top);
+            const auto index = static_cast<uint8_t>(centre ^ 0x80u);
+            const Float32 expected = static_cast<Float32>(BFloat16(LloydMax::LEVELS[index]));
+            EXPECT_EQ(floatBits(lut[precision][raw]), floatBits(expected)) << "precision=" << precision << " raw=" << raw;
+        }
+    }
+}
 }
 }

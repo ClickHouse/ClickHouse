@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 -- A truncated Gaussian Lloyd-Max prefix is reconstructed with the conditional
 -- mean of its existing fine-cell interval, rather than a middle fine-cell
 -- reconstruction level. The sign pairs below also lock the raw-code prefix
@@ -47,3 +49,35 @@ WITH
 SELECT abs(
     dotProductTransposedQuantized(vector, average, 8)
     - toFloat32(dequantizeInt8ToBFloat16(code))) < 1e-7 AS full_precision_unchanged;
+
+-- The improved reconstruction is the default, while compatibility with 26.7
+-- restores the midpoint reconstruction shipped in that release.
+SELECT getSetting('qbit_use_gaussian_prefix_centroids');
+SELECT getSetting('qbit_use_gaussian_prefix_centroids') SETTINGS compatibility = '26.7';
+SELECT getSetting('qbit_use_gaussian_prefix_centroids')
+SETTINGS compatibility = '26.7', qbit_use_gaussian_prefix_centroids = 1;
+SELECT getSetting('qbit_use_gaussian_prefix_centroids')
+SETTINGS qbit_use_gaussian_prefix_centroids = 1, compatibility = '26.7';
+
+WITH
+    [quantizeBFloat16ToInt8(0.5::BFloat16), quantizeBFloat16ToInt8(0.5::BFloat16)]::QBit(Int8, 2) AS positive,
+    [quantizeBFloat16ToInt8(-0.5::BFloat16), quantizeBFloat16ToInt8(-0.5::BFloat16)]::QBit(Int8, 2) AS negative,
+    [0.5, 0.5]::Array(Float32) AS average,
+    toFloat32(dequantizeInt8ToBFloat16(64::Int8)) AS positive_midpoint,
+    toFloat32(dequantizeInt8ToBFloat16(-64::Int8)) AS negative_midpoint
+SELECT
+    abs(dotProductTransposedQuantized(positive, average, 1) - positive_midpoint) < 1e-7 AS positive_legacy_midpoint,
+    abs(dotProductTransposedQuantized(negative, average, 1) - negative_midpoint) < 1e-7 AS negative_legacy_midpoint
+SETTINGS compatibility = '26.7';
+
+WITH
+    quantizeBFloat16ToInt8(0.5::BFloat16) AS code,
+    [code, code]::QBit(Int8, 2) AS vector,
+    [0.5, 0.5]::Array(Float32) AS average,
+    toFloat32(dequantizeInt8ToBFloat16(64::Int8)) AS midpoint
+SELECT
+    abs(dotProductTransposedQuantized(vector, average, 1) - midpoint) < 1e-7 AS explicit_legacy_midpoint,
+    abs(
+        dotProductTransposedQuantized(vector, average, 8)
+        - toFloat32(dequantizeInt8ToBFloat16(code))) < 1e-7 AS legacy_full_precision_unchanged
+SETTINGS qbit_use_gaussian_prefix_centroids = 0;
