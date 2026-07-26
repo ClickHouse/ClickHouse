@@ -7,6 +7,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/StorageID.h>
+#include <Interpreters/pullUpTupleElementDefaults.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -62,6 +63,29 @@ namespace
     constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
     {
         return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
+    }
+
+    /// Normalize `DEFAULT` expressions written inside `Tuple` data types by pulling them up to the column
+    /// level for every column declaration of a `TimeSeries` table - both the outer columns and the columns
+    /// of the inner tables (`SAMPLES INNER COLUMNS (...)` and so on). This must happen before any of the
+    /// declared types is reified with `DataTypeFactory`, because a type AST that still carries a `DEFAULT`
+    /// is rejected by `DataTypeTuple::create`.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/2797.
+    void pullUpTupleElementDefaultsInColumnList(ASTColumns * columns_list)
+    {
+        if (!columns_list || !columns_list->columns)
+            return;
+
+        for (const auto & column : columns_list->columns->children)
+            pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>());
+    }
+
+    void pullUpTupleElementDefaultsInTimeSeriesDefinition(ASTCreateQuery & create_query)
+    {
+        pullUpTupleElementDefaultsInColumnList(create_query.columns_list.get());
+
+        for (auto kind : getTargetKinds())
+            pullUpTupleElementDefaultsInColumnList(create_query.getTargetInnerColumns(kind));
     }
 
     /// Conflict-checking setter for `DataTypePtr`.
@@ -1026,6 +1050,10 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         chassert(is_new_table);
         applyASClause(create_query, context);
     }
+
+    /// Pull up `DEFAULT` expressions written inside `Tuple` data types of the outer and inner columns.
+    /// It has to be done before the declared types are reified below.
+    pullUpTupleElementDefaultsInTimeSeriesDefinition(create_query);
 
     /// Resolve types timestamp_type, scalar_type, id_type.
     /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
