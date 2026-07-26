@@ -3795,6 +3795,209 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
     }
 }
 
+
+// ===========================================================================================
+// Section 25: Coarse posting list cursors (bucket-domain data expanded to rows on the fly)
+// ===========================================================================================
+
+namespace
+{
+
+/// Build multi-block test data whose stored values are bucket ids `row >> level`,
+/// mimicking a coarse posting list after `deserializeTokenInfo`: the CoarsePostings
+/// flag and level are set and block ranges are converted to the row domain.
+MultiBlockTestData makeCoarseMultiBlockData(const std::vector<std::vector<uint32_t>> & bucket_blocks, UInt32 level, UInt32 rows_cardinality)
+{
+    auto data = makeMultiBlockData(bucket_blocks);
+    auto & info = data.info;
+
+    info.header |= PostingsSerialization::Flags::CoarsePostings;
+    info.coarse_level = level;
+    info.rows_cardinality = rows_cardinality;
+
+    for (auto & range : info.ranges)
+    {
+        range.begin = range.begin << level;
+        range.end = ((range.end + 1) << level) - 1;
+    }
+
+    return data;
+}
+
+/// Reference: rows covered by the given buckets at the given level.
+std::vector<uint32_t> expandBucketsToRows(const std::vector<uint32_t> & buckets, UInt32 level)
+{
+    std::vector<uint32_t> rows;
+    for (auto bucket : buckets)
+        for (uint32_t i = 0; i < (1u << level); ++i)
+            rows.push_back((bucket << level) + i);
+    return rows;
+}
+
+}
+
+TEST(PostingListCursorTest, CoarseCursorDrain)
+{
+    /// Buckets {5, 6, 20} at level 3 cover rows {40..55, 160..167}.
+    auto data = makeCoarseMultiBlockData({{5, 6, 20}}, /*level=*/ 3, /*rows_cardinality=*/ 10);
+    auto cursor = makeMultiBlockCursor(data);
+
+    auto expected = expandBucketsToRows({5, 6, 20}, 3);
+    EXPECT_EQ(advanceAndDrainCursor(cursor, 40), expected);
+}
+
+TEST(PostingListCursorTest, CoarseCursorDrainMultipleSegments)
+{
+    auto data = makeCoarseMultiBlockData({{1, 2, 3}, {100, 101}, {500}}, /*level=*/ 4, /*rows_cardinality=*/ 42);
+    auto cursor = makeMultiBlockCursor(data);
+
+    auto expected = expandBucketsToRows({1, 2, 3, 100, 101, 500}, 4);
+    EXPECT_EQ(advanceAndDrainCursor(cursor, 16), expected);
+}
+
+TEST(PostingListCursorTest, CoarseCursorAdvance)
+{
+    auto data = makeCoarseMultiBlockData({{5, 6, 20}}, /*level=*/ 3, /*rows_cardinality=*/ 10);
+    auto cursor = makeMultiBlockCursor(data);
+
+    /// Mid-bucket target: the first covered row >= target is the target itself.
+    cursor->advance(43);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 43u);
+
+    /// Advancing to a smaller target must not move the cursor backwards.
+    cursor->advance(41);
+    EXPECT_EQ(cursor->value(), 43u);
+
+    /// A target in a gap lands on the first row of the next bucket.
+    cursor->advance(56);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 160u);
+
+    /// A target past the last covered row invalidates the cursor.
+    cursor->advance(168);
+    EXPECT_FALSE(cursor->valid());
+}
+
+TEST(PostingListCursorTest, CoarseCursorAdvanceAcrossSegments)
+{
+    auto data = makeCoarseMultiBlockData({{1, 2}, {100}}, /*level=*/ 4, /*rows_cardinality=*/ 5);
+    auto cursor = makeMultiBlockCursor(data);
+
+    cursor->advance(0);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 16u);
+
+    /// Cross-segment advance: bucket 100 covers rows [1600, 1616).
+    cursor->advance(1000);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 1600u);
+
+    cursor->advance(1615);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 1615u);
+
+    cursor->advance(1616);
+    EXPECT_FALSE(cursor->valid());
+}
+
+TEST(PostingListCursorTest, CoarseCursorLinearOrWindows)
+{
+    auto data = makeCoarseMultiBlockData({{5, 6, 20}}, /*level=*/ 3, /*rows_cardinality=*/ 10);
+    auto expected_rows = expandBucketsToRows({5, 6, 20}, 3);
+
+    /// Sweep windows of different sizes and offsets over the covered range.
+    for (size_t row_offset : {0ul, 40ul, 45ul, 56ul, 160ul, 168ul})
+    {
+        for (size_t num_rows : {1ul, 7ul, 64ul, 200ul})
+        {
+            auto cursor = makeMultiBlockCursor(data);
+            auto actual = linearOrToDocIds(cursor, row_offset, num_rows);
+
+            std::vector<uint32_t> expected;
+            for (auto row : expected_rows)
+                if (row >= row_offset && row < row_offset + num_rows)
+                    expected.push_back(row);
+
+            EXPECT_EQ(actual, expected) << "row_offset=" << row_offset << " num_rows=" << num_rows;
+        }
+    }
+}
+
+TEST(PostingListCursorTest, CoarseCursorDenseBucketsUseDenseShortcut)
+{
+    /// Consecutive buckets 8..15 at level 2 cover the contiguous row range [32, 64).
+    auto data = makeCoarseMultiBlockData({{8, 9, 10, 11, 12, 13, 14, 15}}, /*level=*/ 2, /*rows_cardinality=*/ 20);
+    auto cursor = makeMultiBlockCursor(data);
+
+    auto actual = linearOrToDocIds(cursor, 0, 100);
+    EXPECT_EQ(actual, expandBucketsToRows({8, 9, 10, 11, 12, 13, 14, 15}, 2));
+}
+
+TEST(PostingListCursorTest, CoarseExactIntersection)
+{
+    /// Coarse token: buckets {5, 6, 20} at level 3 cover rows {40..55, 160..167}.
+    /// Exact token: rows {41, 50, 100, 161, 300}. Intersection: {41, 50, 161}.
+    auto coarse_data = makeCoarseMultiBlockData({{5, 6, 20}}, /*level=*/ 3, /*rows_cardinality=*/ 10);
+    std::vector<uint32_t> exact_rows{41, 50, 100, 161, 300};
+
+    for (bool brute_force : {true, false})
+    {
+        PostingListCursorMap postings;
+        postings["coarse"] = makeMultiBlockCursor(coarse_data);
+        postings["exact"] = makeEmbeddedCursor(makeEmbeddedInfo(exact_rows));
+
+        VectorWithMemoryTracking<String> tokens{"coarse", "exact"};
+        auto result = intersectAndCollect(postings, tokens, 0, 400, brute_force);
+        EXPECT_EQ(result, (std::vector<uint32_t>{41, 50, 161})) << "brute_force=" << brute_force;
+    }
+}
+
+TEST(PostingListCursorTest, CoarseCoarseIntersectionDifferentLevels)
+{
+    /// Two coarse tokens at different levels: rows {40..55} (buckets 5..6, level 3)
+    /// and rows {48..63} (buckets 3, level 4). Intersection: rows {48..55}.
+    auto data_a = makeCoarseMultiBlockData({{5, 6}}, /*level=*/ 3, /*rows_cardinality=*/ 4);
+    auto data_b = makeCoarseMultiBlockData({{3}}, /*level=*/ 4, /*rows_cardinality=*/ 4);
+
+    for (bool brute_force : {true, false})
+    {
+        PostingListCursorMap postings;
+        postings["a"] = makeMultiBlockCursor(data_a);
+        postings["b"] = makeMultiBlockCursor(data_b);
+
+        VectorWithMemoryTracking<String> tokens{"a", "b"};
+        auto result = intersectAndCollect(postings, tokens, 0, 100, brute_force);
+        EXPECT_EQ(result, generateRange(48, 8)) << "brute_force=" << brute_force;
+    }
+}
+
+TEST(PostingListCursorTest, CoarseUnionWithExact)
+{
+    auto coarse_data = makeCoarseMultiBlockData({{2}}, /*level=*/ 2, /*rows_cardinality=*/ 2);
+
+    PostingListCursorMap postings;
+    postings["coarse"] = makeMultiBlockCursor(coarse_data);
+    postings["exact"] = makeEmbeddedCursor(makeEmbeddedInfo({1, 9, 30}));
+
+    VectorWithMemoryTracking<String> tokens{"coarse", "exact"};
+    auto result = unionAndCollect(postings, tokens, 0, 40);
+
+    /// Bucket 2 at level 2 covers rows {8..11}; union with {1, 9, 30}.
+    EXPECT_EQ(result, (std::vector<uint32_t>{1, 8, 9, 10, 11, 30}));
+}
+
+TEST(PostingListCursorTest, CoarseCursorDensityAndCardinality)
+{
+    /// Buckets {0..9} at level 3: 10 buckets over the row span [0, 80) => density 1.0,
+    /// effective cardinality 80.
+    auto data = makeCoarseMultiBlockData({{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}}, /*level=*/ 3, /*rows_cardinality=*/ 15);
+    auto cursor = makeMultiBlockCursor(data);
+
+    EXPECT_DOUBLE_EQ(cursor->density(), 1.0);
+    EXPECT_EQ(cursor->cardinality(), 80u);
+}
+
 TEST(PostingListCursorTest, SingleValueSegmentAfterAnotherSegment)
 {
     /// Regression test: a segment holding a single value is encoded as one block with
