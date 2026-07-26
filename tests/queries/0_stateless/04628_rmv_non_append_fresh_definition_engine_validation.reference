@@ -6,4 +6,5 @@ restore_rejected
 legacy_uuid_is_nil
 legacy_short_attach_ok
 legacy_refresh_refused
+legacy_restore_ok
 server_alive

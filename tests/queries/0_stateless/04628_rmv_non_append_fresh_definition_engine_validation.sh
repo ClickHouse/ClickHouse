@@ -6,8 +6,9 @@
 # enforced this, but a full-definition ATTACH and a RESTORE (which can remap the view into another
 # database) bypassed the check, producing a Nil-UUID view whose refresh aborted the server in a
 # Replicated-DDL parent-table lookup. All fresh definition paths are validated the same way now.
-# Definitions stored before the validation existed must keep loading, and their refresh must be
-# refused cleanly; a cross-engine RENAME reaches that state without InterpreterCreateQuery.
+# Definitions stored before the validation existed must keep loading, their refresh must be refused
+# cleanly, and their backups must stay restorable; a cross-engine RENAME reaches that state without
+# InterpreterCreateQuery.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -73,6 +74,15 @@ $CLICKHOUSE_CLIENT -q "SELECT 'legacy_short_attach_ok' FROM system.tables WHERE 
 $CLICKHOUSE_CLIENT -q "SYSTEM REFRESH VIEW ${ORD_DB}.legacy_v"
 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT VIEW ${ORD_DB}.legacy_v" 2>&1 \
     | grep -q "Parent table doesn't exist" && echo "legacy_refresh_refused"
+
+# A backup of such a definition must stay restorable into the same database it was taken from: it
+# carries no UUID, so the restore is replaying a definition that already lived without one rather
+# than remapping a UUID view into a database that cannot hold its UUID.
+$CLICKHOUSE_CLIENT -q "BACKUP TABLE ${ORD_DB}.legacy_v TO Disk('backups', '${CLICKHOUSE_DATABASE}/legacy_v') FORMAT Null" > /dev/null
+$CLICKHOUSE_CLIENT --force_remove_data_recursively_on_drop=1 -q "DROP TABLE ${ORD_DB}.legacy_v SYNC"
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE ${ORD_DB}.legacy_v FROM Disk('backups', '${CLICKHOUSE_DATABASE}/legacy_v')" > /dev/null \
+    && echo "legacy_restore_ok"
+
 # A server that aborted during that refresh cannot answer this.
 $CLICKHOUSE_CLIENT -q "SELECT 'server_alive'"
 

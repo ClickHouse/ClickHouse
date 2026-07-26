@@ -1851,11 +1851,16 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// would diverge across replicas, and the view needs a real UUID for parent-table tracking in
     /// Replicated DDL). Stored definitions (attach_short_syntax) were validated when first
     /// introduced and must keep loading; plain Replicated-DDL replay re-executes an already
-    /// validated initiator query. A full-definition ATTACH and a RESTORE (which can remap the view
-    /// into a different database) are fresh input and are validated like CREATE.
+    /// validated initiator query. A full-definition ATTACH is fresh input and is validated like
+    /// CREATE. A RESTORE counts as fresh only when the backed-up definition carried a UUID: such a
+    /// view lived in a UUID database, so landing it in a non-UUID one is a remap that loses the
+    /// UUID. `has_uuid` reflects the backup's own metadata (RESTORE overwrites `uuid` with a freshly
+    /// generated one before this point, but never `has_uuid`), so a UUID-less backup is a definition
+    /// that already lived without a UUID and must stay restorable.
+    const bool is_remapping_restore = is_restore_from_backup && create.has_uuid;
     const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
         || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax)
-        || is_restore_from_backup;
+        || is_remapping_restore;
     if (create.refresh_strategy && !create.refresh_strategy->append && is_fresh_definition)
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
