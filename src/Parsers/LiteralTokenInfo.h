@@ -36,8 +36,17 @@ struct LiteralTokenInfo
 /// recorded (which is the one that survives in the final AST).
 ///
 /// This is a struct (not a type alias) so it can be forward-declared, keeping the map out of
-/// `IParser.h`. It is only populated when a caller asks for literal positions, so a plain
-/// `std::unordered_map` is enough and keeps the parser free of abseil.
+/// `IParser.h`.
+///
+/// This was an `absl::flat_hash_map`, chosen because the map is created and destroyed often while
+/// parsing. That is a real effect - for this construct/insert/lookup/destroy pattern the flat map
+/// measures about twice as fast at one to three entries (13 ns against 29 ns, 55 ns against 121 ns)
+/// and about three times as fast at 64. It is `std::unordered_map` now only because abseil is a
+/// large dependency to carry for one map, and this one is built only when a caller asks for literal
+/// positions: deducing a `ConstantExpressionTemplate` in the `Values` format, and highlighting in
+/// the interactive client. If it ever shows up in a profile, the fix is a flat map that ClickHouse
+/// already has - `HashMapWithStackMemory` would not allocate at all at these sizes - rather than
+/// bringing abseil back.
 struct LiteralTokenMap : std::unordered_map<const ASTLiteral *, LiteralTokenInfo>
 {
     using std::unordered_map<const ASTLiteral *, LiteralTokenInfo>::unordered_map;
