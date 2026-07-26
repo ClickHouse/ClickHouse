@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -34,24 +34,24 @@ import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupporte
 
 ```yaml
 jsonData:
-  host: 127.0.0.1 # (필수) 서버 주소.
-  port: 9000      # (필수) 서버 포트. 네이티브 프로토콜의 경우 보안 연결 기본값은 9440, 비보안 연결 기본값은 9000입니다. HTTP의 경우 보안 연결 기본값은 8443, 비보안 연결 기본값은 8123입니다.
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
 
-  protocol: native # (필수) 연결에 사용할 프로토콜. "native" 또는 "http"로 설정할 수 있습니다.
-  secure: false    # 보안 연결을 사용하는 경우 true로 설정하십시오.
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
 
-  username: default # 인증에 사용할 사용자 이름.
+  username: default # the username used for authentication.
 
-  tlsSkipVerify:     <boolean> # true로 설정하면 TLS 검증을 건너뜁니다.
-  tlsAuth:           <boolean> # TLS 클라이언트 인증을 활성화하려면 true로 설정하십시오.
-  tlsAuthWithCACert: <boolean> # CA 인증서가 제공된 경우 true로 설정하십시오. 자체 서명된 TLS 인증서 검증 시 필요합니다.
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
 
 secureJsonData:
-  password: secureExamplePassword # 인증에 사용할 비밀번호.
+  password: secureExamplePassword # the password used for authentication.
 
-  tlsCACert:     <string> # TLS CA 인증서
-  tlsClientCert: <string> # TLS 클라이언트 인증서
-  tlsClientKey:  <string> # TLS 클라이언트 키
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
 ```
 
 구성을 UI에서 저장하면 `version` 속성이 추가된다는 점에 유의하십시오. 이는 해당 구성을 저장할 때 사용된 플러그인의 버전을 나타냅니다.
@@ -118,12 +118,12 @@ secureJsonData:
 
 ```yaml
 jsonData:
-  defaultDatabase: default # 쿼리 빌더에서 로드되는 기본 데이터베이스. 기본값은 "default".
-  defaultTable: <string>   # 쿼리 빌더에서 로드되는 기본 테이블.
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
 
-  dialTimeout: 10    # 서버 연결 시 다이얼 타임아웃(초). 기본값은 "10".
-  queryTimeout: 60   # 쿼리 실행 시 쿼리 타임아웃(초). 기본값은 60. 사용자에게 권한이 필요합니다. 권한 오류가 발생하면 "0"으로 설정하여 비활성화하십시오.
-  validateSql: false # true로 설정하면 SQL Editor에서 SQL 유효성을 검사합니다.
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
 ```
 
 <div id="opentelemetry">
@@ -156,16 +156,16 @@ OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활�
 ```yaml
 jsonData:
   logs:
-    defaultDatabase: default # 기본 로그 데이터베이스.
-    defaultTable: otel_logs  # 기본 로그 테이블. OTel을 사용하는 경우 "otel_logs"로 설정하십시오.
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
 
-    otelEnabled: false  # OTel이 활성화된 경우 true로 설정하십시오.
-    otelVersion: latest # 사용할 OTel collector 스키마 버전입니다. 버전은 UI에 표시되며, "latest"로 설정하면 plugin에서 사용 가능한 최신 버전이 사용됩니다.
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # 새 로그 쿼리를 열 때 기본으로 선택할 컬럼입니다. OTel이 활성화된 경우 무시됩니다.
-    timeColumn:       <string> # 로그의 기본 시간 컬럼입니다.
-    levelColumn:   <string> # 로그의 로그 레벨/심각도입니다. 값은 일반적으로 "INFO", "error", "Debug" 등의 형태입니다.
-    messageColumn: <string> # 로그의 메시지/내용입니다.
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
 ```
 
 <div id="traces">
@@ -187,23 +187,23 @@ OpenTelemetry가 필수는 아니지만, 트레이스에 OpenTelemetry 스키마
 ```yaml
 jsonData:
   traces:
-    defaultDatabase: default  # 기본 트레이스 데이터베이스.
-    defaultTable: otel_traces # 기본 트레이스 테이블. OTel을 사용하는 경우 "otel_traces"로 설정하십시오.
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
 
-    otelEnabled: false  # OTel을 사용하는 경우 true로 설정하십시오.
-    otelVersion: latest # 사용할 OTel collector 스키마 버전. 버전은 UI에 표시되며, "latest"로 설정하면 plugin에서 사용 가능한 최신 버전이 적용됩니다.
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # 새 트레이스 쿼리를 열 때 기본으로 선택할 컬럼. OTel이 활성화된 경우 무시됩니다.
-    traceIdColumn:       <string>    # 트레이스 ID 컬럼.
-    spanIdColumn:        <string>    # 스팬 ID 컬럼.
-    operationNameColumn: <string>    # 작업 이름 컬럼.
-    parentSpanIdColumn:  <string>    # 상위 스팬 ID 컬럼.
-    serviceNameColumn:   <string>    # 서비스 이름 컬럼.
-    durationTimeColumn:  <string>    # 소요 시간 컬럼.
-    durationUnitColumn:  <time unit> # 소요 시간 단위. "seconds", "milliseconds", "microseconds", "nanoseconds" 중 하나로 설정할 수 있습니다. OTel의 기본값은 "nanoseconds"입니다.
-    startTimeColumn:     <string>    # 시작 시간 컬럼. 트레이스 스팬의 기본 시간 컬럼입니다.
-    tagsColumn:          <string>    # 태그 컬럼. 맵(Map) 타입이어야 합니다.
-    serviceTagsColumn:   <string>    # 서비스 태그 컬럼. 맵(Map) 타입이어야 합니다.
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
 <div id="column-aliases">
@@ -254,13 +254,13 @@ Grafana에서 별칭 테이블은 다음과 같은 컬럼 구조를 가져야 �
 
 ```sql
 CREATE TABLE aliases (
-  `alias` String,  -- Grafana 컬럼 셀렉터에 표시되는 별칭 이름
-  `select` String, -- SQL 생성기에서 사용할 SELECT 구문
-  `type` String    -- 결과 컬럼의 유형으로, 플러그인이 데이터 타입에 맞게 UI 옵션을 수정할 때 사용됩니다.
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
 )
 ```
 
-다음은 alias table을 사용해 `ALIAS` 컬럼의 동작을 재현하는 방법입니다:
+다음은 별칭 테이블을 사용해 `ALIAS` 컬럼의 동작을 재현하는 방법입니다:
 
 ```sql
 CREATE TABLE example_table (
@@ -270,15 +270,15 @@ CREATE TABLE example_table (
 CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
 
 INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
-('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- 테이블의 원래 컬럼 유지(선택 사항)
-('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- TimestampNanos를 Date로 변환하는 새 컬럼 추가
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
 ```
 
 이제 이 테이블을 Grafana에서 사용하도록 구성할 수 있습니다. 이름은 자유롭게 지정할 수 있으며, 별도의 데이터베이스에 정의해도 됩니다:
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="예시 별칭 테이블 구성" border />
 
-이제 Grafana는 `DESC example_table`의 결과 대신 alias table의 결과를 확인합니다:
+이제 Grafana는 `DESC example_table`의 결과 대신 별칭 테이블의 결과를 확인합니다:
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="예시 별칭 테이블 선택" border />
 
