@@ -17,7 +17,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
   ### HTTPS 経由の sticky レプリカルーティング (プライベートプレビュー)
 
-  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で queries を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを queries 間で利用し続けることができ、繰り返し実行される queries が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing) のドキュメントをご覧ください。
+  通常の service URL に `?session_id=` パラメータを追加するだけで、特別なホスト名や DNS の変更なしに、標準的な HTTPS 経由で queries を特定の レプリカ に固定できるようになりました。これにより、一時テーブルのような session スコープのオブジェクトを queries 間で利用し続けることができ、繰り返し実行される queries が レプリカ ローカルのウォームキャッシュにヒットしやすくなります。これは、すべての Enterprise 顧客に対してプライベートプレビューで順次提供されており、Scale 顧客についてはリクエストに応じて利用できます。既存のサブドメインベースのルーティングも引き続き動作しますが、最終的にはこの方式へ移行する予定です。[レプリカ対応ルーティング](/ja/manage/replica-aware-routing) のドキュメントをご覧ください。
 
   ### billing period 開始日のカスタマイズ
 

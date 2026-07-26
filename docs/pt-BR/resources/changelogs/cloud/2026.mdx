@@ -17,7 +17,7 @@ Além deste Cloud changelog do ClickHouse Cloud, consulte também a página [Com
 
   ### Roteamento sticky de réplicas por HTTPS (prévia privada)
 
-  Agora você pode fixar consultas em uma réplica específica por HTTPS padrão adicionando um parâmetro `?session_id=` à URL normal do seu serviço, sem necessidade de nomes de host especiais nem de alterações no DNS. Isso mantém disponíveis entre consultas objetos com escopo de sessão, como tabelas temporárias, e ajuda consultas repetidas a aproveitar caches locais da réplica já aquecidos. O recurso está sendo disponibilizado em prévia privada para todos os clientes Enterprise e, mediante solicitação, para clientes Scale. O roteamento existente baseado em subdomínio continua funcionando, mas acabará migrando para essa abordagem. Consulte a documentação de [replica-aware routing](/pt-BR/products/cloud/features/infrastructure/replica-aware-routing).
+  Agora você pode fixar consultas em uma réplica específica por HTTPS padrão adicionando um parâmetro `?session_id=` à URL normal do seu serviço, sem necessidade de nomes de host especiais nem de alterações no DNS. Isso mantém disponíveis entre consultas objetos com escopo de sessão, como tabelas temporárias, e ajuda consultas repetidas a aproveitar caches locais da réplica já aquecidos. O recurso está sendo disponibilizado em prévia privada para todos os clientes Enterprise e, mediante solicitação, para clientes Scale. O roteamento existente baseado em subdomínio continua funcionando, mas acabará migrando para essa abordagem. Consulte a documentação de [replica-aware routing](/pt-BR/manage/replica-aware-routing).
 
   ### Datas de início personalizadas do período de faturamento
 

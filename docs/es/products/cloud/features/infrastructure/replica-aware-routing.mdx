@@ -11,14 +11,14 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-El enrutamiento con reconocimiento de réplicas (también conocido como sesiones con afinidad, enrutamiento con afinidad o afinidad de sesión) dirige las solicitudes relacionadas a la misma réplica de ClickHouse. Úsalo cuando necesites que las [tablas temporales](/es/reference/statements/create/table#temporary-tables) o el [estado de sesión con nombre](/es/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) sigan siendo accesibles entre consultas, o cuando quieras que las consultas relacionadas reutilicen las cachés locales de esa misma réplica.
+El enrutamiento con reconocimiento de réplicas (también conocido como sesiones con afinidad, enrutamiento con afinidad o afinidad de sesión) dirige las solicitudes relacionadas a la misma réplica de ClickHouse. Úsalo cuando necesites que las [tablas temporales](/es/sql-reference/statements/create/table#temporary-tables) o el [estado de sesión con nombre](/es/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) sigan siendo accesibles entre consultas, o cuando quieras que las consultas relacionadas reutilicen las cachés locales de esa misma réplica.
 
 Es un mecanismo de best effort y no garantiza aislamiento. El escalado, las actualizaciones y los reinicios pueden cambiar la réplica a la que llega un `session_id` determinado.
 
 <Warning>
   **Requiere la interfaz HTTP**
 
-  El enrutamiento con reconocimiento de réplicas se aplica en la capa de proxy sobre la [interfaz HTTP/HTTPS](/es/concepts/features/interfaces/http), mediante el parámetro de consulta `session_id` (ver más abajo). **No está disponible sobre el protocolo nativo** (puerto nativo; por ejemplo, el driver [clickhouse-go](/es/integrations/language-clients/go/index) en su modo nativo predeterminado). Los clientes del protocolo nativo deben cambiar a HTTP y pasar un `session_id` en cada solicitud. Para clickhouse-go (v2), establece `Protocol: clickhouse.HTTP` y pasa `session_id` como un [ajuste](/es/integrations/language-clients/go/database-sql-api#sessions). El driver lo envía como el parámetro de consulta de la URL sobre el que el proxy calcula el hash.
+  El enrutamiento con reconocimiento de réplicas se aplica en la capa de proxy sobre la [interfaz HTTP/HTTPS](/es/interfaces/http), mediante el parámetro de consulta `session_id` (ver más abajo). **No está disponible sobre el protocolo nativo** (puerto nativo; por ejemplo, el driver [clickhouse-go](/es/integrations/go) en su modo nativo predeterminado). Los clientes del protocolo nativo deben cambiar a HTTP y pasar un `session_id` en cada solicitud. Para clickhouse-go (v2), establece `Protocol: clickhouse.HTTP` y pasa `session_id` como un [ajuste](/es/integrations/language-clients/go/database-sql-api#sessions). El driver lo envía como el parámetro de consulta de la URL sobre el que el proxy calcula el hash.
 </Warning>
 
 <div id="prerequisites">
@@ -28,7 +28,7 @@ Es un mecanismo de best effort y no garantiza aislamiento. El escalado, las actu
 * Tu servicio necesita **2 o más réplicas**. En un servicio con una sola réplica, no hay ninguna a la que anclarlo.
 * Un servicio **en ejecución**. Reactivar un servicio inactivo puede cambiar a qué réplica se asigna un `session_id`.
 * Disponible en **Enterprise** de forma predeterminada cuando la función sea GA.
-* Compatible con los servicios estándar de ClickHouse Cloud. [BYOC](/es/products/cloud/guides/infrastructure/deployment-options/byoc/overview) aún no es compatible.
+* Compatible con los servicios estándar de ClickHouse Cloud. [BYOC](/es/cloud/reference/byoc/overview) aún no es compatible.
 
 <div id="configuring-replica-aware-routing">
   ## Configuración del enrutamiento con reconocimiento de réplicas
@@ -40,7 +40,7 @@ Abre un ticket de [soporte](https://clickhouse.com/support/program) y solicita q
   ## Enrutamiento basado en HTTP (session_id)
 </div>
 
-Para fijar una carga de trabajo a una réplica, establece el parámetro de consulta `session_id` en la [interfaz HTTPS](/es/concepts/features/interfaces/http). El proxy aplica hash consistente a ese valor para seleccionar una réplica, por lo que todas las solicitudes que comparten el mismo `session_id` van al mismo servidor hasta que cambie la topología del clúster.
+Para fijar una carga de trabajo a una réplica, establece el parámetro de consulta `session_id` en la [interfaz HTTPS](/es/interfaces/http). El proxy aplica hash consistente a ese valor para seleccionar una réplica, por lo que todas las solicitudes que comparten el mismo `session_id` van al mismo servidor hasta que cambie la topología del clúster.
 
 Usa el hostname de tu servicio existente. No se requieren hostnames especiales con afinidad ni cambios en el DNS.
 
@@ -55,7 +55,7 @@ Cada solicitud que incluya `session_id=my-workload-1` se enruta a la misma répl
 
 `session_id` puede ser cualquier cadena que elijas (nombre de la aplicación, id de usuario o etiqueta de la carga de trabajo). Las solicitudes sin `session_id` mantienen el balanceo de carga normal.
 
-Cualquier client HTTP que pueda añadir un parámetro de consulta funciona, incluidos `curl`, [clickhouse-connect](/es/integrations/language-clients/python/index), JDBC/ODBC y otros. Para `clickhouse-go` (v2), usa el modo HTTP como se indicó anteriormente.
+Cualquier client HTTP que pueda añadir un parámetro de consulta funciona, incluidos `curl`, [clickhouse-connect](/es/integrations/python), JDBC/ODBC y otros. Para `clickhouse-go` (v2), usa el modo HTTP como se indicó anteriormente.
 
 <div id="check-which-replica">
   ### Comprueba a qué réplica accedes
@@ -89,13 +89,13 @@ Cualquier interrupción del servicio cambia el anillo hash de enrutamiento. Esto
   ### El enrutamiento con reconocimiento de réplicas no es aislamiento de cargas de trabajo
 </div>
 
-El enrutamiento con afinidad solo controla *qué* réplica gestiona una petición. Esa réplica puede seguir atendiendo otro tráfico. Para tener cómputo dedicado, usa [compute-compute separation](/es/products/cloud/features/infrastructure/warehouses).
+El enrutamiento con afinidad solo controla *qué* réplica gestiona una petición. Esa réplica puede seguir atendiendo otro tráfico. Para tener cómputo dedicado, usa [compute-compute separation](/es/cloud/reference/warehouses).
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
   ### Private Link y el método de subdominio obsoleto
 </div>
 
-El enrutamiento HTTP de `session_id` funciona con [redes privadas](/es/products/cloud/guides/security/connectivity/private-networking) en el hostname habitual de tu servicio. No se requieren registros DNS adicionales.
+El enrutamiento HTTP de `session_id` funciona con [redes privadas](/es/cloud/security/connectivity/private-networking) en el hostname habitual de tu servicio. No se requieren registros DNS adicionales.
 
 En cambio, el método de subdominio obsoleto no: debes añadir DNS para el patrón de hostname `*.sticky.*`, y una configuración incorrecta puede distribuir la carga de forma desigual entre las réplicas.
 
