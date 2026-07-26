@@ -81,11 +81,16 @@ DataTypePtr computeClickHouseType(const BigQueryField & field)
     {
         case BigQueryField::Type::String:
         case BigQueryField::Type::Bytes:
-        case BigQueryField::Type::Geography:
         case BigQueryField::Type::JSON:
         case BigQueryField::Type::Interval:
         case BigQueryField::Type::Range:
             base = std::make_shared<DataTypeString>();
+            break;
+        case BigQueryField::Type::Geography:
+            /// A GEOGRAPHY value is returned as WKT and is parsed into the `Geometry` type, which is a
+            /// `Variant` of the geometric types. `Variant` represents a NULL by itself, so a NULLABLE
+            /// GEOGRAPHY is not wrapped in `Nullable` (`canBeInsideNullable` is false for `Variant`).
+            base = DataTypeFactory::instance().get("Geometry");
             break;
         case BigQueryField::Type::Integer:
             base = std::make_shared<DataTypeInt64>();

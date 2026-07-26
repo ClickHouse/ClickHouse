@@ -224,6 +224,36 @@ RANGE_ROWS = [
     row("2", "[2021-01-01, UNBOUNDED)"),
 ]
 
+# GEOGRAPHY values are transferred as WKT text and are mapped to the ClickHouse `Geometry` type, which
+# is a `Variant` of the geometric types, so every shape must land in its own variant. The table is also
+# used for the write path: `tabledata.insertAll` receives the WKT text back.
+GEO_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("g", "GEOGRAPHY"),
+    f("garr", "GEOGRAPHY", "REPEATED"),
+]
+
+GEO_ROWS = [
+    row("1", "POINT(1 2)", [v("POINT(3 4)"), v("LINESTRING(0 0, 1 1)")]),
+    row("2", "LINESTRING(0 0, 1 1, 2 3)", []),
+    row("3", "POLYGON((0 0, 0 1, 1 1, 1 0, 0 0))", []),
+    row("4", "MULTILINESTRING((0 0, 1 1), (2 2, 3 3))", []),
+    row("5", "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))", []),
+    row("6", None, []),
+]
+
+# MULTIPOINT and GEOMETRYCOLLECTION are valid GEOGRAPHY shapes that the ClickHouse `Geometry` type
+# cannot represent, so reading such a value must raise an error instead of coercing it to another shape.
+GEO_UNSUPPORTED_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("g", "GEOGRAPHY"),
+]
+
+# One shape per table: predicates are not pushed down, so a query always reads every row of the table.
+GEO_MULTIPOINT_ROWS = [row("1", "MULTIPOINT(0 0, 1 1)")]
+
+GEO_COLLECTION_ROWS = [row("1", "GEOMETRYCOLLECTION(POINT(0 0), LINESTRING(1 1, 2 2))")]
+
 # A deliberately wide table. BigQuery allows up to 10000 columns with names up to 300 bytes, so the
 # comma-separated `selectedFields` list for a wide `SELECT *` can exceed the request-URL length limit.
 # The reader must then fall back to an empty `selectedFields` (which asks BigQuery for all columns).
@@ -291,6 +321,21 @@ def reset_tables():
             "type": "TABLE",
             "schema": RANGE_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in RANGE_ROWS],
+        },
+        "test_geo": {
+            "type": "TABLE",
+            "schema": GEO_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in GEO_ROWS],
+        },
+        "test_geo_multipoint": {
+            "type": "TABLE",
+            "schema": GEO_UNSUPPORTED_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in GEO_MULTIPOINT_ROWS],
+        },
+        "test_geo_collection": {
+            "type": "TABLE",
+            "schema": GEO_UNSUPPORTED_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in GEO_COLLECTION_ROWS],
         },
         "test_wide": {
             "type": "TABLE",

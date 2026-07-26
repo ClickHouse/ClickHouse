@@ -128,7 +128,9 @@ def test_schema_inference():
         "num": "Nullable(Decimal(38, 9))",
         "bignum": "Nullable(Decimal(76, 38))",
         "num_p": "Nullable(Decimal(10, 2))",
-        "geo": "Nullable(String)",
+        # GEOGRAPHY is mapped to `Geometry`, which is a `Variant` and represents a NULL by itself, so a
+        # NULLABLE GEOGRAPHY field is not wrapped in `Nullable`.
+        "geo": "Geometry",
         "j": "Nullable(String)",
         "arr": "Array(Int64)",
         "rec": "Nullable(Tuple(x Nullable(Int64), y String, tags Array(String)))",
@@ -163,7 +165,7 @@ def test_select_all_types():
     expected = (
         "1\t1.5\thello\tbinary-data\ttrue\t2024-01-02\t03:04:05.123456\t"
         "2024-01-02 03:04:05.123456\t2024-01-02 03:04:05.123456\t12345.123456789\t"
-        '1234567890.12345678901234567890123456789012345678\t12345678.99\tPOINT(1 2)\t{"a":1}\t'
+        '1234567890.12345678901234567890123456789012345678\t12345678.99\t(1,2)\t{"a":1}\t'
         "[1,2,3]\t(7,'seven',['t1','t2'])\t[(1,'one'),(2,NULL)]\n"
         "2\tinf\t\t\\N\tfalse\t\\N\t\\N\t\\N\t\\N\t-0.000000001\t\\N\t\\N\t\\N\t\\N\t"
         "[]\t\\N\t[]\n"
@@ -713,6 +715,61 @@ def test_range_read_and_write():
     assert "RANGE" in error and "not supported" in error
     # The write is rejected before any row is streamed to insertAll.
     assert mock_stats()["insert_requests"] == []
+
+
+def test_geography_read_and_write():
+    # GEOGRAPHY is mapped to the `Geometry` type: the WKT text is parsed into the matching alternative
+    # of the `Variant` on read and serialized back to WKT on write. `Variant` holds a NULL by itself, so
+    # a NULLABLE GEOGRAPHY field is inferred as `Geometry`, not as `Nullable(Geometry)`.
+    mock_reset()
+    result = node.query(f"DESCRIBE TABLE {bq('test_geo')}")
+    name_to_type = dict(line.split("\t")[:2] for line in result.strip().split("\n"))
+    assert name_to_type == {"i": "Int64", "g": "Geometry", "garr": "Array(Geometry)"}
+
+    # Every shape is read into its own variant, and the WKT round-trips through `wkt`.
+    assert node.query(
+        f"SELECT i, variantType(g), wkt(g) FROM {bq('test_geo')} ORDER BY i FORMAT TSV"
+    ) == (
+        "1\tPoint\tPOINT(1 2)\n"
+        "2\tLineString\tLINESTRING(0 0,1 1,2 3)\n"
+        "3\tPolygon\tPOLYGON((0 0,0 1,1 1,1 0,0 0))\n"
+        "4\tMultiLineString\tMULTILINESTRING((0 0,1 1),(2 2,3 3))\n"
+        "5\tMultiPolygon\tMULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))\n"
+        "6\tNone\t\\N\n"
+    )
+
+    # The write path serializes a `Geometry` value back to WKT, and a NULL stays a NULL.
+    # A REPEATED GEOGRAPHY field becomes an Array(Geometry).
+    assert (
+        node.query(
+            f"SELECT arrayMap(x -> wkt(x), garr) FROM {bq('test_geo')} WHERE i = 1 FORMAT TSV"
+        )
+        == "['POINT(3 4)','LINESTRING(0 0,1 1)']\n"
+    )
+
+    node.query(
+        f"INSERT INTO FUNCTION {bq('test_geo')} (i, g) "
+        "SELECT 7, readWKTPoint('POINT(5 6)')::Geometry"
+    )
+    node.query(f"INSERT INTO FUNCTION {bq('test_geo')} (i, g) SELECT 8, NULL::Geometry")
+    assert node.query(
+        f"SELECT i, variantType(g), wkt(g) FROM {bq('test_geo')} WHERE i > 6 ORDER BY i FORMAT TSV"
+    ) == ("7\tPoint\tPOINT(5 6)\n" "8\tNone\t\\N\n")
+
+
+def test_geography_unsupported_shape_rejected():
+    # A MULTIPOINT or a GEOMETRYCOLLECTION has no counterpart in the `Geometry` type, so reading such a
+    # value raises an error instead of silently coercing it to a different shape.
+    mock_reset()
+    error = node.query_and_get_error(
+        f"SELECT g FROM {bq('test_geo_multipoint')} FORMAT TSV"
+    )
+    assert "MULTIPOINT" in error and "not supported" in error
+
+    error = node.query_and_get_error(
+        f"SELECT g FROM {bq('test_geo_collection')} FORMAT TSV"
+    )
+    assert "GEOMETRYCOLLECTION" in error and "not supported" in error
 
 
 def test_service_account_auth():

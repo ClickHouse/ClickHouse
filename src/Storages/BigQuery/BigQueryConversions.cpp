@@ -4,12 +4,15 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/geometryConverters.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -20,7 +23,11 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
 #include <cmath>
+#include <sstream>
 
 namespace DB
 {
@@ -53,6 +60,131 @@ T parseStrict(const String & text, const BigQueryField & field)
     T result;
     if (!tryReadText(result, buf) || !buf.eof())
         throwIncorrectValue(field, text);
+    return result;
+}
+
+/// BigQuery returns a GEOGRAPHY value as WKT, and it is mapped to the ClickHouse `Geometry` type, which is
+/// a `Variant` of the geometric types, so the shape of the WKT text selects the variant.
+/// `MULTIPOINT` and `GEOMETRYCOLLECTION` are valid GEOGRAPHY shapes that have no ClickHouse counterpart;
+/// they are rejected as unsupported instead of being silently coerced to another shape.
+void insertGeographyValue(IColumn & column, const DataTypePtr & type, const BigQueryField & field, const String & text)
+{
+    auto & column_variant = assert_cast<ColumnVariant &>(column);
+    const auto & type_variant = assert_cast<const DataTypeVariant &>(*type);
+
+    auto insert_geometry = [&](const String & variant_name, auto & serializer)
+    {
+        auto discriminator = type_variant.tryGetVariantDiscriminator(variant_name);
+        if (!discriminator)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot read the BigQuery GEOGRAPHY field '{}' into a column of type '{}': it has no '{}' variant",
+                field.name, type->getName(), variant_name);
+
+        auto value_column = serializer.finalize();
+        column_variant.insertIntoVariantFrom(*discriminator, *value_column, 0);
+    };
+
+    auto shape = boost::to_lower_copy(text);
+    boost::trim_left(shape);
+
+    /// `read_wkt` reports a parse error as an implementation-defined exception type; translate it.
+    auto read_wkt = [&](auto & out)
+    {
+        try
+        {
+            boost::geometry::read_wkt(text, out);
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Cannot parse the WKT value of the BigQuery GEOGRAPHY field '{}': {}", field.name, e.what());
+        }
+    };
+
+    /// The longer prefixes are matched first, because `multilinestring` also starts with `multi`
+    /// and `linestring` is a prefix of nothing else only after `multilinestring` is excluded.
+    if (shape.starts_with("multipoint") || shape.starts_with("geometrycollection"))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The BigQuery GEOGRAPHY field '{}' contains a value that is not supported by the ClickHouse "
+            "`Geometry` type: '{}'", field.name, text);
+
+    if (shape.starts_with("point"))
+    {
+        /// A ClickHouse `Point` is a `Tuple(Float64, Float64)` with no empty representation, while
+        /// `POINT EMPTY` is valid WKT that `read_wkt` accepts without writing the coordinates.
+        auto rest = shape.substr(strlen("point"));
+        boost::trim(rest);
+        if (rest == "empty")
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The BigQuery GEOGRAPHY field '{}' contains an empty point, which is not supported", field.name);
+
+        CartesianPoint point;
+        read_wkt(point);
+        PointSerializer<CartesianPoint> serializer;
+        serializer.add(point);
+        insert_geometry("Point", serializer);
+    }
+    else if (shape.starts_with("multilinestring"))
+    {
+        MultiLineString<CartesianPoint> multilinestring;
+        read_wkt(multilinestring);
+        MultiLineStringSerializer<CartesianPoint> serializer;
+        serializer.add(multilinestring);
+        insert_geometry("MultiLineString", serializer);
+    }
+    else if (shape.starts_with("linestring"))
+    {
+        LineString<CartesianPoint> linestring;
+        read_wkt(linestring);
+        LineStringSerializer<CartesianPoint> serializer;
+        serializer.add(linestring);
+        insert_geometry("LineString", serializer);
+    }
+    else if (shape.starts_with("multipolygon"))
+    {
+        MultiPolygon<CartesianPoint> multipolygon;
+        read_wkt(multipolygon);
+        MultiPolygonSerializer<CartesianPoint> serializer;
+        serializer.add(multipolygon);
+        insert_geometry("MultiPolygon", serializer);
+    }
+    else if (shape.starts_with("polygon"))
+    {
+        Polygon<CartesianPoint> polygon;
+        read_wkt(polygon);
+        PolygonSerializer<CartesianPoint> serializer;
+        serializer.add(polygon);
+        insert_geometry("Polygon", serializer);
+    }
+    else
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Unexpected WKT value '{}' of the BigQuery GEOGRAPHY field '{}'", text, field.name);
+}
+
+/// Serializes one value of a `Geometry` column back to WKT for `tabledata.insertAll`.
+String geographyWKT(const DataTypePtr & type, const IColumn & column, size_t row)
+{
+    const auto & column_variant = assert_cast<const ColumnVariant &>(column);
+    const auto discriminator = column_variant.globalDiscriminatorAt(row);
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*type).getVariants()[discriminator];
+    /// A single row is cut out, because the converters work on whole columns.
+    auto value_column = column_variant.getVariantByGlobalDiscriminator(discriminator).cut(column_variant.offsetAt(row), 1);
+
+    String result;
+    callOnGeometryDataType<CartesianPoint>(variant_type, [&](const auto & converter_type)
+    {
+        using Converter = typename std::decay_t<decltype(converter_type)>::Type;
+        auto figures = Converter::convert(value_column);
+        std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out.exceptions(std::ios::failbit);
+        out << boost::geometry::wkt(figures[0]);
+        result = out.str();
+    });
     return result;
 }
 
@@ -119,12 +251,16 @@ void insertLeafValue(IColumn & column, const DataTypePtr & type, const BigQueryF
     switch (field.type)
     {
         case BigQueryField::Type::String:
-        case BigQueryField::Type::Geography:
         case BigQueryField::Type::JSON:
         case BigQueryField::Type::Interval:
         case BigQueryField::Type::Range:
         {
             assert_cast<ColumnString &>(column).insertData(text.data(), text.size());
+            return;
+        }
+        case BigQueryField::Type::Geography:
+        {
+            insertGeographyValue(column, type, field, text);
             return;
         }
         case BigQueryField::Type::Bytes:
@@ -246,11 +382,18 @@ Poco::Dynamic::Var leafJSONValue(const BigQueryField & field, const DataTypePtr 
     switch (field.type)
     {
         case BigQueryField::Type::String:
-        case BigQueryField::Type::Geography:
         case BigQueryField::Type::JSON:
         case BigQueryField::Type::Interval:
         {
             return Poco::Dynamic::Var(String(assert_cast<const ColumnString &>(column).getDataAt(row)));
+        }
+        case BigQueryField::Type::Geography:
+        {
+            /// A `Geometry` column is a `Variant`, which represents a NULL by itself instead of being
+            /// wrapped in `Nullable`, so the NULL of a NULLABLE GEOGRAPHY field is handled here.
+            if (assert_cast<const ColumnVariant &>(column).globalDiscriminatorAt(row) == ColumnVariant::NULL_DISCRIMINATOR)
+                return {};
+            return Poco::Dynamic::Var(geographyWKT(type, column, row));
         }
         case BigQueryField::Type::Range:
         {
