@@ -1,9 +1,20 @@
+-- Tags: no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- The `force_data_skipping_indices` assertion below checks that a granule is not pruned after
+-- the index is rebuilt, so it depends on deterministic skip-index granule filtering. Under the
+-- parallel-replicas coordinator and randomized (merge-tree) settings the number of pruned
+-- granules is not stable, so those settings are disabled for this test (same as `04616`).
+
 -- A skip index that references an ALIAS column must be rebuilt when the alias body
 -- changes, even when the dependency is only visible after column matcher expansion
 -- inside another alias body.
 
 -- Matchers do not match ALIAS columns unless this setting is enabled.
 SET asterisk_include_alias_columns = 1;
+
+-- The rebuild is queued as a `MATERIALIZE INDEX` mutation by the ALTER below; wait for it to
+-- finish before querying, otherwise the SELECT can still see the stale index files.
+SET alter_sync = 2;
+SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_index_alias_matcher_dep;
 

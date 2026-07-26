@@ -2539,7 +2539,13 @@ MutationCommands AlterCommands::getMutationCommands(
     /// COMPATIBILITY modes reject these alters in `MergeTreeData::checkAlterIsPossible`.
     /// After the loop above, `metadata` has all commands applied, so it describes the
     /// post-ALTER schema, while `original_metadata` describes the pre-ALTER one.
-    if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
+    /// When the storage has no active parts there are no index files to go stale, so the ALTER
+    /// only affects future inserts and no mutation is queued — this mirrors the
+    /// `alter_affects_existing_parts` gate that `MergeTreeData::checkAlterIsPossible` applies to
+    /// the THROW and COMPATIBILITY modes, and keeps `allow_non_metadata_alters = 0` working on
+    /// empty tables.
+    if (storage_has_active_parts
+        && (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP))
     {
         for (const auto & [index_name, change_description] : getSkipIndicesWithChangedExpression(original_metadata, metadata, context))
         {

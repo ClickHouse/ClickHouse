@@ -5220,9 +5220,21 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// `MATERIALIZE COLUMN` refuses to run on sort-key columns because it could break the sort
     /// order. Reject such ALTERs up front instead of persisting the new metadata and queueing
     /// a mutation that can never succeed.
+    /// The partition key needs the same protection: rematerializing a column the partition key
+    /// depends on rewrites the stored values in place, while the parts keep the partition IDs
+    /// (and part names) computed from the old values, so a part would no longer belong to the
+    /// partition it is stored in and partition pruning would return wrong results.
     if (alter_affects_existing_parts)
     {
+        /// The commands that `AlterCommands::getMutationCommands` will synthesize for this ALTER.
+        /// They are built inside `StorageMergeTree::alter` / `StorageReplicatedMergeTree::alter`,
+        /// after `InterpreterAlterQuery` has already validated the mutation commands written in
+        /// the query, so nothing else runs `checkMutationIsPossible` on them. Only the fields that
+        /// check inspects are filled in - these commands are never executed.
+        MutationCommands automatic_mutation_commands;
+
         Names sorting_key_columns = new_metadata.getSortingKeyColumns();
+        Names partition_key_columns = new_metadata.getColumnsRequiredForPartitionKey();
         for (const auto & column_name : commands.getMaterializedColumnsWithChangedExpansion(old_metadata, new_metadata, local_context))
         {
             if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), column_name) != sorting_key_columns.end())
@@ -5231,7 +5243,45 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                     "The ALTER changes the effective expression of the MATERIALIZED column {}, which is in the sort key. "
                     "Existing parts would have to be rematerialized, and that could break the sort order",
                     backQuote(column_name));
+
+            if (std::find(partition_key_columns.begin(), partition_key_columns.end(), column_name) != partition_key_columns.end())
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "The ALTER changes the effective expression of the MATERIALIZED column {}, which the partition key "
+                    "depends on. Existing parts would have to be rematerialized, and that would make their stored values "
+                    "disagree with the partition they are placed in",
+                    backQuote(column_name));
+
+            MutationCommand materialize_column;
+            materialize_column.type = MutationCommand::MATERIALIZE_COLUMN;
+            materialize_column.column_name = column_name;
+            automatic_mutation_commands.push_back(std::move(materialize_column));
         }
+
+        if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
+        {
+            for (const auto & [index_name, _] : commands.getSkipIndicesWithChangedExpression(old_metadata, new_metadata, local_context))
+            {
+                MutationCommand index_command;
+                if (index_mode == AlterColumnSecondaryIndexMode::REBUILD)
+                {
+                    index_command.type = MutationCommand::MATERIALIZE_INDEX;
+                    index_command.index_name = index_name;
+                }
+                else
+                {
+                    index_command.type = MutationCommand::DROP_INDEX;
+                    index_command.column_name = index_name;
+                    index_command.clear = true;
+                }
+                automatic_mutation_commands.push_back(std::move(index_command));
+            }
+        }
+
+        /// Reject the ALTER before any metadata is committed if the storage cannot run the
+        /// mutation it would queue (immutable disks, `UNIQUE KEY` tables).
+        if (!automatic_mutation_commands.empty())
+            checkMutationIsPossible(automatic_mutation_commands, local_context->getSettingsRef());
     }
 
     auto unfinished_mutations = getUnfinishedMutationCommands();
