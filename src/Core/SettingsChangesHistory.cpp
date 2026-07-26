@@ -46,6 +46,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
+            {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
+            {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
+            {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", true, false, "New setting. Before this version there was no INSERT-level guard, so named tuple conversions dropping extra source fields were allowed during INSERT. The compatibility value 'true' restores the previous permissive INSERT behavior under compatibility set to a version before 26.8."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -104,9 +107,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
-            {"enable_named_columns_in_function_tuple", false, true, "Re-enable the setting since all known bugs are fixed"},
-            {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
-            {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", true, false, "New setting. Before this version there was no INSERT-level guard, so named tuple conversions dropping extra source fields were allowed during INSERT. The compatibility value 'true' restores the previous permissive INSERT behavior under compatibility set to a version before 26.7."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
         });
