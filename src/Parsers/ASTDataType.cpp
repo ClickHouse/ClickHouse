@@ -8,6 +8,9 @@
 #include <Core/Defines.h>
 #include <IO/Operators.h>
 
+#include <limits>
+#include <optional>
+
 
 namespace DB
 {
@@ -42,23 +45,74 @@ bool isBareUUIDTypeName(const String & name)
 
 bool substituteBareUUIDInPlace(IAST & ast);
 
-/// The parser canonicalizes `CAST(expr AS T)` and `expr::T` into `CAST(expr, 'T')`, so inside persisted
-/// expressions (column defaults, view and `AS SELECT` definitions) a type name survives only as a string
-/// literal argument of a cast function. Rewrite a bare `UUID` inside those literals as well.
-bool substituteBareUUIDInCastTypeLiteral(ASTFunction & function)
+/// Position of the type name argument of a function, or `last_type_name_argument` when the type name is
+/// always the last argument (as for the `JSONExtract` family, which takes a variable number of path arguments).
+constexpr size_t last_type_name_argument = std::numeric_limits<size_t>::max();
+
+struct TypeNameArgument
 {
-    static constexpr std::string_view cast_function_names[] = {"CAST", "_CAST", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault"};
+    std::string_view function_name;
+    size_t argument_index;
+};
 
-    bool is_cast_function = false;
-    for (const auto & cast_function_name : cast_function_names)
-        is_cast_function |= equalsCaseInsensitiveString(function.name, cast_function_name);
-    if (!is_cast_function)
+/** Functions that declare their result type through a data type name in a string literal argument.
+  *
+  * The parser canonicalizes `CAST(expr AS T)` and `expr::T` into `CAST(expr, 'T')`, so inside persisted
+  * expressions (column defaults, `ORDER BY` / `PARTITION BY` / TTL expressions, view and `AS SELECT`
+  * definitions) a type name written that way survives only as such a literal. The other functions take a type
+  * name as a string in the query text to begin with. All of them resolve a bare `UUID` through
+  * `DataTypeFactory`, so `uuid_type_version` has to be materialized into them as well - otherwise the setting
+  * would be silently ignored there.
+  *
+  * Deliberately absent are the functions that do not declare a type but look up an existing one by name -
+  * `variantElement`, `dynamicElement`, `getTypeSerializationStreams`. There the name has to match a type that
+  * is already present in the data, which may well be the historical `UUID`; rewriting it could silently turn
+  * such an expression into `NULL`s instead of failing loudly.
+  */
+constexpr TypeNameArgument type_name_arguments[]
+{
+    {"CAST", 1},
+    {"_CAST", 1},
+    {"accurateCast", 1},
+    {"accurateCastOrNull", 1},
+    {"accurateCastOrDefault", 1},
+    {"reinterpret", 1},
+    {"defaultValueOfTypeName", 0},
+    {"JSONExtract", last_type_name_argument},
+    {"JSONExtractKeysAndValues", last_type_name_argument},
+};
+
+bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
+{
+    if (!function.arguments)
         return false;
 
-    if (!function.arguments || function.arguments->children.size() < 2)
+    const auto & arguments = function.arguments->children;
+    std::optional<size_t> type_argument_index;
+
+    for (const auto & candidate : type_name_arguments)
+    {
+        if (!equalsCaseInsensitiveString(function.name, candidate.function_name))
+            continue;
+
+        if (candidate.argument_index == last_type_name_argument)
+        {
+            /// The first argument is the value to extract from, so the type can only be a later argument.
+            if (arguments.size() >= 2)
+                type_argument_index = arguments.size() - 1;
+        }
+        else if (candidate.argument_index < arguments.size())
+        {
+            type_argument_index = candidate.argument_index;
+        }
+
+        break;
+    }
+
+    if (!type_argument_index)
         return false;
 
-    auto * type_literal = function.arguments->children[1]->as<ASTLiteral>();
+    auto * type_literal = arguments[*type_argument_index]->as<ASTLiteral>();
     if (!type_literal || type_literal->value.getType() != Field::Types::String)
         return false;
 
@@ -93,7 +147,7 @@ bool substituteBareUUIDInPlace(IAST & ast)
     }
 
     if (auto * function = ast.as<ASTFunction>())
-        substituted |= substituteBareUUIDInCastTypeLiteral(*function);
+        substituted |= substituteBareUUIDInTypeNameLiteral(*function);
 
     for (const auto & child : ast.children)
         if (child)
@@ -113,6 +167,14 @@ ASTPtr applyUUIDTypeVersion(const ASTPtr & type_ast, UInt64 uuid_type_version)
     if (substituteBareUUIDInPlace(*cloned))
         return cloned;
     return type_ast;
+}
+
+bool applyUUIDTypeVersionInPlace(IAST & ast, UInt64 uuid_type_version)
+{
+    if (uuid_type_version != 2)
+        return false;
+
+    return substituteBareUUIDInPlace(ast);
 }
 
 String ASTDataType::getID(char delim) const

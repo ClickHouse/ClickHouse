@@ -2876,9 +2876,17 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create,
 namespace
 {
 
-/** Materialize the `uuid_type_version` setting into a `CREATE` query AST: column-declaration types, cast type
-  * literals inside column default expressions and the `AS SELECT` / view definition (from which column types may
-  * be inferred), and dictionary attribute types.
+/** Materialize the `uuid_type_version` setting into a `CREATE` query AST.
+  *
+  * The whole query is normalized in one pass, because every AST a `CREATE` persists can name a type: column
+  * declarations and their `DEFAULT` / `MATERIALIZED` / `ALIAS` expressions, codecs, statistics and TTL, the
+  * `AS SELECT` / view definition (from which column types may be inferred), dictionary attributes, skipping
+  * indices, constraints, projections, and the storage definition (`ORDER BY`, `PARTITION BY`, `PRIMARY KEY`,
+  * `SAMPLE BY`, table TTL). Leaving any of them out would let the same stored metadata resolve a bare `UUID`
+  * to the historical `UUID` later - on a node with a different `uuid_type_version`, or after the default flips.
+  *
+  * The substitution is done in place: an AST member that aliases its own child (`ASTColumnDeclaration::type`,
+  * `ASTDictionaryAttributeDeclaration::type`) then stays consistent with `children` without extra bookkeeping.
   *
   * This runs on the initiator, from `getTablePropertiesAndNormalizeCreateQuery`, for a primary user-issued
   * `CREATE` only. It is also called explicitly on the legacy `ON CLUSTER` path
@@ -2888,59 +2896,7 @@ namespace
   */
 void materializeUUIDTypeVersion(ASTCreateQuery & create, UInt64 uuid_type_version)
 {
-    if (uuid_type_version != 2)
-        return;
-
-    if (create.columns_list && create.columns_list->columns)
-    {
-        for (const auto & child : create.columns_list->columns->children)
-        {
-            auto * col_decl = child->as<ASTColumnDeclaration>();
-            if (!col_decl)
-                continue;
-            if (auto type_ast = col_decl->getType())
-                col_decl->setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
-            /// A bare `UUID` can also hide inside a DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression as a cast
-            /// type literal (the parser canonicalizes `CAST(x AS UUID)` and `x::UUID` into `CAST(x, 'UUID')`),
-            /// and the column type is inferred from that expression when no explicit type is given.
-            if (auto default_ast = col_decl->getDefaultExpression())
-                col_decl->setDefaultExpression(applyUUIDTypeVersion(default_ast, uuid_type_version));
-        }
-    }
-
-    /// `CREATE ... AS SELECT` and view definitions infer the table structure from the SELECT expressions,
-    /// where a bare `UUID` likewise survives only inside cast type literals.
-    if (create.select)
-    {
-        ASTPtr old_select = create.select->ptr();
-        auto new_select = applyUUIDTypeVersion(old_select, uuid_type_version);
-        if (new_select != old_select)
-            create.set(create.select, new_select);
-    }
-
-    /// Dictionaries keep their typed attributes in a separate `dictionary_attributes_list`, so a bare `UUID`
-    /// there must be materialized to `UUID2` on the initiator as well - otherwise the setting would be silently
-    /// ignored for `CREATE DICTIONARY`.
-    if (create.dictionary_attributes_list)
-    {
-        for (const auto & child : create.dictionary_attributes_list->children)
-        {
-            auto * attr_decl = child->as<ASTDictionaryAttributeDeclaration>();
-            if (!attr_decl || !attr_decl->type)
-                continue;
-
-            const auto old_type = attr_decl->type;
-            auto new_type = applyUUIDTypeVersion(old_type, uuid_type_version);
-            if (new_type == old_type)
-                continue;
-
-            /// `type` is also referenced from `children` (used by AST visitors and tree hashing), so keep both in sync.
-            for (auto & attr_child : attr_decl->children)
-                if (attr_child == old_type)
-                    attr_child = new_type;
-            attr_decl->type = std::move(new_type);
-        }
-    }
+    applyUUIDTypeVersionInPlace(create, uuid_type_version);
 }
 
 }

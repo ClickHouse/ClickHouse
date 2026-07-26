@@ -110,36 +110,25 @@ bool hasCommands(const CommandSegments & segments)
     return std::ranges::any_of(segments, [](const auto & segment) { return std::holds_alternative<CommandsType>(segment); });
 }
 
-/** Materialize the `uuid_type_version` setting into the `ADD/MODIFY COLUMN` command ASTs of an `ALTER` query.
+/** Materialize the `uuid_type_version` setting into the command ASTs of an `ALTER` query.
   *
-  * This is called once on the initiator (a primary, user-issued `ALTER`) so that a bare `UUID` column type is resolved
-  * to its concrete type (`UUID` or `UUID2`) using the initiator's session setting, and the resolved type is what gets
+  * This is called once on the initiator (a primary, user-issued `ALTER`) so that a bare `UUID` is resolved to its
+  * concrete type (`UUID` or `UUID2`) using the initiator's session setting, and the resolved type is what gets
   * forwarded to `ON CLUSTER` hosts and enqueued into a `Replicated` database DDL log. This mirrors how `CREATE` bakes
-  * the concrete column types into the query AST, and prevents a bare `UUID` from materializing as different types on
+  * the concrete types into the query AST, and prevents a bare `UUID` from materializing as different types on
   * nodes that disagree on `uuid_type_version`.
+  *
+  * The whole command list is normalized in one in-place pass, because an `ALTER` persists a type name not only in
+  * `ADD` / `MODIFY COLUMN` declarations and their default expressions, but also in `MODIFY ORDER BY`,
+  * `MODIFY SAMPLE BY`, `MODIFY TTL`, `MODIFY QUERY`, added indices, constraints and projections, and in mutation
+  * expressions such as `UPDATE ... = CAST(x, 'UUID')`.
   */
 void materializeUUIDTypeVersion(ASTAlterQuery & alter, UInt64 uuid_type_version)
 {
-    if (uuid_type_version != 2 || !alter.command_list)
+    if (!alter.command_list)
         return;
 
-    for (const auto & child : alter.command_list->children)
-    {
-        auto * command_ast = child->as<ASTAlterCommand>();
-        if (!command_ast || !command_ast->col_decl)
-            continue;
-        if (command_ast->type != ASTAlterCommand::ADD_COLUMN && command_ast->type != ASTAlterCommand::MODIFY_COLUMN)
-            continue;
-
-        auto & col_decl = command_ast->col_decl->as<ASTColumnDeclaration &>();
-        if (auto type_ast = col_decl.getType())
-            col_decl.setType(applyUUIDTypeVersion(type_ast, uuid_type_version));
-        /// A bare `UUID` can also hide inside a DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL expression as a cast
-        /// type literal (`CAST(x, 'UUID')`), and the column type is inferred from that expression when no
-        /// explicit type is given.
-        if (auto default_ast = col_decl.getDefaultExpression())
-            col_decl.setDefaultExpression(applyUUIDTypeVersion(default_ast, uuid_type_version));
-    }
+    applyUUIDTypeVersionInPlace(*alter.command_list, uuid_type_version);
 }
 
 CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const StoragePtr & table, const ContextPtr & context)
