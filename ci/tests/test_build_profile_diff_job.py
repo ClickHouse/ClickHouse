@@ -159,6 +159,17 @@ INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, che
     ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{_STRIPPED}', 1500),
     ({_PR}, 'prsha-new-object', '2026-07-02 00:00:00', 'arm_release', 'I8', '{job.BUILD_DIR}/src/CMakeFiles/dbms.dir/bar.cpp.o', 524288);
 
+-- A PR run that adds two translation units with no master baseline at all:
+-- ``mid_tu.cpp`` (25 s) sits between TU_REPORT_SECONDS and the old hard-wired
+-- 30 s report cutoff, yet above TU_SIG_SECONDS, so it must be listed AND drive
+-- the verdict; ``small_tu.cpp`` (7 s) is reportable but not significant.
+INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
+    ({_PR}, 'prsha-midsize-new-tu', '2026-07-02 00:00:00', 'arm_release', 'I10', '{_MAIN}', 1500),
+    ({_PR}, 'prsha-midsize-new-tu', '2026-07-02 00:00:00', 'arm_release', 'I10', '{_STRIPPED}', 1500);
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    ({_PR}, 'prsha-midsize-new-tu', '2026-07-02 00:00:00', 'arm_release', 'I10', 'mid_tu.cpp', 'ExecuteCompiler', '', 25000000),
+    ({_PR}, 'prsha-midsize-new-tu', '2026-07-02 00:00:00', 'arm_release', 'I10', 'small_tu.cpp', 'ExecuteCompiler', '', 7000000);
+
 -- A PR run whose keeper link trace is intact but entirely below the 50 ms
 -- reporting cutoff: it must read as present, not as a lost upload.
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
@@ -332,6 +343,26 @@ def test_expensive_new_tu_without_baseline_is_significant():
     assert "new_tu.cpp" in section.body
     assert section.significant
     assert "without a master baseline" in (section.summary or "")
+
+
+def test_new_tu_report_threshold_matches_the_significance_threshold():
+    """A 25 s new TU is reported and significant; a 7 s one is only reported.
+
+    The no-baseline path used to list translation units from a hard-wired 30 s
+    while judging significance from ``TU_SIG_SECONDS`` (20 s), so a new TU in
+    the 20-30 s range appeared in neither the body, the summary nor the verdict.
+    Both thresholds of the section now apply to it: ``TU_REPORT_SECONDS`` for
+    the listing, ``TU_SIG_SECONDS`` for the verdict.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, "prsha-midsize-new-tu")
+    assert pr_side is not None
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
+    assert "mid_tu.cpp" in section.body
+    assert "small_tu.cpp" in section.body
+    assert section.significant
+    # Only the TU above TU_SIG_SECONDS is counted as a significant new cost.
+    assert "1 new translation units without a master baseline" in (section.summary or "")
 
 
 def test_opt_functions_cover_the_keeper_binary():

@@ -920,20 +920,27 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
                 lines += ["", f"Slowest changed entities of {md_code(tu_label(*tu))}:", ""]
                 lines += drill
 
-    # A brand-new TU has no baseline; surface it when it is expensive.
+    # A brand-new TU has no baseline; its whole compile time is the change, so it
+    # is judged by the same two thresholds as a both-sided delta: reported from
+    # TU_REPORT_SECONDS, significant from TU_SIG_SECONDS. Reporting from a higher
+    # threshold than the significance one used to hide 20-30 s new TUs from the
+    # body, the summary and the verdict alike.
     new_tus = sorted(
-        ((tu, d) for tu, d in pr_durs.items() if tu not in base_durs and d >= 30e6),
+        ((tu, d) for tu, d in pr_durs.items() if tu not in base_durs and d >= TU_REPORT_SECONDS * 1e6),
         key=lambda x: -x[1],
     )
     if new_tus:
-        lines += ["", "Expensive translation units without a recent master baseline:", ""]
-        for tu, dur in new_tus[:10]:
+        lines += ["", "Translation units without a recent master baseline:", ""]
+        for tu, dur in new_tus[:MAX_TABLE_ROWS]:
             lines.append(f"- {md_code(tu_label(*tu))}: {dur / 1e6:.1f} s")
+        if len(new_tus) > MAX_TABLE_ROWS:
+            lines.append(f"- ... and {len(new_tus) - MAX_TABLE_ROWS} more")
         # A large new compile-time cost is significant even without a baseline to
         # diff against; a missing baseline must not silence the top-level verdict.
-        if any(dur >= TU_SIG_SECONDS * 1e6 for _, dur in new_tus):
+        big_new = [dur for _, dur in new_tus if dur >= TU_SIG_SECONDS * 1e6]
+        if big_new:
             section.significant = True
-            new_summary = f"{len(new_tus)} new translation units without a master baseline"
+            new_summary = f"{len(big_new)} new translation units without a master baseline"
             section.summary = f"{section.summary}; {new_summary}" if section.summary else new_summary
 
     section.body = "\n".join(lines)

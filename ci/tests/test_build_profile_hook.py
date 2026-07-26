@@ -118,6 +118,90 @@ def test_producer_collects_final_binary_symbols_for_lto(tmp_path):
     assert f"{build_dir}/programs/clickhouse " in symbols
 
 
+def test_producer_fails_when_a_trace_file_cannot_be_parsed(tmp_path):
+    """A failing ``jq`` child must fail the whole producer, not be swallowed.
+
+    The script used to run without ``set -e`` / ``pipefail``, so a broken trace
+    file only made one ``xargs`` child exit non-zero while the script kept going
+    and still exited 0. The hook then uploaded a truncated profile and the
+    "Build profile diff" check reported the missing translation units as new or
+    absent instead of failing loudly.
+    """
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    (build_dir / "good.cpp.json").write_text(
+        '{"beginningOfTime": 1, "traceEvents": [{"pid": 1, "tid": 1, "ph": "X", "ts": 0, "dur": 1, "cat": "", "name": "ExecuteCompiler", "args": {}}]}'
+    )
+    (build_dir / "broken.cpp.json").write_text("{ this is not json")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    result = subprocess.run(
+        ["bash", str(_PRODUCER), str(build_dir), str(out_dir)],
+        capture_output=True,
+    )
+    assert result.returncode != 0
+
+
+@pytest.mark.skipif(not shutil.which("cc"), reason="no C compiler available")
+def test_producer_fails_when_nm_cannot_read_an_object(tmp_path):
+    """A failing ``nm`` child must fail the producer too.
+
+    An object whose symbol table cannot be read would otherwise silently drop
+    out of ``binary_symbols.txt``, and the consumer would report every symbol of
+    that translation unit as removed.
+    """
+    build_dir = tmp_path / "build"
+    (build_dir / "programs").mkdir(parents=True)
+    # No -flto: the per-object nm pass runs.
+    (build_dir / "compile_commands.json").write_text('[{"command": "cc -O2 x.c"}]')
+    src = tmp_path / "main.c"
+    src.write_text("int main(void) { return 0; }\n")
+    subprocess.run(
+        ["cc", "-c", "-o", str(build_dir / "good.o"), str(src)],
+        check=True,
+        capture_output=True,
+    )
+    (build_dir / "not-an-object.o").write_bytes(b"garbage, definitely not ELF\n")
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    result = subprocess.run(
+        ["bash", str(_PRODUCER), str(build_dir), str(out_dir)],
+        capture_output=True,
+    )
+    assert result.returncode != 0
+
+
+@pytest.mark.skipif(not shutil.which("cc"), reason="no C compiler available")
+def test_producer_accepts_an_object_without_reportable_symbols(tmp_path):
+    """``grep`` selecting nothing is not an extraction error.
+
+    An object that defines no reportable symbol leaves ``grep -v`` with nothing
+    to print, so it exits 1; fail-close must not turn that into a failure of the
+    build - only a failing ``nm``/``jq`` may.
+    """
+    build_dir = tmp_path / "build"
+    build_dir.mkdir()
+    (build_dir / "compile_commands.json").write_text('[{"command": "cc -O2 x.c"}]')
+    src = tmp_path / "empty.c"
+    src.write_text("typedef int nothing_defined_here;\n")
+    subprocess.run(
+        ["cc", "-c", "-o", str(build_dir / "empty.o"), str(src)],
+        check=True,
+        capture_output=True,
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    subprocess.run(
+        ["bash", str(_PRODUCER), str(build_dir), str(out_dir)],
+        check=True,
+        capture_output=True,
+    )
+    assert (out_dir / "binary_symbols.txt").exists()
+
+
 # --- build subset gate ----------------------------------------------------
 
 
