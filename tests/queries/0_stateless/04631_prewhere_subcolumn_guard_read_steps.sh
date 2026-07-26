@@ -36,6 +36,7 @@ ${CLICKHOUSE_CLIENT} -q "
 
 query_id_group=group_$CLICKHOUSE_DATABASE
 query_id_throwing=throwing_$CLICKHOUSE_DATABASE
+query_id_nested=nested_$CLICKHOUSE_DATABASE
 
 opts=(
   --optimize_functions_to_subcolumns 1
@@ -55,6 +56,17 @@ ${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_throwing" -q "
   FORMAT Null
 "
 
+# A WHERE moved into an existing PREWHERE arrives as a nested conjunction. Flattening it must not
+# fragment conditions that used to be grouped, so these three non throwing conditions over one Map
+# still read the rows once.
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_nested" -q "
+  SELECT count() FROM t_steps_group
+  PREWHERE tags['k0'] != ''
+  WHERE tags['k1'] != '' AND tags['k2'] != ''
+  FORMAT Null
+  SETTINGS optimize_prewhere_after_pushdown = 1
+"
+
 ${CLICKHOUSE_CLIENT} -q "
   SYSTEM FLUSH LOGS query_log;
 
@@ -68,6 +80,11 @@ ${CLICKHOUSE_CLIENT} -q "
   SELECT 'split steps', ProfileEvents['RowsReadByPrewhereReaders'] > 100000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_throwing' AND type = 'QueryFinish';
+
+  -- Flattening a nested conjunction of non throwing conditions keeps them in one step.
+  SELECT 'nested grouped steps', ProfileEvents['RowsReadByPrewhereReaders'] = 100000
+    FROM system.query_log
+   WHERE current_database = currentDatabase() AND query_id = '$query_id_nested' AND type = 'QueryFinish';
 
   DROP TABLE t_steps_group;
   DROP TABLE t_steps_throwing;

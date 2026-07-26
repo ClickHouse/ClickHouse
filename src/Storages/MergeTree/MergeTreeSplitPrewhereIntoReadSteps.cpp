@@ -93,6 +93,23 @@ void fillRequiredColumns(
         node_info.may_throw = true;
 }
 
+/// Appends the conditions combined with AND into `atoms`, descending into nested AND nodes.
+/// The order of the original conditions is preserved: `and(A, and(B, C))` yields `A, B, C`.
+/// ActionsDAG::extractConjunctionAtoms is not reused here because it walks with a stack and thus
+/// reverses sibling order, while the step boundaries below and the evaluation order promised for a
+/// user written PREWHERE both depend on the original order.
+void flattenConjunction(const ActionsDAG::Node * node, ActionsDAG::NodeRawConstPtrs & atoms)
+{
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
+    {
+        for (const auto * child : node->children)
+            flattenConjunction(child, atoms);
+        return;
+    }
+
+    atoms.push_back(node);
+}
+
 /// Stores information about a node that has already been cloned or added to one of the new DAGs.
 /// This allows to avoid cloning the same sub-DAG into multiple step DAGs but reference previously cloned nodes from earlier steps.
 struct DAGNodeRef
@@ -262,7 +279,12 @@ bool tryBuildPrewhereSteps(
     const bool is_conjunction = (condition_root.type == ActionsDAG::ActionType::FUNCTION && condition_root.function_base->getName() == "and");
     if (!is_conjunction)
         return false;
-    auto condition_nodes = condition_root.children;
+    /// Nested conjunctions are flattened, so that a condition list like
+    /// `and(existing_prewhere, and(guard, throwing))` (built by optimizePrewhere when a moved WHERE
+    /// is merged into an existing PREWHERE) is grouped condition by condition below instead of
+    /// treating the inner AND as one atomic condition.
+    ActionsDAG::NodeRawConstPtrs condition_nodes;
+    flattenConjunction(&condition_root, condition_nodes);
 
     /// 2. Collect the set of columns that are used in the condition
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
@@ -277,6 +299,10 @@ bool tryBuildPrewhereSteps(
     /// 4. Group adjacent conditions that read from the same set of physical storage columns into a single step.
     /// Conditions on subcolumns of the same column (e.g. `map.key_k0` and `map.key_k1`) are placed into one group
     /// when they appear next to each other in the condition list.
+    ///
+    /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
+    /// rather than a single opaque one. The flattening keeps the original left to right order, for the
+    /// same evaluation order reason spelled out below.
     ///
     /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
     /// Non-adjacent conditions on the same storage column are kept in separate steps even though this

@@ -1,3 +1,5 @@
+-- Tags: no-random-merge-tree-settings
+
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
 SET optimize_move_to_prewhere = 1;
@@ -179,6 +181,44 @@ SELECT count() FROM t_prewhere_guard_mixed PREWHERE gate = 1 AND toUInt64(tags['
 SETTINGS query_plan_merge_filters = 0;
 
 DROP TABLE t_prewhere_guard_mixed;
+
+-- A WHERE moved into an existing PREWHERE is combined as `and(existing, and(guard, throwing))`, so
+-- the condition list is a nested conjunction. It has to be flattened before grouping, otherwise the
+-- inner AND is one condition and the guard shares a step with the throwing conversion again.
+DROP TABLE IF EXISTS t_prewhere_guard_nested;
+CREATE TABLE t_prewhere_guard_nested (id UInt64, pre UInt8, tags Map(String, String), filler String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0;
+
+-- 90% of the rows pass the guard, above the threshold at which a read step applies its filter by itself.
+INSERT INTO t_prewhere_guard_nested
+SELECT number, 1,
+       if(number % 10 = 0, map('safe', '', 'val', 'not a number'), map('safe', 'y', 'val', toString(number % 100))),
+       repeat('x', 200)
+FROM numbers(100000);
+
+-- The converted value is also selected, so the conversion is an output of the PREWHERE DAG and
+-- short circuit execution cannot skip it.
+SELECT 'nested conjunction, WHERE moved into an existing PREWHERE';
+SELECT count(), sum(value) FROM (
+    SELECT toUInt64(tags['val']) AS value
+    FROM t_prewhere_guard_nested
+    PREWHERE pre = 1
+    WHERE tags['safe'] != '' AND value > 50
+)
+SETTINGS optimize_prewhere_after_pushdown = 1;
+
+SELECT 'nested conjunction, WHERE moved into an existing PREWHERE, query_plan_merge_filters = 0';
+SELECT count(), sum(value) FROM (
+    SELECT toUInt64(tags['val']) AS value
+    FROM t_prewhere_guard_nested
+    PREWHERE pre = 1
+    WHERE tags['safe'] != '' AND value > 50
+)
+SETTINGS optimize_prewhere_after_pushdown = 1, query_plan_merge_filters = 0;
+
+DROP TABLE t_prewhere_guard_nested;
 
 -- Conditions that cannot throw are still rewritten to subcolumns of one physical column.
 -- That they also share a single read step is asserted in the .sh companion of this test, which can
