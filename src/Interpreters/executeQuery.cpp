@@ -1222,6 +1222,14 @@ struct CollectTablesData
     const ContextPtr context;
     std::vector<CollectedTable> tables;
 
+    /// Every expression alias declared anywhere in the query (`WITH expr AS name`, `SELECT expr AS name`,
+    /// ...). Used to keep the bare-identifier right-hand side of `IN` from being mistaken for a table:
+    /// unlike a `FROM` reference, an `IN` right-hand side resolves an expression alias in preference to a
+    /// same-named table (`WITH (1, 2) AS rhs SELECT 1 IN rhs` never reads the table `rhs`). The set is
+    /// query-wide rather than per-scope on purpose — a name collision only makes the collector skip a
+    /// table, which is the safe direction for this hook.
+    std::unordered_set<String> alias_names;
+
     void addTableIfNotEmpty(const String & database, const String & table, const std::unordered_set<String> & active_ctes, Context::StorageNamespace resolve_namespace, const AccessFlags & required_access, bool existence_required = true, ExpectedObjectKind expected_kind = ExpectedObjectKind::Any)
     {
         if (table.empty())
@@ -1390,6 +1398,19 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
     return Context::ResolveAll;
 }
 
+/// Collect the names of all expression aliases declared in the query (see `CollectTablesData::alias_names`).
+void collectAliasNames(const ASTPtr & ast, std::unordered_set<String> & alias_names)
+{
+    if (!ast)
+        return;
+
+    if (const auto & alias = ast->tryGetAlias(); !alias.empty())
+        alias_names.insert(alias);
+
+    for (const auto & child : ast->children)
+        collectAliasNames(child, alias_names);
+}
+
 /// Walk the AST and collect tables, tracking CTE scope so that an in-scope CTE name does not cause us to
 /// treat an unqualified table reference of the same name as a real table. `active_ctes` is passed by value
 /// so each `ASTSelectQuery`'s WITH names propagate only to its descendants, not to siblings or ancestors.
@@ -1399,7 +1420,8 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
 /// (only explicit `TABLE` elements — see the `ASTBackupQuery` branch), and the `ASTQueryWithTableAndOutput`
 /// family (`SHOW CREATE TABLE`, `EXISTS TABLE`, `CHECK TABLE`, `OPTIMIZE`, `ALTER`, ...) — including the extra
 /// source/destination tables an `ALTER ... REPLACE/ATTACH/MOVE PARTITION` names in its `from_*`/`to_*` fields
-/// and the `AS` source of a `CREATE ... AS src` — see the `ASTQueryWithTableAndOutput` branch. Query classes that
+/// the `AS` source of a `CREATE ... AS src` and the external view targets of a `CREATE ... TO dst`
+/// — see the `ASTQueryWithTableAndOutput` branch. Query classes that
 /// keep table references in other AST shapes — `SHOW COLUMNS`, `SHOW INDEXES`, `DESCRIBE`, `RENAME`/`EXCHANGE`,
 /// the whole-database/whole-server `BACKUP`/`RESTORE DATABASE` and `BACKUP`/`RESTORE ALL` forms, and all
 /// `RESTORE` forms including `RESTORE TABLE` — are deliberately not covered: `RENAME` and `EXCHANGE`
@@ -1413,6 +1435,8 @@ Context::StorageNamespace mainTableResolveNamespace(const IAST & ast)
 /// `WITH expr AS alias` binding (e.g. `WITH 1 AS t`) does not: `WITH 1 AS t SELECT * FROM t` reads the table
 /// `t`. A CTE's own name is also not active while walking its own definition body, because the analyzer hides
 /// only the CTE currently being resolved (`WITH t AS (SELECT * FROM t) ...` reads the real table `t` inside).
+/// The bare-identifier right-hand side of `IN` follows the opposite rule — any expression alias wins there —
+/// and is handled separately through `CollectTablesData::alias_names`.
 void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::unordered_set<String> active_ctes)
 {
     if (!ast)
@@ -1611,6 +1635,22 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// an unqualified source with `Context::resolveDatabase` and reads it from the persistent
             /// catalog — no temporary-table shadowing — hence `ResolveOrdinary`.
             data.addTableIfNotEmpty(create->as_database, create->as_table, active_ctes, Context::ResolveOrdinary, AccessFlags::allFlagsGrantableOnTableLevel());
+
+            /// External view targets (`CREATE MATERIALIZED VIEW mv TO dst`, `CREATE WINDOW VIEW ... TO dst`,
+            /// the `TimeSeries` targets, ...) live in `create.targets`, not in child AST nodes, and
+            /// `InterpreterCreateQuery::getRequiredAccess` checks `SELECT | INSERT` on each of them. Without
+            /// this, `CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM src` would detach and attach `src`
+            /// and only then fail on the missing access to `dst`. An inner (non-external) target carries no
+            /// table name and is skipped by `addTableIfNotEmpty` naturally. The target is completed with the
+            /// current database by `InterpreterCreateQuery` and never resolved against session temporary
+            /// tables, hence `ResolveOrdinary`; it is not required to exist, because a view may name a target
+            /// that is created only later.
+            if (create->targets)
+                for (const auto & target : create->targets->targets)
+                    data.addTableIfNotEmpty(
+                        target.table_id.database_name, target.table_id.table_name, active_ctes,
+                        Context::ResolveOrdinary, AccessType::SELECT | AccessType::INSERT,
+                        /* existence_required */ false);
         }
     }
     else if (const auto * function = ast->as<ASTFunction>())
@@ -1622,11 +1662,18 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
         /// generic recursion into children below; a tuple/literal or table-function right-hand side names no
         /// table to detach. The referenced table needs `SELECT` just like a `FROM` table, so a user missing
         /// `SELECT` on it keeps the whole query side-effect free via the access preflight.
+        ///
+        /// An unqualified right-hand side that matches an expression alias declared in the query is not a
+        /// table either: the analyzer resolves `rhs` in `WITH (1, 2) AS rhs SELECT 1 IN rhs` (and in
+        /// `SELECT (1, 2) AS rhs, 5 IN rhs`) to the alias, so the same-named table is never read. Unlike a
+        /// `FROM` reference — where a scalar alias does not shadow the table, hence the `ASTWithElement`-only
+        /// rule for `active_ctes` above — the alias wins here, so consult `data.alias_names` as well.
         if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
         {
             if (const auto * id = function->arguments->children[1]->as<ASTIdentifier>())
                 if (auto table_id = id->createTable())
-                    data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
+                    if (!table_id->getDatabaseName().empty() || !data.alias_names.contains(table_id->shortName()))
+                        data.addTableIfNotEmpty(table_id->getDatabaseName(), table_id->shortName(), active_ctes, Context::ResolveAll, AccessType::SELECT);
         }
     }
 
@@ -1639,6 +1686,7 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
 static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr context)
 {
     CollectTablesData data(context);
+    collectAliasNames(query, data.alias_names);
     collectTablesInQuery(query, data, /* active_ctes */ {});
 
     /// Deduplicate: the same table can appear multiple times (e.g. self-joins), possibly in contexts

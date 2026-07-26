@@ -153,6 +153,12 @@ check_if_detached "SELECT * FROM t_reattach_cte WHERE a IN (WITH t_reattach_cte 
 # same name, so the real table is NOT read inside the recursive member and must NOT be detached.
 check_if_not_detached "WITH RECURSIVE t_reattach_cte AS (SELECT toUInt64(1) AS a UNION ALL SELECT a + 1 FROM t_reattach_cte WHERE a < 2) SELECT * FROM t_reattach_cte" "t_reattach_cte"
 
+# An expression alias, unlike a FROM reference, DOES shadow a same-named table on the bare-identifier right-hand
+# side of `IN`: the analyzer resolves `t_reattach_cte` there to the alias, so the real table is never read and
+# must NOT be detached. Both the `WITH expr AS alias` and the `SELECT expr AS alias` forms behave this way.
+check_if_not_detached "WITH (1, 2) AS t_reattach_cte SELECT 1 IN t_reattach_cte" "t_reattach_cte"
+check_if_not_detached "SELECT (1, 2) AS t_reattach_cte, 1 IN t_reattach_cte" "t_reattach_cte"
+
 # A recursive CTE's NON-RECURSIVE seed term (the first UNION member) is resolved before the recursive temporary
 # table exists, so a same-named real table read by the seed term IS read by the query and must be detached.
 # Only the recursive members (after the first) resolve the name through the recursive temporary table.
@@ -307,6 +313,42 @@ fi
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_create_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_create_src"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${CREATE_USER}"
+
+# The external target of `CREATE MATERIALIZED VIEW mv TO dst AS SELECT * FROM src` lives in `create.targets`,
+# another plain (non-child-AST) carrier, and `InterpreterCreateQuery::getRequiredAccess` checks
+# `SELECT | INSERT` on it. A user who can `DETACH`/`ATTACH` the source `src` but lacks access to `dst` must
+# fail with `ACCESS_DENIED` without `src` being detached.
+MV_USER="user_reattach_mv_${CLICKHOUSE_DATABASE}"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${MV_USER}"
+${CLICKHOUSE_CLIENT} -q "CREATE USER ${MV_USER} IDENTIFIED WITH no_password"
+${CLICKHOUSE_CLIENT} -q "GRANT TABLE ENGINE ON MergeTree TO ${MV_USER}"
+
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_dst"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mv_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mv_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+# Full table grants on the source make it a genuine detach candidate; grant nothing on the target.
+${CLICKHOUSE_CLIENT} -q "GRANT ALL ON ${CLICKHOUSE_DATABASE}.t_reattach_mv_src TO ${MV_USER}"
+${CLICKHOUSE_CLIENT} -q "GRANT CREATE VIEW ON ${CLICKHOUSE_DATABASE}.t_reattach_mv TO ${MV_USER}"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} --user "${MV_USER}" \
+    --reattach_tables_before_query_execution=1 \
+    --query "CREATE MATERIALIZED VIEW t_reattach_mv TO t_reattach_mv_dst AS SELECT * FROM t_reattach_mv_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "ACCESS_DENIED"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mv_src"; then
+    echo "FAIL (source detached for an access-rejected query)"
+else
+    echo "OK"
+fi
+
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_mv"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_dst"
+${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${MV_USER}"
 
 # `ALTER TABLE dst REPLACE PARTITION ... FROM src` needs `SELECT` on the source `src` (see
 # `InterpreterAlterQuery::getRequiredAccessForCommand`), which is kept in the command's `from_*` string
