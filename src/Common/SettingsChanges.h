@@ -12,6 +12,12 @@ struct SettingChange
     String name;
     Field value;
 
+    /// Set when the change came from the shorthand form `SET name` with no value, which stands for
+    /// `SET name = true` and is only meaningful for a Bool setting. The parser cannot tell whether
+    /// the setting is Bool - it does not know the settings schema - so it records how the change was
+    /// written and `BaseSettings::applyChange` rejects the shorthand for every other type.
+    bool shorthand = false;
+
     SettingChange() = default;
     SettingChange(std::string_view name_, const Field & value_) : name(name_), value(value_) {}
     SettingChange(std::string_view name_, Field && value_) : name(name_), value(std::move(value_)) {}
