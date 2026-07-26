@@ -61,8 +61,7 @@ public:
         bool background_download_enabled_ = false,
         FileCache * cache_ = nullptr,
         std::weak_ptr<KeyMetadata> key_metadata_ = std::weak_ptr<KeyMetadata>(),
-        Priority::IteratorPtr queue_iterator_ = nullptr,
-        bool size_in_filename_ = false);
+        Priority::IteratorPtr queue_iterator_ = nullptr);
 
     ~FileSegment();
 
@@ -108,11 +107,6 @@ public:
     FileSegmentKind getKind() const { return segment_kind; }
 
     bool isUnbound() const { return is_unbound; }
-
-    /// Whether the segment's file on disk currently has its size encoded in the name
-    /// (`<offset>_<size>`). True once a regular segment is fully downloaded (or was loaded
-    /// from such a file on startup); false while still downloading or for legacy files.
-    bool hasSizeInFileName() const { return size_in_filename; }
 
     String getPath() const;
 
@@ -209,16 +203,11 @@ public:
 
     /// Try to reserve exactly `size` bytes (in addition to the getDownloadedSize() bytes already downloaded).
     /// Returns true if reservation was successful, false otherwise.
-    ///
-    /// `reserve_hint`, if non-zero, bounds the reserve-ahead to the bytes left to read from the
-    /// current download offset (e.g. up to read_until_position), so the segment is never reserved
-    /// ahead past what the read will consume.
     bool reserve(
         size_t size_to_reserve,
         size_t lock_wait_timeout_milliseconds,
         std::string & failure_reason,
-        FileCacheReserveStat * reserve_stat = nullptr,
-        size_t reserve_hint = 0);
+        FileCacheReserveStat * reserve_stat = nullptr);
 
     /// Write data into reserved space.
     void write(char * from, size_t size, size_t offset_in_file);
@@ -267,11 +256,6 @@ private:
 
     void setDownloadedUnlocked(const FileSegmentGuard::Lock &);
     void setDownloadFailedUnlocked(const FileSegmentGuard::Lock &);
-
-    /// Rename a fully downloaded regular segment's file from `<offset>` to `<offset>_<size>`,
-    /// so that startup metadata loading can read the size from the name instead of `stat`-ing
-    /// each file. No-op for ephemeral segments or if the size is already encoded.
-    void renameToIncludeSizeInNameUnlocked(const FileSegmentGuard::Lock &);
     void shrinkFileSegmentToDownloadedSize(const LockedKey &, const FileSegmentGuard::Lock &, bool force_shrink_to_downloaded_size);
 
     void assertNotDetached() const;
@@ -293,11 +277,6 @@ private:
     /// is_unbound == true for temporary data in cache.
     const bool is_unbound;
     const bool background_download_enabled;
-
-    /// Whether the on-disk file is named `<offset>_<size>` (size encoded) rather than `<offset>`.
-    /// Only ever transitions false -> true, under `segment_guard`, when the segment becomes
-    /// fully downloaded; reads in `getPath` are lock-free and safe because of this.
-    std::atomic<bool> size_in_filename;
 
     std::atomic<State> download_state;
     time_t download_finished_time = 0;

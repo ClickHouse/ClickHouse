@@ -46,22 +46,22 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-/// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into
-/// `error`: every hex digit is looked up once, and any invalid digit (which unhex maps to 0xff)
-/// raises the high nibble of `error`. Valid nibbles are 0..15, so `error & 0xF0` is nonzero iff
-/// some digit was invalid. This fuses validation and conversion, avoiding a separate scan.
 template <size_t num_bytes, typename IteratorSrc, typename IteratorDst>
-inline void parseHexChecked(IteratorSrc src, IteratorDst dst, UInt8 & error)
+inline void parseHex(IteratorSrc src, IteratorDst dst)
 {
     size_t src_pos = 0;
     size_t dst_pos = 0;
     for (; dst_pos < num_bytes; ++dst_pos, src_pos += 2)
-    {
-        const UInt8 hi = unhex(static_cast<char>(src[src_pos]));
-        const UInt8 lo = unhex(static_cast<char>(src[src_pos + 1]));
-        error |= hi | lo;
-        dst[dst_pos] = static_cast<UInt8>(hi * 16 + lo);
-    }
+        dst[dst_pos] = unhex2(reinterpret_cast<const char *>(&src[src_pos]));
+}
+
+/// Returns true if all bytes in [begin, end) are valid hexadecimal digits (0-9, a-f, A-F).
+static inline bool areHexChars(const UInt8 * begin, const UInt8 * end)
+{
+    for (const UInt8 * p = begin; p != end; ++p)
+        if (unhex(static_cast<char>(*p)) == 0xff)
+            return false;
+    return true;
 }
 
 template <typename ReturnType>
@@ -72,28 +72,20 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
     const auto * src_ptr = src.data();
     const auto size = src.size();
 
-    /// Decode into a local UUID and copy into `uuid` only after validation passes. parseHexChecked
-    /// writes the destination as it converts, so decoding straight into `uuid` would clobber the
-    /// caller's value on an invalid input; tryParseUUID / tryReadUUIDText must leave it unchanged.
-    UUID tmp;
-
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&tmp) + sizeof(UUID));
+    const std::reverse_iterator<UInt8 *> dst(reinterpret_cast<UInt8 *>(&uuid) + sizeof(UUID));
 #else
-    auto * dst = reinterpret_cast<UInt8 *>(&tmp);
+    auto * dst = reinterpret_cast<UInt8 *>(&uuid);
 #endif
     if (size == 36)
     {
-        /// Validate the 8-4-4-4-12 layout while converting: dashes at positions 8, 13, 18, 23 and hex
-        /// digits everywhere else. Conversion and hex validation happen in one pass (see parseHexChecked).
-        UInt8 error = 0;
-        parseHexChecked<4>(src_ptr, dst + 8, error);
-        parseHexChecked<2>(src_ptr + 9, dst + 12, error);
-        parseHexChecked<2>(src_ptr + 14, dst + 14, error);
-        parseHexChecked<2>(src_ptr + 19, dst, error);
-        parseHexChecked<6>(src_ptr + 24, dst + 2, error);
-        const bool bad_dashes = src_ptr[8] != '-' || src_ptr[13] != '-' || src_ptr[18] != '-' || src_ptr[23] != '-';
-        if (bad_dashes || (error & 0xF0))
+        /// Validate 8-4-4-4-12 layout: dashes at positions 8, 13, 18, 23 and hex digits in the rest.
+        if (src_ptr[8] != '-' || src_ptr[13] != '-' || src_ptr[18] != '-' || src_ptr[23] != '-'
+            || !areHexChars(src_ptr, src_ptr + 8)
+            || !areHexChars(src_ptr + 9, src_ptr + 13)
+            || !areHexChars(src_ptr + 14, src_ptr + 18)
+            || !areHexChars(src_ptr + 19, src_ptr + 23)
+            || !areHexChars(src_ptr + 24, src_ptr + 36))
         {
             if constexpr (throw_exception)
                 throw Exception(
@@ -102,13 +94,15 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
             else
                 return ReturnType(false);
         }
+        parseHex<4>(src_ptr, dst + 8);
+        parseHex<2>(src_ptr + 9, dst + 12);
+        parseHex<2>(src_ptr + 14, dst + 14);
+        parseHex<2>(src_ptr + 19, dst);
+        parseHex<6>(src_ptr + 24, dst + 2);
     }
     else if (size == 32)
     {
-        UInt8 error = 0;
-        parseHexChecked<8>(src_ptr, dst + 8, error);
-        parseHexChecked<8>(src_ptr + 16, dst, error);
-        if (error & 0xF0)
+        if (!areHexChars(src_ptr, src_ptr + 32))
         {
             if constexpr (throw_exception)
                 throw Exception(
@@ -117,6 +111,8 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
             else
                 return ReturnType(false);
         }
+        parseHex<8>(src_ptr, dst + 8);
+        parseHex<8>(src_ptr + 16, dst);
     }
     else
     {
@@ -126,7 +122,6 @@ static ReturnType parseUUIDImpl(std::span<const UInt8> src, UUID & uuid)
             return ReturnType(false);
     }
 
-    uuid = tmp;
     return ReturnType(true);
 }
 
@@ -1896,7 +1891,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             ++buf.position();
 
         double v = 0;
-        if (!tryReadFloatTextPrecise(v, buf))
+        if (!tryReadFloatText(v, buf))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
@@ -2474,13 +2469,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
     else
     {
         /// It's an integer, float or decimal. They all can be parsed as float.
-        /// This only tokenizes: the parsed value is discarded (we keep the consumed text), so use
-        /// the non-throwing parser. A non-numeric field then consumes nothing and is left for the
-        /// caller to handle, instead of raising a "cannot read float" error.
         auto parse_func = [](ReadBuffer & in)
         {
             Float64 tmp = 0;
-            return tryReadFloatTextPrecise(tmp, in);
+            if constexpr (throw_exception)
+                readFloatText(tmp, in);
+            else
+                return tryReadFloatText(tmp, in);
         };
 
         return readParsedValueInto<ReturnType>(s, buf, parse_func);

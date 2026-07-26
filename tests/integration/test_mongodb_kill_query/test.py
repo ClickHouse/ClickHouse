@@ -125,13 +125,11 @@ def test_cancel_query(setup_mongodb_users):
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
-    # from the preceding test_kill_query which also produces "Generate a chunk".
-    node1.wait_for_log_line("Generate a chunk", look_behind_lines=0)
+    node1.wait_for_log_line("Generate a chunk")
     time.sleep(1)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()

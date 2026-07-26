@@ -237,7 +237,7 @@ static ChildUpdateResult removeSingleChildOutput(
 /// returned by the parent's `removeUnusedColumns` call. If `required_input_positions` is
 /// non-empty, use those positions directly; otherwise fall back to computing positions
 /// from headers (for the case where the caller doesn't have positions yet).
-static RemoveChildrenOutputResult removeChildrenOutputs(
+RemoveChildrenOutputResult removeChildrenOutputs(
     QueryPlan::Nodes & nodes,
     QueryPlan::Node & node,
     const std::vector<std::vector<size_t>> & required_input_positions)
