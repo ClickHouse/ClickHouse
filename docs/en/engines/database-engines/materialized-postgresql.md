@@ -251,6 +251,8 @@ Coordinated mode also does not support a column-filtered `materialized_postgresq
 
 Replica identity used for the coordination node and for the nested replicated table engine. Default: `{replica}`. Supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to a distinct value on every replica**, and this is enforced: each replica's registration node stores its identity, so a `CREATE` whose replica name is already registered by another replica is rejected (synchronously when the registration is already visible in Keeper) instead of silently collapsing two replicas onto one registration, which would corrupt the bookkeeping that decides when the last replica removes the shared replication slot and publication.
 
+The expanded value must also be a **single Keeper node name**: an empty value, or a value containing `/` (such as `'{shard}/{replica}'`), is rejected at `CREATE` time and again when the replica registers itself. Replicas are tracked as `<keeper_path>/replicas/<name>`, and the last-replica fence fires by removing the `/replicas` node once it becomes empty; with an extra path level in between it never becomes empty, so the shared replication slot, publication and snapshot marker would leak forever, even after the last replica is dropped.
+
 ## Notes {#notes}
 
 ### Failover of the logical replication slot {#logical-replication-slot-failover}

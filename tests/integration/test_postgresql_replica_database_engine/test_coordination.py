@@ -884,6 +884,43 @@ def test_keeper_path_rejects_per_server_macro(started_cluster):
     assert "test_per_server_path" not in instance.query("SHOW DATABASES")
 
 
+def test_replica_name_must_be_a_single_keeper_component(started_cluster):
+    # The replica name becomes a single Keeper node under <keeper_path>/replicas, and the last-replica fence
+    # fires by removing that /replicas node once it is empty. A name containing '/' would nest the
+    # registration one level deeper, so /replicas would never become empty, the fence could never fire and
+    # the shared replication slot, publication and snapshot marker would leak forever. An empty name would
+    # collide with the /replicas node itself. Both must be rejected at CREATE time.
+    for replica_name in ["{shard}/{replica}", ""]:
+        error = instance.query_and_get_error(
+            f"CREATE DATABASE test_bad_replica_name "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+            f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/bad_replica_name_test', "
+            f"materialized_postgresql_replica_name = '{replica_name}'"
+        )
+        assert "materialized_postgresql_replica_name" in error
+        # The rejected CREATE must not have left a database behind.
+        assert "test_bad_replica_name" not in instance.query("SHOW DATABASES")
+
+    # A name that is a single Keeper component is accepted on the very same keeper path and replicates.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        settings=[
+            "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+            "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/bad_replica_name_test'",
+            "materialized_postgresql_replica_name = 'good_name'",
+            "materialized_postgresql_tables_list = 'test_table'",
+        ],
+    )
+    check_tables_are_synchronized(instance, "test_table")
+
+
 def test_join_with_drifted_schema_reports_error(started_cluster):
     # The shared nested-table schema is authoritative in coordinated mode. A replica joins by declaring a
     # nested table derived from the *current* PostgreSQL schema, and ReplicatedMergeTree compares that

@@ -61,7 +61,10 @@ namespace ErrorCodes
     DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
         "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
         "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica: " \
-        "the registration is ownership-checked, so a name already registered by another replica is rejected.", 0) \
+        "the registration is ownership-checked, so a name already registered by another replica is rejected. " \
+        "It must also resolve to a single Keeper node name: an empty value or a value containing `/` is rejected, " \
+        "because a nested path under `<keeper_path>/replicas` would break the last-replica bookkeeping that " \
+        "decides when the shared replication slot and publication are removed.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)

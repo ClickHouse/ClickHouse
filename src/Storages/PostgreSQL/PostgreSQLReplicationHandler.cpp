@@ -320,6 +320,34 @@ namespace
     {
         return toString(ServerUUID::get()) + "|" + clickhouse_uuid;
     }
+
+    /// The expanded `materialized_postgresql_replica_name` is used as a SINGLE Keeper node name under
+    /// <keeper_path>/replicas (and as the replica name of the nested Replicated/SharedReplacingMergeTree
+    /// tables), so it must be a valid single path component - the same requirement `DatabaseReplicated`
+    /// enforces on its replica name.
+    ///
+    /// A value containing `/` (for example `'{shard}/{replica}'`) would silently turn the registration into a
+    /// nested path `<keeper_path>/replicas/<shard>/<replica>`. `unregisterReplicaAndCheckLast` removes only the
+    /// leaf node and then wins the last-replica fence by removing the now-empty `/replicas` parent, so with an
+    /// intermediate level in between, `/replicas` would never become empty and the fence could never fire: the
+    /// shared replication slot, publication and `snapshot_completed` marker would leak forever, even after the
+    /// last replica is dropped. An empty name would make the registration collide with the `/replicas` node
+    /// itself. Reject both before any Keeper path is formed.
+    void assertValidCoordinationReplicaName(const String & expanded_replica_name)
+    {
+        if (expanded_replica_name.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_replica_name must not be empty in coordinated mode: it names this "
+                "replica's registration node under <keeper_path>/replicas");
+
+        if (expanded_replica_name.contains('/'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Invalid materialized_postgresql_replica_name '{}': '/' is not allowed. The replica name is a "
+                "single Keeper node name under <keeper_path>/replicas (and the replica name of the nested "
+                "replicated tables), so a nested path would break the last-replica bookkeeping that decides "
+                "when the shared replication slot and publication are removed",
+                expanded_replica_name);
+    }
 }
 
 void validateMaterializedPostgreSQLCoordinationSettings(
@@ -421,6 +449,10 @@ void validateMaterializedPostgreSQLCoordinationSettings(
             info.table_id.uuid = clickhouse_uuid;
             expanded_replica_name = macros->expand(raw_replica_name, info);
         }
+
+        /// The expanded replica name must be a single Keeper path component before it is used to form
+        /// <keeper_path>/replicas/<name> anywhere (see `assertValidCoordinationReplicaName`).
+        assertValidCoordinationReplicaName(expanded_replica_name);
 
         auto expand_probe = [&](const String & per_replica_value) -> String
         {
@@ -1577,6 +1609,14 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// solely from <keeper_path>/replicas) could delete the shared slot/publication/marker while this partial
     /// copy still exists. In that case keep the replica registered and let the idempotent startup-task retry
     /// finish creating the remaining tables (it skips the ones that already exist).
+    /// Re-check the expanded replica name here as well, not only in the CREATE-time validator: the macros it
+    /// expands through live in the server configuration and can change after the database was created, and a
+    /// name that is not a single Keeper path component would leak the shared PostgreSQL objects (see
+    /// `assertValidCoordinationReplicaName`). This runs before any Keeper path is formed from it - both the
+    /// registration node and the nested replicated tables come later - and refusing here (rather than in the
+    /// handler's constructor) keeps `DROP DATABASE` of a misconfigured setup possible.
+    assertValidCoordinationReplicaName(coordination_replica_name);
+
     ensureCoordinatedNamingCompatible();
     ensureCoordinatedTableSetCompatible();
 
