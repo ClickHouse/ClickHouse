@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-parallel-replicas
 
 -- `exact_rows_before_limit` makes LimitTransform read its source till the end so it can report an exact
 -- `rows_before_limit_at_least`. The OFFSET-skip read-in-order optimization must not drop leading granules in
