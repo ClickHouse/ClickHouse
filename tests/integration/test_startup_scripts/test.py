@@ -147,10 +147,9 @@ def test_reload_config_does_not_rerun_startup_scripts(start_cluster):
 
 
 def restart_profiler_race_instance():
-    # `stop_clickhouse()` finds the process with `ps -C clickhouse`, which matches on `comm`. The
-    # server re-execs itself for `--daemon`, so its `comm` is `exe` and `ps -C clickhouse` finds
-    # nothing: the helper would log "already stopped" and skip the restart, leaving the test
-    # asserting nothing. Stop it by pid instead, then wait for the process to be gone.
+    # Stop by pid and wait for the process to be gone: the shared `stop_clickhouse()` helper was
+    # observed to skip the stop here, silently turning every restart into a no-op. Restarting
+    # explicitly keeps each iteration a real startup, which is what this test measures.
     pid = profiler_race.get_process_pid("clickhouse")
     assert pid is not None, "server is not running, cannot restart it"
     profiler_race.exec_in_container(
@@ -165,13 +164,11 @@ def restart_profiler_race_instance():
 
 
 def test_profiler_vs_processlist_publication(start_cluster):
-    # Guard against the test silently degenerating into a no-op: every iteration must actually run
-    # the startup script, which is what puts the loader thread and the profiled startup thread on
-    # the same Counters chain.
+    if not profiler_race.is_built_with_thread_sanitizer():
+        pytest.skip("the race is only observable under ThreadSanitizer")
+
     def dictionary_source_logins():
-        # The server rotates its log on open, so each restart leaves a compressed
-        # clickhouse-server.log.N.gz. Count over all of them (zcat -f handles both the plain
-        # current log and the gzipped rotations).
+        # zcat -f reads the current log and the gzipped rotations left by earlier restarts.
         return int(
             profiler_race.exec_in_container(
                 [
@@ -185,22 +182,43 @@ def test_profiler_vs_processlist_publication(start_cluster):
             or 0
         )
 
+    def startup_query_profiler_samples():
+        # Per-query, not the global `system.events` counter: that one is also fed by the always-on
+        # global profiler (`global_profiler_real_time_period_ns`), so it is non-zero even when the
+        # query profiler is off. This attributes the samples to the startup script's own query.
+        profiler_race.query("SYSTEM FLUSH LOGS")
+        return int(
+            profiler_race.query(
+                "SELECT ProfileEvents['QueryProfilerRuns'] FROM system.query_log "
+                "WHERE query LIKE '%profiler_race_dict%' AND type = 'QueryFinish' "
+                "ORDER BY event_time_microseconds DESC LIMIT 1"
+            ).strip()
+            or 0
+        )
+
     for _ in range(PROFILER_RACE_RESTARTS):
         restart_profiler_race_instance()
         assert get_execution_state(profiler_race) == STATE_SUCCESS
+        # The profiler is armed on a best-effort basis: `initQueryProfiler` returns early when there
+        # is no trace collector and swallows timer-creation failures. Without a positive oracle a
+        # silently disarmed profiler would never enter the racing window, yet the absence of a TSan
+        # report would still read as a pass. A healthy startup samples thousands of times.
+        samples = startup_query_profiler_samples()
+        assert samples > 1000, (
+            f"the query profiler sampled the startup script only {samples} times, so the racing "
+            "window was not meaningfully exercised and the absence of a TSan report proves nothing"
+        )
 
     # Log rotation keeps a bounded number of files, so this cannot be compared against the restart
     # count directly. What matters is that the startup script really ran on the restarts that are
-    # still on disk: if it had silently stopped running, this would be 0 and the test would be
-    # asserting nothing.
+    # still on disk.
     assert dictionary_source_logins() > 0, (
         "the dictionary source query never ran, so the startup path this test is meant to "
         "exercise was not exercised at all"
     )
 
-    # A ThreadSanitizer report here means the loader thread published the freshly constructed
-    # per-user Counters into the shared chain without ordering, while the profiler signal handler
-    # on the startup thread was walking it.
+    # Both files are checked because the sanitizer writes to stderr while the server also mirrors
+    # fatal output into its own error log.
     for filename in ("stderr.log", "clickhouse-server.err.log"):
         report = profiler_race.grep_in_log(
             "ThreadSanitizer: data race", from_host=True, filename=filename, after=40

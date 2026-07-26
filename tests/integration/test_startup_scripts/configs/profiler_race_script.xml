@@ -1,12 +1,8 @@
 <clickhouse>
-    <!--
-        The startup script creates a non-lazy dictionary, so `registerStorageDictionary` blocks the
-        main thread in `ExternalLoader::LoadingDispatcher::loadImpl` (a condition_variable wait) while
-        the loader thread, sharing the main thread's ThreadGroup, runs the source query as
-        `dict_source_user`. That source query performs the first `ProcessList::insert` for that user,
-        which constructs a `ProcessListForUser` and publishes its embedded `user_performance_counters`
-        into the shared Counters chain the main thread's profiler signal handler is walking.
-    -->
+    <!-- Non-lazy dictionary plus a non-default source user: that combination makes the loader thread
+         perform the first `ProcessListForUser` allocation for that user while the main thread is
+         blocked inside the loader, sharing one Counters chain with it. The 3000000-row source query
+         keeps the main thread in that wait for seconds, so the 1 ms profiler samples it there. -->
     <startup_scripts>
         <scripts>
             <query>
