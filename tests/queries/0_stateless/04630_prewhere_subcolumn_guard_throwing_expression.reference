@@ -11,11 +11,15 @@ json guard, 90% of rows pass the guard
 json guard, 90% of rows pass the guard, query_plan_merge_filters = 0
 90000
 map guard, WHERE
-66666
+32666
 map guard, explicit PREWHERE
-66666
+32666
 map guard, WHERE, query_plan_merge_filters = 0
-66666
-non throwing map conditions are rewritten to subcolumns and grouped
+32666
+mixed storage columns, explicit PREWHERE
+45000
+mixed storage columns, explicit PREWHERE, query_plan_merge_filters = 0
+45000
+non throwing map conditions are rewritten to subcolumns
 1
 1000

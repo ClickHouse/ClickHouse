@@ -32,11 +32,12 @@ struct NodeInfo
 
 /// Returns the argument types of a function node, as expected by
 /// IFunctionBase::isSuitableForShortCircuitArgumentsExecution.
-DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::Node * node)
+/// Mirrors getDataTypesWithConstInfoFromNodes in ExpressionActions.cpp, which is file local there.
+DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     DataTypesWithConstInfo types;
-    types.reserve(node->children.size());
-    for (const auto & child : node->children)
+    types.reserve(nodes.size());
+    for (const auto & child : nodes)
         types.push_back({child->result_type, child->column != nullptr});
     return types;
 }
@@ -83,9 +84,12 @@ void fillRequiredColumns(
 
     /// Reuse the predicate that the short-circuit machinery uses to decide which nodes must be
     /// guarded (see ExpressionActions::findLazyExecutedNodes). IFunctionBase::canThrow delegates
-    /// to it as well. It is conservative: it also reports true for merely expensive functions.
+    /// to it as well. It is imprecise in both directions: it reports true for merely expensive
+    /// functions, and false for some functions that do throw while parsing row values (for example
+    /// addDays(String, ...) via FunctionDateOrDateTimeAddInterval). There is no sound can-throw
+    /// oracle in the tree yet, see the TODO on IFunctionBase::canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node)))
+        && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children)))
         node_info.may_throw = true;
 }
 
@@ -286,22 +290,26 @@ bool tryBuildPrewhereSteps(
     /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
     /// what keeps the guard effective.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
-    /// Indices of groups that start a new step only because the condition may throw. The preceding
-    /// step must materialize its filter, otherwise the throwing condition still sees rejected rows.
+    /// Indices of groups whose first condition may throw. Steps are not required to materialize their
+    /// filter, so the preceding step is asked to do it, otherwise the throwing condition is evaluated
+    /// on the rows that step rejects. Recorded for every such group regardless of which columns the
+    /// two steps read, because a step never filters the block it hands over on its own.
     std::unordered_set<size_t> groups_requiring_filtered_input;
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        if (!condition_groups.empty()
-            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns)
+        const bool merge_into_previous_group = !condition_groups.empty() && !node_info.may_throw
+            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns;
+
+        if (merge_into_previous_group)
         {
-            if (!node_info.may_throw)
-            {
-                condition_groups.back().push_back(node);
-                continue;
-            }
-            groups_requiring_filtered_input.insert(condition_groups.size());
+            condition_groups.back().push_back(node);
+            continue;
         }
+
+        if (!condition_groups.empty() && node_info.may_throw)
+            groups_requiring_filtered_input.insert(condition_groups.size());
+
         condition_groups.push_back({node});
     }
 

@@ -11,7 +11,9 @@ SET move_all_conditions_to_prewhere = 1;
 
 DROP TABLE IF EXISTS t_prewhere_guard_json;
 CREATE TABLE t_prewhere_guard_json (id Int64, session_id Int64, payload JSON, filler String)
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0;
 
 -- 2/3 of the rows have coordinates, 1/3 are NULL and must be filtered by the guard.
 INSERT INTO t_prewhere_guard_json
@@ -81,7 +83,9 @@ DROP TABLE t_prewhere_guard_json;
 -- preceding step to force filter materialization.
 DROP TABLE IF EXISTS t_prewhere_guard_json_low_sel;
 CREATE TABLE t_prewhere_guard_json_low_sel (id Int64, session_id Int64, payload JSON, filler String)
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_prewhere_guard_json_low_sel
 SELECT number, number,
@@ -121,7 +125,9 @@ DROP TABLE t_prewhere_guard_json_low_sel;
 -- The same invariant for Map subcolumns, including a user written PREWHERE.
 DROP TABLE IF EXISTS t_prewhere_guard_map;
 CREATE TABLE t_prewhere_guard_map (id Int64, tags Map(String, String), filler String)
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_prewhere_guard_map
 SELECT number,
@@ -130,28 +136,64 @@ SELECT number,
 FROM numbers(100000);
 
 SELECT 'map guard, WHERE';
-SELECT count() FROM t_prewhere_guard_map WHERE tags['safe'] != '' AND toUInt64(tags['val']) >= 0;
+SELECT count() FROM t_prewhere_guard_map WHERE tags['safe'] != '' AND toUInt64(tags['val']) > 50;
 
 SELECT 'map guard, explicit PREWHERE';
-SELECT count() FROM t_prewhere_guard_map PREWHERE tags['safe'] != '' AND toUInt64(tags['val']) >= 0;
+SELECT count() FROM t_prewhere_guard_map PREWHERE tags['safe'] != '' AND toUInt64(tags['val']) > 50;
 
 SELECT 'map guard, WHERE, query_plan_merge_filters = 0';
-SELECT count() FROM t_prewhere_guard_map WHERE tags['safe'] != '' AND toUInt64(tags['val']) >= 0
+SELECT count() FROM t_prewhere_guard_map WHERE tags['safe'] != '' AND toUInt64(tags['val']) > 50
 SETTINGS query_plan_merge_filters = 0;
 
 DROP TABLE t_prewhere_guard_map;
 
--- Conditions that cannot throw are still grouped, so subcolumns of one physical column keep
--- sharing a single read step.
+-- The guard and the throwing condition may also read different physical columns, so they land in
+-- separate steps for a reason unrelated to safety. A step does not filter the block it hands over,
+-- so the preceding step must still be asked to materialize its filter.
+--
+-- Only a user written PREWHERE is asserted here. A flat WHERE gives no evaluation order guarantee:
+-- MergeTreeWhereOptimizer orders the conditions it moves by estimated column size, so the throwing
+-- condition can legitimately become the first step, with nothing before it to filter. That happens
+-- on this table when `gate` is stored sparsely, which is why the sparse serialization threshold is
+-- pinned below.
+DROP TABLE IF EXISTS t_prewhere_guard_mixed;
+CREATE TABLE t_prewhere_guard_mixed (id Int64, gate UInt8, tags Map(String, String), filler String)
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0;
+
+-- 90% of the rows pass the guard, which is above the threshold at which a read step applies its
+-- filter on its own.
+INSERT INTO t_prewhere_guard_mixed
+SELECT number,
+       if(number % 10 = 0, 0, 1),
+       if(number % 10 = 0, map('val', 'not a number'), map('val', toString(number % 100))),
+       repeat('x', 200)
+FROM numbers(100000);
+
+SELECT 'mixed storage columns, explicit PREWHERE';
+SELECT count() FROM t_prewhere_guard_mixed PREWHERE gate = 1 AND toUInt64(tags['val']) > 50;
+
+SELECT 'mixed storage columns, explicit PREWHERE, query_plan_merge_filters = 0';
+SELECT count() FROM t_prewhere_guard_mixed PREWHERE gate = 1 AND toUInt64(tags['val']) > 50
+SETTINGS query_plan_merge_filters = 0;
+
+DROP TABLE t_prewhere_guard_mixed;
+
+-- Conditions that cannot throw are still rewritten to subcolumns of one physical column.
+-- That they also share a single read step is asserted in the .sh companion of this test, which can
+-- count read steps through ProfileEvents.
 DROP TABLE IF EXISTS t_prewhere_group_map;
 CREATE TABLE t_prewhere_group_map (id UInt64, tags Map(String, String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         ratio_of_defaults_for_sparse_serialization = 1.0;
 
 INSERT INTO t_prewhere_group_map
 SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayMap(i -> toString(number + i), range(4)))
 FROM numbers(1000);
 
-SELECT 'non throwing map conditions are rewritten to subcolumns and grouped';
+SELECT 'non throwing map conditions are rewritten to subcolumns';
 SELECT count() = 1 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_prewhere_group_map
