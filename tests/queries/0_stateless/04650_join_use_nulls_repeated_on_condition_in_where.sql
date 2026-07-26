@@ -1,5 +1,5 @@
 -- The plan assertions below match analyzer-generated column identifiers (`__table2.`) in the legacy
--- EXPLAIN output, so both are pinned for the whole file. The old analyzer does not build the plan
+-- `EXPLAIN` output, so both are pinned for the whole file. The old analyzer does not build the plan
 -- shape that triggers this bug, so nothing is lost by pinning.
 SET enable_analyzer = 1;
 SET explain_query_plan_default = 'legacy';
@@ -41,12 +41,13 @@ SELECT count() > 0 FROM (
              query_plan_optimize_prewhere = 0
 ) WHERE position(explain, 'AND column: equals(__table2.enabled, 1_Bool)_0') > 0;
 
--- The rename above is printed by FilterStep::describeActions, which splits a clone of the DAG and
--- never builds a pipeline. Assert the AND chain is also split on the real execution path: the
--- resulting FilterTransform multiplicity is >= 2 only when the split happens at runtime.
--- max_threads is pinned so the multiplicity counts split atoms, not parallel streams.
+-- The rename above is printed by `FilterStep::describeActions`, which splits a clone of the DAG and
+-- never builds a pipeline. Assert the `AND` chain is also split on the real execution path. One
+-- `FilterTransform` is emitted per extracted atom plus one for the remainder, so a multiplicity of 3
+-- means two atoms were extracted: the collision this fixes needs that second, iterated split.
+-- `max_threads` is pinned so the multiplicity counts split atoms, not parallel streams.
 SELECT 'the AND chain is split at runtime';
-SELECT max(toUInt32OrZero(extract(explain, 'FilterTransform[^0-9]+([0-9]+)'))) >= 2 FROM (
+SELECT max(toUInt32OrZero(extract(explain, 'FilterTransform[^0-9]+([0-9]+)'))) >= 3 FROM (
     EXPLAIN PIPELINE
     SELECT t1.id, t2.reviewer
     FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
@@ -85,8 +86,8 @@ WHERE t1.grp = 10 AND t2.enabled = true AND t2.reviewer = 100
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
--- The remainder DAG produced by the split is split again by the ARRAY JOIN and sorting lift
--- passes, through ActionsDAG::splitActionsBeforeArrayJoin and splitActionsBySortingDescription.
+-- Two further affected shapes: with an `ARRAY JOIN` above the join, and with `ORDER BY` on an
+-- expression. Both throw the same 352 on master and return the correct result with the fix.
 SELECT 'left join, ARRAY JOIN above the join';
 SELECT t1.id, t2.reviewer, x
 FROM t1 LEFT JOIN t2 ON t1.id = t2.id AND t2.enabled = true
