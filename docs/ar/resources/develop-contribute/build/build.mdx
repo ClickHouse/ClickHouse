@@ -134,15 +134,16 @@ ninja -j 1 clickhouse
 
 <Note>
   تُعدّ `clickhouse-server` و`clickhouse-client` والملفات التنفيذية المشابهة روابط رمزية في الدليل `programs/` تشير إلى الملف التنفيذي `clickhouse` بعد اكتمال البناء.
+</Note>
 
-  :::tip
-  يوفّر CMake اختصارات للأوامر أعلاه:
+<Tip>
+  يوفّر CMake اختصارات للأوامر المذكورة أعلاه:
 
   ```sh
   cmake -S . -B build  # تهيئة البناء، شغّل الأمر من الدليل الجذري للمستودع
   cmake --build build  # تجميع
   ```
-</Note>
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## تشغيل الملف التنفيذي لـ ClickHouse

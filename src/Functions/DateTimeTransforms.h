@@ -54,12 +54,29 @@ namespace ErrorCodes
   *  factor-transformation F is "round to the nearest month" (2015-02-03 -> 2015-02-01).
   */
 
-constexpr time_t MAX_DATETIME64_TIMESTAMP = 10413791999LL;    //  2299-12-31 23:59:59 UTC
-constexpr time_t MIN_DATETIME64_TIMESTAMP = -2208988800LL;    //  1900-01-01 00:00:00 UTC
+constexpr time_t MAX_DATETIME64_TIMESTAMP = 253402300799LL;   //  9999-12-31 23:59:59 UTC
+constexpr time_t MIN_DATETIME64_TIMESTAMP = -62167219200LL;   //  0000-01-01 00:00:00 UTC
+constexpr time_t MAX_DATE32_TIMESTAMP = 10413791999LL;        //  2299-12-31 23:59:59 UTC (last day of Date32)
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
 constexpr time_t MAX_TIME_TIMESTAMP = 3599999;              // 999:59:59
 constexpr time_t MAX_DATETIME_DAY_NUM =  49709;         // 2106-02-06 America/Hermosillo
+
+/// `DateTime64` ticks are stored in an `Int64`, so the representable range of whole seconds shrinks as the scale
+/// grows: at scale 8 it tops out around the year 4892 and at scale 9 around `2262-04-11`, both well inside
+/// `[MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP]`. A numeric conversion must clamp to these scale-dependent
+/// bounds before multiplying by the scale multiplier, otherwise the multiplication overflows the `Int64` and
+/// `decimalFromComponentsWithMultiplier` throws `DECIMAL_OVERFLOW` — even under the non-throwing (saturating /
+/// ignore) overflow modes, which are supposed to clamp rather than fail.
+inline time_t maxWholeSecondsForDateTime64(Int64 scale_multiplier)
+{
+    return std::min<Int64>(MAX_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::max() / scale_multiplier);
+}
+
+inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
+{
+    return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
+}
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);

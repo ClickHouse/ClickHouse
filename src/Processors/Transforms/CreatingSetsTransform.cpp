@@ -9,6 +9,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
@@ -22,6 +23,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
+}
+
+namespace FailPoints
+{
+    extern const char prepared_sets_build_ordered_set_inplace_fail[];
 }
 
 CreatingSetsTransform::~CreatingSetsTransform()
@@ -180,14 +186,14 @@ void CreatingSetsTransform::finishSubquery()
 
     if (set_from_cache)
     {
-        LOG_DEBUG(log, "Got set from cache in {} sec.", seconds);
+        LOG_DEBUG(log, "Got set from cache in {:.3f} sec.", seconds);
     }
     else if (read_rows != 0)
     {
         if (set_and_key->set)
-            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
+            LOG_DEBUG(log, "Created Set with {} entries from {} rows in {:.3f} sec.", set_and_key->set->getTotalRowCount(), read_rows, seconds);
         if (set_and_key->external_table)
-            LOG_DEBUG(log, "Created Table with {} rows in {} sec.", read_rows, seconds);
+            LOG_DEBUG(log, "Created Table with {} rows in {:.3f} sec.", read_rows, seconds);
     }
     else
     {
@@ -235,6 +241,15 @@ Chunk CreatingSetsTransform::generate()
 {
     if (set_and_key->set && !set_from_cache)
     {
+        /// Simulate a silent in-place build failure: skip `finishInsert`, leaving the set not created
+        /// (the same observable state as a subquery timeout with `overflow_mode = 'break'`). Fires once,
+        /// so the in-place build during primary key analysis fails while the deferred build succeeds.
+        fiu_do_on(FailPoints::prepared_sets_build_ordered_set_inplace_fail,
+        {
+            finishSubquery();
+            return {};
+        });
+
         set_and_key->set->finishInsert();
         if (promise_to_build)
         {

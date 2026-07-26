@@ -308,9 +308,6 @@ private:
 
     std::unordered_map<IQueryTreeNode *, QueryTreeNodePtr> cte_copy_to_original_map;
 
-    /// Materialized CTEs that are referenced more than once during query analysis and should be materialized to temporary tables.
-    std::unordered_set<MaterializedCTEPtr> reused_materialized_cte;
-
     /// Function name to user defined lambda map
     std::unordered_map<std::string, QueryTreeNodePtr> function_name_to_user_defined_lambda;
 
@@ -342,6 +339,12 @@ private:
     std::map<IQueryTreeNode::Hash, FunctionBasePtr> functions_cache;
 
     const bool only_analyze;
+
+    /// True while arguments of a table function are resolved. Table functions are resolved
+    /// into storages even in only-analyze mode (the storage is required to infer the query
+    /// header), so scalar subqueries in their arguments must be executed for real instead of
+    /// being replaced with type-only placeholders. See evaluateScalarSubqueryIfNeeded.
+    bool table_function_arguments_in_resolve_process = false;
 };
 
 }

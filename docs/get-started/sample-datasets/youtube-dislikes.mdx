@@ -24,8 +24,7 @@ The steps below will easily work on a local install of ClickHouse too. The only 
 ## Step-by-step instructions {#step-by-step-instructions}
 
 <Steps>
-<Step>
-### Data exploration {#data-exploration}
+<Step title="Data exploration" id="data-exploration">
 
 Let's see what the data looks like. The `s3cluster` table function returns a table, so we can `DESCRIBE` the result:
 
@@ -64,8 +63,7 @@ ClickHouse infers the following schema from the JSON file:
 └─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 </Step>
-<Step>
-### Create the table {#create-the-table}
+<Step title="Create the table" id="create-the-table">
 
 Based on the inferred schema, we cleaned up the data types and added a primary key.
 Define the following table:
@@ -99,8 +97,7 @@ ENGINE = MergeTree
 ORDER BY (uploader, upload_date)
 ```
 </Step>
-<Step>
-### Insert data {#insert-data}
+<Step title="Insert data" id="insert-data">
 
 The following command streams the records from the S3 files into the `youtube` table.
 
@@ -145,8 +142,7 @@ Some comments about our `INSERT` command:
 - The `upload_date` column contains valid dates, but it also contains strings like "4 hours ago" - which is certainly not a valid date. We decided to store the original value in `upload_date_str` and attempt to parse it with `toDate(parseDateTimeBestEffortUSOrZero(upload_date::String))`. If the parsing fails we just get `0`
 - We used `ifNull` to avoid getting `NULL` values in our table. If an incoming value is `NULL`, the `ifNull` function is setting the value to an empty string
 </Step>
-<Step>
-### Count the number of rows {#count-row-numbers}
+<Step title="Count the number of rows" id="count-row-numbers">
 
 Open a new tab in the SQL Console of ClickHouse Cloud (or a new `clickhouse-client` window) and watch the count increase.
 It will take a while to insert 4.56B rows, depending on your server resources. (Without any tweaking of settings, it takes about 4.5 hours.)
@@ -162,8 +158,7 @@ FROM youtube
 └─────────────────────────────────┘
 ```
 </Step>
-<Step>
-### Explore the data {#explore-the-data}
+<Step title="Explore the data" id="explore-the-data">
 
 Once the data is inserted, go ahead and count the number of dislikes of your favorite videos or channels. Let's see how many videos were uploaded by ClickHouse:
 
