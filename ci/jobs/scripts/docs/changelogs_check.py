@@ -10,6 +10,7 @@ from pathlib import Path
 
 
 STATIC_GENERATED_PATHS = (
+    Path("resources/changelogs/cloud/index.mdx"),
     Path("resources/changelogs/cloud/release-notes-index.mdx"),
     Path("resources/changelogs/navigation.json"),
 )
