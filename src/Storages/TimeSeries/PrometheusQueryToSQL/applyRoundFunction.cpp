@@ -3,7 +3,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+
+#include <limits>
 
 
 namespace DB::ErrorCodes
@@ -58,6 +61,25 @@ SQLQueryPiece applyRoundFunction(
     const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     checkArgumentTypes(function_node, arguments, context);
+
+    /// PromQL: scalar() returns NaN if its argument is an empty vector, so a `to_nearest` argument which is known
+    /// to be empty at this point (e.g. scalar(clamp(v, 1, -1))) means to_nearest == NaN, and the result must
+    /// consist of NaN values. We convert such an argument to a NaN constant here so that the calculation below
+    /// applies to it (rounding to the nearest multiple of NaN produces NaN).
+    /// (An empty first argument still makes the result empty - see applySimpleFunction()).
+    if ((arguments.size() == 2) && (arguments[1].store_method == StoreMethod::EMPTY))
+    {
+        auto & argument = arguments[1];
+        auto node_range = context.node_range_getter.get(argument.node);
+        if (!node_range.empty())
+        {
+            argument.store_method = StoreMethod::CONST_SCALAR;
+            argument.scalar_value = std::numeric_limits<Float64>::quiet_NaN();
+            argument.start_time = node_range.start_time;
+            argument.end_time = node_range.end_time;
+            argument.step = node_range.step;
+        }
+    }
 
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {

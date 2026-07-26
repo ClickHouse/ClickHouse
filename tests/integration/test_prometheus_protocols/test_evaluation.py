@@ -1767,6 +1767,30 @@ def test_clamp():
         [["[]", "1970-01-01 00:03:00.000", 5]],
     )
 
+    # scalar() of an empty vector is NaN, so a bound evaluating to an empty scalar makes
+    # every value NaN instead of making the result empty.
+    do_query_test(
+        "clamp(vector(5), scalar(clamp(vector(1), 1, -1)), 10)",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "clamp(vector(5), 0, scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    # An empty vector argument (as opposed to an empty scalar bound) still makes the result empty.
+    do_query_test(
+        "clamp(clamp(vector(1), 1, -1), 0, 10)",
+        180,
+        '{"resultType": "vector", "result": []}',
+        "",
+    )
+
     do_query_test(
         "clamp_min(deltas, 0)[700:100]",
         700,
@@ -1789,6 +1813,21 @@ def test_clamp():
                 "[('1970-01-01 00:01:40.000',-2),('1970-01-01 00:03:20.000',-1),('1970-01-01 00:05:00.000',-0.5),('1970-01-01 00:06:40.000',0),('1970-01-01 00:08:20.000',0),('1970-01-01 00:10:00.000',0),('1970-01-01 00:11:40.000',0)]",
             ]
         ],
+    )
+
+    # clamp_min() and clamp_max() with a bound evaluating to an empty scalar make every value NaN too.
+    do_query_test(
+        "clamp_min(vector(5), scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "clamp_max(vector(5), scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
     )
 
 
@@ -1856,6 +1895,15 @@ def test_round():
                 "[('1970-01-01 00:01:40.000',nan),('1970-01-01 00:03:20.000',nan),('1970-01-01 00:05:00.000',nan),('1970-01-01 00:06:40.000',nan),('1970-01-01 00:08:20.000',nan),('1970-01-01 00:10:00.000',nan),('1970-01-01 00:11:40.000',nan)]",
             ]
         ],
+    )
+
+    # scalar() of an empty vector is NaN, so a `to_nearest` argument evaluating to an empty scalar
+    # makes every value NaN instead of making the result empty.
+    do_query_test(
+        "round(vector(5), scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
     )
 
 
