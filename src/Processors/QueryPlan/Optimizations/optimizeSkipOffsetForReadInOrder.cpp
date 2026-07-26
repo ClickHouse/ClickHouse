@@ -5,6 +5,9 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
+#include <limits>
+#include <optional>
+
 namespace DB::QueryPlanOptimizations
 {
 
@@ -29,6 +32,10 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             set_offset(offset - skipped_rows);
     };
 
+    /// The tightest LIMIT walked past on the way up, if any. Such a limit cuts the prefix the offset above it
+    /// sees, so trimming granules below it can promote rows the limit would have dropped.
+    std::optional<size_t> intermediate_limit;
+
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
         auto * step = iter->node->step.get();
@@ -44,16 +51,33 @@ void optimizeSkipOffsetForReadInOrder(const Stack & stack)
             if (limit_step->alwaysReadTillEnd())
                 return;
 
-            /// A preliminary LIMIT (no offset) only truncates the tail; walk past it to the real offset.
-            if (limit_step->getOffset() == 0)
-                continue;
+            const size_t offset = limit_step->getOffset();
 
-            apply(limit_step->getOffset(), [&](size_t new_offset) { limit_step->setOffset(new_offset); });
+            /// A preliminary LIMIT (no offset) only truncates the tail; walk past it to the real offset.
+            if (offset == 0)
+            {
+                const size_t limit = limit_step->getLimit();
+                intermediate_limit = intermediate_limit ? std::min(*intermediate_limit, limit) : limit;
+                continue;
+            }
+
+            /// Skipping is only invisible to the limits below if they still pass through the whole prefix
+            /// this offset consumes plus everything it keeps.
+            const size_t limit = limit_step->getLimit();
+            const bool overflows = limit > std::numeric_limits<size_t>::max() - offset;
+            if (intermediate_limit && (overflows || *intermediate_limit < offset + limit))
+                return;
+
+            apply(offset, [&](size_t new_offset) { limit_step->setOffset(new_offset); });
             return;
         }
 
         if (auto * offset_step = typeid_cast<OffsetStep *>(step))
         {
+            /// A pure OFFSET keeps every row after it, so no finite intermediate limit can cover it.
+            if (intermediate_limit)
+                return;
+
             apply(offset_step->getOffset(), [&](size_t new_offset) { offset_step->setOffset(new_offset); });
             return;
         }
