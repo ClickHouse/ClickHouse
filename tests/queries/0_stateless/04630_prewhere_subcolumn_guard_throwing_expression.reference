@@ -1,15 +1,15 @@
 json guard, default settings
-66666
+6666
 json guard, both coordinates guarded
-66666
+6666
 json guard, allow_reorder_prewhere_conditions = 0
-66666
+6666
 json guard, query_plan_merge_filters = 0
-66666
+6666
 json guard, 90% of rows pass the guard
-90000
+9000
 json guard, 90% of rows pass the guard, query_plan_merge_filters = 0
-90000
+9000
 map guard, WHERE
 32666
 map guard, explicit PREWHERE

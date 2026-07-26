@@ -18,11 +18,12 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          ratio_of_defaults_for_sparse_serialization = 1.0;
 
 -- 2/3 of the rows have coordinates, 1/3 are NULL and must be filtered by the guard.
+-- Kept at 10000 rows: the cast to JSON dominates this test's CPU cost.
 INSERT INTO t_prewhere_guard_json
 SELECT number, number,
        if(number % 3 = 0, '{}', '{"longitude":4.35,"latitude":52.06}')::JSON,
        repeat('x', 200)
-FROM numbers(100000);
+FROM numbers(10000);
 
 SELECT 'json guard, default settings';
 SELECT count(DISTINCT session_id)
@@ -93,7 +94,7 @@ INSERT INTO t_prewhere_guard_json_low_sel
 SELECT number, number,
        if(number % 10 = 0, '{}', '{"longitude":4.35,"latitude":52.06}')::JSON,
        repeat('x', 200)
-FROM numbers(100000);
+FROM numbers(10000);
 
 SELECT 'json guard, 90% of rows pass the guard';
 SELECT count(DISTINCT session_id)
