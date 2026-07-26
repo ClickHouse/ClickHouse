@@ -83,11 +83,12 @@ void fillRequiredColumns(
     }
 
     /// Reuse the predicate that the short-circuit machinery uses to decide which nodes must be
-    /// guarded (see ExpressionActions::findLazyExecutedNodes). IFunctionBase::canThrow delegates
-    /// to it as well. It is imprecise in both directions: it reports true for merely expensive
-    /// functions, and false for some functions that do throw while parsing row values (for example
-    /// addDays(String, ...) via FunctionDateOrDateTimeAddInterval). There is no sound can-throw
-    /// oracle in the tree yet, see the TODO on IFunctionBase::canThrow in IFunctionAdaptors.h.
+    /// guarded (findLazyExecutedNodes in ExpressionActions.cpp). IExecutableFunction::canThrow
+    /// delegates to it as well, through FunctionToExecutableFunctionAdaptor. It is imprecise in
+    /// both directions: it reports true for merely expensive functions, and false for some
+    /// functions that do throw while parsing row values (for example addDays(String, ...) via
+    /// FunctionDateOrDateTimeAddInterval). There is no sound can-throw oracle in the tree yet,
+    /// see the TODO on canThrow in IFunctionAdaptors.h.
     if (!node_info.may_throw && node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
         && node->function_base->isSuitableForShortCircuitArgumentsExecution(getArgumentTypesWithConstInfo(node->children)))
         node_info.may_throw = true;
