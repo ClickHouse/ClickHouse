@@ -751,30 +751,34 @@ void Connection::forceConnected(const ConnectionTimeouts & timeouts)
         return;
     }
 
-    /// A pooled connection must be idle: nothing must be pending to read on it. Anything readable
-    /// means the connection cannot serve the next request - the server has closed it while it was
-    /// idle in the pool (EOF), the socket is in an error state, or the connection is out of sync
-    /// with the protocol (leftovers of a previous request). This check is a single non-blocking
-    /// system call: unlike the ping it does not add a round trip, and unlike the ping it cannot
-    /// detect a server that went away without closing the connection - such a failure is detected
+    /// A pooled connection must be idle: a stale one cannot serve the next request. A server that
+    /// went away without closing the connection is not detected here - such a failure is detected
     /// when the connection is first used (see ConnectionEstablisher::run, which reconnects and
-    /// retries once). The `Ping` protocol command remains available as a convenience
-    /// (see Connection::ping / checkConnected).
-    bool is_stale = true;
-    try
-    {
-        is_stale = hasReadPendingData() || in->poll(0);
-    }
-    catch (const Poco::Exception & e)
-    {
-        LOG_TRACE(log_wrapper.get(), "Cannot check the pooled connection: {}", e.displayText());
-    }
-
-    if (is_stale)
+    /// retries once).
+    if (isStale())
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
         LOG_TRACE(log_wrapper.get(), "Connection was closed by the server or is out of sync, will reconnect.");
         connect(timeouts);
+    }
+}
+
+bool Connection::isStale()
+{
+    /// Anything readable on an otherwise idle connection means it cannot serve the next request:
+    /// the server has closed it (EOF), the socket is in an error state, or the connection is out of
+    /// sync with the protocol (leftovers of a previous request). This is a single non-blocking
+    /// system call: unlike a `Ping`-`Pong` exchange it does not add a round trip, and it cannot
+    /// mistake a slow answer for a closed connection. The `Ping` protocol command remains available
+    /// as a convenience (see Connection::ping).
+    try
+    {
+        return hasReadPendingData() || in->poll(0);
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_TRACE(log_wrapper.get(), "Cannot check the connection: {}", e.displayText());
+        return true;
     }
 }
 
