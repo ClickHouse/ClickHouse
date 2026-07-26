@@ -101,3 +101,39 @@ def test_exclude_from_backup():
     assert instance.query("SELECT count() FROM test.t4") == "2\n"
 
     instance.query("DROP TABLE IF EXISTS test.t4")
+
+
+def test_exclude_data_from_backup_materialized_view_inner_table():
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP TABLE IF EXISTS test.mv")
+    instance.query("DROP TABLE IF EXISTS test.mv_source")
+    instance.query(
+        "CREATE TABLE test.mv_source (id UInt64) ENGINE = MergeTree ORDER BY id"
+    )
+    instance.query(
+        "CREATE MATERIALIZED VIEW test.mv ENGINE = MergeTree ORDER BY id "
+        "AS SELECT id FROM test.mv_source"
+    )
+    instance.query("INSERT INTO test.mv_source VALUES (1), (2), (3)")
+    assert instance.query("SELECT count() FROM test.mv") == "3\n"
+
+    inner_uuid = instance.query(
+        "SELECT uuid FROM system.tables WHERE database='test' AND name='mv'"
+    ).strip()
+
+    instance.query(
+        f"ALTER TABLE test.`.inner_id.{inner_uuid}` "
+        "MODIFY SETTING exclude_data_from_backup = 1"
+    )
+
+    backup_name = new_backup_name()
+    instance.query(f"BACKUP TABLE test.mv TO {backup_name}")
+
+    instance.query("DROP TABLE test.mv")
+    instance.query(f"RESTORE TABLE test.mv FROM {backup_name}")
+
+    # Data should NOT be restored (inner table was excluded), but the view
+    # definition and its target table schema should still exist.
+    assert instance.query("SELECT count() FROM test.mv") == "0\n"
+
+    instance.query("DROP TABLE IF EXISTS test.mv")
