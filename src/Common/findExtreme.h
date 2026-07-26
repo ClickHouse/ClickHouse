@@ -17,6 +17,7 @@ template <typename T>
 concept underlying_has_find_extreme_implementation = (is_any_of<T, Decimal32, Decimal64, Decimal128, Decimal256, DateTime64>);
 
 /// `findExtreme*Index` scans twice, which only pays off when the first pass is vectorized.
+/// The exclusion goes through `NativeType` so that it also catches `Decimal128` and `Decimal256`.
 template <typename T>
 concept has_find_extreme_index_implementation
     = ((has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)

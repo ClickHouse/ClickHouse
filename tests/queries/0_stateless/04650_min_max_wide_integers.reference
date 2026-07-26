@@ -23,4 +23,8 @@ argmin-argmax	Decimal128	1
 argmin-argmax	Int128	1
 argmin-argmax	UInt256	1
 order-limit1	1	1
-array-minmax	1	1
+array-minmax	Int128	1
+array-minmax	Int256	1
+array-minmax	UInt128	1
+array-minmax	UInt256	1
+array-empty	[0,-7,0,-7]	[0,3,0,3]

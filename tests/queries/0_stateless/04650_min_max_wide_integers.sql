@@ -119,5 +119,23 @@ SELECT 'order-limit1',
        (SELECT toInt128(sipHash64(number)) AS x FROM numbers(100000) ORDER BY x ASC LIMIT 1) = (SELECT min(toInt128(sipHash64(number))) FROM numbers(100000)),
        (SELECT toInt128(sipHash64(number)) AS x FROM numbers(100000) ORDER BY x DESC LIMIT 1) = (SELECT max(toInt128(sipHash64(number))) FROM numbers(100000));
 
-SELECT 'array-minmax', arrayMin(a) = toInt128(-9), arrayMax(a) = toInt128(1000000)
-FROM (SELECT arrayMap(x -> toInt128(if(x = 3, -9, if(x = 7, 1000000, x))), range(20)) AS a);
+SELECT 'array-minmax', t, ok
+FROM
+(
+    SELECT 'Int128' AS t, countIf(arrayMin(a) != arraySort(a)[1] OR arrayMax(a) != arraySort(a)[-1]) = 0 AS ok
+    FROM (SELECT arrayMap(i -> toInt128(sipHash64(number, i)) * toInt128(-1 + (i % 2) * 2), range(1 + number % 17)) AS a FROM numbers(20000))
+    UNION ALL
+    SELECT 'UInt128', countIf(arrayMin(a) != arraySort(a)[1] OR arrayMax(a) != arraySort(a)[-1]) = 0
+    FROM (SELECT arrayMap(i -> toUInt128(sipHash64(number, i)), range(1 + number % 17)) AS a FROM numbers(20000))
+    UNION ALL
+    SELECT 'Int256', countIf(arrayMin(a) != arraySort(a)[1] OR arrayMax(a) != arraySort(a)[-1]) = 0
+    FROM (SELECT arrayMap(i -> toInt256(sipHash64(number, i)) * toInt256(-1 + (i % 2) * 2), range(1 + number % 17)) AS a FROM numbers(20000))
+    UNION ALL
+    SELECT 'UInt256', countIf(arrayMin(a) != arraySort(a)[1] OR arrayMax(a) != arraySort(a)[-1]) = 0
+    FROM (SELECT arrayMap(i -> toUInt256(sipHash64(number, i)), range(1 + number % 17)) AS a FROM numbers(20000))
+)
+ORDER BY t;
+
+-- Empty arrays mixed into a batch must still yield the default, not a neighbour's extreme.
+SELECT 'array-empty', groupArray(arrayMin(a)), groupArray(arrayMax(a))
+FROM (SELECT CAST(if(number % 2 = 0, [], [toInt128(-7), toInt128(3)]), 'Array(Int128)') AS a FROM numbers(4));

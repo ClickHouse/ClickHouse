@@ -36,7 +36,7 @@ template <class Comparator> using NativeComparator = typename NativeComparatorT<
 /// 128/256-bit values have no SIMD comparison, so the accumulator is updated behind a branch instead of a select,
 /// and is kept behind an opaque pointer (hence NO_INLINE) so that it is compared in place and written only on an
 /// update, rather than rotated through registers on every row.
-template <typename T, typename ComparatorClass, bool add_all_elements, bool add_if_cond_zero>
+template <typename T, bool is_min, bool add_all_elements, bool add_if_cond_zero>
 static NO_INLINE void findExtremeWideImpl(
     const T * __restrict ptr,
     const UInt8 * __restrict condition_map [[maybe_unused]],
@@ -44,7 +44,6 @@ static NO_INLINE void findExtremeWideImpl(
     size_t count,
     T * __restrict accumulator)
 {
-    constexpr bool is_min = std::same_as<ComparatorClass, MinComparator<T>>;
     for (; i < count; i++)
     {
         if (add_all_elements || !condition_map[i] == add_if_cond_zero)
@@ -136,7 +135,8 @@ static std::optional<T> findExtremeImpl(const T * __restrict ptr, const UInt8 * 
     }
     else if constexpr (is_big_int_v<T>)
     {
-        findExtremeWideImpl<T, ComparatorClass, add_all_elements, add_if_cond_zero>(ptr, condition_map, i, count, &ret);
+        constexpr bool is_min = std::same_as<ComparatorClass, MinComparator<T>>;
+        findExtremeWideImpl<T, is_min, add_all_elements, add_if_cond_zero>(ptr, condition_map, i, count, &ret);
         return ret;
     }
     else
