@@ -1724,6 +1724,10 @@ The hostname that [DatabaseReplicated](../../engines/database-engines/replicated
 
 If not set, ClickHouse falls back to `interserver_http_host`.
 
+:::note
+The advertised hostname is also used for the cluster that a `Replicated` database exposes automatically (see `system.clusters`), exactly as `interserver_http_host` is used when `replica_host` is not set. A replica is treated as local for that cluster only if its advertised host resolves to a local interface, so an address that does not resolve locally on the server itself (for example, a virtual IP of a load balancer) makes the server consider its own replica remote, and queries to that cluster go through the network instead of running locally. Prefer a hostname that resolves to the server both from other replicas and from the server itself.
+:::
+
 **Example**
 
 ```xml
