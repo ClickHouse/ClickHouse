@@ -507,6 +507,11 @@ bool MergeTextIndexesTask::executeStep()
             output_tokens->insertFrom(*inputs[current->order].tokens, current->getRow());
         }
 
+        /// Coarse posting lists store bucket ids that cannot be remapped through merged part offsets.
+        /// An index with coarsening must have been rebuilt, and merged result is coarsened once here.
+        if (inputs[current->order].token_infos[current->getRow()].isCoarse())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot merge a coarse posting list of a text index, the index must be rebuilt on merge");
+
         auto read_postings = readPostingLists(current->order);
 
         for (auto & posting : read_postings)
