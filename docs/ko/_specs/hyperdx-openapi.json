@@ -1,0 +1,1785 @@
+{
+  "components": {
+    "schemas": {
+      "Alert": {
+        "properties": {
+          "channel": {
+            "properties": {
+              "type": {
+                "example": "webhook",
+                "type": "string"
+              },
+              "webhookId": {
+                "example": "65f5e4a3b9e77c001a789012",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "example": "2023-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "dashboard": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "groupBy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "example": "65f5e4a3b9e77c001a123456",
+            "type": "string"
+          },
+          "interval": {
+            "example": "15m",
+            "type": "string"
+          },
+          "message": {
+            "example": "Error rate exceeds threshold",
+            "type": "string"
+          },
+          "name": {
+            "example": "High Error Rate",
+            "type": "string"
+          },
+          "savedSearch": {
+            "nullable": true,
+            "type": "string"
+          },
+          "silenced": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "tile",
+              "search"
+            ],
+            "example": "tile",
+            "type": "string"
+          },
+          "state": {
+            "example": "inactive",
+            "type": "string"
+          },
+          "team": {
+            "example": "65f5e4a3b9e77c001a345678",
+            "type": "string"
+          },
+          "threshold": {
+            "example": 100,
+            "type": "number"
+          },
+          "thresholdType": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "example": "above",
+            "type": "string"
+          },
+          "tileId": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2023-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AlertResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Alert"
+          }
+        },
+        "type": "object"
+      },
+      "AlertsListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ChartSeries": {
+        "properties": {
+          "aggFn": {
+            "description": "데이터에 사용할 집계 함수",
+            "enum": [
+              "avg",
+              "count",
+              "count_distinct",
+              "last_value",
+              "max",
+              "min",
+              "quantile",
+              "sum"
+            ],
+            "example": "count",
+            "type": "string"
+          },
+          "dataSource": {
+            "enum": [
+              "events",
+              "metrics"
+            ],
+            "example": "events",
+            "type": "string"
+          },
+          "field": {
+            "description": "집계할 필드",
+            "example": "duration",
+            "type": "string"
+          },
+          "groupBy": {
+            "description": "결과를 그룹화할 필드",
+            "example": [
+              "service",
+              "host"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "metricDataType": {
+            "description": "메트릭 데이터 유형",
+            "enum": [
+              "sum",
+              "gauge",
+              "histogram"
+            ],
+            "example": "gauge",
+            "type": "string"
+          },
+          "metricName": {
+            "description": "메트릭 이름(메트릭 data source용)",
+            "example": "http_requests_total",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "이 시리즈의 data source ID",
+            "example": "65f5e4a3b9e77c001a123456",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "time",
+              "table",
+              "number",
+              "histogram",
+              "search",
+              "markdown"
+            ],
+            "example": "time",
+            "type": "string"
+          },
+          "where": {
+            "description": "Lucene 쿼리 구문의 필터 조건",
+            "example": "level:error",
+            "type": "string"
+          },
+          "whereLanguage": {
+            "description": "WHERE 절에서 사용하는 쿼리 언어",
+            "enum": [
+              "lucene",
+              "sql"
+            ],
+            "example": "lucene",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceId",
+          "aggFn",
+          "where",
+          "groupBy"
+        ],
+        "type": "object"
+      },
+      "CreateAlertRequest": {
+        "properties": {
+          "channel": {
+            "properties": {
+              "type": {
+                "example": "webhook",
+                "type": "string"
+              },
+              "webhookId": {
+                "example": "65f5e4a3b9e77c001a789012",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dashboardId": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "interval": {
+            "example": "1h",
+            "type": "string"
+          },
+          "message": {
+            "example": "Test Alert Message",
+            "type": "string"
+          },
+          "name": {
+            "example": "Test Alert",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "tile",
+              "search"
+            ],
+            "example": "tile",
+            "type": "string"
+          },
+          "threshold": {
+            "example": 100,
+            "type": "number"
+          },
+          "thresholdType": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "example": "above",
+            "type": "string"
+          },
+          "tileId": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          }
+        },
+        "required": [
+          "threshold",
+          "interval",
+          "source",
+          "thresholdType",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "CreateDashboardRequest": {
+        "properties": {
+          "name": {
+            "example": "New Dashboard",
+            "type": "string"
+          },
+          "tags": {
+            "example": [
+              "development"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tiles": {
+            "items": {
+              "$ref": "#/components/schemas/Tile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "Dashboard": {
+        "properties": {
+          "id": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "name": {
+            "example": "Service Overview",
+            "type": "string"
+          },
+          "tags": {
+            "example": [
+              "production",
+              "monitoring"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tiles": {
+            "items": {
+              "$ref": "#/components/schemas/Tile"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Dashboard"
+          }
+        },
+        "type": "object"
+      },
+      "DashboardsListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Dashboard"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "EmptyResponse": {
+        "properties": {},
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SeriesDataPoint": {
+        "properties": {
+          "group": {
+            "description": "groupBy가 지정된 경우의 그룹화 값",
+            "example": [
+              "api",
+              "prod-host-1"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "series_0.data": {
+            "description": "첫 번째 시리즈의 값",
+            "example": 42,
+            "type": "number"
+          },
+          "series_1.data": {
+            "description": "두 번째 시리즈의 값",
+            "example": 18,
+            "type": "number"
+          },
+          "ts_bucket": {
+            "description": "데이터 포인트의 타임스탬프(버킷 시작 시간)",
+            "example": 1647014400000,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "SeriesQueryRequest": {
+        "properties": {
+          "endTime": {
+            "description": "밀리초 단위 종료 타임스탬프",
+            "example": 1647100800000,
+            "type": "number"
+          },
+          "granularity": {
+            "description": "집계용 시간 버킷 크기",
+            "enum": [
+              "30s",
+              "1m",
+              "5m",
+              "10m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "6h",
+              "12h",
+              "1d",
+              "2d",
+              "7d",
+              "30d",
+              "auto"
+            ],
+            "example": "1h",
+            "type": "string"
+          },
+          "series": {
+            "description": "시리즈 구성 배열",
+            "items": {
+              "$ref": "#/components/schemas/ChartSeries"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "seriesReturnType": {
+            "description": "반환 데이터의 포맷",
+            "enum": [
+              "ratio",
+              "column"
+            ],
+            "example": "column",
+            "type": "string"
+          },
+          "startTime": {
+            "description": "밀리초 단위 시작 타임스탬프",
+            "example": 1647014400000,
+            "type": "number"
+          }
+        },
+        "required": [
+          "series",
+          "startTime",
+          "endTime"
+        ],
+        "type": "object"
+      },
+      "SeriesResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesDataPoint"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Tile": {
+        "properties": {
+          "asRatio": {
+            "example": false,
+            "type": "boolean"
+          },
+          "h": {
+            "example": 3,
+            "type": "integer"
+          },
+          "id": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          },
+          "name": {
+            "example": "Error Rate",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/ChartSeries"
+            },
+            "type": "array"
+          },
+          "w": {
+            "example": 6,
+            "type": "integer"
+          },
+          "x": {
+            "example": 0,
+            "type": "integer"
+          },
+          "y": {
+            "example": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateAlertRequest": {
+        "properties": {
+          "channel": {
+            "properties": {
+              "type": {
+                "example": "webhook",
+                "type": "string"
+              },
+              "webhookId": {
+                "example": "65f5e4a3b9e77c001a789012",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dashboardId": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "interval": {
+            "example": "1h",
+            "type": "string"
+          },
+          "message": {
+            "example": "Updated message",
+            "type": "string"
+          },
+          "name": {
+            "example": "Updated Alert Name",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "tile",
+              "search"
+            ],
+            "example": "tile",
+            "type": "string"
+          },
+          "threshold": {
+            "example": 500,
+            "type": "number"
+          },
+          "thresholdType": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "example": "above",
+            "type": "string"
+          },
+          "tileId": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateDashboardRequest": {
+        "properties": {
+          "name": {
+            "example": "Updated Dashboard Name",
+            "type": "string"
+          },
+          "tags": {
+            "example": [
+              "production",
+              "updated"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tiles": {
+            "items": {
+              "$ref": "#/components/schemas/Tile"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "API Key",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "HyperDX 알림 및 대시보드 관리 API",
+    "title": "HyperDX External API",
+    "version": "2.0.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v2/alerts": {
+      "get": {
+        "description": "인증된 팀의 모든 알림 목록을 조회합니다",
+        "operationId": "listAlerts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "alertsList": {
+                    "summary": "알림 목록",
+                    "value": {
+                      "data": [
+                        {
+                          "channel": {
+                            "type": "webhook",
+                            "webhookId": "65f5e4a3b9e77c001a789012"
+                          },
+                          "createdAt": "2023-01-01T00:00:00.000Z",
+                          "dashboard": "65f5e4a3b9e77c001a567890",
+                          "id": "65f5e4a3b9e77c001a123456",
+                          "interval": "15m",
+                          "message": "Error rate exceeds threshold",
+                          "name": "High Error Rate",
+                          "source": "tile",
+                          "state": "inactive",
+                          "team": "65f5e4a3b9e77c001a345678",
+                          "threshold": 100,
+                          "thresholdType": "above",
+                          "tileId": "65f5e4a3b9e77c001a901234",
+                          "updatedAt": "2023-01-01T00:00:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsListResponse"
+                }
+              }
+            },
+            "description": "알림을 성공적으로 조회했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          }
+        },
+        "summary": "알림 목록 조회",
+        "tags": [
+          "Alerts"
+        ]
+      },
+      "post": {
+        "description": "새 알림을 생성합니다",
+        "operationId": "createAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "tileAlert": {
+                  "summary": "타일 기반 알림 생성",
+                  "value": {
+                    "channel": {
+                      "type": "webhook",
+                      "webhookId": "65f5e4a3b9e77c001a789012"
+                    },
+                    "dashboardId": "65f5e4a3b9e77c001a567890",
+                    "interval": "1h",
+                    "message": "Error rate has exceeded 100 in the last hour",
+                    "name": "Error Spike Alert",
+                    "source": "tile",
+                    "threshold": 100,
+                    "thresholdType": "above",
+                    "tileId": "65f5e4a3b9e77c001a901234"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            },
+            "description": "알림을 성공적으로 생성했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "서버 오류 또는 유효성 검사 실패"
+          }
+        },
+        "summary": "알림 생성",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v2/alerts/{id}": {
+      "delete": {
+        "description": "알림을 삭제합니다",
+        "operationId": "deleteAlert",
+        "parameters": [
+          {
+            "description": "알림 ID",
+            "example": "65f5e4a3b9e77c001a123456",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {},
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyResponse"
+                }
+              }
+            },
+            "description": "알림을 성공적으로 삭제했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "알림을 찾을 수 없습니다"
+          }
+        },
+        "summary": "알림 삭제",
+        "tags": [
+          "Alerts"
+        ]
+      },
+      "get": {
+        "description": "ID로 특정 알림을 조회합니다",
+        "operationId": "getAlert",
+        "parameters": [
+          {
+            "description": "알림 ID",
+            "example": "65f5e4a3b9e77c001a123456",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "alertResponse": {
+                    "summary": "단일 알림 응답",
+                    "value": {
+                      "data": {
+                        "channel": {
+                          "type": "webhook",
+                          "webhookId": "65f5e4a3b9e77c001a789012"
+                        },
+                        "createdAt": "2023-03-15T10:20:30.000Z",
+                        "dashboard": "65f5e4a3b9e77c001a567890",
+                        "id": "65f5e4a3b9e77c001a123456",
+                        "interval": "5m",
+                        "message": "CPU usage is above 80%",
+                        "name": "CPU Usage Alert",
+                        "source": "tile",
+                        "state": "active",
+                        "team": "65f5e4a3b9e77c001a345678",
+                        "threshold": 80,
+                        "thresholdType": "above",
+                        "tileId": "65f5e4a3b9e77c001a901234",
+                        "updatedAt": "2023-03-15T14:25:10.000Z"
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            },
+            "description": "알림을 성공적으로 조회했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "알림을 찾을 수 없습니다"
+          }
+        },
+        "summary": "알림 조회",
+        "tags": [
+          "Alerts"
+        ]
+      },
+      "put": {
+        "description": "기존 알림을 업데이트합니다",
+        "operationId": "updateAlert",
+        "parameters": [
+          {
+            "description": "알림 ID",
+            "example": "65f5e4a3b9e77c001a123456",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "updateAlert": {
+                  "summary": "알림 속성 업데이트",
+                  "value": {
+                    "channel": {
+                      "type": "webhook",
+                      "webhookId": "65f5e4a3b9e77c001a789012"
+                    },
+                    "dashboardId": "65f5e4a3b9e77c001a567890",
+                    "interval": "1h",
+                    "message": "Updated threshold and interval",
+                    "name": "Updated Alert Name",
+                    "source": "tile",
+                    "threshold": 500,
+                    "thresholdType": "above",
+                    "tileId": "65f5e4a3b9e77c001a901234"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            },
+            "description": "알림을 성공적으로 업데이트했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "알림을 찾을 수 없습니다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "서버 오류 또는 유효성 검사 실패"
+          }
+        },
+        "summary": "알림 업데이트",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v2/charts/series": {
+      "post": {
+        "description": "구성된 시리즈 매개변수를 기반으로 시계열 데이터를 조회합니다",
+        "operationId": "queryChartSeries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "basicTimeSeries": {
+                  "summary": "기본 시계열 쿼리",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "1h",
+                    "series": [
+                      {
+                        "aggFn": "count",
+                        "groupBy": [],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                },
+                "metricSeries": {
+                  "summary": "메트릭 데이터 시리즈",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "5m",
+                    "series": [
+                      {
+                        "aggFn": "avg",
+                        "groupBy": [],
+                        "metricDataType": "gauge",
+                        "metricName": "http_requests_total",
+                        "sourceId": "65f5e4a3b9e77c001a789012",
+                        "where": "service:api"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                },
+                "multiSeriesWithGroupBy": {
+                  "summary": "group by를 사용한 다중 시리즈",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "15m",
+                    "series": [
+                      {
+                        "aggFn": "count",
+                        "groupBy": [
+                          "service"
+                        ],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      },
+                      {
+                        "aggFn": "avg",
+                        "field": "duration",
+                        "groupBy": [
+                          "service"
+                        ],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                },
+                "multiSourceSeries": {
+                  "summary": "여러 소스의 시리즈",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "5m",
+                    "series": [
+                      {
+                        "aggFn": "count",
+                        "groupBy": [],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      },
+                      {
+                        "aggFn": "avg",
+                        "groupBy": [],
+                        "metricDataType": "gauge",
+                        "metricName": "http_requests_total",
+                        "sourceId": "65f5e4a3b9e77c001a789012",
+                        "where": "service:api"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/SeriesQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "groupedTimeSeriesData": {
+                    "summary": "그룹화된 시계열 데이터",
+                    "value": {
+                      "data": [
+                        {
+                          "group": [
+                            "api"
+                          ],
+                          "series_0.data": 15,
+                          "ts_bucket": 1647014400000
+                        },
+                        {
+                          "group": [
+                            "frontend"
+                          ],
+                          "series_0.data": 8,
+                          "ts_bucket": 1647014400000
+                        },
+                        {
+                          "group": [
+                            "api"
+                          ],
+                          "series_0.data": 22,
+                          "ts_bucket": 1647018000000
+                        }
+                      ]
+                    }
+                  },
+                  "timeSeriesData": {
+                    "summary": "시계열 데이터 포인트",
+                    "value": {
+                      "data": [
+                        {
+                          "series_0.data": 42,
+                          "ts_bucket": 1647014400000
+                        },
+                        {
+                          "series_0.data": 37,
+                          "ts_bucket": 1647018000000
+                        },
+                        {
+                          "series_0.data": 53,
+                          "ts_bucket": 1647021600000
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            },
+            "description": "시계열 데이터를 성공적으로 조회했습니다"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalidParams": {
+                    "value": {
+                      "error": "All series must have the same groupBy fields"
+                    }
+                  },
+                  "invalidTimestamp": {
+                    "value": {
+                      "error": "Timestamp must be in milliseconds"
+                    }
+                  }
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "잘못된 요청 매개변수"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Team context missing"
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Source not found"
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "소스를 찾을 수 없습니다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Internal server error"
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "서버 오류"
+          }
+        },
+        "summary": "차트 시리즈 데이터 쿼리",
+        "tags": [
+          "Charts"
+        ]
+      }
+    },
+    "/api/v2/dashboards": {
+      "get": {
+        "description": "인증된 팀의 모든 대시보드 목록을 조회합니다",
+        "operationId": "listDashboards",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardsListResponse"
+                }
+              }
+            },
+            "description": "대시보드를 성공적으로 조회했습니다"
+          },
+          "401": {
+            "description": "인증되지 않음"
+          }
+        },
+        "summary": "대시보드 목록 조회",
+        "tags": [
+          "Dashboards"
+        ]
+      },
+      "post": {
+        "description": "새 대시보드를 생성합니다",
+        "operationId": "createDashboard",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "complexDashboard": {
+                  "summary": "여러 차트 유형이 있는 대시보드",
+                  "value": {
+                    "name": "Service Health Overview",
+                    "tags": [
+                      "service-health",
+                      "production"
+                    ],
+                    "tiles": [
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "Request Count",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [],
+                            "type": "time",
+                            "where": "service:backend"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 0,
+                        "y": 0
+                      },
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "Error Distribution",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [
+                              "errorType"
+                            ],
+                            "sortOrder": "desc",
+                            "type": "table",
+                            "where": "level:error"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 6,
+                        "y": 0
+                      }
+                    ]
+                  }
+                },
+                "simpleTimeSeriesDashboard": {
+                  "summary": "시계열 차트가 있는 대시보드",
+                  "value": {
+                    "name": "API Monitoring Dashboard",
+                    "tags": [
+                      "api",
+                      "monitoring"
+                    ],
+                    "tiles": [
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "API Request Volume",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [],
+                            "type": "time",
+                            "where": "service:api"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 0,
+                        "y": 0
+                      }
+                    ]
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateDashboardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "createdDashboard": {
+                    "summary": "생성된 대시보드 응답",
+                    "value": {
+                      "data": {
+                        "id": "65f5e4a3b9e77c001a567890",
+                        "name": "API Monitoring Dashboard",
+                        "tags": [
+                          "api",
+                          "monitoring"
+                        ],
+                        "tiles": [
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901234",
+                            "name": "API Request Volume",
+                            "series": [
+                              {
+                                "aggFn": "count",
+                                "dataSource": "events",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "service:api"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 0,
+                            "y": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "대시보드를 성공적으로 생성했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard validation failed: name is required"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "서버 오류 또는 유효성 검사 실패"
+          }
+        },
+        "summary": "대시보드 만들기",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/api/v2/dashboards/{id}": {
+      "delete": {
+        "description": "대시보드를 삭제합니다",
+        "operationId": "deleteDashboard",
+        "parameters": [
+          {
+            "description": "대시보드 ID",
+            "example": "65f5e4a3b9e77c001a567890",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {},
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyResponse"
+                }
+              }
+            },
+            "description": "대시보드가 성공적으로 삭제되었습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard not found"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "대시보드를 찾을 수 없습니다"
+          }
+        },
+        "summary": "대시보드 삭제",
+        "tags": [
+          "Dashboards"
+        ]
+      },
+      "get": {
+        "description": "ID로 특정 대시보드를 조회합니다",
+        "operationId": "getDashboard",
+        "parameters": [
+          {
+            "description": "대시보드 ID",
+            "example": "65f5e4a3b9e77c001a567890",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "dashboard": {
+                    "summary": "단일 대시보드 응답",
+                    "value": {
+                      "data": {
+                        "id": "65f5e4a3b9e77c001a567890",
+                        "name": "Infrastructure Monitoring",
+                        "tags": [
+                          "infrastructure",
+                          "monitoring"
+                        ],
+                        "tiles": [
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901234",
+                            "name": "Server CPU",
+                            "series": [
+                              {
+                                "aggFn": "avg",
+                                "dataSource": "metrics",
+                                "field": "cpu.usage",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "host:server-01"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 0,
+                            "y": 0
+                          },
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901235",
+                            "name": "Memory Usage",
+                            "series": [
+                              {
+                                "aggFn": "avg",
+                                "dataSource": "metrics",
+                                "field": "memory.usage",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "host:server-01"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 6,
+                            "y": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "대시보드를 성공적으로 조회했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard not found"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "대시보드를 찾을 수 없습니다"
+          }
+        },
+        "summary": "대시보드 조회",
+        "tags": [
+          "Dashboards"
+        ]
+      },
+      "put": {
+        "description": "기존 대시보드를 업데이트합니다",
+        "operationId": "updateDashboard",
+        "parameters": [
+          {
+            "description": "대시보드 ID",
+            "example": "65f5e4a3b9e77c001a567890",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "updateDashboard": {
+                  "summary": "대시보드 속성 및 타일 업데이트",
+                  "value": {
+                    "name": "Updated Dashboard Name",
+                    "tags": [
+                      "production",
+                      "updated"
+                    ],
+                    "tiles": [
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "id": "65f5e4a3b9e77c001a901234",
+                        "name": "Updated Time Series Chart",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [],
+                            "type": "time",
+                            "where": "level:error"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 0,
+                        "y": 0
+                      },
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "New Number Chart",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "type": "number",
+                            "where": "level:info"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 6,
+                        "y": 0
+                      }
+                    ]
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDashboardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "updatedDashboard": {
+                    "summary": "업데이트된 대시보드 응답",
+                    "value": {
+                      "data": {
+                        "id": "65f5e4a3b9e77c001a567890",
+                        "name": "Updated Dashboard Name",
+                        "tags": [
+                          "production",
+                          "updated"
+                        ],
+                        "tiles": [
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901234",
+                            "name": "Updated Time Series Chart",
+                            "series": [
+                              {
+                                "aggFn": "count",
+                                "dataSource": "events",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "level:error"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 0,
+                            "y": 0
+                          },
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901236",
+                            "name": "New Number Chart",
+                            "series": [
+                              {
+                                "aggFn": "count",
+                                "dataSource": "events",
+                                "type": "number",
+                                "where": "level:info"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 6,
+                            "y": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "대시보드를 성공적으로 업데이트했습니다"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "인증되지 않음"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard not found"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "대시보드를 찾을 수 없습니다"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Invalid dashboard configuration"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "서버 오류 또는 유효성 검사 실패"
+          }
+        },
+        "summary": "대시보드 업데이트",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "운영 API 서버",
+      "url": "https://api.hyperdx.io"
+    },
+    {
+      "description": "현재 서버",
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "description": "대시보드 및 해당 시각화를 관리하는 엔드포인트",
+      "name": "Dashboards"
+    },
+    {
+      "description": "모니터링 알림을 관리하는 엔드포인트",
+      "name": "Alerts"
+    }
+  ]
+}
