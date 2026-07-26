@@ -1,0 +1,290 @@
+---
+description: 'Documentação sobre o Optimize'
+sidebarTitle: 'OPTIMIZE'
+slug: /sql-reference/statements/optimize
+title: 'Instrução OPTIMIZE'
+doc_type: 'reference'
+---
+
+Esta consulta tenta iniciar uma mesclagem não agendada de partes de dados em tabelas. Observe que, em geral, não recomendamos o uso de `OPTIMIZE TABLE ... FINAL` (consulte esta [documentação](/pt-BR/concepts/best-practices/avoid-optimize-final)), pois esse caso de uso se destina à administração, não às operações diárias.
+
+<Note>
+  `OPTIMIZE` não pode corrigir o erro `Too many parts`.
+</Note>
+
+**Sintaxe**
+
+```sql
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
+```
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+A consulta `OPTIMIZE` é compatível com a família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo [visões materializadas](/pt-BR/reference/statements/create/view#materialized-view)) e com os motores [Buffer](/pt-BR/reference/engines/table-engines/special/buffer). Outros motores de tabela não são compatíveis.
+
+Quando `OPTIMIZE` é usado com a família [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) de motores de tabela, o ClickHouse cria uma tarefa de mesclagem e aguarda sua execução em todas as réplicas (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) estiver definida como `2`) ou na réplica atual (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) estiver definida como `1`).
+
+* Se `OPTIMIZE` não executar uma mesclagem por qualquer motivo, o cliente não será notificado. Para ativar notificações, use a configuração [optimize&#95;throw&#95;if&#95;noop](/pt-BR/reference/settings/session-settings#optimize_throw_if_noop).
+* Se você especificar uma `PARTITION`, apenas a partição especificada será otimizada. [Como definir a expressão de partição](/pt-BR/reference/statements/alter/partition#how-to-set-partition-expression).
+* Se você especificar `FINAL` ou `FORCE`, a otimização será executada mesmo quando todos os dados já estiverem em uma única parte. Você pode controlar esse comportamento com [optimize&#95;skip&#95;merged&#95;partitions](/pt-BR/reference/settings/session-settings#optimize_skip_merged_partitions). Além disso, a mesclagem é forçada mesmo se houver mesclagens simultâneas em execução.
+* Se você especificar `DEDUPLICATE`, linhas completamente idênticas (a menos que a cláusula BY seja especificada) serão desduplicadas (todas as colunas são comparadas); isso só faz sentido para o motor MergeTree.
+
+Você pode especificar por quanto tempo (em segundos) esperar que réplicas inativas executem consultas `OPTIMIZE` por meio da configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+
+<Note>
+  Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado pela configuração `replication_wait_for_inactive_replica_timeout`, então será gerada uma exceção `UNFINISHED`.
+</Note>
+
+<div id="dry-run">
+  ## DRY RUN
+</div>
+
+A cláusula `DRY RUN` simula uma mesclagem das partes especificadas sem efetivar o resultado. A parte mesclada é gravada em um local temporário, validada e depois descartada. As partes originais e os dados da tabela permanecem inalterados.
+
+Isso é útil para:
+
+* Testar a correção da mesclagem entre versões do ClickHouse.
+* Reproduzir de forma determinística bugs relacionados à mesclagem.
+* Fazer benchmarking do desempenho da mesclagem.
+
+`DRY RUN` tem suporte apenas para tabelas da família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). A palavra-chave `PARTS`, com uma lista de nomes de partes, é obrigatória. Todas as partes especificadas devem existir, estar ativas e pertencer à mesma partição.
+
+`DRY RUN` é incompatível com `FINAL` e `PARTITION`. Pode ser combinado com `DEDUPLICATE` (com especificação opcional de colunas) e `CLEANUP` (para tabelas `ReplacingMergeTree`).
+
+**Sintaxe**
+
+```sql
+OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
+```
+
+Por padrão, a parte resultante da mesclagem é validada de forma semelhante à consulta [`CHECK TABLE`](/pt-BR/reference/statements/check-table). Esse comportamento é controlado pela configuração [optimize&#95;dry&#95;run&#95;check&#95;part](/pt-BR/reference/settings/session-settings#optimize_dry_run_check_part) (habilitada por padrão). Desabilitá-la faz com que a validação seja ignorada, o que pode ser útil para benchmarking da própria mesclagem.
+
+**Exemplo**
+
+```sql
+CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
+INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
+
+-- Simular a mesclagem usando duas partes
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
+
+-- Simular a mesclagem com desduplicação
+OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
+
+-- As partes e os dados permanecem inalterados após DRY RUN
+SELECT name, rows FROM system.parts
+WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
+ORDER BY name;
+```
+
+```response
+┌─name────────┬─rows─┐
+│ all_1_1_0   │    2 │
+│ all_2_2_0   │    2 │
+└─────────────┴──────┘
+```
+
+<div id="by-expression">
+  ## expressão BY
+</div>
+
+Se você quiser realizar a desduplicação em um conjunto personalizado de colunas, em vez de em todas elas, poderá especificar explicitamente uma lista de colunas ou usar qualquer combinação das expressões [`*`](/pt-BR/reference/statements/select/index#asterisk), [`COLUMNS`](/pt-BR/reference/statements/select/index#select-clause) ou [`EXCEPT`](/pt-BR/reference/statements/select/except_modifier). A lista de colunas escrita explicitamente ou expandida implicitamente deve incluir todas as colunas especificadas na expressão de ordenação das linhas (tanto a chave primária quanto a chave de ordenação) e na expressão de particionamento (chave de particionamento).
+
+<Note>
+  Observe que `*` se comporta exatamente como em `SELECT`: colunas [MATERIALIZED](/pt-BR/reference/statements/create/view#materialized-view) e [ALIAS](/pt-BR/reference/statements/create/table#alias) não são consideradas na expansão.
+
+  Além disso, é um erro especificar uma lista vazia de colunas, escrever uma expressão que resulte em uma lista vazia de colunas ou fazer a desduplicação por uma coluna `ALIAS`.
+</Note>
+
+**Sintaxe**
+
+```sql
+OPTIMIZE TABLE table DEDUPLICATE; -- all columns
+OPTIMIZE TABLE table DEDUPLICATE BY *; -- excludes MATERIALIZED and ALIAS columns
+OPTIMIZE TABLE table DEDUPLICATE BY colX,colY,colZ;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY * EXCEPT (colX, colY);
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex');
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT colX;
+OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (colX, colY);
+```
+
+**Exemplos**
+
+Considere a tabela:
+
+```sql title="Query"
+CREATE TABLE example (
+    primary_key Int32,
+    secondary_key Int32,
+    value UInt32,
+    partition_key UInt32,
+    materialized_value UInt32 MATERIALIZED 12345,
+    aliased_value UInt32 ALIAS 2,
+    PRIMARY KEY primary_key
+) ENGINE=MergeTree
+PARTITION BY partition_key
+ORDER BY (primary_key, secondary_key);
+```
+
+```sql title="Query"
+INSERT INTO example (primary_key, secondary_key, value, partition_key)
+VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```sql title="Response"
+
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+Todos os exemplos a seguir são executados nesse estado com 5 linhas.
+
+<div id="deduplicate">
+  #### `DEDUPLICATE`
+</div>
+
+Quando as colunas para desduplicação não são especificadas, todas são consideradas. A linha é removida apenas se todos os valores de todas as colunas forem iguais aos valores correspondentes da linha anterior:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-">
+  #### `DEDUPLICATE BY *`
+</div>
+
+Quando as colunas são especificadas de forma implícita, a tabela é deduplicada com base em todas as colunas que não são `ALIAS` nem `MATERIALIZED`. Considerando a tabela acima, essas colunas são `primary_key`, `secondary_key`, `value` e `partition_key`:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+│           1 │             1 │     3 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by--except">
+  #### `DEDUPLICATE BY * EXCEPT`
+</div>
+
+Remova duplicatas com base em todas as colunas que não são `ALIAS` nem `MATERIALIZED`, excluindo explicitamente `value`: as colunas `primary_key`, `secondary_key` e `partition_key`.
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-list-of-columns">
+  #### `DEDUPLICATE BY <list of columns>`
+</div>
+
+Remova duplicatas explicitamente com base nas colunas `primary_key`, `secondary_key` e `partition_key`:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```
+
+<div id="deduplicate-by-columnsregex">
+  #### `DEDUPLICATE BY COLUMNS(<regex>)`
+</div>
+
+Remova duplicatas com base em todas as colunas que correspondam a uma expressão regular: as colunas `primary_key`, `secondary_key` e `partition_key`:
+
+```sql title="Query"
+OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
+```
+
+```sql title="Query"
+SELECT * FROM example;
+```
+
+```response title="Response"
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           0 │             0 │     0 │             0 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             2 │
+└─────────────┴───────────────┴───────┴───────────────┘
+┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
+│           1 │             1 │     2 │             3 │
+└─────────────┴───────────────┴───────┴───────────────┘
+```

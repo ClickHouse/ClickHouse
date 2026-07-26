@@ -137,7 +137,7 @@ public:
     };
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -147,6 +147,7 @@ public:
         bool attach,
         bool coordinated,
         bool empty,
+        bool start_paused,
         bool is_restore_from_backup);
 
     /// Called at most once.
@@ -343,6 +344,9 @@ private:
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
     const bool refresh_append;
+    /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
+    /// resumed after the rename so it cannot refresh the target before the replacement is committed.
+    const bool start_paused;
 
     RefreshSet::Handle set_handle;
 

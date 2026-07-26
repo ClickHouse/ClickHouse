@@ -1,0 +1,460 @@
+---
+description: 'AI 함수 문서'
+sidebarTitle: 'AI'
+slug: /sql-reference/functions/ai-functions
+title: 'AI 함수'
+doc_type: 'reference'
+---
+
+AI 함수는 ClickHouse에 내장된 함수로, AI를 호출하거나 임베딩을 생성해 데이터를 활용하고, 정보를 추출하고, 데이터를 분류하는 등의 작업에 사용할 수 있습니다...
+
+<Note>
+  AI 함수는 실험적 기능입니다. 이를 활성화하려면 [`allow_experimental_ai_functions`](/ko/reference/settings/session-settings#allow_experimental_ai_functions)을 설정하십시오.
+</Note>
+
+<Note>
+  AI 함수는 예측하기 어려운 출력을 반환할 수 있습니다. 결과는 프롬프트의 품질과 사용된 모델에 크게 좌우됩니다.
+</Note>
+
+모든 함수는 다음을 제공하는 공통 인프라를 기반으로 합니다:
+
+* **Quota 적용**: 토큰에 대한 쿼리별 제한([`ai_function_max_input_tokens_per_query`](/ko/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ko/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) 및 API 호출 제한([`ai_function_max_api_calls_per_query`](/ko/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
+* **백오프를 사용하는 재시도**: 일시적인 실패는 지수형 백오프([`ai_function_retry_initial_delay_ms`](/ko/reference/settings/session-settings#ai_function_retry_initial_delay_ms))를 적용하여 재시도됩니다([`ai_function_max_retries`](/ko/reference/settings/session-settings#ai_function_max_retries)).
+
+<div id="configuration">
+  ## 구성
+</div>
+
+AI 함수는 프로바이더 자격 증명과 구성을 저장하는 **명명된 컬렉션**을 참조합니다. 서로 다른 함수 또는 함수 호출마다 서로 다른 명명된 컬렉션을 생성해 사용할 수 있습니다. 예를 들어 텍스트 함수(`aiGenerate`, `aiClassify`, `aiExtract`, `aiaiTranslate`)에 사용할 명명된 컬렉션과 `aiEmbed` 함수에 사용할 명명된 컬렉션을 별도로 정의할 수 있습니다. 각 함수는 서로 다른 엔드포인트가 필요하며, 일반적으로 사용하는 모델도 다릅니다.
+
+프로바이더 자격 증명을 포함하는 명명된 컬렉션을 생성하는 예시 구문은 다음과 같습니다. 하나는 채팅 엔드포인트용이고, 다른 하나는 임베딩 엔드포인트용입니다:
+
+```sql
+CREATE NAMED COLLECTION ai_text_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+
+-- `aiEmbed` does not read `model` from the named collection; pass it as a positional argument instead.
+-- Defining `model` in an `aiEmbed` collection is an error, not silently ignored.
+CREATE NAMED COLLECTION ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    api_key = 'sk-...';
+```
+
+<div id="named-collection-parameters">
+  ### 명명된 컬렉션 매개변수
+</div>
+
+| 매개변수          | 유형     | 기본값    | 설명                                                                                                                        |
+| ------------- | ------ | ------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `provider`    | String | —      | 모델 프로바이더입니다. 지원값: `'openai'`, `'anthropic'`. 아래 참고를 확인하십시오.                                                                 |
+| `endpoint`    | String | —      | API endpoint URL입니다.                                                                                                      |
+| `model`       | String | —      | 모델 이름입니다(예: `'gpt-4o-mini'`). 텍스트 Functions에서 사용됩니다. `aiEmbed`는 위치 인수로 `model`이 필요하며, 명명된 컬렉션에 `model`이 지정된 경우 오류가 발생합니다. |
+| `api_key`     | String | —      | 프로바이더 authentication 키입니다. 선택 사항: 생략하면 auth header가 전송되지 않으므로 authentication이 필요하지 않은 OpenAI 호환 server를 대상으로 지정할 수 있습니다.    |
+| `max_tokens`  | UInt64 | `1024` | API 호출당 최대 출력 token 수입니다.                                                                                                 |
+| `api_version` | String | —      | API 버전 문자열입니다. Anthropic에서 사용됩니다(`'2023-06-01'`).                                                                         |
+
+<Note>
+  `provider = 'openai'`로 설정하고 `endpoint`가 해당 서비스를 가리키도록 지정하면 모든 OpenAI 호환 API(예: vLLM, Ollama, LiteLLM)를 사용할 수 있습니다.
+</Note>
+
+<div id="selecting-credentials">
+  ### 자격 증명 선택
+</div>
+
+함수는 다음 순서대로 사용할 명명된 컬렉션을 결정합니다.
+
+1. 있는 경우 매개변수 맵의 `credentials` 키
+2. 그렇지 않으면 해당 기본 자격 증명 설정:
+   * 텍스트 함수(`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`)의 경우 [`ai_function_text_default_credentials`](/ko/reference/settings/session-settings#ai_function_text_default_credentials)
+   * `aiEmbed`의 경우 [`ai_function_embedding_default_credentials`](/ko/reference/settings/session-settings#ai_function_embedding_default_credentials)
+
+둘 다 설정되지 않으면 호출은 실패합니다. chat-completions 엔드포인트는 embeddings용 엔드포인트와 다르므로, 텍스트 함수와 임베딩 함수는 서로 다른 기본 설정을 사용합니다.
+
+```sql
+SET ai_function_text_default_credentials = 'ai_text_credentials';
+
+-- Uses ai_text_credentials from the setting:
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
+
+-- Overrides the default for this call:
+SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+<div id="parameter-map">
+  ### 매개변수 맵
+</div>
+
+각 함수는 선택적으로 끝에 `Map(String, String)` 형식의 매개변수 맵을 받을 수 있습니다. 모든 값은 문자열이므로 숫자도 `'0.2'`처럼 따옴표로 감싸야 합니다. 알 수 없는 키는 허용되지 않습니다. 키가 있으면 해당 명명된 컬렉션 값을 재정의하고, 키가 없으면 명명된 컬렉션(`model`/`max_tokens`의 경우) 또는 내장 기본값이 사용됩니다. 예외는 `aiEmbed`로, `model`을 필수 위치 인수로 받으며(`aiEmbed(text, model[, params])`), 이를 매개변수 맵이나 명명된 컬렉션에 대신 설정하면 오류가 발생합니다.
+
+다음 매개변수는 모든 AI 함수에 공통입니다:
+
+| Key           | Description                                                                       |
+| ------------- | --------------------------------------------------------------------------------- |
+| `credentials` | 사용할 명명된 컬렉션입니다(위 참조).                                                             |
+| `model`       | 컬렉션의 `model`을 재정의합니다(텍스트 함수에만 해당하며, `aiEmbed`는 `model`을 맵 키가 아니라 필수 위치 인수로 받습니다). |
+
+개별 함수는 함수별 추가 매개변수(`max_tokens`, `temperature`, `system_prompt`, `instructions`, `dimensions` 등)를 지원합니다. 허용되는 매개변수와 해당 기본값은 아래 각 함수의 참고 문서를 참조하십시오.
+
+```sql
+SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
+```
+
+<div id="query-level-settings">
+  ### 쿼리 수준 설정
+</div>
+
+모든 AI 관련 설정은 [설정](/ko/reference/settings/session-settings) 문서에서 `ai_function_` 접두사 아래에 나열되어 있습니다.
+
+<div id="restricting-endpoint-hosts">
+  ### `endpoint` 호스트 제한
+</div>
+
+AI 명명된 컬렉션의 `endpoint` URL은 서버가 자체 아이덴티티로 연결하는 아웃바운드 대상입니다. 이때 요청 헤더에는 지정된 경우 명명된 컬렉션의 `api_key`가 포함될 수 있습니다. 기본적으로 ClickHouse는 모든 호스트를 허용합니다. 함수를 특정 프로바이더 집합으로 제한하려면 서버 config에서 [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings#remote_url_allow_hosts)를 구성하십시오. 예:
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+이 설정은 서버 전체에 적용되며 HTTP를 사용하는 모든 기능에 영향을 미친다는 점에 유의하십시오.
+
+<div id="transport-security">
+  ### 전송 보안(HTTP vs HTTPS)
+</div>
+
+전송 방식은 전적으로 `endpoint` URL의 스킴에 따라 결정됩니다. 요청 payload에는 애플리케이션 수준의 암호화가 없으므로, 전송 중 데이터 보호는 전적으로 스킴에 달려 있습니다.
+
+* `https://` — 연결에 TLS를 사용합니다. 요청 본문(입력 텍스트, 프롬프트)과 요청 headers의 `api_key`는 전송 중 암호화되며, 프로바이더의 certificate도 검증됩니다. 원격 프로바이더를 사용할 때는 항상 이 방식을 사용하십시오.
+* `http://` — 연결이 **암호화되지 않습니다**. 요청 본문과 `api_key`가 평문으로 전송됩니다. 신뢰할 수 있는 프로바이더가 프라이빗 네트워크에 있는 경우(예: 로컬 `vLLM` 또는 `Ollama` instance)에만 사용하십시오.
+
+AI 함수는 HTTPS를 강제하지 않습니다. `http://` 엔드포인트도 허용되며, 데이터는 암호화되지 않은 상태로 전송됩니다. 현재 평문 AI 엔드포인트를 거부하는 서버 측 설정은 없습니다. [`remote_url_allow_hosts`](/ko/reference/settings/server-settings/settings#remote_url_allow_hosts)는 대상 host만 제한하고 URL 스킴은 검사하지 않으므로, 허용된 host를 가리키는 `http://` 엔드포인트도 그대로 허용됩니다. 암호화된 전송을 보장하려면 `https://` 엔드포인트를 사용하는 이름이 지정된 컬렉션을 구성하십시오.
+
+어느 경우든 프로바이더는 TLS 종료 이후 입력 데이터를 평문으로 받습니다. TLS는 server와 프로바이더 사이의 네트워크 경로에서만 데이터를 보호합니다.
+
+<div id="supported-providers">
+  ## 지원되는 프로바이더
+</div>
+
+| 프로바이더     | `provider` 값  | 채팅 함수 | 참고                              |
+| --------- | ------------- | ----- | ------------------------------- |
+| OpenAI    | `'openai'`    | 예     | 기본 프로바이더입니다.                    |
+| Anthropic | `'anthropic'` | 예     | `/v1/messages` endpoint를 사용합니다. |
+
+<div id="observability">
+  ## 관측성
+</div>
+
+AI 함수 활동은 ClickHouse [ProfileEvents](/ko/reference/system-tables/query_log)를 통해 추적됩니다.
+
+| ProfileEvent      | Description                                                              |
+| ----------------- | ------------------------------------------------------------------------ |
+| `AIAPICalls`      | AI 프로바이더로 전송된 HTTP 요청 수입니다.                                              |
+| `AIInputTokens`   | 사용된 총 입력 토큰 수입니다.                                                        |
+| `AIOutputTokens`  | 사용된 총 출력 토큰 수입니다.                                                        |
+| `AIRowsProcessed` | 결과를 받은 행 수입니다.                                                           |
+| `AIRowsSkipped`   | 건너뛴 행 수입니다(QUOTA를 초과했거나 `ai_function_throw_on_error = 0`일 때 오류가 발생한 경우). |
+
+다음과 같이 이 이벤트를 조회합니다.
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  아래 태그의 내부 내용은 문서 프레임워크 빌드 시
+  system.functions에서 생성된 문서로 대체됩니다. 태그를 수정하거나 제거하지 마십시오.
+  참고: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+도입 버전: v26.4.0
+
+LLM 프로바이더를 사용해 주어진 텍스트를 제공된 범주 중 하나로 분류합니다.
+
+이 함수는 텍스트를 고정된 분류 프롬프트 및 JSON 스키마 응답 포맷과 함께 전송하여
+모델이 제공된 레이블 중 정확히 하나만 반환하도록 제한합니다. 응답이 JSON
+객체 `{"category": "..."}` 형태로 반환되면 레이블을 추출해 레이블 문자열을 반환합니다.
+
+자격 증명(프로바이더, 모델, endpoint와 선택적으로 API Key를 지정하는 명명된 컬렉션)은
+선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 이 키가 없으면
+`ai_function_text_default_credentials` 설정에서 가져옵니다.
+
+**구문**
+
+```sql
+aiClassify(text, categories[, params])
+```
+
+**별칭**: `AIClassify`
+
+**인수**
+
+* `text` — 분류할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `categories` — 후보 카테고리 레이블의 상수 목록입니다. [`Array(String)`](/ko/reference/data-types/array)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`)입니다. 공통 매개변수 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참고). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+제공된 카테고리 레이블 중 하나를 반환합니다. 요청이 실패하고 `ai_function_throw_on_error`가 비활성화된 경우에는 컬럼 타입의 기본값(빈 문자열)을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**감정 분류**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+```
+
+```response title=Response
+positive
+```
+
+**명시적 자격 증명을 사용해 컬럼 분류**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+도입 버전: v26.6.0
+
+구성된 AI 프로바이더를 사용하여 지정된 텍스트의 임베딩 벡터를 생성합니다.
+
+이 함수는 텍스트를 구성된 임베딩 endpoint로 전송하고, 결과 벡터를 `Array(Float32)`로 반환합니다.
+단일 block의 행 내에서는 호출별 overhead를 줄이기 위해 입력이 HTTP request당 최대
+[`ai_function_embedding_max_batch_size`](/ko/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+개 항목의 batch로 그룹화됩니다.
+
+자격 증명(프로바이더, endpoint, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
+매개변수 맵의 `credentials` 키에서 가져오며, 맵에서 이를 생략한 경우
+`ai_function_embedding_default_credentials` 설정에서 가져옵니다. 임베딩 endpoint는
+chat endpoint와 다르므로 `aiEmbed`는 텍스트 함수와 별도의 기본 자격 증명 설정을 사용한다는 점에 유의하십시오.
+
+`model`은 필수 위치 인수(상수 `String`)입니다. 텍스트 함수와 달리
+`aiEmbed`는 명명된 컬렉션이나 매개변수 맵에서 `model`을 읽지 않습니다. `model`을 정의하는 명명된 컬렉션은
+조용히 무시되는 대신 거부됩니다.
+
+선택적 `dimensions` 매개변수는 모델이 이를 지원하는 경우(예: OpenAI&#39;s `text-embedding-3-*`)
+지정한 크기의 벡터를 요청하며, 그렇지 않으면 모델의 네이티브 크기가 반환됩니다.
+
+**구문**
+
+```sql
+aiEmbed(text, model[, params])
+```
+
+**인수**
+
+* `text` — 임베딩할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `model` — 임베딩 모델 이름입니다. [`const String`](/ko/reference/data-types/string)
+* `params` — 선택적 상수 `Map(String, String)` 파라미터입니다. 함수별 키는 `dimensions`입니다(출력 벡터의 대상 차원 수이며, `0`이거나 생략하면 모델의 네이티브 크기를 의미합니다). 공통 매개변수 `credentials`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+임베딩 벡터 또는 빈 배열을 반환합니다. 입력이 NULL이거나 비어 있는 경우, 요청이 실패했지만 `ai_function_throw_on_error`가 비활성화된 경우, 또는 할당량을 초과했지만 `ai_function_throw_on_quota_exceeded`가 비활성화된 경우에는 빈 배열이 반환됩니다. [`Array(Float32)`](/ko/reference/data-types/array)
+
+**예시**
+
+**단일 문자열 임베딩(`ai_function_embedding_default_credentials` 설정이 지정된 경우 `credentials`는 생략할 수 있습니다)**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
+```
+
+**차원을 명시적으로 지정하는 경우**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
+```
+
+**텍스트 컬럼 임베드하기**
+
+```sql title=Query
+SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+도입 버전: v26.4.0
+
+LLM 프로바이더를 사용해 비구조화 텍스트에서 구조화된 정보를 추출합니다.
+
+세 번째 인수는 자유 형식의 자연어 지시문(예: `'the main complaint'`)이거나
+`'{"field_a": "description of field a", "field_b": "description of field b"}'` 형태의 JSON 인코딩 스키마일 수 있습니다.
+
+지시문 모드에서 이 함수는 추출된 값을 일반 문자열로 반환하고, 아무것도 찾지 못하면 빈 문자열을 반환합니다.
+스키마 모드에서 이 함수는 키가 요청한 스키마와 일치하는 JSON 객체 문자열을 반환하며, 누락된 필드는 `null`로 반환됩니다.
+
+자격 증명(프로바이더, 모델, endpoint 및 선택적으로 API Key를 지정하는 명명된 컬렉션)은
+선택적 매개변수 맵의 `credentials` key에서 가져오며, map에 이 항목이 없으면
+`ai_function_text_default_credentials` setting에서 가져옵니다.
+
+**구문**
+
+```sql
+aiExtract(text, instruction_or_schema[, params])
+```
+
+**별칭**: `AIExtract`
+
+**인수**
+
+* `text` — 정보를 추출할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `instruction_or_schema` — 자유 형식의 추출 지침 또는 추출할 필드를 설명하는 상수 JSON 객체입니다. [`const String`](/ko/reference/data-types/string)
+* `params` — 선택 사항인 상수 `Map(String, String)` 파라미터입니다. 함수별 키는 `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.0`)와 `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`)입니다. 공통 매개변수 `credentials` 및 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+단일 추출 값(지침 모드) 또는 JSON 객체 문자열(스키마 모드)입니다. 요청이 실패하고 `ai_function_throw_on_error`가 비활성화되어 있으면 컬럼 타입의 기본값(빈 문자열)을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**자유 형식 추출 지침**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
+```
+
+```response title=Response
+late and damaged package
+```
+
+**스키마 추출**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+도입된 버전: v26.4.0
+
+LLM 프로바이더를 사용해 프롬프트로부터 자유 형식의 텍스트 콘텐츠를 생성합니다.
+
+이 함수는 프롬프트를 설정된 AI 프로바이더로 전송하고, 생성된 텍스트를 반환합니다.
+
+자격 증명(프로바이더, 모델, endpoint, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
+선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 해당 항목이 없으면
+`ai_function_text_default_credentials` 설정에서 가져옵니다.
+
+선택적 매개변수 맵에서는 `system_prompt`(어조, 포맷, 역할 등 모델의 동작을 안내하는
+지시문), `temperature`, `max_tokens`, `model`도 설정할 수 있습니다. `system_prompt`가
+설정되지 않으면 기본값은 다음과 같습니다: `You are a helpful assistant. Provide a clear and concise response.`
+
+**구문**
+
+```sql
+aiGenerate(prompt[, params])
+```
+
+**별칭**: `AIGenerate`
+
+**인수**
+
+* `prompt` — 모델에 보낼 사용자 프롬프트 또는 질문입니다. [`String`](/ko/reference/data-types/string)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수 맵입니다. 함수별 키는 다음과 같습니다: `temperature` (무작위성을 제어하는 샘플링 온도, 기본값 `0.7`), `max_tokens` (호출당 최대 출력 토큰 수, 기본값 `1024`), `system_prompt` (모델 동작을 안내하는 상수 시스템 수준 지침, 기본값은 일반적인 어시스턴트 프롬프트). 공통 매개변수인 `credentials`와 `model`도 적용됩니다([AI 함수](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+생성된 텍스트 응답 또는 요청이 실패하고 `ai_function_throw_on_error`가 비활성화된 경우 컬럼 타입의 기본값(빈 문자열)입니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**간단한 질문**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
+```
+
+```response title=Response
+4
+```
+
+**명시적 자격 증명과 시스템 프롬프트 사용**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
+```
+
+**컬럼 값 요약**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+도입 버전: v26.4.0
+
+주어진 텍스트를 LLM 프로바이더를 사용해 지정된 대상 언어로 번역합니다.
+
+추가 스타일 또는 방언 관련 지침은 매개변수 맵의 `instructions` 키를 통해 전달할 수 있습니다(예: `'기술 용어는 번역하지 않음'`).
+
+자격 증명(프로바이더, model, endpoint, 그리고 선택적으로 API Key를 지정하는 명명된 컬렉션)은
+선택적 매개변수 맵의 `credentials` 키에서 가져오며, 맵에 해당 항목이 없으면
+`ai_function_text_default_credentials` 설정에서 가져옵니다.
+
+**구문**
+
+```sql
+aiTranslate(text, target_language[, params])
+```
+
+**별칭**: `AITranslate`
+
+**인수**
+
+* `text` — 번역할 텍스트입니다. [`String`](/ko/reference/data-types/string)
+* `target_language` — 대상 언어 이름 또는 BCP-47 코드입니다(예: `'French'`, `'es-MX'`). [`String`](/ko/reference/data-types/string)
+* `params` — 선택적 상수 `Map(String, String)` 매개변수입니다. 함수별 키는 다음과 같습니다. `temperature`(무작위성을 제어하는 샘플링 온도, 기본값 `0.3`), `max_tokens`(호출당 최대 출력 토큰 수, 기본값 `1024`), `instructions`(번역기에 대한 추가 스타일 또는 방언 지침). 공통 매개변수인 `credentials`와 `model`도 적용됩니다([AI Functions](/ko/reference/functions/regular-functions/ai-functions) 참조). [`Map(String, String)`](/ko/reference/data-types/map)
+
+**반환 값**
+
+번역된 텍스트를 반환합니다. 요청이 실패하고 `ai_function_throw_on_error`가 비활성화된 경우에는 컬럼 타입의 기본값(빈 문자열)을 반환합니다. [`String`](/ko/reference/data-types/string)
+
+**예시**
+
+**프랑스어로 번역**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French')
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**스타일 지침에 따라 일본어로 번역**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
+```
+
+{/*AUTOGENERATED_END*/}

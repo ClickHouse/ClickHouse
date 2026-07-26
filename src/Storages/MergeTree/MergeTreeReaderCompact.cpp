@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
+#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
@@ -57,7 +58,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings.read_settings,
         settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
-            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
+            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size(),
+        settings.use_streaming_marks_compression))
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
@@ -88,7 +90,15 @@ void MergeTreeReaderCompact::fillColumnPositions()
             auto subcolumn_name = column_to_read.getSubcolumnName();
             auto storage_column_from_part = part_columns.getColumn(GetColumnsOptions::All, name_in_storage);
 
-            if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
+            /// The `Quantize` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
+            /// the part's plain columns list cannot represent - they round-trip to the bare type name and are lost, so
+            /// the subcolumn would be treated as missing and recomputed/defaulted after a reload. Decide presence from
+            /// the requested column's storage type in that case. Restricted to that specific serialization so it does
+            /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
+            const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
+            const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
+            const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
+            if (!type_for_subcolumn->hasSubcolumn(subcolumn_name))
                 position.reset();
         }
 

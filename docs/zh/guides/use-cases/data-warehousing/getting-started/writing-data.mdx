@@ -1,0 +1,257 @@
+---
+title: '将数据写入开放表格式'
+sidebarTitle: '写入数据湖'
+slug: /use-cases/data-lake/getting-started/writing-data
+toc_max_heading_level: 3
+description: '将数据从 ClickHouse 回写到对象存储中的 Iceberg 表，用于长期存储和下游使用。'
+keywords: ['data lake', 'lakehouse', 'write', 'iceberg', 'reverse ETL', 'INSERT INTO', 'IcebergS3']
+doc_type: 'guide'
+---
+
+在前面的指南中，您已经就地查询了开放表格式，并将数据加载到 MergeTree 中进行快速分析。在许多架构中，数据也需要向相反方向流动——从 ClickHouse 回写到开放表格式。这通常由以下两种常见场景驱动：
+
+* **卸载到长期存储** - 数据进入 ClickHouse 后，作为实时分析层为仪表盘和运营报表提供支持。一旦数据超出实时分析窗口，就可以将其写入对象存储中的 Iceberg，以互操作格式实现持久、低成本的长期保留。
+* **反向 ETL** - 在 ClickHouse 内执行的转换、聚合和富集会生成派生数据集，供下游工具和其他团队使用。将这些结果写入 Iceberg 表后，它们就能在更广泛的数据生态系统中使用。
+
+在这两种情况下，`INSERT INTO SELECT` 都可以让您将数据从 ClickHouse 表移动到存储在对象存储中的 Iceberg 表。
+
+<Note>
+  目前，写入开放表格式仅支持 **Iceberg 表**。对 Delta Lake 表的部分支持仍在开发中。表不能由 catalog 管理。
+</Note>
+
+<div id="prepare-source">
+  ## 准备源数据集
+</div>
+
+本指南将使用 [UK Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 数据集——这是一份记录英格兰和威尔士所有住宅房产交易的公开数据集。
+
+<div id="create-source-table">
+  ### 创建并向 MergeTree 表写入数据
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+直接从公开的 CSV 数据源将数据导入该表：
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+```response
+30906560 rows in set. Elapsed: 59.852 sec. Processed 30.91 million rows, 5.41 GB (516.39 thousand rows/s., 90.40 MB/s.)
+峰值内存占用: 485.15 MiB.
+```
+
+<div id="write-iceberg">
+  ## 向 Iceberg 表写入数据
+</div>
+
+<div id="create-iceberg-table">
+  ### 创建 Iceberg 表
+</div>
+
+要将数据写入 Iceberg，请使用 [`IcebergS3` 表引擎](/zh/reference/engines/table-engines/integrations/iceberg)创建表。
+
+请注意，与 MergeTree 源表相比，schema 必须适当简化。ClickHouse 支持的类型系统比 Iceberg 及其底层 Parquet 文件更丰富，因此 `Enum`、`LowCardinality` 和 `UInt8` 等类型在 Iceberg 中不受支持，必须映射为兼容类型。
+
+```sql
+CREATE TABLE uk.uk_iceberg
+(
+    price UInt32,
+    date Date,
+    postcode1 String,
+    postcode2 String,
+    type UInt32,
+    is_new UInt32,
+    duration UInt32,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_price_paid/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-subset">
+  ### 插入部分数据
+</div>
+
+使用 `INSERT INTO SELECT` 将数据从 MergeTree 表写入 Iceberg 表。在此示例中，我们只写入伦敦的事务：
+
+```sql
+SET allow_experimental_insert_into_iceberg = 1;
+
+INSERT INTO uk.uk_iceberg SELECT *
+FROM uk.uk_price_paid
+WHERE town = 'LONDON'
+```
+
+```response
+2346741 rows in set. Elapsed: 1.419 sec. Processed 30.91 million rows, 153.43 MB (21.78 million rows/s., 108.15 MB/s.)
+峰值内存占用: 371.60 MiB.
+```
+
+<div id="query-iceberg">
+  ### 查询 Iceberg 表
+</div>
+
+现在，数据已以 Iceberg 格式存储在对象存储中，可通过 ClickHouse 或任何其他支持读取 Iceberg 的工具进行查询：
+
+```sql
+SELECT
+    locality,
+    count()
+FROM uk.uk_iceberg
+WHERE locality != ''
+GROUP BY locality
+ORDER BY count() DESC
+LIMIT 10
+```
+
+```response
+┌─locality────┬─count()─┐
+│ LONDON      │  896796 │
+│ WALTHAMSTOW │    8610 │
+│ LEYTON      │    3525 │
+│ CHINGFORD   │    3133 │
+│ HORNSEY     │    2794 │
+│ STREATHAM   │    2760 │
+│ WOOD GREEN  │    2443 │
+│ ACTON       │    2155 │
+│ LEYTONSTONE │    2102 │
+│ EAST HAM    │    2085 │
+└─────────────┴─────────┘
+
+10 rows in set. Elapsed: 0.329 sec. Processed 457.86 thousand rows, 2.62 MB (1.39 million rows/s., 7.95 MB/s.)
+峰值内存占用：12.19 MiB.
+```
+
+<div id="write-aggregates">
+  ## 写入聚合结果
+</div>
+
+Iceberg 表不仅可用于存储原始行，还可以保存聚合和转换的输出，即在 ClickHouse 内部执行的 ETL 流程所得结果。这对于将预计算的汇总发布到湖仓以供下游消费非常有用。
+
+<div id="create-aggregate-table">
+  ### 创建用于存储聚合结果的 Iceberg 表
+</div>
+
+```sql
+CREATE TABLE uk.uk_avg_town
+(
+    price Float64,
+    town String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_avg_town/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-aggregates">
+  ### 插入聚合数据
+</div>
+
+按城镇计算平均房价，并将结果直接写入 Iceberg：
+
+```sql
+INSERT INTO uk.uk_avg_town SELECT
+    avg(price) AS price,
+    town
+FROM uk.uk_price_paid
+GROUP BY town
+```
+
+```response
+1173 rows in set. Elapsed: 0.480 sec. Processed 30.91 million rows, 185.44 MB (64.34 million rows/s., 386.05 MB/s.)
+峰值内存占用: 4.18 MiB.
+```
+
+<div id="query-aggregates">
+  ### 查询聚合表
+</div>
+
+现在，其他工具和其他 ClickHouse 实例都可以读取这份预先聚合好的数据：
+
+```sql
+SELECT
+    town,
+    price
+FROM uk.uk_avg_town
+ORDER BY price DESC
+LIMIT 10
+```
+
+```response
+┌─town───────────────┬──────────────price─┐
+│ GATWICK            │ 28232811.583333332 │
+│ THORNHILL          │             985000 │
+│ VIRGINIA WATER     │  984633.2938574939 │
+│ CHALFONT ST GILES  │  863347.7280187573 │
+│ COBHAM             │    775251.47313278 │
+│ PURFLEET-ON-THAMES │           772651.8 │
+│ BEACONSFIELD       │  746052.9327405858 │
+│ ESHER              │  686708.4969745865 │
+│ KESTON             │  654541.1774842045 │
+│ GERRARDS CROSS     │  639109.4084023251 │
+└────────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.210 sec.
+```

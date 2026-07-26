@@ -1,0 +1,95 @@
+---
+title: Как использовать команду EXCHANGE, чтобы поменять таблицы местами
+description: "Как использовать команду EXCHANGE, чтобы поменять таблицы местами"
+date: 2024-11-21
+tags: ['Управление данными']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## Вопрос
+</div>
+
+Как использовать команду [`EXCHANGE`](/ru/reference/statements/exchange), чтобы поменять местами названия таблиц?
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Команда `EXCHANGE` полезна, когда нужно заменить текущую таблицу другой — временной таблицей, в которой, возможно, были изменены первичный ключ или другие настройки.
+В отличие от команды `RENAME`, это происходит атомарно.
+Она также полезна, если у вас есть materialized views, срабатывающие на исходной таблице, и вы хотите избежать пересоздания представления.
+
+Ниже приведён простой пример того, как это работает и как это проверить:
+
+* Создайте тестовую базу данных
+
+```sql
+create database db1;
+```
+
+* Создайте таблицу-пример
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Вставьте строку с примером данных
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* Создайте временную таблицу-пример, которая будет участвовать в операции EXCHANGE
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Вставьте тестовую строку во временную таблицу
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* Выполните команду `EXCHANGE`, чтобы поменять местами таблицы
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* Убедитесь, что таблицы теперь поменялись местами, и покажите, что строки тоже поменялись местами
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 строка в наборе. Elapsed: 0.002 sec. 
+```

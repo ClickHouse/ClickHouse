@@ -1,0 +1,57 @@
+---
+title: ClickHouseでフィルタ付き集約を使う
+description: "`-If` および `-Distinct` の aggregate combinator を使って ClickHouse のフィルタ付き集約を活用し、クエリ構文を簡潔にして分析機能を強化する方法を学びます。"
+date: 2023-03-01
+tags: ['関数']
+keywords: ['フィルタ付き集約']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-filtered-aggregates">
+  ## フィルタ付き集約を使う
+</div>
+
+ClickHouse では、*フィルタ付き集約*をシンプルかつ直感的に記述できます。
+
+たとえば、フィルタ付き集約を記述する標準的な SQL の書き方 (ClickHouse でも問題なく使用できます) と、任意の集約関数に追加できる `-If` [集約関数コンビネータ](/ja/reference/functions/aggregate-functions/combinators)を使う短縮構文を比較してみましょう。
+
+```sql
+--標準SQL
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--集約コンビネータを使用したClickHouse
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+同様に、`-Distinct` という集約コンビネータもあります：
+
+```sql
+--標準SQL
+SELECT avg(DISTINCT number)
+
+--集約コンビネータを使用したClickHouse
+SELECT avgDistinct(number)
+```
+
+なぜフィルタ付き集約が重要なのでしょうか。それは、ウェブアナリティクスサービスで **&quot;セグメント比較&quot;** 機能を実装できるからです。
+たとえば:
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+詳しくは、ドキュメントの[集約関数コンビネータ](/ja/reference/functions/aggregate-functions/combinators)ページを参照してください。

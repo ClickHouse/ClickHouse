@@ -1,0 +1,136 @@
+---
+title: "PostgreSQL のデータを Parquet、CSV、または JSON にエクスポートするには？"
+date: 2023-03-22
+description: "`clickhouse-local` を使用して、PostgreSQL のデータを Parquet、CSV、または JSON フォーマットでエクスポートする方法を、さまざまな例を交えて学びます。"
+tags: ['データエクスポート', 'データ形式']
+keywords: ['PostgreSQL', 'Parquet', 'CSV', 'JSON']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-export-postgresql-data-to-parquet-csv-or-json">
+  ## PostgreSQL のデータを Parquet、CSV、または JSON にエクスポートする方法
+</div>
+
+これは `clickhouse-local` を使えば簡単です。
+
+* [`postgresql` テーブル関数](/ja/reference/functions/table-functions/postgresql) を使用してデータを読み取ります
+* `INTO OUTFILE _filename_ FORMAT` 句を使用し、必要な出力フォーマットを指定します
+
+出力フォーマットには、ClickHouse でサポートされている任意の [出力フォーマット](/ja/reference/formats/index) を使用できます。いくつか例を見てみましょう...
+
+これらの例では、ClickHouse バイナリの一部である `clickhouse-local` を使用します。以下の手順でダウンロードしてください。
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<div id="export-postgresql-to-parquet">
+  ## PostgreSQL を Parquet にエクスポートする
+</div>
+
+`postgresql` テーブル関数を使用すると、リモートの PostgreSQL サーバーに保存されているデータに対して `SELECT` (および `INSERT`) クエリを実行できます。たとえば、PostgreSQL のテーブルの内容全体を表示するには、次のようにします。
+
+```bash
+SELECT *
+FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+);
+```
+
+このクエリの出力は、`INTO OUTFILE` を使ってファイルに書き出せます。作成するファイルのフォーマットは `FORMAT` で指定します。では、PostgreSQL テーブルの内容全体を取得し、Parquet ファイルに書き出してみましょう。
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.parquet'"
+```
+
+<Note>
+  出力ファイル名の拡張子が `.parquet` のため、ClickHouse は Parquet フォーマットを指定していると判断します。したがって、`FORMAT Parquet` 句は省略しています。
+</Note>
+
+<div id="export-postgresql-to-csv">
+  ## PostgreSQL を CSV にエクスポートする
+</div>
+
+Parquet の場合と同様ですが、出力先にはより適切なファイル名を指定します：
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.csv'"
+```
+
+以上です！ClickHouse は出力ファイル名の `.csv` 拡張子を見て、データをカンマ区切り形式で出力します。それ以外は、上記とまったく同じコマンドです。
+
+<div id="export-postgresql-to-json">
+  ## PostgreSQL を JSON にエクスポートする
+</div>
+
+PostgreSQL から JSON に変換するには、ファイル名を変更するだけで、ClickHouse がフォーマットを自動的に判別します。
+
+```bash
+./clickhouse local -q "SELECT * FROM
+   postgresql(
+    'localhost:5432',
+    'postgres_database',
+    'postgres_table',
+    'user',
+    'password'
+)
+INTO OUTFILE 'my_output_file.ndjson'"
+```
+
+<Note>
+  ここで終わりではありません。`clickhouse-local` を使えば、PostgreSQL からデータを取得して、[さまざまな出力フォーマット](/ja/reference/formats/index) に送信できます。
+
+  ClickHouse がファイル名の拡張子から出力フォーマットを判別できない場合や、使用するフォーマットを明示的に指定したい場合は、`FOMRAT` 句を追加します。
+
+  ```bash
+  ./clickhouse local -q "SELECT * FROM
+     postgresql(
+      'localhost:5432',
+      'postgres_database',
+      'postgres_table',
+      'user',
+      'password'
+  )
+  INTO OUTFILE 'my_output_file.ndjson'
+  FORMAT JSONEachRow"
+  ```
+</Note>
+
+<div id="stream-postgresql-to-another-process">
+  ## PostgreSQL を別のプロセスにストリーム出力する
+</div>
+
+`INTO OUTFILE` を使う代わりに、テーブル関数の結果を別のプロセスにストリーム出力できます。以下は構文を示す簡単な例です。Linux の `wc -l` コマンドを使って行数を数えます。
+
+```bash
+./clickhouse local -q "SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet'
+FORMAT JSONEachRow
+)" | wc -l
+```
+
+ただし、行はシェルスクリプトやPythonスクリプト、あるいは任意の別プロセスに簡単にストリーミングできます。
