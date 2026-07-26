@@ -214,7 +214,7 @@ struct RowsRange
 struct TokenPostingsInfo
 {
     UInt64 header = 0;
-    UInt32 cardinality = 0;
+    UInt32 postings_cardinality = 0;
 
     /// The majority of tokens have only one block,
     /// so use inlined vector to avoid heap allocations.
@@ -225,7 +225,7 @@ struct TokenPostingsInfo
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
     /// Number of Roaringish UInt64 entries in position data.
-    UInt32 position_cardinality = 0;
+    UInt32 positions_cardinality = 0;
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;

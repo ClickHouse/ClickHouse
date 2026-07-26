@@ -54,7 +54,7 @@ double computeDensity(const TokenPostingsInfo & info)
         return 0.0;
 
     double span = static_cast<double>(info.ranges.back().end) - static_cast<double>(info.ranges.front().begin) + 1.0;
-    return span > 0.0 ? static_cast<double>(info.cardinality) / span : 0.0;
+    return span > 0.0 ? static_cast<double>(info.postings_cardinality) / span : 0.0;
 }
 
 /// Narrow an on-disk UInt64 field to UInt32, throwing CORRUPTED_DATA if the value exceeds
@@ -105,7 +105,7 @@ PostingListCursor::PostingListCursor(FlatPostingsPtr shared_values_)
 
 UInt32 PostingListCursor::cardinality() const
 {
-    return is_embedded ? static_cast<UInt32>(decoded_count) : info->cardinality;
+    return is_embedded ? static_cast<UInt32>(decoded_count) : info->postings_cardinality;
 }
 
 PostingListCursor::~PostingListCursor()

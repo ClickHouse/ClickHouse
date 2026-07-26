@@ -272,13 +272,13 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, const Token
     /// Small posting lists are stored as raw VarUInt-encoded values.
     if (info.header & RawPostings)
     {
-        if (info.cardinality > raw_postings_buffer.size())
-            raw_postings_buffer.resize(info.cardinality);
+        if (info.postings_cardinality > raw_postings_buffer.size())
+            raw_postings_buffer.resize(info.postings_cardinality);
 
-        for (size_t i = 0; i < info.cardinality; ++i)
+        for (size_t i = 0; i < info.postings_cardinality; ++i)
             readVarUInt(raw_postings_buffer[i], istr);
 
-        postings->addMany(info.cardinality, raw_postings_buffer.data());
+        postings->addMany(info.postings_cardinality, raw_postings_buffer.data());
         return postings;
     }
 
@@ -956,7 +956,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
     using enum PostingsSerialization::Flags;
     TokenPostingsInfo info;
     info.header = 0;
-    info.cardinality = static_cast<UInt32>(postings.size());
+    info.postings_cardinality = static_cast<UInt32>(postings.size());
     const IPostingListCodec * posting_list_codec = postings_serialization.getPostingListCodec();
 
     if (posting_list_codec && posting_list_codec->getType() != IPostingListCodec::Type::None)
@@ -967,7 +967,7 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
 
     /// Apply posting list compression only to non-embedded,
     /// non-raw posting lists (these are the big ones).
-    if (info.cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
+    if (info.postings_cardinality <= MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= EmbeddedPostings;
@@ -975,14 +975,14 @@ TokenPostingsInfo TextIndexSerialization::serializePostings(
         info.header &= ~HasBlockIndex;
         return info;
     }
-    else if (info.cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
+    else if (info.postings_cardinality <= MAX_CARDINALITY_FOR_RAW_POSTINGS)
     {
         info.header |= RawPostings;
         info.header |= SingleBlock;
         info.header &= ~IsCompressed;
         info.header &= ~HasBlockIndex;
     }
-    else if (info.cardinality <= params.posting_list_block_size)
+    else if (info.postings_cardinality <= params.posting_list_block_size)
     {
         info.header |= SingleBlock;
     }
@@ -1035,13 +1035,13 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     chassert(token_info.offsets.size() == token_info.ranges.size());
 
     writeVarUInt(token_info.header, ostr);
-    writeVarUInt(token_info.cardinality, ostr);
+    writeVarUInt(token_info.postings_cardinality, ostr);
 
-    /// Position metadata is right after (header, cardinality), before posting data.
+    /// Position metadata is right after (header, postings_cardinality), before posting data.
     if (token_info.header & HasPositions)
     {
         writeVarUInt(token_info.position_offset, ostr);
-        writeVarUInt(token_info.position_cardinality, ostr);
+        writeVarUInt(token_info.positions_cardinality, ostr);
     }
 
     /// Embedded postings will be serialized later into the dictionary block.
@@ -1139,16 +1139,16 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
     TokenPostingsInfo info;
 
     readVarUInt(info.header, istr);
-    readVarUInt(info.cardinality, istr);
+    readVarUInt(info.postings_cardinality, istr);
 
-    /// Position metadata is always right after (header, cardinality),
+    /// Position metadata is always right after (header, postings_cardinality),
     /// before any posting data, to keep the layout consistent for all token types.
     if (info.header & HasPositions)
     {
         readVarUInt(info.position_offset, istr);
-        UInt64 position_cardinality = 0;
-        readVarUInt(position_cardinality, istr);
-        info.position_cardinality = static_cast<UInt32>(position_cardinality);
+        UInt64 positions_cardinality = 0;
+        readVarUInt(positions_cardinality, istr);
+        info.positions_cardinality = static_cast<UInt32>(positions_cardinality);
     }
 
     bool skip_postings = !postings_serialization;
@@ -1158,7 +1158,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         if (skip_postings)
         {
             chassert(info.header & RawPostings);
-            for (size_t i = 0; i < info.cardinality; ++i)
+            for (size_t i = 0; i < info.postings_cardinality; ++i)
                 ignoreVarUInt(istr);
         }
         else
@@ -1208,12 +1208,12 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     using enum PostingsSerialization::Flags;
 
     UInt64 header = 0;
-    UInt64 cardinality = 0;
+    UInt64 postings_cardinality = 0;
 
     readVarUInt(header, istr);
-    readVarUInt(cardinality, istr);
+    readVarUInt(postings_cardinality, istr);
 
-    /// Position metadata is right after (header, cardinality), before posting data.
+    /// Position metadata is right after (header, postings_cardinality), before posting data.
     if (header & HasPositions)
     {
         ignoreVarUInt(istr);
@@ -1223,7 +1223,7 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
     if (header & EmbeddedPostings)
     {
         chassert(header & RawPostings);
-        for (size_t i = 0; i < cardinality; ++i)
+        for (size_t i = 0; i < postings_cardinality; ++i)
             ignoreVarUInt(istr);
     }
     else
@@ -1370,7 +1370,7 @@ DictionarySparseIndex serializeTokensAndPostings(
 
                 token_info.header |= PostingsSerialization::Flags::HasPositions;
                 token_info.position_offset = positions_stream->plain_hashing.count();
-                token_info.position_cardinality = static_cast<UInt32>(position_entries.size());
+                token_info.positions_cardinality = static_cast<UInt32>(position_entries.size());
 
                 TextIndexPositionCodec::encode(position_entries, positions_stream->plain_hashing);
             }

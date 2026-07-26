@@ -396,7 +396,7 @@ void MergeTextIndexesTask::flushPostingList()
 
         token_info.header |= PostingsSerialization::Flags::HasPositions;
         token_info.position_offset = positions_stream->plain_hashing.count();
-        token_info.position_cardinality = static_cast<UInt32>(output_positions.size());
+        token_info.positions_cardinality = static_cast<UInt32>(output_positions.size());
 
         TextIndexPositionCodec::encode(output_positions, positions_stream->plain_hashing);
     }

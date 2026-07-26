@@ -41,7 +41,7 @@ namespace
 TokenPostingsInfo makeEmbeddedInfo(const std::vector<uint32_t> & doc_ids)
 {
     TokenPostingsInfo info;
-    info.cardinality = static_cast<UInt32>(doc_ids.size());
+    info.postings_cardinality = static_cast<UInt32>(doc_ids.size());
 
     auto bitmap = std::make_shared<roaring::Roaring>();
     for (auto id : doc_ids)
@@ -72,7 +72,7 @@ TokenPostingsInfo makeMaterializedSingleBlockInfo(const std::vector<uint32_t> & 
 /// to the shared-array cursor.
 PostingListCursorPtr makeEmbeddedCursor(const TokenPostingsInfo & info)
 {
-    auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.cardinality);
+    auto flat = std::make_shared<PaddedPODArray<UInt32>>(info.postings_cardinality);
     if (info.embedded_postings)
         info.embedded_postings->toUint32Array(flat->data());
     return std::make_shared<PostingListCursor>(FlatPostingsPtr(std::move(flat)));
@@ -216,7 +216,7 @@ MultiBlockTestData makeMultiBlockData(const std::vector<std::vector<uint32_t>> &
     for (const auto & block_docs : blocks)
         result.all_docs.insert(result.all_docs.end(), block_docs.begin(), block_docs.end());
 
-    info.cardinality = static_cast<UInt32>(result.all_docs.size());
+    info.postings_cardinality = static_cast<UInt32>(result.all_docs.size());
     info.header = PostingsSerialization::Flags::IsCompressed
                 | PostingsSerialization::Flags::HasBlockIndex;
 
