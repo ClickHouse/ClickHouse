@@ -89,14 +89,27 @@ TEST(LanceWrapper, OpenMissingDatasetThrowsClickHouseException)
 
     try
     {
-        std::ignore = Lance::Dataset::open(options);
-        FAIL() << "Expected Lance::Dataset::open to throw";
+        std::ignore = Lance::DatasetHandle::openEphemeral(options);
+        FAIL() << "Expected Lance::DatasetHandle::openEphemeral to throw";
     }
     catch (const Exception & e)
     {
         EXPECT_EQ(e.code(), ErrorCodes::FILE_DOESNT_EXIST);
         EXPECT_NE(String(e.message()).find("path/to/missing/lance/dataset"), String::npos);
     }
+}
+
+TEST(LanceWrapper, ProcessRuntimeStatsAndReuseCounters)
+{
+    const auto before = Lance::runtimeStats();
+    Lance::ensureRuntime(0);
+    const auto after_ensure = Lance::runtimeStats();
+    EXPECT_GE(after_ensure.runtime_initialized, 1u);
+    EXPECT_GE(after_ensure.runtime_initialized, before.runtime_initialized);
+
+    /// Second ensure must not create another runtime.
+    Lance::ensureRuntime(0);
+    EXPECT_EQ(Lance::runtimeStats().runtime_initialized, after_ensure.runtime_initialized);
 }
 
 TEST(LanceWrapper, MapsFfiErrorKinds)

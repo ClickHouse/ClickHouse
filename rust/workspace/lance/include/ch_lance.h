@@ -83,6 +83,25 @@ typedef struct ch_lance_scan_options
     uint64_t max_block_size;
 } ch_lance_scan_options;
 
+typedef struct ch_lance_runtime_config
+{
+    /// Number of Tokio worker threads. 0 means an automatic bounded default.
+    uint32_t worker_threads;
+} ch_lance_runtime_config;
+
+typedef struct ch_lance_runtime_stats
+{
+    uint64_t open_dataset_calls;
+    uint64_t plan_scan_calls;
+    uint64_t next_batch_calls;
+    uint64_t runtime_initialized;
+} ch_lance_runtime_stats;
+
+/// Ensure the process-wide Lance Tokio runtime exists. First successful call
+/// wins for worker_threads; later calls are no-ops if the runtime is already up.
+bool ch_lance_runtime_ensure(const ch_lance_runtime_config * config, ch_lance_error * error);
+void ch_lance_get_runtime_stats(ch_lance_runtime_stats * out);
+
 ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * options, ch_lance_error * error);
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 

@@ -13,12 +13,86 @@ use object_store::DynObjectStore;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::ffi::{CStr, CString};
+use std::future::Future;
 use std::os::raw::c_char;
 use std::pin::Pin;
 use std::ptr;
-use std::sync::Arc;
-use tokio::runtime::Runtime;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
+use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
 use url::Url;
+
+/// Process-wide multi-thread Tokio runtime shared by all Lance FFI calls.
+static LANCE_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+/// Worker threads requested before first init; 0 means automatic bounded default.
+static LANCE_RUNTIME_WORKER_THREADS: AtomicU32 = AtomicU32::new(0);
+static LANCE_RUNTIME_INITIALIZED: AtomicU64 = AtomicU64::new(0);
+static LANCE_OPEN_DATASET_CALLS: AtomicU64 = AtomicU64::new(0);
+static LANCE_PLAN_SCAN_CALLS: AtomicU64 = AtomicU64::new(0);
+static LANCE_NEXT_BATCH_CALLS: AtomicU64 = AtomicU64::new(0);
+
+fn default_worker_threads() -> usize {
+    // Bound the pool so concurrent ClickHouse queries cannot spawn N * cores threads.
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    std::cmp::max(2, std::cmp::min(cpus, 8))
+}
+
+fn resolve_worker_threads(configured: u32) -> usize {
+    if configured == 0 {
+        default_worker_threads()
+    } else {
+        configured as usize
+    }
+}
+
+fn build_lance_runtime(worker_threads: usize) -> Result<Runtime, String> {
+    RuntimeBuilder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .thread_name("lance-tokio")
+        .build()
+        .map_err(|err| format!("Cannot create Lance runtime: {}", err))
+}
+
+fn ensure_lance_runtime() -> Result<&'static Runtime, FfiError> {
+    if let Some(runtime) = LANCE_RUNTIME.get() {
+        return Ok(runtime);
+    }
+
+    let configured = LANCE_RUNTIME_WORKER_THREADS.load(Ordering::Acquire);
+    let worker_threads = resolve_worker_threads(configured);
+    match build_lance_runtime(worker_threads) {
+        Ok(runtime) => match LANCE_RUNTIME.set(runtime) {
+            Ok(()) => {
+                LANCE_RUNTIME_INITIALIZED.fetch_add(1, Ordering::Relaxed);
+                Ok(LANCE_RUNTIME
+                    .get()
+                    .expect("Lance runtime must be initialized after successful set"))
+            }
+            Err(_) => Ok(LANCE_RUNTIME
+                .get()
+                .expect("Lance runtime must be initialized after concurrent set")),
+        },
+        Err(message) => {
+            // Another thread may have succeeded while we failed to build.
+            if let Some(runtime) = LANCE_RUNTIME.get() {
+                Ok(runtime)
+            } else {
+                Err(FfiError::internal(ChLanceErrorOrigin::Unknown, message))
+            }
+        }
+    }
+}
+
+fn block_on_lance<F>(future: F) -> Result<F::Output, FfiError>
+where
+    F: Future,
+{
+    let runtime = ensure_lance_runtime()?;
+    Ok(runtime.block_on(future))
+}
 
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,15 +162,26 @@ pub struct ch_lance_scan_options {
 }
 
 #[repr(C)]
+pub struct ch_lance_runtime_config {
+    worker_threads: u32,
+}
+
+#[repr(C)]
+pub struct ch_lance_runtime_stats {
+    open_dataset_calls: u64,
+    plan_scan_calls: u64,
+    next_batch_calls: u64,
+    runtime_initialized: u64,
+}
+
+#[repr(C)]
 pub struct ch_lance_dataset {
-    runtime: Runtime,
     dataset: Dataset,
     origin: ChLanceErrorOrigin,
 }
 
 #[repr(C)]
 pub struct ch_lance_scan {
-    runtime: Runtime,
     stream: Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>,
     origin: ChLanceErrorOrigin,
 }
@@ -744,6 +829,36 @@ fn write_record_batch(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn ch_lance_runtime_ensure(
+    config: *const ch_lance_runtime_config,
+    error: *mut ch_lance_error,
+) -> bool {
+    clear_error(error);
+    if !config.is_null() && LANCE_RUNTIME.get().is_none() {
+        let worker_threads = (*config).worker_threads;
+        LANCE_RUNTIME_WORKER_THREADS.store(worker_threads, Ordering::Release);
+    }
+    match ensure_lance_runtime() {
+        Ok(_) => true,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            false
+        }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_get_runtime_stats(out: *mut ch_lance_runtime_stats) {
+    if out.is_null() {
+        return;
+    }
+    (*out).open_dataset_calls = LANCE_OPEN_DATASET_CALLS.load(Ordering::Relaxed);
+    (*out).plan_scan_calls = LANCE_PLAN_SCAN_CALLS.load(Ordering::Relaxed);
+    (*out).next_batch_calls = LANCE_NEXT_BATCH_CALLS.load(Ordering::Relaxed);
+    (*out).runtime_initialized = LANCE_RUNTIME_INITIALIZED.load(Ordering::Relaxed);
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn ch_lance_open_dataset(
     options: *const ch_lance_dataset_options,
     error: *mut ch_lance_error,
@@ -764,25 +879,17 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
             return std::ptr::null_mut();
         }
     };
-    let origin = open_options.origin;
 
-    let runtime = match Runtime::new() {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            set_error(
-                error,
-                FfiError::internal(origin, format!("Cannot create Lance runtime: {}", err)),
-            );
-            return std::ptr::null_mut();
-        }
-    };
-
-    match runtime.block_on(open_dataset(open_options)) {
-        Ok(opened) => Box::into_raw(Box::new(ch_lance_dataset {
-            runtime,
+    LANCE_OPEN_DATASET_CALLS.fetch_add(1, Ordering::Relaxed);
+    match block_on_lance(open_dataset(open_options)) {
+        Ok(Ok(opened)) => Box::into_raw(Box::new(ch_lance_dataset {
             dataset: opened.dataset,
             origin: opened.origin,
         })),
+        Ok(Err(ffi_error)) => {
+            set_error(error, ffi_error);
+            std::ptr::null_mut()
+        }
         Err(ffi_error) => {
             set_error(error, ffi_error);
             std::ptr::null_mut()
@@ -846,13 +953,13 @@ pub unsafe extern "C" fn ch_lance_export_schema(
 
     let dataset_handle = &mut *dataset;
     let origin = dataset_handle.origin;
-    let dataset = match dataset_handle.runtime.block_on(checkout_exact_version(
+    let dataset = match block_on_lance(checkout_exact_version(
         &dataset_handle.dataset,
         version,
         origin,
     )) {
-        Ok(dataset) => dataset,
-        Err(ffi_error) => {
+        Ok(Ok(dataset)) => dataset,
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
             return false;
         }
@@ -889,7 +996,7 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 
     let dataset = &mut *dataset;
     let origin = dataset.origin;
-    let count_result = dataset.runtime.block_on(async {
+    let count_result = block_on_lance(async {
         let dataset = checkout_exact_version(&dataset.dataset, version, origin).await?;
         dataset
             .count_rows(None)
@@ -898,12 +1005,12 @@ pub unsafe extern "C" fn ch_lance_total_rows(
     });
 
     match count_result {
-        Ok(count) => {
+        Ok(Ok(count)) => {
             *rows = count as u64;
             *has_value = true;
             true
         }
-        Err(ffi_error) => {
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
             false
         }
@@ -939,7 +1046,7 @@ pub unsafe extern "C" fn ch_lance_count_rows(
 
     let dataset = &mut *dataset;
     let origin = dataset.origin;
-    let count_result = dataset.runtime.block_on(async {
+    let count_result = block_on_lance(async {
         let dataset = checkout_exact_version(&dataset.dataset, version, origin).await?;
         if predicate.is_empty() {
             dataset
@@ -955,12 +1062,12 @@ pub unsafe extern "C" fn ch_lance_count_rows(
     });
 
     match count_result {
-        Ok(count) => {
+        Ok(Ok(count)) => {
             *rows = count as u64;
             *has_value = true;
             true
         }
-        Err(ffi_error) => {
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
             false
         }
@@ -1023,18 +1130,8 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
     let source_dataset = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
 
-    let runtime = match Runtime::new() {
-        Ok(runtime) => runtime,
-        Err(err) => {
-            set_error(
-                error,
-                FfiError::internal(origin, format!("Cannot create Lance scan runtime: {}", err)),
-            );
-            return std::ptr::null_mut();
-        }
-    };
-
-    let stream_result: FfiResult<_> = runtime.block_on(async move {
+    LANCE_PLAN_SCAN_CALLS.fetch_add(1, Ordering::Relaxed);
+    let stream_result = block_on_lance(async move {
         let dataset = checkout_exact_version(&source_dataset, version, origin).await?;
 
         let mut scanner = dataset.scan();
@@ -1058,12 +1155,11 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
     });
 
     match stream_result {
-        Ok(stream) => Box::into_raw(Box::new(ch_lance_scan {
-            runtime,
+        Ok(Ok(stream)) => Box::into_raw(Box::new(ch_lance_scan {
             stream: Box::pin(stream),
             origin,
         })),
-        Err(ffi_error) => {
+        Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
             std::ptr::null_mut()
         }
@@ -1089,7 +1185,15 @@ pub unsafe extern "C" fn ch_lance_next_batch(
     *has_batch = false;
 
     let scan = &mut *scan;
-    match scan.runtime.block_on(scan.stream.as_mut().next()) {
+    LANCE_NEXT_BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+    let next = match block_on_lance(scan.stream.as_mut().next()) {
+        Ok(next) => next,
+        Err(ffi_error) => {
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
+    match next {
         None => true,
         Some(Ok(batch)) => match write_record_batch(batch, array, schema, scan.origin) {
             Ok(()) => {

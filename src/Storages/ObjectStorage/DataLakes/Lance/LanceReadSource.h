@@ -29,7 +29,7 @@ public:
     ReadSource(
         const Block & header,
         ObjectInfoPtr object_info_,
-        DatasetOptions options_,
+        DatasetHandle dataset_,
         ScanDescription scan_,
         FormatSettings format_settings_);
 
@@ -38,11 +38,10 @@ public:
 
 private:
     ObjectInfoPtr object_info;
-    DatasetOptions options;
+    DatasetHandle dataset;
     ScanDescription scan;
     FormatSettings format_settings;
     bool is_finished = false;
-    std::optional<Dataset> dataset;
     std::optional<Scan> scan_handle;
     std::unique_ptr<ArrowColumnToCHColumn> converter;
 };
