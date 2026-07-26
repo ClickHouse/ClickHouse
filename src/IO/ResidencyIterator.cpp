@@ -9,44 +9,20 @@ namespace DB
 
 ResidencyIterator::ResidencyIterator(
     const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain,
-    const StoredObject & object,
-    size_t object_file_offset,
+    const StoredObject & object_,
+    size_t object_file_offset_,
     ByteRange span_)
-    : probed_span(span_)
-    , last_pos(span_.offset)
+    : object(object_)
+    , object_file_offset(object_file_offset_)
+    , probed_span(span_)
 {
     for (const auto & provider : chain)
     {
         TierWalk walk;
-        walk.view = provider->planResidencyView(object, object_file_offset, probed_span);
-
-        /// Merge the view's sorted hit and miss lists into one classified walk.
-        /// Hits are clamped to the span on both edges, as the batch fold records
-        /// them; a miss keeps its whole cell as the reported extent while only
-        /// its in-span portion drives stride boundaries.
-        const auto & hits = walk.view->hits();
-        const auto & misses = walk.view->misses();
-        size_t hi = 0;
-        size_t mi = 0;
-        while (hi < hits.size() || mi < misses.size())
-        {
-            const bool take_hit = mi >= misses.size()
-                || (hi < hits.size() && hits[hi].range.offset < misses[mi].range.offset);
-            const ByteRange raw = take_hit ? hits[hi].range : misses[mi].range;
-            const size_t lo = std::max(raw.offset, probed_span.offset);
-            const size_t up = std::min(raw.end(), probed_span.end());
-            if (lo < up)
-            {
-                Classified c;
-                c.stride = ByteRange{lo, up - lo};
-                c.extent = take_hit ? c.stride : raw;
-                c.state = take_hit ? ChainResolution::TierState::Resident
-                                   : ChainResolution::TierState::MissCell;
-                walk.entries.push_back(c);
-            }
-            take_hit ? ++hi : ++mi;
-        }
-
+        walk.provider = provider.get();
+        walk.provider->resetProbe();
+        walk.view = std::make_unique<CacheView>();
+        walk.collected_until = probed_span.offset;
         tiers.push_back(std::move(walk));
     }
 }
@@ -55,32 +31,64 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
 {
     chassert(pos >= probed_span.offset && pos < probed_span.end());
 
-    if (pos < last_pos)
-        for (auto & t : tiers)
-            t.cursor = 0;
-    last_pos = pos;
-
     ChainResolution res;
     size_t stride_end = probed_span.end();
     for (auto & t : tiers)
     {
-        while (t.cursor < t.entries.size() && t.entries[t.cursor].stride.end() <= pos)
-            ++t.cursor;
+        const bool inside_current = t.current_valid
+            && t.current.kind != ICacheProvider::Resolution::Kind::End
+            && pos >= t.current.range.offset && pos < t.current.range.end();
+        if (!inside_current)
+        {
+            t.current = t.provider->lookAt(object, object_file_offset, pos);
+            t.current_valid = true;
+
+            /// Collect forward-new entries into the tier's assembled view (in
+            /// offset order); a rewound re-ask resolves ranges only - its
+            /// entry is already collected and its reader already handed out.
+            /// New territory is keyed on the entry's END: entries are disjoint
+            /// and ordered, and a head cell may round BELOW the span start.
+            if (t.current.range.end() > t.collected_until)
+            {
+                if (t.current.kind == ICacheProvider::Resolution::Kind::Hit)
+                {
+                    /// Store span-clamped, as the batch probe (asked with
+                    /// exactly the span) reported hits; the reader may serve
+                    /// wider - the executor clamps.
+                    const size_t lo = std::max(t.current.range.offset, probed_span.offset);
+                    const size_t hi = std::min(t.current.range.end(), probed_span.end());
+                    if (lo < hi)
+                        t.view->hit_entries.push_back(
+                            HitEntry{ByteRange{lo, hi - lo}, std::move(t.current.reader)});
+                    t.collected_until = std::max(t.collected_until, t.current.range.end());
+                }
+                else if (t.current.kind == ICacheProvider::Resolution::Kind::Miss)
+                {
+                    t.view->miss_entries.push_back(MissEntry{t.current.range, nullptr});
+                    t.collected_until = std::max(t.collected_until, t.current.range.end());
+                }
+            }
+        }
 
         ChainResolution::TierSlice slice;
-        if (t.cursor < t.entries.size() && t.entries[t.cursor].stride.offset <= pos)
+        switch (t.current.kind)
         {
-            const auto & e = t.entries[t.cursor];
-            slice.state = e.state;
-            slice.extent = e.extent;
-            stride_end = std::min(stride_end, e.stride.end());
-        }
-        else
-        {
-            const size_t next_start = t.cursor < t.entries.size()
-                ? t.entries[t.cursor].stride.offset
-                : probed_span.end();
-            stride_end = std::min(stride_end, next_start);
+            case ICacheProvider::Resolution::Kind::Hit:
+            {
+                slice.state = ChainResolution::TierState::Resident;
+                const size_t lo = std::max(t.current.range.offset, probed_span.offset);
+                const size_t hi = std::min(t.current.range.end(), probed_span.end());
+                slice.extent = ByteRange{lo, hi - lo};
+                stride_end = std::min(stride_end, t.current.range.end());
+                break;
+            }
+            case ICacheProvider::Resolution::Kind::Miss:
+                slice.state = ChainResolution::TierState::MissCell;
+                slice.extent = t.current.range;
+                stride_end = std::min(stride_end, t.current.range.end());
+                break;
+            case ICacheProvider::Resolution::Kind::End:
+                break;
         }
         res.tiers.push_back(slice);
     }

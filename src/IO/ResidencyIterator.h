@@ -50,28 +50,27 @@ struct ChainResolution
 /// Walks one object-piece's residency across the cache chain one resolution at
 /// a time: `lookAt(pos)` resolves a position into its chain column and the
 /// stride the column stays constant over, so a caller covers a span by
-/// iterating `pos = lookAt(pos).range.end()`. Construction probes each tier
-/// once over the whole span (read-only, identical to the batch observation)
-/// and holds the views; native per-tier cursors replace the eager probe in a
-/// later stage. Forward walks advance monotonic cursors; a backward `pos`
-/// rewinds them.
+/// iterating `pos = lookAt(pos).range.end()`. Each tier is stepped through the
+/// provider's `lookAt` (memoized chunked probing underneath - lazy pinning),
+/// re-asked only at its own boundaries; the handed-out hit readers and the
+/// walked miss cells assemble into the per-tier view the plan takes over.
 class ResidencyIterator
 {
 public:
     ResidencyIterator(
         const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain,
-        const StoredObject & object,
-        size_t object_file_offset,
+        const StoredObject & object_,
+        size_t object_file_offset_,
         ByteRange span_);
 
     ChainResolution lookAt(size_t pos);
 
     ByteRange span() const { return probed_span; }
 
-    /// Hand over the probed tier's view - the hit readers (pinning their
-    /// segments) and the probed miss entries - to become the plan's held
-    /// buffers. `lookAt` keeps working (the walk owns copies of the ranges),
-    /// but the readers travel with the view.
+    /// Hand over the tier's assembled view - the hit readers (pinning their
+    /// segments) and the walked miss cells - to become the plan's held
+    /// buffers. `lookAt` keeps working (re-asks return null readers), but the
+    /// readers travel with the view.
     CacheViewPtr takeView(size_t tier_idx)
     {
         chassert(tier_idx < tiers.size());
@@ -79,25 +78,24 @@ public:
     }
 
 private:
-    struct Classified
-    {
-        /// The in-span portion, driving stride boundaries.
-        ByteRange stride{};
-        /// What the slice reports: the clamped hit run or the whole miss cell.
-        ByteRange extent{};
-        ChainResolution::TierState state = ChainResolution::TierState::Absent;
-    };
-
     struct TierWalk
     {
+        ICacheProvider * provider = nullptr;
+        /// The tier's current resolution, reused while the asked position
+        /// stays inside it.
+        ICacheProvider::Resolution current;
+        bool current_valid = false;
+        /// Entries collected from the walked resolutions, in offset order -
+        /// the plan's held view. `collected_until` keeps a rewound re-ask
+        /// from collecting an entry twice.
         CacheViewPtr view;
-        VectorWithMemoryTracking<Classified> entries;
-        size_t cursor = 0;
+        size_t collected_until = 0;
     };
 
+    StoredObject object;
+    size_t object_file_offset;
     ByteRange probed_span;
     VectorWithMemoryTracking<TierWalk> tiers;
-    size_t last_pos = 0;
 };
 
 /// Accumulates a forward walk of resolutions over a span back into the batch

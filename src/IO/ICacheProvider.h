@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -226,6 +227,53 @@ public:
     /// every fill site skips null-writer entries.
     virtual void openWriteBuffers(
         const StoredObject & object, size_t object_file_offset, CacheView & view) = 0;
+
+    /// One step of the residency walk (the executor's iterator consumes this).
+    struct Resolution
+    {
+        enum class Kind : uint8_t
+        {
+            Hit,
+            Miss,
+            End,
+        };
+
+        Kind kind = Kind::End;
+        /// Hit: one committed run (a probe hit entry - split at the writer
+        /// frontier). Miss: ONE cell of this tier containing the position
+        /// (object-end-clamped, so it may overhang the asked span). End: the
+        /// position is past the object's tiling.
+        ByteRange range{};
+        /// Hit only, and handed out ONCE: the first `lookAt` resolving the run
+        /// owns it; a re-ask of the same run returns a null reader.
+        CacheReaderPtr reader;
+    };
+
+    /// Resolve one position of `object`'s residency. The base implementation
+    /// probes `planResidencyView` one memoized CHUNK at a time - lazy pinning,
+    /// one span probe amortized over many steps, entry overhang carried so a
+    /// chunk edge never splits a cell; a provider with a native cursor
+    /// overrides this instead.
+    virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file);
+
+    /// Drop the `lookAt` memo. Called at the START of each observation walk:
+    /// the memo amortizes probes WITHIN one walk, and residency must be
+    /// re-observed across walks (a warm re-plan must see what the cold pass
+    /// filled).
+    virtual void resetProbe() { probe_memo.reset(); }
+
+private:
+    /// The base `lookAt`'s memo: the last probed chunk's view and walk cursors.
+    struct ProbeMemo
+    {
+        String object_path;
+        size_t object_file_offset = 0;
+        ByteRange span{};
+        CacheViewPtr view;
+        size_t hit_idx = 0;
+        size_t miss_idx = 0;
+    };
+    std::optional<ProbeMemo> probe_memo;
 };
 
 }

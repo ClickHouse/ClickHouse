@@ -228,14 +228,14 @@ DiskCacheReader::DiskCacheReader(
     ThrottlerPtr local_throttler_,
     ReaderAnchorCache * anchors_,
     StreamingReaderSlot * stream_slot_,
-    VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink_)
+    std::shared_ptr<DiskCacheTouchBook> touch_book_)
     : holder(std::move(holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
     , stream_slot(stream_slot_)
-    , hits_to_touch_sink(hits_to_touch_sink_)
+    , touch_book(std::move(touch_book_))
 {
 }
 
@@ -260,8 +260,8 @@ ChainedBuffers DiskCacheReader::read(ByteRange sub)
     /// Record before reading (deferred-bump record): a throwing pread still
     /// leaves a coherent entry that the view's dtor re-fetches and no-ops for
     /// gone segments.
-    if (hits_to_touch_sink)
-        hits_to_touch_sink->push_back(sub);
+    if (touch_book)
+        touch_book->touched.push_back(sub);
 
     chassert(sub.offset >= object_file_offset);
     ByteRange sub_in_object{sub.offset - object_file_offset, sub.size};
@@ -604,35 +604,27 @@ bool DiskCacheWriter::tryWriteToSegment(FileSegment & segment, char * data, size
     }
 }
 
-DiskCacheView::DiskCacheView(
-    std::shared_ptr<FileSegmentsHolder> read_holder_,
-    size_t object_file_offset_)
-    : read_holder(std::move(read_holder_))
-    , object_file_offset(object_file_offset_)
+DiskCacheTouchBook::~DiskCacheTouchBook()
 {
-}
-
-DiskCacheView::~DiskCacheView()
-{
-    /// Deferred LRU bump: raise the priority of each segment this view actually
-    /// read, so a hit next to fresh inserts isn't aged below them. Bump directly
-    /// on the held `read_holder` — it pins exactly the segments the readers read
-    /// from, so there is no need to re-`cache->get` them (which would re-take the
-    /// per-key metadata lock and re-hash the key). A sequential run records many
-    /// contiguous sub-ranges over the same few segments; sorting the records lets
-    /// the linear sweep below bump each touched segment exactly once. No write
-    /// buffers live in this view, so no finalize-before-bump ordering is needed —
-    /// the executor orders write-buffer destruction before view destruction.
-    if (hits_to_touch.empty() || !read_holder)
+    /// Deferred LRU bump: raise the priority of each segment the probe's readers
+    /// actually read, so a hit next to fresh inserts isn't aged below them. Bump
+    /// directly on the held `holder` - it pins exactly the segments the readers
+    /// read from, so there is no need to re-`cache->get` them (which would
+    /// re-take the per-key metadata lock and re-hash the key). A sequential run
+    /// records many contiguous sub-ranges over the same few segments; sorting the
+    /// records lets the linear sweep below bump each touched segment exactly
+    /// once. Runs at the LAST owner's death - after every reader of the probe is
+    /// released (the executor orders write-buffer destruction before that).
+    if (touched.empty() || !holder)
         return;
 
-    std::sort(hits_to_touch.begin(), hits_to_touch.end(),
+    std::sort(touched.begin(), touched.end(),
         [](const ByteRange & a, const ByteRange & b) { return a.offset < b.offset; });
 
     try
     {
         size_t ti = 0;
-        for (const auto & segment : *read_holder)
+        for (const auto & segment : *holder)
         {
             const auto state = segment->state();
             if (state != FileSegmentState::DOWNLOADED
@@ -646,10 +638,10 @@ DiskCacheView::~DiskCacheView()
             const size_t seg_end = seg_range.right + 1 + object_file_offset;
 
             /// Drop records lying entirely before this segment.
-            while (ti < hits_to_touch.size() && hits_to_touch[ti].end() <= seg_start)
+            while (ti < touched.size() && touched[ti].end() <= seg_start)
                 ++ti;
             /// Bump once if the next record overlaps the segment.
-            if (ti < hits_to_touch.size() && hits_to_touch[ti].offset < seg_end)
+            if (ti < touched.size() && touched[ti].offset < seg_end)
                 segment->increasePriority();
         }
     }
@@ -733,7 +725,8 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
             read_holder = std::shared_ptr<FileSegmentsHolder>(std::move(got));
     }
 
-    auto view = std::make_unique<DiskCacheView>(read_holder, object_file_offset);
+    auto touch_book = std::make_shared<DiskCacheTouchBook>(read_holder, object_file_offset);
+    auto view = std::make_unique<DiskCacheView>(read_holder, touch_book);
 
     /// Collect raw (unaligned) object-local miss sub-ranges as we classify; the
     /// cache-alignment + merge happens in a second pass so adjacent misses fold.
@@ -753,7 +746,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         const ByteRange hit_file{off_obj + object_file_offset, clamped_end - off_obj};
         auto reader = std::make_unique<DiskCacheReader>(
             read_holder, hit_file, object_file_offset,
-            local_throttler, &reader_anchors, &streaming_slot, &view->hits_to_touch);
+            local_throttler, &reader_anchors, &streaming_slot, touch_book);
         view->hit_entries.push_back(HitEntry{hit_file, std::move(reader)});
     };
 

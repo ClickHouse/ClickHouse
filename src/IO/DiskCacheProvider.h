@@ -50,6 +50,24 @@ struct StreamingReaderSlot
     bool checked_out = false;
 };
 
+/// Shared deferred-LRU-bump context of one probe: every hit reader records the
+/// sub-ranges it served, and the LAST owner's destruction runs the bump over
+/// the pinned holder - the probe view for a batch probe, the final handed-out
+/// reader (the slide's release point) for a stepped one.
+struct DiskCacheTouchBook
+{
+    DiskCacheTouchBook(std::shared_ptr<FileSegmentsHolder> holder_, size_t object_file_offset_)
+        : holder(std::move(holder_)), object_file_offset(object_file_offset_)
+    {
+    }
+    ~DiskCacheTouchBook();
+
+    std::shared_ptr<FileSegmentsHolder> holder;
+    size_t object_file_offset;
+    VectorWithMemoryTracking<ByteRange> touched;
+    LoggerPtr log = getLogger("DiskCacheTouchBook");
+};
+
 /// `CacheReader` over one resident range, backed by a read-only
 /// `FileSegmentsHolder` shared by all hit buffers of the view (keeps the
 /// segments pinned for the view's lifetime).
@@ -63,7 +81,7 @@ public:
         ThrottlerPtr local_throttler_,
         ReaderAnchorCache * anchors_,
         StreamingReaderSlot * stream_slot_,
-        VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink_);
+        std::shared_ptr<DiskCacheTouchBook> touch_book_);
 
     ByteRange range() const override { return hit_range; }
     ChainedBuffers read(ByteRange sub) override;
@@ -75,10 +93,9 @@ private:
     ThrottlerPtr local_throttler;
     ReaderAnchorCache * anchors = nullptr;
     StreamingReaderSlot * stream_slot = nullptr;
-    /// The owning view's deferred-bump list: each `read` records its `sub`
-    /// here for the LRU bump in `~DiskCacheView`. Not owned; the view outlives
-    /// this buffer.
-    VectorWithMemoryTracking<ByteRange> * hits_to_touch_sink = nullptr;
+    /// The probe's shared deferred-bump book: each `read` records its `sub`
+    /// here; the bump runs when the book's last owner dies.
+    std::shared_ptr<DiskCacheTouchBook> touch_book;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
@@ -125,26 +142,21 @@ private:
 };
 
 /// `CacheView` from `DiskCacheProvider::planResidencyView`. Holds the shared
-/// read-only holder plus the deferred-LRU-bump context; its destructor runs
-/// the bump over all ranges the read buffers recorded. Misses carry
-/// `writer == nullptr`.
+/// read-only holder plus the probe's touch book (whose last owner runs the
+/// deferred LRU bump). Misses carry `writer == nullptr`.
 class DiskCacheView : public CacheView
 {
 public:
     DiskCacheView(
         std::shared_ptr<FileSegmentsHolder> read_holder_,
-        size_t object_file_offset_);
-
-    ~DiskCacheView() override;
-
-    /// `hit_entries` / `miss_entries` are inherited from `CacheView`.
-    /// Appended to by the owned read buffers' `read` calls; consumed by the dtor.
-    VectorWithMemoryTracking<ByteRange> hits_to_touch;
+        std::shared_ptr<DiskCacheTouchBook> touch_book_)
+        : read_holder(std::move(read_holder_)), touch_book(std::move(touch_book_))
+    {
+    }
 
 private:
     std::shared_ptr<FileSegmentsHolder> read_holder;
-    size_t object_file_offset;
-    LoggerPtr log = getLogger("DiskCacheView");
+    std::shared_ptr<DiskCacheTouchBook> touch_book;
 };
 
 
