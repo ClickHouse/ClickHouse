@@ -247,6 +247,9 @@ void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, con
 {
     for (const auto & constraint : constraints_)
     {
+        if (!constraint)
+            continue;
+
         const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         if (constraint_ptr && constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
             checkExpressionDoesntContainSubqueries(constraint_ptr->expr, context);
