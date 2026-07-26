@@ -1456,6 +1456,8 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
 
 Chunk StorageKeeperMap::getByKeys(const ColumnsWithTypeAndName & keys, const Names &, PaddedPODArray<UInt8> & null_map, IColumn::Offsets & /* out_offsets */) const
 {
+    auto component_guard = Coordination::setCurrentComponent("StorageKeeperMap::getByKeys");
+
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageKeeperMap supports only one key, got: {}", keys.size());
 
