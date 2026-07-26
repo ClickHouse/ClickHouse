@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Tags: no-darwin, no-object-storage, no-shared-merge-tree
+#
+# no-darwin: the macOS filesystem (APFS) is case-insensitive, so `MergeTree` hashes stream
+#   filenames unconditionally and the expected `.bin` names never appear on disk.
+# no-object-storage, no-shared-merge-tree: the test inspects the part directory directly, but for
+#   object storage the local part directory contains metadata files, not the data itself, so
+#   reading `columns_substreams.txt` from it returns blob metadata instead of the substream list.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
