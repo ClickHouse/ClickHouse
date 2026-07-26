@@ -16,6 +16,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ParserPipelinedQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
@@ -571,11 +572,31 @@ namespace
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
 
+    /// A dictionary source query is a top-level query of its own, so it may be written in pipe syntax.
+    /// This is only dependency extraction, not the place where `allow_experimental_pipe_syntax` is
+    /// enforced: the setting is checked when the source query is validated and executed, against the
+    /// dictionary source context (server defaults plus the dictionary's own `SETTINGS(...)` clause),
+    /// which the global context used here does not carry. Accepting the wider grammar during analysis
+    /// therefore does not enable the feature; it only keeps the error where the check lives. Both
+    /// parsers produce an `ASTSelectWithUnionQuery`, so the dependency visitor below does not care
+    /// which one accepted the query.
+    class ParserDictionarySourceQuery : public IParserBase
+    {
+        const char * getName() const override { return "dictionary source query"; }
+
+        bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+        {
+            ParserPipelinedQuery pipelined_parser(/*allow_pipe_syntax_=*/ true);
+            ParserSelectWithUnionQuery select_parser;
+            return pipelined_parser.parse(pos, node, expected) || select_parser.parse(pos, node, expected);
+        }
+    };
+
     void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data)
     {
         try
         {
-            ParserSelectWithUnionQuery parser;
+            ParserDictionarySourceQuery parser;
             String description = fmt::format("Query for ClickHouse dictionary {}.{}", backQuoteIfNeed(data.table_name.database), backQuoteIfNeed(data.table_name.table));
             String fixed_query = removeWhereConditionPlaceholder(query);
             const Settings & settings = data.global_context->getSettingsRef();

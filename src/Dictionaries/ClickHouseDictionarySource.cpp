@@ -5,6 +5,7 @@
 #include <Common/QueryScope.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
+#include <Core/Settings.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/ActionsDAG.h>
@@ -35,6 +36,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_QUERY;
+}
+
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_pipe_syntax;
 }
 
 namespace
@@ -175,7 +181,15 @@ BlockIO ClickHouseDictionarySource::createStreamForQuery(const String & query)
 
     const char * query_begin = query.data();
     const char * query_end = query.data() + query.size();
-    ParserQuery parser(query_end);
+    /// This is a validation-only re-parse of a query that `executeQuery` (or the remote server) will
+    /// parse again anyway, so it has to accept everything the execution path accepts. In particular a
+    /// dictionary source configured under `allow_experimental_pipe_syntax = 1` must be able to validate
+    /// a `FROM ... |> ...` source query.
+    ParserQuery parser(
+        query_end,
+        /*allow_settings_after_format_in_insert_=*/ false,
+        /*implicit_select_=*/ false,
+        /*allow_pipe_syntax_=*/ context_copy->getSettingsRef()[Setting::allow_experimental_pipe_syntax]);
     ASTPtr ast = parseQuery(parser, query_begin, query_end, "Query for ClickHouse dictionary", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     if (!ast || ast->getQueryKind() != IAST::QueryKind::Select)
