@@ -7,7 +7,7 @@ doc_type: 'reference'
 keywords: ['clickstack', 'json', 'map', 'attributes', 'schema', 'observability']
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 ClickStack's [default schema](/clickstack/ingesting-data/schemas) stores resource, scope, log, and span attributes as `Map(LowCardinality(String), String)` columns. ClickHouse also supports a strongly typed [`JSON` type](/reference/formats/JSON/JSON), and ClickStack has beta support for using it in place of `Map`.
 
