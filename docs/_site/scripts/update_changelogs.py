@@ -72,6 +72,45 @@ class AnnualChangelog:
     year: int
 
 
+def read_frontmatter(path: Path, docs_root: Path) -> dict[str, str]:
+    content = path.read_text(encoding="utf-8")
+    frontmatter = FRONTMATTER.match(content)
+    if not frontmatter:
+        raise ValueError(f"{path.relative_to(docs_root)}: missing frontmatter")
+
+    fields = {}
+    for line in frontmatter.group(1).splitlines():
+        key, separator, value = line.partition(":")
+        if not separator:
+            continue
+        value = value.strip()
+        if (
+            len(value) >= 2
+            and value[0] == value[-1]
+            and value[0] in {"'", '"'}
+        ):
+            value = value[1:-1]
+        fields[key.strip()] = value
+    return fields
+
+
+def validate_frontmatter(
+    path: Path, docs_root: Path, expected: dict[str, str]
+) -> None:
+    fields = read_frontmatter(path, docs_root)
+    mismatches = [
+        f"{key} is {fields.get(key)!r}, expected {value!r}"
+        for key, value in expected.items()
+        if fields.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            f"{path.relative_to(docs_root)}: invalid annual changelog "
+            "frontmatter: "
+            + "; ".join(mismatches)
+        )
+
+
 def read_release(path: Path, docs_root: Path) -> Release:
     content = path.read_text(encoding="utf-8")
     frontmatter = FRONTMATTER.match(content)
@@ -131,13 +170,24 @@ def load_cloud_changelogs(
     docs_root: Path,
 ) -> tuple[AnnualChangelog, list[AnnualChangelog]]:
     changelog_dir = docs_root / CLOUD_CHANGELOG_PATH_PREFIX
-    current_pages = [
+    current_pages = sorted(
         path for path in changelog_dir.glob("*.mdx") if path.stem.isdigit()
-    ]
-    if not current_pages:
-        raise ValueError(f"No current Cloud changelog found in {changelog_dir}")
+    )
+    if len(current_pages) != 1:
+        raise ValueError(
+            f"Expected exactly one current Cloud changelog in {changelog_dir}, "
+            f"found {len(current_pages)}. Move the previous current page into "
+            "the archive before adding a new year."
+        )
 
-    pages = current_pages + list((changelog_dir / "archive").glob("*.mdx"))
+    archive_pages = sorted(
+        path
+        for path in (changelog_dir / "archive").glob("*.mdx")
+        if path.stem.isdigit()
+    )
+    if not archive_pages:
+        raise ValueError("No archived Cloud changelogs found")
+    pages = current_pages + archive_pages
     changelogs = [
         AnnualChangelog(
             path.relative_to(docs_root).with_suffix("").as_posix(),
@@ -154,21 +204,55 @@ def load_cloud_changelogs(
             + ", ".join(str(year) for year in duplicates)
         )
 
-    current_year = max(int(path.stem) for path in current_pages)
-    current = next(
-        changelog for changelog in changelogs if changelog.year == current_year
+    current_path = current_pages[0]
+    current = AnnualChangelog(
+        current_path.relative_to(docs_root).with_suffix("").as_posix(),
+        int(current_path.stem),
     )
+    validate_frontmatter(
+        current_path,
+        docs_root,
+        {
+            "slug": "/whats-new/changelog/cloud",
+            "sidebarTitle": str(current.year),
+            "title": f"Cloud changelog - {current.year}",
+            "description": (
+                "ClickHouse Cloud changelog providing descriptions of what "
+                "is new in each ClickHouse Cloud release"
+            ),
+            "doc_type": "changelog",
+        },
+    )
+
     archive = sorted(
-        (
-            changelog
-            for changelog in changelogs
-            if changelog.year != current.year
-        ),
+        (changelog for changelog in changelogs if changelog != current),
         key=lambda changelog: changelog.year,
         reverse=True,
     )
-    if not archive:
-        raise ValueError("No archived Cloud changelogs found")
+    invalid_archive_years = [
+        changelog.year
+        for changelog in archive
+        if changelog.year >= current.year
+    ]
+    if invalid_archive_years:
+        raise ValueError(
+            "Cloud archive years must precede the current year "
+            f"{current.year}: "
+            + ", ".join(str(year) for year in invalid_archive_years)
+        )
+    for path in archive_pages:
+        year = int(path.stem)
+        validate_frontmatter(
+            path,
+            docs_root,
+            {
+                "slug": f"/whats-new/cloud/{year}",
+                "sidebarTitle": str(year),
+                "title": f"Cloud changelog - {year}",
+                "description": f"ClickHouse Cloud changelog for {year}",
+                "doc_type": "changelog",
+            },
+        )
     return current, archive
 
 
@@ -337,6 +421,52 @@ def load_oss_changelog(
 
     year_match = year_matches[0]
     year = int(year_match.group(1))
+    changelog_dir = docs_root / OSS_CHANGELOG_PATH_PREFIX
+    annual_pages = sorted(
+        path for path in changelog_dir.glob("*.mdx") if path.stem.isdigit()
+    )
+    target_path = changelog_dir / f"{year}.mdx"
+    if target_path not in annual_pages:
+        raise ValueError(
+            f"Missing current Open source changelog shell "
+            f"{target_path.relative_to(docs_root)}"
+        )
+    validate_frontmatter(
+        target_path,
+        docs_root,
+        {
+            "slug": "/whats-new/changelog/",
+            "sidebarTitle": str(year),
+            "title": f"Changelog {year}",
+            "description": f"Changelog for {year}",
+            "doc_type": "changelog",
+        },
+    )
+
+    archive_pages = [path for path in annual_pages if path != target_path]
+    invalid_archive_years = [
+        int(path.stem) for path in archive_pages if int(path.stem) >= year
+    ]
+    if invalid_archive_years:
+        raise ValueError(
+            "Open source archive years must precede the current year "
+            f"{year}: "
+            + ", ".join(str(archive_year) for archive_year in invalid_archive_years)
+        )
+    for path in archive_pages:
+        archive_year = int(path.stem)
+        validate_frontmatter(
+            path,
+            docs_root,
+            {
+                "slug": f"/whats-new/changelog/{archive_year}",
+                "sidebarTitle": str(archive_year),
+                "title": f"{archive_year} Changelog",
+                "description": f"Changelog for {archive_year}",
+                "doc_type": "changelog",
+            },
+        )
+
     releases = []
     rendered = []
     current_release_anchor = None
