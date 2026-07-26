@@ -1,0 +1,36 @@
+CREATE TABLE default.overwrite_cache
+(
+    `website_type` UInt8,
+    `user_id` UInt64,
+    `tag` LowCardinality(String),
+    `version` UInt64,
+    `tie` UInt64,
+    `payload` String
+)
+ENGINE = OverwriteCache(version)
+KEYS (website_type, user_id, tag)
+SETTINGS max_memory_bytes = 10000000, equal_version_tiebreak_columns = 'tie', secondary_index_columns = 'tag', secondary_index_segment_column = 'website_type', max_secondary_index_rows = 2
+2	2	tie-winner
+1	100	tie-winner
+2	200	site-two
+1	100	tie-winner
+1	100	tie-winner
+tie-winner
+tie-winner
+tie-winner
+tie-winner
+tie-winner
+0
+0
+batch-new
+tie-winner
+1
+Nullable(String)
+1	1
+tie-winner
+after-failure
+after-failure
+tie-winner
+batch-new
+index-limit
+same-version-a

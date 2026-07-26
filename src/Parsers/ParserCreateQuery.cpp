@@ -601,9 +601,13 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_ttl(Keyword::TTL);
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_unique_key(Keyword::UNIQUE_KEY);
+    ParserKeyword s_keys(Keyword::KEYS);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
+    ParserExpressionList expression_list_p(false);
+    ParserToken opening_round_bracket_p(TokenType::OpeningRoundBracket);
+    ParserToken closing_round_bracket_p(TokenType::ClosingRoundBracket);
     ParserStorageOrderByClause order_by_p(/*allow_order_*/ true);
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
@@ -616,6 +620,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr sample_by;
     ASTPtr ttl_table;
     ASTPtr unique_key;
+    ASTPtr keys;
     ASTPtr settings;
 
     bool storage_like = false;
@@ -665,6 +670,17 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!unique_key && s_unique_key.ignore(pos, expected))
         {
             if (expression_p.parse(pos, unique_key, expected))
+            {
+                storage_like = true;
+                continue;
+            }
+            return false;
+        }
+
+        if (engine_kind == TABLE_ENGINE && !keys && s_keys.ignore(pos, expected))
+        {
+            if (opening_round_bracket_p.ignore(pos, expected) && expression_list_p.parse(pos, keys, expected)
+                && closing_round_bracket_p.ignore(pos, expected))
             {
                 storage_like = true;
                 continue;
@@ -730,6 +746,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// produces a different `children` order, breaking the round-trip check
     /// in `executeQueryImpl` with `Inconsistent AST formatting`.
     storage->set(storage->engine, engine);
+    storage->set(storage->keys, keys);
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);

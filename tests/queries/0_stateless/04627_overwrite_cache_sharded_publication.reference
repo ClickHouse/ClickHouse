@@ -1,0 +1,6 @@
+pending-primary	2	0
+pending-secondary	1000	0
+committed-primary	0	4
+committed-secondary	0	2000
+second-pending	2000	0
+second-committed	0	2000

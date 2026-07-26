@@ -78,6 +78,8 @@ public:
         /// non-replicated MergeTree variants — replicated metadata does not yet
         /// serialize `unique_key`, which would allow replicas to diverge silently.
         bool supports_unique_key = false;
+        /// Whether the engine-specific `KEYS` clause is accepted at CREATE time.
+        bool supports_keys = false;
         bool supports_sql_security = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
@@ -117,6 +119,7 @@ public:
         .supports_parallel_insert = false,
         .supports_schema_inference = false,
         .supports_unique_key = false,
+        .supports_keys = false,
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,

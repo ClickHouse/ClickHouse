@@ -192,6 +192,9 @@ StoragePtr StorageFactory::get(
                     "UNIQUE KEY clause",
                     [](StorageFeatures features) { return features.supports_unique_key; });
 
+            if (storage_def->keys)
+                check_feature("KEYS clause", [](StorageFeatures features) { return features.supports_keys; });
+
             if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
                 check_feature(
                     "TTL clause",
