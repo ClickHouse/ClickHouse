@@ -1,3 +1,4 @@
+import subprocess
 import time
 
 import pytest
@@ -25,14 +26,49 @@ bad = cluster.add_instance(
     main_configs=["configs/bad_script.xml"],
     stay_alive=True,
 )
-profiler_race = cluster.add_instance(
-    "profiler_race",
-    main_configs=[
-        "configs/profiler_race_script.xml",
-        "configs/profiler_race_logs.xml",
-    ],
-    user_configs=["configs/profiler_race_users.xml"],
-    stay_alive=True,
+
+
+def _built_with_thread_sanitizer():
+    # `ClickHouseInstance.is_built_with_thread_sanitizer()` needs a running server, which is too
+    # late: `cluster.start()` starts every registered instance before any test body runs, so the
+    # in-test skip cannot avoid the cost of this instance. Ask the binary directly instead.
+    # Unknown answers count as ThreadSanitizer: skipping is a silent loss of the only coverage
+    # this race has, while a needless instance is only slower.
+    # `cluster.server_bin_path` is the binary the instances will run. Re-deriving it here would
+    # diverge from it, because the fallback used when the environment does not name one searches
+    # `PATH` before `/usr/bin`.
+    try:
+        flags = subprocess.run(
+            [
+                cluster.server_bin_path,
+                "local",
+                "--query",
+                "SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS'",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=True,
+        ).stdout
+    except Exception:
+        return True
+    return "-fsanitize=thread" in flags
+
+
+# Registering this instance costs a whole extra server plus a non-lazy dictionary load on every run
+# of this file, and only a ThreadSanitizer build can observe the race it reproduces.
+profiler_race = (
+    cluster.add_instance(
+        "profiler_race",
+        main_configs=[
+            "configs/profiler_race_script.xml",
+            "configs/profiler_race_logs.xml",
+        ],
+        user_configs=["configs/profiler_race_users.xml"],
+        stay_alive=True,
+    )
+    if _built_with_thread_sanitizer()
+    else None
 )
 
 # Values of the StartupScriptsExecutionState metric.
@@ -182,7 +218,10 @@ def restart_profiler_race_instance():
 
 
 def test_profiler_vs_processlist_publication(start_cluster):
-    if not profiler_race.is_built_with_thread_sanitizer():
+    # The instance is only registered on ThreadSanitizer. The server-side check still runs when it
+    # is: it is the authoritative one, and it covers the case where the pre-start probe above had to
+    # guess.
+    if profiler_race is None or not profiler_race.is_built_with_thread_sanitizer():
         pytest.skip("the race is only observable under ThreadSanitizer")
 
     def dictionary_source_logins(current_run_only):
