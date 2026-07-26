@@ -3,7 +3,7 @@ SET enable_lightweight_update = 1;
 
 CREATE TABLE t_lightweight (id UInt64, c1 UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
 
 INSERT INTO t_lightweight SELECT number, number FROM numbers(20);
 

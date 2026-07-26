@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Clone of 03100_lwu_29_concurrent_merges with the legacy patch part format (`patch_parts_version = 'v1'`).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -20,7 +21,7 @@ $CLICKHOUSE_CLIENT --query "
     SETTINGS
         enable_block_number_column = 1,
         enable_block_offset_column = 1,
-        patch_parts_version = 'v2';
+        patch_parts_version = 'v1';
 
     INSERT INTO t_lwu_block_number VALUES (1, 'aa') (2, 'bb') (3, 'cc');
     UPDATE t_lwu_block_number SET s = 'foo' WHERE id = 1;
@@ -44,7 +45,7 @@ sleep 1.0
 $CLICKHOUSE_CLIENT --query "
     SET enable_lightweight_update = 1;
     UPDATE t_lwu_block_number SET s = 'bar' WHERE id = 2;
-    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-6c387a2c50c8ec9b62c8e6c11c885923-all' FINAL;
+    OPTIMIZE TABLE t_lwu_block_number PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL;
 "
 
 wait

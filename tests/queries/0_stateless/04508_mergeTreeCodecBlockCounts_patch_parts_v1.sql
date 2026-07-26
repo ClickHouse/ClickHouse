@@ -1,10 +1,11 @@
 -- Tags: no-random-merge-tree-settings
+-- Clone of 04508_mergeTreeCodecBlockCounts_patch_parts with the legacy patch part format (`patch_parts_version = 'v1'`).
 -- no-random-merge-tree-settings: the output enumerates the physical representation, which many randomised settings change
 DROP TABLE IF EXISTS t_patch;
 
 CREATE TABLE t_patch (a UInt64, b UInt64)
 ENGINE = MergeTree ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v2';
+SETTINGS min_bytes_for_wide_part = 0, enable_block_number_column = 1, enable_block_offset_column = 1, patch_parts_version = 'v1';
 
 SYSTEM STOP MERGES t_patch;
 

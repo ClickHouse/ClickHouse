@@ -1,3 +1,4 @@
+-- Clone of 03100_lwu_deletes_3 with the legacy patch part format (`patch_parts_version = 'v1'`).
 DROP TABLE IF EXISTS t_lwu_deletes_3 SYNC;
 
 CREATE TABLE t_lwu_deletes_3 (id UInt64, dt Date, v1 UInt64, v2 String)
@@ -6,7 +7,7 @@ ORDER BY (id, dt)
 SETTINGS
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
-    patch_parts_version = 'v2';
+    patch_parts_version = 'v1';
 
 SET apply_patch_parts = 1;
 SET enable_lightweight_update = 1;
@@ -39,7 +40,7 @@ WHERE database = currentDatabase() AND table = 't_lwu_deletes_3' AND column = '_
 
 SYSTEM START MERGES t_lwu_deletes_3;
 SYSTEM SYNC REPLICA t_lwu_deletes_3 PULL;
-OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-dd6d2fba644fe240403c01854c4e308e-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-f18f7271629a324b0d26b6ad0b83a6c2-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT 'after merge patch';
 SELECT count(), sum(v1), sum(notEmpty(v2)) FROM t_lwu_deletes_3;

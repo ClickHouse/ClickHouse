@@ -30,7 +30,7 @@
 109	109	109
 all_0_0_0	20
 all_1_1_0	10
-patch-ddd04ad9ea350037445ec793dccdf3f2-all_0_0_0_2	15
+patch-<hash>-all_0_0_0_2	15
 0	0	0
 1	1	1
 2	2	4
@@ -63,7 +63,7 @@ patch-ddd04ad9ea350037445ec793dccdf3f2-all_0_0_0_2	15
 109	109	109
 all_0_0_0	20
 all_1_1_0	10
-patch-ddd04ad9ea350037445ec793dccdf3f2-all_0_0_0_2	15
+patch-<hash>-all_0_0_0_2	15
 0	0	0
 1	1	1
 2	2	4
@@ -98,7 +98,7 @@ all_0_0_0	20
 all_0_0_0_3	20
 all_1_1_0	10
 all_1_1_0_3	10
-patch-ddd04ad9ea350037445ec793dccdf3f2-all_0_0_0_2	15
+patch-<hash>-all_0_0_0_2	15
 2
 2
 0

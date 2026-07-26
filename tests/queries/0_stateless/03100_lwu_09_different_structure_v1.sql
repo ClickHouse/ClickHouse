@@ -1,4 +1,5 @@
 -- Tags: no-replicated-database
+-- Clone of 03100_lwu_09_different_structure with the legacy patch part format (`patch_parts_version = 'v1'`).
 -- no-replicated-database: 03100_lwu_03_join
 
 SET insert_keeper_fault_injection_probability = 0.0;
@@ -14,7 +15,7 @@ SETTINGS
     enable_block_offset_column = true,
     shared_merge_tree_disable_merges_and_mutations_assignment = 1,
     apply_patches_on_merge = 0,
-    patch_parts_version = 'v2';
+    patch_parts_version = 'v1';
 
 INSERT INTO t_shared SELECT number, number, 's' || toString(number) FROM numbers(20);
 
@@ -23,8 +24,8 @@ UPDATE t_shared SET s = s || '_foo' WHERE id % 2 = 1;
 UPDATE t_shared SET c1 = c1 + 1000 WHERE id % 3 = 0;
 
 OPTIMIZE TABLE t_shared FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE t_shared PARTITION ID 'patch-0ac06936311a5bdcd347ed3272aff961-all' FINAL SETTINGS optimize_throw_if_noop = 1;
-OPTIMIZE TABLE t_shared PARTITION ID 'patch-6c387a2c50c8ec9b62c8e6c11c885923-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_shared PARTITION ID 'patch-3e1a7650697c132eb044cc6f1d82bc92-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_shared PARTITION ID 'patch-8feeedf7588c601fd7f38da7fe68712b-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SET apply_patch_parts = 1;
 SELECT * FROM t_shared ORDER BY id;
