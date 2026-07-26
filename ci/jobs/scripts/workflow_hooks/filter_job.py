@@ -106,9 +106,11 @@ _COVERAGE_PIPELINE_PATHS = (
     "ci/jobs/functional_tests.py",
     "ci/jobs/integration_test_job.py",
     "ci/jobs/unit_tests_job.py",
+    # LLVM_COVERAGE_SKIP_PREFIXES here decides which integration suites land in
+    # amd_llvm_coverage vs excluded_from_llvm (integration_test_job.py:433-462).
+    "ci/jobs/scripts/integration_tests_configs.py",
     "ci/jobs/scripts/merge_llvm_coverage.sh",
     "ci/jobs/scripts/generate_diff_coverage_report.sh",
-    "ci/jobs/scripts/print_newly_covered_code.py",
     "ci/jobs/scripts/print_uncovered_code.py",
     "ci/jobs/scripts/dedup_lcov_instantiations.py",
     "ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
