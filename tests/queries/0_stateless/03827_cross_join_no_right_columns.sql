@@ -2,7 +2,7 @@
 -- This used to cause std::out_of_range in HashJoin::getTotalRowCount() because
 -- columns_info.columns was empty but .at(0) was used to get the row count.
 -- The bug triggers when PREWHERE consumes ALL columns from the right table,
--- causing the right side of the join to pass zero columns to HashJoin.
+-- causing the right side of the join to pass zero columns to the join.
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -20,35 +20,44 @@ SELECT count() FROM t1, t2 PREWHERE a > 0 AND b != '';
 DROP TABLE t1;
 DROP TABLE t2;
 
--- A zero-column right block also reached the cross-join block compression path in
--- HashJoin::addBlockToJoin, where `chassert(rows == block.rows())` aborted: rows is taken from
--- the selector (the real row count) but Block::rows() is 0 for a zero-column block. The branch is
--- entered once getTotalRowCount() crosses the threshold, i.e. from the second right block on, so
--- the right side must span more than one block (small max_block_size below).
+-- The same when the zero-column right side spans several blocks, where the row count of a block is
+-- needed and `Block::rows` reports 0 for it.
+--
+-- `a > 0` is deliberate: an always-true comparison such as `a >= 0` on an unsigned column is
+-- constant folded away, the right side then keeps the `b.size` subcolumn and the zero-column
+-- representation under test is never produced.
 DROP TABLE IF EXISTS t1_big;
 DROP TABLE IF EXISTS t2_big;
 
 CREATE TABLE t1_big (x UInt64) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE t2_big (a UInt64, b String) ENGINE = MergeTree ORDER BY a;
+-- `index_granularity` is pinned so the right side arrives in 1000-row blocks: the row accounting
+-- below has to reach the limit exactly between two blocks, which is where a zero-column block
+-- would otherwise be spilled and its rows lost.
+CREATE TABLE t2_big (a UInt64, b String) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 1000, index_granularity_bytes = 0;
 
 INSERT INTO t1_big VALUES (1), (2), (3);
-INSERT INTO t2_big SELECT number, toString(number) FROM numbers(100000);
+INSERT INTO t2_big SELECT number + 1, toString(number) FROM numbers(100000);
 
--- compress by rows
-SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
-SETTINGS cross_join_min_rows_to_compress = 1, max_block_size = 1000, max_threads = 1;
--- compress by bytes
-SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
-SETTINGS cross_join_min_bytes_to_compress = 1, max_block_size = 1000, max_threads = 1;
+-- The join order has to be pinned identically for the assertion and for the query below it: the
+-- test runner randomizes it, and with t2_big on the left the build side becomes the single block
+-- t1_big, which no longer covers a zero-column right side spanning several blocks.
+SELECT count() > 0 FROM (
+    EXPLAIN header = 1 SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
+    SETTINGS query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'
+) WHERE explain ILIKE '%Header: __join_result_dummy UInt8%';
 
--- A zero-column right block also reached the cross-join spill-to-disk path. There the temporary stream
--- serializes Block::rows() == 0 (the count lives only in the selector) and Block::empty() stops the read
--- side at the first spilled block, so every spilled zero-column right block contributed 0 rows and the
--- cross product was silently undercounted. A small max_rows_in_join keeps the first blocks in memory then
--- routes later zero-column blocks through the spill path, so the result must still be the full product.
-SELECT count() FROM t1_big, t2_big PREWHERE a >= 0 AND b != ''
+SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
+SETTINGS max_block_size = 1000, max_threads = 1,
+         query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
+
+-- A zero-column right block is never spilled: a temporary stream would serialize `Block::rows` == 0
+-- and the read side would reconstruct 0 rows for it, silently undercounting the cross product. Its
+-- rows are accounted for in memory instead, so a row limit below the size of the right side is
+-- reported. Spilling such a block instead returns 15000 rather than raising the limit.
+SELECT count() FROM t1_big, t2_big PREWHERE a > 0 AND b != ''
 SETTINGS max_rows_in_join = 5000, max_block_size = 1000, max_threads = 1,
-         cross_join_min_rows_to_compress = 0, cross_join_min_bytes_to_compress = 0;
+         query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 DROP TABLE t1_big;
 DROP TABLE t2_big;
