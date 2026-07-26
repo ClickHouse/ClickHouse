@@ -116,6 +116,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
+    extern const int MEMORY_LIMIT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 namespace
@@ -292,6 +294,19 @@ bool canExcludePartByIndexAnalysis(
             return false;
 
         inverted_dag = std::make_shared<ActionsDAGWithInversionPushDown>(predicate_node, context, /*boolean_context=*/true);
+    }
+    catch (const Exception & e)
+    {
+        /// An interruption or a resource limit is not a "cannot analyze this predicate" answer, so it
+        /// must not be turned into extra work on the fallback path.
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED)
+            throw;
+
+        tryLogCurrentException(
+            getLogger("MutationsInterpreter"),
+            "Cannot check the mutation predicate by index analysis, will fall back to executing the query",
+            LogsLevel::debug);
+        return false;
     }
     catch (...)
     {
