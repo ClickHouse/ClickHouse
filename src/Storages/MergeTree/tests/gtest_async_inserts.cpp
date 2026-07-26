@@ -227,7 +227,7 @@ std::vector<String> testPrewarmFilterToPartition(
     for (size_t p = 0; p < num_partitions; ++p)
     {
         /// partition_id does not affect empty-token grouping (data hash is partition-independent).
-        auto part_info = deduplication_info->filterToPartition(true, selector, p);
+        auto part_info = deduplication_info->filterToPartition(selector, p);
         auto filtered = part_info->filterImpl(part_info->filterSelf("all"));
 
         const auto & out_block = (filtered.removed_rows == 0 || !filtered.filtered_block)
@@ -297,8 +297,8 @@ bool testPrewarmPopulatesCache(
     auto cold = build(false);
     for (size_t p = 0; p < num_partitions; ++p)
     {
-        auto warm_part = warm->filterToPartition(true, selector, p);
-        auto cold_part = cold->filterToPartition(true, selector, p);
+        auto warm_part = warm->filterToPartition(selector, p);
+        auto cold_part = cold->filterToPartition(selector, p);
         for (const auto & t : warm_part->tokens)
             if (t.by_user.empty() && !t.data_hash_batch.has_value())
                 return false;

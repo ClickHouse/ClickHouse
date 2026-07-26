@@ -140,7 +140,7 @@ DeduplicationInfo::FilterResult DeduplicationInfo::deduplicateSelf(bool deduplic
 }
 
 
-DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(bool deduplication_enabled, const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index) const
+DeduplicationInfo::Ptr DeduplicationInfo::filterToPartition(const PaddedPODArray<UInt64> & row_to_partition, size_t partition_index, bool deduplication_enabled) const
 {
     /// An empty selector means the block was not split (single partition); with dedup off or a
     /// single token there is nothing to attribute. Every token then belongs to this partition.
