@@ -322,6 +322,15 @@ void ReadFromUserQueryLog::initializePipeline(QueryPipelineBuilder & pipeline, c
     builder.addSimpleTransform([&](const SharedHeader & header) { return std::make_shared<ExpressionTransform>(header, convert_actions); });
 
     builder.addContext(inner_context);
+
+    /// The processors above were built from an internal query plan which does not outlive this call, so
+    /// they still refer to its steps. Hand them to `ISourceStep::updatePipeline`, which attributes them
+    /// to this step instead: it is the step of the outer plan that stands for this read, and per-step
+    /// facilities of the outer plan (`EXPLAIN PIPELINE`, and the per-step wall clocks of
+    /// `EXPLAIN ANALYZE`, which are looked up by the plan step of every executed processor) only know
+    /// about the steps of that plan.
+    processors = builder.getProcessors();
+
     pipeline = std::move(builder);
 }
 

@@ -122,6 +122,24 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --only-system-tables --query "
     SELECT count() FROM system.user_query_log;
 "
 
+# `EXPLAIN ANALYZE` executes the pipeline and accounts every executed processor to a step of the plan
+# it explains, so the processors of the internal query must be accounted to the step that stands for
+# the read, instead of the steps of the internal query plan, which the explained plan knows nothing
+# about.
+rm -rf "${test_dir}"
+mkdir -p "${test_dir}/data" "${test_dir}/tmp" "${test_dir}/user_files" "${test_dir}/format_schemas"
+make_config custom_query_log true
+if ${CLICKHOUSE_LOCAL} --config-file "${config}" --log_queries 1 --query "
+    SELECT 1 FORMAT Null;
+    SYSTEM FLUSH LOGS query_log;
+    EXPLAIN ANALYZE SELECT count() FROM system.user_query_log;
+" 2>&1 | grep -q "ReadFromUserQueryLog"
+then
+    echo "explain analyze"
+else
+    echo "UNEXPECTED"
+fi
+
 # A leftover table with this name (e.g. created before an upgrade) is reported on startup.
 rm -rf "${test_dir}"
 mkdir -p "${test_dir}/metadata/system"
