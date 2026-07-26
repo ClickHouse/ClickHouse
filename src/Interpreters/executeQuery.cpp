@@ -54,6 +54,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -61,6 +62,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -173,8 +175,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -715,7 +715,8 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
 
     element.thread_ids = info.thread_ids;
     element.peak_threads_usage = info.peak_threads_usage;
-    element.profile_counters = info.profile_counters;
+    if (info.profile_counters)
+        element.profile_counters = *info.profile_counters;
 
     /// We need to refresh the access info since dependent views might have added extra information, either during
     /// creation of the view (PushingToViews chain) or while executing its internal SELECT
@@ -749,7 +750,17 @@ addStatusInfoToQueryLogElement(QueryLogElement & element, const QueryStatusInfo 
         element.used_sql_user_defined_functions = factories_info.sql_user_defined_functions;
     }
 
-    element.async_read_counters = context_ptr->getAsyncReadCounters();
+    if (auto async_read_counters = context_ptr->getAsyncReadCounters())
+    {
+        auto add_counter = [&](const char * name, size_t value)
+        {
+            if (value)
+                element.async_read_counters.emplace(name, value);
+        };
+        add_counter("max_parallel_read_tasks", async_read_counters->max_parallel_read_tasks.load(std::memory_order_relaxed));
+        add_counter("max_parallel_prefetch_tasks", async_read_counters->max_parallel_prefetch_tasks.load(std::memory_order_relaxed));
+        add_counter("total_prefetch_tasks", async_read_counters->total_prefetch_tasks.load(std::memory_order_relaxed));
+    }
     addPrivilegesInfoToQueryLogElement(element, context_ptr);
 }
 
@@ -830,7 +841,7 @@ QueryLogElement logQueryStart(
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
 
         if (settings[Setting::log_query_settings])
-            elem.query_settings = std::make_shared<Settings>(context->getSettingsRef());
+            elem.query_settings = context->getSettingsRef().changedToMap();
 
         elem.log_comment = settings[Setting::log_comment];
         if (elem.log_comment.size() > settings[Setting::max_query_size])
@@ -844,7 +855,7 @@ QueryLogElement logQueryStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
-            query_log->add(elem);
+            query_log->add([&](QueryLogElement & e) { e = elem; });
         }
         else if (elem.type < settings[Setting::log_queries_min_type])
         {
@@ -1030,7 +1041,7 @@ static void logQueryFinishImpl(
             double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
-                "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                "Read {} rows, {} in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
@@ -1048,7 +1059,7 @@ static void logQueryFinishImpl(
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
         {
             if (auto query_log = context->getQueryLog())
-                query_log->add(elem);
+                query_log->add([&](QueryLogElement & e) { e = elem; });
         }
 
     }
@@ -1185,7 +1196,7 @@ void logQueryException(
         && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
     {
         if (auto query_log = context->getQueryLog())
-            query_log->add(elem);
+            query_log->add([&](QueryLogElement & e) { e = elem; });
     }
 
     if (query_span)
@@ -1260,7 +1271,7 @@ void logExceptionBeforeStart(
         elem.tid = txn->tid;
 
     if (settings[Setting::log_query_settings])
-        elem.query_settings = std::make_shared<Settings>(settings);
+        elem.query_settings = settings.changedToMap();
 
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
@@ -1294,7 +1305,7 @@ void logExceptionBeforeStart(
                     "Not adding query settings to 'system.query_log' since setting `log_query_settings` is false"
                     " (the setting was changed for the query).");
 
-            query_log->add(elem);
+            query_log->add([&](QueryLogElement & e) { e = elem; });
         }
         else if (!settings[Setting::log_queries])
         {
@@ -2088,7 +2099,14 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
             if (txn->getState() == MergeTreeTransaction::COMMITTED)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
-            bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
+            /// `EXPLAIN ANALYZE` executes the inner `SELECT`, so after a transaction has failed it must
+            /// be rejected exactly like the query it wraps. Other `EXPLAIN` kinds do not execute the
+            /// inner query (they only print a plan) and stay special, as do transaction-control
+            /// statements so that a failed transaction can still be rolled back.
+            const auto * explain_query = out_ast ? out_ast->as<ASTExplainQuery>() : nullptr;
+            const bool is_executing_explain_analyze = explain_query && explain_query->getKind() == ASTExplainQuery::Analyze;
+            bool is_special_query = out_ast
+                && (out_ast->as<ASTTransactionControl>() || (explain_query && !is_executing_explain_analyze));
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
@@ -2419,6 +2437,33 @@ static BlockIO executeQueryImpl(
                     {
                         auto optimization_settings = QueryPlanOptimizationSettings(context);
                         auto build_pipeline_settings = BuildQueryPipelineSettings(context);
+                        /// EXPLAIN ANALYZE executes the inner SELECT only when it is an executable
+                        /// analyze (inner SELECT, non-distributed), in which case it must be charged
+                        /// against the select-query quota just like a normal SELECT. Rejected forms such
+                        /// as EXPLAIN ANALYZE INSERT, EXPLAIN ANALYZE SYSTEM, or distributed EXPLAIN
+                        /// ANALYZE never run an inner SELECT and stay counted as generic queries only, so
+                        /// reuse the same predicate that gates execution instead of the AST kind alone.
+                        const auto * explain_interpreter = dynamic_cast<const InterpreterExplainQuery *>(interpreter.get());
+                        const bool is_executable_analyze = explain_interpreter && explain_interpreter->isExecutableAnalyze();
+                        const bool charge_as_select = query_plan
+                            || out_ast->as<ASTSelectQuery>()
+                            || out_ast->as<ASTSelectWithUnionQuery>()
+                            || is_executable_analyze;
+
+                        /// `usedForQuery` dispatches per quota: for `NORMALIZED_QUERY_HASH` keyed
+                        /// quotas it charges the per-hash intervals, otherwise the shared session
+                        /// intervals. So a single set of calls covers all key types.
+                        if (charge_as_select)
+                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
+                        else if (out_ast->as<ASTInsertQuery>())
+                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
+                        quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
+                        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
+
+                        /// Track per-normalized-query-hash quota limits (works for all key types).
+                        quota->usedPerNormalizedHash(normalized_query_hash);
+                    }
+                }
 
                         auto query_cached_builder = cache_result.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
                         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
@@ -2436,6 +2481,10 @@ static BlockIO executeQueryImpl(
                 {
                     if (out_ast)
                         interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
+                if (interpreter)
+                {
+                    if (!interpreter->ignoreLimits())
+                        limits = StreamLocalLimits::forQueryResult(settings);
 
                     const auto & query_settings = context->getSettingsRef();
                     if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -2559,9 +2608,17 @@ static BlockIO executeQueryImpl(
         if (process_list_entry)
         {
             /// Query was killed before execution
-            if (process_list_entry->getQueryStatus()->isKilled())
+            auto query_status = process_list_entry->getQueryStatus();
+            if (query_status->isKilled())
+            {
+                /// The deadline (max_execution_time) can fire while the query is still pending (e.g. slow to
+                /// analyze/plan). Report it as a timeout, not a generic cancellation, so callers see the same
+                /// TIMEOUT_EXCEEDED they would get had the deadline fired during execution.
+                if (query_status->getCancelReason() == CancelReason::TIMEOUT)
+                    query_status->throwIfKilled();
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Query '{}' is killed in pending state", process_list_entry->getQueryStatus()->getInfo().client_info.current_query_id);
+                    "Query '{}' is killed in pending state", query_status->getInfo().client_info.current_query_id);
+            }
         }
 
         /// Hold element of process list till end of query execution.
