@@ -318,6 +318,24 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
     zk.ensure_path(f"{keeper_path}/processing")
     zk.create(f"{keeper_path}/processing/{conflict_node}", b"conflict")
 
+    def batch_set_processing_failures():
+        node.query("SELECT 1")  # fails loudly if the server aborted
+        node.query("SYSTEM FLUSH LOGS")
+        return int(
+            node.query(
+                "SELECT value FROM system.events"
+                " WHERE event = 'ObjectStorageQueueFailedToBatchSetProcessing'"
+            ).strip()
+            or 0
+        )
+
+    # system.events counts for the lifetime of the server process, which is shared with the
+    # other tests of this module, so snapshot it before anything can consume from this table
+    # (the MV below is what starts the streaming task) and later wait for an increase. An
+    # absolute "> 0" would already be satisfied by an earlier increment and the test would
+    # then delete the conflict node without ever exercising the failing batch.
+    failures_before = batch_set_processing_failures()
+
     node.query(
         "SYSTEM ENABLE FAILPOINT object_storage_queue_skip_one_file_in_batch"
     )
@@ -329,18 +347,9 @@ def test_batch_set_processing_failure_does_not_crash(started_cluster):
         # the batch where the server aborted without the fix, so observing it guarantees the
         # fixed path was exercised (a delayed CI worker cannot skip it). The server must stay
         # alive while we wait.
-        def batch_set_processing_failed():
-            node.query("SELECT 1")  # fails loudly if the server aborted
-            node.query("SYSTEM FLUSH LOGS")
-            return int(
-                node.query(
-                    "SELECT value FROM system.events"
-                    " WHERE event = 'ObjectStorageQueueFailedToBatchSetProcessing'"
-                ).strip()
-                or 0
-            )
-
-        run_with_retry(lambda x: x > 0, batch_set_processing_failed, retries=120)
+        run_with_retry(
+            lambda x: x > failures_before, batch_set_processing_failures, retries=120
+        )
 
         # Remove the artificial conflict and confirm the queue keeps making progress after the
         # failed batch (the iterator recovered rather than getting stuck or having crashed).
