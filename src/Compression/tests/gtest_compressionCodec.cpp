@@ -1706,6 +1706,34 @@ TEST(ChimpTest, DecompressMalformedInputEarlyHistoryReference)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+TEST(ChimpTest, NoColumnWriteCodecIsRejected)
+{
+    /// `Chimp` must stay constructible without a data type (method-byte decoding and `system.codecs`
+    /// need it), but such an instance has an undetermined data width and cannot compress. Every
+    /// no-column codec built through `CompressionCodecFactory::get(ast, nullptr)` is a write codec
+    /// (`default_compression_codec`, `marks_compression_codec`, `primary_key_compression_codec`,
+    /// `temporary_files_codec`, `TTL ... RECOMPRESS CODEC(...)`), so it must be rejected up front
+    /// instead of being accepted and serialized as `CODEC(Chimp(0))` that only fails on the first
+    /// write, merge or spill.
+    EXPECT_THROW(makeCodec("Chimp", nullptr), Exception);
+    /// The whole chain is checked, element by element, in both positions.
+    EXPECT_THROW(makeCodec("Chimp, LZ4", nullptr), Exception);
+    EXPECT_THROW(makeCodec("LZ4, Chimp", nullptr), Exception);
+
+    /// An explicit width makes the codec ready to compress even without a column type.
+    EXPECT_NO_THROW(makeCodec("Chimp(4)", nullptr));
+    EXPECT_NO_THROW(makeCodec("Chimp(8)", nullptr));
+    EXPECT_NO_THROW(makeCodec("Chimp(8), LZ4", nullptr));
+
+    /// With a column type the width is resolved from it, as for a column codec.
+    EXPECT_NO_THROW(makeCodec("Chimp", std::make_shared<DataTypeFloat32>()));
+    EXPECT_NO_THROW(makeCodec("Chimp", std::make_shared<DataTypeFloat64>()));
+
+    /// Width-independent codecs are unaffected by the check.
+    EXPECT_NO_THROW(makeCodec("LZ4", nullptr));
+    EXPECT_NO_THROW(makeCodec("ZSTD", nullptr));
+}
+
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
 {
     /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:

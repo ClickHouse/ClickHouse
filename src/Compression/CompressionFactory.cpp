@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_CODEC_PARAMETER;
     extern const int OPENSSL_ERROR;
 }
 
@@ -117,6 +118,23 @@ CompressionCodecPtr CompressionCodecFactory::get(
                     "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/nullables "
                     "of them); it can not be used as a marks, primary key or default compression codec, or in any "
                     "other context where the column data type is unknown",
+                    codec_family_name);
+
+            /// Codecs whose data width comes from the column type (e.g. `Chimp`) can be constructed without a
+            /// type — that is required for method-byte decoding (`get(uint8_t)`) and for `system.codecs` — but
+            /// such an instance cannot compress anything. Reject it here so that the string-configured write
+            /// codecs that build codecs with a null type (`default_compression_codec`, `marks_compression_codec`,
+            /// `primary_key_compression_codec`, `temporary_files_codec`, `TTL ... RECOMPRESS CODEC(...)`) fail
+            /// where they are configured, instead of being accepted, serialized as `CODEC(Chimp(0))` and failing
+            /// only on the first write or merge. Chained codecs such as `Chimp, LZ4` are covered because every
+            /// element of the chain goes through this loop. The decompression path (`get(uint8_t)`) builds codecs
+            /// directly through the creator and never reaches this point, so reading existing data is unaffected.
+            if (!column_type && !codec->isReadyToCompress())
+                throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER,
+                    "Codec {} cannot be used without a column type or an explicit width argument, because its "
+                    "data width is undetermined; it can not be used as a marks, primary key, default or "
+                    "temporary files compression codec, or in any other context where the column data type is "
+                    "unknown",
                     codec_family_name);
 
             codecs.emplace_back(codec);
