@@ -8,15 +8,24 @@
 #include <array>
 #include <optional>
 #include <functional>
+/** A standalone build of the parser (see `utils/wasm-parser`) has no signals, no `setjmp` and no
+  * way to walk its own stack, and it does not link `StackTrace.cpp`. Everything below that needs
+  * those is left out rather than making the whole header unavailable, since `Common/Exception.h`
+  * includes it and so does most of the tree.
+  */
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #include <csignal>
 #include <csetjmp>
+#endif
 
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
 #   pragma clang diagnostic ignored "-Wreserved-id-macro"
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
+#endif
 
 struct NoCapture
 {
@@ -46,7 +55,9 @@ public:
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
     explicit StackTrace(const ucontext_t & signal_context);
+#endif
 
     /// Creates empty object for deferred initialization
     explicit StackTrace(NoCapture) {}
@@ -86,13 +97,17 @@ protected:
     FramePointers frame_pointers{};
 };
 
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
 
 std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
 std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
+#endif
 std::string getSignalCodeDescription(int sig, int si_code);
 
 /// Special handling for errors during asynchronous stack unwinding,
 /// Which is used in Query Profiler
 extern thread_local bool asynchronous_stack_unwinding;
+#if !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 extern thread_local sigjmp_buf asynchronous_stack_unwinding_signal_jump_buffer;
+#endif

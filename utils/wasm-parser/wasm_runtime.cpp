@@ -18,13 +18,17 @@
 #include <Core/Settings.h>
 
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <string>
 
 namespace DB
 {
 
 bool terminate_on_any_exception = false;
+
+
 std::atomic_bool abort_on_logical_error = false;
 
 thread_local bool Exception::enable_job_stack_trace = false;
@@ -269,6 +273,40 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 {
     static const SettingFieldTimezone empty{};
     return empty;
+}
+
+}
+
+/// ---------------------------------------------------------------------------------------------
+/// Exceptions.
+///
+/// The build uses `-fignore-exceptions`: `throw`, `try` and `catch` still compile, but no landing
+/// pads or unwind tables are emitted, so nothing can be caught. That is sound here because an
+/// exception can only mean a bug or a resource limit - a syntax error is reported by
+/// `tryParseQuery` returning null, and `src/Parsers` contains no `catch` at all, which a style
+/// check enforces. Defining `__cxa_throw` here keeps libc++abi's exception machinery out of the
+/// bundle entirely; the exception object is constructed and then we stop.
+/// ---------------------------------------------------------------------------------------------
+
+extern "C"
+{
+
+void * __cxa_allocate_exception(size_t size) noexcept
+{
+    static char buffer[512];
+    return size <= sizeof(buffer) ? static_cast<void *>(buffer) : nullptr;
+}
+
+void __cxa_free_exception(void *) noexcept
+{
+}
+
+[[noreturn]] void __cxa_throw(void * thrown, void *, void (*)(void *))
+{
+    /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
+    const auto * as_std_exception = static_cast<const std::exception *>(static_cast<const Poco::Exception *>(thrown));
+    std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", as_std_exception->what());
+    std::abort();
 }
 
 }

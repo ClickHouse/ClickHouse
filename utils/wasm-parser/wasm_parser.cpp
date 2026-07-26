@@ -48,23 +48,24 @@ void ch_free(uint8_t * ptr)
 
 int ch_format(const char * query, uint32_t size, int one_line)
 {
-    try
+    /// `tryParseQuery` reports a syntax error by returning null and filling in the message; it does
+    /// not throw, and nothing in `src/Parsers` catches. So there is nothing to catch here either,
+    /// which is what lets this build with `-fno-exceptions`.
+    std::string error;
+    const char * end = query + size;
+    DB::ParserQuery parser(end);
+    DB::ASTPtr ast = DB::tryParseQuery(
+        parser, query, end, error, /*hilite=*/false, "query", /*allow_multi_statements=*/false,
+        MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS, /*skip_insignificant=*/true);
+
+    if (!ast)
     {
-        DB::ParserQuery parser(query + size);
-        DB::ASTPtr ast = DB::parseQuery(parser, query, query + size, "query", MAX_QUERY_SIZE, MAX_PARSER_DEPTH, MAX_PARSER_BACKTRACKS);
-        result() = one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
-        return 1;
-    }
-    catch (const DB::Exception & e)
-    {
-        result() = e.message();
+        result() = std::move(error);
         return 0;
     }
-    catch (const std::exception & e)
-    {
-        result() = e.what();
-        return 0;
-    }
+
+    result() = one_line ? ast->formatWithSecretsOneLine() : ast->formatWithSecretsMultiLine();
+    return 1;
 }
 
 const char * ch_result_data()
