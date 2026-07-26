@@ -54,6 +54,11 @@ class ClickHouseProc:
     # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
     # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
     DUMP_SYSTEM_TABLE_TIMEOUT = 600
+    # How long a `SIGTRAP`ed server gets to write its core dump and exit
+    # (seconds) before `stop_server` escalates to `SIGKILL`. Coverage and
+    # sanitizer builds have a multi-GB address space, so the kernel needs far
+    # longer than the few seconds a release build takes.
+    TRAP_CORE_DUMP_TIMEOUT = 300
 
     def __init__(
         self,
@@ -758,12 +763,10 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 if force:
                     # Use clickhouse stop --force when this issue is fixed
                     # https://github.com/ClickHouse/ClickHouse/issues/99142
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=10)
+                    self._signal_server(pid, signal.SIGTERM, "TERM")
+                    if self._wait_server_gone(pid, timeout=10):
+                        self._reap_server_wrapper(proc)
                         continue
-                    except subprocess.TimeoutExpired:
-                        pass
                 elif Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
@@ -772,13 +775,93 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 print(
                     f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
                 )
-                proc.send_signal(signal.SIGTRAP)
-                try:
-                    proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
+                self._signal_server(pid, signal.SIGTRAP, "TRAP")
+                if not self._wait_server_gone(
+                    pid, timeout=self.TRAP_CORE_DUMP_TIMEOUT
+                ):
+                    # The server must not outlive this function: it holds an
+                    # exclusive lock on `<run_path>/status`, and the later
+                    # `clickhouse local` scraping of `system.*_log` from the same
+                    # data directory then fails with `CANNOT_OPEN_FILE` ("Another
+                    # server instance in same directory is already running"),
+                    # losing every system table of that replica.
+                    print(
+                        f"ClickHouse process {pid} is still alive after TRAP - send KILL signal"
+                    )
+                    self._signal_server(pid, signal.SIGKILL, "KILL")
+                    if not self._wait_server_gone(pid, timeout=60):
+                        print(
+                            f"WARNING: ClickHouse process {pid} survived KILL - "
+                            f"system tables in {run_path} will not be scraped"
+                        )
+                self._reap_server_wrapper(proc)
 
         return self
+
+    @staticmethod
+    def _server_process_alive(pid) -> bool:
+        """Whether `pid` is still a live ClickHouse server process.
+
+        Matches on the command line instead of merely probing the pid: once the
+        server exits the kernel is free to hand its pid to an unrelated process,
+        and a `SIGKILL` aimed at a recycled pid would take that process out.
+
+        `-ww` is required: `ps` truncates the command line to 80 columns when its
+        output is not a terminal, which can cut the match off entirely.
+        """
+        return "clickhouse-server" in Shell.get_output(f"ps -ww -p {pid} -o command=")
+
+    @classmethod
+    def _signal_server(cls, pid, sig, name) -> bool:
+        """Send `sig` to the server process itself.
+
+        `pid` comes from the server's own `--pid-file`, which is the only handle
+        on the server proper: the servers are started with `Popen(shell=True)`,
+        so `Popen.pid` is the `sh -c ...` wrapper, and the server runs one more
+        fork below it (`BaseDaemon::setupWatchdog`). Signalling the wrapper only
+        killed the shell - the TRAP produced a useless `core.sh.*` dump instead
+        of a dump of the wedged server, and the orphaned server kept running.
+        """
+        if not cls._server_process_alive(pid):
+            print(f"ClickHouse process {pid} is already gone - {name} not sent")
+            return False
+        print(f"Send {name} signal to ClickHouse process {pid}")
+        try:
+            os.kill(pid, sig)
+        except OSError as e:
+            print(f"WARNING: Failed to send {name} to ClickHouse process {pid}: {e}")
+            return False
+        return True
+
+    @classmethod
+    def _wait_server_gone(cls, pid, timeout) -> bool:
+        deadline = time.time() + timeout
+        while True:
+            if not cls._server_process_alive(pid):
+                return True
+            if time.time() >= deadline:
+                return False
+            Utils.sleep(1)
+
+    @staticmethod
+    def _reap_server_wrapper(proc):
+        """Tear down the `sh -c ...` wrapper left above a stopped server.
+
+        The wrapper (and the watchdog between it and the server) normally exits
+        on its own within a moment of the server going away; kill it if it does
+        not, so it is not left behind as a stray process. This is also the only
+        thing that stops a live server whose pid file went stale, since then
+        there is no pid to signal.
+        """
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            print(f"Wrapper process {proc.pid} is still alive - send KILL signal")
+            proc.kill()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                print(f"WARNING: Wrapper process {proc.pid} survived KILL")
 
     def clean_logs(self):
         """
