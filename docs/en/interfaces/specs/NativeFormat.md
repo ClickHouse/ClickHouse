@@ -1477,7 +1477,6 @@ The method byte also encodes the [column-level codecs](/sql-reference/statements
 
 `0xa0` (`Chimp`) is an **experimental** lossless XOR-based codec for `Float32` and `Float64` columns, gated behind `allow_experimental_codecs` at DDL time; the method byte is always accepted on decompression. Its per-frame body carries the parameters the decoder needs, so the codec does not need to be reconstructed with a width up front: 1 byte data width (4 or 8), 1 byte `bytes_to_skip` (kept for backward compatibility), `bytes_to_skip` raw leading bytes (`uncompressed_size % width`), then the compressed stream — a little-endian `u32` item count, the first value verbatim, and the bit-packed XOR encoding of the remaining values. `Chimp` cannot be selected as `network_compression_method`: it has no default width and is rejected without a column type, so it never appears as a standalone top-level frame method byte produced by a ClickHouse server — only as a column-storage codec, typically nested inside a `Multiple` (`0x91`) frame that recursively wraps the inner method bytes (e.g. a column compressed with `CODEC(Chimp, LZ4)`).
 
-
 ### Checksum {#checksum}
 
 ClickHouse uses CityHash v1.0.2 (the historical variant), **not** modern Google CityHash; the two produce different outputs.
