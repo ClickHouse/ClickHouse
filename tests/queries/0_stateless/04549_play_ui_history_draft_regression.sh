@@ -26,6 +26,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     leaves the live editor/params alone (`tab.query`/`tab.params` diverged from `tab.launchQuery`
 #     / the launch-time params) and drops `run=1` on the entry it writes, while still keeping the
 #     completed run's own result snapshot;
+#   - Back onto a LEGACY (pre-`run_id`) history entry written while its tab was mid-run: the
+#     query/params fallback that recognizes such a null-result entry as the tab's own — now
+#     finished — run compares the parameter maps by value per name (`sameParamValues`), so merely
+#     reordering the placeholders does not blank the finished background run, while genuinely
+#     different bindings still render the entry as plain time travel;
 #   - the reload path (`persist` -> `reconcileStartup`): a debounced save that flushes an unrun
 #     draft diverging from the URL (fired by a later structural event / Back-Forward / color
 #     toggle) makes a reload restore that draft as editor text but NEVER auto-run it (the
@@ -345,6 +350,33 @@ async function finishRun(started)
     await drain();
 }
 
+/// A launch the user then switches away from, i.e. a run that will complete in a BACKGROUND tab.
+/// On top of `startRun`'s launch-time snapshot this models the two effects of entering flight
+/// (`beginFlight`, whose panel/chrome work is out of scope here): the tab is marked in flight and
+/// its previous result is dropped, so a history entry written for the tab while the request is
+/// outstanding carries no result snapshot.
+function startBackgroundRun(q)
+{
+    const started = startRun(q);
+    const tab = active();
+    tab.inFlight = true;
+    tab.result = null;
+    return started;
+}
+
+/// Complete a run that was launched in a tab the user has since left: the run path passes the
+/// LAUNCHING tab to `saveHistory`, which then installs the snapshot in memory (and persists it)
+/// but deliberately leaves the browser history, the URL and the title alone — they follow the
+/// active tab, so the null-result entry the launching tab was switched away from is never
+/// rewritten.
+async function finishBackgroundRun(started, tab)
+{
+    await sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, fullEditor: true, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1,
+        database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value }, undefined, tab);
+    tab.inFlight = false;
+    await drain();
+}
+
 function reset()
 {
     sandbox.tabs.length = 0;
@@ -575,6 +607,55 @@ async function openPlain()
     assert_eq('delayed completion (params changed): the query is kept', active().query, 'SELECT {x:Int32}');
     assert_params('delayed completion (params changed): the live param edit survives', active().params, { x: '9' });
     assert_eq('delayed completion (params changed): the entry does not carry run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+
+    /// A LEGACY history entry — persisted before entries recorded the run identity (`run_id`) —
+    /// that was written while its tab was mid-run carries no result snapshot, so Back onto it must
+    /// not time-travel over the run that has since finished in that background tab. Without a
+    /// `run_id` the handler falls back to comparing the entry's query/params against the tab's
+    /// live launch / finished snapshot, and that comparison must be order-insensitive: the entry's
+    /// map was written from the tab (the live inputs) while the snapshot's follows the LAUNCHED
+    /// text's placeholder order, so merely REORDERING the placeholders makes the two maps differ
+    /// in key insertion order only. An order-sensitive comparison read that as a different run and
+    /// blanked the finished tab.
+    reset();
+    setParam('x', '1');
+    setParam('y', '2');
+    await run('SELECT {x:Int32} + {y:Int32}');
+    const legacy_tab = active();
+    const legacy_reordered = startBackgroundRun('SELECT {y:Int32} + {x:Int32}');
+    const legacy_idx = sandbox.history.idx;
+    sandbox.addTab();   /// the structural leave refreshes the launching tab's entry: no result yet
+    await drain();
+    assert_eq('legacy mid-run entry: the entry the tab was left at holds no result', !!sandbox.history.stack[legacy_idx].state.result, false);
+    /// Age the entry into a pre-`run_id` one, the shape an upgraded browser history holds.
+    delete sandbox.history.stack[legacy_idx].state.run_id;
+    await finishBackgroundRun(legacy_reordered, legacy_tab);
+    sandbox.history.back();
+    await drain();
+    assert_eq('legacy mid-run entry (reordered params): the tab is reactivated', sandbox.activeTabId, legacy_tab.id);
+    assert_eq('legacy mid-run entry (reordered params): the finished run is preserved', legacy_tab.result && legacy_tab.result.query, 'SELECT {y:Int32} + {x:Int32}');
+    assert_params('legacy mid-run entry (reordered params): its bindings are preserved', legacy_tab.result && legacy_tab.result.params, { x: '1', y: '2' });
+
+    /// Control: a legacy null-result entry whose bindings genuinely DIFFER in value does not
+    /// belong to the tab's finished run (a parameter widget edited while the request was
+    /// outstanding rewrote the entry), so it still falls through to plain time-travel and the
+    /// entry itself is rendered — the order-insensitive comparison must not make every legacy
+    /// entry match.
+    reset();
+    setParam('x', '1');
+    setParam('y', '2');
+    await run('SELECT {x:Int32} + {y:Int32}');
+    const legacy_edited_tab = active();
+    const legacy_edited = startBackgroundRun('SELECT {y:Int32} + {x:Int32}');
+    setParam('x', '7');   /// a live binding edit while the run is still in flight
+    const legacy_edited_idx = sandbox.history.idx;
+    sandbox.addTab();
+    await drain();
+    delete sandbox.history.stack[legacy_edited_idx].state.run_id;
+    await finishBackgroundRun(legacy_edited, legacy_edited_tab);
+    sandbox.history.back();
+    await drain();
+    assert_eq('legacy mid-run entry (edited params): the entry is rendered as time travel', legacy_edited_tab.result, null);
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the draft
     /// (query != lastSavedQuery, the shape `reconcileStartup` treats as a stale reload), so the

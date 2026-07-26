@@ -31,6 +31,11 @@ delayed completion: the entry does not carry run=1
 delayed completion (params changed): the query is kept
 delayed completion (params changed): the live param edit survives
 delayed completion (params changed): the entry does not carry run=1
+legacy mid-run entry: the entry the tab was left at holds no result
+legacy mid-run entry (reordered params): the tab is reactivated
+legacy mid-run entry (reordered params): the finished run is preserved
+legacy mid-run entry (reordered params): its bindings are preserved
+legacy mid-run entry (edited params): the entry is rendered as time travel
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload: the draft is restored unrun

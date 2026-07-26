@@ -9167,16 +9167,22 @@ window.onpopstate = function(event) {
     /// longer match, so fall through to plain time-travel and render the entry itself.
     ///
     /// Legacy entries persisted before `run_id` existed carry none; for them fall back to the
-    /// earlier launch-query / snapshot-query heuristic so old history still resolves.
+    /// earlier launch-query / snapshot-query heuristic so old history still resolves. That
+    /// heuristic compares the parameter maps by VALUE PER NAME (`sameParamValues`), never by
+    /// serialization: the entry's map was written from the tab (the live inputs / the saved
+    /// snapshot) while `result.params` follows the launched TEXT's placeholder order, so a
+    /// placeholder reorder makes the two maps differ only in key insertion order. An order-
+    /// sensitive comparison would read that as a different run and time-travel over the tab's
+    /// finished result — blanking or replacing a completed run — which is exactly what the
+    /// order-insensitive comparison prevents in `tabReflectsRun` and `saveHistory`.
     const entry_run_id = event.state.run_id;
     const entry_query = event.state.query;
-    const entry_params = JSON.stringify(event.state.params || {});
     const live_is_entry_run = entry_run_id != null
         ? ((tab.inFlight && tab.launchRunId === entry_run_id)
             || (tab.result && tab.result.run_id === entry_run_id))
         : ((tab.inFlight && tab.launchQuery === entry_query)
             || (tab.result && tab.result.query === entry_query
-                && JSON.stringify(tab.result.params || {}) === entry_params));
+                && sameParamValues(tab.result.params, event.state.params)));
     if (!entry_has_result && live_is_entry_run) {
         activateTab(tab.id).then(scheduleSave);
         return;
