@@ -205,4 +205,51 @@ if [ "$count" != "3" ]; then
 fi
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_patch"
+
+# Phase 6: a no-default column whose only live values are in a patch part. `ADD COLUMN a String`
+# plus a lightweight `UPDATE` leaves every base part without a physical a, so the merge must not
+# expire it - neither under its own name (first table) nor as a pending rename target (second
+# table), otherwise the patch is never requested and the updated value is silently lost.
+for phase6 in own_name rename_target; do
+    ${CLICKHOUSE_CLIENT} --query="
+        DROP TABLE IF EXISTS t_rename_merge_race_patch_only;
+        CREATE TABLE t_rename_merge_race_patch_only (id UInt64, v String)
+        ENGINE = MergeTree() ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0,
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            apply_patches_on_merge = 1;
+        SYSTEM STOP MERGES t_rename_merge_race_patch_only;
+        INSERT INTO t_rename_merge_race_patch_only VALUES (1, 'x'), (2, 'y');
+        INSERT INTO t_rename_merge_race_patch_only VALUES (3, 'z'), (4, 'w');
+        ALTER TABLE t_rename_merge_race_patch_only ADD COLUMN a String;
+    "
+    ${CLICKHOUSE_CLIENT} --enable_lightweight_update=1 --query="UPDATE t_rename_merge_race_patch_only SET a = 'patched' WHERE id = 2"
+
+    column=a
+    if [ "$phase6" = "rename_target" ]; then
+        ${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+        ${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_patch_only RENAME COLUMN a TO b SETTINGS alter_sync = 0"
+        column=b
+    fi
+
+    ${CLICKHOUSE_CLIENT} --query="SYSTEM START MERGES t_rename_merge_race_patch_only"
+    ${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_patch_only FINAL"
+    if [ "$phase6" = "rename_target" ]; then
+        disable_failpoint
+        wait_mutation t_rename_merge_race_patch_only
+    fi
+
+    count=$(${CLICKHOUSE_CLIENT} --query="
+        SELECT count() FROM t_rename_merge_race_patch_only
+        WHERE ${column} = if(id = 2, 'patched', '')")
+    if [ "$count" != "4" ]; then
+        echo "FAIL (patch-only column, ${phase6}): expected 4 rows with the patched ${column} preserved, got $count"
+        ${CLICKHOUSE_CLIENT} --query="SELECT id, v, ${column} FROM t_rename_merge_race_patch_only ORDER BY id"
+        exit 1
+    fi
+
+    ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_patch_only"
+done
+
 echo "OK"

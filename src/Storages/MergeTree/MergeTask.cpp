@@ -693,6 +693,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 columns_present_in_parts.emplace(col.name);
         }
 
+        /// The only live values of a column may sit in the patch parts selected for this merge: a
+        /// column added by `ADD COLUMN` and then filled by a lightweight `UPDATE` is physically
+        /// absent from all base parts. Such a column is not expired - expiring it would drop the
+        /// column from the read set, so the patch would never be requested and its values lost.
+        NameSet columns_present_in_patch_parts;
+        for (const auto & patch_part : patch_parts)
+        {
+            for (const auto & col : patch_part->getColumns())
+                columns_present_in_patch_parts.emplace(col.name);
+        }
+
         NameSet storage_column_names;
         storage_column_names.reserve(global_ctx->storage_columns.size());
         for (const auto & storage_column : global_ctx->storage_columns)
@@ -700,7 +711,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
         /// A pending `RENAME COLUMN old -> new` is applied on-fly at read time: `storage_columns`
         /// already carries `new`, while the source parts still physically store `old`. Treat `new`
-        /// as present whenever a part holds the matching `old` name, so the merge does not wrongly
+        /// as present whenever a base or patch part holds the matching `old` name, so the merge does not wrongly
         /// expire and drop a not-yet-materialized rename target of a column with no default
         /// expression (see #80648). If `old` is itself a live storage column (re-added while the
         /// rename is pending), the physical data will belong to `new` only after the rename
@@ -711,7 +722,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             auto conversions = MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context);
             for (const auto & rename : conversions->getRenameMap())
             {
-                if (columns_present_in_parts.contains(rename.rename_from)
+                if ((columns_present_in_parts.contains(rename.rename_from)
+                     || columns_present_in_patch_parts.contains(rename.rename_from))
                     && !storage_column_names.contains(rename.rename_from))
                     renamed_column_targets.emplace(rename.rename_to);
             }
@@ -723,6 +735,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         for (const auto & storage_column : global_ctx->storage_columns)
         {
             if (!columns_present_in_parts.contains(storage_column.name)
+                && !columns_present_in_patch_parts.contains(storage_column.name)
                 && !renamed_column_targets.contains(storage_column.name)
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
