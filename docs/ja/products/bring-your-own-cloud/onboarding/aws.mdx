@@ -81,7 +81,7 @@ CloudFormationスタックを作成すると、Cloud Console で、S3、VPC、EK
 <br />
 
 4. S3 ゲートウェイエンドポイントを設定する
-   VPC に S3 ゲートウェイエンドポイントがまだ設定されていない場合は、VPC と Amazon S3 の間で安全かつプライベートな通信を有効にするために作成する必要があります。このエンドポイントを使用すると、ClickHouse のサービスはパブリックインターネットを経由せずに S3 へアクセスできます。設定例については、以下のスクリーンショットを参照してください。
+   VPC に S3 ゲートウェイエンドポイントがまだ設定されていない場合は、VPC と Amazon S3 の間で安全かつプライベートな通信を有効にするために、これを作成する必要があります。このエンドポイントを使用すると、ClickHouse のサービスはパブリックインターネットを経由せずに S3 へアクセスできます。設定例については、以下のスクリーンショットを参照してください。
 
 <br />
 
@@ -99,100 +99,90 @@ CloudFormationスタックを作成すると、Cloud Console で、S3、VPC、EK
 * それらのサブネットが配置されているアベイラビリティゾーン
 
 <div id="optional-setup-vpc-peering">
-  ### オプション: VPCピアリングを設定する
+  ### 任意: VPC ピアリングを設定する
 </div>
 
-ClickHouse BYOC の VPC ピアリングを作成または削除するには、次の手順に従ってください。
+ClickHouse BYOC の VPC ピアリングを作成または削除するには、次の手順に従います。
 
-<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
-  #### ステップ 1: ClickHouse BYOC でプライベートロードバランサーを有効化する
-</div>
+<Steps>
+  <Step title="ClickHouse BYOC のプライベートロードバランサーを有効にする" id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+    プライベートロードバランサーを有効にするよう、ClickHouse Support に依頼してください。
+  </Step>
 
-プライベートロードバランサーを有効化するには、ClickHouse Supportまでお問い合わせください。
+  <Step title="ピアリング接続を作成する" id="step-2-create-a-peering-connection">
+    1. ClickHouse BYOC アカウントの VPC Dashboard に移動します。
+    2. Peering Connections を選択します。
+    3. Create Peering Connection をクリックします。
+    4. VPC Requester を ClickHouse VPC ID に設定します。
+    5. VPC Accepter を対象の VPC ID に設定します。 (必要に応じて別のアカウントを選択します) 
+    6. Create Peering Connection をクリックします。
 
-<div id="step-2-create-a-peering-connection">
-  #### ステップ 2 ピアリング接続を作成する
-</div>
+    <br />
 
-1. ClickHouse BYOC アカウントの VPC ダッシュボードに移動します。
-2. [Peering Connections] を選択します。
-3. [Create Peering Connection] をクリックします。
-4. [VPC Requester] に ClickHouse の VPC ID を設定します。
-5. [VPC Accepter] に対象の VPC ID を設定します。 (必要に応じて別のアカウントを選択します)
-6. [Create Peering Connection] をクリックします。
+    <img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC ピアリング接続の作成" />
 
-<br />
+    <br />
+  </Step>
 
-<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC ピアリング接続の作成" />
+  <Step title="ピアリング接続リクエストを承認する" id="step-3-accept-the-peering-connection-request">
+    ピアリング先のアカウントで、(VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) ページに移動し、この VPC ピアリング リクエストを承認します。
 
-<br />
+    <br />
 
-<div id="step-3-accept-the-peering-connection-request">
-  #### ステップ 3 ピアリング接続リクエストを承認する
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC ピアリング接続の承認" />
 
-ピアリングアカウントに移動し、(VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) ページでこの VPC ピアリングリクエストを承認します。
+    <br />
+  </Step>
 
-<br />
+  <Step title="ClickHouse VPC のルートテーブルに宛先を追加する" id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+    ClickHouse BYOC アカウントで、
 
-<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC ピアリング接続の承認" />
+    1. VPC Dashboard で Route Tables を選択します。
+    2. ClickHouse VPC ID を検索します。private subnets に関連付けられている各ルートテーブルを編集します。
+    3. Routes タブの下にある Edit ボタンをクリックします。
+    4. Add another route をクリックします。
+    5. Destination に対象 VPC の CIDR 範囲を入力します。
+    6. Target には「Peering Connection」とピアリング接続の ID を選択します。
 
-<br />
+    <br />
 
-<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
-  #### ステップ 4 ClickHouse VPC のルートテーブルに宛先を追加する
-</div>
+    <img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC ルートテーブルの追加" />
 
-ClickHouse BYOC アカウントで、次の操作を行います。
+    <br />
+  </Step>
 
-1. VPC Dashboard で Route Tables を選択します。
-2. ClickHouse VPC ID を検索します。プライベートサブネットに関連付けられている各ルートテーブルを編集します。
-3. Routes タブの Edit ボタンをクリックします。
-4. Add another route をクリックします。
-5. Destination に、対象 VPC の CIDR 範囲を入力します。
-6. Target には「Peering Connection」とピアリング接続 ID を選択します。
+  <Step title="対象 VPC のルートテーブルに宛先を追加する" id="step-5-add-destination-to-the-target-vpc-route-tables">
+    ピアリング先の AWS アカウントで、
 
-<br />
+    1. VPC Dashboard で Route Tables を選択します。
+    2. 対象の VPC ID を検索します。
+    3. Routes タブの下にある Edit ボタンをクリックします。
+    4. Add another route をクリックします。
+    5. Destination に ClickHouse VPC の CIDR 範囲を入力します。
+    6. Target には「Peering Connection」とピアリング接続の ID を選択します。
 
-<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC ルートテーブルの追加" />
+    <br />
 
-<br />
+    <img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC ルートテーブルの追加" />
 
-<div id="step-5-add-destination-to-the-target-vpc-route-tables">
-  #### ステップ 5 宛先をターゲット VPC のルートテーブルに追加する
-</div>
+    <br />
+  </Step>
 
-ピアリング先の AWS アカウントで、次の操作を行います。
+  <Step title="ピア接続された VPC からのアクセスを許可するようにセキュリティグループを編集する" id="step-6-edit-security-group-to-allow-peered-vpc-access">
+    ClickHouse BYOC アカウントでは、ピア接続された VPC からのトラフィックを許可するように、セキュリティグループの設定を更新する必要があります。ピア接続された VPC の CIDR 範囲を含む受信ルールを追加するよう、ClickHouse Support に依頼してください。
 
-1. VPC ダッシュボードで Route Tables を選択します。
-2. ターゲット VPC の ID を検索します。
-3. Routes タブの Edit ボタンをクリックします。
-4. Add another route をクリックします。
-5. Destination に ClickHouse VPC の CIDR 範囲を入力します。
-6. Target で「Peering Connection」とピアリング接続の ID を選択します。
+    ***
 
-<br />
+    これで、ClickHouse サービスはピア接続された VPC からアクセスできるようになります。
 
-<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC ルートテーブルの追加" />
+    ClickHouse にプライベート接続するために、ユーザーのピア接続された VPC から安全に接続できるよう、プライベートロードバランサーとエンドポイントがプロビジョニングされます。プライベート エンドポイントは、パブリックエンドポイントの形式に `-private` 接尾辞を付けたものになります。例:
 
-<br />
+    * **パブリックエンドポイント**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+    * **プライベート エンドポイント**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
-<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
-  #### ステップ 6: ピア接続された VPC からのアクセスを許可するようにセキュリティグループを編集する
-</div>
-
-ClickHouse BYOC アカウントでは、ピア接続された VPC からのトラフィックを許可するように、セキュリティグループの設定を更新する必要があります。ピア接続された VPC の CIDR 範囲を含む受信ルールを追加するよう、ClickHouse Support に依頼してください。
-
-***
-
-これで、ClickHouse サービスはピア接続された VPC からアクセスできるようになります。
-
-ClickHouse にプライベート接続するために、ユーザーのピア接続された VPC から安全に接続できるよう、プライベートロードバランサーとエンドポイントがプロビジョニングされます。プライベート エンドポイントは、パブリックエンドポイントの形式に `-private` 接尾辞を付けたものになります。例:
-
-* **パブリックエンドポイント**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-* **プライベート エンドポイント**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
-
-任意ですが、ピア接続が正常に機能していることを確認した後、ClickHouse BYOC のパブリックロードバランサーの削除を依頼できます。
+    任意ですが、ピア接続が正常に機能していることを確認した後、ClickHouse BYOC のパブリックロードバランサーの削除を依頼できます。
+  </Step>
+</Steps>
 
 <div id="upgrade-process">
   ## アップグレードプロセス
