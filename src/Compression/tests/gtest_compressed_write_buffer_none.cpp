@@ -1,3 +1,4 @@
+#include <base/unaligned.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecNone.h>
 #include <Compression/CompressedReadBufferFromFile.h>
@@ -7,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <memory>
 #include <random>
 #include <vector>
@@ -55,6 +57,48 @@ void roundTrip(const std::vector<char> & data, size_t block_size, size_t out_buf
     ASSERT_EQ(read_back, data);
 }
 
+/// Writes `data` through a CompressedWriteBuffer with the NONE codec and the zero-copy path enabled,
+/// then returns the uncompressed size of every frame found in the resulting file.
+std::vector<size_t> writeAndGetFrameSizes(
+    const std::vector<char> & data, size_t block_size, size_t out_buf_size, bool use_adaptive_buffer_size)
+{
+    auto tmp_file = createTemporaryFile("/tmp/");
+
+    {
+        WriteBufferFromFile out(tmp_file->path(), out_buf_size);
+        CompressedWriteBuffer compressed_out(
+            out,
+            std::make_shared<CompressionCodecNone>(),
+            block_size,
+            use_adaptive_buffer_size,
+            DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE,
+            /*out_buffer_is_exclusive_=*/ true);
+
+        compressed_out.write(data.data(), data.size());
+        compressed_out.finalize();
+        out.finalize();
+    }
+
+    std::vector<size_t> frame_sizes;
+
+    ReadBufferFromFile in(tmp_file->path());
+    while (!in.eof())
+    {
+        in.ignore(sizeof(CityHash_v1_0_2::uint128));
+
+        char header[ICompressionCodec::getHeaderSize()];
+        in.readStrict(header, sizeof(header));
+
+        UInt32 compressed_size = unalignedLoadLittleEndian<UInt32>(&header[1]);
+        UInt32 uncompressed_size = unalignedLoadLittleEndian<UInt32>(&header[5]);
+
+        frame_sizes.push_back(uncompressed_size);
+        in.ignore(compressed_size - ICompressionCodec::getHeaderSize());
+    }
+
+    return frame_sizes;
+}
+
 std::vector<char> makeData(size_t size)
 {
     std::vector<char> data(size);
@@ -86,6 +130,52 @@ TEST(CompressedWriteBufferNone, TinyOutputBufferFallback)
     auto data = makeData(50000);
     for (size_t out_buf_size : {size_t(1), size_t(10), size_t(25), size_t(26), size_t(40), size_t(128)})
         roundTrip(data, /*block_size=*/ 8192, out_buf_size, /*write_chunk=*/ 333);
+}
+
+TEST(CompressedWriteBufferNone, BlockSizeIsHonoredForAnyOutputBufferSize)
+{
+    /// The zero-copy path must never shrink the configured block size: it is used only while the
+    /// nested buffer can expose a window for a whole block plus the service prefix, and otherwise
+    /// the data goes through the owned buffer. Backends that start with a smaller buffer than the
+    /// requested one (adaptive local files, S3 and Azure blob writers) exercise exactly this case.
+    const size_t block_size = 65536;
+    const size_t data_size = 10 * block_size;
+    auto data = makeData(data_size);
+
+    for (size_t out_buf_size : {size_t(4096),                                    /// far too small
+                                block_size,                                      /// one prefix short
+                                block_size + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE, /// exact fit
+                                size_t(1) << 20})                                /// plenty of room
+    {
+        auto frame_sizes = writeAndGetFrameSizes(data, block_size, out_buf_size, /*use_adaptive_buffer_size=*/ false);
+
+        ASSERT_EQ(frame_sizes.size(), data_size / block_size) << "out_buf_size = " << out_buf_size;
+        for (size_t frame_size : frame_sizes)
+            ASSERT_EQ(frame_size, block_size) << "out_buf_size = " << out_buf_size;
+    }
+}
+
+TEST(CompressedWriteBufferNone, AdaptiveBlockSizeGrowsToTheMaximum)
+{
+    /// With the adaptive buffer size the block size ramps up from the initial size to the maximum,
+    /// on the zero-copy path as well as on the owned-buffer path.
+    const size_t block_size = 1 << 20;
+    auto data = makeData(16 * block_size);
+
+    for (size_t out_buf_size : {size_t(4096), block_size + CompressedWriteBuffer::COMPRESSED_BLOCK_PREFIX_SIZE})
+    {
+        auto frame_sizes = writeAndGetFrameSizes(data, block_size, out_buf_size, /*use_adaptive_buffer_size=*/ true);
+
+        ASSERT_FALSE(frame_sizes.empty());
+        for (size_t frame_size : frame_sizes)
+            ASSERT_LE(frame_size, block_size) << "out_buf_size = " << out_buf_size;
+
+        /// The ramp must reach the maximum and stay there: every frame but the last (which is
+        /// whatever is left over) is a full block by the time the maximum is reached.
+        ASSERT_EQ(*std::max_element(frame_sizes.begin(), frame_sizes.end()), block_size)
+            << "out_buf_size = " << out_buf_size;
+        ASSERT_EQ(frame_sizes[frame_sizes.size() - 2], block_size) << "out_buf_size = " << out_buf_size;
+    }
 }
 
 TEST(CompressedWriteBufferNone, ChunkedWritesAcrossBlocks)

@@ -64,6 +64,9 @@ private:
     /// an intermediate copy. Otherwise (or when `out` has no room) we use the owned buffer.
     void setupBufferForNextBlock();
 
+    /// Advance the adaptive block size after a complete block has been written.
+    void growBlockSize(bool block_is_full);
+
     /// finalize call does not affect the out buffer.
     /// That is made in order to handle the use case when several CompressedWriteBuffers write to the one file.
     /// Usually the CompressedWriteBuffer does not own the out buffer.
@@ -86,6 +89,13 @@ private:
     /// large buffer allocation when actual size of written data is small.
     bool use_adaptive_buffer_size;
     size_t adaptive_buffer_max_size;
+
+    /// The size of the block that is currently being filled. It equals adaptive_buffer_max_size,
+    /// unless the adaptive buffer size is used, in which case it starts small and grows up to it.
+    /// The zero-copy NONE path is enabled only while `out` can expose a window of this size plus
+    /// COMPRESSED_BLOCK_PREFIX_SIZE, so that the block size is honored no matter which buffer is
+    /// used for the payload.
+    size_t block_size;
 
     PODArray<char> compressed_buffer;
 
