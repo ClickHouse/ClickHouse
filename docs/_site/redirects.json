@@ -4164,12 +4164,8 @@
     "source": "/integrations/clickpipes/secure-kinesis"
   },
   {
-    "destination": "/integrations/clickpipes/postgres/source/rds#iam-authentication",
+    "destination": "/integrations/clickpipes/postgres/auth",
     "source": "/integrations/clickpipes/secure-rds"
-  },
-  {
-    "destination": "/integrations/clickpipes/postgres/source/rds#iam-authentication",
-    "source": "/integrations/clickpipes/postgres/auth"
   },
   {
     "destination": "/concepts/features/interfaces/cli",

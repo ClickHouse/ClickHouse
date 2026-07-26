@@ -1,14 +1,20 @@
-import { Image } from "/snippets/components/Image.jsx";
-
 export const IAMAuthentication = ({ engine, service, children }) => {
-  const svc = String(service).toLowerCase() === 'aurora'
-    ? { name: 'Aurora', resource: 'cluster', id: 'cluster-xxxxxxxxxxxxxx' }
-    : { name: 'RDS', resource: 'instance', id: 'db-xxxxxxxxxxxxxx' };
+  const services = {
+    aurora: { name: 'Aurora', resource: 'cluster', id: 'cluster-xxxxxxxxxxxxxx' },
+    rds: { name: 'RDS', resource: 'instance', id: 'db-xxxxxxxxxxxxxx' },
+  };
+  const createUserStatements = {
+    postgres: `CREATE USER clickpipes_iam_user;
+GRANT rds_iam TO clickpipes_iam_user;`,
+    mysql: `CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';`,
+  };
+  const svc = services[String(service).toLowerCase()];
+  const createUserSql = createUserStatements[String(engine).toLowerCase()];
 
-  const createUserSql = engine === 'postgres'
-    ? `CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;`
-    : `CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';`;
+  if (!svc)
+    throw new Error(`Unsupported IAM authentication service: ${service}`);
+  if (!createUserSql)
+    throw new Error(`Unsupported IAM authentication engine: ${engine}`);
 
   return (
     <>
@@ -45,7 +51,9 @@ GRANT rds_iam TO clickpipes_iam_user;`
         <li>Copy the service's <strong>Service role ID (IAM)</strong> value, shown below.</li>
       </ol>
 
-      <Image img="/images/cloud/security/secures3_arn.webp" alt="Service role ID (IAM) value in the Network security information section" size="lg" border/>
+      <Frame>
+        <img src="/images/cloud/security/secures3_arn.webp" alt="Service role ID (IAM) value in the Network security information section" />
+      </Frame>
 
       <p>This value is your <code>{'{ClickHouse_IAM_ARN}'}</code> — the role ClickPipes uses to access your {svc.name} {svc.resource}.</p>
 
