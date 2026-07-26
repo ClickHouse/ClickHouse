@@ -1729,8 +1729,8 @@ void Counters::setUserCounters(Counters * user)
         parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    /// Release: see `setParent`. `user` is typically a just-constructed `ProcessListForUser`'s
-    /// `user_performance_counters`, published into a chain shared with already-running threads.
+    /// Release: see `setParent`. `user` is a `ProcessListForUser`'s `user_performance_counters`,
+    /// possibly just constructed, published into a chain shared with already-running threads.
     current_val->parent.store(user, std::memory_order_release);
 }
 
