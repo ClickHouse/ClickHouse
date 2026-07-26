@@ -444,6 +444,18 @@ public:
         ContextPtr /*context*/,
         bool /*async_insert*/);
 
+    /** Checks on the initiator that the current user is allowed to insert into this table, in
+      * addition to the `INSERT` privilege on the table name checked by the interpreter.
+      *
+      * Called when the storage is the destination of an `INSERT`, before the query is executed or
+      * queued for asynchronous insertion. A storage whose `write` guards the write with an access
+      * check of its own must repeat the check here: with `async_insert = 1` the sink is created
+      * later, in a background flush, so a check done only in `write` neither reaches the user
+      * (with `wait_for_async_insert = 0` the query has already returned success) nor happens with
+      * the privileges the user had when the query was issued.
+      */
+    virtual void checkInsertIsAllowed(ContextPtr /*context*/) const {}
+
     /** Writes the data to a table in distributed manner.
       * It is supposed that implementation looks into SELECT part of the query and executes distributed
       * INSERT SELECT if it is possible with current storage as a receiver and query SELECT part as a producer.

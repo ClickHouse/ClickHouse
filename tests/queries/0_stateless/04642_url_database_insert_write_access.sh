@@ -33,6 +33,12 @@ ${CLICKHOUSE_CLIENT} --user "${USER}" -q "SELECT * FROM ${DB}.\`${TABLE}\`"
 echo '--- INSERT without the write source grant must fail'
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "INSERT INTO ${DB}.\`${TABLE}\` VALUES (2)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
 
+echo '--- INSERT without the write source grant must fail with an asynchronous insert too'
+# The sink of an asynchronous insert is created in a background flush, so a check done only when
+# the sink is created would neither reach the user (the query has already returned success with
+# `wait_for_async_insert = 0`) nor run with the privileges the user had when the query was issued.
+${CLICKHOUSE_CLIENT} --user "${USER}" --async_insert 1 --wait_for_async_insert 0 -q "INSERT INTO ${DB}.\`${TABLE}\` VALUES (2)" 2>&1 | grep -o -m1 'ACCESS_DENIED'
+
 echo '--- INSERT with the write source grant'
 ${CLICKHOUSE_CLIENT} -q "GRANT WRITE ON FILE TO ${USER}"
 ${CLICKHOUSE_CLIENT} --user "${USER}" -q "INSERT INTO ${DB}.\`${TABLE}\` VALUES (2)"
