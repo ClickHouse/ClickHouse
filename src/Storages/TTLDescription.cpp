@@ -524,7 +524,7 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                                 representative_arguments, node->result_type, /*input_rows_count=*/ 1, /*dry_run=*/ true);
                             candidates.push_back(cast_result->convertToFullColumnIfConst());
                         }
-                        catch (...)
+                        catch (...) /// Ok: any failure here only means we cannot narrow the domain.
                         {
                             /// The cast failed on the synthetic representative value (a data-dependent
                             /// error, e.g. an unparseable default string). The node itself needs no
