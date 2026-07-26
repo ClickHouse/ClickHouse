@@ -655,8 +655,13 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
     return result;
 }
 
-bool validateQueryPlanCacheEntry(const QueryPlanCacheEntry & entry, const ContextPtr & context)
+bool validateQueryPlanCacheEntry(
+    const QueryPlanCacheEntry & entry,
+    const ContextPtr & context,
+    QueryPlan::ExpectedStorageIdentities & validated_identities)
 {
+    validated_identities.clear();
+
     for (const auto & dep : entry.dependencies)
     {
         auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{dep.database, dep.table}, context);
@@ -685,6 +690,10 @@ bool validateQueryPlanCacheEntry(const QueryPlanCacheEntry & entry, const Contex
         const auto row_policy_info = getRowPolicyInfo(context, dep.database, dep.table);
         if (row_policy_info.has_subquery || row_policy_info.hash != dep.row_policy_hash)
             return false;
+
+        /// Record the identity that was just proven, so that materialization can bind its leaf
+        /// reads to it instead of trusting a second, independent name resolution.
+        validated_identities[{storage_id.getDatabaseName(), storage_id.table_name}] = storage_id.uuid;
     }
 
     return true;
@@ -760,7 +769,10 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
         query_context->addUsedRowPolicy(row_policy);
 }
 
-QueryPlan materializeCachedQueryPlan(std::string_view serialized_plan, const ContextPtr & context)
+QueryPlan materializeCachedQueryPlan(
+    std::string_view serialized_plan,
+    const ContextPtr & context,
+    const QueryPlan::ExpectedStorageIdentities & validated_identities)
 {
     ReadBufferFromMemory in(serialized_plan.data(), serialized_plan.size());
 
@@ -773,9 +785,13 @@ QueryPlan materializeCachedQueryPlan(std::string_view serialized_plan, const Con
     /// Rebuild `PreparedSet` objects for IN (...) subqueries embedded in the plan.
     auto plan = QueryPlan::makeSets(std::move(plan_and_sets), context);
 
-    /// Replace `ReadFromTable` placeholders with storage-specific reads against the
-    /// current data snapshots.
-    plan.resolveStorages(context);
+    /// Replace `ReadFromTable` placeholders with storage-specific reads against the current data
+    /// snapshots, requiring every leaf to resolve to a storage that `validateQueryPlanCacheEntry`
+    /// has already proven. This closes the window between validation and execution: a concurrent
+    /// `DROP`/`CREATE` in an `Atomic` database can no longer make the plan run against a storage
+    /// (engine, schema, view security) that was never validated - resolution throws
+    /// `INCORRECT_DATA` instead, and the caller falls back to normal planning.
+    plan.resolveStorages(context, &validated_identities);
 
     return plan;
 }

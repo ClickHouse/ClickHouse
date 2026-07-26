@@ -4,11 +4,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
-
-class QueryPlan;
 
 /// Returns true if the AST contains functions whose results must not be frozen into a
 /// cached plan (non-deterministic functions; `arrayJoin` is exempt because it is pure).
@@ -45,7 +44,16 @@ std::optional<std::vector<QueryPlanCacheDependency>> collectQueryPlanCacheDepend
 /// Revalidates a cached entry against the current state of the database: every dependency
 /// must still resolve to the same storage (UUID), with the same schema (metadata version /
 /// schema hash) and the same row policy. Returns false if the entry is stale.
-bool validateQueryPlanCacheEntry(const QueryPlanCacheEntry & entry, const ContextPtr & context);
+///
+/// On success `validated_identities` receives the identity of every storage the validation
+/// proved. It must be passed to `materializeCachedQueryPlan` so that plan materialization binds
+/// its leaf reads to exactly these storages: validation and materialization resolve the table
+/// names independently, and without this binding a concurrent `DROP`/`CREATE` between them could
+/// validate one storage and execute against another.
+bool validateQueryPlanCacheEntry(
+    const QueryPlanCacheEntry & entry,
+    const ContextPtr & context,
+    QueryPlan::ExpectedStorageIdentities & validated_identities);
 
 /// Re-checks SELECT access for every dependency of a cached plan. Permissions may have been
 /// revoked after the plan was cached; throws ACCESS_DENIED in that case (the error propagates
@@ -60,7 +68,13 @@ void addQueryAccessInfoForQueryPlanCacheHit(const QueryPlanCacheEntry & entry, c
 /// Reconstructs an executable plan from cached bytes: deserializes the logical plan,
 /// rebuilds prepared sets, and resolves storage-agnostic `ReadFromTable` leaves into reads
 /// against the current data snapshots (this is what makes cache hits see fresh data).
-QueryPlan materializeCachedQueryPlan(std::string_view serialized_plan, const ContextPtr & context);
+///
+/// `validated_identities` comes from `validateQueryPlanCacheEntry` and pins resolution to the
+/// storages that validation proved; a leaf that resolves to anything else throws `INCORRECT_DATA`.
+QueryPlan materializeCachedQueryPlan(
+    std::string_view serialized_plan,
+    const ContextPtr & context,
+    const QueryPlan::ExpectedStorageIdentities & validated_identities);
 
 /// Serializes a logical plan (as produced by the planner's `build_logical_plan` mode) into
 /// cacheable bytes.

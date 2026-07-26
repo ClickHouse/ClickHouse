@@ -62,6 +62,9 @@ Server configuration:
 </query_plan_cache>
 ```
 
+Setting either `max_size_in_bytes` or `max_entries` to `0` disables the cache completely: eligible queries then take the normal
+planning path, exactly as if `enable_query_plan_cache` were unset.
+
 Per-user quota: `query_plan_cache_size_in_bytes_quota` (0 = no quota). The cache can be cleared with:
 
 ```sql

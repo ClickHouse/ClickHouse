@@ -125,7 +125,11 @@ static ASTPtr wrapWithUnion(ASTPtr select)
     return select_with_union;
 }
 
-static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const ContextPtr & context)
+static QueryPlanResourceHolder replaceReadingFromTable(
+    QueryPlan::Node & node,
+    QueryPlan::Nodes & nodes,
+    const ContextPtr & context,
+    const QueryPlan::ExpectedStorageIdentities * expected_identities)
 {
     const auto * reading_from_table = typeid_cast<const ReadFromTableStep *>(node.step.get());
     const auto * reading_from_table_function = typeid_cast<const ReadFromTableFunctionStep *>(node.step.get());
@@ -203,6 +207,27 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
                 query_tree_node->dumpTree());
 
         select_query_info.table_expression_modifiers = reading_from_table_function->getTableExpressionModifiers();
+    }
+
+    /// Bind the read to the identity the caller has already validated. The check must happen here,
+    /// between name resolution and `lockForShare`, exactly where normal planning pins the storage:
+    /// once the lock is taken the resolved storage cannot be replaced underneath the query, so an
+    /// identity proven here is the identity that executes. Anything the caller did not validate -
+    /// a different UUID after a concurrent `DROP`/`CREATE` in an `Atomic` database, an unexpected
+    /// table, or a table function (which has no UUID and can never be a cached-plan leaf) - is
+    /// rejected with `INCORRECT_DATA`, which the query plan cache treats as a stale entry and
+    /// recovers from by re-planning. Note that in UUID-less databases the recorded UUID is
+    /// `Nil` for every table, so there the comparison only confirms the table name, exactly like
+    /// the validation that produced it.
+    if (expected_identities)
+    {
+        const auto & storage_id = storage->getStorageID();
+        auto it = expected_identities->find({storage_id.getDatabaseName(), storage_id.table_name});
+        if (it == expected_identities->end() || it->second != storage_id.uuid)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Table {} resolved to a storage that was not validated for this query plan",
+                storage->getStorageID().getNameForLogs());
     }
 
     auto table_lock = storage->lockForShare(context->getInitialQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -318,7 +343,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     return std::move(nodes_and_resource.second);
 }
 
-void QueryPlan::resolveStorages(const ContextPtr & context)
+void QueryPlan::resolveStorages(const ContextPtr & context, const ExpectedStorageIdentities * expected_identities)
 {
     std::stack<QueryPlan::Node *> stack;
     stack.push(getRootNode());
@@ -330,14 +355,14 @@ void QueryPlan::resolveStorages(const ContextPtr & context)
         if (const auto * delayed_creating_sets = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()))
         {
             for (const auto & set : delayed_creating_sets->getSets())
-                set->getQueryPlan()->resolveStorages(context);
+                set->getQueryPlan()->resolveStorages(context, expected_identities);
         }
 
         for (auto * child : node->children)
             stack.push(child);
 
         if (node->children.empty())
-            addResources(replaceReadingFromTable(*node, nodes, context));
+            addResources(replaceReadingFromTable(*node, nodes, context, expected_identities));
     }
 }
 

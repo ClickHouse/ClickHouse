@@ -153,6 +153,12 @@ public:
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries);
 
+    /// True when the server configuration allows the cache to hold entries. The cache object is
+    /// created unconditionally at startup, so callers must ask this rather than rely on the object
+    /// existing. Mirrors the "disabled" condition enforced in `set` and `updateConfiguration`:
+    /// `CacheBase` treats a zero limit as "unlimited", the query plan cache treats it as "off".
+    bool isEnabled() const { return maxSizeInBytes() > 0 && maxCount() > 0; }
+
     /// Looks up an entry. Returns nullptr on miss or version mismatch.
     MappedPtr get(const QueryPlanCacheKey & key);
 
@@ -188,6 +194,21 @@ private:
     /// Subtracts `weight` from a user's tracked bytes, erasing the record when it reaches zero.
     /// The caller must hold `per_user_mutex`.
     void decrementUserBytes(const std::optional<UUID> & user_id, size_t weight) TSA_REQUIRES(per_user_mutex);
+
+    /// Serializes `set` against `clear`, so that admission accounting and residency always agree.
+    /// `set` charges `per_user_bytes`/`entry_weights` before `Base::set` (the entry can be evicted
+    /// synchronously inside that call, and the eviction hook must find the charge already present),
+    /// while `clear` drops residency in `Base::clear` before wiping the accounting maps. Without an
+    /// outer lock, a `clear` landing between a `set`'s charge and its insertion would wipe the
+    /// accounting of an entry that then becomes resident, leaving it unaccounted and undercounting
+    /// `query_plan_cache_size_in_bytes_quota` until that key is inserted again.
+    ///
+    /// It has to be a separate mutex rather than `per_user_mutex`: holding `per_user_mutex` across
+    /// `Base::set` would invert the lock order, because synchronous eviction inside `Base::set`
+    /// calls `onEntryRemoval` (which takes `per_user_mutex`) while `CacheBase` holds its own mutex.
+    /// Nothing acquires `admission_mutex` while holding `CacheBase`'s mutex or `per_user_mutex`, so
+    /// the order stays `admission_mutex` -> `CacheBase::mutex` -> `per_user_mutex`.
+    std::mutex admission_mutex;
 
     mutable std::mutex per_user_mutex;
     std::unordered_map<UUID, size_t> per_user_bytes TSA_GUARDED_BY(per_user_mutex);

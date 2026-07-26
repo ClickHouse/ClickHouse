@@ -1199,14 +1199,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     {
         try
         {
-            if (validateQueryPlanCacheEntry(*cached_entry, context))
+            QueryPlan::ExpectedStorageIdentities validated_identities;
+            if (validateQueryPlanCacheEntry(*cached_entry, context, validated_identities))
             {
                 /// Revalidate access rights: permissions may have been revoked after the plan
                 /// was cached. Throws ACCESS_DENIED, which propagates to the user without
                 /// falling through to normal planning.
                 checkAccessForQueryPlanCacheHit(*cached_entry, context);
 
-                auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context);
+                auto plan = materializeCachedQueryPlan(cached_entry->serialized_plan, context, validated_identities);
 
                 /// The planner normally records query access info; on a hit it is skipped,
                 /// so restore the info to keep system.query_log populated.
@@ -1905,6 +1906,15 @@ static BlockIO executeQueryImpl(
         /// replicas, and when the analyzer is off.
         QueryPlanCachePtr query_plan_cache = context->getQueryPlanCache();
         const bool can_use_query_plan_cache = query_plan_cache != nullptr
+            /// `Context::setQueryPlanCache` always creates the cache object, so a non-null pointer
+            /// does not mean the cache is usable: the server config disables it with
+            /// `query_plan_cache.max_size_in_bytes = 0` or `query_plan_cache.max_entries = 0`, and
+            /// `QueryPlanCache::set` then turns every store into a no-op. Without this check a
+            /// config-disabled cache would still route eligible queries through the cache path,
+            /// paying AST normalization, dependency collection and plan serialization on every run,
+            /// and executing them through the cacheable logical-plan path (which deliberately skips
+            /// storage-specific planning shortcuts) even though nothing can ever be stored.
+            && query_plan_cache->isEnabled()
             && settings[Setting::allow_experimental_query_plan_cache]
             && settings[Setting::enable_query_plan_cache]
             && !internal

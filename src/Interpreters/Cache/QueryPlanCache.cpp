@@ -171,6 +171,11 @@ void QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
     /// Build the mapped value before charging, so a failed allocation here leaves no accounting behind.
     auto entry_ptr = std::make_shared<QueryPlanCacheEntry>(std::move(entry));
 
+    /// Charging and insertion must be one atomic step with respect to `clear`, otherwise a
+    /// `SYSTEM DROP QUERY PLAN CACHE` running between them wipes this entry's accounting while the
+    /// entry itself goes on to become resident. See `admission_mutex`.
+    std::lock_guard admission_lock(admission_mutex);
+
     {
         std::lock_guard lock(per_user_mutex);
 
@@ -266,6 +271,10 @@ void QueryPlanCache::decrementUserBytes(const std::optional<UUID> & user_id, siz
 
 void QueryPlanCache::clear()
 {
+    /// Excludes a concurrent `set` from the whole drop, so that no entry can be inserted after its
+    /// accounting was erased here. See `admission_mutex`.
+    std::lock_guard admission_lock(admission_mutex);
+
     Base::clear();
     std::lock_guard lock(per_user_mutex);
     per_user_bytes.clear();
