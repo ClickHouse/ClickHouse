@@ -89,7 +89,9 @@ done
 # part directory plus BOTH distinct parents (3), which guards the source-parent fsync that a
 # same-parent insert does not exercise.
 if [[ $ret -eq 0 ]]; then
-    attach_query_id="attach-$CLICKHOUSE_DATABASE"
+    # Unique per run: a fixed query_id would match older rows of a rerun against the same
+    # server, and the multi-line result then breaks the numeric comparison below.
+    attach_query_id="attach-$CLICKHOUSE_DATABASE-$(random_str 10)"
     part_name=$($CLICKHOUSE_CLIENT -q "select name from system.parts where table='data_fsync_pe' and active and database=currentDatabase() order by name limit 1")
     $CLICKHOUSE_CLIENT -q "alter table data_fsync_pe detach part '$part_name'"
     $CLICKHOUSE_CLIENT --query_id "$attach_query_id" -q "alter table data_fsync_pe attach part '$part_name'"
@@ -97,7 +99,13 @@ if [[ $ret -eq 0 ]]; then
         system flush logs query_log;
         select ProfileEvents['DirectorySync']
         from system.query_log
-        where current_database = currentDatabase() and query_id = {query_id:String} and type = 'QueryFinish';
+        where
+            event_date >= yesterday() AND event_time >= now() - 600 and
+            current_database = currentDatabase() and
+            query_id = {query_id:String} and
+            type = 'QueryFinish'
+        order by event_time_microseconds desc
+        limit 1;
     ")
     if [[ $AttachDirectorySync -ne 3 ]]; then
         echo "ATTACH PART DirectorySync: $AttachDirectorySync != 3" >&2
