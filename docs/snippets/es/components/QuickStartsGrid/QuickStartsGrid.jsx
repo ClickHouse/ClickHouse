@@ -176,7 +176,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
       const qs = data.find((q) => q.id === f.id)
       return {
         id: f.id,
-        href: (qs && qs.href) || `/get-started/quickstarts/${f.id}`,
+        href: (qs && qs.href) || `/es/get-started/quickstarts/${f.id}`,
         title: (qs && qs.title) || ""
       }
     })

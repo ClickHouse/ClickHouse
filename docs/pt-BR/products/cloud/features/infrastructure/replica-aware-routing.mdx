@@ -11,14 +11,14 @@ import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBa
 
 <PrivatePreviewBadge />
 
-O roteamento com reconhecimento de réplicas (também conhecido como sticky sessions, roteamento sticky ou afinidade de sessão) encaminha solicitações relacionadas para a mesma réplica do ClickHouse. Use-o quando você precisar que [tabelas temporárias](/pt-BR/sql-reference/statements/create/table#temporary-tables) ou [estado de sessão nomeado](/pt-BR/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) permaneçam acessíveis entre consultas, ou quando quiser que consultas relacionadas reutilizem os mesmos caches locais da réplica.
+O roteamento com reconhecimento de réplicas (também conhecido como sticky sessions, roteamento sticky ou afinidade de sessão) encaminha solicitações relacionadas para a mesma réplica do ClickHouse. Use-o quando você precisar que [tabelas temporárias](/pt-BR/reference/statements/create/table#temporary-tables) ou [estado de sessão nomeado](/pt-BR/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) permaneçam acessíveis entre consultas, ou quando quiser que consultas relacionadas reutilizem os mesmos caches locais da réplica.
 
 Ele funciona em regime de melhor esforço e não garante isolamento. Scaling, upgrade e reinicializações podem remapear a réplica em que um determinado `session_id` vai cair.
 
 <Warning>
   **Requer a interface HTTP**
 
-  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy sobre a [interface HTTP/HTTPS](/pt-BR/interfaces/http), usando o parâmetro de consulta `session_id` (veja abaixo). Ele **não está disponível no protocolo nativo** (porta nativa, por exemplo, o driver [clickhouse-go](/pt-BR/integrations/go) em seu modo nativo padrão). Clientes do protocolo nativo precisam mudar para HTTP e passar um `session_id` em cada solicitação. Para clickhouse-go (v2), defina `Protocol: clickhouse.HTTP` e passe `session_id` como uma [configuração](/pt-BR/integrations/language-clients/go/database-sql-api#sessions). O driver o envia como o parâmetro de consulta na URL sobre o qual o proxy calcula o hash.
+  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy sobre a [interface HTTP/HTTPS](/pt-BR/concepts/features/interfaces/http), usando o parâmetro de consulta `session_id` (veja abaixo). Ele **não está disponível no protocolo nativo** (porta nativa, por exemplo, o driver [clickhouse-go](/pt-BR/integrations/language-clients/go/index) em seu modo nativo padrão). Clientes do protocolo nativo precisam mudar para HTTP e passar um `session_id` em cada solicitação. Para clickhouse-go (v2), defina `Protocol: clickhouse.HTTP` e passe `session_id` como uma [configuração](/pt-BR/integrations/language-clients/go/database-sql-api#sessions). O driver o envia como o parâmetro de consulta na URL sobre o qual o proxy calcula o hash.
 </Warning>
 
 <div id="prerequisites">
@@ -28,7 +28,7 @@ Ele funciona em regime de melhor esforço e não garante isolamento. Scaling, up
 * Seu serviço precisa de **2 ou mais réplicas**. Em um serviço com apenas uma réplica, não há nada ao que se vincular.
 * Um serviço **em execução**. Reativar um serviço inativo pode alterar a réplica à qual um `session_id` é mapeado.
 * Disponível no **Enterprise** por padrão quando o recurso estiver em GA.
-* Compatível com os serviços padrão do ClickHouse Cloud. O [BYOC](/pt-BR/cloud/reference/byoc/overview) ainda não é compatível.
+* Compatível com os serviços padrão do ClickHouse Cloud. O [BYOC](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview) ainda não é compatível.
 
 <div id="configuring-replica-aware-routing">
   ## Configurando o roteamento com reconhecimento de réplicas
@@ -40,7 +40,7 @@ Abra um ticket de [suporte](https://clickhouse.com/support/program) e solicite a
   ## Roteamento baseado em HTTP (`session_id`)
 </div>
 
-Para fixar uma carga de trabalho em uma réplica, defina o parâmetro de consulta `session_id` na [interface HTTPS](/pt-BR/interfaces/http). O proxy usa hash consistente nesse valor para selecionar uma réplica, de modo que todas as solicitações com o mesmo `session_id` vão para o mesmo servidor até que a topologia do cluster mude.
+Para fixar uma carga de trabalho em uma réplica, defina o parâmetro de consulta `session_id` na [interface HTTPS](/pt-BR/concepts/features/interfaces/http). O proxy usa hash consistente nesse valor para selecionar uma réplica, de modo que todas as solicitações com o mesmo `session_id` vão para o mesmo servidor até que a topologia do cluster mude.
 
 Você usa o hostname existente do seu service. Não são necessários hostnames sticky especiais nem alterações de DNS.
 
@@ -55,7 +55,7 @@ Toda solicitação com `session_id=my-workload-1` vai para a mesma réplica. Um 
 
 `session_id` é qualquer string que você escolher (nome da aplicação, ID do usuário ou rótulo da carga de trabalho). Solicitações sem `session_id` mantêm o balanceamento de carga normal.
 
-Qualquer cliente HTTP que possa adicionar um parâmetro de consulta funciona, incluindo `curl`, [clickhouse-connect](/pt-BR/integrations/python), JDBC/ODBC e outros. Para `clickhouse-go` (v2), use o modo HTTP conforme observado acima.
+Qualquer cliente HTTP que possa adicionar um parâmetro de consulta funciona, incluindo `curl`, [clickhouse-connect](/pt-BR/integrations/language-clients/python/index), JDBC/ODBC e outros. Para `clickhouse-go` (v2), use o modo HTTP conforme observado acima.
 
 <div id="check-which-replica">
   ### Verifique qual réplica foi acessada
@@ -89,13 +89,13 @@ Qualquer interrupção no serviço altera o hash ring de roteamento. Isso inclui
   ### O roteamento com reconhecimento de réplicas não é isolamento de workload
 </div>
 
-O sticky routing controla apenas *qual* réplica atende a uma solicitação. Essa réplica ainda pode atender outro tráfego. Para processamento dedicado, use [compute-compute separation](/pt-BR/cloud/reference/warehouses).
+O sticky routing controla apenas *qual* réplica atende a uma solicitação. Essa réplica ainda pode atender outro tráfego. Para processamento dedicado, use [compute-compute separation](/pt-BR/products/cloud/features/infrastructure/warehouses).
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
   ### Private Link e o método de subdomínio obsoleto
 </div>
 
-O roteamento HTTP de `session_id` funciona com [rede privada](/pt-BR/cloud/security/connectivity/private-networking) no hostname padrão do seu serviço. Nenhuma entrada DNS adicional é necessária.
+O roteamento HTTP de `session_id` funciona com [rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking) no hostname padrão do seu serviço. Nenhuma entrada DNS adicional é necessária.
 
 O método de subdomínio obsoleto não funciona: você precisa adicionar DNS para o padrão de hostname `*.sticky.*`, e uma configuração incorreta pode desequilibrar a carga entre as réplicas.
 
