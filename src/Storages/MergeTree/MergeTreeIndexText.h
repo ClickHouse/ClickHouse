@@ -64,8 +64,10 @@ namespace DB
   * - A binary serialized ColumnString with tokens.
   * - Information about posting lists for each token:
   *    1. Header of posting list (VarUInt) (see PostingsSerialization::Flags).
-  *    2. Cardinality of token (VarUInt).
-  *    3. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
+  *    2. Cardinality of token (VarUInt). For coarse posting lists it is the number of stored buckets.
+  *    3. If HasPositions flag is set, offset of position data in the .pos file (VarUInt) and number of position entries (VarUInt).
+  *    4. If CoarsePostings flag is set, coarse level (VarUInt) and exact row cardinality (VarUInt).
+  *    5. a) If EmbeddedPostings flag is set, posting list embedded into the dictionary block.
   *       b) Otherwise, number of blocks of the posting list (VarUInt), if SingleBlock flag is not set.
   *       c) For each posting list block, offset in file to the block and min-max range of the block. All numbers are encoded as VarUInt.
   *
@@ -83,6 +85,7 @@ struct MergeTreeIndexTextParams
     size_t dictionary_block_frontcoding_compression = 1;
     size_t posting_list_block_size = 1024 * 1024;
     size_t positions = 0;
+    UInt64 coarse_granularity = 0;
     ASTPtr preprocessor;
     ASTPtr postprocessor;
 };
@@ -181,6 +184,10 @@ struct PostingsSerialization
         HasBlockIndex = 1ULL << 4,
         /// If set, the token has positional data in the .pos file.
         HasPositions = 1ULL << 5,
+        /// If set, the posting list is a lossy superset of the exact posting list:
+        /// the stored values are bucket ids (row >> coarse_level). The index result
+        /// can be used only as a hint and must be verified by the original predicate.
+        CoarsePostings = 1ULL << 6,
     };
 
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
@@ -226,6 +233,15 @@ struct TokenPostingsInfo
     UInt64 position_offset = 0;
     /// Number of Roaringish UInt64 entries in position data.
     UInt32 positions_cardinality = 0;
+
+    /// Bucket resolution of a coarse posting list: stored values are (row >> coarse_level).
+    /// Meaningful only if the CoarsePostings flag is set.
+    UInt32 coarse_level = 0;
+    /// Exact document frequency in rows. Equals `postings_cardinality` for non-coarse tokens.
+    /// For coarse tokens `postings_cardinality` is the number of stored buckets.
+    UInt32 rows_cardinality = 0;
+
+    bool isCoarse() const { return header & PostingsSerialization::Flags::CoarsePostings; }
 
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
@@ -288,6 +304,7 @@ struct TextIndexHeader
         Initial = 0,
         WithCodec = 1,
         WithPositions = 2,
+        WithCoarsePostings = 3,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
@@ -296,6 +313,9 @@ struct TextIndexHeader
     bool has_positions = false;
     DictionarySparseIndex sparse_index;
 };
+
+/// Chooses the on-disk format version of the text index for the given parameters.
+MergeTreeIndexVersion chooseTextIndexSerializationVersion(const MergeTreeIndexTextParams & params);
 
 struct TextIndexSerialization
 {

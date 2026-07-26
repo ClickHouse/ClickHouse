@@ -74,6 +74,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
     extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
+    extern const MergeTreeSettingsBool allow_experimental_text_index_coarse_granularity;
 }
 
 namespace Setting
@@ -88,10 +89,10 @@ static constexpr UInt64 MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS = 6;
 static_assert(MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS must be less or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 static_assert(PostingListBuilder::max_small_size <= MAX_CARDINALITY_FOR_RAW_POSTINGS, "max_small_size must be less than or equal to MAX_CARDINALITY_FOR_RAW_POSTINGS");
 
-/// Kept as a fixed default rather than a MergeTree setting: a mutable table-level default would let
-/// an index's positions value change after parts exist, mixing positional and non-positional parts
-/// within one index.
+/// Kept as a fixed default rather than a MergeTree settings.
+/// Those parameters changes the semantics of the index and must be specified explicitly.
 static constexpr bool DEFAULT_POSITIONS = false;
+static constexpr UInt64 DEFAULT_COARSE_GRANULARITY = 0;
 
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
     : tokens(std::move(tokens_))
@@ -1044,6 +1045,13 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
         writeVarUInt(token_info.positions_cardinality, ostr);
     }
 
+    /// Coarse metadata is right after position metadata, before posting data.
+    if (token_info.header & CoarsePostings)
+    {
+        writeVarUInt(token_info.coarse_level, ostr);
+        writeVarUInt(token_info.rows_cardinality, ostr);
+    }
+
     /// Embedded postings will be serialized later into the dictionary block.
     if (token_info.header & EmbeddedPostings)
         return;
@@ -1083,12 +1091,27 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
     serialization_number->serializeBinaryBulk(*offsets_column, ostr, 0, offsets_column->size());
 }
 
+MergeTreeIndexVersion chooseTextIndexSerializationVersion(const MergeTreeIndexTextParams & params)
+{
+    /// Parts with positions need a WithPositions reader, parts that may contain
+    /// coarse posting lists need a WithCoarsePostings reader.
+    auto version = TextIndexHeader::Version::WithCodec;
+
+    if (params.positions)
+        version = TextIndexHeader::Version::WithPositions;
+
+    if (params.coarse_granularity > 0)
+        version = TextIndexHeader::Version::WithCoarsePostings;
+
+    return static_cast<MergeTreeIndexVersion>(version);
+}
+
 TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & istr)
 {
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
+    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithCoarsePostings))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1149,6 +1172,20 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         UInt64 positions_cardinality = 0;
         readVarUInt(positions_cardinality, istr);
         info.positions_cardinality = static_cast<UInt32>(positions_cardinality);
+    }
+
+    if (info.header & CoarsePostings)
+    {
+        UInt64 coarse_level = 0;
+        UInt64 rows_cardinality = 0;
+        readVarUInt(coarse_level, istr);
+        readVarUInt(rows_cardinality, istr);
+        info.coarse_level = static_cast<UInt32>(coarse_level);
+        info.rows_cardinality = static_cast<UInt32>(rows_cardinality);
+    }
+    else
+    {
+        info.rows_cardinality = info.postings_cardinality;
     }
 
     bool skip_postings = !postings_serialization;
@@ -1215,6 +1252,13 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
 
     /// Position metadata is right after (header, postings_cardinality), before posting data.
     if (header & HasPositions)
+    {
+        ignoreVarUInt(istr);
+        ignoreVarUInt(istr);
+    }
+
+    /// Coarse metadata is right after position metadata, before posting data.
+    if (header & CoarsePostings)
     {
         ignoreVarUInt(istr);
         ignoreVarUInt(istr);
@@ -1408,10 +1452,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         positions_stream = it->second;
     }
 
-    /// Positional parts need a WithPositions reader.
-    auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
-
+    auto serialization_version = chooseTextIndexSerializationVersion(params);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
 
@@ -1824,6 +1865,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "diction
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
+static const String ARGUMENT_COARSE_GRANULARITY = "coarse_granularity";
 
 namespace
 {
@@ -1929,12 +1971,19 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
     UInt64 positions = extractFieldOption<UInt64>(options, ARGUMENT_POSITIONS).value_or(DEFAULT_POSITIONS);
+    UInt64 coarse_granularity = extractFieldOption<UInt64>(options, ARGUMENT_COARSE_GRANULARITY).value_or(DEFAULT_COARSE_GRANULARITY);
+
+    if (positions && coarse_granularity > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Text index arguments '{}' and '{}' cannot be used together, because coarse posting lists cannot have positional data",
+            ARGUMENT_POSITIONS, ARGUMENT_COARSE_GRANULARITY);
 
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
         posting_list_block_size,
         positions,
+        coarse_granularity,
         std::move(preprocessor_ast),
         std::move(postprocessor_ast)};
 
@@ -1983,6 +2032,23 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
+
+    UInt64 coarse_granularity = extractFieldOption<UInt64>(options, ARGUMENT_COARSE_GRANULARITY).value_or(DEFAULT_COARSE_GRANULARITY);
+
+    if (coarse_granularity == 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Text index argument '{}' (the maximum number of rows in a coarse bucket) must be 0 (disabled) or at least 2, got 1",
+            ARGUMENT_COARSE_GRANULARITY);
+
+    if (positions && coarse_granularity > 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Text index arguments '{}' and '{}' cannot be used together, because coarse posting lists cannot have positional data",
+            ARGUMENT_POSITIONS, ARGUMENT_COARSE_GRANULARITY);
+
+    if (coarse_granularity > 0 && !settings[MergeTreeSetting::allow_experimental_text_index_coarse_granularity])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
+            "`allow_experimental_text_index_coarse_granularity = 1`.", ARGUMENT_COARSE_GRANULARITY);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
