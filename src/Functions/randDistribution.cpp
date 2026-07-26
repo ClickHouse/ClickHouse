@@ -62,7 +62,7 @@ struct DistributionLimits
 /// for the rounding of the intermediate products, which by itself makes the exact quotient hang.
 constexpr Float64 max_degrees_of_freedom = std::numeric_limits<Float64>::max() / 12;
 
-/// `std::binomial_distribution` starts at the mode and walks outwards one trial at a time, subtracting the
+/// `std::binomial_distribution` starts at the mode and walks outwards one value at a time, subtracting the
 /// probability of every visited value from a uniform draw, so a single sample costs O(t) in the worst case.
 /// It derives the probability of the mode from differences of `lgamma(t + 1)` evaluated in `double`, whose
 /// terms grow as `t * ln(t)`; cancelling them therefore loses a relative accuracy of about
