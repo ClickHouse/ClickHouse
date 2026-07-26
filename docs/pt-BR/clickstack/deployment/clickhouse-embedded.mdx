@@ -36,9 +36,7 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step>
-        ### Inicie o ClickHouse
-
+      <Step title="Inicie o ClickHouse" id="start-clickhouse-docker">
         Baixe e execute a imagem do servidor ClickHouse com uma senha configurada:
 
         ```shell
@@ -56,9 +54,7 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
         </Tip>
       </Step>
 
-      <Step>
-        ### Abra a UI do ClickStack
-
+      <Step title="Abra a UI do ClickStack" id="open-clickstack-ui-docker">
         Abra [http://localhost:8123](http://localhost:8123) no navegador e clique em **ClickStack**.
 
         Digite o nome de usuário `default` e a senha `password` para se conectar à instância local.
@@ -66,9 +62,7 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Autenticar" size="lg" />
       </Step>
 
-      <Step>
-        ### Crie uma fonte
-
+      <Step title="Crie uma fonte" id="create-a-source-docker">
         Se você já tiver tabelas do OpenTelemetry, o ClickStack vai detectá-las e criar fontes automaticamente.
 
         Em uma instalação nova, será solicitado que você crie uma fonte. Preencha o campo **Table** com o nome de tabela apropriado (por exemplo, `otel_logs`) e clique em **Save New Source**.
@@ -82,9 +76,7 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
 
   <Tab title="Binary">
     <Steps>
-      <Step>
-        ### Inicie o ClickHouse
-
+      <Step title="Inicie o ClickHouse" id="start-clickhouse-binary">
         Baixe e inicie o ClickHouse:
 
         ```shell
@@ -139,15 +131,11 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
         ```
       </Step>
 
-      <Step>
-        ### Abra a UI do ClickStack
-
+      <Step title="Abra a UI do ClickStack" id="open-clickstack-ui-binary">
         Abra [http://localhost:8123](http://localhost:8123) no navegador e clique em **ClickStack**. Uma conexão com a instância local é criada automaticamente.
       </Step>
 
-      <Step>
-        ### Crie uma fonte
-
+      <Step title="Crie uma fonte" id="create-a-source-binary">
         Se você já tiver tabelas do OpenTelemetry, o ClickStack vai detectá-las e criar fontes automaticamente.
 
         Se você ainda não tiver dados, consulte [Ingestão de dados](/pt-BR/clickstack/ingesting-data/index) para ver as opções disponíveis.
@@ -162,9 +150,9 @@ Esta versão embutida **não foi projetada para uso em produção**. Os recursos
   ## Próximos passos
 </div>
 
-Se você já está pronto para avançar além da avaliação, considere uma implantação pronta para produção:
+Se você está pronto para avançar além da avaliação, considere uma implantação adequada para produção:
 
-* [Tudo em um](/pt-BR/clickstack/deployment/all-in-one) — um único contêiner com todos os componentes, incluindo persistência e autenticação
+* [All-in-One](/pt-BR/clickstack/deployment/all-in-one) — contêiner único com todos os componentes, incluindo persistência e autenticação
 * [Docker Compose](/pt-BR/clickstack/deployment/docker-compose) — componentes individuais para maior controle
-* [Helm](/pt-BR/clickstack/deployment/helm) — recomendado para implantações do Kubernetes em produção
+* [Helm](/pt-BR/clickstack/deployment/helm) — recomendado para implantações Kubernetes em produção
 * [Managed ClickStack](/pt-BR/clickstack/getting-started/managed) — totalmente gerenciado no ClickHouse Cloud

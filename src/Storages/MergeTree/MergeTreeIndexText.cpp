@@ -814,102 +814,6 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
     return result;
 }
 
-bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
-{
-    if (query.getTokens().empty())
-        return false;
-
-    return hasAnyTokensImpl(query);
-}
-
-bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
-{
-    if (query.getPatterns().empty())
-        return false;
-
-    return hasAnyTokensImpl(query);
-}
-
-bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) const
-{
-    const auto & query_builder = analyzer->getQueryBuilder(query);
-
-    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
-    if (query_builder.is_failed)
-        return false;
-
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
-        return true;
-
-    if (!current_range.has_value())
-        return true;
-
-    if (!query_builder.rows_range.has_value())
-        return false;
-
-    auto intersection = query_builder.rows_range->intersectWith(*current_range);
-    if (!intersection.has_value())
-        return false;
-
-    if (!query_builder.needReadPostings() && query_builder.postings)
-    {
-        PostingList range_posting;
-        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-        if (range_posting.and_cardinality(*query_builder.postings) == 0)
-            return false;
-    }
-
-    return true;
-}
-
-bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
-{
-    if (query.getTokens().empty())
-        return false;
-
-    return hasAllQueryTokensOrEmpty(query);
-}
-
-bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
-{
-    if (query.getTokens().empty())
-        return true;
-
-    const auto & query_builder = analyzer->getQueryBuilder(query);
-
-    /// Failure dominates bypass — a proven-empty query stays empty even when pattern analysis is incomplete.
-    if (query_builder.is_failed)
-        return false;
-
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
-        return true;
-
-    if (!current_range.has_value())
-        return true;
-
-    if (!query_builder.rows_range.has_value())
-        return false;
-
-    auto intersection = query_builder.rows_range->intersectWith(*current_range);
-    if (!intersection.has_value())
-        return false;
-
-    if (query_builder.postings)
-    {
-        PostingList range_posting;
-        range_posting.addRangeClosed(static_cast<UInt32>(current_range->begin), static_cast<UInt32>(current_range->end));
-
-        if (range_posting.and_cardinality(*query_builder.postings) == 0)
-            return false;
-    }
-
-    return true;
-}
-
-
 MergeTreeIndexGranuleTextWritable::MergeTreeIndexGranuleTextWritable(
     MergeTreeIndexTextParams params_,
     IPostingListCodec::Type posting_list_codec_type_,
@@ -1636,6 +1540,9 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
+    if (postprocessor_drop_filter && postprocessor_drop_filter->shouldDrop(token))
+        return;
+
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
     ArenaKeyHolder key_holder(token, *arena);
@@ -1668,22 +1575,35 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        sorted_tokens.push_back(SortedToken{key, &mapped, nullptr});
+        std::string_view token = key;
+        sorted_tokens.push_back(SortedToken{token, &mapped, nullptr});
     });
 
     std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return lhs.token < rhs.token; });
 
-    /// Join each token's position builder so one entry carries both; no parallel arrays to keep aligned.
+    /// Attach each token's position builder by binary search over the already-sorted sorted_tokens.
+    /// tokens_map and position_map are filled in lockstep in addDocument(), so the key sets are identical.
     if (position_map)
     {
-        for (auto & entry : sorted_tokens)
+        size_t attached = 0;
+        position_map->forEachValue([&](const auto & key, auto & mapped)
         {
-            auto positions = position_map->find(entry.token);
-            if (!positions)
+            const std::string_view token(key);
+            auto it = std::ranges::lower_bound(
+                sorted_tokens, token,
+                [](std::string_view lhs, std::string_view rhs) { return lhs < rhs; },
+                &SortedToken::token);
+            if (it == sorted_tokens.end() || it->token != token)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Text index: token '{}' has postings but no positions slot", entry.token);
-            entry.positions = &positions->getMapped();
-        }
+                    "Text index: positions token '{}' has no postings slot", token);
+            it->positions = &mapped;
+            ++attached;
+        });
+
+        if (attached != sorted_tokens.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index: postings map has {} tokens but positions map attached {}",
+                sorted_tokens.size(), attached);
     }
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
@@ -1725,6 +1645,17 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
 {
+    /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
+    /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
+    /// dense position renumbering after drops). Any other postprocessor uses the general per-batch path.
+    if (postprocessor->hasActions() && !params.positions)
+    {
+        if (const auto * inline_filter = postprocessor->getInlineFilter())
+        {
+            granule_builder.postprocessor_drop_filter = inline_filter;
+            use_postprocessor_drop_fast_path = true;
+        }
+    }
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorText::getGranuleAndReset()
@@ -1757,7 +1688,7 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (postprocessor->hasActions())
+    if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
