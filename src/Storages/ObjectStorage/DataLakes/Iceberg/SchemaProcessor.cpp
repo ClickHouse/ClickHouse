@@ -97,44 +97,6 @@ void traverseComplexType(Poco::JSON::Object::Ptr type, std::unordered_map<String
     }
 }
 
-/// Collects the paths whose Iceberg logical type is exactly `string` (both `string` and `binary`
-/// read as DataTypeString). `type` is a JSON string (primitive leaf) or object (complex type).
-void collectStringPaths(const Poco::Dynamic::Var & type, std::unordered_set<String> & result, const String & current_path)
-{
-    if (type.isString())
-    {
-        if (type.extract<String>() == Iceberg::f_string)
-            result.insert(current_path);
-        return;
-    }
-
-    const auto & type_object = type.extract<Poco::JSON::Object::Ptr>();
-    auto type_str = type_object->getValue<String>(Iceberg::f_type);
-    if (type_str == "map")
-    {
-        if (type_object->has(Iceberg::f_key))
-            collectStringPaths(type_object->get(Iceberg::f_key), result, Nested::concatenateName(current_path, "key"));
-        if (type_object->has(Iceberg::f_value))
-            collectStringPaths(type_object->get(Iceberg::f_value), result, Nested::concatenateName(current_path, "value"));
-    }
-    else if (type_str == "list")
-    {
-        if (type_object->has(Iceberg::f_element))
-            collectStringPaths(type_object->get(Iceberg::f_element), result, Nested::concatenateName(current_path, "element"));
-    }
-    else if (type_str == "struct")
-    {
-        auto fields = type_object->getArray(Iceberg::f_fields);
-        for (UInt32 i = 0; i < fields->size(); ++i)
-        {
-            auto field = fields->getObject(i);
-            auto child_path = Nested::concatenateName(current_path, field->getValue<String>(Iceberg::f_name));
-            if (field->has(Iceberg::f_type))
-                collectStringPaths(field->get(Iceberg::f_type), result, child_path);
-        }
-    }
-}
-
 using namespace Iceberg;
 
 template <typename T>
@@ -356,12 +318,6 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     std::lock_guard lock(mutex);
 
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
-
-    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
-    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
-    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
-        return;
-
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
@@ -644,7 +600,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                     || field->getObject(f_type)->getValue<std::string>(f_type) == "map"))
             {
                 auto old_type = getFieldType(old_json, "type", required);
-                auto transform = std::make_shared<EvolutionFunctionStruct>(DataTypes{type}, DataTypes{old_type}, old_json, field);
+                auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
                 old_node = &dag->addFunction(transform, std::vector<const Node *>{old_node}, name);
 
                 outputs.push_back(old_node);
@@ -696,9 +652,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
             }
             auto default_type_column = type->createColumnConstWithDefaultValue(0);
             const auto & constant = dag->addColumn(std::move(default_type_column), type, name);
-            /// Materialize so the column leaves the transform as a full column, not a ColumnConst,
-            /// like every other missing-column path (inplaceBlockConversions, IMergeTreeReader, ...).
-            outputs.push_back(&dag->materializeNode(constant));
+            outputs.push_back(&constant);
         }
     }
     return dag;
@@ -808,18 +762,6 @@ std::unordered_map<String, Int64> IcebergSchemaProcessor::traverseSchema(Poco::J
     return result;
 }
 
-std::unordered_set<String> IcebergSchemaProcessor::collectIcebergStringPaths(Poco::JSON::Array::Ptr schema)
-{
-    std::unordered_set<String> result;
-    for (UInt32 i = 0; i < schema->size(); ++i)
-    {
-        auto current_object = schema->getObject(i);
-        if (current_object->has(Iceberg::f_type))
-            collectStringPaths(current_object->get(Iceberg::f_type), result, current_object->getValue<String>(Iceberg::f_name));
-    }
-    return result;
-}
-
 ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 {
     auto schema = getIcebergTableSchemaById(id);
@@ -831,9 +773,9 @@ ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
 ColumnMapperPtr createColumnMapper(Poco::JSON::Object::Ptr schema_object)
 {
     auto column_mapper = std::make_shared<ColumnMapper>();
-    auto fields = schema_object->getArray(Iceberg::f_fields);
-    column_mapper->setStorageColumnEncoding(IcebergSchemaProcessor::traverseSchema(fields));
-    column_mapper->setIcebergStringPaths(IcebergSchemaProcessor::collectIcebergStringPaths(fields));
+    std::unordered_map<String, Int64> column_name_to_parquet_field_id
+        = IcebergSchemaProcessor::traverseSchema(schema_object->getArray(Iceberg::f_fields));
+    column_mapper->setStorageColumnEncoding(std::move(column_name_to_parquet_field_id));
     return column_mapper;
 }
 

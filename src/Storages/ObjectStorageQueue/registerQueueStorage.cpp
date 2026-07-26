@@ -34,7 +34,6 @@ namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
-    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
 }
 
 namespace ObjectStorageQueueSetting
@@ -50,9 +49,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
-    /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getLocalContext(), false, &args.table_id);
+    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, args.getContext(), false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -124,13 +121,6 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
-    /// The S3 client is built once in the storage constructor and reused by background threads, so the
-    /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
-    /// query. The storage itself must keep the persistent global context (`args.getContext()`): it is held
-    /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
-    const bool allow_server_credentials_in_user_queries
-        = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
-
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
         std::move(configuration),
@@ -139,7 +129,6 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         args.constraints,
         args.comment,
         args.getContext(),
-        allow_server_credentials_in_user_queries,
         format_settings,
         args.storage_def,
         args.mode,
@@ -603,15 +592,13 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
 
-3. Lost rows on a device-level power loss of the ClickHouse node. A consumed file is recorded as processed in Keeper (and its source object removed when `after_processing = 'delete'`) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). Keeper is force-synced and usually runs on a separate node, so it survives this node's power loss. If the node loses power after the file is committed as processed but before the target part is fsynced, the file is not re-read on restart and its rows are lost (unrecoverable with `after_processing = 'delete'`). A plain process kill does not expose this, because the page cache survives it. For the recommended materialized-view consumption path (the file is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table makes the inserted part durable before the file is committed as processed, which narrows this window substantially. This does not apply to direct `INSERT ... SELECT` with `commit_on_select = 1`, where the file is committed at the end of the read before the destination sink finalizes its last part.
-
 ## Introspection {#introspection}
 
 For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.
 
 1. `system.s3queue_metadata_cache`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
-```text
+```sql
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE system.s3queue_metadata_cache
 (
@@ -917,10 +904,6 @@ exception:
 1 row in set. Elapsed: 0.002 sec.
 
 ```
-
-## Limitations {#limitations}
-
-`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
 )DOCS_MD",
             .syntax = "ENGINE = AzureQueue(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key,] format [, compression]) SETTINGS mode = '...', ...",
             .related = {"S3Queue", "AzureBlobStorage"}});

@@ -1,4 +1,3 @@
-#include <Core/ProtocolDefines.h>
 #include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
@@ -823,17 +822,7 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
-void LocalConnection::sendScalarsData(Scalars &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-}
-
 void LocalConnection::sendMergeTreeReadTaskResponse(const ParallelReadResponse &)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
-}
-
-void LocalConnection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }

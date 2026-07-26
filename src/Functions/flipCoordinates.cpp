@@ -156,15 +156,15 @@ REGISTER_FUNCTION(FlipCoordinates)
     FunctionDocumentation::Description description = R"(
 Flips the x and y coordinates of geometric objects. This operation swaps latitude and longitude, which is useful for converting between different coordinate systems or correcting coordinate order.
 
-For a Point, it swaps the x and y coordinates. For complex geometries (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
+For a Point, it swaps the x and y coordinates. For complex geometries (LineString, Polygon, MultiPolygon, Ring, MultiLineString), it recursively applies the transformation to each coordinate pair.
 
-The function supports both individual geometry types (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
+The function supports both individual geometry types (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) and the Geometry variant type.
 )";
     FunctionDocumentation::Syntax syntax = "flipCoordinates(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types)."}
+        {"geometry", "The geometry to transform. Supported types: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), or Geometry (a variant containing any of these types)."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The return type matches the input type.", {"Point", "MultiPoint", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"The geometry with flipped coordinates. The return type matches the input type.", {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"}};
     FunctionDocumentation::Examples examples = {
         {"basic_point",
          "SELECT flipCoordinates((1.0, 2.0));",

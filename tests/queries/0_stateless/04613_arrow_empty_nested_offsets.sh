@@ -92,81 +92,23 @@ tbl_d = pa.table({"id": ids, "a": outer_empty(inner_map)})
 open(f"{out}/nested_array_map.arrow", "wb").write(write_arrow(tbl_d))
 PYEOF
 
-# Both reading paths are affected: the native ClickHouse reader
-# (input_format_arrow_use_native_reader=1, the default) and the Apache Arrow
-# library reader (=0).  Exercise both.
-for native in 1 0; do
-    echo "native_reader=${native}"
-    S="--input_format_arrow_use_native_reader=${native}"
+# This release ships only the Apache Arrow library reader
+# (ArrowColumnToCHColumn); the native ClickHouse Arrow reader does not exist
+# here, so there is nothing to switch and the queries run against the library
+# reader directly.
 
-    # (a) Array(Array(Int32)): two empty outer arrays.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, a FROM file('${TMP_DIR}/nested_int.arrow', Arrow) ORDER BY id"
+# (a) Array(Array(Int32)): two empty outer arrays.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, a FROM file('${TMP_DIR}/nested_int.arrow', Arrow) ORDER BY id"
 
-    # (b) Array(Array(String)): two empty outer arrays.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, a FROM file('${TMP_DIR}/nested_string.arrow', Arrow) ORDER BY id"
+# (b) Array(Array(String)): two empty outer arrays.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, a FROM file('${TMP_DIR}/nested_string.arrow', Arrow) ORDER BY id"
 
-    # (c) Map(String, Array(String)): two empty maps.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, m FROM file('${TMP_DIR}/nested_map_value.arrow', Arrow) ORDER BY id"
+# (c) Map(String, Array(String)): two empty maps.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, m FROM file('${TMP_DIR}/nested_map_value.arrow', Arrow) ORDER BY id"
 
-    # (d) Array(Map(String, Int32)): two empty outer arrays.
-    $CLICKHOUSE_LOCAL $S --query \
-        "SELECT id, a FROM file('${TMP_DIR}/nested_array_map.arrow', Arrow) ORDER BY id"
-done
-
-# DoS guard for the native reader: an empty nested container references zero child
-# elements, so the child subtree must also be empty.  A buffer-less child type (e.g.
-# a `Null` field) derives its size from the FieldNode length alone, so a forged-huge
-# length must be rejected *before* decoding it (otherwise a tiny message drives an
-# arbitrary column allocation).  Build an all-empty Array(Array(Nullable(Nothing)))
-# and, for every aligned int64 in the message, forge it to 2^62: ClickHouse must
-# never attempt a huge allocation - each variant is either rejected as INCORRECT_DATA
-# or read successfully, and at least one variant exercises the empty-child guard.
-python3 - "$TMP_DIR" <<'PYEOF'
-import io, struct, sys
-import pyarrow as pa
-import pyarrow.ipc as ipc
-
-out = sys.argv[1]
-HUGE = 1 << 62
-
-null_child = pa.array([], type=pa.null())
-inner = pa.Array.from_buffers(pa.list_(pa.null()), 0, [None, pa.py_buffer(b"")], children=[null_child])
-outer = pa.ListArray.from_arrays(pa.array([0, 0, 0], type=pa.int32()), inner)
-buf = io.BytesIO()
-with ipc.new_file(buf, pa.schema([("id", pa.int32()), ("a", outer.type)])) as w:
-    w.write_batch(pa.record_batch([pa.array([1, 2], type=pa.int32()), outer], names=["id", "a"]))
-data = bytearray(buf.getvalue())
-open(f"{out}/null_leaf_valid.arrow", "wb").write(data)
-
-for i in range(0, len(data) - 8, 8):
-    if struct.unpack_from("<q", data, i)[0] == 0:
-        patched = bytearray(data)
-        patched[i:i + 8] = struct.pack("<q", HUGE)
-        open(f"{out}/null_leaf_forged_{i}.arrow", "wb").write(patched)
-PYEOF
-
-STRUCT='id Int32, a Array(Array(Nullable(Nothing)))'
-
-# The valid file reads as two empty arrays.
-$CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=1 --query \
-    "SELECT id, a FROM file('${TMP_DIR}/null_leaf_valid.arrow', Arrow, '${STRUCT}') ORDER BY id"
-
-# Every forged variant must be handled without an allocation attempt (no OOM/crash).
-oom=0
-guard=0
-for f in "${TMP_DIR}"/null_leaf_forged_*.arrow; do
-    err=$($CLICKHOUSE_LOCAL --input_format_arrow_use_native_reader=1 \
-        --max_memory_usage=1G \
-        --query "SELECT id, a FROM file('${f}', Arrow, '${STRUCT}') FORMAT Null" 2>&1)
-    case "$err" in
-        *CANNOT_ALLOCATE_MEMORY*|*"bad_alloc"*|*"MEMORY_LIMIT_EXCEEDED"*) oom=$((oom + 1)) ;;
-    esac
-    case "$err" in
-        *"references no elements but its child declares"*) guard=$((guard + 1)) ;;
-    esac
-done
-echo "DoS guard: forged-length variants that drove an allocation: ${oom}"
-[ "$guard" -ge 1 ] && echo "DoS guard: empty-child length check active" || echo "DoS guard: empty-child length check NOT triggered"
+# (d) Array(Map(String, Int32)): two empty outer arrays.
+$CLICKHOUSE_LOCAL --query \
+    "SELECT id, a FROM file('${TMP_DIR}/nested_array_map.arrow', Arrow) ORDER BY id"

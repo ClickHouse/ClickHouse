@@ -1,5 +1,4 @@
 #include <Core/ServerSettings.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Storages/System/StorageSystemViewRefreshes.h>
 
 #include <Access/ContextAccess.h>
@@ -129,6 +128,3 @@ void StorageSystemViewRefreshes::fillData(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemViewRefreshes) }
