@@ -336,18 +336,14 @@ if __name__ == "__main__":
             _changed_lines_covered = print_res.ext.get("changed_lines_covered", 0)
             _changed_lines_cov = print_res.ext.get("changed_lines_cov", 0.0)
 
-            _lbc_lines = print_res.ext.get("lbc_lines", 0)
-            _lbc_fns = print_res.ext.get("lbc_fns", 0)
-
             # Only write coverage_comment.json (and thus post a GitHub comment) when
-            # there is something coverage-related to report: the diff HTML report was
-            # generated (C/C++ source files changed), or LBC was detected (tests
-            # removed -> baseline coverage lost). Tests-only PRs never reach this job
-            # at all - the coverage family is auto-skipped for them (see filter_job.py)
-            # since the compiled binary, and therefore coverage, cannot have moved.
-            _has_coverage_data = _diff_ran or _lbc_lines > 0 or _lbc_fns > 0
+            # the diff HTML report was generated (i.e. C/C++ source files changed).
+            # Tests-only PRs never reach this job at all - the coverage family is
+            # auto-skipped for them (see filter_job.py) since the compiled binary,
+            # and therefore coverage, cannot have moved.
+            _has_coverage_data = _diff_ran
             if not _has_coverage_data:
-                print("No coverage-relevant changes detected (no C/C++ source, no LBC) — skipping coverage comment.")
+                print("No coverage-relevant changes detected (no C/C++ source changes) — skipping coverage comment.")
             else:
                 _comment_data = {
                     # GitHub comment fields
