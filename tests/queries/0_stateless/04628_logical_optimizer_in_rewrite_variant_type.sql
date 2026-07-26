@@ -88,5 +88,15 @@ SETTINGS optimize_min_inequality_conjunction_chain_length = 100;
 -- The rewrite must still happen for these - the point is that it now preserves the types.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_dt WHERE (d != parseDateTimeBestEffort('2020-01-01')) AND (d != parseDateTimeBestEffort('2020-01-02')) AND (d != parseDateTimeBestEffort('2020-01-03'))) WHERE explain ILIKE '%Tuple(DateTime, DateTime, DateTime)%';
 
+-- Preserving the types is not enough on its own: the set converts every element to the expression's
+-- type, while the comparison it replaces is evaluated in the wider type. For a non-midnight DateTime
+-- constant against a Date expression that conversion is lossy (the row promotes to midnight and does
+-- differ from the constant, but the constant truncates onto the row), so the chain must be kept.
+SELECT count() FROM t_dt WHERE (d != toDateTime('2020-01-01 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-02 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-03 12:00:00', 'UTC'));
+SELECT count() FROM t_dt WHERE (d != toDateTime('2020-01-01 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-02 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-03 12:00:00', 'UTC'))
+SETTINGS optimize_min_inequality_conjunction_chain_length = 100;
+-- ... and the rewrite is the thing being skipped there:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_dt WHERE (d != toDateTime('2020-01-01 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-02 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-03 12:00:00', 'UTC'))) WHERE explain ILIKE '%function_name: notIn%';
+
 DROP TABLE t_dt;
 DROP TABLE t_var;

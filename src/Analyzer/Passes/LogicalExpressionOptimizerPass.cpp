@@ -1056,11 +1056,14 @@ static void convertNotEqualsChainToNotIn(
             continue;
         }
 
+        const auto expr_type = removeLowCardinality(expression.node->getResultType());
+
         size_t min_index = not_equals_entries.front().first;
         Tuple args;
         args.reserve(not_equals_entries.size());
         DataTypes tuple_element_types;
         tuple_element_types.reserve(not_equals_entries.size());
+        bool all_constants_convert_losslessly = true;
         for (auto & [idx, not_equals] : not_equals_entries)
         {
             min_index = std::min(min_index, idx);
@@ -1068,18 +1071,29 @@ static void convertNotEqualsChainToNotIn(
             chassert(not_equals_function && not_equals_function->getFunctionName() == "notEquals");
 
             const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
-            if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
+            const auto * literal = not_equals_arguments[1]->as<ConstantNode>();
+            if (!literal)
             {
-                args.push_back(rhs_literal->getValue());
-                tuple_element_types.push_back(rhs_literal->getResultType());
+                literal = not_equals_arguments[0]->as<ConstantNode>();
+                chassert(literal);
             }
-            else
-            {
-                const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
-                chassert(lhs_literal);
-                args.push_back(lhs_literal->getValue());
-                tuple_element_types.push_back(lhs_literal->getResultType());
-            }
+
+            args.push_back(literal->getValue());
+            tuple_element_types.push_back(literal->getResultType());
+
+            /// The set converts each element to the expression's type, while the comparison it
+            /// replaces is evaluated in the wider of the two types. Where that conversion is lossy
+            /// the two disagree, so the chain has to be kept (e.g. for a `Date` expression,
+            /// `d != toDateTime('2020-01-01 12:00:00')` holds for the row `2020-01-01`, which
+            /// promotes to midnight, but the constant truncates to `2020-01-01` and the set matches).
+            if (!tryConvertToColumnType(literal, expr_type))
+                all_constants_convert_losslessly = false;
+        }
+
+        if (!all_constants_convert_losslessly)
+        {
+            std::move(not_equals_entries.begin(), not_equals_entries.end(), std::back_inserter(output));
+            continue;
         }
 
         /// Carry the resolved constant types over: deriving them from the `Field` values instead
