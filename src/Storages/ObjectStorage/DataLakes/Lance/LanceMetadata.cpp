@@ -19,6 +19,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Lance/LanceQuerySession.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceReadSource.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/StorageSnapshot.h>
@@ -72,13 +73,15 @@ namespace
 class LanceDatasetObjectInfo final : public ObjectInfo
 {
 public:
-    LanceDatasetObjectInfo(String dataset_path_, Lance::TableStateSnapshot snapshot_)
+    LanceDatasetObjectInfo(String dataset_path_, Lance::TableStateSnapshot snapshot_, Lance::DatasetHandle dataset_)
         : ObjectInfo(RelativePathWithMetadata(std::move(dataset_path_), createDatasetObjectMetadata()))
         , snapshot(std::move(snapshot_))
+        , dataset(std::move(dataset_))
     {
     }
 
     const Lance::TableStateSnapshot snapshot;
+    const Lance::DatasetHandle dataset;
 
 private:
     static ObjectMetadata createDatasetObjectMetadata()
@@ -92,9 +95,14 @@ private:
 class LanceDatasetIterator final : public IObjectIterator
 {
 public:
-    LanceDatasetIterator(String dataset_path_, Lance::TableStateSnapshot snapshot_, IDataLakeMetadata::FileProgressCallback callback_)
+    LanceDatasetIterator(
+        String dataset_path_,
+        Lance::TableStateSnapshot snapshot_,
+        Lance::DatasetHandle dataset_,
+        IDataLakeMetadata::FileProgressCallback callback_)
         : dataset_path(std::move(dataset_path_))
         , snapshot(std::move(snapshot_))
+        , dataset(std::move(dataset_))
         , callback(std::move(callback_))
     {
     }
@@ -105,7 +113,7 @@ public:
             return nullptr;
 
         is_finished = true;
-        auto object_info = std::make_shared<LanceDatasetObjectInfo>(dataset_path, snapshot);
+        auto object_info = std::make_shared<LanceDatasetObjectInfo>(dataset_path, snapshot, dataset);
         if (callback)
             callback(FileProgress{0});
         return object_info;
@@ -118,16 +126,17 @@ public:
 private:
     String dataset_path;
     Lance::TableStateSnapshot snapshot;
+    Lance::DatasetHandle dataset;
     IDataLakeMetadata::FileProgressCallback callback;
     bool is_finished = false;
 };
 
-const Lance::TableStateSnapshot & extractSnapshot(const ObjectInfoPtr & object_info)
+const LanceDatasetObjectInfo & extractLanceObjectInfo(const ObjectInfoPtr & object_info)
 {
     const auto * lance_object_info = typeid_cast<const LanceDatasetObjectInfo *>(object_info.get());
     if (!lance_object_info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance reader received an object without a Lance table state snapshot");
-    return lance_object_info->snapshot;
+    return *lance_object_info;
 }
 
 String quoteLanceIdentifier(const String & name)
@@ -497,14 +506,38 @@ bool LanceMetadata::operator==(const IDataLakeMetadata & other) const
 
 NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
 {
-    auto dataset = Lance::Dataset::open(getDatasetOptions());
+    const auto options = getDatasetOptions();
+    if (local_context && local_context->hasQueryContext())
+    {
+        auto session = Lance::QuerySession::get(local_context);
+        auto dataset = session->getOrOpen(options);
+        const auto snapshot = dataset.currentSnapshot();
+        session->pinVersion(dataset.identityKey(), snapshot.version);
+        return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.version}, local_context);
+    }
+
+    auto dataset = Lance::DatasetHandle::openEphemeral(options);
     const auto snapshot = dataset.currentSnapshot();
     return dataset.tableSchema(Lance::TableStateSnapshot{snapshot.version}, local_context);
 }
 
-std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(ContextPtr) const
+std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(ContextPtr local_context) const
 {
-    const auto snapshot = Lance::Dataset::open(getDatasetOptions()).currentSnapshot();
+    const auto options = getDatasetOptions();
+    Lance::DatasetHandle dataset;
+    if (local_context && local_context->hasQueryContext())
+    {
+        auto session = Lance::QuerySession::get(local_context);
+        dataset = session->getOrOpen(options);
+        const auto snapshot = dataset.currentSnapshot();
+        if (snapshot.version == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
+        session->pinVersion(dataset.identityKey(), snapshot.version);
+        return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
+    }
+
+    dataset = Lance::DatasetHandle::openEphemeral(options);
+    const auto snapshot = dataset.currentSnapshot();
     if (snapshot.version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`Lance` returned zero as the current dataset version");
     return DataLakeTableStateSnapshot{Lance::TableStateSnapshot{snapshot.version}};
@@ -519,8 +552,20 @@ std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFrom
     if (lance_state->version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build `Lance` metadata from zero dataset version");
 
+    const auto options = getDatasetOptions();
+    Lance::DatasetHandle dataset;
+    if (local_context && local_context->hasQueryContext())
+    {
+        auto session = Lance::QuerySession::get(local_context);
+        dataset = session->getPinned(options, lance_state->version);
+    }
+    else
+    {
+        dataset = Lance::DatasetHandle::openEphemeral(options);
+    }
+
     auto result = std::make_unique<StorageInMemoryMetadata>();
-    result->setColumns(ColumnsDescription{Lance::Dataset::open(getDatasetOptions()).tableSchema(*lance_state, local_context)});
+    result->setColumns(ColumnsDescription{dataset.tableSchema(*lance_state, local_context)});
     result->setDataLakeTableState(state);
     return result;
 }
@@ -559,7 +604,7 @@ ObjectIterator LanceMetadata::iterate(
     FileProgressCallback callback,
     size_t,
     StorageMetadataPtr storage_metadata,
-    ContextPtr) const
+    ContextPtr local_context) const
 {
     FailPointInjection::pauseFailPoint(FailPoints::lance_metadata_iterate_pause);
 
@@ -573,7 +618,15 @@ ObjectIterator LanceMetadata::iterate(
     const auto snapshot = std::get<Lance::TableStateSnapshot>(state);
     if (snapshot.version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate `Lance` dataset at zero dataset version");
-    return std::make_shared<LanceDatasetIterator>(getDatasetOptions().uri, snapshot, std::move(callback));
+
+    const auto options = getDatasetOptions();
+    Lance::DatasetHandle dataset;
+    if (local_context && local_context->hasQueryContext())
+        dataset = Lance::QuerySession::get(local_context)->getPinned(options, snapshot.version);
+    else
+        dataset = Lance::DatasetHandle::openEphemeral(options);
+
+    return std::make_shared<LanceDatasetIterator>(options.uri, snapshot, std::move(dataset), std::move(callback));
 }
 
 std::optional<Pipe> LanceMetadata::read(
@@ -586,7 +639,31 @@ std::optional<Pipe> LanceMetadata::read(
     FormatFilterInfoPtr format_filter_info,
     bool need_only_count) const
 {
-    const auto snapshot = extractSnapshot(object_info);
+    const auto & lance_object = extractLanceObjectInfo(object_info);
+    const auto & snapshot = lance_object.snapshot;
+
+    Lance::DatasetHandle dataset = lance_object.dataset;
+    if (!dataset)
+    {
+        const auto options = getDatasetOptions();
+        if (local_context && local_context->hasQueryContext())
+            dataset = Lance::QuerySession::get(local_context)->getPinned(options, snapshot.version);
+        else
+            dataset = Lance::DatasetHandle::openEphemeral(options);
+    }
+    else if (local_context && local_context->hasQueryContext())
+    {
+        /// Source of truth is the query session; ObjectInfo handle is a fast path that must match.
+        auto session_handle = Lance::QuerySession::get(local_context)->getPinned(getDatasetOptions(), snapshot.version);
+        if (session_handle.identityKey() != dataset.identityKey())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Lance ObjectInfo dataset identity does not match the query session handle");
+        }
+        dataset = std::move(session_handle);
+    }
+
     Lance::ScanDescription scan
     {
         .snapshot = snapshot,
@@ -609,7 +686,7 @@ std::optional<Pipe> LanceMetadata::read(
     auto source = std::make_shared<Lance::ReadSource>(
         Block(std::move(physical_columns)),
         std::move(object_info),
-        getDatasetOptions(),
+        std::move(dataset),
         std::move(scan),
         format_settings ? *format_settings : getFormatSettings(local_context));
     return Pipe(source);

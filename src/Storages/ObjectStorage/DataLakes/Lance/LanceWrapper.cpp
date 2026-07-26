@@ -5,14 +5,30 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/ArrowColumnToCHColumn.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceScanDescription.h>
-#include <Common/Exception.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceWrapper.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+#include <Common/Stopwatch.h>
 
 #include <arrow/c/abi.h>
 #include <arrow/c/bridge.h>
 #include <ch_lance.h>
 
+#include <fmt/format.h>
+
 #include <utility>
+
+namespace ProfileEvents
+{
+extern const Event LanceDatasetOpen;
+extern const Event LanceDatasetOpenMicroseconds;
+extern const Event LancePlanScan;
+extern const Event LancePlanScanMicroseconds;
+extern const Event LanceNextBatch;
+extern const Event LanceNextBatchMicroseconds;
+extern const Event LanceRuntimeInit;
+}
 
 namespace DB
 {
@@ -105,73 +121,9 @@ LanceError takeError(ch_lance_error & error)
     throw Exception(code, "{}", message);
 }
 
-}
-
-Scan::Scan(Scan && other) noexcept
-    : scan(std::exchange(other.scan, nullptr))
+ch_lance_dataset_options toNativeOptions(const DatasetOptions & options)
 {
-}
-
-Scan & Scan::operator=(Scan && other) noexcept
-{
-    if (this != &other)
-    {
-        if (scan)
-            ch_lance_free_scan(scan);
-        scan = std::exchange(other.scan, nullptr);
-    }
-    return *this;
-}
-
-Scan::~Scan()
-{
-    if (scan)
-        ch_lance_free_scan(scan);
-}
-
-std::shared_ptr<arrow::RecordBatch> Scan::nextBatch() const
-{
-    ArrowArray array{};
-    ArrowSchema schema{};
-    bool has_batch = false;
-    ch_lance_error error{};
-    if (!ch_lance_next_batch(scan, &array, &schema, &has_batch, &error))
-        throwLanceError(error);
-    if (!has_batch)
-        return nullptr;
-
-    auto record_batch = arrow::ImportRecordBatch(&array, &schema);
-    if (!record_batch.ok())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow record batch: {}", record_batch.status().ToString());
-
-    return *record_batch;
-}
-
-Dataset::Dataset(Dataset && other) noexcept
-    : dataset(std::exchange(other.dataset, nullptr))
-{
-}
-
-Dataset & Dataset::operator=(Dataset && other) noexcept
-{
-    if (this != &other)
-    {
-        if (dataset)
-            ch_lance_free_dataset(dataset);
-        dataset = std::exchange(other.dataset, nullptr);
-    }
-    return *this;
-}
-
-Dataset::~Dataset()
-{
-    if (dataset)
-        ch_lance_free_dataset(dataset);
-}
-
-Dataset Dataset::open(const DatasetOptions & options)
-{
-    ch_lance_dataset_options native_options
+    return ch_lance_dataset_options
     {
         .uri = options.uri.c_str(),
         .use_s3 = options.use_s3,
@@ -187,28 +139,123 @@ Dataset Dataset::open(const DatasetOptions & options)
         .s3_allow_http = options.s3_allow_http,
         .s3_virtual_hosted_style_request = options.s3_virtual_hosted_style_request,
     };
+}
 
+}
+
+String DatasetOptions::identityKey() const
+{
+    SipHash hash;
+    hash.update(uri);
+    hash.update(static_cast<UInt8>(use_s3));
+    hash.update(s3_region);
+    hash.update(s3_endpoint);
+    hash.update(s3_access_key_id);
+    hash.update(s3_secret_access_key);
+    hash.update(s3_session_token);
+    hash.update(s3_role_arn);
+    hash.update(s3_role_session_name);
+    hash.update(static_cast<UInt8>(s3_use_environment_credentials));
+    hash.update(static_cast<UInt8>(s3_no_sign_request));
+    hash.update(static_cast<UInt8>(s3_allow_http));
+    hash.update(static_cast<UInt8>(s3_virtual_hosted_style_request));
+    return getSipHash128AsHexString(hash);
+}
+
+void ensureRuntime(UInt32 worker_threads)
+{
+    ch_lance_runtime_config config{.worker_threads = worker_threads};
     ch_lance_error error{};
+    if (!ch_lance_runtime_ensure(&config, &error))
+        throwLanceError(error, "Cannot initialize Lance runtime");
+}
+
+RuntimeStats runtimeStats()
+{
+    ch_lance_runtime_stats stats{};
+    ch_lance_get_runtime_stats(&stats);
+    return RuntimeStats
+    {
+        .open_dataset_calls = stats.open_dataset_calls,
+        .plan_scan_calls = stats.plan_scan_calls,
+        .next_batch_calls = stats.next_batch_calls,
+        .runtime_initialized = stats.runtime_initialized,
+    };
+}
+
+DatasetHandle::Impl::Impl(ch_lance_dataset * dataset_, DatasetOptions options_)
+    : dataset(dataset_)
+    , options(std::move(options_))
+{
+}
+
+DatasetHandle::Impl::~Impl()
+{
+    if (dataset)
+        ch_lance_free_dataset(dataset);
+}
+
+DatasetHandle DatasetHandle::open(const DatasetOptions & options)
+{
+    return openEphemeral(options);
+}
+
+DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options)
+{
+    ensureRuntime();
+
+    const auto before_init = runtimeStats().runtime_initialized;
+
+    Stopwatch open_watch;
+    ch_lance_error error{};
+    auto native_options = toNativeOptions(options);
     auto * dataset = ch_lance_open_dataset(&native_options, &error);
     if (!dataset)
         throwLanceError(error);
-    return Dataset(dataset);
+
+    ProfileEvents::increment(ProfileEvents::LanceDatasetOpen);
+    ProfileEvents::increment(ProfileEvents::LanceDatasetOpenMicroseconds, open_watch.elapsedMicroseconds());
+
+    const auto after_init = runtimeStats().runtime_initialized;
+    if (after_init > before_init)
+        ProfileEvents::increment(ProfileEvents::LanceRuntimeInit, after_init - before_init);
+
+    return DatasetHandle(std::make_shared<Impl>(dataset, options));
 }
 
-SnapshotInfo Dataset::currentSnapshot() const
+const DatasetOptions & DatasetHandle::options() const
+{
+    if (!impl)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance DatasetHandle is empty");
+    return impl->options;
+}
+
+String DatasetHandle::identityKey() const
+{
+    return options().identityKey();
+}
+
+ch_lance_dataset * DatasetHandle::raw() const
+{
+    if (!impl)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance DatasetHandle is empty");
+    return impl->dataset;
+}
+
+SnapshotInfo DatasetHandle::currentSnapshot() const
 {
     ch_lance_snapshot_info snapshot{};
     ch_lance_error error{};
-    if (!ch_lance_current_snapshot(dataset, &snapshot, &error))
+    if (!ch_lance_current_snapshot(raw(), &snapshot, &error))
         throwLanceError(error);
     return SnapshotInfo{snapshot.version};
 }
 
-NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const
+NamesAndTypesList DatasetHandle::tableSchema(const TableStateSnapshot & snapshot, ContextPtr context) const
 {
     ArrowSchema schema{};
     ch_lance_error error{};
-    if (!ch_lance_export_schema(dataset, snapshot.version, &schema, &error))
+    if (!ch_lance_export_schema(raw(), snapshot.version, &schema, &error))
         throwLanceError(error, fmt::format("Cannot export schema for `Lance` dataset version {}", snapshot.version));
 
     auto arrow_schema = arrow::ImportSchema(&schema);
@@ -229,43 +276,43 @@ NamesAndTypesList Dataset::tableSchema(const TableStateSnapshot & snapshot, Cont
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> Dataset::totalRows(const TableStateSnapshot & snapshot) const
+std::optional<size_t> DatasetHandle::totalRows(const TableStateSnapshot & snapshot) const
 {
     uint64_t rows = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_total_rows(dataset, snapshot.version, &rows, &has_value, &error))
+    if (!ch_lance_total_rows(raw(), snapshot.version, &rows, &has_value, &error))
         throwLanceError(error, fmt::format("Cannot count rows in `Lance` dataset version {}", snapshot.version));
     if (!has_value)
         return std::nullopt;
     return rows;
 }
 
-std::optional<size_t> Dataset::countRows(const TableStateSnapshot & snapshot, const std::optional<String> & predicate) const
+std::optional<size_t> DatasetHandle::countRows(const TableStateSnapshot & snapshot, const std::optional<String> & predicate) const
 {
     uint64_t rows = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_count_rows(dataset, snapshot.version, predicate ? predicate->c_str() : nullptr, &rows, &has_value, &error))
+    if (!ch_lance_count_rows(raw(), snapshot.version, predicate ? predicate->c_str() : nullptr, &rows, &has_value, &error))
         throwLanceError(error, fmt::format("Cannot count filtered rows in `Lance` dataset version {}", snapshot.version));
     if (!has_value)
         return std::nullopt;
     return rows;
 }
 
-std::optional<size_t> Dataset::totalBytes() const
+std::optional<size_t> DatasetHandle::totalBytes() const
 {
     uint64_t bytes = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_total_bytes(dataset, &bytes, &has_value, &error))
+    if (!ch_lance_total_bytes(raw(), &bytes, &has_value, &error))
         throwLanceError(error);
     if (!has_value)
         return std::nullopt;
     return bytes;
 }
 
-Scan Dataset::planScan(const ScanDescription & scan_description) const
+Scan DatasetHandle::planScan(const ScanDescription & scan_description) const
 {
     std::vector<const char *> projection;
     projection.reserve(scan_description.projection.size());
@@ -285,11 +332,68 @@ Scan Dataset::planScan(const ScanDescription & scan_description) const
         .max_block_size = scan_description.max_block_size,
     };
 
+    Stopwatch plan_watch;
     ch_lance_error error{};
-    auto * scan = ch_lance_plan_scan(dataset, &options, &error);
+    auto * scan = ch_lance_plan_scan(raw(), &options, &error);
     if (!scan)
         throwLanceError(error, fmt::format("Cannot plan scan for `Lance` dataset version {}", scan_description.snapshot.version));
-    return Scan(scan);
+
+    ProfileEvents::increment(ProfileEvents::LancePlanScan);
+    ProfileEvents::increment(ProfileEvents::LancePlanScanMicroseconds, plan_watch.elapsedMicroseconds());
+    return Scan(*this, scan);
+}
+
+Scan::Scan(DatasetHandle dataset_, ch_lance_scan * scan_)
+    : dataset(std::move(dataset_))
+    , scan(scan_)
+{
+}
+
+Scan::Scan(Scan && other) noexcept
+    : dataset(std::move(other.dataset))
+    , scan(std::exchange(other.scan, nullptr))
+{
+}
+
+Scan & Scan::operator=(Scan && other) noexcept
+{
+    if (this != &other)
+    {
+        if (scan)
+            ch_lance_free_scan(scan);
+        dataset = std::move(other.dataset);
+        scan = std::exchange(other.scan, nullptr);
+    }
+    return *this;
+}
+
+Scan::~Scan()
+{
+    if (scan)
+        ch_lance_free_scan(scan);
+}
+
+std::shared_ptr<arrow::RecordBatch> Scan::nextBatch() const
+{
+    ArrowArray array{};
+    ArrowSchema schema{};
+    bool has_batch = false;
+    Stopwatch watch;
+    ch_lance_error error{};
+    if (!ch_lance_next_batch(scan, &array, &schema, &has_batch, &error))
+        throwLanceError(error);
+
+    ProfileEvents::increment(ProfileEvents::LanceNextBatch);
+    ProfileEvents::increment(ProfileEvents::LanceNextBatchMicroseconds, watch.elapsedMicroseconds());
+
+    if (!has_batch)
+        return nullptr;
+
+    auto record_batch = arrow::ImportRecordBatch(&array, &schema);
+    if (!record_batch.ok())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to import Lance Arrow record batch: {}", record_batch.status().ToString());
+
+    return *record_batch;
 }
 
 }

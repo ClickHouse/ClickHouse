@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
+extern const int LOGICAL_ERROR;
 extern const int UNKNOWN_EXCEPTION;
 }
 }
@@ -183,13 +184,15 @@ void validateRecordBatchNullability(const arrow::RecordBatch & batch, const Bloc
 }
 
 ReadSource::ReadSource(
-    const Block & header, ObjectInfoPtr object_info_, DatasetOptions options_, ScanDescription scan_, FormatSettings format_settings_)
+    const Block & header, ObjectInfoPtr object_info_, DatasetHandle dataset_, ScanDescription scan_, FormatSettings format_settings_)
     : ISource(std::make_shared<const Block>(header), false)
     , object_info(std::move(object_info_))
-    , options(std::move(options_))
+    , dataset(std::move(dataset_))
     , scan(std::move(scan_))
     , format_settings(std::move(format_settings_))
 {
+    if (!dataset)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance ReadSource requires a non-empty DatasetHandle");
 }
 
 Chunk ReadSource::generate()
@@ -197,12 +200,9 @@ Chunk ReadSource::generate()
     if (is_finished)
         return {};
 
-    if (!dataset)
-        dataset.emplace(Dataset::open(options));
-
     if (scan.need_only_count && scan.projection.empty())
     {
-        const auto rows = scan.predicate ? dataset->countRows(scan.snapshot, scan.predicate) : dataset->totalRows(scan.snapshot);
+        const auto rows = scan.predicate ? dataset.countRows(scan.snapshot, scan.predicate) : dataset.totalRows(scan.snapshot);
         if (rows)
         {
             is_finished = true;
@@ -211,7 +211,7 @@ Chunk ReadSource::generate()
     }
 
     if (!scan_handle)
-        scan_handle.emplace(dataset->planScan(scan));
+        scan_handle.emplace(dataset.planScan(scan));
 
     auto record_batch = scan_handle->nextBatch();
     if (!record_batch)
