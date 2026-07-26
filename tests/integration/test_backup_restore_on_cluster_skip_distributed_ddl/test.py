@@ -1,5 +1,6 @@
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 # Regression test for BACKUP / RESTORE ON CLUSTER when a replica has skip_distributed_ddl=1.
@@ -57,3 +58,38 @@ def test_backup_restore_on_cluster_with_skipped_replica(started_cluster):
     assert (
         node2.query("SELECT count() FROM system.tables WHERE name = 'tbl'").strip() == "0"
     )
+
+
+def test_backup_restore_on_cluster_all_skipped_fails_early(started_cluster):
+    node1.query(
+        "DROP TABLE IF EXISTS tbl2 ON CLUSTER 'backup_cluster' SYNC", settings=DDL_SETTINGS
+    )
+    node1.query(
+        "CREATE TABLE tbl2 ON CLUSTER 'backup_cluster' (n Int32) ENGINE=MergeTree ORDER BY n",
+        settings=DDL_SETTINGS,
+    )
+    node1.query("INSERT INTO tbl2 VALUES (1)")
+
+    backup_name = "Disk('backups', 'all_skipped_backup')"
+
+    # replica_num=2 selects the skipped node2, so the effective host set is empty. The BAD_ARGUMENTS
+    # error must be raised before the backup destination is opened, so no backup artifacts are left.
+    with pytest.raises(QueryRuntimeException, match="skip_distributed_ddl"):
+        node1.query(
+            f"BACKUP TABLE tbl2 ON CLUSTER 'backup_cluster' TO {backup_name} SETTINGS replica_num=2"
+        )
+    assert (
+        node1.exec_in_container(
+            ["bash", "-c", "test -e /backups/all_skipped_backup && echo present || echo absent"]
+        ).strip()
+        == "absent"
+    )
+
+    # RESTORE with an all-skipped selection must fail with the config error before opening the backup
+    # source - otherwise it would fail later with a different "backup not found" error.
+    with pytest.raises(QueryRuntimeException, match="skip_distributed_ddl"):
+        node1.query(
+            f"RESTORE TABLE tbl2 ON CLUSTER 'backup_cluster' FROM {backup_name} SETTINGS replica_num=2"
+        )
+
+    node1.query("DROP TABLE tbl2 ON CLUSTER 'backup_cluster' SYNC", settings=DDL_SETTINGS)
