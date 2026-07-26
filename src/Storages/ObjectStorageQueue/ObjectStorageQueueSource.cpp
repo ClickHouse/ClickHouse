@@ -278,7 +278,8 @@ ObjectStorageQueueSource::FileIterator::next()
                     /// Test-only: make the first file of a multi-file batch non-processable,
                     /// taking the same std::nullopt path as a file grabbed by another consumer.
                     bool force_skip = false;
-                    fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch, {
+                    fiu_do_on(FailPoints::object_storage_queue_skip_one_file_in_batch,
+                    {
                         if (new_batch.size() > 1 && i == 0)
                             force_skip = true;
                     });
