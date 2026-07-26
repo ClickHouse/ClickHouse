@@ -168,7 +168,6 @@ bool CompressionCodecMultiple::isEncryption() const
 }
 
 
-
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {
     factory.registerSimpleCompressionCodec("Multiple", static_cast<UInt8>(CompressionMethodByte::Multiple), [&] ()
