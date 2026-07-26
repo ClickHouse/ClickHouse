@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -112,20 +113,28 @@ SQLQueryPiece applyFunctionScalar(
             }
             else
             {
-                /// SELECT arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)) AS values
+                /// SELECT arrayResize(arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)),
+                ///                    <count_of_time_steps>, NaN) AS values
                 /// FROM <vector_grid>
+                ///
+                /// arrayResize() here handles the case when <vector_grid> contains no rows at all:
+                /// the aggregate functions then return empty arrays, and the result must be NaN at each time step.
                 builder.select_list.push_back(makeASTFunction(
-                    "arrayMap",
+                    "arrayResize",
                     makeASTFunction(
-                        "lambda",
-                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                        "arrayMap",
                         makeASTFunction(
-                            "if",
-                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
-                            makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
-                    makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                    makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
+                            "lambda",
+                            makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                            makeASTFunction(
+                                "if",
+                                makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
+                                makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
+                                timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
+                        makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                        makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))),
+                    make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
 
                 builder.select_list.back()->setAlias(ColumnNames::Values);
                 res.store_method = StoreMethod::SCALAR_GRID;

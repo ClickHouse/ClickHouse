@@ -1040,6 +1040,32 @@ def test_conversion_functions():
         ],
     )
 
+    # scalar() over a vector which turns out to be empty at runtime (not at conversion time)
+    # is NaN at each time step too.
+    do_query_test(
+        "vector(scalar(nonexistent_metric))[50:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[140, "NaN"], [150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "vector(scalar(clamp(nonexistent_metric, 0, 1)))[50:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[140, "NaN"], [150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:20.000',nan),('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
     do_query_test(
         "vector(scalar(vector(time())))[40:10]",
         180,
