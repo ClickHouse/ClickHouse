@@ -30,11 +30,11 @@ quantiles(level1, level2, ...)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric data types, Date or DateTime. [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime)
+- `expr` — Expression over the column values resulting in numeric data types, `Date`, `DateTime` or `DateTime64`. [`(U)Int*`](/reference/data-types/int-uint) or [`Int128`](/reference/data-types/int-uint) or [`UInt128`](/reference/data-types/int-uint) or [`Int256`](/reference/data-types/int-uint) or [`UInt256`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal*`](/reference/data-types/decimal) or [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) or [`DateTime64`](/reference/data-types/datetime64)
 
 **Returned value**
 
-Array of approximate quantiles of the specified levels in the same order as the levels were specified. [`Array(Float64)`](/reference/data-types/array) or [`Array(Date)`](/reference/data-types/array) or [`Array(DateTime)`](/reference/data-types/array)
+Array of approximate quantiles of the specified levels in the same order as the levels were specified. Numeric arguments produce `Float64`, while `Decimal`, `Date`, `DateTime` and `DateTime64` arguments keep their input format. [`Array(Float64)`](/reference/data-types/array) or [`Array(Decimal*)`](/reference/data-types/array) or [`Array(Date)`](/reference/data-types/array) or [`Array(DateTime)`](/reference/data-types/array) or [`Array(DateTime64)`](/reference/data-types/array)
 
 **Examples**
 
