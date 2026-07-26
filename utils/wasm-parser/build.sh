@@ -54,6 +54,12 @@ CXXFLAGS=(
   -DFMT_USE_LOCALE=0
   -fignore-exceptions
   -fno-asynchronous-unwind-tables
+  # Link-time optimization, plus removal of virtual functions that nothing calls through a vtable.
+  # `-fvirtual-function-elimination` needs full LTO, which is why the server build (ThinLTO) cannot
+  # use it. Here the whole program is these 320 translation units, so it is available and cheap.
+  -flto
+  -fwhole-program-vtables
+  -fvirtual-function-elimination
   -Wno-everything
 )
 

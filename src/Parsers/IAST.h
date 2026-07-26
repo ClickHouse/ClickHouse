@@ -134,9 +134,14 @@ public:
     virtual String tryGetAlias() const { return String(); }
 
     /** Set the alias. */
-    virtual void setAlias(const String & /*to*/)
+    virtual void setAlias(const String & to)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias of {} of {}", getColumnName(), getID());
+        /// Deliberately not `getColumnName()` and `getID()`. Both are virtual, and this throw is
+        /// the only thing that names them in the parser - so it alone keeps an override of each
+        /// alive in every one of the ~150 AST classes, which a build of the parser on its own
+        /// pays for. `formatForErrorMessage` is on the formatting path, which is needed anyway,
+        /// and shows the offending node rather than just its kind.
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't set alias '{}' of {}", to, formatForErrorMessage());
     }
 
     /** Get the text that identifies this element. */
