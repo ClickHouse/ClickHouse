@@ -559,6 +559,9 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
 
     auto pk_type = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock().getByName(primary_key).type;
+    /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
+    /// pre-existing values if the caller passed an already sized array.
+    null_map.clear();
     null_map.resize_fill(keys[0].column->size(), 1);
     auto raw_keys = serializeKeysToRawString(keys[0], pk_type, &null_map);
 
