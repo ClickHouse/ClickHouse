@@ -696,9 +696,18 @@ ProcessList::EntryPtr ProcessList::insert(
         /// was never incremented. The map erases here are idempotent (no-ops when the key was never inserted,
         /// so a partial registration rolls back exactly), and `non_internal_queries` is only undone once it
         /// was actually incremented. The guard is dismissed as soon as the `Entry` takes ownership.
+        ///
+        /// The same applies to the `CancellationChecker` registration below: once `appendTask` has
+        /// inserted the query into the checker's set, the checker keeps the `QueryStatus` (and with it
+        /// the acquired `QuerySlot` / `MemoryReservation`) alive until `max_execution_time` expires.
+        /// If the `Entry` construction then throws, no `~ProcessListEntry` will ever run to call
+        /// `appendDoneTasks`, so the guard has to do it.
         bool non_internal_queries_incremented = false;
+        bool registered_in_cancellation_checker = false;
         scope_guard registration_rollback([&]
         {
+            if (registered_in_cancellation_checker)
+                CancellationChecker::getInstance().appendDoneTasks(query);
             user_process_list.queries.erase(client_info.current_query_id);
             queries_to_user.erase(client_info.current_query_id);
             if (non_internal_queries_incremented)
@@ -721,7 +730,7 @@ ProcessList::EntryPtr ProcessList::insert(
             non_internal_queries_incremented = true;
         }
 
-        bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
+        registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
         registration_rollback.release();
