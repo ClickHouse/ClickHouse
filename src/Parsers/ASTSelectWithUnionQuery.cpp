@@ -2,6 +2,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
 
@@ -95,6 +96,12 @@ void ASTSelectWithUnionQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSe
         /// If this is a subtree with another chain of selects, we also need parens.
         auto * union_node = (*it)->as<ASTSelectWithUnionQuery>();
         if (union_node)
+            need_parens = true;
+
+        /// Same for an INTERSECT/EXCEPT subtree: SelectIntersectExceptQueryVisitor moves that mode out of
+        /// `list_of_modes`, so `is_except` above cannot see it, and the check above only matches
+        /// ASTSelectWithUnionQuery. Only a chain can be misread: a lone child has no sibling to rebind to.
+        if (list_of_selects->children.size() > 1 && (*it)->as<ASTSelectIntersectExceptQuery>())
             need_parens = true;
 
         /// When `settings_ast` is set on the whole SelectWithUnionQuery (inherited

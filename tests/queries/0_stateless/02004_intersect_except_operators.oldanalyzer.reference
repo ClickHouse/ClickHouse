@@ -134,10 +134,12 @@ explain syntax select 1 union all select 2  except (select 2 except select 1 uni
     EXCEPT ALL
     (
         (
-            SELECT 2
+            (
+                SELECT 2
+            )
+            EXCEPT ALL
+            SELECT 1
         )
-        EXCEPT ALL
-        SELECT 1
         UNION ALL
         SELECT 1
     )
