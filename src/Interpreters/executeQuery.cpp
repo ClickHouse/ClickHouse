@@ -536,14 +536,10 @@ QueryLogElement logQueryStart(
             interpreter->extendQueryLogElem(elem, query_ast, context, query_database, query_table);
     }
 
-    /// When only audit log is enabled (query_log unavailable),
-    /// we have populated the object names above — return early without touching
-    /// QueryMetricLog or system.query_log machinery.
-    if (!query_log)
-        return elem;
-
     /// Log into system table start of query execution.
-    if (log_queries)
+    /// `query_metric_log` below is configured independently of `system.query_log`, so the absence
+    /// of the latter must skip only this block, not the whole rest of the function.
+    if (query_log && log_queries)
     {
         if (settings[Setting::log_query_settings])
             elem.query_settings = context->getSettingsRef().changedToMap();
