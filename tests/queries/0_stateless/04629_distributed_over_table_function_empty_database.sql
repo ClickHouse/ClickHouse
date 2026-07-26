@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS dist_merge_empty;
 DROP TABLE IF EXISTS dist_loop_empty;
 DROP TABLE IF EXISTS dist_loop_cd;
 DROP TABLE IF EXISTS dist_mti_empty;
+DROP TABLE IF EXISTS dist_mcbc_empty;
 DROP TABLE IF EXISTS bind_db_src;
 
 CREATE TABLE bind_db_src (n UInt64) ENGINE = MergeTree ORDER BY n;
@@ -42,6 +43,8 @@ SHOW CREATE TABLE dist_loop_cd;
 -- to the current database at read time, so it is frozen too.
 CREATE TABLE dist_mti_empty (part_name String) ENGINE = Distributed(test_shard_localhost, mergeTreeIndex('', 'bind_db_src'));
 SHOW CREATE TABLE dist_mti_empty;
+CREATE TABLE dist_mcbc_empty (part_name String) ENGINE = Distributed(test_shard_localhost, mergeTreeCodecBlockCounts('', 'bind_db_src'));
+SHOW CREATE TABLE dist_mcbc_empty;
 
 -- The frozen explicit database also makes the referential dependency on the source table effective:
 -- dropping the source is blocked while the `loop` / `mergeTreeIndex` targets reference it.
@@ -56,12 +59,19 @@ SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_merge_empty SETTINGS en
 SELECT sum(n) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_merge_empty SETTINGS enable_analyzer = 0, prefer_localhost_replica = 0;
 SELECT count(DISTINCT part_name) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_mti_empty SETTINGS enable_analyzer = 1;
 SELECT count(DISTINCT part_name) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_mti_empty SETTINGS enable_analyzer = 0;
+SELECT count(DISTINCT part_name) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_mcbc_empty SETTINGS enable_analyzer = 1;
+SELECT count(DISTINCT part_name) FROM {CLICKHOUSE_DATABASE:Identifier}.dist_mcbc_empty SETTINGS enable_analyzer = 0;
 USE {CLICKHOUSE_DATABASE:Identifier};
 
 DROP TABLE dist_merge_empty;
 DROP TABLE dist_loop_empty;
 DROP TABLE dist_loop_cd;
 DROP TABLE dist_mti_empty;
+
+-- Discriminating check for `mergeTreeCodecBlockCounts`: with every other target gone, the dependency
+-- recorded from its frozen database argument alone must still block dropping the source table.
+DROP TABLE bind_db_src SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE dist_mcbc_empty;
 
 -- The `timeSeries*` / `prometheusQuery*` family resolves the pair through `Context::resolveStorageID`,
 -- which looks up session-local temporary tables only when the database is empty - so the long form keeps

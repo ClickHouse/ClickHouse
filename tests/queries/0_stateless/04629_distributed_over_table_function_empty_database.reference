@@ -2,10 +2,13 @@ CREATE TABLE default.dist_merge_empty\n(\n    `n` UInt64\n)\nENGINE = Distribute
 CREATE TABLE default.dist_loop_empty\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', loop(\'default\', \'bind_db_src\'))
 CREATE TABLE default.dist_loop_cd\n(\n    `n` UInt64\n)\nENGINE = Distributed(\'test_shard_localhost\', loop(\'default\', \'bind_db_src\'))
 CREATE TABLE default.dist_mti_empty\n(\n    `part_name` String\n)\nENGINE = Distributed(\'test_shard_localhost\', mergeTreeIndex(\'default\', \'bind_db_src\'))
+CREATE TABLE default.dist_mcbc_empty\n(\n    `part_name` String\n)\nENGINE = Distributed(\'test_shard_localhost\', mergeTreeCodecBlockCounts(\'default\', \'bind_db_src\'))
 6
 6
 6
 6
+1
+1
 1
 1
 CREATE TABLE default.dist_ts_empty\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'default\', \'ts_bind\'))

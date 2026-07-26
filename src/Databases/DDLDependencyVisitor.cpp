@@ -385,10 +385,12 @@ namespace
                 addDependencyFromLeadingTableNameArguments(function, /* short_form_num_args= */ 1);
             }
             else if (function.name == "mergeTreeIndex" || function.name == "mergeTreeProjection"
-                     || function.name == "mergeTreeTextIndex" || function.name == "mergeTreeAnalyzeIndexes")
+                     || function.name == "mergeTreeTextIndex" || function.name == "mergeTreeAnalyzeIndexes"
+                     || function.name == "mergeTreeCodecBlockCounts")
             {
                 /// mergeTreeIndex(database, table, ...) / mergeTreeProjection(database, table, projection) /
-                /// mergeTreeTextIndex(database, table, index_name) / mergeTreeAnalyzeIndexes(database, table, ...):
+                /// mergeTreeTextIndex(database, table, index_name) / mergeTreeAnalyzeIndexes(database, table, ...) /
+                /// mergeTreeCodecBlockCounts(database, table):
                 /// these inspect a concrete local MergeTree table named by the first two arguments and read it
                 /// via `DatabaseCatalog::getTable` at read time, so a DROP / RENAME of that table must be tracked
                 /// as a referential dependency. The UUID-resolved form (`mergeTreeAnalyzeIndexesUUID`) references

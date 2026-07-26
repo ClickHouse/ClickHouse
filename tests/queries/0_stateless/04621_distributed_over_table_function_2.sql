@@ -290,7 +290,8 @@ SELECT count() FROM dist_probe_arg_subquery SETTINGS enable_analyzer = 0, prefer
 DROP TABLE dist_probe_arg_subquery;
 
 -- The MergeTree-inspection table functions (`mergeTreeIndex`, `mergeTreeProjection`, `mergeTreeTextIndex`,
--- `mergeTreeAnalyzeIndexes`) name a concrete local table in their first two arguments and read it at query
+-- `mergeTreeAnalyzeIndexes`, `mergeTreeCodecBlockCounts`) name a concrete local table in their first two
+-- arguments and read it at query
 -- time, so a persisted `Distributed` over such a target registers a referential dependency on that table -
 -- DROP / RENAME of the source is rejected under `check_referential_table_dependencies = 1`, and allowed once
 -- the dependent `Distributed` tables are gone. The UUID-resolved `mergeTreeAnalyzeIndexesUUID` form references
@@ -300,6 +301,7 @@ CREATE TABLE dist_over_mt_proj (a UInt64) ENGINE = Distributed(test_shard_localh
 CREATE TABLE dist_over_mt_index (a UInt64) ENGINE = Distributed(test_shard_localhost, mergeTreeIndex(currentDatabase(), mt_src));
 CREATE TABLE dist_over_mt_text (a UInt64) ENGINE = Distributed(test_shard_localhost, mergeTreeTextIndex(currentDatabase(), mt_src, idx));
 CREATE TABLE dist_over_mt_analyze (a UInt64) ENGINE = Distributed(test_shard_localhost, mergeTreeAnalyzeIndexes(currentDatabase(), mt_src));
+CREATE TABLE dist_over_mt_codec (a UInt64) ENGINE = Distributed(test_shard_localhost, mergeTreeCodecBlockCounts(currentDatabase(), mt_src));
 SET check_referential_table_dependencies = 1;
 DROP TABLE mt_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
 RENAME TABLE mt_src TO mt_src2; -- { serverError HAVE_DEPENDENT_OBJECTS }
@@ -308,4 +310,10 @@ DROP TABLE dist_over_mt_proj;
 DROP TABLE dist_over_mt_index;
 DROP TABLE dist_over_mt_text;
 DROP TABLE dist_over_mt_analyze;
+-- `mergeTreeCodecBlockCounts` alone still holds the source: dropped last so its own dependency is checked
+-- in isolation.
+SET check_referential_table_dependencies = 1;
+DROP TABLE mt_src; -- { serverError HAVE_DEPENDENT_OBJECTS }
+SET check_referential_table_dependencies = 0;
+DROP TABLE dist_over_mt_codec;
 DROP TABLE mt_src;

@@ -2482,10 +2482,12 @@ void bindTableFunctionTargetToCurrentDatabase(const ASTFunction & table_function
             bindLeadingDatabaseNameArgument(table_function_ast, /* table_name_may_reference_temporary_table= */ false, local_context);
     }
     else if (function_name == "mergeTreeIndex" || function_name == "mergeTreeProjection"
-             || function_name == "mergeTreeTextIndex" || function_name == "mergeTreeAnalyzeIndexes")
+             || function_name == "mergeTreeTextIndex" || function_name == "mergeTreeAnalyzeIndexes"
+             || function_name == "mergeTreeCodecBlockCounts")
     {
         /// mergeTreeIndex(database, table, ...) / mergeTreeProjection(database, table, projection) /
-        /// mergeTreeTextIndex(database, table, index_name) / mergeTreeAnalyzeIndexes(database, table, ...):
+        /// mergeTreeTextIndex(database, table, index_name) / mergeTreeAnalyzeIndexes(database, table, ...) /
+        /// mergeTreeCodecBlockCounts(database, table):
         /// the database argument is always explicit here, but an empty string still resolves to the current
         /// database at read time (`evaluateConstantExpressionForDatabaseName`), so it is frozen the same way.
         if (args.size() >= 2)
