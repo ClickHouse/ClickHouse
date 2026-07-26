@@ -3206,6 +3206,20 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
     if (!isSafePrimaryKey(metadata->getPrimaryKey()) || !metadata->getSortingKeyReverseFlags().empty())
         return 0;
 
+    /// The cut point is proven on the raw key values from the primary index, so the merge order has to be
+    /// those same columns. `optimizeReadInOrder` also keeps an in-order read for a monotonic transformation
+    /// of the key (e.g. `ORDER BY toDate(ts)` on a table sorted by `ts`), where granules strictly separated
+    /// on `ts` can still be tied in the merge order and dropping one changes which tied rows survive.
+    const size_t prefix_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
+    const auto & sort_description = query_info.input_order_info->sort_description_for_merging;
+    const auto & sorting_key_columns = metadata->getSortingKey().column_names;
+    if (sort_description.size() != prefix_size || prefix_size > sorting_key_columns.size())
+        return 0;
+
+    for (size_t i = 0; i < prefix_size; ++i)
+        if (sort_description[i].direction != 1 || sort_description[i].column_name != sorting_key_columns[i])
+            return 0;
+
     auto & result = getAnalysisResult();
     if (!result.split_parts.layers.empty())
         return 0;
@@ -3215,7 +3229,6 @@ size_t ReadFromMergeTree::skipRowsForOffset(size_t offset)
             if (part.data_part->hasLightweightDelete())
                 return 0;
 
-    const size_t prefix_size = query_info.input_order_info->used_prefix_of_sorting_key_size;
     const size_t skipped_rows = skipLeadingGranulesForOffset(result.parts_with_ranges, offset, prefix_size, /*in_reverse_order=*/false, log);
     offset_granules_skipped = true;
     if (skipped_rows == 0)
