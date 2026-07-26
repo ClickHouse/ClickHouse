@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 引入版本：v1.1.0
 
-统计行数或非 NULL 值的数量。
+统计行数或数量。
 
 ClickHouse 支持 `count` 的以下语法：
 
@@ -38,7 +38,7 @@ ClickHouse 支持 `COUNT(DISTINCT ...)` 语法。
   **提升 COUNT(DISTINCT expr) 性能**
 
   如果你的 `COUNT(DISTINCT expr)` 查询较慢，可以考虑添加 [`GROUP BY`](/zh/reference/statements/select/group-by) 子句，这样可以提升并行化程度。
-  你也可以使用[投影](/zh/reference/statements/alter/projection)，为 `COUNT(DISTINCT target_col)` 中使用的目标列创建索引。
+  你也可以使用 [projection](/zh/reference/statements/alter/projection)，为 `COUNT(DISTINCT target_col)` 中使用的目标列创建索引。
 </Tip>
 
 **语法**
@@ -72,7 +72,7 @@ SELECT count() FROM t
 **COUNT(DISTINCT) 示例**
 
 ```sql title=Query
--- 此示例展示了根据 `count_distinct_implementation` 设置值，`count(DISTINCT num)` 由 `uniqExact` 函数执行。
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```
