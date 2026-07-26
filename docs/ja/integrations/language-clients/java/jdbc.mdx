@@ -136,7 +136,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   これは以下のJDBC URLと同等です：
 
   ```sql
-  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
   // credentials shoud be passed in `Properties`. Here it is just for example.
   ```
 
@@ -233,10 +233,10 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **文字列型**
 
-  | ClickHouse Type | JDBC Type | Java Class       |
-  | --------------- | --------- | ---------------- |
-  | String          | VARCHAR   | java.lang.String |
-  | FixedString     | VARCHAR   | java.lang.String |
+  | ClickHouse 型 | JDBC 型  | Java クラス         |
+  | ------------ | ------- | ---------------- |
+  | String       | VARCHAR | java.lang.String |
+  | FixedString  | VARCHAR | java.lang.String |
 
   * `String` は、`java.lang.String` または `byte[]` としてのみ読み込めます。
   * `FixedString` はそのまま読み取られ、カラムの長さに合わせてゼロで埋められます。 (たとえば、`'John'` に対する `FixedString(10)` は `'John\0\0\0\0\0\0\0\0\0'` として読み取られます。)
@@ -284,7 +284,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   * JDBC との互換性を確保するため、`Array` はデフォルトで `java.sql.Array` にマッピングされます。これは、返される配列値についてより多くの情報を提供するためでもあります。型推論に役立ちます。
   * `Array` は、元の配列と同じ内容の `java.sql.ResultSet` を返す `getResultSet()` メソッドを実装しています。
   * コレクション型を `java.lang.String` として読み取るべきではありません。この形式はデータの有効な表現方法ではないためです (例: 配列内の文字列値はクォートされません) 。
-  * `Map` は `OTHER` に対応付けられます。値は `getObject(columnIndex, Class<T>)` メソッドでしか読み取れないためです。
+  * `Map` は `OTHER` にマッピングされます。値は `getObject(columnIndex, Class<T>)` メソッドでのみ読み取れるためです。
     * `Map` には名前付きカラムがないため、`java.sql.Struct` ではありません。
   * `Tuple` は異なる型を含めることができ、`List` は使用できないため、`Object[]` にマップされます。
   * `Tuple` は、`getObject(columnIndex, Array.class)` メソッドを使用して `Array` として読み取れます。この場合、`Array#baseTypeName` は `Tuple` のカラム定義を返します。
@@ -298,7 +298,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   | ClickHouse 型                               | `getBaseTypeName()`                   | `getBaseType()`      |
   | ------------------------------------------ | ------------------------------------- | -------------------- |
-  | `Array(<Primitive Type>)`                  | `<プリミティブ型>`                           | `<JDBC プリミティブ型>`     |
+  | `Array(<プリミティブ型>)`                         | `<プリミティブ型>`                           | `<JDBC プリミティブ型>`     |
   | `Array(<Parameterized Type>(<N>))`         | `<Parameterized Type>(<N>)`           | `<基本型のJDBC型>`        |
   | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                    | `<内部 Type の JDBC 型>` |
   | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`              | `<内部 Type の JDBC 型>` |
@@ -395,7 +395,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
                   }
               }
           }
-      } 
+      }
   }
   ```
 
@@ -537,12 +537,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **Geo Types**
 
-  | ClickHouse型  | JDBC型 | Javaクラス                                        |
-  | ------------ | ----- | ---------------------------------------------- |
-  | Point        | OTHER | double[]                               |
-  | Ring         | OTHER | double[][]                     |
-  | Polygon      | OTHER | double[][][]           |
-  | MultiPolygon | OTHER | double[][][][] |
+  | ClickHouse 型 | JDBC 型 | Java クラス                                       |
+  | ------------ | ------ | ---------------------------------------------- |
+  | Point        | OTHER  | double[]                               |
+  | Ring         | OTHER  | double[][]                     |
+  | Polygon      | OTHER  | double[][][]           |
+  | MultiPolygon | OTHER  | double[][][][] |
 
   **NullableとLowCardinalityの型**
 
@@ -770,7 +770,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
   | ----------------------------------- | ------ | ------------- |
   | トランザクションのサポート                       | 一部サポート | 未サポート         |
   | レスポンスのカラム名変更                        | 一部サポート | 未サポート         |
-  | 複数ステートメントSQL                        | 非対応    | 使用不可          |
+  | 複数ステートメントSQL                        | 未サポート  | 使用不可          |
   | 名前付きパラメータ                           | 対応     | 非対応 (JDBC仕様外) |
   | `PreparedStatement` によるストリーミングデータ処理 | 対応     | 非対応           |
 
@@ -813,36 +813,36 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **数値型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)        | JDBC Type (V1) | Java クラス (V1)                             |
-  | --------------- | ---- | -------------- | -------------------- | -------------- | ----------------------------------------- |
-  | Int8            | ✅    | TINYINT        | java.lang.Byte       | TINYINT        | java.lang.Byte                            |
-  | Int16           | ✅    | SMALLINT       | java.lang.Short      | SMALLINT       | java.lang.Short                           |
-  | Int32           | ✅    | INTEGER        | java.lang.Integer    | INTEGER        | java.lang.Integer                         |
-  | Int64           | ✅    | BIGINT         | java.lang.Long       | BIGINT         | java.lang.Long                            |
-  | Int128          | ✅    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | Int256          | ✅    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | UInt8           | ❌    | SMALLINT       | java.lang.Short      | SMALLINT       | com.clickhouse.data.value.UnsignedByte    |
-  | UInt16          | ❌    | INTEGER        | java.lang.Integer    | INTEGER        | com.clickhouse.data.value.UnsignedShort   |
-  | UInt32          | ❌    | BIGINT         | java.lang.Long       | BIGINT         | com.clickhouse.data.value.UnsignedInteger |
-  | UInt64          | ❌    | NUMERIC        | java.math.BigInteger | NUMERIC        | com.clickhouse.data.value.UnsignedLong    |
-  | UInt128         | ✅    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | UInt256         | ✅    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
-  | Float32         | ✅    | FLOAT          | java.lang.Float      | FLOAT          | java.lang.Float                           |
-  | Float64         | ✅    | DOUBLE         | java.lang.Double     | DOUBLE         | java.lang.Double                          |
-  | Decimal32       | ✅    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Decimal64       | ✅    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Decimal128      | ✅    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Decimal256      | ✅    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
-  | Bool            | ✅    | BOOLEAN        | java.lang.Boolean    | BOOLEAN        | java.lang.Boolean                         |
+  | ClickHouse Type | V1との互換性 | JDBC Type (V2) | Java クラス (V2)        | JDBC Type (V1) | Java クラス (V1)                             |
+  | --------------- | ------- | -------------- | -------------------- | -------------- | ----------------------------------------- |
+  | Int8            | ✅       | TINYINT        | java.lang.Byte       | TINYINT        | java.lang.Byte                            |
+  | Int16           | ✅       | SMALLINT       | java.lang.Short      | SMALLINT       | java.lang.Short                           |
+  | Int32           | ✅       | INTEGER        | java.lang.Integer    | INTEGER        | java.lang.Integer                         |
+  | Int64           | ✅       | BIGINT         | java.lang.Long       | BIGINT         | java.lang.Long                            |
+  | Int128          | ✅       | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | Int256          | ✅       | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | UInt8           | ❌       | SMALLINT       | java.lang.Short      | SMALLINT       | com.clickhouse.data.value.UnsignedByte    |
+  | UInt16          | ❌       | INTEGER        | java.lang.Integer    | INTEGER        | com.clickhouse.data.value.UnsignedShort   |
+  | UInt32          | ❌       | BIGINT         | java.lang.Long       | BIGINT         | com.clickhouse.data.value.UnsignedInteger |
+  | UInt64          | ❌       | NUMERIC        | java.math.BigInteger | NUMERIC        | com.clickhouse.data.value.UnsignedLong    |
+  | UInt128         | ✅       | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | UInt256         | ✅       | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | Float32         | ✅       | FLOAT          | java.lang.Float      | FLOAT          | java.lang.Float                           |
+  | Float64         | ✅       | DOUBLE         | java.lang.Double     | DOUBLE         | java.lang.Double                          |
+  | Decimal32       | ✅       | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal64       | ✅       | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal128      | ✅       | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal256      | ✅       | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Bool            | ✅       | BOOLEAN        | java.lang.Boolean    | BOOLEAN        | java.lang.Boolean                         |
 
   * 最大の違いは、移植性を高めるために、符号なし型がJavaの型にマッピングされている点です。
 
   **文字列型**
 
-  | ClickHouse Type | V1との互換性 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Javaクラス (V1)     |
-  | --------------- | ------- | -------------- | ---------------- | -------------- | ---------------- |
-  | String          | ✅       | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
-  | FixedString     | ✅       | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)    |
+  | --------------- | ---- | -------------- | ---------------- | -------------- | ---------------- |
+  | String          | ✅    | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | FixedString     | ✅    | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
 
   * `FixedString` は、どちらのバージョンでもそのまま読み取られます。たとえば、`'John'` に対する `FixedString(10)` は `'John\0\0\0\0\0\0\0\0\0'` として読み取られます。
   * `PreparedStatement#setBytes` を使用すると、`unhex('<hex_string>')` に変換され、その後 `String` として読み込まれます。
@@ -850,7 +850,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **日付/時刻型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java Class (V2)    | JDBC Type (V1)                  | Javaクラス (V1)             |
+  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)      | JDBC Type (V1)                  | Javaクラス (V1)             |
   | --------------- | ---- | -------------- | ------------------ | ------------------------------- | ------------------------ |
   | Date            | ❌    | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
   | Date32          | ❌    | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
@@ -864,7 +864,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **列挙型**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java Class (V2)  | JDBC Type (V1) | Javaクラス (V1)     |
+  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)    |
   | --------------- | ---- | -------------- | ---------------- | -------------- | ---------------- |
   | Enum            | ✅    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
   | Enum8           | ✅    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
@@ -872,12 +872,12 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **ネストされた型**
 
-  | ClickHouse Type | V1との互換性 | JDBC Type (V2)  | Java クラス (V2)    | JDBC Type (V1) | Javaクラス (V1)                   |
-  | --------------- | ------- | --------------- | ---------------- | -------------- | ------------------------------ |
-  | Array           | ❌       | ARRAY           | java.sql.Array   | ARRAY          | Object[] またはプリミティブ型の配列 |
-  | Tuple           | ❌       | OTHER           | Object[] | STRUCT         | java.sql.Struct                |
-  | Map             | ❌       | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                  |
-  | Nested          | ❌       | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                |
+  | ClickHouse Type | V1互換 | JDBC Type (V2)  | Java クラス (V2)    | JDBC Type (V1) | Java クラス (V1)                  |
+  | --------------- | ---- | --------------- | ---------------- | -------------- | ------------------------------ |
+  | Array           | ❌    | ARRAY           | java.sql.Array   | ARRAY          | Object[] またはプリミティブ型の配列 |
+  | Tuple           | ❌    | OTHER           | Object[] | STRUCT         | java.sql.Struct                |
+  | Map             | ❌    | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                  |
+  | Nested          | ❌    | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                |
 
   * V2 では、JDBC との互換性を保つため、`Array` はデフォルトで `java.sql.Array` にマッピングされます。これは、返される配列値に関する情報をより多く提供するためでもあります。型推論に役立ちます。
   * V2では、`Array` は元の配列と同じ内容を持つ `java.sql.ResultSet` を返す `getResultSet()` メソッドを実装しています。
@@ -891,7 +891,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **Geo Types**
 
-  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java Class (V2)                                | JDBC Type (V1) | Javaクラス (V1)                                   |
+  | ClickHouse Type | V1互換 | JDBC Type (V2) | Java クラス (V2)                                  | JDBC Type (V1) | Java クラス (V1)                                  |
   | --------------- | ---- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
   | Point           | ✅    | OTHER          | double[]                               | OTHER          | double[]                               |
   | Ring            | ✅    | OTHER          | double[][]                     | OTHER          | double[][]                     |
@@ -905,7 +905,7 @@ import WideTableWrapper from "/snippets/ja/components/WideTableWrapper/WideTable
 
   **特殊型**
 
-  | ClickHouse Type         | V1互換 | JDBC Type (V2) | Java Class (V2)       | JDBC Type (V1) | Javaクラス (V1)          |
+  | ClickHouse Type         | V1互換 | JDBC Type (V2) | Java クラス (V2)         | JDBC Type (V1) | Java クラス (V1)         |
   | ----------------------- | ---- | -------------- | --------------------- | -------------- | --------------------- |
   | JSON                    | ❌    | OTHER          | java.lang.String      | 非対応            | 非対応                   |
   | AggregateFunction       | ✅    | OTHER          | (バイナリ表現)              | OTHER          | (バイナリ表現)              |

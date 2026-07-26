@@ -123,76 +123,62 @@ Para cada número de PR original `N` e branch de release `release/X.Y`:
   ### Processo passo a passo
 </div>
 
-<div id="discover-active-releases">
-  #### 1. Identifique as releases ativas
-</div>
+<Steps>
+  <Step title="Descubra os lançamentos ativos" id="discover-active-releases">
+    `BackportPRs.receive_release_prs` consulta o GitHub em busca de todos os PRs abertos com o rótulo `release`. Os head refs desses PRs são os nomes das branches de lançamento (por exemplo, `release/25.3`). A partir deles, ele deriva o conjunto de rótulos específicos de versão a procurar: todo rótulo `v{VER}-must-backport` que exista no repositório e cuja versão não seja mais recente do que o lançamento ativo mais recente. Rótulos mais antigos são incluídos mesmo quando seu lançamento não está mais ativo (um rótulo mais recente do que todos os lançamentos ativos é ignorado, já que não poderia se expandir para nenhuma branch ativa), portanto um PR rotulado para um lançamento em fim de vida ainda é encontrado, desde que um lançamento mais recente esteja ativo.
+  </Step>
 
-`BackportPRs.receive_release_prs` consulta o GitHub em busca de todos os PRs abertos com o rótulo `release`. As refs de origem desses PRs correspondem aos nomes dos branches de release (por exemplo, `release/25.3`). A partir delas, é derivado o conjunto de rótulos específicos de versão a serem procurados: todos os rótulos `v{VER}-must-backport` que existirem no repositório e cuja versão não seja mais recente do que a release ativa mais recente. Rótulos mais antigos são incluídos mesmo quando sua release não está mais ativa (um rótulo mais recente do que todas as releases ativas é ignorado, pois não poderia se expandir para nenhum branch ativo), de modo que um PR rotulado para uma release em fim de vida útil ainda seja encontrado, desde que uma release mais recente esteja ativa.
+  <Step title="Encontre PRs para fazer backport" id="find-prs-to-backport">
+    `BackportPRs.receive_prs_for_backport` usa a API de busca do GitHub para encontrar PRs mesclados que:
 
-<div id="find-prs-to-backport">
-  #### 2. Encontrar PRs para backport
-</div>
+    * têm pelo menos um rótulo de backport (`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix` ou um rótulo específico de versão), e
+    * **não** têm `pr-backports-created`, e
+    * tiveram merge após a data do commit mais antigo encontrada em qualquer branch de release, e
+    * foram atualizados nos últimos 90 dias (para manter a consulta de busca eficiente).
+  </Step>
 
-`BackportPRs.receive_prs_for_backport` usa a API de busca do GitHub para encontrar PRs mesclados que:
+  <Step title="Tratamento da branch durante o rolling-out" id="rolling-out-branch-handling">
+    Quando um PR de release recebe o rótulo `rolling-out`, os rótulos gerais de backport (`pr-must-backport`, `pr-critical-bugfix`) ignoram essa branch. O bot fecha quaisquer PRs de cherry-pick ou de backport criados anteriormente para essa branch com um comentário explicativo. Um rótulo específico de versão (por exemplo, `v25.3-must-backport`) sempre prevalece sobre isso — para o release nomeado e para cada branch de release ativa mais recente à qual ele se expande. `pr-must-backport-force` ignora a verificação de `rolling-out` para todas as branches.
+  </Step>
 
-* tenham pelo menos um rótulo de backport (`pr-must-backport`, `pr-must-backport-force`, `pr-critical-bugfix` ou um rótulo específico da versão), e
-* **não** já tenham `pr-backports-created`, e
-* tenham sido mesclados após a data do commit mais antigo encontrada em qualquer release branch, e
-* tenham sido atualizados nos últimos 90 dias (para manter a consulta de busca eficiente).
+  <Step title={<>Etapa de cherry-pick (<code>ReleaseBranch.create_cherrypick</code>)</>} id="cherry-pick-stage">
+    Para cada par (PR original, branch de release) em que ainda não exista um PR de cherry-pick:
 
-<div id="rolling-out-branch-handling">
-  #### 3. Tratamento de branch em `rolling-out`
-</div>
+    1. Faça checkout da branch de release e crie uma **branch de backport** (`backport/release/X.Y/N`) a partir dela.
+    2. Execute `git merge -s ours` contra o primeiro parent do commit de merge para criar uma base de merge sintética, sem alterações de conteúdo.
+    3. Crie à força uma **branch de cherry-pick** (`cherrypick/release/X.Y/N`) apontando diretamente para o commit de merge do PR original.
+    4. Tente executar `git merge --no-commit --no-ff` da branch de cherry-pick na branch de backport:
+       * Se já estiver atualizada, a alteração já está presente na branch de release — marque como concluído e pule esta etapa.
+       * Caso contrário (com ou sem conflitos), faça reset e envie ambas as branches.
+    5. Crie o PR de cherry-pick com destino a `backport/release/X.Y/N` a partir de `cherrypick/release/X.Y/N`, com os rótulos `pr-cherrypick` e `do not test`.
+    6. Propague `pr-bugfix` ou `pr-critical-bugfix` do PR original, se aplicável.
+    7. Os responsáveis **não** são definidos neste momento; eles só são adicionados quando forem detectados conflitos.
+  </Step>
 
-Quando uma PR de release recebe o rótulo `rolling-out`, os rótulos gerais de backport (`pr-must-backport`, `pr-critical-bugfix`) ignoram esse branch. O bot fecha todas as PRs de cherry-pick ou backport criadas anteriormente para esse branch com um comentário explicativo. Um rótulo específico de versão (por exemplo, `v25.3-must-backport`) sempre prevalece sobre isso — para o release nomeado e para todos os release branches ativos mais recentes aos quais ele se expande. `pr-must-backport-force` ignora a verificação de `rolling-out` para todos os branches.
+  <Step title="Merge automático de PRs de cherry-pick sem conflitos" id="auto-merge-conflict-free-cherry-pick-prs">
+    Se o PR de cherry-pick puder ser mesclado (sem conflitos), o bot faz o merge automaticamente pela API do GitHub e prossegue imediatamente para a etapa de backport.
+  </Step>
 
-<div id="cherry-pick-stage">
-  #### 4. Etapa de cherry-pick (`ReleaseBranch.create_cherrypick`)
-</div>
+  <Step title={<>Etapa de backport (<code>ReleaseBranch.create_backport</code>)</>} id="backport-stage">
+    Depois que o PR de cherry-pick for mesclado:
 
-Para cada par (PR original, branch de release) em que ainda não exista um PR de cherry-pick:
+    1. Faça checkout da branch de backport e execute pull.
+    2. Encontre a merge-base entre a branch de release e a branch de backport.
+    3. Execute `git reset --soft` até a merge-base, fazendo squash de todos os commits de cherry-pick em um só.
+    4. Faça commit usando o título do PR de backport como mensagem.
+    5. Faça force-push da branch de backport e abra um PR de backport com destino à branch de release real.
+    6. Adicione ao PR o rótulo `pr-backport` (e `pr-bugfix` / `pr-critical-bugfix`, se aplicável).
+    7. Atribua o PR ao autor do PR original, a quem fez o merge e aos responsáveis já definidos (excluindo contas de robô).
+  </Step>
 
-1. Faça checkout da branch de release e crie uma **branch de backport** (`backport/release/X.Y/N`) a partir dela.
-2. Execute `git merge -s ours` contra o primeiro parent do commit de merge para criar uma base de merge sintética, sem alterações de conteúdo.
-3. Crie à força uma **branch de cherry-pick** (`cherrypick/release/X.Y/N`) apontando diretamente para o commit de merge do PR original.
-4. Tente executar `git merge --no-commit --no-ff` da branch de cherry-pick na branch de backport:
-   * Se já estiver atualizada, a alteração já está presente na branch de release — marque como concluído e pule esta etapa.
-   * Caso contrário (com ou sem conflitos), faça reset e envie ambas as branches.
-5. Crie o PR de cherry-pick com destino a `backport/release/X.Y/N` a partir de `cherrypick/release/X.Y/N`, com os rótulos `pr-cherrypick` e `do not test`.
-6. Propague `pr-bugfix` ou `pr-critical-bugfix` do PR original, se aplicável.
-7. Os responsáveis **não** são definidos neste momento; eles só são adicionados quando forem detectados conflitos.
+  <Step title="Conclusão" id="completion">
+    Quando todas as branches de release de um determinado PR original tiverem recebido backport, o bot adicionará `pr-backports-created` ao PR original.
+  </Step>
 
-<div id="auto-merge-conflict-free-cherry-pick-prs">
-  #### 5. Mesclagem automática de PRs de cherry-pick sem conflitos
-</div>
-
-Se o PR de cherry-pick puder ser mesclado (sem conflitos), o bot o mescla automaticamente pela API do GitHub e prossegue imediatamente para a etapa de backport.
-
-<div id="backport-stage">
-  #### 6. Etapa de backport (`ReleaseBranch.create_backport`)
-</div>
-
-Depois que a PR de cherry-pick é mesclada:
-
-1. Faça checkout da branch de backport e faça pull.
-2. Encontre a `merge-base` entre a branch de release e a branch de backport.
-3. Execute `git reset --soft` até a `merge-base`, consolidando todos os commits de cherry-pick em um só.
-4. Faça um commit usando o título da PR de backport como mensagem.
-5. Faça force-push da branch de backport e abra uma PR de backport voltada para a branch de release real.
-6. Adicione à PR o label `pr-backport` (e `pr-bugfix` / `pr-critical-bugfix`, se aplicável).
-7. Atribua a PR ao autor da PR original, à pessoa que fez o merge e aos responsáveis já atribuídos (excluindo contas de robô).
-
-<div id="completion">
-  #### 7. Conclusão
-</div>
-
-Quando o backport é concluído em todas as branches de release de um determinado PR original, o bot adiciona `pr-backports-created` ao PR original.
-
-<div id="pre-check">
-  #### 8. Pré-verificação
-</div>
-
-Antes de iniciar qualquer trabalho em um PR, `ReleaseBranch.pre_check` executa `git merge-base --is-ancestor` para verificar se o commit de merge ainda não é alcançável a partir da branch de release. Se for, considera-se que o PR já foi backportado e ele é ignorado.
+  <Step title="Verificação prévia" id="pre-check">
+    Antes de iniciar qualquer trabalho em um PR, `ReleaseBranch.pre_check` executa `git merge-base --is-ancestor` para verificar se o commit de merge já é alcançável a partir da branch de release. Se for, o PR é considerado como já tendo recebido backport e é ignorado.
+  </Step>
+</Steps>
 
 <div id="stale-cherry-pick-pr-handling">
   ### Tratamento de Cherry-pick PRs Inativos

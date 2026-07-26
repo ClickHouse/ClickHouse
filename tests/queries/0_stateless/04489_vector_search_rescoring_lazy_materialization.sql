@@ -59,4 +59,17 @@ ORDER BY L2Distance(vec, reference_vec)
 LIMIT 3
 SETTINGS vector_search_with_rescoring = 1;
 
+-- Regression: a reference vector with a huge component saturates every L2Distance to the
+-- same value, so the vector index returns a tie whose candidate set can differ from the rows
+-- the LIMIT keeps. The lazy read must re-fetch exactly the selected rows and must not
+-- re-apply the vector-index candidate filter; otherwise the lazy chunk ends up shorter than
+-- the offsets and prepareLazyChunk hits a LOGICAL_ERROR. All payloads are equal, so the
+-- selected rows are irrelevant: the query must simply return LIMIT rows.
+WITH [1000.0001, 3.4028234663852886e38] AS reference_vec
+SELECT length(payload)
+FROM tab
+ORDER BY L2Distance(vec, reference_vec)
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 1;
+
 DROP TABLE tab;
