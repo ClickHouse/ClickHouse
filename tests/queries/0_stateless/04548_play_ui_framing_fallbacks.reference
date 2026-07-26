@@ -14,6 +14,11 @@ bounded in-band tail helper present: OK
 raw stream keeps in-band tail: OK
 in-band probe reads the tail: OK
 in-band exception detector present: OK
+plain request pins framing off: OK
+download pins framing off: OK
+auxiliary requests pin framing off: OK
+plain-totals predicate present: OK
+raw text keeps only data packets: OK
 truncated stream fails closed: OK
 residual parse failure maps to truncation: OK
 ndjson reader fails closed mid-line: OK
@@ -80,3 +85,11 @@ application/json
 "row"
 {"exception":
 not a framing packet: OK
+--- a URL-pinned framing_output_format=None overrides a session framing, and a query clause overrides the pin
+text/event-stream
+event: data
+text/tab-separated-values
+the pinned request is not framed: OK
+1
+application/x-ndjson
+"packet":"data"

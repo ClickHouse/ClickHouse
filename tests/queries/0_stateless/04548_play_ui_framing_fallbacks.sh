@@ -71,6 +71,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #    not only the user's own `JSONEachPacket*` framing - to report the failure so "Run all" stops. The
 #    server contract (200 OK, NDJSON, streamed rows then an in-band exception object, no framing
 #    packet) and the served-page detector are checked here.
+# 13. Every request that expects an unframed response pins `framing_output_format=None` instead of
+#    merely omitting the setting: a framing carried by the connection URL or by the HTTP session
+#    behind it would otherwise frame the response of the chart path, of the compatibility retry, and
+#    of the download. A query-level `SETTINGS framing_output_format = ...` clause is applied after the
+#    URL parameters, so a query that intentionally chooses a framing still overrides that pin. Both
+#    the server contract (session setting vs URL pin vs query clause) and the pinned URLs on the
+#    served page are checked here.
+# 14. `FORMAT JSONCompactEachRow ... WITH TOTALS` emits totals and extremes as separate framing
+#    packets although its plain output drops those rows (they would be indistinguishable from data
+#    rows). When the page shows such a format as raw text, only the `data` packets reconstruct the
+#    plain output, so the raw-text path ignores the other payload packets for this family of formats
+#    (checked on the served page; the server contract is pinned by `04512_framing_formats`).
 
 URL="${CLICKHOUSE_URL}&http_wait_end_of_query=0&http_response_buffer_size=0&output_format_parallel_formatting=0"
 PLAY_URL="${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play"
@@ -130,6 +142,16 @@ echo "$page" | grep -q -F 'inband_tail = appendBoundedTail(inband_tail, new_cont
 # A retried plain `JSON*EachRowWithProgress` stream is scanned for its own in-band `{"exception":...}`
 # object, keyed off the output format (`formatMayWriteInBandException`), not only the user's framing.
 echo "$page" | grep -q -F 'function formatMayWriteInBandException(' && echo 'in-band exception detector present: OK'
+# Every URL that expects an unframed response pins `framing_output_format=None`, so a framing left in
+# the connection URL or in the HTTP session cannot leak into the plain path (the chart request, the
+# compatibility retry) or into the download.
+echo "$page" | grep -q -F "url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);" && echo 'plain request pins framing off: OK'
+[ "$(echo "$page" | grep -c -F "'&framing_output_format=None' +")" -ge 1 ] && echo 'download pins framing off: OK'
+[ "$(echo "$page" | grep -c -F "&framing_output_format=None&default_format=")" -ge 3 ] && echo 'auxiliary requests pin framing off: OK'
+# The raw-text path reconstructs the plain output from the `data` packets alone for the formats whose
+# plain output drops the totals and the extremes rows, instead of appending every payload packet.
+echo "$page" | grep -q -F 'function plainOutputDropsTotalsAndExtremes(' && echo 'plain-totals predicate present: OK'
+echo "$page" | grep -q -F "if (name !== 'data' && (options.onBytes || options.rawText) && plainOutputDropsTotalsAndExtremes(options.format))" && echo 'raw text keeps only data packets: OK'
 # A truncated event stream (EOF with a residual frame that never got its terminating blank line)
 # fails closed: the residual is parsed as a final event so a cut-off `exception` is still surfaced,
 # and otherwise the run is marked failed so "Run all" does not proceed. Browser-only lifecycle,
@@ -329,5 +351,27 @@ grep -o -m1 -F '{"exception":' "$result_file"
 # The failure is an in-band JSON object, not a framing packet: the page cannot rely on the
 # `{"packet":"exception"` prefix for this retried WithProgress path.
 [ "$(grep -c -F '{"packet":"exception"' "$result_file")" -eq 0 ] && echo 'not a framing packet: OK'
+
+echo '--- a URL-pinned framing_output_format=None overrides a session framing, and a query clause overrides the pin'
+# The page pins `framing_output_format=None` on every request that expects an unframed response,
+# rather than only omitting the setting: the connection URL (or the HTTP session behind it) can
+# already carry a framing, which would then frame the plain path too. Here the session sets a
+# framing, so the unpinned request is framed (the control) while the pinned one is plain - and a
+# query-level `SETTINGS` clause still wins over the pin, which is how a query that intentionally
+# chooses a framing keeps working.
+session="${CLICKHOUSE_DATABASE}_framing_none_$$"
+# The `SET` response itself is irrelevant here (and is framed by the setting it establishes).
+${CLICKHOUSE_CURL} -sS "${URL}&session_id=${session}" -d "SET framing_output_format = 'EventStream'" > /dev/null
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&session_id=${session}" -d "SELECT 1 FORMAT TSV" > "$result_file"
+grep -o -m1 'text/event-stream' "$header_file"
+grep -o -m1 '^event: data' "$result_file"
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&session_id=${session}&framing_output_format=None" -d "SELECT 1 FORMAT TSV" > "$result_file"
+grep -o -m1 'text/tab-separated-values' "$header_file"
+[ "$(grep -c '^event: ' "$result_file")" -eq 0 ] && echo 'the pinned request is not framed: OK'
+cat "$result_file"
+${CLICKHOUSE_CURL} -sS -D "$header_file" "${URL}&session_id=${session}&framing_output_format=None" \
+    -d "SELECT 1 FORMAT TSV SETTINGS framing_output_format = 'JSONEachPacketString'" > "$result_file"
+grep -o -m1 'application/x-ndjson' "$header_file"
+grep -o -m1 '"packet":"data"' "$result_file"
 
 rm -f "$result_file" "$header_file"

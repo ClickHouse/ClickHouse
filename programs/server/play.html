@@ -5793,7 +5793,10 @@ checkURL();
 async function auxiliaryQuery(server_address, user, password, query, url_params = '', quiet = false, generation = null, on_error = null) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSON' + url_params;
+        /// Framing is pinned off (not merely unset): this response is parsed as a single JSON
+        /// document, so a framing carried by the connection URL or by the HTTP session behind it
+        /// would turn it into a packet stream that no panel query can read.
+        'add_http_cors_header=1&framing_output_format=None&default_format=JSON' + url_params;
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
 
@@ -5834,7 +5837,9 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
 async function getServerStatus(server_address, user, password) {
     let url = server_address +
         (server_address.indexOf('?') >= 0 ? '&' : '?') +
-        'add_http_cors_header=1&default_format=JSONEachRow';
+        /// Framing is pinned off for the same reason as in `auxiliaryQuery`: the response is
+        /// parsed as JSON, not as a packet stream.
+        'add_http_cors_header=1&framing_output_format=None&default_format=JSONEachRow';
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     try {
@@ -7249,12 +7254,38 @@ function renderBinaryPayload(targetResultEl, chunks, imageMime)
     return false;
 }
 
+/// Output formats whose plain (unframed) output does not contain the totals and the extremes rows:
+/// in their own text such a row is indistinguishable from an ordinary data row, so the format drops
+/// them. Under a framing format the packet kind tells them apart, so the server does emit them - as
+/// `totals` and `extremes` packets carrying rows of the same compact shape (see `supportTotals` in
+/// `JSONCompactEachRowRowOutputFormat.h`). Therefore only the `data` packets reconstruct the plain
+/// output of these formats: appending the other payloads verbatim would show rows that the format
+/// the user asked for would never have written. The `*WithProgress` variants are deliberately absent:
+/// they tag every row with its kind, so their plain output does carry totals and extremes.
+const FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES = new Set([
+    'jsoncompacteachrow',
+    'jsoncompacteachrowwithnames',
+    'jsoncompacteachrowwithnamesandtypes',
+    'jsoncompactstringseachrow',
+    'jsoncompactstringseachrowwithnames',
+    'jsoncompactstringseachrowwithnamesandtypes',
+]);
+
+/// Whether the plain output of `format` drops the totals and the extremes rows (see
+/// `FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES`).
+function plainOutputDropsTotalsAndExtremes(format)
+{
+    return FORMATS_WITHOUT_PLAIN_TOTALS_AND_EXTREMES.has(String(format ?? '').toLowerCase());
+}
+
 /// Dispatch a single parsed SSE event (a packet of a framing `EventStream` response) to the result
 /// element. `options.onStop` is called when the result element asks to stop (e.g. a row limit was
 /// reached); `options.resourceMeter`, if given, receives profile-event batches for the live meters;
 /// `options.onBytes`, if given (binary output formats), receives the base64-decoded payload bytes;
 /// `options.onException` is called when an `exception` packet arrives (the query failed even if the
-/// HTTP status was already sent as 200).
+/// HTTP status was already sent as 200); `options.format` is the output format the response carries
+/// (from the `X-ClickHouse-Format` header or the saved snapshot), used to reconstruct the plain
+/// output faithfully in the raw-text mode.
 function makeEventStreamHandler(targetResultEl, options = {})
 {
     /// State for reassembling the compact framed default format (see `framed_default_format`): the
@@ -7269,6 +7300,14 @@ function makeEventStreamHandler(targetResultEl, options = {})
     {
         if (name === 'data' || name === 'totals' || name === 'extremes')
         {
+            /// Both verbatim modes below (the base64 bytes and the raw text) rebuild the output of
+            /// the format itself by concatenating the payloads, so for a format whose plain output
+            /// drops the totals and the extremes rows only the `data` packets belong to it - the
+            /// others would show rows the requested format would never have written (see
+            /// `plainOutputDropsTotalsAndExtremes`). The table path below keeps every packet: it
+            /// renders the totals and the extremes as such, told apart by the packet kind.
+            if (name !== 'data' && (options.onBytes || options.rawText) && plainOutputDropsTotalsAndExtremes(options.format))
+                return;
             /// For a binary or raw output format (`options.onBytes`), the payload is base64-encoded
             /// (a single `data:` field). Decode it to bytes and hand them off to be rendered as an
             /// image or raw text once the whole stream is read.
@@ -7279,8 +7318,8 @@ function makeEventStreamHandler(targetResultEl, options = {})
             }
             const payload = dataLines.join('\n');
             /// For a non-default output format (`options.rawText`), the payload is the format's own
-            /// text (e.g. `Pretty`, `TSV`), shown verbatim. Concatenating the payloads of the data,
-            /// totals and extremes packets reproduces exactly what the format would have written.
+            /// text (e.g. `Pretty`, `TSV`), shown verbatim: concatenating the payloads reproduces
+            /// exactly what the format would have written.
             if (options.rawText)
             {
                 targetResultEl.updateRaw(payload);
@@ -7388,12 +7427,14 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// rendering for non-default output formats (see `makeEventStreamHandler`); `base64` selects the
 /// binary path (a binary or raw output format, whose payloads are base64-encoded), mirroring the
 /// live `readEventStream`: the decoded bytes are collected and rendered as an image or raw text once
-/// the whole snapshot is replayed. Returns true if an image was rendered.
-function renderEventStreamText(text, targetResultEl, rawText, base64, imageMime)
+/// the whole snapshot is replayed. `format` is the output format of the response, which decides both
+/// the image MIME type and how the raw text is reconstructed. Returns true if an image was rendered.
+function renderEventStreamText(text, targetResultEl, rawText, base64, format)
 {
     const binary_chunks = base64 ? [] : null;
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         rawText,
+        format,
         onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
@@ -7408,7 +7449,7 @@ function renderEventStreamText(text, targetResultEl, rawText, base64, imageMime)
     }
     /// The whole (already-finished) stream has been replayed: show the metric totals.
     targetResultEl.finalizeMetrics();
-    return binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
+    return binary_chunks ? renderBinaryPayload(targetResultEl, binary_chunks, imageMimeForFormat(format)) : false;
 }
 
 /// Append streamed text to the string kept for the tab/history snapshot, but stop just past 100 KB.
@@ -7428,7 +7469,7 @@ function appendCappedSnapshot(reply, chunk)
     return reply + chunk.slice(0, 100001 - reply.length);
 }
 
-async function readEventStream(response, targetResultEl, abortController, tab, posted_request_num, rawText, base64, imageMime)
+async function readEventStream(response, targetResultEl, abortController, tab, posted_request_num, rawText, base64, format)
 {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -7469,6 +7510,7 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
             if (tab.id === activeTabId) progressEl.renderResourcesFrom(tab.resources);
         },
         rawText,
+        format,
         onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
         onException: () => { saw_exception = true; },
     });
@@ -7564,7 +7606,7 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
 
     /// Render the collected binary payload (image or raw text) once the stream is complete. Skip it
     /// on a truncated stream: the collected bytes are incomplete and the error is already shown.
-    const is_image = (binary_chunks && !truncated) ? renderBinaryPayload(targetResultEl, binary_chunks, imageMime) : false;
+    const is_image = (binary_chunks && !truncated) ? renderBinaryPayload(targetResultEl, binary_chunks, imageMimeForFormat(format)) : false;
 
     /// The stream is complete: switch the metrics table to totals / query-average rates.
     targetResultEl.finalizeMetrics();
@@ -7942,7 +7984,14 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// reassembles its compact rows (see `makeEventStreamHandler`). A query carrying its own
     /// framing setting gets the framing-compatible default too, for the same reason.
     const framing_url = url + '&default_format=' + framed_default_format + '&framing_output_format=EventStream&send_logs_level=trace';
-    url += '&default_format=' + (user_framing ? framed_default_format : default_format);
+    /// The plain request pins `framing_output_format=None` instead of merely omitting the setting:
+    /// otherwise a framing already present in the connection URL (`server_address` can carry
+    /// `?framing_output_format=...`) or in the HTTP session behind it would still frame the response,
+    /// and every branch that expects plain output - the chart path (`JSONCompactColumns`), the
+    /// compatibility retry after a framing rejection, and the raw rendering - would receive a packet
+    /// stream instead. A query-level `SETTINGS framing_output_format = ...` clause is applied after
+    /// the URL parameters, so a query that intentionally chooses a framing still overrides this.
+    url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);
 
     targetResultEl.queryText = query;
 
@@ -8145,7 +8194,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             framing_kind = 'event_stream';
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
-            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, image_mime);
+            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, format);
             /// `framed_error_stream` was read in full (uncapped), so the carrier is scanned from it
             /// at compaction time; no separate capture is needed here.
             reply = framed_error_stream;
@@ -8238,7 +8287,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
             const raw_text = !base64 && !isDefaultFormat(format);
-            const res = await readEventStream(response, targetResultEl, abortController, tab, posted_request_num, raw_text, base64, image_mime);
+            const res = await readEventStream(response, targetResultEl, abortController, tab, posted_request_num, raw_text, base64, format);
             if (res.cancelled) { return { cancelled: true }; }
             if (base64) { if (res.is_image) is_image = true; else is_raw = true; }
             else if (raw_text) is_raw = true; else is_table = true;
@@ -9360,7 +9409,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         const base64 = !!snap.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        renderEventStreamText(snap.data, el, raw_text, base64, imageMimeForFormat(format));
+        renderEventStreamText(snap.data, el, raw_text, base64, format);
         if (el.isExplainGraph) {
             try {
                 await el.renderGraph(() => matToken === tab.reqNum);
@@ -9705,7 +9754,7 @@ async function materializeResult(tab) {
         const base64 = !!result.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, imageMimeForFormat(format));
+        const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, format);
         if (base64) { if (!rendered_image) is_raw = true; }
         else if (raw_text) is_raw = true; else is_table = true;
         if (!result.ok) {
@@ -13398,7 +13447,10 @@ function buildCompletionUrl() {
     let url = server_address + (server_address.indexOf('?') >= 0 ? '&' : '?') + 'add_http_cors_header=1';
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
-    url += '&default_format=TSVRaw';
+    /// Framing is pinned off (not merely unset): the completion response is read as plain
+    /// `TSVRaw` text, so a framing carried by the connection URL or by the HTTP session would
+    /// otherwise wrap it into packets.
+    url += '&framing_output_format=None&default_format=TSVRaw';
     return url;
 }
 
@@ -15239,6 +15291,12 @@ document.getElementById('download-button').addEventListener('click', async funct
         'add_http_cors_header=1' +
         '&enable_http_compression=1' +
         '&use_query_cache=1&enable_reads_from_query_cache=1&enable_writes_to_query_cache=0&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore' +
+        /// The download must receive the plain output of `format`, so framing is pinned off rather
+        /// than merely left unset: a framing carried by the connection URL or by the HTTP session
+        /// would otherwise stream packets that the browser would save under the chosen extension.
+        /// A query choosing its own framing is refused above, because a query-level `SETTINGS`
+        /// clause overrides this parameter.
+        '&framing_output_format=None' +
         '&default_format=' + encodeURIComponent(format) +
         '&http_response_headers=' + encodeURIComponent(`{'Content-Disposition':'attachment; filename="result.${encodeURIComponent(extension)}"'}`);
     if (user) url += '&user=' + encodeURIComponent(user);
