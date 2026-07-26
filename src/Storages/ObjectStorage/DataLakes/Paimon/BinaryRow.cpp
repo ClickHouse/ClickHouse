@@ -124,7 +124,7 @@ Int32 BinaryRow::getInt(Int32 pos)
 
 Int64 BinaryRow::getLong(Int32 pos)
 {
-    return getFixedSizeData<Int32>(pos);
+    return getFixedSizeData<Int64>(pos);
 }
 
 Float32 BinaryRow::getFloat(Int32 pos)

@@ -1,0 +1,204 @@
+---
+title: قراءة البيانات المتزامنة
+description: "يتيح الإعداد الجديد `allow_asynchronous_read_from_io_pool_for_merge_tree` أن يكون عدد خيوط القراءة (streams) أكبر من عدد الخيوط في بقية مسار تنفيذ الاستعلام."
+date: 2023-03-01
+tags: ['إعدادات', 'الأداء والتحسينات']
+keywords: ['متزامنة', 'غير متزامنة', 'قراءة البيانات']
+---
+
+يتيح الإعداد الجديد allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree أن يكون عدد خيوط القراءة (streams) أكبر من عدد الخيوط في بقية مسار تنفيذ الاستعلام.
+
+عادةً ما [يتحكم](https://clickhouse.com/company/events/query-performance-introspection) الإعداد [max&#95;threads](/ar/reference/settings/session-settings#max_threads) في عدد خيوط القراءة المتوازية وخيوط معالجة الاستعلام المتوازية:
+
+<Image img={sync_read} size="md" alt="مخطط قراءة البيانات المتزامنة" />
+
+تُقرأ البيانات &#39;بالترتيب&#39;، عمودًا تلو الآخر، من القرص.
+
+<div id="asynchronous-data-reading">
+  ### قراءة البيانات غير المتزامنة
+</div>
+
+يتيح الإعداد الجديد [allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree](https://github.com/ClickHouse/ClickHouse/pull/43260) أن يكون عدد خيوط القراءة (streams) أكبر من عدد الخيوط في بقية مسار تنفيذ الاستعلام، وذلك **لتسريع الاستعلامات الباردة على خدمات ClickHouse Cloud ذات موارد CPU المحدودة**، و**لتحسين أداء الاستعلامات المقيّدة بعمليات الإدخال/الإخراج**.
+عند تفعيل هذا الإعداد، يتحكم الإعداد [max&#95;streams&#95;for&#95;merge&#95;tree&#95;reading](https://github.com/ClickHouse/ClickHouse/pull/43260) في عدد خيوط القراءة:
+
+<Image img={async_read} size="md" alt="مخطط قراءة البيانات غير المتزامنة" />
+
+تُقرأ البيانات بشكل غير متزامن وبالتوازي من أعمدة مختلفة.
+
+لاحظ أنه يوجد أيضًا الإعداد [max&#95;streams&#95;to&#95;max&#95;threads&#95;ratio](https://github.com/ClickHouse/ClickHouse/pull/43260) لتهيئة النسبة بين عدد خيوط القراءة (streams) وعدد الخيوط في بقية مسار تنفيذ الاستعلام. ومع ذلك، في اختبارات الأداء، لم يكن تأثيره كبيرًا بقدر الإعداد `max_streams_for_merge_tree_reading`
+
+<div id="what-about-optimize_read_in_order">
+  ### ماذا عن optimize_read_in_order؟
+</div>
+
+باستخدام [تحسين optimize&#95;read&#95;in&#95;order](/ar/reference/statements/select/order-by#optimization-of-data-reading)، يمكن لـ ClickHouse [تجنّب](https://clickhouse.com/blog/clickhouse-faster-queries-with-projections-and-primary-indexes) إعادة فرز البيانات في الذاكرة إذا كان ترتيب الفرز في الاستعلامات يعكس الترتيب الفعلي للبيانات على القرص، **لكن ذلك يتطلب قراءة البيانات بالترتيب (على عكس القراءة غير المتزامنة)**:
+
+<Image img={optimize_read} size="md" alt="مخطط Optimize read in order" />
+
+<div id="optimize_read_in_order-has-precedence-over-asynchronous-reading">
+  ### تتقدّم optimize_read_in_order على القراءة غير المتزامنة
+</div>
+
+عندما يكتشف ClickHouse أنه يمكن تطبيق `تحسين optimize_read_in_order`، يتم تجاهل / تعطيل الإعداد `allow_asynchronous_read_from_io_pool_for_merge_tree`.
+
+<div id="example-demonstrating-all-of-the-above">
+  ### مثال يوضّح كل ما سبق
+</div>
+
+* أنشئ وحمّل [جدول أسعار العقارات المسددة في المملكة المتحدة](/ar/get-started/sample-datasets/uk-price-paid)
+
+* تحقّق من قيمة الإعداد max&#95;threads (وهي افتراضيًا عدد أنوية CPU التي يراها ClickHouse على العقدة التي تنفّذ الاستعلام
+
+```
+SELECT getSetting('max_threads');
+
+┌─getSetting('max_threads')─┐
+│                        10 │
+└───────────────────────────┘
+```
+
+* تحقّق من خط تنفيذ الاستعلام باستخدام العدد الافتراضي من خيوط التنفيذ لكلٍّ من قراءة البيانات ومعالجتها
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid;
+
+┌─explain──────────────────────┐
+│ (Expression)                 │
+│ ExpressionTransform × 10     │
+│   (ReadFromMergeTree)        │
+│   MergeTreeThread × 10 0 → 1 │
+└──────────────────────────────┘
+```
+
+* تحقّق من مسار الاستعلام باستخدام 60 خيط قراءة غير متزامن، وبالعدد الافتراضي من خيوط التنفيذ لبقية مسار تنفيذ الاستعلام
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60;
+
+┌─explain────────────────────────┐
+│ (Expression)                   │
+│ ExpressionTransform × 10       │
+│   (ReadFromMergeTree)          │
+│   Resize 60 → 10               │
+│     MergeTreeThread × 60 0 → 1 │
+└────────────────────────────────┘
+```
+
+* تحقّق من مسار تنفيذ الاستعلام باستخدام 20 مؤشر ترابط لقراءة البيانات ومعالجتها
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    max_threads = 20;
+
+┌─explain──────────────────────┐
+│ (Expression)                 │
+│ ExpressionTransform × 20     │
+│   (ReadFromMergeTree)        │
+│   MergeTreeThread × 20 0 → 1 │
+└──────────────────────────────┘
+```
+
+* تحقّق من مسار الاستعلام باستخدام 60 مؤشر ترابط للقراءة غير المتزامنة و20 مؤشر ترابط لباقي مسار تنفيذ الاستعلام
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60;
+
+┌─explain────────────────────────┐
+│ (Expression)                   │
+│ ExpressionTransform × 20       │
+│   (ReadFromMergeTree)          │
+│   Resize 60 → 20               │
+│     MergeTreeThread × 60 0 → 1 │
+└────────────────────────────────┘
+```
+
+* تحقّق من مسار الاستعلام مع 60 خيط قراءة غير متزامن و20 خيطًا لبقية مسار تنفيذ الاستعلام
+  عندما يمكن تطبيق `تحسين optimize_read_in_order`
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY postcode1, postcode2
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree= 1,
+    max_streams_for_merge_tree_reading= 60;
+
+┌─explain───────────────────────────┐
+│ (Expression)                      │
+│ ExpressionTransform               │
+│   (Sorting)                       │
+│   MergingSortedTransform 20 → 1   │
+│     (Expression)                  │
+│     ExpressionTransform × 20      │
+│       (ReadFromMergeTree)         │
+│       MergeTreeInOrder × 20 0 → 1 │
+└───────────────────────────────────┘
+
+-- note that this is equivalent to disabling allow_asynchronous_read_from_io_pool_for_merge_tree
+
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY postcode1, postcode2
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 0,
+    max_streams_for_merge_tree_reading = 0;
+
+┌─explain───────────────────────────┐
+│ (Expression)                      │
+│ ExpressionTransform               │
+│   (Sorting)                       │
+│   MergingSortedTransform 20 → 1   │
+│     (Expression)                  │
+│     ExpressionTransform × 20      │
+│       (ReadFromMergeTree)         │
+│       MergeTreeInOrder × 20 0 → 1 │
+└───────────────────────────────────┘
+
+-- note that you can enforce allow_asynchronous_read_from_io_pool_for_merge_tree by disabling optimize_read_in_order
+
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY
+    postcode1 ASC,
+    postcode2 ASC
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60,
+    optimize_read_in_order = 0;
+
+┌─explain──────────────────────────────┐
+│ (Expression)                         │
+│ ExpressionTransform                  │
+│   (Sorting)                          │
+│   MergingSortedTransform 20 → 1      │
+│     MergeSortingTransform × 20       │
+│       (Expression)                   │
+│       ExpressionTransform × 20       │
+│         (ReadFromMergeTree)          │
+│         Resize 60 → 20               │
+│           MergeTreeThread × 60 0 → 1 │
+└──────────────────────────────────────┘
+
+```

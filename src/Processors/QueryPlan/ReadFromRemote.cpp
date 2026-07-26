@@ -677,8 +677,16 @@ void ReadFromRemote::addLazyPipe(
 
             if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
             {
+                /// We are falling back from a remote replica to the local one. A shard limit drops
+                /// rows before they reach DelayedSource, but `rows_before_limit_at_least` must include
+                /// those rows. DelayedSource cannot place the counter before a plan that does not exist
+                /// yet, so build this fallback without a shard limit.
+                auto local_stage = my_stage;
+                if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+                    local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+
                 auto plan = createLocalPlan(
-                    query, *header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count);
+                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
 
                 return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
             }

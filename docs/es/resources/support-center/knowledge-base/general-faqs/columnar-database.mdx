@@ -1,0 +1,45 @@
+---
+title: ¿Qué es una base de datos columnar?
+description: "Una base de datos columnar almacena los datos de cada columna de forma independiente. Esto permite leer del disco solo los datos de las columnas que se usan en una consulta determinada."
+date: 2021-09-01
+tags: ['Conceptos fundamentales de datos']
+keywords: ['Base de datos columnar']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introducción
+</div>
+
+Una base de datos columnar almacena los datos de cada columna de forma independiente. Esto permite leer del disco solo los datos de las columnas que se usan en una consulta determinada. La contrapartida es que las operaciones que afectan a filas completas se vuelven proporcionalmente más costosas. Una base de datos columnar es sinónimo de un sistema de gestión de bases de datos orientado a columnas. ClickHouse es un ejemplo típico de este tipo de sistema.
+
+<div id="advantages-of-a-columnar-database">
+  ## Ventajas de una base de datos columnar
+</div>
+
+Las principales ventajas de una base de datos columnar son:
+
+* Consultas que usan solo unas pocas columnas entre muchas.
+* Consultas de agregación sobre grandes volúmenes de datos.
+* Compresión de datos por columna.
+
+<div id="row-oriented-vs-column-oriented-databases">
+  ## Bases de datos orientadas a filas vs. orientadas a columnas
+</div>
+
+A continuación se ilustra la diferencia entre los sistemas tradicionales orientados a filas y las bases de datos columnares al generar informes:
+
+**Tradicional orientado a filas**
+
+<Image img="/images/row-oriented.webp" alt="Ilustración del almacenamiento tradicional de una base de datos orientada a filas" size="md" />
+
+**Columnar**
+
+<Image img="/images/column-oriented.webp" alt="Ilustración del almacenamiento de una base de datos columnar" size="md" />
+
+Una base de datos columnar es la opción preferida para las aplicaciones analíticas porque permite tener muchas columnas en una tabla por si se necesitan, sin asumir el costo de las columnas no utilizadas en el tiempo de ejecución de las consultas de lectura (una base de datos OLTP tradicional lee todos los datos durante las consultas, ya que los datos se almacenan en filas y no en columnas). Las bases de datos orientadas a columnas están diseñadas para el procesamiento de big data y el data warehousing. A menudo escalan de forma nativa mediante clústeres distribuidos de hardware de bajo costo para aumentar el throughput. ClickHouse lo hace con la combinación de tablas [distributed](/es/reference/engines/table-engines/special/distributed) y [replicated](/es/reference/engines/table-engines/mergetree-family/replication).

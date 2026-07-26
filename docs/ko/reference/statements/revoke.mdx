@@ -1,0 +1,57 @@
+---
+description: 'REVOKE SQL 문 문서'
+sidebarTitle: 'REVOKE'
+slug: /sql-reference/statements/revoke
+title: 'REVOKE SQL 문'
+doc_type: 'reference'
+---
+
+사용자 또는 역할로부터 권한을 취소합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+**사용자 권한 취소**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+**사용자에게 부여된 역할 회수**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+<div id="description">
+  ## 설명
+</div>
+
+일부 권한을 취소할 때는, 취소하려는 권한보다 더 넓은 범위의 권한을 사용할 수 있습니다. 예를 들어 사용자가 `SELECT (x,y)` 권한을 가지고 있다면, 관리자는 이 권한을 취소하기 위해 `REVOKE SELECT(x,y) ...`, `REVOKE SELECT * ...`, 또는 `REVOKE ALL PRIVILEGES ...` 쿼리를 실행할 수 있습니다.
+
+<div id="partial-revokes">
+  ### 권한 일부 취소
+</div>
+
+권한의 일부를 취소할 수 있습니다. 예를 들어, 사용자가 `SELECT *.*` 권한을 가지고 있다면, 특정 테이블(table)이나 데이터베이스(database)의 데이터를 읽을 수 있는 권한만 해당 권한에서 취소할 수 있습니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`accounts`를 제외한 모든 데이터베이스에서 SELECT할 수 있는 권한을 `john` 사용자 계정에 부여합니다:
+
+```sql
+GRANT SELECT ON *.* TO john;
+REVOKE SELECT ON accounts.* FROM john;
+```
+
+`accounts.staff` 테이블(table)의 `wage` 컬럼을 제외한 모든 컬럼을 조회할 수 있는 권한을 `mira` 사용자 계정에 부여하십시오.
+
+```sql
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
+```
+
+[원문](/ko/reference/settings/session-settings)

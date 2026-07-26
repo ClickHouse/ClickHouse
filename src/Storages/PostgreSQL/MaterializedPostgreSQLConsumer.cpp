@@ -253,6 +253,21 @@ void MaterializedPostgreSQLConsumer::insertValue(StorageData & storage_data, con
 
         insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
     }
+    catch (const Exception & e)
+    {
+        /// insertPostgreSQLValue translates a foreign pqxx::conversion_error into a DB::Exception with
+        /// BAD_ARGUMENTS, so a bad source value now surfaces here as that instead of the raw pqxx error.
+        /// Keep handling it exactly like the raw conversion error: log and insert a default so replication
+        /// keeps advancing. Letting it propagate would leave the WAL position unadvanced and cause the
+        /// buffered row to be re-inserted on every retry (indefinite row duplication).
+        if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+            throw;
+
+        LOG_ERROR(log, "Conversion failed while inserting PostgreSQL value {}, "
+                  "will insert default value. Error: {}", value, e.message());
+
+        insertDefaultPostgreSQLValue(*column, *column_type_and_name.column);
+    }
 }
 
 void MaterializedPostgreSQLConsumer::insertDefaultValue(StorageData & storage_data, size_t column_idx)
@@ -714,7 +729,20 @@ void MaterializedPostgreSQLConsumer::syncTables()
     while (!tables_to_sync.empty())
     {
         auto table_name = *tables_to_sync.begin();
-        auto & storage_data = storages.find(table_name)->second;
+
+        /// The storage might have been removed after the table was queued in `tables_to_sync`: a
+        /// `Relation` message adds the table there, but a later structure change (`markTableAsSkipped`)
+        /// or a `DETACH TABLE` (`removeNested`) erases the storage. Dereferencing the result of
+        /// `storages.find` past `end()` in that case reads uninitialized memory and crashes the server
+        /// (https://github.com/ClickHouse/ClickHouse/issues/68032). The queued buffers of a table without
+        /// a storage cannot be inserted anywhere, so just drop the stale entry.
+        auto storage_iter = storages.find(table_name);
+        if (storage_iter == storages.end())
+        {
+            tables_to_sync.erase(table_name);
+            continue;
+        }
+        auto & storage_data = storage_iter->second;
 
         while (auto buffer = storage_data.popBuffer())
         {
@@ -855,6 +883,9 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 {
     skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
     storages.erase(relation_name);
+    /// The storage is gone, so its queued buffers can no longer be flushed. Drop them to keep
+    /// `tables_to_sync` consistent with `storages` (`syncTables` looks the table up there).
+    tables_to_sync.erase(relation_name);
     LOG_WARNING(
         log,
         "Table {} is skipped from replication stream because its structure has changes. "
@@ -906,6 +937,10 @@ void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_
     auto it = storages.find(postgres_table_name);
     if (it != storages.end())
         storages.erase(it);
+    /// Same reason as in `markTableAsSkipped`: with the storage removed, any buffers still queued for
+    /// this table must be dropped so `syncTables` does not look up (and dereference) a missing storage
+    /// (https://github.com/ClickHouse/ClickHouse/issues/68032).
+    tables_to_sync.erase(postgres_table_name);
     deleted_tables.insert(postgres_table_name);
 }
 

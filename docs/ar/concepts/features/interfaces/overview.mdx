@@ -1,0 +1,46 @@
+---
+description: 'نظرة عامة على واجهات الشبكة وبرامج التشغيل والأدوات للاتصال بـ
+  ClickHouse'
+keywords: ['clickhouse', 'network', 'interfaces', 'http', 'tcp', 'grpc', 'command-line',
+  'client', 'jdbc', 'odbc', 'driver']
+sidebarTitle: 'نظرة عامة'
+slug: /interfaces/overview
+title: 'برامج التشغيل والواجهات'
+doc_type: 'reference'
+---
+
+يوفّر ClickHouse واجهتَي شبكة (ويمكن اختياريًا تغليفهما باستخدام TLS لمزيد من الأمان):
+
+* [HTTP](/ar/concepts/features/interfaces/http)، وهي موثقة وسهلة الاستخدام مباشرةً.
+* [Native TCP](/ar/concepts/features/interfaces/tcp)، والذي يتطلب أعباء إضافية أقل.
+
+في معظم الحالات، يُنصح باستخدام أداة أو مكتبة مناسبة بدلًا من التعامل المباشر مع هذه الواجهات. وفيما يلي ما يدعمه ClickHouse رسميًا:
+
+* [Command-line client](/ar/concepts/features/interfaces/cli)
+* [JDBC driver](/ar/concepts/features/interfaces/jdbc)
+* [ODBC driver](/ar/concepts/features/interfaces/odbc)
+* [C++ client library](/ar/concepts/features/interfaces/cpp)
+
+يدعم ClickHouse أيضًا بروتوكولَي RPC:
+
+* [gRPC protocol](/ar/concepts/features/interfaces/grpc) المصمم خصيصًا لـ ClickHouse.
+* [Apache Arrow Flight](/ar/concepts/features/interfaces/arrowflight).
+
+يوفّر خادم ClickHouse واجهات مرئية مضمنة للمستخدمين المتقدمين:
+
+* Play UI: افتح `/play` في المتصفح؛
+* Advanced Dashboard: افتح `/dashboard` في المتصفح؛
+* عارض رموز الملف التنفيذي لمهندسي ClickHouse: افتح `/binary` في المتصفح؛
+* ClickStack UI للرصد: افتح `/clickstack` في المتصفح؛
+
+<Info>
+  **ClickStack**
+
+  يُعد هذا الإصدار من ClickStack ممتازًا لتصحيح الأخطاء محليًا وإجراء الاستقصاءات السريعة، لكنه غير مخصص لبيئات الإنتاج. للحصول على ClickStack كامل الميزات والجاهز للإنتاج، راجع [Open Source ClickStack](/ar/clickstack/getting-started/oss).
+</Info>
+
+تتوفر أيضًا مجموعة واسعة من المكتبات الخارجية للعمل مع ClickHouse:
+
+* [Client libraries](/ar/integrations/language-clients/third-party/client-libraries)
+* [Integrations](/ar/integrations/connectors/tools/third-party-libraries)
+* [Visual interfaces](/ar/integrations/connectors/tools/gui)

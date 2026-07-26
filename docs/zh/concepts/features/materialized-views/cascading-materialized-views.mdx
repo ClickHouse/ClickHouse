@@ -1,0 +1,378 @@
+---
+slug: /guides/developer/cascading-materialized-views
+title: '级联 materialized views'
+description: '如何基于源表使用多个 materialized view。'
+keywords: ['materialized view', '聚合']
+doc_type: 'guide'
+---
+
+本示例演示如何创建一个 materialized view，以及如何基于第一个 materialized view 再级联第二个。在本页中，你将了解具体做法、各种可能性以及相关限制。通过创建以另一个 Materialized view 为源的 Materialized view，可以满足不同的使用场景。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QDAJTKZT8y4?si=1KqPNHHfaKfxtPat" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<br />
+
+示例：
+
+我们将使用一个虚构的数据集，其中包含一组域名每小时的访问量。
+
+我们的目标
+
+1. 我们需要按月为每个域名聚合数据，
+2. 我们还需要按年为每个域名聚合数据。
+
+你可以选择以下方案之一：
+
+* 编写查询，在 SELECT 时读取并聚合数据
+* 在摄取时将数据预处理为新的格式
+* 在摄取时将数据预处理为特定的聚合结果。
+
+使用 Materialized views 预处理数据，可以减少 ClickHouse 需要处理的数据量和计算量，从而加快 SELECT 查询速度。
+
+<div id="source-table-for-the-materialized-views">
+  ## materialized views 的源表
+</div>
+
+创建源表。由于我们的目标是基于聚合后的数据进行报表分析，而不是保留单独的行，因此可以先对数据进行解析，将相关信息传递给 Materialized Views，再丢弃实际传入的数据。这样既能满足需求，也能节省存储空间，因此我们将使用 `Null` 表引擎。
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+```
+
+```sql
+CREATE TABLE analytics.hourly_data
+(
+    `domain_name` String,
+    `event_time` DateTime,
+    `count_views` UInt64
+)
+ENGINE = Null
+```
+
+<Note>
+  你可以在 Null 表上创建 materialized view。因此，写入该表的数据会影响该视图，但原始原始数据仍会被丢弃。
+</Note>
+
+<div id="monthly-aggregated-table-and-materialized-view">
+  ## 每月聚合表和 materialized view
+</div>
+
+对于第一个 materialized view，我们需要创建 `目标表`。本示例中，该表为 `analytics.monthly_aggregated_data`，用于按月份和域名存储浏览量总和。
+
+```sql
+CREATE TABLE analytics.monthly_aggregated_data
+(
+    `domain_name` String,
+    `month` Date,
+    `sumCountViews` AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (domain_name, month)
+```
+
+用于将数据转发到目标表的 materialized view 如下所示：
+
+```sql
+CREATE MATERIALIZED VIEW analytics.monthly_aggregated_data_mv
+TO analytics.monthly_aggregated_data
+AS
+SELECT
+    toDate(toStartOfMonth(event_time)) AS month,
+    domain_name,
+    sumState(count_views) AS sumCountViews
+FROM analytics.hourly_data
+GROUP BY
+    domain_name,
+    month
+```
+
+<div id="yearly-aggregated-table-and-materialized-view">
+  ## 年度聚合表和 materialized view
+</div>
+
+现在我们将创建第二个 Materialized view，并将其关联到之前的目标表 `monthly_aggregated_data`。
+
+首先，我们将创建一个新的目标表，用于存储按年份聚合的各域名浏览量总和。
+
+```sql
+CREATE TABLE analytics.year_aggregated_data
+(
+    `domain_name` String,
+    `year` UInt16,
+    `sumCountViews` UInt64
+)
+ENGINE = SummingMergeTree()
+ORDER BY (domain_name, year)
+```
+
+此步骤定义了级联关系。`FROM` 语句将使用 `monthly_aggregated_data` 表，这意味着数据流如下：
+
+1. 数据进入 `hourly_data` 表。
+2. ClickHouse 会将接收到的数据转发到第一个 materialized view `monthly_aggregated_data` 表，
+3. 最后，第 2 步接收到的数据将被转发到 `year_aggregated_data`。
+
+```sql
+CREATE MATERIALIZED VIEW analytics.year_aggregated_data_mv
+TO analytics.year_aggregated_data
+AS
+SELECT
+    toYear(toStartOfYear(month)) AS year,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    year
+```
+
+<Note>
+  使用 Materialized views 时，一个常见误解是认为数据是从表中读取的。`Materialized views` 的工作方式并非如此；被转发的是插入的数据块，而不是表中的最终结果。
+
+  假设在这个示例中，`monthly_aggregated_data` 使用的 engine 是 CollapsingMergeTree，那么转发到第二个 Materialized view `year_aggregated_data_mv` 的数据并不是折叠后表中的最终结果，而是一个数据块，其字段定义与 `SELECT ... GROUP BY` 中一致。
+
+  如果你使用的是 CollapsingMergeTree、ReplacingMergeTree，甚至 SummingMergeTree，并且计划创建级联 Materialized view，就需要了解这里描述的这些限制。
+</Note>
+
+<div id="sample-data">
+  ## 示例数据
+</div>
+
+现在我们可以插入一些数据，测试一下级联 materialized view：
+
+```sql
+INSERT INTO analytics.hourly_data (domain_name, event_time, count_views)
+VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),
+       ('clickhouse.com', '2019-02-02 00:00:00', 2),
+       ('clickhouse.com', '2019-02-01 00:00:00', 3),
+       ('clickhouse.com', '2020-01-01 00:00:00', 6);
+```
+
+如果你对 `analytics.hourly_data` 执行 SELECT 查询，你会看到如下结果，因为表引擎是 `Null`，但数据已被处理。
+
+```sql
+SELECT * FROM analytics.hourly_data
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+我们先使用一个较小的数据集，以便于跟踪流程并将结果与预期进行比较；一旦确认流程在小数据集上无误，就可以直接切换到大规模数据。
+
+<div id="results">
+  ## 结果
+</div>
+
+如果你尝试查询目标表并选择 `sumCountViews` 字段，你会看到二进制表示 (在某些终端中会如此) ，因为该值不是以数字形式存储的，而是以 AggregateFunction 类型存储。
+要获取聚合的最终结果，应使用 `-Merge` 后缀。
+
+你可以通过这个查询查看存储在 AggregateFunction 中的特殊字符：
+
+```sql
+SELECT sumCountViews FROM analytics.monthly_aggregated_data
+```
+
+```response
+┌─sumCountViews─┐
+│               │
+│               │
+│               │
+└───────────────┘
+
+3 行，耗时 0.003 秒。
+```
+
+这里我们改用 `Merge` 后缀来获取 `sumCountViews` 的值：
+
+```sql
+SELECT
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data;
+```
+
+```response
+┌─sumCountViews─┐
+│            12 │
+└───────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+在 `AggregatingMergeTree` 中，我们将 `AggregateFunction` 定义为 `sum`，因此可以使用 `sumMerge`。如果在 `AggregateFunction` 上使用 `avg` 函数，则应使用 `avgMerge`，以此类推。
+
+```sql
+SELECT
+    month,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    month
+```
+
+现在我们可以验证 materialized views 是否实现了我们设定的目标。
+
+现在数据已经存储在目标表 `monthly_aggregated_data` 中，我们可以按月获取各个域名的聚合数据：
+
+```sql
+SELECT
+   month,
+   domain_name,
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+   domain_name,
+   month
+```
+
+```response
+┌──────month─┬─domain_name────┬─sumCountViews─┐
+│ 2020-01-01 │ clickhouse.com │             6 │
+│ 2019-01-01 │ clickhouse.com │             1 │
+│ 2019-02-01 │ clickhouse.com │             5 │
+└────────────┴────────────────┴───────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+按年份汇总的各域名数据：
+
+```sql
+SELECT
+   year,
+   domain_name,
+   sum(sumCountViews)
+FROM analytics.year_aggregated_data
+GROUP BY
+   domain_name,
+   year
+```
+
+```response
+┌─year─┬─domain_name────┬─sum(sumCountViews)─┐
+│ 2019 │ clickhouse.com │                  6 │
+│ 2020 │ clickhouse.com │                  6 │
+└──────┴────────────────┴────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="combining-multiple-source-tables-to-single-target-table">
+  ## 将多个源表合并到单个目标表
+</div>
+
+还可以使用 materialized view 将多个源表合并到同一个目标表中。这适用于创建采用类似 `UNION ALL` 逻辑的 materialized view。
+
+首先，创建两个表示不同指标集的源表：
+
+```sql
+CREATE TABLE analytics.impressions
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+
+CREATE TABLE analytics.clicks
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+```
+
+然后使用合并后的指标集创建 `目标表`：
+
+```sql
+CREATE TABLE analytics.daily_overview
+(
+    `on_date` Date,
+    `domain_name` String,
+    `impressions` SimpleAggregateFunction(sum, UInt64),
+    `clicks` SimpleAggregateFunction(sum, UInt64)
+) ENGINE = AggregatingMergeTree ORDER BY (on_date, domain_name)
+```
+
+创建两个指向同一 `目标表` 的 materialized view。无需显式包含缺失的列：
+
+```sql
+CREATE MATERIALIZED VIEW analytics.daily_impressions_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS impressions,
+    0 clicks         ---<<<--- 如果省略此项，结果同样为 0
+FROM
+    analytics.impressions
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+
+CREATE MATERIALIZED VIEW analytics.daily_clicks_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS clicks,
+    0 impressions    ---<<<--- 如果省略此项，结果同样为 0
+FROM
+    analytics.clicks
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+```
+
+现在，当你插入值时，这些值会聚合到 `目标表` 中各自对应的列里：
+
+```sql
+INSERT INTO analytics.impressions (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-02-01 00:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+
+INSERT INTO analytics.clicks (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+```
+
+将展示和点击数据合并到 `目标表` 中：
+
+```sql
+SELECT
+    on_date,
+    domain_name,
+    sum(impressions) AS impressions,
+    sum(clicks) AS clicks
+FROM
+    analytics.daily_overview
+GROUP BY
+    on_date,
+    domain_name
+;
+```
+
+该查询应输出如下类似内容：
+
+```response
+┌────on_date─┬─domain_name────┬─impressions─┬─clicks─┐
+│ 2019-01-01 │ clickhouse.com │           2 │      2 │
+│ 2019-03-01 │ clickhouse.com │           1 │      1 │
+│ 2019-02-01 │ clickhouse.com │           1 │      0 │
+└────────────┴────────────────┴─────────────┴────────┘
+
+3 rows in set. Elapsed: 0.018 sec.
+```
