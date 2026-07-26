@@ -98,5 +98,17 @@ SETTINGS optimize_min_inequality_conjunction_chain_length = 100;
 -- ... and the rewrite is the thing being skipped there:
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_dt WHERE (d != toDateTime('2020-01-01 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-02 12:00:00', 'UTC')) AND (d != toDateTime('2020-01-03 12:00:00', 'UTC'))) WHERE explain ILIKE '%function_name: notIn%';
 
+-- The OR direction needs the same conversion check: it kept the constant types but not the
+-- requirement that they convert losslessly.
+SELECT count() FROM t_dt WHERE (d = toDateTime('2020-01-01 12:00:00', 'UTC')) OR (d = toDateTime('2020-01-02 12:00:00', 'UTC')) OR (d = toDateTime('2020-01-03 12:00:00', 'UTC'));
+SELECT count() FROM t_dt WHERE (d = toDateTime('2020-01-01 12:00:00', 'UTC')) OR (d = toDateTime('2020-01-02 12:00:00', 'UTC')) OR (d = toDateTime('2020-01-03 12:00:00', 'UTC'))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_dt WHERE (d = toDateTime('2020-01-01 12:00:00', 'UTC')) OR (d = toDateTime('2020-01-02 12:00:00', 'UTC')) OR (d = toDateTime('2020-01-03 12:00:00', 'UTC'))) WHERE explain ILIKE '%function_name: in%';
+-- ... while a midnight constant still converts losslessly, so that rewrite keeps firing:
+SELECT count() FROM t_dt WHERE (d = parseDateTimeBestEffort('2020-01-01')) OR (d = parseDateTimeBestEffort('2020-01-02')) OR (d = parseDateTimeBestEffort('2020-01-03'));
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_dt WHERE (d = parseDateTimeBestEffort('2020-01-01')) OR (d = parseDateTimeBestEffort('2020-01-02')) OR (d = parseDateTimeBestEffort('2020-01-03'))) WHERE explain ILIKE '%function_name: in%';
+-- ... and `k = 1 OR k = NULL` still folds and stays nullable (a NULL constant never reaches the check):
+SELECT materialize(1) = 1 OR materialize(1) = NULL SETTINGS optimize_min_equality_disjunction_chain_length = 2;
+
 DROP TABLE t_dt;
 DROP TABLE t_var;

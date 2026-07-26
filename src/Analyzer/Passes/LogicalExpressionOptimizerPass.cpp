@@ -2466,7 +2466,10 @@ private:
                 continue;
             }
 
+            const auto expr_type = removeLowCardinality(expression.node->getResultType());
+
             bool is_any_nullable = false;
+            bool all_constants_convert_losslessly = true;
             Tuple args;
             args.reserve(equals_functions.size());
             DataTypes tuple_element_types;
@@ -2479,18 +2482,27 @@ private:
                 chassert(equals_function && equals_function->getFunctionName() == "equals");
 
                 const auto & equals_arguments = equals_function->getArguments().getNodes();
-                if (const auto * rhs_literal = equals_arguments[1]->as<ConstantNode>())
+                const auto * literal = equals_arguments[1]->as<ConstantNode>();
+                if (!literal)
                 {
-                    args.push_back(rhs_literal->getValue());
-                    tuple_element_types.push_back(rhs_literal->getResultType());
+                    literal = equals_arguments[0]->as<ConstantNode>();
+                    chassert(literal);
                 }
-                else
-                {
-                    const auto * lhs_literal = equals_arguments[0]->as<ConstantNode>();
-                    chassert(lhs_literal);
-                    args.push_back(lhs_literal->getValue());
-                    tuple_element_types.push_back(lhs_literal->getResultType());
-                }
+
+                args.push_back(literal->getValue());
+                tuple_element_types.push_back(literal->getResultType());
+
+                /// The set converts each element to the expression's type, while the comparison it
+                /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
+                /// A NULL constant is excluded above, so it never reaches this check.
+                if (!tryConvertToColumnType(literal, expr_type))
+                    all_constants_convert_losslessly = false;
+            }
+
+            if (!all_constants_convert_losslessly)
+            {
+                std::move(equals_functions.begin(), equals_functions.end(), std::back_inserter(or_operands));
+                continue;
             }
 
             auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
