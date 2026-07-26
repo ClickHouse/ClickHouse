@@ -469,6 +469,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (merging_params.is_queue && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
         throw Exception(ErrorCodes::UNKNOWN_STORAGE, "MergeTreeQueue does not support merging modes. Used mode: {}", name_part);
 
+    /// The deprecated syntax takes the sorting key from the engine arguments, which contradicts the
+    /// queue engines owning their sorting key `(_block_number, _block_offset)`. Reject it instead of
+    /// silently creating a queue table without the commit-order key.
+    if (merging_params.is_queue && !is_extended_storage_def)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Deprecated syntax is not supported for the {} engine, because it manages its own sorting key",
+            args.engine_name);
+
     /// NOTE Quite complicated.
 
     size_t min_num_params = 0;
@@ -728,7 +736,13 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!args.storage_def->order_by)
         {
-            if (local_settings[Setting::create_table_empty_primary_key_by_default])
+            /// Queue engines own their sorting key, so the user is not required to provide one:
+            /// the commit-order key is injected below regardless of `create_table_empty_primary_key_by_default`.
+            if (merging_params.is_queue)
+            {
+                args.storage_def->set(args.storage_def->order_by, makeASTOperator("tuple"));
+            }
+            else if (local_settings[Setting::create_table_empty_primary_key_by_default])
             {
                 args.storage_def->set(args.storage_def->order_by, makeASTOperator("tuple"));
             }

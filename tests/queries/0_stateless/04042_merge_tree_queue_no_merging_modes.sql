@@ -1,5 +1,6 @@
 -- Tags: no-random-merge-tree-settings
--- Verify that `MergeTreeQueue` does not support merging modes, ORDER BY, or PRIMARY KEY.
+-- Verify that `MergeTreeQueue` does not support merging modes, ORDER BY, PRIMARY KEY,
+-- the deprecated engine syntax, or disabling the virtual columns of its sorting key.
 
 select 'SummingMergeTreeQueue';
 CREATE TABLE mtq_summing(a UInt64) ENGINE = SummingMergeTreeQueue ORDER BY a; -- { serverError UNKNOWN_STORAGE }
@@ -23,4 +24,23 @@ select 'ALTER MODIFY ORDER BY is forbidden';
 drop table if exists mtq_alter_order sync;
 CREATE TABLE mtq_alter_order(a UInt64) ENGINE = MergeTreeQueue;
 ALTER TABLE mtq_alter_order MODIFY ORDER BY a; -- { serverError BAD_ARGUMENTS }
+
+select 'disabling the block number and block offset columns is forbidden';
+ALTER TABLE mtq_alter_order MODIFY SETTING enable_block_number_column = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE mtq_alter_order MODIFY SETTING enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE mtq_alter_order RESET SETTING enable_block_number_column; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE mtq_alter_order RESET SETTING enable_block_offset_column; -- { serverError BAD_ARGUMENTS }
+-- Enabling them again is a no-op and must be allowed.
+ALTER TABLE mtq_alter_order MODIFY SETTING enable_block_number_column = 1;
 drop table mtq_alter_order sync;
+
+select 'no explicit key is required';
+set create_table_empty_primary_key_by_default = 0;
+drop table if exists mtq_no_key sync;
+CREATE TABLE mtq_no_key(a UInt64) ENGINE = MergeTreeQueue;
+select sorting_key from system.tables where database = currentDatabase() and name = 'mtq_no_key';
+drop table mtq_no_key sync;
+
+select 'deprecated syntax is forbidden';
+set allow_deprecated_syntax_for_merge_tree = 1;
+CREATE TABLE mtq_deprecated(d Date, a UInt64) ENGINE = MergeTreeQueue(d, a, 8192); -- { serverError BAD_ARGUMENTS }

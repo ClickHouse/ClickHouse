@@ -5,3 +5,7 @@ AggregatingMergeTreeQueue
 ORDER BY is forbidden
 PRIMARY KEY is forbidden
 ALTER MODIFY ORDER BY is forbidden
+disabling the block number and block offset columns is forbidden
+no explicit key is required
+_block_number, _block_offset
+deprecated syntax is forbidden

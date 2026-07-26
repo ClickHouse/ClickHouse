@@ -5026,6 +5026,35 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    /// Queue engines put `_block_number` and `_block_offset` into their sorting key, so these columns must
+    /// stay materialized for the lifetime of the table. `CREATE` force-enables the corresponding settings;
+    /// forbid turning them off later, the same way `ALTER MODIFY ORDER BY` is forbidden. A `RESET SETTING`
+    /// is rejected as well, because the default value of both settings is `0`.
+    if (merging_params.is_queue)
+    {
+        for (const auto & command : commands)
+        {
+            for (const auto * setting_name : {"enable_block_number_column", "enable_block_offset_column"})
+            {
+                if (command.type == AlterCommand::MODIFY_SETTING)
+                {
+                    Field value;
+                    UInt64 enabled = 1;
+                    if (command.settings_changes.tryGet(setting_name, value) && value.tryGet<UInt64>(enabled) && enabled == 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Setting '{}' cannot be disabled for the MergeTreeQueue engine, "
+                            "because it is required by the sorting key of the table", setting_name);
+                }
+                else if (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains(setting_name))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Setting '{}' cannot be reset for the MergeTreeQueue engine, "
+                        "because it is required by the sorting key of the table", setting_name);
+                }
+            }
+        }
+    }
+
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
     /// `allow_experimental_codecs` for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
