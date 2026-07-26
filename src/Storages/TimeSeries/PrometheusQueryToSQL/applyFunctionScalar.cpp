@@ -57,6 +57,22 @@ SQLQueryPiece applyFunctionScalar(
     switch (argument.store_method)
     {
         case StoreMethod::EMPTY:
+        {
+            /// PromQL: scalar() returns NaN if its argument is an empty vector, so an argument which is known
+            /// to be empty at this point (e.g. scalar(clamp(v, 1, -1))) makes the result a NaN constant.
+            /// (If the evaluation range is empty then there is nothing to evaluate and the result stays empty.)
+            auto node_range = context.node_range_getter.get(function_node);
+            if (node_range.empty())
+                return res;
+
+            res.store_method = StoreMethod::CONST_SCALAR;
+            res.scalar_value = std::numeric_limits<Float64>::quiet_NaN();
+            res.start_time = node_range.start_time;
+            res.end_time = node_range.end_time;
+            res.step = node_range.step;
+            return res;
+        }
+
         case StoreMethod::CONST_SCALAR:
         case StoreMethod::SINGLE_SCALAR:
         case StoreMethod::SCALAR_GRID:

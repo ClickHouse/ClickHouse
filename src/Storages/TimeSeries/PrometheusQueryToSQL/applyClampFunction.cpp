@@ -3,7 +3,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 
@@ -76,25 +75,6 @@ SQLQueryPiece applyClampFunction(
     size_t num_arguments = 1 + has_min + has_max;
 
     checkArgumentTypes(function_node, arguments, num_arguments, context);
-
-    /// PromQL: scalar() returns NaN if its argument is an empty vector, so a bound which is known to be empty
-    /// at this point (e.g. scalar(clamp(v, 1, -1))) means a NaN bound, and the result must consist of NaN values.
-    /// We convert such bounds to NaN constants here so that the NaN handling below applies to them.
-    /// (An empty first argument still makes the result empty - see applySimpleFunction()).
-    for (size_t i = 1; i != arguments.size(); ++i)
-    {
-        auto & argument = arguments[i];
-        if (argument.store_method != StoreMethod::EMPTY)
-            continue;
-        auto node_range = context.node_range_getter.get(argument.node);
-        if (node_range.empty())
-            continue;
-        argument.store_method = StoreMethod::CONST_SCALAR;
-        argument.scalar_value = std::numeric_limits<Float64>::quiet_NaN();
-        argument.start_time = node_range.start_time;
-        argument.end_time = node_range.end_time;
-        argument.step = node_range.step;
-    }
 
     size_t min_index = 1;
     size_t max_index = has_min ? 2 : 1;

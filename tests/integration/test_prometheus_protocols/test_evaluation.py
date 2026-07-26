@@ -1013,6 +1013,33 @@ def test_conversion_functions():
         [["1970-01-01 00:03:00.000", 1]],
     )
 
+    # scalar() of an empty vector is NaN.
+    do_query_test(
+        "scalar(clamp(vector(1), 1, -1))",
+        180,
+        '{"resultType": "scalar", "result": [180, "NaN"]}',
+        [["1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "vector(scalar(clamp(vector(1), 1, -1)))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
+    do_query_test(
+        "vector(scalar(clamp(vector(1), 1, -1)))[40:10]",
+        180,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[150, "NaN"], [160, "NaN"], [170, "NaN"], [180, "NaN"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:30.000',nan),('1970-01-01 00:02:40.000',nan),('1970-01-01 00:02:50.000',nan),('1970-01-01 00:03:00.000',nan)]",
+            ]
+        ],
+    )
+
     do_query_test(
         "vector(scalar(vector(time())))[40:10]",
         180,
