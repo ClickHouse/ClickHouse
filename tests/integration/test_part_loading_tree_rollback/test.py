@@ -4,7 +4,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 # ZooKeeper is required: classifying a part whose `txn_version.txt` carries a transactional TID
-# reaches `TransactionLog::instance()`, whose constructor calls `loadLogFromZooKeeper()`
+# reaches `TransactionLog::instance`, whose constructor calls `loadLogFromZooKeeper`
 # unconditionally. No `allow_experimental_transactions` config is needed - part loading never
 # goes through `Context::checkTransactionsAreAllowed`.
 node = cluster.add_instance("node", with_zookeeper=True)
@@ -110,7 +110,7 @@ def stop_merges(table):
     `create_table_with_one_part`.
 
     This statement cannot protect the window inside `ATTACH TABLE`: `ATTACH` runs
-    `IStorage::startup()` before returning (`InterpreterCreateQuery.cpp`), and
+    `IStorage::startup` before returning (`InterpreterCreateQuery.cpp`), and
     `StorageMergeTree::startup` schedules the background assignee immediately, so a merge can be
     selected before any statement issued after `ATTACH` reaches the server.
 
@@ -196,6 +196,11 @@ def test_contains(started_cluster):
       3. all_3_4_1_0  level 1, mut 0, blocks 3-4  committed, contained in 1-4
       4. all_1_1_0    level 0, mut 0, blocks 1-1  the original insert, covered by all_1_2_1_0
 
+    `all_1_2_1_0` and `all_3_4_1_0` share (level, mutation) = (1, 0) and `PartLoadingTree::build`
+    sorts with a non-stable `std::sort`, so steps 2 and 3 may swap. Both are contained in
+    `all_1_4_2_1` and disjoint from each other, so either order puts both under it and the asserted
+    promotion is the same.
+
     Without the promotion both committed children stay covered by the rolled-back ancestor and are
     invisible to queries.
     """
@@ -278,6 +283,11 @@ def test_tmp_metadata(started_cluster):
       1. all_1_2_1_0  level 1, mut 0, blocks 1-2  rolled back (tmp-only metadata)
       2. all_2_3_0_0  level 0, mut 0, blocks 2-3  committed, intersects 1-2 -> evicts (1)
       3. all_1_1_0    level 0, mut 0, blocks 1-1  the original insert, disjoint from 2-3
+
+    `all_2_3_0_0` and `all_1_1_0` share (level, mutation) = (0, 0) and `PartLoadingTree::build`
+    sorts with a non-stable `std::sort`, so steps 2 and 3 may swap. The asserted outcome holds for
+    either order: with 1-1 first it is contained in 1-2 and becomes a child of the rolled-back node,
+    and the eviction that 2-3 then triggers reinserts it as an orphan at the root.
     """
     table = "t_plt_tmp_metadata"
     data_path = create_table_with_one_part(table)
