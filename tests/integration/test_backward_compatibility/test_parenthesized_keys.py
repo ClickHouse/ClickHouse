@@ -138,6 +138,26 @@ def test_reverse_key_old_replica_joins_new_table(start_cluster):
     check_replication("t_parens_reverse")
 
 
+def test_nested_parens_old_replica_joins_new_table(start_cluster):
+    """Redundant parentheses can also sit deep inside a definition: in the `WITH` clause and the
+    aliased `SELECT` items of a projection, and in the `GROUP BY` / `SET` parts of a TTL element
+    (which are not stored in the `children` of `ASTTTLElement`). The current version must
+    serialize the canonical form of all of them into the ZooKeeper `/metadata` node, because an
+    old replica compares the `projections` and `ttl` fields as text against its canonical local
+    form and would fail to join with METADATA_MISMATCH."""
+    create = """
+        CREATE TABLE t_parens_nested (a UInt32, b UInt32, c UInt32, d DateTime,
+            PROJECTION p (WITH (b + 1) AS y SELECT (a) AS x, sum(y) GROUP BY (a)))
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_parens_nested', '{replica}')
+        ORDER BY (a, b)
+        TTL (d) + INTERVAL 10 YEAR GROUP BY (a), (b) SET c = max((c))
+        """
+    node_new.query(create.format(replica="r1"))
+    node_old.query(create.format(replica="r2"))
+
+    check_replication("t_parens_nested")
+
+
 def test_upgrade_and_attach_partition_from(start_cluster):
     """A table created by the old version must load after an upgrade and be compatible with a
     freshly created parenthesized table in `ATTACH PARTITION FROM`. Must be the last test in the

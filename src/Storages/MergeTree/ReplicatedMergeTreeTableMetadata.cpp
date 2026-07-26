@@ -7,6 +7,7 @@
 #include <DataTypes/IDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -36,24 +37,32 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-/// User-written parentheses around individual key elements (e.g. `PRIMARY KEY (col)`) are
-/// syntactically meaningless in stored metadata. Strip them so the serialized form matches
-/// the canonical form older server versions store.
+/// User-written parentheses (e.g. `PRIMARY KEY (col)`, `TTL d + INTERVAL 10 YEAR GROUP BY (b)`,
+/// `PROJECTION p (WITH (b + 1) AS y SELECT (a) AS x)`) are syntactically meaningless in stored
+/// metadata: the `parenthesized` flag is purely cosmetic and does not participate in the tree
+/// hash. Strip it everywhere in the tree so the serialized form matches the canonical form older
+/// server versions store — they compare this text against their own canonical form and would
+/// otherwise reject an equal definition with `METADATA_MISMATCH`.
 static void stripArtificialParens(IAST & ast)
 {
     ast.setParenthesized(false);
-    if (auto * list = ast.as<ASTExpressionList>())
+
+    for (const auto & child : ast.children)
+        if (child)
+            stripArtificialParens(*child);
+
+    /// `group_by_key`, `group_by_assignments` and `recompression_codec` of a TTL element are not
+    /// stored in `children`, so the walk above does not reach them.
+    if (auto * ttl_element = ast.as<ASTTTLElement>())
     {
-        for (auto & child : list->children)
-        {
-            if (!child)
-                continue;
-            child->setParenthesized(false);
-            /// A reverse key element (`ORDER BY (a) DESC`) wraps the actual expression,
-            /// and the `parenthesized` flag lives on the wrapped expression.
-            if (child->as<ASTStorageOrderByElement>() && !child->children.empty() && child->children.front())
-                child->children.front()->setParenthesized(false);
-        }
+        for (const auto & expr : ttl_element->group_by_key)
+            if (expr)
+                stripArtificialParens(*expr);
+        for (const auto & expr : ttl_element->group_by_assignments)
+            if (expr)
+                stripArtificialParens(*expr);
+        if (ttl_element->recompression_codec)
+            stripArtificialParens(*ttl_element->recompression_codec);
     }
 }
 
@@ -65,6 +74,23 @@ static String formattedASTNormalized(const ASTPtr & ast)
     FunctionNameNormalizer::visit(ast_normalized.get());
     stripArtificialParens(*ast_normalized);
     return ast_normalized->formatWithSecretsOneLine();
+}
+
+/// Same as `formattedASTNormalized`, but for the comma-separated lists of declarations
+/// (skip indices, projections, constraints). Function names are intentionally not normalized
+/// here: unlike the key fields, these were never normalized before, and the canonical form of an
+/// older version is the definition as written.
+static String formattedASTListNormalized(const ASTs & definitions)
+{
+    if (definitions.empty())
+        return "";
+
+    ASTExpressionList list;
+    for (const auto & definition : definitions)
+        list.children.push_back(definition->clone());
+
+    stripArtificialParens(list);
+    return list.formatWithSecretsOneLine();
 }
 
 namespace
@@ -180,16 +206,27 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
 
     /// We only store skip indices that are explicitly defined by user
-    skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
+    {
+        ASTs explicit_indices;
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            if (!index.isImplicitlyCreated())
+                explicit_indices.push_back(index.definition_ast);
+        skip_indices = formattedASTListNormalized(explicit_indices);
+    }
 
-    projections = metadata_snapshot->getProjections().toString();
+    {
+        ASTs projection_definitions;
+        for (const auto & projection : metadata_snapshot->getProjections())
+            projection_definitions.push_back(projection.definition_ast);
+        projections = formattedASTListNormalized(projection_definitions);
+    }
 
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = (*data_settings)[MergeTreeSetting::index_granularity_bytes];
     else
         index_granularity_bytes = 0;
 
-    constraints = metadata_snapshot->getConstraints().toString();
+    constraints = formattedASTListNormalized(metadata_snapshot->getConstraints().getConstraints());
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
