@@ -27,7 +27,7 @@ USING (id);
 SELECT 1 FROM t0 JOIN t1 USING c0;
 
 -- And with runtime filters
-SET enable_join_runtime_filters=1;
+SET enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
 
 SELECT id, value
 FROM

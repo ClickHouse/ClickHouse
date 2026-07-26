@@ -29,14 +29,17 @@ Esta tabla puede usarse para la monitorización. La tabla contiene una fila por 
 * `type` ([String](/es/reference/data-types/index)) — Tipo de un nodo de planificación.
 * `weight` ([Float64](/es/reference/data-types/index)) — Peso de un nodo, usado por un nodo padre de tipo `fair`.
 * `priority` ([Int64](/es/reference/data-types/index)) — Prioridad de un nodo, usada por un nodo padre de tipo &#39;priority&#39; (un valor menor implica una prioridad más alta).
-* `is_active` ([UInt8](/es/reference/data-types/index)) — Indica si este nodo está activo actualmente; es decir, si tiene solicitudes de recursos para sacar de la cola y se cumplen sus restricciones.
-* `active_children` ([UInt64](/es/reference/data-types/index)) — Número de hijos en estado activo.
-* `dequeued_requests` ([UInt64](/es/reference/data-types/index)) — Número total de solicitudes de recursos sacadas de la cola desde este nodo.
-* `canceled_requests` ([UInt64](/es/reference/data-types/index)) — Número total de solicitudes de recursos canceladas desde este nodo.
-* `dequeued_cost` ([Int64](/es/reference/data-types/index)) — Suma de los costos (p. ej., tamaño en bytes) de todas las solicitudes sacadas de la cola desde este nodo.
-* `throughput` ([Float64](/es/reference/data-types/index)) — Rendimiento promedio actual (costo desencolado por segundo).
-* `canceled_cost` ([Int64](/es/reference/data-types/index)) — Suma de los costos (p. ej., tamaño en bytes) de todas las solicitudes canceladas desde este nodo.
-* `busy_periods` ([UInt64](/es/reference/data-types/index)) — Número total de desactivaciones de este nodo.
+* `precedence` ([Int64](/es/reference/data-types/index)) — Precedencia de un nodo, usada por nodos padre con espacio compartido (memoria) para ordenar la admisión y la expulsión (un valor menor implica una precedencia más alta).
+* `is_active` ([Nullable(UInt8)](/es/reference/data-types/index)) — Indica si este nodo está activo actualmente; es decir, si tiene solicitudes de recursos para sacar de la cola y se cumplen sus restricciones.
+* `active_children` ([Nullable(UInt64)](/es/reference/data-types/index)) — Número de hijos en estado activo.
+* `dequeued_requests` ([Nullable(UInt64)](/es/reference/data-types/index)) — Número total de solicitudes de recursos sacadas de la cola desde este nodo.
+* `canceled_requests` ([Nullable(UInt64)](/es/reference/data-types/index)) — Número total de solicitudes de recursos canceladas desde este nodo.
+* `rejected_requests` ([Nullable(UInt64)](/es/reference/data-types/index)) — Número total de solicitudes de recursos rechazadas desde este nodo.
+* `dequeued_cost` ([Nullable(Int64)](/es/reference/data-types/index)) — Suma de los costos (p. ej., tamaño en bytes) de todas las solicitudes sacadas de la cola desde este nodo.
+* `canceled_cost` ([Nullable(Int64)](/es/reference/data-types/index)) — Suma de los costos (p. ej., tamaño en bytes) de todas las solicitudes canceladas desde este nodo.
+* `rejected_cost` ([Nullable(Int64)](/es/reference/data-types/index)) — Suma de los costos (p. ej., tamaño en bytes) de todas las solicitudes rechazadas desde este nodo.
+* `busy_periods` ([Nullable(UInt64)](/es/reference/data-types/index)) — Número total de desactivaciones de este nodo.
+* `throughput` ([Nullable(Float64)](/es/reference/data-types/index)) — Rendimiento promedio actual (costo desencolado por segundo).
 * `vruntime` ([Nullable(Float64)](/es/reference/data-types/index)) — Solo para hijos de nodos `fair`. Tiempo de ejecución virtual de un nodo, usado por el algoritmo SFQ para seleccionar el siguiente hijo que se procesará de forma justa max-min.
 * `system_vruntime` ([Nullable(Float64)](/es/reference/data-types/index)) — Solo para nodos `fair`. Tiempo de ejecución virtual que muestra el `vruntime` de la última solicitud de recurso procesada. Se usa durante la activación de hijos como nuevo valor de `vruntime`.
 * `queue_length` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos `fifo`. Número actual de solicitudes de recursos presentes en la cola.
@@ -51,6 +54,17 @@ Esta tabla puede usarse para la monitorización. La tabla contiene una fila por 
 * `max_burst` ([Nullable(Float64)](/es/reference/data-types/index)) — Solo para nodos `bandwidth_limit`. Límite superior de tokens disponibles en el limitador token-bucket.
 * `throttling_us` ([Nullable(Int64)](/es/reference/data-types/index)) — Solo para nodos `bandwidth_limit`. Número total de microsegundos durante los que este nodo estuvo en estado de throttling.
 * `tokens` ([Nullable(Float64)](/es/reference/data-types/index)) — Solo para nodos `bandwidth_limit`. Número de tokens disponibles actualmente en el limitador token-bucket.
+* `allocated` ([Nullable(Int64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Cantidad de recurso asignada actualmente bajo este nodo.
+* `allocations` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número actual de asignaciones de recursos activas bajo este nodo.
+* `updates` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de actualizaciones propagadas a través de este nodo.
+* `increases` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de solicitudes de aumento aprobadas por este nodo.
+* `decreases` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de solicitudes de disminución aprobadas por este nodo.
+* `admits` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de asignaciones admitidas por este nodo.
+* `removes` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de asignaciones eliminadas de este nodo.
+* `killers` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de desalojos iniciados por este nodo debido a solicitudes de aumento.
+* `victims` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos con espacio compartido. Número total de asignaciones desalojadas de este nodo.
+* `rejects` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos `allocation_queue`. Número total de asignaciones de recursos rechazadas por este nodo.
+* `pending` ([Nullable(UInt64)](/es/reference/data-types/index)) — Solo para nodos `allocation_queue`. Número actual de asignaciones de recursos pendientes en este nodo.
 
 {/*AUTOGENERATED_END*/}
 
