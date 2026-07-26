@@ -75,6 +75,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsUInt64 query_plan_max_step_description_length;
@@ -275,7 +276,11 @@ namespace
             /// where skipping is desirable anyway), so at this point just skip the analysis
             /// (it is only needed to expand views) and leave the select as is.
             if (select.limit_shuffle)
+            {
+                if (!data.getContext()->getSettingsRef()[Setting::allow_experimental_shuffle_query])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled by setting allow_experimental_shuffle_query");
                 return;
+            }
 
             InterpreterSelectQuery interpreter(
                 node, data.getContext(), SelectQueryOptions(QueryProcessingStage::FetchColumns).analyze().modify());
@@ -283,6 +288,12 @@ namespace
             const SelectQueryInfo & query_info = interpreter.getQueryInfo();
             if (query_info.view_query)
             {
+                /// Stored view queries with `LIMIT SHUFFLE` are supported only by the analyzer.
+                /// This legacy syntax-explain visitor cannot expand them correctly, so leave the
+                /// table reference intact instead of turning syntax explain into an execution guard.
+                if (hasLimitShuffle(query_info.view_query))
+                    return;
+
                 ASTPtr tmp;
                 StorageView::replaceWithSubquery(select, query_info.view_query->clone(), tmp, query_info.is_parameterized_view);
             }

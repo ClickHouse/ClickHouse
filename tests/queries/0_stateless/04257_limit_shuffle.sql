@@ -83,6 +83,21 @@ LIMIT 1 SHUFFLE
 SETTINGS allow_experimental_shuffle_query = 1, enable_analyzer = 1;
 
 EXPLAIN SYNTAX
+INSERT INTO limit_shuffle_insert_sink
+SELECT number
+FROM numbers(10)
+LIMIT 1 SHUFFLE
+SETTINGS allow_experimental_shuffle_query = 0, enable_analyzer = 1
+FORMAT Null; -- { serverError SUPPORT_IS_DISABLED }
+
+EXPLAIN SYNTAX
+INSERT INTO limit_shuffle_insert_sink
+SELECT *
+FROM limit_shuffle_view
+SETTINGS enable_analyzer = 1
+FORMAT Null;
+
+EXPLAIN SYNTAX
 SELECT number
 FROM numbers(10)
 LIMIT 3 SHUFFLE;
