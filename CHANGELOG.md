@@ -21,6 +21,42 @@
 
 # 2026 Changelog
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release b59441bd06c2fcb6b103a30874528cc398afc723 (b59441bd06c) FIXME as compared to 693a303c1017477fc39aaa7706af0ec078e13fbc (693a303c101)
+
+#### Performance Improvement
+* A `JOIN` whose `ON` condition is constant-false (e.g. `ON 1 = 2`, `ON NULL`, or a condition that folds to false such as `a.t = 'A' AND a.t = 'B'`) no longer reads the non-contributing side. A new query-plan optimization replaces the input sides that cannot contribute a row with an empty source. Controlled by the setting `query_plan_short_circuit_constant_false_join` (default enabled). [#110234](https://github.com/ClickHouse/ClickHouse/pull/110234) ([Groene AI](https://github.com/groeneai)).
+* Introduces `PackedStringRef`, a compact 16-byte representation for single-`String` aggregation keys, to reduce hash-table cell size and improve string-heavy `GROUP BY` workloads. The change is limited to aggregate string keys; other `StringHashTable` users are unchanged. [#110573](https://github.com/ClickHouse/ClickHouse/pull/110573) ([Harikrishnan Prabakaran](https://github.com/harikrishnan94)).
+
+#### Improvement
+* Handle `ColumnConst` in `IDataType::getSubcolumn` and `IDataType::tryGetSubcolumn`: the constant is unwrapped, the subcolumn is extracted from the nested column, and the result is wrapped back into `ColumnConst`. This prevents a potential exception in the `COUNT(*)` fast path for `file(...)` when the inferred schema wraps columns in `Nullable`. Closes [#102044](https://github.com/ClickHouse/ClickHouse/issues/102044). [#102509](https://github.com/ClickHouse/ClickHouse/pull/102509) ([Rory Shanks](https://github.com/rorylshanks)).
+* In the Web UI (Play), holding `Ctrl` (`Cmd` on Mac) while hovering over a table cell whose value is a URL ending in `.jpg`, `.jpeg`, `.png`, `.gif`, or `.webp` now shows a preview of the image. [#109347](https://github.com/ClickHouse/ClickHouse/pull/109347) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fix server crash (SIGSEGV) when reading Protobuf data with `input_format_allow_errors_num > 0` and a valid message precedes a bad (skippable) message in the same block. [#107739](https://github.com/ClickHouse/ClickHouse/pull/107739) ([Andrey Tsarevskiy | Андрей Царевский ](https://github.com/atsarevskiy)).
+* Fixed `NOT_FOUND_COLUMN_IN_BLOCK` when a query over a `Distributed` table uses `_shard_num` (or `shardNum()`) that becomes `Nullable` (for example under `FULL JOIN` with `join_use_nulls = 1`) together with `ORDER BY`, with the analyzer enabled. [#109798](https://github.com/ClickHouse/ClickHouse/pull/109798) ([Groene AI](https://github.com/groeneai)).
+* Fix `join_algorithm = 'full_sorting_merge'` filling the non-joined rows of a `LEFT`/`RIGHT`/`FULL`/`ASOF` `JOIN` with a raw zero instead of the column type default. For an `Enum` column (whose default is its first element, not `0`) this produced wrong results (a filter on the padded value dropped the unmatched rows, so an outer join silently behaved like an inner one) and a `UNKNOWN_ELEMENT_OF_ENUM` error when the column was selected. [#111197](https://github.com/ClickHouse/ClickHouse/pull/111197) ([Groene AI](https://github.com/groeneai)).
+* Fix a `LOGICAL_ERROR` ("Lambda resolved type ... is not equal to type from actions DAG ...") when a higher-order function's lambda body is a constant-condition `if`/`multiIf` that mixes a `Bool` literal branch with a `UInt8` comparison branch, e.g. `arrayFilter(p -> multiIf(false, true, p = 'ALL'), ['ALL'])`. [#111245](https://github.com/ClickHouse/ClickHouse/pull/111245) ([Groene AI](https://github.com/groeneai)).
+* A `{_partition_id}` placeholder in the path of a file-like engine (`S3`, `AzureBlobStorage`, `URL`, etc.) with no explicit `partition_strategy` implies the `wildcard` strategy again, regardless of `file_like_engine_default_partition_strategy`. This restores backward compatibility for pre-26.6 DDL that started failing with `BAD_ARGUMENTS` ("Partition strategy hive can not be used with a '_partition_id' wildcard in the path") after [#107437](https://github.com/ClickHouse/ClickHouse/issues/107437). [#111279](https://github.com/ClickHouse/ClickHouse/pull/111279) ([Nikita Fomichev](https://github.com/fm4v)).
+* Fix `NUMBER_OF_COLUMNS_DOESNT_MATCH` error for a `GROUP BY` with an aggregate over a `Merge` table wrapping a `Distributed` table, when the grouping key is a function of a column and an aggregate reads the same column (e.g. `SELECT toString(g), min(g) FROM merge_over_distributed GROUP BY toString(g)`). [#111334](https://github.com/ClickHouse/ClickHouse/pull/111334) ([Groene AI](https://github.com/groeneai)).
+
+#### Build/Testing/Packaging Improvement
+* Add `libucontext` to provide `getcontext`/`setcontext`/`swapcontext`/`makecontext` for musl builds, enabling `boost::context`'s ucontext backend (used by sanitizer builds) on musl targets. [#111437](https://github.com/ClickHouse/ClickHouse/pull/111437) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* Fix source-level portability issues for musl-based builds in `clickhouse_fuzzer`, `ShellCommand`, `ReplxxLineReader`, and `gtest_merged_part_offsets`. [#111631](https://github.com/ClickHouse/ClickHouse/pull/111631) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Allowlist rdb_test_ DDLWorker UUID-collision upgrade-check restart noise. [#107126](https://github.com/ClickHouse/ClickHouse/pull/107126) ([Groene AI](https://github.com/groeneai)).
+* Benchmarks, static assertions, system.warnings for per CPU. [#109283](https://github.com/ClickHouse/ClickHouse/pull/109283) ([Azat Khuzhin](https://github.com/azat)).
+* Rename Ssl to SSL in SocketPeerClosed helpers. [#111018](https://github.com/ClickHouse/ClickHouse/pull/111018) ([Groene AI](https://github.com/groeneai)).
+* Add negative-case tests for the Quantized vector codec. [#111084](https://github.com/ClickHouse/ClickHouse/pull/111084) ([Groene AI](https://github.com/groeneai)).
+* Fix flaky 03915_spilling_hash_join by pinning query_plan_join_swap_table. [#111500](https://github.com/ClickHouse/ClickHouse/pull/111500) ([Groene AI](https://github.com/groeneai)).
+* Fix the `Bugfix validation (unit tests)` job failing to configure the "before" binary. [#111530](https://github.com/ClickHouse/ClickHouse/pull/111530) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Reduce the peak memory usage and runtime of the test `03216_arrayWithConstant_limits` to stop it flaking with `MEMORY_LIMIT_EXCEEDED` on loaded parallel runners. [#111705](https://github.com/ClickHouse/ClickHouse/pull/111705) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Run distributed-plan sanitizer stateless on runner with more mem instead of cutting concurrency. [#111789](https://github.com/ClickHouse/ClickHouse/pull/111789) ([Max Kainov](https://github.com/maxknv)).
+* Follow-up to https://github.com/ClickHouse/ClickHouse/pull/111835: when the `#tab-close-others` button in `play.html` is activated with Enter/Space and exactly two tabs are open, the rerender in `renderTabBar` hides the button while it still owns keyboard focus, stranding focus on a hidden element. Mirror the handoff `syncConnectionUI` performs for the 🔑 button and move focus to the always-visible query area before hiding the button. Addresses the unresolved review thread in the original PR. [#111899](https://github.com/ClickHouse/ClickHouse/pull/111899) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="268"></a> ClickHouse release 26.8, FIXME (in progress)
 
 #### New Feature
