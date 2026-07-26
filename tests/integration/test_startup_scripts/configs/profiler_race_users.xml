@@ -4,6 +4,9 @@
             <!-- Sample the startup thread every 1 ms so the profiler signal lands while the loader
                  thread publishes the new per-user Counters. -->
             <query_profiler_real_time_period_ns>1000000</query_profiler_real_time_period_ns>
+            <!-- Off by default; without it system.query_thread_log stays empty, and that table is
+                 the only place profile events are reported per thread instead of per thread group. -->
+            <log_query_threads>1</log_query_threads>
         </default>
     </profiles>
     <users>

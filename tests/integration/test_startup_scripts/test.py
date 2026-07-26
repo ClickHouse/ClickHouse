@@ -27,7 +27,10 @@ bad = cluster.add_instance(
 )
 profiler_race = cluster.add_instance(
     "profiler_race",
-    main_configs=["configs/profiler_race_script.xml"],
+    main_configs=[
+        "configs/profiler_race_script.xml",
+        "configs/profiler_race_logs.xml",
+    ],
     user_configs=["configs/profiler_race_users.xml"],
     stay_alive=True,
 )
@@ -182,15 +185,21 @@ def test_profiler_vs_processlist_publication(start_cluster):
             or 0
         )
 
-    def startup_query_profiler_samples():
-        # Per-query, not the global `system.events` counter: that one is also fed by the always-on
-        # global profiler (`global_profiler_real_time_period_ns`), so it is non-zero even when the
-        # query profiler is off. This attributes the samples to the startup script's own query.
+    def startup_thread_profiler_samples():
+        # Neither `system.events` nor `system.query_log` can answer this: the former is process-wide
+        # and also fed by the always-on global profiler, the latter reports the thread GROUP
+        # aggregate, and the dictionary loader thread joins that same group with its own profiler.
+        # The race needs the thread running `loadStartupScripts` as its reader, so count the samples
+        # that thread booked itself: `query_thread_log` reports each thread's own counters, and the
+        # startup thread is the group's master thread.
         profiler_race.query("SYSTEM FLUSH LOGS")
         return int(
             profiler_race.query(
-                "SELECT ProfileEvents['QueryProfilerRuns'] FROM system.query_log "
-                "WHERE query LIKE '%profiler_race_dict%' AND type = 'QueryFinish' "
+                "SELECT ProfileEvents['QueryProfilerRuns'] FROM system.query_thread_log "
+                "WHERE query LIKE '%profiler_race_dict%' AND thread_id = master_thread_id "
+                # This query is logged too and mentions the dictionary; the table name it reads is
+                # what tells its own rows apart from the startup script's.
+                "AND query NOT LIKE '%query_thread_log%' "
                 "ORDER BY event_time_microseconds DESC LIMIT 1"
             ).strip()
             or 0
@@ -199,13 +208,14 @@ def test_profiler_vs_processlist_publication(start_cluster):
     for _ in range(PROFILER_RACE_RESTARTS):
         restart_profiler_race_instance()
         assert get_execution_state(profiler_race) == STATE_SUCCESS
-        # The profiler is armed on a best-effort basis: `initQueryProfiler` returns early when there
-        # is no trace collector and swallows timer-creation failures. Without a positive oracle a
-        # silently disarmed profiler would never enter the racing window, yet the absence of a TSan
-        # report would still read as a pass. A healthy startup samples thousands of times.
-        samples = startup_query_profiler_samples()
+        # The profiler is armed per thread on a best-effort basis: `initQueryProfiler` returns early
+        # when there is no trace collector and swallows timer-creation failures. Without a positive
+        # oracle a silently disarmed startup thread would never enter the racing window, yet the
+        # absence of a TSan report would still read as a pass. A healthy startup samples thousands
+        # of times.
+        samples = startup_thread_profiler_samples()
         assert samples > 1000, (
-            f"the query profiler sampled the startup script only {samples} times, so the racing "
+            f"the query profiler sampled the startup thread only {samples} times, so the racing "
             "window was not meaningfully exercised and the absence of a TSan report proves nothing"
         )
 
@@ -217,8 +227,8 @@ def test_profiler_vs_processlist_publication(start_cluster):
         "exercise was not exercised at all"
     )
 
-    # Both files are checked because the sanitizer writes to stderr while the server also mirrors
-    # fatal output into its own error log.
+    # The sanitizer writes to stderr, which the logger config redirects to stderr.log. The error log
+    # is grepped too as a cheap fallback in case that redirection is not in place.
     for filename in ("stderr.log", "clickhouse-server.err.log"):
         report = profiler_race.grep_in_log(
             "ThreadSanitizer: data race", from_host=True, filename=filename, after=40
