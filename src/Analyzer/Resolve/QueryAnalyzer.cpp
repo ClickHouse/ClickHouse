@@ -2316,6 +2316,43 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
 }
 
 
+/** Find the nearest scope whose `member` container is not empty, bounded at the enclosing
+  * QUERY/UNION scope. `registered_table_expression_nodes` and `nullable_group_by_keys` are
+  * populated only on the scope that owns the join tree, but an expression can be resolved in a
+  * child scope (a lambda body gets a fresh one), where both are empty. The bound keeps an inner
+  * subquery from adopting an outer query's join tree or GROUP BY keys.
+  */
+template <typename Member>
+static IdentifierResolveScope * findNearestScopeWithNonEmpty(IdentifierResolveScope & scope, Member IdentifierResolveScope::* member)
+{
+    for (auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (!(scope_ptr->*member).empty())
+            return scope_ptr;
+
+        if (isQueryOrUnionNode(scope_ptr->scope_node))
+            break;
+    }
+
+    return nullptr;
+}
+
+/// `ExpressionsStack` is per-scope, so an aggregate/window function enclosing a lambda sits on a
+/// parent scope's stack. Same scan as in `resolveExpressionNode`.
+static bool isInAggregateOrGroupingFunctionScope(const IdentifierResolveScope & scope)
+{
+    for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
+        if (scope_ptr->expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction())
+            return true;
+
+        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            break;
+    }
+
+    return false;
+}
+
 /** Resolve query tree matcher. Check MatcherNode.h for detailed matcher description. Check ColumnTransformers.h for detailed transformers description.
   *
   * 1. Populate matched expression nodes resolving qualified or unqualified matcher.
@@ -2335,14 +2372,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
     else
         matched_expression_nodes_with_names = resolveUnqualifiedMatcher(matcher_node, scope);
 
-    if (scope.join_use_nulls)
+    /// The matcher's columns were discovered against `getNearestQueryScope()`'s join tree, so the
+    /// scope that owns the join tree is also the authority for the promotions below. `scope` itself
+    /// may be a lambda scope with both containers empty.
+    auto * join_tree_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::registered_table_expression_nodes);
+
+    if (join_tree_scope && join_tree_scope->join_use_nulls)
     {
         /** If we are resolving matcher came from the result of JOIN and `join_use_nulls` is set,
           * we need to convert joined column type to Nullable.
           * We are checking all registered_table_expression_nodes which contains all table expressions that are used to resolve matcher.
           * If it's on null side, we need to convert column type to Nullable.
           */
-        for (const auto & table_expression : scope.registered_table_expression_nodes)
+        for (const auto & table_expression : join_tree_scope->registered_table_expression_nodes)
         {
             const JoinNode * nearest_scope_join_node = table_expression->as<JoinNode>();
             if (!nearest_scope_join_node)
@@ -2354,7 +2396,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (!join_identifier_side)
                     continue;
                 auto projection_name_it = node_to_projection_name.find(node);
-                auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, node->getResultType(), nearest_scope_join_node->getKind(), join_identifier_side, scope);
+                /// `join_tree_scope`, not `scope`: `convertJoinedColumnTypeToNullIfNeeded` records the
+                /// type change in `scope.join_columns_with_changed_types`, and the PREWHERE rollback
+                /// below reads that map only from the query scope.
+                auto nullable_node = IdentifierResolver::convertJoinedColumnTypeToNullIfNeeded(node, node->getResultType(), nearest_scope_join_node->getKind(), join_identifier_side, *join_tree_scope);
                 if (nullable_node)
                 {
                     node = nullable_node;
@@ -2432,12 +2477,14 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
-    if (!scope.nullable_group_by_keys.empty() && !scope.expressions_in_resolve_process_stack.hasAggregateOrGroupingFunction() && !has_aggregate_apply_transformer)
+    auto * group_by_keys_scope = findNearestScopeWithNonEmpty(scope, &IdentifierResolveScope::nullable_group_by_keys);
+
+    if (group_by_keys_scope && !isInAggregateOrGroupingFunctionScope(scope) && !has_aggregate_apply_transformer)
     {
         for (auto & [node, _] : matched_expression_nodes_with_names)
         {
-            auto it = scope.nullable_group_by_keys.find(node);
-            if (it != scope.nullable_group_by_keys.end())
+            auto it = group_by_keys_scope->nullable_group_by_keys.find(node);
+            if (it != group_by_keys_scope->nullable_group_by_keys.end())
             {
                 /// See resolveExpressionNode: for a constant keep the matched node's own source
                 /// expression instead of the stored key, which may be a different colliding constant.
@@ -6305,7 +6352,15 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
         bool allow_resolve_from_using = scope.allow_resolve_from_using;
         scope.allow_resolve_from_using = false;
+        /// Do not promote PREWHERE columns to Nullable in the first place: the rollback below cannot
+        /// descend into a lambda body (`ReplaceColumnsVisitor::needChildVisit` excludes LAMBDA), so an
+        /// expression like `arrayMap(z -> f(a), [1])` would keep post-join types the storage cannot
+        /// supply. Both promotion sites read this flag off the join-owning query scope, which is this
+        /// one; a nested subquery re-reads the setting from its own context and is unaffected.
+        bool join_use_nulls = scope.join_use_nulls;
+        scope.join_use_nulls = false;
         resolveExpressionNode(prewhere_node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.join_use_nulls = join_use_nulls;
         scope.allow_resolve_from_using = allow_resolve_from_using;
 
         /** Expressions in PREWHERE with JOIN should not change their type.
