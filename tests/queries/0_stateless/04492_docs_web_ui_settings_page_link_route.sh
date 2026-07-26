@@ -28,7 +28,7 @@ echo "$PAGE" | grep -oF "'merge-tree-settings': '/operations/settings/merge-tree
 # the legacy relative forms.
 $CLICKHOUSE_CLIENT --query "
     SELECT
-        position(description, '/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge') > 0
+        position(description, '/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge') > 0
             AND position(description, 'merge-tree-settings.md/#materialize_skip_indexes_on_merge') = 0
     FROM system.documentation
     WHERE type = 'Setting' AND name = 'materialize_skip_indexes_on_insert'"
