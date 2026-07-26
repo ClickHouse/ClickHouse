@@ -171,8 +171,12 @@ bash -ex /packages/keeper_test.sh""",
 def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
     test_results = []  # type: List[Result]
     for name, command in tests.items():
+        # Note, `--rm` is deliberately not used: it reclaims the writable layer of the
+        # container asynchronously, while every test writes several gigabytes of
+        # installed files there and the next test starts right away. The layer is
+        # removed synchronously by `docker rm` below instead.
         run_command = (
-            f"docker run --rm --privileged --detach --cap-add=SYS_PTRACE "
+            f"docker run --privileged --detach --cap-add=SYS_PTRACE "
             f"--volume={TEMP_PATH}:/packages {image}"
         )
         print(f"Running docker container: [{run_command}]")
@@ -187,7 +191,10 @@ def test_install(image: DockerImage, tests: Dict[str, str]) -> List[Result]:
                 command=install_command,
             )
         )
-        Shell.check(f"docker kill -s 9 {container_id}", verbose=True)
+        Shell.check(f"docker rm --force --volumes {container_id}", verbose=True)
+        # The job runs out of disk space from time to time, and the failure surfaces as
+        # an unrelated error in whatever test happens to be running, so keep track of it.
+        Shell.check("df -h /", verbose=True)
     return test_results
 
 

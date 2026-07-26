@@ -83,7 +83,13 @@ SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
 for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
     destpath=${filepath##$SCRIPTPATH/..}
     mkdir -p $(dirname "$destpath")
-    cp -r "$filepath" "$destpath"
+    # Move instead of copy: copying requires twice the disk space, which is several
+    # gigabytes for the packages with debug symbols. Moving also succeeds when the
+    # destination is a running executable, while copying over it fails with ETXTBSY.
+    mv -f "$filepath" "$destpath"
+    # The tarball carries the ownership of the user who built it, while the installed
+    # files have to belong to root, as they do in the deb and rpm packages.
+    chown -h root:root "$destpath"
 done
 EOF
     chmod +x "$PKG_PATH/install/doinst.sh"
