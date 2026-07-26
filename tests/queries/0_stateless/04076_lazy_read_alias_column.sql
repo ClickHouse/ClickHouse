@@ -159,3 +159,77 @@ ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
 DROP TABLE IF EXISTS test_lazy_alias_topk SYNC;
+
+-- 6. Duplicate output names through the lazy-materialization cleanup projection.
+--    When the sort column, or a `PREWHERE` column that the split expression DAGs do not
+--    consume, stays in the result header, that header has more columns than the query
+--    expects and a projection step is added to strip the extra ones. Rebuilding that
+--    projection must match the expected columns to the DAG outputs in occurrence order:
+--    `findInOutputs` matches through a name -> node map, which would bind several expected
+--    positions carrying the same name to a single node. Each query below is printed twice,
+--    once through the lazy path and once with lazy materialization disabled, so a
+--    positional mismatch shows up as a diff instead of as plausible-looking output.
+DROP TABLE IF EXISTS test_lazy_dup_alias SYNC;
+CREATE TABLE test_lazy_dup_alias
+(
+    c0 UInt64,
+    c1 String,
+    c2 String ALIAS c1,
+    c3 UInt64
+)
+ENGINE = MergeTree
+ORDER BY c0
+SETTINGS min_bytes_for_wide_part = 1, min_rows_for_wide_part = 1;
+
+INSERT INTO test_lazy_dup_alias SELECT number, 'val_' || toString(number), number * 7 FROM numbers(100);
+
+-- 6a. The cleanup projection is only built for a query that really goes through lazy
+--     materialization, so assert the plan first. A filter is required: without one the
+--     read is in primary-key order and lazy materialization does not apply at all.
+SELECT 'dup_alias_lazy_plan';
+SELECT trimLeft(explain) AS s
+FROM (EXPLAIN pretty = 0 SELECT c2, c3, c1, c3 FROM test_lazy_dup_alias WHERE c3 > 5 ORDER BY c3 DESC LIMIT 3)
+WHERE s LIKE 'LazilyRead%';
+
+-- 6b. A column, its `ALIAS`, and a repeated third column: the projection must not shift
+--     `c1` / `c2` into the `c3` positions, nor collapse the two `c3` positions onto a
+--     single node.
+SELECT 'dup_alias_names_result';
+SELECT c2, c3, c1, c3 FROM test_lazy_dup_alias WHERE c3 > 5 ORDER BY c3 DESC LIMIT 3;
+
+SELECT 'dup_alias_names_result_no_lazy';
+SELECT c2, c3, c1, c3 FROM test_lazy_dup_alias WHERE c3 > 5 ORDER BY c3 DESC LIMIT 3
+SETTINGS query_plan_optimize_lazy_materialization = 0;
+
+DROP TABLE IF EXISTS test_lazy_dup_alias SYNC;
+
+-- 6c. The same positional requirement for a `SELECT id, *, id` shape under `PREWHERE`,
+--     which is where the pass-through columns that trigger the cleanup projection come
+--     from in the parallel-replicas case the projection was introduced for.
+DROP TABLE IF EXISTS test_lazy_dup SYNC;
+CREATE TABLE test_lazy_dup
+(
+    id UInt64,
+    a  UInt64,
+    b  String,
+    a2 UInt64 ALIAS a * 2
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS index_granularity = 100;
+
+INSERT INTO test_lazy_dup SELECT number, number * 10, repeat('y', number % 7) FROM numbers(1000);
+
+SELECT 'dup_star_lazy_plan';
+SELECT trimLeft(explain) AS s
+FROM (EXPLAIN pretty = 0 SELECT id, *, id FROM test_lazy_dup PREWHERE a % 3 = 0 WHERE b != 'zzz' ORDER BY a DESC LIMIT 5)
+WHERE s LIKE 'LazilyRead%';
+
+SELECT 'dup_star_result';
+SELECT id, *, id FROM test_lazy_dup PREWHERE a % 3 = 0 WHERE b != 'zzz' ORDER BY a DESC LIMIT 5;
+
+SELECT 'dup_star_result_no_lazy';
+SELECT id, *, id FROM test_lazy_dup PREWHERE a % 3 = 0 WHERE b != 'zzz' ORDER BY a DESC LIMIT 5
+SETTINGS query_plan_optimize_lazy_materialization = 0;
+
+DROP TABLE IF EXISTS test_lazy_dup SYNC;
