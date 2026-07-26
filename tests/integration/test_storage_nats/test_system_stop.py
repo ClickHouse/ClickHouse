@@ -463,8 +463,15 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     table = "nats_stop_during_insert"
     n = 5
 
-    # A short ack-wait so a missing ack surfaces quickly as a redelivery.
-    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+    # The block is acked only after the insert (its durable boundary), so `ack_wait` must exceed the
+    # insert time or the broker redelivers a correctly-acked block before its ack lands (a spurious
+    # duplicate). The view sleeps a fixed `insert_secs` (cap lifted below), so the margin is
+    # deterministic: `ack_wait=3` used to duplicate under this load; `ack_wait` well above insert_secs
+    # does not. A wrongly skipped ack is still detected two ways: as a redelivery duplicate (caught by
+    # the longer-than-`ack_wait` stability window below) and immediately by a non-zero `num_ack_pending`.
+    insert_secs = 5
+    ack_wait = 30
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=ack_wait)
 
     instance.query(
         f"""
@@ -483,7 +490,8 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
             ENGINE = MergeTree ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
-            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+            SELECT key, value FROM test.{table} WHERE sleepEachRow({insert_secs / n}) = 0
+            SETTINGS function_sleep_max_microseconds_per_block = 60000000;
         """
     )
     instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
@@ -494,13 +502,15 @@ def test_stop_during_insert_does_not_duplicate(nats_cluster):
     # (incorrectly) skipped would be redelivered after ack_wait and surface as a duplicate.
     time.sleep(1)
     instance.query(f"SYSTEM STOP test.{table}")
-    instance.query(f"SYSTEM START test.{table}")
-    instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
+    # Wait for the fresh post-START subscription (a new "Started streaming" line), not the stale one from
+    # table creation, so the stability window below actually covers the resubscribed consumer.
+    start_and_wait_for_streaming(table)
 
-    # The block is acked exactly once: the rows appear and never grow past n (past the 3s ack-wait there
-    # is no redelivery), none are missing, and the consumer reports nothing still pending acknowledgement.
+    # The block is acked exactly once: the rows appear and never grow past n, none are missing, and the
+    # consumer reports nothing still pending acknowledgement. Watch for longer than ack_wait so a skipped
+    # ack, which would be redelivered only after ack_wait, still surfaces as a duplicate within the window.
     wait_dst_count_at_least(table, n)
-    assert_dst_count_stable(table, n, seconds=8)
+    assert_dst_count_stable(table, n, seconds=ack_wait + 5)
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
 
 
@@ -514,8 +524,15 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
     table = "nats_cancel_during_insert"
     n = 5
 
-    # A short ack-wait so a missing ack surfaces quickly as a redelivery.
-    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=3)
+    # The block is acked only after the insert (its durable boundary), so `ack_wait` must exceed the
+    # insert time or the broker redelivers a correctly-acked block before its ack lands (a spurious
+    # duplicate). The view sleeps a fixed `insert_secs` (cap lifted below), so the margin is
+    # deterministic: `ack_wait=3` used to duplicate under this load; `ack_wait` well above insert_secs
+    # does not. A wrongly skipped ack is still detected two ways: as a redelivery duplicate (caught by
+    # the longer-than-`ack_wait` stability window below) and immediately by a non-zero `num_ack_pending`.
+    insert_secs = 5
+    ack_wait = 30
+    jetstream_setup(nats_cluster, stream, subject, durable, ack_wait_seconds=ack_wait)
 
     instance.query(
         f"""
@@ -534,7 +551,8 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
             ENGINE = MergeTree ORDER BY key;
 
         CREATE MATERIALIZED VIEW test.{table}_mv TO test.{table}_dst AS
-            SELECT key, value FROM test.{table} WHERE sleepEachRow(0.4) = 0;
+            SELECT key, value FROM test.{table} WHERE sleepEachRow({insert_secs / n}) = 0
+            SETTINGS function_sleep_max_microseconds_per_block = 60000000;
         """
     )
     instance.wait_for_log_line(f"test.{table}.*Started streaming to 1 attached views")
@@ -545,10 +563,11 @@ def test_cancel_during_insert_does_not_duplicate(nats_cluster):
     time.sleep(1)
     instance.query(f"SYSTEM CANCEL test.{table}")
 
-    # Acked exactly once: count reaches n and never grows (no duplicate, no loss), and nothing is
-    # left pending acknowledgement.
+    # Acked exactly once: count reaches n and never grows (no duplicate, no loss), and nothing is left
+    # pending acknowledgement. Watch for longer than ack_wait so a skipped ack, which would be
+    # redelivered only after ack_wait, still surfaces as a duplicate within the window.
     wait_dst_count_at_least(table, n)
-    assert_dst_count_stable(table, n, seconds=8)
+    assert_dst_count_stable(table, n, seconds=ack_wait + 5)
     assert jetstream_ack_pending(nats_cluster, stream, durable) == 0
 
 
