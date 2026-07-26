@@ -1712,21 +1712,26 @@ Count Counters::load(Event event) const
 
 void Counters::setParent(Counters * parent_)
 {
-    parent.store(parent_, std::memory_order_relaxed);
+    /// Release: a `Counters` may be published into a chain that another thread traverses lock-free
+    /// (`increment*`), so the pointee's construction must be visible to whoever observes the pointer.
+    parent.store(parent_, std::memory_order_release);
 }
 
 void Counters::setUserCounters(Counters * user)
 {
     auto * current_val = this;
-    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+    /// Acquire: the loaded pointer is dereferenced below (`->level`).
+    auto * parent_val = this->parent.load(std::memory_order_acquire);
 
     while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
         current_val = parent_val;
-        parent_val = current_val->parent.load(std::memory_order_relaxed);
+        parent_val = current_val->parent.load(std::memory_order_acquire);
     }
 
-    current_val->parent.store(user, std::memory_order_relaxed);
+    /// Release: see `setParent`. `user` is typically a just-constructed `ProcessListForUser`'s
+    /// `user_performance_counters`, published into a chain shared with already-running threads.
+    current_val->parent.store(user, std::memory_order_release);
 }
 
 void Counters::setTraceAllProfileEvents()
@@ -1950,7 +1955,9 @@ void Counters::increment(Event event, Count amount)
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
 
-        current = current->parent;
+        /// Acquire: pairs with the release store in `setParent`/`setUserCounters`, so a
+        /// freshly published parent is fully constructed before it is dereferenced.
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 
     if (unlikely(send_to_trace_log))
@@ -1964,7 +1971,8 @@ void Counters::incrementNoTrace(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, cpu);
-        current = current->parent;
+        /// Acquire: see `increment`.
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 
@@ -1978,7 +1986,8 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     do
     {
         current->fetchAdd(event, amount, -1);
-        current = current->parent;
+        /// Acquire: see `increment`.
+        current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }
 

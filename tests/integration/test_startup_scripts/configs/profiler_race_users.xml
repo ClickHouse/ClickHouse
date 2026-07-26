@@ -1,0 +1,21 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Sample the startup thread every 1 ms so the profiler signal lands while the loader
+                 thread publishes the new per-user Counters. -->
+            <query_profiler_real_time_period_ns>1000000</query_profiler_real_time_period_ns>
+        </default>
+    </profiles>
+    <users>
+        <default>
+            <access_management>1</access_management>
+        </default>
+        <!-- A user distinct from `default`, so the dictionary source query forces a first-time
+             `ProcessListForUser` allocation on the loader thread. -->
+        <dict_source_user>
+            <password></password>
+            <profile>default</profile>
+            <networks><ip>::/0</ip></networks>
+        </dict_source_user>
+    </users>
+</clickhouse>

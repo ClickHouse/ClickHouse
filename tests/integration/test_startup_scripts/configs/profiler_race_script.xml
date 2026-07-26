@@ -1,0 +1,26 @@
+<clickhouse>
+    <!--
+        The startup script creates a non-lazy dictionary, so `registerStorageDictionary` blocks the
+        main thread in `ExternalLoader::LoadingDispatcher::loadImpl` (a condition_variable wait) while
+        the loader thread, sharing the main thread's ThreadGroup, runs the source query as
+        `dict_source_user`. That source query performs the first `ProcessList::insert` for that user,
+        which constructs a `ProcessListForUser` and publishes its embedded `user_performance_counters`
+        into the shared Counters chain the main thread's profiler signal handler is walking.
+    -->
+    <startup_scripts>
+        <scripts>
+            <query>
+                CREATE OR REPLACE DICTIONARY profiler_race_dict
+                (
+                    `key` String,
+                    `value` String
+                )
+                PRIMARY KEY key
+                SOURCE(CLICKHOUSE(USER 'dict_source_user' PASSWORD '' QUERY `SELECT toString(number) AS key, toString(number) AS value FROM numbers(3000000)`))
+                LIFETIME(MIN 0 MAX 0)
+                LAYOUT(COMPLEX_KEY_HASHED)
+                SETTINGS(dictionary_lazy_load = 0);
+            </query>
+        </scripts>
+    </startup_scripts>
+</clickhouse>

@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -23,10 +25,20 @@ bad = cluster.add_instance(
     main_configs=["configs/bad_script.xml"],
     stay_alive=True,
 )
+profiler_race = cluster.add_instance(
+    "profiler_race",
+    main_configs=["configs/profiler_race_script.xml"],
+    user_configs=["configs/profiler_race_users.xml"],
+    stay_alive=True,
+)
 
 # Values of the StartupScriptsExecutionState metric.
 STATE_SUCCESS = 1
 STATE_FAILURE = 2
+
+# How many times the profiler-race instance is restarted. Each restart is one chance for the
+# profiler signal to land while the loader thread publishes the new per-user Counters.
+PROFILER_RACE_RESTARTS = 12
 
 
 @pytest.fixture(scope="module")
@@ -132,3 +144,65 @@ def test_reload_config_does_not_rerun_startup_scripts(start_cluster):
     assert get_execution_state(node) == STATE_SUCCESS
     node.query("SYSTEM RELOAD CONFIG")
     assert get_execution_state(node) == STATE_SUCCESS
+
+
+def restart_profiler_race_instance():
+    # `stop_clickhouse()` finds the process with `ps -C clickhouse`, which matches on `comm`. The
+    # server re-execs itself for `--daemon`, so its `comm` is `exe` and `ps -C clickhouse` finds
+    # nothing: the helper would log "already stopped" and skip the restart, leaving the test
+    # asserting nothing. Stop it by pid instead, then wait for the process to be gone.
+    pid = profiler_race.get_process_pid("clickhouse")
+    assert pid is not None, "server is not running, cannot restart it"
+    profiler_race.exec_in_container(
+        ["bash", "-c", f"kill -9 {pid}"], user="root", nothrow=True
+    )
+    for _ in range(120):
+        if profiler_race.get_process_pid("clickhouse") is None:
+            break
+        time.sleep(0.5)
+    assert profiler_race.get_process_pid("clickhouse") is None, "server did not stop"
+    profiler_race.start_clickhouse(start_wait_sec=180)
+
+
+def test_profiler_vs_processlist_publication(start_cluster):
+    # Guard against the test silently degenerating into a no-op: every iteration must actually run
+    # the startup script, which is what puts the loader thread and the profiled startup thread on
+    # the same Counters chain.
+    def dictionary_source_logins():
+        # The server rotates its log on open, so each restart leaves a compressed
+        # clickhouse-server.log.N.gz. Count over all of them (zcat -f handles both the plain
+        # current log and the gzipped rotations).
+        return int(
+            profiler_race.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "zcat -f /var/log/clickhouse-server/clickhouse-server.log* "
+                    "| grep -ac \"Authenticating user 'dict_source_user'\" || true",
+                ],
+                user="root",
+            ).strip()
+            or 0
+        )
+
+    for _ in range(PROFILER_RACE_RESTARTS):
+        restart_profiler_race_instance()
+        assert get_execution_state(profiler_race) == STATE_SUCCESS
+
+    # Log rotation keeps a bounded number of files, so this cannot be compared against the restart
+    # count directly. What matters is that the startup script really ran on the restarts that are
+    # still on disk: if it had silently stopped running, this would be 0 and the test would be
+    # asserting nothing.
+    assert dictionary_source_logins() > 0, (
+        "the dictionary source query never ran, so the startup path this test is meant to "
+        "exercise was not exercised at all"
+    )
+
+    # A ThreadSanitizer report here means the loader thread published the freshly constructed
+    # per-user Counters into the shared chain without ordering, while the profiler signal handler
+    # on the startup thread was walking it.
+    for filename in ("stderr.log", "clickhouse-server.err.log"):
+        report = profiler_race.grep_in_log(
+            "ThreadSanitizer: data race", from_host=True, filename=filename, after=40
+        )
+        assert not report, f"ThreadSanitizer report in {filename}:\n{report}"
