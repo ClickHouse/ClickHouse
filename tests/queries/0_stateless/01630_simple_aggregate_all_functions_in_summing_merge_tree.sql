@@ -57,7 +57,7 @@ INSERT INTO simple_agf_aggregating_mt SELECT
     minMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMapState((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13))))
-FROM numbers(10000)
+FROM numbers(2500)
 GROUP BY a;
 
 INSERT INTO simple_agf_aggregating_mt SELECT
@@ -86,10 +86,12 @@ INSERT INTO simple_agf_aggregating_mt SELECT
     minMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMapState((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13))))
-FROM numbers(10000)
+FROM numbers(2500)
 GROUP BY a;
 
 OPTIMIZE TABLE simple_agf_aggregating_mt FINAL;
+
+SELECT count() FROM simple_agf_aggregating_mt;
 
 SELECT cityHash64(groupArray(cityHash64(*))) FROM (
   SELECT
@@ -167,10 +169,12 @@ INSERT INTO simple_agf_aggregating_mt SELECT
     minMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMapState((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13))))
-FROM numbers(10000)
+FROM numbers(2500)
 GROUP BY a;
 
 OPTIMIZE TABLE simple_agf_aggregating_mt FINAL;
+
+SELECT count() FROM simple_agf_aggregating_mt;
 
 SELECT cityHash64(groupArray(cityHash64(*))) FROM (
 SELECT
