@@ -28,7 +28,19 @@ mergeTreeTextIndex(database, table, index_name)
 
 ## Returned value {#returned_value}
 
-A table object with tokens and their posting list metadata.
+A table object with tokens and their posting list metadata:
+
+| Column                    | Description                                                                                                                                                       |
+|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `part_name`               | The name of the data part.                                                                                                                                        |
+| `token`                   | The token stored in the dictionary.                                                                                                                               |
+| `dictionary_compression`  | The format of the dictionary block: `raw` or `front_coded`.                                                                                                       |
+| `cardinality`             | The number of values in the posting list. For coarse posting lists it is the number of stored buckets, not rows.                                                  |
+| `coarse_level`            | The resolution of a coarse posting list: stored values are `row >> coarse_level` (see the `coarse_granularity` index argument). `0` for exact posting lists.      |
+| `num_posting_blocks`      | The number of blocks of the posting list.                                                                                                                         |
+| `has_embedded_postings`   | Whether the posting list is embedded into the dictionary block.                                                                                                   |
+| `has_raw_postings`        | Whether the posting list is stored as raw values instead of a roaring bitmap.                                                                                     |
+| `has_compressed_postings` | Whether the posting list is compressed with a posting list codec.                                                                                                 |
 
 ## Usage Example {#usage-example}
 
@@ -49,10 +61,10 @@ SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s);
 ```
 
 ```text title="Response"
-   ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
-1. │ all_1_1_0 │ apple  │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-2. │ all_1_1_0 │ banana │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-3. │ all_2_2_0 │ cherry │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-4. │ all_2_2_0 │ date   │ front_coded            │         500 │                  1 │                     0 │                0 │                       0 │
-   └───────────┴────────┴────────────────────────┴─────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
+   ┌─part_name─┬─token──┬─dictionary_compression─┬─cardinality─┬─coarse_level─┬─num_posting_blocks─┬─has_embedded_postings─┬─has_raw_postings─┬─has_compressed_postings─┐
+1. │ all_1_1_0 │ apple  │ front_coded            │         500 │            0 │                  1 │                     0 │                0 │                       0 │
+2. │ all_1_1_0 │ banana │ front_coded            │         500 │            0 │                  1 │                     0 │                0 │                       0 │
+3. │ all_2_2_0 │ cherry │ front_coded            │         500 │            0 │                  1 │                     0 │                0 │                       0 │
+4. │ all_2_2_0 │ date   │ front_coded            │         500 │            0 │                  1 │                     0 │                0 │                       0 │
+   └───────────┴────────┴────────────────────────┴─────────────┴──────────────┴────────────────────┴───────────────────────┴──────────────────┴─────────────────────────┘
 ```

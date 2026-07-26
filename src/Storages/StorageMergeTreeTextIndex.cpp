@@ -101,6 +101,12 @@ protected:
                     for (size_t i = 0; i < block_size; ++i)
                         data.push_back(static_cast<UInt64>(dict_block->token_infos[i].postings_cardinality));
                 }
+                else if (column_name == "coarse_level")
+                {
+                    auto & data = assert_cast<ColumnUInt64 &>(*result_columns[pos]).getData();
+                    for (size_t i = 0; i < block_size; ++i)
+                        data.push_back(static_cast<UInt64>(dict_block->token_infos[i].coarse_level));
+                }
                 else if (column_name == "part_name")
                 {
                     auto column = col_with_type.type->createColumnConst(block_size, current_part_name);
