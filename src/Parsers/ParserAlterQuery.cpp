@@ -155,6 +155,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /* allow_empty = */ false);
 
     ParserExpressionList parser_add_enum_values(false);
+    ParserExpressionList parser_lookup_index_columns(false);
     ParserSelectWithUnionQuery select_p;
     ParserSQLSecurity sql_security_p;
     ParserRefreshStrategy refresh_p;
@@ -333,7 +334,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_not_exists.ignore(pos, expected))
                     command->if_not_exists = true;
 
-                if (!parser_idx_decl.parse(pos, command_index_decl, expected))
+                if (parser_opening_round_bracket.ignore(pos, expected))
+                {
+                    if (!parser_lookup_index_columns.parse(pos, command_index_decl, expected)
+                        || !parser_closing_round_bracket.ignore(pos, expected))
+                        return false;
+                }
+                else if (!parser_idx_decl.parse(pos, command_index_decl, expected))
                     return false;
 
                 if (s_first.ignore(pos, expected))
@@ -351,7 +358,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
 
-                if (!parser_name.parse(pos, command_index, expected))
+                if (parser_opening_round_bracket.ignore(pos, expected))
+                {
+                    if (!parser_lookup_index_columns.parse(pos, command_index_decl, expected)
+                        || !parser_closing_round_bracket.ignore(pos, expected))
+                        return false;
+                }
+                else if (!parser_name.parse(pos, command_index, expected))
                     return false;
 
                 command->type = ASTAlterCommand::DROP_INDEX;

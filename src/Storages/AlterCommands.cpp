@@ -325,6 +325,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.index_decl = command_ast->index_decl->clone();
+        if (command_ast->index_decl->as<ASTExpressionList>())
+        {
+            command.type = AlterCommand::ADD_LOOKUP_INDEX;
+            command.lookup_index = command_ast->index_decl->clone();
+            command.if_not_exists = command_ast->if_not_exists;
+            return command;
+        }
         command.type = AlterCommand::ADD_INDEX;
 
         const auto & ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration &>();
@@ -432,6 +439,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
+        if (command_ast->index_decl && command_ast->index_decl->as<ASTExpressionList>())
+        {
+            command.type = AlterCommand::DROP_LOOKUP_INDEX;
+            command.lookup_index = command_ast->index_decl->clone();
+            command.if_exists = command_ast->if_exists;
+            return command;
+        }
         command.type = AlterCommand::DROP_INDEX;
         command.index_name = command_ast->index->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
@@ -804,6 +818,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             insert_it,
             IndexDescription::getIndexFromAST(
                 index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+    }
+    else if (type == ADD_LOOKUP_INDEX)
+    {
+        auto indexes = metadata.lookup_indexes
+            ? metadata.lookup_indexes->clone()->as<ASTExpressionList &>().clone()
+            : make_intrusive<ASTExpressionList>();
+        indexes->children.push_back(lookup_index->clone());
+        metadata.lookup_indexes = std::move(indexes);
     }
     else if (type == DROP_INDEX)
     {

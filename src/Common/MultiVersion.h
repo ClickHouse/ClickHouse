@@ -76,6 +76,13 @@ public:
         current_version = std::move(version);
     }
 
+    /// Update with an already allocated version. Useful when publication must not allocate.
+    void setAllocated(Version value)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        current_version = std::move(value);
+    }
+
 private:
     mutable std::mutex mutex;
     Version current_version;

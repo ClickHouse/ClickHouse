@@ -62,6 +62,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
+    , lookup_indexes(other.lookup_indexes ? other.lookup_indexes->clone() : nullptr)
     , select(other.select)
     , refresh(other.refresh ? other.refresh->clone() : nullptr)
     , definer(other.definer)
@@ -103,6 +104,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
         settings_changes = other.settings_changes->clone();
     else
         settings_changes.reset();
+    lookup_indexes = other.lookup_indexes ? other.lookup_indexes->clone() : nullptr;
     select = other.select;
     refresh = other.refresh ? other.refresh->clone() : nullptr;
     definer = other.definer;

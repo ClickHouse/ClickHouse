@@ -25,12 +25,10 @@ CREATE TABLE latest_state
 )
 ENGINE = OverwriteCache(version)
 KEYS (website_type, user_id, tag)
+INDEX (tag), (website_type), (website_type, tag)
 SETTINGS
     max_memory_bytes = 1073741824,
-    equal_version_tiebreak_columns = 'source_sequence',
-    secondary_index_columns = 'tag',
-    secondary_index_segment_column = 'website_type',
-    max_secondary_index_rows = 1000000;
+    equal_version_tiebreak_columns = 'source_sequence';
 ```
 
 `OverwriteCache` requires one engine argument identifying the version column and a nonempty storage-level `KEYS (...)` clause. The version column cannot also be a key column.
@@ -49,30 +47,48 @@ Conflict and memory-limit validation occurs before publishing mutations from an 
 
 ## Concurrent publication {#concurrent-publication}
 
-`OverwriteCache` addresses primary keys and secondary postings through fixed hash shards. Existing rows use a fixed set of striped row locks rather than one lock per row. This bounds lock memory independently of the number of stored keys.
+`OverwriteCache` addresses primary keys and lookup-index postings through fixed hash shards. Existing rows use a fixed set of striped row locks rather than one lock per row. This bounds lock memory independently of the number of stored keys.
 
 An inserted block is prepared as a pending publication. Readers continue using the previously committed rows while the writer installs pending rows across the affected shards. One atomic generation change then makes the complete block visible. A query captures one generation, so it does not mix rows from before and after the same publication.
 
 The atomicity boundary is one input block received by the table-engine sink. A SQL `INSERT` can be divided into multiple input blocks by its pipeline; earlier blocks remain committed if a later block is rejected. Buffering a complete statement would make publication size unbounded and is intentionally not part of this in-memory engine's contract.
 
-Writers are serialized, but a large replacement publication does not take an engine-wide exclusive reader lock. New primary keys can briefly contend with readers of the same primary or posting shard. Large secondary-index results can still require substantial traversal and result-materialization work; sharding does not make an unbounded secondary result inexpensive.
+## Memory representation {#memory-representation}
+
+Committed payloads are stored in immutable native column segments. A segment preserves compact column representations such as `LowCardinality` dictionaries and can use ClickHouse's in-memory column compression. Rows retain only a segment reference and row offset; serialized primary and lookup keys used while preparing an insert are not retained in the row payload.
+
+Lookup postings store compact numeric entry identifiers instead of owning row pointers. They use `UInt32` identifiers while the ID range permits and upgrade to `UInt64` when required. Replacing a winner does not change postings because every indexed column must belong to the immutable `KEYS` tuple. When replacements leave at least half of a segment dead, its remaining live rows are compacted into a new immutable segment. Fully dead segments are reclaimed after readers of the previous publication epoch have drained.
+
+Writers are serialized, but a large replacement publication does not take an engine-wide exclusive reader lock. New primary keys can briefly contend with readers of the same primary or posting shard. Large lookup-index results can still require substantial traversal work; sharding does not make an unbounded result inexpensive.
+
+## Lookup indexes {#lookup-indexes}
+
+The complete `KEYS` tuple always has a primary lookup and must not be repeated in `INDEX`. Each `INDEX (...)` tuple creates one exact lookup family. A composite family does not implicitly create indexes for its individual columns.
+
+When no exact composite family matches a query, `OverwriteCache` can intersect multiple declared families. Within one family, `IN` values are combined as a union; families constrained by `AND` are intersected smallest-first. For example, `INDEX (website_type), (tag)` supports predicates on either column and their intersection, while `INDEX (website_type, tag)` avoids that intersection for the hot composite path.
+
+An index can be added to an existing table without exposing a partial backfill:
+
+```sql
+ALTER TABLE latest_state ADD INDEX (user_id);
+ALTER TABLE latest_state DROP INDEX (user_id);
+```
+
+An added index is privately populated and becomes available to new readers only after atomic publication. If population or metadata persistence fails, the previous index catalog remains active. Dropping an index atomically publishes a catalog without that family; readers that already planned against the previous catalog retain its immutable index generation until they finish.
 
 ## Settings {#settings}
 
-- `max_memory_bytes` — Required hard admission limit for engine-accounted memory. It must be greater than zero.
+- `max_memory_bytes` — Optional hard admission limit for engine-accounted memory. If omitted, allocations remain subject to the normal ClickHouse memory tracker and query limits.
 - `equal_version_tiebreak_columns` — Optional comma-separated column names used to select a deterministic winner when versions are equal. These columns cannot be key or version columns.
-- `secondary_index_columns` — Optional comma-separated key columns used for indexed equality and `IN` reads.
-- `secondary_index_segment_column` — Optional key column prepended to the configured secondary index.
-- `max_secondary_index_rows` — Required when a secondary index is configured. A lookup is rejected before returning more candidate rows than this value.
 
-Column names in each list must be unique. Every secondary-index column must be present in `KEYS (...)`.
+Lookup indexes are declared only through `INDEX (...)`. The legacy settings `max_index_probe_rows`, `max_index_result_rows`, `index_each_key_column`, `secondary_index_columns`, `secondary_index_segment_column`, and `max_secondary_index_rows` are not supported. Every lookup-index column must occur in `KEYS`, and duplicate tuples are rejected.
 
 ## Reading rows {#reading-rows}
 
 Normal `SELECT` queries must contain either:
 
 - equality or `IN` predicates that fully specify all columns in `KEYS (...)`; or
-- equality or `IN` predicates on all `secondary_index_columns`, optionally narrowed by `secondary_index_segment_column`.
+- equality or `IN` predicates covered by one or more declared `INDEX (...)` tuples.
 
 Other predicates can be applied after an indexed lookup, but they cannot be the only access path. Queries that require an unrestricted or partial-key scan are rejected.
 

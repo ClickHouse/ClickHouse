@@ -6,8 +6,10 @@
 #include <Interpreters/IKeyValueEntity.h>
 #include <Storages/IStorage.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -25,27 +27,70 @@ struct OverwriteCacheSettings
 {
     UInt64 max_memory_bytes = 0;
     Names equal_version_tiebreak_columns;
-    Names secondary_index_columns;
-    std::optional<String> secondary_index_segment_column;
-    UInt64 max_secondary_index_rows = 0;
 };
 
 class StorageOverwriteCache final : public IStorage, public IKeyValueEntity
 {
 public:
     using EntryId = UInt64;
+    struct RowSegment
+    {
+        Columns columns;
+        UInt64 allocated_bytes = 0;
+        std::atomic<UInt64> live_rows{0};
+    };
 
     struct RowData
     {
-        std::vector<Field> values;
-        String primary_key;
-        String secondary_key;
-        String segmented_secondary_key;
-        UInt64 accounted_bytes = 0;
+        std::shared_ptr<RowSegment> segment;
+        UInt32 segment_row = 0;
     };
 
-    using RowDataPtr = std::shared_ptr<const RowData>;
-    using RowDataPtrs = std::vector<RowDataPtr>;
+    struct CandidateRow
+    {
+        UInt32 source_row = 0;
+        String encoded_values;
+        std::vector<UInt32> value_offsets;
+        String primary_key;
+        std::vector<String> lookup_keys;
+    };
+
+    using RowDataPtr = std::optional<RowData>;
+    using RowDataPtrs = std::vector<RowData>;
+    class ReadGuard
+    {
+    public:
+        explicit ReadGuard(const StorageOverwriteCache & storage_);
+        ~ReadGuard();
+
+        UInt64 generation() const { return snapshot_generation; }
+
+    private:
+        const StorageOverwriteCache & storage;
+        UInt8 epoch = 0;
+        UInt64 snapshot_generation = 0;
+    };
+    using ReadGuardPtr = std::shared_ptr<ReadGuard>;
+    struct ReadResult
+    {
+        ReadGuardPtr guard;
+        RowDataPtrs rows;
+    };
+    struct LookupIndex;
+    using LookupIndexPtr = std::shared_ptr<LookupIndex>;
+    struct LookupIndexSnapshot
+    {
+        ReadGuardPtr guard;
+        Names columns;
+        DataTypes types;
+        LookupIndexPtr index;
+    };
+    struct LookupRequest
+    {
+        ReadGuardPtr guard;
+        LookupIndexPtr index;
+        std::vector<String> serialized_keys;
+    };
 
     StorageOverwriteCache(
         const StorageID & table_id_,
@@ -54,6 +99,8 @@ public:
         String comment_,
         String version_column_,
         Names key_columns_,
+        std::vector<Names> lookup_indexes_,
+        ASTPtr lookup_indexes_ast_,
         OverwriteCacheSettings settings_,
         ASTPtr settings_changes_);
 
@@ -80,8 +127,9 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         TableExclusiveLockHolder & table_lock_holder) override;
-
     void drop() override;
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & lock_holder) override;
 
     std::optional<UInt64> totalRows(ContextPtr) const override;
     std::optional<UInt64> totalBytes(ContextPtr) const override;
@@ -96,46 +144,25 @@ public:
 
     const Names & getKeyColumns() const { return key_columns; }
     const DataTypes & getKeyColumnTypes() const { return key_column_types; }
-    const Names & getSecondaryIndexColumns() const { return settings.secondary_index_columns; }
-    const DataTypes & getSecondaryIndexColumnTypes() const { return secondary_index_column_types; }
-    const Names & getSegmentedSecondaryIndexColumns() const { return segmented_secondary_index_columns; }
-    const DataTypes & getSegmentedSecondaryIndexColumnTypes() const { return segmented_secondary_index_column_types; }
-    UInt64 getMaxSecondaryIndexRows() const { return settings.max_secondary_index_rows; }
+    std::vector<LookupIndexSnapshot> getLookupIndexSnapshot() const;
 
-    RowDataPtrs getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
-    RowDataPtrs getRowsForSecondaryKeys(const std::vector<String> & serialized_keys) const;
-    RowDataPtrs getRowsForSegmentedSecondaryKeys(const std::vector<String> & serialized_keys) const;
+    ReadResult getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
+    ReadResult getRowsForLookupRequests(const std::vector<LookupRequest> & requests) const;
     size_t getColumnPosition(const String & column_name) const;
+    void insertValueIntoColumn(const RowData & row, size_t position, IColumn & column) const;
 
     void insertBlock(const Block & block);
 
 private:
     struct Candidate;
 
-    enum class PublicationState : UInt8
-    {
-        Preparing,
-        Committed,
-        Aborted,
-    };
-
-    struct Publication
-    {
-        explicit Publication(UInt64 generation_) : generation(generation_) {}
-
-        const UInt64 generation;
-        std::atomic<PublicationState> state = PublicationState::Preparing;
-    };
-
     struct Entry
     {
-        EntryId id = 0;
-        RowDataPtr committed;
-        RowDataPtr pending;
-        std::shared_ptr<Publication> pending_publication;
+        std::optional<RowData> committed;
+        std::unique_ptr<RowData> pending;
+        UInt64 pending_generation = 0;
     };
 
-    using EntryPtr = std::shared_ptr<Entry>;
 
     static constexpr size_t primary_shard_count = 256;
     static constexpr size_t posting_shard_count = 256;
@@ -144,47 +171,123 @@ private:
     struct PrimaryShard
     {
         mutable std::shared_mutex mutex;
-        std::unordered_map<String, EntryPtr> entries;
+        std::unordered_map<String, EntryId> entries;
     };
 
+public:
     struct PostingShard
     {
+        struct Posting
+        {
+            size_t size() const { return wide.empty() ? narrow.size() : wide.size(); }
+
+            void reserve(size_t capacity, EntryId max_entry_id)
+            {
+                if (wide.empty() && max_entry_id > std::numeric_limits<UInt32>::max())
+                {
+                    wide.reserve(capacity);
+                    wide.assign(narrow.begin(), narrow.end());
+                    std::vector<UInt32>().swap(narrow);
+                }
+                else if (wide.empty())
+                    narrow.reserve(capacity);
+                else
+                    wide.reserve(capacity);
+            }
+
+            void push_back(EntryId entry_id)
+            {
+                if (wide.empty() && entry_id <= std::numeric_limits<UInt32>::max())
+                {
+                    narrow.push_back(static_cast<UInt32>(entry_id));
+                    return;
+                }
+                if (wide.empty())
+                {
+                    wide.reserve(narrow.size() + 1);
+                    wide.assign(narrow.begin(), narrow.end());
+                    std::vector<UInt32>().swap(narrow);
+                }
+                wide.push_back(entry_id);
+            }
+
+            void resize(size_t new_size)
+            {
+                if (wide.empty())
+                    narrow.resize(new_size);
+                else
+                    wide.resize(new_size);
+            }
+
+            template <typename Callback>
+            void forEach(Callback && callback) const
+            {
+                if (wide.empty())
+                {
+                    for (const auto entry_id : narrow)
+                        callback(static_cast<EntryId>(entry_id));
+                }
+                else
+                {
+                    for (const auto entry_id : wide)
+                        callback(entry_id);
+                }
+            }
+
+            bool contains(EntryId entry_id) const
+            {
+                if (wide.empty())
+                {
+                    return entry_id <= std::numeric_limits<UInt32>::max()
+                        && std::ranges::binary_search(narrow, static_cast<UInt32>(entry_id));
+                }
+                return std::ranges::binary_search(wide, entry_id);
+            }
+
+            UInt64 allocatedBytes() const
+            {
+                return static_cast<UInt64>(narrow.capacity()) * sizeof(UInt32)
+                    + static_cast<UInt64>(wide.capacity()) * sizeof(EntryId);
+            }
+
+            std::vector<UInt32> narrow;
+            std::vector<EntryId> wide;
+        };
+
         mutable std::shared_mutex mutex;
-        std::unordered_map<String, std::vector<EntryPtr>> postings;
+        std::unordered_map<String, Posting> postings;
     };
 
-    class ReadGuard
+
+    struct LookupIndex
     {
-    public:
-        explicit ReadGuard(const StorageOverwriteCache & storage_);
-        ~ReadGuard();
-
-        UInt64 generation() const { return snapshot_generation; }
-
-    private:
-        const StorageOverwriteCache & storage;
-        UInt8 epoch = 0;
-        UInt64 snapshot_generation = 0;
+        std::array<PostingShard, posting_shard_count> shards;
+        std::atomic<UInt64> accounted_bytes = 0;
     };
 
+private:
     String serializeColumns(const Block & block, size_t row, const std::vector<size_t> & positions) const;
-    String serializeFields(const std::vector<Field> & fields, const std::vector<size_t> & positions) const;
-    int compareWinner(const RowData & lhs, const RowData & rhs) const;
-    bool rowsEqual(const RowData & lhs, const RowData & rhs) const;
-    UInt64 estimateRowBytes(const Block & block, size_t row, const RowData & data) const;
+    String serializeRowColumns(const RowData & row, const std::vector<size_t> & positions) const;
+    Field getRowField(const RowData & row, size_t position) const;
+    Field getCandidateField(const CandidateRow & row, size_t position) const;
+    int compareWinner(const CandidateRow & lhs, const CandidateRow & rhs) const;
+    int compareWinner(const CandidateRow & lhs, const RowData & rhs) const;
+    bool rowsEqual(const CandidateRow & lhs, const RowData & rhs) const;
+
     size_t primaryShardIndex(const String & key) const;
     size_t postingShardIndex(const String & key) const;
     size_t rowLockIndex(EntryId entry_id) const;
-    EntryPtr findEntry(const String & key) const;
-    RowDataPtr resolveEntry(const EntryPtr & entry, UInt64 snapshot_generation) const;
-    RowDataPtrs getRowsForPostingKeys(
-        const std::vector<String> & serialized_keys,
-        const std::array<PostingShard, posting_shard_count> & index,
-        const char * index_name) const;
+    std::optional<EntryId> findEntry(const String & key) const;
+    RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
+    std::vector<EntryId> getPostingIds(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
+    UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
+    void intersectPostingIds(
+        std::vector<EntryId> & entry_ids, const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
     void clearData();
 
     const String version_column;
     const Names key_columns;
+    std::vector<Names> lookup_index_columns;
     const OverwriteCacheSettings settings;
 
     Block sample_block;
@@ -195,16 +298,15 @@ private:
     DataTypes key_column_types;
     size_t version_position = 0;
     std::vector<size_t> tiebreak_positions;
-    std::vector<size_t> secondary_index_positions;
-    DataTypes secondary_index_column_types;
-    Names segmented_secondary_index_columns;
-    std::vector<size_t> segmented_secondary_index_positions;
-    DataTypes segmented_secondary_index_column_types;
+    std::vector<std::vector<size_t>> lookup_index_positions;
+    std::vector<DataTypes> lookup_index_column_types;
 
     mutable std::mutex writer_mutex;
+    mutable std::shared_mutex lookup_catalog_mutex;
     std::array<PrimaryShard, primary_shard_count> primary_shards;
-    std::array<PostingShard, posting_shard_count> secondary_shards;
-    std::array<PostingShard, posting_shard_count> segmented_secondary_shards;
+    std::vector<LookupIndexPtr> lookup_indexes;
+    mutable std::shared_mutex entries_by_id_mutex;
+    std::vector<Entry> entries_by_id;
     mutable std::array<std::mutex, row_lock_count> row_mutexes;
     EntryId next_entry_id = 1;
 

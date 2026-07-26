@@ -602,12 +602,14 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_unique_key(Keyword::UNIQUE_KEY);
     ParserKeyword s_keys(Keyword::KEYS);
+    ParserKeyword s_index(Keyword::INDEX);
 
     ParserIdentifierWithOptionalParameters ident_with_optional_params_p;
     ParserExpression expression_p;
     ParserExpressionList expression_list_p(false);
     ParserToken opening_round_bracket_p(TokenType::OpeningRoundBracket);
     ParserToken closing_round_bracket_p(TokenType::ClosingRoundBracket);
+    ParserToken comma_p(TokenType::Comma);
     ParserStorageOrderByClause order_by_p(/*allow_order_*/ true);
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserTTLExpressionList parser_ttl_list;
@@ -621,6 +623,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr ttl_table;
     ASTPtr unique_key;
     ASTPtr keys;
+    ASTPtr lookup_indexes;
     ASTPtr settings;
 
     bool storage_like = false;
@@ -688,6 +691,24 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
+        if (engine_kind == TABLE_ENGINE && !lookup_indexes && s_index.ignore(pos, expected))
+        {
+            auto indexes = make_intrusive<ASTExpressionList>();
+            while (true)
+            {
+                ASTPtr index_columns;
+                if (!opening_round_bracket_p.ignore(pos, expected) || !expression_list_p.parse(pos, index_columns, expected)
+                    || !closing_round_bracket_p.ignore(pos, expected))
+                    return false;
+                indexes->children.emplace_back(std::move(index_columns));
+                if (!comma_p.ignore(pos, expected))
+                    break;
+            }
+            lookup_indexes = std::move(indexes);
+            storage_like = true;
+            continue;
+        }
+
         if (!sample_by && s_sample_by.ignore(pos, expected))
         {
             if (expression_p.parse(pos, sample_by, expected))
@@ -747,6 +768,7 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// in `executeQueryImpl` with `Inconsistent AST formatting`.
     storage->set(storage->engine, engine);
     storage->set(storage->keys, keys);
+    storage->set(storage->lookup_indexes, lookup_indexes);
     storage->set(storage->partition_by, partition_by);
     storage->set(storage->primary_key, primary_key);
     storage->set(storage->order_by, order_by);

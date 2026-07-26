@@ -12,12 +12,10 @@ CREATE TABLE overwrite_cache
 )
 ENGINE = OverwriteCache(version)
 KEYS (website_type, user_id, tag)
+INDEX (tag), (website_type), (website_type, tag)
 SETTINGS
     max_memory_bytes = 10000000,
-    equal_version_tiebreak_columns = 'tie',
-    secondary_index_columns = 'tag',
-    secondary_index_segment_column = 'website_type',
-    max_secondary_index_rows = 2;
+    equal_version_tiebreak_columns = 'tie';
 
 SHOW CREATE TABLE overwrite_cache FORMAT TSVRaw;
 
@@ -62,9 +60,21 @@ SELECT payload FROM overwrite_cache WHERE (1, 100, 'A') = (website_type, user_id
 SELECT payload FROM overwrite_cache WHERE (website_type, user_id, tag) IN ((1, 100, 'A')) AND length(payload) = 10;
 SELECT payload FROM overwrite_cache WHERE (website_type, user_id, tag) IN ((1, 100, 'A')) AND length(payload) = 999;
 SELECT payload FROM overwrite_cache WHERE user_id = 100; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE overwrite_cache ADD INDEX (user_id);
+ALTER TABLE overwrite_cache ADD INDEX IF NOT EXISTS (user_id);
+ALTER TABLE overwrite_cache ADD INDEX (user_id); -- { serverError BAD_ARGUMENTS }
+SELECT payload FROM overwrite_cache WHERE user_id = 100;
+SHOW CREATE TABLE overwrite_cache FORMAT TSVRaw;
+ALTER TABLE overwrite_cache DROP INDEX (user_id);
+ALTER TABLE overwrite_cache DROP INDEX IF EXISTS (user_id);
+ALTER TABLE overwrite_cache DROP INDEX (user_id); -- { serverError BAD_ARGUMENTS }
+SELECT payload FROM overwrite_cache WHERE user_id = 100; -- { serverError BAD_ARGUMENTS }
+SHOW CREATE TABLE overwrite_cache FORMAT TSVRaw;
 SELECT count() FROM overwrite_cache WHERE website_type = 1 AND user_id IN tuple() AND tag = 'A';
 SELECT count() FROM overwrite_cache WHERE tag IN tuple();
 SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 300 AND tag = 'C';
+SELECT payload FROM overwrite_cache WHERE tag = 'A' OR payload = 'site-two'; -- { serverError BAD_ARGUMENTS }
+SELECT payload FROM overwrite_cache WHERE user_id > 100; -- { serverError BAD_ARGUMENTS }
 
 SELECT overwriteCacheGet(
     'overwrite_cache', 'payload', toUInt8(1), toUInt64(100), 'A');
@@ -109,8 +119,8 @@ SYSTEM DISABLE FAILPOINT overwrite_cache_throw_during_publish;
 SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 100 AND tag = 'A';
 SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 300 AND tag = 'C';
 SELECT count() FROM overwrite_cache; -- { serverError BAD_ARGUMENTS }
-INSERT INTO overwrite_cache VALUES (1, 201, 'A', 1, 1, 'index-limit');
-SELECT payload FROM overwrite_cache WHERE tag = 'A'; -- { serverError MEMORY_LIMIT_EXCEEDED }
+INSERT INTO overwrite_cache VALUES (1, 201, 'A', 1, 1, 'indexed-row');
+SELECT payload FROM overwrite_cache WHERE tag = 'A' ORDER BY user_id;
 SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 201 AND tag = 'A';
 
 DETACH TABLE overwrite_cache;
@@ -138,13 +148,21 @@ SELECT payload FROM overwrite_cache_small WHERE key = 1;
 
 TRUNCATE TABLE overwrite_cache_small;
 SELECT payload FROM overwrite_cache_small WHERE key = 1;
+SELECT total_rows, total_bytes
+FROM system.tables
+WHERE database = currentDatabase() AND name = 'overwrite_cache_small';
 
 CREATE TABLE bad_keys (key UInt64, version UInt64) ENGINE = Memory KEYS (key); -- { serverError BAD_ARGUMENTS }
 CREATE TABLE bad_keys_syntax (key UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS key SETTINGS max_memory_bytes = 10000; -- { clientError SYNTAX_ERROR }
-CREATE TABLE missing_keys (key UInt64, version UInt64) ENGINE = OverwriteCache(version) SETTINGS max_memory_bytes = 10000; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE version_in_keys (key UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, version) SETTINGS max_memory_bytes = 10000; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE bad_secondary (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key) SETTINGS max_memory_bytes = 10000, secondary_index_columns = 'other', max_secondary_index_rows = 10; -- { serverError BAD_ARGUMENTS }
-CREATE TABLE duplicate_secondary_segment (key UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key) SETTINGS max_memory_bytes = 10000, secondary_index_columns = 'key', secondary_index_segment_column = 'key', max_secondary_index_rows = 10; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE missing_keys (key UInt64, version UInt64) ENGINE = OverwriteCache(version); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE version_in_keys (key UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, version); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad_lookup_column (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key) INDEX (other); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE duplicate_lookup (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, other) INDEX (key), (key); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE duplicate_lookup_column (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, other) INDEX (key, key); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE canonical_duplicate_lookup (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, other) INDEX (key, other), (other, key); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE primary_lookup (key UInt64, other UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key, other) INDEX (key, other); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE bad_lookup_engine (key UInt64, version UInt64) ENGINE = Memory INDEX (key); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE old_lookup_settings (key UInt64, version UInt64) ENGINE = OverwriteCache(version) KEYS (key) SETTINGS secondary_index_columns = 'key'; -- { serverError UNKNOWN_SETTING }
 
 DROP TABLE overwrite_cache_small;
 DROP TABLE overwrite_cache;

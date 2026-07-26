@@ -195,6 +195,9 @@ StoragePtr StorageFactory::get(
             if (storage_def->keys)
                 check_feature("KEYS clause", [](StorageFeatures features) { return features.supports_keys; });
 
+            if (storage_def->lookup_indexes)
+                check_feature("lookup INDEX clause", [](StorageFeatures features) { return features.supports_lookup_indexes; });
+
             if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
                 check_feature(
                     "TTL clause",

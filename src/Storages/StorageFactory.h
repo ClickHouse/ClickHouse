@@ -80,6 +80,8 @@ public:
         bool supports_unique_key = false;
         /// Whether the engine-specific `KEYS` clause is accepted at CREATE time.
         bool supports_keys = false;
+        /// Whether engine-specific lookup `INDEX (...)` clauses are accepted at CREATE time.
+        bool supports_lookup_indexes = false;
         bool supports_sql_security = false;
         std::optional<AccessTypeObjects::Source> source_access_type = std::nullopt;
 
@@ -120,6 +122,7 @@ public:
         .supports_schema_inference = false,
         .supports_unique_key = false,
         .supports_keys = false,
+        .supports_lookup_indexes = false,
         .supports_sql_security = false,
         .source_access_type = std::nullopt,
         .has_builtin_setting_fn = nullptr,

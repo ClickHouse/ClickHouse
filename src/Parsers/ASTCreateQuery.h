@@ -16,6 +16,7 @@ namespace DB
 class ASTFunction;
 class ASTSetQuery;
 class ASTSelectWithUnionQuery;
+class ASTExpressionList;
 struct CreateQueryUUIDs;
 
 
@@ -24,6 +25,7 @@ class ASTStorage : public IAST
 public:
     ASTFunction * engine = nullptr;
     IAST * keys = nullptr;
+    ASTExpressionList * lookup_indexes = nullptr;
     IAST * partition_by = nullptr;
     IAST * primary_key = nullptr;
     IAST * order_by = nullptr;
@@ -46,6 +48,7 @@ public:
     {
         f(reinterpret_cast<IAST **>(&engine), nullptr);
         f(&keys, nullptr);
+        f(reinterpret_cast<IAST **>(&lookup_indexes), nullptr);
         f(&partition_by, nullptr);
         f(&primary_key, nullptr);
         f(&order_by, nullptr);
@@ -59,8 +62,6 @@ protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 };
 
-
-class ASTExpressionList;
 
 class ASTColumns : public IAST
 {
