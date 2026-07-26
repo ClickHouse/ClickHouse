@@ -15,7 +15,7 @@
 #include "Poco/Bugcheck.h"
 #include "Poco/Debugger.h"
 #include "Poco/Exception.h"
-#include <sstream>
+#include <string>
 
 
 namespace Poco {
@@ -108,11 +108,16 @@ void Bugcheck::debugger(const char* msg, const char* file, int line)
 
 std::string Bugcheck::what(const char* msg, const char* file, int line, const char* text)
 {
-	std::ostringstream str;
-	if (msg) str << msg << " ";
-   if (text != NULL) str << "(" << text << ") ";
-	str << "in file \"" << file << "\", line " << line;
-	return str.str();
+	/// Deliberately not a stringstream: <sstream> drags in <locale>, and this is reached from
+	/// poco_assert, so it would put the locale tables into every binary that uses Poco.
+	std::string str;
+	if (msg) { str += msg; str += " "; }
+	if (text != NULL) { str += "("; str += text; str += ") "; }
+	str += "in file \"";
+	str += file;
+	str += "\", line ";
+	str += std::to_string(line);
+	return str;
 }
 
 
