@@ -558,7 +558,10 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
     if (keys.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "StorageRedis supports only one key, got: {}", keys.size());
 
-    auto pk_type = getInMemoryMetadataPtr(getContext(), false)->getSampleBlock().getByName(primary_key).type;
+    /// `StorageMetadataHandle` owns the snapshot, so it has to be bound to a named local:
+    /// `operator->` is deleted on a temporary.
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto pk_type = metadata_snapshot->getSampleBlock().getByName(primary_key).type;
     /// `null_map` is an output parameter, so start from a clean state: `resize_fill` alone would keep
     /// pre-existing values if the caller passed an already sized array.
     null_map.clear();
