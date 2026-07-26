@@ -330,7 +330,8 @@ struct TextIndexSerialization
         PostingListBuilder & postings,
         MergeTreeIndexWriterStream & postings_stream,
         const MergeTreeIndexTextParams & params,
-        PostingsSerialization & postings_serialization);
+        PostingsSerialization & postings_serialization,
+        const CoarseSerializationParams & coarse_params);
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
@@ -437,7 +438,8 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
         std::list<PostingList> && posting_lists_,
         std::unique_ptr<Arena> && arena_,
         std::unique_ptr<TokenToPositionListMap> && position_map_,
-        SortedTokens && sorted_tokens_);
+        SortedTokens && sorted_tokens_,
+        UInt64 num_rows_);
 
     ~MergeTreeIndexGranuleTextWritable() override = default;
 
@@ -458,6 +460,10 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
     std::unique_ptr<TokenToPositionListMap> position_map;
     /// Sorted view of tokens with their posting/position builders (non-owning; references the fields above).
     SortedTokens sorted_tokens;
+    /// Number of rows covered by this granule. Used to compute the coarsening budget.
+    UInt64 num_rows = 0;
+    /// Whether to apply coarsening to the posting lists. May be disabled even if coarse_granularity parameter is set.
+    bool apply_coarsening = true;
     LoggerPtr logger;
 };
 
@@ -492,6 +498,7 @@ struct MergeTreeIndexTextGranuleBuilder
 
     bool is_empty = true;
     UInt64 current_row = 0;
+    UInt64 num_processed_rows = 0;
     UInt64 num_processed_tokens = 0;
     /// Pointers to posting lists for each token.
     TokenToPostingsBuilderMap tokens_map;

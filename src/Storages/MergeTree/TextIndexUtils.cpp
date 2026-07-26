@@ -194,6 +194,10 @@ void BuildTextIndexTransform::writeTemporarySegment(size_t i)
     auto granule = aggregator_text.getGranuleAndReset();
     aggregator_text.setCurrentRow(num_processed_rows);
 
+    /// Temporary segments are re-serialized by MergeTextIndexesTask, which coarsens heavy
+    /// tokens once at the final flush. Coarsening them here would stack lossiness.
+    typeid_cast<MergeTreeIndexGranuleTextWritable &>(*granule).apply_coarsening = false;
+
     auto [streams, streams_holders] = makeOutputStreams(
         index_substreams,
         index_file_name,
@@ -250,6 +254,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
 
     output_tokens = ColumnString::create();
     params = typeid_cast<const MergeTreeIndexText &>(*index_ptr).getParams();
+    coarse_params = makeCoarseSerializationParams(params, num_rows);
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
@@ -371,9 +376,10 @@ void MergeTextIndexesTask::flushPostingList()
 {
     auto * postings_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPostings);
     PostingListBuilder builder(&output_postings);
-    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization);
+    auto token_info = TextIndexSerialization::serializePostings(builder, *postings_stream, params, postings_serialization, coarse_params);
 
-    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+    /// For a coarsened token embedded postings are already set by serializePostings.
+    if ((token_info.header & PostingsSerialization::Flags::EmbeddedPostings) && !token_info.embedded_postings)
         token_info.embedded_postings = std::make_shared<PostingList>(output_postings);
 
     /// Serialize position data if positions are enabled.
