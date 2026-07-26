@@ -63,8 +63,6 @@ $CH/src/Access/IAccessStorage.cpp
 $CH/src/Common/Allocator.cpp
 $CH/src/Common/AllocatorWithMemoryTracking.cpp
 $CH/src/Common/CalendarTimeInterval.cpp
-$CH/src/Common/DateLUT.cpp
-$CH/src/Common/DateLUTImpl.cpp
 $CH/src/Common/ErrorCodes.cpp
 $CH/src/Common/FieldVisitorConvertToNumber.cpp
 $CH/src/Common/FieldVisitorDump.cpp
@@ -73,7 +71,6 @@ $CH/src/Common/FieldVisitorToJSONElement.cpp
 $CH/src/Common/FieldVisitorToString.cpp
 $CH/src/Common/IntervalKind.cpp
 $CH/src/Common/KnownObjectNames.cpp
-$CH/src/Common/LocalDateTime.cpp
 $CH/src/Common/PODArray.cpp
 $CH/src/Common/StringUtils.cpp
 $CH/src/Common/UTF8Helpers.cpp
@@ -144,13 +141,6 @@ $CH/base/poco/Net/src/IPAddressImpl.cpp
 $CH/base/poco/Net/src/NetException.cpp
 EOF
   ls "$CH"/contrib/double-conversion/double-conversion/*.cc
-  ls "$CH"/contrib/re2/re2/*.cc "$CH"/contrib/re2/util/*.cc
-  ls "$CH"/contrib/cctz/src/*.cc | grep -vE 'benchmark|_test|time_tool'
-  ls "$CH"/contrib/abseil-cpp/absl/{base,container,hash,strings,synchronization,debugging,profiling,crc,log,flags,numeric,types}/*.cc \
-     "$CH"/contrib/abseil-cpp/absl/{base,container,hash,strings,synchronization,debugging,profiling,crc,log,flags}/internal/*.cc \
-     "$CH"/contrib/abseil-cpp/absl/strings/internal/str_format/*.cc \
-     "$CH"/contrib/abseil-cpp/absl/time/*.cc "$CH"/contrib/abseil-cpp/absl/time/internal/cctz/src/*.cc 2>/dev/null \
-     | grep -vE '_test|_benchmark|test_util|test_helpers|test_matchers|scoped_mock_log|print_hash_of|_win\.cc'
   echo "$HERE/wasm_parser.cpp"
   echo "$HERE/wasm_runtime.cpp"
 )

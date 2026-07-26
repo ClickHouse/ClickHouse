@@ -1,7 +1,6 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 
 #include <Access/Common/AccessRightsElement.h>
-#include <Common/re2.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -28,13 +27,8 @@ namespace
             if (!parseIdentifierOrStringLiteral(pos, expected, parameter_regexp))
                 return false;
 
-            re2::RE2::Options options;
-            options.set_log_errors(false);
-            if (const re2::RE2 re(parameter_regexp, options); !re.ok())
-            {
-                expected.add(pos, "valid regexp");
-                return false;
-            }
+            /// Whether the pattern actually compiles is checked by `InterpreterGrantQuery`:
+            /// that is semantics, and it keeps a regex engine out of the parser.
 
             if (!ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected))
                 return false;
