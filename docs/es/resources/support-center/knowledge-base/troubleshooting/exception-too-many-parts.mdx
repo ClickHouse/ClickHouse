@@ -101,7 +101,7 @@ Mantén `wait_for_async_insert = 1` para que ClickHouse confirme una inserción 
   ### Revise la clave de particionamiento
 </div>
 
-Use una clave de particionamiento de baja cardinalidad y evite particionar por valores como identificadores de usuario o de petición. ClickHouse fusiona partes solo dentro de la misma partición, por lo que un gran número de particiones impide que las fusiones sean eficaces. Para obtener más información, consulte [Elegir una clave de particionamiento](/es/best-practices/choosing-a-partitioning-key).
+Use una clave de particionamiento de baja cardinalidad y evite particionar por valores como identificadores de usuario o de petición. ClickHouse fusiona partes solo dentro de la misma partición, por lo que un gran número de particiones impide que las fusiones sean eficaces. Para obtener más información, consulte [Elegir una clave de particionamiento](/es/concepts/best-practices/partitioning-keys).
 
 <div id="investigate-merge-bottlenecks">
   ### Investigar cuellos de botella de merge

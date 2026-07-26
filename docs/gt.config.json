@@ -15,7 +15,37 @@
     },
     "jsonSchema": {
       "./docs.json": {
-        "preset": "mintlify-hide-default"
+        "preset": "mintlify-hide-default",
+        "composite": {
+          "$.navigation.languages": {
+            "type": "array",
+            "key": "$.language",
+            "experimentalSort": "localesAlphabetical",
+            "splitEntries": true,
+            "include": [
+              "$..group",
+              "$..tab",
+              "$..item",
+              "$..anchor",
+              "$..dropdown",
+              "$..product",
+              "$..description"
+            ],
+            "omitProperties": [
+              "default"
+            ],
+            "transform": {
+              "$..pages[*]": {
+                "match": "^(?!/?products/cloud/api-reference(?:/|$))/?(.*)$",
+                "replace": "{locale}/$1"
+              },
+              "$..root": {
+                "match": "^/?(.*)$",
+                "replace": "{locale}/$1"
+              }
+            }
+          }
+        }
       },
       "./_specs/cloud-openapi.json": {
         "preset": "openapi"
@@ -39,7 +69,7 @@
       ],
       "exclude": [
         "./_specs/**",
-        "./products/cloud/api-reference/navigation.json"
+        "./products/cloud/api-reference/**"
       ],
       "transform": [
         {
@@ -99,8 +129,7 @@
         "./changelogs/**/*.mdx",
         "./en/**/*.md",
         "./en/**/*.mdx",
-        "./products/cloud/api-reference/**/*.md",
-        "./products/cloud/api-reference/**/*.mdx"
+        "./products/cloud/api-reference/**"
       ]
     }
   },
