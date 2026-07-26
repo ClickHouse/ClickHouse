@@ -1,5 +1,7 @@
 #include <Interpreters/SpillingHashJoin.h>
 
+#include <utility>
+
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -160,8 +162,29 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     return hash_join->addBlockToJoin(block, check_limits);
 }
 
+void SpillingHashJoin::keepLeftPipelineInOrder()
+{
+    /// Runs at plan optimization time, long before the build phase, so no switch can have happened
+    /// yet and a plain store is enough to be visible to the build threads.
+    keep_left_in_order.store(true, std::memory_order_release);
+}
+
 void SpillingHashJoin::switchToGraceHashJoin()
 {
+    /// The plan dropped a sort because this join promised to preserve the left order, so we are no
+    /// longer allowed to spill: GraceHashJoin scatters rows into buckets by hash and the query
+    /// would return wrongly ordered rows. Keep collecting in memory and let the memory tracker
+    /// enforce the limit, exactly as it would with no auto-spill threshold configured.
+    if (keep_left_in_order.load(std::memory_order_acquire))
+    {
+        if (!std::exchange(logged_spill_suppressed, true))
+            LOG_DEBUG(
+                log,
+                "Memory spill threshold reached, but the query plan relies on this join preserving "
+                "the left pipeline order; staying in memory instead of switching to GraceHashJoin");
+        return;
+    }
+
     const auto print_threshold_reached_log = [this](const JoinPtr & join, std::string_view join_name)
     {
         LOG_DEBUG(

@@ -159,7 +159,7 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             /// stream's original order either (preservesLeftBlockOrder() == false).
             /// We must not propagate read-in-order through joins that reorder rows.
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && !join_ptr->hasDelayedBlocks() && join_ptr->preservesLeftBlockOrder())
+                && join_ptr->canKeepLeftPipelineInOrder() && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
