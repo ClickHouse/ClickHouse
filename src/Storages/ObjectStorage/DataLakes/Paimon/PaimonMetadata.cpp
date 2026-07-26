@@ -337,6 +337,15 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
         snapshot.watermark);
 }
 
+Int64 PaimonMetadata::readSchemaZeroTimeMillis(PaimonTableClient & table_client)
+{
+    auto schema0_info = table_client.getTableSchemaInfoById(0);
+    auto schema0_json = table_client.getTableSchemaJSON(schema0_info);
+    Int64 schema0_time_millis = 0;
+    Paimon::getValueFromJSON(schema0_time_millis, schema0_json, "timeMillis");
+    return schema0_time_millis;
+}
+
 void PaimonMetadata::validateTableIdentity() const
 {
     /// Detect external table recreation by checking schema-0 timeMillis.
@@ -348,10 +357,7 @@ void PaimonMetadata::validateTableIdentity() const
     if (persistent_components.schema0_time_millis == 0)
         return;
 
-    auto schema0_info = table_client->getTableSchemaInfoById(0);
-    auto schema0_json = table_client->getTableSchemaJSON(schema0_info);
-    Int64 current_schema0_time_millis = 0;
-    Paimon::getValueFromJSON(current_schema0_time_millis, schema0_json, "timeMillis");
+    const Int64 current_schema0_time_millis = readSchemaZeroTimeMillis(*table_client);
 
     if (current_schema0_time_millis != persistent_components.schema0_time_millis)
         throw Exception(
@@ -585,6 +591,17 @@ ObjectIterator PaimonMetadata::iterate(
     if (persistent_components.incremental_read_enabled && target_snapshot_id > 0)
     {
         auto target_state = loadStateForSnapshot(target_snapshot_id);
+        /// Re-validate table identity after loading the targeted snapshot.  `snapshot-N` is a
+        /// mutable path whose numbering restarts after an external DROP + re-CREATE, so a recreate
+        /// landing after the check at the top of iterate() would make a targeted read of, say,
+        /// `snapshot-1` return the *new* table's snapshot, and collectDeltaFilesForSnapshot would
+        /// then serve its data files under the old ClickHouse table.  A recreate rewrites `schema-0`
+        /// (its `timeMillis` changes), so this throws and no data is served (fail-close).
+        /// The check is done here rather than inside loadStateForSnapshot because the other caller
+        /// (getSnapshotsBetween) loads snapshots in a loop and is already covered by the single
+        /// re-validation before the watermark is committed; validating per snapshot there would add
+        /// one remote schema-0 read per snapshot without closing any additional window.
+        validateTableIdentity();
         if (target_state->isCompact())
             LOG_WARNING(log, "Target snapshot_id={} is a COMPACT snapshot. "
                 "Its delta manifest contains compaction output (not incremental changes). "

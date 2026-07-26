@@ -357,4 +357,41 @@ TEST(PaimonIncrementalRead, SkipsOnlyGenuinelyMissingSnapshots)
     EXPECT_TRUE(PaimonMetadata::isSnapshotLoadFailureSkippable(storage, snapshot1.string()));
 }
 
+/// A targeted read (`paimon_target_snapshot_id`) loads `snapshot-N` from a path that an external
+/// DROP + re-CREATE reuses, and snapshot numbering restarts from 1 in the recreated table.  The
+/// snapshot itself therefore carries no evidence of the recreate: `snapshot-1` of the new table is
+/// byte-comparable to `snapshot-1` of the old one.  What does change is `schema-0`'s `timeMillis`,
+/// which is why `iterate` re-validates table identity after loading the targeted snapshot.  This
+/// test pins that property of the reused path: the same snapshot id still loads cleanly after the
+/// recreate, while the identity probe sees a different value and so fails the read closed.
+TEST(PaimonIncrementalRead, DetectsRecreateOnReusedTargetSnapshotPath)
+{
+    ScopedTempDir tmp("paimon_target_snapshot_recreate");
+    auto table = tmp.path / "test.db" / "test_table";
+    auto schema0 = table / Paimon::PAIMON_SCHEMA_DIR / (std::string(Paimon::PAIMON_SCHEMA_PREFIX) + "0");
+    auto snapshot1 = table / Paimon::PAIMON_SNAPSHOT_DIR / (std::string(Paimon::PAIMON_SNAPSHOT_PREFIX) + "1");
+
+    writeFile(schema0, R"({"version":3,"timeMillis":1000})");
+    writeFile(snapshot1, makeSnapshotJson(1));
+
+    auto storage = makeLocalObjectStorage(tmp.path.string());
+    PaimonTableClient client(storage, table.string(), getContext().context);
+
+    /// Identity latched when the ClickHouse table was created.
+    const Int64 latched_time_millis = PaimonMetadata::readSchemaZeroTimeMillis(client);
+    EXPECT_EQ(latched_time_millis, 1000);
+    EXPECT_EQ(client.getSnapshot({1, snapshot1.string()}).id, 1);
+
+    /// External DROP + re-CREATE at the same path: snapshot numbering restarts, so `snapshot-1`
+    /// exists again and loads fine, but it now belongs to a different table.
+    fs::remove_all(table);
+    writeFile(schema0, R"({"version":3,"timeMillis":2000})");
+    writeFile(snapshot1, makeSnapshotJson(1));
+
+    EXPECT_EQ(client.getSnapshot({1, snapshot1.string()}).id, 1)
+        << "the recreated table reuses the snapshot path, so the load itself cannot detect the recreate";
+    EXPECT_NE(PaimonMetadata::readSchemaZeroTimeMillis(client), latched_time_millis)
+        << "identity probe must see the recreate that the targeted snapshot load cannot";
+}
+
 #endif

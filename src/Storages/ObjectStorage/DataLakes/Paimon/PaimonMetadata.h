@@ -109,6 +109,12 @@ public:
     /// Public and static so the decision is unit-testable without constructing PaimonMetadata.
     static bool isSnapshotLoadFailureSkippable(const ObjectStoragePtr & object_storage, const String & snapshot_path);
 
+    /// Read the `timeMillis` of `schema-0`, the value that latches the identity of the underlying
+    /// Paimon table: an external DROP + re-CREATE at the same path rewrites `schema-0` with a fresh
+    /// `timeMillis`, while ordinary writes (new snapshots, schema evolution) never touch it.
+    /// Public and static so recreate detection is unit-testable without constructing PaimonMetadata.
+    static Int64 readSchemaZeroTimeMillis(PaimonTableClient & table_client);
+
 private:
     enum class ManifestKind : UInt8
     {
