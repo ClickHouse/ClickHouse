@@ -35,7 +35,75 @@ OUTPUT_FILE="$2"
 
 TMP_FILE=$(mktemp)
 LABEL_FRAGMENTS_FILE=$(mktemp)
-trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE"' EXIT
+DEAD_CODE_NAMES_FILE=$(mktemp)
+INTERNAL_REGISTERED_FILE=$(mktemp)
+trap 'rm -f "$TMP_FILE" "$LABEL_FRAGMENTS_FILE" "$DEAD_CODE_NAMES_FILE" "$INTERNAL_REGISTERED_FILE"' EXIT
+
+# The trees holding the registration code: every pass below scans a subset of
+# them.
+SCANNED_TREES=(
+    "$SOURCE_ROOT/src/Functions"
+    "$SOURCE_ROOT/src/AggregateFunctions"
+    "$SOURCE_ROOT/src/TableFunctions"
+    "$SOURCE_ROOT/src/DataTypes"
+    "$SOURCE_ROOT/src/Formats"
+    "$SOURCE_ROOT/src/Processors/Transforms/WindowTransform.cpp"
+    "$SOURCE_ROOT/src/Storages/ObjectStorage/StorageObjectStorageDefinitions.h"
+)
+
+# Names carried by code compiled out with #if 0 are not registered by any
+# build: src/Functions/trap.cpp - the whole file, including its
+# REGISTER_FUNCTION(Trap) - sits inside such a region, so "trap" is not a
+# function name in any binary. Collect the string literals of the disabled
+# regions, keeping only those that have no live carrier anywhere else in the
+# scanned trees (a name that is also defined by live code stays).
+mapfile -t DISABLED_FILES < <(grep -rlE '^#if 0' "${SCANNED_TREES[@]}" || true)
+if [ "${#DISABLED_FILES[@]}" -gt 0 ]
+then
+    disabled_literals()
+    {
+        # $1 = 1 to print the literals inside #if 0 regions, 0 for the rest.
+        awk -v inside="$1" '
+            /^#if 0([[:space:]]|$)/ { if (depth == 0) { depth = 1; next } }
+            depth > 0 && /^#if/ { ++depth }
+            depth > 0 && /^#endif/ { if (--depth == 0) next }
+            (depth > 0) == (inside == 1)
+        ' "${DISABLED_FILES[@]}" | grep -aoE '"[^"]+"' | tr -d '"' | LC_ALL=C sort -u
+    }
+
+    DISABLED_EXCLUDES=()
+    for disabled_file in "${DISABLED_FILES[@]}"
+    do
+        DISABLED_EXCLUDES+=("--exclude=$(basename "$disabled_file")")
+    done
+
+    LC_ALL=C comm -23 \
+        <(disabled_literals 1) \
+        <({ disabled_literals 0
+            grep -rhoE '"[^"]+"' "${DISABLED_EXCLUDES[@]}" "${SCANNED_TREES[@]}" | tr -d '"'
+          } | LC_ALL=C sort -u) \
+        > "$DEAD_CODE_NAMES_FILE"
+fi
+
+# Names prefixed with __ are internal by convention, and most of them are
+# registered in the function factory nevertheless (__bitWrapperFunc,
+# __getScalar, __actionName, ... are used by index analysis, scalar subquery
+# execution and the planner). Some are not: the implementation classes in
+# src/Functions/vectorQuantization.cpp ("__quantizeDistance"),
+# src/Functions/productQuantization.cpp ("__productQuantizationDistance") and
+# src/Functions/FunctionTopKFilter.cpp ("__topKFilter") are built by query plan
+# optimizations directly and have no REGISTER_FUNCTION. Their name constants
+# have exactly the shape of a registered carrier, so they are told apart by the
+# registration site: keep an internal name only if some file naming it also
+# registers something.
+grep -rlE '"__[A-Za-z_0-9]+"' "${SCANNED_TREES[@]}" \
+    | while IFS= read -r internal_name_file
+do
+    if grep -qE 'REGISTER_FUNCTION|factory\.register' "$internal_name_file"
+    then
+        grep -ohE '"__[A-Za-z_0-9]+"' "$internal_name_file" | tr -d '"'
+    fi
+done | LC_ALL=C sort -u > "$INTERNAL_REGISTERED_FILE"
 
 # Registered function, aggregate function, table function and data type names
 # are identifiers. Multi-word tokens come only from the keyword pass (ADD
@@ -287,10 +355,15 @@ done >> "$LABEL_FRAGMENTS_FILE"
 } > "$TMP_FILE"
 
 # Quote the extracted tokens (dropping the rare ones with characters that are
-# unsafe for the dictionary format or downstream shell processing), merge with
-# the curated dictionary, and deduplicate.
+# unsafe for the dictionary format or downstream shell processing, the names of
+# code compiled out with #if 0, and the internal __ names without a
+# registration site), merge with the curated dictionary, and deduplicate.
 {
-    grep -vE '[*?\["\\]' "$TMP_FILE" | sed 's/.*/"&"/'
+    grep -vE '[*?\["\\]' "$TMP_FILE" \
+        | { grep -Fxvf "$DEAD_CODE_NAMES_FILE" || true; } \
+        | awk 'NR == FNR { registered[$0]; next } !(/^__/ && !($0 in registered))' \
+            "$INTERNAL_REGISTERED_FILE" - \
+        | sed 's/.*/"&"/'
     cat "$SOURCE_ROOT/tests/fuzz/dictionaries/old.dict"
 } | LC_ALL=C sort -u > "$OUTPUT_FILE"
 
