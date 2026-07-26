@@ -3794,3 +3794,25 @@ TEST(PostingListCursorTest, LazyIntersectIncludesRowAtUInt32Max)
         EXPECT_EQ(data[3], 1u);
     }
 }
+
+TEST(PostingListCursorTest, SingleValueSegmentAfterAnotherSegment)
+{
+    /// Regression test: a segment holding a single value is encoded as one block with
+    /// bits = 0 (its only delta is zero). The portable bitpacking decoder used to skip
+    /// writing the output for bits = 0, leaving stale values from the previously decoded
+    /// block in the cursor's scratch buffer, which shifted the decoded row id.
+    auto data = makeMultiBlockData({{1, 2}, {100}});
+    auto cursor = makeMultiBlockCursor(data);
+
+    cursor->advance(1);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 1u);
+
+    /// Cross-segment advance into the single-value segment must decode exactly 100.
+    cursor->advance(50);
+    ASSERT_TRUE(cursor->valid());
+    EXPECT_EQ(cursor->value(), 100u);
+
+    cursor->next();
+    EXPECT_FALSE(cursor->valid());
+}
