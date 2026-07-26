@@ -17,7 +17,9 @@ concept iota_supported_types = (is_any_of<
                                 UInt8,
                                 UInt32,
                                 UInt64
-#if defined(OS_DARWIN)
+/// On Darwin `size_t` is not `UInt64`, and on 32-bit platforms (WebAssembly) it is not `UInt32`
+/// either, so it is a distinct type that needs an overload of its own.
+#if defined(OS_DARWIN) || !defined(__LP64__)
                                 ,
                                 size_t
 #endif
@@ -28,7 +30,7 @@ template <iota_supported_types T> void iota(T * begin, size_t count, T first_val
 extern template void iota(UInt8 * begin, size_t count, UInt8 first_value);
 extern template void iota(UInt32 * begin, size_t count, UInt32 first_value);
 extern template void iota(UInt64 * begin, size_t count, UInt64 first_value);
-#if defined(OS_DARWIN)
+#if defined(OS_DARWIN) || !defined(__LP64__)
 extern template void iota(size_t * begin, size_t count, size_t first_value);
 #endif
 
@@ -38,7 +40,7 @@ void iotaWithStep(T * begin, size_t count, T first_value, T step);
 extern template void iotaWithStep(UInt8 * begin, size_t count, UInt8 first_value, UInt8 step);
 extern template void iotaWithStep(UInt32 * begin, size_t count, UInt32 first_value, UInt32 step);
 extern template void iotaWithStep(UInt64 * begin, size_t count, UInt64 first_value, UInt64 step);
-#if defined(OS_DARWIN)
+#if defined(OS_DARWIN) || !defined(__LP64__)
 extern template void iotaWithStep(size_t * begin, size_t count, size_t first_value, size_t step);
 #endif
 }
