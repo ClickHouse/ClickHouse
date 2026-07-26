@@ -43,6 +43,8 @@
 #include <base/types.h>
 #include <fmt/ranges.h>
 
+#include <span>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -53,6 +55,7 @@ namespace ProfileEvents
     extern const Event TextIndexTokensCacheHits;
     extern const Event TextIndexTokensCacheMisses;
     extern const Event TextIndexDiscardPatternScan;
+    extern const Event TextIndexCoarsePostingsExpansions;
 }
 
 namespace DB
@@ -268,6 +271,9 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostin
 PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, const TokenPostingsInfo & info)
 {
     chassert(posting_list_codec);
+    if (info.coarse_level > 0)
+        ProfileEvents::increment(ProfileEvents::TextIndexCoarsePostingsExpansions);
+
     auto postings = std::make_shared<PostingList>();
 
     /// Small posting lists are stored as raw VarUInt-encoded values.
@@ -279,7 +285,9 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, const Token
         for (size_t i = 0; i < info.postings_cardinality; ++i)
             readVarUInt(raw_postings_buffer[i], istr);
 
-        postings->addMany(info.postings_cardinality, raw_postings_buffer.data());
+        PostingsAppender appender(*postings, info.coarse_level);
+        appender.addMany(std::span(raw_postings_buffer).first(info.postings_cardinality));
+        appender.finalize();
         return postings;
     }
 
@@ -302,7 +310,7 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, const Token
         }
     }
 
-    posting_list_codec->decode(istr, *postings);
+    posting_list_codec->decode(istr, *postings, info.coarse_level);
     return postings;
 }
 
@@ -1201,11 +1209,13 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         else
         {
             auto postings = postings_serialization->deserialize(istr, info);
-            if (postings && postings->cardinality() > 0)
+
+            if (postings && !postings->isEmpty())
             {
                 info.offsets.emplace_back(0);
                 info.ranges.emplace_back(postings->minimum(), postings->maximum());
             }
+
             info.embedded_postings = std::move(postings);
             ProfileEvents::increment(ProfileEvents::TextIndexUsedEmbeddedPostings);
         }
@@ -1231,6 +1241,13 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
                     "Corrupted data in text index: posting list row range [{}, {}] exceeds UInt32 max",
                     rows_range.begin, rows_range.end);
+            }
+
+            if (info.coarse_level > 0)
+            {
+                static constexpr UInt64 max_row_end = static_cast<UInt64>(std::numeric_limits<UInt32>::max()) + 1;
+                rows_range.begin = rows_range.begin << info.coarse_level;
+                rows_range.end = std::min((static_cast<UInt64>(rows_range.end) + 1) << info.coarse_level, max_row_end) - 1;
             }
 
             info.offsets.emplace_back(offset_in_file);

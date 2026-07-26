@@ -36,6 +36,10 @@ enum class PadOp { Or, And };
 /// Embedded postings (small cardinality tokens) are stored inline as raw values
 /// in the dictionary stream and decoded entirely in `prepareSegment`; no .pst stream is used.
 ///
+/// Coarse posting lists (see `PostingsSerialization::Flags::CoarsePostings`) store bucket ids
+/// `row >> coarse_level`, which the cursor expands back into row ranges on the fly, producing
+/// a lossy superset of the exact rows; consumers verify it against the column.
+///
 /// Two access patterns:
 ///   1. Iterator: `valid` / `value` / `next` / `advance` — for leapfrog intersection.
 ///   2. Linear scan: `linearOr` / `linearAnd` — for brute-force bitmap operations.
@@ -66,7 +70,12 @@ public:
     bool valid() const { return is_valid; }
 
     /// Current doc_id. Undefined when `valid` returns false.
-    uint32_t value() const { return decoded_values_ptr[index]; }
+    uint32_t value() const
+    {
+        return coarse_level
+            ? (decoded_values_ptr[index] << coarse_level) + row_within_bucket
+            : decoded_values_ptr[index];
+    }
 
     /// Advance to the first doc_id >= target.
     void advance(uint32_t target);
@@ -91,7 +100,12 @@ private:
     /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
     /// Returns false if target exceeds this segment's range.
+    /// For coarse posting lists, `target` is a bucket id.
     bool advanceImpl(uint32_t target);
+
+    /// Positions a coarse cursor within the current bucket after `advanceImpl`,
+    /// so that `value` returns the first covered row >= target. No-op for exact cursors.
+    void advanceWithinBucket(uint32_t target);
 
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
@@ -116,6 +130,12 @@ private:
     size_t total_segments = 0;
     bool is_embedded = false;
     double density_val = 0;
+
+    /// Bucket resolution of a coarse posting list: decoded values are (row >> coarse_level).
+    /// 0 for exact posting lists.
+    UInt32 coarse_level = 0;
+    /// Row offset within the current bucket, in [0, 2^coarse_level). Used only when coarse_level > 0.
+    uint32_t row_within_bucket = 0;
 
     /// Set for the shared-array cursor: the postings are read from this shared, immutable, sorted array.
     FlatPostingsPtr shared_values;
