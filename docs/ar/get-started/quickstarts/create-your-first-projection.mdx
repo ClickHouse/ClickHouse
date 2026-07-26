@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'مقدمة إلى الإسقاطات'
 title: 'أنشئ أول إسقاط لك'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['التحليلات اللحظية', 'مستودعات البيانات']
 products: ['Cloud']
 description: 'تعرّف على كيفية استخدام الإسقاطات في ClickHouse لتخزين نسخة إضافية مرتبة من بياناتك داخل الجدول نفسه، مما يتيح عمليات بحث سريعة في الأعمدة التي لا يشملها المفتاح الأساسي.'
 ---
@@ -42,9 +42,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 وبحلول النهاية، ستفهم كيفية إضافة إسقاط وتفعيل تجسيده، وكيف يختاره ClickHouse تلقائيًا، ومتى تختار الإسقاطات بدلًا من العروض المادية.
 
 <Steps titleSize="h3">
-  <Step>
-    ### افهم سبب حاجتك إلى إسقاط
-
+  <Step title="افهم سبب حاجتك إلى إسقاط" id="understand-why-you-need-a-projection">
     يُفرز جدول `uk_price_paid` حسب `(postcode, addr1, addr2)`. وهذا يعني أن ClickHouse يستطيع تخطي كتل كبيرة من البيانات عند التصفية حسب `postcode` أو `addr1` أو `addr2`، لكن الاستعلامات التي تُصفّي حسب `town` يجب أن تفحص كل الصفوف — أي 30 مليون صف بالكامل.
 
     يخزّن **الإسقاط** نسخة إضافية مفروزة من بعض الأعمدة أو كلها *داخل الجدول نفسه*. وعند الاستعلام من الجدول، يتحقق مُحسِّن الاستعلامات تلقائيًا مما إذا كانت القراءة من الإسقاط ستتطلب عددًا أقل من الـ granules مقارنةً بالبيانات الأساسية، ويستخدمه تلقائيًا إذا كان الأمر كذلك.
@@ -58,9 +56,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     اطّلع على المزيد في [الوثائق المرجعية الخاصة بالإسقاطات](/ar/reference/statements/alter/projection).
   </Step>
 
-  <Step>
-    ### أضف إسقاطًا إلى جدولك
-
+  <Step title="أضف إسقاطًا إلى جدولك" id="add-a-projection-to-your-table">
     عرّف إسقاطًا على `uk_price_paid` يخزّن `town` و`date` و`price` و`type` مرتبةً حسب `(town, date)`:
 
     ```sql
@@ -83,9 +79,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     يجب أن ترى كتلة `PROJECTION uk_price_paid_by_town` في المخرجات.
   </Step>
 
-  <Step>
-    ### تجسيد الإسقاط للبيانات الحالية
-
+  <Step title="تجسيد الإسقاط للبيانات الحالية" id="materialize-the-projection-for-existing-data">
     مثل العروض المُجسَّدة، لا يُطبَّق الإسقاط المُضاف حديثًا إلا على عمليات الإدراج اللاحقة. ولملئه بـ30 مليون صف موجودة بالفعل في الجدول، قم بتجسيده صراحةً:
 
     ```sql
@@ -121,9 +115,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### نفّذ استعلامًا على الجدول ولاحظ الاستخدام التلقائي للإسقاط
-
+  <Step title="نفّذ استعلامًا على الجدول ولاحظ الاستخدام التلقائي للإسقاط" id="query-the-table-and-observe-automatic-projection-usage">
     الآن نفّذ استعلامًا مع التصفية حسب `town` على **نفس الجدول** الذي تجري عليه استعلاماتك دائمًا:
 
     ```sql
@@ -170,15 +162,11 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     يؤدي هذا إلى إجراء مسح كامل للجدول لكي تتمكن من ملاحظة الفرق في عدد الصفوف المقروءة.
   </Step>
 
-  <Step>
-    ### قارن بين الإسقاطات والعروض المادية
-
+  <Step title="قارن بين الإسقاطات والعروض المادية" id="compare-projections-to-materialized-views">
     تعالج الإسقاطات والعروض المادية المشكلة نفسها، وهي تسريع عمليات القراءة لأنماط الوصول البديلة، لكن لكلٍّ منهما مفاضلات مختلفة. باختصار، تكون الإسقاطات هي الخيار الأفضل عندما تحتاج فقط إلى ترتيب فرز مختلف للبيانات نفسها؛ أما العروض المادية فهي أكثر مرونة عندما تحتاج إلى تحويل البيانات أو تجميعها أو توجيهها إلى مخطط مختلف. ولمقارنة مفصلة، راجع [العروض المادية مقابل الإسقاطات](/ar/concepts/features/projections/materialized-views-versus-projections).
   </Step>
 
-  <Step>
-    ### راقب الأثر الإضافي على التخزين
-
+  <Step title="راقب الأثر الإضافي على التخزين" id="observe-the-storage-overhead">
     تخزّن الإسقاطات نسخةً ثانية من الأعمدة المحددة داخل الجدول نفسه، مما يزيد من استخدام القرص. استعلم من `system.parts` للاطلاع على الحجم الإجمالي لـ `uk_price_paid` (والذي يتضمن الآن بيانات الإسقاط):
 
     ```sql
@@ -211,9 +199,11 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## الخطوات التالية
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
-في دليل البدء السريع هذا، أضفتَ إسقاط إلى `uk_price_paid` يخزّن البيانات مرتبةً حسب `(town, date)`، مما يتيح عمليات lookup سريعة حسب البلدة دون إنشاء table منفصل. وتعلّمتَ أن مُحسِّن الاستعلامات يختار إسقاط تلقائيًا، وأنها تبقى متزامنة مع mutations، وتستبدل مساحة disk بأداء read أفضل.
+في دليل البدء السريع هذا، أضفتَ إسقاط إلى `uk_price_paid` يخزّن البيانات مرتبةً حسب `(town, date)`، مما يتيح عمليات lookup سريعة حسب البلدة دون إنشاء table منفصل. وتعلّمتَ أن مُحسِّن الاستعلامات يختار إسقاط تلقائيًا، وأنها تبقى متزامنة مع التعديلات، وتستبدل مساحة disk بأداء read أفضل.
 
 اطّلع بعد ذلك على أدلة البدء السريع التالية:
 
