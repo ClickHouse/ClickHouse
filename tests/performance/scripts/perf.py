@@ -283,6 +283,17 @@ parser.add_argument(
     "RIGHT, which otherwise diverges across the test and causes background "
     "purges to do asymmetric work during measured queries.",
 )
+parser.add_argument(
+    "--allow-settings-version-skew",
+    action="store_true",
+    help="Allow dropping a setting from the connections whose server does not know it, "
+    "instead of failing. Pass this only for comparison runs where the servers are "
+    "intentionally different builds (e.g. master HEAD vs the pull request), so one side "
+    "may not know a setting the other one added. Settings rejected by every server remain "
+    "a hard error. Without this flag an unknown setting fails immediately, so a typo in "
+    "the test XML cannot silently change what is benchmarked, and an ordinary run against "
+    "same-version servers can never end up benchmarking different settings on LEFT and RIGHT.",
+)
 args = parser.parse_args()
 
 if args.min_runs is not None:
@@ -725,12 +736,16 @@ for conn_index, c in enumerate(all_connections):
     # unknown setting will lead to failing precondition check, and we will skip
     # the test, which is wrong.
     #
-    # In `master_head` comparisons one of the two servers is master HEAD,
-    # which may not yet know about settings introduced by this PR. Drop only
-    # those specific unknown settings on that connection and retry, so a
-    # single new setting doesn't block the whole comparison. After every
-    # connection has been probed, settings that were dropped on ALL servers
-    # are reported as a hard error - that's the typo case.
+    # In a master-vs-PR comparison one of the two servers is master HEAD,
+    # which may not yet know about settings introduced by this PR. With
+    # `--allow-settings-version-skew` we drop only those specific unknown
+    # settings on that connection and retry, so a single new setting doesn't
+    # block the whole comparison. After every connection has been probed,
+    # settings that were dropped on ALL servers are reported as a hard error -
+    # that's the typo case. Without the flag an unknown setting is fatal: in a
+    # run whose servers are supposed to be interchangeable, silently dropping a
+    # setting on one side would benchmark different settings on LEFT and RIGHT
+    # and produce a bogus delta instead of failing fast.
     dropped = set()
     while True:
         try:
@@ -743,6 +758,14 @@ for conn_index, c in enumerate(all_connections):
             unknown_setting = m.group(1)
             if unknown_setting not in c.settings:
                 raise
+            if not args.allow_settings_version_skew:
+                raise RuntimeError(
+                    f"server #{conn_index} doesn't know setting '{unknown_setting}'. "
+                    "Both sides of a comparison must run with the same settings. Pass "
+                    "--allow-settings-version-skew if the servers are intentionally "
+                    "different builds and dropping the setting on the older side is "
+                    "acceptable."
+                ) from e
             print(
                 f"perf-warn\tserver #{conn_index} doesn't know setting "
                 f"'{unknown_setting}', dropping from this connection"

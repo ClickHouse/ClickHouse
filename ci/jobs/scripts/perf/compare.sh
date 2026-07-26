@@ -543,6 +543,9 @@ function run_tests
                 ${CHPC_RUNS:+--runs "$CHPC_RUNS"}
                 --max-queries "$max_queries"
                 --profile-seconds "$profile_seconds"
+                # LEFT is master HEAD and RIGHT is the pull request, so one side
+                # may not know a setting the other one added.
+                --allow-settings-version-skew
 
                 "$test"
             )
@@ -1023,6 +1026,7 @@ do
         --binary left/clickhouse right/clickhouse \
         --http-port "$LEFT_SERVER_HTTP_PORT" "$RIGHT_SERVER_HTTP_PORT" \
         ${CHPC_RUNS:+--runs "$CHPC_RUNS"} --max-queries 0 --profile-seconds 0 \
+        --allow-settings-version-skew \
         --queries-to-run $confirm_indexes \
         > "analyze-confirm/$confirm_test-raw.tsv.tmp" \
         2> "analyze-confirm/$confirm_test-err.log"
