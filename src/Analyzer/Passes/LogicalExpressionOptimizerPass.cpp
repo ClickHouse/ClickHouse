@@ -1082,10 +1082,7 @@ static void convertNotEqualsChainToNotIn(
             tuple_element_types.push_back(literal->getResultType());
 
             /// The set converts each element to the expression's type, while the comparison it
-            /// replaces is evaluated in the wider of the two types. Where that conversion is lossy
-            /// the two disagree, so the chain has to be kept (e.g. for a `Date` expression,
-            /// `d != toDateTime('2020-01-01 12:00:00')` holds for the row `2020-01-01`, which
-            /// promotes to midnight, but the constant truncates to `2020-01-01` and the set matches).
+            /// replaces is evaluated in the wider of the two: a lossy conversion makes them disagree.
             if (!tryConvertToColumnType(literal, expr_type))
                 all_constants_convert_losslessly = false;
         }

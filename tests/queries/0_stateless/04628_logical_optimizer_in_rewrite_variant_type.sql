@@ -5,7 +5,7 @@
 -- use_variant_default_implementation_for_comparisons = 0, equals resolves to UInt8 but the
 -- resulting `in` resolves through the variant adaptor to Nullable(UInt8). The rewrite must not
 -- change the node's result type (ancestors already captured it) - otherwise a debug/sanitizer
--- build aborts in the query-tree ValidationChecker. Reproducer shape from AST fuzzer STID 0250-20a8.
+-- build raises a LOGICAL_ERROR from the query-tree ValidationChecker. Reproducer shape from AST fuzzer STID 0250-20a8.
 
 SET enable_analyzer = 1;
 SET use_variant_default_implementation_for_comparisons = 0;
@@ -16,7 +16,7 @@ DROP TABLE IF EXISTS t_var;
 CREATE TABLE t_var (id UInt8, b Variant(UInt256), x UInt8) ENGINE = Memory;
 INSERT INTO t_var VALUES (1, 1, 1), (2, 10, 0), (3, 22, 1), (4, 6, 1);
 
--- OR -> IN: scalar parent (previously aborted).
+-- OR -> IN: scalar parent (previously raised the logical error).
 SELECT id, NOT ((b = '10') OR (b = '22') OR (b = '6')) FROM t_var ORDER BY id;
 
 -- OR -> IN: aggregate (windowFunnel + -Null combinator) parent, mirroring the fuzzer query.
@@ -74,7 +74,7 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT has([1, 2], x) FROM t_var
 
 -- The NOT IN tuple must keep the resolved constant types. Building it from the `Field` values alone
 -- re-derives them and collapses DateTime to UInt32, so the rewritten predicate compares a date
--- against raw seconds and silently matches nothing. Each pair must agree with the un-rewritten form.
+-- against raw seconds and matches no set element at all. Each pair must agree with the un-rewritten form.
 DROP TABLE IF EXISTS t_dt;
 CREATE TABLE t_dt (d Date, dt DateTime('UTC')) ENGINE = Memory;
 INSERT INTO t_dt VALUES ('2020-01-01', '2020-01-01 00:00:00'), ('2020-01-02', '2020-01-02 00:00:00'), ('2020-01-03', '2020-01-03 00:00:00'), ('2020-01-04', '2020-01-04 00:00:00');
