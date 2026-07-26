@@ -21,6 +21,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Common/NetException.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/logger_useful.h>
 #include <Common/parseRemoteDescription.h>
@@ -43,6 +44,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INFINITE_LOOP;
+    extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_TABLE;
 }
@@ -148,139 +150,110 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
         query_context->setSettings(new_settings);
     }
 
-    /// Runs the listing query on one shard. The pool retries the replicas of the shard internally
-    /// (`PoolMode::GET_ONE`), so a failure here means the whole shard is unreachable, which must be
-    /// propagated: distinct shards serve distinct data, so another shard's answer is no substitute.
-    auto fetch_from_shard = [&](const Cluster::ShardInfo & shard_info)
+    /// The metadata (the list of the tables and, in `fetchTableStructure`, their structure) is resolved
+    /// from an arbitrary shard, exactly like `getStructureOfRemoteTable` does: the shards of one cluster
+    /// normally serve the same set of tables, and asking every one of them would multiply the cost of
+    /// every `SHOW TABLES` / `EXISTS TABLE` by the number of shards. A shard that points to this server
+    /// is preferred, because it needs no round trip at all; another shard is consulted only when the
+    /// current one is unavailable.
+    const Cluster * remote_cluster = cluster.get();
+    for (const auto & shard_info : cluster->getShardsInfo())
     {
-        RemoteQueryExecutor executor(shard_info.pool, query, sample_block, query_context);
-        executor.setPoolMode(PoolMode::GET_ONE);
-
-        Strings tables;
-        for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
-        {
-            const IColumn & name_column = *block.getByName("name").column;
-            for (size_t i = 0, size = name_column.size(); i < size; ++i)
-                tables.push_back(name_column[i].safeGet<String>());
-        }
-
-        executor.finish();
-        return tables;
-    };
-
-    /// The resulting `Distributed` proxy queries every configured shard, so a table belongs to the
-    /// database only when every shard serves it: exposing a table that some shard is missing would
-    /// advertise a proxy whose `SELECT`/`INSERT` then fail on that shard. Collect the list of every
-    /// shard and intersect them, keeping the order of the first shard. (The replicas of one shard
-    /// are interchangeable; distinct shards are not.)
-    std::optional<Strings> result;
-
-    const auto & shards_info = cluster->getShardsInfo();
-    for (size_t shard_index = 0; shard_index < shards_info.size(); ++shard_index)
-    {
-        const auto & shard_info = shards_info[shard_index];
-        std::optional<Strings> shard_tables;
-
         /// A shard that points to this server is a local shard (see `buildClusters`). Enumerate the
         /// local database under `local_context` instead of opening a self-connection with the stored
         /// engine credentials, mirroring the local-shard special case of `getStructureOfRemoteTable`.
         /// Otherwise `SHOW TABLES` / `system.tables` would list local table names according to the
         /// configured remote user rather than the caller's privileges.
-        if (shard_info.isLocal())
+        if (!shard_info.isLocal())
+            continue;
+
+        if (auto local_database = tryGetLocalDatabase())
         {
-            if (auto local_database = tryGetLocalDatabase())
-            {
-                /// The local database may be another `Remote` database that (indirectly) refers back
-                /// to this one; the guard rejects such a cycle instead of recursing forever.
-                LocalTraversalGuard guard(this);
-                /// The underlying tables are enumerated regardless of the caller's grants, so filter by
-                /// the caller's own `SHOW TABLES` right on the underlying local table, exactly like
-                /// `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database but
-                /// no grants on the underlying local database could enumerate all of its table names
-                /// through `Remote('127.0.0.1', ...)`.
-                const auto access = local_context->getAccess();
+            /// The local database may be another `Remote` database that (indirectly) refers back
+            /// to this one; the guard rejects such a cycle instead of recursing forever.
+            LocalTraversalGuard guard(this);
+            /// The underlying tables are enumerated regardless of the caller's grants, so filter by
+            /// the caller's own `SHOW TABLES` right on the underlying local table, exactly like
+            /// `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database but
+            /// no grants on the underlying local database could enumerate all of its table names
+            /// through `Remote('127.0.0.1', ...)`.
+            const auto access = local_context->getAccess();
 
-                if (only_table)
-                {
-                    /// Existence is a property of the name, so it must not depend on whether the table
-                    /// can be described. A table invisible to the caller is reported as missing, like in
-                    /// the listing below. When the local replica does not have the table, fall through to
-                    /// the remote-replica fallback, mirroring `fetchTableStructure`.
-                    if (local_database->isTableExist(*only_table, query_context))
-                        shard_tables = access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table)
-                            ? Strings{*only_table}
-                            : Strings{};
-                }
-                else
-                {
-                    /// Enumerate through the lightweight iterator: only the names are needed here, and the
-                    /// underlying database may itself be an external one (e.g. another `Remote` database),
-                    /// whose plain `getTablesIterator` resolves the structure of every table and drops
-                    /// those that fail.
-                    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, remote_database);
-                    Strings tables;
-                    for (const auto & table : local_database->getLightweightTablesIterator(query_context))
-                    {
-                        if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
-                            continue;
-                        tables.push_back(table.name);
-                    }
-                    shard_tables = std::move(tables);
-                }
+            if (only_table)
+            {
+                /// Existence is a property of the name, so it must not depend on whether the table
+                /// can be described. A table invisible to the caller is reported as missing, like in
+                /// the listing below. When the local replica does not have the table, fall through to
+                /// the remote-replica fallback, mirroring `fetchTableStructure`.
+                if (local_database->isTableExist(*only_table, query_context))
+                    return access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table) ? Strings{*only_table} : Strings{};
             }
-
-            if (!shard_tables)
+            else
             {
-                /// The local replica does not have the database (or the requested table), but it may
-                /// still exist on the remote replicas of the same shard (e.g.
-                /// `Remote('127.0.0.1|other_host', db)`), which the `Distributed` read path would fall
-                /// back to (see `SelectStreamFactory::createForShard`); do the same here instead of
-                /// hiding their tables. The fallback queries only the genuinely remote replicas: a TCP
-                /// self-connection would list local metadata under the stored engine credentials rather
-                /// than the caller's own. `remote_only_cluster` preserves the shards of `cluster` in
-                /// order (see `buildClusters`), so the shard is looked up by the same index; when no
-                /// fallback cluster exists, the shard consists of the local replica only, so there is
-                /// nowhere else to look and the tables are genuinely missing.
-                if (!remote_only_cluster)
-                    return {};
-                shard_tables = fetch_from_shard(remote_only_cluster->getShardsInfo()[shard_index]);
+                /// Enumerate through the lightweight iterator: only the names are needed here, and the
+                /// underlying database may itself be an external one (e.g. another `Remote` database),
+                /// whose plain `getTablesIterator` resolves the structure of every table and drops
+                /// those that fail.
+                const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, remote_database);
+                Strings tables;
+                for (const auto & table : local_database->getLightweightTablesIterator(query_context))
+                {
+                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, remote_database, table.name))
+                        continue;
+                    tables.push_back(table.name);
+                }
+                return tables;
             }
         }
-        else
-        {
-            shard_tables = fetch_from_shard(shard_info);
-        }
 
-        if (!result)
-        {
-            result = std::move(*shard_tables);
-        }
-        else
-        {
-            std::unordered_set<String> shard_set(shard_tables->begin(), shard_tables->end());
-            std::erase_if(*result, [&](const String & name) { return !shard_set.contains(name); });
-        }
-
-        /// The intersection can only shrink, so once it is empty the remaining shards need not be asked.
-        if (result->empty())
+        /// The local replica does not have the database (or the requested table), but it may still
+        /// exist on the remote replicas (e.g. `Remote('127.0.0.1|other_host', db)`), which the
+        /// `Distributed` read path would fall back to (see `SelectStreamFactory::createForShard`); do
+        /// the same here instead of hiding their tables. The fallback queries only the genuinely
+        /// remote replicas: a TCP self-connection would list local metadata under the stored engine
+        /// credentials rather than the caller's own.
+        if (!remote_only_cluster)
             return {};
+        remote_cluster = remote_only_cluster.get();
+        break;
     }
 
-    return std::move(*result);
+    std::string fail_messages;
+    for (const auto & shard_info : remote_cluster->getShardsInfo())
+    {
+        try
+        {
+            RemoteQueryExecutor executor(shard_info.pool, query, sample_block, query_context);
+            executor.setPoolMode(PoolMode::GET_ONE);
+
+            /// Accumulate per attempt: names read before a mid-stream failure must not leak into
+            /// the next attempt, or a retried listing would return a mixed or duplicated result.
+            Strings tables;
+            for (Block block = executor.readBlock(); !block.empty(); block = executor.readBlock())
+            {
+                const IColumn & name_column = *block.getByName("name").column;
+                for (size_t i = 0, size = name_column.size(); i < size; ++i)
+                    tables.push_back(name_column[i].safeGet<String>());
+            }
+
+            executor.finish();
+            return tables;
+        }
+        catch (const NetException &)
+        {
+            fail_messages += getCurrentExceptionMessage(/* with_stacktrace = */ false) + '\n';
+            continue;
+        }
+    }
+
+    throw NetException(
+        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE, "All attempts to get the list of tables of the remote database failed. Log:\n\n{}\n", fail_messages);
 }
 
 
 ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const
 {
     table_cluster = cluster;
-
-    /// With more than one shard, the structure is inferred from a single shard below, but the table
-    /// must be present on every shard for the resulting `Distributed` proxy to be usable, so establish
-    /// its presence cluster-wide first (a table missing on some shard is reported as missing, matching
-    /// `SHOW TABLES` / `EXISTS TABLE`). A single-shard cluster needs no such round trip: the same
-    /// lookup below either finds the table or reports it missing.
-    if (cluster->getShardsInfo().size() > 1 && fetchTablesList(local_context, &table_name).empty())
-        return {};
 
     /// A shard that points to this server is handled locally, like in `fetchTablesList`. Crucially, the
     /// local shard must not go through `DatabaseCatalog::getTable` (as the local-shard special case of
@@ -419,6 +392,27 @@ bool DatabaseRemote::empty() const
 DatabaseTablesIteratorPtr DatabaseRemote::getTablesIterator(
     ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    /// The consumers of the plain iterator dereference the storage object unconditionally, so a table
+    /// whose structure could not be fetched is dropped here.
+    return getTablesIteratorImpl(local_context, filter_by_table_name, /* keep_unresolved_tables = */ false);
+}
+
+
+DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorWithHint(
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */, const TablesFilter & /*tables_filter*/) const
+{
+    /// This is the `system.tables` path, which null-guards every metadata column (see
+    /// `StorageSystemTables`), so keep a table whose structure could not be fetched instead of hiding
+    /// it: the name has already been established by `fetchTablesList`, and a row with an empty engine
+    /// is a far better answer than a table that silently disappears from `system.tables` because the
+    /// caller lacks `SHOW COLUMNS` on it or a single `DESC TABLE` failed.
+    return getTablesIteratorImpl(local_context, filter_by_table_name, /* keep_unresolved_tables = */ true);
+}
+
+
+DatabaseTablesIteratorPtr DatabaseRemote::getTablesIteratorImpl(
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables) const
+{
     Tables tables;
 
     /// Do not allow to throw here, because this might be, for example, a query to `system.tables`.
@@ -430,7 +424,8 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIterator(
             if (filter_by_table_name && !filter_by_table_name(table_name))
                 continue;
 
-            if (auto storage = fetchTable(table_name, local_context))
+            auto storage = fetchTable(table_name, local_context);
+            if (storage || keep_unresolved_tables)
                 tables[table_name] = storage;
         }
     }

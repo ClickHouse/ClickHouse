@@ -71,6 +71,34 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}_outer"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_outer"
 
+echo '-- system.tables keeps the row of a table whose structure cannot be fetched, with an empty engine'
+# The name has already been established by the listing, so a missing `SHOW COLUMNS` (or a transient
+# `DESC TABLE` failure) must not make the table vanish from `system.tables`; the metadata columns
+# that need the storage object stay empty instead.
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SELECT name, engine FROM system.tables WHERE database = '${REMOTE_DB}'"
+
+echo '-- a table of a multi-shard proxy resolves with the grants on the table alone (prints 4)'
+# Two shards that both point to this server: reading the table must work with `SHOW COLUMNS` and
+# `SELECT` on the underlying table alone, without any database-wide grant, and it reads both shards,
+# so every row of the underlying table is counted twice.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE DATABASE ${REMOTE_DB}_sharded ENGINE = Remote('127.0.0.1,127.0.0.1', '${CLICKHOUSE_DATABASE}', 'default', '');
+    REVOKE SHOW TABLES ON ${CLICKHOUSE_DATABASE}.* FROM ${TEST_USER};
+    GRANT SHOW COLUMNS, SELECT ON ${CLICKHOUSE_DATABASE}.t TO ${TEST_USER};
+    GRANT SELECT, SHOW TABLES ON ${REMOTE_DB}_sharded.* TO ${TEST_USER};
+"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SELECT count() FROM ${REMOTE_DB}_sharded.t"
+
+echo '-- ...and only the tables the caller may see are listed'
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.hidden (id UInt64) ENGINE = MergeTree ORDER BY id;
+"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}_sharded"
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE ${CLICKHOUSE_DATABASE}.hidden;
+    DROP DATABASE ${REMOTE_DB}_sharded;
+"
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP USER ${TEST_USER};
     DROP DATABASE ${REMOTE_DB};

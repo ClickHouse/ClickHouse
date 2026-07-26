@@ -87,12 +87,12 @@ def test_replica_fallback_needs_no_local_grants(started_cluster):
     node2.query("DROP DATABASE grants_src")
 
 
-def test_all_remote_shards_must_have_the_table(started_cluster):
-    # `Remote('node1,node2', db)` on node3 describes two remote shards, and the proxy table queries
-    # both of them, so a table is exposed only when every shard has it. Here `only_on_node2` exists
-    # on one shard only: exposing it would advertise a proxy whose `SELECT` then fails on node1, so
-    # it must be reported as missing instead. A table present on both shards is served, aggregating
-    # over both.
+def test_multi_shard_metadata_comes_from_one_shard(started_cluster):
+    # `Remote('node1,node2', db)` on node3 describes two remote shards. The metadata is resolved from
+    # an arbitrary shard -- the first reachable one, here node1 -- so that a listing costs a single
+    # query instead of one per shard, exactly like the `remote` table function resolves the structure.
+    # A table present on both shards is served, aggregating over both; `only_on_node2`, which the
+    # resolving shard does not have, is not exposed.
     node1.query("CREATE DATABASE sharded_src")
     node1.query("CREATE TABLE sharded_src.both (x UInt64) ENGINE = MergeTree ORDER BY x")
     node1.query("INSERT INTO sharded_src.both VALUES (1)")
@@ -111,7 +111,9 @@ def test_all_remote_shards_must_have_the_table(started_cluster):
     assert node3.query("EXISTS TABLE sharded_proxy.both") == "1\n"
     assert node3.query("EXISTS TABLE sharded_proxy.only_on_node2") == "0\n"
     assert node3.query("SELECT count(), sum(x) FROM sharded_proxy.both") == "2\t3\n"
-    assert "UNKNOWN_TABLE" in node3.query_and_get_error(
+    # Reading a table that only one shard has fails on the shard that does not have it (the structure
+    # itself is inferred from whichever shard can describe it, like `getStructureOfRemoteTable` does).
+    assert "There is no table" in node3.query_and_get_error(
         "SELECT * FROM sharded_proxy.only_on_node2"
     )
 
@@ -120,10 +122,11 @@ def test_all_remote_shards_must_have_the_table(started_cluster):
     node2.query("DROP DATABASE sharded_src")
 
 
-def test_local_shard_does_not_hide_a_missing_remote_shard(started_cluster):
-    # The symmetric case: `Remote('node1,node2', db)` on node1 resolves the first shard through the
-    # local catalog, but the second shard must still be consulted. A table that only the local shard
-    # has must be reported as missing rather than exposed as a proxy that fails on node2.
+def test_multi_shard_metadata_from_the_local_shard(started_cluster):
+    # The symmetric case: `Remote('node1,node2', db)` on node1 resolves the metadata through the local
+    # catalog of the local shard, without a round trip. The shards are expected to serve the same set
+    # of tables: a table that only the resolving shard has is still exposed, and reading it fails on
+    # the shard that does not have it.
     node1.query("CREATE DATABASE partial_src")
     node1.query(
         "CREATE TABLE partial_src.only_local (x UInt64) ENGINE = MergeTree ORDER BY x"
@@ -138,9 +141,9 @@ def test_local_shard_does_not_hide_a_missing_remote_shard(started_cluster):
         "CREATE DATABASE partial_proxy ENGINE = Remote('node1,node2', 'partial_src', 'default', '')"
     )
 
-    assert node1.query("SHOW TABLES FROM partial_proxy") == "both\n"
-    assert node1.query("EXISTS TABLE partial_proxy.only_local") == "0\n"
-    assert "UNKNOWN_TABLE" in node1.query_and_get_error(
+    assert node1.query("SHOW TABLES FROM partial_proxy") == "both\nonly_local\n"
+    assert node1.query("EXISTS TABLE partial_proxy.only_local") == "1\n"
+    assert "There is no table" in node1.query_and_get_error(
         "SELECT * FROM partial_proxy.only_local"
     )
     assert node1.query("SELECT count(), sum(x) FROM partial_proxy.both") == "2\t30\n"

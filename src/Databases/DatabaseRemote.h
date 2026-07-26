@@ -59,6 +59,15 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// The `system.tables` path: unlike the plain iterator, it keeps a table whose structure could not
+    /// be fetched, with a null storage object (`StorageSystemTables` null-guards every column that
+    /// needs it), so the row does not silently vanish from `system.tables`.
+    DatabaseTablesIteratorPtr getTablesIteratorWithHint(
+        ContextPtr context,
+        const FilterByNameFunction & filter_by_table_name,
+        bool skip_not_loaded,
+        const TablesFilter & tables_filter) const override;
+
     /// Drives `SHOW TABLES` directly from `fetchTablesList`. The default implementation goes through
     /// `getTablesIterator`, which drops every table whose structure could not be fetched (e.g. a remote
     /// user with `SHOW TABLES` but no `SHOW COLUMNS` on one table, or a transient `DESC TABLE` failure),
@@ -119,24 +128,30 @@ private:
     bool persistent = true;
     const UUID db_uuid;
 
+    /// Shared implementation of `getTablesIterator` / `getTablesIteratorWithHint`;
+    /// `keep_unresolved_tables` controls whether a table whose structure could not be fetched is kept
+    /// with a null storage object or dropped.
+    DatabaseTablesIteratorPtr getTablesIteratorImpl(
+        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool keep_unresolved_tables) const;
+
     /// Resolve `remote_database` as a database of this server when the cluster has a local shard,
     /// rejecting a database that refers to itself.
     DatabasePtr tryGetLocalDatabase() const;
 
     /// Fetch the names of the tables of `remote_database` from the remote server. When `only_table`
     /// is set, fetches only that name (the cheap existence check of `isTableExist`, which must not
-    /// resolve the structure of the table). The proxy tables query every configured shard, so the
-    /// result is the intersection of the per-shard lists: a table missing on some shard is not
-    /// listed, because the proxy could not serve it.
+    /// resolve the structure of the table). The list comes from an arbitrary shard (a local one is
+    /// preferred, another shard is consulted only when it is unavailable), like the structure does in
+    /// `getStructureOfRemoteTable`: the shards of a cluster normally serve the same set of tables, and
+    /// asking every one of them would multiply the cost of every listing by the number of shards.
     Strings fetchTablesList(ContextPtr local_context, const String * only_table = nullptr) const;
 
     /// Infer the column structure of `remote_database.table_name`, from the local catalog for a local
     /// shard (without the name-hint machinery of `DatabaseCatalog::getTable`, which would recurse back
     /// into this database) and via `DESC TABLE` on the remote server otherwise. When the local replica
     /// does not have the database or the table, falls back to the remote replicas, like the
-    /// `Distributed` read path does. With more than one shard, the table must be present on every
-    /// shard (established via `fetchTablesList`) before the structure is inferred from a single one.
-    /// Returns an empty set when the table does not exist, and sets
+    /// `Distributed` read path does. Like the listing, the structure is inferred from an arbitrary
+    /// shard. Returns an empty set when the table does not exist, and sets
     /// `table_cluster` to the cluster through which the table should be accessed (`remote_only_cluster`
     /// when the structure came from the fallback, `cluster` otherwise).
     ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const;

@@ -20,3 +20,9 @@ t
 1
 -- a Remote database over another Remote database lists the names without resolving the structure
 t
+-- system.tables keeps the row of a table whose structure cannot be fetched, with an empty engine
+t	
+-- a table of a multi-shard proxy resolves with the grants on the table alone (prints 4)
+4
+-- ...and only the tables the caller may see are listed
+t
