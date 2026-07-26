@@ -101,6 +101,13 @@ workflow = Workflow.Config(
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.bugfix_validation_it_jobs
         ],
+        # Unit-test (gtest) bugfix validation: a single AMD-only job (allow_failure)
+        # that builds a merge-base "before" binary and runs the touched suite against it.
+        # It is not part of the per-arch FT/IT aggregation; instead new_tests_check.py
+        # blocks the unit case iff this job reported a definitive FAIL (failed to
+        # reproduce) — a reproduction or an inconclusive ERROR does not block.
+        # Like the sibling FT/IT jobs, it is deferred behind the core blocking jobs.
+        JobConfigs.bugfix_validation_ut_job.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *[
             j.set_run_after(
                 CORE_BLOCKING_JOB_NAMES
@@ -177,6 +184,12 @@ workflow = Workflow.Config(
         *[
             job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
+        ],
+        # ClickBench runs on PRs only when files in its digest change
+        # (see `clickbench_jobs.digest_config`), so the cost is bounded.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.sqllogic_test_master_job.set_run_after(
