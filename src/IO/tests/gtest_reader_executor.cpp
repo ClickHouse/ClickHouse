@@ -402,13 +402,14 @@ TEST_F(ReaderExecutorTest, MissingFileWithUnknownSizeThrows)
 
 TEST_F(ReaderExecutorTest, TruncatedKnownSizeFileThrows)
 {
-    /// A known-size object whose file is shorter than its declared size is
-    /// truncated/corrupt; the executor must throw rather than return a short read.
+    /// A known-size object whose file is shorter than its declared size is truncated/corrupt: the
+    /// executor serves the bytes that exist, then throws when the source ends before the declared
+    /// total (rather than silently reporting a short file).
     StoredObject obj = makeFile("short.bin", 100);
     obj.bytes_size = 1000;  // pretend the object is larger than the file on disk
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), {obj}, ReaderExecutor::Options{.block_size = 256});
 
-    EXPECT_ANY_THROW(ex.readNextWindow());
+    EXPECT_ANY_THROW(drain(ex));
 }
 
 /// The metrics tests read the executor's ProfileEvents from a fresh per-test ThreadGroup

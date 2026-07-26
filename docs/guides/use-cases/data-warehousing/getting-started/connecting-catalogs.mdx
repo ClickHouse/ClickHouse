@@ -8,7 +8,7 @@ keywords: ['data lake', 'lakehouse', 'catalog', 'glue', 'unity', 'rest', 'lakeke
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 In the [previous section](/guides/use-cases/data-warehousing/getting-started/querying-directly), you queried open table formats by passing storage paths directly. In practice, most organizations manage table metadata through a **data catalog** - a central registry that tracks table locations, schemas, and partitions. When you connect ClickHouse to a catalog using the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine, the entire catalog is exposed as a ClickHouse database. Every table in the catalog appears automatically and can be queried with full ClickHouse SQL - no need to know individual table paths or manage credentials per table.
 
@@ -30,11 +30,10 @@ For example purposes, we'll use the Unity catalog.
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) provides centralized governance for Databricks lakehouse data.
 
-Databricks supports multiple data formats for their lakehouse. With ClickHouse, you can query Unity Catalog tables as both Delta and Iceberg.
+Databricks supports multiple data formats for their lakehouse. With ClickHouse, you can query Unity Catalog Delta and Iceberg tables that use external storage locations.
 
 <Note>
-Integration with the Unity Catalog works for managed and external tables.
-This integration is currently only supported on AWS.
+This integration is currently only supported on AWS. Tables on Databricks managed storage are not supported because Unity Catalog does not provide credential vending for those locations. See the [Unity Catalog reference](/guides/use-cases/data-warehousing/unity-catalog) for details.
 </Note>
 
 ### Configuring Unity in Databricks {#configuring-unity-in-databricks}
