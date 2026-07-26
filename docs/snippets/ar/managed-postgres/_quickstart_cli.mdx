@@ -215,7 +215,7 @@ done
   ### انسخ الجداول إلى ClickHouse
 </div>
 
-أنشئ ClickPipe لـ Postgres CDC على خدمة ClickHouse، مع توجيهه إلى اسم مضيف الخاص بـ Managed Postgres. ينسخ هذا الـ pipe الصفوف الحالية، ثم يُبقي ClickHouse متزامنًا مع التغييرات اللاحقة:
+أنشئ ClickPipe لـ Postgres CDC على خدمة ClickHouse، مع توجيهه إلى اسم مضيف الخاص بـ ClickHouse Managed Postgres. ينسخ هذا الـ قناة الصفوف الحالية، ثم يُبقي ClickHouse متزامنًا مع التغييرات اللاحقة:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

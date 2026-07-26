@@ -12,7 +12,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-يوفّر ClickHouse Cloud الآن ClickPipes لترحيل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة Managed Postgres. يوفّر هذا التكامل المضمّن تجربة سلسة للاتصال بقاعدة بياناتك المصدرية، وتصدير المخطط، واستيراده إلى Managed Postgres، وإعداد النسخ المتماثل المستمر.
+يوفّر ClickHouse Cloud الآن ClickPipes لترحيل قاعدة بيانات PostgreSQL الخارجية لديك إلى خدمة ClickHouse Managed Postgres. يوفّر هذا التكامل المضمّن تجربة سلسة للاتصال بقاعدة البيانات المصدر، وتصدير المخطط، واستيراده إلى ClickHouse Managed Postgres، وإعداد النسخ المتماثل المستمر.
 
 <div id="prerequisites">
   ## المتطلبات المسبقة
@@ -35,21 +35,21 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## اعتبارات قبل الترحيل
 </div>
 
-* **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على النظام الهدف.
+* **نشر تغييرات DDL**: يلتقط النسخ المتماثل المستمر (CDC) عمليات DML و`ADD COLUMN`. أما تغييرات DDL الأخرى، مثل `DROP COLUMN` و`ALTER COLUMN`، فلا تُنقل ويجب تطبيقها يدويًا على الهدف.
 
 <Note>
-  إذا واجهت مشكلات أثناء الترحيل، فراجع [الأسئلة الشائعة حول عمليات ترحيل Managed Postgres](/ar/products/managed-postgres/migrations/faq) للاطلاع على الأخطاء الشائعة وحلولها.
+  إذا واجهت مشكلات أثناء الترحيل، فراجع [الأسئلة الشائعة حول عمليات ترحيل ClickHouse Managed Postgres](/ar/products/managed-postgres/migrations/faq) للاطلاع على الأخطاء الشائعة وحلولها.
 </Note>
 
 <Steps>
   <Step title="الاتصال بقاعدة البيانات المصدر" id="step-1-connect">
-    افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد خدمة Managed Postgres الخاص بك.
+    افتح [ClickHouse Cloud console](https://clickhouse.cloud) وحدد خدمة ClickHouse Managed Postgres الخاصة بك.
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="بطاقة خدمة Managed Postgres في قائمة خدمات ClickHouse Cloud" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="بطاقة خدمة ClickHouse Managed Postgres في قائمة خدمات ClickHouse Cloud" size="lg" border />
 
     في الشريط الجانبي الأيسر، انقر على **مصادر البيانات**.
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="إدخال مصادر البيانات في الشريط الجانبي لـ خدمة Managed Postgres" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="إدخال مصادر البيانات في الشريط الجانبي لـ خدمة ClickHouse Managed Postgres" size="lg" border />
 
     انقر على **بدء الاستيراد**.
 
@@ -61,7 +61,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     اختر طريقة الإدخال:
 
-    * **التحميل الأولي + CDC** — ينسخ البيانات الحالية، ثم يُبقي الوجهة متزامنة مع التغييرات المستمرة.
+    * **التحميل الأولي + CDC** — ينسخ البيانات الحالية، ثم يُبقي الهدف متزامنة مع التغييرات المستمرة.
     * **التحميل الأولي فقط** — نسخة لمرة واحدة، من دون نسخ متماثل مستمر.
     * **CDC فقط** — يتخطى النسخة الأولية ويُجري نسخًا متماثلًا للتغييرات الجديدة فقط بدءًا من هذه النقطة.
 
@@ -91,10 +91,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     انقر على **التالي**.
   </Step>
 
-  <Step title="استيراد المخطط إلى خدمة Managed Postgres الخاصة بك" id="step-3-import-schema">
+  <Step title="استيراد المخطط إلى خدمة ClickHouse Managed Postgres الخاصة بك" id="step-3-import-schema">
     حدد قاعدة البيانات الهدف من القائمة المنسدلة، أو انقر على **Create a new database** لإنشاء واحدة جديدة.
 
-    يعرض المعالج أمر `psql` لتطبيق ملف تفريغ المخطط على خدمة Managed Postgres الخاصة بك. شغّله في الطرفية:
+    يعرض المعالج أمر `psql` لتطبيق ملف تفريغ المخطط على خدمة ClickHouse Managed Postgres الخاصة بك. شغّله في الطرفية:
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="الخطوة 3: أمر psql لاستيراد المخطط" size="lg" border />
 
@@ -119,7 +119,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     | Setting                               | Default | Description                                     |
     | ------------------------------------- | ------- | ----------------------------------------------- |
-    | Sync interval (seconds)               | 10      | عدد مرات الاستعلام عن فتحة النسخ المتماثل          |
+    | Sync interval (seconds)               | 10      | عدد مرات الاستعلام عن فتحة النسخ المتماثل       |
     | Parallel threads for initial load     | 4       | عدد الخيوط لمرحلة النسخ المجمّع                 |
     | Pull batch size                       | 100,000 | عدد الصفوف التي يتم جلبها في كل دفعة نسخ متماثل |
     | Snapshot number of rows per partition | 100000  | حجم partition للّقطات الخاصة بالجداول الكبيرة   |
@@ -206,7 +206,7 @@ BEGIN
 END $$;
 ```
 
-**حوِّل حركة مرور التطبيق.** وجِّه عمليات القراءة والكتابة إلى خدمة Managed Postgres لديك، وراقب الأخطاء ومخالفات القيود وسلامة النسخ المتماثل.
+**حوِّل حركة مرور التطبيق.** وجِّه عمليات القراءة والكتابة إلى خدمة ClickHouse Managed Postgres لديك، وراقب الأخطاء ومخالفات القيود وسلامة النسخ المتماثل.
 
 **نظِّف.**  بمجرد إتمام التحويل والتأكد من أن الخدمة الجديدة سليمة، احذف عملية الترحيل من **مصادر البيانات**. إذا كنت قد استخدمت CDC، فاحذف فتحة النسخ المتماثل من المصدر لتحرير الموارد:
 
@@ -218,6 +218,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## الخطوات التالية
 </div>
 
-* [البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)
-* [تفاصيل الاتصال بـ Managed Postgres](/ar/products/managed-postgres/connection)
+* [البدء السريع لـ ClickHouse Managed Postgres](/ar/products/managed-postgres/quickstart)
+* [تفاصيل الاتصال بـ ClickHouse Managed Postgres](/ar/products/managed-postgres/connection)
 * [الأسئلة الشائعة حول Postgres في ClickPipes](/ar/integrations/clickpipes/postgres/faq)

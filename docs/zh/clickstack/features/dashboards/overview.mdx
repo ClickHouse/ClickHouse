@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack 可视化与仪表盘'
-sidebarTitle: '仪表盘'
+sidebarTitle: '概览'
 description: 'ClickStack 可视化与仪表盘'
 doc_type: 'guide'
 keywords: ['clickstack', '仪表盘', '可视化', '监控', '可观测性']
@@ -306,7 +306,7 @@ HyperDX 部署后即提供开箱即用的仪表盘。
 <Info>
   **所需的系统表访问权限**
 
-  此仪表盘会查询 ClickHouse [系统表](/zh/reference/system-tables/index) 以显示关键指标。需要以下授权：
+  此仪表盘会查询 ClickHouse [系统表](/zh/reference/system-tables/overview) 以显示关键指标。需要以下授权：
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

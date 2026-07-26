@@ -356,7 +356,7 @@ ClickHouse は<a href="/ja/get-started/about/distinctive-features#true-column-or
 
     そのため、サンプルテーブルのすべてのグラニュール (最後のものを除く) は同じサイズになっています。
 
-  * アダプティブインデックス粒度を持つテーブルでは、index granularity は[デフォルト](/ja/reference/settings/merge-tree-settings#index_granularity_bytes)でアダプティブであるため、行データのサイズに応じて、一部のグラニュールは 8192 行未満になることがあります。
+  * アダプティブインデックス粒度を持つテーブルでは、index granularity は [デフォルト](/ja/reference/settings/merge-tree-settings#index_granularity_bytes) でアダプティブであるため、行データのサイズに応じて、一部のグラニュールは 8192 行未満になることがあります。
 
   * 主キーのキーカラム (`UserID`、`URL`) の一部のカラム値をオレンジ色で示しています。
     これらのオレンジ色で示したカラム値は、各グラニュールの先頭行にある主キーのキーカラム値です。

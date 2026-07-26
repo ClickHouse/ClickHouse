@@ -228,6 +228,8 @@ ClickHouse может читать только нужные диапазоны 
 
 Если задано значение true, отдельные столбцы, записанные в формате CSV, можно десериализовать в столбец Tuple.
 
+Это применимо только к обычному `Tuple`. `Nullable(Tuple)` всегда записывается как одно поле CSV (см. [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ru/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) и, соответственно, считывается обратно из одного поля, а не из отдельных столбцов, независимо от этой настройки. Разбор отдельных столбцов для `Nullable(Tuple)` не поддерживается, потому что начальное поле `\N` неоднозначно (это может быть как внешний NULL кортежа, так и NULL его первого элемента).
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>
@@ -386,9 +388,9 @@ ClickHouse может читать только нужные диапазоны 
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Новая настройка, которая управляет обработкой геометрических типов GeoJSON, не представимых типом Geometry (GeometryCollection, MultiPoint)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Новая настройка, которая управляет обработкой геометрических типов GeoJSON, не представимых типом Geometry (например, GeometryCollection)"}]}]} />
 
-Определяет, что происходит, если при чтении входных данных `GeoJSON` нужно сохранить в столбце `geometry` корректный геометрический тип `GeoJSON`, который не может быть представлен типом `Geometry` в ClickHouse (например, `GeometryCollection` или `MultiPoint`).
+Определяет, что происходит, если при чтении входных данных `GeoJSON` нужно сохранить в столбце `geometry` корректный геометрический тип `GeoJSON`, который не может быть представлен типом `Geometry` в ClickHouse (например, `GeometryCollection`).
 
 Возможные значения:
 
@@ -1004,7 +1006,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Новая настройка для работы с геостолбцами в файле Parquet"}]}]} />
 
-Использовать парсер геостолбцов для преобразования Array(UInt8) в типы Point/Linestring/Polygon/MultiLineString/MultiPolygon
+Использовать парсер геостолбцов для преобразования Array(UInt8) в типы Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
 
 <div id="input_format_parquet_allow_missing_columns">
   ## input_format_parquet_allow_missing_columns

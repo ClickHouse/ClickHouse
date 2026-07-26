@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'FAQ по миграциям в Managed Postgres'
+title: 'FAQ по миграциям в ClickHouse Managed Postgres'
 description: 'Часто задаваемые вопросы о миграции данных в ClickHouse Managed Postgres.'
-keywords: ['postgres', 'миграция', 'faq', 'managed postgres', 'логическая репликация', 'enum', 'уникальное ограничение']
+keywords: ['postgres', 'миграция', 'faq', 'managed postgres', 'логическая репликация', 'enum', 'ограничение уникальности']
 doc_type: 'reference'
 ---
 
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-Многие вопросы о работе репликации Postgres — включая столбцы `TOAST`, слоты репликации, публикации, изменения схемы и сопоставление типов данных — освещены в [FAQ по ClickPipes для Postgres](/ru/integrations/clickpipes/postgres/faq). Эта информация также применима к миграциям Managed Postgres.
+Многие вопросы о работе репликации Postgres — включая столбцы `TOAST`, слоты репликации, публикации, изменения схемы и сопоставление типов данных — освещены в [FAQ по ClickPipes для Postgres](/ru/integrations/clickpipes/postgres/faq). Эта информация также применима к миграциям ClickHouse Managed Postgres.
 
 <div id="invalid-enum-value">
   ### Во время репликации появляется ошибка &quot;invalid input value for enum&quot;
 </div>
 
-Эта ошибка возникает, когда в исходном Postgres есть значение enum, которого нет в целевом Managed Postgres. Логическая репликация не передаёт команды `ALTER TYPE ... ADD VALUE` автоматически, поэтому новые значения enum, добавленные в источнике после первоначальной настройки схемы, приведут к сбою вставки в целевой базе.
+Эта ошибка возникает, когда в исходном Postgres есть значение enum, которого нет в целевом ClickHouse Managed Postgres. Логическая репликация не передаёт команды `ALTER TYPE ... ADD VALUE` автоматически, поэтому новые значения enum, добавленные в источнике после первоначальной настройки схемы, приведут к сбою вставки в целевой базе.
 
 Чтобы исправить это, добавьте отсутствующее значение в тип enum в целевом Postgres:
 

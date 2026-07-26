@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "Paramètres du serveur",
   "pages": [
+    "fr/reference/settings/server-settings/settings",
     "fr/reference/settings/server-settings/settings/access-control",
     "fr/reference/settings/server-settings/settings/aggregate-function",
     "fr/reference/settings/server-settings/settings/allow",
@@ -132,6 +133,5 @@
     "fr/reference/settings/server-settings/settings/workload",
     "fr/reference/settings/server-settings/settings/zookeeper",
     "fr/reference/settings/server-settings/settings/other"
-  ],
-  "root": "fr/reference/settings/server-settings/settings"
+  ]
 }

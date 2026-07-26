@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## كيف تختلف المفاتيح الأساسية في ClickHouse؟
 </div>
 
-كما هو موضح [هنا](/ar/get-started/migrate/bigquery/index)، ومثل BigQuery، لا يفرض ClickHouse تفرّد قيم أعمدة المفتاح الأساسي في الجدول.
+كما هو موضح [هنا](/ar/get-started/migrate/bigquery/overview)، ومثل BigQuery، لا يفرض ClickHouse تفرّد قيم أعمدة المفتاح الأساسي في الجدول.
 
 وعلى غرار التجميع في BigQuery، تُخزَّن بيانات جدول ClickHouse على القرص مرتبةً حسب أعمدة المفتاح الأساسي. ويستفيد مُحسِّن الاستعلامات من ترتيب الفرز هذا لتجنّب إعادة الفرز، وتقليل استخدام الذاكرة في عمليات JOIN، وتمكين الإيقاف المبكر لعبارات LIMIT.
 وعلى خلاف BigQuery، ينشئ ClickHouse تلقائيًا [فهرسًا أساسيًا (متناثرًا)](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) استنادًا إلى قيم أعمدة المفتاح الأساسي. ويُستخدم هذا الفهرس لتسريع جميع الاستعلامات التي تتضمن عوامل تصفية على أعمدة المفتاح الأساسي. وتحديدًا:

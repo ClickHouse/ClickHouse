@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouseの主キーは何が違うのか？
 </div>
 
-[こちら](/ja/get-started/migrate/bigquery/index)で説明しているように、BigQueryと同様、ClickHouseはテーブルの主キーカラム値の一意性を強制しません。
+[こちら](/ja/get-started/migrate/bigquery/overview)で説明しているように、BigQueryと同様、ClickHouseはテーブルの主キーカラム値の一意性を強制しません。
 
 また、BigQueryのクラスタリングと同様に、ClickHouseテーブルのデータは主キーカラム順に並べられた状態でディスクに保存されます。このソート順はクエリオプティマイザによって利用され、再ソートを回避し、JOIN時のメモリ使用量を抑え、limit句の短絡評価を可能にします。
 一方、BigQueryとは異なり、ClickHouseは主キーカラム値に基づいて[ (スパース) プライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を自動的に作成します。この索引は、主キーカラムに対するフィルターを含むすべてのクエリを高速化するために使われます。具体的には次のとおりです。

@@ -228,6 +228,8 @@ Al leer Array desde CSV, se espera que sus elementos se hayan serializado como C
 
 Si se establece en true, las columnas independientes escritas en formato CSV pueden deserializarse en una columna Tuple.
 
+Esto se aplica solo a `Tuple` simple. Un `Nullable(Tuple)` siempre se escribe como un único campo CSV (consulte [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/es/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) y, del mismo modo, se vuelve a leer desde un único campo, nunca desde columnas independientes, independientemente de esta configuración. El análisis de columnas independientes no es compatible con `Nullable(Tuple)` porque un campo inicial `\N` es ambiguo (puede ser el NULL externo de la tupla o el NULL de su primer elemento).
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>
@@ -386,9 +388,9 @@ Forzar la inicialización de los campos omitidos con valores NULL
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Nueva configuración que controla el tratamiento de los tipos de geometría GeoJSON que no pueden representarse en el tipo Geometry (GeometryCollection, MultiPoint)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Nueva configuración que controla el tratamiento de los tipos de geometría GeoJSON que no pueden representarse en el tipo Geometry (como GeometryCollection)"}]}]} />
 
-Controla qué sucede cuando un tipo de geometría `GeoJSON` válido que no puede representarse en el tipo `Geometry` de ClickHouse (como `GeometryCollection` o `MultiPoint`) debe almacenarse en la columna `geometry` al leer la entrada `GeoJSON`.
+Controla qué sucede cuando un tipo de geometría `GeoJSON` válido que no puede representarse en el tipo `Geometry` de ClickHouse (como `GeometryCollection`) debe almacenarse en la columna `geometry` al leer la entrada `GeoJSON`.
 
 Posibles valores:
 
@@ -1004,7 +1006,7 @@ Valores posibles:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Una nueva configuración para usar columnas geo en un archivo Parquet"}]}]} />
 
-Usa el analizador de columnas geo para convertir Array(UInt8) en tipos Point/Linestring/Polygon/MultiLineString/MultiPolygon
+Usa el analizador de columnas geo para convertir Array(UInt8) en tipos Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
 
 <div id="input_format_parquet_allow_missing_columns">
   ## input_format_parquet_allow_missing_columns

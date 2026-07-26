@@ -16,7 +16,7 @@ ClickHouse 支持多种类型的用户自定义函数 (UDFs) ：
 * [可执行 UDFs](#executable-user-defined-functions) 会启动外部程序或脚本 (Python、Bash 等) ，并通过 STDIN / STDOUT 以流式方式向其传输数据块。可用于在无需重新编译 ClickHouse 的情况下集成现有代码或工具。与进程内方案相比，它们的单次调用开销更高，因此更适合较重的逻辑，或需要不同运行时的场景。
 * [SQL UDFs](#sql-user-defined-functions) 使用 `CREATE FUNCTION` 通过纯 SQL 定义。它们会被内联/展开到查询计划中 (不存在进程边界) ，因此开销较低，非常适合复用表达式逻辑或简化复杂的计算列。
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) 会在服务器进程内的沙箱中运行编译为 WebAssembly 的代码。与外部可执行程序相比，它们的单次调用开销更低；与原生扩展相比，又具备更好的隔离性，因此适合用可编译为 WASM 的语言 (如 C/C++/Rust) 编写自定义算法。
-* [Experimental 基于 driver 的可执行 UDFs](#driver-based-executable-user-defined-functions) 允许由运维人员提供的 &quot;driver&quot; 在函数创建时，将 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` 中提供的代码片段转换为可执行 UDF (例如通过编译) 。它们构建在可执行 UDFs 之上，并且需要服务器端 driver 配置。
+* [Experimental 基于 驱动 的可执行 UDFs](#driver-based-executable-user-defined-functions) 允许由运维人员提供的 &quot;驱动&quot; 在函数创建时，将 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` 中提供的代码片段转换为可执行 UDF (例如通过编译) 。它们构建在可执行 UDFs 之上，并且需要服务器端 驱动 配置。
 
 <div id="executable-user-defined-functions">
   ## 可执行用户自定义函数

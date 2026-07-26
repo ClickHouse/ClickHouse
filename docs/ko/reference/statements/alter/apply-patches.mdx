@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 ```
 
-이 명령은 [lightweight `UPDATE`](/ko/reference/statements/update) SQL 문으로 생성된 패치 파트를 물리적으로 머티리얼라이즈하도록 수동으로 트리거합니다. 영향을 받는 컬럼만 다시 작성하여 보류 중인 패치를 데이터 파트에 강제로 적용합니다.
+이 명령은 [경량 업데이트](/ko/reference/statements/update) SQL 문으로 생성된 패치 파트를 물리적으로 머티리얼라이즈하도록 수동으로 트리거합니다. 영향을 받는 컬럼만 다시 작성하여 보류 중인 패치를 데이터 파트에 강제로 적용합니다.
 
 <Note>
   * [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블([복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블 포함)에서만 작동합니다.

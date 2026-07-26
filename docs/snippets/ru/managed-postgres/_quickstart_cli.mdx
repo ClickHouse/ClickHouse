@@ -215,7 +215,7 @@ done
   ### Реплицируйте таблицы в ClickHouse
 </div>
 
-Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста Managed Postgres. Пайп скопирует существующие строки, а затем будет поддерживать синхронизацию ClickHouse с текущими изменениями:
+Создайте Postgres CDC ClickPipe в сервисе ClickHouse, указав имя хоста ClickHouse Managed Postgres. Пайп скопирует существующие строки, а затем будет поддерживать синхронизацию ClickHouse с текущими изменениями:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

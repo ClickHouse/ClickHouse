@@ -1912,9 +1912,9 @@ FROM numbers(5);
 
 기하 객체의 x 및 y 좌표를 서로 바꿉니다. 이 작업은 위도와 경도를 맞바꾸는 것으로, 서로 다른 좌표계 간 변환하거나 좌표 순서를 바로잡는 데 유용합니다.
 
-Point에서는 x 및 y 좌표를 서로 바꿉니다. 복합 기하 객체(LineString, Polygon, MultiPolygon, Ring, MultiLineString)에서는 각 좌표 쌍에 이 변환을 재귀적으로 적용합니다.
+Point에서는 x 및 y 좌표를 서로 바꿉니다. 복합 기하 객체(MultiPoint, LineString, 다각형, MultiPolygon, Ring, MultiLineString)에서는 각 좌표 쌍에 이 변환을 재귀적으로 적용합니다.
 
-이 함수는 개별 Geometry 타입(Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString)과 Geometry variant type을 모두 지원합니다.
+이 함수는 개별 Geometry 타입(Point, MultiPoint, Ring, 다각형, MultiPolygon, LineString, MultiLineString)과 Geometry variant type을 모두 지원합니다.
 
 **구문**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **인수**
 
-* `geometry` — 변환할 도형입니다. 지원되는 타입: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), 또는 Geometry (이들 타입 중 하나를 포함하는 Variant)입니다.
+* `geometry` — 변환할 도형입니다. 지원되는 타입: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), 다각형 (Array(Ring)), MultiPolygon (Array(다각형)), LineString (Array(Point)), MultiLineString (Array(LineString)), 또는 Geometry (이들 타입 중 하나를 포함하는 Variant)입니다.
 
 **반환 값**
 
-좌표가 뒤바뀐 도형입니다. 반환 타입은 입력 타입과 동일합니다. [`Point`](/ko/reference/data-types/geo#point) 또는 [`Ring`](/ko/reference/data-types/geo#ring) 또는 [`Polygon`](/ko/reference/data-types/geo#polygon) 또는 [`MultiPolygon`](/ko/reference/data-types/geo#multipolygon) 또는 [`LineString`](/ko/reference/data-types/geo#linestring) 또는 [`MultiLineString`](/ko/reference/data-types/geo#multilinestring) 또는 [`Geometry`](/ko/reference/data-types/geo)
+좌표가 뒤바뀐 도형입니다. 반환 타입은 입력 타입과 동일합니다. [`Point`](/ko/reference/data-types/geo#point) 또는 [`MultiPoint`](/ko/reference/data-types/geo#multipoint) 또는 [`Ring`](/ko/reference/data-types/geo#ring) 또는 [`다각형`](/ko/reference/data-types/geo#polygon) 또는 [`MultiPolygon`](/ko/reference/data-types/geo#multipolygon) 또는 [`LineString`](/ko/reference/data-types/geo#linestring) 또는 [`MultiLineString`](/ko/reference/data-types/geo#multilinestring) 또는 [`Geometry`](/ko/reference/data-types/geo)
 
 **예시**
 

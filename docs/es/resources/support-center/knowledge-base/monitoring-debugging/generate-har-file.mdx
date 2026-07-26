@@ -6,6 +6,20 @@ keywords: ['archivo HAR', 'HTTP Archive']
 description: 'Un archivo HAR (HTTP Archive) registra la actividad de red en su navegador. Puede ayudar a nuestro equipo de soporte técnico a diagnosticar cargas de página lentas, solicitudes fallidas u otros problemas de red.'
 ---
 
+<Warning>
+  Los archivos HAR pueden contener cookies de sesión u otros datos confidenciales.
+  Compártalos únicamente con personal de soporte autorizado.
+</Warning>
+
+<Note title="Captura de intentos de inicio de sesión y otros flujos de varios pasos">
+  Algunos problemas abarcan más de una carga de página, como un inicio de sesión que redirige a su proveedor de identidad y luego lo devuelve al sitio. De forma predeterminada, su navegador borra el registro de red en cada navegación, por lo que el archivo HAR resultante puede quedar casi vacío. Al reproducir un problema como este, habilite la opción de su navegador para conservar los registros entre cargas de página antes de comenzar:
+
+  * Chrome / Edge / Safari: habilite &quot;Preserve log&quot;
+  * Firefox: habilite &quot;Persist Logs&quot;
+
+  Si lo desea, puede desmarcar esta opción nuevamente una vez que se haya generado el archivo HAR.
+</Note>
+
 <div id="from-google-chrome">
   ## Desde Google Chrome
 </div>
@@ -52,8 +66,3 @@ description: 'Un archivo HAR (HTTP Archive) registra la actividad de red en su n
 1. Cambie el nombre del archivo por uno corto y descriptivo (p. ej., login-issue.har).
 2. Comprima el archivo (opcional, pero recomendable).
 3. Adjúntelo a su caso de soporte o envíelo por correo electrónico a su contacto de soporte asignado.
-
-<Note>
-  Los archivos HAR pueden contener cookies de sesión u otros datos sensibles.
-  Compártalos únicamente con personal de soporte autorizado.
-</Note>

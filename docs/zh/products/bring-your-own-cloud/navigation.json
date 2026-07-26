@@ -31,10 +31,10 @@
         {
           "group": "Network",
           "pages": [
+            "zh/products/bring-your-own-cloud/onboarding/network",
             "zh/products/bring-your-own-cloud/onboarding/network-aws",
             "zh/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "zh/products/bring-your-own-cloud/onboarding/network"
+          ]
         },
         "zh/products/bring-your-own-cloud/onboarding/new-region",
         "zh/products/bring-your-own-cloud/onboarding/azure-private-preview"

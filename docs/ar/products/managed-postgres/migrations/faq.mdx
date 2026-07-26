@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'الأسئلة الشائعة'
-title: 'الأسئلة الشائعة حول عمليات ترحيل Managed Postgres'
+title: 'الأسئلة الشائعة حول عمليات ترحيل ClickHouse Managed Postgres'
 description: 'الأسئلة الشائعة حول ترحيل البيانات إلى ClickHouse Managed Postgres.'
 keywords: ['Postgres', 'ترحيل', 'الأسئلة الشائعة', 'Managed Postgres', 'النسخ المتماثل المنطقي', 'enum', 'قيد فريد']
 doc_type: 'مرجع'
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-تتناول [الأسئلة الشائعة حول ClickPipes for Postgres](/ar/integrations/clickpipes/postgres/faq) العديد من الأسئلة المتعلقة بكيفية عمل النسخ المتماثل في Postgres — بما في ذلك أعمدة `TOAST`، وفتحات النسخ المتماثل، والمنشورات، وتغييرات المخطط، وتعيينات الأنواع. وتنطبق المعلومات الواردة هناك أيضًا على عمليات الترحيل إلى Managed Postgres.
+تتناول [الأسئلة الشائعة حول ClickPipes for Postgres](/ar/integrations/clickpipes/postgres/faq) العديد من الأسئلة المتعلقة بكيفية عمل النسخ المتماثل في Postgres — بما في ذلك أعمدة `TOAST`، وفتحات النسخ المتماثل، والمنشورات، وتغييرات المخطط، وتعيينات الأنواع. وتنطبق المعلومات الواردة هناك أيضًا على عمليات الترحيل إلى ClickHouse Managed Postgres.
 
 <div id="invalid-enum-value">
   ### أواجه خطأ &quot;invalid input value for enum&quot; أثناء النسخ المتماثل
 </div>
 
-يحدث هذا الخطأ عندما يحتوي Postgres المصدر على قيمة enum غير موجودة في Managed Postgres الهدف. لا ينقل النسخ المتماثل المنطقي أوامر `ALTER TYPE ... ADD VALUE` تلقائيًا، لذلك فإن أي قيم enum جديدة تُضاف إلى المصدر بعد الإعداد الأولي للمخطط ستؤدي إلى فشل عمليات الإدراج على الهدف.
+يحدث هذا الخطأ عندما يحتوي Postgres المصدر على قيمة enum غير موجودة في ClickHouse Managed Postgres الهدف. لا ينقل النسخ المتماثل المنطقي أوامر `ALTER TYPE ... ADD VALUE` تلقائيًا، لذلك فإن أي قيم enum جديدة تُضاف إلى المصدر بعد الإعداد الأولي للمخطط ستؤدي إلى فشل عمليات الإدراج على الهدف.
 
 لإصلاح ذلك، أضف القيمة المفقودة إلى نوع enum في Postgres الهدف:
 

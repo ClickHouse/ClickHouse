@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouse 主键有何不同？
 </div>
 
-如[此处](/zh/get-started/migrate/bigquery/index)所述，与 BigQuery 一样，ClickHouse 不会强制要求表中的主键列值保持唯一。
+如[此处](/zh/get-started/migrate/bigquery/overview)所述，与 BigQuery 一样，ClickHouse 不会强制要求表中的主键列值保持唯一。
 
 与 BigQuery 中的聚簇类似，ClickHouse 表中的数据会按主键列排序后存储在磁盘上。查询优化器会利用这种排序顺序来避免额外排序、减少 JOIN 的内存占用，并支持对 limit 子句进行短路处理。
 不同于 BigQuery，ClickHouse 会根据主键列值自动创建[ (稀疏) 主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。该索引用于加速所有包含主键列过滤条件的查询。具体来说：

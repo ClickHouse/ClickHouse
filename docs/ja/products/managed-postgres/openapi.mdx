@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: Managed Postgres OpenAPI
-description: 'OpenAPI で Managed Postgres サービスを操作する'
+title: 'ClickHouse Managed Postgres OpenAPI'
+description: 'OpenAPI で ClickHouse Managed Postgres サービスを操作する'
 keywords: ['Managed Postgres', 'openapi', 'api', 'curl', 'チュートリアル', 'コマンドライン', 'クエリインサイト', 'スロークエリ']
 doc_type: 'guide'
 ---
@@ -11,12 +11,12 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-[ClickHouse OpenAPI](/ja/products/cloud/features/admin-features/api/index) を使用すると、
-ClickHouse サービスと同様に Managed Postgres サービスをプログラムから
+[ClickHouse OpenAPI](/ja/products/cloud/features/admin-features/api/api-overview) を使用すると、
+ClickHouse サービスと同様に ClickHouse Managed Postgres サービスをプログラムから
 操作できます。同じ API では、サービスのメトリクスをスクレイピングするための
 [Prometheus エンドポイント] も公開されています。
 すでに [OpenAPI] に慣れている場合は、[API キー] を取得して
-[Managed Postgres API リファレンス][pg-openapi] に直接進んでください。
+[ClickHouse Managed Postgres API リファレンス][pg-openapi] に直接進んでください。
 そうでない場合は、このまま簡単な概要をご確認ください。
 
 <div id="api-keys">
@@ -300,7 +300,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## 監視
 </div>
 
-Prometheus 互換のエンドポイントが 2 つあり、Managed Postgres サービスの CPU、メモリ、I/O、接続、
+Prometheus 互換のエンドポイントが 2 つあり、ClickHouse Managed Postgres サービスの CPU、メモリ、I/O、接続、
 およびトランザクションのメトリクスを公開しています。1 つは組織内のすべてのサービスの
 メトリクスを返し、もう 1 つは単一のサービスのメトリクスを返します。設定については
 [Prometheus エンドポイント] ページを、メトリクスの一覧については
@@ -434,10 +434,10 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 }
 ```
 
-この例では簡潔にするため、両方のオブジェクトを一部省略しています。API は
-[per-execution counters] で説明している完全なカウンター セットを返します。
+この例では簡潔にするため、両方のオブジェクトをトリムしています。API は
+[per-execution counters] に記載されている完全なカウンター セットを返します。
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
@@ -463,9 +463,9 @@ time、並列 worker 数、JIT、WAL — が含まれます。これらは、
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres サービスの superuser パスワードをリセット"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus エンドポイント"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus エンドポイント"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Managed Postgres メトリクス リファレンス"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres メトリクス リファレンス"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres クエリインサイト"
 

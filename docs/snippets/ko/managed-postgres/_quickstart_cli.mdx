@@ -215,7 +215,7 @@ done
   ### 테이블을 ClickHouse로 복제
 </div>
 
-ClickHouse 서비스에서 Managed Postgres 호스트명을 대상으로 Postgres CDC ClickPipe를 생성하세요. 이 파이프는 기존 행을 복사한 후, 이후 발생하는 변경 사항도 반영하여 ClickHouse와 계속 동기화합니다:
+ClickHouse 서비스에서 ClickHouse Managed Postgres 호스트명을 대상으로 Postgres CDC ClickPipe를 생성하세요. 이 파이프는 기존 행을 복사한 후, 이후 발생하는 변경 사항도 반영하여 ClickHouse와 계속 동기화합니다:
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

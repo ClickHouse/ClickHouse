@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'Managed Postgres OpenAPI'
-description: '通过我们的 OpenAPI 管理您的 Managed Postgres 服务'
+title: 'ClickHouse Managed Postgres OpenAPI'
+description: '通过我们的 OpenAPI 管理您的 ClickHouse Managed Postgres 服务'
 keywords: ['managed postgres', 'openapi', 'api', 'curl', '教程', '命令行', 'query insights', '慢查询']
 doc_type: 'guide'
 ---
@@ -11,7 +11,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-使用 [ClickHouse OpenAPI](/zh/products/cloud/features/admin-features/api/index) 可像管理 ClickHouse 服务一样，以编程方式管理您的 Managed Postgres 服务。同一个 API 还公开了一个用于抓取服务指标的 [Prometheus 端点]。如果您已经熟悉 [OpenAPI]，可直接获取您的 [API 密钥] 并跳转到 [Managed Postgres API 参考文档][pg-openapi]。否则，请继续阅读，快速了解一下。
+使用 [ClickHouse OpenAPI](/zh/products/cloud/features/admin-features/api/api-overview) 可像管理 ClickHouse 服务一样，以编程方式管理您的 ClickHouse Managed Postgres 服务。同一个 API 还公开了一个用于抓取服务指标的 [Prometheus 端点]。如果您已经熟悉 [OpenAPI]，可直接获取您的 [API 密钥] 并跳转到 [ClickHouse Managed Postgres API 参考文档][pg-openapi]。否则，请继续阅读，快速了解一下。
 
 <div id="api-keys">
   ## API 密钥
@@ -297,7 +297,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## 监控
 </div>
 
-两个兼容 Prometheus 的端点可提供 Managed Postgres 服务的 CPU、内存、I/O、连接
+两个兼容 Prometheus 的端点可提供 ClickHouse Managed Postgres 服务的 CPU、内存、I/O、连接
 和事务指标：其中一个返回组织内所有服务的指标，另一个返回单个
 服务的指标。有关设置，请参阅 [Prometheus 端点] 页面；完整指标列表请参阅
 [指标参考]。
@@ -427,10 +427,9 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 ```
 
 该示例为简洁起见对这两个对象都进行了裁剪；API 返回的是
-[per-execution counters]中记录的完整
-计数器 集合。
+[per-execution counters]中记录的完整计数器集合。
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
@@ -438,7 +437,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [pg-openapi]: /products/cloud/api-reference/postgres/postgres-service-create "ClickHouse Cloud API 参考文档：Postgres"
 
-[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "获取组织的 Postgres 服务 列表"
+[list API]: /products/cloud/api-reference/postgres/postgres-service-get-list "获取组织的 Postgres 服务列表"
 
 [create API]: /products/cloud/api-reference/postgres/postgres-service-create "创建新的 Postgres 服务"
 
@@ -456,9 +455,9 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "重置 Postgres 服务 superuser 的密码"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus 端点"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus 端点"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Managed Postgres 指标参考"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres 指标参考"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres Query Insights"
 

@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/ja/integrations/home';
+    const href = '/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -260,25 +260,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-          .ch-goal-icon { color: #374151; }
-          .dark .ch-goal-icon { color: #FAFF69; }
-          /* Integrations バナー: 両モードでアクセントカラーの枠線 */
-          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-          /* ホームページではサイドバーを即座に非表示にする（ちらつきを防止） */
-          #sidebar { display: none !important; }
-          /* サイドバーが非表示のため、ナビゲーションバーを全幅表示にする */
-          #navbar-transition-maple {
-            width: 100vw !important;
-            left: 0 !important;
-            margin-left: 0 !important;
-            /* ナビゲーションバー自体の右側のパディング（3rem）に合わせる */
-            padding-left: 3rem !important;
-            justify-content: flex-start !important;
-          }
-          `}
+            .ch-goal-icon { color: #374151; }
+            .dark .ch-goal-icon { color: #FAFF69; }
+            /* Integrations バナー: 両モードでアクセントカラーの枠線 */
+            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+            /* ホームページではサイドバーを即座に非表示にする（ちらつきを防止） */
+            #sidebar { display: none !important; }
+            /* サイドバーが非表示のため、ナビゲーションバーを全幅表示にする */
+            #navbar-transition-maple {
+              width: 100vw !important;
+              left: 0 !important;
+              margin-left: 0 !important;
+              /* ナビゲーションバー自体の右側のパディング（3rem）に合わせる */
+              padding-left: 3rem !important;
+              justify-content: flex-start !important;
+            }
+            `}
 </style>
 
 <PageWrapper>
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouseとは？", href: "/ja/get-started/about/intro" },
-        { label: "インストール", href: "/ja/get-started/setup/cloud" },
-        { label: "クイックスタート", href: "/ja/get-started/quickstarts/home" },
-        { label: "ClickHouseの基本概念", href: "/ja/concepts/core-concepts/index" },
-        { label: "サンプルデータセット", href: "/ja/get-started/sample-datasets/index" },
-        { label: "移行ガイド", href: "/ja/get-started/migrate/overview" },
-        { label: "ベストプラクティス", href: "/ja/concepts/best-practices/index" },
+        { label: "ClickHouseとは？", href: "/get-started/about/intro" },
+        { label: "インストール", href: "/get-started/setup/cloud" },
+        { label: "クイックスタート", href: "/get-started/quickstarts/home" },
+        { label: "ClickHouseの基本概念", href: "/concepts/core-concepts/index" },
+        { label: "サンプルデータセット", href: "/get-started/sample-datasets/index" },
+        { label: "移行ガイド", href: "/get-started/migrate/overview" },
+        { label: "ベストプラクティス", href: "/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "データモデリング", href: "/ja/guides/clickhouse/data-modelling/schema-design" },
-        { label: "パフォーマンスの最適化", href: "/ja/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/ja/products/cloud/guides" },
-        { label: "ユースケース", href: "/ja/guides/use-cases" }
+        { label: "データモデリング", href: "/guides/clickhouse/data-modelling/schema-design" },
+        { label: "パフォーマンスの最適化", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
+        { label: "ユースケース", href: "/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "SQLリファレンス", href: "/ja/reference/statements" },
-        { label: "設定", href: "/ja/reference/settings/index" },
-        { label: "関数", href: "/ja/reference/functions/regular-functions/overview" },
-        { label: "エンジン", href: "/ja/reference/engines/engines" },
-        { label: "システムテーブル", href: "/ja/reference/system-tables" },
-        { label: "フォーマット", href: "/ja/reference/formats/index" },
-        { label: "データ型", href: "/ja/reference/data-types/index" }
+        { label: "SQLリファレンス", href: "/reference/statements" },
+        { label: "設定", href: "/reference/settings/index" },
+        { label: "関数", href: "/reference/functions/regular-functions/overview" },
+        { label: "エンジン", href: "/reference/engines/engines" },
+        { label: "システムテーブル", href: "/reference/system-tables" },
+        { label: "フォーマット", href: "/reference/formats/index" },
+        { label: "データ型", href: "/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/ja/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/ja/clickstack" },
-        { label: "Managed Postgres", href: "/ja/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/ja/chdb" },
-        { label: "Kubernetes Operator", href: "/ja/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/chdb" },
+        { label: "Kubernetes Operator", href: "/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -430,25 +430,25 @@ export const PageWrapper = ({ children }) => {
               href="/ja/products/cloud/getting-started/cloud-get-started"
               extraClassName="h-full"
               body={<>
-              <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
-                  このセクションでは、ClickHouse によってデータウェアハウジングを高速かつシンプルで、予測しやすいものにする方法を紹介します。壊れやすいパイプラインや低速なクエリエンジンに悩まされる代わりに、アプリ、サービス、ツールのデータを数週間ではなく数分で一元化できます。その後は、同じプラットフォーム上でリアルタイムのダッシュボードを動かし、アラートをトリガーし、過去の傾向を分析し、イベント駆動型のプロダクトを構築できます。
-              </p>
-              <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">学べること:</p>
-          </>}
+    <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
+        このセクションでは、ClickHouse によってデータウェアハウジングを高速かつシンプルで、予測しやすいものにする方法を紹介します。壊れやすいパイプラインや低速なクエリエンジンに悩まされる代わりに、アプリ、サービス、ツールのデータを数週間ではなく数分で一元化できます。その後は、同じプラットフォーム上でリアルタイムのダッシュボードを動かし、アラートをトリガーし、過去の傾向を分析し、イベント駆動型のプロダクトを構築できます。
+    </p>
+    <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">学べること:</p>
+</>}
               links={[
-              { label: "1. 一般的なデータソースから最小限の作業でデータを取り込む方法", href: "/integrations" },
-              { label: "2. 分析と成長のためにデータを整理するベストプラクティス", href: "/ja/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. 大規模なデータセットにリアルタイムでクエリする方法", href: "/ja/get-started/use-cases/real-time-analytics" },
-              { label: "4. その上にダッシュボード、アラート、イベント駆動型の機能を構築する方法", href: "/ja/get-started/use-cases/data-warehousing" },
-              { label: "5. パフォーマンスを高く保ちながらコストを低く抑えるためのヒント", href: "/ja/concepts/best-practices/index" },
-          ]}
+    { label: "1. 一般的なデータソースから最小限の作業でデータを取り込む方法", href: "/integrations" },
+    { label: "2. 分析と成長のためにデータを整理するベストプラクティス", href: "/guides/clickhouse/data-modelling/schema-design" },
+    { label: "3. 大規模なデータセットにリアルタイムでクエリする方法", href: "/get-started/use-cases/real-time-analytics" },
+    { label: "4. その上にダッシュボード、アラート、イベント駆動型の機能を構築する方法", href: "/get-started/use-cases/data-warehousing" },
+    { label: "5. パフォーマンスを高く保ちながらコストを低く抑えるためのヒント", href: "/concepts/best-practices/index" },
+]}
             />
           </div>
 
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="ClickHouse を基盤とするオールインワンのオブザーバビリティスタックで、ログ、メトリクス、トレース、セッションリプレイ、エラーに対して超高速のクエリと強力な集計を提供します。" href="/ja/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="高速でスケーラブルな、エンタープライズ向けの Postgres サービスです。ClickHouse とネイティブに統合されています。トランザクションには Postgres、分析には ClickHouse を簡単に組み合わせられます。" href="/ja/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="高速でスケーラブルな、エンタープライズ向けの Postgres サービスです。ClickHouse とネイティブに統合されています。トランザクションには Postgres、分析には ClickHouse を簡単に組み合わせられます。" href="/ja/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
@@ -479,26 +479,40 @@ export const PageWrapper = ({ children }) => {
               <p className="mb-2 text-[#9ca3af] text-[13px]">ターミナルで次を実行します：</p>
 
               <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
+                {`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}
               </CodeBlock>
             </Tab>
 
             <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]"><code>claude&#95;desktop&#95;config.json</code> に追加します：</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
+            </Tab>
+
+            <Tab title="Codex" icon="/images/logo-codex.svg">
+              <p className="mb-2 text-[#9ca3af] text-[13px]">ターミナルで次を実行します：</p>
+
+              <CodeBlock language="bash">
+                {`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
               <p className="mb-2 text-[#9ca3af] text-[13px]"><code>.cursor/mcp.json</code> に追加します：</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]"><code>~/.codeium/windsurf/mcp&#95;config.json</code> に追加します：</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
           </Tabs>
         </div>

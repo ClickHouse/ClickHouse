@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouse 프라이머리 키는 어떻게 다릅니까?
 </div>
 
-[여기](/ko/get-started/migrate/bigquery/index)에 설명했듯이, BigQuery와 마찬가지로 ClickHouse는 테이블의 프라이머리 키(primary key) 컬럼 값에 고유성을 강제하지 않습니다.
+[여기](/ko/get-started/migrate/bigquery/overview)에 설명했듯이, BigQuery와 마찬가지로 ClickHouse는 테이블의 프라이머리 키(primary key) 컬럼 값에 고유성을 강제하지 않습니다.
 
 BigQuery의 클러스터링과 유사하게 ClickHouse 테이블의 데이터는 프라이머리 키 컬럼 순서대로 정렬되어 디스크에 저장됩니다. 이 정렬 순서는 쿼리 최적화기가 재정렬을 피하고, 조인 시 메모리 사용량을 줄이며, LIMIT 절에서 short-circuit를 수행하는 데 활용됩니다.
 반면 BigQuery와 달리 ClickHouse는 프라이머리 키 컬럼 값을 기반으로 [희소 프라이머리 인덱스(sparse primary index)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 자동으로 생성합니다. 이 인덱스는 프라이머리 키 컬럼에 대한 필터가 포함된 모든 쿼리의 속도를 높이는 데 사용됩니다. 구체적으로는 다음과 같습니다.

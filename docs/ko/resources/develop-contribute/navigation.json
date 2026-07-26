@@ -46,11 +46,11 @@
     {
       "group": "통합 개발",
       "pages": [
+        "ko/resources/develop-contribute/integrations/index",
         "ko/resources/develop-contribute/integrations/building-integrations",
         "ko/resources/develop-contribute/integrations/testing-your-integration",
         "ko/resources/develop-contribute/integrations/documenting-your-integration"
-      ],
-      "root": "ko/resources/develop-contribute/integrations/index"
+      ]
     },
     {
       "group": "로드맵",

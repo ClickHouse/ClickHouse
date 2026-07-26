@@ -28,19 +28,19 @@ doc_type: 'reference'
 
 `FeatureCollection` を読み込むと、地物 ごとに 1 行が生成され、次の固定スキーマになります。
 
-| カラム          | 型                  | 説明                                                                                                                              |
-| ------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| カラム          | 型                  | 説明                                                                                                                         |
+| ------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | `id`         | `Nullable(String)` | 地物 の `id` メンバー (JSON の文字列または数値) 。テキストとして格納されます。`id` が存在しない場合または `null` の場合は `NULL` になり、明示的に空文字列が指定された id は `''` のまま保持されます。 |
 | `geometry`   | `Geometry`         | 地物 のジオメトリ。`Geometry` の Variant 型として格納されます。                                                                                 |
 | `properties` | `Nullable(JSON)`   | 地物 の `properties` object。半構造化 `JSON` カラムとして格納されます。明示的な `"properties": null` は `NULL` として保持されます。                            |
 
-各ジオメトリは ClickHouse の `Geometry` 型 (`Variant`) に格納されます。サポートされている GeoJSON ジオメトリ型 は `Point`、`LineString`、`MultiLineString`、`Polygon`、`MultiPolygon` です。これ以外の 2 つの GeoJSON ジオメトリ型、`GeometryCollection` と `MultiPoint` は `Geometry` 型では表現できません。これらを `geometry` カラムに読み込むと、デフォルトでは例外が発生しますが、代わりに `NULL` を挿入するように変更することもできます。詳しくは下の [サポートされない ジオメトリ型 の処理](#unsupported-geometry) を参照してください。デフォルトでは、`geometry` カラムが `NULL` になるのは 地物 の geometry が明示的な JSON `null` の場合だけです。`input_format_geojson_unsupported_geometry_handling = 'null'` を指定すると、サポートされない ジオメトリ型 の場合も `NULL` になります。
+各ジオメトリは ClickHouse の `Geometry` 型 (`Variant`) に格納されます。サポートされている GeoJSON ジオメトリ型 は `Point`、`MultiPoint`、`LineString`、`MultiLineString`、`Polygon`、`MultiPolygon` です。残りの GeoJSON ジオメトリ型 `GeometryCollection` は `Geometry` 型では表現できません。これを `geometry` カラムに読み込むと、デフォルトでは例外が発生しますが、代わりに `NULL` を挿入するように変更することもできます。詳しくは下の [サポートされない ジオメトリ型 の処理](#unsupported-geometry) を参照してください。デフォルトでは、`geometry` カラムが `NULL` になるのは 地物 の geometry が明示的な JSON `null` の場合だけです。`input_format_geojson_unsupported_geometry_handling = 'null'` を指定すると、サポートされない ジオメトリ型 の場合も `NULL` になります。
 
 ドキュメントの構造は検証されます。最上位の `type` は `FeatureCollection` でなければならず、`features` の各要素は `type` が `Feature` でなければなりません。デフォルトでは、coordinates は GeoJSON の shape の不変条件を満たす必要があります。つまり、`LineString` (および `MultiLineString` の各 line) は少なくとも 2 つの Point を持つ必要があり、`Polygon` の リング (および `MultiPolygon` の各 リング) は閉じていて、少なくとも 4 つの Point を持つ必要があります ([Geometry validation](#geometry-validation) を参照) 。不正なドキュメントは黙って読み込まれることはなく、拒否されます。
 
 キーの順序は柔軟です。最上位の `type` は `features` 配列の前でも後でもよく、geometry object 内では `coordinates` は `type` の前でも後でもかまいません。
 
-スキーマ推論では上記の固定スキーマが返されるため、`DESCRIBE` や `SELECT ... FROM format(...)` は table definition なしで動作します。
+スキーマ推論では上記の固定スキーマが返されるため、`DESCRIBE` や `SELECT ... FROM format(...)` はテーブル定義なしで動作します。
 
 複数のジオメトリ型が含まれる、次の GeoJSON ファイル `london.geojson` を例にします。
 
@@ -91,7 +91,7 @@ FROM file('london.geojson', GeoJSON);
 └────┴─────────────────┴────────────┘
 ```
 
-ファイル拡張子 `.geojson` は自動的に検出されるため、フォーマット引数は省略できます。
+ファイル拡張子 `.geojson` は自動的に検出されるため、フォーマットの引数は省略できます。
 
 ```sql title="Query"
 SELECT id, properties.name AS name, variantType(geometry) AS geo_type
@@ -213,7 +213,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
   ### サポートされていないジオメトリ型の処理
 </div>
 
-`GeometryCollection` や `MultiPoint` など、一部の有効な GeoJSON ジオメトリ型は、ClickHouse の `Geometry` 型では表現できません。そのようなジオメトリを `geometry` カラムに格納する必要がある場合の動作は、`input_format_geojson_unsupported_geometry_handling` 設定で制御できます。設定可能な値は次のとおりです。
+`GeometryCollection` など、一部の有効な GeoJSON ジオメトリ型は、ClickHouse の `Geometry` 型では表現できません。そのようなジオメトリを `geometry` カラムに格納する必要がある場合の動作は、`input_format_geojson_unsupported_geometry_handling` 設定で制御できます。設定可能な値は次のとおりです。
 
 * `'throw'` — 例外をスローする (デフォルト)
 * `'null'` — `geometry` カラムに `NULL` 値を挿入し、パースを続行する
@@ -230,7 +230,7 @@ DESCRIBE format(GeoJSON, '{"type":"FeatureCollection","features":[]}');
 * 位置の 3 番目の座標 (標高) とそれ以降の座標は破棄されるため、位置は `[longitude, latitude]` になります。
 * `bbox` と外部メンバー (トップレベルの `name` や `crs`、または `Feature` 内の追加メンバーなど) は無視されます。
 * 数値の `id` はテキストとして保存されるため、文字列と数値の区別は失われます。`id` が存在しない場合や `null` の場合は `NULL` になります。
-* `GeometryCollection` と `MultiPoint` は表現できません。詳しくは [サポートされていないジオメトリ型の扱い](#unsupported-geometry) を参照してください。
+* `GeometryCollection` は表現できません。詳しくは [サポートされていないジオメトリ型の処理](#unsupported-geometry) を参照してください。
 
 <div id="writing-data">
   ## データの書き込み
@@ -252,11 +252,12 @@ geometry 型のカラムには、`Geometry` のバリアントまたは特定の
 | ClickHouse type   | GeoJSON `"type"`                          |
 | ----------------- | ----------------------------------------- |
 | `Point`           | `Point`                                   |
+| `MultiPoint`      | `MultiPoint`                              |
 | `LineString`      | `LineString`                              |
 | `MultiLineString` | `MultiLineString`                         |
 | `Polygon`         | `Polygon`                                 |
 | `MultiPolygon`    | `MultiPolygon`                            |
-| `Ring`            | `Polygon` (a single リング)                 |
+| `Ring`            | `Polygon` (a single リング)                  |
 | `Geometry`        | the active variant&#39;s type (or `null`) |
 
 `Ring` は GeoJSON の ジオメトリ型 ではありません。[linear リング](https://datatracker.ietf.org/doc/html/rfc7946#section-3.1.6) は `Polygon` の構成要素であるため、`Ring` の値は単一リングの `Polygon` として書き込まれます。

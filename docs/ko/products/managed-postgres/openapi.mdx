@@ -1,8 +1,8 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'Managed Postgres OpenAPI'
-description: 'OpenAPI로 Managed Postgres 서비스를 관리합니다'
+title: 'ClickHouse Managed Postgres OpenAPI'
+description: 'OpenAPI로 ClickHouse Managed Postgres 서비스를 관리합니다'
 keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'command line', '쿼리 인사이트', '느린 쿼리']
 doc_type: 'guide'
 ---
@@ -11,12 +11,12 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-[ClickHouse OpenAPI](/ko/products/cloud/features/admin-features/api/index)를 사용하면
-ClickHouse 서비스와 마찬가지로 Managed Postgres 서비스를 프로그래밍 방식으로
+[ClickHouse OpenAPI](/ko/products/cloud/features/admin-features/api/api-overview)를 사용하면
+ClickHouse 서비스와 마찬가지로 ClickHouse Managed Postgres 서비스를 프로그래밍 방식으로
 제어할 수 있습니다. 동일한 API는 서비스 메트릭을 스크레이핑할 수 있는
 [Prometheus 엔드포인트]도 제공합니다.
 이미 [OpenAPI]에 익숙하다면 [API Key]를 발급받아
-[Managed Postgres API 참조][pg-openapi]로 바로 이동하십시오.
+[ClickHouse Managed Postgres API 참조][pg-openapi]로 바로 이동하십시오.
 그렇지 않다면, 아래에서 간단히 살펴보십시오.
 
 <div id="api-keys">
@@ -305,7 +305,7 @@ curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
   ## 모니터링
 </div>
 
-Prometheus와 호환되는 2개의 엔드포인트에서 Managed Postgres 서비스의 CPU, 메모리, I/O, 연결,
+Prometheus와 호환되는 2개의 엔드포인트에서 ClickHouse Managed Postgres 서비스의 CPU, 메모리, I/O, 연결,
 트랜잭션 메트릭을 제공합니다. 하나는 조직의 모든 서비스에 대한 메트릭을 반환하고,
 다른 하나는 단일 서비스에 대한 메트릭을 반환합니다. 설정 방법은 [Prometheus 엔드포인트] 페이지를,
 전체 메트릭 목록은 [메트릭 참고]를 참조하십시오.
@@ -382,7 +382,7 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
   ### 느린 쿼리 패턴 조회
 </div>
 
-목록 응답의 `queryId`를 [slow patterns API]에 전달하면 해당
+목록 응답의 `queryId`를 [slow pattern API]에 전달하면 해당
 패턴의 집계된 메트릭과 가장 최근의 개별 실행 정보를 함께 조회할 수 있습니다.
 패턴을 식별하는 `db_name`, `db_user`, `db_operation`은
 필수입니다:
@@ -439,7 +439,7 @@ JIT, WAL이 포함되며, 이는 콘솔의
 이 예시에서는 간결하게 보여주기 위해 두 객체를 모두 일부만 표시했으며, API는 [per-execution counters]에 문서화된 전체
 카운터 세트를 반환합니다.
 
-[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/api-overview "Cloud API"
 
 [OpenAPI]: https://www.openapis.org "OpenAPI Initiative"
 
@@ -465,9 +465,9 @@ JIT, WAL이 포함되며, 이는 콘솔의
 
 [password reset]: /products/cloud/api-reference/postgres/postgres-service-set-password "Postgres 서비스 슈퍼유저 비밀번호 재설정"
 
-[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "Managed Postgres Prometheus 엔드포인트"
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "ClickHouse Managed Postgres Prometheus 엔드포인트"
 
-[metrics reference]: /products/managed-postgres/monitoring/metrics "Managed Postgres 메트릭 참고"
+[metrics reference]: /products/managed-postgres/monitoring/metrics "ClickHouse Managed Postgres 메트릭 참고"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Postgres 쿼리 인사이트"
 

@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'التصورات ولوحات المعلومات في ClickStack'
-sidebarTitle: 'لوحات المعلومات'
+sidebarTitle: 'نظرة عامة'
 description: 'التصورات ولوحات المعلومات في ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'لوحات المعلومات', 'تصور', 'المراقبة', 'الرصد']
@@ -13,7 +13,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 يدعم ClickStack تصور الأحداث، مع دعم مدمج لإنشاء المخططات في ClickStack UI ‏(HyperDX). ويمكن إضافة هذه المخططات إلى لوحات المعلومات لمشاركتها مع مستخدمين آخرين.
 
-يمكن إنشاء التصورات من التتبعات أو المقاييس أو السجلات أو أي بنى أحداث واسعة يعرّفها المستخدم.
+يمكن إنشاء التصورات من التتبعات أو المقاييس أو السجلات أو أي بنى wide events يعرّفها المستخدم.
 
 <div id="creating-visualizations">
   ## إنشاء التصورات
@@ -297,7 +297,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
   ### لوحة معلومات ClickHouse
 </div>
 
-توفر لوحة المعلومات هذه تصورات مرئية لمراقبة ClickHouse. للانتقال إلى لوحة المعلومات هذه، حدّدها من القائمة اليمنى.
+توفر لوحة المعلومات هذه تصورات مرئية لمراقبة ClickHouse. للانتقال إلى لوحة المعلومات هذه، حدّدها من قائمة أيسر.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="لوحة معلومات ClickHouse" size="lg" />
 
@@ -306,7 +306,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 <Info>
   **وصول مطلوب إلى جداول النظام**
 
-  تستعلم لوحة المعلومات هذه من [جداول النظام](/ar/reference/system-tables/index) في ClickHouse لعرض المقاييس الرئيسية. وتلزم امتيازات الوصول التالية:
+  تستعلم لوحة المعلومات هذه من [جداول النظام](/ar/reference/system-tables/overview) في ClickHouse لعرض المقاييس الرئيسية. وتلزم امتيازات الوصول التالية:
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

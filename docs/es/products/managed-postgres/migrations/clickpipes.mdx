@@ -12,7 +12,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de PostgreSQL a un servicio de Managed Postgres. Esta integración incorporada ofrece una experiencia optimizada para conectarse a su base de datos de origen, exportar el esquema, importarlo en Managed Postgres y configurar la replicación continua.
+ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de PostgreSQL a un servicio de ClickHouse Managed Postgres. Esta integración incorporada ofrece una experiencia optimizada para conectarse a su base de datos de origen, exportar el esquema, importarlo en ClickHouse Managed Postgres y configurar la replicación continua.
 
 <div id="prerequisites">
   ## Prerrequisitos
@@ -38,18 +38,18 @@ ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de
 * **Propagación de DDL**: la replicación continua (CDC) captura operaciones DML y `ADD COLUMN`. Otros cambios de DDL, como `DROP COLUMN` y `ALTER COLUMN`, no se propagan y deben aplicarse manualmente en el sistema de destino.
 
 <Note>
-  Si tienes problemas durante la migración, consulta las [preguntas frecuentes sobre migraciones de Managed Postgres](/es/products/managed-postgres/migrations/faq) para ver los errores más comunes y sus soluciones.
+  Si tienes problemas durante la migración, consulta las [preguntas frecuentes sobre migraciones de ClickHouse Managed Postgres](/es/products/managed-postgres/migrations/faq) para ver los errores más comunes y sus soluciones.
 </Note>
 
 <Steps>
   <Step title="Conéctate a tu base de datos de origen" id="step-1-connect">
-    Abre la [consola de ClickHouse Cloud](https://clickhouse.cloud) y selecciona tu servicio de Managed Postgres.
+    Abre la [consola de ClickHouse Cloud](https://clickhouse.cloud) y selecciona tu servicio de ClickHouse Managed Postgres.
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Tarjeta del servicio de Managed Postgres en la lista de servicios de ClickHouse Cloud" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Tarjeta del servicio de ClickHouse Managed Postgres en la lista de servicios de ClickHouse Cloud" size="lg" border />
 
     En la barra lateral izquierda, haz clic en **fuentes de datos**.
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada fuentes de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada fuentes de datos en la barra lateral del servicio de ClickHouse Managed Postgres" size="lg" border />
 
     Haz clic en **Start import**.
 
@@ -91,10 +91,10 @@ ClickHouse Cloud ahora ofrece ClickPipes para migrar su base de datos externa de
     Haz clic en **Next**.
   </Step>
 
-  <Step title="Importa el esquema en tu servicio de Managed Postgres" id="step-3-import-schema">
+  <Step title="Importa el esquema en tu servicio de ClickHouse Managed Postgres" id="step-3-import-schema">
     Selecciona la base de datos de destino en el menú desplegable o haz clic en **Create a new database** para aprovisionar una.
 
-    El asistente muestra un comando `psql` para aplicar el volcado de esquema a tu servicio de Managed Postgres. Ejecútalo en una terminal:
+    El asistente muestra un comando `psql` para aplicar el volcado de esquema a tu servicio de ClickHouse Managed Postgres. Ejecútalo en una terminal:
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Paso 3: comando psql para importar el esquema" size="lg" border />
 
@@ -172,7 +172,7 @@ ALTER DATABASE <source_db> SET default_transaction_read_only = on;
 **Confirme que la replicación esté al día.** Compare la última fila del origen y del destino:
 
 ```sql
--- Ejecutar tanto en el origen como en el destino
+-- Run on both source and target
 SELECT MAX(id), MAX(updated_at) FROM public.orders;
 ```
 
@@ -206,7 +206,7 @@ BEGIN
 END $$;
 ```
 
-**Redirija el tráfico de la aplicación.** Dirija las operaciones de lectura y escritura a su servicio Managed Postgres y supervise los errores, las violaciones de restricciones y el estado de la replicación.
+**Redirija el tráfico de la aplicación.** Dirija las operaciones de lectura y escritura a su servicio ClickHouse Managed Postgres y supervise los errores, las violaciones de restricciones y el estado de la replicación.
 
 **Limpieza.**  Una vez que haya redirigido el tráfico y confirmado que el nuevo servicio está en buen estado, elimine la migración de **fuentes de datos**. Si usó CDC, elimine el slot de replicación del origen para liberar recursos:
 
@@ -218,6 +218,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## Próximos pasos
 </div>
 
-* [Guía de inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)
-* [Detalles de conexión de Managed Postgres](/es/products/managed-postgres/connection)
+* [Guía de inicio rápido de ClickHouse Managed Postgres](/es/products/managed-postgres/quickstart)
+* [Detalles de conexión de ClickHouse Managed Postgres](/es/products/managed-postgres/connection)
 * [Preguntas frecuentes sobre Postgres en ClickPipes](/es/integrations/clickpipes/postgres/faq)

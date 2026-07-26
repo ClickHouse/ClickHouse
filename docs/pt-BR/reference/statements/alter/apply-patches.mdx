@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 ```
 
-O comando aciona manualmente a materialização física das partes de patch criadas por instruções de [`UPDATE` lightweight](/pt-BR/reference/statements/update). Ele força a aplicação dos patches pendentes às partes de dados, reescrevendo apenas as colunas afetadas.
+O comando aciona manualmente a materialização física das partes de patch criadas por instruções de [`UPDATE` leve](/pt-BR/reference/statements/update). Ele força a aplicação dos patches pendentes às partes de dados, reescrevendo apenas as colunas afetadas.
 
 <Note>
   * Funciona apenas para tabelas da família [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).

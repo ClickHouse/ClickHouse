@@ -3,9 +3,11 @@
     {
       "group": "أدلة ClickHouse",
       "pages": [
+        "ar/guides/clickhouse/index",
         {
           "group": "تنسيقات البيانات",
           "pages": [
+            "ar/guides/clickhouse/data-formats/intro",
             "ar/guides/clickhouse/data-formats/csv-tsv",
             "ar/guides/clickhouse/data-formats/parquet",
             "ar/guides/clickhouse/data-formats/arrow-avro-orc",
@@ -15,21 +17,21 @@
             {
               "group": "JSON",
               "pages": [
+                "ar/guides/clickhouse/data-formats/json/intro",
                 "ar/guides/clickhouse/data-formats/json/loading",
                 "ar/guides/clickhouse/data-formats/json/inference",
                 "ar/guides/clickhouse/data-formats/json/schema",
                 "ar/guides/clickhouse/data-formats/json/formats",
                 "ar/guides/clickhouse/data-formats/json/exporting",
                 "ar/guides/clickhouse/data-formats/json/other"
-              ],
-              "root": "ar/guides/clickhouse/data-formats/json/intro"
+              ]
             }
-          ],
-          "root": "ar/guides/clickhouse/data-formats/intro"
+          ]
         },
         {
           "group": "نمذجة البيانات",
           "pages": [
+            "ar/guides/clickhouse/data-modelling/index",
             "ar/guides/clickhouse/data-modelling/schema-design",
             "ar/guides/clickhouse/data-modelling/sparse-primary-indexes",
             "ar/guides/clickhouse/data-modelling/denormalization",
@@ -47,8 +49,7 @@
             },
             "ar/guides/clickhouse/working-with-arrays",
             "ar/guides/clickhouse/working-with-joins"
-          ],
-          "root": "ar/guides/clickhouse/data-modelling/index"
+          ]
         },
         {
           "group": "الأداء والمراقبة",
@@ -61,7 +62,7 @@
         },
         {
           "expanded": false,
-          "group": "أمثلة على مبدِّلات الدوال التجميعية",
+          "group": "أمثلة على مُعدِّلات الدوال التجميعية",
           "pages": [
             "ar/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
             "ar/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -101,7 +102,7 @@
         },
         {
           "expanded": false,
-          "group": "النشر والتوسيع",
+          "group": "النشر والتوسع",
           "pages": [
             "ar/guides/oss/deployment-and-scaling/terminology",
             "ar/guides/oss/deployment-and-scaling/shards",
@@ -112,9 +113,9 @@
               "expanded": false,
               "group": "Keeper",
               "pages": [
+                "ar/guides/oss/deployment-and-scaling/keeper/index",
                 "ar/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper"
-              ],
-              "root": "ar/guides/oss/deployment-and-scaling/keeper/index"
+              ]
             },
             {
               "expanded": false,
@@ -133,23 +134,23 @@
                 "ar/guides/oss/deployment-and-scaling/examples/2-shards-2-replicas"
               ]
             }
-          ],
-          "root": "ar/guides/oss/deployment-and-scaling/index"
+          ]
         }
-      ],
-      "root": "ar/guides/clickhouse/index"
+      ]
     },
     {
       "expanded": true,
       "group": "أدلة حالات الاستخدام",
       "pages": [
+        "ar/guides/use-cases/index",
         {
-          "group": "تحليلات الوقت الفعلي",
+          "group": "التحليلات اللحظية",
           "pages": [
             {
               "expanded": false,
               "group": "السلاسل الزمنية",
               "pages": [
+                "ar/guides/use-cases/real-time-analytics/time-series/index",
                 "ar/guides/use-cases/real-time-analytics/time-series/date-time-data-types",
                 "ar/guides/use-cases/real-time-analytics/time-series/basic-operations",
                 "ar/guides/use-cases/real-time-analytics/time-series/analysis-functions",
@@ -157,48 +158,49 @@
                 "ar/guides/use-cases/real-time-analytics/time-series/query-performance",
                 "ar/guides/use-cases/real-time-analytics/time-series/materialized-view-rollup",
                 "ar/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps"
-              ],
-              "root": "ar/guides/use-cases/real-time-analytics/time-series/index"
+              ]
             }
           ]
         },
         {
-          "group": "Observability",
+          "group": "أوبزرفابيليتي",
           "pages": [
+            "ar/guides/use-cases/observability/index",
             "ar/guides/use-cases/observability/cloud-monitoring",
             "ar/guides/use-cases/observability/self-managed-monitoring",
             {
-              "group": "أنشئ حلك بنفسك",
+              "group": "أنشئه بنفسك",
               "pages": [
+                "ar/guides/use-cases/observability/build-your-own/index",
                 "ar/guides/use-cases/observability/build-your-own/introduction",
                 "ar/guides/use-cases/observability/build-your-own/schema-design",
                 "ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry",
                 "ar/guides/use-cases/observability/build-your-own/managing-data",
                 "ar/guides/use-cases/observability/build-your-own/grafana",
                 "ar/guides/use-cases/observability/build-your-own/demo-application"
-              ],
-              "root": "ar/guides/use-cases/observability/build-your-own/index"
+              ]
             }
-          ],
-          "root": "ar/guides/use-cases/observability/index"
+          ]
         },
         {
           "group": "مستودعات البيانات",
           "pages": [
+            "ar/guides/use-cases/data-warehousing/index",
             {
               "group": "البدء",
               "pages": [
+                "ar/guides/use-cases/data-warehousing/getting-started/overview",
                 "ar/guides/use-cases/data-warehousing/getting-started/querying-directly",
                 "ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
                 "ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
                 "ar/guides/use-cases/data-warehousing/getting-started/writing-data",
                 "ar/guides/use-cases/data-warehousing/getting-started/best-practices"
-              ],
-              "root": "ar/guides/use-cases/data-warehousing/getting-started/overview"
+              ]
             },
             {
               "group": "الكتالوجات",
               "pages": [
+                "ar/guides/use-cases/data-warehousing/reference/index",
                 "ar/guides/use-cases/data-warehousing/glue-catalog",
                 "ar/guides/use-cases/data-warehousing/lakekeeper-catalog",
                 "ar/guides/use-cases/data-warehousing/nessie-catalog",
@@ -207,16 +209,15 @@
                 "ar/guides/use-cases/data-warehousing/rest-catalog",
                 "ar/guides/use-cases/data-warehousing/unity-catalog",
                 "ar/guides/use-cases/data-warehousing/biglake-catalog"
-              ],
-              "root": "ar/guides/use-cases/data-warehousing/reference/index"
+              ]
             },
             "ar/guides/use-cases/data-warehousing/support-matrix"
-          ],
-          "root": "ar/guides/use-cases/data-warehousing/index"
+          ]
         },
         {
-          "group": "AI/ML",
+          "group": "الذكاء الاصطناعي/تعلّم الآلة",
           "pages": [
+            "ar/guides/use-cases/ai-ml/index",
             "ar/guides/use-cases/ai-ml/vector-search",
             "ar/guides/use-cases/ai-ml/ai-powered-sql-generation",
             {
@@ -229,6 +230,7 @@
             {
               "group": "MCP",
               "pages": [
+                "ar/guides/use-cases/ai-ml/MCP/index",
                 "ar/guides/use-cases/ai-ml/MCP/claude-desktop",
                 "ar/guides/use-cases/ai-ml/MCP/librechat",
                 "ar/guides/use-cases/ai-ml/MCP/anythingllm",
@@ -238,6 +240,7 @@
                 {
                   "group": "مكتبات وكلاء الذكاء الاصطناعي",
                   "pages": [
+                    "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
@@ -253,17 +256,13 @@
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
                     "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
-                  ],
-                  "root": "ar/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
+                  ]
                 }
-              ],
-              "root": "ar/guides/use-cases/ai-ml/MCP/index"
+              ]
             }
-          ],
-          "root": "ar/guides/use-cases/ai-ml/index"
+          ]
         }
-      ],
-      "root": "ar/guides/use-cases/index"
+      ]
     }
   ],
   "icon": "/images/icons/icon-guides.svg",

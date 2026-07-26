@@ -215,7 +215,7 @@ done
   ### テーブルを ClickHouse にレプリケートする
 </div>
 
-ClickHouse サービス 上に、Managed Postgres の ホスト名 を指定した Postgres CDC ClickPipe を作成します。このパイプは既存の行をコピーし、その後も継続的な変更に合わせて ClickHouse を同期した状態に保ちます。
+ClickHouse サービス 上に、ClickHouse Managed Postgres の ホスト名 を指定した Postgres CDC ClickPipe を作成します。このパイプは既存の行をコピーし、その後も継続的な変更に合わせて ClickHouse を同期した状態に保ちます。
 
 ```bash
 PG_HOST=$(jq -r .hostname pg.json)

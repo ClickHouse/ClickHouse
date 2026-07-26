@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "セッション設定",
   "pages": [
+    "ja/reference/settings/session-settings",
     "ja/reference/settings/session-settings/additional",
     "ja/reference/settings/session-settings/aggregate",
     "ja/reference/settings/session-settings/aggregation",
@@ -255,6 +256,5 @@
     "ja/reference/settings/session-settings/window-view",
     "ja/reference/settings/session-settings/write-through-distributed-cache",
     "ja/reference/settings/session-settings/other"
-  ],
-  "root": "ja/reference/settings/session-settings"
+  ]
 }
