@@ -105,20 +105,39 @@ def all_parts(table):
 
 def stop_merges(table):
     """
-    Block background merges for one table.
+    Redundant second line of defence only. The guard that actually prevents merges is
+    `max_bytes_to_merge_at_max_space_in_pool = 0` in the table metadata, see
+    `create_table_with_one_part`.
 
-    A global `SYSTEM STOP MERGES` only locks the tables that exist when it runs
-    (`InterpreterSystemQuery::startStopAction`, lock keyed per `IStorage`), so it would not cover a
-    table created afterwards, and the lock does not survive the DETACH/ATTACH cycle that destroys
-    the storage instance. Merges would rewrite the part set these tests assert on.
+    This statement cannot protect the window inside `ATTACH TABLE`: `ATTACH` runs
+    `IStorage::startup()` before returning (`InterpreterCreateQuery.cpp`), and
+    `StorageMergeTree::startup` schedules the background assignee immediately, so a merge can be
+    selected before any statement issued after `ATTACH` reaches the server.
+
+    A global `SYSTEM STOP MERGES` would be worse still: it only locks the tables that exist when it
+    runs (`InterpreterSystemQuery::startStopAction`, lock keyed per `IStorage`), so it would not
+    cover a table created afterwards, and the lock does not survive the DETACH/ATTACH cycle that
+    destroys the storage instance.
     """
     node.query(f"SYSTEM STOP MERGES {table}")
 
 
 def create_table_with_one_part(table):
-    """Create `table`, commit one part `all_1_1_0`, then detach it so its directory can be edited."""
+    """
+    Create `table`, commit one part `all_1_1_0`, then detach it so its directory can be edited.
+
+    Merges are disabled in the table metadata rather than by a statement, so the storage comes up
+    with merging already off on every startup, including the one `ATTACH TABLE` performs before it
+    returns. `max_bytes_to_merge_at_max_space_in_pool = 0` is checked before any merge selector runs
+    (`getMaxSourcePartsBytesForMerge` returns 0, `StorageMergeTree` reports `CANNOT_SELECT` with
+    "Current value of max_source_parts_bytes is zero"). A merge would rewrite the part set these
+    tests assert on.
+    """
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
-    node.query(f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x")
+    node.query(
+        f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x"
+        " SETTINGS max_bytes_to_merge_at_max_space_in_pool = 0"
+    )
     stop_merges(table)
     node.query(f"INSERT INTO {table} VALUES (42)")
     data_path = table_data_path(table)
