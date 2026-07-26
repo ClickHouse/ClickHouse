@@ -36,8 +36,6 @@ IN_FLIGHT_TXN_VERSION = ROLLED_BACK_TXN_VERSION.replace(
 def started_cluster():
     try:
         cluster.start()
-        # Background merges would rewrite the part set these tests assert on.
-        node.query("SYSTEM STOP MERGES")
         yield cluster
     finally:
         cluster.shutdown()
@@ -95,10 +93,33 @@ def active_parts(table):
     )
 
 
+def all_parts(table):
+    """Every loaded part with its active flag, including Outdated ones."""
+    node.query(f"SYSTEM WAIT LOADING PARTS {table}")
+    rows = node.query(
+        "SELECT name, active FROM system.parts"
+        f" WHERE database = 'default' AND table = '{table}'"
+    ).split()
+    return dict(zip(rows[::2], (r == "1" for r in rows[1::2])))
+
+
+def stop_merges(table):
+    """
+    Block background merges for one table.
+
+    A global `SYSTEM STOP MERGES` only locks the tables that exist when it runs
+    (`InterpreterSystemQuery::startStopAction`, lock keyed per `IStorage`), so it would not cover a
+    table created afterwards, and the lock does not survive the DETACH/ATTACH cycle that destroys
+    the storage instance. Merges would rewrite the part set these tests assert on.
+    """
+    node.query(f"SYSTEM STOP MERGES {table}")
+
+
 def create_table_with_one_part(table):
     """Create `table`, commit one part `all_1_1_0`, then detach it so its directory can be edited."""
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(f"CREATE TABLE {table} (x UInt32) ENGINE = MergeTree ORDER BY x")
+    stop_merges(table)
     node.query(f"INSERT INTO {table} VALUES (42)")
     data_path = table_data_path(table)
     node.query(f"DETACH TABLE {table}")
@@ -132,6 +153,7 @@ def test_reparent(started_cluster):
     fabricate_part(data_path, "all_1_1_0", "all_2_3_1_0")
 
     node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
 
     # all_1_1_1_1 was re-parented to the root and covers the original all_1_1_0.
     assert active_parts(table) == {"all_1_1_1_1", "all_2_3_1_0"}
@@ -168,6 +190,7 @@ def test_contains(started_cluster):
     fabricate_part(data_path, "all_1_1_0", "all_3_4_1_0")
 
     node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
 
     assert active_parts(table) == {"all_1_2_1_0", "all_3_4_1_0"}
 
@@ -176,23 +199,26 @@ def test_contains(started_cluster):
 
 def test_evict_reinsert_contains(started_cluster):
     """
-    Orphans re-inserted after an eviction must be ordered so that a container is added before the
-    part it contains.
+    Evicting a rolled-back node that has a *nested* committed subtree must keep every orphan: the
+    container `all_2_4_2_0` active, and the part it contains, `all_2_3_1_0`, covered by it rather
+    than dropped.
 
-    Reaches the intersection arm, and specifically the (level, mutation) descending sort in
-    `evict_and_reinsert`: `all_2_4_2_0` contains `all_2_3_1_0`, and adding the container second
-    would hit the generic intersection branch (which does not handle `incoming.contains(existing)`)
-    and throw a LOGICAL_ERROR.
-
-    Insertion order:
+    Reaches the intersection arm. Insertion order:
       1. all_1_5_4_1  level 4, mut 1, blocks 1-5  rolled back
       2. all_2_4_2_0  level 2, mut 0, blocks 2-4  committed, contained in 1-5, contains 2-3
       3. all_2_3_1_0  level 1, mut 0, blocks 2-3  committed, contained in 2-4
       4. all_5_6_1_0  level 1, mut 0, blocks 5-6  committed, intersects 1-5 -> evicts (1)
       5. all_1_1_0    level 0, mut 0, blocks 1-1  the original insert, disjoint from the rest
 
-    After the eviction: all_2_4_2_0 and all_5_6_1_0 (and the disjoint all_1_1_0) are active, while
-    all_2_3_1_0 is covered by the active container all_2_4_2_0.
+    This does NOT pin the (level, mutation) descending sort of `evict_and_reinsert`
+    (`MergeTreeData.cpp:2167-2171`): `collect` walks `children`, a `std::map` keyed on
+    `MergeTreePartInfo`, so it already yields the container 2-4 before the part 2-3 it contains, and
+    the incoming 5-6 is disjoint from both. Removing that sort leaves this outcome unchanged.
+
+    `all_2_3_1_0` and `all_5_6_1_0` share (level, mutation) = (1, 0) and `PartLoadingTree::build`
+    sorts with a non-stable `std::sort`, so steps 3 and 4 may swap. The asserted outcome holds for
+    either order: with 5-6 first the eviction fires before 2-3 joins the victim's subtree, and 2-3
+    then arrives through the containment arm under the already-reinserted 2-4.
     """
     table = "t_plt_evict_reinsert"
     data_path = create_table_with_one_part(table)
@@ -205,8 +231,16 @@ def test_evict_reinsert_contains(started_cluster):
     fabricate_part(data_path, "all_1_1_0", "all_5_6_1_0")
 
     node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
 
-    assert active_parts(table) == {"all_1_1_0", "all_2_4_2_0", "all_5_6_1_0"}
+    # all_2_3_1_0 must be present but covered by the reinserted container all_2_4_2_0, not dropped:
+    # a regression that loses the orphan is invisible to an active-only check.
+    assert all_parts(table) == {
+        "all_1_1_0": True,
+        "all_2_4_2_0": True,
+        "all_5_6_1_0": True,
+        "all_2_3_1_0": False,
+    }
 
     node.query(f"DROP TABLE {table} SYNC")
 
@@ -238,6 +272,7 @@ def test_tmp_metadata(started_cluster):
     fabricate_part(data_path, "all_1_1_0", "all_2_3_0_0")
 
     node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
 
     assert active_parts(table) == {"all_1_1_0", "all_2_3_0_0"}
 
