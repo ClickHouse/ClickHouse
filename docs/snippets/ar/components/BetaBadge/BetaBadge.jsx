@@ -1,5 +1,4 @@
 import { galaxyOnClick } from '/snippets/lib/galaxy.jsx';
-
 export const BetaBadge = ({ link, galaxyTrack, galaxyEvent }) => {
     if (link) {
         return (
