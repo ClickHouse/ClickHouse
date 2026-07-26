@@ -1109,8 +1109,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         /// Park after the durable boundary and before the blocked check below, so a test can
         /// observe a frozen row count with the backlog still pending and have a SYSTEM PAUSE
         /// issued while parked be seen by that very check. No-op unless explicitly enabled.
-        /// An empty cycle has no durable boundary, and skipping it keeps a concurrently polling
-        /// idle table from consuming the one-shot pause.
+        /// Only a cycle that produced rows parks: the failpoint is process-global and one-shot,
+        /// so an idle table polling concurrently must not consume the pause.
         if (rows > 0)
             FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_commit);
 
