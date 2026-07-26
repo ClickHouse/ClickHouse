@@ -275,16 +275,8 @@ struct JoinAlgorithmParams
         std::chrono::milliseconds lock_acquire_timeout_);
 };
 
-/** Can at least one of the enabled join algorithms execute a join of this kind/strictness?
-  * Mirrors the per-algorithm dispatch in PlannerJoins.cpp::tryCreateJoin, so a caller can tell
-  * up front whether a planned (kind, strictness) has a runnable algorithm before building it.
-  *
-  * `direct_join_possible` tells the check whether the DIRECT algorithm may actually apply to the
-  * right side: DIRECT only runs against key-value storages (dictionary / EmbeddedRocksDB / ...),
-  * which this storage-blind predicate cannot see. Pass true when the right side may be such a
-  * storage (e.g. the generic query-plan pass over arbitrary joins), false when it never is (e.g.
-  * a join whose right side is a materialized subplan).
-  */
+/// Can any enabled algorithm execute this kind/strictness? Mirrors tryCreateJoin.
+/// `direct_join_possible`: may the right side be key-value? Not visible here.
 bool anyEnabledAlgorithmSupports(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,

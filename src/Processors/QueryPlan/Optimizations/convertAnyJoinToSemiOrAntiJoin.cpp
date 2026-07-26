@@ -135,11 +135,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!join || child_node->children.size() != 2)
         return 0;
 
-    /// A Join-engine right side reuses the stored join and requires its declared strictness
-    /// unchanged, so skip the rewrite for it. A key-value right side makes a direct join possible.
+    /// The Join engine rejects a changed strictness.
     auto * right_lookup_step = typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get());
     if (right_lookup_step && right_lookup_step->getPreparedJoinStorage().storage_join)
         return 0;
+    /// direct needs a key-value right side.
     const bool direct_join_possible = right_lookup_step && right_lookup_step->getPreparedJoinStorage().storage_key_value;
 
     auto & join_operator = join->getJoinOperator();
@@ -149,8 +149,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!isLeftOrRight(join_operator.kind))
         return 0;
 
-    /// Only rewrite to SEMI/ANTI when some enabled algorithm can execute the result; otherwise leave
-    /// the ANY join, which stays runnable. direct_join_possible gates whether DIRECT counts here.
+    /// Rewrite only if something runs the result; ANY stays runnable.
     const auto & join_algorithms = join->getJoinSettings().join_algorithms;
     const bool semi_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Semi, direct_join_possible);
     const bool anti_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Anti, direct_join_possible);

@@ -1044,8 +1044,6 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
-/// The kind/strictness matrix DirectKeyValueJoin can execute. Used both by tryDirectJoin and by
-/// anyEnabledAlgorithmSupports so the capability check stays in sync with the actual dispatch.
 static bool directKeyValueJoinSupportsKindAndStrictness(JoinKind kind, JoinStrictness strictness)
 {
     if (isInner(kind))
@@ -1178,15 +1176,15 @@ bool anyEnabledAlgorithmSupports(
     {
         switch (algorithm)
         {
-            /// Hash family (and the hash fallbacks) execute any kind/strictness.
+            /// Hash family runs anything.
             case JoinAlgorithm::HASH:
             case JoinAlgorithm::PARALLEL_HASH:
-            case JoinAlgorithm::PREFER_PARTIAL_MERGE: /// falls back to hash when merge can't do it
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE: /// falls back to hash
             case JoinAlgorithm::GRACE_HASH:
             case JoinAlgorithm::AUTO:
             case JoinAlgorithm::DEFAULT:
                 return true;
-            /// Plain partial merge has no hash fallback: only what MergeJoin implements.
+            /// No hash fallback below.
             case JoinAlgorithm::PARTIAL_MERGE:
                 if (MergeJoin::isSupported(kind, strictness))
                     return true;
@@ -1195,9 +1193,6 @@ bool anyEnabledAlgorithmSupports(
                 if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
                     return true;
                 break;
-            /// DIRECT only runs against key-value storages and has no hash fallback. It can execute
-            /// the (kind, strictness) only when a direct key-value join is actually possible for the
-            /// right side (direct_join_possible), which the storage-blind caller passes in.
             case JoinAlgorithm::DIRECT:
                 if (direct_join_possible && directKeyValueJoinSupportsKindAndStrictness(kind, strictness))
                     return true;
