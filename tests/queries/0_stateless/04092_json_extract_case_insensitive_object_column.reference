@@ -41,3 +41,9 @@ null rows ci	3
 null mixed rows	1	"alice"	alice
 null mixed rows	2		
 null mixed rows	3	"bob"	bob
+root raw	{"a":1}	{"a":1}
+root extract	('hello',[1])
+root scalars	2	Object	1	1
+root rows	1	{"Key":"value"}	{"Key":"value"}	1
+root rows	2	{}	{}	0
+root rows	3	{"n":{"x":1}}	{"n":{"x":1}}	1

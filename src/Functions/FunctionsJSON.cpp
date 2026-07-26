@@ -126,9 +126,10 @@ public:
                 if (Impl<JSONParser>::getNumberOfIndexArguments(arguments) != 0)
                     return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
 
+                auto string_type = std::make_shared<DataTypeString>();
                 arguments_holder = arguments;
-                arguments_holder[0].column = serializeObjectColumnToJSONStrings(first_column, input_rows_count, format_settings);
-                arguments_holder[0].type = std::make_shared<DataTypeString>();
+                arguments_holder[0].column = castColumn(first_column, string_type);
+                arguments_holder[0].type = string_type;
             }
 
             /// String input: parse JSON and extract values.
@@ -201,31 +202,6 @@ public:
         }
 
     private:
-        /// Serializes every row of a `JSON`/`Object` column into its JSON text representation,
-        /// so that the string implementation can be reused for the whole root value.
-        static ColumnPtr serializeObjectColumnToJSONStrings(
-            const ColumnWithTypeAndName & column, size_t input_rows_count, const FormatSettings & format_settings)
-        {
-            ColumnPtr source = column.column->convertToFullColumnIfConst();
-            auto serialization = column.type->getDefaultSerialization();
-
-            auto result = ColumnString::create();
-            ColumnString::Chars & chars = result->getChars();
-            ColumnString::Offsets & offsets = result->getOffsets();
-            offsets.reserve(input_rows_count);
-
-            WriteBufferFromVector<ColumnString::Chars> buffer(chars);
-            for (size_t i = 0; i < input_rows_count; ++i)
-            {
-                serialization->serializeTextJSON(*source, i, buffer, format_settings);
-                writeChar(0, buffer);
-                offsets.push_back(buffer.count());
-            }
-            buffer.finalize();
-
-            return result;
-        }
-
         /// Helper to process ColumnObject directly using subcolumns.
         /// Only supports constant string path keys (no indexes or non-const keys).
         /// - Extract literal subcolumn (json.path) for scalar values

@@ -101,3 +101,19 @@ INSERT INTO t_04092_null_mixed VALUES
     (3, '{"NAME": "bob"}');
 SELECT 'null mixed rows', id, JSONExtractRawCaseInsensitive(j, 'name'), JSONExtractStringCaseInsensitive(j, 'name') FROM t_04092_null_mixed ORDER BY id;
 DROP TABLE t_04092_null_mixed;
+
+-- The root form without any path argument must extract the whole JSON value instead of
+-- silently returning the default, matching what the same call returns on the JSON string.
+SELECT 'root raw', JSONExtractRaw('{"a": 1}'::JSON), JSONExtractRawCaseInsensitive('{"a": 1}'::JSON);
+SELECT 'root extract', JSONExtract('{"a":"hello","b":[1]}'::JSON, 'Tuple(String, Array(UInt8))');
+SELECT 'root scalars', JSONLength('{"a":1,"B":2}'::JSON), JSONType('{"a":1}'::JSON), isValidJSON('{"a":1}'::JSON), JSONHas('{"a":1}'::JSON);
+
+-- Same for a materialized column, per row, including an empty object.
+DROP TABLE IF EXISTS t_04092_root;
+CREATE TABLE t_04092_root (id UInt32, j JSON) ENGINE = Memory;
+INSERT INTO t_04092_root VALUES
+    (1, '{"Key": "value"}'),
+    (2, '{}'),
+    (3, '{"n": {"x": 1}}');
+SELECT 'root rows', id, JSONExtractRaw(j), JSONExtractRawCaseInsensitive(j), JSONLength(j) FROM t_04092_root ORDER BY id;
+DROP TABLE t_04092_root;
