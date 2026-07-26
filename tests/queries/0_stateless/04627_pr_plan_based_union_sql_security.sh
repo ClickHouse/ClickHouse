@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-replicated-database
+# ^ creates a user and a DEFINER view; access entities are not part of the Replicated test database.
 
 # Plan-based parallel replicas merges a UNION ALL over MergeTree branches into a single distributed plan
 # fragment that executes under one context. Result-affecting transforms (here a per-branch SQL-security row
@@ -17,9 +19,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user="user_${CLICKHOUSE_DATABASE}"
 
-$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS ${user}"
-
 $CLICKHOUSE_CLIENT --multiquery --query "
+DROP USER IF EXISTS ${user};
 CREATE USER ${user};
 GRANT SELECT ON *.* TO ${user};
 
@@ -36,37 +37,35 @@ CREATE ROW POLICY rp ON ub1 FOR SELECT USING a < 500000 TO ${user};
 CREATE VIEW dv1 DEFINER = ${user} SQL SECURITY DEFINER AS SELECT a FROM ub1;
 -- iv2: INVOKER over ub2 (no policy) -> returns all of ub2.
 CREATE VIEW iv2 SQL SECURITY INVOKER AS SELECT a FROM ub2;
-"
 
-pr_settings="enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3,
-    cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_plan_based = 1,
-    automatic_parallel_replicas_mode = 0"
+SET enable_analyzer = 1;
+SET enable_parallel_replicas = 1;
+SET max_parallel_replicas = 3;
+SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SET parallel_replicas_for_non_replicated_merge_tree = 1;
+SET parallel_replicas_plan_based = 1;
+SET automatic_parallel_replicas_mode = 0;
 
-# Expect ub1 filtered by the definer's policy (500000 rows: 0..499999) plus all of ub2 (1000000 rows).
-# If the merged plan fragment dropped the definer's context/policy for the ub1 branch, ub1 would return all
-# rows and the count/sum would grow. Checked for both plan fragment execution paths.
-$CLICKHOUSE_CLIENT --query "
+-- Expect ub1 filtered by the definer's policy (500000 rows: 0..499999) plus all of ub2 (1000000 rows).
+-- If the merged plan fragment dropped the definer's context/policy for the ub1 branch, ub1 would return all
+-- rows and the count/sum would grow. Checked for both plan fragment execution paths.
 SELECT count(), sum(a) FROM (SELECT a FROM dv1 UNION ALL SELECT a FROM iv2)
-SETTINGS ${pr_settings}, parallel_replicas_local_plan = 0"
+SETTINGS parallel_replicas_local_plan = 0;
 
-$CLICKHOUSE_CLIENT --multiquery --query "
 SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 SELECT count(), sum(a) FROM (SELECT a FROM dv1 UNION ALL SELECT a FROM iv2)
-SETTINGS ${pr_settings}, parallel_replicas_local_plan = 1;
-SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;"
+SETTINGS parallel_replicas_local_plan = 1;
+SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
 
-# The union ships as one distributed plan fragment (single shared context), no leftover split.
-$CLICKHOUSE_CLIENT --query "
+-- The union ships as one distributed plan fragment (single shared context), no leftover split.
 SELECT
     countIf(explain LIKE '%ReadFromParallelReplicas%') > 0 AS has_remote_read,
     countIf(explain LIKE '%ParallelReplicasSplit%') AS splits
 FROM (EXPLAIN optimize = 1, description = 0
-    SELECT a FROM (SELECT a FROM dv1 UNION ALL SELECT a FROM iv2))
-SETTINGS ${pr_settings}"
+    SELECT a FROM (SELECT a FROM dv1 UNION ALL SELECT a FROM iv2));
 
-# Drop the definer view before the user (a user cannot be dropped while it is a view's definer).
-$CLICKHOUSE_CLIENT --multiquery --query "
+-- Drop the definer view before the user (a user cannot be dropped while it is a view's definer).
 DROP VIEW dv1;
 DROP VIEW iv2;
-DROP USER ${user};"
+DROP USER ${user};
+"
