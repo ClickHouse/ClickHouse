@@ -41,6 +41,10 @@ expect ":) "
 # next line instead of submitting. If it were submitted, the `print` would report
 # a syntax error (and the `SET` + `let x = 1` would already have run).
 send -- "SET dialect = 'kusto'; let x = 1; print\r"
+# Give the client time to react to the <ENTER> on its own: two lines sent back to
+# back arrive in a single read and are inserted as one pasted block, which would
+# fold the buffer regardless of what the continuation probe decides.
+sleep 1
 # Complete the query on the continuation line. The whole buffer now runs as one:
 # `SET` switches to Kusto, `let x = 1` binds `x`, and `print x` prints 1.
 send -- "x\r"

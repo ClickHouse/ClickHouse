@@ -32,6 +32,10 @@ expect ":) "
 # query. If it had been submitted on the first <ENTER>, the result would be a
 # syntax error rather than "42".
 send -- "SELECT\r"
+# The second line is sent after a pause: two lines sent back to back arrive in
+# a single read and are inserted as one pasted block, which would fold the
+# buffer regardless of what the continuation probe decides.
+sleep 1
 send -- "42\r"
 expect "│ 42 │"
 expect ":) "
@@ -40,6 +44,7 @@ expect ":) "
 # completes the query. The column name "plus(1, 2)" only appears if the full
 # "SELECT (1 + 2)" was executed as one query.
 send -- "SELECT (1\r"
+sleep 1
 send -- "+ 2)\r"
 expect "plus(1, 2)"
 expect ":) "
@@ -76,6 +81,7 @@ expect ":) "
 # earlier complete ones. "SELECT 1; SELECT" continues; after completing it with
 # "2", both statements run and no syntax error is produced.
 send -- "SELECT 1; SELECT\r"
+sleep 1
 send -- "2\r"
 expect {
     "Syntax error" { exit 1 }
@@ -86,6 +92,7 @@ expect ":) "
 # Ctrl+C while editing a continued (incomplete) query discards it without
 # submitting; the client returns to a fresh prompt and still accepts new queries.
 send -- "SELECT\r"
+sleep 1
 send -- "\x03"
 expect ":) "
 send -- "SELECT 99\r"

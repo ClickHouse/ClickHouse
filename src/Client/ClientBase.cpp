@@ -3325,6 +3325,15 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
         /// token stream), so only the parser is rebuilt; the token iterator stays.
         Settings effective_settings = settings;
 
+        /// A setting value can be a query parameter, e.g. `SET dialect = {d:String}`,
+        /// and a `SET param_d = 'kusto'` earlier in the same buffer defines it. The
+        /// executor resolves the changes against the query parameters known so far
+        /// and then remembers the ones the statement declares, before parsing the
+        /// next statement. Mirror that with a local copy of the parameter map, so a
+        /// parameterized `SET dialect = ...` shapes the parser for the following
+        /// statements here exactly as it does during execution.
+        NameToNameMap effective_query_parameters = client_context->getQueryParameters();
+
         auto make_parser = [&]() -> std::unique_ptr<IParserBase>
         {
             const Dialect dialect = effective_settings[Setting::dialect];
@@ -3443,6 +3452,12 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 for (const auto & change : set_query->changes)
                     if (change.name != "profile")
                         changes.push_back(change);
+                /// Resolve query parameters used as setting values against the
+                /// parameters known at this point in the buffer, as the executor
+                /// does. This works on the local copy of the changes, so the AST
+                /// is left untouched. An unknown parameter throws, which is caught
+                /// below and commits the buffer -- the executor throws there too.
+                replaceQueryParametersInSettingsChanges(changes, effective_query_parameters);
                 effective_settings.applyChanges(changes);
                 /// `SET name = DEFAULT` lands in `default_settings`, not `changes`;
                 /// the executor resets those via `resetSettingsToDefaultValue`.
@@ -3450,6 +3465,10 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                 /// probes the trailing statements with the session's parser again.
                 for (const auto & name : set_query->default_settings)
                     effective_settings.setDefaultValue(name);
+                /// `SET param_x = ...` declares a query parameter for the following
+                /// statements; remember it for their `SET` resolution above.
+                for (const auto & [name, value] : set_query->query_parameters)
+                    effective_query_parameters.insert_or_assign(name, value);
                 parser = make_parser();
 
                 /// The `SET` may also have changed the parser limits, and the
