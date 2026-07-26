@@ -50,7 +50,9 @@ CXXFLAGS=(
   -D_LIBCPP_HAS_NO_THREADS
   -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_MMAN
   -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_GETPID
-  -fwasm-exceptions
+  -DCLICKHOUSE_PARSER_MINIMAL_BUILD
+  -fignore-exceptions
+  -fno-asynchronous-unwind-tables
   -Wno-everything
 )
 
@@ -155,7 +157,7 @@ echo "Linking..."
     -Wl,--no-entry -mexec-model=reactor -Wl,--strip-all \
     -Wl,--export=ch_format,--export=ch_alloc,--export=ch_free \
     -Wl,--export=ch_result_data,--export=ch_result_size \
-    "$OUT"/obj/*.o -lunwind -lwasi-emulated-signal -lwasi-emulated-mman \
+    "$OUT"/obj/*.o -lwasi-emulated-signal -lwasi-emulated-mman \
     -o "$OUT/parser.wasm"
 
 printf '%s: %s bytes (%s gzipped)\n' "$OUT/parser.wasm" \

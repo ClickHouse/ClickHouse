@@ -21,7 +21,8 @@
 #include "Poco/Foundation.h"
 
 
-#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS)
+/// A standalone build of the ClickHouse parser has neither POSIX signals nor setjmp/longjmp.
+#if defined(POCO_OS_FAMILY_UNIX) && !defined(POCO_VXWORKS) && !defined(CLICKHOUSE_PARSER_MINIMAL_BUILD)
 
 
 #    include <vector>
