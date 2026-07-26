@@ -37,7 +37,7 @@ GRANT rds_iam TO clickpipes_iam_user;`,
 
       <p>Create the ClickPipes user with IAM authentication enabled, then grant it the same schema and replication privileges shown above:</p>
 
-      <pre><code className="language-sql">{createUserSql}</code></pre>
+      <CodeBlock language="sql">{createUserSql}</CodeBlock>
 
       {children}
 
@@ -75,7 +75,7 @@ GRANT rds_iam TO clickpipes_iam_user;`,
 
           <p>Trust policy (replace <code>{'{ClickHouse_IAM_ARN}'}</code> with the IAM role ARN of your ClickHouse instance):</p>
 
-          <pre><code className="language-json">{`{
+          <CodeBlock language="json">{`{
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -89,11 +89,11 @@ GRANT rds_iam TO clickpipes_iam_user;`,
       ]
     }
   ]
-}`}</code></pre>
+}`}</CodeBlock>
 
           <p>Permissions policy (replace <code>{'{RDS_RESOURCE_ID}'}</code> with the resource ID of your {svc.name} {svc.resource}, <code>{'{RDS_REGION}'}</code> with its region, and <code>{'{AWS_ACCOUNT}'}</code> with your AWS account ID):</p>
 
-          <pre><code className="language-json">{`{
+          <CodeBlock language="json">{`{
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -106,7 +106,7 @@ GRANT rds_iam TO clickpipes_iam_user;`,
       ]
     }
   ]
-}`}</code></pre>
+}`}</CodeBlock>
         </li>
         <li>Once the role is created, copy its ARN. This is your <code>{'{RDS_ACCESS_IAM_ROLE_ARN}'}</code>.</li>
       </ol>
