@@ -1172,7 +1172,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     /// scan the manifest files: the file-level `record_count` is required in all format
     /// versions, so summing it over the data files is exact at the cost of opening the
     /// manifest files (served from the Iceberg metadata cache on repeated queries).
-    Int64 result = 0;
+    UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
@@ -1191,7 +1191,12 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
             || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
 
-        result += manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        /// nullopt means a corrupted manifest file with a negative `record_count`: fail
+        /// closed to a real scan instead of returning a wrong count.
+        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        if (!manifest_rows.has_value())
+            return {};
+        result += *manifest_rows;
     }
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
