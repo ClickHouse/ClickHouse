@@ -5,6 +5,8 @@
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <atomic>
@@ -200,6 +202,65 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesSimpleAggrega
     /// for every other query as a side effect of serving one old client.
     ASSERT_EQ(asAgg(simple).getVersion(), 1u);
     ASSERT_EQ(simple->getName(), name_before);
+}
+
+/// The custom name does not have to sit on the versioned leaf itself: in
+/// `SimpleAggregateFunction(anyLast, Array(AggregateFunction(...)))` it sits on the Array, while the
+/// leaf that gets replaced is one level below. Rebuilding the wrapper therefore has to carry its
+/// customization over too, or the column silently degrades to a plain Array and stops being
+/// recognised as a simple-aggregate one by the AggregatingMergeTree and SummingMergeTree algorithms.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafPreservesCustomNameOnWrapper)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr simple = DataTypeFactory::instance().get(
+        "SimpleAggregateFunction(anyLast, Array(AggregateFunction(sumMap, Array(UInt64), Array(UInt64))))");
+    ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(simple->getCustomName()), nullptr);
+    const String name_before = simple->getName();
+
+    DataTypePtr assigned = simple;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/false, /*revision=*/std::nullopt);
+
+    /// The leaf under the Array was replaced, so the Array itself was rebuilt ...
+    ASSERT_NE(assigned.get(), simple.get());
+    const auto * assigned_array = typeid_cast<const DataTypeArray *>(assigned.get());
+    ASSERT_NE(assigned_array, nullptr);
+    ASSERT_EQ(asAgg(assigned_array->getNestedType()).getVersion(), 0u);
+
+    /// ... and the name on the wrapper came along with it.
+    ASSERT_NE(dynamic_cast<const DataTypeCustomSimpleAggregateFunction *>(assigned->getCustomName()), nullptr);
+    ASSERT_EQ(assigned->getName(), name_before);
+
+    /// The shared source type is untouched.
+    ASSERT_EQ(simple->getName(), name_before);
+}
+
+/// A state cannot be directly inside Nullable, but a Tuple can be, so
+/// `Nullable(Tuple(AggregateFunction(...)))` is reachable (with enable_nullable_tuple_type) and
+/// transformTypesRecursively descended into Nullable first of all. Skipping it would leave the leaf
+/// unversioned, so an old client would be sent a version-1 payload under an unversioned type name.
+GTEST_TEST(DataTypeAggregateFunctionVersion, VersionedLeafUnderNullableIsAssigned)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr nullable = DataTypeFactory::instance().get(
+        "Nullable(Tuple(AggregateFunction(sumMap, Array(UInt64), Array(UInt64))))");
+
+    DataTypePtr assigned = nullable;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/std::nullopt);
+
+    /// Version 0 was forced onto the leaf under Nullable(Tuple(...)), and it is still a Nullable.
+    ASSERT_NE(assigned.get(), nullable.get());
+    const auto * assigned_nullable = typeid_cast<const DataTypeNullable *>(assigned.get());
+    ASSERT_NE(assigned_nullable, nullptr);
+    const auto * assigned_tuple = typeid_cast<const DataTypeTuple *>(assigned_nullable->getNestedType().get());
+    ASSERT_NE(assigned_tuple, nullptr);
+    ASSERT_EQ(asAgg(assigned_tuple->getElements()[0]).getVersion(), 0u);
+
+    /// The shared source type still resolves to its default version.
+    const auto * source_tuple = typeid_cast<const DataTypeTuple *>(
+        typeid_cast<const DataTypeNullable *>(nullable.get())->getNestedType().get());
+    ASSERT_EQ(asAgg(source_tuple->getElements()[0]).getVersion(), 1u);
 }
 
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.

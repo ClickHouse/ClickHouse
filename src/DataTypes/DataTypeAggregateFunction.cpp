@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Common/FieldVisitorToCastedLiteral.h>
 #include <Parsers/parseFieldFromCastedLiteral.h>
@@ -362,10 +363,21 @@ namespace
 /// client but also stored in the table metadata on ATTACH.
 ///
 /// Only the wrappers that `transformTypesRecursively` used to descend into are handled, so nothing
-/// that was reached before is skipped now. Nullable is not among them: an aggregate function state
-/// cannot be inside Nullable, as DataTypeNullable's constructor rejects it.
+/// that was reached before is skipped now. Nullable is among them: a state cannot be directly inside
+/// Nullable, but a Tuple can, and `Nullable(Tuple(AggregateFunction(...)))` is reachable with
+/// enable_nullable_tuple_type.
 DataTypePtr withVersionedAggregateFunctions(const DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
 {
+    /// A rebuilt wrapper keeps the customization of the original: a custom name can sit on the
+    /// wrapper rather than on the leaf, as in `SimpleAggregateFunction(anyLast, Array(AggregateFunction(...)))`,
+    /// which is stored as the `Array` plus a `DataTypeCustomSimpleAggregateFunction` name.
+    auto keep_customization = [&](const DataTypePtr & rebuilt)
+    {
+        if (auto customization = type->cloneCustomization())
+            rebuilt->setCustomization(std::move(customization));
+        return rebuilt;
+    };
+
     /// Rewrites `elements` in place and reports whether any of them changed.
     auto update_elements = [&](DataTypes & elements)
     {
@@ -418,7 +430,7 @@ DataTypePtr withVersionedAggregateFunctions(const DataTypePtr & type, bool if_em
         auto nested_type = withVersionedAggregateFunctions(array_type->getNestedType(), if_empty, revision);
         if (nested_type.get() == array_type->getNestedType().get())
             return type;
-        return std::make_shared<DataTypeArray>(std::move(nested_type));
+        return keep_customization(std::make_shared<DataTypeArray>(std::move(nested_type)));
     }
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -426,9 +438,9 @@ DataTypePtr withVersionedAggregateFunctions(const DataTypePtr & type, bool if_em
         DataTypes elements = tuple_type->getElements();
         if (!update_elements(elements))
             return type;
-        return tuple_type->hasExplicitNames()
+        return keep_customization(tuple_type->hasExplicitNames()
             ? std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames())
-            : std::make_shared<DataTypeTuple>(elements);
+            : std::make_shared<DataTypeTuple>(elements));
     }
 
     if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
@@ -436,7 +448,15 @@ DataTypePtr withVersionedAggregateFunctions(const DataTypePtr & type, bool if_em
         DataTypes elements = {map_type->getKeyType(), map_type->getValueType()};
         if (!update_elements(elements))
             return type;
-        return std::make_shared<DataTypeMap>(elements[0], elements[1]);
+        return keep_customization(std::make_shared<DataTypeMap>(elements[0], elements[1]));
+    }
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto nested_type = withVersionedAggregateFunctions(nullable_type->getNestedType(), if_empty, revision);
+        if (nested_type.get() == nullable_type->getNestedType().get())
+            return type;
+        return keep_customization(std::make_shared<DataTypeNullable>(std::move(nested_type)));
     }
 
     return type;
