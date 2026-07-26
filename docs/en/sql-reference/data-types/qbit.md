@@ -145,7 +145,7 @@ CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree
 
 Here the 4096 dimensions are split into 4 groups of 1024. The subcolumns follow a group-major order: with `BFloat16` (16 bit planes), `vec.1` … `vec.16` are the 16 bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on. In general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`.
 
-To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The reference vector must have exactly that many elements, and the value must be a multiple of `stride`.
+To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The value must be a multiple of `stride`, and the reference vector must have at least that many elements. Any extra trailing elements of the reference vector are ignored, so a full-size query vector can be reused for a reduced-dimension search without slicing it first.
 
 ## Vector search functions {#vector-search-functions}
 
