@@ -1059,6 +1059,8 @@ static void convertNotEqualsChainToNotIn(
         size_t min_index = not_equals_entries.front().first;
         Tuple args;
         args.reserve(not_equals_entries.size());
+        DataTypes tuple_element_types;
+        tuple_element_types.reserve(not_equals_entries.size());
         for (auto & [idx, not_equals] : not_equals_entries)
         {
             min_index = std::min(min_index, idx);
@@ -1067,16 +1069,23 @@ static void convertNotEqualsChainToNotIn(
 
             const auto & not_equals_arguments = not_equals_function->getArguments().getNodes();
             if (const auto * rhs_literal = not_equals_arguments[1]->as<ConstantNode>())
+            {
                 args.push_back(rhs_literal->getValue());
+                tuple_element_types.push_back(rhs_literal->getResultType());
+            }
             else
             {
                 const auto * lhs_literal = not_equals_arguments[0]->as<ConstantNode>();
                 chassert(lhs_literal);
                 args.push_back(lhs_literal->getValue());
+                tuple_element_types.push_back(lhs_literal->getResultType());
             }
         }
 
-        auto rhs_node = std::make_shared<ConstantNode>(std::move(args));
+        /// Carry the resolved constant types over: deriving them from the `Field` values instead
+        /// would collapse `DateTime` to `UInt32`, an Enum to its underlying integer and so on, and
+        /// the resulting `notIn` would compare different values than the notEquals it replaces.
+        auto rhs_node = std::make_shared<ConstantNode>(std::move(args), std::make_shared<DataTypeTuple>(std::move(tuple_element_types)));
 
         auto not_in_function = std::make_shared<FunctionNode>("notIn");
         not_in_function->markAsOperator();

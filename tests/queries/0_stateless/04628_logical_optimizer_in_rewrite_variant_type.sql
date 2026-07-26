@@ -65,4 +65,21 @@ SELECT count() FROM (EXPLAIN QUERY TREE SELECT (b != '1') AND (b != '2') AND (b 
 -- ... but still fires for plain String:
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT (s != '1') AND (s != '2') AND (s != '3') AND (y = 1) FROM (SELECT materialize('0') AS s, materialize(toUInt8(1)) AS y)) WHERE explain ILIKE '%function_name: notIn%';
 
+-- The NOT IN tuple must keep the resolved constant types. Building it from the `Field` values alone
+-- re-derives them and collapses DateTime to UInt32, so the rewritten predicate compares a date
+-- against raw seconds and silently matches nothing. Each pair must agree with the un-rewritten form.
+DROP TABLE IF EXISTS t_dt;
+CREATE TABLE t_dt (d Date, dt DateTime('UTC')) ENGINE = Memory;
+INSERT INTO t_dt VALUES ('2020-01-01', '2020-01-01 00:00:00'), ('2020-01-02', '2020-01-02 00:00:00'), ('2020-01-03', '2020-01-03 00:00:00'), ('2020-01-04', '2020-01-04 00:00:00');
+
+SELECT count() FROM t_dt WHERE (d != parseDateTimeBestEffort('2020-01-01')) AND (d != parseDateTimeBestEffort('2020-01-02')) AND (d != parseDateTimeBestEffort('2020-01-03'));
+SELECT count() FROM t_dt WHERE (d != parseDateTimeBestEffort('2020-01-01')) AND (d != parseDateTimeBestEffort('2020-01-02')) AND (d != parseDateTimeBestEffort('2020-01-03'))
+SETTINGS optimize_min_inequality_conjunction_chain_length = 100;
+SELECT count() FROM t_dt WHERE (dt != toDate('2020-01-01')) AND (dt != toDate('2020-01-02')) AND (dt != toDate('2020-01-03'));
+SELECT count() FROM t_dt WHERE (dt != toDate('2020-01-01')) AND (dt != toDate('2020-01-02')) AND (dt != toDate('2020-01-03'))
+SETTINGS optimize_min_inequality_conjunction_chain_length = 100;
+-- The rewrite must still happen for these - the point is that it now preserves the types.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_dt WHERE (d != parseDateTimeBestEffort('2020-01-01')) AND (d != parseDateTimeBestEffort('2020-01-02')) AND (d != parseDateTimeBestEffort('2020-01-03'))) WHERE explain ILIKE '%Tuple(DateTime, DateTime, DateTime)%';
+
+DROP TABLE t_dt;
 DROP TABLE t_var;
