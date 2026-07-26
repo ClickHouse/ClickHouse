@@ -571,6 +571,15 @@ public:
 
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
 
+    /// Arms insert-time compaction (compression, with `enable_join_in_memory_compression`) for the
+    /// right-side blocks added from now on, as if the memory-pressure trigger inside
+    /// `shrinkStoredBlocksToFit` had fired. Needed by `JoinSwitcher` (`join_algorithm = 'auto'`),
+    /// which enforces the join limits itself and therefore calls `shrinkStoredBlocksToFit` with
+    /// `force_optimize`: that path deliberately skips the trigger evaluation, so without arming it
+    /// here every block added after the forced pass would be stored uncompressed and the next limit
+    /// crossing would switch to `MergeJoin` on an uncompressed build size.
+    void armCompactionForFurtherBlocks() { shrink_blocks = true; }
+
     void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
     void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
 

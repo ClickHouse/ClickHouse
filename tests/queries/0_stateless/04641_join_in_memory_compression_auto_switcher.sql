@@ -51,5 +51,25 @@ SELECT ProfileEvents['JoinInMemoryCompressedColumns'] FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04641_auto_off' AND type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
+-- The build blocks that arrive after the first compression pass must be compressed too: the pass at
+-- the switch point is one-shot (re-running it on the same data would only burn CPU), so it arms
+-- insert-time compression in the hash join instead. Here the right side is fed in many small blocks
+-- and only a few of them fit under `max_bytes_in_join`, so without that the later blocks would be
+-- stored uncompressed, the next limit crossing would switch to `partial_merge`, and its own right
+-- side (still uncompressed, still over the limit) would be flushed to temporary files.
+SELECT (SELECT sum(cityHash64(l.number, r.k, r.pad)) FROM numbers(20000) AS l
+            INNER JOIN (SELECT number AS k, repeat('x', 1000) AS pad FROM numbers(60000)) AS r ON l.number = r.k
+            SETTINGS join_algorithm = 'hash', enable_join_in_memory_compression = 0, max_bytes_in_join = 0, query_plan_join_swap_table = 'false')
+     = (SELECT sum(cityHash64(l.number, r.k, r.pad)) FROM numbers(20000) AS l
+            INNER JOIN (SELECT number AS k, repeat('x', 1000) AS pad FROM numbers(60000)) AS r ON l.number = r.k
+            SETTINGS join_algorithm = 'auto', enable_join_in_memory_compression = 1, max_bytes_in_join = 12000000,
+                     max_block_size = 2048, max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0,
+                     query_plan_join_swap_table = 'false')
+SETTINGS log_comment = '04641_auto_many_blocks', enable_analyzer = 1;
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['JoinInMemoryCompressedColumns'] > 0, ProfileEvents['ExternalProcessingFilesTotal'] FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '04641_auto_many_blocks' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
 DROP TABLE jimc_a_left;
 DROP TABLE jimc_a_right;
