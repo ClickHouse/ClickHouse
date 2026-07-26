@@ -196,6 +196,15 @@ SELECT arr_t.id, rhs.id, elem FROM arr_t ARRAY JOIN arr1 AS elem INNER JOIN (SEL
 -- Disabling the setting keeps the pre-existing permissive behavior for the wrapped case as well.
 SELECT x FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS x) AS rhs ON true SETTINGS joined_subquery_requires_alias = 0;
 
+-- The verdict for a collision with an in-scope expression alias does not depend on the sibling table
+-- expressions, so it is reached before they are resolved: the error is `ALIAS_REQUIRED` and not the
+-- failure of the unresolvable table function on the right, which is never even looked at.
+WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError ALIAS_REQUIRED }
+
+-- Without such a collision the verdict does need the sibling columns, so the right operand is resolved
+-- first and its own error is reported.
+SELECT 1 FROM (SELECT 2 AS y) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError UNKNOWN_FUNCTION }
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
