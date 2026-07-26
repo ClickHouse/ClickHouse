@@ -44,6 +44,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include "config.h"
 
 
@@ -113,12 +114,26 @@ public:
                                 "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
                                 "{}", String(Name::name), first_column.type->getName());
 
-            /// For JSON/Object type input: use subcolumn extraction (constant string keys only).
+            /// For JSON/Object type input with at least one path key: use subcolumn extraction
+            /// (constant string keys only).
+            /// The root form without any path key has no subcolumn to read, so each row is serialized
+            /// back to JSON text and handled by the string implementation below. This makes
+            /// `JSONExtractRaw(json_column)` behave exactly like `JSONExtractRaw` on the equivalent
+            /// JSON string instead of silently returning a default value.
+            ColumnsWithTypeAndName arguments_holder;
             if (is_object_input)
-                return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
+            {
+                if (Impl<JSONParser>::getNumberOfIndexArguments(arguments) != 0)
+                    return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
+
+                arguments_holder = arguments;
+                arguments_holder[0].column = serializeObjectColumnToJSONStrings(first_column, input_rows_count, format_settings);
+                arguments_holder[0].type = std::make_shared<DataTypeString>();
+            }
 
             /// String input: parse JSON and extract values.
-            const ColumnPtr & arg_json = first_column.column;
+            const ColumnsWithTypeAndName & json_arguments = is_object_input ? arguments_holder : arguments;
+            const ColumnPtr & arg_json = json_arguments[0].column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
@@ -129,8 +144,8 @@ public:
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
-            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(json_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, json_arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -145,7 +160,7 @@ public:
 
             /// prepare() does Impl-specific preparation before handling each row.
             if constexpr (Preparable<Impl<JSONParser>>)
-                impl.prepare(Name::name, arguments, result_type);
+                impl.prepare(Name::name, json_arguments, result_type);
 
             using Element = typename JSONParser::Element;
 
@@ -172,7 +187,7 @@ public:
                     /// Perform moves.
                     Element element;
                     std::string_view last_key;
-                    bool moves_ok = performMoves<JSONParser, case_insensitive>(arguments, i, document, moves, element, last_key);
+                    bool moves_ok = performMoves<JSONParser, case_insensitive>(json_arguments, i, document, moves, element, last_key);
 
                     if (moves_ok)
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
@@ -186,6 +201,31 @@ public:
         }
 
     private:
+        /// Serializes every row of a `JSON`/`Object` column into its JSON text representation,
+        /// so that the string implementation can be reused for the whole root value.
+        static ColumnPtr serializeObjectColumnToJSONStrings(
+            const ColumnWithTypeAndName & column, size_t input_rows_count, const FormatSettings & format_settings)
+        {
+            ColumnPtr source = column.column->convertToFullColumnIfConst();
+            auto serialization = column.type->getDefaultSerialization();
+
+            auto result = ColumnString::create();
+            ColumnString::Chars & chars = result->getChars();
+            ColumnString::Offsets & offsets = result->getOffsets();
+            offsets.reserve(input_rows_count);
+
+            WriteBufferFromVector<ColumnString::Chars> buffer(chars);
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                serialization->serializeTextJSON(*source, i, buffer, format_settings);
+                writeChar(0, buffer);
+                offsets.push_back(buffer.count());
+            }
+            buffer.finalize();
+
+            return result;
+        }
+
         /// Helper to process ColumnObject directly using subcolumns.
         /// Only supports constant string path keys (no indexes or non-const keys).
         /// - Extract literal subcolumn (json.path) for scalar values
@@ -252,7 +292,8 @@ public:
             /// Expand ColumnConst to full column if needed.
             ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
 
-            /// Root case (no path specified) return defaults for most functions.
+            /// The root form (no path arguments) is handled by the caller. Getting here with an empty
+            /// path means all the key arguments are empty strings, which cannot match a stored path.
             if (path.empty())
                 return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
 
