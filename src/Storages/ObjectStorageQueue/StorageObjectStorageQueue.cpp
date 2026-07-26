@@ -89,6 +89,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_commit_after_success[];
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
+    extern const char object_storage_queue_pause_after_commit[];
 }
 
 namespace ServerSetting
@@ -1104,6 +1105,14 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         file_iterator->releaseFinishedBuckets();
         max_files_override = 0;
         total_rows += rows;
+
+        /// Park after the durable boundary and before the blocked check below, so a test can
+        /// observe a frozen row count with the backlog still pending and have a SYSTEM PAUSE
+        /// issued while parked be seen by that very check. No-op unless explicitly enabled.
+        /// An empty cycle has no durable boundary, and skipping it keeps a concurrently polling
+        /// idle table from consuming the one-shot pause.
+        if (rows > 0)
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_after_commit);
 
         if (stream_control.isBlocked())
             break;
