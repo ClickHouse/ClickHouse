@@ -10,20 +10,24 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # RowsReadByPrewhereReaders counts the rows each prewhere read step reads, so it grows with the
 # number of steps: 4 grouped conditions over one Map read 1 x N rows, and a split that puts the
 # throwing condition into its own step reads 2 x N.
+# gate and gate2 are constant 1, so conditions on them filter nothing and only change how the
+# conditions are grouped into steps.
 ${CLICKHOUSE_CLIENT} -q "
   DROP TABLE IF EXISTS t_steps_group;
   DROP TABLE IF EXISTS t_steps_throwing;
 
-  CREATE TABLE t_steps_group (id UInt64, tags Map(String, String))
+  CREATE TABLE t_steps_group (id UInt64, gate UInt8, gate2 UInt8, tags Map(String, String))
   ENGINE = MergeTree ORDER BY id
-  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           ratio_of_defaults_for_sparse_serialization = 1.0;
 
   CREATE TABLE t_steps_throwing (id UInt64, tags Map(String, String))
   ENGINE = MergeTree ORDER BY id
-  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+  SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0,
+           ratio_of_defaults_for_sparse_serialization = 1.0;
 
   INSERT INTO t_steps_group
-  SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayMap(i -> toString(number + i), range(4)))
+  SELECT number, 1, 1, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayMap(i -> toString(number + i), range(4)))
   FROM numbers(100000);
 
   INSERT INTO t_steps_throwing
@@ -36,7 +40,9 @@ ${CLICKHOUSE_CLIENT} -q "
 
 query_id_group=group_$CLICKHOUSE_DATABASE
 query_id_throwing=throwing_$CLICKHOUSE_DATABASE
+query_id_interleaved=interleaved_$CLICKHOUSE_DATABASE
 query_id_nested=nested_$CLICKHOUSE_DATABASE
+query_id_nested_split=nested_split_$CLICKHOUSE_DATABASE
 
 opts=(
   --optimize_functions_to_subcolumns 1
@@ -56,6 +62,14 @@ ${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_throwing" -q "
   FORMAT Null
 "
 
+# Only adjacent conditions over the same storage column are merged, so the condition on gate keeps
+# the two Map conditions in separate steps and the query reads the rows three times.
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_interleaved" -q "
+  SELECT count() FROM t_steps_group
+  PREWHERE tags['k0'] != '' AND gate = 1 AND tags['k1'] != ''
+  FORMAT Null
+"
+
 # A WHERE moved into an existing PREWHERE arrives as a nested conjunction. Flattening it must not
 # fragment conditions that used to be grouped, so these three non throwing conditions over one Map
 # still read the rows once.
@@ -63,6 +77,16 @@ ${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_nested" -q "
   SELECT count() FROM t_steps_group
   PREWHERE tags['k0'] != ''
   WHERE tags['k1'] != '' AND tags['k2'] != ''
+  FORMAT Null
+  SETTINGS optimize_prewhere_after_pushdown = 1
+"
+
+# The same nested conjunction, but its conditions read different columns, so flattening it splits
+# the step it would otherwise be evaluated in: the rows are read three times, not twice.
+${CLICKHOUSE_CLIENT} "${opts[@]}" --query_id "$query_id_nested_split" -q "
+  SELECT count() FROM t_steps_group
+  PREWHERE tags['k0'] != ''
+  WHERE gate = 1 AND gate2 = 1
   FORMAT Null
   SETTINGS optimize_prewhere_after_pushdown = 1
 "
@@ -81,10 +105,20 @@ ${CLICKHOUSE_CLIENT} -q "
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_throwing' AND type = 'QueryFinish';
 
-  -- Flattening a nested conjunction of non throwing conditions keeps them in one step.
+  -- Exactly three steps, a count no single step plan can produce.
+  SELECT 'interleaved steps', ProfileEvents['RowsReadByPrewhereReaders'] = 300000
+    FROM system.query_log
+   WHERE current_database = currentDatabase() AND query_id = '$query_id_interleaved' AND type = 'QueryFinish';
+
+  -- Flattening a nested conjunction of non throwing conditions over one Map keeps them in one step.
   SELECT 'nested grouped steps', ProfileEvents['RowsReadByPrewhereReaders'] = 100000
     FROM system.query_log
    WHERE current_database = currentDatabase() AND query_id = '$query_id_nested' AND type = 'QueryFinish';
+
+  -- Without flattening the nested conjunction is one condition and the query reads the rows twice.
+  SELECT 'nested split steps', ProfileEvents['RowsReadByPrewhereReaders'] = 300000
+    FROM system.query_log
+   WHERE current_database = currentDatabase() AND query_id = '$query_id_nested_split' AND type = 'QueryFinish';
 
   DROP TABLE t_steps_group;
   DROP TABLE t_steps_throwing;
