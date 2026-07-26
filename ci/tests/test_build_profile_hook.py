@@ -20,6 +20,9 @@ Layers covered:
 * The upload transport (``LogCluster.do_query``): the telemetry INSERT runs
   with parallel parsing disabled so its peak parse memory stays under the
   shared cluster's per-user limit.
+* The endpoint routing (``LogCluster.READONLY_URL``): the consumer reads
+  through the read-only sub-service of the cluster and sends no settings there,
+  while the uploads keep the writer endpoint.
 """
 
 import os
@@ -612,3 +615,55 @@ def test_do_query_disables_parallel_parsing():
 
     assert cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
     assert cluster._session.params["input_format_parallel_parsing"] == 0
+
+
+# --- endpoint routing: reads on the read-only sub-service -----------------
+
+
+def test_reader_uses_the_read_only_endpoint(monkeypatch):
+    """The diff consumer must read through the read-only sub-service.
+
+    Its queries scan months of the whole fleet's build telemetry; running them
+    on the endpoint that ingests every job's logs and profiles is what makes
+    the shared cluster's memory-pressure spikes (Code 241) hit the uploads.
+    """
+    monkeypatch.delenv("CI_LOGS_HOST", raising=False)
+    from ci.jobs.build_profile_diff_job import Db
+
+    cluster = Db()._cluster
+    assert cluster.readonly
+    assert cluster.url == LogCluster.READONLY_URL
+
+
+def test_do_query_refuses_the_read_only_endpoint():
+    """The telemetry INSERT must never be routed to the read-only endpoint,
+    which cannot serve it - the data would be lost instead of uploaded."""
+    cluster = LogCluster(readonly=True)
+    cluster.is_ready = lambda: True
+    with pytest.raises(AssertionError):
+        cluster.do_query("INSERT INTO t FORMAT JSONEachRow", data=b"")
+
+
+def test_select_sends_no_settings_to_the_read_only_endpoint():
+    """A read-only profile rejects a query that changes any setting, so the
+    read path must not send the `send_logs_level` of the upload path."""
+
+    class _Resp:
+        ok = True
+        text = "[]"
+
+    class _Session:
+        def __init__(self):
+            self.params = None
+
+        def post(self, url, params, data, headers, timeout):
+            self.params = params
+            return _Resp()
+
+    cluster = LogCluster(readonly=True)
+    cluster.is_ready = lambda: True
+    cluster._auth = {}
+    cluster._session = _Session()
+
+    assert cluster.select("SELECT 1 FORMAT JSON") == "[]"
+    assert cluster._session.params == {}

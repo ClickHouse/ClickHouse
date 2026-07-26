@@ -10,13 +10,20 @@ from ci.praktika.secret import Secret
 class LogCluster:
     URL_SECRET = "clickhouse_ci_logs_host"
     PASSWD_SECRET = "clickhouse_ci_logs_password"
+    # A read-only sub-service of the same cluster: it serves the same data with
+    # the same user and password, but its own compute. Every read-only query
+    # from the CI goes there, so that reporting queries and the log and build
+    # profile uploads of the whole CI fleet do not compete for one endpoint.
+    # Not a secret, unlike the writer endpoint, hence no AWS SSM parameter.
+    READONLY_URL = "https://t6h0zvqlgy.us-east-2.aws.clickhouse-staging.com"
     USER = "ci"
 
-    def __init__(self, url="", user="", password=None):
+    def __init__(self, url="", user="", password=None, readonly=False):
         # Explicit url/user/password skip the AWS SSM secret lookup - used for
         # running the consumers locally against the cluster.
         self.user = user or self.USER
-        self.url = url
+        self.readonly = readonly
+        self.url = url or (self.READONLY_URL if readonly else "")
         self._session = None
         self._auth = None
         if password is not None:
@@ -75,6 +82,9 @@ class LogCluster:
         return True
 
     def do_query(self, query, data, db_name="", retries=1, timeout=5):
+        # The INSERT transport: the read-only endpoint cannot serve it, and
+        # silently sending data there would lose it.
+        assert not self.readonly, "LogCluster: writes need the writer endpoint"
         if not self.is_ready():
             print("ERROR: LogCluster not ready")
             return False
@@ -139,9 +149,10 @@ class LogCluster:
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
-        params = {
-            "send_logs_level": "warning",
-        }
+        # Nothing is sent along with it against the read-only endpoint: a
+        # read-only profile rejects a query that changes any setting, and none
+        # of the settings here is needed to read.
+        params = {} if self.readonly else {"send_logs_level": "warning"}
 
         response = None
         for retry in range(retries):

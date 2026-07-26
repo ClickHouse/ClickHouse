@@ -132,6 +132,9 @@ class Section:
 
 class Db:
     def __init__(self):
+        # This job only reads, so it goes to the read-only sub-service of the
+        # CI logs cluster (LogCluster.READONLY_URL) rather than to the endpoint
+        # that ingests the logs and profiles of the whole CI fleet.
         # Local runs read the connection from the environment instead of AWS
         # SSM (any HTTPS ClickHouse endpoint with the CI logs schema works).
         url = os.environ.get("CI_LOGS_HOST", "")
@@ -143,9 +146,10 @@ class Db:
                 url=url,
                 user=os.environ.get("CI_LOGS_USER", "default"),
                 password=password,
+                readonly=True,
             )
         else:
-            self._cluster = LogCluster()
+            self._cluster = LogCluster(readonly=True)
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts. Raises on failure."""
