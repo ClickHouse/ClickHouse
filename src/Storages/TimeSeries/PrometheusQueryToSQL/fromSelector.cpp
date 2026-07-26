@@ -17,6 +17,12 @@ namespace
 {
     constexpr UInt64 STALE_NAN_BITS = 0x7ff0000000000002ULL;
 
+    /// The Prometheus stale marker is a specific `Float64` `NaN` payload, so it is recognized only on a
+    /// `TimeSeries` table whose value column is `Float64`. A `Float32` value column cannot represent the
+    /// payload - the write path downcasts the marker to an ordinary `NaN` - so on such a table stale samples
+    /// are indistinguishable from regular `NaN` values here and flow through as ordinary data, as they did
+    /// before stale-marker filtering existed. This limitation is documented for `prometheusQuery` and
+    /// `prometheusQueryRange`.
     ASTPtr isStaleMarker(ASTPtr && value)
     {
         return makeASTFunction(

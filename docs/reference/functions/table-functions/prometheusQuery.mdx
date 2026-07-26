@@ -55,6 +55,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
 
+**Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
+
 ### Operators {#operators}
 
 All arithmetic (`+`, `-`, `*`, `/`, `%`, `^`), comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`), and logical (`and`, `or`, `unless`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
