@@ -1417,9 +1417,27 @@ def test_jdbc_set_noop_requires_exact_statement(started_cluster):
         cur.execute("SET application_name TO 'probe'")
         assert cur.statusmessage == "SET", cur.statusmessage
 
+        # The value of `application_name` comes from a user-supplied connection string, so it may
+        # contain semicolons. Such a statement is still exactly one statement and must be accepted:
+        # the single-statement check has to skip quoted literals instead of splitting on the first `;`.
+        cur.execute("SET application_name TO 'jdbc;a'")
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name = 'a;b;c'")
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name TO 'quo''ted;value'")
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name TO 'trailing;'")
+        assert cur.statusmessage == "SET", cur.statusmessage
+        cur.execute("SET application_name TO 'jdbc;a';")
+        assert cur.statusmessage == "SET", cur.statusmessage
+
         # A query containing the magic text as a literal is executed, not swallowed.
         cur.execute("SELECT 'SET application_name'")
         assert cur.fetchall() == [("SET application_name",)]
+
+        # A literal that merely looks like a second statement does not make the query a no-op either.
+        cur.execute("SELECT 'SET application_name TO ''x''; SELECT 1'")
+        assert cur.fetchall() == [("SET application_name TO 'x'; SELECT 1",)]
 
         # A multi-statement packet is not acknowledged by the fast path: it falls through to normal
         # processing, where the unsupported `SET` fails loudly instead of silently dropping the trailing

@@ -27,6 +27,7 @@
 #include <Common/config_version.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/StringUtils.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTCopyQuery.h>
@@ -183,23 +184,175 @@ private:
 /// session-management commands as plain, unparameterized statements, so there is no reason to run
 /// them through the extended `Parse` / `Bind` / `Execute` flow, and the extended path deliberately
 /// performs no such driver-specific rewriting.
+/// Whether a simple-query packet consists of a single statement, that is, whether it contains no `;`
+/// that separates statements. The check has to be SQL-aware: a `;` inside a string literal, a quoted
+/// identifier, a dollar-quoted string or a comment is ordinary text, not a separator. In particular
+/// `SET application_name TO 'jdbc;a'` is one statement, and the value of `application_name` comes
+/// straight from a user-supplied JDBC/libpq connection string, so semicolons in it are legal and
+/// common; a naive scan for the first `;` would reject such a handshake statement.
+///
+/// A packet that cannot be scanned to the end — an unterminated literal or block comment — is
+/// reported as "not a single statement" as well, so that the caller falls through to normal
+/// processing, where it fails with a proper parser error.
+bool isSingleStatementQuery(const String & query)
+{
+    const size_t size = query.size();
+    /// Set once a `;` is seen outside of any literal or comment: nothing but whitespace and comments
+    /// may follow it, otherwise the packet holds more than one statement.
+    bool statement_ended = false;
+
+    size_t i = 0;
+    while (i < size)
+    {
+        const char c = query[i];
+
+        /// A line comment runs to the end of the line, a block comment is terminated by `*/` and,
+        /// unlike in the SQL standard, nests in PostgreSQL.
+        if (c == '-' && i + 1 < size && query[i + 1] == '-')
+        {
+            i += 2;
+            while (i < size && query[i] != '\n')
+                ++i;
+            continue;
+        }
+        if (c == '/' && i + 1 < size && query[i + 1] == '*')
+        {
+            size_t depth = 1;
+            i += 2;
+            while (i < size && depth > 0)
+            {
+                if (query[i] == '/' && i + 1 < size && query[i + 1] == '*')
+                {
+                    ++depth;
+                    i += 2;
+                }
+                else if (query[i] == '*' && i + 1 < size && query[i + 1] == '/')
+                {
+                    --depth;
+                    i += 2;
+                }
+                else
+                    ++i;
+            }
+            if (depth > 0)
+                return false;
+            continue;
+        }
+
+        /// Comments were skipped above, so any other non-whitespace character after the terminating
+        /// `;` starts a second statement.
+        if (statement_ended)
+        {
+            if (!isWhitespaceASCII(c))
+                return false;
+            ++i;
+            continue;
+        }
+
+        if (c == '\'')
+        {
+            /// A string literal: `''` stands for an embedded quote. In the `E'...'` form a backslash
+            /// escapes the next character as well; ClickHouse does not report
+            /// `standard_conforming_strings`, so treat a backslash as an escape only in that form.
+            const bool backslash_escapes = i > 0 && (query[i - 1] == 'E' || query[i - 1] == 'e')
+                && (i == 1 || !isWordCharASCII(query[i - 2]));
+            ++i;
+            bool closed = false;
+            while (i < size)
+            {
+                if (backslash_escapes && query[i] == '\\' && i + 1 < size)
+                {
+                    i += 2;
+                    continue;
+                }
+                if (query[i] == '\'')
+                {
+                    if (i + 1 < size && query[i + 1] == '\'')
+                    {
+                        i += 2;
+                        continue;
+                    }
+                    ++i;
+                    closed = true;
+                    break;
+                }
+                ++i;
+            }
+            if (!closed)
+                return false;
+            continue;
+        }
+
+        if (c == '"')
+        {
+            /// A quoted identifier: `""` stands for an embedded double quote.
+            ++i;
+            bool closed = false;
+            while (i < size)
+            {
+                if (query[i] == '"')
+                {
+                    if (i + 1 < size && query[i + 1] == '"')
+                    {
+                        i += 2;
+                        continue;
+                    }
+                    ++i;
+                    closed = true;
+                    break;
+                }
+                ++i;
+            }
+            if (!closed)
+                return false;
+            continue;
+        }
+
+        if (c == '$')
+        {
+            /// A dollar-quoted string `$tag$ ... $tag$` (the tag may be empty). Anything else that
+            /// starts with `$`, such as the `$1` parameter placeholder, is ordinary text.
+            size_t tag_end = i + 1;
+            while (tag_end < size && (isWordCharASCII(query[tag_end]) || query[tag_end] == '$'))
+            {
+                if (query[tag_end] == '$')
+                    break;
+                ++tag_end;
+            }
+            if (tag_end < size && query[tag_end] == '$')
+            {
+                const String delimiter = query.substr(i, tag_end - i + 1);
+                const size_t closing = query.find(delimiter, tag_end + 1);
+                if (closing == String::npos)
+                    return false;
+                i = closing + delimiter.size();
+                continue;
+            }
+            ++i;
+            continue;
+        }
+
+        if (c == ';')
+        {
+            statement_ended = true;
+            ++i;
+            continue;
+        }
+
+        ++i;
+    }
+
+    return true;
+}
+
 std::optional<String> classifyNoOpDriverCommand(const String & query)
 {
     /// Only treat the packet as a no-op when it consists of a single statement. A simple-query
     /// packet may contain several `;`-separated statements; if we shortcut on the leading keyword
     /// we would acknowledge the whole packet and silently skip the rest (e.g. `RESET ALL; SELECT 1`
-    /// or, worse, `RESET ALL; DROP TABLE t`). An interior `;` — anything other than trailing
-    /// whitespace after it — means there is more than one statement, so bail out and let the normal
-    /// multi-statement splitter handle it.
-    if (const size_t semicolon = query.find(';'); semicolon != String::npos)
-    {
-        for (size_t i = semicolon + 1; i < query.size(); ++i)
-        {
-            const char c = query[i];
-            if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v')
-                return std::nullopt;
-        }
-    }
+    /// or, worse, `RESET ALL; DROP TABLE t`).
+    if (!isSingleStatementQuery(query))
+        return std::nullopt;
 
     /// Enough to cover the longest recognized command plus its argument: a PostgreSQL identifier
     /// is at most 63 bytes, and a qualified `RESET extension.setting` name consists of two of them.
@@ -210,9 +363,10 @@ std::optional<String> classifyNoOpDriverCommand(const String & query)
     if (prefix.size() == max_prefix_len)
         return std::nullopt;
 
-    /// The multi-statement guard above rejected any statement after an interior `;`, so the only
-    /// `;` that can remain is a single trailing one (with trailing whitespace already collapsed).
-    /// Drop it so it is not mistaken for a command argument below.
+    /// The single-statement guard above rejected any statement after a terminating `;`, so the only
+    /// `;` that can remain at the end is that terminator itself (with trailing whitespace already
+    /// collapsed). Drop it so it is not mistaken for a command argument below. A `;` inside a string
+    /// literal is left alone: it is not at the end, because the closing quote follows it.
     while (!prefix.empty() && (prefix.back() == ';' || prefix.back() == ' '))
         prefix.pop_back();
 
