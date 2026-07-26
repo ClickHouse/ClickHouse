@@ -62,3 +62,21 @@ def test_zookeeper_info_number_overflow(started_cluster):
         == "2147483648\t5\t3000000000\t\\N\t18446744073709551615\t3000000000\t4000000000"
         "\t5000000000\t5000000000\n"
     )
+
+
+def test_zookeeper_info_file_descriptor_counts(started_cluster):
+    # The same values from the real Keeper of this build: `mntr` prints the file
+    # descriptor counts as unsigned numbers, and the textual -1 it reports for an
+    # undetermined value must not wrap around to 2^64 - 1 (which is a valid value
+    # on its own: an unlimited RLIMIT_NOFILE).
+    open_fd, max_fd = (
+        keeper.query(
+            "SELECT open_file_descriptor_count, max_file_descriptor_count"
+            " FROM system.zookeeper_info WHERE port = 9181"
+        )
+        .strip()
+        .split("\t")
+    )
+
+    assert open_fd != "\\N" and 0 < int(open_fd) < 2**31
+    assert max_fd != "\\N" and int(max_fd) >= int(open_fd)
