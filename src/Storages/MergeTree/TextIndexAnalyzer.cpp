@@ -311,7 +311,7 @@ void TextIndexAnalyzer::bypassPatternQueries()
 
     for (const auto & query_hash : all_pattern_queries)
     {
-        auto & query_builder = query_builders[query_hash];
+        auto & query_builder = query_builders.at(query_hash);
         query_builder.markBypassed();
 
         for (const auto & [query_token, _] : query_builder.tokens)
@@ -438,7 +438,7 @@ void TextIndexAnalyzer::processTokenOperation(std::string_view token, Operation 
 
     for (const auto & query_hash : token_queries)
     {
-        auto & query_builder = query_builders[query_hash];
+        auto & query_builder = query_builders.at(query_hash);
         if (query_builder.is_failed || query_builder.is_bypassed)
             continue;
 

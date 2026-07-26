@@ -1,13 +1,26 @@
 #include <Backups/BackupFactory.h>
 #include <Common/Exception.h>
 
+#include <fmt/format.h>
+
+#include <iterator>
+
 
 namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int BACKUP_ENGINE_NOT_FOUND;
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+    void appendIdentityComponent(String & identity, std::string_view component)
+    {
+        fmt::format_to(std::back_inserter(identity), ":{}:{}", component.size(), component);
+    }
 }
 
 
@@ -38,17 +51,42 @@ BackupFactory & BackupFactory::instance()
 BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
 {
     const String & engine_name = params.backup_info.backup_engine_name;
-    auto it = creators.find(engine_name);
-    if (it == creators.end())
+    auto it = engines.find(engine_name);
+    if (it == engines.end())
         throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
-    return (it->second)(params);
+    return it->second.creator(params);
 }
 
-void BackupFactory::registerBackupEngine(const String & engine_name, const CreatorFn & creator_fn)
+String BackupFactory::getDestinationIdentity(const BackupInfo & backup_info, ContextPtr context) const
 {
-    if (creators.contains(engine_name))
+    if (!context)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Context is required to identify a backup destination");
+    if (!backup_info.id_arg.empty() && !backup_info.frozen_named_collection)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Named collection '{}' must be frozen before identifying a backup destination",
+            backup_info.id_arg);
+
+    const String & engine_name = backup_info.backup_engine_name;
+    auto it = engines.find(engine_name);
+    if (it == engines.end())
+        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine '{}'", engine_name);
+
+    String identity = "backup-destination-v1";
+    appendIdentityComponent(identity, engine_name);
+    for (const auto & component : it->second.destination_identity(backup_info, context))
+        appendIdentityComponent(identity, component);
+    return identity;
+}
+
+void BackupFactory::registerBackupEngine(
+    const String & engine_name,
+    const CreatorFn & creator_fn,
+    const DestinationIdentityFn & destination_identity_fn)
+{
+    if (engines.contains(engine_name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine '{}' was registered twice", engine_name);
-    creators[engine_name] = creator_fn;
+    engines.emplace(engine_name, RegisteredEngine{creator_fn, destination_identity_fn});
 }
 
 void registerBackupEnginesFileAndDisk(BackupFactory &);

@@ -208,6 +208,14 @@ const flatbuf::FieldNode & RecordBatchDecoder::nextNode()
     return *nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index++));
 }
 
+Int64 RecordBatchDecoder::peekNextNodeLength() const
+{
+    const auto * nodes = current_batch->nodes();
+    if (!nodes || node_index >= nodes->size())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC record batch has fewer field nodes than the schema requires");
+    return nodes->Get(static_cast<flatbuffers::uoffset_t>(node_index))->length();
+}
+
 RecordBatchDecoder::Slice RecordBatchDecoder::nextBuffer()
 {
     if (buffer_index >= buffer_slices.size())
@@ -633,6 +641,17 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
                     ErrorCodes::INCORRECT_DATA, "Arrow IPC fixed-size-list has a non-positive list size {}", type.list_size);
             const size_t list_size = static_cast<size_t>(type.list_size);
             const size_t expected_child = requiredBytes(rows, list_size);
+            /// When there are no rows the child is empty; reject a non-zero child FieldNode length BEFORE
+            /// decodeField so a buffer-less child type (e.g. Null) cannot drive an unbounded allocation
+            /// that the expected-child size check below could not prevent.
+            if (rows == 0)
+            {
+                const Int64 child_len = peekNextNodeLength();
+                if (child_len != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC empty fixed-size-list references no elements but its child declares {} rows", child_len);
+            }
             ColumnPtr child = decodeField(type.children.at(0), /*allow_low_cardinality=*/false, arrayElementHint(effective_hint), path);
             if (child->size() != expected_child)
                 throw Exception(
@@ -653,6 +672,18 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
             for (size_t i = 0; i < type.children.size(); ++i)
             {
                 const ArrowField & child = type.children[i];
+                /// An empty struct has no rows, so every field references zero rows; reject a non-zero
+                /// field FieldNode length BEFORE decodeField. A buffer-less field type (e.g. a Null
+                /// field) derives its size from the length alone, so a forged-huge length would
+                /// otherwise drive an unbounded allocation that the size check below could not prevent.
+                if (rows == 0)
+                {
+                    const Int64 field_len = peekNextNodeLength();
+                    if (field_len != 0)
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Arrow IPC empty struct field '{}' declares {} rows", child.name, field_len);
+                }
                 ColumnPtr element = decodeField(
                     child, /*allow_low_cardinality=*/false,
                     tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
@@ -673,22 +704,45 @@ ColumnPtr RecordBatchDecoder::decodeInner(const ArrowField & field, size_t rows,
         {
             /// Map is List<Struct<key, value>>: read the list offsets, then the entries struct.
             const Slice offsets_slice = nextBuffer();
-            checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(Int32)), "map offsets");
+            /// A zero-row map may omit its offsets buffer entirely (Apache Arrow Java < 19.0.0 emits a
+            /// 0-byte offsets buffer for an empty nested Map). No offset is read for zero rows.
+            /// Validate the buffer BEFORE allocating `offsets_col`: this bounds `rows` to the actual
+            /// buffer size, so a forged-huge `rows` cannot drive an allocation before being rejected.
+            if (rows > 0)
+                checkBufferSize(offsets_slice, requiredBytes(rows + 1, sizeof(Int32)), "map offsets");
             const auto * arrow_offsets = reinterpret_cast<const Int32 *>(offsets_slice.ptr);
-            const Int64 base = arrow_offsets[0];
-            if (base < 0)
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has a negative first offset {}", base);
             auto offsets_col = ColumnUInt64::create(rows);
             auto & offs = offsets_col->getData();
-            /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
-            Int64 prev = base;
-            for (size_t i = 0; i < rows; ++i)
+            Int64 base = 0;
+            Int64 prev = 0;
+            if (rows > 0)
             {
-                const Int64 end = arrow_offsets[i + 1];
-                if (end < prev)
-                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has non-monotonic offsets");
-                offs[i] = static_cast<UInt64>(end - base);
-                prev = end;
+                base = arrow_offsets[0];
+                if (base < 0)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has a negative first offset {}", base);
+                /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
+                prev = base;
+                for (size_t i = 0; i < rows; ++i)
+                {
+                    const Int64 end = arrow_offsets[i + 1];
+                    if (end < prev)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map has non-monotonic offsets");
+                    offs[i] = static_cast<UInt64>(end - base);
+                    prev = end;
+                }
+            }
+
+            /// An empty map references no entries, so the entries struct must also be empty. Reject a
+            /// non-zero entries FieldNode length BEFORE decodeField: a buffer-less entry type (e.g.
+            /// Map(_, Null)) derives its size from the length alone, so a forged-huge length would
+            /// otherwise drive an unbounded allocation that the later cut(0, 0) could not prevent.
+            if (rows == 0)
+            {
+                const Int64 entries_len = peekNextNodeLength();
+                if (entries_len != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Arrow IPC empty map references no entries but its entries struct declares {} rows", entries_len);
             }
 
             /// The entries struct's (key, value) get their hints from a synthetic Tuple(keyType, valueType)
@@ -728,7 +782,13 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
 {
     const Slice offsets_slice = nextBuffer();
     const size_t offset_size = large ? sizeof(Int64) : sizeof(Int32);
-    checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "list offsets");
+
+    /// A zero-row list may omit its offsets buffer entirely (Apache Arrow Java < 19.0.0 emits a 0-byte
+    /// offsets buffer for an empty nested List). No offset is read for zero rows, so require no bytes.
+    /// Validate the buffer BEFORE allocating `offsets_col`: this bounds `rows` to the actual buffer
+    /// size, so a forged-huge `rows` cannot drive an `rows * 8` byte allocation before being rejected.
+    if (rows > 0)
+        checkBufferSize(offsets_slice, requiredBytes(rows + 1, offset_size), "list offsets");
 
     auto read_offset = [&](size_t i) -> Int64
     {
@@ -737,21 +797,39 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
         return reinterpret_cast<const Int32 *>(offsets_slice.ptr)[i];
     };
 
-    const Int64 base = read_offset(0);
-    /// The first offset must be non-negative; the per-row offsets below are stored relative to it.
-    if (base < 0)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has a negative first offset {}", base);
     auto offsets_col = ColumnUInt64::create(rows);
     auto & offs = offsets_col->getData();
-    /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
-    Int64 prev = base;
-    for (size_t i = 0; i < rows; ++i)
+    Int64 base = 0;
+    Int64 prev = 0;
+    if (rows > 0)
     {
-        const Int64 end = read_offset(i + 1);
-        if (end < prev)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has non-monotonic offsets");
-        offs[i] = static_cast<UInt64>(end - base);
-        prev = end;
+        base = read_offset(0);
+        /// The first offset must be non-negative; the per-row offsets below are stored relative to it.
+        if (base < 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has a negative first offset {}", base);
+        /// Offsets must be monotonic non-decreasing: compare each with the previous one, not only `base`.
+        prev = base;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            const Int64 end = read_offset(i + 1);
+            if (end < prev)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC list has non-monotonic offsets");
+            offs[i] = static_cast<UInt64>(end - base);
+            prev = end;
+        }
+    }
+
+    /// An empty list references no child elements, so the child subtree must also be empty. Reject a
+    /// non-zero child FieldNode length BEFORE decodeField: a buffer-less child type (e.g. List(Null))
+    /// derives its size from the length alone, so a forged-huge length would otherwise drive an
+    /// unbounded null-map allocation that the later child->cut(0, 0) could not prevent.
+    if (rows == 0)
+    {
+        const Int64 child_len = peekNextNodeLength();
+        if (child_len != 0)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Arrow IPC empty list references no elements but its child declares {} rows", child_len);
     }
 
     /// `target_hint`/`path` are this list's element hint and dotted name, threaded for the recursive

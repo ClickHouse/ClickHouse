@@ -1,15 +1,27 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <time.h>
+#include <vector>
+
 #include <base/types.h>
 #include <Common/HTTPFieldLess.h>
 #include <Common/OpenTelemetryTracingContext.h>
+#include <Poco/Net/SocketAddress.h>
+
+/// On ppc64le, Poco's socket headers transitively include <termios.h>, which defines the CR1/CR2/CR3
+/// macros. They collide with parameter names in LLVM's ConstantRange.h in translation units that include
+/// this header (e.g. via Context.h) before the LLVM headers. Undef them at the source of the inclusion.
+#if defined(__powerpc64__)
+#    undef CR1
+#    undef CR2
+#    undef CR3
+#endif
 
 namespace Poco::Net
 {
     class HTTPRequest;
-    class SocketAddress;
 }
 
 namespace DB
@@ -61,12 +73,12 @@ public:
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
-    std::shared_ptr<Poco::Net::SocketAddress> connection_address;
+    std::optional<Poco::Net::SocketAddress> connection_address;
 
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
-    std::shared_ptr<Poco::Net::SocketAddress> current_address;
+    std::optional<Poco::Net::SocketAddress> current_address;
 
     /// For IMPERSONATEd session, stores the original authenticated user
     String authenticated_user;
@@ -74,7 +86,7 @@ public:
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
-    std::shared_ptr<Poco::Net::SocketAddress> initial_address;
+    std::optional<Poco::Net::SocketAddress> initial_address;
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
@@ -130,6 +142,9 @@ public:
     /// For interserver in case initial query transport was authenticated via JWT.
     String jwt;
 
+    /// Initiator's current roles for secondary queries; nullopt = not sent (remote uses default roles).
+    std::optional<std::vector<String>> current_roles;
+
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
     /// The element can be trusted only if you trust the corresponding proxy.
@@ -160,10 +175,10 @@ public:
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
       */
-    /// `with_trailing_fields` controls whether the `client_agent` and `is_internal` fields are (de)serialized as
-    /// trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the persisted async
-    /// `Distributed` insert header, where `client_agent` and `is_internal` are stored as trailing header fields
-    /// instead, so that older binaries draining newer queue files can read the header without misinterpreting it.
+    /// `with_trailing_fields` controls whether the `client_agent`, `is_internal` and `current_roles` fields are
+    /// (de)serialized as trailing members of `ClientInfo`. It must be `false` for the embedded `ClientInfo` of the
+    /// persisted async `Distributed` insert header, where these are stored as trailing header fields instead, so
+    /// that older binaries draining newer queue files can read the header without misinterpreting it.
     void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
     void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
 

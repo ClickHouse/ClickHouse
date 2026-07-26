@@ -2,21 +2,23 @@
 title: Insertions asynchrones
 ---
 
-Les insertions asynchrones dans ClickHouse offrent une alternative puissante lorsque le batching côté client n&#39;est pas envisageable. Cela est particulièrement utile pour les charges de travail d&#39;observabilité, où des centaines, voire des milliers d&#39;agents envoient des données en continu — logs, métriques, traces — souvent sous la forme de payloads de petite taille en temps réel. Dans ces environnements, le buffering côté client accroît la complexité, car il nécessite une queue centralisée pour garantir l&#39;envoi de batches suffisamment volumineux.
+Les insertions asynchrones dans ClickHouse offrent une alternative puissante lorsque le batching côté client n&#39;est pas envisageable. Cela est particulièrement utile pour les charges de travail d&#39;observabilité, où des centaines, voire des milliers d&#39;agents envoient des données en continu — logs, métriques, traces — souvent sous la forme de payloads de petite taille en temps réel. Dans ces environnements, la mise en tampon côté client accroît la complexité, car il nécessite une queue centralisée pour garantir l&#39;envoi de batches suffisamment volumineux.
 
 <Note>
   Il n&#39;est pas recommandé d&#39;envoyer de nombreux petits batches en mode synchrone, car cela entraîne la création d&#39;un grand nombre de parts. Cela dégrade les performances des queries et peut provoquer des erreurs [&quot;too many part&quot;](/fr/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts).
 </Note>
 
-Les insertions asynchrones transfèrent la responsabilité du batching du client vers le server en écrivant les données entrantes dans un tampon en mémoire, puis en les vidant vers le stockage en fonction de thresholds configurables. Cette approche réduit considérablement la surcharge liée à la création de parts, diminue l&#39;utilisation du CPU et garantit une ingestion efficace, même en cas de forte concurrence.
+Les insertions asynchrones transfèrent la responsabilité du batching du client vers le server en écrivant les données entrantes dans un tampon en mémoire, puis en les vidant vers le stockage en fonction de thresholds configurables. Cette approche réduit considérablement la surcharge liée à la création de parts, diminue l&#39;utilisation du CPU et garantit une ingestion efficace, même en cas de forte concurrency.
 
 Le comportement principal est contrôlé via le paramètre [`async_insert`](/fr/reference/settings/session-settings#async_insert).
 
-<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="Insertions asynchrones" />
+<Frame>
+  <img src="/images/bestpractices/async_inserts.webp" alt="Insertions asynchrones" />
+</Frame>
 
 Les insertions asynchrones sont prises en charge à la fois par les interfaces HTTP et native TCP.
 
-Lorsqu&#39;elles sont activées (`async_insert = 1`), les insertions sont mises en tampon et écrites sur disk uniquement lorsqu&#39;une des conditions de flush suivantes est remplie :
+Lorsqu&#39;elles sont activées (`async_insert = 1`), les insertions sont mises en tampon et écrites sur disque uniquement lorsqu&#39;une des conditions de flush suivantes est remplie :
 
 * Le tampon atteint une taille de données spécifiée ([`async_insert_max_data_size`](/fr/reference/settings/session-settings#async_insert_max_data_size), 100 MiB par défaut).
 * Un seuil de temps est atteint ([`async_insert_busy_timeout_ms`](/fr/reference/settings/session-settings#async_insert_busy_timeout_max_ms), 200 ms par défaut ou 1000 ms sur Cloud).
