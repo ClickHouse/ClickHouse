@@ -115,6 +115,7 @@ The supported formats are:
 | [ORC](./formats/ORC.md)                                                                                    | ✔   | ✔     |
 | [One](./formats/One.md)                                                                                    | ✔   | ✗     |
 | [Npy](./formats/Npy.md)                                                                                    | ✔   | ✔     |
+| [NetCDF](./formats/NetCDF.md)                                                                              | ✔   | ✔     |
 | [RowBinary](./formats/RowBinary/RowBinary.md)                                                              | ✔   | ✔     |
 | [RowBinaryWithNames](./formats/RowBinary/RowBinaryWithNames.md)                                            | ✔   | ✔     |
 | [RowBinaryWithNamesAndTypes](./formats/RowBinary/RowBinaryWithNamesAndTypes.md)                            | ✔   | ✔     |

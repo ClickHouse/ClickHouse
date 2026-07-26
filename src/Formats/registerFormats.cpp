@@ -80,6 +80,8 @@ void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
 void registerOutputFormatNpy(FormatFactory & factory);
+void registerInputFormatNetCDF(FormatFactory & factory);
+void registerOutputFormatNetCDF(FormatFactory & factory);
 void registerInputFormatForm(FormatFactory & factory);
 
 /// Output only (presentational) formats.
@@ -153,6 +155,7 @@ void registerParquetMetadataSchemaReader(FormatFactory & factory);
 void registerDWARFSchemaReader(FormatFactory & factory);
 void registerOneSchemaReader(FormatFactory & factory);
 void registerNpySchemaReader(FormatFactory & factory);
+void registerNetCDFSchemaReader(FormatFactory & factory);
 void registerFormSchemaReader(FormatFactory & factory);
 
 void registerInputFormatGeoJSON(FormatFactory & factory);
@@ -237,6 +240,8 @@ void registerFormats()
     registerOutputFormatArrow(factory);
     registerInputFormatNpy(factory);
     registerOutputFormatNpy(factory);
+    registerInputFormatNetCDF(factory);
+    registerOutputFormatNetCDF(factory);
 
     registerOutputFormatPretty(factory);
     registerOutputFormatVertical(factory);
@@ -310,6 +315,7 @@ void registerFormats()
     registerDWARFSchemaReader(factory);
     registerOneSchemaReader(factory);
     registerNpySchemaReader(factory);
+    registerNetCDFSchemaReader(factory);
     registerFormSchemaReader(factory);
 }
 

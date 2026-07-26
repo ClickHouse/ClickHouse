@@ -1296,6 +1296,20 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
     DECLARE(String, input_format_record_errors_file_path, "", R"(
 Path of the file used to record errors while reading text formats (CSV, TSV).
 )", 0) \
+    DECLARE(Bool, input_format_netcdf_fill_value_as_null, false, R"(
+Read the values that are equal to the `_FillValue` (or, if there is no such attribute, `missing_value`) attribute of a variable of a `NetCDF` file as `NULL`, making the column [Nullable](/sql-reference/data-types/nullable.md).
+
+These attributes are how the [CF conventions](https://cfconventions.org/) mark the data that is missing, such as the sea surface temperature over land. The attribute is only used when it holds a single value of the same type as the variable, which is what the conventions require.
+
+When disabled (default), the column has the type of the variable and the value of the attribute is read as an ordinary number.
+)", 0) \
+    DECLARE(Bool, input_format_netcdf_add_dimension_columns, false, R"(
+Add a column with the index along every dimension of the row space of a `NetCDF` file.
+
+A dimension that has a variable of the same name (a coordinate variable, which is the usual way a file stores the values along a dimension) is skipped, because that variable already becomes a column. This setting is for the files that have no coordinate variables, where without it there is no way to tell which point of the grid a row belongs to.
+
+The columns are added before the columns of the variables and have the type [UInt64](/sql-reference/data-types/int-uint.md).
+)", 0) \
     DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
 Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
 
