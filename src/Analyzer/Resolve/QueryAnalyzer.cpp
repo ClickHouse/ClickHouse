@@ -886,7 +886,11 @@ static bool getColumnsFromTableExpression(
     GetColumnsOptions::Kind table_function_columns_kind = GetColumnsOptions::AllPhysical,
     bool collect_array_join_columns = false);
 
-void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
+void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
+    const QueryTreeNodePtr & join_node,
+    const QueryTreeNodePtr & table_expression_node,
+    IdentifierResolveScope & scope,
+    JoinAliasValidationStage stage)
 {
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return;
@@ -975,6 +979,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * where `z` is such an alias is a genuine ambiguity that must still require an alias. This widened
       * set is local to this check: other callers of `getColumnsFromTableExpression` (e.g. the
       * `NATURAL JOIN` synthesis) keep the physical-only set they have always used.
+      *
+      * At `JoinAliasValidationStage::BeforeSiblingsResolved` the siblings are not resolved yet and are left out of
+      * the collision set: only the sibling-independent binders decide. Adding sibling columns can only add
+      * collisions, never remove one, so a verdict reached without them is final and it is sound (and matches the
+      * historical fail-fast order) to throw already at that point; everything else is deferred to the full check.
       */
     NameSet table_expression_columns;
     NameSet sibling_columns;
@@ -983,15 +992,18 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
         true /*collect_array_join_columns*/);
 
     QueryTreeNodes sibling_table_expressions;
-    if (const auto * join = join_node->as<JoinNode>())
+    if (stage == JoinAliasValidationStage::AfterSiblingsResolved)
     {
-        sibling_table_expressions.push_back(join->getLeftTableExpression());
-        sibling_table_expressions.push_back(join->getRightTableExpression());
-    }
-    else if (const auto * cross_join = join_node->as<CrossJoinNode>())
-    {
-        for (const auto & sibling : cross_join->getTableExpressions())
-            sibling_table_expressions.push_back(sibling);
+        if (const auto * join = join_node->as<JoinNode>())
+        {
+            sibling_table_expressions.push_back(join->getLeftTableExpression());
+            sibling_table_expressions.push_back(join->getRightTableExpression());
+        }
+        else if (const auto * cross_join = join_node->as<CrossJoinNode>())
+        {
+            for (const auto & sibling : cross_join->getTableExpressions())
+                sibling_table_expressions.push_back(sibling);
+        }
     }
 
     for (const auto & sibling : sibling_table_expressions)
@@ -5273,12 +5285,18 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     auto & expressions = cross_join_node_typed.getTableExpressions();
 
     for (auto & expr : expressions)
+    {
         resolveQueryJoinTreeNode(expr, scope, expressions_visitor);
 
-    /// Validate only after every table expression is resolved, so that sibling columns are known
-    /// when deciding whether a missing alias introduces an ambiguity.
+        /// Reject an operand that is already invalid regardless of its siblings before resolving the following
+        /// ones, which can execute table functions: the historical fail-fast order is kept for such queries.
+        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope, JoinAliasValidationStage::BeforeSiblingsResolved);
+    }
+
+    /// The rest of the validation needs the sibling columns of the whole join to tell whether a missing alias
+    /// introduces a real ambiguity, so it runs only after every table expression is resolved.
     for (auto & expr : expressions)
-        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope);
+        validateJoinTableExpressionWithoutAlias(cross_join_node, expr, scope, JoinAliasValidationStage::AfterSiblingsResolved);
 }
 
 static bool getColumnsFromTableExpression(
@@ -5497,12 +5515,20 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     auto & join_node_typed = join_node->as<JoinNode &>();
 
     resolveQueryJoinTreeNode(join_node_typed.getLeftTableExpression(), scope, expressions_visitor);
+
+    /// Reject a left operand that is already invalid regardless of its siblings before resolving the right one,
+    /// which can execute a table function: the historical fail-fast order is kept for such queries.
+    validateJoinTableExpressionWithoutAlias(
+        join_node, join_node_typed.getLeftTableExpression(), scope, JoinAliasValidationStage::BeforeSiblingsResolved);
+
     resolveQueryJoinTreeNode(join_node_typed.getRightTableExpression(), scope, expressions_visitor);
 
-    /// Validate only after both table expressions are resolved, so that sibling columns are known
-    /// when deciding whether a missing alias introduces an ambiguity.
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getLeftTableExpression(), scope);
-    validateJoinTableExpressionWithoutAlias(join_node, join_node_typed.getRightTableExpression(), scope);
+    /// The rest of the validation needs the sibling columns of the whole join to tell whether a missing alias
+    /// introduces a real ambiguity, so it runs only after both table expressions are resolved.
+    validateJoinTableExpressionWithoutAlias(
+        join_node, join_node_typed.getLeftTableExpression(), scope, JoinAliasValidationStage::AfterSiblingsResolved);
+    validateJoinTableExpressionWithoutAlias(
+        join_node, join_node_typed.getRightTableExpression(), scope, JoinAliasValidationStage::AfterSiblingsResolved);
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpression()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
