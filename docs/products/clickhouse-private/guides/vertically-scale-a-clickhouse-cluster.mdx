@@ -14,9 +14,7 @@ Adjust CPU and memory resources for a ClickHouse cluster using the Private API.
 
 <Steps>
 
-<Step>
-
-## 1. Create the Scale Request
+<Step title="1. Create the Scale Request" id="1-create-the-scale-request">
 
 Create a JSON file with the desired resource allocation:
 
@@ -35,9 +33,7 @@ Save this as `scale.json`.
 
 </Step>
 
-<Step>
-
-## 2. Send the Request
+<Step title="2. Send the Request" id="2-send-the-request">
 
 ``` bash
 curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
@@ -47,9 +43,7 @@ curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
 
 </Step>
 
-<Step>
-
-## 3. CPU:Memory Ratio Enforcement
+<Step title="3. CPU:Memory Ratio Enforcement" id="3-cpumemory-ratio-enforcement">
 
 The API enforces a **1:4 CPU to memory ratio** (1 CPU core per 4 GiB of memory) with a 5% margin.
 
@@ -66,9 +60,7 @@ Binary units (Ki, Mi, Gi) are recommended for memory.
 
 </Step>
 
-<Step>
-
-## 4. Monitor Scaling Progress
+<Step title="4. Monitor Scaling Progress" id="4-monitor-scaling-progress">
 
 Check the cluster status to track the scaling operation:
 

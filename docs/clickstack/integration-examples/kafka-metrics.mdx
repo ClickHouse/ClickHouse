@@ -30,8 +30,7 @@ If you want to test this integration first without modifying your existing setup
 - OpenTelemetry JMX Metric Gatherer JAR (download instructions below)
 
 <Steps>
-<Step>
-#### Get ClickStack API key {#get-api-key}
+<Step title="Get ClickStack API key" id="get-api-key">
 
 The JMX Metric Gatherer sends data to ClickStack's OTLP endpoint, which requires authentication.
 
@@ -47,8 +46,7 @@ The JMX Metric Gatherer sends data to ClickStack's OTLP endpoint, which requires
 export CLICKSTACK_API_KEY=your-api-key-here
 ```
 </Step>
-<Step>
-#### Download the OpenTelemetry JMX Metric Gatherer {#download-jmx}
+<Step title="Download the OpenTelemetry JMX Metric Gatherer" id="download-jmx">
 
 Download the JMX Metric Gatherer JAR:
 ```bash
@@ -56,8 +54,7 @@ curl -L -o opentelemetry-jmx-metrics.jar \
   https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
 ```
 </Step>
-<Step>
-#### Verify Kafka JMX is enabled {#verify-jmx}
+<Step title="Verify Kafka JMX is enabled" id="verify-jmx">
 
 Ensure JMX is enabled on your Kafka brokers. For Docker deployments:
 ```yaml
@@ -83,8 +80,7 @@ Verify JMX is accessible:
 netstat -an | grep 9999
 ```
 </Step>
-<Step>
-#### Deploy JMX Metric Gatherer with Docker Compose {#deploy-jmx}
+<Step title="Deploy JMX Metric Gatherer with Docker Compose" id="deploy-jmx">
 
 This example shows a complete setup with Kafka, the JMX Metric Gatherer, and ClickStack. Adjust service names and endpoints to match your existing deployment:
 ```yaml
@@ -161,8 +157,7 @@ networks:
 - `service.name=kafka,kafka.broker.id=broker-0` - Resource attributes for filtering
 - `10000` - Collection interval in milliseconds (10 seconds)
 </Step>
-<Step>
-#### Verify metrics in HyperDX {#verify-metrics}
+<Step title="Verify metrics in HyperDX" id="verify-metrics">
 
 Log into HyperDX and confirm metrics are flowing:
 
@@ -197,8 +192,7 @@ When running Kafka client commands (kafka-topics, kafka-console-producer, etc.) 
 For users who want to test the Kafka Metrics integration before configuring their production systems, we provide a pre-generated dataset with realistic Kafka metrics patterns.
 
 <Steps>
-<Step>
-#### Download the sample metrics dataset {#download-sample}
+<Step title="Download the sample metrics dataset" id="download-sample">
 
 Download the pre-generated metrics files (29 hours of Kafka metrics with realistic patterns):
 ```bash
@@ -218,8 +212,7 @@ The dataset includes realistic patterns for a single-broker e-commerce Kafka clu
 - **18:45: Consumer rebalance** - 6x lag spike during rebalancing
 - **20:00-22:00: Evening drop** - Steep decline to overnight levels
 </Step>
-<Step>
-#### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 Start a ClickStack instance:
 ```bash
@@ -228,8 +221,7 @@ docker run -d --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Load metrics into ClickStack {#load-metrics}
+<Step title="Load metrics into ClickStack" id="load-metrics">
 
 Load the metrics directly into ClickHouse:
 ```bash
@@ -242,8 +234,7 @@ cat kafka-metrics-sum.csv | docker exec -i clickstack-demo \
   clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
 ```
 </Step>
-<Step>
-#### Verify metrics in HyperDX {#verify-demo-metrics}
+<Step title="Verify metrics in HyperDX" id="verify-demo-metrics">
 
 Once loaded, the quickest way to see your metrics is through the pre-built dashboard.
 
@@ -262,11 +253,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring Kafka with ClickStack, we provide essential visualizations for Kafka metrics.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -277,8 +268,7 @@ To help you get started monitoring Kafka with ClickStack, we provide essential v
 
 <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="Finish import dialog"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 

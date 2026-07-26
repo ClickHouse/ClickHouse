@@ -233,6 +233,7 @@ void SerializationDynamicElement::deserializeBinaryBulkWithMultipleStreams(
             {
                 auto value = shared_variant.getDataAt(i);
                 ReadBufferFromMemory buf(value);
+                /// Reading already-stored shared-variant data: not limited by the input complexity guard.
                 auto type = decodeDataType(buf);
                 if (type->getName() == dynamic_element_name)
                 {

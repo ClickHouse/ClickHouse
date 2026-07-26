@@ -975,11 +975,11 @@ Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) betw
     FunctionDocumentation::Examples examples_edit_utf8 = {
     {
         "Usage example",
-        "SELECT editDistanceUTF8('我是谁', '我是我')",
+        "SELECT editDistanceUTF8('我是谁', '我是我') AS distance",
         R"(
-┌─editDistanceUTF8('我是谁', '我是我')──┐
-│                                   1 │
-└─────────────────────────────────────┘
+┌─distance─┐
+│        1 │
+└──────────┘
         )"
     }
     };
@@ -1044,11 +1044,11 @@ Like [`stringJaccardIndex`](#stringJaccardIndex) but for UTF8-encoded strings.
     FunctionDocumentation::Examples examples_jaccard_utf8 = {
     {
         "Usage example",
-        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你')",
+        "SELECT stringJaccardIndexUTF8('我爱你', '我也爱你') AS jaccard_index",
         R"(
-┌─stringJaccardIndexUTF8('我爱你', '我也爱你')─┐
-│                                       0.75 │
-└─────────────────────────────────────────────┘
+┌─jaccard_index─┐
+│          0.75 │
+└───────────────┘
         )"
     }
     };

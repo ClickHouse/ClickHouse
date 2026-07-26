@@ -23,17 +23,13 @@ Before the migration can begin, verify the following prerequisites:
 
 <Steps>
 
-<Step>
-
-### 1. At least 2 Server replicas
+<Step title="1. At least 2 Server replicas" id="1-at-least-2-server-replicas">
 
 The Operator performs a rolling upgrade to migrate databases to the new Shared database engine. Set the `server.replicas` helm value to 2 or greater.
 
 </Step>
 
-<Step>
-
-### 2. All databases use the Replicated engine
+<Step title="2. All databases use the Replicated engine" id="2-all-databases-use-the-replicated-engine">
 
 All databases (except `system`) must use the Replicated database engine. Verify with:
 
@@ -50,9 +46,7 @@ The query should return no rows.
 
 </Step>
 
-<Step>
-
-### 3. All tables use non-replicated table engines
+<Step title="3. All tables use non-replicated table engines" id="3-all-tables-use-non-replicated-table-engines">
 
 No tables (except in `system`) should use replicated or legacy table engines. Verify with:
 
@@ -70,9 +64,7 @@ The query should return no rows.
 
 </Step>
 
-<Step>
-
-### 4. No detached tables exist
+<Step title="4. No detached tables exist" id="4-no-detached-tables-exist">
 
 ``` sql
 SELECT * FROM system.detached_tables
@@ -96,17 +88,13 @@ For Hydra instances, migrate the parent instance first before migrating any chil
 
 <Steps>
 
-<Step>
-
-### 1. Enable Shared Catalog configuration
+<Step title="1. Enable Shared Catalog configuration" id="1-enable-shared-catalog-configuration">
 
 Set `featureFlags.enableSharedCatalog` to `true` in your Helm values. This enables the configuration, but doesn't trigger the migration of databases. Deploying a ClickHouse Cluster with this flag set to `true` but not migrating existing replicated databases will cause the ClickHouse Cluster to fail to start.
 
 </Step>
 
-<Step>
-
-### 2. Add the migration markers
+<Step title="2. Add the migration markers" id="2-add-the-migration-markers">
 
 Set `featureFlags.migrateToSharedCatalog` to `true` in your Helm values. This:
 
@@ -117,9 +105,7 @@ Once deployed, the Operator will trigger a rolling upgrade of the Server nodes. 
 
 </Step>
 
-<Step>
-
-### 3. Wait for the status to be Ready
+<Step title="3. Wait for the status to be Ready" id="3-wait-for-the-status-to-be-ready">
 
 ``` bash
 kubectl get ClickHouseCluster <instance-name>
@@ -127,17 +113,13 @@ kubectl get ClickHouseCluster <instance-name>
 
 </Step>
 
-<Step>
-
-### 4. Remove the migration markers
+<Step title="4. Remove the migration markers" id="4-remove-the-migration-markers">
 
 Once the status is Ready, set `featureFlags.migrateToSharedCatalog` to `false` in your Helm values. As all databases have been migrated to type `Shared` instead of `Replicated`, the migration settings are no longer relevant.
 
 </Step>
 
-<Step>
-
-### 5. Verify all databases are migrated
+<Step title="5. Verify all databases are migrated" id="5-verify-all-databases-are-migrated">
 
 Confirm all non-system databases use the Shared engine:
 
@@ -162,25 +144,19 @@ If any issues are encountered with the Shared Catalog, you can roll back to the 
 
 <Steps>
 
-<Step>
-
-### 1. Remove the migration markers
+<Step title="1. Remove the migration markers" id="1-remove-the-migration-markers">
 
 Set `featureFlags.migrateToSharedCatalog` to `false` in your Helm values.
 
 </Step>
 
-<Step>
-
-### 2. Remove the Shared Catalog settings
+<Step title="2. Remove the Shared Catalog settings" id="2-remove-the-shared-catalog-settings">
 
 Set `featureFlags.enableSharedCatalog` to `false` in your Helm values. This will trigger the Operator to revert the changes.
 
 </Step>
 
-<Step>
-
-### 3. Remove the Catalog in Keeper
+<Step title="3. Remove the Catalog in Keeper" id="3-remove-the-catalog-in-keeper">
 
 Port-forward a connection to Keeper and start a keeper-client session (using `clickhouse keeper-client`).
 
@@ -199,9 +175,7 @@ This will clean up all Shared Catalog state from Keeper.
 
 </Step>
 
-<Step>
-
-### 4. Verify rollback
+<Step title="4. Verify rollback" id="4-verify-rollback">
 
 Confirm all non-system databases are using the Replicated engine again:
 

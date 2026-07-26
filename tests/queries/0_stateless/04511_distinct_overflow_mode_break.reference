@@ -1,0 +1,16 @@
+-- DistinctTransform: the chunk that crosses the limit is returned, not dropped
+30
+-- DistinctTransform: limit tripping on the very first chunk must not produce an empty result
+10
+-- DistinctTransform: reading stops after the limit trips (hangs on infinite source otherwise)
+30
+-- DistinctTransform: max_bytes_in_distinct also returns a partial non-empty result
+1	1
+-- DistinctSortedTransform is used for distinct over a globally sorted stream
+1
+-- DistinctSortedTransform (distinct over globally sorted stream): the chunk that crosses the limit is returned, not dropped
+30
+-- DistinctSortedStreamTransform (in-order pre-distinct): partial result on limit trip
+3
+-- limits are enforced across sort-prefix runs, not per run
+30
