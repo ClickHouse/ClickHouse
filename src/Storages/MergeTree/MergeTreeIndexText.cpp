@@ -264,16 +264,26 @@ void PostingsSerialization::serialize(PostingListBuilder & postings, TokenPostin
     }
 }
 
-PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality)
+PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, const TokenPostingsInfo & info)
 {
-    if (header & IsCompressed)
-    {
-        if (!posting_list_codec)
-        {
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Posting list header marks compressed data but no codec is configured");
-        }
+    chassert(posting_list_codec);
+    auto postings = std::make_shared<PostingList>();
 
+    /// Small posting lists are stored as raw VarUInt-encoded values.
+    if (info.header & RawPostings)
+    {
+        if (info.cardinality > raw_postings_buffer.size())
+            raw_postings_buffer.resize(info.cardinality);
+
+        for (size_t i = 0; i < info.cardinality; ++i)
+            readVarUInt(raw_postings_buffer[i], istr);
+
+        postings->addMany(info.cardinality, raw_postings_buffer.data());
+        return postings;
+    }
+
+    if (info.header & IsCompressed)
+    {
         static constexpr auto required_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec);
 
         if (serialization_version < required_version)
@@ -289,40 +299,10 @@ PostingListPtr PostingsSerialization::deserialize(ReadBuffer & istr, UInt64 head
             throw Exception(ErrorCodes::CORRUPTED_DATA,
                 "Posting list header marks compressed data but configured codec is None");
         }
-
-        auto postings = std::make_shared<PostingList>();
-        posting_list_codec->decode(istr, *postings);
-        return postings;
     }
-    else if (header & RawPostings)
-    {
-        if (cardinality > raw_postings_buffer.size())
-            raw_postings_buffer.resize(cardinality);
 
-        for (size_t i = 0; i < cardinality; ++i)
-            readVarUInt(raw_postings_buffer[i], istr);
-
-        auto postings = std::make_shared<PostingList>();
-        postings->addMany(cardinality, raw_postings_buffer.data());
-        return postings;
-    }
-    else
-    {
-        size_t num_bytes = 0;
-        readVarUInt(num_bytes, istr);
-
-        /// If the posting list is completely in the buffer, avoid copying.
-        if (istr.position() && istr.position() + num_bytes <= istr.buffer().end())
-        {
-            auto result = std::make_shared<PostingList>(PostingList::read(istr.position()));
-            istr.position() += num_bytes;
-            return result;
-        }
-
-        deserialization_buffer.resize(num_bytes);
-        istr.readStrict(deserialization_buffer.data(), num_bytes);
-        return std::make_shared<PostingList>(PostingList::read(deserialization_buffer.data()));
-    }
+    posting_list_codec->decode(istr, *postings);
+    return postings;
 }
 
 
@@ -772,7 +752,7 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
     {
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
-        auto postings = postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
+        auto postings = postings_serialization.deserialize(*data_buffer, token_info);
         return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
     };
 
@@ -1183,7 +1163,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         }
         else
         {
-            auto postings = postings_serialization->deserialize(istr, info.header, info.cardinality);
+            auto postings = postings_serialization->deserialize(istr, info);
             if (postings && postings->cardinality() > 0)
             {
                 info.offsets.emplace_back(0);

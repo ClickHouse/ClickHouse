@@ -339,7 +339,7 @@ std::vector<PostingListPtr> MergeTextIndexesTask::readPostingLists(size_t source
     for (const auto offset_in_file : token_info.offsets)
     {
         stream->seekToMark({offset_in_file, 0});
-        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info.header, token_info.cardinality));
+        postings.emplace_back(source_postings_serializations[source_num].deserialize(*data_buffer, token_info));
     }
 
     return postings;

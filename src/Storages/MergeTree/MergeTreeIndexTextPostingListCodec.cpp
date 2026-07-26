@@ -239,6 +239,26 @@ void PostingListCodecBitpacking::decode(ReadBuffer & in, PostingList & postings)
     impl.decode(in, postings);
 }
 
+void PostingListCodecNone::decode(ReadBuffer & in, PostingList & postings) const
+{
+    chassert(postings.isEmpty());
+
+    size_t num_bytes = 0;
+    readVarUInt(num_bytes, in);
+
+    /// If the posting list is completely in the buffer, avoid copying.
+    if (in.position() && in.position() + num_bytes <= in.buffer().end())
+    {
+        postings = PostingList::read(in.position());
+        in.position() += num_bytes;
+        return;
+    }
+
+    std::vector<char> buffer(num_bytes);
+    in.readStrict(buffer.data(), num_bytes);
+    postings = PostingList::read(buffer.data());
+}
+
 void PostingListCodecBitpacking::encode(
         const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const
 {

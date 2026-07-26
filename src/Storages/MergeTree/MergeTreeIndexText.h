@@ -186,16 +186,14 @@ struct PostingsSerialization
     void serialize(PostingListBuilder & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const PostingList & postings, TokenPostingsInfo & info, size_t posting_list_block_size, WriteBuffer & ostr);
     void serialize(const roaring::api::roaring_bitmap_t & postings, UInt64 header, WriteBuffer & ostr);
-    PostingListPtr deserialize(ReadBuffer & istr, UInt64 header, UInt64 cardinality);
+    PostingListPtr deserialize(ReadBuffer & istr, const TokenPostingsInfo & info);
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
-
-    /// Reusable buffers to avoid repeated heap allocations during deserialization.
+    /// Reusable buffer to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
 };
 
 /// Closed range of rows.

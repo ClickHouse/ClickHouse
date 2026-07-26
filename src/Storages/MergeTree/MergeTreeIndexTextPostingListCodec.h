@@ -237,7 +237,8 @@ public:
     void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
-/// A posting list codec that doesn't compress (no-op).
+/// A posting list codec that doesn't compress: every posting list segment
+/// is stored as a portable Roaring bitmap prefixed by its size in bytes.
 class PostingListCodecNone : public IPostingListCodec
 {
 public:
@@ -246,7 +247,7 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     void encode(const PostingList &, size_t, TokenPostingsInfo &, WriteBuffer &) const override {}
-    void decode(ReadBuffer &, PostingList &) const override {}
+    void decode(ReadBuffer & in, PostingList & postings) const override;
 };
 
 }
