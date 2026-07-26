@@ -105,3 +105,26 @@ SELECT toTypeName(LpDistance(materialize([1, 2]), materialize([3, 4]), toDecimal
 SELECT toTypeName(LpNormalize(materialize((1, 2)), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(LpNorm(materialize((1, 2)), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT toTypeName(LpDistance(materialize((1, 2)), materialize((3, 4)), toDecimal32(2, 4))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- The value of a constant `p` is validated during return-type inference too, so analysis-only paths
+-- reject an out-of-range `p` (`0.5`, `nan`, `inf`) with the same error as execution instead of
+-- advertising a return type for a call that can never run.
+SELECT toTypeName(LpNormalize(materialize([1, 2]), 0.5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNormalize(materialize([1, 2]), nan)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNormalize(materialize([1, 2]), inf)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNorm(materialize([1, 2]), 0.5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpDistance(materialize([1, 2]), materialize([3, 4]), 0.5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNormalize(materialize((1, 2)), 0.5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNormalize(materialize((1, 2)), nan)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNormalize(materialize((1, 2)), inf)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpNorm(materialize((1, 2)), 0.5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT toTypeName(LpDistance(materialize((1, 2)), materialize((3, 4)), 0.5)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+
+-- A `p` within the valid range is still inferred as before.
+SELECT toTypeName(LpNormalize(materialize([1, 2]), 3));
+SELECT toTypeName(LpNormalize(materialize([toFloat32(1), 2]), 3));
+SELECT toTypeName(LpNorm(materialize([1, 2]), 3));
+SELECT toTypeName(LpDistance(materialize([1, 2]), materialize([3, 4]), 3));
+SELECT toTypeName(LpNormalize(materialize((1, 2)), 3));
+SELECT toTypeName(LpNorm(materialize((1, 2)), 3));
+SELECT toTypeName(LpDistance(materialize((1, 2)), materialize((3, 4)), 3));

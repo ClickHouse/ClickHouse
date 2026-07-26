@@ -739,7 +739,7 @@ public:
         }
 
         if constexpr (std::is_same_v<Kernel, LpDistance>)
-            checkLpNormPArgumentType(*arguments[2].type, getName());
+            checkLpNormPArgumentForAnalysis(arguments[2], getName());
 
         const DataTypePtr & common_type = getLeastSupertype(types);
         switch (common_type->getTypeId())

@@ -2,8 +2,10 @@
 
 #include <cmath>
 #include <base/types.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
+#include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
@@ -41,6 +43,18 @@ inline void checkLpNormPArgumentType(const IDataType & p_type, const String & fu
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Argument p of function {} must be a numeric constant",
             function_name);
+}
+
+/// Validate the `p` argument during return-type inference. On top of the type, validate the value
+/// itself whenever `p` is already known as a constant at analysis time, so that analysis-only paths
+/// (e.g. `toTypeName`) reject an out-of-range `p` such as `0.5`, `nan` or `inf` instead of
+/// advertising a return type for a call that execution rejects with `ARGUMENT_OUT_OF_BOUND`.
+inline void checkLpNormPArgumentForAnalysis(const ColumnWithTypeAndName & p_argument, const String & function_name)
+{
+    checkLpNormPArgumentType(*p_argument.type, function_name);
+
+    if (p_argument.column && isColumnConst(*p_argument.column))
+        checkLpNormPArgument(p_argument.column->getFloat64(0), function_name);
 }
 
 /// Extract and validate the `p` argument from its column, shared by the same carriers.

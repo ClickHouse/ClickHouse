@@ -198,7 +198,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
 
         if constexpr (std::is_same_v<Kernel, LpNorm>)
-            checkLpNormPArgumentType(*arguments[1].type, getName());
+            checkLpNormPArgumentForAnalysis(arguments[1], getName());
 
         switch (array_type->getNestedType()->getTypeId())
         {
@@ -401,7 +401,7 @@ public:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must be array.", getName());
 
         if constexpr (std::is_same_v<Kernel, LpNorm>)
-            checkLpNormPArgumentType(*arguments[1].type, getName());
+            checkLpNormPArgumentForAnalysis(arguments[1], getName());
 
         switch (array_type->getNestedType()->getTypeId())
         {
