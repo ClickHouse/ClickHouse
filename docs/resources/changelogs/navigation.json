@@ -57,15 +57,21 @@
       "icon": "/images/icons/icon-server.svg",
       "pages": [
         "resources/changelogs/oss/2026",
-        "resources/changelogs/oss/2025",
-        "resources/changelogs/oss/2024",
-        "resources/changelogs/oss/2023",
-        "resources/changelogs/oss/2022",
-        "resources/changelogs/oss/2021",
-        "resources/changelogs/oss/2020",
-        "resources/changelogs/oss/2019",
-        "resources/changelogs/oss/2018",
-        "resources/changelogs/oss/2017",
+        {
+          "group": "Archive",
+          "expanded": false,
+          "pages": [
+            "resources/changelogs/oss/2025",
+            "resources/changelogs/oss/2024",
+            "resources/changelogs/oss/2023",
+            "resources/changelogs/oss/2022",
+            "resources/changelogs/oss/2021",
+            "resources/changelogs/oss/2020",
+            "resources/changelogs/oss/2019",
+            "resources/changelogs/oss/2018",
+            "resources/changelogs/oss/2017"
+          ]
+        },
         "resources/changelogs/security-changelog"
       ]
     }
