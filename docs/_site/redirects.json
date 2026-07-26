@@ -52546,5 +52546,37 @@
   {
     "destination": "/reference/statements/create/dictionary/layouts/naive-bayes",
     "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes"
+  },
+  {
+    "destination": "/ar/get-started/sample-datasets/nyc-taxi",
+    "source": "/ar/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/es/get-started/sample-datasets/nyc-taxi",
+    "source": "/es/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/fr/get-started/sample-datasets/nyc-taxi",
+    "source": "/fr/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "source": "/ja/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "source": "/ko/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/pt-BR/get-started/sample-datasets/nyc-taxi",
+    "source": "/pt-BR/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "source": "/ru/get-started/quickstarts/tutorial"
+  },
+  {
+    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "source": "/zh/get-started/quickstarts/tutorial"
   }
 ]

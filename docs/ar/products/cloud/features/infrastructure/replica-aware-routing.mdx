@@ -11,14 +11,14 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-يوجّه التوجيه المراعي للنسخ المتماثلة (المعروف أيضًا باسم الجلسات المثبتة أو التوجيه المثبت أو ألفة الجلسة) الطلبات المرتبطة إلى نفس نسخة متماثلة في ClickHouse. استخدمه عندما تحتاج إلى أن تبقى [الجداول المؤقتة](/ar/sql-reference/statements/create/table#temporary-tables) أو [حالة الجلسة المسمّاة](/ar/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) متاحة عبر الاستعلامات، أو عندما تريد أن تعيد الاستعلامات المرتبطة استخدام الذاكرات المؤقتة المحلية لنفس نسخة متماثلة.
+يوجّه التوجيه المراعي للنسخ المتماثلة (المعروف أيضًا باسم الجلسات المثبتة أو التوجيه المثبت أو ألفة الجلسة) الطلبات المرتبطة إلى نفس نسخة متماثلة في ClickHouse. استخدمه عندما تحتاج إلى أن تبقى [الجداول المؤقتة](/ar/reference/statements/create/table#temporary-tables) أو [حالة الجلسة المسمّاة](/ar/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) متاحة عبر الاستعلامات، أو عندما تريد أن تعيد الاستعلامات المرتبطة استخدام الذاكرات المؤقتة المحلية لنفس نسخة متماثلة.
 
 وهو يعمل على أساس أفضل جهد، ولا يضمن العزل. وقد تؤدي عمليات التوسّع والترقيات وإعادات التشغيل إلى إعادة تعيين نسخة متماثلة التي ينتهي إليها `session_id` معيّن.
 
 <Warning>
   **يتطلب واجهة HTTP**
 
-  يُطبَّق التوجيه المراعي للنسخ المتماثلة في طبقة الوكيل عبر [واجهة HTTP/HTTPS](/ar/interfaces/http)، باستخدام معلمة الاستعلام ‏`session_id` (انظر أدناه). وهو **غير متاح عبر البروتوكول الأصلي** (المنفذ الأصلي، مثل driver ‏[clickhouse-go](/ar/integrations/go) في وضعه الأصلي الافتراضي). يجب على clients الذين يستخدمون البروتوكول الأصلي التحول إلى HTTP وتمرير `session_id` مع كل request. بالنسبة إلى clickhouse-go ‏(v2)، عيّن `Protocol: clickhouse.HTTP` ومرّر `session_id` كـ [setting](/ar/integrations/language-clients/go/database-sql-api#sessions). يرسله driver باعتباره معلمة الاستعلام في الـ URL يُجري الوكيل عليها hash.
+  يُطبَّق التوجيه المراعي للنسخ المتماثلة في طبقة الوكيل عبر [واجهة HTTP/HTTPS](/ar/concepts/features/interfaces/http)، باستخدام معلمة الاستعلام ‏`session_id` (انظر أدناه). وهو **غير متاح عبر البروتوكول الأصلي** (المنفذ الأصلي، مثل driver ‏[clickhouse-go](/ar/integrations/language-clients/go/index) في وضعه الأصلي الافتراضي). يجب على clients الذين يستخدمون البروتوكول الأصلي التحول إلى HTTP وتمرير `session_id` مع كل request. بالنسبة إلى clickhouse-go ‏(v2)، عيّن `Protocol: clickhouse.HTTP` ومرّر `session_id` كـ [setting](/ar/integrations/language-clients/go/database-sql-api#sessions). يرسله driver باعتباره معلمة الاستعلام في الـ URL يُجري الوكيل عليها hash.
 </Warning>
 
 <div id="prerequisites">
@@ -28,7 +28,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 * تحتاج خدمتك إلى **نسختين متماثلتين أو أكثر**. في خدمة ذات نسخة متماثلة واحدة، لا توجد نسخة يمكن التثبيت عليها.
 * **خدمة قيد التشغيل**. قد يؤدي إيقاظ خدمة خاملة إلى تغيير النسخة المتماثلة التي يرتبط بها `session_id`.
 * تكون متاحة على **Enterprise** افتراضيًا عندما تصبح الميزة في مرحلة GA.
-* مدعومة في خدمات ClickHouse Cloud القياسية. أما [BYOC](/ar/cloud/reference/byoc/overview) فغير مدعوم بعد.
+* مدعومة في خدمات ClickHouse Cloud القياسية. أما [BYOC](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview) فغير مدعوم بعد.
 
 <div id="configuring-replica-aware-routing">
   ## تهيئة التوجيه المراعي للنسخ المتماثلة
@@ -40,7 +40,7 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
   ## التوجيه المستند إلى HTTP (`session_id`)
 </div>
 
-لتثبيت عبء عمل على نسخة متماثلة، اضبط معلمة الاستعلام `session_id` على [واجهة HTTPS](/ar/interfaces/http). يستخدم الوكيل التجزئة المتسقة لهذه القيمة لاختيار نسخة متماثلة، بحيث تُوجَّه جميع الطلبات التي تشترك في `session_id` نفسه إلى الخادم نفسه إلى أن تتغير بنية العنقود.
+لتثبيت عبء عمل على نسخة متماثلة، اضبط معلمة الاستعلام `session_id` على [واجهة HTTPS](/ar/concepts/features/interfaces/http). يستخدم الوكيل التجزئة المتسقة لهذه القيمة لاختيار نسخة متماثلة، بحيث تُوجَّه جميع الطلبات التي تشترك في `session_id` نفسه إلى الخادم نفسه إلى أن تتغير بنية العنقود.
 
 استخدم اسم مضيف الخدمة الحالي لديك. لا يلزم أي أسماء مضيفين مثبتة خاصة أو تغييرات على DNS.
 
@@ -55,7 +55,7 @@ echo 'SELECT hostName()' | curl \
 
 يمكن أن تكون `session_id` أي سلسلة نصية تختارها (اسم التطبيق، أو معرّف المستخدم، أو تسمية عبء العمل). أما الطلبات التي لا تحتوي على `session_id` فتستمر في استخدام موازنة الحمل العادية.
 
-يعمل أي عميل HTTP يمكنه إضافة معلمة استعلام، بما في ذلك `curl` و[clickhouse-connect](/ar/integrations/python) وJDBC/ODBC وغيرها. بالنسبة إلى `clickhouse-go` (v2)، استخدم وضع HTTP كما هو مذكور أعلاه.
+يعمل أي عميل HTTP يمكنه إضافة معلمة استعلام، بما في ذلك `curl` و[clickhouse-connect](/ar/integrations/language-clients/python/index) وJDBC/ODBC وغيرها. بالنسبة إلى `clickhouse-go` (v2)، استخدم وضع HTTP كما هو مذكور أعلاه.
 
 <div id="check-which-replica">
   ### تحقّق من النسخة المتماثلة التي وصلت إليها
@@ -89,13 +89,13 @@ echo 'SELECT hostName()' | curl \
   ### التوجيه المراعي للنسخ المتماثلة ليس عزلًا لأعباء العمل
 </div>
 
-لا يحدد التوجيه اللاصق سوى *أي* نسخة متماثلة ستعالج الطلب. وقد تظل هذه النسخة المتماثلة تخدم حركة مرور أخرى. للحصول على موارد حوسبة مخصصة، استخدم [فصل الحوسبة-الحوسبة](/ar/cloud/reference/warehouses).
+لا يحدد التوجيه اللاصق سوى *أي* نسخة متماثلة ستعالج الطلب. وقد تظل هذه النسخة المتماثلة تخدم حركة مرور أخرى. للحصول على موارد حوسبة مخصصة، استخدم [فصل الحوسبة-الحوسبة](/ar/products/cloud/features/infrastructure/warehouses).
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
   ### Private Link وطريقة النطاق الفرعي المهملة
 </div>
 
-يعمل توجيه HTTP `session_id` مع [الشبكات الخاصة](/ar/cloud/security/connectivity/private-networking) على اسم مضيف الخدمة العادي لديك. ولا تحتاج إلى أي سجلات DNS إضافية.
+يعمل توجيه HTTP `session_id` مع [الشبكات الخاصة](/ar/products/cloud/guides/security/connectivity/private-networking) على اسم مضيف الخدمة العادي لديك. ولا تحتاج إلى أي سجلات DNS إضافية.
 
 أما طريقة النطاق الفرعي المهملة فلا تعمل: يجب عليك إضافة DNS لنمط اسم المضيف `*.sticky.*`، وقد يؤدي الإعداد غير الصحيح إلى عدم توازن الحمل بين النسخ المتماثلة.
 
