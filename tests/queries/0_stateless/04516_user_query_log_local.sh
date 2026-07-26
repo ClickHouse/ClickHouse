@@ -32,6 +32,22 @@ make_config()
 EOF
 }
 
+make_config_without_query_log()
+{
+    cat > "${config}" <<EOF
+<clickhouse>
+    <path>${test_dir}/data/</path>
+    <tmp_path>${test_dir}/tmp/</tmp_path>
+    <user_files_path>${test_dir}/user_files/</user_files_path>
+    <format_schema_path>${test_dir}/format_schemas/</format_schema_path>
+    <logger>
+        <level>none</level>
+        <console>false</console>
+    </logger>
+</clickhouse>
+EOF
+}
+
 # Without a configured query log the table exists and is empty, not an error.
 ${CLICKHOUSE_LOCAL} --query "SELECT count() FROM system.user_query_log"
 ${CLICKHOUSE_LOCAL} --query "SELECT engine FROM system.tables WHERE database = 'system' AND name = 'user_query_log'"
@@ -97,6 +113,13 @@ ${CLICKHOUSE_LOCAL} --config-file "${config}" --log_queries 1 --query "
 # still sees their own persisted records instead of an empty result.
 ${CLICKHOUSE_LOCAL} --config-file "${config}" --only-system-tables --query "
     SELECT count() >= 1, countIf(if(initial_user != '', initial_user, user) != currentUser()) FROM system.user_query_log;
+"
+# But the resolution of the backing table applies only to a configured query log: with the query log
+# section removed, the persisted table is still attached from disk, while `system.user_query_log` must
+# be empty, because the query log is not configured any more.
+make_config_without_query_log
+${CLICKHOUSE_LOCAL} --config-file "${config}" --only-system-tables --query "
+    SELECT count() FROM system.user_query_log;
 "
 
 # A leftover table with this name (e.g. created before an upgrade) is reported on startup.

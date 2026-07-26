@@ -35,6 +35,7 @@
 
 #include <fmt/format.h>
 
+#include <optional>
 #include <unordered_set>
 
 namespace DB
@@ -377,12 +378,19 @@ void StorageSystemUserQueryLog::read(
     /// the `query_log.database` / `query_log.table` server settings in that case. The query log table is
     /// always created in the `system` database (a custom `query_log.database` is coerced back to `system`
     /// in `createSystemLog`), so only the table name is configurable; `system.query_log` is the default.
+    /// This resolution is limited to the case where the query log is actually configured: `createSystemLog`
+    /// returns nothing both when the loggers are not started and when the `query_log` section is missing
+    /// altogether, while a `system.query_log` table created by an earlier run is still attached from disk.
+    /// Without a configured query log, `system.user_query_log` must be empty, not a window into a table
+    /// that the server no longer writes to.
     auto query_log = context->getQueryLog();
-    StorageID log_table_id = query_log
-        ? query_log->getTableID()
-        : StorageID("system", context->getConfigRef().getString("query_log.table", "query_log"));
+    std::optional<StorageID> log_table_id;
+    if (query_log)
+        log_table_id = query_log->getTableID();
+    else if (context->getConfigRef().has("query_log"))
+        log_table_id = StorageID("system", context->getConfigRef().getString("query_log.table", "query_log"));
 
-    StoragePtr source_table = DatabaseCatalog::instance().tryGetTable(log_table_id, context);
+    StoragePtr source_table = log_table_id ? DatabaseCatalog::instance().tryGetTable(*log_table_id, context) : nullptr;
     if (!source_table)
     {
         /// The query log is not configured, or its table has not been created yet (this happens on the
