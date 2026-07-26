@@ -1,0 +1,308 @@
+---
+title: ClickPipes 向け Confluent Cloud プライベート接続
+description: AWS PrivateLink または GCP Private Service Connect 経由で、既存の Confluent Cloud Kafka クラスターに ClickPipes を接続する方法。
+date: 2026-07-09
+tags: ['セキュリティと認証', 'Cloud の管理']
+keywords: ['Confluent Cloud', 'PrivateLink', 'Private Service Connect', 'Kafka', 'ClickPipes']
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+このガイドでは、プライベート ネットワーキングを介して、ClickPipes を既存の Confluent Cloud Kafka クラスターに接続する方法を説明します。
+
+このガイドは、次の場合に利用してください。
+
+* AWS PrivateLink または GCP Private Service Connect (PSC) を使用する Confluent Cloud Dedicated クラスター
+* AWS PrivateLink または GCP Private Service Connect (PSC) を使用する Confluent Cloud サーバーレスクラスター
+
+このガイドは、Confluent Cloud Kafka クラスター、トピック、および Kafka 認証情報がすでに存在していることを前提としています。
+主に、プライベート接続と ClickPipes の reverse private endpoints (RPE) に焦点を当てています。
+
+<Warning>
+  現在、この Confluent Cloud のセットアップは ClickHouse Cloud console だけでは完了できません。
+
+  Confluent Cloud では、1 つの reverse private endpoint に対して複数のカスタム private DNS マッピングが必要です。
+  ClickHouse Cloud console では現在、RPE ごとに 1 つのカスタム private DNS 名しかサポートされていません。
+
+  RPE のカスタム DNS マッピングを作成または更新するには、[ClickHouse Cloud OpenAPI](/ja/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
+  または Terraform を使用してください。
+</Warning>
+
+<div id="how-the-setup-works">
+  ## セットアップの仕組み
+</div>
+
+Kafkaクライアントは bootstrap ホスト名に接続してメタデータを取得し、その後、Confluent Cloud が通知する broker ホスト名に接続します。
+Confluent Cloud のプライベート ネットワークを使用する場合、これらのホスト名は ClickPipes ネットワーク内で、ClickPipes が作成したプライベート エンドポイントに名前解決される必要があります。
+
+ClickPipes では、次を使用します。
+
+* クラウドプロバイダーのプライベート ネットワーク接続を作成するための Reverse Private Endpoint。
+* その RPE 上のカスタム private DNS マッピング。これにより、Confluent の bootstrap および broker ホスト名がプライベートに名前解決されます。
+* ClickPipe の broker アドレスとして使用する Confluent Cloud Kafka の ブートストラップエンドポイント。
+
+<div id="requirements">
+  ## 要件
+</div>
+
+* Kafka ClickPipe を作成するための ClickHouse Cloud サービス。
+* プライベート接続先と同じクラウドおよびリージョンにある Confluent Cloud Kafka クラスター。
+* ClickPipes が使用できる Kafka API key、またはサービスアカウントの認証情報。
+* AWS PrivateLink の場合、[ClickPipes custom private DNS](/ja/integrations/clickpipes/aws-privatelink#custom-private-dns) はプライベートプレビューです。お使いのサービスで有効になっていない場合は、ClickHouse Support にお問い合わせください。
+
+<div id="dedicated-clusters">
+  ## Dedicated クラスター
+</div>
+
+Confluent のプライベートネットワークを介して接続された Confluent Cloud Dedicated クラスターについては、このセクションを使用します。
+
+<div id="collect-dedicated-network-details">
+  ### Confluent Cloud のネットワーク詳細を収集する
+</div>
+
+Dedicated クラスターに接続されている Confluent Cloud ネットワークから、以下の情報を収集します。
+
+* 以下では `{dns_domain}` として示している private DNS ドメイン。
+* Confluent ネットワークで使用されているクラウドプロバイダーのゾーン。
+* AWS の場合は、Confluent PrivateLink endpoint service 名。
+* GCP の場合は、Confluent ネットワークの各ゾーンに対応する PSC サービスアタッチメント。
+
+これらのゾーン値は、ClickPipes が名前解決する DNS 名の一部になります。
+AWS では、`use1-az1` のような availability zone ID を使用します。
+GCP では、`us-central1-a` のようなゾーンを使用します。
+
+<div id="authorize-clickpipes-dedicated">
+  ### Confluent Cloud で ClickPipes を認可する
+</div>
+
+Confluent Cloud で、ClickPipes のコンシューマー ID 用に PrivateLink または PSC のアクセスエントリを追加します。
+
+* AWS: ClickPipes の AWS アカウント ID `072088201116` を許可します。
+* GCP: ClickPipes の GCP プロジェクト `clickpipes-production` を許可します。
+
+ClickPipes RPE が Confluent Cloud のプライベートネットワークに接続するには、事前にこの認可が必要です。
+
+<div id="create-dedicated-rpes">
+  ### ClickPipes RPE を作成する
+</div>
+
+[OpenAPI](/ja/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
+または Terraform を使用して、RPE を作成します。
+
+OpenAPI を使用する場合は、作成リクエストで `customPrivateDnsMappings` を指定します。
+既存の RPE を [update operation](/ja/products/cloud/api-reference/clickpipes/update-reverse-private-endpoint) で更新する場合は、
+`customPrivateDnsMappings` がリスト全体を置き換えることに注意してください。
+
+<div id="aws-dedicated">
+  #### AWS Dedicated
+</div>
+
+Confluent Cloud PrivateLink endpoint service を指す `VPC_ENDPOINT_SERVICE` RPE を 1 つ作成します。
+
+これらのカスタム private DNS マッピングをすべて同じ RPE に追加します。
+
+* `*.{dns_domain}`
+* Confluent network zone ごとに `*.{zone}.{dns_domain}`
+
+OpenAPI リクエストボディの例:
+
+```json
+{
+  "description": "Confluent Cloud Dedicated AWS PrivateLink",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.abcde12345.us-east-1.aws.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.use1-az1.abcde12345.us-east-1.aws.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.use1-az2.abcde12345.us-east-1.aws.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.use1-az3.abcde12345.us-east-1.aws.confluent.cloud"
+    }
+  ]
+}
+```
+
+<div id="gcp-dedicated">
+  #### GCP Dedicated
+</div>
+
+Confluent Cloud のゾーンごとに、`GCP_PSC_SERVICE_ATTACHMENT` の RPE を 1 つ作成します。
+各 RPE は、そのゾーンの PSC サービス アタッチメントを指します。
+
+対応するゾーンの RPE に `*.{zone}.{dns_domain}` を追加します。
+`*.{dns_domain}` は、いずれか 1 つの RPE にのみ追加します。
+
+最初のゾーンに対する OpenAPI リクエストボディの例:
+
+```json
+{
+  "description": "Confluent Cloud Dedicated PSC us-central1-a",
+  "type": "GCP_PSC_SERVICE_ATTACHMENT",
+  "gcpServiceAttachment": "projects/confluent-prod/regions/us-central1/serviceAttachments/confluent-us-central1-a",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.us-central1-a.abcde12345.us-central1.gcp.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.abcde12345.us-central1.gcp.confluent.cloud"
+    }
+  ]
+}
+```
+
+additional-zone OpenAPI のリクエストボディの例:
+
+```json
+{
+  "description": "Confluent Cloud Dedicated PSC us-central1-b",
+  "type": "GCP_PSC_SERVICE_ATTACHMENT",
+  "gcpServiceAttachment": "projects/confluent-prod/regions/us-central1/serviceAttachments/confluent-us-central1-b",
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.us-central1-b.abcde12345.us-central1.gcp.confluent.cloud"
+    }
+  ]
+}
+```
+
+<div id="serverless-clusters">
+  ## サーバーレスクラスター
+</div>
+
+このセクションは、Confluent の private イングレスゲートウェイとアクセスポイントを使用する Confluent Cloud のサーバーレスクラスター向けです。
+
+<div id="create-ingress-gateway">
+  ### Confluent のイングレス用プライベート接続ゲートウェイを作成する
+</div>
+
+Confluent Kafka クラスターと同じクラウドおよびリージョンの Confluent Cloud に、プライベート接続用のイングレスゲートウェイを作成します。
+
+* AWS: イングレス PrivateLink ゲートウェイを作成します。
+* GCP: イングレス Private Service Connect ゲートウェイを作成します。
+
+ClickPipes の接続先となるゲートウェイのターゲットを記録します。
+
+* AWS: ゲートウェイの VPC エンドポイントサービス名。
+* GCP: ゲートウェイの PSC サービスアタッチメント。
+
+<div id="create-dedicated-rpes">
+  ### ClickPipes RPE を作成する
+</div>
+
+Confluent イングレスゲートウェイ向けに ClickPipes RPE を 1 つ作成します。
+
+AWS の場合は、`VPC_ENDPOINT_SERVICE` RPE を作成します。
+
+```json
+{
+  "description": "Confluent Cloud ingress AWS PrivateLink",
+  "type": "VPC_ENDPOINT_SERVICE",
+  "vpcEndpointServiceName": "com.amazonaws.vpce.us-east-1.vpce-svc-0123456789abcdef0"
+}
+```
+
+GCP では、`GCP_PSC_SERVICE_ATTACHMENT` RPE を作成します:
+
+```json
+{
+  "description": "Confluent Cloud ingress PSC",
+  "type": "GCP_PSC_SERVICE_ATTACHMENT",
+  "gcpServiceAttachment": "projects/confluent-prod/regions/us-central1/serviceAttachments/confluent-ingress"
+}
+```
+
+RPE のレスポンスに `endpointId` が含まれるまで待機します。
+Confluent アクセスポイントを作成するには、この ID が必要です。
+
+<div id="create-access-point">
+  ### Confluent アクセスポイントを作成する
+</div>
+
+ClickPipes エンドポイント用に、Confluent Cloud のイングレスアクセスポイントを作成します。
+
+* AWS: ClickPipes RPE の `endpointId` を VPC Endpoint ID として使用します。
+* GCP: ClickPipes RPE の `endpointId` を PSC connection ID として使用します。
+
+アクセスポイントを作成したら、以下を控えておきます。
+
+* アクセスポイントの DNS ドメイン (以下では `{access_point_dns_domain}` と表記します) 。
+* アクセスポイントのブートストラップエンドポイント。
+
+<div id="patch-serverless-rpe-dns">
+  ### RPE のカスタム DNS マッピングにパッチを適用する
+</div>
+
+以下の 2 つのカスタム private DNS マッピングの両方を使用して、ClickPipes RPE にパッチを適用します。
+
+* `*.{region}.{cloud}.accesspoint.glb.confluent.cloud`
+* `*.{access_point_dns_domain}`
+
+OpenAPI 更新リクエストボディの例:
+
+```json
+{
+  "customPrivateDnsMappings": [
+    {
+      "privateDnsName": "*.us-east-1.aws.accesspoint.glb.confluent.cloud"
+    },
+    {
+      "privateDnsName": "*.abcd1234.us-east-1.aws.confluent.cloud"
+    }
+  ]
+}
+```
+
+<Note>
+  `*.{region}.{cloud}.accesspoint.glb.confluent.cloud` のマッピング範囲は広く、cloud と region の組み合わせごとに一意です。
+  カスタム private DNS 名は ClickHouse service 内のすべての RPE で一意である必要があるため、
+  現時点では、同じ ClickHouse service に対して、同じ cloud と region 内に複数の Confluent イングレスアクセスポイントを作成することはできません。
+</Note>
+
+<div id="terraform-setup">
+  ## Terraform のセットアップ
+</div>
+
+Terraform では、以下を使用します。
+
+* [`clickhouse_clickpipes_reverse_private_endpoint`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint): RPE を作成します。
+* [`clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/clickpipes_reverse_private_endpoint_custom_private_dns): 各 RPE に対するカスタム private DNS マッピング一式を管理します。
+
+ClickPipes の Terraform module には、Confluent 向けの完全な例も用意されています。
+
+* [`confluent-dedicated`](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/confluent-dedicated): Confluent Cloud Dedicated の プライベートネットワーキング 向けです。
+* [`confluent-serverless`](https://github.com/ClickHouse/clickpipes-terraform-modules/tree/main/modules/confluent-serverless): Confluent Cloud serverless のプライベートイングレス向けです。
+
+このガイドと同じ DNS マッピングパターンを使用してください。
+Terraform では、フィールド名に snake&#95;case を使用します。たとえば、`vpc_endpoint_service_name`、`gcp_service_attachment`、`private_dns_name` です。
+
+<div id="create-the-kafka-clickpipe">
+  ## Kafka ClickPipe を作成する
+</div>
+
+RPE の準備ができたら、次の操作を行います。
+
+1. Kafka ClickPipe を作成または編集します。
+2. Confluent Cloud の ブートストラップエンドポイントを、`SASL_SSL://` プレフィックスなしで broker アドレス として使用します。
+3. Confluent Cloud の private connection 用に作成した RPE を選択します。
+4. Confluent Cloud Kafka API key と secret を使用し、`PLAIN` 認証を設定します。
+5. 通常どおり、topics、コンシューマグループ、データフォーマット、宛先テーブルを設定します。
+
+プライベートネットワーク経由で Confluent スキーマレジストリを使用する場合は、ClickPipe でスキーマレジストリ URL を設定し、そのホスト名が同じ RPE の Custom private DNS 構成を通じて名前解決されることを確認してください。
+詳細は、[Schema registries for Kafka ClickPipe](/ja/integrations/clickpipes/kafka/schema-registries) を参照してください。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+* RPE が引き続き pending のままの場合は、Confluent Cloud の プライベートネットワーキング の承認を確認し、Confluent Cloud で接続を承認または完了してください。
+* ClickPipe の接続確認が失敗する場合は、Confluent Cloud から返されるすべての bootstrap および broker の ホスト名 が、カスタム private DNS マッピングのいずれかに一致していることを確認してください。
+* カスタム DNS マッピングに patch を適用する場合は、必要なリスト全体を含めてください。更新すると既存のリストは置き換えられます。
+* DNS マッピングが重複として拒否される場合は、同じ ClickHouse service 内のすべての RPE を確認し、完全一致またはワイルドカード名が重複していないか確認してください。
