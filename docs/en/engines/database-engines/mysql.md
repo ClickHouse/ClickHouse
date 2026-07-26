@@ -77,11 +77,12 @@ SETTINGS enable_compression = 1;
 | POLYGON                          | [Polygon](../../sql-reference/data-types/geo.md#polygon)     |
 | MULTILINESTRING                  | [MultiLineString](../../sql-reference/data-types/geo.md#multilinestring) |
 | MULTIPOLYGON                     | [MultiPolygon](../../sql-reference/data-types/geo.md#multipolygon) |
+| MULTIPOINT                       | [MultiPoint](../../sql-reference/data-types/geo.md#multipoint) |
 | GEOMETRY                         | [Geometry](../../sql-reference/data-types/geo.md#geometry)   |
 
 The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](../../operations/settings/settings.md#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](../../sql-reference/data-types/geo.md#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](../../sql-reference/data-types/string.md) (the raw WKB) like all other MySQL data types.
 
-[Nullable](../../sql-reference/data-types/nullable.md) is supported.
+[Nullable](../../sql-reference/data-types/nullable.md) is supported. A nullable spatial column falls back to `Nullable(String)` when its geometric type cannot be nested inside `Nullable`, which is the case for the `Array`- and `Variant`-based geometric types. The string holds the value exactly as MySQL returns it: a 4-byte SRID prefix followed by the WKB payload, so strip those 4 leading bytes before passing it to a WKB decoder. A non-nullable spatial column maps to the geometric type as shown above.
 
 ## Global variables support {#global-variables-support}
 
