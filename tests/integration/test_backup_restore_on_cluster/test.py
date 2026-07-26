@@ -1064,17 +1064,36 @@ def test_table_in_replicated_database_with_exclude_data_from_backup_not_synced()
         "CREATE TABLE mydb.tbl (x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY tuple()"
     )
     node1.query("INSERT INTO mydb.tbl VALUES (1, 'a'), (2, 'b')")
-    node1.query("ALTER TABLE mydb.tbl MODIFY SETTING exclude_data_from_backup=1")
-    backup_name = new_backup_name()
-    # Backup is taken from node2 right after node1's ALTER. node2's own local
-    # replica may not have reloaded/reprocessed the DDL queue entry yet, so
-    # its live storage object could still report exclude_data_from_backup=0.
-    # The exclusion decision must come from the Keeper-snapshotted metadata
-    # (ASTCreateQuery/settings_changes), not node2's possibly-stale storage
-    # object -- this is exactly the blocker the review bot flagged.
-    node2.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
+    # Freeze node2's DatabaseReplicatedDDLWorker on the next entry it tries to
+    # execute, so it genuinely never applies the upcoming ALTER -- this makes
+    # node2 a real stale replica instead of relying on timing.
+    node2.query("system enable failpoint database_replicated_stop_entry_execution")
+    try:
+        # distributed_ddl_task_timeout=0 so this doesn't wait for node2 (which
+        # is frozen and would otherwise make this call hang/timeout).
+        node1.query(
+            "ALTER TABLE mydb.tbl MODIFY SETTING exclude_data_from_backup=1",
+            settings={"distributed_ddl_task_timeout": 0},
+        )
+        backup_name = new_backup_name()
+        # node2's live storage object is now genuinely stale (still
+        # exclude_data_from_backup=0, since its DDL worker is frozen and never
+        # applied the ALTER). The exclusion decision must come from the
+        # Keeper-snapshotted metadata (ASTCreateQuery/settings_changes), not
+        # node2's stale storage object -- this is exactly the blocker the
+        # review bot flagged.
+        node2.query(f"BACKUP DATABASE mydb ON CLUSTER 'cluster' TO {backup_name}")
+    finally:
+        node2.query(
+            "system disable failpoint database_replicated_stop_entry_execution"
+        )
     node1.query("DROP DATABASE mydb ON CLUSTER 'cluster' SYNC")
-    node1.query(f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name}")
+    # Restore specifically replica 2's backup slice -- the one node2 (the
+    # stale replica) produced -- to directly verify that slice also excluded
+    # the data, rather than only checking node1's own (already-correct) slice.
+    node1.query(
+        f"RESTORE DATABASE mydb ON CLUSTER 'cluster' FROM {backup_name} SETTINGS replica_num_in_backup=2"
+    )
     assert node1.query("SELECT count() FROM mydb.tbl") == "0\n"
     assert node1.query(
         "SELECT name, type FROM system.columns WHERE database='mydb' AND table='tbl'"
