@@ -1,0 +1,20 @@
+-- enable_analyzer = 1
+SELECT             outsider : ACCESS_DENIED
+SELECT             view_only: ACCESS_DENIED
+SELECT             full     : OK, view body not revealed
+EXPLAIN AST        outsider : ACCESS_DENIED
+EXPLAIN AST        view_only: ACCESS_DENIED
+EXPLAIN AST        full     : OK, view body revealed
+EXPLAIN AST plain  view_only: OK, view body not revealed
+EXPLAIN AST unres. outsider : OK, view body not revealed
+EXPLAIN AST unres. full     : OK, view body not revealed
+-- enable_analyzer = 0
+SELECT             outsider : ACCESS_DENIED
+SELECT             view_only: ACCESS_DENIED
+SELECT             full     : OK, view body not revealed
+EXPLAIN AST        outsider : ACCESS_DENIED
+EXPLAIN AST        view_only: ACCESS_DENIED
+EXPLAIN AST        full     : OK, view body revealed
+EXPLAIN AST plain  view_only: OK, view body not revealed
+EXPLAIN AST unres. outsider : OK, view body not revealed
+EXPLAIN AST unres. full     : OK, view body not revealed

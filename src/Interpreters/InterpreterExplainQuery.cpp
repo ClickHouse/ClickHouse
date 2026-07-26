@@ -387,6 +387,15 @@ namespace
             /// check on the base tables ever having happened - a metadata leak for a `SQL SECURITY INVOKER`
             /// view. Leaving the view reference unexpanded is the fail-safe fallback, matching how the
             /// parameterized-view path falls back to the unexpanded query in the same situation.
+            ///
+            /// The loop above cannot check a parameterized view: `InterpreterSelectQuery` resolves `pv(...)`
+            /// into a freshly built, parameter-substituted storage that is not the view the AST names. Both
+            /// callers therefore run `ExpandParameterizedViewsMatcher` before this visitor, so that the
+            /// analysis above resolves the expanded body and checks its base tables; by then the view call is
+            /// already a plain subquery and `query_info.view_query` is not set. What is left here are the
+            /// views that matcher deliberately leaves intact - `SQL SECURITY DEFINER` and `NONE` - whose
+            /// bodies a user granted `SELECT` on the view may see, exactly as for a regular view with those
+            /// security settings, because their base tables are read under the view's own context.
             if (query_info.view_query && main_view_access_check_performed)
             {
                 ASTPtr tmp;
@@ -1294,16 +1303,43 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
+
+            ASTPtr query_to_dump = ast.getExplainedQuery();
             if (settings.optimize)
             {
+                /// `EXPLAIN AST optimize = 1` runs the same visitor as `EXPLAIN SYNTAX` and therefore dumps
+                /// the same rewritten query, so it needs the same parameterized-view handling. Expand the
+                /// view calls here too: the visitor's own inlining (`StorageView::replaceWithSubquery`) runs
+                /// no base-table access check at all, while resolving the expanded subquery below does check
+                /// them, exactly as a real `SELECT ... FROM pv(...)` does in `StorageView::readImpl`.
+                ASTPtr explained_query_before_expansion = ast.getExplainedQuery()->clone();
+
+                ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
+                ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
+                const bool expanded_parameterized_view = expand_views_data.expanded_parameterized_view;
+
                 ExplainAnalyzedSyntaxVisitor::Data data(query_context);
-                ExplainAnalyzedSyntaxVisitor(data).visit(query);
+
+                /// As on the `EXPLAIN SYNTAX` path: the expanded query may be unresolvable, and dumping it
+                /// then would reveal the parameter-substituted view body without any check having run. Fall
+                /// back to the original, unexpanded query - the user's own text - in that case. An
+                /// `ACCESS_DENIED` is still propagated.
+                try
+                {
+                    ExplainAnalyzedSyntaxVisitor(data).visit(query);
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::ACCESS_DENIED || !expanded_parameterized_view)
+                        throw;
+                    query_to_dump = explained_query_before_expansion;
+                }
             }
 
             if (settings.graph)
-                dumpASTInDotFormat(*ast.getExplainedQuery(), buf);
+                dumpASTInDotFormat(*query_to_dump, buf);
             else
-                dumpAST(*ast.getExplainedQuery(), buf);
+                dumpAST(*query_to_dump, buf);
             break;
         }
         case ASTExplainQuery::AnalyzedSyntax:
