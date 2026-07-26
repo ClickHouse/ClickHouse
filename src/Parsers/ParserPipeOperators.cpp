@@ -341,27 +341,14 @@ bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expe
 
     if (group_expression_list)
     {
-        // The output of AGGREGATE is the grouping columns followed by the aggregate
-        // expressions. A grouping expression is only prepended when its result is not
-        // already present in the user-provided projection, so that
-        //   AGGREGATE number % 2 AS k, count() AS c GROUP BY number % 2
-        // produces `number % 2 AS k, count() AS c` instead of duplicating `number % 2`.
-        // A projection expression is matched both by its output name (the alias, e.g.
-        // `GROUP BY k`) and by its alias-less form (the expression, e.g. `GROUP BY number % 2`).
-        std::unordered_set<String> projected;
-        for (const auto & expr : select_expression_list->children)
-        {
-            projected.insert(expr->getAliasOrColumnName());
-            projected.insert(expr->getColumnNameWithoutAlias());
-        }
-
         // A positional grouping argument is an integer literal (see `replaceForPositionalArguments`).
-        // When `enable_positional_arguments` is on it already refers to an existing projection
-        // column, and when it is off it is a constant grouping key; in neither case does the
-        // equivalent regular SELECT add it to the projection. Prepending it would both introduce a
-        // spurious leading column and shift the positions that later positional arguments resolve
-        // against, so `AGGREGATE number % 2 AS k, count() AS c GROUP BY 1` must keep the projection
-        // as `number % 2 AS k, count() AS c` (matching `SELECT ... GROUP BY 1`).
+        // When `enable_positional_arguments` is on it refers to a projection column by its position,
+        // and when it is off it is a constant grouping key; in neither case does the equivalent
+        // regular SELECT add it to the projection. Both adding and reordering projection columns
+        // would shift the positions such an argument resolves against, so as soon as one grouping
+        // argument is positional the user-provided projection is left exactly as written:
+        //   AGGREGATE number % 2 AS k, count() AS c GROUP BY 1
+        // keeps `number % 2 AS k, count() AS c` (matching `SELECT ... GROUP BY 1`).
         auto is_positional_argument = [](const ASTPtr & expr)
         {
             const auto * literal = expr->as<ASTLiteral>();
@@ -371,40 +358,81 @@ bool ParserPipeAggregate::parse(IParser::Pos & pos, ASTSelectQuery & query, Expe
             return type == Field::Types::UInt64 || type == Field::Types::Int64;
         };
 
-        // new vector created in order to preserve order SELECT <group_cols>, <agg_expr>
-        ASTs prepended_grouping_cols;
-        auto prepend_if_absent = [&](const ASTPtr & expr)
-        {
-            if (is_positional_argument(expr))
-                return;
-
-            if (projected.contains(expr->getAliasOrColumnName()) || projected.contains(expr->getColumnNameWithoutAlias()))
-                return;
-
-            prepended_grouping_cols.push_back(expr->clone());
-            // Record the prepended column so a repeated grouping expression is not prepended twice.
-            projected.insert(expr->getAliasOrColumnName());
-            projected.insert(expr->getColumnNameWithoutAlias());
-        };
-
+        // The grouping expressions in the order they are written, flattening `GROUPING SETS`.
+        ASTs grouping_expressions;
         if (query.group_by_with_grouping_sets)
         {
             for (const auto & grouping_set : group_expression_list->children)
                 for (const auto & expr : grouping_set->children)
-                    prepend_if_absent(expr);
+                    grouping_expressions.push_back(expr);
         }
         else
         {
             for (const auto & expr : group_expression_list->children)
-                prepend_if_absent(expr);
+                grouping_expressions.push_back(expr);
         }
 
-        for (const auto & expr : select_expression_list->children)
+        const bool has_positional_argument = std::any_of(
+            grouping_expressions.begin(), grouping_expressions.end(), is_positional_argument);
+
+        if (!has_positional_argument)
         {
-            prepended_grouping_cols.push_back(expr->clone());
-        }
+            // The output of AGGREGATE is the grouping columns followed by the aggregate expressions.
+            // A grouping expression that the user already projected is *moved* to the front instead of
+            // being duplicated, so that both
+            //   AGGREGATE number % 2 AS k, count() AS c GROUP BY number % 2
+            //   AGGREGATE count() AS c, number % 2 AS k GROUP BY k
+            // produce `number % 2 AS k, count() AS c`, and a later pipe stage such as `|> ORDER BY 1`
+            // sees the documented order. A projection expression is matched both by its output name
+            // (the alias, e.g. `GROUP BY k`) and by its alias-less form (e.g. `GROUP BY number % 2`).
+            ASTs projection = std::move(select_expression_list->children);
+            std::vector<bool> moved(projection.size(), false);
 
-        select_expression_list->children = std::move(prepended_grouping_cols);
+            ASTs reordered;
+            reordered.reserve(projection.size() + grouping_expressions.size());
+
+            // Names of the grouping expressions already placed, so that an expression repeated across
+            // `GROUPING SETS` does not produce the column twice.
+            std::unordered_set<String> placed;
+
+            for (const auto & expr : grouping_expressions)
+            {
+                const String alias_name = expr->getAliasOrColumnName();
+                const String plain_name = expr->getColumnNameWithoutAlias();
+
+                if (placed.contains(alias_name) || placed.contains(plain_name))
+                    continue;
+                placed.insert(alias_name);
+                placed.insert(plain_name);
+
+                bool found = false;
+                for (size_t i = 0; i < projection.size(); ++i)
+                {
+                    if (moved[i])
+                        continue;
+
+                    const String projected_alias_name = projection[i]->getAliasOrColumnName();
+                    const String projected_plain_name = projection[i]->getColumnNameWithoutAlias();
+                    if (projected_alias_name != alias_name && projected_alias_name != plain_name
+                        && projected_plain_name != alias_name && projected_plain_name != plain_name)
+                        continue;
+
+                    moved[i] = true;
+                    reordered.push_back(projection[i]);
+                    found = true;
+                    break;
+                }
+
+                if (!found)
+                    reordered.push_back(expr->clone());
+            }
+
+            for (size_t i = 0; i < projection.size(); ++i)
+                if (!moved[i])
+                    reordered.push_back(projection[i]);
+
+            select_expression_list->children = std::move(reordered);
+        }
     }
 
     query.setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list));

@@ -1,0 +1,87 @@
+aggregate before grouping key
+SELECT
+    modulo(number, 3) AS k,
+    count() AS c
+FROM numbers(5)
+GROUP BY k
+0	2
+1	2
+2	1
+grouping key before aggregate produces the same query
+SELECT
+    modulo(number, 3) AS k,
+    count() AS c
+FROM numbers(5)
+GROUP BY k
+0	2
+1	2
+2	1
+grouping key matched by its alias-less form
+SELECT
+    modulo(number, 3) AS k,
+    count() AS c
+FROM numbers(5)
+GROUP BY modulo(number, 3)
+0	2
+1	2
+2	1
+several grouping keys are ordered as written in GROUP BY
+SELECT
+    modulo(number, 2) AS k,
+    modulo(number, 3) AS m,
+    count() AS c
+FROM numbers(6)
+GROUP BY
+    k,
+    m
+0	0	1
+0	1	1
+0	2	1
+1	0	1
+1	1	1
+1	2	1
+a grouping key that is not projected is still added in front
+SELECT
+    modulo(number, 2),
+    count() AS c
+FROM numbers(6)
+GROUP BY modulo(number, 2)
+0	3
+1	3
+positional grouping argument leaves the projection untouched
+SELECT
+    modulo(number, 2) AS k,
+    count() AS c
+FROM numbers(6)
+GROUP BY 1
+0	3
+1	3
+SELECT
+    count() AS c,
+    modulo(number, 2) AS k
+FROM numbers(6)
+GROUP BY 2
+3	0
+3	1
+mixed positional and expression grouping arguments
+SELECT
+    count() AS c,
+    modulo(number, 2) AS k
+FROM numbers(6)
+GROUP BY
+    2,
+    modulo(number, 3)
+1	0
+1	0
+1	0
+1	1
+1	1
+1	1
+GROUP BY ALL keeps the written order
+SELECT
+    count() AS c,
+    modulo(number, 2) AS k
+FROM numbers(6)
+GROUP BY ALL
+3	0
+3	1
