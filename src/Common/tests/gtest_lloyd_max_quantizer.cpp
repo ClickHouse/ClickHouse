@@ -50,8 +50,10 @@ Float32 conditionalMean(size_t precision, size_t positive_prefix)
     const size_t block_size = size_t{1} << (8 - precision);
     const size_t first_index = (positive_prefix + (size_t{1} << (precision - 1))) * block_size;
     const size_t last_index = first_index + block_size - 1;
-    const long double lower = first_index == 0 ? -std::numeric_limits<long double>::infinity() : LloydMax::BOUNDARIES[first_index - 1];
-    const long double upper = last_index == 255 ? std::numeric_limits<long double>::infinity() : LloydMax::BOUNDARIES[last_index];
+    const long double lower = first_index == 0 ? -std::numeric_limits<long double>::infinity()
+                                               : static_cast<long double>(LloydMax::BOUNDARIES[first_index - 1]);
+    const long double upper
+        = last_index == 255 ? std::numeric_limits<long double>::infinity() : static_cast<long double>(LloydMax::BOUNDARIES[last_index]);
     return static_cast<Float32>((normalPdf(lower) - normalPdf(upper)) / (normalCdf(upper) - normalCdf(lower)));
 }
 
