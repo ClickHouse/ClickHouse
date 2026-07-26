@@ -202,7 +202,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链�
   ### 卡片显示设置
 </div>
 
-每个卡片都有一个 **Display Settings** 抽屉面板，用于控制其数值的显示方式。在卡片编辑器中点击 **Display Settings** 即可打开。可用选项取决于可视化类型。
+每个卡片都有一个 **Display Settings** 抽屉，用于控制其数值的显示方式。在卡片编辑器中点击 **Display Settings** 即可打开。可用选项取决于可视化类型。
 
 数值卡片可以显示**背景图表**：即在数值后方绘制一条趋势迷你线图，让你一眼就能看出它在所选时间范围内的变化。这对 SLO 和错误预算卡片尤其有用，因为数值的变化趋势与当前读数同样重要。
 
@@ -211,6 +211,14 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、链�
 <Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="数值卡片的 Display Settings 抽屉，其中 Background chart 设置为 Area" size="lg" />
 
 背景图表适用于查询构建器生成的数值卡片。Raw SQL 数值卡片只返回单个值，没有可用于分桶的时间维度，因此该选项会显示，但处于禁用状态。
+
+表格卡片可以使用 **Alternate Row Background** 为行添加斑马纹背景，即为隔行着色，从而让宽表更易于浏览。默认情况下此选项处于关闭状态。
+
+选中表格卡片后，打开 **Display Settings** 并开启 **Alternate Row Background**。斑马纹仅影响视觉显示，因此它同时适用于查询构建器和 Raw SQL 表格卡片。
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="表格卡片的 Display Settings 抽屉，其中已开启 Alternate Row Background" size="lg" />
+
+表格卡片在滚动时也会在表头与数据之间保留分隔线，因此列标题始终清晰可辨。
 
 <div id="dashboard-listing-search">
   ## 仪表盘 - 列表与搜索

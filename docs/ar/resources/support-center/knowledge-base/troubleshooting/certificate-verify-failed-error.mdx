@@ -62,7 +62,7 @@ keywords: ['خطأ', 'شهادة SSL', '210']
 open "/Applications/Python 3.11/Install Certificates.command"
 ```
 
-بدلاً من ذلك، وجّه العميل إلى حزمة certifi مباشرةً. لا يلجأ [ClickHouse Connect](/ar/integrations/language-clients/python) إلى certifi تلقائيًا، لذا مرّر الحزمة عبر المعامل `ca_cert`:
+بدلاً من ذلك، وجّه العميل إلى حزمة certifi مباشرةً. لا يلجأ [ClickHouse Connect](/ar/integrations/python) إلى certifi تلقائيًا، لذا مرّر الحزمة عبر المعامل `ca_cert`:
 
 ```python
 import certifi
@@ -81,4 +81,4 @@ client = clickhouse_connect.get_client(
   ## موارد إضافية
 </div>
 
-راجع [وثائق إعداد `clickhouse-client`](/ar/concepts/features/interfaces/client#configuration_files).
+راجع [وثائق إعداد `clickhouse-client`](/ar/interfaces/client#configuration_files).
