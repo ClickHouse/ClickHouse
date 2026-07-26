@@ -26,6 +26,7 @@
 #include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SetUtils.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
@@ -91,6 +92,52 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
     }
 
     return result;
+}
+
+/// Whether parallel replicas could actually be engaged for a query subtree.
+///
+/// A recursive step that reads nothing but local, non-`MergeTree` storages — in
+/// particular a purely self-referential recursion such as
+/// `SELECT n + 1 FROM t WHERE n < 10`, whose only table is the in-memory working
+/// table — never engages parallel replicas in the planner: `findTableForParallelReplicas`
+/// finds no eligible table, and the custom-key / sampling modes have nothing remote or
+/// `MergeTree` to split either. Such a query must keep running as before, even under
+/// the forcing mode, so the rejection below must not fire for it.
+///
+/// The check is deliberately conservative (fail closed): a table counts as
+/// parallel-replica-eligible unless it is clearly not one, so the force-or-throw
+/// contract is only relaxed when no table in the subtree could be read with parallel
+/// replicas at all.
+bool mayEngageParallelReplicas(IQueryTreeNode * root)
+{
+    std::vector<IQueryTreeNode *> nodes_to_process;
+    nodes_to_process.push_back(root);
+
+    while (!nodes_to_process.empty())
+    {
+        auto * subtree_node = nodes_to_process.back();
+        nodes_to_process.pop_back();
+
+        StoragePtr storage;
+        if (const auto * table_node = subtree_node->as<TableNode>())
+            storage = table_node->getStorage();
+        else if (const auto * table_function_node = subtree_node->as<TableFunctionNode>())
+            storage = table_function_node->getStorage();
+
+        /// Remote storages (`Distributed`, `remote`, `cluster`) and views (which can wrap
+        /// a `MergeTree` table) can be read with parallel replicas, and so can every table
+        /// of the `MergeTree` family.
+        if (storage && (storage->isRemote() || storage->isView() || storage->isMergeTree()))
+            return true;
+
+        for (auto & child : subtree_node->getChildren())
+        {
+            if (child)
+                nodes_to_process.push_back(child.get());
+        }
+    }
+
+    return false;
 }
 
 /// Equi-join key between the recursive CTE working table and a real table,
@@ -598,8 +645,10 @@ public:
         /// interpreter context, so overriding only the interpreter context is not enough.
         /// We rewrite the contexts once at construction time and preserve sharing: nodes
         /// that originally pointed to the same context will share the same copy afterwards.
+        const bool recursive_query_may_engage_parallel_replicas = mayEngageParallelReplicas(recursive_query.get());
+
         std::map<Context *, ContextMutablePtr> context_copies;
-        auto rewrite_context = [&context_copies](ContextMutablePtr & ctx)
+        auto rewrite_context = [&context_copies, recursive_query_may_engage_parallel_replicas](ContextMutablePtr & ctx)
         {
             if (auto it = context_copies.find(ctx.get()); it != context_copies.end())
             {
@@ -633,7 +682,16 @@ public:
             /// downgraded here, breaking the force-or-throw contract. The disable
             /// below (setting the mode to `0`) does turn off all of them, since
             /// every `canUse*` predicate requires the setting to be `> 0`.
+            ///
+            /// The settings alone are not enough, though: the recursive query also has to
+            /// contain a table parallel replicas could be engaged for (see
+            /// `recursive_query_may_engage_parallel_replicas`). A self-referential
+            /// recursion that reads only the in-memory working table would never use
+            /// parallel replicas in the planner either, so rejecting it merely because the
+            /// profile enables the forcing mode would be a backwards-incompatible change
+            /// unrelated to the stale `GLOBAL JOIN` cache hazard guarded here.
             if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
+                && recursive_query_may_engage_parallel_replicas
                 && (ctx->canUseTaskBasedParallelReplicas()
                     || ctx->canUseParallelReplicasCustomKey()
                     || ctx->canUseOffsetParallelReplicas()))

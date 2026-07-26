@@ -711,6 +711,45 @@ SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_rep
     parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'from_id',
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- Conversely, the forced-mode rejection must stay as narrow as the planner's own
+-- decision: a recursive CTE whose recursive part reads no parallel-replica-eligible
+-- table (here, only the in-memory working table) would never engage parallel replicas
+-- anyway, so it must keep running under the forcing mode instead of failing closed.
+WITH RECURSIVE self_only_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM self_only_pr WHERE n < 10
+)
+SELECT sum(n) FROM self_only_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- The same, with a forced custom-key mode: still no eligible table, still no throw.
+WITH RECURSIVE self_only_pr_custom_key AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM self_only_pr_custom_key WHERE n < 10
+)
+SELECT sum(n) FROM self_only_pr_custom_key
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'n',
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
+-- A recursive part that joins a real `MergeTree` table still fails closed under the
+-- forcing mode even when the recursion is otherwise trivial — the eligible table is
+-- what makes the request unsatisfiable, and it is detected anywhere in the join tree.
+WITH RECURSIVE joined_pr AS
+(
+    SELECT 1 AS n
+  UNION ALL
+    SELECT n + 1 FROM joined_pr AS t INNER JOIN edges AS e ON e.from_id = t.n WHERE n < 10
+)
+SELECT sum(n) FROM joined_pr
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
