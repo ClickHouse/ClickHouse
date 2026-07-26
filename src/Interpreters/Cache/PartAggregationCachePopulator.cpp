@@ -14,11 +14,33 @@
 #include <QueryPipeline/QueryPipeline.h>
 
 #include <Common/Arena.h>
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
+PartAggregationCache::Key makePartAggregationCacheKey(
+    const IASTHash & query_hash,
+    const String & table_id,
+    const RangesInDataPart & part)
+{
+    SipHash hash;
+    hash.update(query_hash.low64);
+    hash.update(query_hash.high64);
+
+    /// The range count is a boundary: without it `{[0, 2), [3, 4)}` and `{[0, 2), [3, 4), ...}`
+    /// prefixes could feed the same byte stream.
+    hash.update(part.ranges.size());
+    for (const auto & range : part.ranges)
+    {
+        hash.update(range.begin);
+        hash.update(range.end);
+    }
+
+    return PartAggregationCache::Key{getSipHash128AsPair(hash), table_id, part.data_part->name};
+}
 
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
@@ -54,6 +76,16 @@ void populatePartAggregationCache(
     /// serve; otherwise warmup would keep doing the expensive work for an already-cancelled query.
     auto process_list_element = context->getProcessListElement();
 
+    /// The warmup reads raw rows from storage on behalf of the query, so it must be charged to the
+    /// same quota as the normal `SELECT` pipeline (`InterpreterSelectQueryAnalyzer` does
+    /// `pipeline.setQuota(context->getQuota())`). Without this, a user could consume an arbitrary
+    /// amount of `READ_ROWS`/`READ_BYTES` in the populator's own pipelines and still get the answer,
+    /// bypassing a tight read quota. `ReadProgressCallback` (installed by `PullingPipelineExecutor`
+    /// from the pipeline) charges the quota per read progress and needs the normalized query hash to
+    /// attribute the usage, so pass both.
+    auto quota = context->getQuota();
+    auto normalized_query_hash = context->getNormalizedQueryHash();
+
     for (const auto & part : parts)
     {
         /// Stop populating promptly if the query was cancelled or timed out, instead of warming the
@@ -61,7 +93,7 @@ void populatePartAggregationCache(
         if (process_list_element && (process_list_element->isKilled() || !process_list_element->checkTimeLimitSoft()))
             break;
 
-        PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
+        auto key = makePartAggregationCacheKey(query_hash, table_id, part);
 
         if (cache->get(key))
             continue;
@@ -92,6 +124,8 @@ void populatePartAggregationCache(
 
             QueryPipeline pipeline(std::move(pipe));
             pipeline.setProcessListElement(process_list_element);
+            pipeline.setQuota(quota);
+            pipeline.setNormalizedQueryHash(normalized_query_hash);
             PullingPipelineExecutor executor(pipeline);
 
             auto params_copy = params;

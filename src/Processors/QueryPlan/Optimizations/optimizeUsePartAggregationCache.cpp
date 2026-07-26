@@ -302,7 +302,14 @@ void optimizeUsePartAggregationCache(
     /// Hashing only output names is not enough: two filters can share output column
     /// names while computing different predicates, which would alias incompatible
     /// queries to the same cache key and return cached states from a different query.
-    if (!intermediate_actions.empty())
+    ///
+    /// The read step's own filter DAG is hashed as well. It is the source of truth for primary key,
+    /// partition and skip-index analysis, i.e. for which mark ranges of a part were selected — and
+    /// the populator aggregates exactly those ranges (`part.ranges`). A predicate that is absorbed
+    /// into the read step is not necessarily visible in `intermediate_actions` or in `PrewhereInfo`
+    /// (for example a filter supplied through `SelectQueryInfo::filter_actions_dag`), so without this
+    /// two queries with different source-level filters could leave identical post-read pipelines and
+    /// collide on `{query_hash, table_id, part_name}` while having aggregated different rows.
     {
         SipHash extra_hash;
         extra_hash.update(query_hash.low64);
@@ -321,6 +328,12 @@ void optimizeUsePartAggregationCache(
             extra_hash.update(action.filter_column_name);
             extra_hash.update(action.remove_filter_column);
         }
+
+        const auto & source_filter_dag = reading->getFilterActionsDAG();
+        extra_hash.update(source_filter_dag != nullptr);
+        if (source_filter_dag)
+            source_filter_dag->updateHash(extra_hash);
+
         query_hash = getSipHash128AsPair(extra_hash);
     }
 
@@ -342,7 +355,7 @@ void optimizeUsePartAggregationCache(
 
     for (const auto & part : parts)
     {
-        PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
+        auto key = makePartAggregationCacheKey(query_hash, table_id, part);
         auto entry = enable_reads ? cache->get(key) : nullptr;
 
         if (entry)
@@ -368,7 +381,7 @@ void optimizeUsePartAggregationCache(
         RangesInDataParts still_uncached;
         for (const auto & part : uncached_parts)
         {
-            PartAggregationCache::Key key{query_hash, table_id, part.data_part->name};
+            auto key = makePartAggregationCacheKey(query_hash, table_id, part);
             auto entry = enable_reads ? cache->get(key) : nullptr;
             if (entry)
                 cached_entries.push_back(std::move(entry));

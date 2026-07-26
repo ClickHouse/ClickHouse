@@ -22,6 +22,17 @@ struct IntermediateStepAction
     bool remove_filter_column = false; /// whether the original FilterStep removed the filter column from output
 };
 
+/// Build the cache key for one part. The key salts the query hash with the exact mark ranges that
+/// were (or will be) aggregated for the part, because the cached state covers only those ranges.
+/// The selected ranges are the result of primary key / partition / skip-index analysis and can be
+/// narrowed by mechanisms that are not otherwise represented in the key (a source-level filter, a
+/// projection-based part/range filter, top-K pruning). Hashing them keeps `{query_hash, table_id,
+/// part_name}` from aliasing two reads of the same part that covered different ranges.
+PartAggregationCache::Key makePartAggregationCacheKey(
+    const IASTHash & query_hash,
+    const String & table_id,
+    const RangesInDataPart & part);
+
 void populatePartAggregationCache(
     const PartAggregationCachePtr & cache,
     const IASTHash & query_hash,
