@@ -1912,9 +1912,9 @@ FROM numbers(5);
 
 ジオメトリオブジェクトの x 座標と y 座標を入れ替えます。この操作では緯度と経度が入れ替わるため、異なる座標系間の変換や座標順序の修正に役立ちます。
 
-Point では x 座標と y 座標を入れ替えます。複雑なジオメトリ (LineString、Polygon、MultiPolygon、Ring、MultiLineString) では、各座標ペアにこの変換が再帰的に適用されます。
+Point では x 座標と y 座標を入れ替えます。複雑なジオメトリ (MultiPoint、LineString、Polygon、MultiPolygon、Ring、MultiLineString) では、各座標ペアにこの変換が再帰的に適用されます。
 
-この関数は、個別のジオメトリ型 (Point、Ring、Polygon、MultiPolygon、LineString、MultiLineString) と Geometry Variant 型の両方をサポートします。
+この関数は、個別のジオメトリ型 (Point、MultiPoint、Ring、Polygon、MultiPolygon、LineString、MultiLineString) と Geometry Variant 型の両方をサポートします。
 
 **構文**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **引数**
 
-* `geometry` — 変換対象のジオメトリ。対応する型: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), または Geometry (これらのいずれかの型を含むバリアント) 。
+* `geometry` — 変換対象のジオメトリ。対応する型: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)), または Geometry (これらのいずれかの型を含むバリアント) 。
 
 **戻り値**
 
-座標が反転されたジオメトリ。戻り値の型は入力型と一致します。[`Point`](/ja/reference/data-types/geo#point) または [`Ring`](/ja/reference/data-types/geo#ring) または [`Polygon`](/ja/reference/data-types/geo#polygon) または [`MultiPolygon`](/ja/reference/data-types/geo#multipolygon) または [`LineString`](/ja/reference/data-types/geo#linestring) または [`MultiLineString`](/ja/reference/data-types/geo#multilinestring) または [`Geometry`](/ja/reference/data-types/geo)
+座標が反転されたジオメトリ。戻り値の型は入力型と一致します。[`Point`](/ja/reference/data-types/geo#point) または [`MultiPoint`](/ja/reference/data-types/geo#multipoint) または [`Ring`](/ja/reference/data-types/geo#ring) または [`Polygon`](/ja/reference/data-types/geo#polygon) または [`MultiPolygon`](/ja/reference/data-types/geo#multipolygon) または [`LineString`](/ja/reference/data-types/geo#linestring) または [`MultiLineString`](/ja/reference/data-types/geo#multilinestring) または [`Geometry`](/ja/reference/data-types/geo)
 
 **例**
 

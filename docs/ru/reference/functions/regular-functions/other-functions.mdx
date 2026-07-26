@@ -1912,9 +1912,9 @@ FROM numbers(5);
 
 Меняет местами координаты x и y геометрических объектов. Эта операция меняет широту и долготу местами, что полезно при преобразовании между различными системами координат или при исправлении порядка координат.
 
-Для Point функция меняет местами координаты x и y. Для сложных геометрий (LineString, Polygon, MultiPolygon, Ring, MultiLineString) преобразование рекурсивно применяется к каждой паре координат.
+Для Point функция меняет местами координаты x и y. Для сложных геометрий (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString) преобразование рекурсивно применяется к каждой паре координат.
 
-Функция поддерживает как отдельные геометрические типы (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString), так и тип варианта Geometry.
+Функция поддерживает как отдельные геометрические типы (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString), так и тип варианта Geometry.
 
 **Синтаксис**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **Аргументы**
 
-* `geometry` — геометрия, которую нужно преобразовать. Поддерживаемые типы: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) или Geometry (вариант, содержащий любой из этих типов).
+* `geometry` — геометрия, которую нужно преобразовать. Поддерживаемые типы: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) или Geometry (вариант, содержащий любой из этих типов).
 
 **Возвращаемое значение**
 
-Геометрия с переставленными координатами. Возвращаемый тип соответствует входному типу. [`Point`](/ru/reference/data-types/geo#point) или [`Ring`](/ru/reference/data-types/geo#ring) или [`Polygon`](/ru/reference/data-types/geo#polygon) или [`MultiPolygon`](/ru/reference/data-types/geo#multipolygon) или [`LineString`](/ru/reference/data-types/geo#linestring) или [`MultiLineString`](/ru/reference/data-types/geo#multilinestring) или [`Geometry`](/ru/reference/data-types/geo)
+Геометрия с переставленными координатами. Возвращаемый тип соответствует входному типу. [`Point`](/ru/reference/data-types/geo#point) или [`MultiPoint`](/ru/reference/data-types/geo#multipoint) или [`Ring`](/ru/reference/data-types/geo#ring) или [`Polygon`](/ru/reference/data-types/geo#polygon) или [`MultiPolygon`](/ru/reference/data-types/geo#multipolygon) или [`LineString`](/ru/reference/data-types/geo#linestring) или [`MultiLineString`](/ru/reference/data-types/geo#multilinestring) или [`Geometry`](/ru/reference/data-types/geo)
 
 **Примеры**
 

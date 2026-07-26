@@ -2,7 +2,6 @@
   "directory": "none",
   "group": "Configuración de formatos",
   "pages": [
-    "es/reference/settings/formats",
     "es/reference/settings/formats/bool",
     "es/reference/settings/formats/date-time",
     "es/reference/settings/formats/format",
@@ -20,5 +19,6 @@
     "es/reference/settings/formats/show-create",
     "es/reference/settings/formats/type-json",
     "es/reference/settings/formats/other"
-  ]
+  ],
+  "root": "es/reference/settings/formats"
 }

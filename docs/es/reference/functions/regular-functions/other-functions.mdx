@@ -1912,9 +1912,9 @@ Introducido en: v25.11.0
 
 Invierte las coordenadas x e y de los objetos geométricos. Esta operación intercambia la latitud y la longitud, lo que resulta útil para convertir entre distintos sistemas de coordenadas o corregir el orden de las coordenadas.
 
-En un Point, intercambia las coordenadas x e y. En las geometrías complejas (LineString, Polygon, MultiPolygon, Ring, MultiLineString), aplica la transformación de forma recursiva a cada par de coordenadas.
+En un Point, intercambia las coordenadas x e y. En las geometrías complejas (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), aplica la transformación de forma recursiva a cada par de coordenadas.
 
-La función admite tanto tipos de geometría individuales (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) como el tipo variante Geometry.
+La función admite tanto tipos de geometría individuales (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) como el tipo variante Geometry.
 
 **Sintaxis**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **Argumentos**
 
-* `geometry` — La geometría que se va a transformar. Tipos admitidos: Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) o Geometry (una variante que contiene cualquiera de estos tipos).
+* `geometry` — La geometría que se va a transformar. Tipos admitidos: Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) o Geometry (una variante que contiene cualquiera de estos tipos).
 
 **Valor devuelto**
 
-La geometría con las coordenadas invertidas. El tipo devuelto coincide con el tipo de entrada. [`Point`](/es/reference/data-types/geo#point) o [`Ring`](/es/reference/data-types/geo#ring) o [`Polygon`](/es/reference/data-types/geo#polygon) o [`MultiPolygon`](/es/reference/data-types/geo#multipolygon) o [`LineString`](/es/reference/data-types/geo#linestring) o [`MultiLineString`](/es/reference/data-types/geo#multilinestring) o [`Geometry`](/es/reference/data-types/geo)
+La geometría con las coordenadas invertidas. El tipo devuelto coincide con el tipo de entrada. [`Point`](/es/reference/data-types/geo#point) o [`MultiPoint`](/es/reference/data-types/geo#multipoint) o [`Ring`](/es/reference/data-types/geo#ring) o [`Polygon`](/es/reference/data-types/geo#polygon) o [`MultiPolygon`](/es/reference/data-types/geo#multipolygon) o [`LineString`](/es/reference/data-types/geo#linestring) o [`MultiLineString`](/es/reference/data-types/geo#multilinestring) o [`Geometry`](/es/reference/data-types/geo)
 
 **Ejemplos**
 
@@ -1942,7 +1942,7 @@ SELECT flipCoordinates((1.0, 2.0));
 (2.0, 1.0)
 ```
 
-**anillo**
+**Ring**
 
 ```sql title=Query
 SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
@@ -1952,7 +1952,7 @@ SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
 [(2.0, 1.0), (4.0, 3.0)]
 ```
 
-**polígono**
+**Polygon**
 
 ```sql title=Query
 SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);

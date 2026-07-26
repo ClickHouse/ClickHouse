@@ -1912,9 +1912,9 @@ FROM numbers(5);
 
 تبدّل هذه الدالة الإحداثيين x وy في الكائنات الهندسية. تؤدي هذه العملية إلى تبديل خط العرض وخط الطول، وهو ما يفيد عند التحويل بين أنظمة إحداثيات مختلفة أو تصحيح ترتيب الإحداثيات.
 
-بالنسبة إلى Point، فهي تبدّل الإحداثيين x وy. وبالنسبة إلى الأشكال الهندسية الأكثر تعقيدًا (LineString وPolygon وMultiPolygon وRing وMultiLineString)، فإنها تطبّق هذا التحويل تكراريًا على كل زوج من الإحداثيات.
+بالنسبة إلى Point، فهي تبدّل الإحداثيين x وy. وبالنسبة إلى الأشكال الهندسية الأكثر تعقيدًا (MultiPoint وLineString وPolygon وMultiPolygon وRing وMultiLineString)، فإنها تطبّق هذا التحويل تكراريًا على كل زوج من الإحداثيات.
 
-تدعم الدالة كلاً من الأنواع الهندسية الفردية (Point وRing وPolygon وMultiPolygon وLineString وMultiLineString) ونوع Geometry المتغاير.
+تدعم الدالة كلاً من الأنواع الهندسية الفردية (Point وMultiPoint وRing وPolygon وMultiPolygon وLineString وMultiLineString) ونوع Geometry المتغاير.
 
 **الصياغة**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **الوسائط**
 
-* `geometry` — العنصر الهندسي المراد تحويله. الأنواع المدعومة: Point (Tuple(Float64, Float64))، وRing (Array(Point))، وPolygon (Array(Ring))، وMultiPolygon (Array(Polygon))، وLineString (Array(Point))، وMultiLineString (Array(LineString))، أو Geometry (نوع Variant يحتوي على أي من هذه الأنواع).
+* `geometry` — العنصر الهندسي المراد تحويله. الأنواع المدعومة: Point (Tuple(Float64, Float64))، وMultiPoint (Array(Point))، وRing (Array(Point))، وPolygon (Array(Ring))، وMultiPolygon (Array(Polygon))، وLineString (Array(Point))، وMultiLineString (Array(LineString))، أو Geometry (نوع Variant يحتوي على أي من هذه الأنواع).
 
 **القيمة المُعادة**
 
-العنصر الهندسي بإحداثيات معكوسة. نوع الإرجاع يطابق نوع الإدخال. [`Point`](/ar/reference/data-types/geo#point) أو [`Ring`](/ar/reference/data-types/geo#ring) أو [`Polygon`](/ar/reference/data-types/geo#polygon) أو [`MultiPolygon`](/ar/reference/data-types/geo#multipolygon) أو [`LineString`](/ar/reference/data-types/geo#linestring) أو [`MultiLineString`](/ar/reference/data-types/geo#multilinestring) أو [`Geometry`](/ar/reference/data-types/geo)
+العنصر الهندسي بإحداثيات معكوسة. نوع الإرجاع يطابق نوع الإدخال. [`Point`](/ar/reference/data-types/geo#point) أو [`MultiPoint`](/ar/reference/data-types/geo#multipoint) أو [`Ring`](/ar/reference/data-types/geo#ring) أو [`Polygon`](/ar/reference/data-types/geo#polygon) أو [`MultiPolygon`](/ar/reference/data-types/geo#multipolygon) أو [`LineString`](/ar/reference/data-types/geo#linestring) أو [`MultiLineString`](/ar/reference/data-types/geo#multilinestring) أو [`Geometry`](/ar/reference/data-types/geo)
 
 **أمثلة**
 

@@ -1912,9 +1912,9 @@ Introduite dans : v25.11.0
 
 Inverse les coordonnées x et y des objets géométriques. Cette opération permute la latitude et la longitude, ce qui est utile pour passer d’un système de coordonnées à un autre ou corriger l’ordre des coordonnées.
 
-Pour un Point, elle permute les coordonnées x et y. Pour les géométries complexes (LineString, Polygon, MultiPolygon, Ring, MultiLineString), elle applique récursivement la transformation à chaque paire de coordonnées.
+Pour un Point, elle permute les coordonnées x et y. Pour les géométries complexes (MultiPoint, LineString, Polygon, MultiPolygon, Ring, MultiLineString), elle applique récursivement la transformation à chaque paire de coordonnées.
 
-La fonction prend en charge à la fois les types géométriques individuels (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString) et le type Variant Geometry.
+La fonction prend en charge à la fois les types géométriques individuels (Point, MultiPoint, Ring, Polygon, MultiPolygon, LineString, MultiLineString) et le type Variant Geometry.
 
 **Syntaxe**
 
@@ -1924,11 +1924,11 @@ flipCoordinates(geometry)
 
 **Arguments**
 
-* `geometry` — Géométrie à transformer. Types pris en charge : Point (Tuple(Float64, Float64)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) ou Geometry (un variant contenant l’un de ces types).
+* `geometry` — Géométrie à transformer. Types pris en charge : Point (Tuple(Float64, Float64)), MultiPoint (Array(Point)), Ring (Array(Point)), Polygon (Array(Ring)), MultiPolygon (Array(Polygon)), LineString (Array(Point)), MultiLineString (Array(LineString)) ou Geometry (un variant contenant l’un de ces types).
 
 **Valeur renvoyée**
 
-La géométrie dont les coordonnées sont permutées. Le type de retour correspond au type d’entrée. [`Point`](/fr/reference/data-types/geo#point) ou [`Ring`](/fr/reference/data-types/geo#ring) ou [`Polygon`](/fr/reference/data-types/geo#polygon) ou [`MultiPolygon`](/fr/reference/data-types/geo#multipolygon) ou [`LineString`](/fr/reference/data-types/geo#linestring) ou [`MultiLineString`](/fr/reference/data-types/geo#multilinestring) ou [`Geometry`](/fr/reference/data-types/geo)
+La géométrie dont les coordonnées sont permutées. Le type de retour correspond au type d’entrée. [`Point`](/fr/reference/data-types/geo#point) ou [`MultiPoint`](/fr/reference/data-types/geo#multipoint) ou [`Ring`](/fr/reference/data-types/geo#ring) ou [`Polygon`](/fr/reference/data-types/geo#polygon) ou [`MultiPolygon`](/fr/reference/data-types/geo#multipolygon) ou [`LineString`](/fr/reference/data-types/geo#linestring) ou [`MultiLineString`](/fr/reference/data-types/geo#multilinestring) ou [`Geometry`](/fr/reference/data-types/geo)
 
 **Exemples**
 
@@ -1942,7 +1942,7 @@ SELECT flipCoordinates((1.0, 2.0));
 (2.0, 1.0)
 ```
 
-**anneau**
+**Ring**
 
 ```sql title=Query
 SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
@@ -1952,7 +1952,7 @@ SELECT flipCoordinates([(1.0, 2.0), (3.0, 4.0)]);
 [(2.0, 1.0), (4.0, 3.0)]
 ```
 
-**polygone**
+**Polygon**
 
 ```sql title=Query
 SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);
