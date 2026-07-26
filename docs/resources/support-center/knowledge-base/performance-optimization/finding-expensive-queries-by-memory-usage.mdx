@@ -27,6 +27,7 @@ FROM
     clusterAllReplicas(default, system.query_log)
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'
@@ -70,6 +71,7 @@ FROM
     system.query_log
 WHERE
     (event_time >= (now() - toIntervalDay(1)))
+    AND is_initial_query = 1
     AND query_kind = 'Select'
     AND type = 'QueryFinish'
     and user != 'monitoring-internal'

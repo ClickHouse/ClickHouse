@@ -66,13 +66,13 @@ These are the tools we generally recommend for ClickHouse users based on maturit
 
 **Why it works well for ClickHouse:** Atlas has first-class ClickHouse support, including tables, views, materialized views, projections, partitions, and UDFs. Atlas added cluster support in v0.37 in September 2025. It supports both HCL and plain SQL schema definitions.
 
-**What to watch out for:** Atlas generates migration plans, but does not understand the cost of those plans. A difference might look simple, such as changing a column type, but trigger an expensive mutation on a multi-terabyte table. Always review generated plans before applying them.
+**What to watch out for:** Atlas's ClickHouse driver is available only on the Pro plan or during a trial. Atlas generates migration plans, but does not understand the cost of those plans. A difference might look simple, such as changing a column type, but trigger an expensive mutation on a multi-terabyte table. Always review generated plans before applying them.
 
 **Best for:** Teams that want infrastructure-as-code workflows and automatic drift detection.
 
 - **Type:** Declarative
 - **Language:** Go, distributed as a single binary
-- **License:** Open Core, with an Apache 2.0 community edition and paid tiers for advanced features
+- **License and availability:** Open Core; the Atlas CLI has an Apache 2.0 community edition, but ClickHouse support requires the Pro plan or a trial
 - **Cluster support:** Yes
 
 ### Golang Migrate {#golang-migrate}
