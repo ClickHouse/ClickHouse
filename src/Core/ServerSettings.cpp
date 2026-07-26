@@ -2571,14 +2571,25 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         /// not merged into the server config, so it is intentionally excluded here.
         std::unordered_set<std::string> merge_files;
 
+        /// A scanned config file that exists but is not a regular file (e.g. a pipe such as
+        /// `/dev/fd/X`). `ConfigProcessor::parseConfig` explicitly accepts such a path, but it cannot
+        /// be re-read here (see the bail-out below), so the scan cannot see its `<include .../>`
+        /// directives and the whole check is skipped — fail open, never refuse to start a valid config.
+        std::string non_regular_config_path;
+
         /// Returns true iff the file is an actual merge candidate — i.e. it exists, parses, and has
         /// a root the merger accepts. Only such files contribute their top-level tags to the merged
         /// config, so only they belong in `merge_files`. Also collects any `<include_from>` source
         /// and, when `is_server_file` is set, any top-level `<include incl="X"/>` reference name.
         auto scan_file = [&](const fs::path & p, bool is_server_file) -> bool
         {
-            if (!fs::exists(p) || !fs::is_regular_file(p))
+            if (!fs::exists(p))
                 return false;
+            if (!fs::is_regular_file(p))
+            {
+                non_regular_config_path = p.string();
+                return false;
+            }
             try
             {
                 Poco::AutoPtr<Poco::XML::Document> doc = ConfigProcessor::parseConfig(p.string(), dom_parser);
@@ -2760,6 +2771,29 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             scan_file(users_path, /*is_server_file=*/false);
             for (const auto & merge_file : ConfigProcessor::getConfigMergeFiles(users_path.string()))
                 scan_file(merge_file, /*is_server_file=*/false);
+        }
+
+        /// `ConfigProcessor::parseConfig` accepts a non-regular config path (it has an explicit
+        /// carve-out: "Suppose non regular file parsed as XML, such as pipe: /dev/fd/X"), so the
+        /// server can legitimately be started with e.g. `--config-file=/dev/fd/N`. Such a file cannot
+        /// be re-read by the scan above: the processor has already consumed it (a drained pipe
+        /// re-parses as empty and diverges from what the processor saw) and opening a FIFO for reading
+        /// blocks until a writer appears. The scan therefore misses its top-level `<include .../>`
+        /// directives — which `ConfigProcessor` already expanded and removed, so the merged config
+        /// contains the imported keys while nothing records that they were imported — and an
+        /// unrecognized top-level key would be rejected even though the very same config was valid
+        /// before this check existed. Skip the whole check in this rare case — fail open, exactly like
+        /// a non-regular `<include_from>` source below — and log so a genuine typo remains visible.
+        if (!non_regular_config_path.empty())
+        {
+            LOG_WARNING(
+                getLogger("ServerSettings"),
+                "Not checking for unknown config options in '{}': the config file '{}' is not a regular "
+                "file, so the top-level keys its <include> directives contribute cannot be determined "
+                "at config-validation time.",
+                config_path,
+                non_regular_config_path);
+            return;
         }
 
         /// A top-level `<include from_zk="..."/>` in the server config imports the children of a
