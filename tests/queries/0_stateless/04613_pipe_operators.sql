@@ -20,6 +20,9 @@ FROM orders o |> WHERE amount >= 250 |> ORDER BY amount;
 -- The word SELECT after the tables starts the explicit SELECT clause, it is not an alias
 FROM orders select customer ORDER BY customer LIMIT 1;
 FROM orders select |> LIMIT 1; -- { clientError SYNTAX_ERROR }
+-- A quoted alias `select` is never the SELECT keyword, and neither is an alias named select inside a subquery
+FROM orders `select` WHERE `select`.amount >= 250 ORDER BY `select`.amount;
+FROM (SELECT 1 AS select) s WHERE s.`select` = 1 ORDER BY s.`select`;
 
 SELECT '-- WHERE';
 FROM orders |> WHERE amount >= 100 |> WHERE cancelled = 0 |> ORDER BY amount;
