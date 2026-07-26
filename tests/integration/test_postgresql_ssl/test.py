@@ -317,6 +317,52 @@ def test_postgresql_dictionary_client_certificate_is_required(started_cluster):
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
 
 
+def test_postgresql_dictionary_wrong_ca_is_rejected(started_cluster):
+    # The positive dictionary cases connect to a server that accepts any SSL session
+    # (`hostssl ... trust`), so they would still pass if `PostgreSQLDictionarySource`
+    # dropped `sslmode`/`sslrootcert` and libpq fell back to its default
+    # `sslmode=prefer`. Pointing the same source at a CA that did not sign the server
+    # certificate must fail: certificate verification is only performed when both
+    # settings reach libpq, so a dropped `sslmode`/`sslrootcert` would connect happily
+    # and this test would not see an error. Depending on `dictionaries_lazy_load` the
+    # source is instantiated either at CREATE or on first use, so accept the error
+    # from either step.
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_wrong_ca")
+    try:
+        node.query(
+            f"""
+            CREATE DICTIONARY dict_pg_wrong_ca (key UInt32, value UInt32)
+            PRIMARY KEY key
+            SOURCE(POSTGRESQL(
+                host '{PG_HOST}' port 5432
+                user 'postgres' password '{pg_pass}'
+                db 'postgres' table 'test_table'
+                sslmode 'verify-full' sslrootcert '{WRONG_CA_CERT_PATH}'))
+            LAYOUT(HASHED())
+            LIFETIME(MIN 0 MAX 0)
+            """
+        )
+    except Exception as e:
+        error = str(e)
+    else:
+        error = node.query_and_get_error("SELECT dictGetUInt32(dict_pg_wrong_ca, 'value', toUInt64(1))")
+        node.query("DROP DICTIONARY dict_pg_wrong_ca")
+    assert "POSTGRESQL_CONNECTION_FAILURE" in error
+
+
+def test_postgresql_database_engine_wrong_ca_is_rejected(started_cluster):
+    # Same argument for the `PostgreSQL` database engine, which parses the SSL
+    # parameters on its own path in `DatabasePostgreSQL.cpp`: a wrong CA must break the
+    # connection, which would not happen if `sslmode`/`sslrootcert` were dropped there.
+    # The database itself is created without connecting, so the failure surfaces on the
+    # first query that reaches PostgreSQL.
+    node.query("DROP DATABASE IF EXISTS pg_db_wrong_ca")
+    node.query(f"CREATE DATABASE pg_db_wrong_ca ENGINE = PostgreSQL(pg_ssl_db, sslmode='verify-full', sslrootcert='{WRONG_CA_CERT_PATH}')")
+    error = node.query_and_get_error("SELECT count() FROM pg_db_wrong_ca.test_table")
+    assert "POSTGRESQL_CONNECTION_FAILURE" in error or "UNKNOWN_TABLE" in error
+    node.query("DROP DATABASE pg_db_wrong_ca")
+
+
 def test_client_certificate_authentication(started_cluster):
     # CERT_DB requires a verified client certificate, so a successful read proves
     # the sslcert/sslkey parameters are forwarded to libpq and accepted.
@@ -511,6 +557,82 @@ def test_materialized_postgresql_client_certificate(started_cluster):
     assert node.query(f"SELECT count() FROM mpg_cert_ssl.{CERT_TABLE}").strip() == "11"
 
     node.query("DROP DATABASE mpg_cert_ssl")
+
+
+def test_materialized_postgresql_table_engine_wrong_ca_is_rejected(started_cluster):
+    # The `MaterializedPostgreSQL` cases above all connect to a server that accepts any
+    # SSL session, so none of them can falsify a regression in the table engine's own
+    # settings-merge block that drops `materialized_postgresql_ssl_mode` /
+    # `_ssl_root_cert`: libpq would fall back to `sslmode=prefer` and still connect.
+    # A CA that did not sign the server certificate must break the connection, which
+    # only happens when both settings reach libpq. On a fresh CREATE (not an attach) the
+    # table engine starts replication synchronously, so the error surfaces at CREATE.
+    seed_table("tbl_wrong_ca_table", 5)
+    node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
+    error = node.query_and_get_error(
+        f"""
+        CREATE TABLE mpg_tbl_wrong_ca (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'tbl_wrong_ca_table', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{WRONG_CA_CERT_PATH}'
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "POSTGRESQL_CONNECTION_FAILURE" in error
+    node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
+
+
+def test_materialized_postgresql_database_wrong_ca_is_rejected(started_cluster):
+    # The same falsification for the database engine, which merges the
+    # `materialized_postgresql_ssl_*` settings on its own registration path. Unlike the
+    # table engine, the database engine starts replication in a background task that
+    # retries on failure, so `CREATE DATABASE` itself succeeds and a rejected
+    # certificate shows up as replication never creating the replicated table.
+    seed_table("db_wrong_ca_table", 20)
+    node.query("DROP DATABASE IF EXISTS mpg_wrong_ca")
+    node.query(
+        f"""
+        CREATE DATABASE mpg_wrong_ca
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{WRONG_CA_CERT_PATH}',
+            materialized_postgresql_tables_list = 'db_wrong_ca_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+
+    # The startup task retries every 5 seconds, so a connection that libpq accepted
+    # would have produced the table well within this window.
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        node.query_and_get_error("SELECT count() FROM mpg_wrong_ca.db_wrong_ca_table")
+        time.sleep(1)
+    node.query("DROP DATABASE mpg_wrong_ca")
+
+    # Positive control: the very same database with the correct CA does synchronize, so
+    # the absence above is caused by the certificate being rejected and not by an
+    # unrelated failure of the replication setup.
+    node.query("DROP DATABASE IF EXISTS mpg_right_ca")
+    node.query(
+        f"""
+        CREATE DATABASE mpg_right_ca
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', 'postgres', 'postgres', '{pg_pass}')
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}',
+            materialized_postgresql_tables_list = 'db_wrong_ca_table'
+        """,
+        settings={"allow_experimental_database_materialized_postgresql": 1},
+    )
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_right_ca.db_wrong_ca_table").strip() == "20",
+        120,
+        "MaterializedPostgreSQL initial sync with the correct CA",
+    )
+    node.query("DROP DATABASE mpg_right_ca")
 
 
 def test_relative_certificate_path_is_resolved_against_user_files(started_cluster):
