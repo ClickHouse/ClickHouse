@@ -22,7 +22,7 @@ LEFT JOIN rdb_str_pk USING (key) ORDER BY key NULLS LAST, value;
 -- Confirm DirectKeyValueJoin is still picked (mismatch would imply a regression
 -- where `tryDirectJoin` declined to handle the Nullable left key).
 SELECT 'explain';
-SELECT trim(explain) FROM (
+SELECT extract(explain, 'Algorithm: \\w+') FROM (
     EXPLAIN actions = 1
     SELECT key, value FROM (SELECT k AS key FROM t_null) AS t
     INNER JOIN rdb_str_pk USING (key)

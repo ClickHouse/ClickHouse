@@ -32,14 +32,14 @@ LEFT JOIN km_str USING (key) ORDER BY key NULLS LAST, value;
 -- Confirm `DirectKeyValueJoin` is picked for both the plain and the `Nullable` left key, so the
 -- result checks above really exercise `StorageKeeperMap::getByKeys` rather than a hash join fallback.
 SELECT 'explain plain';
-SELECT trim(explain) FROM (
+SELECT extract(explain, 'Algorithm: \\w+') FROM (
     EXPLAIN actions = 1
     SELECT key, value FROM (SELECT k AS key FROM t_str) AS t
     INNER JOIN km_str USING (key)
 ) WHERE explain LIKE '%Algorithm:%';
 
 SELECT 'explain nullable';
-SELECT trim(explain) FROM (
+SELECT extract(explain, 'Algorithm: \\w+') FROM (
     EXPLAIN actions = 1
     SELECT key, value FROM (SELECT k AS key FROM t_null) AS t
     INNER JOIN km_str USING (key)
