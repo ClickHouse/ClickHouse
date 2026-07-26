@@ -185,6 +185,8 @@ When reading Array from CSV, expect that its elements were serialized in nested 
 
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 
+This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
+
 ## input_format_csv_detect_header {#input_format_csv_detect_header}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -309,9 +311,9 @@ Force initialize omitted fields with null values
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (GeometryCollection, MultiPoint)"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "New setting that controls handling of GeoJSON geometry types that cannot be represented in the Geometry type (such as GeometryCollection)"}]}]}/>
 
-Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection`) must be stored in the `geometry` column while reading `GeoJSON` input.
 
 Possible values:
 - `'throw'` (default) — throw an exception.
@@ -815,12 +817,6 @@ Batch size when reading ORC stripes.
 
 Skip columns with unsupported types while schema inference for format ORC
 
-## input_format_orc_use_fast_decoder {#input_format_orc_use_fast_decoder}
-
-<SettingsInfoBlock type="Bool" default_value="1" />
-
-Use a faster ORC decoder implementation.
-
 ## input_format_parallel_parsing {#input_format_parallel_parsing}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -838,7 +834,7 @@ Possible values:
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "A new setting to use geo columns in parquet file"}]}]}/>
 
-Use geo column parser to convert Array(UInt8) into Point/Linestring/Polygon/MultiLineString/MultiPolygon types
+Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
 
 ## input_format_parquet_allow_missing_columns {#input_format_parquet_allow_missing_columns}
 
