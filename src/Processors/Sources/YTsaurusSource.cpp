@@ -101,7 +101,8 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
     const SharedHeader & sample_block_,
     const UInt64 & max_block_size_,
     bool format_skip_unknown_columns_,
-    VectorWithMemoryTracking<Block> lookup_input_blocks_,
+    Block lookup_input_block_,
+    size_t lookup_max_rows_per_query_,
     ThrottlerPtr lookup_throttler_,
     YTsaurusTableLockPtr table_lock_)
     : ISource(sample_block_)
@@ -110,7 +111,8 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
     , sample_block(sample_block_)
     , max_block_size(max_block_size_)
     , format_settings({.skip_unknown_fields = format_skip_unknown_columns_})
-    , lookup_input_blocks(std::move(lookup_input_blocks_))
+    , lookup_input_block(std::move(lookup_input_block_))
+    , lookup_max_rows_per_query(lookup_max_rows_per_query_)
     , lookup_throttler(std::move(lookup_throttler_))
     , table_lock(table_lock_)
 {
@@ -119,15 +121,22 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
 
 Chunk YTsaurusTableSourceDynamicTableLookup::generate()
 {
+    const size_t total_rows = lookup_input_block.rows();
     while (true)
     {
         if (!json_row_format)
         {
-            if (next_block_index >= lookup_input_blocks.size())
+            const size_t chunk_rows = lookupChunkRows(total_rows, next_row, lookup_max_rows_per_query);
+            if (!chunk_rows)
                 return {};
 
-            read_buffer = client->lookupRows(cypress_path, lookup_input_blocks[next_block_index], lookup_throttler);
-            ++next_block_index;
+            /// The payload of a single request is cut out lazily: `lookupRows` copies the (shallow) block into its
+            /// request callback, so the slice does not have to outlive this call.
+            const Block lookup_input_chunk = chunk_rows == total_rows
+                ? lookup_input_block
+                : lookup_input_block.cloneWithCutColumns(next_row, chunk_rows);
+            read_buffer = client->lookupRows(cypress_path, lookup_input_chunk, lookup_throttler);
+            next_row += chunk_rows;
             json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
                 *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
         }
@@ -199,28 +208,35 @@ Pipe createPipeForDynamicTable(
     UInt64 max_block_size)
 {
     bool use_lookups = !source_options.settings[YTsaurusSetting::force_read_table]
-                       && source_options.lookup_input_blocks.has_value();
+                       && source_options.lookup_input_block.has_value();
     bool skip_unknown_columns = source_options.settings[YTsaurusSetting::skip_unknown_columns];
 
     if (use_lookups)
     {
-        if (source_options.lookup_input_blocks->empty())
+        /// An empty key set must stay a no-op: no `lookup_rows` request is issued for it, so it consumes no
+        /// throttler token either.
+        const size_t lookup_rows = source_options.lookup_input_block->rows();
+        if (!lookup_rows)
             return Pipe(std::make_shared<NullSource>(sample_block));
 
-        LOG_DEBUG(::getLogger("YTsaurusSourceFactory"),
-        "Will read dynamic table {} in lookup mode with {} lookup requests",
-            cypress_path, source_options.lookup_input_blocks->size());
+        const size_t lookup_max_rows_per_query = source_options.settings[YTsaurusSetting::lookup_max_rows_per_query];
 
-        /// A single source issues the lookup requests one by one: materializing one source per
-        /// chunk would create an unbounded number of pipeline sources when
-        /// `lookup_max_rows_per_query` is small relative to the number of requested keys.
+        LOG_DEBUG(::getLogger("YTsaurusSourceFactory"),
+        "Will read dynamic table {} in lookup mode with {} rows split by at most {} rows per request",
+            cypress_path, lookup_rows, lookup_max_rows_per_query);
+
+        /// A single source issues the lookup requests one by one, cutting each request payload out of the whole
+        /// lookup input only right before the request: materializing one source (or one `Block`) per chunk would
+        /// scale with the number of chunks when `lookup_max_rows_per_query` is small relative to the number of
+        /// requested keys.
         return Pipe(std::make_shared<YTsaurusTableSourceDynamicTableLookup>(
             client,
             cypress_path,
             sample_block,
             max_block_size,
             skip_unknown_columns,
-            std::move(*source_options.lookup_input_blocks),
+            std::move(*source_options.lookup_input_block),
+            lookup_max_rows_per_query,
             source_options.lookup_throttler,
             source_options.table_lock));
     }

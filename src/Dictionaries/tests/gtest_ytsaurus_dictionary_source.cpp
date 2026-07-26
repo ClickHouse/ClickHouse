@@ -4,54 +4,42 @@
 
 #if USE_YTSAURUS
 
-#include <Dictionaries/YTsaurusDictionarySource.h>
+#include <Processors/Sources/YTsaurusSource.h>
 
 #include <base/types.h>
 
 using namespace DB;
 
-namespace
+/// Regression test for the empty-input no-op invariant of a YTsaurus selective load.
+/// An empty key set must produce zero `lookup_rows` requests, so that no throttler token is consumed and no empty
+/// request is sent to YTsaurus. This must also hold for the unlimited case (`chunk_size == 0`).
+TEST(YTsaurusDictionarySource, LookupChunkRowsEmptyInputProducesNoRequest)
 {
-using Vec = VectorWithMemoryTracking<UInt64>;
+    EXPECT_EQ(lookupChunkRows(0, 0, 0), 0u);
+    EXPECT_EQ(lookupChunkRows(0, 0, 1), 0u);
+    EXPECT_EQ(lookupChunkRows(0, 0, 100), 0u);
 }
 
-/// Regression test for the empty-input no-op invariant of `divideVectorByChunkSize`.
-/// An empty selective load must produce zero chunks (and therefore zero lookup blocks), so that
-/// `YTsaurusSourceFactory::createPipe` issues no `lookup_rows` request and consumes no throttler token.
-/// This must also hold for the unlimited case (`chunk_size == 0`), which previously returned one empty
-/// chunk for an empty input and thus bypassed the empty-batch guard.
-TEST(YTsaurusDictionarySource, DivideEmptyInputProducesNoChunks)
+TEST(YTsaurusDictionarySource, LookupChunkRowsUnlimitedChunkSizeIsASingleRequest)
 {
-    EXPECT_TRUE(divideVectorByChunkSize(Vec{}, 0).empty());
-    EXPECT_TRUE(divideVectorByChunkSize(Vec{}, 1).empty());
-    EXPECT_TRUE(divideVectorByChunkSize(Vec{}, 100).empty());
+    EXPECT_EQ(lookupChunkRows(5, 0, 0), 5u);
+    EXPECT_EQ(lookupChunkRows(5, 5, 0), 0u);
 }
 
-TEST(YTsaurusDictionarySource, DivideUnlimitedChunkSizeReturnsSingleChunk)
+TEST(YTsaurusDictionarySource, LookupChunkRowsSplitsRowsIntoRequests)
 {
-    const Vec input{1, 2, 3, 4, 5};
-    const auto chunks = divideVectorByChunkSize(input, 0);
-    ASSERT_EQ(chunks.size(), 1u);
-    EXPECT_EQ(chunks[0], input);
-}
+    /// 5 rows with at most 2 rows per request: 2, 2, 1 and then nothing left.
+    EXPECT_EQ(lookupChunkRows(5, 0, 2), 2u);
+    EXPECT_EQ(lookupChunkRows(5, 2, 2), 2u);
+    EXPECT_EQ(lookupChunkRows(5, 4, 2), 1u);
+    EXPECT_EQ(lookupChunkRows(5, 5, 2), 0u);
 
-TEST(YTsaurusDictionarySource, DivideSplitsIntoChunks)
-{
-    const Vec input{1, 2, 3, 4, 5};
+    /// A chunk size equal to or larger than the input is a single request.
+    EXPECT_EQ(lookupChunkRows(5, 0, 5), 5u);
+    EXPECT_EQ(lookupChunkRows(5, 0, 10), 5u);
 
-    const auto chunks = divideVectorByChunkSize(input, 2);
-    ASSERT_EQ(chunks.size(), 3u);
-    EXPECT_EQ(chunks[0], (Vec{1, 2}));
-    EXPECT_EQ(chunks[1], (Vec{3, 4}));
-    EXPECT_EQ(chunks[2], (Vec{5}));
-
-    const auto exact = divideVectorByChunkSize(input, 5);
-    ASSERT_EQ(exact.size(), 1u);
-    EXPECT_EQ(exact[0], input);
-
-    const auto larger = divideVectorByChunkSize(input, 10);
-    ASSERT_EQ(larger.size(), 1u);
-    EXPECT_EQ(larger[0], input);
+    /// The offset never exceeds the number of rows, but an out of range offset must stay a no-op anyway.
+    EXPECT_EQ(lookupChunkRows(5, 100, 2), 0u);
 }
 
 #endif

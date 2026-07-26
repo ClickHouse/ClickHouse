@@ -91,6 +91,7 @@ void registerDictionarySourceYTsaurus(DictionarySourceFactory & factory)
             configuration->oauth_token = config.getString(config_prefix + ".oauth_token");
             if (config.has(config_prefix + ".ytsaurus_columns_description"))
                 configuration->ytsaurus_columns_description = config.getString(config_prefix + ".ytsaurus_columns_description");
+            configuration->validate();
         }
 
         return std::make_unique<YTsarususDictionarySource>(context, dict_struct, std::move(configuration), sample_block, name);
@@ -195,18 +196,14 @@ BlockIO YTsarususDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Can't make selective update of YTsaurus dictionary because data source doesn't supports lookups.");
 
     BlockIO io;
-    auto ids_vectors = divideVectorByChunkSize(ids, configuration->settings[YTsaurusSetting::lookup_max_rows_per_query]);
-    VectorWithMemoryTracking<Block> lookup_blocks;
-    for (const auto & ids_chunk : ids_vectors)
-    {
-        lookup_blocks.push_back(blockForIds(dict_struct, ids_chunk));
-    }
+    /// The whole set of the requested ids is passed as a single block; it is the source that splits it into
+    /// `lookup_max_rows_per_query` sized requests, so a small chunk size does not multiply the memory usage here.
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
         client
         , configuration->cypress_path
         , {
               .settings = configuration->settings
-            , .lookup_input_blocks = std::move(lookup_blocks)
+            , .lookup_input_block = blockForIds(dict_struct, ids)
             , .check_types_allow_nullable = true
             , .lookup_throttler = lookup_throttler
             }
@@ -229,29 +226,16 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
     if (key_columns.size() != dict_struct.key->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
-    /// `blockForKeys` scans the whole key columns on every call, so it is called only once for all
-    /// requested rows, and the resulting block is sliced into chunks; this keeps the total work
-    /// linear in the number of requested rows regardless of `lookup_max_rows_per_query`.
-    VectorWithMemoryTracking<Block> lookup_blocks;
-    if (!requested_rows.empty())
-    {
-        const Block block_for_all_keys = blockForKeys(dict_struct, key_columns, requested_rows);
-        const size_t chunk_size = configuration->settings[YTsaurusSetting::lookup_max_rows_per_query];
-        const size_t total_rows = block_for_all_keys.rows();
-        if (!chunk_size || total_rows <= chunk_size)
-            lookup_blocks.push_back(block_for_all_keys);
-        else
-            for (size_t offset = 0; offset < total_rows; offset += chunk_size)
-                lookup_blocks.push_back(block_for_all_keys.cloneWithCutColumns(offset, std::min(chunk_size, total_rows - offset)));
-    }
-
+    /// `blockForKeys` scans the whole key columns on every call, so it is called only once for all requested rows;
+    /// the resulting block is split into `lookup_max_rows_per_query` sized requests by the source itself, which keeps
+    /// both the total work and the memory usage linear in the number of requested rows regardless of the chunk size.
     BlockIO io;
     io.pipeline = QueryPipeline(YTsaurusSourceFactory::createPipe(
           client
         , configuration->cypress_path
         , {
               .settings = configuration->settings
-            , .lookup_input_blocks = std::move(lookup_blocks)
+            , .lookup_input_block = blockForKeys(dict_struct, key_columns, requested_rows)
             , .check_types_allow_nullable = true
             , .lookup_throttler = lookup_throttler
         }

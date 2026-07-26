@@ -9,7 +9,7 @@
 #include <Processors/Formats/Impl/JSONEachRowRowInputFormat.h>
 #include <Storages/YTsaurus/YTsaurusSettings.h>
 #include <QueryPipeline/Pipe.h>
-#include <Common/VectorWithMemoryTracking.h>
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <memory>
@@ -17,10 +17,24 @@
 namespace DB
 {
 
+/// Number of rows of the next `lookup_rows` request payload that starts at row `offset` of a lookup input block with
+/// `total_rows` rows. `chunk_size == 0` means unlimited, i.e. all the remaining rows go into a single request.
+/// Returns zero when there is nothing left to request, so an empty input never produces a request at all.
+inline size_t lookupChunkRows(size_t total_rows, size_t offset, size_t chunk_size)
+{
+    if (offset >= total_rows)
+        return 0;
+    const size_t rows_left = total_rows - offset;
+    return chunk_size ? std::min(chunk_size, rows_left) : rows_left;
+}
+
 struct YTsaurusTableSourceOptions
 {
     YTsaurusSettings settings;
-    std::optional<VectorWithMemoryTracking<Block>> lookup_input_blocks = std::nullopt;
+    /// The whole payload of a selective load. It is split into `lookup_max_rows_per_query` sized requests lazily by
+    /// `YTsaurusTableSourceDynamicTableLookup`, so neither the number of pipeline sources nor the number of
+    /// materialized `Block` objects depends on the chunk size.
+    std::optional<Block> lookup_input_block = std::nullopt;
     std::optional<String> select_rows_columns = std::nullopt;
     YTsaurusTableLockPtr table_lock = nullptr;
     bool check_types_allow_nullable = false;
@@ -88,7 +102,8 @@ public:
         const SharedHeader & sample_block_,
         const UInt64 & max_block_size_,
         bool format_skip_unknown_columns_,
-        VectorWithMemoryTracking<Block> lookup_input_blocks_,
+        Block lookup_input_block_,
+        size_t lookup_max_rows_per_query_,
         ThrottlerPtr lookup_throttler_,
         YTsaurusTableLockPtr table_lock_);
     ~YTsaurusTableSourceDynamicTableLookup() override = default;
@@ -103,11 +118,12 @@ private:
     const SharedHeader sample_block;
     UInt64 max_block_size;
     FormatSettings format_settings;
-    /// Each block is one `lookup_rows` request of at most `lookup_max_rows_per_query` keys.
-    /// A single source processes them sequentially so that the number of pipeline sources
-    /// does not depend on the number of chunks.
-    VectorWithMemoryTracking<Block> lookup_input_blocks;
-    size_t next_block_index = 0;
+    /// The whole lookup payload. A single source issues the `lookup_rows` requests for its slices of at most
+    /// `lookup_max_rows_per_query` rows sequentially, cutting every slice out only right before its request, so that
+    /// neither the number of pipeline sources nor the amount of memory held at once depends on the chunk size.
+    Block lookup_input_block;
+    size_t lookup_max_rows_per_query;
+    size_t next_row = 0;
     ThrottlerPtr lookup_throttler;
     YTsaurusTableLockPtr table_lock;
     ReadBufferPtr read_buffer;
