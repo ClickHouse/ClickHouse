@@ -17,5 +17,7 @@ b	B
 c	C
 d	
 \N	
-explain
+explain plain
+Algorithm: DirectKeyValueJoin
+explain nullable
 Algorithm: DirectKeyValueJoin

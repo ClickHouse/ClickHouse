@@ -1,8 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database
 
 DROP TABLE IF EXISTS km_str SYNC;
-DROP TABLE IF EXISTS km_str_null SYNC;
-DROP TABLE IF EXISTS km_str_lc SYNC;
 DROP TABLE IF EXISTS t_str;
 DROP TABLE IF EXISTS t_null;
 
@@ -31,10 +29,19 @@ SELECT 'nullable left left';
 SELECT key, value FROM (SELECT k AS key FROM t_null) AS t
 LEFT JOIN km_str USING (key) ORDER BY key NULLS LAST, value;
 
-SELECT 'explain';
+-- Confirm `DirectKeyValueJoin` is picked for both the plain and the `Nullable` left key, so the
+-- result checks above really exercise `StorageKeeperMap::getByKeys` rather than a hash join fallback.
+SELECT 'explain plain';
 SELECT trim(explain) FROM (
     EXPLAIN actions = 1
     SELECT key, value FROM (SELECT k AS key FROM t_str) AS t
+    INNER JOIN km_str USING (key)
+) WHERE explain LIKE '%Algorithm:%';
+
+SELECT 'explain nullable';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT key, value FROM (SELECT k AS key FROM t_null) AS t
     INNER JOIN km_str USING (key)
 ) WHERE explain LIKE '%Algorithm:%';
 
