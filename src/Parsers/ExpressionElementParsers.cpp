@@ -1422,11 +1422,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
         ReadBufferFromMemory in(pos->begin, pos->size());
 
-        try
-        {
-            readQuotedStringWithSQLStyle(s, in);
-        }
-        catch (const Exception &)
+        if (!tryReadQuotedStringWithSQLStyle(s, in))
         {
             expected.add(pos, "string literal");
             return false;
