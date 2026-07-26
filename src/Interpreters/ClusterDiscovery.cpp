@@ -779,6 +779,8 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
                 continue;
             }
             auto & cluster_info = cluster_info_it->second;
+            auto zk = context->getDefaultOrAuxiliaryZooKeeper(cluster_info.zk_name);
+            registerInZk(zk, cluster_info);
             if (upsertCluster(cluster_info))
             {
                 cluster_info.watch.restart();
