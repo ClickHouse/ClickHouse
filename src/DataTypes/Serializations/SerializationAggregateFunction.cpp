@@ -233,6 +233,61 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     createStateFromValues(function, column, arg_columns, tmp_column->size());
 }
 
+/// Backward compatibility for the legacy string-wrapped `value` form of `JSONEachRow` and friends, e.g.
+/// `{"x": "\\N"}` (see the comment in `deserializeTextJSON`). Released parsed the unwrapped content with the
+/// argument type's `deserializeTextCSV`, and for a `Nullable` argument that parse recognizes forms the
+/// whole-text parse of the same content does not: see `deserializeFromSingleNullableArgumentLegacyValue`.
+bool useLegacyNullableValueParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
+{
+    if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Value)
+        return false;
+
+    const auto & argument_types = function->getArgumentTypes();
+    if (argument_types.size() != 1)
+        return false;
+
+    return argument_types[0]->isNullable() || argument_types[0]->isLowCardinalityNullable();
+}
+
+void deserializeFromSingleNullableArgumentLegacyValue(
+    IColumn & column, const String & value, const FormatSettings & settings, const AggregateFunctionPtr & function)
+{
+    const auto & argument_types = function->getArgumentTypes();
+    chassert(argument_types.size() == 1);
+
+    const auto & value_type = argument_types[0];
+    const auto tmp_column = value_type->createColumn();
+    const auto nested_type = removeNullable(removeLowCardinality(value_type));
+
+    if (value == settings.csv.null_representation)
+    {
+        /// The released CSV parse of the unwrapped content produced a null for the CSV null representation
+        /// (`\N` by default), which the whole-text parse of a `Nullable` does not recognize.
+        tmp_column->insert(Null());
+    }
+    else if (isStringOrFixedString(nested_type) || isEnum(nested_type))
+    {
+        /// The released CSV parse only ever produced a null for the CSV null representation handled above:
+        /// for string-like nested types every other content was a plain value, including `NULL` and `null`
+        /// (`{"x": "NULL"}` inserted the string 'NULL'). The whole-text parse of a `Nullable` would turn
+        /// those two words into a null instead, so parse the content as the nested type here.
+        const auto nested_column = nested_type->createColumn();
+        ReadBufferFromString buf(value);
+        nested_type->getDefaultSerialization()->deserializeWholeText(*nested_column, buf, settings);
+        tmp_column->insert((*nested_column)[0]);
+    }
+    else
+    {
+        /// For the remaining nested types the released CSV parse of `NULL` produced a default value rather
+        /// than a null, so accepting the `NULL` keyword of the whole-text parse only adds a form.
+        ReadBufferFromString buf(value);
+        value_type->getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
+    }
+
+    const IColumn * arg_columns[1] = {tmp_column.get()};
+    createStateFromValues(function, column, arg_columns, 1);
+}
+
 }
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
@@ -455,11 +510,22 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
     /// `JSON` type itself has no native quoted-token form (a JSON document root must be an object, so e.g.
     /// `{"x": "hello"}` is rejected for plain `JSON` columns as well), while its released string-wrapped
     /// object form `{"x": "{\"a\":1}"}` only works through this branch.
+    /// The one released form the whole-text parse of the unwrapped content does not reproduce is a
+    /// `Nullable` single argument: released parsed the content with `deserializeTextCSV`, which recognizes
+    /// the CSV null representation (`\N` by default) and never treats `NULL` as a null for string-like
+    /// nested types, so those two forms are handled separately below.
     skipWhitespaceIfAny(istr);
     if (!istr.eof() && *istr.position() == '"')
     {
         String s;
         readJSONString(s, istr, settings.json);
+
+        if (useLegacyNullableValueParsing(function, settings))
+        {
+            deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
+            return;
+        }
+
         ReadBufferFromString str_buf(s);
         deserializeWholeText(column, str_buf, settings);
         return;
