@@ -40,6 +40,15 @@
             <read_write_timeout>20123001</read_write_timeout>
             <connect_timeout>20123002</connect_timeout>
         </mysql_with_settings>
+        <mysql_no_geo_types>
+            <user>root</user>
+            <password>ClickHouse_MySQL_P@ssw0rd</password>
+            <host>mysql80</host>
+            <port>3306</port>
+            <database>clickhouse</database>
+            <table>test_mysql_geometry</table>
+            <mysql_datatypes_support_level>decimal,datetime64,date2Date32</mysql_datatypes_support_level>
+        </mysql_no_geo_types>
         <mysql_with_ssl>
             <user>ssl_user</user>
             <password></password>

@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_QUERY;
 }
 
 namespace
@@ -36,6 +37,10 @@ public:
     static constexpr auto name = "sqlite";
     std::string getName() const override { return name; }
 
+    /// The 2nd argument may be a query passed to SQLite as is - a subquery `(SELECT ...)` or `query('SELECT ...')`.
+    /// Such an argument must not be analyzed as an ordinary expression.
+    VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr &, ContextPtr) const override { return {1}; }
+
 private:
     StoragePtr executeImpl(
             const ASTPtr & ast_function, ContextPtr context,
@@ -46,17 +51,24 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    String database_path, remote_table_name;
+    String database_path;
+    TableNameOrQuery remote_table_or_query;
     std::shared_ptr<sqlite3> sqlite_db;
 };
 
 StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
-        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool /*is_insert_query*/) const
+        ContextPtr context, const String & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
+    /// Reject the insert before constructing the storage, so that read-only query-backed sources do not run
+    /// schema inference (preparing the user's query against SQLite) only to fail.
+    if (is_insert_query && remote_table_or_query.isQuery())
+        throw Exception(ErrorCodes::INCORRECT_QUERY,
+            "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
+
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
                                          sqlite_db,
                                          database_path,
-                                         remote_table_name,
+                                         remote_table_or_query,
                                          cached_columns, ConstraintsDescription{}, /* comment = */ "", context);
 
     storage->startup();
@@ -66,7 +78,11 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
 
 ColumnsDescription TableFunctionSQLite::getActualTableStructure(ContextPtr /* context */, bool /*is_insert_query*/) const
 {
-    return StorageSQLite::getTableStructureFromData(sqlite_db, remote_table_name);
+    /// A query-backed insert is rejected in executeImpl, which is the only path taken by INSERT INTO TABLE
+    /// FUNCTION (it is called with empty cached columns, before any external contact). It must not be rejected
+    /// here, because DESCRIBE TABLE also calls getActualTableStructure with is_insert_query = true and must
+    /// keep returning the inferred structure.
+    return StorageSQLite::getTableStructureFromData(sqlite_db, remote_table_or_query);
 }
 
 
@@ -80,13 +96,23 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
     ASTs & args = func_args.arguments->children;
 
     if (args.size() != 2)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name");
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "SQLite database requires 2 arguments: database path, table name (or query)");
 
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
+    /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
+    auto maybe_query = tryGetExternalDatabaseQuery(
+        args[1], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::Regular);
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        if (i == 1 && maybe_query)
+            continue;
+        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    }
 
     database_path = checkAndGetLiteralArgument<String>(args[0], "database_path");
-    remote_table_name = checkAndGetLiteralArgument<String>(args[1], "table_name");
+    if (maybe_query)
+        remote_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::QUERY, *maybe_query);
+    else
+        remote_table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, checkAndGetLiteralArgument<String>(args[1], "table_name"));
 
     sqlite_db = openSQLiteDB(database_path, context);
 }
@@ -95,7 +121,60 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
 void registerTableFunctionSQLite(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionSQLite>({});
+    factory.registerFunction<TableFunctionSQLite>({.description = R"DOCS_MD(
+Allows to perform queries on data stored in a [SQLite](/reference/engines/database-engines/sqlite) database.
+
+## Syntax {#syntax}
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+## Arguments {#arguments}
+
+- `db_path` — Path to a file with an SQLite database. [String](/reference/data-types/string).
+- `table_name` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)). [String](/reference/data-types/string).
+
+## Returned value {#returned_value}
+
+- A table object with the same columns as in the original `SQLite` table.
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the second argument can be a `SELECT` query that is passed to SQLite as is. The structure of the resulting table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+SELECT * FROM sqlite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
+SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
+```
+
+Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`SQLite`](/reference/engines/table-engines/integrations/sqlite) table engine.
+
+<Note>
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized before being sent to SQLite. It must therefore be valid ClickHouse SQL. To pass SQLite-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to SQLite verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/reference/settings/session-settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+</Note>
+
+## Example {#example}
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+## Related {#related}
+
+- [SQLite](/reference/engines/table-engines/integrations/sqlite) table engine
+- [SQLite database engine](/reference/engines/database-engines/sqlite) — Data types support section
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }

@@ -1,0 +1,84 @@
+---
+description: 'Rust 라이브러리를 ClickHouse에 통합하는 가이드'
+sidebarTitle: 'Rust 라이브러리'
+slug: /development/integrating_rust_libraries
+title: 'Rust 라이브러리 통합'
+doc_type: 'guide'
+---
+
+Rust 라이브러리 통합은 BLAKE3 해시 함수 통합을 예시로 설명합니다.
+
+통합의 첫 단계는 라이브러리를 /rust 폴더에 추가하는 것입니다. 이를 위해 빈 Rust 프로젝트를 만들고 Cargo.toml에 필요한 라이브러리를 포함해야 합니다. 또한 Cargo.toml에 `crate-type = ["staticlib"]`를 추가해 새 라이브러리가 정적 라이브러리로 컴파일되도록 설정해야 합니다.
+
+다음으로, Corrosion 라이브러리를 사용해 해당 라이브러리를 CMake에 연결해야 합니다. 첫 단계는 /rust 폴더 내부의 CMakeLists.txt에 라이브러리 폴더를 추가하는 것입니다. 그런 다음 라이브러리 디렉터리에 CMakeLists.txt 파일을 추가해야 합니다. 이 파일에서 Corrosion import 함수를 호출해야 합니다. BLAKE3를 가져오기 위해 다음 줄을 사용했습니다:
+
+```CMake
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+따라서 Corrosion을 사용해 올바른 CMake 타깃을 만든 다음, 더 편리한 이름으로 변경합니다. `_ch_rust_blake3`라는 이름은 Cargo.toml에서 온 것으로, 그곳에서 프로젝트 이름(`name = "_ch_rust_blake3"`)으로 사용된다는 점에 유의하십시오.
+
+Rust 데이터 타입은 C/C++ 데이터 타입과 호환되지 않으므로, 비어 있는 라이브러리 프로젝트를 사용해 C/C++에서 전달받은 데이터를 변환하고, 라이브러리 메서드를 호출하며, 출력 데이터를 다시 변환하는 shim 메서드를 만듭니다. 예를 들어, BLAKE3에는 다음과 같은 메서드를 작성했습니다:
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+이 메서드는 C 호환 문자열, 해당 크기, 그리고 출력 문자열 포인터를 입력으로 받습니다. 그런 다음 C 호환 입력값을 실제 라이브러리 메서드에서 사용하는 타입으로 변환한 뒤 해당 메서드를 호출합니다. 이후에는 라이브러리 메서드의 출력을 다시 C 호환 타입으로 변환해야 합니다. 하지만 이 경우에는 라이브러리가 `fill()` 메서드를 통해 포인터에 직접 쓸 수 있도록 지원하므로 변환이 필요하지 않았습니다. 여기서 핵심 권장 사항은 메서드 수를 최소화하는 것입니다. 그래야 각 메서드 호출 시 수행해야 하는 변환이 줄어들고 오버헤드도 크게 늘어나지 않습니다.
+
+`#[no_mangle]` 속성과 `extern "C"`는 이러한 모든 메서드에 반드시 필요하다는 점도 알아두어야 합니다. 이것들이 없으면 올바른 C/C++ 호환 컴파일을 수행할 수 없습니다. 또한 이는 통합의 다음 단계에도 필요합니다.
+
+shim 메서드용 코드를 작성한 후에는 라이브러리용 헤더 파일을 준비해야 합니다. 이는 수동으로 할 수도 있고, 자동 생성을 위해 cbindgen 라이브러리를 사용할 수도 있습니다. cbindgen을 사용하는 경우에는 build.rs 빌드 스크립트를 작성하고 cbindgen을 build-dependency로 포함해야 합니다.
+
+헤더 파일을 자동 생성할 수 있는 빌드 스크립트 예시:
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+또한 C와 호환되는 모든 속성에는 #[no&#95;mangle] 속성과 `extern "C"`를 사용해야 합니다. 이를 사용하지 않으면 라이브러리가 잘못 컴파일될 수 있으며, cbindgen이 헤더 자동 생성을 시작하지 못합니다.
+
+이 모든 단계를 마친 후에는 작은 프로젝트에서 라이브러리를 테스트하여 호환성이나 헤더 생성과 관련된 문제를 모두 찾아볼 수 있습니다. 헤더 생성 중 문제가 발생하면 `cbindgen.toml` 파일로 설정을 조정해 볼 수 있습니다(템플릿은 여기에서 확인할 수 있습니다: [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
+
+BLAKE3를 통합할 때 발생한 문제도 언급할 만합니다:
+MemorySanitizer는 Rust에서 일부 변수가 초기화되었는지 확인하지 못하므로 거짓 양성(false positive) 보고가 발생할 수 있습니다. 이 문제는 일부 변수에 대해 더 명확하게 정의된 메서드를 작성하여 해결했지만, 이 메서드 구현은 더 느리며 MemorySanitizer builds를 수정하기 위한 용도로만 사용됩니다.

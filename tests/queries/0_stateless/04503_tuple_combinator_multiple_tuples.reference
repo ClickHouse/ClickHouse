@@ -1,0 +1,18 @@
+two tuples
+(1,-1)
+(1.667,15)
+element names come from the first tuple
+(1,-1)	Tuple(\n    a Float64,\n    b Float64)
+state and merge
+(1,-1)
+composition with -If
+(5,5)
+only-null element in one tuple
+(NULL,-1)
+sparse elements with two tuples
+(1,1)
+(1,1)
+mixed sparse and dense elements with two tuples
+(3.962,1.999)
+3961.363	1998.201
+errors

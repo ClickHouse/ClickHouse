@@ -29,6 +29,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
+        zlib1g-dev \
         python3-boto3 \
         yasm \
         zstd \
@@ -44,7 +45,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
 # Optional PGO+BOLT optimized toolchain override
-ARG TOOLCHAIN_COMMIT=19da6af712ebc2678cc34b8f2f4251e8056766ba
+ARG TOOLCHAIN_COMMIT=9ba77fe643bd2b46b341a07320cf9b95a3e87384
 RUN if [ "$TOOLCHAIN_COMMIT" != "none" ]; then \
     arch=${TARGETARCH:-amd64} && \
     case $arch in \

@@ -3,6 +3,7 @@
 #include <IO/LocalSourceReader.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Common/CurrentMetrics.h>
 
 #include <gtest/gtest.h>
 #include <fstream>
@@ -10,6 +11,11 @@
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace CurrentMetrics
+{
+    extern const Metric ReaderExecutorChainedBufferBytes;
+}
 
 using namespace DB;
 
@@ -51,7 +57,7 @@ protected:
     std::unique_ptr<PipelineReadBuffer> makeBuffer(const StoredObjects & objects, size_t block_size = 256)
     {
         auto executor = std::make_unique<ReaderExecutor>(
-            std::make_shared<LocalSourceReader>(), objects, block_size);
+            std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = block_size});
         return std::make_unique<PipelineReadBuffer>(std::move(executor));
     }
 };
@@ -226,6 +232,23 @@ TEST_F(PipelineReadBufferTest, ExtendReadUntilAfterTrimContinues)
     ASSERT_EQ(rest.size(), 1024u - 200u);            // [200, 1024)
     for (size_t i = 0; i < rest.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(rest[i]), patternByte(200 + i)) << "at logical " << (200 + i);
+}
+
+TEST_F(PipelineReadBufferTest, ChainedBufferBytesReturnToBaselineAtEOF)
+{
+    /// One window buffer is alive at a time while streaming, and EOF releases the last
+    /// one: window memory must not accumulate across refills.
+    const auto baseline = CurrentMetrics::get(CurrentMetrics::ReaderExecutorChainedBufferBytes);
+    auto buf = makeBuffer({makeFile("a.bin", 1024)}, /*block_size=*/256);
+
+    std::vector<char> data(256);
+    for (size_t window = 0; window < 4; ++window)
+    {
+        buf->readStrict(data.data(), data.size());
+        EXPECT_LE(CurrentMetrics::get(CurrentMetrics::ReaderExecutorChainedBufferBytes) - baseline, 256);
+    }
+    EXPECT_TRUE(buf->eof());
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::ReaderExecutorChainedBufferBytes), baseline);
 }
 
 }

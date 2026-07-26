@@ -1,0 +1,27 @@
+---
+title: Como ignorar configurações incorretas no ClickHouse
+description: Saiba como usar a opção `skip_check_for_incorrect_settings` para permitir que o ClickHouse inicie mesmo quando configuração no nível do usuário forem especificadas incorretamente.
+date: 2023-03-01
+tags: ['Configurações']
+keywords: ['Ignorar configurações incorretas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## Ignorando configurações incorretas no ClickHouse
+</div>
+
+Quando uma configuração no nível do usuário é especificada no lugar errado, o servidor não inicia e uma mensagem de exceção é enviada para o log. No entanto, você pode instruir o ClickHouse a ignorar a configuração incorreta usando a configuração `skip_check_for_incorrect_settings`.
+
+Adicione o seguinte a `config.xml`:
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  As configurações no nível do usuário devem ser especificadas em `users.xml`, dentro de uma seção `<profile>` para o perfil de usuário específico (ou em `<default>` para as configurações padrão).
+</Note>

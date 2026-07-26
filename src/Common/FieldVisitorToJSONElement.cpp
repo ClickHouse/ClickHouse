@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToJSONElement.h>
+#include <Common/checkStackSize.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -57,6 +58,7 @@ String FieldVisitorToJSONElement::operator() (const CustomType & x) const { retu
 
 String FieldVisitorToJSONElement::operator() (const Array & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
@@ -73,6 +75,7 @@ String FieldVisitorToJSONElement::operator() (const Array & x) const
 
 String FieldVisitorToJSONElement::operator() (const Tuple & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
@@ -89,6 +92,7 @@ String FieldVisitorToJSONElement::operator() (const Tuple & x) const
 
 String FieldVisitorToJSONElement::operator() (const Map & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '{';
@@ -107,6 +111,7 @@ String FieldVisitorToJSONElement::operator() (const Map & x) const
 
 String FieldVisitorToJSONElement::operator() (const Object & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '{';

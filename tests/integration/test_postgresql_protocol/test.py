@@ -13,7 +13,7 @@ import psycopg2 as py_psql
 import psycopg2.extras
 import pytest
 
-from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
+from helpers.cluster import ClickHouseCluster, get_docker_compose_path
 
 psycopg2.extras.register_uuid()
 
@@ -235,7 +235,7 @@ def test_psql_client_secure(started_cluster):
     )
 
     assert node.contains_in_log(
-        f"<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
+        "<Error> PostgreSQLHandler: DB::Exception: SSL connection required."
     )
 
 
@@ -356,7 +356,7 @@ def test_prepared_statement(started_cluster):
     assert cur.fetchall() == [(1,)]
 
     cur.execute("DEALLOCATE select_test;")
-    with pytest.raises(Exception) as exc:
+    with pytest.raises(Exception):
         cur.execute("EXECUTE select_test(1);")
 
 

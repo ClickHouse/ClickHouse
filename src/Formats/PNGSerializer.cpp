@@ -205,12 +205,15 @@ PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_se
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Image width and height must be greater than zero (got {}x{})", width, height);
 
-    /// The PNG specification stores width and height as 31-bit unsigned integers. Reject larger values here,
-    /// before allocating the buffer, so they cannot be silently truncated when later narrowed to `png_uint_32`.
-    static constexpr size_t MAX_IMAGE_DIMENSION = (size_t(1) << 31) - 1;
+    /// Reject absurdly large dimensions up front, before allocating the image buffer, with a clear message
+    /// naming the settings. This bounds the buffer size and keeps the width and height well within the
+    /// 4-byte range that the PNG header stores them in.
+    static constexpr size_t MAX_IMAGE_DIMENSION = 1000000;
     if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Image width and height must not exceed {} (got {}x{})", MAX_IMAGE_DIMENSION, width, height);
+            "Image width and height must not exceed {} (got {}x{}). "
+            "Reduce 'output_format_image_width'/'output_format_image_height'.",
+            MAX_IMAGE_DIMENSION, width, height);
 
     const size_t num_cols = header.columns();
     if (num_cols == 0)
@@ -364,7 +367,7 @@ void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_colum
     src_columns.clear();
     src_columns.reserve(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        src_columns.push_back(columns[i]->convertToFullIfNeeded());
+        src_columns.push_back(columns[i]->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
 }
 
 void PNGSerializer::Impl::writePixel(size_t x, size_t y, const UInt8 * components)

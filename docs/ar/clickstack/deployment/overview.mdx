@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: 'خيارات النشر'
+description: 'نشر ClickStack - حزمة المراقبة القائمة على ClickHouse'
+doc_type: 'reference'
+keywords: ['ClickStack', 'المراقبة']
+---
+
+يوفّر ClickStack عدة خيارات للنشر تناسب مختلف حالات الاستخدام.
+
+فيما يلي ملخص لكل خيار من خيارات النشر. ويوضح [دليل البدء](/ar/clickstack/getting-started/index) تحديدًا الخيارين 1 و2. وقد أُدرجا هنا لاستكمال الصورة.
+
+| الاسم              | الوصف                                                                                                  | مناسب لـ                                                                            | القيود                                                         | رابط المثال                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------------- |
+| Managed ClickStack | استضافة ClickHouse وواجهة ClickStack UI ‏(HyperDX) على ClickHouse Cloud.                               | عمليات النشر في بيئات production، والعروض التوضيحية، وإثباتات المفهوم               | لا شيء                                                         | [Managed](/ar/clickstack/deployment/managed)                  |
+| الكل في واحد       | حاوية Docker واحدة تضم جميع مكونات ClickStack.                                                         | عمليات النشر خارج بيئات production، والعروض التوضيحية، وإثباتات المفهوم             | غير موصى به لبيئات production                                  | [الكل في واحد](/ar/clickstack/deployment/all-in-one)          |
+| Helm               | مخطط Helm رسمي لعمليات النشر المستندة إلى Kubernetes. يدعم ClickHouse Cloud والتوسع لبيئات production. | عمليات النشر في بيئات production على Kubernetes                                     | يتطلب معرفة بـ Kubernetes، مع التخصيص عبر Helm                 | [Helm](/ar/clickstack/deployment/helm)                        |
+| Docker Compose     | انشر كل مكون من مكونات ClickStack بشكل منفصل عبر Docker Compose.                                       | الاختبار المحلي، وإثباتات المفهوم، وبيئات production على خادم واحد، وBYO ClickHouse | لا يدعم تحمل الأعطال، ويتطلب إدارة عدة حاويات                  | [Docker Compose](/ar/clickstack/deployment/docker-compose)    |
+| HyperDX فقط        | استخدم HyperDX بشكل مستقل مع ClickHouse والمخطط الخاص بك.                                              | مستخدمو ClickHouse الحاليون، وخطوط معالجة الأحداث المخصصة                           | لا يتضمن ClickHouse، ويجب على المستخدم إدارة الاستيعاب والمخطط | [HyperDX فقط](/ar/clickstack/deployment/hyperdx-only)         |
+| الوضع المحلي فقط   | يعمل بالكامل داخل المتصفح مع تخزين محلي. بلا backend أو استمرارية.                                     | العروض التوضيحية، واستكشاف الأخطاء وإصلاحها، والتطوير باستخدام HyperDX              | لا توجد مصادقة، ولا استمرارية، ولا تنبيهات، ولمستخدم واحد فقط  | [الوضع المحلي فقط](/ar/clickstack/deployment/local-mode-only) |

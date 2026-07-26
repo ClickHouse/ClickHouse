@@ -25,8 +25,11 @@ void BlockIO::reset()
       */
     /// TODO simplify it all
 
-    releaseQuerySlot();
+    /// Reset the pipeline before releasing workload resources: pipeline threads hold raw pointers
+    /// to `MemoryReservation` (see `WorkloadResources` in `PipelineExecutor`), so the reservation
+    /// must outlive them.
     resetPipeline(/*cancel=*/false);
+    releaseWorkloadResources();
     process_list_entries.clear();
 
     /// TODO Do we need also reset callbacks? In which order?
@@ -60,6 +63,13 @@ BlockIO::~BlockIO()
 
 void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
 {
+    /// Release the query slot as early as possible: until it is released the query keeps occupying a
+    /// concurrency slot even though the client already considers the query finished, which can needlessly
+    /// block the next query. This is safe while the pipeline is still running because pipeline threads do
+    /// not touch the query slot.
+    /// The memory reservation is different: pipeline threads hold raw pointers to it (see `WorkloadResources`
+    /// in `PipelineExecutor`) and read it until the pipeline is finalized below, so releasing it here would
+    /// be a data race. It is released a bit later instead — the extra hold is brief and harmless.
     releaseQuerySlot();
     if (finalize_query_pipeline)
     {
@@ -71,23 +81,30 @@ void BlockIO::onFinish(std::chrono::system_clock::time_point finish_time)
     }
     else
         resetPipeline(/*cancel=*/false);
+
+    /// Safe now: the pipeline (and its threads) have been finalized and joined.
+    releaseMemoryReservation();
 }
 
 void BlockIO::onException(bool log_as_error)
 {
-    releaseQuerySlot();
     setAllDataSent();
 
     for (const auto & callback : exception_callbacks)
         callback(log_as_error);
 
+    /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
+    /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
+    releaseWorkloadResources();
 }
 
 void BlockIO::onCancelOrConnectionLoss()
 {
-    releaseQuerySlot();
+    /// Stop the pipeline before releasing workload resources: pipeline threads hold raw
+    /// pointers to `MemoryReservation` and call `syncWithMemoryTracker` between processors.
     resetPipeline(/*cancel=*/true);
+    releaseWorkloadResources();
 }
 
 void BlockIO::setAllDataSent() const
@@ -101,13 +118,31 @@ void BlockIO::setAllDataSent() const
     }
 }
 
-void BlockIO::releaseQuerySlot() const
+void BlockIO::releaseWorkloadResources() const
 {
     /// If the query executed an external query, we need to release all query slots
     for (const auto & entry : process_list_entries)
     {
         if (entry)
+            entry->getQueryStatus()->releaseWorkloadResources();
+    }
+}
+
+void BlockIO::releaseQuerySlot() const
+{
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
             entry->getQueryStatus()->releaseQuerySlot();
+    }
+}
+
+void BlockIO::releaseMemoryReservation() const
+{
+    for (const auto & entry : process_list_entries)
+    {
+        if (entry)
+            entry->getQueryStatus()->releaseMemoryReservation();
     }
 }
 

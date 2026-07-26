@@ -19,6 +19,7 @@ the reference can be updated deliberately.
 
 import logging
 import textwrap
+import uuid
 from typing import Optional
 
 import pytest
@@ -83,6 +84,8 @@ DISTRIBUTED_SETTINGS = ", ".join([
     "query_plan_convert_any_join_to_semi_or_anti_join = 0",
     # Runtime filters are not yet implemented for distributed queries.
     "enable_join_runtime_filters = 0",
+    # To support old explain format
+    "explain_query_plan_default = 'legacy'",
 ])
 
 
@@ -163,6 +166,25 @@ def _create_tables_and_load_data():
         assert parts_count >= 2, (
             f"expected >= 2 active parts on {node.name}, got {parts_count}"
         )
+
+    # ReplacingMergeTree table for the parallel FINAL path: two overlapping batches (same ids, higher
+    # version wins) leave duplicate keys across two parts, so FINAL must deduplicate and the distributed
+    # read must split into primary-key-range layers across the workers.
+    for node in NODES:
+        node.query(
+            """
+            CREATE TABLE final_rep (id UInt64, v UInt64, ver UInt64)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/final_rep', '{replica}', ver)
+            ORDER BY id SETTINGS index_granularity = 256
+            """
+        )
+        node.query("SYSTEM STOP MERGES final_rep")
+
+    INITIATOR.query("INSERT INTO final_rep SELECT number, number, 1 FROM numbers(60000)")
+    INITIATOR.query("INSERT INTO final_rep SELECT number, number + 7, 2 FROM numbers(60000)")
+    for node in NODES:
+        node.query("SYSTEM SYNC REPLICA final_rep")
+        assert int(node.query("SELECT count() FROM final_rep").strip()) == 120_000
 
 
 def _explain_and_check(query: str, settings: str, expected_plan: str):
@@ -290,6 +312,78 @@ def test_parallel_read_missing_part_on_worker_errors(started_cluster):
 
 
 @EXCHANGE_KINDS
+def test_final_parallel_read(started_cluster, exchange_kind):
+    """A FINAL scan of a ReplacingMergeTree splits into primary-key-range layers (one per worker bucket),
+    each deduplicated independently on its replica, then gathered on the initiator. The result must equal
+    local FINAL, and the read must distribute rather than fall back to a serial read."""
+    distributed, baseline = _run_both_ways(
+        "SELECT count(), sum(v) FROM final_rep FINAL",
+        settings_override=_override(exchange_kind),
+    )
+    assert distributed == baseline
+
+    pipeline = INITIATOR.query(
+        "EXPLAIN PIPELINE SELECT id, v FROM final_rep FINAL "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, {_override(exchange_kind)}"
+    )
+    assert "ReadFromDistributedPlanSource" in pipeline
+
+
+def test_final_missing_part_on_worker_errors(started_cluster):
+    """The parallel FINAL read ships each worker the marks (by part name) of its primary-key-range layer.
+    A layer spans every part, so a worker replica missing a coordinator-selected part (replication lag)
+    cannot read its layer and the query must fail closed instead of silently dropping rows.
+
+    Stop fetches on node2/node3 and add a new overlapping part only on the coordinator (node1). Every layer
+    references the new part, so both lagging workers raise NO_SUCH_DATA_PART at once; the initiator surfaces
+    either that error directly or a cancellation triggered by it -- both prove no rows were dropped."""
+    table = "final_lagging"
+    for node in NODES:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, v UInt64, ver UInt64)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{{shard}}/{table}', '{{replica}}', ver)
+            ORDER BY id SETTINGS index_granularity = 256
+            """
+        )
+        node.query(f"SYSTEM STOP MERGES {table}")
+
+    for batch in range(2):
+        offset = batch * 25_000
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number + {offset}, number + {offset}, 1 FROM numbers(25000)"
+        )
+    for node in NODES:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+    node2.query(f"SYSTEM STOP FETCHES {table}")
+    node3.query(f"SYSTEM STOP FETCHES {table}")
+    try:
+        # A new overlapping part (higher version) lands only on the coordinator; node2/node3 stay behind.
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number, number + 7, 2 FROM numbers(50000)"
+        )
+        settings = (
+            DISTRIBUTED_SETTINGS
+            + ", distributed_plan_force_exchange_kind = 'Persisted'"
+            + ", distributed_plan_prefer_replicas_over_workers = 1"
+        )
+        with pytest.raises(QueryRuntimeException) as exc:
+            INITIATOR.query(f"SELECT count(), sum(v) FROM {table} FINAL SETTINGS {settings}")
+        # Fail-closed: the missing part surfaces directly, or as a cancellation when another worker's
+        # identical failure reaches the initiator first. Both mean the read did not return a short result.
+        message = str(exc.value)
+        assert "is not available on this replica" in message or "QUERY_WAS_CANCELLED" in message
+    finally:
+        node2.query(f"SYSTEM START FETCHES {table}")
+        node3.query(f"SYSTEM START FETCHES {table}")
+        for node in NODES:
+            node.query(f"SYSTEM SYNC REPLICA {table}")
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+@EXCHANGE_KINDS
 def test_shuffle_hash_join(started_cluster, exchange_kind):
     """Self-join on a non-key expression so the optimizer cannot reuse the
     primary-key sort order and must shuffle both inputs by the join key."""
@@ -405,6 +499,101 @@ def test_distributed_sort(started_cluster, exchange_kind):
         """,
     )
     assert distributed == baseline
+
+
+def _distributed_profile_events(query_id: str) -> dict:
+    """Read the make_distributed_plan ProfileEvents for a finished query from the
+    initiator's query_log.
+
+    Deterministic by construction (no reliance on async-flush timing): the query
+    is run synchronously with an explicit query_id, then SYSTEM FLUSH LOGS forces
+    the QueryFinish row out before it is read. The events are incremented on the
+    initiator inside the query's thread group, so they are aggregated into the
+    initial query's ProfileEvents. A missing event key reads as 0 via Map access.
+    """
+    INITIATOR.query("SYSTEM FLUSH LOGS query_log")
+    row = (
+        INITIATOR.query(
+            f"""
+            SELECT
+                count(),
+                sum(ProfileEvents['DistributedPlanRemoteTasks']),
+                sum(ProfileEvents['DistributedPlanHostsUsed']),
+                sum(ProfileEvents['DistributedPlanLocalExecution'])
+            FROM system.query_log
+            WHERE query_id = '{query_id}'
+              AND type = 'QueryFinish'
+              AND is_initial_query
+            """
+        )
+        .strip()
+        .split("\t")
+    )
+    rows_found = int(row[0])
+    assert rows_found > 0, f"no QueryFinish row found for query_id {query_id}"
+    return {
+        "remote_tasks": int(row[1]),
+        "hosts_used": int(row[2]),
+        "local_execution": int(row[3]),
+    }
+
+
+def test_profile_events_remote_execution(started_cluster):
+    """A distributed query run with the default (remote) executor emits:
+      - DistributedPlanRemoteTasks  > 0  : tasks were dispatched to workers, so
+                                           the query really executed distributedly,
+      - DistributedPlanHostsUsed   >= 2  : work spread across multiple replicas,
+      - DistributedPlanLocalExecution == 0 : the remote executor ran, not the
+                                             in-process local one.
+
+    All three are deterministic for this fixed 3-host worker cluster and reader
+    bucket count of 3 (the read stage alone produces 3 tasks round-robined onto
+    3 distinct hosts), so the assertions carry no timing/race component.
+    """
+    query = "SELECT count(), sum(id), sum(group_key) FROM big"
+    query_id = f"dist_profile_remote_{uuid.uuid4().hex}"
+
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id
+    )
+    # Confirm the distributed run is also correct, not just instrumented.
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    events = _distributed_profile_events(query_id)
+    assert events["remote_tasks"] > 0, (
+        f"expected the query to run distributed, got events={events}"
+    )
+    assert events["hosts_used"] >= 2, (
+        f"expected work to spread across multiple replicas, got events={events}"
+    )
+    assert events["local_execution"] == 0, (
+        f"expected remote execution, got events={events}"
+    )
+
+
+def test_profile_events_local_execution(started_cluster):
+    """The same query with distributed_plan_execute_locally = 1 runs every stage
+    in-process via the local executor. It emits DistributedPlanLocalExecution and
+    dispatches nothing to remote workers, so the remote counters stay at 0."""
+    query = "SELECT count(), sum(id), sum(group_key) FROM big"
+    query_id = f"dist_profile_local_{uuid.uuid4().hex}"
+
+    distributed = INITIATOR.query(
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_execute_locally = 1",
+        query_id=query_id,
+    )
+    assert distributed == INITIATOR.query(f"{query} SETTINGS make_distributed_plan = 0")
+
+    events = _distributed_profile_events(query_id)
+    assert events["local_execution"] > 0, (
+        f"expected local execution to be recorded, got events={events}"
+    )
+    assert events["remote_tasks"] == 0, (
+        f"expected no remote tasks for local execution, got events={events}"
+    )
+    assert events["hosts_used"] == 0, (
+        f"expected no host assignment for local execution, got events={events}"
+    )
 
 
 @EXCHANGE_KINDS

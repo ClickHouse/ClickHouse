@@ -1,4 +1,5 @@
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 
@@ -175,7 +176,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 10000000;
 
 INSERT INTO tab SELECT number, 'Hello, ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello, World' FROM numbers(1024);
@@ -244,7 +245,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 10000000;
 
 INSERT INTO tab
 SELECT
@@ -311,7 +312,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY (id)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, text_index_posting_list_block_size = 10000000;
 
 INSERT INTO tab SELECT number, 'Hello, ClickHouse' FROM numbers(1024);
 INSERT INTO tab SELECT number, 'Hello, World' FROM numbers(1024);

@@ -5,7 +5,7 @@
 #include <map>
 #include <optional>
 #include <vector>
-#include <time.h>
+#include <ctime>
 
 namespace DB
 {
@@ -26,6 +26,7 @@ struct MergeTreeDataPartTTLInfo
     /// again for merge with multiple parts.
     std::optional<bool> ttl_finished;
     bool finished() const { return ttl_finished.value_or(false); }
+    bool initialized() const { return min != 0 || max != 0; }
 
     void update(time_t time);
     void update(const MergeTreeDataPartTTLInfo & other_info);
@@ -63,13 +64,16 @@ struct MergeTreeDataPartTTLInfos
     /// Has any TTLs which are not calculated on completely expired parts.
     bool hasAnyNonFinishedTTLs() const;
 
-    void updatePartMinMaxTTL(time_t time_min, time_t time_max)
+    void updatePartMinMaxTTL(const MergeTreeDataPartTTLInfo & ttl_info)
     {
-        if (time_min && (!part_min_ttl || time_min < part_min_ttl))
-            part_min_ttl = time_min;
+        if (ttl_info.finished())
+            return;
 
-        if (time_max && (!part_max_ttl || time_max > part_max_ttl))
-            part_max_ttl = time_max;
+        if (ttl_info.min && (!part_min_ttl || ttl_info.min < part_min_ttl))
+            part_min_ttl = ttl_info.min;
+
+        if (ttl_info.max && (!part_max_ttl || ttl_info.max > part_max_ttl))
+            part_max_ttl = ttl_info.max;
     }
 
     bool empty() const

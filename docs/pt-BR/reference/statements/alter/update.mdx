@@ -1,0 +1,37 @@
+---
+description: 'Documentação para as instruções ALTER TABLE ... UPDATE'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'Instruções ALTER TABLE ... UPDATE'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+Manipula os dados que correspondem à expressão de filtro especificada. É implementado como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+<Note>
+  O prefixo `ALTER TABLE` faz com que essa sintaxe seja diferente da maioria dos outros sistemas compatíveis com SQL. Ele serve para indicar que, ao contrário de consultas semelhantes em bancos de dados OLTP, esta é uma operação pesada, não projetada para uso frequente.
+</Note>
+
+A `filter_expr` deve ser do tipo `UInt8`. Esta consulta atualiza os valores das colunas especificadas para os valores das expressões correspondentes nas linhas em que a `filter_expr` assume um valor diferente de zero. Os valores são convertidos para o tipo da coluna usando o operador `CAST`. Não há suporte para atualizar colunas usadas no cálculo da chave primária ou da chave de partição.
+
+Uma única consulta pode conter vários comandos separados por vírgulas.
+
+A sincronia do processamento da consulta é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync). Por padrão, ela é assíncrona.
+
+**Veja também**
+
+* [Mutações](/pt-BR/reference/statements/alter/index#mutations)
+* [Sincronia das consultas ALTER](/pt-BR/reference/statements/alter/index#synchronicity-of-alter-queries)
+* Configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync)
+* [`UPDATE` leve](/pt-BR/reference/statements/update) - Alternativa de atualização leve usando partes de patch
+* [`APPLY PATCHES`](/pt-BR/reference/statements/alter/apply-patches) - Aplicar manualmente patches de atualizações leves
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como lidar com atualizações e exclusões no ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
