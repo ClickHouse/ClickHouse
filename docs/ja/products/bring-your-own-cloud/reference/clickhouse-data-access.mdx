@@ -1,0 +1,78 @@
+---
+title: 'ClickHouse のデータアクセス (BYOC)'
+slug: /cloud/reference/byoc/reference/clickhouse_data_access
+sidebarTitle: 'ClickHouse のデータアクセス'
+keywords: ['BYOC', 'bring your own cloud', 'データアクセス', '従業員アクセス', 'system.query_log', 'トラブルシューティングアクセス', 'コンプライアンス']
+description: 'BYOC デプロイメントにおいて、ClickHouse の従業員がお客様のデータに対して持つアクセス権'
+doc_type: 'reference'
+---
+
+ClickHouse の従業員は、デフォルトではお客様のデータにアクセスできません。すべてのユーザーテーブルとクエリ結果を含む ClickHouse のデータは、お客様の VPC 内に保持されます。ClickHouse がお客様のデプロイメントとやり取りする経路は以下に限られており、そのいずれもお客様のテーブルデータへのアクセスを許可するものではありません。
+
+<div id="routine-operations">
+  ## 通常運用
+</div>
+
+ClickHouse Cloud の制御プレーンは、お客様のデータを読み取ることなく、お客様の BYOC デプロイメントを運用します。お客様の VPC 外にデータを送信するコンポーネントに含まれるのは、運用メタデータのみです。
+
+| Component       | VPC 外に送信されるもの                                               |
+| --------------- | ----------------------------------------------------------- |
+| State exporter  | ClickHouse Cloud が所有する `SQS` キューに送信されるサービスの状態 (正常性、ステータス) 。 |
+| Billing scraper | ClickHouse Cloud が所有する S3 バケットに送信される CPU およびメモリのメトリクス。      |
+| AlertManager    | ClickHouse Cloud に送信されるクラスターの正常性アラート。                       |
+
+クエリトラフィック、テーブルの内容、スキーマがこれらの経路を通ることはありません。ログとメトリクスは BYOC VPC 内にとどまります。
+
+<div id="troubleshooting-access">
+  ## トラブルシューティングアクセス
+</div>
+
+ClickHouse engineers がご利用中のデプロイメントで問題を診断する必要がある場合は、内部のエスカレーションおよび承認ワークフローを通じて、必要なときに限ってアクセスをリクエストします。承認されたアクセスは有効期限付きの証明書によって付与され、[Tailscale](/ja/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) 経由でルーティングされます。公開インターネットを経由することはありません。
+
+<div id="what-engineers-can-see">
+  ### エンジニアが確認できる内容
+</div>
+
+承認されたトラブルシューティングアクセスでは、エンジニアは ClickHouse のシステムテーブルのみを参照できます。対象は次のとおりです。
+
+* `system.query_log` — サービスに対して実行されたクエリのクエリテキストと実行メタデータ
+* `system.tables`、`system.columns`、および同様のシステムテーブル — スキーマとメタデータ
+* 診断に使用されるその他の `system.*` テーブル (例: パーツ、ミューテーション、レプリカ)
+
+<div id="what-engineers-cant-see">
+  ### エンジニアが確認できないもの
+</div>
+
+エンジニアは顧客のユーザーテーブルを参照できません。アクセスはシステムテーブルのみに限定されています。
+
+<div id="how-access-is-enforced">
+  ### アクセス制御の仕組み
+</div>
+
+* **承認が必要**: すべてのアクセスリクエストは、指定された承認者による社内承認システムを通ります。エンジニアが自分でアクセス権を付与することはできません。
+* **有効期限付き証明書**: 承認された各セッションごとに、一時的な有効期限付き証明書が発行されます。アクセスは自動的に失効します。
+* **証明書ベース認証**: BYOC インスタンスへの人によるすべてのアクセスでは、パスワードベースのアクセスの代わりに証明書が使用されます。
+* **システムテーブルに対する読み取り専用**: 証明書の認証主体は、システムテーブルの読み取りに限定されます。
+* **データはエクスポートされない**: トラブルシューティングセッションのログやクエリ結果が ClickHouse インフラストラクチャにエクスポートされることはありません。
+
+<div id="auditing">
+  ## 監査
+</div>
+
+エンジニアのアクティビティはお客様にも可視化されており、ClickHouse によって監査されています。
+
+* **お客様から確認可能**: ClickHouse のエンジニアがお客様のインスタンスで実行したすべてのクエリは、クエリテキストと証明書の identity を含めて、お客様自身の `system.query_log` に記録されます。これは ClickHouse サービスから直接監査できます。
+* **ClickHouse 側**: ClickHouse のセキュリティチームは、すべてのアクセスリクエスト、承認、Tailscale 接続を内部で記録し、監査しています。
+
+<div id="future-controls">
+  ## 今後追加予定の制御
+</div>
+
+顧客側で承認を管理する機能 (エンジニアによるアクセス要求ごとに、有効化される前にお客様が承認する仕組み) は、ロードマップに含まれています。現時点では、承認は ClickHouse の社内エスカレーションプロセスを通じて行われます。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [BYOC ネットワークセキュリティ](/ja/products/bring-your-own-cloud/reference/network-security) — Tailscale とネットワーク境界の仕組み
+* [BYOC 権限](/ja/products/bring-your-own-cloud/reference/privilege) — BYOC のセットアップ時に作成される IAM ロール

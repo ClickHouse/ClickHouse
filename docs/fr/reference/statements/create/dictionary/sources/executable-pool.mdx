@@ -1,0 +1,68 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-pool
+title: 'Source de dictionnaire Executable Pool'
+sidebarTitle: 'Executable Pool'
+description: 'Configurez un executable pool comme source de dictionnaire dans ClickHouse.'
+doc_type: 'reference'
+---
+
+Executable pool permet de charger des données à partir d&#39;un pool de processus.
+Cette source ne fonctionne pas avec les dictionary layouts qui doivent charger toutes les données depuis la source.
+
+Executable pool fonctionne si le dictionnaire [est stocké](/fr/reference/statements/create/dictionary/layouts/overview#storing-dictionaries-in-memory) à l&#39;aide de l&#39;un des layouts suivants :
+
+* `cache`
+* `complex_key_cache`
+* `ssd_cache`
+* `complex_key_ssd_cache`
+* `direct`
+* `complex_key_direct`
+
+Executable pool lance un pool de processus avec la commande spécifiée et les maintient en cours d&#39;exécution jusqu&#39;à leur arrêt. Le programme doit lire les données depuis STDIN tant qu&#39;elles sont disponibles et écrire le résultat sur STDOUT. Il peut attendre le bloc de données suivant sur STDIN. ClickHouse ne fermera pas STDIN après le traitement d&#39;un bloc de données, mais y enverra un autre chunk de données si nécessaire. Le script exécutable doit être conçu pour ce mode de traitement des données : il doit surveiller STDIN et vider rapidement les données vers STDOUT.
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE_POOL(
+        command 'while read key; do printf "$key\tData for key $key\n"; done'
+        format 'TabSeparated'
+        pool_size 10
+        max_command_execution_time 10
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+        <executable_pool>
+            <command><command>while read key; do printf "$key\tData for key $key\n"; done</command</command>
+            <format>TabSeparated</format>
+            <pool_size>10</pool_size>
+            <max_command_execution_time>10<max_command_execution_time>
+            <implicit_key>false</implicit_key>
+        </executable_pool>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+Champs de paramétrage :
+
+| Paramètre                     | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `command`                     | Le chemin absolu vers le fichier exécutable, ou le nom du fichier (si le répertoire du programme figure dans `PATH`).                                                                                                                                                                                                                                                                                                                                        |
+| `format`                      | Le format de fichier. Tous les formats décrits dans [Formats](/fr/reference/formats/index) sont pris en charge.                                                                                                                                                                                                                                                                                                                                                 |
+| `pool_size`                   | Taille du pool. Si `0` est spécifié pour `pool_size`, il n&#39;y a pas de limite de taille du pool. La valeur par défaut est `16`.                                                                                                                                                                                                                                                                                                                           |
+| `command_termination_timeout` | Le script exécutable doit contenir une boucle principale en lecture-écriture. Une fois le dictionnaire détruit, le pipe est fermé, et le fichier exécutable dispose de `command_termination_timeout` secondes pour s&#39;arrêter avant que ClickHouse n&#39;envoie un signal SIGTERM au processus enfant. Exprimé en secondes. La valeur par défaut est `10`. Facultatif.                                                                                    |
+| `max_command_execution_time`  | Temps d&#39;exécution maximal de la commande du script exécutable pour traiter un bloc de données. Exprimé en secondes. La valeur par défaut est `10`. Facultatif.                                                                                                                                                                                                                                                                                           |
+| `command_read_timeout`        | Délai d&#39;attente pour la lecture des données depuis le stdout de la commande, en millisecondes. Valeur par défaut : `10000`. Facultatif.                                                                                                                                                                                                                                                                                                                  |
+| `command_write_timeout`       | Délai d&#39;attente pour l&#39;écriture des données vers le stdin de la commande, en millisecondes. Valeur par défaut : `10000`. Facultatif.                                                                                                                                                                                                                                                                                                                 |
+| `implicit_key`                | Le fichier source exécutable peut ne renvoyer que des valeurs, et la correspondance avec les clés demandées est alors déterminée implicitement par l&#39;ordre des rows dans le résultat. La valeur par défaut est `false`. Facultatif.                                                                                                                                                                                                                      |
+| `execute_direct`              | Si `execute_direct` = `1`, alors `command` est recherché dans le dossier user&#95;scripts spécifié par [user&#95;scripts&#95;path](/fr/reference/settings/server-settings/settings#user_scripts_path). Des arguments de script supplémentaires peuvent être indiqués en les séparant par des espaces. Exemple : `script_name arg1 arg2`. Si `execute_direct` = `0`, `command` est passé comme argument à `bin/sh -c`. La valeur par défaut est `1`. Facultatif. |
+| `send_chunk_header`           | Contrôle s&#39;il faut envoyer le nombre de rows avant d&#39;envoyer un chunk de données au processus. La valeur par défaut est `false`. Facultatif.                                                                                                                                                                                                                                                                                                         |
+
+Cette source de dictionnaire ne peut être configurée que via une configuration XML. La création de dictionnaires avec une source exécutable via DDL est désactivée, sinon l&#39;utilisateur de la DB pourrait exécuter un binaire arbitraire sur un nœud ClickHouse.

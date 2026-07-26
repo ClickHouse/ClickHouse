@@ -1,0 +1,124 @@
+---
+description: 'The Join Order Benchmark (JOB) data set and queries.'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['example dataset', 'job', 'join order benchmark', 'benchmark', 'performance testing', 'query optimizer', 'join ordering']
+---
+
+The Join Order Benchmark (JOB) stresses the query optimizer with 113 analytical queries over a real-world, highly-correlated dataset (a snapshot of IMDb). Since its introduction, the JOB benchmark has become the de facto standard to assess the performance of relational database query optimizers, including cardinality estimation and join order optimization. Unlike synthetic benchmarks that assume uniform, independent data, JOB uses real data with skew and correlations, which makes it a hard test for join ordering and cardinality estimation.
+
+The dataset holds about 74 million rows across 21 tables and takes around 1.15 GiB compressed in ClickHouse.
+
+The 113 queries are organized into 33 families (`1`–`33`). Queries within a family (`a`, `b`, `c`, ...) share the same join graph but differ in their selection predicates.
+
+**References**
+
+- [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis et al., VLDB 2015)
+- [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) repository
+
+## Creating the tables {#creating-tables}
+
+The JOB dataset is a snapshot of IMDb with 21 tables. The table definitions are available in [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) in the ClickHouse repository.
+
+Each table uses the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) engine sorted by its primary key column `id`, mirroring the original PostgreSQL schema where every table declares `id integer NOT NULL PRIMARY KEY`. Nullable PostgreSQL columns map to `Nullable(...)` types.
+
+Create the tables:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+## Loading the data {#loading-the-data}
+
+The data comes from the original IMDb snapshot used by JOB, distributed as one CSV file per table (`aka_name.csv`, `title.csv`, ...).
+These CSVs use PostgreSQL `COPY` semantics with `ESCAPE '\'`: a backslash escapes the quote character only inside a quoted field, while outside quotes a backslash is a literal character.
+ClickHouse expects RFC 4180 CSV (doubled quotes, no backslash escaping), so the files must be re-encoded first.
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) performs that re-encoding.
+It reads the original CSV on stdin and writes standard CSV on stdout, doubling embedded quotes and preserving empty unquoted fields (which ClickHouse maps to `NULL` for `Nullable` columns).
+
+To build the tables from the original CSVs:
+
+- Create the tables (see above).
+- Download the IMDb data set as an `imdb.tgz` file, following the instructions in the Join Order Benchmark repository.
+- Convert and import the data:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+Once the tables are populated, they can be exported to Parquet for faster re-import later, e.g.
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+Detailed table sizes:
+
+| Table           | size (in rows) | size (compressed in ClickHouse) |
+| --------------- | -------------- | ------------------------------- |
+| aka_name        | 901,343        | 31.86 MiB                       |
+| aka_title       | 361,472        | 14.32 MiB                       |
+| cast_info       | 36,244,344     | 296.25 MiB                      |
+| char_name       | 3,140,339      | 107.95 MiB                      |
+| comp_cast_type  | 4              | 132.00 B                        |
+| company_name    | 234,997        | 8.38 MiB                        |
+| company_type    | 4              | 162.00 B                        |
+| complete_cast   | 135,086        | 748.80 KiB                      |
+| info_type       | 113            | 1.25 KiB                        |
+| keyword         | 134,170        | 1.88 MiB                        |
+| kind_type       | 7              | 177.00 B                        |
+| link_type       | 18             | 284.00 B                        |
+| movie_companies | 2,609,129      | 21.20 MiB                       |
+| movie_info      | 14,835,720     | 300.46 MiB                      |
+| movie_info_idx  | 1,380,035      | 8.01 MiB                        |
+| movie_keyword   | 4,523,930      | 21.06 MiB                       |
+| movie_link      | 29,997         | 178.21 KiB                      |
+| name            | 4,167,491      | 131.16 MiB                      |
+| person_info     | 2,963,664      | 154.12 MiB                      |
+| role_type       | 12             | 246.00 B                        |
+| title           | 2,528,312      | 78.04 MiB                       |
+| **Total**       | **74,190,187** | **1.15 GiB**                    |
+
+(Compressed sizes in ClickHouse are taken from `system.tables.total_bytes` and based on the above table definitions.)
+
+## Queries {#queries}
+
+The 113 JOB queries can be found [here](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) in the ClickHouse repository.
+The settings used to run them are in [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+See the [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) for known issues and notes on specific queries.
+
+The queries reference the tables by name, so run them against the `job` database (for example, with `clickhouse client --database job`).
+
+An example query (`1a`):
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

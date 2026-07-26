@@ -1,0 +1,70 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayResample'
+title: 'groupArrayResample'
+description: 'مثال على استخدام المُركِّب Resample مع الدالة groupArray'
+keywords: ['groupArray', 'Resample', 'combinator', 'examples', 'groupArrayResample']
+sidebarTitle: 'groupArrayResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`Resample`](/ar/reference/functions/aggregate-functions/combinators#-resample)
+على الدالة التجميعية [`groupArray`](/ar/reference/functions/aggregate-functions/sum) من أجل
+تقسيم نطاق عمود مفتاح محدد إلى عدد ثابت من الفترات (`N`)
+وبناء المصفوفة الناتجة باختيار قيمة تمثيلية واحدة
+(تقابل أصغر مفتاح) من نقاط البيانات الواقعة ضمن كل فترة.
+وهو ينشئ عرضًا للبيانات بعد تقليل أخذ العينات، بدلًا من جمع جميع القيم.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+لنلقِ نظرة على مثال. سننشئ جدولًا يحتوي على `name` و`age` و
+`wage` للموظفين، وسنُدرج فيه بعض البيانات:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+لنحصل على أسماء الأشخاص الذين تقع أعمارهم ضمن الفترتين `[30,60)`
+و`[60,75)`. وبما أننا نستخدم تمثيلًا صحيحًا للأعمار، فستكون الأعمار ضمن
+الفترتين `[30, 59]` و`[60,74]`.
+
+لتجميع الأسماء في مصفوفة، نستخدم الدالة التجميعية `groupArray`.
+تأخذ هذه الدالة وسيطة واحدة، وهي في حالتنا عمود الاسم. ويجب أن تستخدم الدالة `groupArrayResample`
+عمود العمر لتجميع الأسماء بحسب العمر. ولتحديد
+الفترات المطلوبة، نمرّر `30` و`75` و`30` كوسائط إلى الدالة `groupArrayResample`:
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
+```
+
+```response
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`groupArray`](/ar/reference/functions/aggregate-functions/groupArray)
+* [`Resample المُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-resample)

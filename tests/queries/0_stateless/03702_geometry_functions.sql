@@ -13,8 +13,8 @@ INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,
 INSERT INTO geo_dst SELECT id, readWKT(geom) FROM geo ORDER BY id;
 INSERT INTO geo_dst VALUES (6, NULL);
 
-SELECT perimeterCartesian(geom) FROM geo_dst ORDER BY id;
-SELECT areaCartesian(geom) FROM geo_dst ORDER BY id;
+SELECT round(perimeterCartesian(geom), 6) FROM geo_dst ORDER BY id;
+SELECT round(areaCartesian(geom), 6) FROM geo_dst ORDER BY id;
 
 CREATE TABLE variant_table
 (

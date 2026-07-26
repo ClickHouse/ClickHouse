@@ -1,0 +1,80 @@
+---
+title: TRUNCATE
+---
+
+ClickHouse의 `TRUNCATE` 문은 테이블 또는 데이터베이스의 구조는 유지하면서 모든 데이터를 빠르게 제거하는 데 사용됩니다.
+
+<div id="truncate-table">
+  ## TRUNCATE TABLE
+</div>
+
+```sql
+TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+<br />
+
+| 매개변수                 | 설명                                                                        |
+| -------------------- | ------------------------------------------------------------------------- |
+| `IF EXISTS`          | 테이블이 존재하지 않아도 오류가 발생하지 않도록 합니다. 생략하면 쿼리가 오류를 반환합니다.                       |
+| `db.name`            | 선택 사항인 데이터베이스 이름입니다.                                                      |
+| `ON CLUSTER cluster` | 지정된 클러스터 전체에서 명령을 실행합니다.                                                  |
+| `SYNC`               | 복제된 테이블을 사용할 때 `TRUNCATE`를 레플리카 전체에 동기식으로 적용합니다. 생략하면 기본적으로 비동기식으로 수행됩니다. |
+
+[alter&#95;sync](/ko/reference/settings/session-settings#alter_sync) 설정을 사용하여 레플리카에서 작업이 실행될 때까지 대기하도록 설정할 수 있습니다.
+
+[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 설정을 사용하여 비활성 레플리카가 `TRUNCATE` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위) 지정할 수 있습니다.
+
+<Info>
+  `alter_sync`가 `2`로 설정되어 있고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
+</Info>
+
+`TRUNCATE TABLE` 쿼리는 다음 테이블 엔진에서는 **지원되지 않습니다**:
+
+* [`View`](/ko/reference/engines/table-engines/special/view)
+* [`File`](/ko/reference/engines/table-engines/special/file)
+* [`URL`](/ko/reference/engines/table-engines/special/url)
+* [`Buffer`](/ko/reference/engines/table-engines/special/buffer)
+* [`Null`](/ko/reference/engines/table-engines/special/null)
+
+<div id="truncate-all-tables">
+  ## 모든 테이블 TRUNCATE하기
+</div>
+
+```sql
+TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
+```
+
+<br />
+
+| 매개변수                                    | 설명                                  |
+| --------------------------------------- | ----------------------------------- |
+| `ALL`                                   | 데이터베이스의 모든 테이블에서 데이터를 제거합니다.        |
+| `IF EXISTS`                             | 데이터베이스가 존재하지 않을 때 오류가 발생하지 않도록 합니다. |
+| `db`                                    | 데이터베이스 이름입니다.                       |
+| `LIKE \| ILIKE \| NOT LIKE '<pattern>'` | 패턴으로 테이블을 필터링합니다.                   |
+| `ON CLUSTER cluster`                    | 클러스터 전체에서 명령을 실행합니다.                |
+
+데이터베이스의 모든 테이블에서 모든 데이터를 제거합니다.
+
+<div id="truncate-database">
+  ## TRUNCATE DATABASE
+</div>
+
+```sql
+TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
+```
+
+<br />
+
+| 매개변수                 | 설명                                 |
+| -------------------- | ---------------------------------- |
+| `IF EXISTS`          | 데이터베이스가 존재하지 않아도 오류가 발생하지 않도록 합니다. |
+| `db`                 | 데이터베이스 이름입니다.                      |
+| `ON CLUSTER cluster` | 지정된 클러스터 전체에서 명령을 실행합니다.           |
+
+데이터베이스 자체는 유지하면서 데이터베이스의 모든 테이블을 삭제합니다. `IF EXISTS` 절을 생략하면 데이터베이스가 존재하지 않을 경우 쿼리가 오류를 반환합니다.
+
+<Note>
+  `TRUNCATE DATABASE`는 `Replicated` 데이터베이스에서 지원되지 않습니다. 대신 데이터베이스를 `DROP`한 후 다시 `CREATE`하십시오.
+</Note>

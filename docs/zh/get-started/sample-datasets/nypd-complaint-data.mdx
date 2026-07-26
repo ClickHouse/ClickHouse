@@ -1,0 +1,681 @@
+---
+description: '用 5 个步骤摄取并查询制表符分隔值数据'
+sidebarTitle: 'NYPD 投诉数据'
+slug: /getting-started/example-datasets/nypd_complaint_data
+title: 'NYPD 投诉数据'
+doc_type: 'guide'
+keywords: ['示例数据集', 'nypd', '犯罪数据', '样本数据', '公共数据']
+---
+
+制表符分隔值 (TSV) 文件很常见，文件的第一行可能包含字段标题。ClickHouse 可以摄取 TSV，也可以在不摄取文件的情况下直接查询 TSV。本指南将介绍这两种情况。如果你需要查询或摄取 CSV 文件，也可以使用相同的方法，只需在格式参数中将 `TSV` 替换为 `CSV` 即可。
+
+按照本指南操作时，你将：
+
+* **探查**：查询 TSV 文件的结构和内容。
+* **确定目标 ClickHouse schema**：选择合适的数据类型，并将现有数据映射到这些类型。
+* **创建 ClickHouse 表**。
+* **预处理并将数据流式传输**到 ClickHouse。
+* **运行一些查询**。
+
+本指南使用的数据集来自 NYC Open Data 团队，包含“纽约市警察局 (NYPD) 报告的所有有效重罪、轻罪和违规犯罪”数据。撰写本文时，该数据文件为 166MB，但会定期更新。
+
+**来源**： [data.cityofnewyork.us](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)
+**使用条款**： https://www1.nyc.gov/home/terms-of-use.page
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 访问 [NYPD Complaint Data Current (Year To Date)](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) 页面，点击 Export 按钮，然后选择 **TSV for Excel** 下载数据集。
+* 安装 [ClickHouse server 和客户端](/zh/get-started/setup/install)
+
+<div id="a-note-about-the-commands-described-in-this-guide">
+  ### 关于本指南中所述命令的说明
+</div>
+
+本指南中的命令分为两类：
+
+* 一部分命令用于查询 TSV 文件，需要在命令行提示符下运行。
+* 其余命令用于查询 ClickHouse，需要在 `clickhouse-client` 或 Play UI 中运行。
+
+<Note>
+  本指南中的示例默认你已将 TSV 文件保存到 `${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`；如有需要，请相应调整命令。
+</Note>
+
+<div id="familiarize-yourself-with-the-tsv-file">
+  ## 了解 TSV 文件
+</div>
+
+在开始使用 ClickHouse 数据库之前，先了解一下这些数据。
+
+<div id="look-at-the-fields-in-the-source-tsv-file">
+  ### 查看 TSV 源文件中的字段
+</div>
+
+这是一个查询 TSV 文件的命令示例，但先不要运行。
+
+```sh title="Query"
+clickhouse-local --query \
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
+```
+
+响应示例
+
+```response
+CMPLNT_NUM                  Nullable(Float64)
+ADDR_PCT_CD                 Nullable(Float64)
+BORO_NM                     Nullable(String)
+CMPLNT_FR_DT                Nullable(String)
+CMPLNT_FR_TM                Nullable(String)
+```
+
+<Tip>
+  大多数情况下，上面的命令会告诉你输入数据中的哪些字段是数值，哪些是 String，哪些是 Tuple。但也并非总是如此。由于 ClickHouse 经常用于处理包含数十亿条记录的数据集，为了避免为了推断 schema 而解析数十亿行数据，系统默认只检查一定数量 (100) 的行来[推断 schema](/zh/guides/clickhouse/data-formats/json/inference)。下面的结果可能与你实际看到的不一致，因为该数据集每年都会更新数次。查看数据字典可以看到，CMPLNT&#95;NUM 被指定为文本，而不是数值。通过使用设置 `SETTINGS input_format_max_rows_to_read_for_schema_inference=2000` 覆盖默认的 100 行推断限制，
+  你可以更准确地了解其中的内容。
+
+  注意：从 22.5 版本开始，用于推断 schema 的默认值已变为 25,000 行，因此，只有在你使用较旧版本，或需要采样超过 25,000 行时，才需要更改此设置。
+</Tip>
+
+请在命令行提示符中运行此命令。你将使用 `clickhouse-local` 查询已下载的 TSV 文件中的数据。
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"describe file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')"
+```
+
+```response title="Response"
+CMPLNT_NUM        Nullable(String)
+ADDR_PCT_CD       Nullable(Float64)
+BORO_NM           Nullable(String)
+CMPLNT_FR_DT      Nullable(String)
+CMPLNT_FR_TM      Nullable(String)
+CMPLNT_TO_DT      Nullable(String)
+CMPLNT_TO_TM      Nullable(String)
+CRM_ATPT_CPTD_CD  Nullable(String)
+HADEVELOPT        Nullable(String)
+HOUSING_PSA       Nullable(Float64)
+JURISDICTION_CODE Nullable(Float64)
+JURIS_DESC        Nullable(String)
+KY_CD             Nullable(Float64)
+LAW_CAT_CD        Nullable(String)
+LOC_OF_OCCUR_DESC Nullable(String)
+OFNS_DESC         Nullable(String)
+PARKS_NM          Nullable(String)
+PATROL_BORO       Nullable(String)
+PD_CD             Nullable(Float64)
+PD_DESC           Nullable(String)
+PREM_TYP_DESC     Nullable(String)
+RPT_DT            Nullable(String)
+STATION_NAME      Nullable(String)
+SUSP_AGE_GROUP    Nullable(String)
+SUSP_RACE         Nullable(String)
+SUSP_SEX          Nullable(String)
+TRANSIT_DISTRICT  Nullable(Float64)
+VIC_AGE_GROUP     Nullable(String)
+VIC_RACE          Nullable(String)
+VIC_SEX           Nullable(String)
+X_COORD_CD        Nullable(Float64)
+Y_COORD_CD        Nullable(Float64)
+Latitude          Nullable(Float64)
+Longitude         Nullable(Float64)
+Lat_Lon           Tuple(Nullable(Float64), Nullable(Float64))
+New Georeferenced Column Nullable(String)
+```
+
+此时，你应检查 TSV 文件中的列是否与[数据集网页](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)中 **Columns in this Dataset** 部分列出的名称和类型一致。数据类型并不算很具体：所有数值字段都设为 `Nullable(Float64)`，其余字段则都为 `Nullable(String)`。创建用于存储这些数据的 ClickHouse 表时，你可以指定更合适、性能更优的类型。
+
+<div id="determine-the-proper-schema">
+  ### 确定合适的 schema
+</div>
+
+要判断这些字段应使用什么类型，首先必须了解数据的实际情况。例如，字段 `JURISDICTION_CODE` 是数值型：它应该使用 `UInt8`、`Enum`，还是 `Float64` 更合适？
+
+```sql title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select JURISDICTION_CODE, count() FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ GROUP BY JURISDICTION_CODE
+ ORDER BY JURISDICTION_CODE
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─JURISDICTION_CODE─┬─count()─┐
+│                 0 │  188875 │
+│                 1 │    4799 │
+│                 2 │   13833 │
+│                 3 │     656 │
+│                 4 │      51 │
+│                 6 │       5 │
+│                 7 │       2 │
+│                 9 │      13 │
+│                11 │      14 │
+│                12 │       5 │
+│                13 │       2 │
+│                14 │      70 │
+│                15 │      20 │
+│                72 │     159 │
+│                87 │       9 │
+│                88 │      75 │
+│                97 │     405 │
+└───────────────────┴─────────┘
+```
+
+查询响应表明，`JURISDICTION_CODE` 很适合使用 `UInt8`。
+
+同样，也可以查看一些 `String` 字段，看看它们是否更适合使用 `DateTime` 或 [`LowCardinality(String)`](/zh/reference/data-types/lowcardinality) 类型。
+
+例如，字段 `PARKS_NM` 的描述是 &quot;事发地点对应的纽约市公园、游乐场或绿地名称 (如适用；不包括州立公园) &quot;。纽约市公园名称很可能适合使用 `LowCardinality(String)`：
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select count(distinct PARKS_NM) FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─uniqExact(PARKS_NM)─┐
+│                 319 │
+└─────────────────────┘
+```
+
+来看看其中一些公园名称：
+
+```sql title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select distinct PARKS_NM FROM
+ file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ LIMIT 10
+ FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─PARKS_NM───────────────────┐
+│ (null)                     │
+│ ASSER LEVY PARK            │
+│ JAMES J WALKER PARK        │
+│ BELT PARKWAY/SHORE PARKWAY │
+│ PROSPECT PARK              │
+│ MONTEFIORE SQUARE          │
+│ SUTTON PLACE PARK          │
+│ JOYCE KILMER PARK          │
+│ ALLEY ATHLETIC PLAYGROUND  │
+│ ASTORIA PARK               │
+└────────────────────────────┘
+```
+
+在撰写本文时所使用的数据集中，`PARK_NM` 列里只有几百个不同的公园和游乐场。根据 [LowCardinality](/zh/reference/data-types/lowcardinality#description) 的建议，`LowCardinality(String)` 字段中的不同字符串数量最好保持在 10,000 以下，因此这已经算是很小的数量了。
+
+<div id="datetime-fields">
+  ### DateTime 字段
+</div>
+
+根据[数据集网页](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243)中 **Columns in this Dataset** 部分的信息，可以看到有表示已报告事件开始和结束时间的日期和时间字段。查看 `CMPLNT_FR_DT` 和 `CMPLT_TO_DT` 的最小值和最大值，可以大致判断这些字段是否始终有值：
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_FR_DT), max(CMPLNT_FR_DT) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_FR_DT)─┬─max(CMPLNT_FR_DT)─┐
+│ 01/01/1973        │ 12/31/2021        │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_TO_DT), max(CMPLNT_TO_DT) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_TO_DT)─┬─max(CMPLNT_TO_DT)─┐
+│                   │ 12/31/2021        │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_FR_TM), max(CMPLNT_FR_TM) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_FR_TM)─┬─max(CMPLNT_FR_TM)─┐
+│ 00:00:00          │ 23:59:00          │
+└───────────────────┴───────────────────┘
+```
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select min(CMPLNT_TO_TM), max(CMPLNT_TO_TM) FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─min(CMPLNT_TO_TM)─┬─max(CMPLNT_TO_TM)─┐
+│ (null)            │ 23:59:00          │
+└───────────────────┴───────────────────┘
+```
+
+<div id="make-a-plan">
+  ## 制定计划
+</div>
+
+根据上述调查：
+
+* `JURISDICTION_CODE` 应转换为 `UInt8`。
+* `PARKS_NM` 应转换为 `LowCardinality(String)`
+* `CMPLNT_FR_DT` 和 `CMPLNT_FR_TM` 始终有值 (时间可能为默认值 `00:00:00`)
+* `CMPLNT_TO_DT` 和 `CMPLNT_TO_TM` 可能为空
+* 在源数据中，日期和时间分别存储在不同的字段中
+* 日期采用 `mm/dd/yyyy` 格式
+* 时间采用 `hh:mm:ss` 格式
+* 日期和时间可以拼接为 DateTime 类型
+* 有些日期早于 1970 年 1 月 1 日，这意味着我们需要 64 位 DateTime
+
+<Note>
+  还有很多类型需要调整，这些都可以通过遵循相同的调查步骤来确定。查看某个字段中不同字符串的数量、数值的最小值和最大值，然后据此做出判断。指南后面给出的表 schema 中包含许多低基数 String 和无符号整数字段，而浮点数值字段很少。
+</Note>
+
+<div id="concatenate-the-date-and-time-fields">
+  ## 拼接日期和时间字段
+</div>
+
+要将日期和时间字段 `CMPLNT_FR_DT` 和 `CMPLNT_FR_TM` 拼接成一个可转换为 `DateTime` 的 `String`，请选择用拼接运算符连接这两个字段：`CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM`。`CMPLNT_TO_DT` 和 `CMPLNT_TO_TM` 字段的处理方式也相同。
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM AS complaint_begin FROM
+file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+LIMIT 10
+FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─complaint_begin─────┐
+│ 07/29/2010 00:01:00 │
+│ 12/01/2011 12:00:00 │
+│ 04/01/2017 15:00:00 │
+│ 03/26/2018 17:20:00 │
+│ 01/01/2019 00:00:00 │
+│ 06/14/2019 00:00:00 │
+│ 11/29/2021 20:00:00 │
+│ 12/04/2021 00:35:00 │
+│ 12/05/2021 12:50:00 │
+│ 12/07/2021 20:30:00 │
+└─────────────────────┘
+```
+
+<div id="convert-the-date-and-time-string-to-a-datetime64-type">
+  ## 将日期和时间 String 转换为 DateTime64 类型
+</div>
+
+在本指南前面的内容中，我们发现 TSV 文件中存在早于 1970 年 1 月 1 日的日期，这意味着这些日期需要使用 64 位 DateTime 类型。日期还需要从 `MM/DD/YYYY` 格式转换为 `YYYY/MM/DD` 格式。这两项操作都可以通过 [`parseDateTime64BestEffort()`](/zh/reference/functions/regular-functions/type-conversion-functions#parseDateTime64BestEffort) 完成。
+
+```sh title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"WITH (CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM) AS CMPLNT_START,
+      (CMPLNT_TO_DT || ' ' || CMPLNT_TO_TM) AS CMPLNT_END
+select parseDateTime64BestEffort(CMPLNT_START) AS complaint_begin,
+       parseDateTime64BestEffortOrNull(CMPLNT_END) AS complaint_end
+FROM file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+ORDER BY complaint_begin ASC
+LIMIT 25
+FORMAT PrettyCompact"
+```
+
+上面的第 2 行和第 3 行包含上一步拼接得到的结果，而第 4 行和第 5 行则将这些字符串解析为 `DateTime64`。由于投诉结束时间不一定存在，因此使用 `parseDateTime64BestEffortOrNull`。
+
+```response title="Response"
+┌─────────complaint_begin─┬───────────complaint_end─┐
+│ 1925-01-01 10:00:00.000 │ 2021-02-12 09:30:00.000 │
+│ 1925-01-01 11:37:00.000 │ 2022-01-16 11:49:00.000 │
+│ 1925-01-01 15:00:00.000 │ 2021-12-31 00:00:00.000 │
+│ 1925-01-01 15:00:00.000 │ 2022-02-02 22:00:00.000 │
+│ 1925-01-01 19:00:00.000 │ 2022-04-14 05:00:00.000 │
+│ 1955-09-01 19:55:00.000 │ 2022-08-01 00:45:00.000 │
+│ 1972-03-17 11:40:00.000 │ 2022-03-17 11:43:00.000 │
+│ 1972-05-23 22:00:00.000 │ 2022-05-24 09:00:00.000 │
+│ 1972-05-30 23:37:00.000 │ 2022-05-30 23:50:00.000 │
+│ 1972-07-04 02:17:00.000 │                    ᴺᵁᴸᴸ │
+│ 1973-01-01 00:00:00.000 │                    ᴺᵁᴸᴸ │
+│ 1975-01-01 00:00:00.000 │                    ᴺᵁᴸᴸ │
+│ 1976-11-05 00:01:00.000 │ 1988-10-05 23:59:00.000 │
+│ 1977-01-01 00:00:00.000 │ 1977-01-01 23:59:00.000 │
+│ 1977-12-20 00:01:00.000 │                    ᴺᵁᴸᴸ │
+│ 1981-01-01 00:01:00.000 │                    ᴺᵁᴸᴸ │
+│ 1981-08-14 00:00:00.000 │ 1987-08-13 23:59:00.000 │
+│ 1983-01-07 00:00:00.000 │ 1990-01-06 00:00:00.000 │
+│ 1984-01-01 00:01:00.000 │ 1984-12-31 23:59:00.000 │
+│ 1985-01-01 12:00:00.000 │ 1987-12-31 15:00:00.000 │
+│ 1985-01-11 09:00:00.000 │ 1985-12-31 12:00:00.000 │
+│ 1986-03-16 00:05:00.000 │ 2022-03-16 00:45:00.000 │
+│ 1987-01-07 00:00:00.000 │ 1987-01-09 00:00:00.000 │
+│ 1988-04-03 18:30:00.000 │ 2022-08-03 09:45:00.000 │
+│ 1988-07-29 12:00:00.000 │ 1990-07-27 22:00:00.000 │
+└─────────────────────────┴─────────────────────────┘
+```
+
+<Note>
+  上面显示为 `1925` 的日期是由数据错误造成的。原始数据中有几条记录的年份写成了 `1019` - `1022`，实际应为 `2019` - `2022`。由于 `1925` 年 1 月 1 日是 64 位 DateTime 可表示的最早日期，这些记录都会被存储为这一天。
+</Note>
+
+<div id="create-a-table">
+  ## 创建表
+</div>
+
+上文针对各列所用数据类型作出的决定，体现在下面的表 schema
+中。我们还需要确定该表使用的 `ORDER BY` 和 `PRIMARY KEY`。`ORDER BY` 或 `PRIMARY KEY`
+中至少必须指定一个。下面提供了一些关于如何确定应将哪些列包含在 `ORDER BY` 中的指导原则，更多信息请参见本文档末尾的 *后续步骤*
+部分。
+
+<div id="order-by-and-primary-key-clauses">
+  ### `ORDER BY` 和 `PRIMARY KEY` 子句
+</div>
+
+* `ORDER BY` 元组应包含用于查询过滤条件的字段
+* 为了最大限度提高磁盘上的压缩效果，`ORDER BY` 元组应按基数升序排列
+* 如果存在，`PRIMARY KEY` 元组必须是 `ORDER BY` 元组的子集
+* 如果只指定了 `ORDER BY`，则同一个元组也会用作 `PRIMARY KEY`
+* 如果指定了 `PRIMARY KEY` 元组，则主键索引会基于该元组创建；否则基于 `ORDER BY` 元组创建
+* `PRIMARY KEY` 索引会保存在主内存中
+
+结合这个数据集以及可能通过查询回答的问题，我们可能会
+决定关注纽约市五个行政区中，随时间变化的已报告犯罪类型。
+因此，这些字段可能会被包含在 `ORDER BY` 中：
+
+| Column        | Description (from the data dictionary) |
+| ------------- | -------------------------------------- |
+| OFNS&#95;DESC | 与键代码对应的犯罪描述                            |
+| RPT&#95;DT    | 事件向警方报案的日期                             |
+| BORO&#95;NM   | 事件发生所在行政区的名称                           |
+
+查询 TSV 文件以获取这三个候选列的基数：
+
+```bash title="Query"
+clickhouse-local --input_format_max_rows_to_read_for_schema_inference=2000 \
+--query \
+"select formatReadableQuantity(uniq(OFNS_DESC)) as cardinality_OFNS_DESC,
+        formatReadableQuantity(uniq(RPT_DT)) as cardinality_RPT_DT,
+        formatReadableQuantity(uniq(BORO_NM)) as cardinality_BORO_NM
+  FROM
+  file('${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv', 'TSVWithNames')
+  FORMAT PrettyCompact"
+```
+
+```response title="Response"
+┌─cardinality_OFNS_DESC─┬─cardinality_RPT_DT─┬─cardinality_BORO_NM─┐
+│ 60.00                 │ 306.00             │ 6.00                │
+└───────────────────────┴────────────────────┴─────────────────────┘
+```
+
+按基数排序后，`ORDER BY` 为：
+
+```sql
+ORDER BY ( BORO_NM, OFNS_DESC, RPT_DT )
+```
+
+<Note>
+  下表将使用更便于阅读的列名，上述名称将映射为
+
+  ```sql
+  ORDER BY ( borough, offense_description, date_reported )
+  ```
+</Note>
+
+结合数据类型的变更和 `ORDER BY` 元组后，可得到如下表结构：
+
+```sql
+CREATE TABLE NYPD_Complaint (
+    complaint_number     String,
+    precinct             UInt8,
+    borough              LowCardinality(String),
+    complaint_begin      DateTime64(0,'America/New_York'),
+    complaint_end        DateTime64(0,'America/New_York'),
+    was_crime_completed  String,
+    housing_authority    String,
+    housing_level_code   UInt32,
+    jurisdiction_code    UInt8,
+    jurisdiction         LowCardinality(String),
+    offense_code         UInt8,
+    offense_level        LowCardinality(String),
+    location_descriptor  LowCardinality(String),
+    offense_description  LowCardinality(String),
+    park_name            LowCardinality(String),
+    patrol_borough       LowCardinality(String),
+    PD_CD                UInt16,
+    PD_DESC              String,
+    location_type        LowCardinality(String),
+    date_reported        Date,
+    transit_station      LowCardinality(String),
+    suspect_age_group    LowCardinality(String),
+    suspect_race         LowCardinality(String),
+    suspect_sex          LowCardinality(String),
+    transit_district     UInt8,
+    victim_age_group     LowCardinality(String),
+    victim_race          LowCardinality(String),
+    victim_sex           LowCardinality(String),
+    NY_x_coordinate      UInt32,
+    NY_y_coordinate      UInt32,
+    Latitude             Float64,
+    Longitude            Float64
+) ENGINE = MergeTree
+  ORDER BY ( borough, offense_description, date_reported )
+```
+
+<div id="finding-the-primary-key-of-a-table">
+  ### 查找表的主键
+</div>
+
+ClickHouse 的 `system` 数据库中，具体来说是 `system.table`，包含了你刚创建的这个表的全部信息。下面这个查询会显示 `ORDER BY` (排序键) 和 `PRIMARY KEY`：
+
+```sql
+SELECT
+    partition_key,
+    sorting_key,
+    primary_key,
+    table
+FROM system.tables
+WHERE table = 'NYPD_Complaint'
+FORMAT Vertical
+```
+
+响应
+
+```response
+Query id: 6a5b10bf-9333-4090-b36e-c7f08b1d9e01
+
+Row 1:
+──────
+partition_key:
+sorting_key:   borough, offense_description, date_reported
+primary_key:   borough, offense_description, date_reported
+table:         NYPD_Complaint
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+<div id="preprocess-import-data">
+  ## 预处理并导入数据
+</div>
+
+我们将使用 `clickhouse-local` 工具对数据进行预处理，并使用 `clickhouse-client` 将其上传。
+
+<div id="clickhouse-local-arguments-used">
+  ### 使用的 `clickhouse-local` 参数
+</div>
+
+<Tip>
+  下方 `clickhouse-local` 的参数中出现了 `table='input'`。`clickhouse-local` 会接收提供的输入 (`cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv`) ，并将其插入到一个表中。默认情况下，该表名为 `table`。本指南将表名设置为 `input`，以便更清楚地展示数据流。`clickhouse-local` 的最后一个参数是一条从该表中选择数据的查询 (`FROM input`) ，然后通过管道传递给 `clickhouse-client`，以填充 `NYPD_Complaint` 表。
+</Tip>
+
+```sql
+cat ${HOME}/NYPD_Complaint_Data_Current__Year_To_Date_.tsv \
+  | clickhouse-local --table='input' --input-format='TSVWithNames' \
+  --input_format_max_rows_to_read_for_schema_inference=2000 \
+  --query "
+    WITH (CMPLNT_FR_DT || ' ' || CMPLNT_FR_TM) AS CMPLNT_START,
+     (CMPLNT_TO_DT || ' ' || CMPLNT_TO_TM) AS CMPLNT_END
+    SELECT
+      CMPLNT_NUM                                  AS complaint_number,
+      ADDR_PCT_CD                                 AS precinct,
+      BORO_NM                                     AS borough,
+      parseDateTime64BestEffort(CMPLNT_START)     AS complaint_begin,
+      parseDateTime64BestEffortOrNull(CMPLNT_END) AS complaint_end,
+      CRM_ATPT_CPTD_CD                            AS was_crime_completed,
+      HADEVELOPT                                  AS housing_authority_development,
+      HOUSING_PSA                                 AS housing_level_code,
+      JURISDICTION_CODE                           AS jurisdiction_code,
+      JURIS_DESC                                  AS jurisdiction,
+      KY_CD                                       AS offense_code,
+      LAW_CAT_CD                                  AS offense_level,
+      LOC_OF_OCCUR_DESC                           AS location_descriptor,
+      OFNS_DESC                                   AS offense_description,
+      PARKS_NM                                    AS park_name,
+      PATROL_BORO                                 AS patrol_borough,
+      PD_CD,
+      PD_DESC,
+      PREM_TYP_DESC                               AS location_type,
+      toDate(parseDateTimeBestEffort(RPT_DT))     AS date_reported,
+      STATION_NAME                                AS transit_station,
+      SUSP_AGE_GROUP                              AS suspect_age_group,
+      SUSP_RACE                                   AS suspect_race,
+      SUSP_SEX                                    AS suspect_sex,
+      TRANSIT_DISTRICT                            AS transit_district,
+      VIC_AGE_GROUP                               AS victim_age_group,
+      VIC_RACE                                    AS victim_race,
+      VIC_SEX                                     AS victim_sex,
+      X_COORD_CD                                  AS NY_x_coordinate,
+      Y_COORD_CD                                  AS NY_y_coordinate,
+      Latitude,
+      Longitude
+    FROM input" \
+  | clickhouse-client --query='INSERT INTO NYPD_Complaint FORMAT TSV'
+```
+
+<div id="validate-data">
+  ## 验证数据
+</div>
+
+<Note>
+  该数据集每年会更新一次或多次，因此你的计数结果可能与本文档中的内容不一致。
+</Note>
+
+```sql title="Query"
+SELECT count()
+FROM NYPD_Complaint
+```
+
+```text title="Response"
+┌─count()─┐
+│  208993 │
+└─────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+ClickHouse 中的数据集大小仅为原始 TSV 文件的 12%，下面来比较一下原始 TSV 文件与表的大小：
+
+```sql title="Query"
+SELECT formatReadableSize(total_bytes)
+FROM system.tables
+WHERE name = 'NYPD_Complaint'
+```
+
+```text title="Response"
+┌─formatReadableSize(total_bytes)─┐
+│ 8.63 MiB                        │
+└─────────────────────────────────┘
+```
+
+<div id="run-queries">
+  ## 执行一些查询
+</div>
+
+<div id="query-1-compare-the-number-of-complaints-by-month">
+  ### 查询 1：按月比较投诉数量
+</div>
+
+```sql title="Query"
+SELECT
+    dateName('month', date_reported) AS month,
+    count() AS complaints,
+    bar(complaints, 0, 50000, 80)
+FROM NYPD_Complaint
+GROUP BY month
+ORDER BY complaints DESC
+```
+
+```response title="Response"
+Query id: 7fbd4244-b32a-4acf-b1f3-c3aa198e74d9
+
+┌─month─────┬─complaints─┬─bar(count(), 0, 50000, 80)───────────────────────────────┐
+│ March     │      34536 │ ███████████████████████████████████████████████████████▎ │
+│ May       │      34250 │ ██████████████████████████████████████████████████████▋  │
+│ April     │      32541 │ ████████████████████████████████████████████████████     │
+│ January   │      30806 │ █████████████████████████████████████████████████▎       │
+│ February  │      28118 │ ████████████████████████████████████████████▊            │
+│ November  │       7474 │ ███████████▊                                             │
+│ December  │       7223 │ ███████████▌                                             │
+│ October   │       7070 │ ███████████▎                                             │
+│ September │       6910 │ ███████████                                              │
+│ August    │       6801 │ ██████████▊                                              │
+│ June      │       6779 │ ██████████▋                                              │
+│ July      │       6485 │ ██████████▍                                              │
+└───────────┴────────────┴──────────────────────────────────────────────────────────┘
+
+12 rows in set. Elapsed: 0.006 sec. Processed 208.99 thousand rows, 417.99 KB (37.48 million rows/s., 74.96 MB/s.)
+```
+
+<div id="query-2-compare-total-number-of-complaints-by-borough">
+  ### 查询 2. 比较各区的投诉总数
+</div>
+
+```sql title="Query"
+SELECT
+    borough,
+    count() AS complaints,
+    bar(complaints, 0, 125000, 60)
+FROM NYPD_Complaint
+GROUP BY borough
+ORDER BY complaints DESC
+```
+
+```response title="Response"
+Query id: 8cdcdfd4-908f-4be0-99e3-265722a2ab8d
+
+┌─borough───────┬─complaints─┬─bar(count(), 0, 125000, 60)──┐
+│ BROOKLYN      │      57947 │ ███████████████████████████▋ │
+│ MANHATTAN     │      53025 │ █████████████████████████▍   │
+│ QUEENS        │      44875 │ █████████████████████▌       │
+│ BRONX         │      44260 │ █████████████████████▏       │
+│ STATEN ISLAND │       8503 │ ████                         │
+│ (null)        │        383 │ ▏                            │
+└───────────────┴────────────┴──────────────────────────────┘
+
+6 rows in set. Elapsed: 0.008 sec. Processed 208.99 thousand rows, 209.43 KB (27.14 million rows/s., 27.20 MB/s.)
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+[ClickHouse 稀疏主索引实用入门](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) 介绍了 ClickHouse 的索引与传统关系型数据库有何不同、ClickHouse 如何构建和使用稀疏主索引，以及索引的最佳实践。
