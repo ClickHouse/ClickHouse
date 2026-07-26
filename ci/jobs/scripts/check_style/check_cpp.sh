@@ -14,7 +14,7 @@
 
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h|utils/wasm-parser/shim/'
 # Heuristic style checks must skip the verbatim Markdown documentation embedded into
 # the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
 # in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
@@ -51,6 +51,7 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     --glob '!**/AvroSchema.h' \
     --glob '!**/*Settings.cpp' --glob '!**/FormatFactorySettings.h' \
     --glob '!**/StorageSystemDashboards.cpp' \
+    --glob '!**/wasm-parser/shim/**' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
@@ -400,7 +401,7 @@ grep -v StorageSystemContributors.generated.cpp "$STYLE_TMPDIR/nobase_all" | \
 
 # 13: Orphaned header files
 {
-join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
+join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | grep -v 'utils/wasm-parser/shim/' | sed 's:.*/::'  | sort -u) <(rg --no-filename -o '[\w-]+\.h' --glob '*.cpp' --glob '*.c' --glob '*.h' --glob '*.S' $ROOT_PATH/src $ROOT_PATH/programs $ROOT_PATH/utils $ROOT_PATH/tests/lexer | sort -u) |
     grep . && echo '^ Found orphan header files.'
 } > "$O.13" 2>&1 &
 
@@ -476,6 +477,23 @@ xargs < "$STYLE_TMPDIR/all_excluded" rg -n '\bassert[[:space:]]*\(' |
     rg -v ':[[:space:]]*(//|/\*|\*)' &&
     echo "Use chassert instead of assert"
 } > "$O.18" 2>&1 &
+
+# 19: The SQL parser must not use exceptions to decide between alternatives
+{
+# An alternative that does not match is an ordinary parse outcome, not an exceptional one, and a
+# parser says so by returning false. Routing it through throw/catch also drags the whole exception
+# machinery into a component that otherwise does not need it - see utils/wasm-parser, which builds
+# src/Parsers on its own.
+#
+# The harnesses under tests/, examples/ and fuzzers/ are expected to catch. Kusto is the one part
+# of the parser that has not been cleaned up yet: it still catches to fall back between a number
+# and a timespan, and to turn a failed cast into NULL.
+find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
+    grep -vP '/(tests|examples|fuzzers|Kusto)/' |
+    xargs rg -n '\bcatch[[:space:]]*\(' |
+    grep . &&
+    echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
+} > "$O.19" 2>&1 &
 
 # Wait for all parallel checks to complete, then output results in order
 wait
