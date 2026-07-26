@@ -1,7 +1,7 @@
 #pragma once
 
-#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__loongarch64)) && !(defined(__riscv) && (__riscv_xlen == 64)) && !defined(__e2k__)
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress), loongarch64 (experimental), RISC-V 64 (experimental) and E2K (experimental, work in progress)"
+#if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !defined(__s390x__) && !(defined(__loongarch64)) && !(defined(__riscv) && (__riscv_xlen == 64)) && !defined(__e2k__) && !defined(__wasm__)
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress), s390x (work in progress), loongarch64 (experimental), RISC-V 64 (experimental), E2K (experimental, work in progress) and WebAssembly (only a subset of the code, such as the SQL parser, is expected to build)"
 #endif
 
 #if !defined(likely)
