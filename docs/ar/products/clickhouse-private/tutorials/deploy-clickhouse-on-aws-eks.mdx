@@ -35,9 +35,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
 ***
 
 <Steps>
-  <Step>
-    ## المرحلة 1: إنشاء دور IAM للوصول إلى ECR
-
+  <Step title="المرحلة 1: إنشاء دور IAM للوصول إلى ECR" id="phase-1-create-iam-role-for-ecr-access">
     أنشئ دور IAM يتيح سحب الصور من مستودع ECR الخاص بـ ClickHouse. انشر قالب CloudFormation هذا في حساب AWS الخاص بك:
 
     ```yaml expandable
@@ -94,9 +92,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 2: نسخ صور الحاويات
-
+  <Step title="المرحلة 2: نسخ صور الحاويات" id="phase-2-copy-container-images">
     أنشئ مستودعات ECR في حسابك لكل artifact، ثم استخدم skopeo لنسخ الصور من ECR الخاص بـ ClickHouse إلى مستودعاتك. يحافظ الخيار `--all` على جميع المعماريات (amd64 وarm64).
 
     ```ini
@@ -125,9 +121,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 3: إنشاء VPC
-
+  <Step title="المرحلة 3: إنشاء VPC" id="phase-3-create-vpc">
     أنشئ VPC تضم 3 مناطق توافر على الأقل لضمان التوافر العالي. إليك مثالًا على التكوين:
 
     | الإعداد           | القيمة                |
@@ -157,9 +151,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 4: إنشاء عنقود EKS
-
+  <Step title="المرحلة 4: إنشاء عنقود EKS" id="phase-4-create-eks-cluster">
     أنشئ عنقود EKS مرتبطًا بـ VPC من المرحلة 3. يتطلب العنقود ما يلي:
 
     * مكوّن إضافي لـ CNI يستخدم IPv4 (مثل [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s) مع IRSA)
@@ -181,9 +173,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 5: إنشاء مجموعات العقد
-
+  <Step title="المرحلة 5: إنشاء مجموعات العقد" id="phase-5-create-node-groups">
     أنشئ ثلاث مجموعات عقد. **تستلزم جميع العقد [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) للمصادقة.**
 
     بالنسبة لمجموعات عقد Keeper والخادم، أنشئ مجموعة عقد واحدة لكل منطقة توافر (AZ) إذا أردت دعم cluster autoscaler عبر مناطق التوافر.
@@ -213,7 +203,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
         | الحد الأدنى/العدد المطلوب من العُقد | يساوي العدد المطلوب من نُسخ ClickHouse المتماثلة (إذا لم تكن تستخدم التوسّع التلقائي) |
         | نوع المثيل الموصى به                | `m7gd.16xlarge` (استخدم سلسلة &quot;d&quot; لذاكرة تخزين مؤقت من نوع NVMe SSD)        |
         | تسميات Kubernetes                   | x86: `clickhouseGroup: server` / arm64: `clickhouseGroup: server-arm64`               |
-        | قيود Kubernetes                     | `clickhouse.com/do-not-schedule: true, NoSchedule`                                    |
+        | علامات الحظر في Kubernetes          | `clickhouse.com/do-not-schedule: true, NoSchedule`                                    |
 
         **هام:** بالنسبة للـ instances المزوّدة بـ NVMe SSD، استخدم قالب الإطلاق أدناه لتركيب NVMe SSD تلقائيًا كـ RAID Array لـ Caching في ClickHouse.
 
@@ -349,9 +339,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 6: إنشاء حاوية S3 وأدوار IAM
-
+  <Step title="المرحلة 6: إنشاء حاوية S3 وأدوار IAM" id="phase-6-create-s3-bucket-and-iam-roles">
     ### حاوية S3
 
     أنشئ حاوية S3 (الفئة Standard) مع تمكين التشفير في نفس المنطقة التي يوجد فيها عنقود EKS. يمكنك استخدام حاوية واحدة لكل عنقود ClickHouse، أو حاوية واحدة مع بادئة فريدة لكل عنقود.
@@ -395,9 +383,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 7: تثبيت المتطلبات الأساسية لـ Kubernetes
-
+  <Step title="المرحلة 7: تثبيت المتطلبات الأساسية لـ Kubernetes" id="phase-7-install-kubernetes-prerequisites">
     ### تثبيت VolumeSnapshot CRDs
 
     يتطلب ClickHouse Operator وحدات CRD هذه.
@@ -443,9 +429,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 8: تثبيت المشغّل
-
+  <Step title="المرحلة 8: تثبيت المشغّل" id="phase-8-install-the-operator">
     سجّل الدخول إلى ECR عبر Helm عند الحاجة:
 
     ```ini
@@ -489,9 +473,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 9: نشر مجموعة ClickHouse
-
+  <Step title="المرحلة 9: نشر مجموعة ClickHouse" id="phase-9-deploy-a-clickhouse-cluster">
     ### تسمية الكلاستر
 
     تحتاج كل مجموعة ClickHouse إلى **اسم فريد** داخل مجموعة EKS. استخدم الصيغة `$DESCRIPTOR-$LETTERS-$ORDINAL`:
@@ -579,9 +561,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 10: تشغيل فحوصات التحقّق المسبق
-
+  <Step title="المرحلة 10: تشغيل فحوصات التحقّق المسبق" id="phase-10-run-preflight-checks">
     للتحقّق من جاهزية الكتلة، نوصي بتشغيل فحوصات التحقّق المسبق. تستخدم فحوصات التحقّق المسبق [Troubleshoot](https://troubleshoot.sh/)، وهي إضافة لـ Kubernetes مخصّصة لتشخيص الكتل.
 
     ### تثبيت الإضافة
@@ -621,9 +601,7 @@ description: "يشرح هذا الدليل كيفية نشر ClickHouse Private 
     ***
   </Step>
 
-  <Step>
-    ## المرحلة 11: التحقق من التثبيت
-
+  <Step title="المرحلة 11: التحقق من التثبيت" id="phase-11-verify-installation">
     ### إعادة توجيه المنفذ إلى خدمة ClickHouse
 
     ```bash
