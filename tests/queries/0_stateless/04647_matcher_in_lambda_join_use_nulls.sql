@@ -140,6 +140,25 @@ SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 FULL JO
 SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 RIGHT JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 0;
 SELECT arrayMap(z -> tuple(* EXCEPT w), [1]) AS r, toTypeName(r) FROM p1 LEFT JOIN p2 USING (a) ORDER BY r SETTINGS join_use_nulls = 1;
 
+SELECT '-- 12e. USING, matcher inside the PREWHERE predicate: pre-join type, and the rows it selects';
+-- The merged USING key must have its pre-join type here, so `9` (present only in p1) is visible to
+-- PREWHERE and its row survives. Each matcher case is paired with the explicit-column oracle for
+-- the same merged key: under USING the oracle is the merged `a`, not `p1.a`, which under FULL/RIGHT
+-- resolves to the left table's own column and carries a different type.
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = toTypeName(arrayMap(z -> tuple(a, v), [1])) ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = 'Array(Tuple(UInt8, UInt64))' ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(a, v), [1])) = 'Array(Tuple(UInt8, UInt64))' ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) PREWHERE arrayMap(z -> tuple(* EXCEPT w), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) PREWHERE arrayMap(z -> tuple(a, v), [1])[1].1 = 9 ORDER BY a SETTINGS join_use_nulls = 1;
+-- RIGHT/LEFT controls: `createProjectionForUsing` returns the surviving side's own argument, which
+-- `need_nullable` never promotes, so these are unaffected either way and must not move.
+SELECT a, v, w FROM p1 RIGHT JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = toTypeName(arrayMap(z -> tuple(a, v), [1])) ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM p1 RIGHT JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = 'Array(Tuple(UInt8, UInt64))' ORDER BY a SETTINGS join_use_nulls = 1;
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = 'Array(Tuple(UInt8, UInt64))' ORDER BY a SETTINGS join_use_nulls = 0;
+SELECT a, v, w FROM p1 LEFT JOIN p2 USING (a) PREWHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = 'Array(Tuple(UInt8, UInt64))' ORDER BY a SETTINGS join_use_nulls = 1;
+-- WHERE runs after the join, so there the promoted type is the correct one.
+SELECT a, v, w FROM p1 FULL JOIN p2 USING (a) WHERE toTypeName(arrayMap(z -> tuple(* EXCEPT w), [1])) = 'Array(Tuple(Nullable(UInt8), Nullable(UInt64)))' ORDER BY a SETTINGS join_use_nulls = 1;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;

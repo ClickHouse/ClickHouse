@@ -144,3 +144,22 @@
 [(1,10)]	Array(Tuple(UInt8, UInt64))
 [(1,10)]	Array(Tuple(UInt8, UInt64))
 [(9,90)]	Array(Tuple(UInt8, UInt64))
+-- 12e. USING, matcher inside the PREWHERE predicate: pre-join type, and the rows it selects
+1	10	11
+9	90	\N
+1	10	11
+9	90	\N
+1	10	11
+9	90	\N
+1	\N	11
+9	90	\N
+1	\N	11
+9	90	\N
+1	10	11
+1	10	11
+1	10	11
+9	90	0
+1	10	11
+9	90	\N
+1	10	11
+9	90	\N

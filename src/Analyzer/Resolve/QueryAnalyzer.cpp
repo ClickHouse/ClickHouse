@@ -2235,7 +2235,10 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                         is_column_from_parent_scope(join_using_column_nodes.at(1)))
                         continue;
 
-                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(join_using_column_node, join_node->getKind(), scope);
+                    /// The USING projection must read promotion state from the join-owning scope: a
+                    /// lambda child re-reads `join_use_nulls` from its own context, and records its
+                    /// type change in a rollback map the PREWHERE rollback never consults.
+                    QueryTreeNodePtr matched_column_node = createProjectionForUsing(join_using_column_node, join_node->getKind(), *nearest_query_scope);
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
