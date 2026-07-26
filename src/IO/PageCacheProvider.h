@@ -128,17 +128,17 @@ public:
     /// completion); the probe reports one miss range per block.
     bool fillsWholeCell() const override { return true; }
 
-    CacheViewPtr planResidencyView(
-        const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
+    std::unique_ptr<IProbeCursor> probe() override;
 
     /// Cells are created lazily on the first `write` of each block.
     void openWriteBuffers(
         const StoredObject & object, size_t object_file_offset, CacheView & view) override;
 
 private:
-    /// Read-only block-by-block residency probe, coalescing adjacent
-    /// same-kind blocks into single hit/miss entries (miss writers null).
-    CacheViewPtr buildView(ByteRange range_in_file);
+    /// Defined in the .cpp; nested for private-member access.
+    class ProbeCursor;
+    /// The step probe body (the cursor delegates; stateless per step).
+    Resolution resolve(const StoredObject & object, size_t object_file_offset, size_t pos_in_file);
 
     PageCachePtr cache;
     PageCacheFile file;

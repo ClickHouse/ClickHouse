@@ -75,7 +75,7 @@ namespace DB
 /// CONSUMER (top of the model, inverted in file order):
 ///   `readNextWindow` -> `serveWindow` (the consumer loop) -> `pump` (in the
 ///   Schedule-driven interpreter region) -> `finishWindow`.
-/// PLAN BUILD, two spans: `preparePlan` (the epoch scheduler, in Read path)
+/// PLAN BUILD, two spans: `preparePlan` (the plan scheduler, in Read path)
 ///   and `observeAndSchedule` + its extract* helpers.
 /// COLLECT, three spans: `collectInFlightInto`; the put pair `collectFillTargets` /
 ///   `runPutStep`; and teardown's `cancelMachine` / `drainAbandonedMachines`.
@@ -332,7 +332,7 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
         /// EXTEND vs RESTART: a contiguous-forward need - the cursor still inside
         /// (or at the end of) the live span, only more look-ahead wanted - grows
         /// the plan in place, keeping the held buffers, the bank and the fill-lane
-        /// epoch; each extension also SLIDES the released territory out, so the
+        /// state; each extension also SLIDES the released territory out, so the
         /// retained span stays bounded by the reuse reach plus the plan window.
         /// Anything else (no plan, backward cursor) rebuilds from scratch.
         const auto & g = read_plan.geometry();
@@ -391,7 +391,7 @@ void ReaderExecutor::seek(size_t new_position)
     }
 
     /// REUSE: a NEAR target inside the live plan span changes only the cursor - the
-    /// plan, the held buffers, the bank and the lane epoch all stay (a backward
+    /// plan, the held buffers, the bank and the lane state all stay (a backward
     /// target re-serves committed cells, which the serve reads ahead-cursor-blind).
     /// NEAR inherits the connection-bridge policy: a jump the open connection would
     /// bridge (`min_bytes_for_seek`) is a jump the plan absorbs - the interleaved
@@ -434,14 +434,14 @@ void ReaderExecutor::seek(size_t new_position)
 
     position = new_position;
     reached_eof = false;
-    /// A jumped position invalidates the plan epoch: bytes banked AHEAD of the old cursor
+    /// A far jump invalidates the plan: bytes banked AHEAD of the old cursor
     /// would, after the jump, sit disjoint from the new one. Drop the plan AND the lane's
-    /// epoch state here - by ownership, not by trusting the next replan to reset it (the
+    /// plan-scoped state here - by ownership, not by trusting the next restart to reset it (the
     /// executor can go idle at EOF holding a stale bank otherwise). (The fast paths above
     /// keep the plan, the cursor, and the bank for a target inside the in-flight window
     /// or inside the live plan span - RESTART is only for a target outside both.)
     read_plan = {};
-    fill_lane.resetEpoch();
+    fill_lane.resetOnRestart();
 
     prefetch();
 }
@@ -596,7 +596,7 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & cache : caches)
         {
-            auto view = cache->planResidencyView(pieces.front().object, /*object_file_offset=*/0, header_range);
+            auto view = probeView(*cache, pieces.front().object, /*object_file_offset=*/0, header_range);
             if (view->allHit())
             {
                 ChainedBuffers chain;
@@ -943,7 +943,7 @@ static size_t cellCeil(const PlanSchedule::Retrieve & r, size_t pos)
 
 // ─── The display (cont.): plan-view hit serve ──────────────────────────────
 
-/// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
+/// Serve a clamped resident sub-range from a held probe view's hit read
 /// buffers: find each `HitEntry` overlapping `clamped`, read the overlap from its
 /// re-readable buffer, and append the pieces. A hit is readable in full (the probe
 /// splits partial segments at their write offset), so the result is contiguous from
@@ -2670,11 +2670,11 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
     /// span (the start already at/past a bound) publishes an empty plan.
-    /// New plan epoch: the ahead cursor re-derives from the fresh display truth and the
+    /// RESTART: the ahead cursor re-derives from the fresh display truth and the
     /// bank drops with the plan it served - BEFORE the empty-plan early return below, so an
-    /// at-bound replan cannot leave the previous epoch's state alive (the seek fast path
-    /// keeps the surviving plan, the cursor, AND the bank).
-    fill_lane.resetEpoch();
+    /// at-bound restart cannot leave the previous plan's state alive (REUSE and
+    /// EXTEND keep the surviving plan, the cursor, AND the bank).
+    fill_lane.resetOnRestart();
 
     const ByteRange plan_range = boundedPlanSpan(physical_start);
     if (plan_range.size == 0)

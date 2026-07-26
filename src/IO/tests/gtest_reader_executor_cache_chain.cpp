@@ -16,6 +16,7 @@
 #include <IO/ReaderExecutor.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/PageCacheProvider.h>
 #include <IO/DiskCacheProvider.h>
 #include <IO/LongConnectionLimit.h>
@@ -752,7 +753,7 @@ TEST_F(ReaderExecutorCacheChain, PageHitSkipsSourceAndFs)
     /// report only misses across the file.
     {
         StoredObject object{"obj", "", file_size};
-        auto view = disk_provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, file_size});
+        auto view = probeView(*disk_provider, object, /*object_file_offset=*/0, ByteRange{0, file_size});
         EXPECT_TRUE(view->hits().empty())
             << "page hits must not back-fill the fs cache";
         EXPECT_FALSE(view->misses().empty());
@@ -820,7 +821,7 @@ TEST_F(ReaderExecutorCacheChain, PageHeldRangesServeWhileFsFillsByReadThrough)
     /// The fs segment holds the read-through prefix + the hole; its tail stays a hole.
     {
         StoredObject object{"obj", "", file_size};
-        auto view = disk_provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, segment_size});
+        auto view = probeView(*disk_provider, object, /*object_file_offset=*/0, ByteRange{0, segment_size});
         EXPECT_FALSE(view->hits().empty()) << "the fs segment must hold the read-through prefix + the hole";
     }
 }
@@ -1457,7 +1458,7 @@ TEST_F(ReaderExecutorCacheChain, AheadRunsOverSameTierResidentPrefix)
 
 
 /// The other half of the pinning model the executor relies on: HIT views are PINNED FACTS.
-/// `planResidencyView`'s readers hold the resident segments for the plan's life, so eviction
+/// the residency probe's (`lookAt`) readers hold the resident segments for the plan's life, so eviction
 /// pressure between windows cannot take a classified hit out from under the plan - the hit
 /// keeps serving from the cache with ZERO re-fetches. The control at the end proves the
 /// pressure was real: once the plan dies, the same sweep removes the segment.

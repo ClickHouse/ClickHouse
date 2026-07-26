@@ -20,7 +20,7 @@ ResidencyIterator::ResidencyIterator(
     {
         TierWalk walk;
         walk.provider = provider.get();
-        walk.provider->resetProbe();
+        walk.probe = walk.provider->probe();
         walk.view = std::make_unique<CacheView>();
         walk.collected_until = probed_span.offset;
         tiers.push_back(std::move(walk));
@@ -40,7 +40,7 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
             && pos >= t.current.range.offset && pos < t.current.range.end();
         if (!inside_current)
         {
-            t.current = t.provider->lookAt(object, object_file_offset, pos);
+            t.current = t.probe->lookAt(object, object_file_offset, pos);
             t.current_valid = true;
 
             /// Collect forward-new entries into the tier's assembled view (in
@@ -96,6 +96,31 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
     chassert(stride_end > pos);
     res.range = ByteRange{pos, stride_end - pos};
     return res;
+}
+
+CacheViewPtr probeView(
+    ICacheProvider & provider, const StoredObject & object, size_t object_file_offset, ByteRange span)
+{
+    auto probe = provider.probe();
+    auto view = std::make_unique<CacheView>();
+    size_t collected_until = span.offset;
+    size_t pos = span.offset;
+    while (pos < span.end())
+    {
+        auto r = probe->lookAt(object, object_file_offset, pos);
+        if (r.kind == ICacheProvider::Resolution::Kind::End)
+            break;
+        if (r.range.end() > collected_until)
+        {
+            if (r.kind == ICacheProvider::Resolution::Kind::Hit)
+                view->hit_entries.push_back(HitEntry{r.range, std::move(r.reader)});
+            else
+                view->miss_entries.push_back(MissEntry{r.range, nullptr});
+            collected_until = std::max(collected_until, r.range.end());
+        }
+        pos = std::max(pos + 1, r.range.end());
+    }
+    return view;
 }
 
 ResolutionFold::ResolutionFold(VectorWithMemoryTracking<TierTraits> traits_, ByteRange span_)

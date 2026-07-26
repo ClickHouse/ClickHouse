@@ -81,6 +81,9 @@ private:
     struct TierWalk
     {
         ICacheProvider * provider = nullptr;
+        /// The walk's own probe state; its pins die with the iterator - what
+        /// the plan keeps pinned travels in the handed-out readers.
+        std::unique_ptr<ICacheProvider::IProbeCursor> probe;
         /// The tier's current resolution, reused while the asked position
         /// stays inside it.
         ICacheProvider::Resolution current;
@@ -104,6 +107,12 @@ private:
 /// `upper_hits` prune), bypass tiers contributing no cells, tiers with nothing
 /// resident and nothing to fill dropped. The equivalence gate proving the
 /// iterated observation reproduces `observeAndSchedule`'s flat fold.
+/// Assemble a span-probe-shaped view (sorted hit entries with readers + one-cell
+/// miss entries) by walking `lookAt` over `span` - for callers that need one
+/// whole small range at once: the encryption-header read, the buffer-API tests.
+CacheViewPtr probeView(
+    ICacheProvider & provider, const StoredObject & object, size_t object_file_offset, ByteRange span);
+
 class ResolutionFold
 {
 public:

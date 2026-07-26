@@ -53,9 +53,12 @@ class EncryptionHeaderCache;
 ///
 /// The buffer is POSITIONAL (offset-indexed, not FIFO) and SHARED (sibling
 /// executors read and write the same cells) - which is why seeks, contention,
-/// and warm reads are ordinary cases. Planning happens once per epoch: observe
-/// residency (`CoverageMap`), derive the complete job list (`PlanSchedule`);
-/// execution interprets it.
+/// and warm reads are ordinary cases. Planning is a ROLLING window: residency
+/// is observed step-wise (`ResidencyIterator::lookAt` over the providers), the
+/// job list derives from the geometry (`PlanSchedule`), and the plan then
+/// EXTENDS forward and SLIDES the passed territory out as the cursor advances;
+/// a near seek REUSES it, and only a far jump RESTARTS from scratch.
+/// Execution interprets the schedule; the display carries the truth.
 ///
 /// The PRODUCER is the `FillLane` + the fill flow, ONE body of code with two
 /// anchors: AHEAD (`prefetch` - the wake rule and the launch scan at the
@@ -99,7 +102,8 @@ class EncryptionHeaderCache;
 ///   piece  -> one `FetchMachine` window;
 ///   F      -> `FillLane::attempted_end`, the producer's ahead cursor;
 ///   bank   -> `FillLane::bank`, the one overflow display cell;
-///   epoch  -> one plan lifetime, opened by `observeAndSchedule` on replan.
+///   restart-> a from-scratch plan build (`observeAndSchedule`): the first
+///             read or a far seek; everything else extends/reuses the plan.
 ///
 /// One instance per column-stream; not thread-safe beyond the machine handoff:
 /// while a fetch machine is in flight the worker exclusively owns the machine
@@ -527,7 +531,7 @@ private:
     /// the serve position and the lane's ahead cursor; there is no third to maintain.
     size_t serveRunAt(size_t pos_phys) const;
 
-    /// The epoch scheduler - the ONE entry to `observeAndSchedule`. Collects an in-flight
+    /// The plan scheduler - the ONE entry to `observeAndSchedule`/`extendPlan`. Collects an in-flight
     /// machine sitting at the consumed plan end, then (re)plans per the caller's role:
     ///   - `coverage_ahead == 0` (the serve front): only a fully consumed plan replans (the
     ///     position before `plan_start`, or at `plan_end` with the plan not running to EOF) -
@@ -690,7 +694,7 @@ private:
 
     /// EXTEND: grow the live plan forward to the span a fresh plan at
     /// `position_phys` would target, keeping the held buffers, the bank and the
-    /// fill-lane epoch. Observes only `[plan_end, target)`; publishes a NEW
+    /// fill-lane state. Observes only `[plan_end, target)`; publishes a NEW
     /// geometry snapshot (copy-on-extend - the published snapshot stays
     /// immutable) and rebuilds the schedule - a pure function of the geometry -
     /// over the full extended span, with the launch frontier skipping jobs

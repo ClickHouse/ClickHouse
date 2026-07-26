@@ -141,23 +141,7 @@ private:
     LoggerPtr log = getLogger("DiskCacheWriter");
 };
 
-/// `CacheView` from `DiskCacheProvider::planResidencyView`. Holds the shared
-/// read-only holder plus the probe's touch book (whose last owner runs the
-/// deferred LRU bump). Misses carry `writer == nullptr`.
-class DiskCacheView : public CacheView
-{
-public:
-    DiskCacheView(
-        std::shared_ptr<FileSegmentsHolder> read_holder_,
-        std::shared_ptr<DiskCacheTouchBook> touch_book_)
-        : read_holder(std::move(read_holder_)), touch_book(std::move(touch_book_))
-    {
-    }
 
-private:
-    std::shared_ptr<FileSegmentsHolder> read_holder;
-    std::shared_ptr<DiskCacheTouchBook> touch_book;
-};
 
 
 /// `ICacheProvider` wrapping FileCache. Safe for concurrent use (the
@@ -195,14 +179,20 @@ public:
     /// (`optimalFillCell`) on the absolute grid; a cut never falls inside an
     /// EXISTING segment, so each emitted range maps to whole cells and
     /// `openWriteBuffers` never hands two writers the same segment.
-    CacheViewPtr planResidencyView(
-        const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override;
+    std::unique_ptr<IProbeCursor> probe() override;
+
+private:
+    /// Defined in the .cpp; nested for private-member access.
+    class ProbeCursor;
+
+public:
 
     /// One `getOrSet` per surviving miss cell; the held holder is owned by each writer.
     void openWriteBuffers(
         const StoredObject & object, size_t object_file_offset, CacheView & view) override;
 
 private:
+
     /// The cache boundary grid: the quantum of segment starts/extents (as
     /// `getOrSet` resolves it).
     size_t resolvedBoundaryAlignment() const;

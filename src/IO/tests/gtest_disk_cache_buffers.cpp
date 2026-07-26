@@ -1,11 +1,12 @@
 /// Unit grid for the NEW per-range cache-buffer API on `DiskCacheProvider`
-/// (`planResidencyView` / `openWriteBuffers` + `DiskCacheReader` /
-/// `DiskCacheWriter` / `DiskCacheView`). Backed by a REAL `FileCache` over a
+/// (`lookAt` / `openWriteBuffers` + `DiskCacheReader` /
+/// `DiskCacheWriter` / `CacheView`). Backed by a REAL `FileCache` over a
 /// temp dir, mirroring `RealDiskCacheSequentialEvictionKeepsConnection` in
 /// `gtest_reader_executor.cpp` (same `ThreadStatus` + `QueryScope` machinery so
 /// `FileSegment::reserve` finds a query budget).
 
 #include <IO/DiskCacheProvider.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/ChainedBuffers.h>
 #include <IO/IntervalSet.h>
 #include <Interpreters/FileCache/FileCache.h>
@@ -176,7 +177,7 @@ StoredObject makeObject(const String & name, size_t size)
 /// (a) openWriteBuffers over an empty miss range → fill across TWO window-by-window
 /// write() calls into ONE held buffer; the segment stays PARTIALLY_DOWNLOADED
 /// between calls and the second write appends from the grown cwo (no re-getOrSet);
-/// committed() grows; complete() true at the end; a later planResidencyView reports
+/// committed() grows; complete() true at the end; a later probeView reports
 /// it as a hit and read() returns the written bytes.
 TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
 {
@@ -220,8 +221,8 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     // Drop the writer so the segment finalizes (holder reset → DOWNLOADED on full fill).
     view_misses->miss_entries.clear();
 
-    // planResidencyView now reports the whole range as a hit.
-    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, kSegmentSize});
+    // probeView now reports the whole range as a hit.
+    auto view = probeView(*provider, object, /*object_file_offset=*/0, ByteRange{0, kSegmentSize});
     ASSERT_TRUE(view->allHit());
     ASSERT_EQ(view->hits().size(), 1u);
     const auto & hit = view->hits()[0];
@@ -297,7 +298,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
 }
 
 
-/// (d) planResidencyView is READ-ONLY: over an uncached range it creates NO
+/// (d) the residency probe (`lookAt`) is READ-ONLY: over an uncached range it creates NO
 /// segments (a later getOrSet/openWriteBuffers sees them still empty); misses
 /// carry writer==nullptr and cache-aligned ranges.
 TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
@@ -307,7 +308,7 @@ TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
     auto object = makeObject("obj_d", object_size);
 
     // Probe a sub-range that is unaligned on both ends within the object.
-    auto view = provider->planResidencyView(object, 0, ByteRange{kSegmentSize / 2, kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{kSegmentSize / 2, kSegmentSize});
     EXPECT_TRUE(view->allMiss());
     ASSERT_FALSE(view->misses().empty());
     for (const auto & m : view->misses())
@@ -334,7 +335,7 @@ TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
 
 
 /// (e) bypass: a DiskCacheProvider with read_if_exists_otherwise_bypass=true →
-/// openWriteBuffers returns empty; planResidencyView misses carry writer==nullptr.
+/// openWriteBuffers returns empty; `lookAt` misses carry writer==nullptr.
 TEST_F(DiskCacheBuffers, BypassNoWriters)
 {
     auto provider = makeProvider(/*bypass=*/true);
@@ -345,7 +346,7 @@ TEST_F(DiskCacheBuffers, BypassNoWriters)
     ASSERT_EQ(misses.size(), 1u);
     EXPECT_EQ(misses[0].writer, nullptr);
 
-    auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
     EXPECT_TRUE(view->allMiss());
     for (const auto & m : view->misses())
         EXPECT_EQ(m.writer, nullptr);
@@ -394,7 +395,7 @@ TEST_F(DiskCacheBuffers, PinFrontier)
 
     // Finalize the buffer → segment becomes DOWNLOADED; pin then returns nullptr.
     view_misses->miss_entries.clear();
-    auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
     ASSERT_TRUE(view->allHit());
 
     // Re-open a writer over the now-resident range: there is nothing to download,
@@ -420,7 +421,7 @@ TEST_F(DiskCacheBuffers, HitTracksPartialWrite)
     ASSERT_EQ(claimedWrite(writer, makeChain(0, quarter, 'R')), quarter);
 
     // A view over the same range reports the committed prefix as a hit.
-    auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
     ASSERT_FALSE(view->hits().empty());
     const auto & hit = view->hits()[0];
     EXPECT_EQ(hit.range.offset, 0u);
@@ -442,7 +443,7 @@ TEST_F(DiskCacheBuffers, HitTracksPartialWrite)
 /// (h) a single aligned miss range spanning TWO segments → ONE write buffer fills
 /// both, advancing across the segment boundary; complete() flips only once both
 /// segments are committed; committed() accumulates over the two intervals; a later
-/// planResidencyView reports both as hits and each segment's bytes round-trip.
+/// probeView reports both as hits and each segment's bytes round-trip.
 TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
 {
     auto provider = makeProvider();
@@ -475,7 +476,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     view_misses->miss_entries.clear();
 
     // Both segments are hits and the bytes round-trip per segment.
-    auto view = provider->planResidencyView(object, 0, ByteRange{0, 2 * kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{0, 2 * kSegmentSize});
     ASSERT_TRUE(view->allHit());
     ASSERT_FALSE(view->hits().empty());
 
@@ -496,7 +497,7 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
 
 /// (i) object at a non-zero file offset: all public ByteRanges are FILE-LEVEL while
 /// the cache keys object-local. Writing the object's only segment at its file-level
-/// offset commits the file-level range; a planResidencyView returns a hit whose
+/// offset commits the file-level range; a probeView returns a hit whose
 /// range is file-level. A second, partially-uncached object-with-offset yields a
 /// MISS that is file-level and cache-aligned in FILE space relative to the offset.
 TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
@@ -523,9 +524,9 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
 
     view_misses->miss_entries.clear();
 
-    // planResidencyView returns a hit whose range is the file-level segment.
-    auto view = provider->planResidencyView(
-        object, object_file_offset, ByteRange{kSegmentSize, kSegmentSize});
+    // probeView returns a hit whose range is the file-level segment.
+    auto view = probeView(
+        *provider, object, object_file_offset, ByteRange{kSegmentSize, kSegmentSize});
     ASSERT_TRUE(view->allHit());
     ASSERT_EQ(view->hits().size(), 1u);
     const auto & hit = view->hits()[0];
@@ -549,8 +550,8 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     ASSERT_EQ(claimedWrite(*misses2[0].writer, makeChain(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
     view_misses2->miss_entries.clear();
 
-    auto view2 = provider->planResidencyView(
-        object2, object_file_offset, ByteRange{kSegmentSize, 2 * kSegmentSize});
+    auto view2 = probeView(
+        *provider, object2, object_file_offset, ByteRange{kSegmentSize, 2 * kSegmentSize});
     ASSERT_FALSE(view2->allHit());
     ASSERT_FALSE(view2->misses().empty());
     const auto & miss = view2->misses()[0];
@@ -565,7 +566,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
 
 /// (j) partial fill then finalize: write only the first half of a segment, then drop
 /// the writer so the held holder finalizes (last owner). The finalized segment
-/// reflects only the downloaded prefix (cwo = half), so a later planResidencyView
+/// reflects only the downloaded prefix (cwo = half), so a later probeView
 /// reports ONLY the written half as a hit and the uncommitted remainder as a miss.
 TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
 {
@@ -584,7 +585,7 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     // owner; only the downloaded prefix (half) is committed/resident.
     view_misses->miss_entries.clear();
 
-    auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
 
     // The hit reflects only the downloaded half, NOT the whole segment.
     ASSERT_FALSE(view->hits().empty());
@@ -620,7 +621,7 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
         ASSERT_EQ(claimedWrite(*misses[0].writer, makeChain(0, kSegmentSize, 'K')), kSegmentSize);
     }
 
-    auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
+    auto view = probeView(*provider, object, 0, ByteRange{0, kSegmentSize});
     ASSERT_TRUE(view->allHit());
     ASSERT_FALSE(view->hits().empty());
 
@@ -716,7 +717,7 @@ TEST_F(DiskCacheBuffers, VirginMissRunsTileIntoOptimalCells)
     const size_t object_size = 3 * kSegmentSize;
     auto object = makeObject("obj_tile", object_size);
 
-    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, object_size});
+    auto view = probeView(*provider, object, /*object_file_offset=*/0, ByteRange{0, object_size});
     EXPECT_TRUE(view->allMiss());
     ASSERT_EQ(view->misses().size(), 3u);
     for (size_t i = 0; i < 3; ++i)
@@ -777,7 +778,7 @@ TEST_F(DiskCacheBuffers, TileCutsRespectExistingSegments)
         /*boundary_alignment_=*/kSegmentSize);
     ASSERT_EQ(concurrent->size(), 1u);   /// one wide segment spanning the grid cut
 
-    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, ByteRange{0, object_size});
+    auto view = probeView(*provider, object, /*object_file_offset=*/0, ByteRange{0, object_size});
     EXPECT_TRUE(view->allMiss());
     /// The cut at 4 * kSegmentSize is interior to the wide segment -> suppressed;
     /// the next grid cut is the run end. One range, one future writer: no aliasing.

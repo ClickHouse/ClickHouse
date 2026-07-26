@@ -4,6 +4,8 @@
 #include <IO/BufferSourceReader.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/ICacheProvider.h>
+#include <IO/ResidencyIterator.h>
+#include <IO/tests/SpanProbeMockBase.h>
 #include <IO/IntervalSet.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -533,7 +535,7 @@ private:
     IntervalSet committed_ranges;
 };
 
-class MockCacheProvider : public ICacheProvider
+class MockCacheProvider : public DB::tests::SpanProbeMockBase
 {
 public:
     explicit MockCacheProvider(size_t block_size_)
@@ -542,11 +544,12 @@ public:
     String name() const override { return "MockCache"; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
+protected:
     /// Read-only residency probe: classify each block as hit/miss against the LIVE
     /// store (never mutating it). Hits coalesce adjacent blocks into one entry and
     /// carry a held read buffer; misses are ONE ENTRY PER BLOCK (a block is this
     /// mock's cell) with no writer.
-    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
+    CacheViewPtr buildProbeView(const StoredObject &, size_t, ByteRange range_in_file) override
     {
         auto view = std::make_unique<CacheView>();
         if (range_in_file.size == 0)
@@ -589,6 +592,7 @@ public:
         return view;
     }
 
+public:
     void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
     {
         for (auto & entry : view.miss_entries)
@@ -1823,17 +1827,19 @@ namespace
 ///   - empty/evicted segment        -> miss head at segment start.
 /// Honors pinning via the write buffer's `pin` using FileCache's releasable()
 /// rule (use_count()==1).
-class EvictableSegmentMockCache : public ICacheProvider
+class EvictableSegmentMockCache : public DB::tests::SpanProbeMockBase
 {
 public:
     explicit EvictableSegmentMockCache(size_t segment_size_)
         : segment_size(segment_size_) {}
 
+protected:
     /// Read-only residency probe (defined out-of-line below, after the buffer
     /// classes): committed prefix is a hit, the segment-aligned tail past the
     /// download frontier is a per-segment miss. MUST NOT mutate the store.
-    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override;
+    CacheViewPtr buildProbeView(const StoredObject &, size_t, ByteRange range_in_file) override;
 
+public:
     /// One held write buffer per aligned (segment) miss range; each appends into its
     /// segment append-only (mirroring the old `put`) and pins it via `pin`.
     void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override;
@@ -2038,7 +2044,7 @@ private:
     IntervalSet committed_ranges;
 };
 
-inline CacheViewPtr EvictableSegmentMockCache::planResidencyView(
+inline CacheViewPtr EvictableSegmentMockCache::buildProbeView(
     const StoredObject &, size_t, ByteRange range_in_file)
 {
     auto view = std::make_unique<CacheView>();
@@ -2086,7 +2092,7 @@ inline void EvictableSegmentMockCache::openWriteBuffers(
     for (auto & entry : view.miss_entries)
     {
         /// Each miss cell lies within a single segment (one miss entry per segment
-        /// in `planResidencyView`); derive its index from the offset.
+        /// in `buildProbeView`); derive its index from the offset.
         const size_t seg_idx = entry.range.offset / segment_size;
         ++open_count[seg_idx];
         entry.writer = std::make_unique<EvictableSegmentWriteBuffer>(entry.range, seg_idx, *this);
@@ -3078,7 +3084,7 @@ private:
     std::unordered_map<size_t, String> pending;
 };
 
-class WideGranularityMockCache : public ICacheProvider
+class WideGranularityMockCache : public DB::tests::SpanProbeMockBase
 {
 public:
     WideGranularityMockCache(size_t block_size_, String name_)
@@ -3087,12 +3093,13 @@ public:
     String name() const override { return provider_name; }
     CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
+protected:
     /// Read-only residency probe at FULL block granularity: a block IS the write
     /// unit (`seedBlock`/`hasBlock` operate on whole blocks), so each miss range
     /// is ONE block - a touch fetches the whole block it lands in (cell-edge
     /// shaping). Hits coalesce adjacent blocks into one entry; never mutates the
     /// store.
-    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range_in_file) override
+    CacheViewPtr buildProbeView(const StoredObject &, size_t, ByteRange range_in_file) override
     {
         auto view = std::make_unique<CacheView>();
         if (range_in_file.size == 0)
@@ -3135,6 +3142,7 @@ public:
         return view;
     }
 
+public:
     void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
     {
         for (auto & entry : view.miss_entries)
@@ -3452,7 +3460,7 @@ TEST(ReaderExecutor, ProactivelyFillsLowerCellAcrossEmbeddedFasterHit)
 
 namespace
 {
-    /// Records every cache access (each `planResidencyView` probe) so tests can assert
+    /// Records every cache access (each `buildProbeView` probe) so tests can assert
     /// which `StoredObject` and `object_file_offset` the cache provider received per
     /// piece. The view always reports the whole range as a single MISS so the executor
     /// falls through to the source — keeps the data path simple.
@@ -3478,16 +3486,17 @@ namespace
         IntervalSet committed_ranges;
     };
 
-    class TrackingCacheProvider : public ICacheProvider
+    class TrackingCacheProvider : public DB::tests::SpanProbeMockBase
     {
     public:
         String name() const override { return "Tracking"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
+    protected:
         /// Read-only probe: record the access (the executor calls this both at plan
         /// build, so a cold window logs per-object passes)
         /// and report the whole range as one writer-null miss.
-        CacheViewPtr planResidencyView(
+        CacheViewPtr buildProbeView(
             const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override
         {
             log.push_back(TrackedLookup{object.remote_path, object_file_offset, range_in_file});
@@ -3496,6 +3505,7 @@ namespace
             return view;
         }
 
+    public:
         void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
         {
             for (auto & entry : view.miss_entries)
@@ -4698,7 +4708,7 @@ TEST(ReaderExecutor, PumpHealsAbandonedSiblingSegment)
 }
 
 /// Reproduces the `chassert(!is_last_holder)` abort in `FileSegment::complete`'s
-/// DOWNLOADING branch. `planResidencyView` credits a concurrently-DOWNLOADING
+/// DOWNLOADING branch. The residency probe (`lookAt`) credits a concurrently-DOWNLOADING
 /// segment's committed prefix as a HIT, so its `read_holder` passively pins the
 /// in-flight segment for the plan's lifetime, with no writer of its own. When a
 /// query is interrupted, that read view can outlive the segment's downloader and
@@ -4753,7 +4763,7 @@ TEST(ReaderExecutor, RealDiskCacheSiblingReadViewOutlivesDownloaderOfDownloading
     cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
 
     /// Fix the key + origin so the manual download lands on exactly the segment
-    /// `planResidencyView` will probe.
+    /// `probeView` will probe.
     auto key = DB::FileCacheKey::fromPath("sib_obj");
     auto origin = DB::FileCache::getCommonOrigin();
     auto provider = std::make_shared<DB::DiskCacheProvider>(
@@ -4784,7 +4794,7 @@ TEST(ReaderExecutor, RealDiskCacheSiblingReadViewOutlivesDownloaderOfDownloading
 
     /// A residency read view over the same range: its `read_holder` now passively
     /// pins the DOWNLOADING segment (committed prefix credited as a hit).
-    auto view = provider->planResidencyView(object, /*object_file_offset=*/0, DB::ByteRange{0, 8192});
+    auto view = probeView(*provider, object, /*object_file_offset=*/0, DB::ByteRange{0, 8192});
     ASSERT_TRUE(view != nullptr);
 
     /// Drop both holders on a HELPER thread: its thread-id makes `getCallerId()`
