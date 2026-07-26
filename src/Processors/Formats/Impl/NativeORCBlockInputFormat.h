@@ -126,13 +126,19 @@ public:
     NativeORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
+    std::optional<size_t> readNumberOrRows() override;
 
     /// The parser reads only the requested columns and never touches the rest of the file,
     /// regardless of `input_format_skip_unknown_fields`.
     bool alwaysSkipsUnknownFields() const override { return true; }
 
 private:
+    void initializeIfNeeded();
+
     const FormatSettings format_settings;
+    std::unique_ptr<orc::Reader> file_reader;
+    std::atomic<int> is_stopped{0};
+    bool initialized = false;
 };
 
 class ORCColumnToCHColumn
