@@ -697,8 +697,7 @@ public:
         , format_settings(getFormatSettings(context))
     {
         /// Extracting a string JSON value into a DateTime/DateTime64 column is a string-to-type
-        /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`),
-        /// same as HivePartitioningUtils::buildHiveFormatSettings.
+        /// cast, so we honour `cast_string_to_date_time_mode` (rather than `date_time_input_format`).
         format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
     }
 
