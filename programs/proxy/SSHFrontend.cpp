@@ -198,12 +198,17 @@ bool connectBackend(Bridge * bridge)
     if (!bridge->backend_session)
         return false;
 
-    const long timeout = static_cast<long>(bridge->ctx->config.connect_timeout_ms / 1000);  // NOLINT(google-runtime-int)
+    /// libssh sums `SSH_OPTIONS_TIMEOUT` (whole seconds) and `SSH_OPTIONS_TIMEOUT_USEC` (microseconds),
+    /// so both have to be set to honor the millisecond granularity of `connect_timeout_ms`.
+    const UInt64 timeout_ms = bridge->ctx->config.connect_timeout_ms;
+    const long timeout_sec = static_cast<long>(timeout_ms / 1000);  // NOLINT(google-runtime-int)
+    const long timeout_usec = static_cast<long>((timeout_ms % 1000) * 1000);  // NOLINT(google-runtime-int)
     int no_strict = 0;
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_HOST, backend.config().host.c_str());
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_PORT_STR, std::to_string(port).c_str());
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_USER, ssh_config.backend_user.c_str());
-    ssh_options_set(bridge->backend_session, SSH_OPTIONS_TIMEOUT, &timeout);
+    ssh_options_set(bridge->backend_session, SSH_OPTIONS_TIMEOUT, &timeout_sec);
+    ssh_options_set(bridge->backend_session, SSH_OPTIONS_TIMEOUT_USEC, &timeout_usec);
     ssh_options_set(bridge->backend_session, SSH_OPTIONS_STRICTHOSTKEYCHECK, &no_strict);
 
     if (ssh_connect(bridge->backend_session) != SSH_OK)
