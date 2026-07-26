@@ -607,7 +607,7 @@ SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
 
 ## Addition with Date {#addition-with-date}
 
-A [Time](time.md) value can be added to a [Date](date.md) or [Date32](date32.md) value to produce a [DateTime](datetime.md) or [DateTime64](datetime64.md):
+A [Time](/reference/data-types/time) value can be added to a [Date](/reference/data-types/date) or [Date32](/reference/data-types/date32) value to produce a [DateTime](/reference/data-types/datetime) or [DateTime64](/reference/data-types/datetime64):
 
 ```sql
 SET use_legacy_to_time = 0;
@@ -631,8 +631,8 @@ See [Date and Time Addition](/reference/operators/index#date-time-addition) for 
 - [The `date_time_output_format` setting](/reference/settings/formats/date-time#date_time_output_format)
 - [The `timezone` server configuration parameter](/reference/settings/server-settings/settings/other#timezone)
 - [The `session_timezone` setting](/reference/settings/session-settings/other#session_timezone)
-- [The `DateTime` data type](datetime.md)
-- [The `Date` data type](date.md)
+- [The `DateTime` data type](/reference/data-types/datetime)
+- [The `Date` data type](/reference/data-types/date)
 )DOCS_MD",
             .syntax = "Time",
             .related = {"Time64", "DateTime"},
@@ -753,7 +753,7 @@ SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
 
 ## Addition with Date {#addition-with-date}
 
-A [Time64](time64.md) value can be added to a [Date](date.md) or [Date32](date32.md) value to produce a [DateTime64](datetime64.md) with the same scale as the `Time64`:
+A [Time64](/reference/data-types/time64) value can be added to a [Date](/reference/data-types/date) or [Date32](/reference/data-types/date32) value to produce a [DateTime64](/reference/data-types/datetime64) with the same scale as the `Time64`:
 
 ```sql
 SET use_legacy_to_time = 0;

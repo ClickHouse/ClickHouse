@@ -1904,12 +1904,12 @@ Possible values:
     DECLARE(UInt64, query_plan_max_limit_for_top_k_optimization, 1000, R"(Control maximum limit value that allows to evaluate query plan for TopK optimization by using minmax skip index and dynamic threshold filtering. If zero, there is no limit.
 )", 0) \
     DECLARE(Bool, materialize_skip_indexes_on_insert, true, R"(
-If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
+If INSERTs build and store skip indexes. If disabled, skip indexes will only be built and stored [during merges](/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) or by explicit [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index).
 
 See also [exclude_materialize_skip_indexes_on_insert](#exclude_materialize_skip_indexes_on_insert).
 )", 0) \
     DECLARE(String, exclude_materialize_skip_indexes_on_insert, "", R"(
-Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](merge-tree-settings.md/#materialize_skip_indexes_on_merge) or by an explicit
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) or by an explicit
 [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index.md/#materialize-index) query.
 
 Has no effect if [materialize_skip_indexes_on_insert](#materialize_skip_indexes_on_insert) is false.
@@ -2252,8 +2252,8 @@ Possible values:
 - 1 — Enabled.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](/reference/engines/table-engines/mergetree-family/replication)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
+For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 )", 0) \
     DECLARE(Bool, async_insert_deduplicate, false, R"(
 For async INSERT queries in the replicated table, specifies that deduplication of inserting blocks should be performed
@@ -7210,8 +7210,8 @@ Possible values:
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
 
-For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](merge-tree-settings.md/#replicated_deduplication_window), [replicated_deduplication_window_seconds](merge-tree-settings.md/#replicated_deduplication_window_seconds)).
-For not replicated tables see [non_replicated_deduplication_window](merge-tree-settings.md/#non_replicated_deduplication_window).
+For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 
 :::note
 `insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
@@ -7585,12 +7585,12 @@ Allows to set default `DEFINER` option while creating a view. [More about SQL se
 The default value is `CURRENT_USER`.
 )", 0) \
     DECLARE(UInt64, cache_warmer_threads, 4, R"(
-Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch) is enabled. Zero to disable.
+Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](/reference/settings/merge-tree-settings#cache_populated_by_fetch) is enabled. Zero to disable.
 )", 0) \
     DECLARE(Bool, use_async_executor_for_materialized_views, false, R"(
 Use async and potentially multithreaded execution of materialized view query, can speedup views processing during INSERT, but also consume more memory.)", 0) \
     DECLARE(Int64, ignore_cold_parts_seconds, 0, R"(
-Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
+Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queries until they're either pre-warmed (see [cache_populated_by_fetch](/reference/settings/merge-tree-settings#cache_populated_by_fetch)) or this many seconds old. Only for Replicated-/SharedMergeTree.
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
 Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
@@ -7600,7 +7600,7 @@ Ratio threshold of NULL values to execute functions with Nullable arguments only
 When the ratio of rows containing NULL values to the total number of rows exceeds this threshold, these rows containing NULL values will not be evaluated.
 )", 0) \
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
-Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
+Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](/reference/settings/merge-tree-settings#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
     DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
 Query Iceberg table using the snapshot that was current at a specific timestamp.
@@ -7808,8 +7808,8 @@ Uses replicas from cluster_for_parallel_replicas.
 **See also**
 
 - [distributed_index_analysis_for_non_shared_merge_tree](#distributed_index_analysis_for_non_shared_merge_tree)
-- [distributed_index_analysis_min_parts_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_parts_to_activate)
-- [distributed_index_analysis_min_indexes_bytes_to_activate](merge-tree-settings.md/#distributed_index_analysis_min_indexes_bytes_to_activate)
+- [distributed_index_analysis_min_parts_to_activate](/reference/settings/merge-tree-settings#distributed_index_analysis_min_parts_to_activate)
+- [distributed_index_analysis_min_indexes_bytes_to_activate](/reference/settings/merge-tree-settings#distributed_index_analysis_min_indexes_bytes_to_activate)
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_index_analysis_only_on_coordinator, false, R"(
 If enabled, distributed index analysis runs only on the coordinator.

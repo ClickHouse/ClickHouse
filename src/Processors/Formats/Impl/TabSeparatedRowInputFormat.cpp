@@ -729,7 +729,7 @@ The output will be in tab separated format:
 
 ## Description {#description}
 
-Differs from the [`TabSeparatedWithNames`](./TabSeparatedWithNames.md) format, 
+Differs from the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format,
 in that the rows are written without escaping.
 
 :::note
@@ -813,7 +813,7 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 
 ## Description {#description}
 
-Differs from the [`TabSeparatedWithNamesAndTypes`](./TabSeparatedWithNamesAndTypes.md) format,
+Differs from the [`TabSeparatedWithNamesAndTypes`](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format,
 in that the rows are written without escaping.
 
 :::note

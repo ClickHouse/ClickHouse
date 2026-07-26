@@ -597,7 +597,7 @@ Importing data columns with unknown names will be skipped if setting [input_form
 
 ## Description {#description}
 
-Differs from the [`JSONEachRow`](./JSONEachRow.md) only in that data fields are output in strings, not in typed JSON values.
+Differs from the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) only in that data fields are output in strings, not in typed JSON values.
 
 ## Example usage {#example-usage}
 

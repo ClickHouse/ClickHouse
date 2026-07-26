@@ -135,7 +135,7 @@ void registerInputFormatJSONObjectEachRow(FormatFactory & factory)
 
 ## Description {#description}
 
-In this format, all data is represented as a single JSON Object, with each row represented as a separate field of this object similar to the [`JSONEachRow`](./JSONEachRow.md) format.
+In this format, all data is represented as a single JSON Object, with each row represented as a separate field of this object similar to the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format.
 
 ## Example usage {#example-usage}
 
@@ -266,7 +266,7 @@ The query `SELECT * FROM UserActivity FORMAT JSONEachRow` returns:
 Unlike the [JSON](/interfaces/formats/JSON) format, there is no substitution of invalid UTF-8 sequences. Values are escaped in the same way as for `JSON`.
 
 :::info
-Any set of bytes can be output in the strings. Use the [`JSONEachRow`](./JSONEachRow.md) format if you are sure that the data in the table can be formatted as JSON without losing any information.
+Any set of bytes can be output in the strings. Use the [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) format if you are sure that the data in the table can be formatted as JSON without losing any information.
 :::
 
 ### Usage of Nested Structures {#jsoneachrow-nested}

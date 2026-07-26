@@ -856,7 +856,7 @@ The `Values` format prints every row in brackets.
 - Numbers are output in a decimal format without quotes. 
 - Arrays are output in `[]`.
 - Strings, dates, and dates with times are output in quotes. 
-- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
+- Escaping rules and parsing are similar to the [TabSeparated](/reference/formats/TabSeparated/TabSeparated) format.
 
 During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
 [`NULL`](/sql-reference/syntax.md) is represented as `NULL`.

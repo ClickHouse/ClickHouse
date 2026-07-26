@@ -208,7 +208,7 @@ SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
 
 ## Reading nested subcolumns from Array {#reading-nested-subcolumns-from-array}
 
-If nested type `T` inside `Array` has subcolumns (for example, if it's a [named tuple](./tuple.md)), you can read its subcolumns from an `Array(T)` type with the same subcolumn names. The type of a subcolumn will be `Array` of the type of original subcolumn.
+If nested type `T` inside `Array` has subcolumns (for example, if it's a [named tuple](/reference/data-types/tuple)), you can read its subcolumns from an `Array(T)` type with the same subcolumn names. The type of a subcolumn will be `Array` of the type of original subcolumn.
 
 **Example**
 

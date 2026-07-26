@@ -276,7 +276,7 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 
 ## Description {#description}
 
-Differs from [`JSONEachRow`](./JSONEachRow.md) only in that data rows are output as arrays, not as objects.
+Differs from [`JSONEachRow`](/reference/formats/JSON/JSONEachRow) only in that data rows are output as arrays, not as objects.
 
 ## Example usage {#example-usage}
 
@@ -353,7 +353,7 @@ The output will be in JSON format:
 
 ## Description {#description}
 
-Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
+Differs from the [`JSONCompactEachRow`](/reference/formats/JSON/JSONCompactEachRow) format in that it also prints the header row with column names, similar to the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
 
 ## Example usage {#example-usage}
 
@@ -438,7 +438,7 @@ Otherwise, the first row will be skipped.
 
 ## Description {#description}
 
-Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints two header rows with column names and types, similar to the [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format.
+Differs from the [`JSONCompactEachRow`](/reference/formats/JSON/JSONCompactEachRow) format in that it also prints two header rows with column names and types, similar to the [TabSeparatedWithNamesAndTypes](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format.
 
 ## Example usage {#example-usage}
 
@@ -527,7 +527,7 @@ the types from input data will be compared with the types of the corresponding c
 
 ## Description {#description}
 
-Differs from [`JSONCompactEachRow`](./JSONCompactEachRow.md) only in that data fields are output as strings, not as typed JSON values.
+Differs from [`JSONCompactEachRow`](/reference/formats/JSON/JSONCompactEachRow) only in that data fields are output as strings, not as typed JSON values.
 
 ## Example usage {#example-usage}
 
@@ -604,7 +604,7 @@ The output will be in JSON format:
 
 ## Description {#description}
 
-Differs from the [`JSONCompactEachRow`](./JSONCompactEachRow.md) format in that it also prints the header row with column names, similar to the [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
+Differs from the [`JSONCompactEachRow`](/reference/formats/JSON/JSONCompactEachRow) format in that it also prints the header row with column names, similar to the [TabSeparatedWithNames](/reference/formats/TabSeparated/TabSeparatedWithNames) format.
 
 ## Example usage {#example-usage}
 

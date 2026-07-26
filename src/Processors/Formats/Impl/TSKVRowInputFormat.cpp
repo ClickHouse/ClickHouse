@@ -310,8 +310,8 @@ void registerInputFormatTSKV(FormatFactory & factory)
 
 ## Description {#description}
 
-Similar to the [`TabSeparated`](./TabSeparated.md) format, but outputs a value in `name=value` format. 
-Names are escaped the same way as in the [`TabSeparated`](./TabSeparated.md) format, and the `=` symbol is also escaped.
+Similar to the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format, but outputs a value in `name=value` format.
+Names are escaped the same way as in the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format, and the `=` symbol is also escaped.
 
 ```text
 SearchPhrase=   count()=8267016
