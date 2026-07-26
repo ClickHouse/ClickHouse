@@ -17,48 +17,38 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
   ## 사용자 지정 역할 만들기
 </div>
 
-사용자 지정 역할에는 조직, service, 데이터베이스 권한을 조합하여 포함할 수 있습니다. 권한은 모든 service와 데이터베이스 또는 그 부분 집합에 적용할 수 있습니다.
+사용자 지정 역할에는 조직, 서비스, 데이터베이스 권한을 조합하여 포함할 수 있습니다. 권한은 모든 서비스와 데이터베이스 또는 그 부분 집합에 적용할 수 있습니다.
 
 <Steps>
-  <Step>
-    ### 조직 설정으로 이동하여 Users and roles를 선택합니다
-
-    services 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
+  <Step title="조직 설정으로 이동하여 Users and roles를 선택합니다" id="users-and-roles-1">
+    서비스 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### `Roles` 탭을 선택합니다
-
+  <Step title={<>`Roles` 탭을 선택합니다</>} id="roles-tab">
     화면 상단 중앙에서 `Roles` 탭을 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 오른쪽 상단에서 `Create new role`을 선택합니다
-
+  <Step title={<>오른쪽 상단에서 <code>Create new role</code>을 선택합니다</>} id="create-new-role">
     화면 오른쪽 상단에서 `Create new role` 버튼을 선택합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### 역할 이름을 지정합니다
-
+  <Step title="역할 이름을 지정합니다" id="name-the-role">
     설명을 잘 나타내는 역할 이름을 입력합니다. 이 이름은 사용자와 API Key에 역할을 할당할 때 표시됩니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### `Allow`를 클릭하고 권한 범위를 선택합니다
-
-    `Allow` 버튼을 클릭한 다음 조직, Service 및/또는 Database 권한 중에서 선택합니다. 모든 권한에 대한 설명은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
+  <Step title={<>`Allow`를 클릭하고 권한 범위를 선택합니다</>} id="scope-permissions">
+    `Allow` 버튼을 클릭한 다음 조직, 서비스 및/또는 Database 권한 중에서 선택합니다. 모든 권한에 대한 설명은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
 
     <Tip>
-      console에 로그인할 사용자는 최소한 조직 &gt; Access 조직 권한이 있어야 합니다.
+      콘솔에 로그인할 사용자는 최소한 조직 &gt; Access 조직 권한이 있어야 합니다.
     </Tip>
 
     <Info>
@@ -70,9 +60,7 @@ ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### 새 역할을 검토합니다
-
+  <Step title="새 역할을 검토합니다" id="review-role">
     최종 생성 전에 새 역할에 할당된 권한을 검토합니다. 완료되면 `Create role`을 클릭합니다.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
