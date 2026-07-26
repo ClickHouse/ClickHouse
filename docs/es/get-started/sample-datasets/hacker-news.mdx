@@ -15,9 +15,7 @@ keywords: ['dataset de ejemplo', 'hacker news', 'datos de muestra', 'análisis d
 </div>
 
 <Steps>
-  <Step>
-    ### Descargar CSV
-
+  <Step title="Descargar CSV" id="download">
     Se puede descargar una versión en CSV del conjunto de datos desde nuestro [bucket público de S3](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz), o ejecutando este comando:
 
     ```bash
@@ -27,9 +25,7 @@ keywords: ['dataset de ejemplo', 'hacker news', 'datos de muestra', 'análisis d
     Con 4,6 GB y 28 millones de filas, este archivo comprimido debería tardar entre 5 y 10 minutos en descargarse.
   </Step>
 
-  <Step>
-    ### Tomar una muestra de los datos
-
+  <Step title="Tomar una muestra de los datos" id="sampling">
     [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local) permite procesar rápidamente archivos locales sin
     tener que desplegar y configurar el servidor de ClickHouse.
 
@@ -95,9 +91,7 @@ keywords: ['dataset de ejemplo', 'hacker news', 'datos de muestra', 'análisis d
     El formato `Vertical` se utiliza para ver más fácilmente los datos de cada columna.
   </Step>
 
-  <Step>
-    ### Cargar los datos con inferencia de esquema
-
+  <Step title="Cargar los datos con inferencia de esquema" id="loading-the-data">
     La herramienta más sencilla y potente para cargar datos es `clickhouse-client`: un cliente nativo de línea de comandos con numerosas funciones.
     Para cargar datos, también puedes aprovechar la inferencia de esquema y dejar que ClickHouse determine los tipos de las columnas.
 
@@ -148,9 +142,7 @@ keywords: ['dataset de ejemplo', 'hacker news', 'datos de muestra', 'análisis d
     ¡Has insertado 28 millones de filas en ClickHouse con un solo comando!
   </Step>
 
-  <Step>
-    ### Explorar los datos
-
+  <Step title="Explorar los datos" id="explore">
     Obtenga una muestra de las historias de Hacker News y de columnas concretas ejecutando la siguiente consulta:
 
     ```sql title="Query"
@@ -203,9 +195,7 @@ keywords: ['dataset de ejemplo', 'hacker news', 'datos de muestra', 'análisis d
     Aunque la inferencia de esquemas es una excelente herramienta para la exploración inicial de datos, funciona con un criterio de «mejor esfuerzo» y no sustituye a largo plazo la definición de un esquema óptimo para sus datos.
   </Step>
 
-  <Step>
-    ### Definir un esquema
-
+  <Step title="Definir un esquema" id="define-a-schema">
     Una optimización inmediata y evidente es definir un tipo para cada campo.
     Además de declarar el campo de tiempo como de tipo `DateTime`, definimos un tipo adecuado para cada uno de los campos siguientes después de eliminar el dataset existente.
     En ClickHouse, el id de la clave primaria de los datos se define mediante la cláusula `ORDER BY`.
@@ -248,9 +238,7 @@ keywords: ['dataset de ejemplo', 'hacker news', 'datos de muestra', 'análisis d
     ```
   </Step>
 
-  <Step>
-    ### Ejecutar consultas de muestra
-
+  <Step title="Ejecutar consultas de muestra" id="run-sample-queries">
     A continuación se presentan algunas consultas de ejemplo para que puedas inspirarte
     al escribir tus propias consultas.
 
@@ -463,9 +451,7 @@ Parquet tiene un conjunto mínimo de tipos, que ClickHouse debe respetar, y esta
 La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente a un esquema ligeramente distinto del archivo CSV.
 
 <Steps>
-  <Step>
-    ### Insertar los datos
-
+  <Step title="Insertar los datos" id="insert-the-data">
     Ejecuta la siguiente consulta para leer los mismos datos en formato Parquet, de nuevo con la función url para leer los datos remotos:
 
     ```sql
@@ -557,9 +543,7 @@ La inferencia de tipos a partir de un archivo Parquet conducirá invariablemente
     ```
   </Step>
 
-  <Step>
-    ### Añade un índice de descarte para acelerar las consultas
-
+  <Step title="Añade un índice de descarte para acelerar las consultas" id="add-skipping-index">
     Para averiguar cuántos comentarios mencionan &quot;ClickHouse&quot;, ejecuta la siguiente consulta:
 
     ```sql title="Query"
