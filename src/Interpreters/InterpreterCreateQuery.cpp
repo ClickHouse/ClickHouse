@@ -1853,14 +1853,15 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// introduced and must keep loading; plain Replicated-DDL replay re-executes an already
     /// validated initiator query. A full-definition ATTACH is fresh input and is validated like
     /// CREATE. A RESTORE counts as fresh only when the backed-up definition carried a UUID: such a
-    /// view lived in a UUID database, so landing it in a non-UUID one is a remap that loses the
-    /// UUID. `has_uuid` reflects the backup's own metadata (RESTORE overwrites `uuid` with a freshly
-    /// generated one before this point, but never `has_uuid`), so a UUID-less backup is a definition
-    /// that already lived without a UUID and must stay restorable.
-    const bool is_remapping_restore = is_restore_from_backup && create.has_uuid;
+    /// view lived in a UUID database, so landing it in a non-UUID one loses the UUID and is what
+    /// must be rejected. `has_uuid` reflects the backup's own metadata (RESTORE overwrites `uuid`
+    /// with a freshly generated one before this point, but never `has_uuid`), so a UUID-less backup
+    /// is a definition that already lived without a UUID: it stays restorable under any name, and
+    /// the Nil guard in checkParentTableExists keeps its refresh failing cleanly.
+    const bool is_uuid_losing_restore = is_restore_from_backup && create.has_uuid;
     const bool is_fresh_definition = mode <= LoadingStrictnessLevel::CREATE
         || (mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax)
-        || is_remapping_restore;
+        || is_uuid_losing_restore;
     if (create.refresh_strategy && !create.refresh_strategy->append && is_fresh_definition)
     {
         if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")

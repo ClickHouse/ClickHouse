@@ -83,7 +83,15 @@ $CLICKHOUSE_CLIENT --force_remove_data_recursively_on_drop=1 -q "DROP TABLE ${OR
 $CLICKHOUSE_CLIENT -q "RESTORE TABLE ${ORD_DB}.legacy_v FROM Disk('backups', '${CLICKHOUSE_DATABASE}/legacy_v')" > /dev/null \
     && echo "legacy_restore_ok"
 
-# A server that aborted during that refresh cannot answer this.
+# Restoring it under another name is accepted for the same reason (there is no UUID to lose), and the
+# copy stays harmless: its refresh is refused by the same Nil guard rather than aborting the server.
+$CLICKHOUSE_CLIENT -q "RESTORE TABLE ${ORD_DB}.legacy_v AS ${ORD_DB}.legacy_v_copy FROM Disk('backups', '${CLICKHOUSE_DATABASE}/legacy_v')" > /dev/null \
+    && echo "legacy_restore_as_ok"
+$CLICKHOUSE_CLIENT -q "SYSTEM REFRESH VIEW ${ORD_DB}.legacy_v_copy"
+$CLICKHOUSE_CLIENT -q "SYSTEM WAIT VIEW ${ORD_DB}.legacy_v_copy" 2>&1 \
+    | grep -q "Parent table doesn't exist" && echo "legacy_restore_as_refresh_refused"
+
+# A server that aborted during any of those refreshes cannot answer this.
 $CLICKHOUSE_CLIENT -q "SELECT 'server_alive'"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS ${MEM_DB} SYNC"
