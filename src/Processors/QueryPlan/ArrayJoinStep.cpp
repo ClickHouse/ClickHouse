@@ -48,6 +48,11 @@ ArrayJoinStep::ArrayJoinStep(const SharedHeader & input_header_, ArrayJoin array
     , max_block_size(max_block_size_)
     , enable_lazy_columns_replication(enable_lazy_columns_replication_)
 {
+    /// `array_join_use_nulls` changes semantics only for `LEFT ARRAY JOIN`; both construction paths pass
+    /// the raw setting. Normalize it here so that everything downstream - the output header, the
+    /// transform and, most importantly, the serialized flag and its version gate - sees the flag set
+    /// only when the new `NULL` semantics are actually in effect.
+    array_join.array_join_use_nulls = array_join.is_left && array_join.array_join_use_nulls;
 }
 
 void ArrayJoinStep::updateOutputHeader()
