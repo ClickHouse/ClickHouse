@@ -1088,6 +1088,40 @@ static void constructPhysicalStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
+/// Whether the join predicate is a constant (`JOIN ON 1`, `JOIN ON NULL`, ...), and if so, its value.
+/// Such a join is marked with `TableJoin::setJoinExpressionValue` below and is then executed by
+/// `ConstantJoin` regardless of `join_algorithm` (see the ConstantJoin branch in
+/// Planner/PlannerJoins.cpp), so serialization-version selection consults this too.
+/// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
+/// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
+/// ASOF JOIN is excluded: a constant expression cannot contain the required inequality predicate,
+/// and marking the join as a join with constant would leave `table_join_clauses` empty.
+/// Instead, it is rejected with INVALID_JOIN_ON_EXPRESSION.
+static std::optional<bool> tryGetConstantJoinPredicateValue(const JoinOperator & join_operator)
+{
+    if (join_operator.strictness == JoinStrictness::Asof)
+        return {};
+
+    const auto & join_expression = join_operator.expression;
+    const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
+
+    const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
+    const bool is_always_false_predicate = join_expression.size() == 1
+        && join_expression[0].getType()->onlyNull()
+        && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
+
+    if (is_always_true_predicate || is_always_false_predicate)
+        return is_always_true_predicate;
+    return {};
+}
+
+/// Whether this join will be executed by `ConstantJoin`: both an explicit CROSS/COMMA join and a join
+/// with a constant predicate are routed there whatever `join_algorithm` says.
+static bool willExecuteAsConstantJoin(const JoinOperator & join_operator)
+{
+    return isCrossOrComma(join_operator.kind) || tryGetConstantJoinPredicateValue(join_operator).has_value();
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -1120,20 +1154,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
     const bool is_join_without_expression = isCrossOrComma(join_operator.kind) || isPaste(join_operator.kind);
 
-    const bool is_always_true_predicate = !is_join_without_expression && join_expression.empty();
-    const bool is_always_false_predicate = join_expression.size() == 1
-        && join_expression[0].getType()->onlyNull()
-        && std::get<0>(join_expression[0].asBinaryPredicate()) == JoinConditionOperator::Unknown;
-    /// When we do JOIN ON NULL or JOIN ON 1 we create dummy columns and in fact joining on 1 = 0 or 1 = 1.
-    /// For INNER JOIN we could just do CROSS, but for OUTER result depends on whether any table is empty or not.
-    /// ASOF JOIN is excluded: a constant expression cannot contain the required inequality predicate,
-    /// and marking the join as a join with constant would leave `table_join_clauses` empty.
-    /// Instead, it is rejected below with INVALID_JOIN_ON_EXPRESSION.
-    if (join_operator.strictness != JoinStrictness::Asof && (is_always_true_predicate || is_always_false_predicate))
+    /// See tryGetConstantJoinPredicateValue for which predicates count as constant.
+    if (auto constant_predicate_value = tryGetConstantJoinPredicateValue(join_operator))
     {
-        bool join_expression_value = join_expression.empty();
         join_expression.clear();
-        table_join->setJoinExpressionValue(join_expression_value);
+        table_join->setJoinExpressionValue(*constant_predicate_value);
     }
 
     std::vector<JoinActionRef> used_expressions;
@@ -1639,13 +1664,17 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
 {
     join_settings.updatePlanSettings(settings);
     sorting_settings.updatePlanSettings(settings);
-    /// CROSS/COMMA join keeps its own dedicated threshold-based compression path and PASTE join
-    /// stores no build side, so `enable_join_in_memory_compression` never applies to this step and
-    /// must not raise its fragment's minimum serialization version (a receiver that later rewrites
-    /// the cross join into an inner hash join simply plans without the setting, the same graceful
-    /// degradation as a pre-version-4 receiver). See getMinRequiredVersion.
+    /// A join executed by `ConstantJoin` (an explicit CROSS/COMMA join, or a join with a constant
+    /// predicate such as `ON 1`) keeps its own dedicated threshold-based compression path, and PASTE
+    /// join stores no build side, so `enable_join_in_memory_compression` never applies to this step
+    /// and must not raise its fragment's minimum serialization version (a receiver that later
+    /// rewrites the join into an inner hash join simply plans without the setting, the same graceful
+    /// degradation as a pre-version-4 receiver). `ConstantJoin` does consume `max_memory_usage`
+    /// though, so a step-local value must still reach the receiver whatever `join_algorithm` allows.
+    /// See getMinRequiredVersion.
+    settings.join_executes_as_constant_join = willExecuteAsConstantJoin(join_operator);
     settings.join_kind_consumes_in_memory_compression
-        = !isCrossOrComma(join_operator.kind) && !isPaste(join_operator.kind);
+        = !settings.join_executes_as_constant_join && !isPaste(join_operator.kind);
 }
 
 static void serializeNodeList(

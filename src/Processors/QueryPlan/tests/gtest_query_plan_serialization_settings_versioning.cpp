@@ -134,21 +134,21 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
 
-    /// A join kind that never consults `enable_join_in_memory_compression` (CROSS/COMMA, which keep
-    /// a dedicated threshold-based compression path, and PASTE, which stores no build side - the
-    /// serializing step flags them via join_kind_consumes_in_memory_compression, see
-    /// JoinStepLogical::serializeSettings) must not raise the version even with compression enabled
-    /// and a hash-capable `join_algorithm`: a cross join executes as HashJoin whatever the
-    /// algorithm setting says, and bumping its fragment would make a version-3 receiver reject it
-    /// for a setting it would never consume.
+    /// A step that never consults `enable_join_in_memory_compression` (a `ConstantJoin` - a
+    /// CROSS/COMMA join or a join with a constant predicate, which keeps a dedicated threshold-based
+    /// compression path - and PASTE, which stores no build side; the serializing step flags them via
+    /// join_kind_consumes_in_memory_compression, see JoinStepLogical::serializeSettings) must not
+    /// raise the version even with compression enabled and a hash-capable `join_algorithm`: such a
+    /// join executes as `ConstantJoin` whatever the algorithm setting says, and bumping its fragment
+    /// would make a version-3 receiver reject it for a setting it would never consume.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
         settings.join_kind_consumes_in_memory_compression = false;
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
 
-        /// A step-local `max_memory_usage` still requires version 4 for such a kind: a cross join's
-        /// HashJoin consumes `max_memory_usage` as its plain shrink trigger.
+        /// A step-local `max_memory_usage` still requires version 4 for such a step: `ConstantJoin`
+        /// consumes `max_memory_usage` as its plain shrink trigger.
         settings.max_memory_usage_is_step_local = true;
         EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
     }
@@ -156,8 +156,9 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
     /// A step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged by
     /// JoinSettings::updatePlanSettings) is the other case that requires version 4 even with
     /// compression off: the receiver's query context carries only the outer query's value, so an
-    /// omitted step-local value could not be restored (see JoinStepLogical::deserialize). The same
-    /// hash-family gate applies: only hash-family joins consume the setting.
+    /// omitted step-local value could not be restored (see JoinStepLogical::deserialize). The gate is
+    /// the implementation that will run: hash-family joins consume the setting, and so does
+    /// `ConstantJoin`, which is chosen regardless of `join_algorithm`.
     {
         QueryPlanSerializationSettings settings;
         settings[QueryPlanSerializationSetting::max_memory_usage] = 12345;
@@ -166,6 +167,19 @@ TEST(QueryPlanSerializationSettings, MinRequiredVersion)
 
         settings[QueryPlanSerializationSetting::join_algorithm]
             = std::vector<JoinAlgorithm>{JoinAlgorithm::FULL_SORTING_MERGE, JoinAlgorithm::PARTIAL_MERGE, JoinAlgorithm::DIRECT};
+        EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
+
+        /// ... but a `ConstantJoin` step (`CROSS JOIN`, `JOIN ON 1`) ignores `join_algorithm`, and it
+        /// consumes `max_memory_usage`, so its fragment must still carry a step-local value.
+        settings.join_executes_as_constant_join = true;
+        EXPECT_EQ(settings.getMinRequiredVersion(), 4u);
+
+        /// Compression, on the other hand, is never consumed by `ConstantJoin`: such a step stays on
+        /// the baseline version when the step-local override is absent.
+        settings.max_memory_usage_is_step_local = false;
+        settings[QueryPlanSerializationSetting::enable_join_in_memory_compression] = true;
+        settings.join_kind_consumes_in_memory_compression = false;
+        settings[QueryPlanSerializationSetting::join_algorithm] = std::vector<JoinAlgorithm>{JoinAlgorithm::HASH};
         EXPECT_EQ(settings.getMinRequiredVersion(), 1u);
     }
 }

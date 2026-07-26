@@ -86,11 +86,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_RE
 /// mixed-version deployment does not make not-yet-upgraded workers reject tasks. Settings introduced
 /// by newer versions are omitted for this version by writeChangedBinary; they only tune in-memory
 /// behavior, so the omission degrades gracefully (an omitted `max_memory_usage` is restored on the
-/// receiver from its query context settings, see JoinStepLogical::deserialize). Exception: when a
-/// join step of the fragment has
-/// `enable_join_in_memory_compression` enabled, its `join_algorithm` may resolve to a hash-family
-/// implementation and its join kind actually consults the setting (CROSS/COMMA and PASTE joins never
-/// do), the task plan is serialized at version 4
+/// receiver from its query context settings, see JoinStepLogical::deserialize). Exceptions: when a
+/// join step of the fragment has `enable_join_in_memory_compression` enabled, its `join_algorithm` may
+/// resolve to a hash-family implementation and it actually consults the setting (a `ConstantJoin` -
+/// CROSS/COMMA or a constant predicate - and PASTE joins never do), or when its `max_memory_usage` is
+/// a subquery-local override that the receiver cannot restore from its query context, the task plan is
+/// serialized at version 4
 /// instead, so the opted-in feature is not silently dropped on this path - a not-yet-upgraded worker
 /// then rejects the task with a clear unsupported-version error rather than misbehaving (see
 /// serializeQueryPlan in DistributedPlanExecutor.cpp). Bump it only after the task protocol learns to negotiate the

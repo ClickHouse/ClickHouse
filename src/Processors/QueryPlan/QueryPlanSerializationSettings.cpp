@@ -133,6 +133,7 @@ QueryPlanSerializationSettings::QueryPlanSerializationSettings() : impl(std::mak
 QueryPlanSerializationSettings::QueryPlanSerializationSettings(const QueryPlanSerializationSettings & settings)
     : max_memory_usage_is_step_local(settings.max_memory_usage_is_step_local)
     , join_kind_consumes_in_memory_compression(settings.join_kind_consumes_in_memory_compression)
+    , join_executes_as_constant_join(settings.join_executes_as_constant_join)
     , impl(std::make_unique<QueryPlanSerializationSettingsImpl>(*settings.impl))
 {
 }
@@ -218,20 +219,27 @@ UInt64 QueryPlanSerializationSettings::getMinRequiredVersion() const
     /// The exception is a step-local `max_memory_usage` (a subquery-local SETTINGS override, flagged
     /// by JoinSettings::updatePlanSettings): the receiver's query context carries only the outer
     /// query's value, so an omitted step-local value cannot be restored and the stream must carry it.
-    /// Both cases can only matter when the step's `join_algorithm` may pick a hash-family
-    /// implementation: a step restricted to e.g. `full_sorting_merge` or `partial_merge` never
-    /// consumes either setting, so its fragment stays readable by older receivers.
+    /// Both cases are keyed on the implementation the step will actually run, not on the settings
+    /// alone. A step whose `join_algorithm` cannot pick a hash-family implementation (e.g. one
+    /// restricted to `full_sorting_merge` or `partial_merge`) consumes neither setting, so its
+    /// fragment stays readable by older receivers - unless it is a `ConstantJoin` step, which is
+    /// chosen regardless of `join_algorithm` (join_executes_as_constant_join) and consumes
+    /// `max_memory_usage` as its plain shrink trigger.
     /// The compression case is additionally keyed on the step's join kind
-    /// (join_kind_consumes_in_memory_compression): a CROSS JOIN executes as a ConstantJoin whatever
-    /// `join_algorithm` says, and that implementation keeps its own threshold-based compression path
-    /// and never consults `enable_join_in_memory_compression` - raising its fragment to version 4 for
-    /// it would only make older receivers reject a stream whose extra setting they would ignore
-    /// anyway. The step-local `max_memory_usage` case is not keyed on the kind: a cross join's
-    /// ConstantJoin still consumes `max_memory_usage` as its plain shrink trigger.
-    bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
-        && join_kind_consumes_in_memory_compression;
-    if ((compression_matters || max_memory_usage_is_step_local)
-        && canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]))
+    /// (join_kind_consumes_in_memory_compression): a `ConstantJoin` (a CROSS JOIN or a join with a
+    /// constant predicate) keeps its own threshold-based compression path and never consults
+    /// `enable_join_in_memory_compression`, and PASTE join stores no build side - raising such a
+    /// fragment to version 4 would only make older receivers reject a stream whose extra setting
+    /// they would ignore anyway.
+    const bool can_choose_hash_family_join = canChooseHashFamilyJoin((*this)[QueryPlanSerializationSetting::join_algorithm]);
+
+    const bool compression_matters = (*this)[QueryPlanSerializationSetting::enable_join_in_memory_compression]
+        && join_kind_consumes_in_memory_compression && can_choose_hash_family_join;
+
+    const bool step_local_max_memory_usage_matters = max_memory_usage_is_step_local
+        && (can_choose_hash_family_join || join_executes_as_constant_join);
+
+    if (compression_matters || step_local_max_memory_usage_matters)
         return 4;
     return 1;
 }

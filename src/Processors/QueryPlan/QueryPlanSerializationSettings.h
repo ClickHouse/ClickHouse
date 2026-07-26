@@ -87,6 +87,13 @@ struct QueryPlanSerializationSettings
     /// does not know its join kind keeps the conservative version bump.
     bool join_kind_consumes_in_memory_compression = true;
 
+    /// Whether the serializing join step is executed by `ConstantJoin` (an explicit CROSS/COMMA join,
+    /// or a join with a constant predicate like `ON 1`): that implementation is chosen regardless of
+    /// `join_algorithm`, and it consumes `max_memory_usage` as its shrink trigger, so a step-local
+    /// `max_memory_usage` must reach the receiver even when `join_algorithm` excludes hash-family
+    /// joins. Not a serialized setting; it only feeds getMinRequiredVersion.
+    bool join_executes_as_constant_join = false;
+
     /// Generated operator[] overloads for each supported type category.
     QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
