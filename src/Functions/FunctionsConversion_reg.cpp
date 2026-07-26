@@ -2337,8 +2337,9 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 
     /// toDate32OrZero documentation
     FunctionDocumentation::Description description_toDate32OrZero = R"(
-Converts an input value to a value of type [Date32](../data-types/date32.md) but returns the lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
-The same as [toDate32](#toDate32) but returns lower boundary of [Date32](../data-types/date32.md) if an invalid argument is received.
+Converts an input value to a value of type [Date32](../data-types/date32.md) but returns the default value `1900-01-01` if an invalid argument is received.
+The same as [toDate32](#toDate32) but returns `1900-01-01` if an invalid argument is received.
+Note that `1900-01-01` is a historical default value for invalid input, not the lower boundary of [Date32](../data-types/date32.md), which is `0000-01-01`.
 
 See also:
 - [`toDate32`](#toDate32)
@@ -2349,7 +2350,7 @@ See also:
     FunctionDocumentation::Arguments arguments_toDate32OrZero = {
         {"x", "A string representation of a date.", {"String"}},
     };
-    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the lower boundary of Date32 (`1900-01-01`).", {"Date32"}};
+    FunctionDocumentation::ReturnedValue returned_value_toDate32OrZero = {"Returns a Date32 value if successful, otherwise the historical default value for invalid input (`1900-01-01`).", {"Date32"}};
     FunctionDocumentation::Examples examples_toDate32OrZero = {
     {
         "Usage example",
