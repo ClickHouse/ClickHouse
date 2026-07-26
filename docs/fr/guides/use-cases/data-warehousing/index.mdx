@@ -16,7 +16,7 @@ ClickHouse s’intègre aux formats de table ouverts, notamment [Apache Iceberg]
   ### Interroger les données existantes sans les déplacer
 </div>
 
-ClickHouse peut interroger directement des formats de table ouverts dans le stockage objet, sans dupliquer les données. Les organisations qui ont standardisé Iceberg, Delta Lake, Hudi ou Paimon peuvent faire pointer ClickHouse vers des tables existantes et utiliser immédiatement son dialecte SQL, ses fonctions d&#39;analyse et son lecteur Parquet natif performant. Parallèlement, des outils comme [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) et [chDB](/fr/products/chdb/index) permettent d&#39;effectuer des analyses exploratoires ad hoc sur plus de 70 formats de fichiers dans un stockage distant, afin d&#39;explorer de façon interactive des datasets de lac de données sans configuration d&#39;infrastructure.
+ClickHouse peut interroger directement des formats de table ouverts dans le stockage objet, sans dupliquer les données. Les organisations qui ont standardisé Iceberg, Delta Lake, Hudi ou Paimon peuvent faire pointer ClickHouse vers des tables existantes et utiliser immédiatement son dialecte SQL, ses fonctions d&#39;analyse et son lecteur Parquet natif performant. Parallèlement, des outils comme [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) et [chDB](/fr/chdb/index) permettent d&#39;effectuer des analyses exploratoires ad hoc sur plus de 70 formats de fichiers dans un stockage distant, afin d&#39;explorer de façon interactive des datasets de lac de données sans configuration d&#39;infrastructure.
 
 Les utilisateurs peuvent y parvenir soit par lecture directe, à l&#39;aide des [fonctions de table et des moteurs de table](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly), soit en [se connectant à un catalogue de données](/fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
@@ -70,6 +70,12 @@ ClickHouse prend en charge la réécriture de données vers des formats de table
 * **ETL inversé** - Les utilisateurs effectuent des transformations dans ClickHouse à l&#39;aide de vues matérialisées ou de requêtes planifiées et souhaitent persister les résultats dans des formats de table ouverts pour qu&#39;ils puissent être exploités par d&#39;autres outils de l&#39;écosystème des données.
 
 Consultez le guide de démarrage pour [l&#39;écriture vers des lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+<div id="best-practices">
+  ### Bonnes pratiques
+</div>
+
+Pour les charges de travail de production, consultez [Bonnes pratiques pour les lacs de données](/fr/guides/use-cases/data-warehousing/getting-started/best-practices) pour savoir comment choisir les fonctions de table, les moteurs de table ou les connexions au catalogue, ajuster les paramètres de performance et déboguer les requêtes sur le lac de données.
 
 <div id="next-steps">
   ## Étapes suivantes
