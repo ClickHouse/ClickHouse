@@ -1,0 +1,19 @@
+inner/any non-leftmost: reads from remote replicas
+0
+inner/any non-leftmost under a left leftmost join: reads from remote replicas
+0
+all/inner only: reads from remote replicas
+1
+all/left only: reads from remote replicas
+1
+comma join rewritten to all/inner: reads from remote replicas
+1
+single table: reads from remote replicas
+1
+two-way inner/any: reads from remote replicas
+0
+inner/any non-leftmost: rows
+2	2	7
+inner/any non-leftmost under a left leftmost join: row count
+1
+all/inner only: rows

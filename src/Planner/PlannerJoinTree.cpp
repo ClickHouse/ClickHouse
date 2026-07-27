@@ -2569,11 +2569,24 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     int first_join_pos = -1;
     int last_right_join_pos = -1;
     bool is_cross_join = false;
+    /// Parallel-replicas eligibility is evaluated on the parent join node of the leftmost leaf only, i.e.
+    /// on the FIRST join node of this post-order stack (`parent_join_tree_for_leftmost` below). Any other
+    /// join of an n-way tree is never examined there, so track it here.
+    bool leftmost_join_tree_node_seen = false;
+    bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
         auto table_expression_type = table_expression->getNodeType();
+
+        const bool is_join_tree_node = table_expression_type == QueryTreeNodeType::JOIN
+            || table_expression_type == QueryTreeNodeType::CROSS_JOIN
+            || table_expression_type == QueryTreeNodeType::ARRAY_JOIN;
+        const bool is_non_leftmost_join_tree_node = is_join_tree_node && leftmost_join_tree_node_seen;
+        if (is_join_tree_node)
+            leftmost_join_tree_node_seen = true;
+
         if (table_expression_type == QueryTreeNodeType::ARRAY_JOIN)
             continue;
 
@@ -2612,6 +2625,16 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
+            /// Whitelist of the (kind, strictness) pairs `allowParallelReplicasForJoinTree` accepts. Anything
+            /// else must not be executed on several replicas: the whole join tree is shipped to every replica
+            /// while only the leftmost leaf's reads are coordinated, so a non-replica-safe join re-applies its
+            /// own strictness independently on each replica and the initiator concatenates the results,
+            /// duplicating rows. A whitelist keeps this fail-closed for future `JoinStrictness` enumerators.
+            if (is_non_leftmost_join_tree_node
+                && !((join_kind == JoinKind::Inner && join_node.getStrictness() == JoinStrictness::All)
+                     || join_kind == JoinKind::Left))
+                has_unsafe_non_leftmost_join = true;
+
             continue;
         }
 
@@ -2627,6 +2650,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
         /// for n-way join with FULL JOIN or GLOBAL JOINS or CROSS JOIN
         if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
+            return true;
+
+        /// for n-way join whose non-leftmost join is not replica-safe (e.g. INNER ... ANY INNER)
+        if (joins_count > 1 && has_unsafe_non_leftmost_join)
             return true;
 
         /// For RIGHT JOIN with distributed table on the right side
