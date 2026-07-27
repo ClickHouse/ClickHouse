@@ -1508,9 +1508,12 @@ protected:
         task_description.settings_changes = context->getSettingsRef().changes();
         /// A worker only reads the plan, and reading needs no version choice. Sending the setting
         /// would make a worker that predates it reject the task before reading a plan it can read,
-        /// which is the opposite of what holding the writer back is for.
+        /// which is the opposite of what holding the writer back is for. Named as a string because
+        /// changes carry names; the assertion catches a rename that would silently stop filtering.
+        static constexpr std::string_view writer_version_setting = "query_plan_serialization_version";
+        chassert(Settings::hasBuiltin(writer_version_setting));
         std::erase_if(task_description.settings_changes,
-            [](const SettingChange & change) { return change.name == "query_plan_serialization_version"; });
+            [](const SettingChange & change) { return change.name == writer_version_setting; });
 
         const String unique_temp_file_path = toString(unique_query_id);
         const auto server_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
