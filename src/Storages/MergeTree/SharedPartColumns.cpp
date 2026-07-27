@@ -271,35 +271,44 @@ size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const Serializa
 
 PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationInfoByName & infos) const
 {
-    auto key = buildSerializationsCacheKey(infos);
+    SerializationsCacheKey key;
+    std::vector<SerializationGroupKey> group_keys;
+    std::vector<PartSerializations::ColumnGroupPtr> groups;
 
     {
-        SharedLockGuard lock(serializations_cache_mutex);
-        if (auto it = serializations_cache.find(key); it != serializations_cache.end())
-            if (auto shared = it->second.lock())
-                return shared;
-    }
-
-    /// Whole-object miss: a new combination of serialization kinds. Probe the per-column group
-    /// cache before building anything: the keys are cheap to compute (the kind encodings fit in
-    /// SSO strings), and when only some columns' kinds changed, the groups of all the others are
-    /// reused without constructing a single serialization object.
-    auto group_keys = buildSerializationGroupKeys(infos);
-    std::vector<PartSerializations::ColumnGroupPtr> groups(group_keys.size());
-
-    {
-        SharedLockGuard lock(serializations_cache_mutex);
-        for (size_t i = 0; i != group_keys.size(); ++i)
-            if (auto it = serialization_groups_cache.find(group_keys[i]); it != serialization_groups_cache.end())
-                groups[i] = it->second.lock();
-    }
-
-    {
-        /// Build the missing groups outside the lock (concurrent loads of parts with distinct
-        /// kinds do not serialize each other) and inside the parts arena: the groups live as long
-        /// as some part of the table needs them. Only the survivors are built here — the transient
-        /// work of this function (keys, the lookup map draft) stays in the default arena.
+        /// Everything built in this block can outlive the call: on a cache miss the key and the
+        /// group keys are moved into the cache maps below, and the groups (with the vector that
+        /// holds them) into the part's `PartSerializations`, so allocate them in the parts arena
+        /// from the start. Only the transient name lookup draft below stays in the default arena
+        /// (the interned copy is what the parts keep).
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+        key = buildSerializationsCacheKey(infos);
+
+        {
+            SharedLockGuard lock(serializations_cache_mutex);
+            if (auto it = serializations_cache.find(key); it != serializations_cache.end())
+                if (auto shared = it->second.lock())
+                    return shared;
+        }
+
+        /// Whole-object miss: a new combination of serialization kinds. Probe the per-column group
+        /// cache before building anything: the keys are cheap to compute (the kind encodings fit in
+        /// SSO strings), and when only some columns' kinds changed, the groups of all the others are
+        /// reused without constructing a single serialization object.
+        group_keys = buildSerializationGroupKeys(infos);
+        groups.resize(group_keys.size());
+
+        {
+            SharedLockGuard lock(serializations_cache_mutex);
+            for (size_t i = 0; i != group_keys.size(); ++i)
+                if (auto it = serialization_groups_cache.find(group_keys[i]); it != serialization_groups_cache.end())
+                    groups[i] = it->second.lock();
+        }
+
+        /// Build the missing groups outside the lock (concurrent loads of parts with distinct
+        /// kinds do not serialize each other): the groups live as long as some part of the table
+        /// needs them.
         size_t i = 0;
         for (const auto & column : columns)
         {
@@ -335,7 +344,8 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
             /// emplace: the first occurrence of a name wins, as in the flat map this replaces.
             name_to_slot_draft.emplace(groups[group_index]->names[name_index], std::make_pair(group_index, name_index));
 
-    /// Route everything that ends up owned by the caches or the parts to the dedicated arena.
+    /// Route the rest of what ends up owned by the caches or the parts (the cache map nodes, the
+    /// interned name lookup map, the `PartSerializations` object) to the dedicated arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     std::lock_guard lock(serializations_cache_mutex);
