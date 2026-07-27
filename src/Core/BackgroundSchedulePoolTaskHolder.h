@@ -10,6 +10,12 @@ class BackgroundSchedulePoolTaskInfo;
 
 using BackgroundSchedulePoolTaskInfoPtr = std::shared_ptr<BackgroundSchedulePoolTaskInfo>;
 
+class BackgroundSchedulePool;
+
+/// Declared here (rather than only in BackgroundSchedulePool.h) so that headers holding a pool
+/// can do so without pulling in the full definition.
+using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;
+
 class BackgroundSchedulePoolTaskHolder
 {
 public:

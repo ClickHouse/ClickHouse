@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -93,7 +94,6 @@ class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
 class AsynchronousMetrics;
-class BackgroundSchedulePool;
 class MergeList;
 class MovesList;
 class ReplicatedFetchList;
@@ -1592,22 +1592,27 @@ public:
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
-    BackgroundSchedulePool & getBufferFlushSchedulePool() const;
-    BackgroundSchedulePool & getSchedulePool() const;
-    BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
-    BackgroundSchedulePool & getDistributedSchedulePool() const;
-    BackgroundSchedulePool & getIcebergSchedulePool() const;
-    BackgroundSchedulePool & getStreamingSchedulePool() const;
+    /// Create the pool if needed and return it. Returns a `shared_ptr` (not a reference) so a
+    /// caller keeping the pool around cannot outlive it: `shutdown` clears the members while
+    /// background tasks may still hold their pool.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePool() const;
+    BackgroundSchedulePoolPtr getSchedulePool() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePool() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePool() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePool() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePool() const;
 
-    /// Non-creating accessors: return the pool only if it has already been created,
-    /// nullptr otherwise. For callers that must observe the pools without instantiating
-    /// them (the read-only system.background_schedule_pool table must be side-effect-free).
-    BackgroundSchedulePool * getBufferFlushSchedulePoolIfExists() const;
-    BackgroundSchedulePool * getSchedulePoolIfExists() const;
-    BackgroundSchedulePool * getMessageBrokerSchedulePoolIfExists() const;
-    BackgroundSchedulePool * getDistributedSchedulePoolIfExists() const;
-    BackgroundSchedulePool * getIcebergSchedulePoolIfExists() const;
-    BackgroundSchedulePool * getStreamingSchedulePoolIfExists() const;
+    /// Non-creating accessors: return the pool only if it has already been created, null
+    /// otherwise. For callers that must observe the pools without instantiating them (the
+    /// read-only system.background_schedule_pool table must be side-effect-free). They return
+    /// a `shared_ptr` so the pool stays alive for as long as the caller uses it, even if a
+    /// concurrent `shutdown` clears the member.
+    BackgroundSchedulePoolPtr getBufferFlushSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getMessageBrokerSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getDistributedSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getIcebergSchedulePoolIfExists() const;
+    BackgroundSchedulePoolPtr getStreamingSchedulePoolIfExists() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
