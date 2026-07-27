@@ -72,6 +72,10 @@ MARKDOWN_FENCE_RE = re.compile(r"^(?P<fence>`{3,}|~{3,})")
 MINTLIFY_HEADING_PUNCTUATION_RE = re.compile(r"[?,;:!'\"()\[\]{}]")
 IMPORT_RE = re.compile(
     r'^import\s+(?P<symbol>[A-Za-z_$][\w$]*)\s+from\s+[^\n]+;\s*$', re.MULTILINE)
+NAMED_IMPORT_RE = re.compile(
+    r'^import\s+\{\s*(?P<symbol>[A-Za-z_$][\w$]*)\s*\}\s+from\s+[^\n]+;\s*$',
+    re.MULTILINE,
+)
 
 SETTINGS_SPLIT_FAMILIES = {
     "session-settings": {
@@ -976,9 +980,26 @@ def _rewrite_session_setting_links(markdown, routes):
 
 def _component_imports_for_page(preamble, markdown):
     imports = []
-    for match in IMPORT_RE.finditer(preamble):
-        if re.search(rf"<{re.escape(match.group('symbol'))}\b", markdown):
-            imports.append(match.group(0).strip())
+    candidates = [
+        (match.group("symbol"), match.group(0).strip())
+        for regex in (IMPORT_RE, NAMED_IMPORT_RE)
+        for match in regex.finditer(preamble)
+    ]
+    for symbol, import_line in candidates:
+        if not re.search(rf"<{re.escape(symbol)}\b", markdown):
+            continue
+        # Mintlify's JSX snippet renderer requires `VersionHistory` to use its
+        # named export. A default import silently omits the component.
+        if (
+            symbol == "VersionHistory"
+            and import_line.startswith(f"import {symbol} from ")
+        ):
+            import_line = import_line.replace(
+                f"import {symbol} from ",
+                f"import {{ {symbol} }} from ",
+                1,
+            )
+        imports.append(import_line)
     return imports
 
 
