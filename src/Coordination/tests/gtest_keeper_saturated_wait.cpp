@@ -58,6 +58,11 @@ std::vector<UInt64> hugeUnsignedTimeoutsMs()
 /// duration returns true, while a wait whose duration was lost to overflow returns false at once.
 constexpr Int64 notify_after_ms = 300;
 
+/// For the opposite direction, where the wait must not happen at all, the predicate is satisfied
+/// sooner: the ordering oracle can only see a spurious wait that lasts at least this long, so the
+/// delay has to stay below the shortest regression worth catching rather than above it.
+constexpr Int64 signal_after_ms = 100;
+
 }
 
 class KeeperSaturatedWaitTest : public ::testing::Test
@@ -140,14 +145,35 @@ TEST_F(KeeperSaturatedWaitTest, InterruptibleSleepKeepsHugePeriod)
 /// a wait, otherwise shutdown paths that pass a wrapped negative count would hang.
 TEST_F(KeeperSaturatedWaitTest, InterruptibleSleepReturnsAtOnceForNonPositivePeriod)
 {
-    KeeperDispatcher dispatcher;
-
     for (Int64 period_ms : {Int64{0}, Int64{-1}, Int64{-9'223'372'036'854'775}})
     {
         SCOPED_TRACE(period_ms);
+
+        /// A fresh dispatcher per period: the flag latches once signalled, so a shared one would
+        /// already be shutting down for every iteration after the first and the oracle below would
+        /// read true without any wait having happened.
+        KeeperDispatcher dispatcher;
+
+        std::thread shutdown_signaller(
+            [&]
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(signal_after_ms));
+                dispatcher.signalShutdown();
+            });
+
         Stopwatch watch;
         dispatcher.interruptibleSleep(std::chrono::milliseconds(period_ms));
-        EXPECT_LT(watch.elapsedMilliseconds(), static_cast<UInt64>(notify_after_ms));
+        const auto elapsed_ms = watch.elapsedMilliseconds();
+        /// Sampled before the join for the same reason as above: the signaller sets the flag
+        /// unconditionally, so a reading taken afterwards is true whatever ended the wait.
+        const bool shutdown_was_signalled_when_the_wait_returned = dispatcher.isShuttingDown();
+        shutdown_signaller.join();
+
+        /// An elapsed bound alone accepts any wait shorter than the signal delay, so it cannot say
+        /// the wait did not happen. This pins the ordering: the call returned while the predicate
+        /// was still false, so it did not wait at all.
+        EXPECT_FALSE(shutdown_was_signalled_when_the_wait_returned);
+        EXPECT_LT(elapsed_ms, static_cast<UInt64>(notify_after_ms));
     }
 }
 

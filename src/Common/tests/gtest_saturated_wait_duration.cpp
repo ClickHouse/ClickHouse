@@ -189,10 +189,33 @@ TEST(SaturatedWaitDuration, ConcurrentBoundedQueuePushKeepsHugeTimeout)
 
 TEST(SaturatedWaitDuration, ConcurrentBoundedQueueZeroTimeoutStillReturnsAtOnce)
 {
-    /// Saturation must not turn "do not wait" into a wait.
+    /// Saturation must not turn "do not wait" into a wait. An empty queue reports failure however
+    /// long the wait lasted, and an elapsed bound accepts any wait shorter than the bound, so
+    /// neither can say the wait did not happen. A producer that pushes a little later makes it an
+    /// ordering fact instead: the item must still be in the queue afterwards, which is only true if
+    /// the pop returned before the push landed. The delay stays below the shortest spurious wait
+    /// worth catching, because a wait shorter than it would go unnoticed.
+    constexpr UInt64 push_after_ms = 100;
+
     ConcurrentBoundedQueue<int> queue(1);
+
+    std::thread producer(
+        [&]
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(push_after_ms));
+            ASSERT_TRUE(queue.tryPush(42, 1000));
+        });
+
     int x = 0;
     Stopwatch watch;
-    EXPECT_FALSE(queue.tryPop(x, 0));
-    EXPECT_LT(watch.elapsedMilliseconds(), 300u);
+    const bool popped = queue.tryPop(x, 0);
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    producer.join();
+
+    EXPECT_FALSE(popped);
+    EXPECT_LT(elapsed_ms, 300u);
+
+    int still_queued = 0;
+    EXPECT_TRUE(queue.tryPop(still_queued, 0));
+    EXPECT_EQ(still_queued, 42);
 }
