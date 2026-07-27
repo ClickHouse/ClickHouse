@@ -7,6 +7,12 @@
 -- inputs, which makes the exact wall-clock result non-portable.
 
 SET enable_time_time64_type = 1;
+-- Pinned at its own default on purpose, not redundantly: FunctionFactory resolves `toTime` to
+-- the legacy `toTimeWithFixedDate` whenever `use_legacy_to_time = 1`, and the stress runner
+-- injects a random `compatibility='NN.N'` client option which restores that value for versions
+-- before 26.7. Without this pin the `toTime` statements below stop reaching
+-- `ToTimeImpl::execute(Int64)`, so the `DateTime64 -> Time` half of the fix goes uncovered.
+SET use_legacy_to_time = 0;
 
 -- DateTime64 -> Time (ToTimeImpl::execute(Int64)): INT64_MIN with a negative offset overflowed.
 SELECT toTime(reinterpret(CAST(-9223372036854775808 AS Int64), 'DateTime64(0, ''Etc/GMT+12'')'));
