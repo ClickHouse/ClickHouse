@@ -148,13 +148,20 @@ void ActionsChainStep::initialize()
     {
         std::unordered_set<std::string_view> available_output_columns_names;
 
+        for (const auto * output_node : actions->dag.getOutputs())
+        {
+            if (!available_output_columns_names.insert(output_node->result_name).second)
+                continue;
+
+            available_output_columns.emplace_back(output_node->column, output_node->result_type, output_node->result_name);
+        }
+
         for (const auto & node : actions->dag.getNodes())
         {
-            if (available_output_columns_names.contains(node.result_name))
+            if (!available_output_columns_names.insert(node.result_name).second)
                 continue;
 
             available_output_columns.emplace_back(node.column, node.result_type, node.result_name);
-            available_output_columns_names.insert(node.result_name);
         }
     }
 

@@ -1,0 +1,68 @@
+---
+title: 'Exploitation et maintenance du BYOC'
+slug: /cloud/reference/byoc/operations
+sidebarTitle: 'Exploitation et maintenance'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'exploitation', 'maintenance']
+description: 'Déployer ClickHouse dans votre propre infrastructure cloud'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+ClickHouse Cloud gère les mises à niveau et la maintenance de votre déploiement BYOC afin de garantir que vos services restent sécurisés, performants et à jour. Cette page décrit les processus de mise à niveau des différents composants de votre infrastructure BYOC, ainsi que le fonctionnement des fenêtres de maintenance.
+
+<div id="clickhouse-upgrade-process">
+  ## Processus de mise à niveau du service ClickHouse
+</div>
+
+Nous mettons régulièrement à niveau la base de données ClickHouse, notamment avec des changements de version, des corrections de bugs et des améliorations des performances. ClickHouse Cloud utilise une approche de [&quot;make before break&quot; (MBB)](/fr/products/cloud/features/autoscaling/make-before-break) pour les mises à niveau, qui consiste à ajouter des répliques mises à jour avant de retirer les anciennes, afin de rendre les mises à niveau plus fluides et moins perturbatrices pour les charges de travail en cours.
+
+Les mises à niveau des services ClickHouse en BYOC suivent le même processus et les mêmes modalités que les services ClickHouse Cloud standard, notamment avec la prise en charge des release channels (Fast, Regular et Slow) et des fenêtres de maintenance planifiées. Toutes les fonctionnalités des niveaux Scale et Enterprise sont disponibles dans les déploiements BYOC. Pour des informations détaillées sur le planning des mises à niveau, les release channels et les fenêtres de maintenance, consultez la [documentation sur les mises à niveau](/fr/products/cloud/features/admin-features/upgrades).
+
+<div id="cloud-upgrade-process">
+  ## Processus de mise à niveau des services et ressources Cloud
+</div>
+
+ClickHouse Cloud met régulièrement à niveau les services auxiliaires exécutés sur Kubernetes ainsi que les composants d’infrastructure de votre déploiement BYOC afin de garantir la sécurité, la fiabilité et l’accès aux nouvelles fonctionnalités. Ces mises à niveau des services Cloud sont effectuées en arrière-plan et suivent notre calendrier de release standard pour Cloud. Tous les services auxiliaires sont gérés via ArgoCD, et les mises à niveau sont conçues pour être sans interruption. Aucune interruption de service n’est attendue pendant ces mises à jour.
+
+Voici quelques exemples de services Cloud mis à niveau :
+
+* **ClickHouse Operator** : l’opérateur Kubernetes qui gère les clusters ClickHouse
+* **Services Istio** : les composants Ingress et agent
+* **Stack de monitoring** : les composants Prometheus, Grafana, AlertManager et Thanos
+
+<div id="k8s-upgrade-process">
+  ## Processus de mise à niveau du cluster Kubernetes
+</div>
+
+Le cluster Kubernetes (EKS pour AWS, GKE pour GCP) qui héberge vos services ClickHouse nécessite des mises à niveau périodiques afin de préserver la sécurité, la compatibilité et l’accès aux nouvelles fonctionnalités. ClickHouse Cloud gère toutes les mises à niveau du cluster Kubernetes pour votre déploiement BYOC, afin de garantir que votre cluster reste à jour avec les versions prises en charge.
+
+<div id="cluster-upgrade-types">
+  ### Types de mise à niveau du cluster
+</div>
+
+**Mises à niveau du plan de contrôle** : Les composants du plan de contrôle Kubernetes (serveur API, etcd, controller manager) sont mis à niveau par ClickHouse Cloud. Ces mises à niveau sont généralement transparentes pour vos charges de travail et ne nécessitent pas de redémarrage des pods.
+
+**Mises à niveau des groupes de nœuds** : Les mises à niveau des nœuds worker nécessitent le remplacement de nœuds, ce qui peut affecter les pods en cours d’exécution. ClickHouse Cloud coordonne ces mises à niveau selon une approche de type « make before break » afin de minimiser les perturbations :
+
+* De nouveaux nœuds sont provisionnés avec la version Kubernetes mise à jour avant la suppression des anciens nœuds
+* Les pods sont drainés proprement et migrés vers les nouveaux nœuds
+* Les anciens nœuds ne sont arrêtés qu’une fois les pods migrés avec succès
+
+<Note>
+  Les mises à niveau des nœuds Kubernetes peuvent entraîner de brefs redémarrages de pods pendant le processus de migration. ClickHouse Cloud utilise des budgets de perturbation des pods et des arrêts propres afin de minimiser l’impact sur vos charges de travail.
+</Note>
+
+<div id="upgrade-schedule">
+  ### Planification des mises à niveau
+</div>
+
+Les mises à niveau du cluster Kubernetes sont planifiées avec vous par l’intermédiaire de ClickHouse Support. Nous vous informerons à l’avance du plan de mise à niveau et travaillerons avec vous afin de définir une fenêtre de maintenance adaptée, de manière à réduire au minimum l’impact opérationnel.
+
+<div id="version-support">
+  ### Versions prises en charge
+</div>
+
+ClickHouse Cloud maintient les clusters Kubernetes dans les plages de versions prises en charge définies par votre fournisseur de services cloud (AWS EKS ou Google GKE). Nous veillons à ce que votre cluster reste compatible avec les exigences du fournisseur tout en restant à jour en matière de correctifs de sécurité et de mises à jour de fonctionnalités.

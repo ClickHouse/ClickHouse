@@ -45,8 +45,6 @@ struct MergeTreeReaderSettings
     bool is_low_cardinality_dictionary = false;
     /// True if we read stream that contains some metadata and will be read as a whole at once.
     bool is_metadata_file = false;
-    /// True if data may be compressed by different codecs in one stream.
-    bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
     bool apply_deleted_mask = true;
     /// Put reading task in a common I/O pool, return Async state on prepare()
@@ -70,13 +68,22 @@ struct MergeTreeReaderSettings
     bool secondary_indices_enable_bulk_filtering = true;
     UInt64 merge_tree_min_bytes_for_seek = 0;
     UInt64 merge_tree_min_rows_for_seek = 0;
+    UInt64 merge_tree_coarse_index_granularity = 8;
+    UInt64 merge_tree_generic_exclusion_search_max_steps = 0;
     size_t filesystem_prefetches_limit = 0;
     bool enable_analyzer = false;
     bool load_marks_asynchronously = false;
+    /// If true, compress marks into the in-memory representation one block at a time
+    /// instead of materializing the full plain marks array.
+    bool use_streaming_marks_compression = false;
     /// If true, only column sample with 0 rows will be read.
     /// This information can be used for more optimal reading of
     /// columns prefixes.
     bool read_only_column_sample = false;
+    /// True when predicate_statistics_sample_rate > 0, i.e. the read steps must
+    /// maintain selectivity counters for system.predicate_statistics_log. When
+    /// false (the default), the readers skip the per-granule counter work.
+    bool collect_predicate_statistics = false;
 
     static MergeTreeReaderSettings createFromContext(const ContextPtr & context);
     /// Note storage_settings used only in private, do not remove

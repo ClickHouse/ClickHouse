@@ -410,21 +410,7 @@ private:
     size_t getEqualLength()
     {
         const size_t base_pos = impl.getPos();
-        size_t pos = base_pos + 1;
-        for (; pos < impl.rows; ++pos)
-            if (cmpPrev(base_pos, pos))
-                break;
-        return pos - base_pos;
-    }
-
-    int ALWAYS_INLINE cmpPrev(size_t base_pos, size_t pos) const
-    {
-        int res = impl.sort_columns[0]->compareAt(base_pos, pos, *(impl.sort_columns[0]), 1);
-
-        for (size_t i = 1; (!res) && i < impl.sort_columns_size; ++i)
-            res = impl.sort_columns[i]->compareAt(base_pos, pos, *(impl.sort_columns[i]), 1);
-
-        return res;
+        return getEqualRangeEndAssumeSorted(impl.sort_columns, base_pos, impl.rows, 1) - base_pos;
     }
 };
 

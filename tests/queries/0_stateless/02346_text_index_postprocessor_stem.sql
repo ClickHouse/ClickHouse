@@ -215,8 +215,8 @@ SELECT count() FROM tab WHERE val = 'walking';   -- 0
 DROP TABLE tab;
 
 SELECT '-- hasPhrase: phrase tokens are stemmed before index lookup.';
--- HINT mode: granule is kept if every phrase-token stem is present. Row-level hasPhrase
--- still does literal phrase matching, so each variant matches only its own row.
+-- HINT mode: granule is kept if every phrase-token stem is present. The row-level recheck stems both
+-- the haystack tokens and the phrase, so any morphological variant matches every stem-equivalent row.
 
 CREATE TABLE tab
 (
@@ -233,11 +233,11 @@ INSERT INTO tab VALUES
     (3, 'run fast'),       -- stems 'run', 'fast'
     (4, 'walking slowly'); -- stems 'walk', 'slowli'
 
--- Each literal phrase matches its row; granule kept via stems 'run', 'fast'.
-SELECT count() FROM tab WHERE hasPhrase(val, 'running fast');     -- 1
-SELECT count() FROM tab WHERE hasPhrase(val, 'runs fast');        -- 1
-SELECT count() FROM tab WHERE hasPhrase(val, 'run fast');         -- 1
--- All three phrases together cover every stem-'run' row.
+-- Each phrase stems to ['run','fast'], matching all three stem-'run' rows.
+SELECT count() FROM tab WHERE hasPhrase(val, 'running fast');     -- 3
+SELECT count() FROM tab WHERE hasPhrase(val, 'runs fast');        -- 3
+SELECT count() FROM tab WHERE hasPhrase(val, 'run fast');         -- 3
+-- The three phrases are equivalent after stemming; together they still cover the three stem-'run' rows.
 SELECT count() FROM tab WHERE hasPhrase(val, 'running fast') OR hasPhrase(val, 'runs fast') OR hasPhrase(val, 'run fast');   -- 3
 -- Different stems — granule pruned.
 SELECT count() FROM tab WHERE hasPhrase(val, 'jumping high');     -- 0

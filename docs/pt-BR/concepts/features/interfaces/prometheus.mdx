@@ -1,0 +1,171 @@
+---
+description: 'Documentação do suporte ao protocolo Prometheus no ClickHouse'
+sidebarTitle: 'Protocolos do Prometheus'
+slug: /interfaces/prometheus
+title: 'Protocolos do Prometheus'
+doc_type: 'reference'
+---
+
+<div id="expose">
+  ## Expondo métricas
+</div>
+
+<Note>
+  Se você estiver usando o ClickHouse Cloud, poderá expor métricas para o Prometheus usando a [integração com o Prometheus](/pt-BR/products/cloud/features/monitoring/prometheus).
+</Note>
+
+O ClickHouse pode expor suas próprias métricas para coleta pelo Prometheus:
+
+````xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+
+A seção `<prometheus.handlers>` pode ser usada para criar handlers mais avançados.
+Esta seção é semelhante a [<http_handlers>](/concepts/features/interfaces/http), mas funciona para protocolos prometheus:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+````
+
+Configurações:
+
+| Name                         | Default    | Description                                                                                                                                                                                      |
+| ---------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `port`                       | nenhum     | Porta usada para servir o protocolo de exposição de métricas.                                                                                                                                    |
+| `endpoint`                   | `/metrics` | Endpoint HTTP para a coleta de métricas pelo servidor Prometheus. Começa com `/`. Não deve ser usado com a seção `<handlers>`.                                                                   |
+| `url` / `headers` / `method` | nenhum     | Filtros usados para encontrar um handler correspondente para uma requisição. Semelhantes aos campos com os mesmos nomes na seção [`<http_handlers>`](/pt-BR/concepts/features/interfaces/http).        |
+| `metrics`                    | true       | Expõe métricas da tabela [system.metrics](/pt-BR/reference/system-tables/metrics).                                                                                                                     |
+| `asynchronous_metrics`       | true       | Expõe os valores atuais das métricas da tabela [system.asynchronous&#95;metrics](/pt-BR/reference/system-tables/asynchronous_metrics).                                                                 |
+| `events`                     | true       | Expõe métricas da tabela [system.events](/pt-BR/reference/system-tables/events).                                                                                                                       |
+| `errors`                     | true       | Expõe o número de erros por código de erro ocorridos desde a última reinicialização do servidor. Essas informações também podem ser obtidas em [system.errors](/pt-BR/reference/system-tables/errors). |
+| `histograms`                 | true       | Expõe métricas de histograma de [system.histogram&#95;metrics](/pt-BR/reference/system-tables/histogram_metrics)                                                                                       |
+| `dimensional_metrics`        | true       | Expõe métricas dimensionais de [system.dimensional&#95;metrics](/pt-BR/reference/system-tables/dimensional_metrics)                                                                                    |
+
+Verifique (substitua `127.0.0.1` pelo endereço IP ou hostname do seu servidor ClickHouse):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+## Protocolo remote-write
+
+O ClickHouse oferece suporte ao protocolo [remote-write](https://prometheus.io/docs/specs/remote_write_spec/).
+Os dados recebidos por esse protocolo são gravados em uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series)
+(que deve ser criada previamente).
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+Configurações:
+
+| Name                         | Default | Description                                                                                                                                                                                                                          |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `port`                       | nenhum  | Porta usada para expor o protocolo `remote-write`.                                                                                                                                                                                   |
+| `url` / `headers` / `method` | nenhum  | Filtros usados para encontrar um handler correspondente para uma requisição. Semelhante aos campos de mesmo nome na seção [`<http_handlers>`](/pt-BR/concepts/features/interfaces/http).                                                   |
+| `table`                      | nenhum  | O nome de uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) para gravar os dados recebidos pelo protocolo `remote-write`. Esse nome também pode conter, opcionalmente, o nome de um banco de dados. |
+| `database`                   | nenhum  | O nome de um banco de dados onde está localizada a tabela especificada na configuração `table`, caso ele não esteja especificado na configuração `table`.                                                                            |
+
+## Protocolo remote-read
+
+O ClickHouse oferece suporte ao protocolo [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/).
+Os dados são lidos de uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) e enviados por esse protocolo.
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+Configurações:
+
+| Nome                         | Padrão | Descrição                                                                                                                                                                                                                               |
+| ---------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | nenhum | Porta para atender ao protocolo `remote-read`.                                                                                                                                                                                          |
+| `url` / `headers` / `method` | nenhum | Filtros usados para encontrar um handler correspondente para uma solicitação. Semelhante aos campos com os mesmos nomes na seção [`<http_handlers>`](/pt-BR/concepts/features/interfaces/http).                                               |
+| `table`                      | nenhum | O nome de uma tabela [TimeSeries](/pt-BR/reference/engines/table-engines/integrations/time-series) para ler os dados a serem enviados pelo protocolo `remote-read`. Esse nome também pode, opcionalmente, conter o nome de um banco de dados. |
+| `database`                   | nenhum | O nome de um banco de dados onde está localizada a tabela especificada na configuração `table`, caso ele não esteja especificado na configuração `table`.                                                                               |
+
+## Configuração de vários protocolos
+
+É possível especificar vários protocolos em um único lugar:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
+```

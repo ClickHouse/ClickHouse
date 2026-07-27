@@ -1,0 +1,326 @@
+---
+description: 'Documentación de la sentencia INSERT INTO'
+sidebarTitle: 'INSERT INTO'
+slug: /sql-reference/statements/insert-into
+title: 'Sentencia INSERT INTO'
+doc_type: 'reference'
+---
+
+Inserta datos en una tabla.
+
+**Sintaxis**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
+```
+
+Puede especificar una lista de columnas para insertar mediante `(c1, c2, c3)`. También puede usar una expresión con un [selector](/es/reference/statements/select/index#asterisk) de columnas, como `*`, y/o [modificadores](/es/reference/statements/select/index#select-modifiers) como [APPLY](/es/reference/statements/select/apply_modifier), [EXCEPT](/es/reference/statements/select/except_modifier), [REPLACE](/es/reference/statements/select/replace_modifier).
+
+Por ejemplo, considere la tabla:
+
+```sql
+SHOW CREATE insert_select_testtable;
+```
+
+```text
+CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a
+```
+
+```sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
+```
+
+Si desea insertar datos en todas las columnas, excepto la columna `b`, puede hacerlo con la palabra clave `EXCEPT`. Según la sintaxis anterior, debe asegurarse de insertar tantos valores (`VALUES (v11, v13)`) como columnas especifique (`(c1, c3)`):
+
+```sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
+```
+
+```sql
+SELECT * FROM insert_select_testtable;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+
+En este ejemplo, vemos que la segunda fila insertada tiene las columnas `a` y `c` rellenadas con los valores proporcionados, y `b` con el valor predeterminado. También es posible usar la palabra clave `DEFAULT` para insertar valores predeterminados:
+
+```sql
+INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
+```
+
+Si una lista de columnas no incluye todas las columnas existentes, el resto de las columnas se rellena con:
+
+* Los valores calculados a partir de las expresiones `DEFAULT` especificadas en la definición de la tabla.
+* Ceros y cadenas vacías, si no se han definido expresiones `DEFAULT`.
+
+Se pueden pasar datos a INSERT en cualquier [formato](/es/reference/formats/index) compatible con ClickHouse. El formato debe especificarse explícitamente en la consulta:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
+```
+
+Por ejemplo, el siguiente formato de consulta es idéntico a la versión básica de `INSERT ... VALUES`:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
+```
+
+ClickHouse elimina todos los espacios y un salto de línea (si lo hay) antes de los datos. Al construir una consulta, recomendamos colocar los datos en una línea nueva después de los operadores de la consulta, lo cual es importante si los datos empiezan con espacios.
+
+Ejemplo:
+
+```sql
+INSERT INTO t FORMAT TabSeparated
+11  Hello, world!
+22  Qwerty
+```
+
+Puede insertar los datos por separado de la consulta mediante el [cliente de línea de comandos](/es/concepts/features/tools-and-utilities/clickhouse-local) o la [interfaz HTTP](/es/concepts/features/interfaces/http).
+
+<Note>
+  Si quiere especificar `SETTINGS` para la consulta `INSERT`, debe hacerlo *antes* de la cláusula `FORMAT`, ya que todo lo que aparece después de `FORMAT format_name` se interpreta como datos. Por ejemplo:
+
+  ```sql
+  INSERT INTO table SETTINGS ... FORMAT format_name data_set
+  ```
+</Note>
+
+<div id="constraints">
+  ## Restricciones
+</div>
+
+Si una tabla tiene [restricciones](/es/reference/statements/create/table#constraints), sus expresiones se comprobarán para cada fila de datos insertados. Si alguna de esas restricciones no se cumple, el servidor generará una excepción que incluirá el nombre y la expresión de la restricción, y la consulta se detendrá.
+
+<div id="data-type-validation">
+  ## Validación de tipos de datos
+</div>
+
+ClickHouse valida los tipos de datos permitidos (controlados por ajustes como `enable_time_time64_type`, `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types`, etc.) solo durante la creación de tablas (`CREATE TABLE`) y la modificación del esquema (`ALTER TABLE`), no durante `INSERT`.
+
+Esto significa que, si ya existe una tabla con un tipo de datos no permitido, se podrán insertar datos en ella aunque el ajuste correspondiente esté deshabilitado en el servidor. Esto es intencional: una vez creada una tabla, las inserciones no deben bloquearse por ajustes que controlan la creación de tipos.
+
+Por ejemplo:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE events
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id;
+
+SET enable_time_time64_type = 0;
+
+-- Esto funciona aunque la configuración esté deshabilitada.
+-- La tabla ya existe, por lo que las inserciones no se bloquean.
+INSERT INTO events VALUES (1, '14:30:25');
+
+-- Pero crear una nueva tabla con el tipo Time fallará.
+CREATE TABLE events_new
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
+```
+
+<Note>
+  Como consecuencia, un cliente con una versión más reciente (en la que una configuración está habilitada de forma predeterminada) puede insertar datos con tipos de datos no permitidos en un servidor con una versión anterior (en la que la configuración está deshabilitada), siempre que la tabla de destino ya tenga los tipos de columna correspondientes. La validación se aplica en el nivel de DDL, no en el de DML.
+</Note>
+
+<div id="inserting-the-results-of-select">
+  ## Inserción de los resultados de SELECT
+</div>
+
+**Sintaxis**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
+```
+
+Las columnas se asignan según su posición en la cláusula `SELECT`. Sin embargo, sus nombres en la expresión `SELECT` y en la tabla de `INSERT` pueden ser distintos. Si es necesario, se realiza una conversión de tipos.
+
+Ninguno de los formatos de datos, excepto el formato Values, permite asignar valores a expresiones como `now()`, `1 + 2`, etc. El formato Values permite un uso limitado de expresiones, pero no se recomienda, ya que en ese caso se utiliza código ineficiente para ejecutarlas.
+
+No se admiten otras consultas para modificar data parts: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
+Sin embargo, puede eliminar datos antiguos con `ALTER TABLE ... DROP PARTITION`.
+
+La cláusula `FORMAT` debe especificarse al final de la consulta si la cláusula `SELECT` contiene la función de tabla [input()](/es/reference/functions/table-functions/input).
+
+Para insertar un valor predeterminado en lugar de `NULL` en una columna con un tipo de dato no anulable, habilite la configuración [insert&#95;null&#95;as&#95;default](/es/reference/settings/session-settings#insert_null_as_default).
+
+`INSERT` también admite CTE (expresiones de tabla comunes). Por ejemplo, las dos sentencias siguientes son equivalentes:
+
+```sql
+INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
+WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
+```
+
+<div id="inserting-data-from-a-file">
+  ## Inserción de datos desde un archivo
+</div>
+
+**Sintaxis**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] [FORMAT format_name]
+```
+
+Use la sintaxis anterior para insertar datos desde un archivo o varios archivos almacenados en el lado del **cliente**. `file_name` y `type` son literales de cadena. El [formato](/es/reference/formats/index) del archivo de entrada debe especificarse en la cláusula `FORMAT`.
+
+Se admiten archivos comprimidos. El tipo de compresión se detecta a partir de la extensión del nombre del archivo. También puede especificarse explícitamente en una cláusula `COMPRESSION`. Los tipos admitidos son: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+Esta funcionalidad está disponible en el [cliente de línea de comandos](/es/concepts/features/interfaces/client) y en [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local).
+
+**Ejemplos**
+
+<div id="single-file-with-from-infile">
+  ### Un solo archivo con FROM INFILE
+</div>
+
+Ejecute las siguientes consultas con el [cliente de línea de comandos](/es/concepts/features/interfaces/client):
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
+<div id="multiple-files-with-from-infile-using-globs">
+  ### Varios archivos con FROM INFILE usando globs
+</div>
+
+Este ejemplo es muy similar al anterior, pero aquí los datos se insertan desde varios archivos con `FROM INFILE 'input_*.csv`.
+
+```bash
+echo 1,A > input_1.csv ; echo 2,B > input_2.csv
+clickhouse-client --query="CREATE TABLE infile_globs (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
+```
+
+<Tip>
+  Además de seleccionar varios archivos con `*`, puedes usar rangos (`{1,2}` o `{1..9}`) y otras [sustituciones de glob](/es/reference/functions/table-functions/file#globs-in-path). Cualquiera de estas tres opciones funciona con el ejemplo anterior:
+
+  ```sql
+  INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
+  ```
+</Tip>
+
+<div id="inserting-using-a-table-function">
+  ## Inserción con una función de tabla
+</div>
+
+Se pueden insertar datos en tablas a las que se hace referencia mediante [funciones de tabla](/es/reference/functions/table-functions/index).
+
+**Sintaxis**
+
+```sql
+INSERT INTO [TABLE] FUNCTION table_func ...
+```
+
+**Ejemplo**
+
+La función de tabla [remote](/es/reference/functions/table-functions/remote) se utiliza en las siguientes consultas:
+
+```sql title="Query"
+CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+    VALUES (100, 'inserted via remote()');
+SELECT * FROM simple_table;
+```
+
+```text title="Response"
+┌──id─┬─text──────────────────┐
+│ 100 │ inserted via remote() │
+└─────┴───────────────────────┘
+```
+
+<div id="inserting-into-clickhouse-cloud">
+  ## Inserción en ClickHouse Cloud
+</div>
+
+De forma predeterminada, los servicios de ClickHouse Cloud proporcionan múltiples réplicas para alta disponibilidad. Cuando te conectas a un servicio, se establece una conexión con una de estas réplicas.
+
+Después de que un `INSERT` se complete correctamente, los datos se escriben en el almacenamiento subyacente. Sin embargo, las réplicas pueden tardar un tiempo en recibir estas actualizaciones. Por lo tanto, si usas una conexión distinta que ejecuta una consulta `SELECT` en alguna de esas otras réplicas, es posible que los datos actualizados todavía no se hayan reflejado.
+
+Es posible usar `select_sequential_consistency` para forzar que la réplica reciba las actualizaciones más recientes. Aquí tienes un ejemplo de una consulta `SELECT` que usa esta configuración:
+
+```sql
+SELECT .... SETTINGS select_sequential_consistency = 1;
+```
+
+Tenga en cuenta que usar `select_sequential_consistency` aumentará la carga en ClickHouse Keeper (utilizado internamente por ClickHouse Cloud) y puede ralentizar el rendimiento en función de la carga del servicio. Recomendamos no habilitar esta configuración salvo que sea necesario. La forma recomendada es ejecutar lecturas/escrituras en la misma sesión o usar un driver de cliente que utilice el protocolo nativo (y, por tanto, admita conexiones persistentes).
+
+<div id="inserting-into-a-replicated-setup">
+  ## Inserción en una configuración replicada
+</div>
+
+En una configuración replicada, los datos serán visibles en otras réplicas una vez que se hayan replicado. Los datos empiezan a replicarse (a descargarse en otras réplicas) inmediatamente después de un `INSERT`. Esto difiere de ClickHouse Cloud, donde los datos se escriben de inmediato en almacenamiento compartido y las réplicas se suscriben a los cambios de metadatos.
+
+Tenga en cuenta que, en las configuraciones replicadas, los `INSERTs` a veces pueden tardar bastante (del orden de un segundo), ya que requieren confirmar la operación en ClickHouse Keeper para el consenso distribuido. Usar S3 para el almacenamiento también añade latencia.
+
+<div id="performance-considerations">
+  ## Consideraciones de rendimiento
+</div>
+
+`INSERT` ordena los datos de entrada por clave primaria y los divide en particiones según una clave de partición. Si se insertan datos en varias particiones a la vez, el rendimiento de la consulta `INSERT` puede reducirse significativamente. Para evitarlo:
+
+* Añada datos en lotes bastante grandes, por ejemplo, 100,000 filas cada vez.
+* Agrupe los datos por clave de partición antes de cargarlos en ClickHouse.
+
+El rendimiento no disminuirá si:
+
+* Los datos se añaden en tiempo real.
+* Se cargan datos que normalmente ya están ordenados por tiempo.
+
+<div id="asynchronous-inserts">
+  ### Inserciones asíncronas
+</div>
+
+Es posible insertar datos de forma asíncrona mediante inserciones pequeñas pero frecuentes. Los datos de esas inserciones se combinan en lotes y luego se insertan de forma segura en una tabla. Para usar las inserciones asíncronas, habilite la configuración [`async_insert`](/es/reference/settings/session-settings#async_insert).
+
+Usar `async_insert` o el [motor de tabla `Buffer`](/es/reference/engines/table-engines/special/buffer) implica un almacenamiento en búfer adicional.
+
+<div id="large-or-long-running-inserts">
+  ### Inserciones grandes o prolongadas
+</div>
+
+Cuando se insertan grandes cantidades de datos, ClickHouse optimiza el rendimiento de escritura mediante un proceso llamado &quot;squashing&quot;. Los bloques pequeños de datos insertados en memoria se fusionan y compactan en bloques más grandes antes de escribirse en disco. El squashing reduce la sobrecarga asociada a cada operación de escritura. En este proceso, los datos insertados estarán disponibles para consulta una vez que ClickHouse termine de escribir cada [`max_insert_block_size`](/es/reference/settings/session-settings#max_insert_block_size) filas.
+
+**Ver también**
+
+* [async&#95;insert](/es/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/es/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/es/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/es/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/es/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/es/reference/settings/session-settings#async_insert_max_data_size)

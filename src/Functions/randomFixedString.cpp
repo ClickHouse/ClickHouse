@@ -95,9 +95,9 @@ The returned characters are not necessarily ASCII characters, i.e. they may not 
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a string filled with random bytes.", {"FixedString"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT randomFixedString(13) AS rnd, toTypeName(rnd)", R"(
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};

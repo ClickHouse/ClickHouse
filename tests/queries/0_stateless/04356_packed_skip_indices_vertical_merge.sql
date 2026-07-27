@@ -15,6 +15,8 @@
 -- the lowest possible activation thresholds; merge_algorithm is asserted from system.part_log so
 -- the test fails (rather than silently going horizontal) if vertical merge stops engaging.
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_vert_packed;
 CREATE TABLE t_vert_packed
 (

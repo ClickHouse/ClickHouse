@@ -1,0 +1,122 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ip-trie
+title: 'Структура словаря ip_trie'
+sidebarTitle: 'ip_trie'
+description: 'Хранит словарь в виде префиксного дерева для быстрого поиска по префиксам IP-адресов.'
+doc_type: 'reference'
+---
+
+Словарь `ip_trie` предназначен для поиска IP-адресов по сетевому префиксу.
+Он хранит диапазоны IP в нотации CIDR и позволяет быстро определять, к какому префиксу (например, подсети или диапазону ASN) относится заданный IP-адрес, что делает его особенно удобным для IP-поиска, например для геолокации или классификации сетей.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="Поиск на основе IP с помощью словаря ip_trie" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+**Пример**
+
+Предположим, у нас есть таблица в ClickHouse, содержащая IP-префиксы и соответствующие им сопоставления:
+
+```sql
+CREATE TABLE my_ip_addresses (
+    prefix String,
+    asn UInt32,
+    cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
+```
+
+```sql
+INSERT INTO my_ip_addresses VALUES
+    ('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
+
+Определим словарь `ip_trie` для этой таблицы. Для структуры `ip_trie` требуется составной ключ:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY my_ip_trie_dictionary (
+        prefix String,
+        asn UInt32,
+        cca2 String DEFAULT '??'
+    )
+    PRIMARY KEY prefix
+    SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+    LAYOUT(IP_TRIE)
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="Конфигурационный файл">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>prefix</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        <attribute>
+                <name>asn</name>
+                <type>UInt32</type>
+                <null_value />
+        </attribute>
+        <attribute>
+                <name>cca2</name>
+                <type>String</type>
+                <null_value>??</null_value>
+        </attribute>
+        ...
+    </structure>
+    <layout>
+        <ip_trie>
+            <!-- Ключевой атрибут `prefix` можно получить с помощью dictGetString. -->
+            <!-- Эта опция увеличивает использование памяти. -->
+            <access_to_key_from_attributes>true</access_to_key_from_attributes>
+        </ip_trie>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Ключ должен содержать только один атрибут типа `String` с допустимым IP-префиксом. Другие типы пока не поддерживаются.
+
+Синтаксис:
+
+```sql
+dictGetT('dict_name', 'attr_name', ip)
+```
+
+Функция принимает либо значение типа `UInt32` для IPv4, либо `FixedString(16)` для IPv6. Например:
+
+```sql
+SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
+
+┌─result─┐
+│ NP     │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result─┐
+│  65536 │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result───────┐
+│ (65536,'ZZ') │
+└──────────────┘
+```
+
+Другие типы пока не поддерживаются. Функция возвращает атрибут для префикса, соответствующего этому IP-адресу. Если префиксы перекрываются, возвращается наиболее специфичный из них.
+
+Данные должны полностью помещаться в оперативную память.

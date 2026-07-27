@@ -1,0 +1,355 @@
+---
+description: 'Visão geral da replicação de dados com a família Replicated* de motores de tabela no ClickHouse'
+sidebarTitle: 'Replicated*'
+slug: /engines/table-engines/mergetree-family/replication
+title: 'Motores de tabela Replicated*'
+doc_type: 'referência'
+---
+
+<Note>
+  No ClickHouse Cloud, a replicação é gerenciada para você. Crie suas tabelas sem adicionar argumentos. Por exemplo, no texto abaixo, você substituiria:
+
+  ```sql
+  ENGINE = ReplicatedMergeTree(
+      '/clickhouse/tables/{shard}/table_name',
+      '{replica}'
+  )
+  ```
+
+  por:
+
+  ```sql
+  ENGINE = ReplicatedMergeTree
+  ```
+</Note>
+
+A replicação é suportada apenas para tabelas da família MergeTree
+
+* ReplicatedSummingMergeTree
+* ReplicatedCoalescingMergeTree
+* ReplicatedVersionedCollapsingMergeTree
+* ReplicatedCollapsingMergeTree
+* ReplicatedGraphiteMergeTree
+* ReplicatedMergeTree
+* ReplicatedReplacingMergeTree
+* ReplicatedAggregatingMergeTree
+
+A replicação funciona no nível de cada tabela individual, não do servidor como um todo. Um servidor pode armazenar tabelas replicadas e não replicadas ao mesmo tempo.
+
+A replicação não depende de sharding. Cada shard tem sua própria replicação independente.
+
+Os dados comprimidos de consultas `INSERT` e `ALTER` são replicados (para mais informações, consulte a documentação de [ALTER](/pt-BR/reference/statements/alter/index).
+
+As consultas `CREATE`, `DROP`, `ATTACH`, `DETACH` e `RENAME` são executadas em um único servidor e não são replicadas:
+
+* A consulta `CREATE TABLE` cria uma nova tabela replicável no servidor em que é executada. Se essa tabela já existir em outros servidores, ela adiciona uma nova réplica.
+* A consulta `DROP TABLE` exclui a réplica localizada no servidor em que a consulta é executada.
+* A consulta `RENAME` renomeia a tabela em uma das réplicas. Em outras palavras, tabelas replicadas podem ter nomes diferentes em réplicas diferentes.
+
+O ClickHouse usa o [ClickHouse Keeper](/pt-BR/guides/oss/deployment-and-scaling/keeper/index) para armazenar os metadados de réplica. É possível usar o ZooKeeper versão 3.4.5 ou mais recente, mas o ClickHouse Keeper é recomendado.
+
+Para usar a replicação, defina parâmetros na seção [zookeeper](/pt-BR/reference/settings/server-settings/settings#zookeeper) da configuração do servidor.
+
+<Note>
+  Não deixe de configurar a segurança. O ClickHouse oferece suporte ao [esquema ACL](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) `digest` do subsistema de segurança do ZooKeeper.
+</Note>
+
+Exemplo de configuração dos endereços do cluster do ClickHouse Keeper:
+
+```xml
+<zookeeper>
+    <node>
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example3</host>
+        <port>2181</port>
+    </node>
+</zookeeper>
+```
+
+O ClickHouse também oferece suporte ao armazenamento dos metadados de réplica em um cluster ZooKeeper auxiliar. Para isso, informe o nome e o caminho do cluster ZooKeeper como argumentos do motor.
+Em outras palavras, ele oferece suporte ao armazenamento dos metadados de tabelas diferentes em clusters ZooKeeper diferentes.
+
+Exemplo de configuração dos endereços do cluster ZooKeeper auxiliar:
+
+```xml
+<auxiliary_zookeepers>
+    <zookeeper2>
+        <node>
+            <host>example_2_1</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example_2_2</host>
+            <port>2181</port>
+        </node>
+        <node>
+            <host>example_2_3</host>
+            <port>2181</port>
+        </node>
+    </zookeeper2>
+    <zookeeper3>
+        <node>
+            <host>example_3_1</host>
+            <port>2181</port>
+        </node>
+    </zookeeper3>
+</auxiliary_zookeepers>
+```
+
+Para armazenar os metadados da tabela em um cluster ZooKeeper auxiliar em vez do cluster ZooKeeper padrão, podemos usar SQL para criar a tabela com o
+mecanismo ReplicatedMergeTree da seguinte forma:
+
+```sql
+CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
+```
+
+Você pode especificar qualquer cluster ZooKeeper existente, e o sistema usará um diretório nele para seus próprios dados (o diretório é especificado ao criar uma tabela que pode ser replicada).
+
+Se o ZooKeeper não estiver definido no arquivo de configuração, você não poderá criar tabelas replicadas, e todas as tabelas replicadas existentes ficarão em modo somente leitura.
+
+ZooKeeper não é usado em consultas `SELECT`, porque a replicação não afeta o desempenho de `SELECT`, e as consultas são executadas tão rapidamente quanto em tabelas não replicadas. Ao consultar tabelas replicadas distribuídas, o comportamento do ClickHouse é controlado pelas configurações [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/pt-BR/reference/settings/session-settings#max_replica_delay_for_distributed_queries) e [fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/pt-BR/reference/settings/session-settings#fallback_to_stale_replicas_for_distributed_queries).
+
+Para cada consulta `INSERT`, aproximadamente dez entradas são adicionadas ao ZooKeeper por meio de várias transações. (Mais precisamente, isso ocorre para cada bloco de dados inserido; uma consulta `INSERT` contém um bloco, ou um bloco a cada `max_insert_block_size = 1048576` linhas.) Isso resulta em latências um pouco maiores para `INSERT` em comparação com tabelas não replicadas. Mas, se você seguir a recomendação de inserir dados em batches de no máximo um `INSERT` por segundo, isso não causará problemas. Todo o cluster ClickHouse usado para coordenar um cluster ZooKeeper tem, no total, várias centenas de `INSERTs` por segundo. A taxa de transferência nas inserções de dados (o número de linhas por segundo) é tão alta quanto a de dados não replicados.
+
+Para clusters muito grandes, você pode usar diferentes clusters ZooKeeper para diferentes shards. No entanto, com base em nossa experiência, isso não se mostrou necessário em clusters de produção com aproximadamente 300 servidores.
+
+A replicação é assíncrona e multi-master. Consultas `INSERT` (assim como `ALTER`) podem ser enviadas para qualquer servidor disponível. Os dados são inseridos no servidor em que a consulta é executada e, em seguida, copiados para os outros servidores. Como ela é assíncrona, os dados inseridos recentemente aparecem nas outras réplicas com alguma latência. Se parte das réplicas não estiver disponível, os dados serão gravados quando elas voltarem a ficar disponíveis. Se uma réplica estiver disponível, a latência será o tempo necessário para transferir o bloco de dados comprimidos pela rede. O número de threads que executam tarefas em segundo plano para tabelas replicadas pode ser definido pela configuração [background&#95;schedule&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_schedule_pool_size).
+
+O motor `ReplicatedMergeTree` usa um pool de threads separado para fetches replicados. O tamanho do pool é limitado pela configuração [background&#95;fetches&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_fetches_pool_size), que pode ser ajustada com uma reinicialização do servidor.
+
+Por padrão, uma consulta `INSERT` aguarda a confirmação da gravação dos dados de apenas uma réplica. Se os dados tiverem sido gravados com sucesso em apenas uma réplica e o servidor com essa réplica deixar de existir, os dados armazenados serão perdidos. Para habilitar a confirmação da gravação de dados por várias réplicas, use a opção `insert_quorum`.
+
+Cada bloco de dados é gravado atomicamente. A consulta `INSERT` é dividida em blocos de até `max_insert_block_size = 1048576` linhas. Em outras palavras, se a consulta `INSERT` tiver menos de 1048576 linhas, ela será executada atomicamente.
+
+Blocos de dados são desduplicados. Em várias gravações do mesmo bloco de dados (blocos de dados do mesmo tamanho contendo as mesmas linhas na mesma ordem), o bloco é gravado apenas uma vez. O motivo é que, em caso de falhas de rede, a aplicação cliente pode não saber se os dados foram gravados no DB, então a consulta `INSERT` pode simplesmente ser repetida. Não importa para qual réplica os `INSERTs` foram enviados com dados idênticos. `INSERTs` são idempotentes. Os parâmetros de desduplicação são controlados pelas configurações de servidor [merge&#95;tree](/pt-BR/reference/settings/server-settings/settings#merge_tree).
+
+Durante a replicação, apenas os dados de origem a serem inseridos são transferidos pela rede. A transformação posterior dos dados (merging) é coordenada e executada da mesma forma em todas as réplicas. Isso minimiza o uso da rede, o que significa que a replicação funciona bem quando as réplicas ficam em diferentes datacenters. (Observe que duplicar dados em diferentes datacenters é o principal objetivo da replicação.)
+
+Você pode ter qualquer número de réplicas dos mesmos dados. Com base em nossa experiência, uma solução relativamente confiável e conveniente pode usar replicação dupla em produção, com cada servidor usando RAID-5 ou RAID-6 (e RAID-10 em alguns casos).
+
+O sistema monitora a sincronização dos dados nas réplicas e é capaz de se recuperar após uma falha. O failover é automático (para pequenas diferenças nos dados) ou semiautomático (quando os dados diferem demais, o que pode indicar um erro de configuração).
+
+<div id="creating-replicated-tables">
+  ## Criando tabelas replicadas
+</div>
+
+<Note>
+  No ClickHouse Cloud, a replicação é gerenciada automaticamente.
+
+  Crie tabelas usando [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) sem argumentos de replicação. Internamente, o sistema converte [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) em [`SharedMergeTree`](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree) para fins de replicação e distribuição de dados.
+
+  Evite usar `ReplicatedMergeTree` ou especificar parâmetros de replicação, pois ela é gerenciada pela plataforma.
+</Note>
+
+<div id="replicatedmergetree-parameters">
+  ### Parâmetros do Replicated*MergeTree
+</div>
+
+| Parâmetro          | Descrição                                                                                                   |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| `zoo_path`         | O caminho da tabela no ClickHouse Keeper.                                                                   |
+| `replica_name`     | O nome da réplica no ClickHouse Keeper.                                                                     |
+| `other_parameters` | Parâmetros de um motor usado para criar a versão replicada, por exemplo, a versão no `ReplacingMergeTree`. |
+
+Exemplo:
+
+```sql
+CREATE TABLE table_name
+(
+    EventDate DateTime,
+    CounterID UInt32,
+    UserID UInt32,
+    ver UInt16
+)
+ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID);
+```
+
+<details markdown="1">
+  <summary>Exemplo em sintaxe obsoleta</summary>
+
+  ```sql
+  CREATE TABLE table_name
+  (
+      EventDate DateTime,
+      CounterID UInt32,
+      UserID UInt32
+  ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
+  ```
+</details>
+
+Como o exemplo mostra, esses parâmetros podem conter substituições em `{}`. Os valores substituídos são obtidos na seção [macros](/pt-BR/reference/settings/server-settings/settings#macros) do arquivo de configuração.
+
+Exemplo:
+
+```xml
+<macros>
+    <shard>02</shard>
+    <replica>example05-02-1</replica>
+</macros>
+```
+
+O caminho para a tabela no ClickHouse Keeper deve ser único para cada tabela replicada. Tabelas em shards diferentes devem ter caminhos diferentes.
+Neste caso, o caminho consiste nas seguintes partes:
+
+`/clickhouse/tables/` é o prefixo comum. Recomendamos usar exatamente este.
+
+`{shard}` será expandido para o identificador do shard.
+
+`table_name` é o nome do nó da tabela no ClickHouse Keeper. É uma boa ideia que ele seja o mesmo que o nome da tabela. Ele é definido explicitamente porque, ao contrário do nome da tabela, não muda após uma consulta RENAME.
+*DICA*: você também pode adicionar um nome de banco de dados antes de `table_name`. Por exemplo, `db_name.table_name`
+
+As duas substituições internas `{database}` e `{table}` podem ser usadas; elas se expandem, respectivamente, para o nome da tabela e o nome do banco de dados (a menos que essas macros estejam definidas na seção `macros`). Portanto, o caminho do ZooKeeper pode ser especificado como `'/clickhouse/tables/{shard}/{database}/{table}'`.
+Tenha cuidado ao renomear tabelas ao usar essas substituições internas. O caminho no ClickHouse Keeper não pode ser alterado e, quando a tabela é renomeada, as macros serão expandidas para um caminho diferente; a tabela passará a apontar para um caminho que não existe no ClickHouse Keeper e entrará em modo somente leitura.
+
+O nome da réplica identifica diferentes réplicas da mesma tabela. Você pode usar o nome do servidor para isso, como no exemplo. O nome só precisa ser único dentro de cada shard.
+
+Você pode definir os parâmetros explicitamente em vez de usar substituições. Isso pode ser conveniente para testes e para configurar clusters pequenos. No entanto, nesse caso, você não pode usar consultas DDL distribuídas (`ON CLUSTER`).
+
+Ao trabalhar com clusters grandes, recomendamos usar substituições porque elas reduzem a probabilidade de erro.
+
+Você pode especificar argumentos padrão para o motor de tabela `Replicated` no arquivo de configuração do servidor. Por exemplo:
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/{database}/{table}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+```
+
+Nesse caso, você pode omitir argumentos ao criar tabelas:
+
+```sql
+CREATE TABLE table_name (
+    x UInt32
+) ENGINE = ReplicatedMergeTree
+ORDER BY x;
+```
+
+É equivalente a:
+
+```sql
+CREATE TABLE table_name (
+    x UInt32
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
+ORDER BY x;
+```
+
+Execute a consulta `CREATE TABLE` em cada réplica. Essa consulta cria uma nova tabela replicada ou adiciona uma nova réplica a uma tabela já existente.
+
+Se você adicionar uma nova réplica depois que a tabela já contiver dados em outras réplicas, os dados serão copiados das outras réplicas para a nova após a execução da consulta. Em outras palavras, a nova réplica se sincroniza com as demais.
+
+Para excluir uma réplica, execute `DROP TABLE`. No entanto, apenas uma réplica é excluída — aquela que está no servidor em que você executa a consulta.
+
+<div id="recovery-after-failures">
+  ## Recuperação após falhas
+</div>
+
+Se o ClickHouse Keeper estiver indisponível quando um servidor for iniciado, as tabelas replicadas passarão para o modo somente leitura. O sistema tenta se conectar periodicamente ao ClickHouse Keeper.
+
+Se o ClickHouse Keeper estiver indisponível durante um `INSERT`, ou se ocorrer um erro ao interagir com o ClickHouse Keeper, será gerada uma exceção.
+
+Depois de se conectar ao ClickHouse Keeper, o sistema verifica se o conjunto de dados no sistema de arquivos local corresponde ao conjunto esperado de dados (o ClickHouse Keeper armazena essas informações). Se houver pequenas inconsistências, o sistema as corrige sincronizando os dados com as réplicas.
+
+Se o sistema detectar partes de dados corrompidas (com tamanho de arquivo incorreto) ou partes não reconhecidas (partes gravadas no sistema de arquivos, mas não registradas no ClickHouse Keeper), ele as move para o subdiretório `detached` (elas não são excluídas). Quaisquer partes ausentes são copiadas das réplicas.
+
+Observe que o ClickHouse não executa nenhuma ação destrutiva, como excluir automaticamente uma grande quantidade de dados.
+
+Quando o servidor é iniciado (ou estabelece uma nova sessão com o ClickHouse Keeper), ele verifica apenas a quantidade e os tamanhos de todos os arquivos. Se os tamanhos dos arquivos corresponderem, mas alguns bytes tiverem sido alterados em algum ponto no meio, isso não será detectado imediatamente, mas apenas ao tentar ler os dados para uma consulta `SELECT`. A consulta gera uma exceção informando que há incompatibilidade de checksum ou no tamanho de um bloco comprimido. Nesse caso, as partes de dados são adicionadas à fila de verificação e copiadas das réplicas, se necessário.
+
+Se o conjunto local de dados diferir demais do esperado, um mecanismo de segurança é acionado. O servidor registra isso no log e se recusa a iniciar. O motivo é que esse caso pode indicar um erro de configuração, por exemplo, se uma réplica em um shard tiver sido configurada acidentalmente como uma réplica em outro shard. No entanto, os limites desse mecanismo são definidos em um nível relativamente baixo, e essa situação pode ocorrer durante a recuperação normal após falhas. Nesse caso, os dados são restaurados de forma semiautomática — “apertando um botão”.
+
+Para iniciar a recuperação, crie o nó `/path_to_table/replica_name/flags/force_restore_data` no ClickHouse Keeper com qualquer conteúdo ou execute o comando para restaurar todas as tabelas replicadas:
+
+```bash
+sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+```
+
+Em seguida, reinicie o servidor. Na inicialização, o servidor remove essas flags e inicia a recuperação.
+
+<div id="recovery-after-complete-data-loss">
+  ## Recuperação após perda completa dos dados
+</div>
+
+Se todos os dados e metadados desaparecerem de um dos servidores, siga estas etapas para a recuperação:
+
+1. Instale o ClickHouse no servidor. Defina corretamente as substituições no arquivo de config que contém o identificador do shard e as réplicas, se você as usar.
+2. Se você tinha tabelas não replicadas que precisam ser duplicadas manualmente nos servidores, copie os dados delas de uma réplica (no diretório `/var/lib/clickhouse/data/db_name/table_name/`).
+3. Copie as definições das tabelas localizadas em `/var/lib/clickhouse/metadata/` de uma réplica. Se um identificador de shard ou de réplica estiver definido explicitamente nas definições das tabelas, corrija-o para que corresponda a esta réplica. (Como alternativa, inicie o servidor e execute todas as consultas `ATTACH TABLE` que deveriam estar nos arquivos .sql em `/var/lib/clickhouse/metadata/`.)
+4. Para iniciar a recuperação, crie o nó do ClickHouse Keeper `/path_to_table/replica_name/flags/force_restore_data` com qualquer conteúdo ou execute o comando para restaurar todas as tabelas replicadas: `sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
+
+Em seguida, inicie o servidor (ou reinicie-o, se já estiver em execução). Os dados serão baixados das réplicas.
+
+Uma opção alternativa de recuperação é excluir as informações sobre a réplica perdida do ClickHouse Keeper (`/path_to_table/replica_name`) e, em seguida, criar a réplica novamente, conforme descrito em &quot;[Criando tabelas replicadas](#creating-replicated-tables)&quot;.
+
+Não há restrição de largura de banda da rede durante a recuperação. Tenha isso em mente se estiver restaurando muitas réplicas ao mesmo tempo.
+
+<div id="converting-from-mergetree-to-replicatedmergetree">
+  ## Convertendo de MergeTree para ReplicatedMergeTree
+</div>
+
+Usamos o termo `MergeTree` para nos referirmos a todos os motores de tabela da `família MergeTree`, da mesma forma que fazemos com `ReplicatedMergeTree`.
+
+Se você tiver uma tabela `MergeTree` replicada manualmente, poderá convertê-la em uma tabela replicada. Isso pode ser necessário se você já tiver coletado uma grande quantidade de dados em uma tabela `MergeTree` e agora quiser habilitar a replicação.
+
+A instrução [ATTACH TABLE ... AS REPLICATED](/pt-BR/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) permite anexar uma tabela `MergeTree` desanexada como `ReplicatedMergeTree`.
+
+Uma tabela `MergeTree` pode ser convertida automaticamente na reinicialização do servidor se a flag `convert_to_replicated` estiver definida no diretório de dados da tabela (`/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/` para o banco de dados `Atomic`).
+Crie um arquivo `convert_to_replicated` vazio, e a tabela será carregada como replicada na próxima reinicialização do servidor.
+
+Esta consulta pode ser usada para obter o caminho dos dados da tabela. Se a tabela tiver vários caminhos de dados, você deverá usar o primeiro.
+
+```sql
+SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = 'database_name';
+```
+
+Observe que a tabela ReplicatedMergeTree será criada com os valores das configurações `default_replica_path` e `default_replica_name`.
+Para criar uma tabela convertida em outras réplicas, será necessário especificar explicitamente o caminho dela no primeiro argumento do motor `ReplicatedMergeTree`. A consulta a seguir pode ser usada para obter esse caminho.
+
+```sql
+SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
+```
+
+Também existe uma forma manual de fazer isso.
+
+Se os dados diferirem entre várias réplicas, primeiro sincronize-os ou exclua esses dados de todas as réplicas, exceto uma.
+
+Renomeie a tabela MergeTree existente e, em seguida, crie uma tabela `ReplicatedMergeTree` com o nome antigo.
+Mova os dados da tabela antiga para o subdiretório `detached` dentro do diretório com os dados da nova tabela (`/var/lib/clickhouse/data/db_name/table_name/`).
+Em seguida, execute `ALTER TABLE ATTACH PARTITION` em uma das réplicas para adicionar essas partes de dados ao conjunto ativo.
+
+<div id="converting-from-replicatedmergetree-to-mergetree">
+  ## Convertendo de ReplicatedMergeTree para MergeTree
+</div>
+
+Use a instrução [ATTACH TABLE ... AS NOT REPLICATED](/pt-BR/reference/statements/attach#attach-mergetree-table-as-replicatedmergetree) para anexar uma tabela `ReplicatedMergeTree` desanexada como `MergeTree` em um único servidor.
+
+Outra maneira de fazer isso envolve reiniciar o servidor. Crie uma tabela `MergeTree` com um nome diferente. Mova todos os dados do diretório que contém os dados da tabela `ReplicatedMergeTree` para o diretório de dados da nova tabela. Em seguida, exclua a tabela `ReplicatedMergeTree` e reinicie o servidor.
+
+Se você quiser remover uma tabela `ReplicatedMergeTree` sem iniciar o servidor:
+
+* Exclua o arquivo `.sql` correspondente no diretório de metadados (`/var/lib/clickhouse/metadata/`).
+* Exclua o caminho correspondente no ClickHouse Keeper (`/path_to_table/replica_name`).
+
+Depois disso, você pode iniciar o servidor, criar uma tabela `MergeTree`, mover os dados para o diretório dela e, em seguida, reiniciar o servidor.
+
+<div id="recovery-when-metadata-in-the-zookeeper-cluster-is-lost-or-damaged">
+  ## Recuperação quando os metadados no cluster do ClickHouse Keeper são perdidos ou corrompidos
+</div>
+
+Se os dados no ClickHouse Keeper forem perdidos ou corrompidos, você poderá salvá-los movendo-os para uma tabela não replicada, conforme descrito acima.
+
+**Veja também**
+
+* [background&#95;schedule&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_schedule_pool_size)
+* [background&#95;fetches&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_fetches_pool_size)
+* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/pt-BR/reference/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
+* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/pt-BR/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/pt-BR/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)

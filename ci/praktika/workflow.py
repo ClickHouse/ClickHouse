@@ -62,6 +62,11 @@ class Workflow:
         # prefixed with this string, except "self-hosted". The intent is to route the
         # workflow to an isolated fleet of runners that carry the prefixed labels.
         runs_on_label_prefix: str = ""
+        # If set, GHAuth mints the GitHub token for this workflow's jobs by
+        # invoking this AWS Lambda instead of Settings.GH_AUTH_LAMBDA_NAME. Lets
+        # a workflow control its token's permission scope - e.g. a more
+        # permissive token for the master push and the merge queue.
+        gh_auth_lambda_name: str = ""
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -142,3 +147,4 @@ class Workflow:
             is_required: bool
             default_value: str
             options: Optional[List] = None
+            is_boolean: bool = False

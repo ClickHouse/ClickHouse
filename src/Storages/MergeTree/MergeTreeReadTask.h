@@ -193,7 +193,8 @@ public:
         const PrewhereExprInfo & prewhere_actions,
         MergeTreeIndexBuildContextPtr index_build_context,
         LazyMaterializingRowsPtr lazy_materializing_rows,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters,
+        bool collect_predicate_statistics);
 
     void initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows);
 
@@ -233,7 +234,8 @@ public:
     static MergeTreeReadersChain createReadersChain(
         const Readers & readers,
         const PrewhereExprInfo & prewhere_actions,
-        const ReadStepsPerformanceCounters & read_steps_performance_counters);
+        const ReadStepsPerformanceCounters & read_steps_performance_counters,
+        bool collect_predicate_statistics);
 
 private:
     using DataflowCacheUpdateCallback

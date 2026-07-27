@@ -1,0 +1,76 @@
+---
+description: 'PREWHERE句のドキュメント'
+sidebarTitle: 'PREWHERE'
+slug: /sql-reference/statements/select/prewhere
+title: 'PREWHERE 句'
+doc_type: 'reference'
+---
+
+PREWHERE は、フィルタリングをより効率的に行うための最適化です。`PREWHERE` 句を明示的に指定しない場合でも、デフォルトで有効になっています。これは、[WHERE](/ja/reference/statements/select/where) 条件の一部を prewhere ステージに自動的に移すことで機能します。`PREWHERE` 句の役割は、デフォルトの動作よりもうまく制御できると考える場合に、この最適化を制御することだけです。
+
+prewhere 最適化では、まず prewhere 式の実行に必要なカラムだけが読み込まれます。続いて、クエリの残りの部分の実行に必要なほかのカラムが読み込まれますが、その対象となるのは、少なくとも一部の行で prewhere 式が `true` となるブロックだけです。すべての行で prewhere 式が `false` となるブロックが多く、かつ prewhere に必要なカラム数がクエリのほかの部分より少ない場合、クエリ実行時にディスクから読み込むデータ量を大幅に減らせることがよくあります。
+
+<div id="controlling-prewhere-manually">
+  ## PREWHERE を手動で制御する
+</div>
+
+この句は `WHERE` 句と同じ意味です。違いは、テーブルからどのデータを読み取るかにあります。`PREWHERE` を手動で制御するのは、クエリ内で使用されるカラムの一部にしか関係しない一方で、データを大きく絞り込めるフィルタ条件に対してです。これにより、読み取るデータ量を削減できます。
+
+1 つのクエリで `PREWHERE` と `WHERE` を同時に指定できます。この場合、`PREWHERE` は `WHERE` より先に適用されます。
+
+[optimize&#95;move&#95;to&#95;prewhere](/ja/reference/settings/session-settings#optimize_move_to_prewhere) 設定が 0 の場合、式の一部を `WHERE` から `PREWHERE` へ自動的に移動するヒューリスティクスは無効になります。
+
+クエリに [FINAL](/ja/reference/statements/select/from#final-modifier) modifier がある場合、`PREWHERE` の最適化は必ずしも正しいとは限りません。これは、[optimize&#95;move&#95;to&#95;prewhere](/ja/reference/settings/session-settings#optimize_move_to_prewhere) と [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ja/reference/settings/session-settings#optimize_move_to_prewhere_if_final) の両方の設定が有効になっている場合にのみ有効です。
+
+<Note>
+  `PREWHERE` セクションは `FINAL` より前に実行されるため、テーブルの `ORDER BY` セクションに含まれないフィールドに対して `PREWHERE` を使用すると、`FROM ... FINAL` クエリの結果が偏る可能性があります。
+</Note>
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+`PREWHERE` は、[*MergeTree](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーのテーブルでのみサポートされています。
+
+<div id="example">
+  ## 例
+</div>
+
+```sql
+CREATE TABLE mydata
+(
+    `A` Int64,
+    `B` Int8,
+    `C` String
+)
+ENGINE = MergeTree
+ORDER BY A AS
+SELECT
+    number,
+    0,
+    if(number between 1000 and 2000, 'x', toString(number))
+FROM numbers(10000000);
+
+SELECT count()
+FROM mydata
+WHERE (B = 0) AND (C = 'x');
+
+1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
+
+-- どのpredicateがPREWHEREに移動されるかを確認するため、tracingを有効にします
+set send_logs_level='debug';
+
+MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE  
+-- ClickHouseは自動的に`B = 0`をPREWHEREに移動しますが、Bは常に0であるため、これは意味がありません。
+
+-- 別のpredicate `C = 'x'` を手動で移動してみましょう 
+
+SELECT count()
+FROM mydata
+PREWHERE C = 'x'
+WHERE B = 0;
+
+1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+
+-- `PREWHERE`を手動指定したこのクエリは、処理するデータがわずかに少なくなります: 158.89 MB VS 168.89 MB
+```

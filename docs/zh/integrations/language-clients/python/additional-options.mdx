@@ -1,0 +1,102 @@
+---
+sidebarTitle: '其他选项'
+keywords: ['clickhouse', 'python', '选项', '设置']
+description: 'ClickHouse Connect 的其他选项'
+slug: /integrations/language-clients/python/additional-options
+title: '其他选项'
+doc_type: 'reference'
+---
+
+ClickHouse Connect 提供了许多适用于高级用例的其他选项。
+
+<div id="global-settings">
+  ## 全局设置
+</div>
+
+只有少量设置项可用于全局控制 ClickHouse Connect 的行为。可通过顶层 `common` 包访问这些设置：
+
+```python
+from clickhouse_connect import common
+
+common.set_setting('autogenerate_session_id', False)
+common.get_setting('invalid_setting_action')
+'drop'
+```
+
+<Note>
+  在使用 `clickhouse_connect.get_client` 方法创建客户端之前，*务必*先修改这些常用设置：`autogenerate_session_id`、`product_name` 和 `readonly`。在客户端创建后再更改这些设置，不会影响现有客户端的行为。
+</Note>
+
+当前定义了以下全局设置：
+
+| 设置名称                                            | 默认值             | 可选值                                             | 说明                                                                                                                                                                                           |
+| ----------------------------------------------- | --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| autogenerate&#95;session&#95;id                 | True            | True, False                                     | 为每个客户端会话自动生成一个新的 UUID(1) 会话 ID (如果未提供) 。如果未提供会话 ID (无论是在客户端级别还是查询级别) ，ClickHouse 都会为每个查询生成一个随机的内部 ID。                                                                                        |
+| dict&#95;parameter&#95;format                   | &#39;json&#39;  | &#39;json&#39;, &#39;map&#39;                   | 控制参数化查询是将 Python 字典转换为 JSON，还是转换为 ClickHouse Map 语法。`json` 应用于插入 JSON 列，`map` 用于 ClickHouse Map 列。                                                                                           |
+| invalid&#95;setting&#95;action                  | &#39;error&#39; | &#39;drop&#39;, &#39;send&#39;, &#39;error&#39; | 当提供了无效设置或只读设置时 (无论是客户端会话还是查询级别) ，指定要采取的操作。如果为 `drop`，则忽略该设置；如果为 `send`，则将该设置发送给 ClickHouse；如果为 `error`，则会在客户端抛出 ProgrammingError。                                                            |
+| max&#95;connection&#95;age                      | 600             |                                                 | HTTP Keep-Alive 连接保持打开或复用的最长时间 (秒) 。这可避免在负载均衡器/代理后方，连接过度集中到某一个 ClickHouse 节点。默认值为 10 分钟。                                                                                                     |
+| product&#95;name                                |                 |                                                 | 随查询一起传递给 ClickHouse 的字符串，用于跟踪使用 ClickHouse Connect 的应用。应采用 &lt;product name;&amp;gl/&lt;product version&gt; 的格式。                                                                             |
+| readonly                                        | 0               | 0, 1                                            | 适用于 19.17 之前版本的隐式 &quot;read&#95;only&quot; ClickHouse 设置。可将其设置为与 ClickHouse 的 &quot;read&#95;only&quot; 设置值一致，以便兼容非常旧的 ClickHouse 版本。                                                       |
+| send&#95;os&#95;user                            | True            | True, False                                     | 在发送给 ClickHouse 的客户端信息中包含检测到的操作系统用户名 (HTTP User-Agent 字符串) 。                                                                                                                                 |
+| send&#95;integration&#95;tags                   | True            | True, False                                     | 在发送给 ClickHouse 的客户端信息中包含所使用的集成库及其版本 (例如 Pandas/SQLAlchemy 等)  (HTTP User-Agent 字符串) 。                                                                                                       |
+| use&#95;protocol&#95;version                    | True            | True, False                                     | 使用客户端协议版本。这是 `DateTime` 时区列所必需的，但会与当前版本的 chproxy 不兼容。                                                                                                                                        |
+| max&#95;error&#95;size                          | 1024            |                                                 | 客户端错误消息返回的最大字符数。将此设置设为 0 可获取完整的 ClickHouse 错误消息。默认值为 1024 个字符。                                                                                                                               |
+| http&#95;buffer&#95;size                        | 10MB            |                                                 | 用于 HTTP 流式查询的“内存中”缓冲区大小 (以字节为单位) 。                                                                                                                                                           |
+| preserve&#95;pandas&#95;datetime&#95;resolution | False           | True, False                                     | 当为 True 且使用 pandas 2.x 时，会保留 datetime64/timedelta64 dtype 的分辨率 (例如 &#39;s&#39;、&#39;ms&#39;、&#39;us&#39;、&#39;ns&#39;) 。如果为 False (或在 pandas &lt;2.x 中) ，则会强制转换为纳秒 (&#39;ns&#39;) 分辨率以保持兼容性。 |
+
+<div id="compression">
+  ## 压缩
+</div>
+
+ClickHouse Connect 支持对查询结果和插入使用 lz4、zstd、brotli 和 gzip 压缩。请始终记住，使用压缩通常需要在网络带宽/传输速度与 CPU 使用率之间进行权衡 (客户端和服务器端都是如此) 。
+
+要接收压缩数据，ClickHouse server 的 `enable_http_compression` 必须设置为 1，或者用户必须具有按“每次查询”更改该设置的 permission。
+
+调用 `clickhouse_connect.get_client` 工厂 method 时，可通过 `compress` parameter 控制压缩。默认情况下，`compress` 设置为 `True`，这会启用默认压缩设置。对于通过 `query`、`query_np` 和 `query_df` client methods 执行的查询，ClickHouse Connect 会添加 `Accept-Encoding` 请求头，其中包含
+`lz4`、`zstd`、`br` (如果已安装 brotli 库，则表示 brotli) 、`gzip` 和 `deflate` 编码；这些编码会用于通过 `query` client method 执行的查询 (以及间接通过 `query_np` 和 `query_df` 执行的查询) 。 (对于绝大多数请求，ClickHouse
+server 会返回使用 `zstd` 压缩的载荷。) 对于插入操作，默认情况下 ClickHouse Connect 会使用 `lz4` 压缩插入块，并发送 `Content-Encoding: lz4` HTTP 请求头。
+
+`get_client` 的 `compress` parameter 也可以设置为特定的压缩方法，即 `lz4`、`zstd`、`br` 或 `gzip` 之一。随后，该方法将同时用于插入和查询结果 (如果 ClickHouse server 支持) 。现在，所需的 `zstd` 和 `lz4` 压缩库默认会随 ClickHouse Connect 一起安装。如果指定 `br`/brotli，则必须单独安装 brotli 库。
+
+请注意，`raw*` client methods 不会使用 client configuration 中指定的压缩设置。
+
+我们也不建议使用 `gzip` 压缩，因为无论是压缩还是解压数据，它都明显比其他方案更慢。
+
+<div id="http-proxy-support">
+  ## HTTP 代理支持
+</div>
+
+ClickHouse Connect 通过 `urllib3` 库提供基础的 HTTP 代理支持。它可识别标准的 `HTTP_PROXY` 和 `HTTPS_PROXY` 环境变量。请注意，使用这些环境变量会影响通过 `clickhouse_connect.get_client` 方法创建的任何 client。或者，如果要为每个 client 单独配置，可以向 `get_client` 方法传入 `http_proxy` 或 `https_proxy` argument。有关 HTTP 代理支持实现的详细信息，请参阅 [urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies) 文档。
+
+如需使用 SOCKS 代理，可以将 `urllib3` 的 `SOCKSProxyManager` 作为 `pool_mgr` argument 传递给 `get_client`。请注意，这需要直接安装 PySocks 库，或为 `urllib3` 依赖项启用 `[socks]` 选项。
+
+<div id="old-json-data-type">
+  ## “旧” JSON 数据类型
+</div>
+
+实验性的 `Object` (或 `Object('json')`) 数据类型已弃用，应避免在生产环境中使用。出于向后兼容的考虑，ClickHouse Connect 仍为该数据类型提供有限支持。请注意，这种支持不包括那些预期会以字典或等效类型返回“顶层”或“父级” JSON 值的查询，这类查询会导致异常。
+
+<div id="new-variantdynamicjson-datatypes-experimental-feature">
+  ## “新” Variant/Dynamic/JSON 数据类型 (Experimental 功能)
+</div>
+
+从 0.8.0 版本开始，`clickhouse-connect` 开始对新的 (同样处于 Experimental 阶段的) ClickHouse 类型 Variant、Dynamic 和 JSON 提供实验性支持。
+
+<div id="usage-notes">
+  ### 使用说明
+</div>
+
+* JSON 数据可以作为 Python 字典插入，也可以作为包含 JSON 对象 `{}` 的 JSON 字符串插入。不支持其他形式的 JSON 数据。
+* 对这些类型使用 subcolumns/paths 的查询将返回该子列的类型。
+* 其他使用说明请参见 ClickHouse [文档](/zh/)。
+
+<div id="known-limitations">
+  ### 已知限制
+</div>
+
+* 使用这些类型前，必须先在 ClickHouse 设置中启用它们。
+* “新” JSON 类型自 ClickHouse 24.8 版本起可用。
+* 由于内部格式发生变化，`clickhouse-connect` 仅兼容 ClickHouse 24.7 及以上版本中的 Variant 类型。
+* 返回的 JSON 对象最多只会返回 `max_dynamic_paths` 个元素 (默认值为 1024) 。此问题将在未来版本中修复。
+* 插入到 `Dynamic` 列中的值始终会采用 Python 值的字符串表示形式。待 https://github.com/ClickHouse/ClickHouse/issues/70395 修复后，此问题将在未来版本中修复。
+* 这些新类型的实现尚未用 C 代码优化，因此性能可能会比更简单、更成熟的数据类型稍慢。

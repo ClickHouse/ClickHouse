@@ -1,0 +1,129 @@
+---
+slug: /use-cases/observability/clickstack/architecture
+description: 'معمارية ClickStack - حزمة ClickHouse لـ Observability'
+title: 'المعمارية'
+toc_max_heading_level: 2
+doc_type: 'مرجع'
+keywords: ['معمارية ClickStack', 'معمارية Observability', 'HyperDX', 'OpenTelemetry Collector', 'MongoDB', 'تصميم النظام']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تختلف بنية ClickStack المعمارية بحسب طريقة نشره. وتوجد فروق معمارية مهمة بين **ClickStack Open Source**، حيث تُدار جميع المكوّنات ذاتيًا، و**Managed ClickStack**، حيث تُستضاف ClickHouse وHyperDX UI وتُشغَّلان في ClickHouse Cloud. ورغم أن المكوّنات الأساسية تبقى نفسها في كلا النموذجين، فإن مسؤولية استضافة كل مكوّن وتوسيع نطاقه وتأمينه تختلف.
+
+<div id="architecture-overview">
+  ## نظرة عامة على المعمارية
+</div>
+
+فيما يلي نظرة عامة على معماريتَي ClickStack المُدارة ومفتوحة المصدر.
+
+<Tabs>
+  <Tab title="ClickStack المُدار">
+    يعمل ClickStack المُدار بالكامل داخل **ClickHouse Cloud**، موفّرًا منصة backend مُدارة بالكامل لقابلية الرصد مع الحفاظ على نموذج بيانات ClickStack نفسه وتجربة المستخدم نفسها.
+
+    في هذا النموذج، تتم استضافة **ClickHouse وواجهة ClickStack UI (HyperDX)** وتشغيلهما وتأمينهما بواسطة ClickHouse Cloud. ولا يقتصر دور المستخدمين إلا على تشغيل **OpenTelemetry (OTel) collector** لإرسال telemetry data إلى الخدمة المُدارة.
+
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="البنية المُدارة" size="lg" />
+
+    ### ClickHouse Cloud: المحرّك
+
+    في صميم ClickStack المُدار توجد ClickHouse Cloud، وهي نسخة serverless من ClickHouse — قاعدة بيانات column-oriented مصممة لإجراء analytics في الوقت الحقيقي وعلى نطاق واسع. وهي تشغّل ingest والاستعلام عن بيانات قابلية الرصد، بما يتيح:
+
+    * بحثًا بزمن أقل من ثانية عبر تيرابايتات من الأحداث
+    * ingest مليارات السجلات عالية cardinality يوميًا
+    * معدلات Compression مرتفعة لا تقل عن 10x لبيانات قابلية الرصد
+    * دعمًا أصليًا لبيانات JSON شبه المهيكلة، بما يتيح schema evolution بشكل ديناميكي
+    * محرّك SQL قويًا يضم مئات الوظائف التحليلية المضمّنة
+
+    تتعامل ClickHouse Cloud مع بيانات قابلية الرصد باعتبارها wide events، مما يتيح ترابطًا عميقًا بين logs وmetrics وtraces ضمن بنية موحّدة واحدة.
+
+    وبالإضافة إلى ClickHouse Open Source، فإنها توفّر عددًا من المزايا لقابلية الرصد:
+
+    * scaling تلقائيًا للقدرات الحاسوبية بشكل مستقل عن Storage
+    * احتفاظًا منخفض التكلفة وغير محدود فعليًا بالاعتماد على object storage
+    * إمكانية عزل workloads القراءة والكتابة بشكل مستقل باستخدام Warehouses
+    * authentication مدمج
+    * backups مؤتمتة
+    * ميزات Security وcompliance
+    * Upgrades سلسة
+
+    ### OpenTelemetry collector: data ingestion
+
+    يتضمن ClickStack Managed **OpenTelemetry (OTel) collector** مُعدًا مسبقًا لإجراء ingestion لبيانات telemetry بطريقة مفتوحة وموحّدة. ويمكنك إرسال البيانات باستخدام protocol ‏OTLP عبر:
+
+    * gRPC (المنفذ `4317`)
+    * HTTP (المنفذ `4318`)
+
+    يُصدّر collector بيانات telemetry إلى ClickHouse Cloud على شكل batches فعّالة. وهو يدعم schemas محسّنة للجداول لكل data source، مما يضمن أداءً قابلًا للتوسع عبر جميع أنواع الإشارات.
+
+    **هذا المكوّن من البنية مسؤولية المستخدم**
+
+    ### ClickStack UI (HyperDX): الواجهة
+
+    تُعد ClickStack UI (HyperDX) واجهة المستخدم الخاصة بـ ClickStack. وهي توفّر:
+
+    * بحثًا باللغة الطبيعية وبأسلوب Lucene
+    * تتبعًا مباشرًا لأغراض debugging في الوقت الحقيقي
+    * عروضًا موحّدة لـ logs وmetrics وtraces
+    * session replay لقابلية الرصد في الواجهة الأمامية
+    * إنشاء dashboard وإعداد التنبيهات
+    * واجهة SQL query للتحليل المتقدم
+
+    صُمم HyperDX خصيصًا لـ ClickHouse، ويجمع بين البحث القوي وسير العمل السلس، بما يمكّنك من اكتشاف الحالات الشاذة والتحقيق في المشكلات والحصول على رؤى بسرعة.
+
+    في ClickStack المُدار، تكون الواجهة مدمجة في نظام authentication الخاص بـ ClickHouse Cloud console.
+  </Tab>
+
+  <Tab title="ClickStack مفتوح المصدر">
+    تعتمد بنية ClickStack Open Source على ثلاثة مكونات أساسية: **ClickHouse** و**HyperDX** و**مجمّع OpenTelemetry (OTel)**. ويوفّر مثيل **MongoDB** تخزينًا لحالة التطبيق. وتشكّل هذه المكونات معًا حزمة رصد عالية الأداء ومفتوحة المصدر، محسّنة للسجلات والمقاييس والتتبعات.
+
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="البنية" size="lg" />
+
+    ### ClickHouse: محرك قاعدة البيانات
+
+    في صميم ClickStack يأتي ClickHouse، وهي قاعدة بيانات عمودية التوجّه صُممت للتحليلات الفورية على نطاق واسع. وهي تدعم استيعاب بيانات الرصد والاستعلام عنها، بما يتيح:
+
+    * بحثًا بزمن أقل من ثانية عبر تيرابايتات من الأحداث
+    * استيعاب مليارات السجلات عالية الكاردينالية يوميًا
+    * معدلات ضغط عالية لا تقل عن 10x لبيانات الرصد
+    * دعمًا أصيلًا لبيانات JSON شبه المهيكلة، بما يتيح تطوّر المخطط ديناميكيًا
+    * محرك SQL قويًا يضم مئات الدوال التحليلية المضمّنة
+
+    يتعامل ClickHouse مع بيانات الرصد على هيئة أحداث موسّعة، ما يتيح ربطًا عميقًا بين السجلات والمقاييس والتتبعات ضمن بنية موحّدة واحدة.
+
+    ### OpenTelemetry collector: استيعاب البيانات
+
+    يتضمن ClickStack مجمّع OpenTelemetry (OTel) مُعدًا مسبقًا لاستيعاب بيانات telemetry بطريقة مفتوحة وموحّدة. ويمكنك إرسال البيانات باستخدام بروتوكول OTLP عبر:
+
+    * gRPC (المنفذ `4317`)
+    * HTTP (المنفذ `4318`)
+
+    يُصدّر المجمّع بيانات telemetry إلى ClickHouse على دفعات فعّالة. كما يدعم مخططات جداول محسّنة لكل مصدر بيانات، بما يضمن أداءً قابلًا للتوسع عبر جميع أنواع الإشارات.
+
+    ### ClickStack UI (HyperDX): الواجهة
+
+    تُعد ClickStack UI (HyperDX) واجهة المستخدم الخاصة بـ ClickStack. وهي توفّر:
+
+    * بحثًا باللغة الطبيعية وبأسلوب Lucene
+    * تتبّعًا مباشرًا لتصحيح الأخطاء في الوقت الفعلي
+    * عروضًا موحّدة للسجلات والمقاييس والتتبعات
+    * إعادة تشغيل الجلسات لرصد الواجهة الأمامية
+    * إنشاء لوحات المعلومات وتهيئة التنبيهات
+    * واجهة استعلام SQL للتحليل المتقدم
+
+    صُممت HyperDX خصيصًا لـ ClickHouse، وهي تجمع بين البحث القوي وسير العمل السلس، بما يتيح لك اكتشاف الحالات الشاذة والتحقيق في المشكلات واستخلاص الرؤى بسرعة.
+
+    ### MongoDB: حالة التطبيق
+
+    يستخدم ClickStack قاعدة MongoDB لتخزين الحالة على مستوى التطبيق، بما في ذلك:
+
+    * لوحات المعلومات
+    * التنبيهات
+    * ملفات تعريف المستخدمين
+    * التصورات المحفوظة
+
+    ويضمن هذا الفصل بين الحالة وبيانات الأحداث الأداء وقابلية التوسع، مع تبسيط النسخ الاحتياطي والإعداد.
+
+    تُمكّن هذه البنية المعيارية ClickStack من تقديم منصة رصد جاهزة للعمل تتسم بالسرعة والمرونة وكونها مفتوحة المصدر.
+  </Tab>
+</Tabs>

@@ -1,0 +1,846 @@
+---
+sidebarTitle: '드라이버 API'
+keywords: ['clickhouse', 'python', 'driver', 'api', 'client']
+description: 'ClickHouse Connect 드라이버 API'
+slug: /integrations/language-clients/python/driver-api
+title: 'ClickHouse Connect 드라이버 API'
+doc_type: 'reference'
+---
+
+<Note>
+  사용할 수 있는 인수가 많고 대부분이 선택 사항이므로, 대부분의 API 메서드에서는 키워드 인수를 사용하는 것이 좋습니다.
+
+  *여기에 문서화되지 않은 메서드는 API의 일부로 간주되지 않으며, 제거되거나 변경될 수 있습니다.*
+</Note>
+
+<div id="client-initialization">
+  ## 클라이언트 초기화
+</div>
+
+`clickhouse_connect.driver.client` 클래스는 Python 애플리케이션과 ClickHouse 데이터베이스 서버 간의 기본 인터페이스를 제공합니다. `clickhouse_connect.get_client` 함수를 사용해 다음 인수를 받는 Client 인스턴스를 가져오십시오:
+
+<div id="connection-arguments">
+  ### 연결 인수
+</div>
+
+| 매개변수                                 | 유형          | 기본값                           | 설명                                                                                                                                            |
+| ------------------------------------ | ----------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| interface                            | str         | http                          | `http` 또는 `https`여야 합니다.                                                                                                                      |
+| host                                 | str         | localhost                     | ClickHouse 서버의 호스트명 또는 IP 주소입니다. 설정하지 않으면 `localhost`를 사용합니다.                                                                                 |
+| port                                 | int         | 8123 or 8443                  | ClickHouse의 HTTP 또는 HTTPS 포트입니다. 설정하지 않으면 기본적으로 8123을 사용하며, *secure*=*True* 또는 *interface*=*https*인 경우 8443을 사용합니다.                           |
+| username                             | str         | default                       | ClickHouse 사용자 이름입니다. 설정하지 않으면 `default` ClickHouse 사용자를 사용합니다.                                                                               |
+| password                             | str         | *&lt;empty string&gt;*        | *username*의 비밀번호입니다.                                                                                                                          |
+| database                             | str         | *None*                        | 연결의 기본 데이터베이스입니다. 설정하지 않으면 ClickHouse Connect가 *username*의 기본 데이터베이스를 사용합니다.                                                                  |
+| secure                               | bool        | False                         | HTTPS/TLS를 사용합니다. interface 또는 port 인수에서 추론한 값을 이 설정으로 재정의합니다.                                                                                |
+| dsn                                  | str         | *None*                        | 표준 DSN(Data Source Name) 포맷의 문자열입니다. 별도로 지정하지 않은 다른 연결 값(예: host 또는 user)은 이 문자열에서 추출합니다.                                                     |
+| compress                             | bool or str | True                          | ClickHouse HTTP 삽입과 쿼리 결과에 대한 압축을 활성화합니다. [추가 옵션(Compression)](/ko/integrations/language-clients/python/additional-options#compression)을 참조하십시오. |
+| query&#95;limit                      | int         | 0 (unlimited)                 | 모든 `query` 응답에서 반환할 최대 행 수입니다. 무제한 행을 반환하려면 이 값을 0으로 설정하십시오. 결과를 스트리밍하지 않으면 모든 결과가 한 번에 메모리에 로드되므로, 큰 쿼리 제한값은 메모리 부족 예외를 일으킬 수 있습니다.          |
+| query&#95;retries                    | int         | 2                             | `query` 요청의 최대 재시도 횟수입니다. &quot;retryable&quot; HTTP 응답만 재시도합니다. 의도하지 않은 중복 요청을 방지하기 위해 드라이버는 `command` 또는 `insert` 요청을 자동으로 재시도하지 않습니다.      |
+| connect&#95;timeout                  | int         | 10                            | 초 단위 HTTP 연결 타임아웃입니다.                                                                                                                         |
+| send&#95;receive&#95;timeout         | int         | 300                           | HTTP 연결의 송신/수신 타임아웃이며, 단위는 초입니다.                                                                                                              |
+| client&#95;name                      | str         | *None*                        | HTTP user agent 헤더 앞에 추가되는 client&#95;name입니다. ClickHouse system.query&#95;log에서 클라이언트 쿼리를 추적하려면 이 값을 설정하십시오.                                 |
+| pool&#95;mgr                         | obj         | *&lt;default PoolManager&gt;* | 사용할 `urllib3` 라이브러리의 PoolManager입니다. 서로 다른 호스트에 대해 여러 연결 풀이 필요한 고급 사용 사례에 사용합니다.                                                              |
+| http&#95;proxy                       | str         | *None*                        | HTTP 프록시 주소입니다(HTTP&#95;PROXY 환경 변수를 설정하는 것과 동일).                                                                                             |
+| https&#95;proxy                      | str         | *None*                        | HTTPS 프록시 주소입니다(HTTPS&#95;PROXY 환경 변수를 설정하는 것과 동일).                                                                                           |
+| apply&#95;server&#95;timezone        | bool        | True                          | 시간대 정보를 포함하는 쿼리 결과에 서버 시간대를 사용합니다. [시간대 우선순위](/ko/integrations/language-clients/python/advanced-querying#time-zones)를 참조하십시오.                    |
+| show&#95;clickhouse&#95;errors       | bool        | True                          | 클라이언트 측 예외에 자세한 ClickHouse 서버 오류 메시지와 예외 코드를 포함합니다.                                                                                           |
+| autogenerate&#95;session&#95;id      | bool        | *None*                        | 전역 `autogenerate_session_id` 설정을 재정의합니다. True이면 값이 제공되지 않았을 때 UUID4 세션 ID를 자동으로 생성합니다.                                                        |
+| proxy&#95;path                       | str         | &lt;empty string&gt;          | 프록시 구성에서 ClickHouse 서버 URL에 추가할 선택적 경로 접두사입니다.                                                                                                |
+| form&#95;encode&#95;query&#95;params | bool        | False                         | URL 매개변수 대신 요청 본문에 폼 인코딩된 데이터로 쿼리 매개변수를 전송합니다. URL 길이 제한을 초과할 수 있는 대량의 매개변수 집합이 있는 쿼리에 유용합니다.                                                 |
+| rename&#95;response&#95;column       | str         | *None*                        | 쿼리 결과의 응답 컬럼 이름을 변경하기 위한 선택적 콜백 함수 또는 컬럼 이름 매핑입니다.                                                                                            |
+
+<div id="httpstls-arguments">
+  ### HTTPS/TLS 인수
+</div>
+
+| 매개변수                     | 유형   | 기본값    | 설명                                                                                                                                                                                          |
+| ------------------------ | ---- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| verify                   | bool | True   | HTTPS/TLS를 사용하는 경우 ClickHouse 서버의 TLS/SSL 인증서(호스트명, 만료일 등)를 검증합니다.                                                                                                                          |
+| ca&#95;cert              | str  | *None* | *verify*=*True*인 경우, .pem 포맷의 인증 기관(CA) 루트 인증서 파일 경로입니다. 이 파일은 ClickHouse 서버 인증서를 검증하는 데 사용됩니다. verify가 False이면 무시됩니다. ClickHouse 서버 인증서가 운영 체제에서 신뢰하는 전역 루트 인증 기관을 통해 검증되는 경우에는 필요하지 않습니다. |
+| client&#95;cert          | str  | *None* | .pem 포맷의 TLS 클라이언트 인증서 파일 경로입니다(상호 TLS 인증용). 파일에는 중간 인증서를 포함한 전체 인증서 체인이 포함되어야 합니다.                                                                                                         |
+| client&#95;cert&#95;key  | str  | *None* | 클라이언트 인증서의 private key 파일 경로입니다. private key가 클라이언트 인증서 파일에 포함되어 있지 않으면 필요합니다.                                                                                                              |
+| server&#95;host&#95;name | str  | *None* | TLS 인증서의 CN 또는 SNI로 식별되는 ClickHouse 서버의 호스트명입니다. 다른 호스트명을 사용하는 프록시 또는 터널을 통해 연결할 때 SSL 오류를 방지하려면 이 값을 설정하십시오.                                                                               |
+| tls&#95;mode             | str  | *None* | 고급 TLS 동작을 제어합니다. `proxy` 및 `strict`는 ClickHouse 상호 TLS connection을 사용하지 않지만, 클라이언트 인증서와 키는 전송합니다. `mutual`은 클라이언트 인증서를 사용하는 ClickHouse 상호 TLS 인증을 가정합니다. *None*/기본 동작은 `mutual`입니다.        |
+
+<div id="settings-argument">
+  ### 설정 인수
+</div>
+
+마지막으로, `get_client`의 `settings` 인수는 각 클라이언트 요청마다 추가 ClickHouse 설정을 서버에 전달하는 데 사용됩니다. 대부분의 경우 *readonly*=*1* 권한을 가진 사용자는 쿼리와 함께 전송된 설정을 변경할 수 없으므로, ClickHouse Connect는 최종 요청에서 이러한 설정을 제외하고 경고를 기록합니다. 다음 설정은 ClickHouse Connect에서 사용하는 HTTP 쿼리/세션에만 적용되며, 일반적인 ClickHouse 설정으로 문서화되어 있지 않습니다.
+
+| Setting                       | Description                                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| buffer&#95;size               | ClickHouse 서버가 HTTP 채널에 쓰기 전에 사용하는 버퍼 크기(바이트 단위)입니다.                             |
+| session&#95;id                | 서버에서 관련 쿼리를 연결하기 위한 고유한 세션 ID입니다. 임시 테이블에 필요합니다.                        |
+| compress                      | ClickHouse 서버가 POST 응답 데이터를 압축할지 여부입니다. 이 설정은 &quot;raw&quot; 쿼리에만 사용해야 합니다.     |
+| decompress                    | ClickHouse 서버로 전송된 데이터를 압축 해제해야 하는지 여부입니다. 이 설정은 &quot;raw&quot; 삽입에만 사용해야 합니다.  |
+| quota&#95;key                 | 이 요청에 연결된 쿼터 키입니다. 쿼터에 대해서는 ClickHouse 서버 문서를 참조하십시오.                            |
+| session&#95;check             | 세션 상태를 확인하는 데 사용됩니다.                                                             |
+| session&#95;timeout           | 세션 ID로 식별되는 세션이 timeout되어 더 이상 유효하지 않게 되기 전까지의 비활성 시간(초)입니다. 기본값은 60초입니다.        |
+| wait&#95;end&#95;of&#95;query | ClickHouse 서버에서 전체 응답을 버퍼링합니다. 이 설정은 요약 정보를 반환하는 데 필요하며, 비스트리밍 쿼리에서는 자동으로 설정됩니다. |
+| role                          | 세션에 사용할 ClickHouse 역할(Role)입니다. 쿼리 컨텍스트에 포함할 수 있는 유효한 전송 설정입니다.                  |
+
+각 쿼리와 함께 전송할 수 있는 다른 ClickHouse 설정은 [ClickHouse 문서](/ko/reference/settings/session-settings)를 참조하십시오.
+
+<div id="client-creation-examples">
+  ### 클라이언트 생성 예시
+</div>
+
+* 매개변수를 지정하지 않으면 ClickHouse Connect 클라이언트는 `localhost`의 기본 HTTP 포트에 `default` 사용자로 비밀번호 없이 연결됩니다:
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+print(client.server_version)
+# 출력: '22.10.1.98'
+```
+
+* 보안(HTTPS)을 사용하는 외부 ClickHouse 서버에 연결
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='play.clickhouse.com', secure=True, port=443, user='play', password='clickhouse')
+print(client.command('SELECT timezone()'))
+# 출력: 'Etc/UTC'
+```
+
+* 세션 ID와 기타 사용자 지정 연결 매개변수, ClickHouse 설정을 사용해 연결합니다.
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(
+    host='play.clickhouse.com',
+    user='play',
+    password='clickhouse',
+    port=443,
+    session_id='example_session_1',
+    connect_timeout=15,
+    database='github',
+    settings={'distributed_ddl_task_timeout':300},
+)
+print(client.database)
+# 출력: 'github'
+```
+
+<div id="client-lifecycle-and-best-practices">
+  ## 클라이언트 수명 주기와 모범 사례
+</div>
+
+ClickHouse Connect 클라이언트를 생성하는 작업은 연결을 설정하고, 서버 메타데이터를 가져오고, 설정을 초기화하는 과정이 포함되므로 비용이 많이 드는 작업입니다. 최적의 성능을 위해 다음 모범 사례를 따르십시오:
+
+<div id="core-principles">
+  ### 핵심 원칙
+</div>
+
+* **클라이언트 재사용**: 애플리케이션 시작 시 클라이언트를 한 번만 생성하고, 애플리케이션이 실행되는 동안 계속 재사용합니다
+* **빈번한 생성 방지**: 각 쿼리나 요청마다 새 클라이언트를 생성하지 마십시오(이렇게 하면 작업마다 수백 밀리초가 낭비됩니다)
+* **적절한 정리**: 종료할 때는 연결 풀 리소스를 해제할 수 있도록 항상 클라이언트를 닫으십시오
+* **가능하면 공유**: 단일 클라이언트는 연결 풀을 통해 많은 동시 쿼리를 처리할 수 있습니다(아래의 스레딩 참고 사항 참조)
+
+<div id="basic-patterns">
+  ### 기본 패턴
+</div>
+
+**✅ 좋은 예: 단일 클라이언트를 재사용하세요**
+
+```python
+import clickhouse_connect
+
+# 시작 시 한 번만 생성
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+
+# 모든 쿼리에 재사용
+for i in range(1000):
+    result = client.query('SELECT count() FROM users')
+
+# 종료 시 닫기
+client.close()
+```
+
+**❌ 잘못된 예: 클라이언트를 반복적으로 생성**
+
+```python
+# 나쁜 예: 초기화 오버헤드가 큰 클라이언트를 1000개 생성합니다
+for i in range(1000):
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    result = client.query('SELECT count() FROM users')
+    client.close()
+```
+
+<div id="multi-threaded-applications">
+  ### 멀티스레드 애플리케이션
+</div>
+
+<Warning>
+  세션 ID를 사용하는 경우 클라이언트 인스턴스는 **스레드 안전하지 않습니다**. 기본적으로 클라이언트에는 자동 생성된 세션 ID가 있으며, 동일한 세션 내에서 동시 쿼리를 실행하면 `ProgrammingError`가 발생합니다.
+</Warning>
+
+스레드 간에 클라이언트를 안전하게 공유하려면:
+
+```python
+import clickhouse_connect
+import threading
+
+# 옵션 1: 세션 비활성화 (공유 클라이언트에 권장)
+client = clickhouse_connect.get_client(
+    host='my-host',
+    username='default',
+    password='password',
+    autogenerate_session_id=False  # 스레드 안전성을 위해 필요
+)
+
+def worker(thread_id):
+    # 이제 모든 스레드에서 동일한 클라이언트를 안전하게 사용할 수 있음
+    result = client.query(f"SELECT {thread_id}")
+    print(f"Thread {thread_id}: {result.result_rows[0][0]}")
+
+threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+
+client.close()
+# 출력:
+# Thread 0: 0
+# Thread 7: 7
+# Thread 1: 1
+# Thread 9: 9
+# Thread 4: 4
+# Thread 2: 2
+# Thread 8: 8
+# Thread 5: 5
+# Thread 6: 6
+# Thread 3: 3
+```
+
+**세션 대신:** 세션이 필요하다면(예: 임시 테이블 사용 시) 스레드마다 별도의 클라이언트를 생성하십시오:
+
+```python
+def worker(thread_id):
+    # 각 스레드는 격리된 세션을 가진 독립적인 클라이언트를 사용합니다
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    client.command('CREATE TEMPORARY TABLE temp (id UInt32) ENGINE = Memory')
+    # ... 임시 테이블 사용 ...
+    client.close()
+```
+
+<div id="proper-cleanup">
+  ### 올바른 정리
+</div>
+
+종료 시에는 항상 클라이언트를 닫으십시오. `client.close()`는 클라이언트가 자체 풀 관리자(pool manager)를 소유한 경우에만(예: 사용자 지정 TLS/프록시 옵션으로 생성된 경우) 클라이언트를 정리하고 풀링된 HTTP 연결을 닫습니다. 이 점에 유의하십시오. 기본 공유 풀에서는 `client.close_connections()`를 사용해 소켓을 미리 정리하십시오. 그렇지 않으면 연결은 idle 만료 시점이나 프로세스 종료 시 자동으로 회수됩니다.
+
+```python
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+try:
+    result = client.query('SELECT 1')
+finally:
+    client.close()
+```
+
+또는 컨텍스트 관리자를 사용하세요:
+
+```python
+with clickhouse_connect.get_client(host='my-host', username='default', password='password') as client:
+    result = client.query('SELECT 1')
+```
+
+<div id="when-to-use-multiple-clients">
+  ### 여러 클라이언트를 사용해야 하는 경우
+</div>
+
+여러 클라이언트는 다음과 같은 경우에 적합합니다.
+
+* **서로 다른 서버**: ClickHouse 서버 또는 클러스터마다 클라이언트를 1개씩 사용
+* **서로 다른 자격 증명**: 서로 다른 사용자 또는 접근 수준별로 별도의 클라이언트 사용
+* **서로 다른 데이터베이스**: 여러 데이터베이스에서 작업해야 하는 경우
+* **격리된 세션**: 임시 테이블 또는 세션별 설정을 위해 별도의 세션이 필요한 경우
+* **스레드별 격리**: 스레드마다 독립적인 세션이 필요한 경우(위 예시 참조)
+
+<div id="common-method-arguments">
+  ## 공통 메서드 인수
+</div>
+
+여러 클라이언트 메서드는 공통 `parameters` 및 `settings` 인수 중 하나 또는 둘 다를 사용합니다. 이러한 키워드 인수는 아래에서 설명합니다.
+
+<div id="parameters-argument">
+  ### 매개변수 인수
+</div>
+
+ClickHouse Connect Client의 `query*` 및 `command` 메서드는 Python 표현식을 ClickHouse 값 표현식에 바인딩하는 데 사용하는 선택적 키워드 인수 `parameters`를 지원합니다. 바인딩은 두 가지 방식으로 사용할 수 있습니다.
+
+<div id="server-side-binding">
+  #### 서버 측 바인딩
+</div>
+
+ClickHouse는 쿼리에서 사용하는 대부분의 값에 대해 [서버 측 바인딩](/ko/concepts/features/interfaces/client#cli-queries-with-parameters)을 지원합니다. 이 방식에서는 바인딩된 값이 쿼리와 별도로 HTTP 쿼리 매개변수로 전송됩니다. ClickHouse Connect는 `{<name>:<datatype>}` 형식의 바인딩 표현식을 감지하면 적절한 쿼리 매개변수를 추가합니다. 서버 측 바인딩의 경우 `parameters` 인수는 Python 딕셔너리여야 합니다.
+
+* Python 딕셔너리, DateTime 값, 문자열 값을 사용한 서버 측 바인딩
+
+```python
+import datetime
+
+my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
+
+parameters = {'table': 'my_table', 'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM {table:Identifier} WHERE date >= {v1:DateTime} AND string ILIKE {v2:String}', parameters=parameters)
+```
+
+그러면 서버에서 다음 쿼리가 생성됩니다:
+
+```sql
+SELECT *
+FROM my_table
+WHERE date >= '2022-10-01 15:20:05'
+  AND string ILIKE 'a string with a single quote\''
+```
+
+<Warning>
+  서버 측 바인딩은 ClickHouse 서버에서 `SELECT` 쿼리에 대해서만 지원됩니다. `ALTER`, `DELETE`, `INSERT` 또는 기타 타입의 쿼리에는 사용할 수 없습니다. 이는 향후 변경될 수 있습니다. 자세한 내용은 https://github.com/ClickHouse/ClickHouse/issues/42092를 참조하십시오.
+</Warning>
+
+<div id="client-side-binding">
+  #### 클라이언트 측 바인딩
+</div>
+
+ClickHouse Connect는 클라이언트 측 매개변수 바인딩도 지원하며, 이를 통해 템플릿 기반 SQL 쿼리를 더 유연하게 생성할 수 있습니다. 클라이언트 측 바인딩에서는 `parameters` 인수가 딕셔너리 또는 시퀀스여야 합니다. 클라이언트 측 바인딩은 매개변수 치환을 위해 Python의 [&quot;printf&quot; 스타일](https://docs.python.org/3/library/stdtypes.html#old-string-formatting) 문자열 포맷팅을 사용합니다.
+
+서버 측 바인딩과 달리 클라이언트 측 바인딩은 데이터베이스, 테이블, 컬럼 이름과 같은 데이터베이스 식별자에는 사용할 수 없습니다. Python 스타일 포맷팅은 서로 다른 문자열 타입을 구분하지 못하며, 이러한 값은 서로 다른 방식으로 포맷팅해야 하기 때문입니다(데이터베이스 식별자에는 backticks 또는 큰따옴표를 사용하고, 데이터 값에는 작은따옴표를 사용).
+
+* Python 딕셔너리, DateTime 값, 문자열 이스케이프를 사용하는 예시
+
+```python
+import datetime
+
+my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
+
+parameters = {'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM my_table WHERE date >= %(v1)s AND string ILIKE %(v2)s', parameters=parameters)
+```
+
+그러면 서버에서 다음 쿼리가 생성됩니다:
+
+```sql
+SELECT *
+FROM my_table
+WHERE date >= '2022-10-01 15:20:05'
+  AND string ILIKE 'a string with a single quote\''
+```
+
+* Python 시퀀스(Tuple), Float64, IPv4Address 사용 예시
+
+```python
+import ipaddress
+
+parameters = (35200.44, ipaddress.IPv4Address(0x443d04fe))
+client.query('SELECT * FROM some_table WHERE metric >= %s AND ip_address = %s', parameters=parameters)
+```
+
+그러면 server에서 다음 쿼리가 생성됩니다:
+
+```sql
+SELECT *
+FROM some_table
+WHERE metric >= 35200.44
+  AND ip_address = '68.61.4.254''
+```
+
+<Note>
+  DateTime64 인수(초 미만 정밀도를 지원하는 ClickHouse 타입)를 바인딩하려면 다음 두 가지 사용자 지정 방법 중 하나를 사용해야 합니다:
+
+  * 예를 들어 Python `datetime.datetime` 값을 새 DT64Param 클래스로 감싸세요.
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}'  # 딕셔너리를 사용하는 서버 측 바인딩
+      parameters={'p1': DT64Param(dt_value)}
+
+      query = 'SELECT %s as string, toDateTime64(%s,6) as dateTime' # 목록을 사용하는 클라이언트 측 바인딩
+      parameters=['a string', DT64Param(datetime.now())]
+    ```
+    * 매개변수 값으로 딕셔너리를 사용하는 경우 매개변수 이름에 문자열 `_64`를 추가하세요.
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}, {a1:Array(DateTime(3))}'  # 딕셔너리를 사용하는 서버 측 바인딩
+
+      parameters={'p1_64': dt_value, 'a1_64': [dt_value1, dt_value2]}
+    ```
+</Note>
+
+<div id="settings-argument">
+  ### 설정 인수
+</div>
+
+주요 ClickHouse Connect Client의 `insert` 및 `select` 메서드는 모두 포함된 SQL 문에 대해 ClickHouse 서버 [사용자 설정](/ko/reference/settings/session-settings)을 전달할 수 있도록 선택적 `settings` 키워드 인수를 지원합니다. `settings` 인수는 딕셔너리여야 합니다. 각 항목은 ClickHouse 설정 이름과 해당 값으로 이루어져야 합니다. 값은 서버로 쿼리 매개변수로 전송될 때 문자열로 변환된다는 점에 유의하십시오.
+
+클라이언트 수준 설정과 마찬가지로, ClickHouse Connect는 서버가 *readonly*=*1*로 표시한 설정을 관련 로그 메시지와 함께 모두 제외합니다. ClickHouse HTTP 인터페이스를 통한 쿼리에만 적용되는 설정은 항상 유효합니다. 이러한 설정은 `get_client` [API](#settings-argument)에서 설명합니다.
+
+ClickHouse 설정 사용 예시:
+
+```python
+settings = {'merge_tree_min_rows_for_concurrent_read': 65535,
+            'session_id': 'session_1234',
+            'use_skip_indexes': False}
+client.query("SELECT event_type, sum(timeout) FROM event_errors WHERE event_time > '2022-08-01'", settings=settings)
+```
+
+<div id="client-command-method">
+  ## Client `command` 메서드
+</div>
+
+`Client.command` 메서드는 일반적으로 데이터를 반환하지 않거나, 전체 데이터셋 대신 단일 원시 값 또는 배열 값 하나를 반환하는 SQL 쿼리를 ClickHouse 서버로 전송할 때 사용합니다. 이 메서드는 다음 매개변수를 받습니다:
+
+| 매개변수              | Type             | Default    | Description                                                                                                                                          |
+| ---------------------- | ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cmd                    | str              | *Required* | 단일 값 또는 값으로 이루어진 단일 행을 반환하는 ClickHouse SQL 문입니다.                                                                                                     |
+| parameters             | dict or iterable | *None*     | [매개변수 설명](#parameters-argument)을 참조하십시오.                                                                                                             |
+| data                   | str or bytes     | *None*     | 명령과 함께 POST 본문으로 포함할 수 있는 선택적 데이터입니다.                                                                                                                |
+| settings               | dict             | *None*     | [설정 설명](#settings-argument)을 참조하십시오.                                                                                                                 |
+| use&#95;database       | bool             | True       | 클라이언트 데이터베이스(클라이언트 생성 시 지정됨)를 사용합니다. False이면 명령은 연결된 사용자의 기본 ClickHouse 서버 데이터베이스를 사용합니다.                                                            |
+| external&#95;data      | ExternalData     | *None*     | 쿼리와 함께 사용할 파일 또는 바이너리 데이터가 포함된 `ExternalData` 객체입니다. [고급 쿼리(외부 데이터)](/ko/integrations/language-clients/python/advanced-querying#external-data)를 참조하십시오. |
+| transport&#95;settings | dict             | *None*     | 이 요청에 포함할 HTTP 헤더의 선택적 딕셔너리입니다. 각 키-값 쌍은 HTTP 헤더로 추가됩니다(예: `{'X-Custom-Header': 'value'}`). 프록시 인증, 요청 추적 또는 중간 인프라에 필요한 헤더를 전달할 때 유용합니다.            |
+
+<div id="command-examples">
+  ### 명령 예시
+</div>
+
+<div id="ddl-statements">
+  #### DDL 문
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 테이블 생성
+result = client.command("CREATE TABLE test_command (col_1 String, col_2 DateTime) ENGINE MergeTree ORDER BY tuple()")
+print(result)  # query_id가 포함된 QuerySummary 반환
+
+# 테이블 정의 조회
+result = client.command("SHOW CREATE TABLE test_command")
+print(result)
+# 출력:
+# CREATE TABLE default.test_command
+# (
+#     `col_1` String,
+#     `col_2` DateTime
+# )
+# ENGINE = MergeTree
+# ORDER BY tuple()
+
+# 테이블 삭제
+client.command("DROP TABLE test_command")
+```
+
+<div id="simple-queries-returning-single-values">
+  #### 단일 값을 반환하는 간단한 쿼리
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 단일 값 결과
+count = client.command("SELECT count() FROM system.tables")
+print(count)
+# 출력: 151
+
+# 서버 버전
+version = client.command("SELECT version()")
+print(version)
+# 출력: "25.8.2.29"
+```
+
+<div id="commands-with-parameters">
+  #### 매개변수를 사용하는 명령
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 클라이언트 측 매개변수 사용
+table_name = "system"
+result = client.command(
+    "SELECT count() FROM system.tables WHERE database = %(db)s",
+    parameters={"db": table_name}
+)
+
+# 서버 측 매개변수 사용
+result = client.command(
+    "SELECT count() FROM system.tables WHERE database = {db:String}",
+    parameters={"db": "system"}
+)
+```
+
+<div id="commands-with-settings">
+  #### 설정이 포함된 명령
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 특정 설정을 사용해 명령 실행
+result = client.command(
+    "OPTIMIZE TABLE large_table FINAL",
+    settings={"optimize_throw_if_noop": 1}
+)
+```
+
+<div id="client-query-method">
+  ## Client `query` 메서드
+</div>
+
+`Client.query` 메서드는 ClickHouse 서버에서 단일 &quot;batch&quot; 데이터셋을 가져오는 기본 방법입니다. 이 메서드는 HTTP를 통해 네이티브 ClickHouse 포맷을 사용하여 대규모 데이터셋(최대 약 100만 행)을 효율적으로 전송합니다. 이 메서드는 다음 매개변수를 받습니다:
+
+| 매개변수                   | Type             | Default    | Description                                                                                                                                                |
+| --------------------------- | ---------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| query                       | str              | *Required* | ClickHouse SQL SELECT 또는 DESCRIBE 쿼리입니다.                                                                                                                   |
+| parameters                  | dict or iterable | *None*     | [매개변수 설명](#parameters-argument)을 참조하십시오.                                                                                                                   |
+| settings                    | dict             | *None*     | [설정 설명](#settings-argument)을 참조하십시오.                                                                                                                       |
+| query&#95;formats           | dict             | *None*     | 결과 값의 데이터 타입 포맷 지정입니다. 고급 사용법(Read Formats)을 참조하십시오.                                                                                                       |
+| column&#95;formats          | dict             | *None*     | 컬럼별 데이터 타입 포맷 지정입니다. 고급 사용법(Read Formats)을 참조하십시오.                                                                                                         |
+| encoding                    | str              | *None*     | ClickHouse String 컬럼을 Python 문자열로 변환할 때 사용하는 인코딩입니다. 설정하지 않으면 Python은 기본적으로 `UTF-8`을 사용합니다.                                                                |
+| use&#95;none                | bool             | True       | ClickHouse NULL 값에 Python *None* 타입을 사용합니다. False이면 ClickHouse NULL 값에 데이터 타입 기본값(예: 0)을 사용합니다. 참고: 성능상의 이유로 NumPy/Pandas에서는 기본값이 False입니다.                |
+| column&#95;oriented         | bool             | False      | 결과를 행 시퀀스가 아니라 컬럼 시퀀스로 반환합니다. Python 데이터를 다른 컬럼 지향 데이터 포맷으로 변환할 때 유용합니다.                                                                                   |
+| query&#95;tz                | str              | *None*     | `zoneinfo` 데이터베이스의 시간대 이름입니다. 이 시간대는 쿼리가 반환하는 모든 datetime 또는 Pandas Timestamp 객체에 적용됩니다.                                                                   |
+| column&#95;tzs              | dict             | *None*     | 컬럼 이름과 시간대 이름을 매핑한 딕셔너리입니다. `query_tz`와 비슷하지만 컬럼마다 서로 다른 시간대를 지정할 수 있습니다.                                                                                  |
+| use&#95;extended&#95;dtypes | bool             | True       | Pandas 확장 dtype(예: StringArray)과 ClickHouse NULL 값에 대해 pandas.NA 및 pandas.NaT를 사용합니다. `query_df` 및 `query_df_stream` 메서드에만 적용됩니다.                          |
+| external&#95;data           | ExternalData     | *None*     | 쿼리와 함께 사용할 파일 또는 바이너리 데이터를 포함하는 ExternalData 객체입니다. [고급 쿼리(External Data)](/ko/integrations/language-clients/python/advanced-querying#external-data)를 참조하십시오. |
+| context                     | QueryContext     | *None*     | 재사용 가능한 QueryContext 객체를 사용해 위 메서드 인수를 캡슐화할 수 있습니다. [고급 쿼리(QueryContexts)](/ko/integrations/language-clients/python/advanced-querying#querycontexts)를 참조하십시오. |
+| transport&#95;settings      | dict             | *None*     | 이 요청에 포함할 선택적 HTTP 헤더 딕셔너리입니다. 각 키-값 쌍은 HTTP 헤더로 추가됩니다(예: `{'X-Custom-Header': 'value'}`). 프록시 인증, 요청 추적 또는 중간 인프라에 필요한 헤더 전달에 유용합니다.                      |
+
+<div id="query-examples">
+  ### 쿼리 예시
+</div>
+
+<div id="basic-query">
+  #### 기본 쿼리
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 간단한 SELECT 쿼리
+result = client.query("SELECT name, database FROM system.tables LIMIT 3")
+
+# 결과를 행 단위로 확인
+for row in result.result_rows:
+    print(row)
+# 출력:
+# ('CHARACTER_SETS', 'INFORMATION_SCHEMA')
+# ('COLLATIONS', 'INFORMATION_SCHEMA')
+# ('COLUMNS', 'INFORMATION_SCHEMA')
+
+# 컬럼 이름과 타입 확인
+print(result.column_names)
+# 출력: ("name", "database")
+print([col_type.name for col_type in result.column_types])
+# 출력: ['String', 'String']
+```
+
+<div id="accessing-query-results">
+  #### 쿼리 결과 조회하기
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+result = client.query("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
+
+# 행 지향 접근 (기본값)
+print(result.result_rows)
+# 출력: [[0, "0"], [1, "1"], [2, "2"]]
+
+# 컬럼 지향 접근
+print(result.result_columns)
+# 출력: [[0, 1, 2], ["0", "1", "2"]]
+
+# 이름 있는 결과 (딕셔너리 목록)
+for row_dict in result.named_results():
+    print(row_dict)
+# 출력: 
+# {"number": 0, "str": "0"}
+# {"number": 1, "str": "1"}
+# {"number": 2, "str": "2"}
+
+# 첫 번째 행을 딕셔너리로
+print(result.first_item)
+# 출력: {"number": 0, "str": "0"}
+
+# 첫 번째 행을 튜플로
+print(result.first_row)
+# 출력: (0, "0")
+```
+
+<div id="query-with-client-side-parameters">
+  #### 클라이언트 측 매개변수를 사용한 쿼리
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 딕셔너리 매개변수 사용 (printf 스타일)
+query = "SELECT * FROM system.tables WHERE database = %(db)s AND name LIKE %(pattern)s"
+parameters = {"db": "system", "pattern": "%query%"}
+result = client.query(query, parameters=parameters)
+
+# 튜플 매개변수 사용
+query = "SELECT * FROM system.tables WHERE database = %s LIMIT %s"
+parameters = ("system", 5)
+result = client.query(query, parameters=parameters)
+```
+
+<div id="query-with-server-side-parameters">
+  #### 서버 측 매개변수를 사용하는 쿼리
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 서버 측 바인딩 (보안이 강화되고 SELECT 쿼리 성능이 향상됨)
+query = "SELECT * FROM system.tables WHERE database = {db:String} AND name = {tbl:String}"
+parameters = {"db": "system", "tbl": "query_log"}
+
+result = client.query(query, parameters=parameters)
+```
+
+<div id="query-with-settings">
+  #### 설정을 지정한 쿼리
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 쿼리와 함께 ClickHouse 설정을 지정합니다
+result = client.query(
+    "SELECT sum(number) FROM numbers(1000000)",
+    settings={
+        "max_block_size": 100000,
+        "max_execution_time": 30
+    }
+)
+```
+
+<div id="the-queryresult-object">
+  ### `QueryResult` 객체
+</div>
+
+기본 `query` 메서드는 다음 공개 속성을 포함하는 `QueryResult` 객체를 반환합니다:
+
+* `result_rows` -- 반환된 데이터를 행(row) 시퀀스 형태로 나타낸 행렬이며, 각 행 요소는 컬럼 값의 시퀀스입니다.
+* `result_columns` -- 반환된 데이터를 컬럼(column) 시퀀스 형태로 나타낸 행렬이며, 각 컬럼 요소는 해당 컬럼의 행 값 시퀀스입니다
+* `column_names` -- `result_set`의 컬럼 이름을 나타내는 문자열 튜플
+* `column_types` -- `result_columns`의 각 컬럼에 대한 ClickHouse 데이터 타입을 나타내는 ClickHouseType 인스턴스 튜플
+* `query_id` -- ClickHouse query&#95;id (`system.query_log` 테이블에서 쿼리를 확인할 때 유용함)
+* `summary` -- `X-ClickHouse-Summary` HTTP 응답 헤더를 통해 반환되는 모든 데이터
+* `first_item` -- 응답의 첫 번째 행을 딕셔너리로 가져오기 위한 편의 속성입니다(키는 컬럼 이름)
+* `first_row` -- 결과의 첫 번째 행을 반환하는 편의 속성입니다
+* `column_block_stream` -- 컬럼 지향 포맷의 쿼리 결과를 생성하는 제너레이터입니다. 이 속성은 직접 참조하지 않아야 합니다(아래 참조).
+* `row_block_stream` -- 행 지향 포맷의 쿼리 결과를 생성하는 제너레이터입니다. 이 속성은 직접 참조하지 않아야 합니다(아래 참조).
+* `rows_stream` -- 호출할 때마다 단일 행을 반환하는 쿼리 결과 제너레이터입니다. 이 속성은 직접 참조하지 않아야 합니다(아래 참조).
+* `summary` -- `command` 메서드에서 설명한 대로, ClickHouse가 반환하는 요약 정보 딕셔너리
+
+`*_stream` 속성은 반환된 데이터의 이터레이터로 사용할 수 있는 Python Context를 반환합니다. 이러한 속성은 Client `*_stream` 메서드를 통해서만 간접적으로 접근해야 합니다.
+
+스트리밍 쿼리 결과의 전체 세부 사항(StreamContext 객체 사용)은 [고급 쿼리(Streaming Queries)](/ko/integrations/language-clients/python/advanced-querying#streaming-queries)에 설명되어 있습니다.
+
+<div id="consuming-query-results-with-numpy-pandas-or-arrow">
+  ## NumPy, Pandas 또는 Arrow로 쿼리 결과 처리하기
+</div>
+
+ClickHouse Connect는 NumPy, Pandas, Arrow 데이터 포맷용 전용 쿼리 메서드를 제공합니다. 예시, 스트리밍 지원, 고급 타입 처리 등 이러한 메서드의 사용법에 관한 자세한 내용은 [고급 쿼리(NumPy, Pandas 및 Arrow 쿼리)](/ko/integrations/language-clients/python/advanced-querying#numpy-pandas-and-arrow-queries)를 참조하십시오.
+
+<div id="client-streaming-query-methods">
+  ## 클라이언트 스트리밍 쿼리 메서드
+</div>
+
+대규모 결과 집합(result set)을 스트리밍하려면 ClickHouse Connect에서 여러 스트리밍 메서드를 제공합니다. 자세한 내용과 예시는 [고급 쿼리(Streaming Queries)](/ko/integrations/language-clients/python/advanced-querying#streaming-queries)를 참조하십시오.
+
+<div id="client-insert-method">
+  ## 클라이언트 `insert` 메서드
+</div>
+
+여러 레코드를 ClickHouse에 삽입하는 일반적인 경우에는 `Client.insert` 메서드를 사용합니다. 이 메서드는 다음 매개변수를 받습니다.
+
+| Parameter                 | Type                              | Default     | Description                                                                                                                                                    |
+| ------------------------- | --------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| table                     | str                               | *Required*  | 데이터를 삽입할 ClickHouse 테이블입니다. 데이터베이스를 포함한 전체 테이블 이름도 사용할 수 있습니다.                                                                                                 |
+| data                      | Sequence of Sequences             | *Required*  | 삽입할 데이터 행렬입니다. 각 요소가 컬럼 값의 시퀀스인 행들의 시퀀스이거나, 각 요소가 행 값의 시퀀스인 컬럼들의 시퀀스일 수 있습니다.                                                                                  |
+| column&#95;names          | Sequence of str, or str           | &#39;*&#39; | 데이터 행렬의 column&#95;names 목록입니다. 대신 &#39;*&#39;를 사용하면 ClickHouse Connect가 테이블의 모든 컬럼 이름을 가져오기 위해 &quot;사전 쿼리&quot;를 실행합니다.                                      |
+| database                  | str                               | &#39;&#39;  | 삽입 대상 데이터베이스입니다. 지정하지 않으면 클라이언트에 설정된 데이터베이스가 사용됩니다.                                                                                                            |
+| column&#95;types          | Sequence of ClickHouseType        | *None*      | ClickHouseType 인스턴스 목록입니다. column&#95;types와 column&#95;type&#95;names를 모두 지정하지 않으면 ClickHouse Connect가 테이블의 모든 컬럼 타입을 가져오기 위해 &quot;사전 쿼리&quot;를 실행합니다.       |
+| column&#95;type&#95;names | Sequence of ClickHouse type names | *None*      | ClickHouse 데이터 타입 이름 목록입니다. column&#95;types와 column&#95;type&#95;names를 모두 지정하지 않으면 ClickHouse Connect가 테이블의 모든 컬럼 타입을 가져오기 위해 &quot;사전 쿼리&quot;를 실행합니다.      |
+| column&#95;oriented       | bool                              | False       | True이면 `data` 인수는 컬럼들의 시퀀스로 간주됩니다(따라서 데이터를 삽입할 때 &quot;피벗&quot;이 필요하지 않습니다). 그렇지 않으면 `data`는 행들의 시퀀스로 해석됩니다.                                                   |
+| settings                  | dict                              | *None*      | [설정 설명](#settings-argument)을 참조하십시오.                                                                                                                           |
+| context                   | InsertContext                     | *None*      | 재사용 가능한 InsertContext 객체를 사용해 위 메서드 인수를 캡슐화할 수 있습니다. [고급 삽입(InsertContexts)](/ko/integrations/language-clients/python/advanced-inserting#insertcontexts)을 참조하십시오. |
+| transport&#95;settings    | dict                              | *None*      | 이 요청에 포함할 선택적 HTTP 헤더 딕셔너리입니다. 각 키-값 쌍은 HTTP 헤더로 추가됩니다(예: `{'X-Custom-Header': 'value'}`). 프록시 인증, 요청 추적, 또는 중간 인프라에서 요구하는 헤더를 전달할 때 유용합니다.                    |
+
+이 메서드는 &quot;command&quot; 메서드에 설명된 &quot;쿼리 요약&quot; 딕셔너리를 반환합니다. 어떤 이유로든 삽입이 실패하면 예외가 발생합니다.
+
+Pandas DataFrame, PyArrow 테이블, Arrow 기반 DataFrame에서 작동하는 특수 삽입 메서드는 [고급 삽입(특수 삽입 메서드)](/ko/integrations/language-clients/python/advanced-inserting#specialized-insert-methods)를 참조하십시오.
+
+<Note>
+  NumPy 배열은 유효한 Sequence of Sequences이므로 기본 `insert` 메서드의 `data` 인수로 사용할 수 있으며, 별도의 특수 메서드는 필요하지 않습니다.
+</Note>
+
+<div id="examples">
+  ### 예시
+</div>
+
+아래 예시에서는 스키마(schema)가 `(id UInt32, name String, age UInt8)`인 기존 `users` 테이블(table)이 이미 있다고 가정합니다.
+
+<div id="basic-row-oriented-insert">
+  #### 기본적인 행 지향 삽입
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 행 지향 데이터: 각 내부 리스트가 하나의 행
+data = [
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
+]
+
+client.insert("users", data, column_names=["id", "name", "age"])
+```
+
+<div id="column-oriented-insert">
+  #### 컬럼 지향 방식 삽입
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 컬럼 지향 데이터: 각 내부 리스트는 하나의 컬럼
+data = [
+    [1, 2, 3],  # id 컬럼
+    ["Alice", "Bob", "Joe"],  # name 컬럼
+    [25, 30, 28],  # age 컬럼
+]
+
+client.insert("users", data, column_names=["id", "name", "age"], column_oriented=True)
+```
+
+<div id="insert-with-explicit-column-types">
+  #### 명시적으로 컬럼 타입을 지정해 삽입
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+# 서버에 DESCRIBE 쿼리를 보내지 않으려 할 때 유용합니다
+data = [
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
+]
+
+client.insert(
+    "users",
+    data,
+    column_names=["id", "name", "age"],
+    column_type_names=["UInt32", "String", "UInt8"],
+)
+```
+
+<div id="insert-into-specific-database">
+  #### 특정 데이터베이스에 삽입하기
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client()
+
+data = [
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+]
+
+# 특정 데이터베이스의 테이블에 삽입
+client.insert(
+    "users",
+    data,
+    column_names=["id", "name", "age"],
+    database="production",
+)
+```
+
+<div id="file-inserts">
+  ## 파일 삽입
+</div>
+
+파일의 데이터를 ClickHouse 테이블에 직접 삽입하는 방법은 [고급 삽입(파일 삽입)](/ko/integrations/language-clients/python/advanced-inserting#file-inserts)을 참조하십시오.
+
+<div id="raw-api">
+  ## Raw API
+</div>
+
+유형 변환 없이 ClickHouse HTTP 인터페이스에 직접 액세스해야 하는 고급 사용 사례는 [고급 사용법(Raw API)](/ko/integrations/language-clients/python/advanced-usage#raw-api)을 참조하십시오.
+
+<div id="utility-classes-and-functions">
+  ## 유틸리티 클래스와 함수
+</div>
+
+다음 클래스와 함수도 &quot;공개&quot; `clickhouse-connect` API의 일부로 간주되며, 위에 문서화된 클래스 및 메서드와 마찬가지로 마이너 릴리스 전반에 걸쳐 안정적으로 유지됩니다. 이러한 클래스와 함수에 대한 호환성 깨짐 변경은 마이너 릴리스(패치 릴리스 제외)에서만 발생하며, 최소 한 번의 마이너 릴리스 동안 Deprecated 상태로 제공됩니다.
+
+<div id="exceptions">
+  ### 예외
+</div>
+
+모든 사용자 정의 예외(DB API 2.0 사양에 정의된 예외 포함)는 `clickhouse_connect.driver.exceptions` 모듈에 정의되어 있습니다. 드라이버가 실제로 감지하는 예외는 이들 타입 중 하나로 처리됩니다.
+
+<div id="clickhouse-sql-utilities">
+  ### ClickHouse SQL 유틸리티
+</div>
+
+`clickhouse_connect.driver.binding` 모듈의 함수와 DT64Param 클래스는 ClickHouse SQL 쿼리를 올바르게 구성하고 이스케이프 처리하는 데 사용할 수 있습니다. 마찬가지로 `clickhouse_connect.driver.parser` 모듈의 함수는 ClickHouse 데이터 타입 이름을 파싱하는 데 사용할 수 있습니다.
+
+<div id="multithreaded-multiprocess-and-asyncevent-driven-use-cases">
+  ## 멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 사용 사례
+</div>
+
+멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 애플리케이션에서 ClickHouse Connect를 사용하는 방법에 대한 자세한 내용은 [고급 사용법(멀티스레드, 멀티프로세스 및 비동기/이벤트 기반 사용 사례)](/ko/integrations/language-clients/python/advanced-usage#multithreaded-multiprocess-and-asyncevent-driven-use-cases)를 참조하십시오.
+
+<div id="asyncclient-wrapper">
+  ## AsyncClient 래퍼
+</div>
+
+asyncio 환경에서 AsyncClient 래퍼를 사용하는 방법은 [고급 사용법(AsyncClient 래퍼)](/ko/integrations/language-clients/python/advanced-usage#asyncclient-wrapper)를 참조하십시오.
+
+<div id="managing-clickhouse-session-ids">
+  ## ClickHouse 세션 ID 관리
+</div>
+
+멀티스레드 또는 동시 처리 애플리케이션에서 ClickHouse 세션 ID를 관리하는 방법에 대한 자세한 내용은 [고급 사용법(ClickHouse 세션 ID 관리)](/ko/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids)을 참조하십시오.
+
+<div id="customizing-the-http-connection-pool">
+  ## HTTP 연결 풀 사용자 지정
+</div>
+
+대규모 멀티스레드 애플리케이션에서 HTTP 연결 풀을 사용자 지정하는 방법에 대한 자세한 내용은 [고급 사용법(HTTP 연결 풀 사용자 지정)](/ko/integrations/language-clients/python/advanced-usage#customizing-the-http-connection-pool)을 참조하십시오.
