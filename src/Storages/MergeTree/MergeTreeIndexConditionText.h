@@ -93,6 +93,7 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context_,
         const Block & index_sample_block,
+        const NameSet & alternative_header_column_names_,
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -188,12 +189,17 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
+    /// Checks the header and the alternative names.
+    bool hasHeaderColumn(const String & column_name) const;
+
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    /// See IndexDescription::alternative_column_names.
+    NameSet alternative_header_column_names;
     TokenizerPtr tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;

@@ -127,12 +127,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
+    const NameSet & alternative_header_column_names_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_)
     : WithContext(context_)
     , header(index_sample_block)
+    , alternative_header_column_names(alternative_header_column_names_)
     , tokenizer(tokenizer_)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
@@ -304,6 +306,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     }
 
     return TextIndexDirectReadMode::None;
+}
+
+bool MergeTreeIndexConditionText::hasHeaderColumn(const String & column_name) const
+{
+    return header.has(column_name) || alternative_header_column_names.contains(column_name);
 }
 
 TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
@@ -890,7 +897,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     auto direct_read_mode = getDirectReadMode(function_name);
 
     auto index_column_name = index_column_node.getColumnName();
-    bool has_index_column = header.has(index_column_name);
+    bool has_index_column = hasHeaderColumn(index_column_name);
     bool has_map_keys_column = header.has(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = header.has(fmt::format("mapValues({})", index_column_name));
 
@@ -1642,7 +1649,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return header.has(node.getColumnName())
+        return hasHeaderColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
             || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
     };
