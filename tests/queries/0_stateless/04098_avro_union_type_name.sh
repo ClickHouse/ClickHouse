@@ -107,3 +107,10 @@ echo "== Nullable union has NO branch-value column (only \$name) =="
 $CH_CLIENT -q "DESCRIBE file('$file_name') SETTINGS input_format_avro_union_type_name=1" \
   | grep -E 'nullable_payload' || true
 echo
+
+echo "== Non-nullable branch sub-column is rejected (value + branch selected) =="
+$CH_CLIENT --input_format_avro_union_type_name=1 -q "
+  SELECT id, variant_payload, \`variant_payload.TypeB\`
+  FROM file('$file_name', 'Avro', 'id Int32, variant_payload Variant(Tuple(y String), Tuple(z Float64)), \`variant_payload.TypeB\` Tuple(y String)')
+" 2>&1 | grep -q 'must be Nullable' && echo "rejected: must be Nullable" || echo "NOT rejected"
+echo

@@ -1252,9 +1252,22 @@ AvroDeserializer::Action AvroDeserializer::createUnionWithNameAction(
             if (header.has(branch_path))
             {
                 const int bidx = static_cast<int>(header.getPositionByName(branch_path));
+                const auto & branch_col_type = header.getByPosition(bidx).type;
+                /// A branch sub-column is NULL on every row where the union holds a different
+                /// branch, so it has to be Nullable. A non-nullable one cannot represent that:
+                /// it would silently store the type's default value instead of NULL, and the
+                /// value+branch fill path assumes ColumnNullable.
+                if (!branch_col_type->isNullable())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_COLUMN,
+                        "Avro union branch sub-column '{}' must be Nullable, because it is NULL on rows where the "
+                        "union holds a different branch, but it was declared as '{}'. Use 'Nullable({})' instead.",
+                        branch_path,
+                        branch_col_type->getName(),
+                        branch_col_type->getName());
                 branch_col_idxs[i] = bidx;
                 column_found[bidx] = true;
-                branch_col_fns[i] = createDeserializeFn(branch_node, header.getByPosition(bidx).type);
+                branch_col_fns[i] = createDeserializeFn(branch_node, branch_col_type);
             }
         }
     }

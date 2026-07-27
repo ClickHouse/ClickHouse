@@ -73,3 +73,6 @@ variant_payload.TypeC	Nullable(Tuple(z Float64))
 nullable_payload	Nullable(Tuple(x Int32))					
 nullable_payload.$name	Nullable(String)					
 
+== Non-nullable branch sub-column is rejected (value + branch selected) ==
+rejected: must be Nullable
+
