@@ -100,5 +100,42 @@ BufferAllocationPolicyPtr BufferAllocationPolicy::create(BufferAllocationPolicy:
     return std::make_unique<ExpBufferAllocationPolicy>(settings_);
 }
 
+MultipartUploadMemory getMultipartUploadMemory(const BufferAllocationPolicy::Settings & settings, UInt64 max_inflight_parts_for_one_file)
+{
+    MultipartUploadMemory result;
+
+    /// Mirror the two policies of create above. FixedSizeBufferAllocationPolicy hands out buffers of
+    /// strict_size, the first one included; ExpBufferAllocationPolicy starts at max_single_size (raised to
+    /// min_size when that is larger) and grows later buffers up to max_size.
+    UInt64 largest_buffer_size = 0;
+    if (settings.strict_size > 0)
+    {
+        result.guaranteed = settings.strict_size;
+        largest_buffer_size = settings.strict_size;
+    }
+    else
+    {
+        result.guaranteed = std::max(settings.max_single_size, settings.min_size);
+        largest_buffer_size = std::max<UInt64>(result.guaranteed, settings.max_size);
+    }
+
+    if (max_inflight_parts_for_one_file == 0)
+    {
+        result.ceiling = MultipartUploadMemory::UNLIMITED;
+        return result;
+    }
+
+    /// The buffer being filled plus the in-flight ones, all of them priced at the largest size the policy can
+    /// hand out: by the time a writer holds max_inflight_parts_for_one_file parts in flight, the buffer it is
+    /// filling has long grown past the first one. Saturate rather than wrap around - a configuration that
+    /// allows an enormous number of in-flight parts is indistinguishable from an unlimited one here.
+    UInt64 live_buffers = 0;
+    if (__builtin_add_overflow(max_inflight_parts_for_one_file, static_cast<UInt64>(1), &live_buffers)
+        || __builtin_mul_overflow(live_buffers, largest_buffer_size, &result.ceiling))
+        result.ceiling = MultipartUploadMemory::UNLIMITED;
+
+    return result;
+}
+
 }
 

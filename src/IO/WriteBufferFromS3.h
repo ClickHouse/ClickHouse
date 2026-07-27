@@ -32,6 +32,11 @@ namespace DB
  */
 class TaskTracker;
 
+/// The buffer allocation settings WriteBufferFromS3 builds its BufferAllocationPolicy from. Exposed so that
+/// a caller which needs a writer's memory footprint before the writer exists - the up-front merge memory
+/// reservation, via getMultipartUploadMemory - derives it from the same settings the writer uses.
+BufferAllocationPolicy::Settings getUploadBufferAllocationSettings(const S3::S3RequestSettings & settings);
+
 class WriteBufferFromS3 final : public WriteBufferFromFileBase
 {
 public:

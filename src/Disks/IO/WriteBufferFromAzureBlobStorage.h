@@ -26,6 +26,11 @@ namespace DB
 
 class TaskTracker;
 
+/// The buffer allocation settings WriteBufferFromAzureBlobStorage builds its BufferAllocationPolicy from.
+/// Exposed so that a caller which needs a writer's memory footprint before the writer exists - the up-front
+/// merge memory reservation, via getMultipartUploadMemory - derives it from the same settings the writer uses.
+BufferAllocationPolicy::Settings getUploadBufferAllocationSettings(const AzureBlobStorage::RequestSettings & settings);
+
 class WriteBufferFromAzureBlobStorage : public WriteBufferFromFileBase
 {
 public:

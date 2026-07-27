@@ -39,7 +39,7 @@ struct WriteBufferFromAzureBlobStorage::PartData
     size_t data_size = 0;
 };
 
-static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
+BufferAllocationPolicy::Settings getUploadBufferAllocationSettings(const AzureBlobStorage::RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings.strict_upload_part_size;
@@ -49,7 +49,12 @@ static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobSto
     allocation_settings.multiply_parts_count_threshold = settings.upload_part_size_multiply_parts_count_threshold;
     allocation_settings.max_single_size = settings.max_single_part_upload_size;
 
-    return BufferAllocationPolicy::create(allocation_settings);
+    return allocation_settings;
+}
+
+static BufferAllocationPolicyPtr createBufferAllocationPolicy(const AzureBlobStorage::RequestSettings & settings)
+{
+    return BufferAllocationPolicy::create(getUploadBufferAllocationSettings(settings));
 }
 
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(

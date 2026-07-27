@@ -343,28 +343,28 @@ std::unique_ptr<WriteBufferFromFileBase> S3ObjectStorage::writeObject( /// NOLIN
 
 UInt64 S3ObjectStorage::getWriteBufferMemoryCeiling() const
 {
-    /// Mirror the multipart upload buffer sizing of WriteBufferFromS3 / BufferAllocationPolicy: the first
-    /// buffer is max(max_single_part_upload_size, min_upload_part_size), later buffers grow up to
-    /// max_upload_part_size, and up to max_inflight_parts_for_one_file of them can be held in memory while
-    /// their uploads are in flight. These come from this storage's own request settings (background writes
-    /// do not apply query/session settings, see writeObject above).
+    /// Every upload buffer WriteBufferFromS3 can hold at once, derived by getMultipartUploadMemory from the
+    /// same allocation settings and in-flight limit the writer itself uses - so a strict_upload_part_size
+    /// disk (a fixed-size allocation policy) and an unlimited max_inflight_parts_for_one_file are both
+    /// accounted for. These come from this storage's own request settings (background writes do not apply
+    /// query/session settings, see writeObject above).
     const auto & request_settings = s3_settings.get()->request_settings;
-    const UInt64 max_single_part_upload_size = request_settings[S3RequestSetting::max_single_part_upload_size];
-    const UInt64 min_upload_part_size = request_settings[S3RequestSetting::min_upload_part_size];
-    const UInt64 max_upload_part_size = request_settings[S3RequestSetting::max_upload_part_size];
-    const UInt64 max_inflight_parts_for_one_file = request_settings[S3RequestSetting::max_inflight_parts_for_one_file];
-    return std::max(max_single_part_upload_size, min_upload_part_size) + max_inflight_parts_for_one_file * max_upload_part_size;
+    return getMultipartUploadMemory(
+               getUploadBufferAllocationSettings(request_settings),
+               request_settings[S3RequestSetting::max_inflight_parts_for_one_file])
+        .ceiling;
 }
 
 UInt64 S3ObjectStorage::getWriteBufferGuaranteedMemory() const
 {
-    /// The first multipart upload buffer of WriteBufferFromS3 / BufferAllocationPolicy: a stream allocates
-    /// it regardless of how little data flows through it, while every later buffer only ever holds data
-    /// already written. Same source of truth as getWriteBufferMemoryCeiling above.
+    /// The first multipart upload buffer of WriteBufferFromS3: a stream allocates it regardless of how
+    /// little data flows through it, while every later buffer only ever holds data already written. Same
+    /// source of truth as getWriteBufferMemoryCeiling above.
     const auto & request_settings = s3_settings.get()->request_settings;
-    return std::max<UInt64>(
-        request_settings[S3RequestSetting::max_single_part_upload_size],
-        request_settings[S3RequestSetting::min_upload_part_size]);
+    return getMultipartUploadMemory(
+               getUploadBufferAllocationSettings(request_settings),
+               request_settings[S3RequestSetting::max_inflight_parts_for_one_file])
+        .guaranteed;
 }
 
 

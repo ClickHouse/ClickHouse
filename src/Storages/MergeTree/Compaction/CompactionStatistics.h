@@ -20,11 +20,12 @@ namespace CompactionStatistics
   */
 struct DiskWriteBufferMemory
 {
-    /// The first multipart upload buffer, max(*_max_single_part_upload_size, *_min_upload_part_size): a
-    /// writer stream allocates it regardless of how little data ends up flowing through it, while every
-    /// later buffer only ever holds data already written.
+    /// The first multipart upload buffer (MultipartUploadMemory::guaranteed): a writer stream allocates it
+    /// regardless of how little data ends up flowing through it, while every later buffer only ever holds
+    /// data already written.
     UInt64 guaranteed = 0;
-    /// The most one stream's buffers can hold at once: the first buffer plus all in-flight upload parts.
+    /// The most one stream's buffers can hold at once: the first buffer plus all in-flight upload parts, or
+    /// MultipartUploadMemory::UNLIMITED when the disk allows unlimited in-flight parts.
     UInt64 ceiling = 0;
 };
 

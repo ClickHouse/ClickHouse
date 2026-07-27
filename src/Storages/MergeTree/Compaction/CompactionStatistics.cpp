@@ -17,6 +17,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Common/BufferAllocationPolicy.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <IO/S3Defines.h>
@@ -26,6 +27,7 @@
 #include <base/interpolate.h>
 
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <unordered_set>
 
@@ -70,10 +72,12 @@ namespace Setting
     extern const SettingsUInt64 s3_max_single_part_upload_size;
     extern const SettingsUInt64 s3_min_upload_part_size;
     extern const SettingsUInt64 s3_max_upload_part_size;
+    extern const SettingsUInt64 s3_strict_upload_part_size;
     extern const SettingsUInt64 s3_max_inflight_parts_for_one_file;
     extern const SettingsUInt64 azure_max_single_part_upload_size;
     extern const SettingsUInt64 azure_min_upload_part_size;
     extern const SettingsUInt64 azure_max_upload_part_size;
+    extern const SettingsUInt64 azure_strict_upload_part_size;
     extern const SettingsUInt64 azure_max_inflight_parts_for_one_file;
 }
 
@@ -112,6 +116,18 @@ UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, co
 
 namespace
 {
+
+/// The per-stream write buffer ceiling can be unbounded (MultipartUploadMemory::UNLIMITED, for a disk that
+/// allows unlimited in-flight upload parts), so pricing every stream at it must saturate instead of wrapping
+/// around to a tiny number. Such a worst case is only ever the upper half of a std::min with a
+/// data-volume bound, which then governs the estimate.
+UInt64 saturatingStreamsTimesBuffer(UInt64 streams, UInt64 buffer_size)
+{
+    UInt64 result = 0;
+    if (__builtin_mul_overflow(streams, buffer_size, &result))
+        return std::numeric_limits<UInt64>::max();
+    return result;
+}
 
 /// Number of on-disk column streams for a set of columns: one per non-ephemeral serialization
 /// substream. This mirrors how MergeTreeReaderWide / MergeTreeDataPartWriterWide open exactly one
@@ -871,11 +887,14 @@ UInt64 estimateNeededMemoryForMerge(
     const UInt64 local_write_buffer_size = 2 * max_compress_block_size;
 
     /// Per-stream write buffer size on multipart object storage (S3 / Azure). A stream's upload buffers
-    /// follow the multipart buffer allocation policy (see BufferAllocationPolicy / WriteBufferFromS3 /
-    /// WriteBufferFromAzureBlobStorage): the first buffer is max(*_max_single_part_upload_size,
-    /// *_min_upload_part_size) (ExpBufferAllocationPolicy::first_size), later buffers grow up to
-    /// *_max_upload_part_size, and up to *_max_inflight_parts_for_one_file of them can be held in memory at
-    /// once while their uploads are in flight.
+    /// follow the multipart buffer allocation policy of its writer (see BufferAllocationPolicy /
+    /// WriteBufferFromS3 / WriteBufferFromAzureBlobStorage), and getMultipartUploadMemory derives both the
+    /// first buffer and the ceiling from exactly the settings the writer uses: with the default exponential
+    /// policy the first buffer is max(*_max_single_part_upload_size, *_min_upload_part_size) and later
+    /// buffers grow up to *_max_upload_part_size, with *_strict_upload_part_size set every buffer is that
+    /// size, and up to *_max_inflight_parts_for_one_file of them are held in memory at once while their
+    /// uploads are in flight - unbounded when that setting is zero, in which case the ceiling is
+    /// MultipartUploadMemory::UNLIMITED and only the data-volume bound below constrains the estimate.
     ///
     /// Prefer the actual destination disk's sizing (remote_write_buffer_memory from
     /// getDiskWriteBufferMemory) when the caller knows the disk: a background merge's
@@ -907,21 +926,33 @@ UInt64 estimateNeededMemoryForMerge(
     }
     else if (output_on_remote_disk)
     {
+        /// Model both back ends exactly as their writers do (getMultipartUploadMemory over the same
+        /// allocation settings, so a strict_upload_part_size configuration and an unlimited
+        /// *_max_inflight_parts_for_one_file are accounted for), and take the larger of the two: the disk
+        /// this merge will write to is one of them, so the maximum is a safe upper bound. The first buffer
+        /// is additionally never assumed smaller than the S3 default, because a disk config that this
+        /// pre-selection guess cannot see may raise it back to the default.
         const auto & query_settings = context->getSettingsRef();
-        const UInt64 s3_first_buffer = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-             query_settings[Setting::s3_max_single_part_upload_size],
-             query_settings[Setting::s3_min_upload_part_size]});
-        const UInt64 azure_first_buffer = std::max<UInt64>(
-            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE,
-             query_settings[Setting::azure_max_single_part_upload_size],
-             query_settings[Setting::azure_min_upload_part_size]});
-        remote_write_buffer_guaranteed_size = std::max(s3_first_buffer, azure_first_buffer);
-        remote_write_buffer_size = std::max(
-            s3_first_buffer
-                + query_settings[Setting::s3_max_inflight_parts_for_one_file] * query_settings[Setting::s3_max_upload_part_size],
-            azure_first_buffer
-                + query_settings[Setting::azure_max_inflight_parts_for_one_file] * query_settings[Setting::azure_max_upload_part_size]);
+
+        BufferAllocationPolicy::Settings s3_allocation;
+        s3_allocation.strict_size = query_settings[Setting::s3_strict_upload_part_size];
+        s3_allocation.min_size = query_settings[Setting::s3_min_upload_part_size];
+        s3_allocation.max_size = query_settings[Setting::s3_max_upload_part_size];
+        s3_allocation.max_single_size = query_settings[Setting::s3_max_single_part_upload_size];
+        const auto s3_memory
+            = getMultipartUploadMemory(s3_allocation, query_settings[Setting::s3_max_inflight_parts_for_one_file]);
+
+        BufferAllocationPolicy::Settings azure_allocation;
+        azure_allocation.strict_size = query_settings[Setting::azure_strict_upload_part_size];
+        azure_allocation.min_size = query_settings[Setting::azure_min_upload_part_size];
+        azure_allocation.max_size = query_settings[Setting::azure_max_upload_part_size];
+        azure_allocation.max_single_size = query_settings[Setting::azure_max_single_part_upload_size];
+        const auto azure_memory
+            = getMultipartUploadMemory(azure_allocation, query_settings[Setting::azure_max_inflight_parts_for_one_file]);
+
+        remote_write_buffer_guaranteed_size = std::max<UInt64>(
+            {S3::DEFAULT_MAX_SINGLE_PART_UPLOAD_SIZE, s3_memory.guaranteed, azure_memory.guaranteed});
+        remote_write_buffer_size = std::max({remote_write_buffer_guaranteed_size, s3_memory.ceiling, azure_memory.ceiling});
     }
 
     /// A merge that applies patch parts (lightweight updates, apply_patches_on_merge) opens a separate
@@ -1163,7 +1194,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// means the output is not written through multipart upload buffers (a local disk, a known remote disk
     /// without them, or a local pre-disk-selection guess), so the local per-stream size applies.
     const UInt64 write_buffer_size = remote_write_buffer_size != 0 ? remote_write_buffer_size : local_write_buffer_size;
-    const UInt64 output_worst_case = output_streams * write_buffer_size;
+    const UInt64 output_worst_case = saturatingStreamsTimesBuffer(output_streams, write_buffer_size);
 
     /// However, only the compressor block and the file buffer are allocated eagerly (and they start at
     /// adaptive_write_buffer_initial_size when adaptive write buffers are active for this part). Object
@@ -1193,15 +1224,15 @@ UInt64 estimateNeededMemoryForMerge(
         : local_write_buffer_size;
 
     /// A writer stream on multipart object storage allocates up to its first upload buffer
-    /// (max(*_max_single_part_upload_size, *_min_upload_part_size), see ExpBufferAllocationPolicy)
-    /// regardless of how little data ends up flowing through it, while everything beyond that first
-    /// buffer only ever holds data already written. The first buffer's size comes from the destination
-    /// disk's own settings (remote_write_buffer_guaranteed_size above): pinning it to the S3 default
-    /// would under-reserve such streams on Azure, whose default first buffer is 100 MiB, and on any disk
-    /// whose config raises *_max_single_part_upload_size or *_min_upload_part_size. Where a stream's data
+    /// (MultipartUploadMemory::guaranteed) regardless of how little data ends up flowing through it, while
+    /// everything beyond that first buffer only ever holds data already written. The first buffer's size
+    /// comes from the destination disk's own settings (remote_write_buffer_guaranteed_size above): pinning
+    /// it to the S3 default would under-reserve such streams on Azure, whose default first buffer is
+    /// 100 MiB, and on any disk whose config raises *_max_single_part_upload_size, *_min_upload_part_size
+    /// or *_strict_upload_part_size. Where a stream's data
     /// volume is not derivable from the sources, this per-stream remnant is what it is priced at - NOT
     /// the full multipart ceiling
-    /// (first buffer + max_inflight * max_upload_part_size, ~100 GiB with default S3 settings): pricing
+    /// (~100 GiB with default S3 settings, and unbounded when in-flight parts are unlimited): pricing
     /// unknowable-volume streams at the ceiling proved to be a starvation regression in CI - a TTL merge
     /// of a 2-row table priced at 200.09 GiB (two ceiling-priced streams) was rejected by the admission
     /// gate for the whole 300 s test window of 03365_column_ttl_should_rebuild_skp_idx_and_proj because
@@ -1382,7 +1413,7 @@ UInt64 estimateNeededMemoryForMerge(
                     : 0;
                 const UInt64 alive_streams = merging_streams + max_gathering_column_streams + delayed_streams;
 
-                const UInt64 vertical_worst_case = alive_streams * write_buffer_size;
+                const UInt64 vertical_worst_case = saturatingStreamsTimesBuffer(alive_streams, write_buffer_size);
                 const UInt64 vertical_data_bound = alive_streams * eager_buffers_per_stream
                     + 3 * (merging_uncompressed + max_gathering_column_uncompressed)
                     + delayed_streams * remote_stream_remnant
@@ -1612,7 +1643,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// identical to the plain one under default settings.
                 const UInt64 projection_read_buffer_size
                     = output_on_remote_disk ? cached_remote_read_buffer_size : local_read_buffer_size;
-                const UInt64 projection_worst_case = projection_streams * write_buffer_size;
+                const UInt64 projection_worst_case = saturatingStreamsTimesBuffer(projection_streams, write_buffer_size);
                 const UInt64 projection_data_bound = projection_streams * remote_stream_remnant
                     + 3 * 2 * projection_uncompressed_bytes;
                 projection_memory += std::min(projection_worst_case, projection_data_bound)

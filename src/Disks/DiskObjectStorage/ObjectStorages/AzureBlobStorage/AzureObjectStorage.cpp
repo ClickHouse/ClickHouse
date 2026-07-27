@@ -341,14 +341,14 @@ UInt64 AzureObjectStorage::getWriteBufferMemoryCeiling() const
     if (isAdlsGen2Endpoint(connection_params.endpoint))
         return 0;
 
-    /// Mirror the multipart upload buffer sizing of WriteBufferFromAzureBlobStorage / BufferAllocationPolicy:
-    /// the first buffer is max(max_single_part_upload_size, min_upload_part_size), later buffers grow up to
-    /// max_upload_part_size, and up to max_inflight_parts_for_one_file of them can be held in memory while
-    /// their uploads are in flight. These come from this storage's own request settings (background writes
-    /// do not apply query/session settings).
+    /// Every upload buffer WriteBufferFromAzureBlobStorage can hold at once, derived by
+    /// getMultipartUploadMemory from the same allocation settings and in-flight limit the writer itself uses
+    /// - so a strict_upload_part_size disk (a fixed-size allocation policy) and an unlimited
+    /// max_inflight_parts_for_one_file are both accounted for. These come from this storage's own request
+    /// settings (background writes do not apply query/session settings).
     const auto settings_ptr = settings.get();
-    const UInt64 first_buffer = std::max<UInt64>(settings_ptr->max_single_part_upload_size, settings_ptr->min_upload_part_size);
-    return first_buffer + settings_ptr->max_inflight_parts_for_one_file * settings_ptr->max_upload_part_size;
+    return getMultipartUploadMemory(getUploadBufferAllocationSettings(*settings_ptr), settings_ptr->max_inflight_parts_for_one_file)
+        .ceiling;
 }
 
 UInt64 AzureObjectStorage::getWriteBufferGuaranteedMemory() const
@@ -359,11 +359,12 @@ UInt64 AzureObjectStorage::getWriteBufferGuaranteedMemory() const
     if (isAdlsGen2Endpoint(connection_params.endpoint))
         return 0;
 
-    /// The first multipart upload buffer of WriteBufferFromAzureBlobStorage / BufferAllocationPolicy: a
-    /// stream allocates it regardless of how little data flows through it, while every later buffer only
-    /// ever holds data already written.
+    /// The first multipart upload buffer of WriteBufferFromAzureBlobStorage: a stream allocates it
+    /// regardless of how little data flows through it, while every later buffer only ever holds data
+    /// already written.
     const auto settings_ptr = settings.get();
-    return std::max<UInt64>(settings_ptr->max_single_part_upload_size, settings_ptr->min_upload_part_size);
+    return getMultipartUploadMemory(getUploadBufferAllocationSettings(*settings_ptr), settings_ptr->max_inflight_parts_for_one_file)
+        .guaranteed;
 }
 
 void AzureObjectStorage::removeObjectImpl(
