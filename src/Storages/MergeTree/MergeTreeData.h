@@ -1050,7 +1050,30 @@ public:
         const Settings & settings,
         ContextPtr local_context) const override;
 
-    /// Change MergeTreeSettings
+    /// Result of the fallible "prepare" phase of a settings change: a fully-built settings object and
+    /// the metadata to publish, plus the derived activation flags. Applying it (applySettingsChange) is
+    /// non-throwing (modulo OOM), so a settings ALTER can validate/prepare before its coordinator commit
+    /// and publish only after it, without leaving divergent local state when the commit is rejected.
+    struct PreparedSettingsChange
+    {
+        std::unique_ptr<MergeTreeSettings> settings_copy;
+        StorageInMemoryMetadata new_metadata;
+        bool has_storage_policy_changed = false;
+        bool has_refresh_statistics_interval_changed = false;
+    };
+
+    /// Fallible prepare phase of a settings change. Returns std::nullopt when new_settings is null
+    /// (nothing to change). Does not mutate published storage state; its only external side effect is
+    /// creating data directories on newly added disks, which is idempotent and harmless if the change
+    /// is later rejected.
+    std::optional<PreparedSettingsChange> prepareSettingsChange(
+        const ASTPtr & new_settings,
+        bool run_sanity_checks = true);
+
+    /// Non-throwing (modulo OOM) apply phase: publishes the prepared settings and metadata.
+    void applySettingsChange(PreparedSettingsChange prepared);
+
+    /// Change MergeTreeSettings (prepare + apply in one step). Kept for callers that commit locally.
     void changeSettings(
         const ASTPtr & new_settings,
         AlterLockHolder & table_lock_holder,

@@ -5755,111 +5755,128 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_, part_may_exist_on_disk);
 }
 
+std::optional<MergeTreeData::PreparedSettingsChange> MergeTreeData::prepareSettingsChange(
+    const ASTPtr & new_settings,
+    bool run_sanity_checks)
+{
+    if (!new_settings)
+        return std::nullopt;
+
+    bool has_storage_policy_changed = false;
+
+    auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
+    MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+
+    StoragePolicyPtr new_storage_policy = nullptr;
+
+    for (const auto & change : new_changes)
+    {
+        if (change.name == "disk" || change.name == "storage_policy")
+        {
+            if (change.name == "disk")
+                new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
+            else
+                new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
+            StoragePolicyPtr old_storage_policy = getStoragePolicy();
+
+            /// StoragePolicy of different version or name is guaranteed to have different pointer
+            if (new_storage_policy != old_storage_policy)
+            {
+                checkStoragePolicy(new_storage_policy);
+
+                std::unordered_set<String> all_diff_disk_names;
+                for (const auto & disk : new_storage_policy->getDisks())
+                    all_diff_disk_names.insert(disk->getName());
+                for (const auto & disk : old_storage_policy->getDisks())
+                    all_diff_disk_names.erase(disk->getName());
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    auto disk = new_storage_policy->getDiskByName(disk_name);
+                    if (disk->existsDirectory(relative_data_path))
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
+                }
+
+                for (const String & disk_name : all_diff_disk_names)
+                {
+                    auto disk = new_storage_policy->getDiskByName(disk_name);
+                    disk->createDirectories(relative_data_path);
+                    disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+                }
+                /// FIXME how would that be done while reloading configuration???
+
+                has_storage_policy_changed = true;
+            }
+        }
+    }
+
+    /// Reset to default settings before applying existing.
+    auto copy = getDefaultSettings();
+    copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+    if (run_sanity_checks)
+    {
+        const auto & ac = getContext()->getAccessControl();
+        bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_beta = ac.getAllowBetaTierSettings();
+        copy->sanityCheck(
+            getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
+            allow_experimental,
+            allow_beta,
+            getContext()->wasBackgroundPoolAutoLowered());
+    }
+
+    bool has_escape_index_filenames_changed
+        = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
+
+    bool has_refresh_statistics_interval_changed
+        = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
+
+    /// Route the new `StorageInMemoryMetadata` clone into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(getContext());
+    StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
+    new_metadata.setSettingsChanges(new_settings);
+
+    if (has_escape_index_filenames_changed)
+    {
+        /// We need to update the metadata fields and indices so we use the new setting when reading indices
+        bool new_value = (*copy)[MergeTreeSetting::escape_index_filenames];
+        new_metadata.escape_index_filenames = new_value;
+        for (auto & idx : new_metadata.secondary_indices)
+            idx.escape_filenames = new_value;
+    }
+
+    return PreparedSettingsChange{
+        .settings_copy = std::move(copy),
+        .new_metadata = std::move(new_metadata),
+        .has_storage_policy_changed = has_storage_policy_changed,
+        .has_refresh_statistics_interval_changed = has_refresh_statistics_interval_changed,
+    };
+}
+
+void MergeTreeData::applySettingsChange(PreparedSettingsChange prepared)
+{
+    storage_settings.set(std::move(prepared.settings_copy));
+
+    /// Route the deeper clone produced by `setInMemoryMetadata` into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    setInMemoryMetadata(prepared.new_metadata);
+
+    if (prepared.has_storage_policy_changed)
+        startBackgroundMovesIfNeeded();
+
+    if (prepared.has_refresh_statistics_interval_changed)
+        startStatisticsCache();
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
     bool run_sanity_checks)
 {
-    if (new_settings)
-    {
-        bool has_storage_policy_changed = false;
-
-        auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
-        MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
-
-        StoragePolicyPtr new_storage_policy = nullptr;
-
-        for (const auto & change : new_changes)
-        {
-            if (change.name == "disk" || change.name == "storage_policy")
-            {
-                if (change.name == "disk")
-                    new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
-                else
-                    new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
-                StoragePolicyPtr old_storage_policy = getStoragePolicy();
-
-                /// StoragePolicy of different version or name is guaranteed to have different pointer
-                if (new_storage_policy != old_storage_policy)
-                {
-                    checkStoragePolicy(new_storage_policy);
-
-                    std::unordered_set<String> all_diff_disk_names;
-                    for (const auto & disk : new_storage_policy->getDisks())
-                        all_diff_disk_names.insert(disk->getName());
-                    for (const auto & disk : old_storage_policy->getDisks())
-                        all_diff_disk_names.erase(disk->getName());
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        if (disk->existsDirectory(relative_data_path))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "New storage policy contain disks which already contain data of a table with the same name");
-                    }
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        disk->createDirectories(relative_data_path);
-                        disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
-                    }
-                    /// FIXME how would that be done while reloading configuration???
-
-                    has_storage_policy_changed = true;
-                }
-            }
-        }
-
-        /// Reset to default settings before applying existing.
-        auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
-        if (run_sanity_checks)
-        {
-            const auto & ac = getContext()->getAccessControl();
-            bool allow_experimental = ac.getAllowExperimentalTierSettings();
-            bool allow_beta = ac.getAllowBetaTierSettings();
-            copy->sanityCheck(
-                getContext()->getMergeMutateExecutor()->getMaxTasksCount(),
-                allow_experimental,
-                allow_beta,
-                getContext()->wasBackgroundPoolAutoLowered());
-        }
-
-        bool has_escape_index_filenames_changed
-            = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
-
-        UInt64 has_refresh_statistics_interval_changed
-            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-
-        storage_settings.set(std::move(copy));
-
-        /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
-        /// `setInMemoryMetadata`) into the dedicated MergeTree arena.
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
-        auto storage_metadata_snapshot = getInMemoryMetadataUncached(getContext());
-        StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
-        new_metadata.setSettingsChanges(new_settings);
-
-        if (has_escape_index_filenames_changed)
-        {
-            /// We need to update the metadata fields and indices so we use the new setting when reading indices
-            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
-            new_metadata.escape_index_filenames = new_value;
-            for (auto & idx : new_metadata.secondary_indices)
-                idx.escape_filenames = new_value;
-        }
-
-        setInMemoryMetadata(new_metadata);
-
-        if (has_storage_policy_changed)
-            startBackgroundMovesIfNeeded();
-
-        if (has_refresh_statistics_interval_changed)
-        {
-            startStatisticsCache();
-        }
-    }
+    if (auto prepared = prepareSettingsChange(new_settings, run_sanity_checks))
+        applySettingsChange(std::move(*prepared));
 }
 
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
