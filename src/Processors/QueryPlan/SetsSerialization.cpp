@@ -179,6 +179,13 @@ static UInt64 nestedPlanBodyMinReader(const String & body)
     readVarUInt(version, in);
     if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
         return version;
+
+    /// Head order: version, format kind, body size, then the value wanted here.
+    UInt64 format_kind = 0;
+    readVarUInt(format_kind, in);
+    UInt64 body_size = 0;
+    readVarUInt(body_size, in);
+
     UInt64 min_reader = 0;
     readVarUInt(min_reader, in);
     return min_reader;

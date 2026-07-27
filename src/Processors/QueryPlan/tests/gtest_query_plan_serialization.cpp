@@ -717,11 +717,12 @@ TEST(QueryPlanSerialization, NewerCompatibleStreamIsAccepted)
     auto reference_explain = debugExplainPlan(plan);
 
     std::string bytes = serializePlan(plan);
-    /// Head layout: [plan_version][min_reader_plan_version][envelope_size]... - both versions are
-    /// single-byte varints here.
-    ASSERT_GE(bytes.size(), 2u);
+    /// Head layout: [plan_version][format_kind][body_size][min_reader_plan_version]... - all of
+    /// them are single-byte varints for a plan this small.
+    ASSERT_GE(bytes.size(), 4u);
     ASSERT_EQ(static_cast<UInt8>(bytes[0]), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
-    ASSERT_EQ(static_cast<UInt8>(bytes[1]), DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE);
+    ASSERT_EQ(static_cast<UInt8>(bytes[1]), DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE);
+    ASSERT_EQ(static_cast<UInt8>(bytes[3]), DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE);
 
     /// A stream from a "newer" writer whose content requires nothing new must be accepted.
     std::string from_the_future = bytes;
@@ -732,9 +733,16 @@ TEST(QueryPlanSerialization, NewerCompatibleStreamIsAccepted)
     /// A stream whose content requires a newer reader is rejected at the head.
     std::string too_new = bytes;
     too_new[0] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
-    too_new[1] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+    too_new[3] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
     ReadBufferFromString in(too_new);
     EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, 0), Exception);
+
+    /// A body layout this server does not know is refused on the kind alone, even though the
+    /// content claims to need nothing newer.
+    std::string unknown_kind = bytes;
+    unknown_kind[1] = static_cast<char>(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE + 1);
+    ReadBufferFromString unknown_in(unknown_kind);
+    EXPECT_THROW(QueryPlan::deserialize(unknown_in, getContext().context, 0), Exception);
 }
 
 TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
@@ -761,6 +769,40 @@ TEST(QueryPlanOutline, ValidationChecksTreeStructureAndSetOrder)
     EXPECT_EQ(result.issues.size(), 2u) << result.describe();
 }
 
+TEST(QueryPlanSerialization, RejectedPlansAreStillTakenOffTheStream)
+{
+    registerStepsOnce();
+    const std::string plan_bytes = serializePlan(makeSourcePlan());
+
+    /// What follows the plan on a real connection is the next protocol packet. A plan this server
+    /// cannot read has to be consumed anyway, or that packet is read as plan bytes.
+    const std::string sentinel = "the next protocol packet";
+
+    /// A body layout this server does not know.
+    {
+        std::string unknown_kind = plan_bytes;
+        unknown_kind[1] = static_cast<char>(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE + 1);
+        ReadBufferFromString in(unknown_kind + sentinel);
+        EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+
+        String rest;
+        readStringUntilEOF(rest, in);
+        EXPECT_EQ(rest, sentinel) << "an unknown body layout left bytes on the stream";
+    }
+
+    /// Content that needs a newer reader than this one.
+    {
+        std::string too_new = plan_bytes;
+        too_new[3] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
+        ReadBufferFromString in(too_new + sentinel);
+        EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+
+        String rest;
+        readStringUntilEOF(rest, in);
+        EXPECT_EQ(rest, sentinel) << "a too-new plan left bytes on the stream";
+    }
+}
+
 TEST(QueryPlanSerialization, OutlineFrameCannotEscapeTheEnvelope)
 {
     registerStepsOnce();
@@ -770,9 +812,10 @@ TEST(QueryPlanSerialization, OutlineFrameCannotEscapeTheEnvelope)
     /// that belong to whatever follows the plan on the connection.
     WriteBufferFromOwnString head;
     writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), head);
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), head);
+    writeVarUInt(UInt64(4), head);                              /// body claims 4 bytes ...
     writeVarUInt(UInt64(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE), head);
-    writeVarUInt(UInt64(4), head);
-    writeVarUInt(UInt64(32) << 20, head);
+    writeVarUInt(UInt64(32) << 20, head);                       /// ... the outline frame claims 32 MiB
     head.finalize();
 
     const std::string bytes = head.str() + "bytes that belong to the protocol";

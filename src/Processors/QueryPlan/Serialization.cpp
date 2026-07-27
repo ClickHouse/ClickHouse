@@ -308,11 +308,11 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     writeQueryPlanOutline(outline, outline_bytes);
     outline_bytes.finalize();
 
-    size_t envelope_size = outline_bytes.str().size();
+    size_t body_size = outline_bytes.str().size();
     for (const auto & payload : payloads)
-        envelope_size += payload.size();
+        body_size += payload.size();
     for (const auto & payload : set_payloads)
-        envelope_size += payload.size();
+        body_size += payload.size();
 
     /// The head carries the stream version, the "needed to read" version, the envelope size and
     /// the outline; every payload then stays the chunk it was serialized into.
@@ -321,8 +321,9 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
 
     WriteBufferFromOwnString head;
     writeVarUInt(flags.version, head);
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), head);
+    writeVarUInt(body_size, head);
     writeVarUInt(min_reader_plan_version, head);
-    writeVarUInt(envelope_size, head);
     head.write(outline_bytes.str().data(), outline_bytes.str().size());
     head.finalize();
     chunks.push_back(std::move(head.str()));
@@ -337,39 +338,40 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
 
 /// Bounds the memory one plan can take before anything is buffered. A server setting, not a query
 /// one: a query setting arrives from the sender, who could then pick its own limit.
-static UInt64 readEnvelopeSize(ReadBuffer & in, const ContextPtr & context)
+static UInt64 readBodySize(ReadBuffer & in, const ContextPtr & context)
 {
     const UInt64 max_envelope_bytes = context->getServerSettings()[ServerSetting::max_serialized_query_plan_size];
 
-    UInt64 envelope_size = 0;
-    readVarUInt(envelope_size, in);
-    if (envelope_size > max_envelope_bytes)
+    UInt64 body_size = 0;
+    readVarUInt(body_size, in);
+    if (body_size > max_envelope_bytes)
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan envelope declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
-            envelope_size, max_envelope_bytes);
+            "Query plan body declares {} bytes which exceeds `max_serialized_query_plan_size` = {}",
+            body_size, max_envelope_bytes);
 
-    return envelope_size;
+    return body_size;
 }
 
-/// Takes the whole envelope off the stream without decoding any of it. The frame is self-delimiting,
-/// so a plan that will be discarded costs no allocation and no step construction.
-static void skipQueryPlanEnvelope(ReadBuffer & in, const ContextPtr & context)
+/// Takes the body off the stream without decoding any of it. The head declares its size for every
+/// format kind, so a plan that will be discarded -- or one this server cannot read -- costs no
+/// allocation and leaves the connection positioned at whatever follows.
+static void skipPlanBody(ReadBuffer & in, UInt64 body_size)
 {
-    const UInt64 envelope_size = readEnvelopeSize(in, context);
     try
     {
-        in.ignore(envelope_size);
+        in.ignore(body_size);
     }
     catch (Exception & e)
     {
-        e.addMessage(fmt::format("while skipping a query plan envelope of {} bytes", envelope_size));
-        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan envelope is truncated: {}", e.message());
+        e.addMessage(fmt::format("while skipping a query plan body of {} bytes", body_size));
+        throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN, "Query plan body is truncated: {}", e.message());
     }
 }
 
-QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity, UInt64 min_reader_plan_version)
+QueryPlanAndSets QueryPlan::deserializeEnvelope(
+    ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
+    size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 envelope_size)
 {
-    const UInt64 envelope_size = readEnvelopeSize(in, context);
     const size_t envelope_start = in.count();
 
     auto outline = readQueryPlanOutline(in, max_type_complexity, envelope_size);
@@ -588,27 +590,48 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
 
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
     {
+        /// The head is the same four fields in every format kind, so the body can always be found
+        /// and skipped even when the rest of the stream means nothing to this server.
+        UInt64 format_kind = 0;
+        readVarUInt(format_kind, in);
+
+        const UInt64 body_size = readBodySize(in, context);
+
         /// Acceptance is decided by the content's "needed to read" version, not by the writer's
         /// version: a newer writer's plan is readable as long as everything above this reader's
         /// knowledge is ignorable, which the writer's fold guarantees for min_reader <= supported.
         UInt64 min_reader_plan_version = 0;
         readVarUInt(min_reader_plan_version, in);
 
-        /// The plan is only being drained off the connection, so the envelope frame is consumed
-        /// without parsing it: no steps are built and no set data is decoded. A plan too new to
-        /// read is drained the same way, which leaves the connection usable.
+        /// The plan is only being drained off the connection: no steps are built and no set data
+        /// is decoded.
         if (flags.skip_data)
         {
-            skipQueryPlanEnvelope(in, context);
+            skipPlanBody(in, body_size);
             return {};
         }
 
+        /// Every rejection below takes the body off the stream first, so a plan this server cannot
+        /// read costs the query and not the connection.
+
+        /// An unknown body layout is refused on the kind alone. Trusting `min_reader` here would put
+        /// the whole grammar at the mercy of a future writer computing it correctly.
+        if (format_kind != DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
+        {
+            skipPlanBody(in, body_size);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "The query plan uses body format {} which this server does not know", format_kind);
+        }
+
         if (min_reader_plan_version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+        {
+            skipPlanBody(in, body_size);
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "The query plan requires serialization version {} while this server supports up to {}",
                 min_reader_plan_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        }
 
-        return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version);
+        return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version, body_size);
     }
 
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)

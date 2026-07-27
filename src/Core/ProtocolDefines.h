@@ -67,8 +67,10 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-/// Version 4 is the outline-first framed envelope:
-/// `[version][min_reader_version][envelope_size][outline][step payloads][set payloads]`.
+/// Version 4 is the outline-first framed envelope. The head is
+/// `[version][format_kind][body_size][min_reader_version]` and is frozen: every future body layout
+/// keeps those four, so a reader that does not know the kind still finds the end of the body,
+/// skips it and rejects the plan without losing the connection.
 /// The outline carries per-node names, step format versions, headers, framed settings and payload
 /// sizes, so a reader can validate the whole plan or render its shape without touching a payload,
 /// and steps may append ignorable payload fields without a version bump. `min_reader_version` is
@@ -80,6 +82,10 @@ static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// reads the new version everywhere before anyone writes it, and users can try it per query with
 /// `query_plan_serialization_version`. Move it up once the new version has proven itself.
 static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 4;
+/// Body layout of a v4+ stream, named in the head so a reader decides what it is looking at instead
+/// of inferring it from the version. 0 is never written. Every new layout takes the next value and
+/// names the plan version that introduced it.
+static constexpr auto DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE = 1;
 /// First version with the outline-first framed envelope.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 4;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
