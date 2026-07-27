@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-query_id_prefix="04628_handled_fallback_${CLICKHOUSE_DATABASE}_${RANDOM}"
+query_id_prefix="04648_handled_fallback_${CLICKHOUSE_DATABASE}_${RANDOM}"
 
 http_port=$(python3 -c "
 import socket
