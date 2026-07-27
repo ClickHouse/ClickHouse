@@ -82,6 +82,11 @@ void generateManifestFile(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     std::optional<Int64> user_defined_sequence_number = std::nullopt,
+    /// Optional snapshot-id override for ADDED entries; used when regenerating a manifest whose
+    /// adding snapshot is known from the source manifest-list entry (and may already be expired
+    /// from table metadata), so rewritten entries keep the original lineage instead of being
+    /// re-attributed to a later snapshot.
+    std::optional<Int64> user_defined_snapshot_id = std::nullopt,
     /// Optional per-file formats parallel to `data_file_names`; when non-empty each entry's original `file_format` is preserved, else `format` is used.
     const std::vector<String> & data_file_formats = {},
     /// Optional per-file column statistics parallel to `data_file_names`; when non-empty each entry's stats come from the matching element, else `data_file_statistics` is used.

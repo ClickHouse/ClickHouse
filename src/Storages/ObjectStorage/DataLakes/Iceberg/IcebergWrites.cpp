@@ -332,6 +332,7 @@ void generateManifestFile(
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
     std::optional<Int64> user_defined_sequence_number,
+    std::optional<Int64> user_defined_snapshot_id,
     const std::vector<String> & data_file_formats,
     const std::vector<DataFileColumnStatistics> & per_file_statistics,
     const std::vector<std::optional<Int32>> & data_file_sort_order_ids,
@@ -403,7 +404,7 @@ void generateManifestFile(
                                                : static_cast<Int32>(ManifestEntryStatus::ADDED));
         Int64 snapshot_id = (entry_lineage && entry_lineage->added_snapshot_id)
             ? *entry_lineage->added_snapshot_id
-            : new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+            : user_defined_snapshot_id.value_or(new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id));
 
         setVersionedField(manifest, snapshot_id, Iceberg::f_snapshot_id);
 

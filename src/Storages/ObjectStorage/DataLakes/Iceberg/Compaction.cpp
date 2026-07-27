@@ -95,6 +95,17 @@ struct Plan
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_to_first_snapshot;
+    /// Original manifest-list entry lineage per manifest path: `added_snapshot_id` and
+    /// `sequence_number` of the snapshot that actually added the manifest. This is taken from
+    /// the source manifest-list entries rather than derived from retained history order,
+    /// because the adding snapshot may already be expired from table metadata while later
+    /// snapshots still carry the manifest forward.
+    struct ManifestFileLineage
+    {
+        Int64 added_snapshot_id = 0;
+        Int64 added_sequence_number = 0;
+    };
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
@@ -225,6 +236,9 @@ static Plan getPlan(
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
+            if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
+                plan.manifest_file_lineage[manifest_file.manifest_file_path]
+                    = {manifest_file.added_snapshot_id, manifest_file.added_sequence_number};
             auto files_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
@@ -834,6 +848,7 @@ static bool writeConsolidatedManifestFile(
                 *buffer_manifest,
                 Iceberg::FileContentType::DATA,
                 /* user_defined_sequence_number */ std::nullopt,
+                /* user_defined_snapshot_id */ std::nullopt,
                 /* data_file_formats */ pd.file_formats,
                 /* per_file_statistics */ pd.file_statistics,
                 /* data_file_sort_order_ids */ pd.file_sort_order_ids,
@@ -1109,25 +1124,28 @@ static void writeMetadataFiles(
                 }
             }
 
+            /// The manifest's original lineage, taken from the source manifest-list entry: the
+            /// snapshot that actually added the manifest may already be expired from table
+            /// metadata, in which case `plan.manifest_file_to_first_snapshot` (first *retained*
+            /// snapshot referencing the manifest) would wrongly re-attribute it.
+            const auto manifest_lineage = plan.manifest_file_lineage[manifest_entry->path];
+
             /// Record the manifest's actual content counts and lineage for its manifest-list
             /// entries. The files keep their original data sequence numbers, so
-            /// min_sequence_number is the sequence number of the snapshot whose manifest is
-            /// being rewritten, and added_snapshot_id / added_sequence_number identify that
-            /// snapshot so later manifest lists that carry this manifest forward preserve its
-            /// lineage instead of claiming they added it.
+            /// min_sequence_number is the manifest's original sequence number, and
+            /// added_snapshot_id / added_sequence_number preserve which snapshot added it, so
+            /// manifest lists of later snapshots that carry this manifest forward do not claim
+            /// they added it.
             {
                 Int64 manifest_rows = 0;
                 for (const auto rows : file_row_counts)
                     manifest_rows += static_cast<Int64>(rows);
-                const Int64 manifest_sequence_number = snapshot->has(Iceberg::f_metadata_sequence_number)
-                    ? snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)
-                    : 0;
                 ManifestListEntryCounts counts;
                 counts.files_count = static_cast<Int64>(data_files_vec.size());
                 counts.rows_count = manifest_rows;
-                counts.min_sequence_number = manifest_sequence_number;
-                counts.added_snapshot_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
-                counts.added_sequence_number = manifest_sequence_number;
+                counts.min_sequence_number = manifest_lineage.added_sequence_number;
+                counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
+                counts.added_sequence_number = manifest_lineage.added_sequence_number;
                 manifest_file_counts[manifest_entry->patched_path] = counts;
             }
             generateManifestFile(
@@ -1145,7 +1163,12 @@ static void writeMetadataFiles(
                 partititon_spec,
                 partition_spec_id,
                 *buffer_manifest_entry,
-                Iceberg::FileContentType::DATA);
+                Iceberg::FileContentType::DATA,
+                /// Stamp the rewritten entries with the manifest's original lineage instead of
+                /// the first retained snapshot's, keeping the manifest file consistent with
+                /// the manifest-list entries written above.
+                /* user_defined_sequence_number */ manifest_lineage.added_sequence_number,
+                /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id);
 
             buffer_manifest_entry->finalize();
             auto manifest_bytes = buffer_manifest_entry->count();
