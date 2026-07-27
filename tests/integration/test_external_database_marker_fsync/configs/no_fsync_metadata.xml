@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The background cleaner has no query context and reads `fsync_metadata` from the
+                 global context, which is initialised once from the `default` profile. A per-query
+                 setting cannot reach it, so the disabled case needs its own instance. -->
+            <fsync_metadata>false</fsync_metadata>
+        </default>
+    </profiles>
+</clickhouse>

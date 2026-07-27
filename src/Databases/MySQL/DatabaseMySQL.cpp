@@ -50,6 +50,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool fsync_metadata;
     extern const SettingsUInt64 glob_expansion_max_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
@@ -428,7 +429,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const String &)
 {
     std::lock_guard lock{mutex};
 
@@ -440,18 +441,30 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
         throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS, "Cannot attach table {}.{} because it already exists.",
             backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
+    /// The disk work runs first, so a failed `ATTACH TABLE` stays retryable. The two statements
+    /// below cannot throw: the cache key is known to exist and erasing a present name allocates
+    /// nothing.
+    if (persistent)
+    {
+        fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+        auto db_disk = getDisk();
+
+        /// fsync the parent directory so the `unlink` survives a power loss (a directory-entry
+        /// change is durable only after the directory is fsync'd; the guard fsyncs on destruction).
+        /// Only when a marker exists: a plain (non-permanent) `DETACH` writes none, so the `unlink`
+        /// is a no-op there and there is nothing to make durable.
+        SyncGuardPtr dir_sync_guard;
+        if (local_context->getSettingsRef()[Setting::fsync_metadata] && db_disk->existsFile(remove_flag))
+            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
+        db_disk->removeFileIfExists(remove_flag);
+    }
+
     /// We use the new storage to replace the original storage, because the original storage may have been dropped
     /// Although we still keep its
     local_tables_cache[table_name].second = storage;
 
     remove_or_detach_tables.erase(table_name);
-    fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-
-    if (!persistent)
-        return;
-
-    auto db_disk = getDisk();
-    db_disk->removeFileIfExists(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
@@ -497,7 +510,7 @@ void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel 
     }
 }
 
-void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name)
+void DatabaseMySQL::detachTablePermanently(ContextPtr local_context, const String & table_name)
 {
     if (!persistent)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE is not supported for non-persistent MySQL database");
@@ -523,6 +536,15 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     try
     {
         table_iter->second.second->drop();
+
+        /// fsync the parent directory so the marker survives a power loss, else the table silently
+        /// re-attaches on restart. The marker is an empty file, so only its directory entry matters
+        /// (a directory-entry change is durable only after the directory is fsync'd; the guard
+        /// fsyncs on destruction).
+        SyncGuardPtr dir_sync_guard;
+        if (local_context->getSettingsRef()[Setting::fsync_metadata])
+            dir_sync_guard = db_disk->getDirectorySyncGuard(getMetadataPath());
+
         db_disk->createFile(remove_flag);
     }
     catch (...)
