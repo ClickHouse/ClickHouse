@@ -5,6 +5,10 @@
 #include <base/defines.h>
 #include <base/types.h>
 
+#include <optional>
+
+struct PreformattedMessage;
+
 namespace DB
 {
 
@@ -30,12 +34,18 @@ public:
     /// Read and discard all queued wakeup bytes.
     void drain() const;
 
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Returns a description of the problem if the given end of the pipe (0 = read, 1 = write) no
+    /// longer matches the descriptor created by the constructor, std::nullopt if it is intact.
+    /// notify()/drain() abort on it via validate; public so tests can check without aborting.
+    std::optional<PreformattedMessage> checkEnd(int which) const;
+#endif
+
 private:
     PipeFDs pipe;
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-    /// Throws LOGICAL_ERROR (which aborts in these builds) if the fd no longer matches the pipe end
-    /// created by the constructor.
+    /// Throws LOGICAL_ERROR (which aborts in these builds) if checkEnd reports a problem.
     void validate(int which) const;
 
     /// dev:ino of each pipe end at construction. If unrelated code closes our fd number (a stale-fd

@@ -1,4 +1,5 @@
 #include <Common/WakeupFd.h>
+#include <Common/Exception.h>
 
 #include <base/defines.h>
 
@@ -23,28 +24,33 @@ TEST(WakeupFd, NotifyDrainDoesNotBlock)
     wake.drain();
 }
 
-/// The fd validation is compiled only into debug/sanitizer builds, where a LOGICAL_ERROR aborts,
-/// so the detection cases are death tests. Fork-based death tests are unreliable under TSan.
-#if defined(DEBUG_OR_SANITIZER_BUILD) && !defined(THREAD_SANITIZER)
+/// The fd validation is compiled only into debug/sanitizer builds. The tests use the non-throwing
+/// checkEnd: calling drain/notify on a tampered fd would abort (LOGICAL_ERROR in these builds).
+#ifdef DEBUG_OR_SANITIZER_BUILD
 
-TEST(WakeupFdDeathTest, DetectsLostNonBlocking)
+TEST(WakeupFd, DetectsLostNonBlocking)
 {
     WakeupFd wake;
+    EXPECT_FALSE(wake.checkEnd(0).has_value());
+    EXPECT_FALSE(wake.checkEnd(1).has_value());
 
     int read_fd = wake.fd();
     int flags = fcntl(read_fd, F_GETFL);
     ASSERT_NE(flags, -1);
     ASSERT_TRUE(flags & O_NONBLOCK);
 
-    /// Simulate foreign code stripping O_NONBLOCK from our fd: drain must fail loudly, not block.
+    /// Simulate foreign code stripping O_NONBLOCK from our fd.
     ASSERT_EQ(0, fcntl(read_fd, F_SETFL, flags & ~O_NONBLOCK));
-    EXPECT_DEATH(wake.drain(), "");
+    auto problem = wake.checkEnd(0);
+    ASSERT_TRUE(problem.has_value());
+    EXPECT_TRUE(problem->text.contains("lost O_NONBLOCK"));
 
     ASSERT_EQ(0, fcntl(read_fd, F_SETFL, flags));
+    EXPECT_FALSE(wake.checkEnd(0).has_value());
     wake.drain();
 }
 
-TEST(WakeupFdDeathTest, DetectsRecycledFd)
+TEST(WakeupFd, DetectsRecycledFd)
 {
     WakeupFd wake;
 
@@ -55,8 +61,11 @@ TEST(WakeupFdDeathTest, DetectsRecycledFd)
     int recycled = ::open("/dev/null", O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     ASSERT_EQ(recycled, read_fd);
 
-    EXPECT_DEATH(wake.drain(), "");
-    /// Do not close `recycled` here: WakeupFd still believes it owns the number and closes it.
+    auto problem = wake.checkEnd(0);
+    ASSERT_TRUE(problem.has_value());
+    EXPECT_TRUE(problem->text.contains("refers to another file"));
+    /// Do not drain() here (it would abort on the problem) and do not close `recycled`:
+    /// WakeupFd still believes it owns the number and closes it.
 }
 
 #endif

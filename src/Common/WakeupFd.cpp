@@ -42,18 +42,20 @@ WakeupFd::WakeupFd()
 }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
-void WakeupFd::validate(int which) const
+std::optional<PreformattedMessage> WakeupFd::checkEnd(int which) const
 {
     const char * side = which == 0 ? "read" : "write";
     int fd = pipe.fds_rw[which];
 
     int flags = fcntl(fd, F_GETFL);
     if (flags == -1)
-        throw ErrnoException(
-            ErrorCodes::LOGICAL_ERROR, "Wakeup pipe {} end (fd {}) is invalid; the fd was probably closed by unrelated code", side, fd);
+        return PreformattedMessage::create(
+            "Wakeup pipe {} end (fd {}) is invalid ({}); the fd was probably closed by unrelated code",
+            side,
+            fd,
+            errnoToString());
     if (!(flags & O_NONBLOCK))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+        return PreformattedMessage::create(
             "Wakeup pipe {} end (fd {}) lost O_NONBLOCK (flags {:#x}); the fd was probably tampered with by unrelated code",
             side,
             fd,
@@ -61,10 +63,9 @@ void WakeupFd::validate(int which) const
 
     struct stat st{};
     if (0 != fstat(fd, &st))
-        throw ErrnoException(ErrorCodes::LOGICAL_ERROR, "Cannot fstat wakeup pipe {} end (fd {})", side, fd);
+        return PreformattedMessage::create("Cannot fstat wakeup pipe {} end (fd {}): {}", side, fd, errnoToString());
     if (!S_ISFIFO(st.st_mode) || static_cast<UInt64>(st.st_dev) != ends[which].dev || static_cast<UInt64>(st.st_ino) != ends[which].ino)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
+        return PreformattedMessage::create(
             "Wakeup pipe {} end (fd {}) refers to another file (mode {:#o}, dev:ino {}:{}, expected {}:{}); "
             "the fd was probably closed and recycled by unrelated code",
             side,
@@ -74,6 +75,14 @@ void WakeupFd::validate(int which) const
             static_cast<UInt64>(st.st_ino),
             ends[which].dev,
             ends[which].ino);
+
+    return std::nullopt;
+}
+
+void WakeupFd::validate(int which) const
+{
+    if (auto problem = checkEnd(which))
+        throw Exception(std::move(*problem), ErrorCodes::LOGICAL_ERROR);
 }
 #endif
 
