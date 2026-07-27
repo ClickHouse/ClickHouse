@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -165,7 +166,9 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     /// deduplicates by name), and reads of a column written with the original discriminators then fail.
     /// Such a type cannot round-trip through its own name, so it must not be created. This check is an
     /// integrity requirement rather than a suspicious-type policy, so unlike the callback above it is not
-    /// gated by any setting.
+    /// gated by any setting. The traversal below cannot use `forEachChild` alone, because
+    /// `DataTypeAggregateFunction` does not expose its argument types through it, and a `Variant` used as
+    /// an argument of an aggregate function is part of the stored name just the same.
     auto check_variant_name_collisions = [](const IDataType & data_type)
     {
         const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type);
@@ -207,8 +210,28 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
         }
     };
 
-    check_variant_name_collisions(*type_to_check);
-    type_to_check->forEachChild(check_variant_name_collisions);
+    /// `forEachChild` already walks a whole subtree, so it is applied to a type once and never from inside
+    /// the callback it is given. The recursion below only adds the arguments of an aggregate function, which
+    /// `forEachChild` does not reach. Its depth is bounded by the parse depth limit of `DataTypeFactory`, so
+    /// it needs no limit of its own.
+    IDataType::ChildCallback check_type_and_aggregate_arguments;
+    check_type_and_aggregate_arguments = [&](const IDataType & data_type)
+    {
+        check_variant_name_collisions(data_type);
+
+        const auto * aggregate_type = typeid_cast<const DataTypeAggregateFunction *>(&data_type);
+        if (!aggregate_type)
+            return;
+
+        for (const auto & argument_type : aggregate_type->getArgumentsDataTypes())
+        {
+            check_type_and_aggregate_arguments(*argument_type);
+            argument_type->forEachChild(check_type_and_aggregate_arguments);
+        }
+    };
+
+    check_type_and_aggregate_arguments(*type_to_check);
+    type_to_check->forEachChild(check_type_and_aggregate_arguments);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
