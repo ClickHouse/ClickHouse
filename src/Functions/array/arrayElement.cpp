@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/ColumnNumbers.h>
@@ -64,6 +65,10 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A lazily replicated array argument (e.g. produced by lazy ARRAY JOIN or a lazily
+    /// replicated lambda capture) is consumed by gathering from the compact nested column.
+    /// The default implementation would materialize it whenever the index is a full column.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -87,6 +92,19 @@ private:
         const DataTypePtr & result_type,
         ArrayImpl::NullMapBuilder<mode> & builder,
         size_t input_rows_count) const;
+
+    /// Element access over a lazily replicated array (Replicated(Array)) without materializing it.
+    ColumnPtr executeReplicated(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    template <typename IndexType>
+    static bool gatherReplicated(
+        const IColumn & index_column,
+        const ColumnIndex & replication_indexes,
+        const ColumnArray::Offsets & offsets,
+        const IColumn & data,
+        IColumn & result,
+        ArrayImpl::NullMapBuilder<mode> & builder);
 
     template <typename DataType>
     static ColumnPtr executeNumberConst(
@@ -2246,6 +2264,10 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
+        || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))
+        return executeReplicated(arguments, result_type, input_rows_count);
+
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
 
@@ -2329,6 +2351,134 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     /// Store the result.
     return ColumnNullable::create(res, builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeReplicated(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    /// The index argument is a per-row number - cheap to materialize if it came replicated.
+    ColumnsWithTypeAndName args = arguments;
+    args[1].column = args[1].column->convertToFullColumnIfReplicated();
+
+    const auto * replicated = typeid_cast<const ColumnReplicated *>(args[0].column.get());
+    if (!replicated)
+        return executeImpl(args, result_type, input_rows_count);
+
+    const auto * col_array = typeid_cast<const ColumnArray *>(replicated->getNestedColumn().get());
+
+    /// Fall back to materialization for the shapes the fast path does not cover:
+    /// Replicated over Map, and LowCardinality elements (their handling is layered above
+    /// this function, see FunctionWithLowCardinalityFastPath).
+    bool fast_path_supported = col_array
+        && !typeid_cast<const ColumnLowCardinality *>(&col_array->getData())
+        && !typeid_cast<const ColumnMap *>(&col_array->getData());
+    if (!fast_path_supported)
+    {
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (isColumnConst(*args[1].column))
+    {
+        /// A constant index gives one value per nested row: execute on the compact nested
+        /// array and replicate the result lazily.
+        size_t nested_rows = col_array->size();
+        ColumnsWithTypeAndName nested_args
+            = {{replicated->getNestedColumn(), args[0].type, args[0].name},
+               {args[1].column->cloneResized(nested_rows), args[1].type, args[1].name}};
+
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows);
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), replicated->getIndexesColumn()));
+    }
+
+    const auto & offsets = col_array->getOffsets();
+    const IColumn * data = &col_array->getData();
+
+    ArrayImpl::NullMapBuilder<mode> builder;
+    bool is_array_of_nullable = isColumnNullable(*data);
+    if (is_array_of_nullable)
+    {
+        const auto & nullable_data = assert_cast<const ColumnNullable &>(*data);
+        builder.initSource(nullable_data.getNullMapData().data());
+        data = &nullable_data.getNestedColumn();
+    }
+
+    if (builder)
+        builder.initSink(input_rows_count);
+
+    auto result = data->cloneEmpty();
+    result->reserve(input_rows_count);
+
+    const auto & replication_indexes = replicated->getIndexes();
+    const auto & index_column = *args[1].column;
+
+    if (!(gatherReplicated<UInt8>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt16>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt32>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<UInt64>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int8>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int16>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int32>(index_column, replication_indexes, offsets, *data, *result, builder)
+          || gatherReplicated<Int64>(index_column, replication_indexes, offsets, *data, *result, builder)))
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
+
+    if (is_array_of_nullable)
+        return ColumnNullable::create(
+            std::move(result), builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+
+    ColumnPtr immutable_result = std::move(result);
+    if (builder && immutable_result->canBeInsideNullable())
+        return ColumnNullable::create(immutable_result, std::move(builder).getNullMapColumnPtr());
+
+    return immutable_result;
+}
+
+template <ArrayElementExceptionMode mode>
+template <typename IndexType>
+bool FunctionArrayElement<mode>::gatherReplicated(
+    const IColumn & index_column,
+    const ColumnIndex & replication_indexes,
+    const ColumnArray::Offsets & offsets,
+    const IColumn & data,
+    IColumn & result,
+    ArrayImpl::NullMapBuilder<mode> & builder)
+{
+    const auto * index_vec = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
+    if (!index_vec)
+        return false;
+
+    const auto & indices = index_vec->getData();
+    size_t rows = indices.size();
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        ssize_t nested_row = replication_indexes.getIndexAt(i);
+        ColumnArray::Offset begin = offsets[nested_row - 1];
+        size_t array_size = offsets[nested_row] - begin;
+
+        IndexType index = indices[i];
+        if (index > 0 && static_cast<size_t>(index) <= array_size)
+        {
+            size_t j = begin + index - 1;
+            result.insertFrom(data, j);
+            builder.update(j);
+        }
+        else if (index < 0 && -static_cast<size_t>(index) <= array_size)
+        {
+            size_t j = offsets[nested_row] + index;
+            result.insertFrom(data, j);
+            builder.update(j);
+        }
+        else
+        {
+            result.insertDefault();
+            builder.update();
+        }
+    }
+
+    return true;
 }
 
 template <ArrayElementExceptionMode mode>

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnReplicated.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 
@@ -78,8 +79,11 @@ public:
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
         auto array_column = arguments[0].column;
-        const auto & offset_column = arguments[1].column;
-        const auto & length_column = arguments.size() > 2 ? arguments[2].column : nullptr;
+        /// The offset and length are per-row numbers - cheap to materialize if they came replicated.
+        /// The array argument is the one worth keeping lazy: it is consumed by a ReplicatedSource
+        /// without materialization.
+        const auto offset_column = arguments[1].column->convertToFullColumnIfReplicated();
+        const auto length_column = arguments.size() > 2 ? arguments[2].column->convertToFullColumnIfReplicated() : nullptr;
 
         std::unique_ptr<GatherUtils::IArraySource> source;
 
@@ -92,7 +96,9 @@ public:
             array_column = const_array_column->getDataColumnPtr();
         }
 
-        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
+        if (const auto * replicated_column = typeid_cast<const ColumnReplicated *>(array_column.get()))
+            source = GatherUtils::createArraySourceFromReplicated(*replicated_column);
+        else if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
@@ -148,6 +154,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
+    /// A lazily replicated array argument (e.g. produced by lazy ARRAY JOIN or a lazily
+    /// replicated lambda capture) is sliced directly through a ReplicatedSource. The default
+    /// implementation would materialize it whenever the offset or length is a full column.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 };
 
 

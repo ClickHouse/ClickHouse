@@ -31,6 +31,8 @@ struct SliceFromRightConstantOffsetUnboundedSelectArraySource
 
             if (is_const)
                 sliceFromRightConstantOffsetUnbounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset);
+            else if (source.isReplicated())
+                sliceFromRightConstantOffsetUnbounded(static_cast<ReplicatedSource<NullableSource> &>(source), sink, offset);
             else
                 sliceFromRightConstantOffsetUnbounded(static_cast<NullableSource &>(source), sink, offset);
         }
@@ -41,6 +43,8 @@ struct SliceFromRightConstantOffsetUnboundedSelectArraySource
 
             if (is_const)
                 sliceFromRightConstantOffsetUnbounded(static_cast<ConstSource<SourceType> &>(source), sink, offset);
+            else if (source.isReplicated())
+                sliceFromRightConstantOffsetUnbounded(static_cast<ReplicatedSource<SourceType> &>(source), sink, offset);
             else
                 sliceFromRightConstantOffsetUnbounded(source, sink, offset);
         }

@@ -31,6 +31,8 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
 
             if (is_const)
                 sliceDynamicOffsetBounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset_column, length_column);
+            else if (source.isReplicated())
+                sliceDynamicOffsetBounded(static_cast<ReplicatedSource<NullableSource> &>(source), sink, offset_column, length_column);
             else
                 sliceDynamicOffsetBounded(static_cast<NullableSource &>(source), sink, offset_column, length_column);
         }
@@ -41,6 +43,8 @@ struct SliceDynamicOffsetBoundedSelectArraySource : public ArraySourceSelector<S
 
             if (is_const)
                 sliceDynamicOffsetBounded(static_cast<ConstSource<SourceType> &>(source), sink, offset_column, length_column);
+            else if (source.isReplicated())
+                sliceDynamicOffsetBounded(static_cast<ReplicatedSource<SourceType> &>(source), sink, offset_column, length_column);
             else
                 sliceDynamicOffsetBounded(source, sink, offset_column, length_column);
         }
