@@ -98,28 +98,30 @@ ColumnsWithTypeAndName createBlockWithNestedColumns(const ColumnsWithTypeAndName
 namespace
 {
 
-/// `i` is a zero-based index; the returned ordinal is one-based ("1st" for i == 0).
 String withOrdinalEnding(size_t i)
 {
+    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
+    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
     const size_t n = i + 1;
-
-    /// 11th, 12th and 13th, unlike 21st, 22nd and 23rd.
-    if (n % 100 / 10 != 1)
+    const char * suffix = "th";
+    if (n % 100 < 11 || n % 100 > 13)
     {
         switch (n % 10)
         {
             case 1:
-                return std::to_string(n) + "st";
+                suffix = "st";
+                break;
             case 2:
-                return std::to_string(n) + "nd";
+                suffix = "nd";
+                break;
             case 3:
-                return std::to_string(n) + "rd";
+                suffix = "rd";
+                break;
             default:
                 break;
         }
     }
-
-    return std::to_string(n) + "th";
+    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -154,7 +156,6 @@ void validateVariadicArgumentsImpl(
     size_t argument_offset,
     const FunctionArgumentDescriptor & variadic_descriptor)
 {
-    /// `i` is already the absolute zero-based argument index here, so it must not be offset again.
     for (size_t i = argument_offset; i < arguments.size(); ++i)
     {
         const auto & arg = arguments[i];
