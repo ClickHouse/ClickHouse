@@ -277,13 +277,21 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     /// the wrong rows. Keep every column that participates in a default expression - the defaulted
     /// column itself and the transitive inputs of its expression - on the main branch, so that the
     /// expression is always evaluated over the real values.
+    ///
+    /// Only the defaults that this query can actually evaluate matter: `AddingDefaultsTransform`
+    /// applies a default expression solely for a column present in the block of its own branch
+    /// (`res.has(col_name)`), so a defaulted column that the query does not read at all imposes no
+    /// dependency and must not pin its inputs to the main branch - otherwise a schema with unused
+    /// `DEFAULT` / `ALIAS` columns would lose the I/O savings for no reason.
     const auto & column_defaults = info.columns_description.getDefaults();
     NameSet names_in_default_expressions;
     std::vector<String> names_to_visit;
-    for (const auto & [name, _] : column_defaults)
+    for (const auto & column : info.source_header)
     {
-        names_in_default_expressions.insert(name);
-        names_to_visit.push_back(name);
+        if (!column_defaults.contains(column.name))
+            continue;
+        names_in_default_expressions.insert(column.name);
+        names_to_visit.push_back(column.name);
     }
     while (!names_to_visit.empty())
     {

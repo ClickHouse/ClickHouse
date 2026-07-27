@@ -16,6 +16,11 @@
 -- neither the defaulted columns nor the inputs of their expressions are deferred
 Lazily read columns: s
 Lazily read columns: s
+-- a defaulted column that the query does not read does not pin the inputs of its expression
+1000	val_0
+993	val_1
+986	val_2
+Lazily read columns: b, s
 -- query_plan_optimize_lazy_materialization_for_object_storage = 0
 -- sorting by a defaulted column whose input is also selected
 937	val_9
@@ -32,3 +37,7 @@ Lazily read columns: s
 -- the number of lazy read steps in the plan
 0
 -- neither the defaulted columns nor the inputs of their expressions are deferred
+-- a defaulted column that the query does not read does not pin the inputs of its expression
+1000	val_0
+993	val_1
+986	val_2

@@ -50,6 +50,9 @@ SELECT countIf(explain LIKE '%LazilyReadFromObjectStorage%') FROM (EXPLAIN SELEC
 SELECT '-- neither the defaulted columns nor the inputs of their expressions are deferred';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT b, s FROM lazy_mat_defaults ORDER BY a LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT c, s FROM lazy_mat_defaults ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
+SELECT '-- a defaulted column that the query does not read does not pin the inputs of its expression';
+SELECT b, s FROM lazy_mat_defaults ORDER BY k LIMIT 3;
+SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT b, s FROM lazy_mat_defaults ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 "
 
 # `enable_analyzer` is pinned because lazy materialization requires the analyzer
