@@ -1547,8 +1547,8 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     TokenToPostingsBuilderMap::LookupResult it;
     for (const auto & filter_token : postprocessor_drop_filter->tokens)
     {
-        ArenaKeyHolder key_holder(std::string_view(filter_token), *arena);
-        tokens_map.emplace(key_holder, it, inserted);
+        std::string_view key(arena->insert(filter_token.data(), filter_token.size()), filter_token.size());
+        tokens_map.emplace(key, it, inserted);
         chassert(inserted);
         it->getMapped().markFiltered();
     }
