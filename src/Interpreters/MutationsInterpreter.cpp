@@ -55,7 +55,6 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/CollectSets.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -1580,7 +1579,15 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         if (!source.hasProjection(projection.name))
+        {
+            if (projection.with_block_number || projection.with_block_offset)
+            {
+                LOG_DEBUG(logger, "Will rebuild commit-order projection {}", projection.name);
+                materialized_projections.insert(projection.name);
+            }
+
             continue;
+        }
 
         /// Always rebuild broken projections.
         if (source.hasBrokenProjection(projection.name))
@@ -1748,8 +1755,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             auto planner_context = std::make_shared<PlannerContext>(
                 execution_context, global_planner_context, SelectQueryOptions{});
 
-            collectSourceColumns(expression, planner_context, /*keep_alias_columns=*/true);
-            collectSets(expression, *planner_context);
+            collectSetsAndSourceColumns(expression, planner_context, /*keep_alias_columns=*/true);
 
             /// 3. Build input columns from all available columns plus any
             /// virtual columns actually referenced by the expression
@@ -1895,8 +1901,7 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
                 auto update_tree = buildQueryTree(update_expr_list, execution_context);
                 QueryAnalyzer update_analyzer(/*only_analyze=*/!execute_scalar_subqueries);
                 update_analyzer.resolve(update_tree, table_node, execution_context);
-                collectSourceColumns(update_tree, planner_context, true);
-                collectSets(update_tree, *planner_context);
+                collectSetsAndSourceColumns(update_tree, planner_context, true);
 
                 auto update_actions = std::make_shared<ActionsAndProjectInputsFlag>();
                 update_actions->dag = ActionsDAG(available_columns_for_step);

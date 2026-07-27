@@ -42,6 +42,18 @@ ClickPipes can be deployed and managed manually using the ClickPipes UI, as well
 
 More connectors will get added to ClickPipes, you can find out more by [contacting us](https://clickhouse.com/company/contact?loc=clickpipes).
 
+## AWS IAM database authentication {#aws-iam-database-authentication}
+
+ClickPipes supports AWS IAM database authentication for Amazon RDS and Aurora. The configuration differs by database engine and AWS service, so choose the source setup guide that matches your database:
+
+| Database engine | AWS service | Setup guide |
+|---|---|---|
+| PostgreSQL | Amazon RDS | [RDS for PostgreSQL](/integrations/clickpipes/postgres/source/rds#iam-authentication) |
+| PostgreSQL | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL | Amazon RDS | [RDS for MySQL](/integrations/clickpipes/mysql/source/rds#iam-authentication) |
+| MySQL | Amazon Aurora | [Aurora MySQL-Compatible Edition](/integrations/clickpipes/mysql/source/aurora#iam-authentication) |
+| MariaDB | Amazon RDS | [RDS for MariaDB](/integrations/clickpipes/mysql/source/rds-maria#iam-authentication) |
+
 ## List of Static IPs {#list-of-static-ips}
 
 The following tables list the static NAT IPs that ClickPipes uses to connect to your external services. Add the IPs for the ClickPipes region that serves your ClickHouse Cloud service to your IP allow list. In the case of object storage pipes you should also add the [ClickHouse cluster IPs](/products/cloud/guides/data-sources/cloud-endpoints-api) to your IP allow list.
