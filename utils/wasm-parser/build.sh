@@ -4,11 +4,10 @@
 #   ./utils/wasm-parser/build.sh [output-directory]
 #
 # Requires a wasi-sdk in $WASI_SDK (or ./tmp/wasi-sdk-*), for example:
-#   curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m)-linux.tar.gz | tar xz -C tmp
+#   curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m | sed s/aarch64/arm64/)-linux.tar.gz | tar xz -C tmp
 #
-# The result exports a small C interface (see wasm_parser.cpp) and needs an engine with the
-# WebAssembly exception-handling proposal. Test it with:
-#   node --experimental-wasm-exnref utils/wasm-parser/test.mjs <output-directory>/parser.wasm
+# The result exports a small C interface (see wasm_parser.cpp). Test it with:
+#   node utils/wasm-parser/test.mjs <output-directory>/parser.wasm
 
 set -euo pipefail
 

@@ -10,9 +10,10 @@ without a round trip to the server.
 ## Building
 
 ```bash
-curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m)-linux.tar.gz | tar xz -C tmp
+# wasi-sdk names the AArch64 build `arm64`, not `aarch64`
+curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m | sed s/aarch64/arm64/)-linux.tar.gz | tar xz -C tmp
 ./utils/wasm-parser/build.sh
-node --experimental-wasm-exnref utils/wasm-parser/test.mjs tmp/wasm-parser/parser.wasm
+node utils/wasm-parser/test.mjs tmp/wasm-parser/parser.wasm
 ```
 
 The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
@@ -23,29 +24,30 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | `ch_format(ptr, size, one_line)` | parse and format; 1 = ok, 0 = parse error |
 | `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
 
-It needs an engine with the WebAssembly exception-handling proposal. `-fwasm-exceptions` is not
-optional: the parser reports errors by throwing, and the wasi-sdk headers refuse `setjmp.h`
-without it.
+It runs on a plain engine: the build is compiled with `-fignore-exceptions`, so no unwinding is
+emitted and the WebAssembly exception-handling proposal is not needed. A parser that does not
+match returns `false` rather than throwing (see check 19 in
+`ci/jobs/scripts/check_style/check_cpp.sh`), and the one exception left - the syntax error itself
+- is reported through `ch_format` returning 0.
 
 ## What it costs
 
-`-Os`, stripped, all 220 parser translation units plus their transitive closure:
+`-Os`, stripped, all 320 translation units of the parser and its transitive closure. Sizes are
+attributed to the defining object with the linker map:
 
 | component | KB | share |
 | --- | ---: | ---: |
-| `src/Parsers` | 1063 | 45% |
-| `src/Common` + `base` | 356 | 15% |
-| abseil | 196 | 8% |
-| re2 | 181 | 8% |
-| `src/Parsers/Access` | 178 | 7% |
-| `src/Access` | 156 | 7% |
-| fmt, double-conversion, zmij | 94 | 4% |
-| Poco | 63 | 3% |
-| `src/IO` + `src/Core` | 46 | 2% |
-| cctz | 30 | 1% |
-| entry point + runtime shim | 11 | 0% |
+| `src/Parsers` | 884 | 45% |
+| `src/Common` + `base` | 334 | 17% |
+| `src/Parsers/Access` | 148 | 7% |
+| `src/Access` | 142 | 7% |
+| fmt, double-conversion | 86 | 4% |
+| `src/IO` + `src/Core` | 40 | 2% |
+| Poco | 37 | 2% |
+| entry point + runtime shim | 3 | 0% |
 
-2.7 MB total, 789 KB gzipped.
+2.0 MB total, 573 KB gzipped. The 290 KB unaccounted for above are the data segments, the wasm
+type/import/export sections and wasi-libc.
 
 ## What is left out, and why
 
@@ -56,12 +58,15 @@ something a browser has no use for, and each would otherwise dominate the bundle
   `STD_EXCEPTION_HAS_STACK_TRACE`, which comes from ClickHouse's patched libc++ in
   `contrib/libcxx-cmake`. WebAssembly cannot walk its own call stack from user code anyway.
 * **Memory tracking and thread status.** Server bookkeeping; `malloc` is the only budget here.
-* **`Core/Settings.cpp`.** `ParserSetQuery` calls `Settings::castValueUtil` once, only to ask
-  whether a bare `SET x` names a `Bool` setting. That single call pulls in the whole settings
-  schema - every `SettingField*Traits` specialization - which is larger than the parser itself.
-* **The timezone database.** `contrib/cctz-cmake` generates `getTimeZone` with all of tzdata
-  compiled into the binary.
 * **Query masking.** Configured on the server; there is nothing to mask client-side.
+
+`Core/Settings.cpp` and the timezone database used to be on this list. They are not left out any
+more - the parser no longer reaches them at all. `ParserSetQuery` used to call
+`Settings::castValueUtil`, only to ask whether a bare `SET x` names a `Bool` setting; it now
+records that the value was omitted and `BaseSettings::applyChange` checks the type, where the
+schema is known. `SYSTEM ... SET FAKE TIME` used to parse and format its argument through
+`DateLUT`, which compiled all of tzdata into the module; the AST keeps the literal text and the
+interpreter resolves it against the server timezone, which is where that decision belongs.
 
 The `shim/` directory supplies the POSIX headers wasi-libc omits (`netdb.h`, `ucontext.h`,
 `sched.h`, `pwd.h`, rounding modes in `fenv.h`, `sun_path`, `__u6_addr`). Nothing in the build
@@ -69,11 +74,13 @@ calls into them - they exist so that headers naming those types in signatures st
 
 ## Where the remaining size is
 
-Roughly 30% of the bundle is access-entity DDL: `CREATE USER`/`ROLE`/`QUOTA`/`ROW POLICY` and
-`GRANT` cost 334 KB of parser and `Access` code directly. A "queries only" profile would be a
-large, easy cut for a Web UI that never issues those statements.
+Access-entity DDL is the largest single candidate for removal: `CREATE USER`/`ROLE`/`QUOTA`/`ROW
+POLICY` and `GRANT` cost 290 KB of parser and `Access` code directly, 15% of the module. A
+"queries only" profile would be a large, easy cut for a Web UI that never issues those
+statements.
 
-re2 and abseil (377 KB together) are pulled in by `COLUMNS('regexp')` matchers, by
-`ASTFunction`'s secret-argument finder, and by access-rights parsing. `ASTColumnsRegexpMatcher`
-compiles the pattern while *parsing*, which is what forces a regex engine into a component that
-otherwise only builds a syntax tree.
+re2, abseil and cctz used to account for another 407 KB. They are gone: `COLUMNS('regexp')` and
+`GRANT ... ON S3('...')` patterns are compiled where the pattern is *used* rather than where it
+is parsed (`Interpreters/applyColumnsTransformer.cpp` and `InterpreterGrantQuery`), the two
+secret-masking regular expressions became string scans, and `IParser.h` and `LiteralTokenMap`
+have their own containers.
