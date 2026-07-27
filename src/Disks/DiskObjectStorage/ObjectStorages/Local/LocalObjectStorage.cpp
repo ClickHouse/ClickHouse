@@ -56,11 +56,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// An identifier of the file content, used the same way as an ETag of a remote object:
-/// it must change on every modification of the file. `st_mtim` alone is not enough,
-/// because the filesystem timestamp granularity can be coarser than the interval between
-/// two consecutive writes, so the inode number and the size participate as well.
-/// Conditional writes (`If-Match`) publish a new file with `rename`, hence a new inode.
 String makeETag(const struct stat & file_stat)
 {
 #if defined(OS_DARWIN)
@@ -270,14 +265,10 @@ private:
     BlobStorageLogWriterPtr blob_log;
 };
 
-/// Atomically make `temp_path` visible as `target_path`, provided the precondition still holds.
-/// An empty `if_match_etag` means `If-None-Match: *`, otherwise it is `If-Match: <etag>`.
 void publishConditionally(const String & temp_path, const String & target_path, const std::optional<String> & if_match_etag)
 {
     if (!if_match_etag.has_value())
     {
-        /// `link` fails with `EEXIST` if the target name is already taken, which is exactly
-        /// the `If-None-Match: *` semantics, and it is atomic.
         if (0 == ::link(temp_path.c_str(), target_path.c_str()))
             return;
 
@@ -290,16 +281,12 @@ void publishConditionally(const String & temp_path, const String & target_path, 
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_LINK, target_path, "Cannot link {} to {}", temp_path, target_path);
     }
 
-    /// Compare-and-swap. A local filesystem has no conditional `rename`, so the comparison and
-    /// the replacement are serialized against the other conditional writers of the same
-    /// directory by an exclusive `flock` on the directory itself (the target file cannot be
-    /// locked: every writer replaces it with a new inode).
     const String parent_path = fs::path(target_path).parent_path();
     int dir_fd = ::open(parent_path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (dir_fd < 0)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_OPEN_FILE, parent_path, "Cannot open directory {}", parent_path);
 
-    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(dir_fd); }); /// Releases the lock as well.
+    SCOPE_EXIT({ [[maybe_unused]] int err = ::close(dir_fd); });
 
     if (0 != ::flock(dir_fd, LOCK_EX))
         ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, parent_path, "Cannot lock directory {}", parent_path);
@@ -326,10 +313,6 @@ void publishConditionally(const String & temp_path, const String & target_path, 
         ErrnoException::throwFromPath(ErrorCodes::SYSTEM_ERROR, target_path, "Cannot rename {} to {}", temp_path, target_path);
 }
 
-/// A write with a precondition (`If-None-Match` / `If-Match`). The data is written into a
-/// temporary file in the same directory and published under the target name only when the
-/// buffer is finalized, so, like for a remote object storage, a concurrent reader never
-/// observes a partially written object and a failed precondition leaves no traces.
 class WriteBufferToConditionallyPublishedFile final : public WriteBufferFromFileDecorator
 {
 public:
@@ -385,8 +368,6 @@ private:
         removeTemporaryFile();
     }
 
-    /// After a successful `link` the temporary name still refers to the published inode,
-    /// after a successful `rename` it is already gone.
     void removeTemporaryFile() noexcept
     {
         if (std::exchange(temporary_file_removed, true))
