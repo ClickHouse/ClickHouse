@@ -5,6 +5,7 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Backups/BackupsWorker.h>
 #include <Common/typeid_cast.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseFactory.h>
@@ -47,6 +48,12 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char alter_pause_before_alter_lock[];
+    extern const char alter_pause_after_alter_under_lock[];
+}
 
 namespace MergeTreeSetting
 {
@@ -314,6 +321,11 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
     {
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
+            /// Test-only (issue #110036): park the ALTER between its access-check metadata pin
+            /// (getRequiredAccess -> isRowExistsLightweightDeleteMarker, before this lock) and lockForAlter,
+            /// so a test can deterministically apply a concurrent ALTER_METADATA inside that window.
+            FailPointInjection::pauseFailPoint(FailPoints::alter_pause_before_alter_lock);
+
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
             /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
             /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
@@ -333,6 +345,10 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             alter_commands->prepare(*metadata_snapshot, share_nested);
             table->checkAlterIsPossible(*alter_commands, context);
             table->alter(*alter_commands, context, alter_lock);
+
+            /// Test-only (issue #110036): keep lockForAlter held after this commit, so a test can prove a
+            /// concurrent (plain MergeTree) ALTER's pre-lock metadata pin is stale relative to it.
+            FailPointInjection::pauseFailPoint(FailPoints::alter_pause_after_alter_under_lock);
         }
         else if (auto * mutation_commands = std::get_if<MutationCommands>(&segment))
         {
