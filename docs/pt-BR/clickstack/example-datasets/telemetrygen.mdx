@@ -15,15 +15,11 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
 <Tabs>
   <Tab title="ClickStack Gerenciado">
     <Steps>
-      <Step>
-        ### Pré-requisitos
-
+      <Step title="Pré-requisitos" id="prerequisites-managed">
         Este guia pressupõe que você tenha concluído o [Guia de primeiros passos do Managed ClickStack](/pt-BR/clickstack/deployment/managed) e esteja com um coletor OpenTelemetry em execução, com os endpoints OTLP gRPC (`4317`) e HTTP (`4318`) acessíveis a partir da máquina em que você executa o `telemetrygen`. Se você [protegeu o coletor](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector) com um `OTLP_AUTH_TOKEN`, mantenha esse valor em mãos.
       </Step>
 
-      <Step>
-        ### Instalar o telemetrygen
-
+      <Step title="Instalar o telemetrygen" id="install-telemetrygen-managed">
         Execute o `telemetrygen` a partir da sua imagem Docker (não é necessário instalar). Defina um pequeno wrapper para manter os comandos abaixo legíveis; `--add-host` permite que o contêiner acesse um collector em execução no host:
 
         ```shell
@@ -42,9 +38,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         ```
       </Step>
 
-      <Step>
-        ### Defina variáveis de ambiente
-
+      <Step title="Defina as variáveis de ambiente" id="set-env-vars-managed">
         Exporte o token de autenticação se o collector estiver protegido:
 
         ```shell
@@ -67,9 +61,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         ```
       </Step>
 
-      <Step>
-        ### Gerar logs
-
+      <Step title="Gerar logs" id="generate-logs-managed">
         Envie logs com uma combinação realista de níveis de severidade entre os serviços, em sua maioria informativos, com um aviso e um erro, em vez de um único fluxo uniforme:
 
         ```shell
@@ -93,9 +85,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         * `--telemetry-attributes` define atributos por registro.
       </Step>
 
-      <Step>
-        ### Gerar traces
-
+      <Step title="Gerar traces" id="generate-traces-managed">
         Envie traces com vários spans de diversos serviços saudáveis, além de uma dependência com falha. Isso dá ao Service Map uma configuração realista, majoritariamente saudável, com um serviço apresentando erros, e preenche as visualizações de erro:
 
         ```shell
@@ -121,9 +111,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         * `--workers` executa vários geradores em paralelo para gerar um volume maior e mais variado.
       </Step>
 
-      <Step>
-        ### Gerar métricas
-
+      <Step title="Gerar métricas" id="generate-metrics-managed">
         Envie os três tipos comuns de métricas para que os painéis tenham contadores, gauges e uma distribuição. Ao contrário de alguns geradores, o `telemetrygen` respeita `--duration` para métricas, então não é preciso interromper manualmente:
 
         ```shell
@@ -135,9 +123,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         `--metric-type` aceita `Gauge`, `Sum`, `Histogram` ou `ExponentialHistogram`. `--otlp-metric-name` define o nome da série para que você possa encontrá-la na UI, e `--aggregation-temporality` é `delta` ou `cumulative`.
       </Step>
 
-      <Step>
-        ### Verifique no ClickStack
-
+      <Step title="Verifique no ClickStack" id="verify-managed">
         Abra a UI do ClickStack no console do ClickHouse Cloud. Na visualização `Busca`, defina o intervalo de tempo como `Last 15 minutes` e alterne a origem entre `Logs` e `Traces`. Filtre por `ServiceName` para ver os serviços `frontend`, `checkout`, `cart` e `payment`, e por `SeverityText` para encontrar os logs de aviso e erro. Abra um trace de `payment` para ver os spans filhos e o status de erro. Abra o `Chart Explorer`, selecione `Metrics` e crie um gráfico para um dos nomes de métrica definidos acima (por exemplo, `http.server.requests`) para verificar a ingestão de métricas.
       </Step>
     </Steps>
@@ -145,16 +131,12 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
 
   <Tab title="ClickStack Open Source">
     <Steps>
-      <Step>
-        ### Pré-requisitos
-
+      <Step title="Pré-requisitos" id="prerequisites-oss">
         Este guia parte do pressuposto de que você iniciou o Open Source ClickStack usando as [instruções para a imagem all-in-one](/pt-BR/clickstack/getting-started/oss) e que os endpoints OTLP (`4317` gRPC e `4318` HTTP) estão acessíveis. Você também precisa da API key de ingestão na interface do HyperDX, em `Team Settings > API Keys`.
       </Step>
 
-      <Step>
-        ### Instale o telemetrygen
-
-        Execute o `telemetrygen` usando a imagem Docker (sem necessidade de instalação). Defina um pequeno wrapper para que os comandos abaixo continuem legíveis; `--add-host` permite que o contêiner se conecte a um collector escutando no host:
+      <Step title="Instalar o telemetrygen" id="install-telemetrygen-oss">
+        Execute o `telemetrygen` a partir da sua imagem Docker (não é necessário instalar). Defina um pequeno wrapper para manter os comandos abaixo legíveis; `--add-host` permite que o contêiner acesse um collector em execução no host:
 
         ```shell
         telemetrygen() {
@@ -164,7 +146,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         export OTEL_ENDPOINT=host.docker.internal:4317
         ```
 
-        Ou instale o binário com Go e use `localhost` como destino:
+        Ou instale o binário com Go e aponte para `localhost`:
 
         ```shell
         go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
@@ -172,16 +154,14 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         ```
       </Step>
 
-      <Step>
-        ### Defina as variáveis de ambiente
-
+      <Step title="Defina variáveis de ambiente" id="set-env-vars-oss">
         Exporte a API key de ingestão:
 
         ```shell
         export CLICKSTACK_API_KEY=<your_ingestion_api_key>
         ```
 
-        Defina um pequeno auxiliar `tg` para que cada comando especifique apenas o que muda (service, severity, status, attributes):
+        Defina um pequeno helper `tg` para que cada comando especifique apenas o que muda (serviço, severidade, status, atributos):
 
         ```shell
         tg() { local signal=$1; shift; telemetrygen "$signal" \
@@ -191,10 +171,8 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         ```
       </Step>
 
-      <Step>
-        ### Gerar logs
-
-        Envie logs com uma combinação realista de níveis de severidade entre os serviços: a maioria informativos, com alguns avisos e um erro, em vez de um fluxo uniforme:
+      <Step title="Gerar logs" id="generate-logs-oss">
+        Envie logs com uma combinação realista de níveis de severidade entre os serviços, em sua maioria informativos, com um aviso e um erro, em vez de um único fluxo uniforme:
 
         ```shell
         tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
@@ -209,10 +187,8 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         ```
       </Step>
 
-      <Step>
-        ### Gerar traces
-
-        Envie traces com vários spans de vários serviços saudáveis e uma dependência com falha. Isso dá ao Service Map uma configuração mais realista, predominantemente saudável, mas com um serviço apresentando erro, e preenche as visualizações de erro:
+      <Step title="Gerar traces" id="generate-traces-oss">
+        Envie traces com vários spans de diversos serviços saudáveis, além de uma dependência com falha. Isso dá ao Service Map uma configuração realista, majoritariamente saudável, com um serviço apresentando erros, e preenche as visualizações de erro:
 
         ```shell
         # Healthy services: the bulk of the traffic, all spans Ok
@@ -229,9 +205,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         ```
       </Step>
 
-      <Step>
-        ### Gerar métricas
-
+      <Step title="Gerar métricas" id="generate-metrics-oss">
         Envie os três tipos de métrica mais comuns para que os gráficos exibam um contador, um gauge e uma distribuição:
 
         ```shell
@@ -243,9 +217,7 @@ Este guia pressupõe que o collector já esteja em execução com endpoints OTLP
         `--metric-type` aceita `Gauge`, `Sum`, `Histogram` ou `ExponentialHistogram`.
       </Step>
 
-      <Step>
-        ### Verifique no ClickStack
-
+      <Step title="Verifique no ClickStack" id="verify-oss">
         Acesse [http://localhost:8080](http://localhost:8080) para abrir a UI do ClickStack. Na visualização `Search`, defina o intervalo de tempo como `Last 15 minutes` e alterne a source entre `Logs` e `Traces`. Aplique um filtro em `ServiceName` para ver os serviços `frontend`, `checkout`, `cart` e `payment`, e em `SeverityText` para encontrar as linhas de log de aviso e erro. Abra um trace de `payment` para ver os spans filhos e o status de erro. Abra o `Chart Explorer`, selecione `Metrics` e crie um gráfico com um dos nomes de métricas definidos acima (por exemplo, `http.server.requests`) para verificar a ingestão de métricas.
       </Step>
     </Steps>

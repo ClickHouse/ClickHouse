@@ -25,7 +25,8 @@ Please note that implementing and managing a separation of storage and compute a
 Don't configure any AWS/GCS life cycle policy. This isn't supported and could lead to broken tables.
 </Warning>
 
-## 1. Use S3 as a ClickHouse disk {#1-use-s3-as-a-clickhouse-disk}
+<Steps>
+<Step title="Use S3 as a ClickHouse disk" id="1-use-s3-as-a-clickhouse-disk">
 
 ### Creating a disk {#creating-a-disk}
 
@@ -88,7 +89,8 @@ You can now restart the ClickHouse server to have the changes take effect:
 service clickhouse-server restart
 ```
 
-## 2. Create a table backed by S3 {#2-create-a-table-backed-by-s3}
+</Step>
+<Step title="Create a table backed by S3" id="2-create-a-table-backed-by-s3">
 
 To test that we've configured the S3 disk properly, we can attempt to create and query a table.
 
@@ -156,7 +158,8 @@ If everything worked successfully, you're now using ClickHouse with separated st
 
 <Image img="/images/guides/s3_bucket_example.webp" size="md" alt="S3 bucket example using separation of compute and storage" border/>
 
-## 3. Implementing replication for fault tolerance (optional) {#3-implementing-replication-for-fault-tolerance-optional}
+</Step>
+<Step title="Implementing replication for fault tolerance (optional)" id="3-implementing-replication-for-fault-tolerance-optional">
 
 <Warning>
 Don't configure any AWS/GCS life cycle policy. This isn't supported and could lead to broken tables.
@@ -166,6 +169,9 @@ For fault tolerance, you can use multiple ClickHouse server nodes distributed ac
 
 Replication with S3 disks can be accomplished by using the `ReplicatedMergeTree` table engine. See the following guide for details:
 - [Replicating a single shard across two AWS regions using S3 Object Storage](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#s3-multi-region).
+
+</Step>
+</Steps>
 
 ## Further reading {#further-reading}
 

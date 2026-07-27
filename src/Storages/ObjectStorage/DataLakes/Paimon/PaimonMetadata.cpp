@@ -31,6 +31,7 @@
 #include <base/MemorySanitizer.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/SipHash.h>
 #include <Common/assert_cast.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
@@ -52,6 +53,7 @@ extern const int REPLICA_IS_ALREADY_ACTIVE;
 namespace Setting
 {
 extern const SettingsBool use_paimon_partition_pruning;
+extern const SettingsBool use_paimon_metadata_files_cache;
 extern const SettingsInt64 paimon_target_snapshot_id;
 extern const SettingsUInt64 max_consume_snapshots;
 }
@@ -62,6 +64,37 @@ extern const DataLakeStorageSettingsBool paimon_incremental_read;
 extern const DataLakeStorageSettingsInt64 paimon_metadata_refresh_interval_sec;
 extern const DataLakeStorageSettingsString paimon_keeper_path;
 extern const DataLakeStorageSettingsString paimon_replica_name;
+}
+
+namespace
+{
+/// Build a cache-key prefix that uniquely identifies a Paimon table instance.
+///
+/// Paimon's own table UUID defaults to the table name, so it cannot
+/// distinguish two tables that once shared the same path (e.g. after
+/// DROP + re-CREATE).  Instead we hash three orthogonal components:
+///   - data-source description  (host:port/bucket for S3, URL/container
+///     for Azure, full URL for HDFS — isolates different storage backends)
+///   - table path               (isolates different tables on the same backend)
+///   - schema-0 timeMillis      (isolates DROP-then-recreate of the same path,
+///     because every CREATE writes a fresh schema-0 with a new timestamp)
+String buildPaimonCacheKeyPrefix(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const String & table_name,
+    Int64 schema0_time_millis)
+{
+    const String link_identity = configuration->getDataSourceDescription();
+    /// Feed each component into SipHash with its length prefix to avoid
+    /// ambiguity when a component itself contains the delimiter character.
+    /// For example, link="a|b" + table="c" must differ from link="a" + table="b|c".
+    SipHash hash;
+    hash.update(link_identity.size());
+    hash.update(link_identity);
+    hash.update(table_name.size());
+    hash.update(table_name);
+    hash.update(schema0_time_millis);
+    return fmt::format("{:016x}", hash.get64());
+}
 }
 
 DataLakeMetadataPtr PaimonMetadata::create(
@@ -86,6 +119,15 @@ DataLakeMetadataPtr PaimonMetadata::create(
 
     /// Create table client
     PaimonTableClientPtr table_client = std::make_shared<PaimonTableClient>(object_storage, table_path, global_context);
+
+    /// Always latch schema-0 timeMillis before loading any schema from the table.
+    /// This anchors the whole initialization to one table identity: if the upstream
+    /// table is `DROP` + `CREATE`d while `create` is reading metadata, the post-load
+    /// `validateTableIdentity` in the constructor will fail before publishing state.
+    auto schema0_info = table_client->getTableSchemaInfoById(0);
+    auto schema0_json = table_client->getTableSchemaJSON(schema0_info);
+    Int64 schema0_time_millis = 0;
+    Paimon::getValueFromJSON(schema0_time_millis, schema0_json, "timeMillis");
 
     /// Get and validate schema
     auto schema_info = table_client->getLatestTableSchemaInfo();
@@ -143,15 +185,47 @@ DataLakeMetadataPtr PaimonMetadata::create(
             LOG_WARNING(stream_log, "Replica {} not activated for Paimon incremental read (maybe already active elsewhere)", replica_name);
     }
 
+    /// Only the session-level setting use_paimon_metadata_files_cache is latched here at
+    /// metadata construction time: PaimonPersistentComponents is immutable and shared across
+    /// queries, so whether this table is bound to the global cache is decided once.  This is
+    /// the same pattern used by IcebergMetadata (and all DataLake metadata that returns
+    /// supportsUpdate() == true).  To change the session-level decision for an existing table,
+    /// the user must DROP + re-CREATE the table with the desired setting.
+    ///
+    /// The server-level capacity (paimon_metadata_files_cache_size) is intentionally NOT
+    /// latched: it is a runtime setting that can be changed via SYSTEM RELOAD CONFIG, so the
+    /// pointer to the global cache is always kept and the actual usability is evaluated
+    /// dynamically at read time via isMetadataCacheActive().  This way raising/lowering the
+    /// size takes effect immediately even for already-created tables.
+    PaimonMetadataFilesCachePtr cache_ptr = nullptr;
+    if (local_context->getSettingsRef()[Setting::use_paimon_metadata_files_cache])
+        cache_ptr = local_context->getPaimonMetadataFilesCache();
+    else
+        LOG_TRACE(
+            log,
+            "Not using in-memory cache for paimon metadata files, because the setting use_paimon_metadata_files_cache is false.");
+
+    String table_cache_key_prefix;
+    if (cache_ptr)
+    {
+        const String table_name = configuration_ptr->getRawPath().path.empty()
+            ? table_path
+            : configuration_ptr->getRawPath().path;
+        table_cache_key_prefix = buildPaimonCacheKeyPrefix(configuration_ptr, table_name, schema0_time_millis);
+    }
+
     /// Create persistent components
     PaimonPersistentComponents persistent_components(
         schema_processor,
+        cache_ptr,
         stream_state,
         configuration_ptr->getPathForRead().path,
         table_path,
+        table_cache_key_prefix,
         partition_default_name,
         incremental_read_enabled,
-        metadata_refresh_interval_sec);
+        metadata_refresh_interval_sec,
+        schema0_time_millis);
 
     return std::make_unique<PaimonMetadata>(
         object_storage, configuration_ptr, global_context, std::move(persistent_components), table_client);
@@ -183,6 +257,7 @@ PaimonMetadata::PaimonMetadata(
 
     /// Load initial state
     auto initial_state = loadLatestState();
+    validateTableIdentity();
     if (initial_state)
     {
         std::atomic_store_explicit(&current_state, initial_state, std::memory_order_release);
@@ -260,10 +335,44 @@ PaimonTableStatePtr PaimonMetadata::loadLatestState() const
         snapshot.watermark);
 }
 
+void PaimonMetadata::validateTableIdentity() const
+{
+    /// Detect external table recreation by checking schema-0 timeMillis.
+    /// This guard is intentionally NOT tied to isMetadataCacheActive(): the schema_processor
+    /// caches schemas by id regardless of the metadata files cache capacity, so a stale schema
+    /// could otherwise be silently reused after an external DROP + re-CREATE at the same path
+    /// when paimon_metadata_files_cache_size is reloaded to 0.  Run it whenever the table
+    /// identity was latched at create time.
+    if (persistent_components.schema0_time_millis == 0)
+        return;
+
+    auto schema0_info = table_client->getTableSchemaInfoById(0);
+    auto schema0_json = table_client->getTableSchemaJSON(schema0_info);
+    Int64 current_schema0_time_millis = 0;
+    Paimon::getValueFromJSON(current_schema0_time_millis, schema0_json, "timeMillis");
+
+    if (current_schema0_time_millis != persistent_components.schema0_time_millis)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Underlying Paimon table was recreated (schema-0 timeMillis changed: {} -> {}). "
+            "Please DROP and re-CREATE the ClickHouse external table to pick up the new table identity.",
+            persistent_components.schema0_time_millis,
+            current_schema0_time_millis);
+}
+
 void PaimonMetadata::update(const ContextPtr & /*local_context*/)
 {
+    /// NOTE: This method only refreshes the snapshot state.  It does NOT re-evaluate
+    /// use_paimon_metadata_files_cache because cache_ptr lives in the immutable
+    /// PaimonPersistentComponents (same design as IcebergMetadata::update).
+
+    /// Validate table identity after loading the snapshot, so a DROP + re-CREATE
+    /// during loadLatestState() cannot publish a new table instance while reusing
+    /// schemas cached by schema_id.
+
     /// 1. Load new state outside any lock (I/O operations)
     auto new_state = loadLatestState();
+    validateTableIdentity();
     if (!new_state)
     {
         LOG_WARNING(log, "Paimon table has no snapshots yet, skip update");
@@ -370,25 +479,52 @@ PaimonTableStatePtr PaimonMetadata::extractTableState(StorageMetadataPtr storage
     return std::make_shared<PaimonTableState>(*paimon_state);
 }
 
-std::vector<PaimonManifestFileMeta> PaimonMetadata::getManifestList(const String & manifest_list_path) const
+ManifestListConstPtr PaimonMetadata::getManifestList(const String & manifest_list_path) const
 {
     if (manifest_list_path.empty())
-        return {};
+        return std::make_shared<const std::vector<PaimonManifestFileMeta>>();
 
-    /// No cache, load directly
+    if (persistent_components.isMetadataCacheActive())
+    {
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_list_path);
+        auto log_ptr = log;
+        auto client = table_client;
+        auto load_manifest_list = [log_ptr, client, manifest_list_path]()
+        {
+            LOG_TRACE(log_ptr, "Loading manifest list (cache miss): {}", manifest_list_path);
+            return client->getManifestMeta(manifest_list_path, /*disable_filesystem_cache=*/true);
+        };
+        return persistent_components.metadata_cache->getOrSetManifestList(cache_key, load_manifest_list);
+    }
+
     LOG_TRACE(log, "Loading manifest list (no cache): {}", manifest_list_path);
-    return table_client->getManifestMeta(manifest_list_path);
+    auto [manifest_list, _] = table_client->getManifestMeta(manifest_list_path);
+    return std::make_shared<const std::vector<PaimonManifestFileMeta>>(std::move(manifest_list));
 }
 
-PaimonManifest PaimonMetadata::getManifest(const String & manifest_path, Int64 schema_id) const
+ManifestConstPtr PaimonMetadata::getManifest(const String & manifest_path, Int64 schema_id) const
 {
     auto schema = persistent_components.schema_processor->getSchemaById(schema_id);
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", schema_id);
 
-    /// No cache, load directly
+    if (persistent_components.isMetadataCacheActive())
+    {
+        String cache_key = PaimonMetadataFilesCache::makeKey(persistent_components.table_cache_key_prefix, manifest_path + ":" + toString(schema_id));
+        auto log_ptr = log;
+        auto client = table_client;
+        auto partition_default_name = persistent_components.partition_default_name;
+        auto load_manifest = [log_ptr, client, manifest_path, schema, partition_default_name]()
+        {
+            LOG_TRACE(log_ptr, "Loading manifest (cache miss): {}", manifest_path);
+            return client->getDataManifest(manifest_path, *schema, partition_default_name, /*disable_filesystem_cache=*/true);
+        };
+        return persistent_components.metadata_cache->getOrSetManifest(cache_key, load_manifest);
+    }
+
     LOG_TRACE(log, "Loading manifest (no cache): {}", manifest_path);
-    return table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name);
+    return std::make_shared<const PaimonManifest>(
+        table_client->getDataManifest(manifest_path, *schema, persistent_components.partition_default_name));
 }
 
 ObjectIterator PaimonMetadata::iterate(
@@ -407,6 +543,9 @@ ObjectIterator PaimonMetadata::iterate(
         if (!state)
         {
             state = loadLatestState();
+            /// Publishing before the consumption-point validateTableIdentity() below is safe: that
+            /// check re-validates identity before any data is served, so a state from a recreated
+            /// table can only fail-close, never cause a silent stale read.
             if (state)
                 std::atomic_store_explicit(&current_state, state, std::memory_order_release);
         }
@@ -414,6 +553,14 @@ ObjectIterator PaimonMetadata::iterate(
 
     if (!state)
         return createKeysIterator({}, object_storage, callback); /// still no snapshot: return empty
+
+    /// Detect external table recreation before consuming the pinned/current/loaded state.
+    /// The normal path pins datalake_table_state during analysis (updateExternalDynamicMetadataIfExists)
+    /// and reaches here via extractTableState, so this is the only place that closes the
+    /// analysis->execution window where an external DROP + re-CREATE would otherwise be reused stale.
+    /// iterate() runs once per query read (the iterator is shared across streams), so this single
+    /// remote schema-0 check is negligible relative to the data scan it guards (fail-close).
+    validateTableIdentity();
 
     /// 2. Get schema from processor (cached)
     auto schema = persistent_components.schema_processor->getSchemaById(state->schema_id);
@@ -730,10 +877,10 @@ Strings PaimonMetadata::collectDataFilesFromManifests(
             return;
 
         auto manifest_metas = getManifestList(manifest_list_path);
-        for (const auto & meta : manifest_metas)
+        for (const auto & meta : *manifest_metas)
         {
             auto manifest = getManifest(meta.file_name, snapshot_state->schema_id);
-            for (const auto & entry : manifest.entries)
+            for (const auto & entry : manifest->entries)
             {
                 String file_path = (std::filesystem::path(persistent_components.table_path)
                     / entry.file.bucket_path / entry.file.file_name);

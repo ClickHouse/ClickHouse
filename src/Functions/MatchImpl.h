@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <base/types.h>
 #include <Common/Volnitsky.h>
+#include <Common/likePatternToRegexp.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/isValidUTF8.h>
 #include <Columns/ColumnString.h>
@@ -24,57 +25,8 @@ inline bool likePatternMatchesEverything(std::string_view pattern)
     return !pattern.empty() && pattern.find_first_not_of('%') == std::string_view::npos;
 }
 
-/// Is the [I]LIKE expression equivalent to a substring search?
-inline bool likePatternIsSubstring(std::string_view pattern, String & res)
-{
-    /// TODO: ignore multiple leading or trailing %
-    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
-        return false;
-
-    res.clear();
-    res.reserve(pattern.size() - 2);
-
-    const char * pos = pattern.data() + 1;
-    const char * const end = pattern.data() + pattern.size() - 1;
-
-    while (pos < end)
-    {
-        switch (*pos)
-        {
-            case '%':
-            case '_':
-                return false;
-            case '\\':
-                ++pos;
-                if (pos == end)
-                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
-                    return false;
-
-                switch (*pos)
-                {
-                    /// Known LIKE escape sequences:
-                    case '%':
-                    case '_':
-                    case '\\':
-                        res += *pos;
-                        break;
-                    /// For all other escape sequences, the backslash loses its special meaning
-                    default:
-                        res += '\\';
-                        res += *pos;
-                        break;
-                }
-
-                break;
-            default:
-                res += *pos;
-                break;
-        }
-        ++pos;
-    }
-
-    return true;
-}
+/// `likePatternIsSubstring` lives in `Common/likePatternToRegexp.h` so it can be shared with the
+/// `optimize_or_like_chain` rewrite passes; it is declared in namespace `DB` and used unqualified below.
 
 }
 
@@ -212,7 +164,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.data() + haystack_data.size();
@@ -283,7 +235,7 @@ struct MatchImpl
         }
         else
         {
-            /// NOTE This almost matches with the case of impl::likePatternIsSubstring.
+            /// NOTE This almost matches with the case of likePatternIsSubstring.
 
             const UInt8 * const begin = haystack_data.data();
             const UInt8 * const end = haystack_data.begin() + haystack_data.size();
@@ -375,7 +327,7 @@ struct MatchImpl
 
         /// Special case that the [I]LIKE expression reduces to finding a substring in a string
         String strstr_pattern;
-        if (is_like && impl::likePatternIsSubstring(needle, strstr_pattern))
+        if (is_like && likePatternIsSubstring(needle, strstr_pattern))
         {
             const UInt8 * const begin = haystack.data();
             const UInt8 * const end = haystack.data() + haystack.size();
@@ -538,7 +490,7 @@ struct MatchImpl
             || (!is_like && (needle == ".*" || needle == ".*?")))
             return !negate;
 
-        if (is_like && impl::likePatternIsSubstring(needle, required_substr))
+        if (is_like && likePatternIsSubstring(needle, required_substr))
         {
             if (required_substr.size() > haystack_length)
                 return negate;

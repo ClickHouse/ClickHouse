@@ -61,6 +61,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
+#include <Analyzer/Utils.h>
 
 
 namespace ProfileEvents
@@ -723,6 +724,22 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
+static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+{
+    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+    {
+        std::optional<TableExpressionModifiers> modifiers;
+        if (const auto * table_node = node->as<TableNode>())
+            modifiers = table_node->getTableExpressionModifiers();
+        else if (const auto * table_function_node = node->as<TableFunctionNode>())
+            modifiers = table_function_node->getTableExpressionModifiers();
+
+        if (modifiers && modifiers->hasStream())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+    }
+}
+
 struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
@@ -782,9 +799,11 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
     result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
 
     Stopwatch watch;
+    QueryTreeNodePtr query_tree;
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        query_tree = interpreter.getQueryTree();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
         /// Force planning so the effective ignore flags settle before we read them.
@@ -801,6 +820,10 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
+
+    if (query_tree)
+        rejectStreamingForExplainAnalyze(query_tree);
+
     result->planning_ns = watch.elapsed();
 
     analyzed_inner_query = std::move(result);
