@@ -2,6 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDExIDEwIj48c3R5bGU+LmJne2ZpbGw6I2ZmMH0ub3tmaWxsOiMwMDB9PC9zdHlsZT48cmVjdCBjbGFzcz0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiLz48cGF0aCBkPSJNMSwxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik0zLDEgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTUsMSBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNNywxIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik05LDQuMjUgaDEgdjEuNSBoLTEgeiIgY2xhc3M9Im8iLz48L3N2Zz4K">
     <title>ClickHouse Query</title>
 
@@ -197,6 +198,14 @@
             font-family: Roboto Mono, Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
             background: var(--background-color);
             color: var(--text-color);
+            /* Disable iOS Safari's automatic text inflation ("text autosizing"). On iPhone it
+               rescales the font size of text blocks by a per-block multiplier, which it applies
+               differently to the `#query` textarea and the `#query-backdrop` div behind it. That
+               breaks the character-for-character alignment the syntax-highlighting overlay relies
+               on, so the colors slide out from under the text. iPad, macOS, and visionOS Safari do
+               not inflate, which is why highlighting looks correct there but not on iPhone. */
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
         }
 
         body
@@ -503,8 +512,14 @@
             justify-content: center;
             padding: 0.25rem 0.6rem;
             cursor: pointer;
+            /* Inherit the page font, not just its size: a native <button> otherwise falls
+               back to the system button font (see #databases-hide), whose `normal`
+               line-height differs from the .tab divs' page font. In Firefox that makes the
+               [+] glyph's line box taller, so the button — aligned to flex-end like the
+               tabs — sticks up above them. Inheriting the font makes its height match the
+               tabs exactly, as it already does in Chromium. */
+            font: inherit;
             font-weight: bold;
-            font-size: 100%;
             background: var(--element-background-color);
             color: var(--text-color);
             border: 1px solid var(--border-color);
@@ -1703,6 +1718,21 @@
         #server_info
         {
             color: var(--misc-text-color);
+        }
+
+        /* On touch devices, mobile Safari automatically zooms the whole page when the user
+           focuses a form control whose font is smaller than 16px. With the `device-width`
+           viewport above, our 11pt controls fall below that threshold, so tapping the query
+           editor would jump the page. Raise the typography of the controls to 16px, together
+           with every layer that must mirror the textarea's metrics character-for-character
+           (`#query-backdrop`, `#completion-mirror`, `.completion-entry`) and the `#url_status`
+           overlay that sits on the URL input, so the highlighting overlay stays aligned. */
+        @media (hover: none) and (pointer: coarse)
+        {
+            input, textarea, #query-backdrop, #completion-mirror, .completion-entry, #url_status
+            {
+                font-size: 16px;
+            }
         }
 
         /* Prevents a different color when Chromium auto-fills inputs from the list. */
