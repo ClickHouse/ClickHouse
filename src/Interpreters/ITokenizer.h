@@ -443,34 +443,9 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
-#if USE_MECAB
-/// Splits Japanese text into words using the MeCab morphological analyzer (each token is one word as
-/// segmented by MeCab). The dictionary is loaded at runtime from <tokenizer><japanese> in the server
-/// config (see `MecabDictionaryManager`).
-struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
-{
-    JapaneseTokenizer();
-    JapaneseTokenizer(const JapaneseTokenizer & other);
-    ~JapaneseTokenizer() override;
-
-    static const char * getName() { return "japanese"; }
-    static const char * getExternalName() { return getName(); }
-    String getDescription() const override { return getName(); }
-
-    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
-    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
-
-    bool supportsStringLike() const override { return false; }
-    bool isStateful() const override { return true; }
-    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
-    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
-
-private:
-    struct JapaneseImpl;
-    /// Mutable per-string parsing state; like `SparseGramsTokenizer`, not concurrency-safe — clone per thread.
-    std::unique_ptr<JapaneseImpl> impl;
-};
-#endif
+/// The Japanese (MeCab) tokenizer is declared in its own header (`JapaneseTokenizer.h`) so that this
+/// widely-included header does not pull in `<mecab.h>`. `forEachToken` dispatches it via the base
+/// `nextInString` (see `Type::Japanese` below), so the concrete type is not needed here.
 
 namespace detail
 {
@@ -542,11 +517,10 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         }
 #if USE_MECAB
         case ITokenizer::Type::Japanese:
-        {
-            const auto & japanese_tokenizer = assert_cast<const JapaneseTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(japanese_tokenizer, data, length, callback);
+            /// Dispatch through the base virtual `nextInString` so this header needn't see the
+            /// MeCab-dependent `JapaneseTokenizer` definition.
+            detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
-        }
 #endif
     }
 }

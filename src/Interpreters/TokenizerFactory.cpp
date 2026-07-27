@@ -2,6 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Interpreters/ITokenizer.h>
+#if USE_MECAB
+#include <Interpreters/JapaneseTokenizer.h>
+#endif
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
