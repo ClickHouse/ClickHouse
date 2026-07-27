@@ -24,16 +24,57 @@ a
 b
 c
 String key NOT IN, partition pruning
+a
+b
+1
+1
 
 b
+1
 1
 Int64 key NOT IN, partition pruning
-0
+5
 7
 1
+1
+Cross-type UInt64 key NOT IN Nullable(String), partition pruning
+2
+3
+1
+1
 String key NOT has, partition pruning
-
+a
 b
+1
+1
+LowCardinality(Nullable(String)) source NOT IN, partition pruning
+a
+b
+1
+1
+Multi-column set NOT IN, one component NULL
+	0
+y	2
+1
+1
+All-NULL source set NOT IN
+
+a
+b
+1
+String key IN, partition pruning
+
+1
+1
+Tuple(Nullable, Nullable) key unchanged
+(1,2)
+(3,NULL)
+(NULL,NULL)
+(NULL,NULL)
+Duplicate key mapping stays relaxed
+1
+2
+3
 1
 Nullable(String) key IN
 a
