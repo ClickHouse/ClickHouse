@@ -699,50 +699,6 @@ def test_partition_affinity_shard_macro_reattach(kafka_cluster):
         assert leaked == "0", f"Re-attached macro shard leaked {leaked} messages"
 
 
-def test_partition_affinity_keeper_namespace_per_layout(kafka_cluster):
-    """
-    The derived Keeper namespace must be keyed on the full
-    (kafka_partition_shard_num, kafka_shard_count) layout, not just the shard
-    number: layouts (1, 2) and (1, 3) consume different partition subsets, so
-    they must not share /replicas, /topic_partition_locks or committed offsets.
-    Verify that two tables with the same base kafka_keeper_path but different
-    shard counts get disjoint Keeper subtrees, each with its own replica.
-    """
-    admin = k.get_admin_client(kafka_cluster)
-    topic_name = "affinity_layout_topic"
-    keeper_path = "/clickhouse/test/affinity_layout"
-
-    k.kafka_create_topic(admin, topic_name, num_partitions=6)
-    with k.existing_kafka_topic(admin, topic_name):
-        for layout_suffix, shard_count in (("of2", 2), ("of3", 3)):
-            instance.query(
-                f"""
-                CREATE TABLE test.kafka_layout_{layout_suffix} (partition_id UInt64, value UInt64)
-                ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg_{layout_suffix}', 'JSONEachRow', '\\n')
-                SETTINGS kafka_keeper_path = '{keeper_path}',
-                         kafka_replica_name = 'r_{layout_suffix}',
-                         kafka_partition_shard_num = '1',
-                         kafka_shard_count = {shard_count}
-                SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
-                """
-            )
-
-        nodes = instance.query(
-            "SELECT name FROM system.zookeeper WHERE path = '/clickhouse/test' AND name LIKE 'affinity_layout%' ORDER BY name"
-        ).strip()
-        assert nodes == "affinity_layout__shard1_of_2\naffinity_layout__shard1_of_3", (
-            f"Expected disjoint Keeper subtrees per affinity layout, got: {nodes}"
-        )
-
-        for layout_suffix, shard_count in (("of2", 2), ("of3", 3)):
-            replicas = instance.query(
-                f"SELECT name FROM system.zookeeper WHERE path = '{keeper_path}__shard1_of_{shard_count}/replicas'"
-            ).strip()
-            assert replicas == f"r_{layout_suffix}", (
-                f"Layout (1, {shard_count}): expected only its own replica, got: {replicas}"
-            )
-
-
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

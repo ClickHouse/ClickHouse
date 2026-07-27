@@ -466,7 +466,7 @@ partition_id % kafka_shard_count == kafka_partition_shard_num - 1
 
 Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be between 1 and `kafka_shard_count` inclusive. It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup. This allows the same table metadata to be shared across shards in a Replicated database, with each shard resolving its own value. Validation is performed after macro expansion.
 
-Each shard's Keeper state is automatically isolated by appending a `__shard{N}_of_{M}` suffix to `kafka_keeper_path` (e.g., `/clickhouse/kafka/mytable__shard1_of_2`), where `{N}` is the expanded `kafka_partition_shard_num` and `{M}` is `kafka_shard_count`. Including the shard count in the suffix ensures that tables with incompatible affinity layouts (e.g. `(1, 2)` and `(1, 3)`), which consume different partition subsets, never share replica registrations, partition locks, or committed offsets. All shards should use the same `kafka_keeper_path` value; the shard differentiation is handled automatically.
+All shards should use the same `kafka_keeper_path` value. Replicas with the same shard number share committed offsets and intent sizes, and only compete with each other for partition locks.
 
 Example with 3 shards consuming a 12-partition topic:
 

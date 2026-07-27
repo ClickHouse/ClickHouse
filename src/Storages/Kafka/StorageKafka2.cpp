@@ -655,20 +655,7 @@ void StorageKafka2::parsePartitionAffinitySettings()
     partition_shard_num = parsed;
     shard_count = shard_count_val;
 
-    /// Isolate Keeper coordination state per affinity bucket.
-    /// Use a sibling path (e.g. /foo__shard1_of_3) rather than a child path (e.g. /foo/1)
-    /// to avoid nesting under another table's Keeper root, which would cause
-    /// recursive deletion conflicts during drop.
-    /// The suffix is keyed on the full (kafka_partition_shard_num, kafka_shard_count) layout:
-    /// the shard count determines the eligible partition set, so tables with different
-    /// counts must not share `/replicas`, `/topic_partition_locks` or committed offsets.
-    if (!keeper_path.empty() && keeper_path.back() == '/')
-        keeper_path.resize(keeper_path.size() - 1);
-    keeper_path = keeper_path + "__shard" + toString(partition_shard_num) + "_of_" + toString(shard_count);
-    fs_keeper_path = keeper_path;
-    replica_path = keeper_path + "/replicas/" + (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
-
-    LOG_INFO(log, "Partition affinity enabled: partition_shard_num={}, shard_count={}, keeper_path={}", partition_shard_num, shard_count, keeper_path);
+    LOG_INFO(log, "Partition affinity enabled: partition_shard_num={}, shard_count={}", partition_shard_num, shard_count);
 }
 
 KafkaConsumer2Ptr StorageKafka2::createKafkaConsumer(size_t consumer_number)
@@ -801,6 +788,12 @@ bool StorageKafka2::createTableIfNotExists()
         ops.emplace_back(zkutil::makeCreateRequest(replicas_path, "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
 
+        if (shard_count > 0)
+            ops.emplace_back(zkutil::makeCreateRequest(
+                fs_keeper_path / "replicas" / (*kafka_settings)[KafkaSetting::kafka_replica_name].value / "shard_number",
+                fmt::format("{}", partition_shard_num),
+                zkutil::CreateMode::Persistent));
+
 
         Coordination::Responses responses;
         const auto code = keeper->tryMulti(ops, responses);
@@ -893,6 +886,10 @@ void StorageKafka2::createReplica()
         default:
             throw Coordination::Exception::fromPath(code, replica_path);
     }
+
+    if (shard_count > 0)
+        keeper->createIfNotExists(fs_keeper_path / "replicas" / (*kafka_settings)[KafkaSetting::kafka_replica_name].value / "shard_number",
+            fmt::format("{}", partition_shard_num));
 }
 
 

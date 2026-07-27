@@ -183,6 +183,7 @@ private:
 
 
     std::pair<TopicPartitionSet, ActiveReplicasInfo> getLockedTopicPartitions();
+    ActiveReplicasInfo getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock);
     std::pair<TopicPartitions, ActiveReplicasInfo> getAvailableTopicPartitions(const TopicPartitionOffsets & all_topic_partitions);
     std::optional<LockedTopicPartitionInfo> createLocksInfoIfFree(const TopicPartition & partition_to_lock);
 

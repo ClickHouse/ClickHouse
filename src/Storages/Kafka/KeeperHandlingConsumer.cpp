@@ -276,10 +276,47 @@ KeeperHandlingConsumer::getLockedTopicPartitions()
         already_locked_partitions_str.push_back(fmt::format("[{}:{}]", already_locks.topic, already_locks.partition_id));
     LOG_INFO(log, "Already locked topic partitions are [{}]", boost::algorithm::join(already_locked_partitions_str, ", "));
 
-    const auto replicas_count = keeper->getChildren(keeper_path / "replicas").size();
-    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
-    const auto has_replica_without_locks = replicas_with_lock.size() < replicas_count;
-    return {locked_partitions, ActiveReplicasInfo{replicas_count, has_replica_without_locks}};
+    return {locked_partitions, getActiveReplicasInfo(replicas_with_lock)};
+}
+
+KeeperHandlingConsumer::ActiveReplicasInfo
+KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> & replicas_with_lock)
+{
+    const auto replica_names = keeper->getChildren(keeper_path / "replicas");
+
+    /// Fast path: when partition affinity is disabled, all replicas share the same
+    /// layout, so we can count them without reading individual znode data.
+    if (shard_count == 0)
+    {
+        const auto replicas_count = replica_names.size();
+        LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total", replicas_with_lock.size(), replicas_count);
+        return ActiveReplicasInfo{replicas_count, replicas_with_lock.size() < replicas_count};
+    }
+
+    /// Only count replicas whose shard number matches this replica's shard.
+    /// Replicas with a different shard number form a disjoint rebalancing group
+    /// and must not be counted.
+    const auto my_shard_num = std::to_string(partition_shard_num);
+
+    size_t matching_replica_count = 0;
+    size_t matching_replicas_with_lock = 0;
+    for (const auto & name : replica_names)
+    {
+        String shard_num_data;
+        if (!keeper->tryGet(keeper_path / "replicas" / name / "shard_number", shard_num_data))
+            continue;
+
+        if (shard_num_data != my_shard_num)
+            continue;
+
+        matching_replica_count++;
+        if (replicas_with_lock.contains(name))
+            matching_replicas_with_lock++;
+    }
+
+    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total (shard={})",
+             matching_replicas_with_lock, matching_replica_count, my_shard_num);
+    return ActiveReplicasInfo{matching_replica_count, matching_replicas_with_lock < matching_replica_count};
 }
 
 std::pair<KeeperHandlingConsumer::TopicPartitions, KeeperHandlingConsumer::ActiveReplicasInfo>
