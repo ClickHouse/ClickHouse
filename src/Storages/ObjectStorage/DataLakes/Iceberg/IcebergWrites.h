@@ -93,11 +93,15 @@ void generateManifestFile(
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
     Poco::JSON::Object::Ptr schema_to_serialize = nullptr);
 
-/// Per manifest-list entry existing-file/existing-row counts for a manifest-only rewrite, where every referenced data file already existed.
-struct ManifestListEntryExistingCounts
+/// Per manifest-list entry file/row counts for rewritten manifests. Reported as existing
+/// counts when the rewritten manifest preserves entry lineage (a metadata-only rewrite:
+/// its entries stay EXISTING), or as added counts when the manifest is regenerated
+/// without lineage (its entries are emitted as ADDED, and the manifest-list entry must
+/// agree with the manifest it points to).
+struct ManifestListEntryCounts
 {
-    Int64 existing_files_count = 0;
-    Int64 existing_rows_count = 0;
+    Int64 files_count = 0;
+    Int64 rows_count = 0;
     /// Minimum data sequence number across the entries in this manifest, used as the manifest-list `min_sequence_number`.
     Int64 min_sequence_number = 0;
 };
@@ -114,7 +118,8 @@ void generateManifestList(
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true,
     const std::vector<Iceberg::FileContentType> & per_entry_content_types = {},
-    const std::vector<ManifestListEntryExistingCounts> & existing_entry_counts = {},
+    const std::vector<ManifestListEntryCounts> & entry_counts = {},
+    bool entry_counts_are_added = false,
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
     const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
