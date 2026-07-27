@@ -15,7 +15,7 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
 }
 
-struct JapaneseTokenizer::Impl
+struct JapaneseTokenizer::JapaneseImpl
 {
     MecabDictionaryPtr dictionary;
     std::unique_ptr<MeCab::Lattice> lattice;
@@ -32,19 +32,19 @@ struct JapaneseTokenizer::Impl
         dictionary = MecabDictionaryManager::instance().getJapaneseDictionary();
         lattice.reset(dictionary->getModel().createLattice());
         if (!lattice)
-            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Failed to create a MeCab lattice for the Japanese tokenizer");
+            throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Failed to initialize the MeCab Japanese tokenizer");
     }
 };
 
 JapaneseTokenizer::JapaneseTokenizer()
-    : ITokenizerHelper(Type::Japanese), impl(std::make_shared<Impl>())
+    : ITokenizerHelper(Type::Japanese), impl(std::make_shared<JapaneseImpl>())
 {
 }
 
 /// Clones (per-thread copies) start with fresh parsing state; the dictionary is re-fetched cheaply
 /// from the process-wide cache on first use.
 JapaneseTokenizer::JapaneseTokenizer(const JapaneseTokenizer &)
-    : ITokenizerHelper(Type::Japanese), impl(std::make_shared<Impl>())
+    : ITokenizerHelper(Type::Japanese), impl(std::make_shared<JapaneseImpl>())
 {
 }
 

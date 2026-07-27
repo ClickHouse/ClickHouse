@@ -65,12 +65,10 @@ namespace S3AuthSetting
 }
 #endif
 
-MecabDictionary::MecabDictionary(std::unique_ptr<MeCab::Model> model_, String dictionary_dir_)
-    : model(std::move(model_)), dictionary_dir(std::move(dictionary_dir_))
+MecabDictionary::MecabDictionary(std::unique_ptr<MeCab::Model> model_, String dictionary_path_)
+    : model(std::move(model_)), dictionary_path(std::move(dictionary_path_))
 {
 }
-
-MecabDictionary::~MecabDictionary() = default;
 
 namespace
 {
@@ -288,14 +286,14 @@ MecabDictionaryPtr MecabDictionaryManager::getJapaneseDictionary()
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "The Japanese tokenizer requires a dictionary configured under <tokenizer><japanese> in the server configuration");
 
-    const String sha = Poco::toLower(config.getString(configKey("dictionarySha"), ""));
+    const String sha = Poco::toLower(config.getString(configKey("dictionary_sha"), ""));
 
     /// Reuse the cached dictionary if the configuration still points at the same one.
-    if (cached_dictionary && cached_sha == sha)
+    if (cached_dictionary && dictionary_sha == sha)
         return cached_dictionary;
 
     cached_dictionary = loadJapaneseDictionary(context, sha);
-    cached_sha = sha;
+    dictionary_sha = sha;
     return cached_dictionary;
 }
 
@@ -304,20 +302,22 @@ MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary(const ContextP
     const auto & config = context->getConfigRef();
     LoggerPtr log = getLogger("MecabDictionaryManager");
 
-    const String location = config.getString(configKey("dictionaryLocation"), "");
+    const String location = config.getString(configKey("dictionary_location"), "");
 
     if (location.empty())
         throw Exception(
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-            "Missing <tokenizer><japanese><dictionaryLocation> in the server configuration");
+            "Missing <tokenizer><japanese><dictionary_location> in the server configuration");
     if (expected_sha.empty())
         throw Exception(
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
-            "Missing <tokenizer><japanese><dictionarySha> in the server configuration. "
+            "Missing <tokenizer><japanese><dictionary_sha> in the server configuration. "
             "The SHA-256 of the dictionary archive is required to verify its integrity before loading");
 
     /// Cache under the server data path, keyed by the verified SHA (download+verify happen once).
     const fs::path cache_dir = fs::path(context->getPath()) / "mecab_dictionaries" / expected_sha;
+    /// Written only after a fully successful download+verify+extract; its presence means the cached
+    /// dictionary is complete and can be reused without downloading again.
     const fs::path ready_marker = cache_dir / ".ready";
 
     /// Keep the archive's original extension: `createArchiveReader` picks the reader by extension.
@@ -357,7 +357,7 @@ MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary(const ContextP
                 "SHA-256 mismatch for the Japanese dictionary downloaded from '{}'. "
                 "Expected {} but the downloaded file has {}. The dictionary was NOT loaded. "
                 "This indicates the file is corrupted or has been tampered with; verify "
-                "<tokenizer><japanese><dictionarySha> and the source at <dictionaryLocation>.",
+                "<tokenizer><japanese><dictionary_sha> and the source at <dictionary_location>.",
                 location, expected_sha, actual_sha);
         }
 

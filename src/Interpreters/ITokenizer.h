@@ -444,9 +444,9 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
 };
 
 #if USE_MECAB
-/// Splits Japanese text into words using the MeCab morphological analyzer; each token is the surface
-/// form of one MeCab node. The dictionary is loaded at runtime from <tokenizer><japanese> in the
-/// server config (see `MecabDictionaryManager`).
+/// Splits Japanese text into words using the MeCab morphological analyzer (each token is one word as
+/// segmented by MeCab). The dictionary is loaded at runtime from <tokenizer><japanese> in the server
+/// config (see `MecabDictionaryManager`).
 struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
 {
     JapaneseTokenizer();
@@ -466,9 +466,9 @@ struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
 private:
-    struct Impl;
+    struct JapaneseImpl;
     /// Shared model + mutable per-string state; like `SparseGramsTokenizer`, not concurrency-safe — clone per thread.
-    std::shared_ptr<Impl> impl;
+    std::shared_ptr<JapaneseImpl> impl;
 };
 #endif
 

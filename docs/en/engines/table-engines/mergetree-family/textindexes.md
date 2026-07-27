@@ -173,19 +173,19 @@ The `japanese` tokenizer needs a MeCab dictionary, which ClickHouse does not shi
 ```xml
 <tokenizer>
     <japanese>
-        <dictionaryLocation>https://example.com/dictionary.tar.zst</dictionaryLocation>
-        <dictionarySha>0123...cdef</dictionarySha>
+        <dictionary_location>https://example.com/dictionary.tar.zst</dictionary_location>
+        <dictionary_sha>0123...cdef</dictionary_sha>
     </japanese>
 </tokenizer>
 ```
 
-- `dictionaryLocation` is the location of an archive (for example `.tar.zst`) of a compiled MeCab dictionary. Any official dictionary works, such as [IPADIC](https://github.com/taku910/mecab) or [UniDic](https://clrd.ninjal.ac.jp/unidic/). Supported locations:
+- `dictionary_location` is the location of an archive (for example `.tar.zst`) of a compiled MeCab dictionary. Any official dictionary works, such as [IPADIC](https://github.com/taku910/mecab) or [UniDic](https://clrd.ninjal.ac.jp/unidic/). Supported locations:
     - a local file path;
     - an `http(s)://` URL, fetched as a plain download (use this for a public or pre-signed object);
     - an S3-compatible object store, addressed either as `s3://`/`gs://`/`oss://` or as a full `http(s)://endpoint/bucket/key` URL. This works with any S3-compatible service (AWS S3, GCS, MinIO, on-prem, ...), not only AWS. Add the S3 settings to the same `<japanese>` section — `access_key_id`, `secret_access_key`, `region`, `no_sign_request`, etc.; their presence is what makes an `http(s)://` URL use the S3 client rather than a plain download.
-- `dictionarySha` is the SHA-256 of that archive. It is verified before the dictionary is loaded; on a mismatch the dictionary is not loaded and an error is raised.
+- `dictionary_sha` is the SHA-256 of that archive. It is verified before the dictionary is loaded; on a mismatch the dictionary is not loaded and an error is raised.
 
-The archive is downloaded and extracted once, then cached locally. Because the dictionary determines how documents are tokenized, the same `dictionarySha` must be configured on all replicas.
+The archive is downloaded and extracted once, then cached locally. Because the dictionary determines how documents are tokenized, the same `dictionary_sha` must be configured on all replicas.
 
 Once the dictionary is configured, the `japanese` tokenizer is used like any other. For example:
 

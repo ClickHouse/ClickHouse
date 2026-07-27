@@ -9,5 +9,5 @@ exercised without a large official dictionary.
 
 To regenerate the binary after editing `src/`, run `./generate.sh`. It builds MeCab's
 `mecab-dict-index` from the vendored `contrib/MeCab` sources, compiles the dictionary, packs it
-reproducibly, and prints the SHA-256. If the SHA changes, update `<dictionarySha>` in
+reproducibly, and prints the SHA-256. If the SHA changes, update `<dictionary_sha>` in
 `../configs/mecab_tokenizer.xml`.

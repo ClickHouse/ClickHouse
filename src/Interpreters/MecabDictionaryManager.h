@@ -5,6 +5,7 @@
 #if USE_MECAB
 
 #include <base/types.h>
+#include <base/defines.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <memory>
@@ -18,29 +19,33 @@ class Model;
 namespace DB
 {
 
-/// A loaded MeCab dictionary: owns the `MeCab::Model` and the directory it was extracted to.
-/// The model is shared; each consumer creates its own `Lattice` from it.
+/// A loaded MeCab dictionary: owns the `MeCab::Model` and its associated dictionary directory.
 class MecabDictionary
 {
 public:
-    MecabDictionary(std::unique_ptr<MeCab::Model> model_, String dictionary_dir_);
-    ~MecabDictionary();
+    MecabDictionary(std::unique_ptr<MeCab::Model> model_, String dictionary_path_);
 
     const MeCab::Model & getModel() const { return *model; }
 
 private:
-    std::unique_ptr<MeCab::Model> model;
-    String dictionary_dir;
+    const std::unique_ptr<MeCab::Model> model;
+    const String dictionary_path;
 };
 
 using MecabDictionaryPtr = std::shared_ptr<const MecabDictionary>;
 
-/// Loads the Japanese (MeCab) dictionary described under <tokenizer><japanese> in the server config
-/// (<dictionaryLocation> + <dictionarySha>). The archive is downloaded once, its SHA-256 verified
-/// BEFORE use (mismatch = hard error, loading stops), extracted into a cache keyed by the SHA, and a
-/// shared `MeCab::Model` created from it and cached process-wide.
+/// Loads the Japanese (MeCab) dictionary described in the server config:
 ///
-/// Fail-closed: missing config, download failure, or checksum mismatch throws; there is no fallback.
+///     <tokenizer>
+///         <japanese>
+///             <dictionary_location>https://.../dictionary.tar.zst</dictionary_location>
+///             <dictionary_sha>&lt;hex sha-256 of the archive&gt;</dictionary_sha>
+///         </japanese>
+///     </tokenizer>
+///
+/// The archive is downloaded once, its SHA-256 verified before use (mismatch = hard error, loading
+/// stops), extracted into a cache keyed by the SHA, and a `MeCab::Model` created from it and cached
+/// process-wide. Fail-closed: missing config, download failure, or checksum mismatch throws.
 class MecabDictionaryManager
 {
 public:
@@ -53,8 +58,8 @@ private:
     MecabDictionaryPtr loadJapaneseDictionary(const ContextPtr & context, const String & expected_sha);
 
     std::mutex mutex;
-    MecabDictionaryPtr cached_dictionary;
-    String cached_sha;
+    MecabDictionaryPtr cached_dictionary TSA_GUARDED_BY(mutex);
+    String dictionary_sha TSA_GUARDED_BY(mutex);
 };
 
 }
