@@ -124,6 +124,20 @@ private:
         const RPNBuilderTreeNode & lhs,
         const RPNBuilderTreeNode & rhs,
         RPNElement & out) const;
+    bool tryExtractExpressionDerivedRange(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const RPNBuilderTreeNode & expression,
+        const Field & const_value,
+        const DataTypePtr & const_type,
+        RPNElement & out) const;
+    bool tryBuildColumnConstantAtom(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const String & column_name,
+        Field const_value,
+        DataTypePtr const_type,
+        RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.

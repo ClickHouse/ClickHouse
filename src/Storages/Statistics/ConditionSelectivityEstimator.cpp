@@ -2,14 +2,18 @@
 
 #include <stack>
 #include <cmath>
+#include <limits>
 
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Utils.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
 #include <Interpreters/PreparedSets.h>
@@ -153,6 +157,60 @@ bool tryConvertFieldLosslesslyToCommonType(
         return false;
 
     out = converted;
+    return true;
+}
+
+bool isComparisonFunction(const String & function_name)
+{
+    return function_name == "equals" || function_name == "notEquals"
+        || function_name == "less" || function_name == "lessOrEquals"
+        || function_name == "greater" || function_name == "greaterOrEquals";
+}
+
+DataTypePtr getFieldTypeForExactConversion(const Field & value, const DataTypePtr & fallback_type)
+{
+    if (value.isNull())
+        return fallback_type;
+
+    /// AST-only tests may provide a dummy constant block type for every literal.
+    /// The Field's own type is a better hint for exact numeric rewrites.
+    return applyVisitor(FieldToDataType(), value);
+}
+
+bool tryConvertFieldToInt64Exactly(const Field & value, const DataTypePtr & from_type, Int64 & out)
+{
+    DataTypePtr effective_from_type = getFieldTypeForExactConversion(value, from_type);
+    if (!effective_from_type || value.isNull() || value.isNaN())
+        return false;
+
+    auto int64_type = std::make_shared<DataTypeInt64>();
+    Field converted = tryConvertFieldToType(value, *int64_type, effective_from_type.get(), {}, /*strict=*/true);
+    if (converted.isNull() || converted.getType() != Field::Types::Int64)
+        return false;
+
+    Field round_trip = tryConvertFieldToType(converted, *effective_from_type, int64_type.get(), {}, /*strict=*/true);
+    if (round_trip.isNull() || round_trip != value)
+        return false;
+
+    out = converted.safeGet<Int64>();
+    return true;
+}
+
+bool addInt64Checked(Int64 lhs, Int64 rhs, Int64 & out)
+{
+    Int128 result = static_cast<Int128>(lhs) + static_cast<Int128>(rhs);
+    if (result < std::numeric_limits<Int64>::min() || result > std::numeric_limits<Int64>::max())
+        return false;
+    out = static_cast<Int64>(result);
+    return true;
+}
+
+bool subtractInt64Checked(Int64 lhs, Int64 rhs, Int64 & out)
+{
+    Int128 result = static_cast<Int128>(lhs) - static_cast<Int128>(rhs);
+    if (result < std::numeric_limits<Int64>::min() || result > std::numeric_limits<Int64>::max())
+        return false;
+    out = static_cast<Int64>(result);
     return true;
 }
 
@@ -560,6 +618,294 @@ bool ConditionSelectivityEstimator::tryExtractColumnComparison(
     return true;
 }
 
+bool ConditionSelectivityEstimator::tryBuildColumnConstantAtom(
+    const StorageMetadataPtr & metadata,
+    const String & function_name,
+    const String & column_name,
+    Field const_value,
+    DataTypePtr const_type,
+    RPNElement & out) const
+{
+    if (!metadata || !isComparisonFunction(function_name))
+        return false;
+
+    const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+    if (!column_desc)
+        return false;
+
+    DataTypePtr column_type = removeLowCardinalityAndNullable(column_desc->type);
+
+    /// Keep this conversion path aligned with the simple `column OP constant`
+    /// extraction below: normalize the constant into the column domain only when
+    /// doing so is conservative for statistics range estimation.
+    bool cast_not_needed = !const_type
+        || ((isNativeInteger(column_type) || isDateTime(column_type))
+            && (isNativeInteger(const_type) || isDateTime(const_type)));
+
+    if (!cast_not_needed && !column_type->equals(*const_type))
+    {
+        if (const_value.getType() == Field::Types::String)
+        {
+            try
+            {
+                const_value = convertFieldToType(const_value, *column_type);
+            }
+            catch (const Exception & e)
+            {
+                if (!isParseError(e.code()))
+                    throw;
+
+                if (function_name == "equals")
+                {
+                    out.function = RPNElement::ALWAYS_FALSE;
+                    return true;
+                }
+                return false;
+            }
+            if (const_value.isNull())
+                return false;
+        }
+        else
+        {
+            DataTypePtr common_type = tryGetLeastSupertype(DataTypes{column_type, const_type});
+            if (!common_type)
+                return false;
+
+            if (!const_type->equals(*common_type))
+            {
+                Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
+                if (converted.isNull())
+                    return false;
+
+                const_value = converted;
+            }
+            if (!column_type->equals(*common_type))
+            {
+                if (!isFloat(column_type))
+                    return false;
+
+                Field converted = tryConvertFieldToType(const_value, *column_type, const_type.get(), {});
+                if (converted.isNull())
+                    return false;
+
+                if (function_name == "equals" || function_name == "notEquals")
+                {
+                    Field round_trip = tryConvertFieldToType(converted, *common_type, column_type.get(), {});
+                    if (round_trip.isNull() || round_trip != const_value)
+                    {
+                        out.function = function_name == "equals" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+                        return true;
+                    }
+                }
+
+                const_value = converted;
+            }
+        }
+    }
+
+    auto atom_it = atom_map.find(function_name);
+    if (atom_it == atom_map.end())
+        return false;
+
+    atom_it->second(out, column_name, const_value);
+    return true;
+}
+
+bool ConditionSelectivityEstimator::tryExtractExpressionDerivedRange(
+    const StorageMetadataPtr & metadata,
+    const String & function_name,
+    const RPNBuilderTreeNode & expression,
+    const Field & const_value,
+    const DataTypePtr & const_type,
+    RPNElement & out) const
+{
+    if (!metadata || !isComparisonFunction(function_name) || const_value.isNull())
+        return false;
+
+    auto try_get_cast_target_type = [](const RPNBuilderFunctionTreeNode & cast_func) -> DataTypePtr
+    {
+        if (const auto * dag_node = cast_func.getDAGNode())
+            return removeLowCardinalityAndNullable(dag_node->result_type);
+
+        if (cast_func.getArgumentsSize() < 2)
+            return nullptr;
+
+        Field type_name;
+        DataTypePtr type_name_type;
+        if (!cast_func.getArgumentAt(1).tryGetConstant(type_name, type_name_type) || type_name.getType() != Field::Types::String)
+            return nullptr;
+
+        try
+        {
+            return removeLowCardinalityAndNullable(DataTypeFactory::instance().get(type_name.safeGet<String>()));
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+    };
+
+    auto convert_constant_through_cast = [&](
+        const DataTypePtr & source_type,
+        const DataTypePtr & target_type,
+        Field & source_value,
+        DataTypePtr & source_value_type) -> bool
+    {
+        DataTypePtr effective_const_type = getFieldTypeForExactConversion(const_value, const_type);
+        if (!effective_const_type || !isNativeNumber(source_type) || !isNativeNumber(target_type) || !canBeSafelyCast(source_type, target_type))
+            return false;
+
+        Field target_value = const_value;
+        if (!target_type->equals(*effective_const_type))
+        {
+            target_value = tryConvertFieldToType(const_value, *target_type, effective_const_type.get(), {}, /*strict=*/true);
+            if (target_value.isNull())
+                return false;
+
+            Field round_trip = tryConvertFieldToType(target_value, *effective_const_type, target_type.get(), {}, /*strict=*/true);
+            if (round_trip.isNull() || round_trip != const_value)
+                return false;
+        }
+
+        source_value = tryConvertFieldToType(target_value, *source_type, target_type.get(), {}, /*strict=*/true);
+        if (source_value.isNull())
+            return false;
+
+        Field round_trip = tryConvertFieldToType(source_value, *target_type, source_type.get(), {}, /*strict=*/true);
+        if (round_trip.isNull() || round_trip != target_value)
+            return false;
+
+        source_value_type = source_type;
+        return true;
+    };
+
+    auto try_extract_cast = [&]() -> bool
+    {
+        if (!expression.isFunction())
+            return false;
+
+        auto cast_func = expression.toFunctionNode();
+        String cast_name = cast_func.getFunctionName();
+        if (cast_name != "CAST" && cast_name != "_CAST")
+            return false;
+        if (cast_func.getArgumentsSize() < 1)
+            return false;
+
+        String column_name = cast_func.getArgumentAt(0).getColumnName();
+        const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+        if (!column_desc)
+            return false;
+
+        DataTypePtr source_type = removeLowCardinalityAndNullable(column_desc->type);
+        DataTypePtr target_type = try_get_cast_target_type(cast_func);
+        if (!target_type)
+            return false;
+
+        Field source_value;
+        DataTypePtr source_value_type;
+        if (!convert_constant_through_cast(source_type, target_type, source_value, source_value_type))
+            return false;
+
+        return tryBuildColumnConstantAtom(metadata, function_name, column_name, source_value, source_value_type, out);
+    };
+
+    auto try_extract_arithmetic = [&]() -> bool
+    {
+        if (!expression.isFunction())
+            return false;
+
+        auto arithmetic_func = expression.toFunctionNode();
+        String arithmetic_name = arithmetic_func.getFunctionName();
+        if (arithmetic_name != "plus" && arithmetic_name != "minus")
+            return false;
+        if (arithmetic_func.getArgumentsSize() != 2 || !const_type)
+            return false;
+
+        size_t column_arg = 0;
+        Field offset_value;
+        DataTypePtr offset_type;
+        if (arithmetic_func.getArgumentAt(1).tryGetConstant(offset_value, offset_type))
+        {
+            column_arg = 0;
+        }
+        else if (arithmetic_name == "plus" && arithmetic_func.getArgumentAt(0).tryGetConstant(offset_value, offset_type))
+        {
+            column_arg = 1;
+        }
+        else
+            return false;
+
+        const auto column_node = arithmetic_func.getArgumentAt(column_arg);
+        String column_name = column_node.getColumnName();
+        const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+        if (!column_desc)
+            return false;
+
+        DataTypePtr column_type = removeLowCardinalityAndNullable(column_desc->type);
+        if (!isNativeInteger(column_type))
+            return false;
+
+        DataTypePtr effective_const_type = getFieldTypeForExactConversion(const_value, const_type);
+        DataTypePtr effective_offset_type = getFieldTypeForExactConversion(offset_value, offset_type);
+        if (!effective_const_type || !effective_offset_type
+            || !isNativeInteger(effective_const_type) || !isNativeInteger(effective_offset_type))
+            return false;
+
+        Int64 const_int = 0;
+        Int64 offset_int = 0;
+        if (!tryConvertFieldToInt64Exactly(const_value, effective_const_type, const_int)
+            || !tryConvertFieldToInt64Exactly(offset_value, effective_offset_type, offset_int))
+            return false;
+
+        auto estimator_it = column_estimators.find(column_name);
+        if (estimator_it == column_estimators.end() || !isCompatibleStatistics(metadata, estimator_it->second.stats, column_name))
+            return false;
+        Estimate estimate = estimator_it->second.stats->getEstimate();
+        if (!estimate.estimated_min || !estimate.estimated_max)
+            return false;
+
+        Int64 column_min = 0;
+        Int64 column_max = 0;
+        if (!tryConvertFieldToInt64Exactly(*estimate.estimated_min, column_type, column_min)
+            || !tryConvertFieldToInt64Exactly(*estimate.estimated_max, column_type, column_max))
+            return false;
+
+        Int64 ignored = 0;
+        if (arithmetic_name == "plus")
+        {
+            if (!addInt64Checked(column_min, offset_int, ignored) || !addInt64Checked(column_max, offset_int, ignored))
+                return false;
+        }
+        else
+        {
+            if (!subtractInt64Checked(column_min, offset_int, ignored) || !subtractInt64Checked(column_max, offset_int, ignored))
+                return false;
+        }
+
+        Int64 normalized_int = 0;
+        if (arithmetic_name == "plus")
+        {
+            if (!subtractInt64Checked(const_int, offset_int, normalized_int))
+                return false;
+        }
+        else
+        {
+            if (!addInt64Checked(const_int, offset_int, normalized_int))
+                return false;
+        }
+
+        return tryBuildColumnConstantAtom(
+            metadata,
+            function_name,
+            column_name,
+            Field(normalized_int),
+            std::make_shared<DataTypeInt64>(),
+            out);
+    };
+
+    return try_extract_cast() || try_extract_arithmetic();
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -652,6 +998,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     out.function = RPNElement::ALWAYS_FALSE;
                     return true;
                 }
+                if (tryExtractExpressionDerivedRange(metadata, func_name, func.getArgumentAt(0), const_value, const_type, out))
+                    return true;
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
@@ -671,6 +1019,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     func_name = "lessOrEquals";
                 else if (func_name == "lessOrEquals")
                     func_name = "greaterOrEquals";
+
+                if (tryExtractExpressionDerivedRange(metadata, func_name, func.getArgumentAt(1), const_value, const_type, out))
+                    return true;
             }
             else if (tryExtractColumnComparison(metadata, func_name, func.getArgumentAt(0), func.getArgumentAt(1), out))
                 return true;

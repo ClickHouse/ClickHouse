@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
@@ -403,6 +405,60 @@ TEST(Statistics, ColumnToColumnComparisons)
     check("not((na = nb AND na IS NOT NULL) AND na IS NULL)", 1000.0, 1e-6);
     check("na <= na OR na IS NULL", 1000.0, 1e-6);
     check("not(na <= na)", 0.0, 1e-6);
+}
+
+TEST(Statistics, ExpressionDerivedRanges)
+{
+    tryRegisterAggregateFunctions();
+    tryRegisterFunctions();
+
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    auto int64_type = std::make_shared<DataTypeInt64>();
+    auto metadata = makeStorageMetadata({ColumnDescription("a", int32_type), ColumnDescription("big", int64_type)});
+
+    std::vector<Int32> values;
+    std::vector<Int64> big_values;
+    values.reserve(1000);
+    big_values.reserve(1000);
+    for (Int32 i = 0; i < 1000; ++i)
+    {
+        values.push_back(i);
+        big_values.push_back(std::numeric_limits<Int64>::max() - (i % 2));
+    }
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", buildInt32Stats({StatisticsType::Basic}, values));
+    builder.addStatistics("big", buildInt64Stats({StatisticsType::Basic}, big_values));
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto estimate = [&](const String & expression)
+    {
+        return estimateRowsFor(estimator, expression, metadata);
+    };
+
+    auto check_same_as = [&](const String & rewritten_expression, const String & simple_expression)
+    {
+        EXPECT_NEAR(estimate(rewritten_expression), estimate(simple_expression), 1.0)
+            << "Rewritten expression: " << rewritten_expression << ", simple expression: " << simple_expression;
+    };
+
+    /// Safe widening casts are estimated through the underlying column when the
+    /// constant can be converted back to the source type exactly.
+    check_same_as("CAST(a, 'Int64') < 500", "a < 500");
+    check_same_as("CAST(a, 'Int64') = 42", "a = 42");
+
+    /// Checked integer arithmetic rewrites normalize simple column +/- constant forms.
+    check_same_as("a + 1 < 500", "a < 499");
+    check_same_as("1 + a < 500", "a < 499");
+    check_same_as("a - 1 < 500", "a < 501");
+
+    /// Unsupported or unsafe expression forms keep the pre-existing expression fallback.
+    EXPECT_EQ(estimate("CAST(a, 'Float64') < 500"), 330.0);
+    EXPECT_EQ(estimate("a + 0.0 < 500"), 330.0);
+    EXPECT_EQ(estimate("0.0 + a < 500"), 330.0);
+    EXPECT_EQ(estimate("a + -1 < 9223372036854775807"), 330.0);
+    EXPECT_EQ(estimate("big + 1 < 0"), 330.0);
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
