@@ -21,14 +21,6 @@
 #define POCO_ENOERR 0
 
 
-// Strips Poco's emulated `MSG_DONTWAIT` from socket flags before they reach the platform.
-// Only Windows needs it (see the note next to MSG_DONTWAIT below); everywhere else the flag
-// is the platform's own and passes through.
-#if !defined(POCO_OS_FAMILY_WINDOWS)
-#    define POCO_MSG_WINSOCK_FLAGS(flags) (flags)
-#endif
-
-
 #if   defined(POCO_OS_FAMILY_WINDOWS)
 #    include "Poco/UnWindows.h"
 #    include <winsock2.h>
@@ -84,11 +76,10 @@
 // Winsock has no per-call non-blocking flag - whether a socket call blocks is a property of
 // the socket, set with `ioctlsocket(FIONBIO)`. ClickHouse's `SocketImpl` nevertheless takes
 // `MSG_DONTWAIT` in its `flags`, so define it as a bit Winsock does not assign and strip it
-// again before every `send`/`recv` (`POCO_MSG_WINSOCK_FLAGS` below). The places that have to
+// again before every `send`/`recv` (`stripEmulatedSocketFlags` below). The places that have to
 // honour it poll with a zero timeout instead; see `SocketImpl::connectionOpen`.
 #    define MSG_DONTWAIT 0x2000
 #    define POCO_MSG_DONTWAIT_IS_EMULATED 1
-#    define POCO_MSG_WINSOCK_FLAGS(flags) ((flags) & ~MSG_DONTWAIT)
 #elif defined(POCO_OS_FAMILY_UNIX)
 #    include <unistd.h>
 #    include <errno.h>
@@ -309,6 +300,23 @@ namespace Poco
 {
 namespace Net
 {
+
+
+    inline int stripEmulatedSocketFlags(int flags)
+    /// Removes any socket flag that Poco emulates rather than passes to the platform, so that
+    /// the result is safe to hand to `send`/`recv`. Only Windows has such a flag - see
+    /// `MSG_DONTWAIT` above - and everywhere else this is the identity.
+    ///
+    /// A function rather than a macro on purpose: glibc defines `MSG_DONTWAIT` and `MSG_PEEK`
+    /// as self-referential macros naming an enumerator, and using one as a macro argument
+    /// trips `-Wdisabled-macro-expansion`.
+    {
+#if defined(POCO_MSG_DONTWAIT_IS_EMULATED)
+        return flags & ~MSG_DONTWAIT;
+#else
+        return flags;
+#endif
+    }
 
 
     struct AddressFamily

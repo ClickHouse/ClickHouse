@@ -299,7 +299,7 @@ int SocketImpl::sendBytes(const void* buffer, int length, int flags)
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, POCO_MSG_WINSOCK_FLAGS(flags));
+		rc = ::send(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags));
 		if (rc < 0)
 			err = lastError();
 		if (blocking && rc < 0 && err == POCO_EINTR)
@@ -349,7 +349,7 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, POCO_MSG_WINSOCK_FLAGS(flags));
+		rc = ::recv(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags));
 		if (rc < 0)
 			err = lastError();
 		if (blocking && rc < 0 && err == POCO_EINTR)
@@ -397,7 +397,7 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_SNDTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, POCO_MSG_WINSOCK_FLAGS(flags), address.addr(), address.length());
+		rc = ::sendto(_sockfd, reinterpret_cast<const char*>(buffer), length, stripEmulatedSocketFlags(flags), address.addr(), address.length());
 		if (rc < 0)
 			err = lastError();
 		if (_blocking && rc < 0 && err == POCO_EINTR)
@@ -441,7 +441,7 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 		/// The call should complete quickly since poll indicated the socket is ready.
 		/// Socket timeout (SO_RCVTIMEO) serves as a safeguard against unexpected blocking.
 		Poco::Timestamp start;
-		rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, POCO_MSG_WINSOCK_FLAGS(flags), pSA, &saLen);
+		rc = ::recvfrom(_sockfd, reinterpret_cast<char*>(buffer), length, stripEmulatedSocketFlags(flags), pSA, &saLen);
 		if (rc < 0)
 			err = lastError();
 		if (_blocking && rc < 0 && err == POCO_EINTR)
@@ -519,7 +519,7 @@ bool SocketImpl::connectionOpen()
 		return true;
 #endif
 
-	int rc = ::recv(_sockfd, &b, 1, POCO_MSG_WINSOCK_FLAGS(MSG_DONTWAIT | MSG_PEEK));
+	int rc = ::recv(_sockfd, &b, 1, stripEmulatedSocketFlags(MSG_DONTWAIT | MSG_PEEK));
 	if (rc > 0)
 		return true;
 	if (rc == 0)
