@@ -171,6 +171,10 @@ DROP TABLE IF EXISTS t_ttl_recalc_only;
 -- expired part with an empty one.
 CREATE TABLE t_ttl_recalc_only (id UInt32, d DateTime('UTC')) ENGINE = MergeTree ORDER BY id
     TTL d + INTERVAL 300 DAY SETTINGS materialize_ttl_recalculate_only = 1;
+-- The refreshed metadata marks the part as fully expired, so a background TTL merge is free to drop
+-- its rows right after the mutation - that is the regular behaviour and it would race with the check
+-- below. Only mutations are of interest here, and `SYSTEM STOP TTL MERGES` does not block them.
+SYSTEM STOP TTL MERGES t_ttl_recalc_only;
 INSERT INTO t_ttl_recalc_only SELECT number, now('UTC') - INTERVAL 100 DAY FROM numbers(1000);
 ALTER TABLE t_ttl_recalc_only MODIFY TTL d + INTERVAL 10 DAY;
 SELECT count() FROM t_ttl_recalc_only;
