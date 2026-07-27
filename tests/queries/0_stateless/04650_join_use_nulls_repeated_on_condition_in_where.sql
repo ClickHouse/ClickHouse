@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t2_string;
 DROP TABLE IF EXISTS t2_lc;
+DROP TABLE IF EXISTS t2_uint8;
 DROP TABLE IF EXISTS t2_lc_nullable;
 DROP TABLE IF EXISTS t2_nullable;
 DROP TABLE IF EXISTS mt1;
@@ -25,7 +26,7 @@ WHERE t1.grp = 10 AND t2.reviewer = 100 AND t2.enabled = true
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
--- The AND-chain split has to rename the colliding boundary input. Assert the rename is in the
+-- The `AND`-chain split has to rename the colliding boundary input. Assert the rename is in the
 -- plan: a plan shape that never reaches the split would make every case below pass vacuously.
 -- The extra settings are pinned (all randomized in CI) because the assertion needs both colliding
 -- atoms to stay on one shared filter step below the join.
@@ -123,23 +124,39 @@ WHERE t1.grp = 10 AND t2_lc.reviewer = 100 AND t2_lc.tag = 'x'
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
-CREATE TABLE t2_lc_nullable (id Int64, reviewer Int64, tag LowCardinality(Nullable(String))) ENGINE = Memory;
-INSERT INTO t2_lc_nullable VALUES (1, 100, 'x'), (2, 200, NULL);
+-- `Bool` is a `UInt8` domain (a display name over `UInt8`), so it does not cover a plain `UInt8`
+-- column: the colliding name carries the type spelling (`1_Bool` vs `1_UInt8`). Pin both.
+CREATE TABLE t2_uint8 (id Int64, reviewer Int64, flag UInt8) ENGINE = Memory;
+INSERT INTO t2_uint8 VALUES (1, 100, 1), (2, 200, 0);
 
-SELECT 'left join, LowCardinality(Nullable) repeated condition';
-SELECT t1.id, t2_lc_nullable.reviewer
-FROM t1 LEFT JOIN t2_lc_nullable ON t1.id = t2_lc_nullable.id AND t2_lc_nullable.tag = 'x'
-WHERE t1.grp = 10 AND t2_lc_nullable.reviewer = 100 AND t2_lc_nullable.tag = 'x'
+SELECT 'left join, plain UInt8 repeated condition';
+SELECT t1.id, t2_uint8.reviewer
+FROM t1 LEFT JOIN t2_uint8 ON t1.id = t2_uint8.id AND t2_uint8.flag = 1
+WHERE t1.grp = 10 AND t2_uint8.reviewer = 100 AND t2_uint8.flag = 1
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
 CREATE TABLE t2_nullable (id Int64, reviewer Int64, enabled Nullable(Bool)) ENGINE = Memory;
 INSERT INTO t2_nullable VALUES (1, 100, true), (2, 200, false), (3, 300, NULL);
 
-SELECT 'left join, already Nullable repeated condition';
+SELECT 'left join, already Nullable repeated condition (non-regression)';
 SELECT t1.id, t2_nullable.reviewer
 FROM t1 LEFT JOIN t2_nullable ON t1.id = t2_nullable.id AND t2_nullable.enabled = true
 WHERE t1.grp = 10 AND t2_nullable.reviewer = 100 AND t2_nullable.enabled = true
+ORDER BY t1.id
+SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
+
+-- Also non-regression, for the same reason as the case above: `makeNullableOrLowCardinalityNullable`
+-- early-returns on `isLowCardinalityNullable`, so promoting this column is a no-op and the `ON` and
+-- `WHERE` copies of the predicate are computed on the identical type. Kept as the negative half of
+-- the LowCardinality wrapper matrix.
+CREATE TABLE t2_lc_nullable (id Int64, reviewer Int64, tag LowCardinality(Nullable(String))) ENGINE = Memory;
+INSERT INTO t2_lc_nullable VALUES (1, 100, 'x'), (2, 200, NULL);
+
+SELECT 'left join, LowCardinality(Nullable) repeated condition (no promotion, non-regression)';
+SELECT t1.id, t2_lc_nullable.reviewer
+FROM t1 LEFT JOIN t2_lc_nullable ON t1.id = t2_lc_nullable.id AND t2_lc_nullable.tag = 'x'
+WHERE t1.grp = 10 AND t2_lc_nullable.reviewer = 100 AND t2_lc_nullable.tag = 'x'
 ORDER BY t1.id
 SETTINGS join_use_nulls = 1, query_plan_merge_filters = 1, query_plan_convert_outer_join_to_inner_join = 1;
 
@@ -162,6 +179,7 @@ DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t2_string;
 DROP TABLE t2_lc;
+DROP TABLE t2_uint8;
 DROP TABLE t2_lc_nullable;
 DROP TABLE t2_nullable;
 DROP TABLE mt1;

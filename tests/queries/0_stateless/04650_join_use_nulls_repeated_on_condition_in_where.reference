@@ -21,9 +21,11 @@ left join, String repeated condition
 1	100
 left join, LowCardinality repeated condition
 1	100
-left join, LowCardinality(Nullable) repeated condition
+left join, plain UInt8 repeated condition
 1	100
-left join, already Nullable repeated condition
+left join, already Nullable repeated condition (non-regression)
+1	100
+left join, LowCardinality(Nullable) repeated condition (no promotion, non-regression)
 1	100
 left join over ReplacingMergeTree with FINAL, prewhere disabled
 1	100
