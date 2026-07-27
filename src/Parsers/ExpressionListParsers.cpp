@@ -1924,23 +1924,34 @@ protected:
 
 class SubstringLayer : public Layer
 {
+    bool comma_mode = false; /// true after the first separator was a comma, i.e. the functional form
 public:
     SubstringLayer() : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true) {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
-        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length)
+        /// Either SUBSTRING(expr FROM start [FOR length]) or SUBSTRING(expr, start, length, ...)
         ///
         /// 0: Parse first separator: FROM or comma (-> 1), or closing bracket
         ///    when a lambda is pending (round-trip for the merged-tuple lambda
         ///    sugar, see issue #104605)
         /// 1: Parse second separator: FOR or comma (-> 2)
+        /// 2: In the functional form, parse further commas (stays at 2)
         /// 1 or 2: Parse closing bracket (finished)
 
         if (state == 0)
         {
-            if (ParserToken(TokenType::Comma).ignore(pos, expected) ||
-                ParserKeyword(Keyword::FROM).ignore(pos, expected))
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                comma_mode = true;
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
+
+                state = 1;
+            }
+            else if (ParserKeyword(Keyword::FROM).ignore(pos, expected))
             {
                 action = Action::OPERAND;
 
@@ -1985,6 +1996,22 @@ public:
                     return false;
 
                 state = 2;
+            }
+        }
+        /// In the functional form, accept further arguments so that a too-long call is
+        /// reported by the function as NUMBER_OF_ARGUMENTS_DOESNT_MATCH rather than as a
+        /// syntax error. `substr`/`mid`/`byteSlice` go through the generic FunctionLayer and
+        /// already accept any argument count; DDL normalization rewrites them to `substring`,
+        /// so without this the persisted definition would not re-parse (issue #69141).
+        /// The SQL-standard FROM/FOR grammar keeps its fixed shape.
+        else if (comma_mode && state == 2)
+        {
+            if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                action = Action::OPERAND;
+
+                if (!mergeElement())
+                    return false;
             }
         }
 
