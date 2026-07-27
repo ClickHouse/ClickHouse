@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_PARSE_TEXT;
-}
-
 bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
 {
     return IParserBase::wrapParseImpl(pos, [&]
