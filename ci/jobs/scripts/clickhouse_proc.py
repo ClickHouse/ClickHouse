@@ -59,6 +59,9 @@ class ClickHouseProc:
     # sanitizer builds have a multi-GB address space, so the kernel needs far
     # longer than the few seconds a release build takes.
     TRAP_CORE_DUMP_TIMEOUT = 300
+    # `argv[0]` the servers are started with (see `self.command` below), used to
+    # tell the server apart from a process that has been given its recycled pid.
+    SERVER_ARGV0 = "clickhouse-server"
 
     def __init__(
         self,
@@ -798,18 +801,36 @@ clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
-    @staticmethod
-    def _server_process_alive(pid) -> bool:
+    @classmethod
+    def _server_process_alive(cls, pid) -> bool:
         """Whether `pid` is still a live ClickHouse server process.
 
-        Matches on the command line instead of merely probing the pid: once the
+        Checks what the process *is* instead of merely probing the pid: once the
         server exits the kernel is free to hand its pid to an unrelated process,
         and a `SIGKILL` aimed at a recycled pid would take that process out.
 
-        `-ww` is required: `ps` truncates the command line to 80 columns when its
-        output is not a terminal, which can cut the match off entirely.
+        The identity is `argv[0]` of the process, compared exactly against
+        `clickhouse-server` after stripping the directory. A substring search
+        over the whole command line would not be an identity check at all: the
+        pid file is `<config dir>/clickhouse-server.pid`, so an unrelated
+        process that merely names it - or any other `clickhouse-server` path -
+        somewhere in its arguments would be taken for the server and signalled.
+        Nor is `clickhouse` alone accepted: the log scraping this teardown
+        exists to unblock runs `clickhouse local` in the very same directory.
+
+        `argv[0]` comes from `/proc/<pid>/cmdline` rather than from `ps`, which
+        truncates the command line to 80 columns when its output is not a
+        terminal and would lose a server started from a long path.
         """
-        return "clickhouse-server" in Shell.get_output(f"ps -ww -p {pid} -o command=")
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as cmdline:
+                argv0 = os.fsdecode(cmdline.read().split(b"\0", 1)[0])
+        except OSError:
+            # No such pid, or it is gone between the check and the read. A
+            # zombie reads back as an empty command line and is handled below:
+            # it holds no locks and its pid cannot be recycled yet.
+            return False
+        return os.path.basename(argv0) == cls.SERVER_ARGV0
 
     @classmethod
     def _signal_server(cls, pid, sig, name) -> bool:

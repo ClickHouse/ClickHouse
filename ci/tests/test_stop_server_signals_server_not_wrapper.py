@@ -41,43 +41,54 @@ server running.
 import os
 import signal
 import subprocess
+import sys
 import time
 
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.praktika.utils import Shell
 
-# The fake server must be named `clickhouse-server`: `_server_process_alive`
-# identifies the server by its command line so the harness never signals a pid
-# the kernel has already recycled for something else.
+# The fake server first plays the watchdog half of `BaseDaemon::setupWatchdog`:
+# fork, and let the child be the real server. So `Popen(shell=True)` on it
+# produces the same three-process chain as in CI - `sh -c ...` wrapper ->
+# watchdog -> server - with only the server's pid in the pid file.
 #
-# Invoked without `--server` it plays the watchdog half of
-# `BaseDaemon::setupWatchdog`: fork, and let the child be the real server. So
-# `Popen(shell=True)` on it produces the same three-process chain as in CI -
-# `sh -c ...` wrapper -> watchdog -> server - with only the server's pid in the
-# pid file.
+# `argv[1]` is the pid file, `argv[2]` the `status` file to lock, `argv[3]` the
+# extra signals to ignore on top of TERM (which a server wedged past `clickhouse
+# stop` ignores in effect); passing TRAP forces stop_server's SIGKILL escalation.
 #
-# `$1` is the pid file, `$2` the `status` file to lock, `$3` the extra signals to
-# ignore on top of TERM (which a server wedged past `clickhouse stop` ignores in
-# effect); passing TRAP forces stop_server's SIGKILL escalation.
-_FAKE_SERVER = """#!/bin/sh
-if [ "$1" = "--server" ]; then
-    shift
-    trap '' TERM $3
-    # Hold the data directory lock that the scraping `clickhouse local` needs.
-    # The pid file is written only once the lock is held, so a test that sees
-    # the pid file can rely on the lock being taken.
-    exec 9>>"$2"
-    flock --exclusive 9
-    echo $$ > "$1"
-    # `9>&-` keeps each `sleep` from inheriting the locked descriptor: an flock
-    # lives on the open file description, so a child holding a copy would keep
-    # the lock after this process dies and make the assertions race. The real
-    # server has no such child - `setupWatchdog` forks before the status file is
-    # created - so this only removes an artifact of the fake.
-    while true; do sleep 0.1 9>&-; done
-fi
-"$0" --server "$1" "$2" "$3" &
-wait
+# It is a Python script rather than a shell one because it has to run under an
+# `argv[0]` of our choosing: `_server_process_alive` identifies the server by
+# `argv[0]` so the harness never signals a pid the kernel has already recycled,
+# and a `#!` script cannot control its own `argv[0]` - the kernel replaces it
+# with the interpreter. Running the interpreter itself through a symlink named
+# `clickhouse-server` gives the fake exactly the identity of the real thing.
+_FAKE_SERVER = """
+import fcntl
+import os
+import signal
+import sys
+import time
+
+pid_file, status_file, ignore_signals = sys.argv[1], sys.argv[2], sys.argv[3]
+
+if os.fork() != 0:
+    # The watchdog half: outlive the server, as `setupWatchdog` does. `argv[0]`
+    # survives the fork, so the server below is indistinguishable from the real
+    # one to `_server_process_alive`, just as in CI.
+    os.wait()
+    sys.exit(0)
+
+for name in ignore_signals.split():
+    signal.signal(getattr(signal, "SIG" + name), signal.SIG_IGN)
+# Hold the data directory lock that the scraping `clickhouse local` needs. The
+# pid file is written only once the lock is held, so a test that sees the pid
+# file can rely on the lock being taken.
+fd = os.open(status_file, os.O_CREAT | os.O_WRONLY, 0o644)
+fcntl.flock(fd, fcntl.LOCK_EX)
+with open(pid_file, "w") as f:
+    f.write(str(os.getpid()))
+while True:
+    time.sleep(0.1)
 """
 
 
@@ -94,19 +105,26 @@ def _pid_alive(pid):
 def _start_fake_server(tmp_path, name="clickhouse-server", ignore_signals="TERM"):
     """Start wrapper shell -> watchdog -> "server", as the CI harness does.
 
+    `name` is the `argv[0]` the fake server runs under - the sole thing that
+    makes it the server as far as `_server_process_alive` is concerned.
+
     Returns `(proc, pid)`, the pair `stop_server` iterates over: `proc` is the
     `Popen` handle on the wrapper, `pid` is what the server wrote to its pid file.
     """
+    script = tmp_path / "fake_server.py"
+    script.write_text(_FAKE_SERVER)
+    # A symlink to the interpreter, so the process runs with `argv[0]` ending in
+    # `name` while `/proc/<pid>/exe` points at the real Python binary - the same
+    # split as the real `clickhouse-server`, which is a symlink to `clickhouse`.
     server = tmp_path / name
-    server.write_text(_FAKE_SERVER)
-    server.chmod(0o755)
-    # Name the pid file after the binary: `_server_process_alive` matches the
-    # whole command line, so a hardcoded `clickhouse-server.pid` argument would
-    # make even a non-ClickHouse process look like the server.
-    pid_file = tmp_path / f"{name}.pid"
+    server.symlink_to(sys.executable)
+    # Always the production pid-file name, whatever the binary is called: an
+    # unrelated process must not be taken for the server just because
+    # `clickhouse-server.pid` appears somewhere in its command line.
+    pid_file = tmp_path / "clickhouse-server.pid"
     status_file = tmp_path / "status"
     proc = subprocess.Popen(
-        f"{server} {pid_file} {status_file} {ignore_signals}",
+        f"{server} {script} {pid_file} {status_file} '{ignore_signals}'",
         shell=True,
         cwd=tmp_path,
     )
@@ -221,8 +239,10 @@ def test_stop_server_escalates_to_kill_when_the_server_ignores_trap(
 def test_stop_server_leaves_an_unrelated_process_alone(monkeypatch, tmp_path):
     # The pid file is read once at startup, so by teardown its pid may belong to
     # an unrelated process the kernel has since given it to. stop_server must not
-    # kill it - the command-line check in `_server_process_alive` is what stops a
-    # `SIGKILL` from going to a random process on the runner.
+    # kill it - the `argv[0]` check in `_server_process_alive` is what stops a
+    # `SIGKILL` from going to a random process on the runner. Note that this
+    # process does carry `.../clickhouse-server.pid` in its arguments, the shape
+    # a substring search over the whole command line would wrongly accept.
     proc, pid = _start_fake_server(tmp_path, name="not-a-clickhouse-binary")
     try:
         _make_proc(monkeypatch, tmp_path, proc, pid).stop_server()
@@ -232,10 +252,11 @@ def test_stop_server_leaves_an_unrelated_process_alone(monkeypatch, tmp_path):
 
 
 def test_server_liveness_check_survives_a_long_command_line(tmp_path):
-    # `ps` truncates the command line to 80 columns when its output is not a
-    # terminal, so a plain `ps -p <pid> -o command=` misses the match for a
-    # server started from a long path - and a liveness check that wrongly
-    # answers "already gone" skips the KILL and leaves the server running.
+    # A liveness check that wrongly answers "already gone" skips the KILL and
+    # leaves the server running, so it must not depend on how much of the
+    # command line it can see: `ps` truncates it to 80 columns when its output
+    # is not a terminal, which is why `_server_process_alive` reads
+    # `/proc/<pid>/cmdline` instead.
     deep = tmp_path / ("d" * 60) / ("e" * 60)
     deep.mkdir(parents=True)
     proc, pid = _start_fake_server(deep)
