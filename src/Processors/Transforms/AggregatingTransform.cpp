@@ -637,7 +637,39 @@ private:
         if (params->params.max_rows_to_group_by != 0 && params->params.group_by_overflow_mode == OverflowMode::ANY)
             return false;
 
-        return params->aggregator.canMergeSingleLevelInPartitions(*data->at(0));
+        if (!params->aggregator.canMergeSingleLevelInPartitions(*data->at(0)))
+            return false;
+
+        /// The largest source table is measured here, before any partition source runs: the
+        /// merge mutates the source tables concurrently, so the workers must not read their
+        /// sizes.
+        max_source_table_size = 0;
+        for (const auto & variants : *data)
+            max_source_table_size = std::max(max_source_table_size, variants->sizeWithoutOverflowRow());
+
+        /// A single partition would rebuild the whole result into a fresh table with no
+        /// parallelism at all; the serial merge into the largest existing table is strictly
+        /// cheaper, because that table's own cells do not move.
+        partition_merge_num_partitions = singleLevelMergePartitionCount(max_source_table_size);
+        return partition_merge_num_partitions > 1;
+    }
+
+    /// More partitions than workers, handed out dynamically, so a worker that got a light
+    /// partition does not stay idle. Heavy per-key states always get the full partition count:
+    /// their merge work dwarfs the partitioning overhead at any key count. Cheap states get
+    /// fewer partitions for smaller merges, sized by the largest source table — a lower bound
+    /// on the distinct-key count.
+    size_t singleLevelMergePartitionCount(size_t max_table_size) const
+    {
+        const size_t max_partitions = std::bit_floor(std::min<size_t>(NUM_BUCKETS, num_threads * 2));
+
+        const bool has_heavy_states
+            = std::ranges::any_of(params->params.aggregates, [](const auto & aggregate) { return aggregate.function->sizeOfData() > 16; });
+        if (has_heavy_states)
+            return max_partitions;
+
+        static constexpr size_t MIN_KEYS_PER_PARTITION = 512;
+        return std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
     }
 
     /// The partition sources emit finished chunks in no particular order; forward them as they come.
@@ -816,6 +848,11 @@ private:
     bool parallelize_single_level_merge = false;
     bool parallel_partition_merge_started = false;
 
+    /// Set by the partition-merge gate for `createSourcesForPartitionMerge`; the sizes must be
+    /// read before any partition source runs, because the merge mutates the source tables.
+    size_t partition_merge_num_partitions = 0;
+    size_t max_source_table_size = 0;
+
     Chunks single_level_chunks;
 
     UInt32 current_bucket_num = 0;
@@ -933,34 +970,16 @@ private:
 
     void createSourcesForPartitionMerge()
     {
-        /// More partitions than workers, handed out dynamically, so a partition that got a light
-        /// partition does not stay idle.
-        const size_t max_partitions = std::bit_floor(std::min<size_t>(NUM_BUCKETS, num_threads * 2));
-
-        /// Heavy per-key states always get the full partition count: their merge work dwarfs the
-        /// partitioning overhead at any key count. Cheap states get fewer partitions for smaller
-        /// merges, sized by the largest source table — a lower bound on the distinct-key count.
-        const bool has_heavy_states
-            = std::ranges::any_of(params->params.aggregates, [](const auto & aggregate) { return aggregate.function->sizeOfData() > 16; });
-
-        /// The largest source table is measured here, before any partition source runs: the merge
-        /// mutates the source tables concurrently, so the workers must not read their sizes.
-        size_t max_table_size = 0;
-        for (const auto & variants : *data)
-            max_table_size = std::max(max_table_size, variants->sizeWithoutOverflowRow());
-
-        size_t num_partitions = max_partitions;
-        if (!has_heavy_states)
-        {
-            static constexpr size_t MIN_KEYS_PER_PARTITION = 512;
-            num_partitions = std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
-        }
+        /// Computed by the gate (`worthParallelPartitionMergeSingleLevel`), which engages this
+        /// path only for more than one partition.
+        const size_t num_partitions = partition_merge_num_partitions;
+        chassert(num_partitions > 1);
 
         const size_t num_sources = std::min<size_t>(num_threads, num_partitions);
         for (size_t thread = 0; thread < num_sources; ++thread)
         {
             auto source = std::make_shared<ConvertingAggregatedToChunksByPartitionMergingSource>(
-                params, data, shared_data, static_cast<UInt32>(num_partitions), max_table_size, updater);
+                params, data, shared_data, static_cast<UInt32>(num_partitions), max_source_table_size, updater);
             processors.emplace_back(std::move(source));
         }
 
