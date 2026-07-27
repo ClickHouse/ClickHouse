@@ -3,13 +3,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketImpl.h>
 
-#if defined(OS_WINDOWS)
-#include <Poco/UnWindows.h>
-#include <winsock2.h>
-#else
-#include <sys/socket.h>
-#endif
-#include <cerrno>
+#include <Common/Socket.h>
 
 #if USE_SSL
 #include <Poco/Net/SecureStreamSocketImpl.h>
@@ -21,75 +15,13 @@
 namespace DB
 {
 
-namespace
+SocketState getSocketState(Socket socket)
 {
-
-/// `AsyncCallback` and the rest of the codebase pass socket descriptors around as `int`, but a
-/// Windows `SOCKET` is pointer-sized and is not a file descriptor at all. Real socket handles
-/// are small kernel handle values that fit in 32 bits, so this round trip is lossless in
-/// practice - but making the socket-handle type portable throughout is the proper fix, and it
-/// has to happen before the async event loop (which polls these descriptors) can work here.
-int toSocketDescriptor(poco_socket_t handle)
-{
-#if defined(OS_WINDOWS)
-    return static_cast<int>(static_cast<unsigned int>(handle));
-#else
-    return handle;
-#endif
-}
-
-#if defined(OS_WINDOWS)
-SOCKET toSocketHandle(int fd)
-{
-    return static_cast<SOCKET>(static_cast<unsigned int>(fd));
-}
-#endif
-
-}
-
-SocketState getSocketState(int fd)
-{
-    if (fd < 0)
-        return SocketState::Closed;
-
-#if defined(OS_WINDOWS)
-    /// Winsock has no per-call `MSG_DONTWAIT` - whether a call blocks is a property of the
-    /// socket, set with `ioctlsocket(FIONBIO)`, and this probe must not change that for a socket
-    /// it does not own. So ask first, with a zero timeout, whether anything is readable: if
-    /// nothing is, that is precisely the healthy idle case `EAGAIN` reports below, and if
-    /// something is, the `MSG_PEEK` that follows cannot block.
-    ///
-    const auto handle = toSocketHandle(fd);
-
-    fd_set readable;
-    FD_ZERO(&readable);
-    FD_SET(handle, &readable);
-    /// The first argument is ignored on Windows; the sets carry the handles.
-    timeval no_wait{.tv_sec = 0, .tv_usec = 0};
-    const int ready = ::select(0, &readable, nullptr, nullptr, &no_wait);
-    if (ready == 0)
-        return SocketState::Idle;           /// Nothing to read and no FIN: a healthy idle connection.
-    if (ready == SOCKET_ERROR)
+    if (!socket.isValid())
         return SocketState::Closed;
 
     char c = 0;
-    const int res = ::recv(handle, &c, 1, MSG_PEEK);
-    if (res > 0)
-        return SocketState::DataPending;    /// Bytes are waiting to be read; the peer is alive.
-    if (res == 0)
-        return SocketState::Closed;         /// Orderly shutdown: the peer sent a FIN, the next read would return EOF.
-
-    /// Winsock reports through `WSAGetLastError`, not `errno`.
-    const int error = ::WSAGetLastError();
-    if (error == WSAEWOULDBLOCK)
-        return SocketState::Idle;
-    return SocketState::Closed;             /// Any other error (e.g. WSAECONNRESET): closed/broken.
-#else
-    char c = 0;
-    ssize_t res = 0;
-    do
-        res = ::recv(fd, &c, 1, MSG_PEEK | MSG_DONTWAIT);
-    while (res < 0 && errno == EINTR);
+    const Int64 res = socket.peek(&c, 1);
 
     if (res > 0)
         return SocketState::DataPending;    /// Bytes are waiting to be read; the peer is alive.
@@ -97,10 +29,9 @@ SocketState getSocketState(int fd)
         return SocketState::Closed;         /// Orderly shutdown: the peer sent a FIN, the next read would return EOF.
 
     /// res < 0
-    if (errno == EAGAIN || errno == EWOULDBLOCK)
+    if (Socket::isWouldBlock(Socket::lastError()))
         return SocketState::Idle;           /// Nothing to read and no FIN: a healthy idle connection.
     return SocketState::Closed;             /// Any other error (e.g. ECONNRESET): treat as closed/broken.
-#endif
 }
 
 #if USE_SSL
@@ -197,12 +128,12 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         }
     }
 #endif
-    return getSocketState(toSocketDescriptor(socket.impl()->sockfd()));
+    return getSocketState(Socket(socket.impl()->sockfd()));
 }
 
-bool isSocketPeerClosed(int fd)
+bool isSocketPeerClosed(Socket socket)
 {
-    return getSocketState(fd) == SocketState::Closed;
+    return getSocketState(socket) == SocketState::Closed;
 }
 
 bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket)
