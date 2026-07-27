@@ -9,6 +9,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/PODArray.h>
+#include <Common/SharedMutex.h>
 #include <base/StringViewHash.h>
 
 #include <algorithm>
@@ -20,7 +21,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <shared_mutex>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -246,7 +246,7 @@ private:
 
     struct PrimaryShard
     {
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         PrimaryMap entries;
         /// Owns the key bytes referenced by `entries`.
         std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -342,7 +342,7 @@ public:
             return it ? &postings[it->getMapped()] : nullptr;
         }
 
-        mutable std::shared_mutex mutex;
+        mutable SharedMutex mutex;
         PostingMap index;
         std::deque<Posting> postings;
         std::unique_ptr<Arena> arena = std::make_unique<Arena>();
@@ -398,7 +398,7 @@ private:
     std::vector<DataTypes> lookup_index_column_types;
 
     mutable std::mutex writer_mutex;
-    mutable std::shared_mutex lookup_catalog_mutex;
+    mutable SharedMutex lookup_catalog_mutex;
     std::array<PrimaryShard, primary_shard_count> primary_shards;
     std::vector<LookupIndexPtr> lookup_indexes;
     EntryTable entries;
