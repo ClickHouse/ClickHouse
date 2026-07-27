@@ -110,7 +110,7 @@ Chunk AsyncInsertSelectSource::generate()
         auto convert_dag = ActionsDAG::makeConvertingActions(
             pulling_executor.getHeader().getColumnsWithTypeAndName(),
             sync_exec->getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
+            ActionsDAG::MatchColumnsMode::Name,
             context);
         sync_converter = std::make_shared<ExpressionActions>(std::move(convert_dag));
     };
