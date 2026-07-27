@@ -53,7 +53,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, BaseTypeDriftDoesNotAbortHeaderComp
 {
     tryRegisterFunctions();
 
-    /// Resolved for Float64 (as `03915_exchange_tables_race` does), header arrives as Int256.
+    /// Resolved for `Float64` (as `03915_exchange_tables_race` does), header arrives as `Int256`.
     auto dag = makeDagOverInput("n", std::make_shared<DataTypeFloat64>(), "negate");
     const auto expected_result_type = dag.getOutputs().front()->result_type->getName();
 
