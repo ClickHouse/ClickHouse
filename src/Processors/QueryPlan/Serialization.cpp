@@ -402,20 +402,12 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan outline of {} bytes does not fit the body of {}", consumed, body_size);
 
-    /// Everything the outline can rule out is decided before any payload is read, and the body is
-    /// taken off the stream first: these are the mixed-version failures the outline exists to
-    /// report, so they should cost the query and not the connection.
-    auto skip_rest_of_body = [&] { skipPlanBody(in, body_size - (in.count() - body_start)); };
-
     /// One pass over the outline reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
     auto validation = validateQueryPlanOutline(outline, min_reader_plan_version);
     if (!validation.ok())
-    {
-        skip_rest_of_body();
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan cannot be deserialized: {}", validation.describe());
-    }
 
     const size_t node_count = outline.nodes.size();
     const auto & children_indices = validation.shape.children;
@@ -428,29 +420,20 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
         for (const auto & outline_node : outline.nodes)
         {
             if (outline_node.payload_size > budget)
-            {
-                skip_rest_of_body();
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Query plan payload of step '{}' extends past the envelope", outline_node.step_name);
-            }
             budget -= outline_node.payload_size;
         }
         for (const auto & set : outline.sets)
         {
             if (set.payload_size > budget)
-            {
-                skip_rest_of_body();
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Serialized set {}_{} extends past the envelope", set.hash.low64, set.hash.high64);
-            }
             budget -= set.payload_size;
         }
         if (budget != 0)
-        {
-            skip_rest_of_body();
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Query plan envelope has {} bytes that no frame accounts for", budget);
-        }
     }
 
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
@@ -673,7 +656,32 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
                 version, min_reader_plan_version);
         }
 
-        return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version, body_size);
+        /// Anything the body reader throws leaves its remaining frames on the stream, so they are
+        /// taken off here: a plan this server cannot read costs the query and not the connection.
+        /// Covers every reason at once -- a refused outline, a step that would not read its
+        /// payload, a set that failed to decode -- rather than the ones a check remembered to.
+        const size_t body_start = in.count();
+        try
+        {
+            return deserializeEnvelope(in, context, flags, max_type_complexity, min_reader_plan_version, body_size);
+        }
+        catch (...)
+        {
+            const size_t consumed = in.count() - body_start;
+            if (consumed < body_size)
+            {
+                /// A drain that fails means the stream really did end there, and the error that
+                /// says why the plan was refused is the useful one to report.
+                try
+                {
+                    skipPlanBody(in, body_size - consumed);
+                }
+                catch (...) // NOLINT(bugprone-empty-catch)
+                {
+                }
+            }
+            throw;
+        }
     }
 
     if (version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)

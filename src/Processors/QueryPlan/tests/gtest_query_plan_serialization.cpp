@@ -858,6 +858,30 @@ TEST(QueryPlanSerialization, RejectedPlansAreStillTakenOffTheStream)
     }
 }
 
+TEST(QueryPlanSerialization, AStepThatRefusesItsPayloadLeavesTheStreamAtTheNextPacket)
+{
+    registerStepsOnce();
+
+    /// The unreadable step is the child, so it throws while its parent's payload is still on the
+    /// stream. A failure in the middle of the body has to take the rest of the body with it.
+    QueryPlan plan;
+    plan.addStep(std::make_unique<TestUnreadableStep>(makeTestHeader()));
+    ActionsDAG dag(plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    const auto & alias = dag.addAlias(*dag.getInputs().front(), "y");
+    dag.getOutputs().push_back(&alias);
+    plan.addStep(std::make_unique<ExpressionStep>(plan.getCurrentHeader(), std::move(dag)));
+
+    const std::string sentinel = "the next protocol packet";
+    const std::string stream = serializePlan(plan) + sentinel;
+
+    ReadBufferFromString in(stream);
+    EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+
+    String rest;
+    readStringUntilEOF(rest, in);
+    EXPECT_EQ(rest, sentinel) << "a step that threw left plan bytes on the stream";
+}
+
 TEST(QueryPlanSerialization, OutlineFrameCannotEscapeTheEnvelope)
 {
     registerStepsOnce();
