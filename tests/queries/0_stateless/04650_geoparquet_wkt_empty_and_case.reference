@@ -64,31 +64,35 @@ LINESTRING()	POLYGON()
 1	LineString	[]
 2	Polygon	[[]]
 -- rejected
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
-1
+ctl
+ctl IMPORTED	(7,8)
+bad_0
+bad_1
+bad_2
+bad_3
+bad_4
+bad_5
+bad_6
+bad_7
+bad_8
+bad_9
+bad_10
+bad_11
+bad_12
+bad_13
+bad_14
+bad_15
+bad_16
+bad_17
+bad_18
+bad_19
+bad_20
+bad_21
+bad_22
+bad_23
+bad_24
+bad_25
+bad_26
+bad_27
+ctl
+ctl IMPORTED	(7,8)

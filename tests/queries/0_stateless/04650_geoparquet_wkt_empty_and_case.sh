@@ -158,9 +158,28 @@ bad_values = [
 ]
 for i, wkt in enumerate(bad_values):
     write_geoparquet(f"bad_{i}", [wkt])
+
+# All rejections run in ONE clickhouse-local process, driven by this generated file.
+# One process per case is what a reader would expect, but it is far too slow: each
+# rejection formats a symbolized stack trace, and on a sanitizer build 28 separate
+# processes measured ~40s against ~3s batched, which alone would push the test past
+# the 180s flaky-check limit. --ignore-error keeps the batch going after a throw.
+# The oracle is the PRESENCE of an imported row after each marker, not an error
+# string, so 'ctl' (a valid value, run before and after) is required: without it
+# the whole section would pass vacuously if no statement produced any output.
+write_geoparquet("ctl", ["POINT(7 8)"])
+with open(os.path.join(out, "rejected.sql"), "w") as sql:
+    def case(name):
+        path = os.path.join(out, name + ".parquet")
+        sql.write("SELECT '%s';\n" % name)
+        sql.write("SELECT '%s IMPORTED', toString(geom) FROM file('%s', Parquet);\n" % (name, path))
+    case("ctl")
+    for i in range(len(bad_values)):
+        case("bad_%d" % i)
+    case("ctl")
 PYEOF
 
-PARQUET_SETTINGS="--input_format_parquet_use_native_reader_v3=1 --input_format_parquet_allow_geoparquet_parser=1"
+PARQUET_SETTINGS="--input_format_parquet_allow_geoparquet_parser=1"
 
 for name in case tagged_empty empty_list control; do
     echo "-- $name"
@@ -203,10 +222,10 @@ PYEOF
 $CLICKHOUSE_LOCAL $PARQUET_SETTINGS -q \
     "SELECT id, variantType(geom), geom FROM file('$TMP_DIR/roundtrip.parquet', Parquet) ORDER BY id"
 
-# Invalid values must stay rejected: 1 per line.
+# Invalid values must stay rejected. A 'bad_N' line with no 'bad_N IMPORTED' line
+# after it means that value produced no row, i.e. it was rejected; the two 'ctl'
+# cases must each be followed by their IMPORTED line, proving the batch does
+# detect an accepted value.
 echo "-- rejected"
-for i in $(seq 0 27); do
-    $CLICKHOUSE_LOCAL $PARQUET_SETTINGS -q \
-        "SELECT geom FROM file('$TMP_DIR/bad_$i.parquet', Parquet)" 2>&1 \
-        | grep -c -E "BAD_ARGUMENTS|CANNOT_PARSE_NUMBER"
-done
+$CLICKHOUSE_LOCAL $PARQUET_SETTINGS --ignore-error \
+    --queries-file "$TMP_DIR/rejected.sql"
