@@ -1,4 +1,5 @@
--- Tags: no-parallel
+-- Tags: no-async-insert, no-parallel
+-- - no-async-insert -- the surviving `x IN (SELECT id FROM check_udf_in_set_src)` constraint is evaluated in the background flush, whose context is created from the global context and therefore has `default` as the current database, so the unqualified table name cannot be resolved. This is a pre-existing property of the asynchronous insert queue, unrelated to the constraint machinery.
 -- - no-parallel -- SQL UDFs are global server objects; the flaky check runs the same test concurrently and the CREATE FUNCTION statements would collide.
 
 -- A scalar subquery hidden inside a SQL user-defined function must not bypass the

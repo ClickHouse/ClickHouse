@@ -1,3 +1,6 @@
+-- Tags: no-async-insert
+-- - no-async-insert -- the allowed `c0 IN (SELECT id FROM check_in_set_src)` constraint is evaluated in the background flush, whose context is created from the global context and therefore has `default` as the current database, so the unqualified table name cannot be resolved. This is a pre-existing property of the asynchronous insert queue, unrelated to the constraint machinery.
+
 -- A bare subquery in a CHECK constraint is rejected, but so must be a scalar subquery
 -- nested under a function: otherwise an arbitrary subquery would run on every insert.
 -- Only the set side of an IN operator is allowed (built lazily as a "not-ready set").
