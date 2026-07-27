@@ -716,9 +716,22 @@ void DataPartStorageOnDiskBase::rename(
         disk.moveDirectory(from, to);
 
         /// Only after moveDirectory() since before the directory does not exist.
-        SyncGuardPtr to_sync_guard;
         if (fsync_part_dir)
-            to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
+        {
+            /// Sync child before parent so a parent dentry never points at a not-yet-synced
+            /// child: the moved dir, then the parent(s) holding the renamed dentry.
+            { SyncGuardPtr to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to); }
+
+            /// parent_path() twice: step past the trailing slash on `to`/`from`, then to the container.
+            const String to_parent = fs::path(to).parent_path().parent_path().string();
+            const String from_parent = fs::path(from).parent_path().parent_path().string();
+
+            if (!to_parent.empty())
+                { SyncGuardPtr to_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(to_parent); }
+
+            if (!from_parent.empty() && from_parent != to_parent)
+                { SyncGuardPtr from_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(from_parent); }
+        }
     });
 
     part_dir = new_part_dir;
