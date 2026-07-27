@@ -18,8 +18,16 @@ single table: reads from remote replicas
 1
 two-way inner/any: reads from remote replicas
 0
+left/any non-leftmost: reads from remote replicas
+1
+left/semi non-leftmost: reads from remote replicas
+1
+asof/inner non-leftmost: reads from remote replicas
+0
 inner/any non-leftmost: rows
 2	2	7
 inner/any non-leftmost under a left leftmost join: row count
 1
-all/inner only: rows
+all/inner non-leftmost on a constant: rows
+2	2	7
+2	2	8

@@ -2636,8 +2636,10 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// row). Every other strictness collapses across the whole left side -- `INNER ANY`,
             /// `RIGHT ANY` and `RIGHT SEMI` use `FirstRowOnly`, implemented as a single
             /// `has_seen_matching_rows` compare-exchange -- and re-applying it per replica duplicates
-            /// rows. The condition is a whitelist, so a future `JoinStrictness` enumerator is
-            /// fail-closed. Note this is a strictness rule only: a non-distributive KIND
+            /// rows. Outside `LEFT` the strictness test is a whitelist, so a future `JoinStrictness`
+            /// enumerator is fail-closed there; under `LEFT` every strictness is admitted, which is
+            /// the point of the kind exemption below.
+            /// Note this is a strictness rule only: a non-distributive KIND
             /// (`FULL`/`GLOBAL`/`CROSS`, or a misplaced `RIGHT`) is the business of the disjuncts above,
             /// which is why `ALL` is admitted for every kind here.
             if (is_non_leftmost_join_tree_node
