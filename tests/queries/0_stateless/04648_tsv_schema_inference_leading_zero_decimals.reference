@@ -1,0 +1,113 @@
+group 1: TSV infers Float64
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 2: CSV control, must equal group 1
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 3: zero-padded integers stay String
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+group 4: non-numbers stay String
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+group 5: already-working values unchanged
+c1	Nullable(Int64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 6: date-shaped controls stay String
+c1	Nullable(String)					
+c1	Nullable(String)					
+group 7: round trip through Float64
+0
+0.5
+0
+0
+0.5
+8.5
+0
+0.1
+1e-25
+group 8: no row is lost
+3
+3
+3
+3
+group 9: type merge
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 10: exponent forms stay String in TSV
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+group 10: the CSV divergence that deliberately remains
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 11: try_infer_integers = 1 (the default)
+c1	Nullable(Float64)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+group 11: try_infer_integers = 0
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 11: try_infer_integers = 0, the admitted type is readable
+0
+7
+3242
+100
+9
+1
+0
+18446744073709552000
+group 12: TSV-family siblings
+c1	Nullable(Float64)					
+c1	Nullable(String)					
+c1	Nullable(Float64)					
+c1	Nullable(String)					
+group 13: multiple leading zeros with a fractional part
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+c1	Nullable(Float64)					
+group 14: Dynamic runtime path
+0	Float64
+007	String
+0	Float64
