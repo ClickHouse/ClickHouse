@@ -21,9 +21,7 @@ Prometheus が ClickHouse のメトリクスをスクレイプし、kube-prometh
 </div>
 
 <Steps>
-  <Step>
-    ### 1. kube-prometheus-stack をインストールする
-
+  <Step title="1. kube-prometheus-stack をインストールする" id="1-install-kube-prometheus-stack">
     Prometheus community の Helm リポジトリをローカルの Helm クライアントに追加し、チャートを取得します。
 
     ```bash
@@ -46,9 +44,7 @@ Prometheus が ClickHouse のメトリクスをスクレイプし、kube-prometh
     > **注:** kube-prometheus-stack には、Prometheus、Alertmanager、Grafana、Prometheus Operator がバンドルされています。お使いのプライベートレジストリにミラーする必要があるイメージの完全な一覧については、[チャートのドキュメント](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)を参照してください。
   </Step>
 
-  <Step>
-    ### 2. ClickHouse Operator で PodMonitor を有効にする
-
+  <Step title="2. ClickHouse Operator で PodMonitor を有効にする" id="2-enable-podmonitors-in-the-clickhouse-operator">
     ClickHouse Operator の Helm チャートには、ClickHouse server と Keeper の PodMonitor 定義が含まれています。operator の Helm values でこれらを有効にします。
 
     ```yaml
@@ -83,9 +79,7 @@ Prometheus が ClickHouse のメトリクスをスクレイプし、kube-prometh
     > **Note:** Prometheus インスタンスで別のリリース名を使用している場合は、operator chart のテンプレートをオーバーライドするか、kube-prometheus-stack の values で `prometheus.prometheusSpec.podMonitorSelector` を設定して、それに合わせて PodMonitor のラベルセレクターを更新してください。
   </Step>
 
-  <Step>
-    ### 3. カスタムメトリクスハンドラーを有効にする (任意)
-
+  <Step title="3. カスタムメトリクスハンドラーを有効にする (任意)" id="3-enable-the-custom-metrics-handler-optional">
     ClickHouse Server は、ポート 3123 の専用 HTTP ハンドラーを通じて追加の `ClickHouse_CustomMetric_*` メトリクスを公開します。このエンドポイントには認証が必要です。スクレイピングを有効にするには、次のように設定します。
 
     ```yaml
@@ -107,9 +101,7 @@ Prometheus が ClickHouse のメトリクスをスクレイプし、kube-prometh
     カスタムメトリクスの一覧と推奨アラート閾値の詳細については、[メトリクスとアラートのリファレンス](/ja/products/clickhouse-private/reference/metrics-and-alerts-reference)を参照してください。
   </Step>
 
-  <Step>
-    ### 4. Prometheus ターゲットを確認する
-
+  <Step title="4. Prometheus ターゲットを確認する" id="4-verify-prometheus-targets">
     デプロイ後、Prometheus が ClickHouse のターゲットを検出し、スクレイプできていることを確認します。
 
     ```bash
@@ -125,9 +117,7 @@ Prometheus が ClickHouse のメトリクスをスクレイプし、kube-prometh
     ```
   </Step>
 
-  <Step>
-    ### 5. ClickHouse Grafana Mixin ダッシュボードをインポートする
-
+  <Step title="5. ClickHouse Grafana Mixin ダッシュボードをインポートする" id="5-import-the-clickhouse-grafana-mixin-dashboards">
     [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) には、ClickHouse server と Keeper のメトリクス用に事前構築されたダッシュボードが用意されています。エアギャップ環境では、ダッシュボードの JSON ファイルを手動でインポートしてください。
 
     #### ダッシュボードをダウンロードする
@@ -170,9 +160,7 @@ Prometheus が ClickHouse のメトリクスをスクレイプし、kube-prometh
     Grafana のサイドカーは、`grafana_dashboard: "1"` ラベルが付いた ConfigMap を自動的に検出し、ダッシュボードを読み込みます。
   </Step>
 
-  <Step>
-    ### 6. アラートルールを設定する (任意)
-
+  <Step title="6. アラートルールを設定する (任意)" id="6-configure-alert-rules-optional">
     `PrometheusRule` リソースを作成し、推奨される ClickHouse のアラートルールを Prometheus にインポートします。アラート定義の全一覧については、[アラートを設定する](/ja/products/clickhouse-private/guides/configure-alerting-for-clickhouse) と [メトリクスとアラートのリファレンス](/ja/products/clickhouse-private/reference/metrics-and-alerts-reference) を参照してください。
 
     例:
