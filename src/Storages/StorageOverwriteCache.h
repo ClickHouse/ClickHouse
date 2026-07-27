@@ -1,19 +1,27 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Field.h>
 #include <Core/Names.h>
+#include <Formats/FormatSettings.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Storages/IStorage.h>
+
+#include <Common/Arena.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/PODArray.h>
+#include <base/StringViewHash.h>
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -27,6 +35,7 @@ struct OverwriteCacheSettings
 {
     UInt64 max_memory_bytes = 0;
     Names equal_version_tiebreak_columns;
+    bool compress_segments = false;
 };
 
 class StorageOverwriteCache final : public IStorage, public IKeyValueEntity
@@ -36,6 +45,9 @@ public:
     struct RowSegment
     {
         Columns columns;
+        /// One entry identifier per stored row. A row is dead when its entry no longer points back here,
+        /// which makes compaction proportional to the segment instead of to the whole table.
+        std::vector<EntryId> entry_ids;
         UInt64 allocated_bytes = 0;
         std::atomic<UInt64> live_rows{0};
     };
@@ -46,13 +58,24 @@ public:
         UInt32 segment_row = 0;
     };
 
-    struct CandidateRow
+    /// Memoizes decompressed segment columns for the duration of one operation. Without it every row
+    /// access decompresses a whole segment column, which makes reads and replacements quadratic.
+    class SegmentColumnCache
     {
-        UInt32 source_row = 0;
-        String encoded_values;
-        std::vector<UInt32> value_offsets;
-        String primary_key;
-        std::vector<String> lookup_keys;
+    public:
+        const IColumn & get(const RowSegment & segment, size_t position)
+        {
+            auto & columns = cache[&segment];
+            if (columns.empty())
+                columns.resize(segment.columns.size());
+            auto & column = columns[position];
+            if (!column)
+                column = segment.columns[position]->decompress();
+            return *column;
+        }
+
+    private:
+        std::unordered_map<const RowSegment *, Columns> cache;
     };
 
     using RowDataPtr = std::optional<RowData>;
@@ -149,13 +172,11 @@ public:
     ReadResult getRowsForPrimaryKeys(const std::vector<String> & serialized_keys) const;
     ReadResult getRowsForLookupRequests(const std::vector<LookupRequest> & requests) const;
     size_t getColumnPosition(const String & column_name) const;
-    void insertValueIntoColumn(const RowData & row, size_t position, IColumn & column) const;
+    void insertValueIntoColumn(const RowData & row, size_t position, IColumn & column, SegmentColumnCache & cache) const;
 
     void insertBlock(const Block & block);
 
 private:
-    struct Candidate;
-
     struct Entry
     {
         std::optional<RowData> committed;
@@ -163,15 +184,72 @@ private:
         UInt64 pending_generation = 0;
     };
 
+    /// Chunked, never-relocating entry array. Chunk sizes double, so a tiny table costs a few entries
+    /// while a large one needs only a handful of chunks. Readers reach an entry without any lock.
+    class EntryTable
+    {
+    public:
+        ~EntryTable() { clear(); }
+
+        size_t size() const { return entry_count.load(std::memory_order_acquire); }
+
+        Entry & at(EntryId entry_id) const
+        {
+            const size_t index = static_cast<size_t>(entry_id) - 1;
+            if (index < base_size)
+                return chunks[0].load(std::memory_order_acquire)[index];
+            const size_t level = std::bit_width(index) - base_shift;
+            return chunks[level].load(std::memory_order_acquire)[index - (1ULL << (level + base_shift - 1))];
+        }
+
+        /// Both grow and shrink run under the writer lock.
+        void grow(size_t new_size);
+        void shrink(size_t new_size);
+        void clear();
+
+        UInt64 allocatedBytes() const { return static_cast<UInt64>(allocated_entries) * sizeof(Entry); }
+
+    private:
+        static constexpr size_t base_shift = 2;
+        static constexpr size_t base_size = 1ULL << base_shift;
+        static constexpr size_t max_chunks = 8 * sizeof(size_t) - base_shift + 1;
+
+        static size_t chunkCapacity(size_t level) { return level ? 1ULL << (level + base_shift - 1) : base_size; }
+
+        std::array<std::atomic<Entry *>, max_chunks> chunks{};
+        size_t chunk_count = 0;
+        size_t allocated_entries = 0;
+        std::atomic<size_t> entry_count = 0;
+    };
+
+    /// Serialized keys of one input block for one column tuple, packed into a single buffer.
+    struct SerializedKeys
+    {
+        PODArray<char> data;
+        PODArray<UInt64> offsets;
+        PODArray<UInt64> hashes;
+
+        std::string_view at(size_t row) const
+        {
+            const UInt64 begin = row ? offsets[row - 1] : 0;
+            return {data.data() + begin, offsets[row] - begin};
+        }
+    };
 
     static constexpr size_t primary_shard_count = 256;
     static constexpr size_t posting_shard_count = 256;
     static constexpr size_t row_lock_count = 4096;
+    static_assert(primary_shard_count == 256 && posting_shard_count == 256, "shardIndex takes the top eight hash bits");
+
+    /// A small initial capacity keeps the fixed cost of a nearly empty shard low.
+    using PrimaryMap = HashMapWithSavedHash<std::string_view, EntryId, StringViewHash, HashTableGrowerWithPrecalculation<3>>;
 
     struct PrimaryShard
     {
         mutable std::shared_mutex mutex;
-        std::unordered_map<String, EntryId> entries;
+        PrimaryMap entries;
+        /// Owns the key bytes referenced by `entries`.
+        std::unique_ptr<Arena> arena = std::make_unique<Arena>();
     };
 
 public:
@@ -254,8 +332,20 @@ public:
             std::vector<EntryId> wide;
         };
 
+        /// The hash map stores only a position, so its cells stay trivially relocatable while the
+        /// postings themselves keep stable addresses in the deque.
+        using PostingMap = HashMapWithSavedHash<std::string_view, UInt32, StringViewHash, HashTableGrowerWithPrecalculation<3>>;
+
+        const Posting * find(std::string_view key, size_t hash) const
+        {
+            const auto * it = index.find(key, hash);
+            return it ? &postings[it->getMapped()] : nullptr;
+        }
+
         mutable std::shared_mutex mutex;
-        std::unordered_map<String, Posting> postings;
+        PostingMap index;
+        std::deque<Posting> postings;
+        std::unique_ptr<Arena> arena = std::make_unique<Arena>();
     };
 
 
@@ -266,18 +356,21 @@ public:
     };
 
 private:
+    void serializeKeys(const Block & block, const std::vector<size_t> & positions, SerializedKeys & result) const;
     String serializeColumns(const Block & block, size_t row, const std::vector<size_t> & positions) const;
-    String serializeRowColumns(const RowData & row, const std::vector<size_t> & positions) const;
-    Field getRowField(const RowData & row, size_t position) const;
-    Field getCandidateField(const CandidateRow & row, size_t position) const;
-    int compareWinner(const CandidateRow & lhs, const CandidateRow & rhs) const;
-    int compareWinner(const CandidateRow & lhs, const RowData & rhs) const;
-    bool rowsEqual(const CandidateRow & lhs, const RowData & rhs) const;
+    String serializeRowColumns(const RowData & row, const std::vector<size_t> & positions, SegmentColumnCache & cache) const;
 
-    size_t primaryShardIndex(const String & key) const;
-    size_t postingShardIndex(const String & key) const;
+    /// Winner selection compares values in place: the version and tie-break columns are never compressed,
+    /// so no row payload is ever materialized to pick a winner.
+    int compareWinner(const Block & block, size_t lhs_row, size_t rhs_row) const;
+    int compareWinner(const Block & block, size_t lhs_row, const RowData & rhs) const;
+    UInt128 rowDigest(const Block & block, size_t row) const;
+    UInt128 rowDigest(const RowData & row, SegmentColumnCache & cache) const;
+
+    /// The hash tables index themselves by the low bits, so the shard is chosen from the high ones.
+    static size_t shardIndex(size_t hash) { return hash >> 56; }
     size_t rowLockIndex(EntryId entry_id) const;
-    std::optional<EntryId> findEntry(const String & key) const;
+    std::optional<EntryId> findEntry(std::string_view key, size_t hash) const;
     RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
     std::vector<EntryId> getPostingIds(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
     UInt64 getPostingCardinality(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
@@ -292,12 +385,15 @@ private:
 
     Block sample_block;
     Serializations serializations;
+    FormatSettings format_settings;
     DataTypes column_types;
     std::unordered_map<String, size_t> column_positions;
     std::vector<size_t> key_positions;
     DataTypes key_column_types;
     size_t version_position = 0;
     std::vector<size_t> tiebreak_positions;
+    /// The version and tie-break columns must stay directly comparable inside a segment.
+    std::vector<bool> keep_uncompressed;
     std::vector<std::vector<size_t>> lookup_index_positions;
     std::vector<DataTypes> lookup_index_column_types;
 
@@ -305,8 +401,7 @@ private:
     mutable std::shared_mutex lookup_catalog_mutex;
     std::array<PrimaryShard, primary_shard_count> primary_shards;
     std::vector<LookupIndexPtr> lookup_indexes;
-    mutable std::shared_mutex entries_by_id_mutex;
-    std::vector<Entry> entries_by_id;
+    EntryTable entries;
     mutable std::array<std::mutex, row_lock_count> row_mutexes;
     EntryId next_entry_id = 1;
 

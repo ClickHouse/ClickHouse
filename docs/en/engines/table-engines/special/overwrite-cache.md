@@ -55,9 +55,13 @@ The atomicity boundary is one input block received by the table-engine sink. A S
 
 ## Memory representation {#memory-representation}
 
-Committed payloads are stored in immutable native column segments. A segment preserves compact column representations such as `LowCardinality` dictionaries and can use ClickHouse's in-memory column compression. Rows retain only a segment reference and row offset; serialized primary and lookup keys used while preparing an insert are not retained in the row payload.
+Committed payloads are stored in immutable native column segments. A segment preserves compact column representations such as `LowCardinality` dictionaries. Rows retain only a segment reference and row offset; serialized primary and lookup keys used while preparing an insert are not retained in the row payload.
 
-Lookup postings store compact numeric entry identifiers instead of owning row pointers. They use `UInt32` identifiers while the ID range permits and upgrade to `UInt64` when required. Replacing a winner does not change postings because every indexed column must belong to the immutable `KEYS` tuple. When replacements leave at least half of a segment dead, its remaining live rows are compacted into a new immutable segment. Fully dead segments are reclaimed after readers of the previous publication epoch have drained.
+Segments are uncompressed by default. `compress_segments` enables ClickHouse's in-memory column compression, which lowers residency at a large cost per accessed row: reading one row of a compressed column decompresses the whole column, so it suits caches that are scanned by large lookups rather than probed one key at a time. The version and tie-break columns are never compressed, so winner selection compares values in place and never materializes a stored payload.
+
+Lookup postings store compact numeric entry identifiers instead of owning row pointers. They use `UInt32` identifiers while the ID range permits and upgrade to `UInt64` when required. Replacing a winner does not change postings because every indexed column must belong to the immutable `KEYS` tuple. When replacements leave at least half of a segment dead, its remaining live rows are compacted into a new immutable segment. Each segment carries one entry identifier per stored row, so selecting the survivors costs one pass over that segment rather than a scan of the whole table. Fully dead segments are reclaimed after readers of the previous publication epoch have drained.
+
+Entries live in a chunked array that never relocates, and the primary index and lookup postings are open-addressed hash tables keyed by arena-owned bytes. A reader therefore reaches a row without taking any table-wide lock, and a writer hashes each key once and locks each affected shard once per published block.
 
 Writers are serialized, but a large replacement publication does not take an engine-wide exclusive reader lock. New primary keys can briefly contend with readers of the same primary or posting shard. Large lookup-index results can still require substantial traversal work; sharding does not make an unbounded result inexpensive.
 
@@ -80,6 +84,7 @@ An added index is privately populated and becomes available to new readers only 
 
 - `max_memory_bytes` — Optional hard admission limit for engine-accounted memory. If omitted, allocations remain subject to the normal ClickHouse memory tracker and query limits.
 - `equal_version_tiebreak_columns` — Optional comma-separated column names used to select a deterministic winner when versions are equal. These columns cannot be key or version columns.
+- `compress_segments` — Optional flag, `0` by default. When set to `1`, payload columns are compressed in memory. This trades a large per-row read cost for lower residency; see [Memory representation](#memory-representation).
 
 Lookup indexes are declared only through `INDEX (...)`. The legacy settings `max_index_probe_rows`, `max_index_result_rows`, `index_each_key_column`, `secondary_index_columns`, `secondary_index_segment_column`, and `max_secondary_index_rows` are not supported. Every lookup-index column must occur in `KEYS`, and duplicate tuples are rejected.
 

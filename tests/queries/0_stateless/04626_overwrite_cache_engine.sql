@@ -138,9 +138,9 @@ CREATE TABLE overwrite_cache_small
 )
 ENGINE = OverwriteCache(version)
 KEYS (key)
-SETTINGS max_memory_bytes = 800;
+SETTINGS max_memory_bytes = 131072;
 
-INSERT INTO overwrite_cache_small VALUES (1, 1, repeat('x', 100)), (2, 1, repeat('y', 100)); -- { serverError MEMORY_LIMIT_EXCEEDED }
+INSERT INTO overwrite_cache_small VALUES (1, 1, repeat('x', 200000)), (2, 1, repeat('y', 200000)); -- { serverError MEMORY_LIMIT_EXCEEDED }
 SELECT payload FROM overwrite_cache_small WHERE key = 1;
 
 INSERT INTO overwrite_cache_small VALUES (1, 1, 'same-version-a');
