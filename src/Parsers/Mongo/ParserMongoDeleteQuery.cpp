@@ -36,9 +36,12 @@ bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
     auto delete_query = make_intrusive<ASTDeleteQuery>();
     node = delete_query;
 
-    delete_query->table = make_intrusive<ASTIdentifier>(metadata->getCollectionName());
+    /// `set` is what puts the identifier into `children`, which `ASTQueryWithTableAndOutput`
+    /// requires: `InterpreterDeleteQuery` fills in the database with `setDatabase`, which
+    /// starts by removing the current one from `children`.
+    delete_query->set(delete_query->table, make_intrusive<ASTIdentifier>(metadata->getCollectionName()));
     if (!metadata->getDatabaseName().empty())
-        delete_query->database = make_intrusive<ASTIdentifier>(metadata->getDatabaseName());
+        delete_query->set(delete_query->database, make_intrusive<ASTIdentifier>(metadata->getDatabaseName()));
 
     /// Traverse data tree for WHERE operator
     ASTPtr where_condition;
