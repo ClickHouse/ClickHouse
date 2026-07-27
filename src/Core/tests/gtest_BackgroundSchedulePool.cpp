@@ -291,7 +291,7 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 }
 
 /// Failing to spawn a schedule pool's initial threads must throw a recoverable exception, not
-/// abort the server. The fault injector forces the spawn to throw deterministically.
+/// abort the server. The fault injector forces the spawn to throw.
 TEST(BackgroundSchedulePool, CtorThrowsInsteadOfAbortOnSpawnFailure)
 {
     CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
@@ -308,4 +308,39 @@ TEST(BackgroundSchedulePool, CtorThrowsInsteadOfAbortOnSpawnFailure)
     }
 
     EXPECT_TRUE(threw_cannot_schedule) << "constructor must throw CANNOT_SCHEDULE_TASK, not abort, when it cannot spawn initial threads";
+}
+
+/// The case above always fails the very first spawn, so `threads` is still empty and the
+/// constructor's teardown has nothing to join. Failing a *later* spawn leaves already started,
+/// still joinable threads behind, and `~ThreadFromGlobalPoolImpl` aborts the process for those,
+/// so the constructor must join them before propagating. A partial fault probability makes some
+/// construction fail after at least one worker started; without the teardown this test aborts
+/// rather than fails, which is exactly the failure mode being guarded against.
+TEST(BackgroundSchedulePool, CtorJoinsPartiallySpawnedThreadsOnFailure)
+{
+    CannotAllocateThreadFaultInjector::setFaultProbability(0.5);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    size_t threw = 0;
+    size_t constructed = 0;
+    for (size_t i = 0; i < 200; ++i)
+    {
+        try
+        {
+            auto pool
+                = BackgroundSchedulePool::create(8, 8, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+            ++constructed;
+            pool->join();
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::CANNOT_SCHEDULE_TASK);
+            ++threw;
+        }
+    }
+
+    /// With 8 initial threads at probability 0.5 both outcomes are overwhelmingly likely to occur;
+    /// the assertion that matters is that neither aborted the process.
+    EXPECT_EQ(threw + constructed, 200u);
+    EXPECT_GT(threw, 0u) << "no construction failed, so the teardown path was never exercised";
 }
