@@ -43,7 +43,7 @@ The following settings are available:
 
 ## query_log {#query_log}
 
-Setting for logging queries received with the [log_queries=1](/reference/settings/session-settings) setting.
+Setting for logging queries received with the [log_queries=1](/reference/settings/session-settings/log-queries#log_queries) setting.
 
 Queries are logged in the [system.query_log](/reference/system-tables/query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -136,7 +136,7 @@ To disable `query_metric_log` setting, you should create the following file `/et
 
 ## query_thread_log {#query_thread_log}
 
-Setting for logging threads of queries received with the [log_query_threads=1](/reference/settings/session-settings#log_query_threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](/reference/settings/session-settings/log-query#log_query_threads) setting.
 
 Queries are logged in the [system.query_thread_log](/reference/system-tables/query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -161,7 +161,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/reference/settings/session-settings#log_query_views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/reference/settings/session-settings/log-query#log_query_views) setting.
 
 Queries are logged in the [system.query_views_log](/reference/system-tables/query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
