@@ -116,6 +116,24 @@ def seconds_between(from_time, to_time):
     return (parse_server_time(to_time) - parse_server_time(from_time)).total_seconds()
 
 
+# Reads the server-recorded start time of a query from system.query_log by its query_id.
+# Called after the measured operation has finished, so that neither the flush nor the read
+# can perturb the interval being measured.
+def get_query_start_time(node, query_id):
+    node.query("SYSTEM FLUSH LOGS query_log")
+    rows = node.query(
+        "SELECT query_start_time_microseconds FROM system.query_log "
+        f"WHERE (query_id = '{query_id}') AND (type = 'QueryFinish')"
+    ).splitlines()
+    # Exactly one row must be found, so that a vanished oracle fails loudly here instead of
+    # silently skipping the caller's timing check.
+    assert (
+        len(rows) == 1
+    ), f"Expected 1 query_log row for query_id={query_id}, got {rows}"
+    print(f"{get_node_name(node)}: query {query_id} started at {rows[0]} (server time)")
+    return rows[0]
+
+
 # Reads the status of a backup or a restore from system.backups.
 def get_status(initiator, backup_id=None, restore_id=None):
     id = backup_id if backup_id is not None else restore_id
@@ -253,10 +271,10 @@ def wait_num_system_processes(
 
 
 # Kills a BACKUP or RESTORE query.
-# Returns the server-recorded `query_start_time_microseconds` of the KILL QUERY itself
-# (a DateTime64(6) value read from system.query_log by the KILL's own query_id), so that
-# callers can measure the cancellation without any clickhouse-client launch inside the
-# measured interval.
+# Returns the `query_id` of the KILL QUERY it issued, so that the caller can look up its
+# server-recorded start time later (see get_query_start_time()), after the measured
+# operation has finished, so that no clickhouse-client launch is inside the measured
+# interval.
 def kill_query(
     node, backup_id=None, restore_id=None, is_initial_query=None, timeout=None
 ):
@@ -281,21 +299,7 @@ def kill_query(
     )
     if timeout is not None:
         assert waited < timeout
-    node.query("SYSTEM FLUSH LOGS")
-    rows = node.query(
-        "SELECT query_start_time_microseconds FROM system.query_log "
-        f"WHERE (query_id = '{kill_query_id}') AND (type = 'QueryFinish')"
-    ).splitlines()
-    # Exactly one row must be found, so that a vanished oracle fails loudly here instead of
-    # silently skipping the caller's timing check.
-    assert (
-        len(rows) == 1
-    ), f"Expected 1 query_log row for KILL query_id={kill_query_id}, got {rows}"
-    kill_start_time = rows[0]
-    print(
-        f"{get_node_name(node)}: KILL QUERY {kill_query_id} started at {kill_start_time} (server time)"
-    )
-    return kill_start_time
+    return kill_query_id
 
 
 # Sleeps for random amount of time.
@@ -509,7 +513,7 @@ def test_cancel_backup():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
-        kill_start_time = kill_query(
+        kill_query_id = kill_query(
             node_to_cancel, backup_id=backup_id, is_initial_query=cancel_as_initiator
         )
 
@@ -517,17 +521,22 @@ def test_cancel_backup():
             assert get_status(initiator, backup_id=backup_id) == "BACKUP_CANCELLED"
         end_time = wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id)
 
+        kill_start_time = get_query_start_time(node_to_cancel, kill_query_id)
+
         # Measured between two server-recorded timestamps: the start of the KILL QUERY on the
         # node it was sent to, and the moment the initiator reached the terminal status (which
         # is stamped after the initiator finished waiting for the other hosts). So the whole
         # cluster-wide cancellation is inside the interval, while the harness round trips are
-        # not.
+        # not. The system.query_log lookup above happens after the operation finished, so it
+        # cannot perturb the interval either.
         time_to_cancel = seconds_between(kill_start_time, end_time)
         print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, backup_id=backup_id)
         assert get_num_system_processes(nodes, backup_id=backup_id) == 0
-        assert time_to_cancel <= 6  # A backup should be cancelled quite quickly.
+        # Two independent wall-clock reads, so a backward clock step would otherwise make a
+        # too-slow cancellation look fast; the lower bound turns that into a failure.
+        assert 0 <= time_to_cancel <= 6  # A backup should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
 
@@ -573,7 +582,7 @@ def test_cancel_restore():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
-        kill_start_time = kill_query(
+        kill_query_id = kill_query(
             node_to_cancel, restore_id=restore_id, is_initial_query=cancel_as_initiator
         )
 
@@ -581,13 +590,17 @@ def test_cancel_restore():
             assert get_status(initiator, restore_id=restore_id) == "RESTORE_CANCELLED"
         end_time = wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id)
 
+        kill_start_time = get_query_start_time(node_to_cancel, kill_query_id)
+
         # Both endpoints are server-recorded, see the comment in test_cancel_backup.
         time_to_cancel = seconds_between(kill_start_time, end_time)
         print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, restore_id=restore_id)
         assert get_num_system_processes(nodes, restore_id=restore_id) == 0
-        assert time_to_cancel <= 6  # A restore should be cancelled quite quickly.
+        # Two independent wall-clock reads, so a backward clock step would otherwise make a
+        # too-slow cancellation look fast; the lower bound turns that into a failure.
+        assert 0 <= time_to_cancel <= 6  # A restore should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
     # Restore successfully.
