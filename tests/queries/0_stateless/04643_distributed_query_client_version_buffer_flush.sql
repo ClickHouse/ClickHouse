@@ -43,8 +43,10 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT 'remote_version', count() > 0, min(client_version_major) > 0
 FROM system.query_log
+-- The sub-query runs on the shard with its connection's own default database, so it is identified
+-- by the tables it reads, not by `current_database`.
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
-    AND query LIKE concat('%`', currentDatabase(), '`.`agg_src`%');
+    AND has(databases, currentDatabase()) AND has(tables, concat(currentDatabase(), '.agg_src'));
 
 DROP TABLE buf;
 DROP TABLE buf_mv;
