@@ -647,7 +647,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         storage->updateExternalDynamicMetadataIfExists(context);
         if (!metadata_snapshot)
         {
-            const auto in_memory_metadata = storage->getInMemoryMetadataPtr(context, false);
+            const auto in_memory_metadata = storage->getInMemoryMetadataQueryCached(context);
             metadata_snapshot = in_memory_metadata;
         }
 
@@ -785,7 +785,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             {
                 LOG_TRACE(log, "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
-                auto custom_key_metadata = storage->getInMemoryMetadataPtr(context, false);
+                auto custom_key_metadata = storage->getInMemoryMetadataQueryCached(context);
                 parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
                     settings[Setting::parallel_replicas_count],
                     settings[Setting::parallel_replica_offset],

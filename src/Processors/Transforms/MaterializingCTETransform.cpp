@@ -96,7 +96,7 @@ void MaterializingCTETransform::init()
 
     /// Prepare writing to temporary table
     auto storage = materialized_cte->storage;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     table_out = QueryPipeline(storage->write({}, metadata_snapshot, nullptr, /*async_insert=*/false));
     executor = std::make_unique<PushingPipelineExecutor>(table_out);
 

@@ -187,7 +187,7 @@ namespace
             if (!storage_view || !storage_view->isParameterizedView())
                 return;
 
-            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
+            auto metadata = storage->getInMemoryMetadataQueryCached(query_context);
 
             /// For views created with `SQL SECURITY DEFINER` or `NONE`, execution resolves the
             /// inner tables via `StorageView::getSQLSecurityOverriddenContext`. Inlining the view
@@ -1117,7 +1117,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
             auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
-            auto metadata = storage->getInMemoryMetadataPtr(query_context, false);
+            auto metadata = storage->getInMemoryMetadataQueryCached(query_context);
             const StorageInMemoryMetadata & metadata_snapshot = *metadata;
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());

@@ -169,7 +169,7 @@ void UniqueKeyDenseIndexOps::sweepOrphans(const DataPartsLock & /*part_lock*/)
     /// SST-side sweep only. Delete-bitmap recovery + version GC live in
     /// the txn commit/recovery protocol, not here.
     auto & log = data.log;
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
+    auto metadata_snapshot = data.getInMemoryMetadataUncached(data.getContext());
     const bool table_has_uk = metadata_snapshot && metadata_snapshot->hasUniqueKey();
 
     size_t removed_stray_ssts = 0;
@@ -211,7 +211,7 @@ void UniqueKeyDenseIndexOps::ensureValidDenseIndex(MutableDataPartPtr & part, bo
         return;
 
     auto & log = data.log;
-    auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), /*bypass_metadata_cache=*/false);
+    auto metadata_snapshot = data.getInMemoryMetadataUncached(data.getContext());
     if (!metadata_snapshot || !metadata_snapshot->hasUniqueKey())
         return;
 

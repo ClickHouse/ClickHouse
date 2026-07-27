@@ -1625,7 +1625,7 @@ static BlockIO executeQueryImpl(
                     }
                     StoragePtr storage = context->executeTableFunction(input_function, select_query_hint);
                     auto & input_storage = dynamic_cast<StorageInput &>(*storage);
-                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataPtr(context, false);
+                    auto input_metadata_snapshot = input_storage.getInMemoryMetadataQueryCached(context);
 
                     auto pipe = getSourceFromASTInsertQuery(
                         out_ast, true, input_metadata_snapshot->getSampleBlock(), context, input_function);

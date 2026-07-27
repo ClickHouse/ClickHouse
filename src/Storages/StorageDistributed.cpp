@@ -1081,7 +1081,7 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
         *modified_query_info.getCluster(), local_context, metadata_snapshot->columns);
 
@@ -1388,7 +1388,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
-    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataQueryCached(local_context);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
         predicate, filter.get(), local_context, cluster, storage_metadata);
 
@@ -1506,7 +1506,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
         }
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
@@ -1517,7 +1517,7 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, local_context);
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);

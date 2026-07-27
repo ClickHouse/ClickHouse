@@ -162,7 +162,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (!session_tz.empty())
             {
                 auto source_alter = mutation_command->ast();
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
                     *source_alter, metadata_snapshot->columns, session_tz);
                 if (tz_rewritten_ast)
@@ -323,7 +323,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
                 cache->clear();
             }
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/ false);
+            auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
             alter_commands->validate(table, context);
 
             bool share_nested = true;
@@ -338,7 +338,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         {
             if (mutation_commands->hasNonEmptyMutationCommands())
             {
-                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+                auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
                 table->checkMutationIsPossible(*mutation_commands, settings);
                 /// Replicated-storage non-determinism check must always run, even when
                 /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
@@ -356,7 +356,7 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         }
         else if (auto * partition_commands = std::get_if<PartitionCommands>(&segment))
         {
-            auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
+            auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
             table->checkAlterPartitionIsPossible(*partition_commands, metadata_snapshot, settings, context);
             auto partition_commands_pipe = table->alterPartition(metadata_snapshot, *partition_commands, context);
             if (!partition_commands_pipe.empty())
@@ -575,7 +575,7 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
     /// A null storage (non-local ON CLUSTER target) fails closed -> treated as a regular column.
     if (!storage)
         return false;
-    const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
+    const auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(context_);
     return metadata_snapshot->isVirtualColumn(RowExistsColumn::name);
 }
 

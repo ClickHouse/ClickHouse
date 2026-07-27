@@ -1065,7 +1065,7 @@ void TreeRewriterResult::collectSourceColumns(bool add_special)
         else
             source_columns.insert(source_columns.end(), columns_from_storage.begin(), columns_from_storage.end());
 
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     }
 
     source_columns_set = removeDuplicateColumns(source_columns);

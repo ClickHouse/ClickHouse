@@ -84,7 +84,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         std::this_thread::sleep_for(std::chrono::milliseconds(3000));
     });
 
-    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_snapshot = storage.getInMemoryMetadataUncached(storage.getContext());
     int32_t metadata_version = metadata_snapshot->getMetadataVersion();
     const auto storage_settings_ptr = storage.getSettings();
 

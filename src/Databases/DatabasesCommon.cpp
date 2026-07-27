@@ -281,7 +281,7 @@ ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context)
 {
     auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr(context, false);
+    auto metadata_ptr = storage->getInMemoryMetadataQueryCached(context);
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)

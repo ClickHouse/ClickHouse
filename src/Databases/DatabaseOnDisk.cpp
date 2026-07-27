@@ -862,7 +862,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & table_name, boo
 
 ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
 {
-    auto metadata_ptr = storage->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_ptr = storage->getInMemoryMetadataUncached(getContext());
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)

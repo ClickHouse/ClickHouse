@@ -75,7 +75,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
                         "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
     /// List of columns to read to execute the query.
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = storage->getInMemoryMetadataUncached(getContext());
     Names required_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     getContext()->checkAccess(AccessType::SELECT, table_id, required_columns);
 

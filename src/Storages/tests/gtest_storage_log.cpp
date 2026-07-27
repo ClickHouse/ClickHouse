@@ -69,7 +69,7 @@ private:
 static std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
 
     std::string data;
 
@@ -109,7 +109,7 @@ static std::string writeData(int rows, DB::StoragePtr & table, const DB::Context
 static std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
 {
     using namespace DB;
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, context);
 
     Names column_names;

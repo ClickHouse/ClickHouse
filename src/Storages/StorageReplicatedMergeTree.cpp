@@ -629,7 +629,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         return;
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     has_metadata_in_zookeeper = true;
 
@@ -672,7 +672,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
                     setInMemoryMetadata(metadata_snapshot->withMetadataVersion(metadata_version));
                 }
-                metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
+                metadata_snapshot = getInMemoryMetadataUncached(getContext());
             }
         }
         catch (Coordination::Exception & e)
@@ -1815,7 +1815,7 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
 void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
     ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
@@ -2637,7 +2637,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
     /// Looking for covering part. After that entry.actual_new_part_name may be filled.
     String replica = findReplicaHavingCoveringPart(entry, true);
     const auto storage_settings_ptr = getSettings();
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     try
     {
@@ -2857,7 +2857,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::executeFetchShared
     }
 
     const auto storage_settings_ptr = getSettings();
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     try
     {
@@ -3025,7 +3025,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
     /// command must be applied to all parts on disk.
     waitForOutdatedPartsToBeLoaded();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     auto storage_settings_ptr = getSettings();
 
     /// Range with only one block has special meaning: it's ATTACH PARTITION or MOVE PARTITION, so there is no drop range
@@ -3095,7 +3095,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
 
     auto table_lock_holder_dst_table = lockForShare(
             RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
-    auto dst_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto dst_metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     for (size_t i = 0; i < entry_replace.new_part_names.size(); ++i)
     {
@@ -3159,7 +3159,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             return 0;
         }
 
-        auto src_metadata_snapshot = source_table->getInMemoryMetadataPtr(getContext(), false);
+        auto src_metadata_snapshot = source_table->getInMemoryMetadataUncached(getContext());
         MergeTreeData * src_data = nullptr;
         try
         {
@@ -3497,7 +3497,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     MutableDataPartPtr part;
 
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
         String source_replica_path = entry.source_shard + "/replicas/" + replica;
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(source_replica_path + "/host"));
         auto timeouts = getHTTPTimeouts(getContext());
@@ -3740,7 +3740,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     if ((*getSettings())[MergeTreeSetting::detach_old_local_parts_when_cloning_replica])
     {
-        auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
         for (const auto & part : parts_to_remove_from_working_set)
         {
@@ -3915,7 +3915,7 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
         return;
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     Int32 source_metadata_version = parse<Int32>(source_metadata_version_str);
     if (metadata_snapshot->getMetadataVersion() == source_metadata_version)
         return;
@@ -4845,7 +4845,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
         if (!broken_part_info.contains(part->info))
             continue;
 
-        const auto storage_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto storage_metadata = getInMemoryMetadataUncached(getContext());
         if (broken_part_info == part->info)
         {
             chassert(!broken_part);
@@ -6224,7 +6224,7 @@ void StorageReplicatedMergeTree::read(
         {
             auto modified_query_info = query_info;
             modified_query_info.cluster = std::move(cluster);
-            auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+            auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                 query_plan,
                 getStorageID(),
@@ -6460,7 +6460,7 @@ bool StorageReplicatedMergeTree::optimize(
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
-    auto projections_metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto projections_metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     if (deduplicate && projections_metadata_snapshot->hasProjections()
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::IGNORE))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -6487,7 +6487,7 @@ bool StorageReplicatedMergeTree::optimize(
 
     auto zookeeper = getZooKeeperAndAssertNotReadonly();
     const auto storage_settings_ptr = getSettings();
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     std::vector<ReplicatedMergeTreeLogEntryData> merge_entries;
 
     auto try_assign_merge = [&](const String & partition_id) -> bool
@@ -6666,7 +6666,7 @@ bool StorageReplicatedMergeTree::optimize(
 
 bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & entry)
 {
-    auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto current_metadata = getInMemoryMetadataUncached(getContext());
     if (entry.alter_version < current_metadata->getMetadataVersion())
     {
         /// TODO Can we replace it with LOGICAL_ERROR?
@@ -6730,7 +6730,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
-        auto applied_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
+        auto applied_metadata_snapshot = getInMemoryMetadataUncached(getContext());
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
     }
 
@@ -6802,7 +6802,7 @@ void StorageReplicatedMergeTree::alter(
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     StorageInMemoryMetadata future_metadata = *metadata_snapshot;
     /// Snapshot the sorting key before applying commands, to compare with the resolved future one.
     KeyDescription old_sorting_key = future_metadata.sorting_key;
@@ -6870,7 +6870,7 @@ void StorageReplicatedMergeTree::alter(
         /// changeSettings is the sole writer of the setting-derived escape fields and has
         /// already committed them; carry them into future_metadata so the comment commit
         /// below does not revert the index filename policy (commands.apply never sets them).
-        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
+        auto committed_metadata = getInMemoryMetadataUncached(query_context);
         future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
         for (auto & index : future_metadata.secondary_indices)
             index.escape_filenames = committed_metadata->escape_index_filenames;
@@ -6936,7 +6936,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry.emplace();
         mutation_znode.reset();
 
-        auto current_metadata = getInMemoryMetadataPtr(query_context, false);
+        auto current_metadata = getInMemoryMetadataQueryCached(query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
@@ -7251,7 +7251,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
     SCOPE_EXIT({ are_restoring_replica.store(false); });
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     waitForOutdatedPartsToBeLoaded();
     const DataPartsVector all_parts = getAllDataPartsVector();
@@ -9090,8 +9090,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     auto lock2 = source_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     const auto storage_settings_ptr = getSettings();
-    const auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(query_context, false);
-    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    const auto source_metadata_snapshot = source_table->getInMemoryMetadataQueryCached(query_context);
+    const auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     const MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, metadata_snapshot);
 
     std::unordered_set<String> partitions;
@@ -9465,8 +9465,8 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     auto lock2 = dest_table->lockForShare(query_context->getCurrentQueryId(), query_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     auto storage_settings_ptr = getSettings();
 
-    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(query_context, false);
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataQueryCached(query_context);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -9783,7 +9783,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
     {
         /// Optimistic check that for compatible destination table structure.
-        const auto storage_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto storage_metadata = getInMemoryMetadataUncached(getContext());
         checkTableStructure(to, storage_metadata, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     }
 
@@ -11346,7 +11346,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     LOG_INFO(log, "Going to replace lost part {} with empty part", lost_part_name);
 
     auto new_part_info = MergeTreePartInfo::fromPartName(lost_part_name, format_version);
-    auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto table_metadata = getInMemoryMetadataUncached(getContext());
 
     MergeTreePartition partition;
     /// Use a sibling part's metadata when possible so patch parts get patch-part metadata.
@@ -11717,7 +11717,7 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
         /// Try to adjust the create query using values from ZooKeeper.
         auto zookeeper = getZooKeeper();
         auto columns_from_entry = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns"));
-        auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+        auto current_metadata = getInMemoryMetadataUncached(getContext());
         auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
             zookeeper->get(fs::path(zookeeper_path) / "metadata"), columns_from_entry,
             current_metadata->add_minmax_index_for_numeric_columns,
@@ -11886,7 +11886,7 @@ void StorageReplicatedMergeTree::attachRestoredParts(
     MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> & zookeeper_retries_info)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::attachRestoredParts");
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     auto sink = std::make_shared<ReplicatedMergeTreeSink>(
         /* async_insert */ false, *this, metadata_snapshot, /* quorum */ 0, /* quorum_timeout_ms */ 0, /* max_parts_per_block */ 0, /* quorum_parallel */ false,

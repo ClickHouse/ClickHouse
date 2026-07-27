@@ -299,13 +299,13 @@ StorageMergeTreeIndex::StorageMergeTreeIndex(
     data_parts = merge_tree->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
-    auto primary_key_metadata = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto primary_key_metadata = merge_tree->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     key_sample_block = std::make_shared<const Block>(primary_key_metadata->getPrimaryKey().sample_block);
 
     if (with_minmax)
     {
         Block minmax_block;
-        const auto metadata_snapshot = merge_tree->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        const auto metadata_snapshot = merge_tree->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
         const auto & partition_key = metadata_snapshot->getPartitionKey();
         for (const auto & column : MergeTreeData::getMinMaxColumns(partition_key, merge_tree->getSettings()))
             minmax_block.insert({nullptr, std::make_shared<DataTypeTuple>(DataTypes{makeNullableSafe(column.type), makeNullableSafe(column.type)}), fmt::format("minmax_{}", column.name)});
@@ -385,7 +385,7 @@ void StorageMergeTreeIndex::readImpl(
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
-    const auto storage_metadata = source_table->getInMemoryMetadataPtr(context, false);
+    const auto storage_metadata = source_table->getInMemoryMetadataQueryCached(context);
     const auto & storage_columns = storage_metadata->getColumns();
     Names columns_from_storage;
 

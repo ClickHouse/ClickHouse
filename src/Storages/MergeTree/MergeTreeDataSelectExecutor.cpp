@@ -148,7 +148,7 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
     if (projection)
     {
-        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        auto metadata_snapshot = data.getInMemoryMetadataUncached(nullptr);
         if (metadata_snapshot->hasUniqueKey())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "UNIQUE KEY tables do not support reading via projections");

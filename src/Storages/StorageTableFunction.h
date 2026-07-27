@@ -96,7 +96,7 @@ public:
             size_t num_streams) override
     {
         auto storage = getNested();
-        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        const auto nested_metadata = storage->getInMemoryMetadataQueryCached(context);
         auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                                   processed_stage, max_block_size, num_streams);
@@ -129,7 +129,7 @@ public:
     {
         auto storage = getNested();
         auto cached_structure = metadata_snapshot->getSampleBlock();
-        auto nested_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+        auto nested_metadata_snapshot = storage->getInMemoryMetadataQueryCached(context);
         auto actual_structure = nested_metadata_snapshot->getSampleBlock();
         if (!blocksHaveEqualStructure(actual_structure, cached_structure) && add_conversion)
         {

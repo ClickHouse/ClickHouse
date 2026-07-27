@@ -40,7 +40,7 @@ public:
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
-        auto nested_metadata = getNested()->getInMemoryMetadataPtr(query_context, false);
+        auto nested_metadata = getNested()->getInMemoryMetadataQueryCached(query_context);
         auto new_metadata = std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(nested_metadata->virtuals));
         return std::make_shared<StorageSnapshot>(*this, std::move(new_metadata));
     }
@@ -51,7 +51,7 @@ public:
         const StorageSnapshotPtr &,
         SelectQueryInfo & info) const override
     {
-        const auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, false);
+        const auto nested_metadata = getNested()->getInMemoryMetadataQueryCached(context);
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getStorageSnapshot(nested_metadata, context), info);
     }
 
@@ -110,7 +110,7 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
-        auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
+        auto nested_metadata = getNested()->getInMemoryMetadataUncached(context);
         IStorage::setInMemoryMetadata(*nested_metadata);
     }
 

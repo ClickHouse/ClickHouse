@@ -100,7 +100,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         {
             auto query_context = context->getQueryContext();
             const auto & storage = query_context->executeTableFunction(table_expression);
-            auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+            auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(query_context);
             columns = metadata_snapshot->getColumns().getOrdinary();
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression)); // XXX: const_cast should be avoided!
         }
@@ -108,7 +108,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         {
             auto table_id = context->resolveStorageID(table_expression);
             const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
-            auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(context);
             columns = metadata_snapshot->getColumns().getOrdinary();
             select_query->replaceDatabaseAndTable(table_id);
         }

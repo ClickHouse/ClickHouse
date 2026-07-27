@@ -361,7 +361,7 @@ void StorageMergeTree::read(
         {
             auto modified_query_info = query_info;
             modified_query_info.cluster = std::move(cluster);
-            auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+            auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                 query_plan,
                 getStorageID(),
@@ -471,7 +471,7 @@ void StorageMergeTree::alter(
     auto old_storage_settings = getSettings();
     const auto & query_settings = local_context->getSettingsRef();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 
@@ -1737,7 +1737,7 @@ bool StorageMergeTree::merge(
         /// the same mutex, so this `OPTIMIZE`-driven merge selection cannot observe new
         /// metadata without also seeing the pending rename mutation. See #80648.
         /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
-        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot_handle = getInMemoryMetadataUncached(getContext());
         metadata_snapshot = metadata_snapshot_handle;
 
         return selectPartsToMerge(
@@ -2052,7 +2052,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// Pairs with `StorageMergeTree::alter`, which updates in-memory metadata and
         /// inserts rename mutations atomically under this mutex. See #80648.
         /// Bind the handle to a named lvalue first: converting an rvalue StorageMetadataHandle to StorageMetadataPtr is deleted.
-        auto metadata_snapshot_handle = getInMemoryMetadataPtr(getContext(), false);
+        auto metadata_snapshot_handle = getInMemoryMetadataUncached(getContext());
         metadata_snapshot = metadata_snapshot_handle;
 
         if (merger_mutator.merges_blocker.isCancelled())
@@ -2131,7 +2131,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         /// We take new metadata snapshot here. It's because mutation commands can be executed only with metadata snapshot
         /// which is equal or more fresh than commands themselves. In extremely rare case it can happen that we will have alter
         /// in between we took snapshot above and selected commands. That is why we take new snapshot here.
-        const auto new_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto new_metadata_snapshot = getInMemoryMetadataUncached(getContext());
         auto task = std::make_shared<MutatePlainMergeTreeTask>(*this, new_metadata_snapshot, mutate_entry, shared_lock, common_assignee_trigger);
         return assignee.scheduleMergeMutateTask(task);
     }
@@ -2269,7 +2269,7 @@ bool StorageMergeTree::optimize(
 {
     assertNotReadonly();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
 
     /// Merges are disabled for UNIQUE KEY tables (see selectPartsToMerge). Reject
     /// explicit OPTIMIZE up front with an actionable message rather than letting it
@@ -2719,7 +2719,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             if (detach)
             {
-                auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+                auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
                 String part_dir = part->getDataPartStorage().getPartDirectory();
                 LOG_INFO(log, "Detaching {}", part_dir);
                 auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -2837,7 +2837,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
             {
                 for (const auto & part : parts)
                 {
-                    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+                    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
                     String part_dir = part->getDataPartStorage().getPartDirectory();
                     LOG_INFO(log, "Detaching {}", part_dir);
                     auto holder = getTemporaryPartDirectoryHolder(String(DETACHED_DIR_NAME) + "/" + part_dir);
@@ -2871,7 +2871,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool detach, ContextPtr query_context)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
 
     if (detach)
     {
@@ -2945,7 +2945,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     /// Source-side UK reject (destination-side rejection is centralized in
     /// MergeTreeData::alterPartition). Without this, REPLACE PARTITION FROM a
     /// UK source into a plain table would silently break UK invariants.
-    auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
+    auto source_uk_metadata_snapshot = source_table->getInMemoryMetadataQueryCached(local_context);
     if (source_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "REPLACE/ATTACH PARTITION FROM a source table with UNIQUE KEY is not supported");
@@ -2975,8 +2975,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         merges_blocker = stopMergesAndWaitForPartition(partition_id);
     }
 
-    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(local_context, false);
-    auto my_metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataQueryCached(local_context);
+    auto my_metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
 
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
@@ -3175,7 +3175,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
     /// Destination-side UK reject (source-side rejection is centralized in
     /// MergeTreeData::alterPartition).
-    auto dest_uk_metadata_snapshot = dest_table_storage->getInMemoryMetadataPtr(local_context, false);
+    auto dest_uk_metadata_snapshot = dest_table_storage->getInMemoryMetadataQueryCached(local_context);
     if (dest_uk_metadata_snapshot->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "MOVE PARTITION TO a destination table with UNIQUE KEY is not supported");
@@ -3217,8 +3217,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     OperationDataPartsLock operation_data_parts_lock_src(operation_with_data_parts_mutex, std::adopt_lock);
     OperationDataPartsLock operation_data_parts_lock_dest(dest_table_storage->operation_with_data_parts_mutex, std::adopt_lock);
 
-    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataPtr(local_context, false);
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto dest_metadata_snapshot = dest_table->getInMemoryMetadataQueryCached(local_context);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     Stopwatch watch;
     ProfileEventsScope profile_events_scope;
 
@@ -3370,7 +3370,7 @@ IStorage::DataValidationTasksPtr StorageMergeTree::getCheckTaskList(
     /// TODO(unique-key): sidecar-aware check. The per-part delete-bitmap
     /// sidecars are not enumerated as part artifacts, so checkDataPart treats
     /// them as UNEXPECTED_FILE_IN_DATA_PART. Reject for now.
-    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
+    if (auto uk_metadata = getInMemoryMetadataQueryCached(local_context); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "CHECK TABLE is not supported for UNIQUE KEY tables yet: delete-bitmap "
             "sidecars are not yet recognized as part artifacts.");
@@ -3458,7 +3458,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     /// TODO(unique-key): sidecar-aware backup. The per-part delete-bitmap
     /// sidecars are not enumerated as part artifacts, so BACKUP would silently
     /// omit them and restore would resurrect deleted rows. Reject for now.
-    if (auto uk_metadata = getInMemoryMetadataPtr(local_context, false); uk_metadata && uk_metadata->hasUniqueKey())
+    if (auto uk_metadata = getInMemoryMetadataQueryCached(local_context); uk_metadata && uk_metadata->hasUniqueKey())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "BACKUP is not supported for UNIQUE KEY tables yet: delete-bitmap sidecars "
             "are not preserved across backup/restore.");

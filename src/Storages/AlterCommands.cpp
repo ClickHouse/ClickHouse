@@ -1673,7 +1673,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
-    const auto metadata = table->getInMemoryMetadataPtr(context, false);
+    const auto metadata = table->getInMemoryMetadataQueryCached(context);
     const auto virtuals = metadata->virtuals;
 
     bool share_nested = true;

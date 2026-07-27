@@ -1127,7 +1127,7 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
-    auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
+    auto metadata = storage->getInMemoryMetadataQueryCached(init_context);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 
     if (materialized_view && current != init_table_id)

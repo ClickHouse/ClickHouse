@@ -165,7 +165,7 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         auto table = table_function_ptr->execute(table_expression.table_function, getContext(), table_function_ptr->getName());
         if (table)
         {
-            const auto metadata_snapshot = table->getInMemoryMetadataPtr(current_context, false);
+            const auto metadata_snapshot = table->getInMemoryMetadataQueryCached(current_context);
             const auto & virtuals = metadata_snapshot->virtuals;
             for (const auto & column : virtuals)
                 if (!column_descriptions.has(column.name))
@@ -187,7 +187,7 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
     table->updateExternalDynamicMetadataIfExists(query_context);
 
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = table->getInMemoryMetadataQueryCached(query_context);
     const auto & column_descriptions = metadata_snapshot->getColumns();
     for (const auto & column : column_descriptions)
         columns.emplace_back(column);

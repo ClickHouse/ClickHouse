@@ -186,7 +186,7 @@ std::optional<PipeWithResources> buildNextSnapshotReadingPipeline(
     LOG_DEBUG(log, "Building new snapshot for {} partition(s): [{}]", partitions_to_read.size(), fmt::join(partitions_to_read, ", "));
 
     /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
-    const auto metadata = storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+    const auto metadata = storage.getInMemoryMetadataUncached(context);
     const auto storage_snapshot = storage.getStorageSnapshot(metadata, context);
 
     /// We need all columns user requested + columns needed to recalculate cursors.

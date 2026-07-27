@@ -178,7 +178,7 @@ public:
         /// See issue: https://github.com/ClickHouse/ClickHouse/issues/37671
         if (!generate_chunk_from_metadata && !to_read_block.columns())
         {
-            const auto metadata = storage.getInMemoryMetadataPtr(getContext(), false);
+            const auto metadata = storage.getInMemoryMetadataUncached(getContext());
             for (const auto & column : metadata->getColumns().getAllPhysical())
             {
                 bool is_partition_column = false;
@@ -505,7 +505,7 @@ void StorageHive::lazyInitialize()
 
 void StorageHive::initMinMaxIndexExpression()
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
     if (!partition_key_expr_list->children.empty())
     {

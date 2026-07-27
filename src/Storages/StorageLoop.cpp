@@ -15,7 +15,7 @@ namespace DB
             , inner_storage(std::move(inner_storage_))
             , inner_table_function_ast(std::move(inner_table_function_ast_))
     {
-        auto metadata_snapshot = inner_storage->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        auto metadata_snapshot = inner_storage->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
         setInMemoryMetadata(*metadata_snapshot);
     }
 

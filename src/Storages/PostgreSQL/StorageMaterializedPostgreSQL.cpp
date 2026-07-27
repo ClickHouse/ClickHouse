@@ -142,7 +142,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
     , nested_table_id(nested_storage_->getStorageID())
 {
-    auto nested_metadata = nested_storage_->getInMemoryMetadataPtr(context_, false);
+    auto nested_metadata = nested_storage_->getInMemoryMetadataQueryCached(context_);
     setInMemoryMetadata(*nested_metadata);
 }
 
@@ -247,7 +247,7 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
     nested_table_id = nested_storage->getStorageID();
-    auto nested_metadata = nested_storage->getInMemoryMetadataPtr(getContext(), false);
+    auto nested_metadata = nested_storage->getInMemoryMetadataUncached(getContext());
     setInMemoryMetadata(*nested_metadata);
     has_nested.store(true);
 }
@@ -430,7 +430,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     auto columns_declare_list = make_intrusive<ASTColumns>();
     auto order_by_expression = make_intrusive<ASTFunction>();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
 
     ConstraintsDescription constraints;
     NamesAndTypesList ordinary_columns_and_types;

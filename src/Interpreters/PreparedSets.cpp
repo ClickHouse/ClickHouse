@@ -314,7 +314,7 @@ void FutureSetFromSubquery::buildExternalTableFromInplaceSet(StoragePtr external
     if (set.empty())
         return;
 
-    auto metadata = external_table_->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto metadata = external_table_->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     const auto & expected_columns = metadata->getColumns().getAllPhysical();
 
     Columns set_elements = set.getSetElements();

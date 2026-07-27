@@ -92,7 +92,7 @@ Pipe getSourceFromInputFormat(
         if (ast_insert_query->table_id)
         {
             StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id, context);
-            metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+            metadata_snapshot = storage->getInMemoryMetadataQueryCached(context);
             columns = &metadata_snapshot->getColumns();
         }
         else if (const auto & insertion_columns = context->getInsertionTableColumnsDescription())

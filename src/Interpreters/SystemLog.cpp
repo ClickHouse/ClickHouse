@@ -862,7 +862,7 @@ void SystemLog<LogElement>::prepareTable()
                 bool old_table_has_ttl = false;
                 if (old_table)
                 {
-                    auto old_metadata = old_table->getInMemoryMetadataPtr(getContext(), false);
+                    auto old_metadata = old_table->getInMemoryMetadataUncached(getContext());
                     old_table_has_ttl = old_metadata->hasAnyTTL();
                 }
 

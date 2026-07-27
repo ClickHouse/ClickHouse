@@ -102,7 +102,7 @@ void StorageSystemPartsColumns::processNextStorage(
     };
 
     std::unordered_map<String, ColumnInfo> columns_info;
-    auto metadata_snapshot = info.storage->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = info.storage->getInMemoryMetadataQueryCached(context);
     for (const auto & column : metadata_snapshot->getColumns())
     {
         ColumnInfo column_info;

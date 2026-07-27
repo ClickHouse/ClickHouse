@@ -246,7 +246,7 @@ namespace
             auto external_table = DatabaseCatalog::instance().tryGetTable(context->tryResolveStorageID(external_table_id), context);
             if (!external_table)
                 throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", external_table_id.getNameForLogs());
-            auto external_metadata = external_table->getInMemoryMetadataPtr(context, false);
+            auto external_metadata = external_table->getInMemoryMetadataQueryCached(context);
             return {external_table_id, external_metadata->columns};
         };
 
@@ -1046,7 +1046,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 /// An external target table is specified — check it has all the required columns.
                 auto target_table_id = create_query.getTargetTableID(kind);
                 auto target_table = DatabaseCatalog::instance().getTable(target_table_id, context);
-                auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
+                auto target_metadata = target_table->getInMemoryMetadataQueryCached(context);
                 checkTargetTable(target_metadata->columns, kind, settings, resolved_types, target_table_id);
             }
             else

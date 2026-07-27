@@ -429,7 +429,7 @@ bool StorageTimeSeries::optimize(
         if (isInnerTable(target_kind))
         {
             auto inner_table = getTargetTable(target_kind, local_context);
-            const auto inner_metadata = inner_table->getInMemoryMetadataPtr(local_context, false);
+            const auto inner_metadata = inner_table->getInMemoryMetadataQueryCached(local_context);
             optimized |= inner_table->optimize(query, inner_metadata, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
     }
@@ -462,7 +462,7 @@ void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, Con
 
 void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
 

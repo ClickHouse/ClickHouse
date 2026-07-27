@@ -163,7 +163,7 @@ void CreatingSetsTransform::startSubquery()
     if (set_and_key->external_table)
     {
         /// TODO: make via port
-        const auto metadata_snapshot = set_and_key->external_table->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+        const auto metadata_snapshot = set_and_key->external_table->getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
         table_out = QueryPipeline(set_and_key->external_table->write({}, metadata_snapshot, nullptr, /*async_insert=*/false));
     }
 

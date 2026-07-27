@@ -179,7 +179,7 @@ StorageBuffer::StorageBuffer(
     if (columns_.empty())
     {
         auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
+        auto dest_table_metadata = dest_table->getInMemoryMetadataQueryCached(context_);
         storage_metadata.setColumns(dest_table_metadata->getColumns());
     }
     else
@@ -282,7 +282,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
 {
     if (auto destination = getDestinationTable())
     {
-        const auto destination_metadata = destination->getInMemoryMetadataPtr(local_context, false);
+        const auto destination_metadata = destination->getInMemoryMetadataQueryCached(local_context);
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getStorageSnapshot(destination_metadata, local_context), query_info);
     }
 
@@ -337,7 +337,7 @@ void StorageBuffer::read(
         auto destination_lock
             = destination->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
-        auto destination_metadata_snapshot = destination->getInMemoryMetadataPtr(local_context, false);
+        auto destination_metadata_snapshot = destination->getInMemoryMetadataQueryCached(local_context);
         auto destination_snapshot = destination->getStorageSnapshot(destination_metadata_snapshot, local_context);
         auto destination_columns = destination_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
         auto our_columns = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysicalAndAliases).withSubcolumns().withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
@@ -859,7 +859,7 @@ void StorageBuffer::flushAndPrepareForShutdown()
 
     try
     {
-        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
         optimize(nullptr /*query*/, metadata_snapshot, {} /*partition*/, false /*final*/, false /*deduplicate*/, {}, false /*cleanup*/, getContext());
     }
     catch (...)
@@ -1100,7 +1100,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
         LOG_ERROR(log, "Destination table {} doesn't exist. Block of data is discarded.", destination_id.getNameForLogs());
         return;
     }
-    auto destination_metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    auto destination_metadata_snapshot = table->getInMemoryMetadataUncached(getContext());
 
     MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
@@ -1287,7 +1287,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
 
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);

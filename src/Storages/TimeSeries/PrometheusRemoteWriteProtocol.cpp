@@ -651,8 +651,8 @@ void PrometheusRemoteWriteProtocol::writeTimeSeries(const google::protobuf::Repe
 
     auto time_series_settings = time_series_storage->getStorageSettings();
 
-    auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, getContext())->getInMemoryMetadataPtr(getContext(), false);
-    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, getContext())->getInMemoryMetadataUncached(getContext());
+    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, getContext())->getInMemoryMetadataUncached(getContext());
     const auto & tags_metadata = *tags_table_metadata;
     const auto & samples_metadata = *samples_table_metadata;
     auto blocks = toBlocks(time_series, getContext(), *time_series_storage, *time_series_settings, tags_metadata, samples_metadata);
@@ -669,7 +669,7 @@ void PrometheusRemoteWriteProtocol::writeMetricsMetadata(const google::protobuf:
     LOG_TRACE(log, "{}: Writing {} metrics metadata",
               time_series_storage_id.getNameForLogs(), metrics_metadata.size());
 
-    auto metrics_table_metadata_ptr = time_series_storage->getTargetTable(ViewTarget::Metrics, getContext())->getInMemoryMetadataPtr(getContext(), false);
+    auto metrics_table_metadata_ptr = time_series_storage->getTargetTable(ViewTarget::Metrics, getContext())->getInMemoryMetadataUncached(getContext());
     const auto & metrics_table_metadata = *metrics_table_metadata_ptr;
     auto blocks = toBlocks(metrics_metadata, metrics_table_metadata);
     insertToTargetTables(std::move(blocks), *time_series_storage, getContext(), log.get());

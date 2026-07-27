@@ -1260,7 +1260,7 @@ bool StorageRabbitMQ::streamToViews(UInt64 cycle_epoch)
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Engine table {} doesn't exist.", table_id.getNameForLogs());
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    const auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, getContext());
     auto block_size = getMaxBlockSize();
 

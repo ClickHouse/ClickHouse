@@ -824,7 +824,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
-        auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
+        auto as_storage_metadata = as_storage->getInMemoryMetadataUncached(getContext());
         properties.columns = as_storage_metadata->getColumns();
 
         if (!create.comment && !as_storage_metadata->comment.empty())
@@ -1106,7 +1106,7 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
         if (to_table)
         {
-            auto to_table_metadata = to_table->getInMemoryMetadataPtr(getContext(), false);
+            auto to_table_metadata = to_table->getInMemoryMetadataUncached(getContext());
             all_output_columns = to_table_metadata->getSampleBlockInsertable().getNamesAndTypesList();
             check_columns = true;
         }
@@ -1996,7 +1996,7 @@ namespace
 
 void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode, ContextPtr context, bool is_temporary)
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = storage.getInMemoryMetadataQueryCached(context);
 
     /// Re-check inferred column types only for a fresh, persisted table: the pre-construction check
     /// does not see inferred columns, and ATTACH/RESTORE, temporary tables and views/dictionaries are
@@ -2015,7 +2015,7 @@ void checkForUnsupportedColumns(IStorage & storage, LoadingStrictnessLevel mode,
 
 void validateVirtualColumns(IStorage & storage, ContextPtr context)
 {
-    const auto metadata = storage.getInMemoryMetadataPtr(context, false);
+    const auto metadata = storage.getInMemoryMetadataQueryCached(context);
     for (const auto & storage_column : metadata->columns)
     {
         if (metadata->virtuals.tryGet(storage_column.name, VirtualsKind::Persistent, VirtualsMaterializationPlace::All))
@@ -2613,7 +2613,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         {
             auto temp_table = DatabaseCatalog::instance().getTable(
                 StorageID{create.getDatabase(), create.getTable(), create.uuid}, current_context);
-            auto temp_metadata = temp_table->getInMemoryMetadataPtr(current_context, false);
+            auto temp_metadata = temp_table->getInMemoryMetadataQueryCached(current_context);
             const Names insert_columns = temp_metadata->getSampleBlockNonMaterialized().getNames();
             current_context->checkAccess(
                 AccessType::INSERT, StorageID{create.getDatabase(), table_to_replace_name}, insert_columns);

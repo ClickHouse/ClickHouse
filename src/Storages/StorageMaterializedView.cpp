@@ -350,7 +350,7 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     const StorageSnapshotPtr &,
     SelectQueryInfo & query_info) const
 {
-    const auto target_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
+    const auto target_metadata = getTargetTable()->getInMemoryMetadataQueryCached(local_context);
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
@@ -398,7 +398,7 @@ void StorageMaterializedView::readImpl(
     const size_t max_block_size,
     const size_t num_streams)
 {
-    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto view_metadata = getInMemoryMetadataQueryCached(local_context);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
 
     /// When this view is being read by the old interpreter, query_info has no query tree and the
@@ -432,7 +432,7 @@ void StorageMaterializedView::readImpl(
     /// (which is a no-op), not the target table.
     storage->updateExternalDynamicMetadataIfExists(context);
 
-    auto target_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto target_metadata_snapshot = storage->getInMemoryMetadataQueryCached(context);
     auto target_storage_snapshot = storage->getStorageSnapshot(target_metadata_snapshot, context);
 
     if (query_info.order_optimizer)
@@ -491,11 +491,11 @@ void StorageMaterializedView::readImpl(
 
 SinkToStoragePtr StorageMaterializedView::write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr local_context, bool async_insert)
 {
-    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto view_metadata = getInMemoryMetadataQueryCached(local_context);
     auto context = view_metadata->getSQLSecurityOverriddenContext(local_context);
     auto storage = getTargetTable();
     auto lock = storage->lockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
+    auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(context);
 
     auto storage_id = storage->getStorageID();
 
@@ -519,7 +519,7 @@ void StorageMaterializedView::drop()
 {
     auto table_id = getStorageID();
 
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto view_metadata = getInMemoryMetadataUncached(getContext());
     if (view_metadata->sql_security_type == SQLSecurityType::DEFINER)
         DefinerDependencies::instance().removeDependencies(table_id);
 
@@ -624,7 +624,7 @@ bool StorageMaterializedView::optimize(
 {
     checkStatementCanBeForwarded();
     auto storage_ptr = getTargetTable();
-    auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = storage_ptr->getInMemoryMetadataQueryCached(local_context);
     return storage_ptr->optimize(query, metadata_snapshot, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
 }
 
@@ -634,7 +634,7 @@ ContextMutablePtr StorageMaterializedView::createRefreshContext(const String & l
     ClientInfo client_info = table_context->getClientInfo();
     client_info.interface = ClientInfo::Interface::BACKGROUND;
     client_info.client_name = "refreshable materialized view";
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto view_metadata = getInMemoryMetadataUncached(getContext());
     auto refresh_context = view_metadata->getSQLSecurityOverriddenContext(table_context, &client_info);
     refresh_context->setClientInfo(client_info);
     refresh_context->setSetting("database_replicated_allow_replicated_engine_arguments", 3);
@@ -653,7 +653,7 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
     auto inner_table_id = getTargetTableId();
     StorageID target_table = inner_table_id;
 
-    auto view_metadata = getInMemoryMetadataPtr(refresh_context, false);
+    auto view_metadata = getInMemoryMetadataQueryCached(refresh_context);
     auto select_query = view_metadata->getSelectQuery().select_query->clone();
     InterpreterSetQuery::applySettingsFromQuery(select_query, refresh_context);
 
@@ -786,7 +786,7 @@ void StorageMaterializedView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    auto view_metadata = getInMemoryMetadataPtr(local_context, false);
+    auto view_metadata = getInMemoryMetadataQueryCached(local_context);
     StorageInMemoryMetadata new_metadata = *view_metadata;
     const StorageInMemoryMetadata & old_metadata = *view_metadata;
 
@@ -804,7 +804,7 @@ void StorageMaterializedView::alter(
     {
         /// If this materialized view has an inner table it should always have the same columns as this materialized view.
         /// Try to find mistakes in the select query (it shouldn't have columns which are not in the inner table).
-        auto target_table_metadata = getTargetTable()->getInMemoryMetadataPtr(local_context, false);
+        auto target_table_metadata = getTargetTable()->getInMemoryMetadataQueryCached(local_context);
         const auto & select_query_output_columns = new_metadata.columns; /// AlterCommands::alter() analyzed the query and assigned `new_metadata.columns` before.
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
@@ -937,7 +937,7 @@ void StorageMaterializedView::flushAndPrepareForShutdown()
 
 void StorageMaterializedView::shutdown(bool)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     const auto & select_query = metadata_snapshot->getSelectQuery();
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_query.select_table_id.empty())
@@ -1092,9 +1092,9 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
     if (!table)
         return std::nullopt;
 
-    auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
+    auto view_metadata = getInMemoryMetadataUncached(getContext());
     auto view_columns = view_metadata->getColumns().getAll();
-    auto target_table_metadata = table->getInMemoryMetadataPtr(getContext(), false);
+    auto target_table_metadata = table->getInMemoryMetadataUncached(getContext());
     auto target_table_columns = target_table_metadata->getColumns();
     NameSet supported_columns;
     for (const auto & [name, type] : view_columns)

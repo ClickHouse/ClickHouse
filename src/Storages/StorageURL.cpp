@@ -1146,13 +1146,13 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     return metadata_snapshot->getFakeColumnSizes();
 }
 
@@ -2234,7 +2234,7 @@ public:
         , resolved_format(std::move(resolved_format_))
     {
         StorageInMemoryMetadata metadata;
-        const auto nested_metadata = nested->getInMemoryMetadataPtr(nullptr, false);
+        const auto nested_metadata = nested->getInMemoryMetadataUncached(nullptr);
         /// `columns_` is empty for a schema-inferred `CREATE TABLE ... ENGINE = URL('file://...')`
         /// without an explicit column list, because the structure is inferred inside the delegate
         /// storage constructor (the `URL` engine declares `supports_schema_inference`). Copy the

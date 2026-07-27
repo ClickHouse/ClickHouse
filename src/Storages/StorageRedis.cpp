@@ -446,7 +446,7 @@ Chunk StorageRedis::getBySerializedKeys(const std::vector<std::string> & keys, P
 
 Chunk StorageRedis::getBySerializedKeys(const RedisArray & keys, PaddedPODArray<UInt8> * null_map) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     Block sample_block = metadata_snapshot->getSampleBlock();
 
     size_t primary_key_pos = getPrimaryKeyPos(sample_block, getPrimaryKey());
@@ -576,7 +576,7 @@ Chunk StorageRedis::getByKeys(const ColumnsWithTypeAndName & keys, const Names &
 
 Block StorageRedis::getSampleBlock(const Names &) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = getInMemoryMetadataUncached(getContext());
     return metadata_snapshot->getSampleBlock();
 }
 
@@ -626,7 +626,7 @@ void StorageRedis::mutate(const MutationCommands & commands, ContextPtr context_
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
+    auto metadata_snapshot = getInMemoryMetadataQueryCached(context_);
     auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);

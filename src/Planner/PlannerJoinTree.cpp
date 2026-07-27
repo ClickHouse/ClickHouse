@@ -786,7 +786,7 @@ std::optional<FilterDAGInfo> buildCustomKeyFilterIfNeeded(const StoragePtr & sto
 
     LOG_TRACE(getLogger("Planner"), "Processing query on a replica using custom_key '{}'", settings[Setting::parallel_replicas_custom_key].value);
 
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+    auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(query_context);
     auto parallel_replicas_custom_filter_ast = getCustomKeyFilterForParallelReplica(
         settings[Setting::parallel_replicas_count],
         settings[Setting::parallel_replica_offset],
@@ -1860,7 +1860,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             modified_query_info.cluster = std::move(cluster);
                             till_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
                             QueryPlan query_plan_parallel_replicas;
-                            auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
+                            auto metadata_snapshot = storage->getInMemoryMetadataQueryCached(query_context);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                                 query_plan_parallel_replicas,
                                 storage->getStorageID(),

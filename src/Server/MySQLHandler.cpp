@@ -553,7 +553,7 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     /// Check before getTable() so this command does not become a table-existence oracle.
     session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
-    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataQueryCached(session_context);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(

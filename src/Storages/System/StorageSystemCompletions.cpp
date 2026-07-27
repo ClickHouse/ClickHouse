@@ -90,7 +90,7 @@ static void fillDataWithTableColumns(
     if (table_lock == nullptr)
         return; // table was dropped while acquiring the lock
 
-    const auto snapshot = table->getInMemoryMetadataPtr(context, false);
+    const auto snapshot = table->getInMemoryMetadataQueryCached(context);
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {

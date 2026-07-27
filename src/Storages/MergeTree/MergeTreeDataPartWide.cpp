@@ -83,7 +83,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
     }
 
     /// Files for projection columns
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto metadata_snapshot = storage.getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     for (const auto & projection : metadata_snapshot->getProjections())
     {
         for (const String & name : projection.sample_block.getNames())
@@ -675,7 +675,7 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    const auto metadata_ptr = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataQueryCached(CurrentThread::tryGetQueryContext());
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

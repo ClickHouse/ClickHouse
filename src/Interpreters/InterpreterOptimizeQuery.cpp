@@ -49,7 +49,7 @@ BlockIO InterpreterOptimizeQuery::execute()
     auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
-    auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+    auto metadata_snapshot = table->getInMemoryMetadataUncached(getContext());
     auto storage_snapshot = table->getStorageSnapshot(metadata_snapshot, getContext());
 
     /// Handle OPTIMIZE TABLE ... MANIFEST for Iceberg tables
