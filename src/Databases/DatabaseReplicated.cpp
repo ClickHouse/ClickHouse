@@ -1730,11 +1730,15 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             dropped_dictionaries += table->isDictionary();
             table->flushAndShutdown(/*is_drop=*/true);
 
-            if (table->getName() == "MaterializedView" || table->getName() == "WindowView")
+            if (table->getName() == "MaterializedView" || table->getName() == "WindowView" || table->getName() == "TimeSeries")
             {
                 /// We have to drop MV inner table, so MV will not try to do it implicitly breaking some invariants.
                 /// Also we have to commit metadata transaction, because it's not committed by default for inner tables of MVs.
                 /// Yep, I hate inner tables of materialized views.
+                /// `TimeSeries` owns inner tables too. Without an eager drop here its deferred `drop` runs in the
+                /// background `dropTableFinally` task, which has no metadata transaction, so the inner `DROP` is
+                /// re-routed into the replicated DDL log, rejected with `INCORRECT_QUERY`, and retried forever, and
+                /// `waitTableFinallyDropped` below never returns. See #107604 for the same fix in `dropTable`.
                 auto mv_drop_inner_table_context = make_query_context();
                 table->dropInnerTableIfAny(/* sync */ true, mv_drop_inner_table_context);
                 mv_drop_inner_table_context->getZooKeeperMetadataTransaction()->commit();
