@@ -1780,7 +1780,8 @@ If set to true, server settings will not be checked for correctness.
 #define LIST_OF_SERVER_SETTINGS_WITH_PATH(DECLARE, ALIAS) \
     DECLARE(String, named_collections_storage_type, "local", R"(
 The storage type for named collections. Possible values are `local`, `local_encrypted`, `keeper`,
-`keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`. Configured in `<named_collections_storage><type>`.
+`keeper_encrypted`, `zookeeper`, and `zookeeper_encrypted`.
+Configured as `named_collections_storage.type` (`<named_collections_storage><type>` in XML).
 )", 0, "named_collections_storage.type") \
     DECLARE(UInt64, query_cache_max_size_in_bytes, 1073741824, R"(The maximum cache size in bytes. 0 means the query cache is disabled.)", 0, "query_cache.max_size_in_bytes") \
     DECLARE(UInt64, query_cache_max_entries, 1024, R"(The maximum number of SELECT query results stored in the cache.)", 0, "query_cache.max_entries") \
