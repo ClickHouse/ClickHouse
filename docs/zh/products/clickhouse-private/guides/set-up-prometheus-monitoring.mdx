@@ -21,9 +21,7 @@ description: "使用 kube-prometheus-stack 和 ClickHouse Grafana mixin 配置 P
 </div>
 
 <Steps>
-  <Step>
-    ### 1. 安装 kube-prometheus-stack
-
+  <Step title="1. 安装 kube-prometheus-stack" id="1-install-kube-prometheus-stack">
     将 Prometheus 社区的 Helm 仓库添加到本地 Helm 客户端，并拉取该 Helm chart：
 
     ```bash
@@ -46,9 +44,7 @@ description: "使用 kube-prometheus-stack 和 ClickHouse Grafana mixin 配置 P
     > **注意：**kube-prometheus-stack 集成了 Prometheus、Alertmanager、Grafana 和 Prometheus Operator。要查看必须镜像到您的私有镜像仓库中的完整镜像列表，请参阅 [Helm Chart 文档](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)。
   </Step>
 
-  <Step>
-    ### 2. 在 ClickHouse Operator 中启用 PodMonitor
-
+  <Step title="2. 在 ClickHouse Operator 中启用 PodMonitor" id="2-enable-podmonitors-in-the-clickhouse-operator">
     ClickHouse Operator 的 Helm 图表包含用于 ClickHouse Server 和 Keeper 的 PodMonitor 定义。请在 operator 的 Helm 配置值中启用它们：
 
     ```yaml
@@ -83,9 +79,7 @@ description: "使用 kube-prometheus-stack 和 ClickHouse Grafana mixin 配置 P
     > **注意：** 如果你的 Prometheus 实例使用的是其他 release 名称，请相应更新 PodMonitor 的标签选择器：可以覆盖 operator chart 模板，或在 kube-prometheus-stack 配置值中配置 `prometheus.prometheusSpec.podMonitorSelector`。
   </Step>
 
-  <Step>
-    ### 3. 启用自定义指标处理程序 (可选)
-
+  <Step title="3. 启用自定义指标处理程序 (可选)" id="3-enable-the-custom-metrics-handler-optional">
     ClickHouse Server 通过 3123 端口上的专用 HTTP 处理程序暴露额外的 `ClickHouse_CustomMetric_*` 指标。此端点需要身份验证。要启用抓取：
 
     ```yaml
@@ -107,9 +101,7 @@ description: "使用 kube-prometheus-stack 和 ClickHouse Grafana mixin 配置 P
     有关所有自定义指标及其推荐告警阈值的完整列表，请参阅[指标和告警参考](/zh/products/clickhouse-private/reference/metrics-and-alerts-reference)。
   </Step>
 
-  <Step>
-    ### 4. 验证 Prometheus 目标
-
+  <Step title="4. 验证 Prometheus 目标" id="4-verify-prometheus-targets">
     部署完成后，确认 Prometheus 已发现并抓取 ClickHouse 目标：
 
     ```bash
@@ -125,9 +117,7 @@ description: "使用 kube-prometheus-stack 和 ClickHouse Grafana mixin 配置 P
     ```
   </Step>
 
-  <Step>
-    ### 5. 导入 ClickHouse Grafana Mixin 仪表盘
-
+  <Step title="5. 导入 ClickHouse Grafana Mixin 仪表盘" id="5-import-the-clickhouse-grafana-mixin-dashboards">
     [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) 为 ClickHouse server 和 Keeper 指标提供了预置仪表盘。在隔离环境中，请手动导入这些仪表盘的 JSON 文件。
 
     #### 下载仪表盘
@@ -170,9 +160,7 @@ description: "使用 kube-prometheus-stack 和 ClickHouse Grafana mixin 配置 P
     Grafana sidecar 会自动发现带有 `grafana_dashboard: "1"` 标签的 ConfigMaps，并加载其中的仪表盘。
   </Step>
 
-  <Step>
-    ### 6. 配置告警规则 (可选)
-
+  <Step title="6. 配置告警规则 (可选)" id="6-configure-alert-rules-optional">
     通过创建 `PrometheusRule` 资源，将推荐的 ClickHouse 告警规则导入到 Prometheus 中。完整的告警定义请参阅[配置告警](/zh/products/clickhouse-private/guides/configure-alerting-for-clickhouse)和[指标与告警参考](/zh/products/clickhouse-private/reference/metrics-and-alerts-reference)。
 
     示例：
