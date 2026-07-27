@@ -82,11 +82,18 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
 
         const size_t size = usage->size.load(std::memory_order_relaxed);
         const size_t elements = usage->elements.load(std::memory_order_relaxed);
+        if (size == 0 && elements == 0)
+        {
+            if (usage.use_count() == 1)
+                it = usage_by_user.erase(it);
+            else
+                ++it;
+            continue;
+        }
+
         if (usage.use_count() == 1)
         {
-            if (size != 0 || elements != 0)
-                LOG_ERROR(log, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
-
+            LOG_ERROR(log, "Filesystem cache usage counters outlived all entries for user '{}'", user_id);
             it = usage_by_user.erase(it);
             continue;
         }
