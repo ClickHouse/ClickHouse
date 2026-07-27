@@ -8,6 +8,8 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -79,6 +81,8 @@ private:
                 {"b", std::make_shared<DataTypeDate>()},
                 {"foo", std::make_shared<DataTypeString>()},
                 {"is_value", DataTypeFactory::instance().get("Bool")},
+                {"uuid_col", std::make_shared<DataTypeUUID>()},
+                {"lc_uuid_col", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUUID>())},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -293,7 +297,8 @@ TEST(TransformQueryForExternalDatabase, MultipleAndSubqueries)
         {"column"},
         "SELECT column FROM test.table WHERE 1 = 1 AND toString(column) = '42' AND column = 42 AND left(toString(column), 10) = "
         "RIGHT(toString(column), 10) AND column IN (1, 42) AND SUBSTRING(toString(column) FROM 1 FOR 2) = 'Hello' AND column != 4",
-        R"(SELECT "column" FROM "test"."table" WHERE (1 = 1) AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))");
+        R"(SELECT "column" FROM "test"."table" WHERE (1 = 1) AND ("column" = 42) AND ("column" IN (1, 42)) AND ("column" != 4))",
+        R"(SELECT "column" FROM "test"."table" WHERE (1 = 1) AND ("column" = 42) AND ("column" IN (1, 42)))");
     check(state, 1, {"column"},
           "SELECT column FROM test.table WHERE toString(column) = '42' AND left(toString(column), 10) = RIGHT(toString(column), 10) AND column = 42",
           R"(SELECT "column" FROM "test"."table" WHERE "column" = 42)");
@@ -418,10 +423,10 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         "SELECT sleepEachRow(1) FROM table",
         R"(SELECT "column" FROM "test"."table")");
 
-    check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
+    check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col"},
         "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE ("column") IN (1))",
-        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col" FROM "test"."table" WHERE ("column") IN (1))",
+        R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo", "uuid_col", "lc_uuid_col" FROM "test"."table" WHERE "column" IN (1))");
 
     check(state, 1, {"is_value"},
         "SELECT is_value FROM table WHERE is_value = true",
@@ -430,4 +435,44 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
     check(state, 1, {"is_value"},
         "SELECT is_value FROM table WHERE is_value = 1",
         R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
+}
+
+TEST(TransformQueryForExternalDatabase, UUIDColumn)
+{
+    const State & state = State::instance();
+    /// The State context is shared between tests; make sure strict mode (set by the Strict test)
+    /// is off here, so non-compatible predicates are dropped rather than throwing.
+    state.context->setSetting("external_table_strict_query", false);
+
+    /// ClickHouse and external databases sort UUIDs differently, so range comparisons on a UUID
+    /// column must not be pushed down - the predicate would compare against a different ordering
+    /// and silently drop rows. It is applied locally instead, leaving the external query without it.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/105558.
+    check(state, 1, {"uuid_col"},
+          "SELECT uuid_col FROM table WHERE uuid_col >= toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')",
+          R"(SELECT "uuid_col" FROM "test"."table")");
+    check(state, 1, {"uuid_col"},
+          "SELECT uuid_col FROM table WHERE uuid_col < toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')",
+          R"(SELECT "uuid_col" FROM "test"."table")");
+
+    /// The UUID column may be nested inside a tuple/row comparison; that must not be pushed down either.
+    /// (The pushed-down query lists columns in table-definition order, so "a" precedes "uuid_col".)
+    check(state, 1, {"a", "uuid_col"},
+          "SELECT a, uuid_col FROM table WHERE (uuid_col, a) > (toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), 0)",
+          R"(SELECT "a", "uuid_col" FROM "test"."table")");
+
+    /// A LowCardinality(UUID) column is still UUID-backed, so its range comparisons must stay local too.
+    check(state, 1, {"lc_uuid_col"},
+          "SELECT lc_uuid_col FROM table WHERE lc_uuid_col > toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')",
+          R"(SELECT "lc_uuid_col" FROM "test"."table")");
+
+    /// Equality does not depend on ordering, so it remains pushed down.
+    check(state, 1, {"uuid_col"},
+          "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')",
+          R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
+
+    /// In a conjunction, the equality is still pushed down while the range predicate stays local.
+    check(state, 1, {"uuid_col"},
+          "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012')",
+          R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
 }

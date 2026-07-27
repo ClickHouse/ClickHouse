@@ -9,7 +9,7 @@ Securely configure ClickHouse `remote_servers` to shard data across multiple Cli
 
 ## When to Use remote_servers
 
-[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) defines a named cluster topology that ClickHouse uses when executing distributed queries via [Distributed tables](https://clickhouse.com/docs/engines/table-engines/special/distributed) or the [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) table function.
+[`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers) defines a named cluster topology that ClickHouse uses when executing distributed queries via [Distributed tables](https://clickhouse.com/docs/engines/table-engines/special/distributed) or the [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) table function.
 
 Within a single ClickHouse Private cluster, replicas already coordinate through ClickHouse Keeper and [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) -- the same architecture used in ClickHouse Cloud -- so `remote_servers` is not needed for replication purposes. This setup covers the vast majority of use cases.
 
