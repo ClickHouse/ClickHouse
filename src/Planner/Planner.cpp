@@ -2629,15 +2629,8 @@ void Planner::buildPlanForQueryNode()
             addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
         }
 
-        /// WITH FILL (and its INTERPOLATE) must be applied only on the node that produces the final
-        /// result, never on a shard that emits a mergeable state to be merged further on the initiator.
-        /// A shard reading up to WithMergeableStateAfterAggregation(AndLimit) has both isFirstStage()
-        /// and isSecondStage() true, so without this guard it would run the FillingStep too: the fill
-        /// rows would be generated per shard and duplicated after the merge, and with INTERPOLATE the
-        /// shard also materializes the interpolate output column, which the initiator then re-adds under
-        /// the same name - the FillingTransform locates interpolate columns by name, leaves the second
-        /// same-named column unpopulated, and the resulting ragged chunk trips the row-count check
-        /// ("Invalid number of rows in Chunk").
+        /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,
+        /// not per shard (which would duplicate fill rows and break the INTERPOLATE column on merge).
         if (query_node.hasOrderBy() && query_processing_info.isFinalizingStage())
             addWithFillStepIfNeeded(query_plan, query_analysis_result, expression_analysis_result.getSort(), planner_context, query_node, select_query_options, useful_sets);
 

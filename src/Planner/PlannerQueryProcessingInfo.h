@@ -79,15 +79,8 @@ public:
         return to_stage >= QueryProcessingStage::WithMergeableStateAfterAggregation;
     }
 
-    /** Whether this node produces the complete query result rather than a mergeable state to be merged
-      * further. Only such a node may apply operators that must run once over the whole (merged) input,
-      * such as ORDER BY ... WITH FILL / INTERPOLATE.
-      *
-      * Normally this is the initiating server (or a non-distributed query); a shard/replica emits a
-      * WithMergeableState* state and is not finalizing. The exception is distributed_group_by_no_merge=1,
-      * where each shard is deliberately asked for a Complete result and the initiator merely concatenates
-      * them - there WITH FILL is applied per shard, which is that mode's semantics (the initiator runs no
-      * merge or FillingStep, so this is the only node that can apply it at all).
+    /** Whether this node produces the complete result (not a mergeable state to be merged further),
+      * so it may apply operators that must run once over the whole merged input, e.g. WITH FILL.
       */
     bool isFinalizingStage() const
     {

@@ -2331,14 +2331,8 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 executeLimitBy(query_plan);
             }
 
-            /// WITH FILL (and its INTERPOLATE) must run only on the node that produces the complete
-            /// result, over the fully merged stream - never on a node that emits a mergeable state to
-            /// be merged further. Otherwise the fill rows are generated per shard and duplicated after
-            /// the merge, and INTERPOLATE additionally yields a broken chunk once the per-shard
-            /// interpolate column is merged on the initiator. `to_stage == Complete` is the precise
-            /// "final node" test: `!to_aggregation_stage` is weaker and would still fire on an
-            /// intermediate node whose `from_stage` is an after-aggregation state while `to_stage` is
-            /// only WithMergeableState (e.g. nested Distributed), running WITH FILL before the outer merge.
+            /// WITH FILL / INTERPOLATE must run only on the finalizing node (to_stage == Complete),
+            /// over the merged stream, not per shard - otherwise fill rows are duplicated after the merge.
             if (options.to_stage == QueryProcessingStage::Complete)
                 executeWithFill(query_plan);
 
