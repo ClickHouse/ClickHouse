@@ -1,0 +1,190 @@
+---
+slug: /changelogs/24.5
+title: 'Cloud용 v24.5 변경 로그'
+description: 'v24.5 빠른 릴리스 변경 로그'
+keywords: ['변경 로그', '클라우드']
+sidebarTitle: '24.5'
+doc_type: 'changelog'
+---
+
+v24.5 릴리스의 ClickHouse Cloud 서비스 관련 주요 변경 사항입니다.
+
+<div id="breaking-changes">
+  ## 호환성이 깨지는 변경 사항
+</div>
+
+* duration이 마이크로초 해상도라는 점을 반영하여 system.zookeeper 테이블의 컬럼 이름을 duration&#95;ms에서 duration&#95;microseconds로 변경합니다. [#60774](https://github.com/ClickHouse/ClickHouse/pull/60774) (Duc Canh Le).
+
+* max&#95;parallel&#95;replicas를 0으로 설정하는 것은 의미가 없으므로 더 이상 허용하지 않습니다. 0으로 설정하면 예기치 않은 논리 오류가 발생할 수 있습니다. #60140을 해결합니다. [#61201](https://github.com/ClickHouse/ClickHouse/pull/61201) (Kruglov Pavel).
+
+* experimental LIVE VIEW 기능의 일부인 INSERT WATCH 쿼리 지원을 제거합니다. [#62382](https://github.com/ClickHouse/ClickHouse/pull/62382) (Alexey Milovidov).
+
+* neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference 함수 사용은 지원 중단(deprecated)됩니다(오류를 유발하기 쉬우므로). 대신 적절한 윈도우 함수를 사용해야 합니다. 다시 활성화하려면 allow&#95;deprecated&#95;error&#95;prone&#95;window&#95;functions=1로 설정하십시오. [#63132](https://github.com/ClickHouse/ClickHouse/pull/63132) (Nikita Taranov).
+
+<div id="backward-incompatible-changes">
+  ## 하위 호환되지 않는 변경 사항
+</div>
+
+* 새 ClickHouse 버전에서는 모든 인수가 Float64인 경우 geoDistance, greatCircleDistance, greatCircleAngle 함수가 내부 계산과 반환 유형에 64비트 배정밀도 부동소수점 데이터 타입을 사용합니다. 이로써 #58476이 해결됩니다. 이전 버전에서는 이 함수들이 항상 Float32를 사용했습니다. geo&#95;distance&#95;returns&#95;float64&#95;on&#95;float64&#95;arguments를 false로 설정하거나 compatibility를 24.2 이하로 설정하면 이전 동작으로 전환할 수 있습니다. [#61848](https://github.com/ClickHouse/ClickHouse/pull/61848) (Alexey Milovidov).
+
+* 컬럼 수는 매우 많지만 많은 데이터베이스 또는 테이블에 SHOW TABLES 권한이 부여되지 않은 경우, system.columns의 쿼리가 더 빠르게 동작합니다. 이전 버전에서는 해당 테이블에 SHOW TABLES 권한이 없는 상태에서 개별 컬럼에만 SHOW COLUMNS를 부여하면 system.columns 테이블에 해당 컬럼이 표시되었지만, 새 버전에서는 테이블 전체를 건너뜁니다. 쿼리를 느리게 하던 &quot;Access granted&quot; 및 &quot;Access denied&quot; trace 로그 메시지도 제거했습니다. [#63439](https://github.com/ClickHouse/ClickHouse/pull/63439) (Alexey Milovidov).
+
+* largestTriangleThreeBuckets의 충돌 문제를 수정했습니다. 이에 따라 이 함수의 동작이 변경되어, 제공된 series의 NaN을 무시하게 됩니다. 따라서 결과 집합이 이전 버전과 다를 수 있습니다. [#62646](https://github.com/ClickHouse/ClickHouse/pull/62646) (Raúl Marín).
+
+<div id="new-features">
+  ## 새로운 기능
+</div>
+
+* 새로 생성된 서비스에서는 새 분석기가 기본적으로 활성화됩니다.
+
+* `drop table a,b,c;`와 같이 여러 테이블을 한 번에 삭제할 수 있습니다. [#58705](https://github.com/ClickHouse/ClickHouse/pull/58705) (zhongyuankai).
+
+* 이제 설정 input&#95;format&#95;tsv&#95;crlf&#95;end&#95;of&#95;line을 사용하면 TSV 포맷에서 CRLF 줄 끝을 파싱할 수 있습니다. #56257을 해결했습니다. [#59747](https://github.com/ClickHouse/ClickHouse/pull/59747) (Shaun Struwig).
+
+* 이제 테이블 엔진에도 권한을 부여할 수 있으며, 기존 사용자의 동작에는 영향을 미치지 않습니다. [#60117](https://github.com/ClickHouse/ClickHouse/pull/60117) (jsc0218).
+
+* application/x-www-form-urlencoded 포맷으로 단일 레코드를 읽고 쓸 수 있는 Form 포맷을 추가했습니다. [#60199](https://github.com/ClickHouse/ClickHouse/pull/60199) (Shaun Struwig).
+
+* CROSS JOIN에서 압축을 사용할 수 있게 되었습니다. [#60459](https://github.com/ClickHouse/ClickHouse/pull/60459) (p1rattttt).
+
+* 누락된 필드에 NULL 값을 강제로 적용하는 새로운 설정 input&#95;format&#95;force&#95;null&#95;for&#95;omitted&#95;fields. [#60887](https://github.com/ClickHouse/ClickHouse/pull/60887) (Constantine Peresypkin).
+
+* 왼쪽 및 오른쪽 테이블의 컬럼을 모두 포함하는 부등 조건을 사용하는 join을 지원합니다. 예: `t1.y < t2.y`. 활성화하려면 SET allow&#95;experimental&#95;join&#95;condition = 1로 설정하십시오. [#60920](https://github.com/ClickHouse/ClickHouse/pull/60920) (lgbo).
+
+* 새 함수 getClientHTTPHeader를 추가했습니다. 이로써 #54665가 종료되었습니다. @lingtaolf와 공동으로 작성했습니다. [#61820](https://github.com/ClickHouse/ClickHouse/pull/61820) (Alexey Milovidov).
+
+* 편의를 위해 `SELECT * FROM numbers()`는 제한 없이 `SELECT * FROM system.numbers`와 동일하게 동작합니다. [#61969](https://github.com/ClickHouse/ClickHouse/pull/61969) (YenchangChan).
+
+* 이제 ALTER MODIFY SETTING을 통해 메모리 테이블 설정을 수정하는 기능이 지원됩니다. ALTER TABLE memory MODIFY SETTING min&#95;rows&#95;to&#95;keep = 100, max&#95;rows&#95;to&#95;keep = 1000;. [#62039](https://github.com/ClickHouse/ClickHouse/pull/62039) (zhongyuankai).
+
+* 분석기에서 재귀 CTE를 지원합니다. [#62074](https://github.com/ClickHouse/ClickHouse/pull/62074) (Maksim Kita).
+
+* 이전에는 S3 스토리지와 S3 테이블 함수에서 아카이브 파일을 조회할 수 없었습니다. S3에 있는 아카이브 내부의 파일을 순회할 수 있는 솔루션을 만들었습니다. [#62259](https://github.com/ClickHouse/ClickHouse/pull/62259) (Daniil Ivanik).
+
+* 조건 함수 `clamp` 지원. [#62377](https://github.com/ClickHouse/ClickHouse/pull/62377) (skyoct).
+
+* npy 출력 형식이 추가되었습니다. [#62430](https://github.com/ClickHouse/ClickHouse/pull/62430) (豪肥肥).
+
+* 분석기에서 QUALIFY 절을 지원합니다. #47819를 닫습니다. [#62619](https://github.com/ClickHouse/ClickHouse/pull/62619) (Maksim Kita).
+
+* HTTP 인터페이스에 role 쿼리 매개변수가 추가되었습니다. 이 매개변수는 `SET ROLE x`와 유사하게 동작하며, SQL 문이 실행되기 전에 역할을 적용합니다. 이를 통해 HTTP 인터페이스의 제약을 우회할 수 있습니다. 여러 SQL 문은 허용되지 않으므로 `SET ROLE x`와 SQL 문 자체를 동시에 전송할 수 없기 때문입니다. 이 방식으로 여러 역할을 설정할 수도 있습니다. 예를 들어 `?role=x&amp;role=y`는 `SET ROLE x, y`와 동일합니다. [#62669](https://github.com/ClickHouse/ClickHouse/pull/62669) (Serge Klochkov).
+
+* SYSTEM UNLOAD PRIMARY KEY를 추가했습니다. [#62738](https://github.com/ClickHouse/ClickHouse/pull/62738) (Pablo Marcos).
+
+* 버전 7 UUID, 즉 무작위 구성 요소를 포함한 타임스탬프 기반 UUID를 생성하는 SQL 함수 `generateUUIDv7`, `generateUUIDv7ThreadMonotonic`, `generateUUIDv7NonMonotonic`(각각 단조성과 성능 간 절충이 다름)이 추가되었습니다. 또한 UUID에서 바이트를 추출하는 새 함수 `UUIDToNum`과 버전 7 UUID에서 타임스탬프 구성 요소를 추출하는 새 함수 `UUIDv7ToDateTime`도 추가되었습니다. [#62852](https://github.com/ClickHouse/ClickHouse/pull/62852) (Alexey Petrunyaka).
+
+* Raw를 TSVRaw의 동의어로 추가했습니다. [#63394](https://github.com/ClickHouse/ClickHouse/pull/63394) (Unalian).
+
+* 크기가 제한을 초과할 경우 임시 파일을 사용해 cross join을 수행할 수 있는 기능이 추가되었습니다. [#63432](https://github.com/ClickHouse/ClickHouse/pull/63432) (p1rattttt).
+
+<div id="performance-improvements">
+  ## 성능 개선
+</div>
+
+* INSERT 시 새로 생성된 projection 블록의 머지를 건너뛰도록 했습니다. [#59405](https://github.com/ClickHouse/ClickHouse/pull/59405) (Nikita Taranov).
+
+* SELECT에 대한 뮤테이션 오버헤드를 줄였습니다(v2). [#60856](https://github.com/ClickHouse/ClickHouse/pull/60856) (Azat Khuzhin).
+
+* 동등 집합을 활용한 JOIN filter push down을 개선했습니다. [#61216](https://github.com/ClickHouse/ClickHouse/pull/61216) (Maksim Kita).
+
+* 단일 값 최적화를 위한 새로운 분석기 패스를 추가했습니다. [#61564](https://github.com/ClickHouse/ClickHouse/pull/61564) (LiuNeng).
+
+* 입력 문자열이 모두 ASCII 문자일 경우 문자열 함수 XXXUTF8을 ASCII 방식으로 처리합니다. apache/doris#29799에서 착안했습니다. 전체적으로 속도가 1.07배~1.62배 향상되었습니다. 일부 경우에는 최대 메모리 사용량도 감소했습니다. [#61632](https://github.com/ClickHouse/ClickHouse/pull/61632) (李扬).
+
+* 빠른 Parquet encoder를 기본적으로 활성화했습니다(output&#95;format&#95;parquet&#95;use&#95;custom&#95;encoder). [#62088](https://github.com/ClickHouse/ClickHouse/pull/62088) (Michael Kolupaev).
+
+* 필요한 필드를 모두 읽은 경우 남은 필드를 모두 스키핑하도록 하여 JSONEachRowRowInputFormat을 개선했습니다. [#62210](https://github.com/ClickHouse/ClickHouse/pull/62210) (lgbo).
+
+* 함수 splitByChar와 splitByRegexp의 속도가 크게 향상되었습니다. [#62392](https://github.com/ClickHouse/ClickHouse/pull/62392) (李扬).
+
+* file/s3/hdfs/url/... 테이블 함수에서 파일로부터 수행하는 단순한 INSERT SELECT를 개선했습니다. 병렬 parsing에 사용하는 스레드 수를 제어할 수 있도록 별도의 max&#95;parsing&#95;threads 설정도 추가했습니다. [#62404](https://github.com/ClickHouse/ClickHouse/pull/62404) (Kruglov Pavel).
+
+* azure&#95;allow&#95;parallel&#95;part&#95;upload 설정으로 제어되는 AzureBlobStorage용 병렬 write buffer를 지원합니다. [#62534](https://github.com/ClickHouse/ClickHouse/pull/62534) (SmitaRKulkarni).
+
+* 함수 to&#95;utc&#95;timestamp와 from&#95;utc&#95;timestamp가 이제 약 2배 더 빨라졌습니다. [#62583](https://github.com/ClickHouse/ClickHouse/pull/62583) (KevinyhZou).
+
+* 입력에 parsing할 수 없는 값이 대부분 포함된 경우, 함수 parseDateTimeOrNull, parseDateTimeOrZero, parseDateTimeInJodaSyntaxOrNull, parseDateTimeInJodaSyntaxOrZero가 이제 훨씬 더 빠르게 실행됩니다(10배~1000배). [#62634](https://github.com/ClickHouse/ClickHouse/pull/62634) (LiuNeng).
+
+* 실패 시 IP당 레코드 하나만 유지하도록 HostResolver 동작을 변경했습니다. [#62652](https://github.com/ClickHouse/ClickHouse/pull/62652) (Anton Ivashkin).
+
+* 컬럼이 많을 때 머지 중 메모리 사용량을 제어하고 정렬 속도를 2배 높일 수 있도록 새로운 구성 prefer&#95;merge&#95;sort&#95;block&#95;bytes를 추가했습니다. [#62904](https://github.com/ClickHouse/ClickHouse/pull/62904) (LiuNeng).
+
+* JOIN 이후의 filter가 항상 기본값을 걸러내는 경우 QueryPlan이 OUTER JOIN을 INNER JOIN으로 변환하는 최적화를 수행합니다. 이 최적화는 query&#95;plan&#95;convert&#95;outer&#95;join&#95;to&#95;inner&#95;join 설정으로 제어할 수 있으며 기본적으로 활성화되어 있습니다. [#62907](https://github.com/ClickHouse/ClickHouse/pull/62907) (Maksim Kita).
+
+* optimize&#95;rewrite&#95;sum&#95;if&#95;to&#95;count&#95;if를 기본적으로 활성화했습니다. [#62929](https://github.com/ClickHouse/ClickHouse/pull/62929) (Raúl Marín).
+
+* 새로운 분석기에 대한 미세 최적화를 적용했습니다. [#63429](https://github.com/ClickHouse/ClickHouse/pull/63429) (Raúl Marín).
+
+* DateTime을 DateTime64와 비교하는 경우에도 index analysis가 동작합니다. 이 변경으로 #63441이 해결됩니다. [#63443](https://github.com/ClickHouse/ClickHouse/pull/63443) (Alexey Milovidov).
+
+* 불필요한 데이터를 제거해 set 유형 인덱스의 속도를 소폭(약 1.5배) 높였습니다. [#64098](https://github.com/ClickHouse/ClickHouse/pull/64098) (Alexey Milovidov).
+
+<div id="improvements">
+  ## 개선 사항
+</div>
+
+* optimize&#95;monotonous&#95;functions&#95;in&#95;order&#95;by 설정을 제거했습니다. 이 설정은 더 이상 아무 동작도 하지 않게 되기 때문입니다. [#63004](https://github.com/ClickHouse/ClickHouse/pull/63004) (Raúl Marín).
+
+* 맵은 이제 Float32, Float64, Array(T), Map(K,V), Tuple(T1, T2, ...)를 키로 사용할 수 있습니다. #54537을 해결합니다. [#59318](https://github.com/ClickHouse/ClickHouse/pull/59318) (李扬).
+
+* S3와 유사하게 AzureBlobStorage용 비동기 WriteBuffer를 추가했습니다. [#59929](https://github.com/ClickHouse/ClickHouse/pull/59929) (SmitaRKulkarni).
+
+* 테두리를 유지하면서 컬럼 너비를 변경할 수 있는 여러 줄 문자열. [#59940](https://github.com/ClickHouse/ClickHouse/pull/59940) (Volodyachan).
+
+* 손상된 메시지에 대해 RabbitMQ가 nack 처리하도록 했습니다. 이 변경으로 #45350이 해결됩니다. [#60312](https://github.com/ClickHouse/ClickHouse/pull/60312) (Kseniia Sumarokova).
+
+* 함수 toStartOfInterval(..., INTERVAL ... WEEK)에서 주의 시작 요일로 간주하는 기준에 영향을 주는 first&#95;day&#95;of&#95;week 설정을 추가했습니다. 이를 통해 기본적으로 일요일을 주의 시작 요일로 사용하는 함수 toStartOfWeek와의 일관성을 유지할 수 있습니다. [#60598](https://github.com/ClickHouse/ClickHouse/pull/60598) (Jordi Villar).
+
+* 삽입 시 block에 할당된 원래 행 번호를 저장하는 persistent virtual column &#95;block&#95;offset을 추가했습니다. 컬럼 &#95;block&#95;offset의 영속성은 enable&#95;block&#95;offset&#95;column 설정으로 활성화할 수 있습니다. part의 최소 block 번호 또는 mutation 버전을 포함하는 virtual column &#95;part&#95;data&#95;version도 추가했습니다. persistent virtual column &#95;block&#95;number는 더 이상 Experimental로 간주되지 않습니다. [#60676](https://github.com/ClickHouse/ClickHouse/pull/60676) (Anton Popov).
+
+* 함수 date&#95;diff와 age는 이제 결과를 마이크로초 정밀도 대신 나노초 정밀도로 계산합니다. 이제 unit 매개변수에 사용할 수 있는 값으로 nanosecond(또는 nanoseconds 또는 ns)도 지원합니다. [#61409](https://github.com/ClickHouse/ClickHouse/pull/61409) (Austin Kothig).
+
+* 이제 머지 중에는 wide 파트의 마크를 로드하지 않습니다. [#61551](https://github.com/ClickHouse/ClickHouse/pull/61551) (Anton Popov).
+
+* output&#95;format&#95;pretty&#95;row&#95;numbers를 기본적으로 활성화했습니다. 사용성이 더 좋습니다. [#61791](https://github.com/ClickHouse/ClickHouse/pull/61791) (Alexey Milovidov).
+
+* system.zeros, system.zeros&#95;mt, 그리고 generateRandom 테이블 함수에서 LIMIT가 있는 단순한 쿼리에 대해 진행률 표시줄이 동작합니다(system.numbers와 system.numbers&#95;mt에서는 이미 동작합니다). 추가로, 전체 레코드 수가 max&#95;rows&#95;to&#95;read 한도보다 크면 더 일찍 예외를 발생시킵니다. 이 변경으로 #58183이 해결됩니다. [#61823](https://github.com/ClickHouse/ClickHouse/pull/61823) (Alexey Milovidov).
+
+* TRUNCATE ALL TABLES를 추가했습니다. [#61862](https://github.com/ClickHouse/ClickHouse/pull/61862) (豪肥肥).
+
+* input&#95;format&#95;json&#95;throw&#95;on&#95;bad&#95;escape&#95;sequence 설정을 추가했습니다. 이 설정을 비활성화하면 JSON 입력 형식에서 잘못된 이스케이프 시퀀스도 저장할 수 있습니다. [#61889](https://github.com/ClickHouse/ClickHouse/pull/61889) (Kruglov Pavel).
+
+* 경고 메시지에서 &quot;a&quot;를 &quot;the&quot;로 수정했습니다. Atomic engine은 하나뿐이므로 &quot;to a new Atomic engine&quot;가 아니라 &quot;to the new Atomic engine&quot;가 맞습니다. [#61952](https://github.com/ClickHouse/ClickHouse/pull/61952) (shabroo).
+
+* quorum 삽입 트랜잭션을 롤백할 때 발생하는 논리 오류를 수정했습니다. [#61953](https://github.com/ClickHouse/ClickHouse/pull/61953) (Han Fei).
+
+* Apache Arrow 스키마에서 널 허용 컬럼 타입을 자동으로 추론합니다. [#61984](https://github.com/ClickHouse/ClickHouse/pull/61984) (Maksim Kita).
+
+* 집계 중 aggregate state의 병렬 머지를 취소할 수 있게 했습니다. 예시: uniqExact. [#61992](https://github.com/ClickHouse/ClickHouse/pull/61992) (Maksim Kita).
+
+* INVALIDATE&#95;QUERY가 있는 딕셔너리 소스는 시작 시 두 번 다시 로드되지 않도록 했습니다. [#62050](https://github.com/ClickHouse/ClickHouse/pull/62050) (vdimir).
+
+* ReplicatedMergeTree의 OPTIMIZE FINAL은 이제 현재 진행 중인 머지가 끝날 때까지 기다린 뒤 최종 머지를 다시 예약하려고 시도합니다. 이를 통해 일반적인 MergeTree 동작에 더 가까워집니다. [#62067](https://github.com/ClickHouse/ClickHouse/pull/62067) (Nikita Taranov).
+
+* Hive text file에서 데이터를 읽을 때 입력 필드 수를 조정하기 위해 Hive text file의 첫 번째 줄을 사용했는데, 첫 번째 줄의 필드 수가 정의된 Hive 테이블과 일치하지 않는 경우가 있었습니다. 예를 들어 Hive 테이블이 test&#95;tbl(a Int32, b Int32, c Int32)처럼 3개의 컬럼을 갖도록 정의되어 있지만, 텍스트 파일의 첫 번째 줄에는 필드가 2개만 있을 수 있습니다. 이 경우 입력 필드 수가 2개로 조정되며, 텍스트 파일의 다음 줄에 필드가 3개 있더라도 세 번째 필드는 읽지 못하고 기본값 0으로 설정되는데, 이는 올바르지 않습니다. [#62086](https://github.com/ClickHouse/ClickHouse/pull/62086) (KevinyhZou).
+
+* 클라이언트에서 입력하는 동안 구문 강조가 구문 수준에서 동작합니다(이전에는 lexer 수준에서 동작했습니다). [#62123](https://github.com/ClickHouse/ClickHouse/pull/62123) (Alexey Milovidov).
+
+* 프라이머리 키가 포함된 Boolean 표현식 뒤에 불필요한 `= 1` 또는 `= 0`을 추가하면 프라이머리 인덱스를 사용하지 않던 문제를 수정했습니다. 예를 들어, 프라이머리 인덱스를 사용할 수 있음에도 `SELECT * FROM <table> WHERE <primary-key> IN (<value>) = 1` 및 `SELECT * FROM <table> WHERE <primary-key> NOT IN (<value>) = 0`는 모두 전체 테이블 스캔을 수행했습니다. [#62142](https://github.com/ClickHouse/ClickHouse/pull/62142) (josh-hildred).
+
+* lightweight&#95;deletes&#95;sync 설정을 추가했습니다(기본값: 2 - 모든 레플리카를 동기적으로 기다립니다). 이 설정은 mutations&#95;sync 설정과 유사하지만 경량한 삭제의 동작에만 영향을 줍니다. [#62195](https://github.com/ClickHouse/ClickHouse/pull/62195) (Anton Popov).
+
+* 사용자 지정 설정의 값을 파싱할 때 불리언과 정수를 구분합니다: SET custom&#95;a = true; SET custom&#95;b = 1;. [#62206](https://github.com/ClickHouse/ClickHouse/pull/62206) (Vitaly Baranov).
+
+* AWS Private Link Interface 엔드포인트를 통한 S3 액세스를 지원합니다. 이 변경으로 #60021, #31074, #53761이 해결됩니다. [#62208](https://github.com/ClickHouse/ClickHouse/pull/62208) (Arthur Passos).
+
+* 클라이언트는 서버에 헤더 &#39;Keep-Alive: timeout=X&#39;를 보내야 합니다. 클라이언트가 서버로부터 해당 헤더가 포함된 응답을 받으면 서버가 보낸 값을 사용해야 합니다. 또한 connection close race를 피하기 위해 클라이언트는 만료가 임박한 연결을 사용하지 않는 것이 좋습니다. [#62249](https://github.com/ClickHouse/ClickHouse/pull/62249) (Sema Checherinda).
+
+* date&#95;trunc에 나노초, 마이크로초, 밀리초 단위를 추가했습니다. [#62335](https://github.com/ClickHouse/ClickHouse/pull/62335) (Misz606).
+
+* 이제 쿼리 캐시는 시스템 테이블(system.*, information&#95;schema.*, INFORMATION&#95;SCHEMA.*)에 대한 쿼리 결과를 더 이상 캐시하지 않습니다. [#62376](https://github.com/ClickHouse/ClickHouse/pull/62376) (Robert Schulze).
+
+* MOVE PARTITION TO TABLE 쿼리는 파트 수 제한을 초과하지 않도록 지연되거나 TOO&#95;MANY&#95;PARTS 예외를 발생시킬 수 있습니다. INSERT 쿼리와 동일한 설정 및 제한이 적용됩니다(max&#95;parts&#95;in&#95;total, parts&#95;to&#95;delay&#95;insert, parts&#95;to&#95;throw&#95;insert, inactive&#95;parts&#95;to&#95;throw&#95;insert, inactive&#95;parts&#95;to&#95;delay&#95;insert, max&#95;avg&#95;part&#95;size&#95;for&#95;too&#95;many&#95;parts, min&#95;delay&#95;to&#95;insert&#95;ms 및 max&#95;delay&#95;to&#95;insert 설정 참조). [#62420](https://github.com/ClickHouse/ClickHouse/pull/62420) (Sergei Trifonov).
+
+* transform이 항상 첫 번째로 일치하는 값을 반환하도록 했습니다. [#62518](https://github.com/ClickHouse/ClickHouse/pull/62518) (Raúl Marín).
+
+* RESTORE를 실행하는 동안 테이블 DEFAULT 표현식을 평가하지 않도록 했습니다. [#62601](https://github.com/ClickHouse/ClickHouse/pull/62601) (Vitaly Baranov).
+
+* HTTP 요청에서 서로 다른 인증 방식과 함께 quota key를 허용합니다. [#62842](https://github.com/ClickHouse/ClickHouse/pull/62842) (Kseniia Sumarokova).
+
+* 사용자의 valid&#95;until 시각에 도달하면 session을 종료합니다. [#63046](https://github.com/ClickHouse/ClickHouse/pull/63046) (Konstantin Bogdanov).

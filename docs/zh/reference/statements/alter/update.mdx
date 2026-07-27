@@ -1,0 +1,37 @@
+---
+description: 'ALTER TABLE ... UPDATE 语句文档'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'ALTER TABLE ... UPDATE 语句'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+对与指定过滤表达式匹配的数据进行操作。其作为一种[变更](/zh/reference/statements/alter/index#mutations)实现。
+
+<Note>
+  `ALTER TABLE` 前缀使这种语法有别于大多数其他支持 SQL 的系统。这样设计是为了表明，与 OLTP 数据库中的类似查询不同，这是一项开销较大的操作，并非为频繁使用而设计。
+</Note>
+
+`filter_expr` 必须为 `UInt8` 类型。对于 `filter_expr` 取非零值的行，此查询会将指定列的值更新为相应表达式的值。这些值会使用 `CAST` 运算符转换为列类型。不支持更新用于计算主键或分区键的列。
+
+一条查询可以包含多个以逗号分隔的命令。
+
+查询处理的同步方式由 [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置决定。默认情况下，它是异步的。
+
+**另请参阅**
+
+* [Mutations](/zh/reference/statements/alter/index#mutations)
+* [ALTER 查询的同步性](/zh/reference/statements/alter/index#synchronicity-of-alter-queries)
+* [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置
+* [轻量级 `UPDATE`](/zh/reference/statements/update) - 使用补丁分区片段的轻量级更新替代方案
+* [`APPLY PATCHES`](/zh/reference/statements/alter/apply-patches) - 手动应用轻量级更新中的补丁
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[在 ClickHouse 中处理更新与删除操作](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

@@ -43,6 +43,29 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 SELECT name, status FROM system.dictionaries;
 ```
 
+## SYSTEM UNLOAD DICTIONARY {#unload-dictionary}
+
+Unloads a dictionary `dictionary_name` to release its memory, if the dictionary status is `LOADED`.
+The dictionary is lazy-reloaded when necessary again.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+The status of the dictionary can be checked by querying the `system.dictionaries` table.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+## SYSTEM UNLOAD DICTIONARIES {#unload-dictionaries}
+
+The `SYSTEM UNLOAD DICTIONARIES` query unloads all dictionaries with a `LOADED` status (see the `status` column of [`system.dictionaries`](/operations/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 ## SYSTEM RELOAD MODELS {#reload-models}
 
 :::note
@@ -97,6 +120,11 @@ For more convenient (automatic) cache management, see `disable_internal_dns_cach
 
 Clears the mark cache.
 
+## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
+
+Clears the primary index cache, which holds the primary keys of [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) tables in memory.
+Its size is configured with the server-level setting [`primary_index_cache_size`](../../operations/server-configuration-parameters/settings.md#primary_index_cache_size).
+
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
 Clears the iceberg metadata cache.
@@ -109,15 +137,94 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+
+Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
+## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
+
+Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
+
 ## SYSTEM CLEAR|DROP TEXT INDEX CACHES {#drop-text-index-caches}
 
-Clears the text index's header, dictionary and postings caches.
+Clears the text index's tokens, header and postings caches.
 
 If you like to drop one of these caches individually, you can run
 
-- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
-- `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`, or
+- `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
+- `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, or
 - `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+## SYSTEM CLEAR|DROP INDEX MARK CACHE {#drop-index-mark-cache}
+
+Clears the cache of marks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE {#drop-index-uncompressed-cache}
+
+Clears the cache of uncompressed blocks for secondary (data-skipping) indexes.
+
+## SYSTEM CLEAR|DROP MMAP CACHE {#drop-mmap-cache}
+
+Clears the cache of memory-mapped files.
+
+## SYSTEM CLEAR|DROP PAGE CACHE {#drop-page-cache}
+
+Clears the userspace page cache, ClickHouse's own in-memory cache of data read from the underlying storage.
+
+## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
+
+Clears the vector similarity index cache.
+
+## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
+
+Clears the cache of HTTP connection pools used for outgoing connections.
+
+## SYSTEM CLEAR|DROP S3 CLIENT CACHE {#drop-s3-client-cache}
+
+Clears the cache of S3 clients.
+
+## SYSTEM PREWARM MARK CACHE {#prewarm-mark-cache}
+
+Loads the marks of a table into the [mark cache](#drop-mark-cache). Secondary-index marks are also loaded into the [index mark cache](#drop-index-mark-cache).
+
+```sql
+SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM PREWARM PRIMARY INDEX CACHE {#prewarm-primary-index-cache}
+
+Loads the primary indexes of a `MergeTree` table into the [primary index cache](#drop-primary-index-cache).
+
+```sql
+SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
+```
+
+## SYSTEM CLEAR|DROP DISK METADATA CACHE {#drop-disk-metadata-cache}
+
+Clears the metadata cache of the specified disk.
+
+```sql
+SYSTEM DROP DISK METADATA CACHE <disk_name>
+```
+
+## SYSTEM SYNC FILESYSTEM CACHE {#sync-filesystem-cache}
+
+Reconciles ClickHouse's in-memory state of the filesystem cache with the cache files actually present on disk, and returns the `cache_name`, `path` and downloaded `size` of each cached file segment. An optional cache name limits the operation to a single cache.
+
+```sql
+SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
+```
+
+## SYSTEM CLEAR|DROP DISTRIBUTED CACHE {#drop-distributed-cache}
+
+:::note
+`SYSTEM CLEAR|DROP DISTRIBUTED CACHE` is available only in ClickHouse Cloud.
+:::
+
+Drops the distributed cache. Use `CONNECTIONS` to drop only the cached connections to the distributed cache servers, or pass a server identifier to target a single server.
+
+```sql
+SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
+```
 
 ## SYSTEM DROP REPLICA {#drop-replica}
 
@@ -163,6 +270,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
@@ -775,6 +886,74 @@ If there's a refresh in progress for the given view on the current replica, inte
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
+
+## Managing Background Activity {#managing-background-activity}
+
+Engine-agnostic commands to control the background activity of a single table, or of every such table on the server at once. They cover:
+
+- [Refreshable materialized views](../../sql-reference/statements/create/view.md#refreshable-materialized-view) (the periodic refresh), and
+- the streaming table engines that continuously consume from an external source: [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md), [NATS](../../engines/table-engines/integrations/nats.md), [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md).
+
+For a refreshable materialized view each verb is an alias of the corresponding `SYSTEM ... VIEW` command from [Managing Refreshable Materialized Views](#managing-refreshable-materialized-views), so `SYSTEM STOP [db.]name` behaves exactly like `SYSTEM STOP VIEW [db.]name`, and so on.
+
+The per-table and wildcard forms differ in how they treat tables without a background activity. The per-table form (`SYSTEM STOP [db.]table`) throws an error if the named table is neither a streaming engine nor a refreshable materialized view. The wildcard form silently skips such tables, so it is always safe to run.
+
+`STOP` and `CANCEL` interrupt consumption as soon as possible. For [Kafka](../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../engines/table-engines/integrations/rabbitmq.md) and [NATS](../../engines/table-engines/integrations/nats.md) they stop reading from the source but do not interrupt an insert that has already started: a block already being written into the materialized views still finishes and commits. [S3Queue](../../engines/table-engines/integrations/s3queue.md) and [AzureQueue](../../engines/table-engines/integrations/azure-queue.md) read and insert in a single pipeline. With deduplication enabled (default) the insert is cancelled too and the files are reprocessed later. With deduplication disabled the in-flight batch finishes and commits instead (like the engines above) to avoid duplicating rows. Data that was read but not yet committed is consumed again later, so nothing is lost, except for core NATS (without JetStream), which cannot redeliver and drops it.
+
+`PAUSE` does not interrupt a running insert, so it normally does not lose anything. Core NATS is the exception: pausing stops consuming and drops the messages it had already received but not yet inserted, and core NATS cannot redeliver them.
+
+:::note
+None of these states persist across a server restart. After a restart, refreshable views resume their configured schedules and streaming engines resume consuming.
+:::
+
+### SYSTEM STOP {#stop-background}
+
+Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
+
+```sql
+SYSTEM STOP [db.]table
+SYSTEM STOP ALL BACKGROUND
+```
+
+### SYSTEM START {#start-background}
+
+Resume activity, undoing a previous `SYSTEM STOP` or `SYSTEM PAUSE`. No activity is interrupted.
+
+```sql
+SYSTEM START [db.]table
+SYSTEM START ALL BACKGROUND
+```
+
+### SYSTEM PAUSE {#pause-background}
+
+Prevent further background activity, but let whatever is running right now finish first.
+
+```sql
+SYSTEM PAUSE [db.]table
+SYSTEM PAUSE ALL BACKGROUND
+```
+
+### SYSTEM CANCEL {#cancel-background}
+
+Interrupt the activity running right now only, without blocking future activity — the table keeps refreshing or consuming on its schedule. Does nothing if no activity is in progress.
+
+```sql
+SYSTEM CANCEL [db.]table
+SYSTEM CANCEL ALL BACKGROUND
+```
+
+### SYSTEM REFRESH {#refresh-background}
+
+Run one extra cycle out of schedule. On a streaming table it runs immediately and once, even while the table is stopped or paused. On a refreshable materialized view it behaves like `SYSTEM REFRESH VIEW`: if the view is stopped, the refresh is remembered and runs once `SYSTEM START` releases it.
+
+```sql
+SYSTEM REFRESH [db.]table
+SYSTEM REFRESH ALL BACKGROUND
+```
+
+### Privileges {#background-privileges}
+
+Each command requires the privilege of the targeted engine: `SYSTEM VIEWS` for a refreshable materialized view and `SYSTEM STREAMING ENGINES` for a streaming table. Both are children of `SYSTEM BACKGROUND`, so granting `SYSTEM BACKGROUND` allows controlling the background activity of every such table. The `ALL BACKGROUND` forms apply only to the tables the user is allowed to control and silently skip the rest.
 
 ## SYSTEM FLUSH OBJECT STORAGE QUEUE {#flush-object-storage-queue}
 

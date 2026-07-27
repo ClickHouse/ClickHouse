@@ -39,24 +39,23 @@ public:
             {"instruction_or_schema", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
-            {"temperature", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), &isColumnConst, "const Number"},
+            {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return wrapReturnTypeForNullablePrompt(arguments, prompt_arg_index, std::make_shared<DataTypeString>());
+        return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
 private:
     static constexpr float default_temp = 0.0f;
-    static constexpr size_t prompt_arg_index = 0;
     static constexpr size_t instruction_arg_index = 1;
-    static constexpr size_t temp_arg_idx = 2;
 
     String functionName() const override { return name; }
 
-    float defaultTemperature() const override { return default_temp; }
-    size_t promptArgumentIndex() const override { return prompt_arg_index; }
-    size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
+    AIParamSpecs functionParams() const override
+    {
+        return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
+    }
 
     static bool isJSONSchema(const String & instruction)
     {
@@ -69,7 +68,7 @@ private:
         return String(arguments[instruction_arg_index].column->getDataAt(0));
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
+    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
     {
         auto instruction = getInstruction(arguments);
         if (isJSONSchema(instruction))
@@ -82,7 +81,7 @@ private:
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        return String(arguments[prompt_arg_index].column->getDataAt(row));
+        return String(arguments[0].column->getDataAt(row));
     }
 
     /// Builds the OpenAI `response_format` schema object. Two shapes depending on `instruction_or_schema`:
@@ -225,23 +224,25 @@ REGISTER_FUNCTION(AiExtract)
         .description = R"(
 Extracts structured information from unstructured text using an LLM provider.
 
-The second argument may be either a free-form natural-language instruction (e.g. `'the main complaint'`) or a
+The third argument may be either a free-form natural-language instruction (e.g. `'the main complaint'`) or a
 JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-Provider credentials and configuration are taken from the named collection specified by the `ai_function_credentials` setting.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 )",
-        .syntax = "aiExtract(text, instruction_or_schema[, temperature])",
+        .syntax = "aiExtract(text, instruction_or_schema[, params])",
         .arguments = {
             {"text", "Text to extract information from.", {"String"}},
             {"instruction_or_schema", "Free-form extraction instruction, or a constant JSON object describing the fields to extract.", {"const String"}},
-            {"temperature", "Sampling temperature controlling randomness. Default: `0.0`.", {"const Float64"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"A single extracted value (instruction mode) or a JSON object string (schema mode). Returns the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'", "late and damaged package"},
+            {"Free-form instruction", "SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')", "late and damaged package"},
             {"Schema extraction", R"(SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5)", ""},
         },
         .introduced_in = {26, 4},

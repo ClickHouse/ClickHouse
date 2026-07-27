@@ -15,6 +15,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 from helpers.config_cluster import minio_secret_key
+from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -23,9 +24,15 @@ AVAILABLE_MODES = ["unordered", "ordered"]
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
     instance_2 = started_cluster.instances["instance2"]
+    instance_3 = started_cluster.instances["instance_without_keeper_fault_injection"]
 
     instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
     instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
+    # instance_without_keeper_fault_injection was not reset between tests, so S3Queue
+    # tables leaked from prior tests kept streaming and could consume a process-global
+    # ONCE failpoint (e.g. object_storage_queue_fail_commit_after_success) before the
+    # test that armed it committed. Reset it too so each test starts with no streamers.
+    instance_3.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
@@ -1124,9 +1131,9 @@ def test_mv_settings(started_cluster, mode, limit):
     )
 
     num_rows = 10
+    files_to_generate = 5
 
     def insert():
-        files_to_generate = 5
         table_name_suffix = f"{uuid.uuid4()}"
         for i in range(files_to_generate):
             file_name = f"file_{table_name}_{table_name_suffix}_{i}.csv"
@@ -1147,14 +1154,15 @@ def test_mv_settings(started_cluster, mode, limit):
     )
     node.query(f"SYSTEM STOP MERGES {dst_table_name}")
 
-    def get_count():
-        return int(node.query(f"SELECT count() FROM {dst_table_name}"))
-
-    expected_rows = num_rows
-    for _ in range(100):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
+    # All inserted rows must land in the destination before the part-count check.
+    expected_rows = num_rows * files_to_generate
+    assert_eq_with_retry(
+        node,
+        f"SELECT count() FROM {dst_table_name}",
+        str(expected_rows),
+        retry_count=120,
+        sleep_time=0.5,
+    )
 
     assert expected_parts_num == int(
         node.query(

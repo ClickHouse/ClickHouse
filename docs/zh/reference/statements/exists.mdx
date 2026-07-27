@@ -1,0 +1,13 @@
+---
+description: 'EXISTS 语句的文档'
+sidebarTitle: 'EXISTS'
+slug: /sql-reference/statements/exists
+title: 'EXISTS 语句'
+doc_type: 'reference'
+---
+
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+```
+
+返回一个 `UInt8` 类型的单列：如果表或数据库不存在，该列包含单个值 `0`；如果表存在于指定的数据库中，则包含 `1`。

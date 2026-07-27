@@ -1,0 +1,438 @@
+---
+title: 'استنتاج مخطط JSON'
+slug: /integrations/data-formats/json/inference
+description: 'كيفية استخدام استنتاج مخطط JSON'
+keywords: ['json', 'مخطط', 'استنتاج', 'استنتاج المخطط']
+doc_type: 'guide'
+---
+
+يمكن لـ ClickHouse تحديد بنية بيانات JSON تلقائيًا. ويمكن استخدام ذلك للاستعلام عن بيانات JSON مباشرةً، على سبيل المثال من القرص باستخدام `clickhouse-local` أو من حاويات S3، و/أو إنشاء مخططات تلقائيًا قبل تحميل البيانات إلى ClickHouse.
+
+<div id="when-to-use-type-inference">
+  ## متى تستخدم استنتاج الأنواع
+</div>
+
+* **بنية متسقة** - يجب أن تحتوي البيانات التي ستستنتج منها الأنواع على جميع المفاتيح التي تهمك. يستند استنتاج الأنواع إلى أخذ عينات من البيانات حتى [الحد الأقصى لعدد الصفوف](/ar/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) أو [البايتات](/ar/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). وأي بيانات تأتي بعد العينة وتحتوي على أعمدة إضافية سيتم تجاهلها، ولن يمكن الاستعلام عنها.
+* **أنواع متسقة** - يجب أن تكون أنواع البيانات للمفاتيح المحددة متوافقة، أي يجب أن يكون من الممكن تحويل أحد الأنواع إلى الآخر تلقائيًا.
+
+إذا كانت بيانات JSON لديك أكثر ديناميكية، بحيث تُضاف إليها مفاتيح جديدة وتكون فيه أنواع متعددة ممكنة للمسار ذاته، فراجع [&quot;العمل مع البيانات شبه المنظمة والديناميكية&quot;](/ar/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
+
+<div id="detecting-types">
+  ## اكتشاف الأنواع
+</div>
+
+يفترض ما يلي أن بنية JSON متسقة وأن لكل مسار نوعًا واحدًا فقط.
+
+استخدمت أمثلتنا السابقة نسخة مبسطة من [مجموعة بيانات Python PyPI](https://clickpy.clickhouse.com/) بتنسيق `NDJSON`. في هذا القسم، نستعرض مجموعة بيانات أكثر تعقيدًا ذات بُنى متداخلة، وهي [مجموعة بيانات arXiv](https://www.kaggle.com/datasets/Cornell-University/arxiv?resource=download) التي تضم 2.5 مليون ورقة علمية. ويمثل كل صف في مجموعة البيانات هذه، الموزعة بتنسيق `NDJSON`، ورقة أكاديمية منشورة. ويظهر أدناه صف على سبيل المثال:
+
+```json
+{
+  "id": "2101.11408",
+  "submitter": "Daniel Lemire",
+  "authors": "Daniel Lemire",
+  "title": "Number Parsing at a Gigabyte per Second",
+  "comments": "Software at https://github.com/fastfloat/fast_float and\n https://github.com/lemire/simple_fastfloat_benchmark/",
+  "journal-ref": "Software: Practice and Experience 51 (8), 2021",
+  "doi": "10.1002/spe.2984",
+  "report-no": null,
+  "categories": "cs.DS cs.MS",
+  "license": "http://creativecommons.org/licenses/by/4.0/",
+  "abstract": "With disks and networks providing gigabytes per second ....\n",
+  "versions": [
+    {
+      "created": "Mon, 11 Jan 2021 20:31:27 GMT",
+      "version": "v1"
+    },
+    {
+      "created": "Sat, 30 Jan 2021 23:57:29 GMT",
+      "version": "v2"
+    }
+  ],
+  "update_date": "2022-11-07",
+  "authors_parsed": [
+    [
+      "Lemire",
+      "Daniel",
+      ""
+    ]
+  ]
+}
+```
+
+تتطلب هذه البيانات مخططًا أكثر تعقيدًا بكثير من الأمثلة السابقة. نوضح أدناه عملية تعريف هذا المخطط، مع تقديم أنواع معقدة مثل `Tuple` و`Array`.
+
+تُخزَّن مجموعة البيانات هذه في حاوية S3 عامة على `s3://datasets-documentation/arxiv/arxiv.json.gz`.
+
+يمكنك ملاحظة أن مجموعة البيانات أعلاه تحتوي على كائنات JSON متداخلة. وبينما ينبغي لك إعداد مخططاتك وإدارة إصداراتها، يتيح الاستدلال استنتاج الأنواع من البيانات. وهذا يسمح بإنشاء DDL الخاص بالمخطط تلقائيًا، مما يجنّب الحاجة إلى إنشائه يدويًا ويُسرّع عملية التطوير.
+
+<Info>
+  **الاكتشاف التلقائي للتنسيق**
+
+  بالإضافة إلى اكتشاف المخطط، سيستدل استنتاج مخطط JSON تلقائيًا على تنسيق البيانات من امتداد الملف ومحتوياته. ونتيجةً لذلك، يُكتشف الملف أعلاه تلقائيًا على أنه NDJSON.
+</Info>
+
+يُظهر استخدام [دالة s3](/ar/reference/functions/table-functions/s3) مع الأمر `DESCRIBE` الأنواع التي سيجري استنتاجها.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────┬─type────────────────────────────────────────────────────────────────────┐
+│ id             │ Nullable(String)                                                        │
+│ submitter      │ Nullable(String)                                                        │
+│ authors        │ Nullable(String)                                                        │
+│ title          │ Nullable(String)                                                        │
+│ comments       │ Nullable(String)                                                        │
+│ journal-ref    │ Nullable(String)                                                        │
+│ doi            │ Nullable(String)                                                        │
+│ report-no      │ Nullable(String)                                                        │
+│ categories     │ Nullable(String)                                                        │
+│ license        │ Nullable(String)                                                        │
+│ abstract       │ Nullable(String)                                                        │
+│ versions       │ Array(Tuple(created Nullable(String),version Nullable(String)))         │
+│ update_date    │ Nullable(Date)                                                          │
+│ authors_parsed │ Array(Array(Nullable(String)))                                          │
+└────────────────┴─────────────────────────────────────────────────────────────────────────┘
+```
+
+<Info>
+  **تجنّب القيم NULL**
+
+  يمكنك ملاحظة أن الكثير من الأعمدة جرى اكتشافها على أنها من النوع Nullable. نحن [لا نوصي باستخدام النوع Nullable](/ar/reference/data-types/nullable#storage-features) إلا عند الضرورة القصوى. يمكنك استخدام [schema&#95;inference&#95;make&#95;columns&#95;nullable](/ar/reference/settings/formats#schema_inference_make_columns_nullable) للتحكم في الحالات التي يُطبَّق فيها Nullable.
+</Info>
+
+يمكننا ملاحظة أن معظم الأعمدة قد اكتُشفت تلقائيًا على أنها `String`، بينما اكتُشف العمود `update_date` بشكل صحيح على أنه `Date`. وقد أُنشئ العمود `versions` بصيغة `Array(Tuple(created String, version String))` لتخزين قائمة من الكائنات، في حين عُرِّف `authors_parsed` على أنه `Array(Array(String))` للمصفوفات المتداخلة.
+
+<Info>
+  **التحكم في اكتشاف الأنواع**
+
+  يمكن التحكم في الاكتشاف التلقائي للتواريخ وأنواع DateTime من خلال الإعدادين [`input_format_try_infer_dates`](/ar/reference/settings/formats#input_format_try_infer_dates) و[`input_format_try_infer_datetimes`](/ar/reference/settings/formats#input_format_try_infer_datetimes) على التوالي (وكلاهما مُمكَّن افتراضيًا). كما يتحكم الإعداد [`input_format_json_try_infer_named_tuples_from_objects`](/ar/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects) في استنتاج الكائنات على أنها Tuples. ويمكن العثور [هنا](/ar/concepts/features/interfaces/schema-inference#text-formats) على إعدادات أخرى تتحكم في استنتاج المخطط في JSON، مثل الاكتشاف التلقائي للأرقام.
+</Info>
+
+<div id="querying-json">
+  ## الاستعلام عن JSON
+</div>
+
+يفترض ما يلي أن بنية JSON متسقة وأن لكل مسار نوعًا واحدًا فقط.
+
+يمكننا الاعتماد على استنتاج المخطط للاستعلام عن بيانات JSON مباشرةً. في ما يلي، نحدّد أبرز المؤلفين لكل سنة، مع الاستفادة من اكتشاف التواريخ والمصفوفات تلقائيًا.
+
+```sql
+SELECT
+ toYear(update_date) AS year,
+ authors,
+    count() AS c
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+GROUP BY
+    year,
+ authors
+ORDER BY
+    year ASC,
+ c DESC
+LIMIT 1 BY year
+```
+
+```response
+┌─year─┬─authors────────────────────────────────────┬───c─┐
+│ 2007 │ The BABAR Collaboration, B. Aubert, et al  │  98 │
+│ 2008 │ The OPAL collaboration, G. Abbiendi, et al │  59 │
+│ 2009 │ Ashoke Sen                                 │  77 │
+│ 2010 │ The BABAR Collaboration, B. Aubert, et al  │ 117 │
+│ 2011 │ Amelia Carolina Sparavigna                 │  21 │
+│ 2012 │ ZEUS Collaboration                         │ 140 │
+│ 2013 │ CMS Collaboration                          │ 125 │
+│ 2014 │ CMS Collaboration                          │  87 │
+│ 2015 │ ATLAS Collaboration                        │ 118 │
+│ 2016 │ ATLAS Collaboration                        │ 126 │
+│ 2017 │ CMS Collaboration                          │ 122 │
+│ 2018 │ CMS Collaboration                          │ 138 │
+│ 2019 │ CMS Collaboration                          │ 113 │
+│ 2020 │ CMS Collaboration                          │  94 │
+│ 2021 │ CMS Collaboration                          │  69 │
+│ 2022 │ CMS Collaboration                          │  62 │
+│ 2023 │ ATLAS Collaboration                        │ 128 │
+│ 2024 │ ATLAS Collaboration                        │ 120 │
+└──────┴────────────────────────────────────────────┴─────┘
+
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
+```
+
+يتيح لنا استنتاج المخطط الاستعلام عن ملفات JSON من دون الحاجة إلى تحديد المخطط، مما يسرّع مهام تحليل البيانات عند الحاجة.
+
+<div id="creating-tables">
+  ## إنشاء الجداول
+</div>
+
+يمكننا الاعتماد على استنتاج المخطط لإنشاء مخطط جدول. يؤدي الأمر `CREATE AS EMPTY` التالي إلى استنتاج تعريف DDL للجدول ثم إنشاء الجدول. لا يؤدي هذا إلى تحميل أي بيانات:
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+SETTINGS schema_inference_make_columns_nullable = 0
+```
+
+للتحقق من مخطط الجدول، نستخدم الأمر `SHOW CREATE TABLE`:
+
+```sql
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `journal-ref` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+ما سبق هو المخطط الصحيح لهذه البيانات. يعتمد استنتاج المخطط على أخذ عينات من البيانات وقراءة البيانات صفًا صفًا. تُستخرج قيم الأعمدة وفقًا للتنسيق، مع استخدام محللات متداخلة وأساليب استدلالية لتحديد النوع لكل قيمة. يتحكم الإعدادان [`input_format_max_rows_to_read_for_schema_inference`](/ar/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (25000 افتراضيًا) و[`input_format_max_bytes_to_read_for_schema_inference`](/ar/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (32MB افتراضيًا) في الحد الأقصى لعدد الصفوف والبايتات المقروءة من البيانات أثناء استنتاج المخطط. إذا لم يكن الاكتشاف دقيقًا، يمكنك تقديم تلميحات كما هو موضح [هنا](/ar/reference/settings/formats#schema_inference_make_columns_nullable).
+
+<div id="creating-tables-from-snippets">
+  ### إنشاء الجداول من المقتطفات
+</div>
+
+يستخدم المثال أعلاه ملفًا على S3 لإنشاء مخطط الجدول. وقد ترغب في إنشاء مخطط انطلاقًا من مقتطف يتكوّن من row واحدة. ويمكن تحقيق ذلك باستخدام الدالة [format](/ar/reference/functions/table-functions/format) كما هو موضح أدناه:
+
+```sql
+CREATE TABLE arxiv
+ENGINE = MergeTree
+ORDER BY update_date EMPTY
+AS SELECT *
+FROM format(JSONEachRow, '{"id":"2101.11408","submitter":"Daniel Lemire","authors":"Daniel Lemire","title":"Number Parsing at a Gigabyte per Second","comments":"Software at https://github.com/fastfloat/fast_float and","doi":"10.1002/spe.2984","report-no":null,"categories":"cs.DS cs.MS","license":"http://creativecommons.org/licenses/by/4.0/","abstract":"Withdisks and networks providing gigabytes per second ","versions":[{"created":"Mon, 11 Jan 2021 20:31:27 GMT","version":"v1"},{"created":"Sat, 30 Jan 2021 23:57:29 GMT","version":"v2"}],"update_date":"2022-11-07","authors_parsed":[["Lemire","Daniel",""]]}') SETTINGS schema_inference_make_columns_nullable = 0
+
+SHOW CREATE TABLE arxiv
+
+CREATE TABLE arxiv
+(
+    `id` String,
+    `submitter` String,
+    `authors` String,
+    `title` String,
+    `comments` String,
+    `doi` String,
+    `report-no` String,
+    `categories` String,
+    `license` String,
+    `abstract` String,
+    `versions` Array(Tuple(created String, version String)),
+    `update_date` Date,
+    `authors_parsed` Array(Array(String))
+)
+ENGINE = MergeTree
+ORDER BY update_date
+```
+
+<div id="loading-json-data">
+  ## تحميل بيانات JSON
+</div>
+
+يفترض ما يلي أن بيانات JSON ذات بنية متسقة، وأن لكل مسار نوعًا واحدًا فقط.
+
+أنشأت الأوامر السابقة جدولًا يمكن تحميل البيانات إليه. يمكنك الآن insert البيانات إلى جدولك باستخدام `INSERT INTO SELECT` التالي:
+
+```sql
+INSERT INTO arxiv SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+```
+
+```response
+0 rows in set. Elapsed: 38.498 sec. Processed 2.52 million rows, 1.39 GB (65.35 thousand rows/s., 36.03 MB/s.)
+Peak memory usage: 870.67 MiB.
+```
+
+للاطلاع على أمثلة على تحميل البيانات من مصادر أخرى، مثل ملف، راجع [هنا](/ar/reference/statements/insert-into).
+
+بمجرد تحميلها، يمكننا الاستعلام عن بياناتنا، مع استخدام التنسيق `PrettyJSONEachRow` اختياريًا لعرض الصفوف ببنيتها الأصلية:
+
+```sql
+SELECT *
+FROM arxiv
+LIMIT 1
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "0704.0004",
+  "submitter": "David Callan",
+  "authors": "David Callan",
+  "title": "A determinant of Stirling cycle numbers counts unlabeled acyclic",
+  "comments": "11 pages",
+  "journal-ref": "",
+  "doi": "",
+  "report-no": "",
+  "categories": "math.CO",
+  "license": "",
+  "abstract": "  We show that a determinant of Stirling cycle numbers counts unlabeled acyclic\nsingle-source automata.",
+  "versions": [
+    {
+      "created": "Sat, 31 Mar 2007 03:16:14 GMT",
+      "version": "v1"
+    }
+  ],
+  "update_date": "2007-05-23",
+  "authors_parsed": [
+    [
+      "Callan",
+      "David"
+    ]
+  ]
+}
+```
+
+```response
+1 row in set. Elapsed: 0.009 sec.
+```
+
+<div id="handling-errors">
+  ## التعامل مع الأخطاء
+</div>
+
+أحيانًا قد تكون لديك بيانات غير صالحة. على سبيل المثال، قد تحتوي أعمدة معيّنة على نوع غير صحيح أو كائن JSON غير منسّق بشكل صحيح. لهذا، يمكنك استخدام الإعدادين [`input_format_allow_errors_num`](/ar/reference/settings/formats#input_format_allow_errors_num) و[`input_format_allow_errors_ratio`](/ar/reference/settings/formats#input_format_allow_errors_ratio) للسماح بتجاهل عدد معيّن من الصفوف إذا كانت البيانات تتسبب في أخطاء عند الإدراج. بالإضافة إلى ذلك، يمكن تقديم [تلميحات](/ar/reference/settings/formats#schema_inference_hints) للمساعدة في الاستدلال.
+
+<div id="working-with-semi-structured-data">
+  ## العمل مع البيانات شبه المنظَّمة والديناميكية
+</div>
+
+استخدم مثالنا السابق JSON ثابتًا بأسماء مفاتيح وأنواع معروفة مسبقًا. لكن الحال لا يكون كذلك غالبًا، إذ قد تُضاف مفاتيح جديدة أو تتغير أنواعها. وهذا شائع في حالات استخدام مثل بيانات Observability.
+
+يتعامل ClickHouse مع ذلك من خلال النوع المخصص [`JSON`](/ar/reference/data-types/newjson).
+
+إذا كنت تعلم أن بيانات JSON لديك شديدة الديناميكية وتحتوي على عدد كبير من المفاتيح الفريدة وأنواع متعددة للمفاتيح نفسها، فنوصي بعدم استخدام استنتاج المخطط مع `JSONEachRow` لمحاولة استنتاج عمود لكل مفتاح، حتى لو كانت البيانات بتنسيق newline-delimited JSON.
+
+تأمل المثال التالي من إصدار موسَّع من مجموعة بيانات [Python PyPI dataset](https://clickpy.clickhouse.com/) المذكورة أعلاه. هنا أضفنا عمود `tags` عشوائيًا يضم أزواجًا عشوائية من المفاتيح والقيم.
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+```
+
+تتوفّر عيّنة من هذه البيانات للعامة بتنسيق JSON مفصول بأسطر جديدة. إذا حاولنا استنتاج المخطط لهذا الملف، فستجد أن الأداء ضعيف وأن الاستجابة مطوّلة للغاية:
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+
+-- result omitted for brevity
+```
+
+```response
+9 rows in set. Elapsed: 127.066 sec.
+```
+
+المشكلة الأساسية هنا هي أن تنسيق `JSONEachRow` يُستخدم للاستنتاج. إذ يحاول استنتاج **نوع عمود لكل مفتاح في JSON** — أي إنه يحاول فعليًا فرض مخطط ثابت على البيانات من دون استخدام النوع [`JSON`](/ar/reference/data-types/newjson).
+
+عند وجود آلاف الأعمدة الفريدة، يصبح هذا النهج في الاستنتاج بطيئًا. وكبديل، يمكنك استخدام تنسيق `JSONAsObject`.
+
+يتعامل `JSONAsObject` مع الإدخال بالكامل على أنه كائن JSON واحد، ويخزّنه في عمود واحد من النوع [`JSON`](/ar/reference/data-types/newjson)، مما يجعله أنسب لحمولات JSON شديدة الديناميكية أو المتداخلة.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+يُعد هذا التنسيق ضروريًا أيضًا عندما تكون للأعمدة أنواع متعددة يتعذر التوفيق بينها. على سبيل المثال، افترض وجود ملف `sample.json` يحتوي على JSON مفصول بأسطر جديدة كما يلي:
+
+```json
+{"a":1}
+{"a":"22"}
+```
+
+في هذه الحالة، يستطيع ClickHouse التوفيق بين تعارض الأنواع وتحديد العمود `a` على أنه `Nullable(String)`.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(String) │
+└──────┴──────────────────┘
+
+1 row in set. Elapsed: 0.081 sec.
+```
+
+<Info>
+  **التحويل القسري للنوع**
+
+  يمكن التحكم في هذا التحويل القسري للنوع عبر عدد من الإعدادات. يعتمد المثال أعلاه على الإعداد [`input_format_json_read_numbers_as_strings`](/ar/reference/settings/formats#input_format_json_read_numbers_as_strings).
+</Info>
+
+ومع ذلك، فإن بعض الأنواع غير متوافقة. انظر إلى المثال التالي:
+
+```json
+{"a":1}
+{"a":{"b":2}}
+```
+
+في هذه الحالة، لا يمكن إجراء أي نوع من تحويل الأنواع هنا. ولذلك يفشل الأمر `DESCRIBE`:
+
+```sql
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+```
+
+```response
+Elapsed: 0.755 sec.
+```
+
+```sql
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSON format file. Error:
+Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a' in row 1 differs from type defined by previous rows: Int64. You can specify the type for this column using setting schema_inference_hints.
+```
+
+في هذه الحالة، يتعامل `JSONAsObject` مع كل صف باعتباره قيمة واحدة من النوع [`JSON`](/ar/reference/data-types/newjson) (ما يتيح أن يكون للعمود نفسه أكثر من نوع). وهذا أمر أساسي:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+SETTINGS enable_json_type = 1, describe_compact_output = 1
+```
+
+```response
+┌─name─┬─type─┐
+│ json │ JSON │
+└──────┴──────┘
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+<div id="further-reading">
+  ## للمزيد من القراءة
+</div>
+
+للتعرّف بمزيد من التفصيل على استدلال أنواع البيانات، يمكنك الرجوع إلى صفحة التوثيق [هذه](/ar/concepts/features/interfaces/schema-inference).

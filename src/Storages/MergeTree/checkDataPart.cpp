@@ -187,7 +187,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     {
         auto file_buf = data_part_storage_.readFile(file_path, read_settings, std::nullopt);
         HashingReadBuffer compressed_hashing_buf(*file_buf);
-        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
+        CompressedReadBuffer uncompressing_buf(compressed_hashing_buf, /* allow_different_codecs */ true);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
         uncompressed_hashing_buf.ignoreAll();
@@ -365,9 +365,27 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             bool noop = false;
+            auto projection_storage = data_part_storage.getProjection(projection_file);
+
+            /// A projection part that failed to load before its columns were set (e.g. because of a
+            /// corrupted serialization.json) has an empty column list. Checking against it would
+            /// report a misleading "columns don't match" error and hide the real corruption, so
+            /// read the expected columns from the part's own columns.txt in that case. The current
+            /// projection metadata would not do: existing parts can legitimately lag behind it
+            /// after an ALTER (readable through alter conversions). If
+            /// columns.txt itself is unreadable, this throws the actual problem into the catch
+            /// below.
+            NamesAndTypesList projection_columns = projection->getColumns();
+            if (projection_columns.empty())
+            {
+                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
+                projection_columns.readText(*buf);
+                assertEOF(*buf);
+            }
+
             projection_checksums = checkDataPart(
-                projection, *data_part_storage.getProjection(projection_file),
-                projection->getColumns(), projection->getType(),
+                projection, *projection_storage,
+                projection_columns, projection->getType(),
                 projection->getFileNamesWithoutChecksums(),
                 read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
         }
@@ -419,6 +437,27 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         is_broken_projection = true;
         for (const auto & projection_file : projections_on_disk)
             checksums_txt.remove(projection_file);
+    }
+
+    /// Also handle leftover checksums entries for projections that are unknown to the current metadata
+    /// and were not found on disk either: their directory can legitimately be absent (a projection
+    /// dropped while the part was detached and re-attached, or a fetched part whose dropped-projection
+    /// directory was not transferred), while the stale entry survives in checksums.txt. Known
+    /// projections were validated above and left a computed checksum, so any .proj still listed without
+    /// one refers to such a removed projection. Drop it so the base-part checkEqual below does not fail,
+    /// while base files (and known projections) keep their mismatches fatal.
+    {
+        Names removed_projection_files;
+        for (const auto & [name, _] : checksums_txt.files)
+            if (name.ends_with(".proj") && !checksums_data.files.contains(name))
+                removed_projection_files.push_back(name);
+
+        if (!removed_projection_files.empty())
+        {
+            is_broken_projection = true;
+            for (const auto & projection_file : removed_projection_files)
+                checksums_txt.remove(projection_file);
+        }
     }
 
     if (throw_on_broken_projection)

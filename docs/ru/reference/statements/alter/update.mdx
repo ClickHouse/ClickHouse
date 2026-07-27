@@ -1,0 +1,37 @@
+---
+description: 'Документация по командам ALTER TABLE ... UPDATE'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'Команды ALTER TABLE ... UPDATE'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+Изменяет данные, соответствующие указанному условию фильтрации. Реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
+
+<Note>
+  Префикс `ALTER TABLE` отличает этот синтаксис от большинства других систем с поддержкой SQL. Он призван показать, что, в отличие от похожих запросов в OLTP-базах данных, это ресурсоёмкая операция, не предназначенная для частого использования.
+</Note>
+
+`filter_expr` должен иметь тип `UInt8`. Этот запрос обновляет значения указанных столбцов значениями соответствующих выражений в строках, для которых `filter_expr` принимает ненулевое значение. Значения приводятся к типу столбца с помощью оператора `CAST`. Обновление столбцов, которые используются при вычислении первичного ключа или ключа партиционирования, не поддерживается.
+
+Один запрос может содержать несколько команд, разделённых запятыми.
+
+Синхронность обработки запроса определяется настройкой [mutations&#95;sync](/ru/reference/settings/session-settings#mutations_sync). По умолчанию обработка выполняется асинхронно.
+
+**См. также**
+
+* [Мутации](/ru/reference/statements/alter/index#mutations)
+* [Синхронность запросов ALTER](/ru/reference/statements/alter/index#synchronicity-of-alter-queries)
+* настройка [mutations&#95;sync](/ru/reference/settings/session-settings#mutations_sync)
+* [Легковесный `UPDATE`](/ru/reference/statements/update) - Альтернативное легковесное обновление с использованием патч-частей
+* [`APPLY PATCHES`](/ru/reference/statements/alter/apply-patches) - Ручное применение патчей из легковесных обновлений
+
+<div id="related-content">
+  ## Связанные материалы
+</div>
+
+* Блог: [Обработка обновлений и удалений в ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

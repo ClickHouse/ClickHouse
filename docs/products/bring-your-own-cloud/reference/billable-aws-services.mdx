@@ -1,0 +1,57 @@
+---
+title: 'Billable AWS services'
+slug: /cloud/reference/byoc/billable-aws-services
+sidebarTitle: 'Billable AWS services'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'billing', 'cost', 'EKS', 'EC2', 'S3', 'NAT Gateway', 'PrivateLink']
+description: 'AWS services provisioned by ClickHouse BYOC, classified as mandatory or optional, with notes on which ones contribute to your AWS bill'
+doc_type: 'reference'
+---
+
+ClickHouse BYOC provisions a self-contained data plane in your AWS account. This page lists every AWS service the deployment uses, classifies each as mandatory or optional, and notes which ones contribute to your AWS bill.
+
+<Note>
+AWS infrastructure costs are billed by AWS directly to your account and are independent of your ClickHouse Cloud subscription.
+</Note>
+
+## Mandatory services {#mandatory-services}
+
+These services are provisioned in every BYOC deployment.
+
+| Service | Purpose | Billable? |
+|---------|---------|-----------|
+| **Amazon EKS** | Managed Kubernetes control plane that runs the ClickHouse data plane. | Yes — per cluster-hour |
+| **Amazon EC2** (worker instances via EKS managed node groups) | Compute for ClickHouse server pods, ClickHouse Keeper, and platform add-ons. Memory-optimized instance families by default. | Yes — per instance-hour |
+| **Amazon EBS** (gp3 volumes) | Local storage for node OS, container images, and ClickHouse server logs. | Yes — per GB-month + IOPS/throughput |
+| **Amazon S3** | Primary ClickHouse table storage, backups, and platform telemetry. Bucket policies enforce `BucketOwnerEnforced`, public-access block, and SSE. | Yes — storage + request + data transfer |
+| **Amazon VPC** (VPC, subnets, route tables, security groups, internet gateway) | Network isolation for the data plane. Three private and three public subnets across AZs. | No — VPC resources themselves are free |
+| **NAT Gateway + Elastic IP** (one per AZ) | Outbound internet egress from private subnets (control plane connectivity, image pulls, telemetry). | Yes — per hour + data processing |
+| **VPC Endpoint for S3** (gateway endpoint) | Private S3 access without traversing NAT. | No — gateway endpoints are free |
+| **Elastic Load Balancing (NLB)** | Client traffic ingress to ClickHouse services. Created by the in-cluster AWS Load Balancer Controller. Default: internal-facing. | Yes — per LCU-hour + data processed |
+| **AWS IAM** (roles, policies, OIDC provider, Pod Identity associations) | Cross-account access for ClickHouse Cloud, IRSA for in-cluster controllers (cert-manager, external-dns, load-balancer-controller, cluster-autoscaler, EBS CSI driver, state-exporter). | No |
+| **Amazon CloudWatch Logs** | EKS control plane logs (api, audit, authenticator, controllerManager, scheduler). | Yes — ingestion + storage |
+
+## Optional services {#optional-services}
+
+These services are provisioned only when the corresponding feature is enabled.
+
+| Service | Enabled when | Billable? |
+|---------|--------------|-----------|
+| **AWS PrivateLink** (VPC Endpoint Service) | You enable PrivateLink connectivity for client traffic instead of, or in addition to, the NLB. | Yes — per VPC endpoint-hour + data processed |
+| **VPC Peering Connection** | You request peering between the BYOC VPC and another VPC in your account. | No for the connection itself. Cross-AZ and cross-Region data transfer is billable. |
+
+## Data transfer charges {#data-transfer-charges}
+
+Even when individual resources are free, AWS data transfer charges apply:
+
+- **Cross-AZ traffic** between EKS nodes and across replicas in multi-AZ deployments.
+- **Egress to the internet** through NAT Gateway, for control plane heartbeat, telemetry, and image pulls.
+- **Egress to the ClickHouse Cloud control plane** over the encrypted overlay (Tailscale).
+- **Egress to client networks** through the NLB or PrivateLink endpoint.
+
+See [AWS data transfer pricing](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer) for current rates.
+
+## Related {#related}
+
+- [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) — components ClickHouse Cloud deploys in your account
+- [BYOC network security](/products/bring-your-own-cloud/reference/network-security) — how the data plane connects to ClickHouse Cloud
+- [BYOC privilege](/products/bring-your-own-cloud/reference/privilege) — IAM roles created during BYOC setup

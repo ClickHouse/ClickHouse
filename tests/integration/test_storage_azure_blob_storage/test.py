@@ -237,7 +237,7 @@ def test_partition_by(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') "
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard') "
         f"PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_write VALUES {values}")
@@ -258,7 +258,7 @@ def test_partition_by_string_column(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_string_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV') "
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard') "
         f"PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_string_write VALUES {values}")
@@ -280,7 +280,7 @@ def test_partition_by_const_column(cluster):
     azure_query(
         node,
         f"CREATE TABLE test_partitioned_const_write ({table_format}) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}',"
-        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV')"
+        f" 'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', 'wildcard')"
         f" PARTITION BY {partition_by}",
     )
     azure_query(node, f"INSERT INTO test_partitioned_const_write VALUES {values}")
@@ -433,10 +433,14 @@ def test_azure_glob_scheherazade(cluster):
     node = cluster.instances["node"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     values = "(1, 1, 1)"
-    nights_per_job = 1001 // 30
+    # The glob pattern night_*/tale.csv is fully exercised across many distinct
+    # directories with far fewer than the original 1001 files; the absolute
+    # count only drives CPU cost (heavily amplified under coverage/sanitizers).
+    nights = 101
+    nights_per_job = max(1, nights // 30)
     jobs = []
     used_names = []
-    for night in range(0, 1001, nights_per_job):
+    for night in range(0, nights, nights_per_job):
 
         def add_tales(start, end):
             for i in range(start, end):
@@ -455,7 +459,7 @@ def test_azure_glob_scheherazade(cluster):
 
         jobs.append(
             threading.Thread(
-                target=add_tales, args=(night, min(night + nights_per_job, 1001))
+                target=add_tales, args=(night, min(night + nights_per_job, nights))
             )
         )
         jobs[-1].start()
@@ -469,7 +473,7 @@ def test_azure_glob_scheherazade(cluster):
         f"storage_account_url = '{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', container='cont', blob_path='night_*/tale.csv', format='CSV')",
     )
     query = "select count(), sum(column1), sum(column2), sum(column3) from test_glob_select_scheherazade"
-    assert azure_query(node, query).splitlines() == ["1001\t1001\t1001\t1001"]
+    assert azure_query(node, query).splitlines() == [f"{nights}\t{nights}\t{nights}\t{nights}"]
     azure_query(node, "DROP TABLE test_glob_select_scheherazade")
 
     drop_jobs = []
@@ -821,7 +825,7 @@ def test_partition_by_tf(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', "
         f"'cont', '{filename}', 'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', "
-        f"'CSV', 'auto', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        f"'CSV', 'auto', 'wildcard', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
@@ -841,7 +845,7 @@ def test_filter_using_file(cluster):
         node,
         f"INSERT INTO TABLE FUNCTION azureBlobStorage('{cluster.env_variables['AZURITE_STORAGE_ACCOUNT_URL']}', 'cont', '{filename}', "
         f"'devstoreaccount1', 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV', 'auto', "
-        f"'{table_format}') PARTITION BY {partition_by} VALUES {values}",
+        f"'wildcard', '{table_format}') PARTITION BY {partition_by} VALUES {values}",
         settings={"azure_truncate_on_insert": 1},
     )
 
@@ -1585,7 +1589,7 @@ def test_write_to_globbed_partitioned_path(cluster):
     account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
     error = azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_data_*_{{_partition_id}}', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard', 'x UInt64') partition by 42 select 42 SETTINGS azure_truncate_on_insert=1",
         expect_error="true",
     )
 
@@ -1634,7 +1638,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     error = azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 42 settings azure_truncate_on_insert=0",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 42 settings azure_truncate_on_insert=0",
         expect_error="true",
     )
 
@@ -1642,7 +1646,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 43 settings azure_truncate_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 43 settings azure_truncate_on_insert=1",
     )
 
     result = azure_query(
@@ -1654,7 +1658,7 @@ def test_respect_object_existence_on_partitioned_write(cluster):
 
     azure_query(
         node,
-        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
+        f"INSERT INTO TABLE FUNCTION azureBlobStorage('{storage_account_url}', 'cont', 'test_partitioned_write{{_partition_id}}.csv', '{account_name}', '{account_key}', 'CSV', 'auto', 'wildcard') partition by 42 select 44 settings azure_truncate_on_insert=0, azure_create_new_file_on_insert=1",
     )
 
     result = azure_query(
