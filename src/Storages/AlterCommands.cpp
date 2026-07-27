@@ -1671,16 +1671,18 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 }
 
 
-void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
+void AlterCommands::validate(const StoragePtr & table, const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
-    const auto metadata = table->getInMemoryMetadataQueryCached(context);
-    const auto virtuals = metadata->virtuals;
+    /// The base metadata is threaded in from the interpreter's single under-lock entry snapshot
+    /// (see InterpreterAlterQuery::runCommandSegments), so validate/prepare/apply all observe the
+    /// exact same base rather than each re-reading it.
+    const auto virtuals = metadata.virtuals;
 
     bool share_nested = true;
     if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
         share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
-    auto all_columns = metadata->columns;
+    auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
     /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
@@ -1935,7 +1937,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
-            if (metadata->settings_changes == nullptr)
+            if (metadata.settings_changes == nullptr)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot alter settings, because table engine doesn't support settings changes");
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
@@ -2028,11 +2030,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot rename column from nested struct to normal column and vice versa");
             }
         }
-        else if (command.type == AlterCommand::REMOVE_TTL && !metadata->hasAnyTableTTL())
+        else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have any table TTL expression, cannot remove");
         }
-        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata->hasSamplingKey())
+        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata.hasSamplingKey())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table doesn't have SAMPLE BY, cannot remove");
         }

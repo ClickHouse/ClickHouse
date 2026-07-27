@@ -323,8 +323,13 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
                 auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
                 cache->clear();
             }
+            /// Single entry base for the whole ALTER pipeline: threaded explicitly into validate and
+            /// prepare, and (because the read above repopulated the just-cleared query pin) resolved
+            /// to the same handle by the storage-internal QueryCached reads in checkAlterIsPossible
+            /// and alter for MergeTree. The alter lock freezes the locked storage's committed
+            /// metadata, so every phase observes this exact base.
             auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
-            alter_commands->validate(table, context);
+            alter_commands->validate(table, *metadata_snapshot, context);
 
             bool share_nested = true;
             if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))

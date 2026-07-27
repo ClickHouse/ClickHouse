@@ -6802,6 +6802,9 @@ void StorageReplicatedMergeTree::alter(
     auto table_id = getStorageID();
     const auto & query_settings = query_context->getSettingsRef();
 
+    /// Command-application base, read under the caller's lockForAlter. Equals (and for MergeTree is
+    /// the pinned identical handle to) the interpreter's entry snapshot in
+    /// InterpreterAlterQuery::runCommandSegments — the alter lock freezes committed metadata.
     auto metadata_snapshot = getInMemoryMetadataQueryCached(query_context);
     StorageInMemoryMetadata future_metadata = *metadata_snapshot;
     /// Snapshot the sorting key before applying commands, to compare with the resolved future one.
@@ -6936,7 +6939,11 @@ void StorageReplicatedMergeTree::alter(
         alter_entry.emplace();
         mutation_znode.reset();
 
-        auto current_metadata = getInMemoryMetadataQueryCached(query_context);
+        /// Mid-commit current read: this is the retry loop's per-iteration view of the committed
+        /// metadata, used as the ZooKeeper CAS base version. It must observe this loop's own
+        /// settings/comment commit from a previous CAS iteration, so it deliberately bypasses the
+        /// query-scoped pin (which would otherwise keep returning the entry snapshot).
+        auto current_metadata = getInMemoryMetadataUncached(query_context);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
