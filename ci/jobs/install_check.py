@@ -164,6 +164,21 @@ for pkg in /packages/clickhouse-keeper*tgz; do
     "/$package/install/doinst.sh" $CONFIGURE
 done
 bash -ex /packages/keeper_test.sh""",
+        f"Install tgz over a symlinked config in {image}": r"""#!/bin/bash -ex
+# An installation may keep its config elsewhere and link to it from the installed path.
+# The installer has to write through such a symlink instead of replacing it.
+mkdir -p /etc/clickhouse-client /shared
+: > /shared/config.xml
+ln -s /shared/config.xml /etc/clickhouse-client/config.xml
+for pkg in /packages/clickhouse-client*tgz; do
+    package=${pkg%-*}
+    package=${package##*/}
+    tar xf "$pkg"
+    "/$package/install/doinst.sh"
+done
+[ -L /etc/clickhouse-client/config.xml ]
+[ "$(readlink /etc/clickhouse-client/config.xml)" = "/shared/config.xml" ]
+[ -s /shared/config.xml ]""",
     }
     return test_install(image, tests)
 
