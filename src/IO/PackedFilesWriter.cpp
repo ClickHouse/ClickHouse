@@ -2,7 +2,6 @@
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -146,17 +145,6 @@ void PackedFilesWriter::writePackedIndex(WriteBuffer & out, const PackedFilesIO:
         if (version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE)
             writeIntBinary(offset.uncompressed_size, out);
     }
-}
-
-PackedFilesIO::Index PackedFilesWriter::finalize(CommitDataFunc commit_func, const Strings & files_order_hint, UInt8 version)
-{
-    WriteBufferFromOwnString serialized;
-    auto [index, need_sync] = finalize(serialized, files_order_hint, version);
-
-    serialized.preFinalize();
-    serialized.finalize();
-    commit_func(serialized.str(), write_settings.value_or(WriteSettings{}), need_sync);
-    return index;
 }
 
 std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version)

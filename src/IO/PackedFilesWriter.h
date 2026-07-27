@@ -15,7 +15,9 @@ namespace DB
   * format into one data file (archive). Like the "tar" format
   * or similar, but much simpler. It buffers in memory all files
   * and writes them into one archive at @finalize method.
-  * Before finalization all data is stored RAM.
+  * Before finalization all data is stored RAM. @finalize streams
+  * the archive into the provided buffer, so it does not need
+  * a second copy of the whole archive in memory.
   * Each file is written continuously to avoid fragmentation
   * and large number of seeks while reading from remote filesystem.
   *
@@ -34,7 +36,6 @@ class PackedFilesWriter
 {
 public:
     using OutBufferPtr = std::unique_ptr<WriteBufferFromFileBase>;
-    using CommitDataFunc = std::function<void(String serialized_data, const WriteSettings & settings, bool need_sync)>;
 
     /// Creates memory buffer for the data of file
     /// and returns fake WriteBufferFromFileBase.
@@ -59,12 +60,15 @@ public:
     /// Calculates index for written files.
     /// Dumps index and contents of files
     /// into the provided output write buffer.
-    /// Returns calculated index of written files.
     /// The caller can provide files order hint to optimize the order of files in the archive. The files listed in the hint
     /// Will be written first in the archive in the specified order, and the rest of the files will be written after them.
-    PackedFilesIO::Index finalize(CommitDataFunc commit_func, const Strings & files_order_hint, UInt8 version);
     /// Returns a pair of (packed files index, need to fsync the archive)
     std::pair<PackedFilesIO::Index, bool> finalize(WriteBuffer & out, const Strings & files_order_hint, UInt8 version);
+
+    /// Settings of the files written into the archive. The archive is a single file on disk,
+    /// so the settings of its members apply to it. The caller needs them to create the
+    /// destination buffer before @finalize starts writing into it.
+    WriteSettings getWriteSettings() const { return write_settings.value_or(WriteSettings{}); }
 
     /// Applies changes of files metadata both to the @written_files and @index.
     void applyMetadataChanges(PackedFilesIO::Index & index);

@@ -8,6 +8,19 @@
 
 using namespace DB;
 
+/// Writes the archive of @writer into @file_name on @disk and returns its index.
+static PackedFilesIO::Index writeArchive(const DiskPtr & disk, const String & file_name, PackedFilesWriter & writer)
+{
+    auto buf = disk->writeFile(file_name, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, writer.getWriteSettings());
+    auto [index, need_sync] = writer.finalize(*buf, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
+    buf->finalize();
+    if (need_sync)
+        buf->sync();
+
+    return index;
+}
+
 TEST(PackedFilesWriter, Basics)
 {
     static constexpr auto data_filename = "data.packed";
@@ -36,14 +49,7 @@ TEST(PackedFilesWriter, Basics)
         out1->finalize();
     }
 
-    writer.finalize([&](String serialised_data, const auto & settings, bool need_sync)
-    {
-        auto buf = disk->writeFile(data_filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        buf->write(serialised_data.data(), serialised_data.size());
-        buf->finalize();
-        if (need_sync)
-            buf->sync();
-    }, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    writeArchive(disk, data_filename, writer);
 
     PackedFilesReader reader(disk, data_filename, getReadSettings());
 
@@ -85,15 +91,6 @@ TEST(PackedFilesWriter, Removes)
     fs::create_directory("tmp/");
     DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
 
-    auto write_callback = [&](String serialised_data, const auto & settings, bool need_sync)
-    {
-        auto buf = disk->writeFile(data_filename, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, settings);
-        buf->write(serialised_data.data(), serialised_data.size());
-        buf->finalize();
-        if (need_sync)
-            buf->sync();
-    };
-
     PackedFilesWriter writer1;
 
     {
@@ -106,7 +103,7 @@ TEST(PackedFilesWriter, Removes)
         out2->finalize();
     }
 
-    auto old_index = writer1.finalize(write_callback, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    auto old_index = writeArchive(disk, data_filename, writer1);
 
     PackedFilesWriter writer2;
 
@@ -125,7 +122,7 @@ TEST(PackedFilesWriter, Removes)
     }
 
     writer2.applyMetadataChanges(old_index);
-    auto new_index = writer2.finalize(write_callback, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    auto new_index = writeArchive(disk, data_filename, writer2);
 
     ASSERT_EQ(old_index.size(), 1);
     ASSERT_FALSE(old_index.contains("file1"));
