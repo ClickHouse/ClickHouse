@@ -1,3 +1,4 @@
+import datetime
 import os
 import random
 import time
@@ -103,6 +104,18 @@ def get_backup_name(backup_id):
     return f"Disk('backups', '{backup_id}')"
 
 
+# Converts a DateTime64(6) value as printed by clickhouse-client to a datetime.
+def parse_server_time(value):
+    return datetime.datetime.strptime(value.strip(), "%Y-%m-%d %H:%M:%S.%f")
+
+
+# Returns the number of seconds between two DateTime64(6) values produced by the server.
+# Both endpoints must be server-recorded so that no clickhouse-client launch (each costs
+# 0.5-1 s, and much more on a contended runner) is inside the measured interval.
+def seconds_between(from_time, to_time):
+    return (parse_server_time(to_time) - parse_server_time(from_time)).total_seconds()
+
+
 # Reads the status of a backup or a restore from system.backups.
 def get_status(initiator, backup_id=None, restore_id=None):
     id = backup_id if backup_id is not None else restore_id
@@ -120,7 +133,7 @@ def get_error(initiator, backup_id=None, restore_id=None):
 
 
 # Waits until the status of a backup or a restore becomes a desired one.
-# Returns how many seconds the function was waiting.
+# Returns the server-recorded `end_time` of the operation (a DateTime64(6) value).
 def wait_status(
     initiator,
     status="BACKUP_CREATED",
@@ -156,6 +169,7 @@ def wait_status(
         f"(start_time = {start_time}, end_time = {end_time})"
     )
     assert current_status == status
+    return end_time
 
 
 # Returns how many entries are in system.processes corresponding to a specified backup or restore.
@@ -239,7 +253,10 @@ def wait_num_system_processes(
 
 
 # Kills a BACKUP or RESTORE query.
-# Returns how many seconds the KILL QUERY was executing.
+# Returns the server-recorded `query_start_time_microseconds` of the KILL QUERY itself
+# (a DateTime64(6) value read from system.query_log by the KILL's own query_id), so that
+# callers can measure the cancellation without any clickhouse-client launch inside the
+# measured interval.
 def kill_query(
     node, backup_id=None, restore_id=None, is_initial_query=None, timeout=None
 ):
@@ -252,9 +269,11 @@ def kill_query(
         if is_initial_query is not None
         else ""
     )
+    kill_query_id = uuid.uuid4().hex
     old_time = time.monotonic()
     node.query(
-        f"KILL QUERY WHERE (query_kind='{query_kind}') AND (query LIKE '%{id}%'){filter_for_is_initial_query} SYNC"
+        f"KILL QUERY WHERE (query_kind='{query_kind}') AND (query LIKE '%{id}%'){filter_for_is_initial_query} SYNC",
+        query_id=kill_query_id,
     )
     waited = time.monotonic() - old_time
     print(
@@ -262,6 +281,21 @@ def kill_query(
     )
     if timeout is not None:
         assert waited < timeout
+    node.query("SYSTEM FLUSH LOGS")
+    rows = node.query(
+        "SELECT query_start_time_microseconds FROM system.query_log "
+        f"WHERE (query_id = '{kill_query_id}') AND (type = 'QueryFinish')"
+    ).splitlines()
+    # Exactly one row must be found, so that a vanished oracle fails loudly here instead of
+    # silently skipping the caller's timing check.
+    assert (
+        len(rows) == 1
+    ), f"Expected 1 query_log row for KILL query_id={kill_query_id}, got {rows}"
+    kill_start_time = rows[0]
+    print(
+        f"{get_node_name(node)}: KILL QUERY {kill_query_id} started at {kill_start_time} (server time)"
+    )
+    return kill_start_time
 
 
 # Sleeps for random amount of time.
@@ -439,6 +473,11 @@ def get_backup_id_of_successful_backup():
 # Test that a BACKUP operation can be cancelled with KILL QUERY.
 def test_cancel_backup():
     with NoTrashChecker() as no_trash_checker:
+        # QUERY_WAS_CANCELLED is allowed from here on, so that if the test body fails before
+        # reaching the `expect_errors` assignment below, __exit__ reports that failure instead
+        # of masking it with its own "unexpected error" assert.
+        no_trash_checker.allow_errors = ["QUERY_WAS_CANCELLED"]
+
         create_and_fill_table(random_node())
 
         initiator = random_node()
@@ -470,17 +509,21 @@ def test_cancel_backup():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
-        time_before_kill_query = time.monotonic()
-
-        kill_query(
+        kill_start_time = kill_query(
             node_to_cancel, backup_id=backup_id, is_initial_query=cancel_as_initiator
         )
 
         if cancel_as_initiator:
             assert get_status(initiator, backup_id=backup_id) == "BACKUP_CANCELLED"
-        wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id)
+        end_time = wait_status(initiator, "BACKUP_CANCELLED", backup_id=backup_id)
 
-        time_to_cancel = time.monotonic() - time_before_kill_query
+        # Measured between two server-recorded timestamps: the start of the KILL QUERY on the
+        # node it was sent to, and the moment the initiator reached the terminal status (which
+        # is stamped after the initiator finished waiting for the other hosts). So the whole
+        # cluster-wide cancellation is inside the interval, while the harness round trips are
+        # not.
+        time_to_cancel = seconds_between(kill_start_time, end_time)
+        print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, backup_id=backup_id)
         assert get_num_system_processes(nodes, backup_id=backup_id) == 0
@@ -495,6 +538,11 @@ def test_cancel_restore():
 
     # Cancel restoring.
     with NoTrashChecker() as no_trash_checker:
+        # QUERY_WAS_CANCELLED is allowed from here on, so that if the test body fails before
+        # reaching the `expect_errors` assignment below, __exit__ reports that failure instead
+        # of masking it with its own "unexpected error" assert.
+        no_trash_checker.allow_errors = ["QUERY_WAS_CANCELLED"]
+
         print("Will cancel restoring")
         initiator = random_node()
         print(f"Using {get_node_name(initiator)} as initiator")
@@ -525,17 +573,17 @@ def test_cancel_restore():
             f"Cancelling on {'initiator' if cancel_as_initiator else 'node'} {get_node_name(node_to_cancel)} at {format_current_time()}"
         )
 
-        time_before_kill_query = time.monotonic()
-
-        kill_query(
+        kill_start_time = kill_query(
             node_to_cancel, restore_id=restore_id, is_initial_query=cancel_as_initiator
         )
 
         if cancel_as_initiator:
             assert get_status(initiator, restore_id=restore_id) == "RESTORE_CANCELLED"
-        wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id)
+        end_time = wait_status(initiator, "RESTORE_CANCELLED", restore_id=restore_id)
 
-        time_to_cancel = time.monotonic() - time_before_kill_query
+        # Both endpoints are server-recorded, see the comment in test_cancel_backup.
+        time_to_cancel = seconds_between(kill_start_time, end_time)
+        print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, restore_id=restore_id)
         assert get_num_system_processes(nodes, restore_id=restore_id) == 0
