@@ -199,10 +199,15 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
 في الوقت الحالي، لا ندعم تحديد تعيينات مخصّصة لأنواع البيانات كجزء من الـ pipe. ومع ذلك، تجدر الإشارة إلى أن تعيين أنواع البيانات الافتراضي الذي تستخدمه ClickPipes يعتمد بدرجة كبيرة على الأنواع الأصلية. تُنسخ معظم أنواع الأعمدة في Postgres إلى أقرب ما يمكن من نظيراتها الأصلية في ClickHouse. فعلى سبيل المثال، تُنسخ أنواع مصفوفات الأعداد الصحيحة في Postgres كأنواع مصفوفات أعداد صحيحة في ClickHouse.
 
 <div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
-  ### كيف تُنسَخ أعمدة JSON وJSONB من Postgres؟
+  ### كيف تُنسخ أعمدة `json` و`jsonb` من Postgres؟
 </div>
 
-تُنسَخ أعمدة JSON وJSONB بنوع String في ClickHouse. ونظرًا إلى أن ClickHouse يدعم [JSON type](/ar/reference/data-types/newjson) دعمًا أصليًا، يمكنك إنشاء عرض مُجسَّد على جداول ClickPipes لإجراء هذا التحويل عند الحاجة. أو يمكنك استخدام [JSON functions](/ar/reference/functions/regular-functions/json-functions) مباشرةً على أعمدة String. ونعمل حاليًا على ميزة تنسخ أعمدة JSON وJSONB مباشرةً إلى JSON type في ClickHouse. ومن المتوقع أن تتوفر هذه الميزة خلال الأشهر القليلة المقبلة.
+تُنسخ أعمدة `json` و`jsonb` بنوع String في ClickHouse بسبب عدم التوافق مع [نوع JSON الأصلي](/ar/reference/data-types/newjson). على سبيل المثال:
+
+* يتيح PostgreSQL أي قيمة JSON صالحة في المستوى الأعلى (سلاسل نصية أو أرقام أو مصفوفات)، بينما لا يدعم نوع JSON في ClickHouse إلا الكائنات.
+* كما أن المفاتيح التي تحتوي على نقاط (مثل `"app.kubernetes.io/name"`) تُفسَّر على أنها مسارات متداخلة في نوع JSON لدى ClickHouse، مما قد يغيّر بنية البيانات.
+
+للتعامل مع سلاسل JSON في المراحل اللاحقة لـ ClickPipe لـ Postgres CDC، يمكنك استخدام [دوال JSON](/ar/reference/functions/regular-functions/json-functions) مباشرةً على الأعمدة لاستخراج البيانات والعمل معها. ولتحسين أداء الاستعلام، يمكنك أيضًا استخدام عرض مُجسَّد لاستخراج حقول محددة إلى أعمدة ذات أنواع معرّفة، أو لتحويل العمود إلى نوع JSON الأصلي (مع مراعاة أن التحويل قد يفشل إذا صادف حالة عدم توافق بين الأنواع عبر المنصات).
 
 <div id="what-happens-to-inserts-when-a-mirror-is-paused">
   ### ماذا يحدث لعمليات الإدراج عندما يتم إيقاف mirror مؤقتًا؟
@@ -221,7 +226,7 @@ ALTER TABLE your_table_name REPLICA IDENTITY FULL;
   ### هل يمكن أتمتة إنشاء ClickPipe أو تنفيذه عبر واجهة برمجة تطبيقات أو CLI؟
 </div>
 
-يمكن أيضًا إنشاء Postgres ClickPipe وإدارته عبر نقاط النهاية الخاصة بـ [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi). هذه الميزة ما تزال في مرحلة بيتا، ويمكن العثور على مرجع واجهة برمجة التطبيقات [هنا](/ar/api-reference/organization/get-list-of-available-organizations#tag/beta). كما نعمل حاليًا على دعم Terraform لإنشاء Postgres ClickPipes أيضًا.
+يمكن أيضًا إنشاء Postgres ClickPipe وإدارته عبر نقاط النهاية الخاصة بـ [OpenAPI](/ar/products/cloud/features/admin-features/api/openapi). هذه الميزة ما تزال في مرحلة بيتا، ويمكن العثور على مرجع واجهة برمجة تطبيقات [هنا](/ar/products/cloud/api-reference/clickpipes/list-clickpipes). كما نعمل حاليًا على دعم Terraform لإنشاء Postgres ClickPipes أيضًا.
 
 <div id="how-do-i-speed-up-my-initial-load">
   ### كيف أُسرّع التحميل الأولي؟
@@ -436,10 +441,10 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
 * ما إذا كانت هناك سياسات صفوف على جانب ClickHouse قد تؤدي إلى تصفية بعض الصفوف.
 
 <div id="failover-slot">
-  ### هل يمكنني جعل ClickPipe ينشئ فتحة نسخ متماثل مع تمكين failover؟
+  ### هل يمكنني جعل ClickPipe ينشئ فتحة النسخ المتماثل مع تمكين failover؟
 </div>
 
-نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة نسخ متماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
+نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة النسخ المتماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
 

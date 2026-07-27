@@ -155,7 +155,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   #### بيانات اعتماد HMAC
 </div>
 
-لاستخدام [مفاتيح HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) للمصادقة، اختر `Credentials` ضمن **طريقة المصادقة** عند إعداد ClickPipe connection. ثم أدخِل مفتاح الوصول (على سبيل المثال، `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) والمفتاح السري (على سبيل المثال، `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) في حقلي `Access key` و`Secret key`، على التوالي.
+لاستخدام [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) للمصادقة، اختر `Credentials` ضمن **طريقة المصادقة** عند إعداد ClickPipe connection. ثم أدخِل مفتاح الوصول (على سبيل المثال، `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) والمفتاح السري (على سبيل المثال، `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) في حقلي `Access key` و`Secret key`، على التوالي.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="بيانات اعتماد HMAC لـ GCS ClickPipes" size="lg" border />
 
@@ -180,18 +180,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة استخدامك تتطلب مزيدًا من الضبط الدقيق، فيمكنك تعديل الإعدادات التالية:
 
-| Setting                              | Default value | Description                                                                                                                                |
-| ------------------------------------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `Max insert bytes`                   | 10GB          | عدد البايتات المطلوب معالجتها في دفعة insert واحدة.                                                                                        |
-| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات المطلوب معالجتها في دفعة insert واحدة.                                                                            |
+| Setting                              | Default value | Description                                                                                                                                   |
+| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | عدد البايتات المطلوب معالجتها في دفعة insert واحدة.                                                                                           |
+| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات المطلوب معالجتها في دفعة insert واحدة.                                                                               |
 | `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                              |
 | `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ insert المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                  |
 | `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في الكتلة](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.         |
 | `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                               |
-| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                    |
+| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في عنقود ClickHouse.                                                                       |
 | `Parallel distributed insert select` | 2             | [إعداد Parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                       |
 | `Parallel view processing`           | false         | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عقد متعددة.                                                                                      |
+| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عقد متعددة.                                                                                         |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة لـ ClickPipes" size="lg" border />
 

@@ -30,6 +30,15 @@ QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, con
     return hash.get128();
 }
 
+String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)
+{
+    /// NUL cannot occur in a file path or in a version token, so it is an unambiguous separator.
+    String part_name = path;
+    part_name.push_back('\0');
+    part_name.append(version_token);
+    return part_name;
+}
+
 size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 {
     size_t memory = sizeof(Key) + sizeof(Entry);
