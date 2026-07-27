@@ -1045,7 +1045,12 @@ def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
     # A barrier ALTER waits for the latest mutation before changing the metadata.
     # The orphan must not be picked as that mutation: it never finishes and is
     # reported as killed, so the ALTER would fail with "Mutation ... was killed".
-    node.query("ALTER TABLE mt_kill_txn_on_fly RENAME COLUMN value TO val")
+    # alter_sync = 0 because the RENAME's own mutation cannot finish while merges
+    # are stopped; only the prewait before the metadata change is under test.
+    node.query(
+        "ALTER TABLE mt_kill_txn_on_fly RENAME COLUMN value TO val",
+        settings={"alter_sync": 0},
+    )
 
     # Once the background scheduling runs again, the orphan is removed and
     # subsequent mutations of the same parts are not blocked.
