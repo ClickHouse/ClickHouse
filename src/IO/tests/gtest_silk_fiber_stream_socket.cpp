@@ -315,6 +315,10 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
 
     struct Params
     {
+        /// The global fiber-switch hooks read this on EVERY fiber; a raw
+        /// header-less spawn makes them reinterpret the first bytes as a
+        /// `ThreadGroupPtr`.
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         uint64_t * elapsed_us;
@@ -325,7 +329,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
     DB::SocketState state = DB::SocketState::Closed;
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -353,7 +357,8 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingPeekDoesNotBlockOnIdleConnection)
             socket.close();
             return 0;
         },
-        Params{port, policy.makeClient(), &elapsed_us, &state},
+        Params{{}, port, policy.makeClient(), &elapsed_us, &state},
+        /*category=*/0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -388,6 +393,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
 
     struct Params
     {
+        DB::SilkFiberJobHeader header;
         uint16_t port;
         Poco::Net::StreamSocketImpl * impl;
         uint64_t * elapsed_us;
@@ -398,7 +404,7 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
     int ssl_error = 0;
 
     silk::FiberFuture client_future;
-    const int run_result = silk::FiberScheduler::run(
+    const int run_result = DB::runSilkFiber(
         +[](Params * p) noexcept -> int
         {
             Poco::Net::StreamSocket socket(p->impl);
@@ -431,7 +437,8 @@ TEST_F(SilkFiberSecureSocketTest, NonBlockingSslPeekReturnsWantReadImmediately)
             socket.close();
             return 0;
         },
-        Params{port, policy.makeClient(), &elapsed_us, &ssl_error},
+        Params{{}, port, policy.makeClient(), &elapsed_us, &ssl_error},
+        /*category=*/0,
         &client_future);
     ASSERT_EQ(run_result, 0);
 
