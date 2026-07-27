@@ -8,6 +8,7 @@
 #include <Processors/Transforms/ApplySquashingTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
+#include <Interpreters/IKeyValueEntity.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/WindowView/StorageWindowView.h>
@@ -1050,6 +1051,114 @@ bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewForwardingToSep
 }
 
 
+bool InsertDependenciesBuilder::storageOverwritesRowsByKeyOnInsert(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// `KeeperMap`, `EmbeddedRocksDB` and `Redis` overwrite the previous value of a key, so the result
+    /// of inserting several rows with equal keys depends on the order in which the sinks commit them.
+    if (dynamic_cast<const IKeyValueEntity *>(storage.get()))
+        return true;
+
+    /// Follow the forwarding chain to the concrete local target where it is known, failing closed when
+    /// it cannot be resolved.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || storageOverwritesRowsByKeyOnInsert(target, depth + 1);
+    }
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || storageOverwritesRowsByKeyOnInsert(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageOverwritesRowsByKeyOnInsert(proxy->getNested(), depth + 1);
+
+    /// `Distributed` and `Buffer` may forward the write to such an engine, but an insert into them is
+    /// already kept single-stream by `storageForwardsInsertToSeparateContext`, so there is no fan-out
+    /// left to guard here.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::dependentViewOverwritesRowsByKeyOnInsert(
+    const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    for (const auto & view_id : DatabaseCatalog::instance().getDependentViews(storage->getStorageID()))
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        /// Fail closed on a dependent view that cannot be resolved or is not a materialized view
+        /// (its write path is not modelled here).
+        if (!view)
+            return true;
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            return true;
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target)
+            return true;
+        /// The view target itself (or a forwarding chain it starts) overwrites rows by key ...
+        if (storageOverwritesRowsByKeyOnInsert(target, depth + 1))
+            return true;
+        /// ... or the target cascades into further dependent views that do ...
+        if (dependentViewOverwritesRowsByKeyOnInsert(target, context, depth + 1))
+            return true;
+        /// ... or the target is an `Alias` hiding yet another dependent-view graph that does.
+        if (forwardedInsertHidesDependentViewOverwritingRowsByKey(target, context, depth + 1))
+            return true;
+    }
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::forwardedInsertHidesDependentViewOverwritingRowsByKey(
+    const StoragePtr & storage, ContextPtr context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return true;
+
+    /// An `Alias` executes a full nested `INSERT` into its target per sink (`AliasSink`), so the
+    /// target's dependent-view graph is expanded only inside that nested `INSERT` at execution time -
+    /// the outer builder never sees it. Check that hidden graph for an overwrite-by-key target, and
+    /// follow further `Alias` hops of the target chain.
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        if (!target)
+            return true;
+        return dependentViewOverwritesRowsByKeyOnInsert(target, context, depth + 1)
+            || forwardedInsertHidesDependentViewOverwritingRowsByKey(target, context, depth + 1);
+    }
+
+    /// `Distributed` and `Buffer` switch to a separate context; the write into them is already kept
+    /// single-stream by `storageForwardsInsertToSeparateContext`, so nothing hidden behind them needs
+    /// to be reported here.
+    if (dynamic_cast<const StorageDistributed *>(storage.get()) || dynamic_cast<const StorageBuffer *>(storage.get()))
+        return false;
+
+    /// `MaterializedView` and proxies pass the write through within this pipeline, and
+    /// `collectAllDependencies` follows their targets: look through them (failing closed when the
+    /// target cannot be resolved).
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return !target || forwardedInsertHidesDependentViewOverwritingRowsByKey(target, context, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return forwardedInsertHidesDependentViewOverwritingRowsByKey(proxy->getNested(), context, depth + 1);
+
+    /// A concrete local target: its dependent views are visible to `collectAllDependencies`, so the
+    /// hazard scan over `storages` checks them (and the graphs their `Alias` targets hide) directly -
+    /// nothing is hidden at this level.
+    return false;
+}
+
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
@@ -1145,10 +1254,26 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
         return storageForwardsInsertToSeparateContext(entry.second)
             || forwardedInsertHidesDependentViewForwardingToSeparateContext(entry.second, init_context);
     });
+    /// A dependent-MV target that overwrites rows by key (`KeeperMap`, `EmbeddedRocksDB`, `Redis`)
+    /// resolves rows with equal keys by the order in which they are committed. With the write fan-out
+    /// each branch commits its own independent batch, so equal keys produced by one `INSERT` may be
+    /// applied in an arbitrary order (or even collide, see `storageOverwritesRowsByKeyOnInsert`). Keep
+    /// such inserts single-stream - unlike the deduplication hazards above this does not depend on any
+    /// deduplication setting. A dependent target that is an `Alias` additionally hides its own target's
+    /// dependent-view graph behind the nested `INSERT` its `AliasSink` runs, so an overwrite-by-key
+    /// target inside that hidden graph must be probed explicitly.
+    const bool any_dependent_target_overwrites_rows_by_key = std::ranges::any_of(storages, [&] (const auto & entry)
+    {
+        if (isView(entry.first) || entry.first == init_table_id)
+            return false;
+        return storageOverwritesRowsByKeyOnInsert(entry.second)
+            || forwardedInsertHidesDependentViewOverwritingRowsByKey(entry.second, init_context);
+    });
 
     const bool mv_dedup_single_stream = isViewsInvolved()
         && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
-            || any_dependent_target_forwards_to_separate_context);
+            || any_dependent_target_forwards_to_separate_context
+            || any_dependent_target_overwrites_rows_by_key);
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
