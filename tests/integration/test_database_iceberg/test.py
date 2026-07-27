@@ -449,7 +449,7 @@ def test_check_database(started_cluster):
         node.query(
             "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
-    
+
         assert "fault when checking database" in node.query_and_get_error(
             f"CHECK DATABASE {CATALOG_NAME}"
         )
@@ -936,7 +936,10 @@ def test_optimize_manifest_with_catalog(started_cluster):
         ["snapshots"],
         ["metadata-log"],
         ["snapshot-log"],
-        ["snapshots", "metadata-log", "snapshot-log"],
+        # `refs` is likewise optional (an object, not an array): e.g. empty-table metadata
+        # created by external engines may omit it entirely.
+        ["refs"],
+        ["refs", "snapshots", "metadata-log", "snapshot-log"],
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
