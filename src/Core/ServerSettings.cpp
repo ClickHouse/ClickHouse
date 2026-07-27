@@ -43,9 +43,13 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperArgs.h>
 
+#include <Poco/AutoPtr.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Util/LayeredConfiguration.h>
 #include <Poco/Util/Option.h>
 #include <Poco/Util/OptionSet.h>
+
+#include <base/argsToConfig.h>
 
 #include <fmt/ranges.h>
 
@@ -2035,6 +2039,46 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
                 .repeatable(false)
                 .argument(argument_placeholder)
                 .binding(binding));
+    }
+}
+
+void ServerSettings::mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config)
+{
+    /// A setting backed by a nested config key can be given on the command line in two ways: as a direct
+    /// option, which binds the nested key (`openSSL.server.requireTLSv1_2`), or after the `--` separator,
+    /// which `argsToConfig` stores under the flat setting name (`openssl_server_required_tls_v1_2`).
+    /// `loadSettingsFromConfig` gives the flat name precedence, but the components that read the raw
+    /// configuration instead of `ServerSettings` (e.g. `TLSHandler` reading `openSSL.server.*`) only look at
+    /// the nested key, so without the mirroring below `system.server_settings` and the actual behaviour of
+    /// the server would disagree for a mixed invocation such as
+    /// `clickhouse-server --openssl_server_required_tls_v1_2 0 -- --openssl_server_required_tls_v1_2 1`.
+    ///
+    /// Only the command line is inspected here - the configuration file is deliberately not consulted,
+    /// because a value that comes from the file must keep being read from its own (nested) key. Therefore
+    /// this function has to be called before the configuration file is loaded, and it parses the command
+    /// line into a throwaway configuration instead of looking at `config`, which by then already contains
+    /// the bindings of the direct options.
+    Poco::AutoPtr<Poco::Util::LayeredConfiguration> command_line(new Poco::Util::LayeredConfiguration);
+    argsToConfig(argv, *command_line, 0);
+
+    const auto & accessor = ServerSettingsTraits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); ++i)
+    {
+        std::string_view path = accessor.getPath(i);
+
+        /// Only the settings whose config key is a nested one are affected. This also excludes `config_file`,
+        /// whose key (`config-file`) belongs to the built-in option of the same name and is consumed while the
+        /// configuration is being loaded.
+        if (path.find('.') == std::string_view::npos)
+            continue;
+
+        const String & name = accessor.getName(i);
+        if (!command_line->has(name))
+            continue;
+
+        /// This writes into the writeable configuration layer, the same one the option bindings use, so the
+        /// command line keeps taking precedence over the configuration file, also after a configuration reload.
+        config.setString(std::string(path), command_line->getString(name));
     }
 }
 

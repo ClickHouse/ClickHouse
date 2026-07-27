@@ -186,3 +186,40 @@ $CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name 
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
+
+# Test 9: For a setting backed by a dotted config path, the components that read the raw configuration
+# instead of `ServerSettings` must see the same value as `system.server_settings`. `logger_level` is such
+# a setting (`logger.level`, read while the loggers are built), so passing it under its flat name after
+# the `--` separator must both be reported by `system.server_settings` and actually take effect: the
+# command-line values of these settings are mirrored into their dotted config key before the
+# configuration file is loaded.
+srv_dir9="${CLICKHOUSE_TMP}/srv9"
+mkdir -p "$srv_dir9"
+$CLICKHOUSE_BINARY server \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir9/" --logger_level information > "${CLICKHOUSE_TMP}/server9.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server9.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'logger.level'"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT
+
+# The default (embedded) configuration logs at the `trace` level, so if `logger.level` had not received
+# the value from the command line, the log would contain `<Debug>` and `<Trace>` messages.
+if grep -qE '<(Debug|Trace)>' "${CLICKHOUSE_TMP}/server9.log"; then
+    echo "FAIL: logger.level is not applied"
+else
+    echo "OK: logger.level is applied"
+fi

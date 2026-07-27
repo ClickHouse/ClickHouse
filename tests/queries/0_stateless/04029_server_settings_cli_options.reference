@@ -8,3 +8,5 @@ OK: --log resolves
 1
 7
 2500
+information
+OK: logger.level is applied

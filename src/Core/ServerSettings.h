@@ -12,6 +12,7 @@
 namespace Poco::Util
 {
 class AbstractConfiguration;
+class LayeredConfiguration;
 class OptionSet;
 }
 
@@ -69,6 +70,12 @@ struct ServerSettings
     void dumpToSystemServerSettingsColumns(ServerSettingColumnsParams & params) const;
 
     static void addToProgramOptions(Poco::Util::OptionSet & options);
+
+    /// Mirror the command-line values of the settings backed by a nested config key (e.g.
+    /// `openssl_server_required_tls_v1_2` -> `openSSL.server.requireTLSv1_2`) into that key, so that the
+    /// components reading the raw configuration and `system.server_settings` always agree.
+    /// Must be called before the configuration file is loaded - see the implementation for the details.
+    static void mirrorCommandLineToConfigPaths(const std::vector<std::string> & argv, Poco::Util::LayeredConfiguration & config);
 
     /// Some server settings can be changed without a restart (e.g. memory and cache limits, thread pool sizes).
     /// When this happens, the live value held by the component diverges from the value stored in `*this`,

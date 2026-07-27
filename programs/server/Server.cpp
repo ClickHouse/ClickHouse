@@ -757,6 +757,12 @@ int Server::run()
 void Server::initialize(Poco::Util::Application & self)
 {
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(resource_embedded_xml), std::size(resource_embedded_xml)));
+
+    /// The command-line values of the settings backed by a nested config key have to be mirrored into that key
+    /// before the configuration file is loaded and before the loggers are built, because the components reading
+    /// the raw configuration do not go through `ServerSettings`.
+    ServerSettings::mirrorCommandLineToConfigPaths(argv(), config());
+
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
