@@ -58,6 +58,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
 
         ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(name, std::move(cluster_registry));
         ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
+        ConfigurationFields configuration_fields = DiskObjectStorage::getWhitelistedDiskConfigurationFields(config, config_prefix);
 
         std::string compatibility_metadata_type_hint;
         if (!config.has(config_prefix + ".metadata_type"))
@@ -83,6 +84,7 @@ void registerDiskObjectStorage(DiskFactory & factory, bool global_skip_access_ch
             std::move(cluster),
             std::move(metadata_storage),
             std::move(object_storages),
+            std::move(configuration_fields),
             /*wrapped_disk=*/nullptr,
             config,
             config_prefix,
