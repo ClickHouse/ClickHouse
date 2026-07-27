@@ -2,12 +2,10 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
-#include <bit>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
-#include <base/types.h>
 
 namespace DB
 {
@@ -45,7 +43,6 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = true;
-    static constexpr bool has_pre_computed_hashes = false;
 
     const char * vec;
 
@@ -97,65 +94,6 @@ struct HashMethodOneNumber : public columns_hashing_impl::HashMethodBase<
 };
 
 
-/// Like HashMethodOneNumber, but subtracts min_key from each key and validates if the key is in range.
-/// Used for hash join's fixed-range optimization, where the hash table stores keys shifted to [0, max_key - min_key].
-template <typename Value, typename Mapped, typename FieldType, bool use_cache = true, bool need_offset = false, bool nullable = false>
-struct HashMethodOneNumberInRange : public columns_hashing_impl::HashMethodBase<
-                                            HashMethodOneNumberInRange<Value, Mapped, FieldType, use_cache, need_offset, nullable>,
-                                            Value,
-                                            Mapped,
-                                            use_cache,
-                                            need_offset,
-                                            nullable>
-{
-    using Self = HashMethodOneNumberInRange<Value, Mapped, FieldType, use_cache, need_offset, nullable>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
-
-    static constexpr bool has_range_check = true;
-    static constexpr bool has_cheap_key_calculation = true;
-
-    const char * vec;
-    FieldType min_key{};
-    FieldType range_size{};
-
-    HashMethodOneNumberInRange(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : HashMethodOneNumberInRange(key_columns[0])
-    {
-    }
-
-    explicit HashMethodOneNumberInRange(const IColumn * column) : Base(column)
-    {
-        if constexpr (nullable)
-            vec = checkAndGetColumn<ColumnNullable>(*column).getNestedColumnPtr()->getRawData().data();
-        else
-            vec = column->getRawData().data();
-    }
-
-    using Base::createContext;
-    using Base::emplaceKey;
-    using Base::findKey;
-    using Base::getHash;
-
-    FieldType getKeyHolder(size_t row, Arena &) const
-    {
-        return unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
-    }
-
-    std::pair<FieldType, bool> getKeyHolderInRange(size_t row, Arena &) const
-    {
-        FieldType shifted_key = unalignedLoad<FieldType>(vec + row * sizeof(FieldType)) - min_key;
-        return {shifted_key, shifted_key < range_size};
-    }
-};
-
-
-template <typename T>
-struct IsHashMethodInRange : std::false_type {};
-
-template <typename Value, typename Mapped, typename FieldType, bool use_cache, bool need_offset, bool nullable>
-struct IsHashMethodInRange<HashMethodOneNumberInRange<Value, Mapped, FieldType, use_cache, need_offset, nullable>> : std::true_type {};
-
-
 /// For the case when there is one string key.
 template <
     typename Value,
@@ -176,14 +114,13 @@ struct HashMethodString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = false;
 
     const IColumn::Offset * offsets;
     const UInt8 * chars;
 
     HashMethodString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn * column = nullptr;
+        const IColumn * column;
         if constexpr (nullable)
         {
             column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
@@ -215,104 +152,6 @@ protected:
     friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 };
 
-/// For the case when there is one packed string key.
-/// Unlike `HashMethodString`, this method does not support nullable keys or key offsets,
-/// and the key is always persisted into the arena by `keyHolderPersistKey`.
-template <typename Value, typename Mapped, bool use_cache>
-struct HashMethodPackedString : public columns_hashing_impl::HashMethodBase<
-                              HashMethodPackedString<Value, Mapped, use_cache>,
-                              Value,
-                              Mapped,
-                              use_cache,
-                              /*need_offset=*/ false,
-                              /*nullable=*/ false>
-{
-    using Self = HashMethodPackedString<Value, Mapped, use_cache>;
-    using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
-
-    static constexpr bool has_cheap_key_calculation = false;
-
-    const IColumn::Offset * offsets;
-    const UInt8 * chars;
-
-    HashMethodPackedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &)
-        : Base(key_columns[0])
-    {
-        const ColumnString & column_string = assert_cast<const ColumnString &>(*key_columns[0]);
-        offsets = column_string.getOffsets().data();
-        chars = column_string.getChars().data();
-    }
-
-    /// Content hash stored inside the packed key. `PackedStringRef::build` invokes it
-    /// only for lengths that store a hash (1..UInt32 max): the empty value hashes to
-    /// zero by construction and oversized strings use the length as a hash surrogate,
-    /// trading hash quality for a uniform cell layout (full string comparison remains
-    /// the final equality check).
-    ///
-    /// Computing the hash inside `build` keeps a single pass over the string data:
-    /// a separate per-block hashing pass would read every key twice and allocate a
-    /// hash array per block. The flip side is that when the `Aggregator` prefetch
-    /// pipeline is active (hash table larger than L2), the look-ahead `getKeyHolder`
-    /// call rebuilds the key and hashes it a second time - the same behaviour as the
-    /// `StringHashTable` prefetch path this method replaces.
-    ///
-    /// A 32-bit hash is sufficient for in-memory aggregation hash tables; external
-    /// aggregation derives a 64-bit hash via a dedicated conversion path.
-    struct Hash
-    {
-        ALWAYS_INLINE UInt32 operator()(const char * data, size_t size) const
-        {
-#if defined(CRC_INT)
-            /// Tiny keys (1..7 bytes) go through a single CRC instruction on the masked
-            /// word, exactly like `StringHashTableHash` for `StringKey8`. This avoids the
-            /// multiply-heavy `hashLessThan8` path inside `StringViewHash` for short strings,
-            /// which otherwise dominates low-cardinality short-string aggregation
-            /// (`group_by_sundy_li`, `if_transform_strings_to_enum`). Keys of 8 bytes or more
-            /// already use the cheap CRC loop in `StringViewHash` and are left unchanged, so
-            /// medium/large keys (e.g. URLs) keep the same hash and bucketing as before.
-            if (size < 8)
-                return hashTinyKey(data, size);
-#endif
-            return static_cast<UInt32>(StringViewHash()(std::string_view(data, size)));
-        }
-    };
-
-#if defined(CRC_INT)
-    /// Hash a 1..7 byte key with a single CRC instruction.
-    /// Reading 8 bytes from the key start is safe: `ColumnString::Chars` is a `PaddedPODArray`
-    /// with at least 15 bytes of right padding, so the load never crosses the allocation end.
-    /// Trailing bytes beyond the key length are masked off, so the result depends only on the
-    /// key content and is independent of neighbouring data.
-    static ALWAYS_INLINE UInt32 hashTinyKey(const char * data, size_t size)
-    {
-        const UInt8 shift = static_cast<UInt8>((-size & 7) * 8);
-        UInt64 word = 0;
-        memcpy(&word, data, sizeof(word));
-        /// `memcpy` places the key in the low bytes of `word` on little-endian and in the high
-        /// bytes on big-endian, so the trailing-byte mask has to follow the same direction.
-        /// `CRC_INT` is also defined on big-endian s390x, so masking the wrong end there would
-        /// fold neighbouring padding bytes into the hash and split a single tiny key into
-        /// several groups (the hash is stored in `PackedStringRef::low` and gates `operator==`).
-        if constexpr (std::endian::native == std::endian::little)
-            word &= (~UInt64(0) >> shift);
-        else
-            word &= (~UInt64(0) << shift);
-        size_t res = static_cast<size_t>(-1);
-        res = CRC_INT(static_cast<UInt32>(res), word);
-        return static_cast<UInt32>(res);
-    }
-#endif
-
-    ArenaPackedStringHolder getKeyHolder(ssize_t row, Arena & pool) const
-    {
-        const char * data = reinterpret_cast<const char *>(chars + offsets[row - 1]);
-        const size_t size = offsets[row] - offsets[row - 1];
-        return ArenaPackedStringHolder{PackedStringRef::build(data, size, Hash{}), pool};
-    }
-
-protected:
-    friend class columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, false, false>;
-};
 
 /// For the case when there is one fixed-length string key.
 template <
@@ -334,14 +173,13 @@ struct HashMethodFixedString : public columns_hashing_impl::HashMethodBase<
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset, nullable>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = false;
 
     size_t n;
     const ColumnFixedString::Chars * chars;
 
     HashMethodFixedString(const ColumnRawPtrs & key_columns, const Sizes & /*key_sizes*/, const HashMethodContextPtr &) : Base(key_columns[0])
     {
-        const IColumn * column = nullptr;
+        const IColumn * column;
         if constexpr (nullable)
         {
             column = checkAndGetColumn<ColumnNullable>(*key_columns[0]).getNestedColumnPtr().get();
@@ -406,7 +244,6 @@ struct HashMethodKeysFixed
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     static constexpr bool has_cheap_key_calculation = true;
-    static constexpr bool has_pre_computed_hashes = false;
 
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
@@ -530,7 +367,7 @@ struct HashMethodKeysFixed
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
             if constexpr (sizeof(Key) <= 16)
             {
-                chassert(!has_low_cardinality && !has_nullable_keys);
+                assert(!has_low_cardinality && !has_nullable_keys);
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
             }
 #endif
@@ -580,7 +417,6 @@ struct HashMethodHashed
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
 
     static constexpr bool has_cheap_key_calculation = false;
-    static constexpr bool has_pre_computed_hashes = false;
 
     ColumnRawPtrs key_columns;
 

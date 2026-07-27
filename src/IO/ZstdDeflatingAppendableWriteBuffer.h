@@ -75,8 +75,8 @@ private:
 
     bool append_to_existing_file = false;
     ZSTD_CCtx * cctx;
-    ZSTD_inBuffer input{};
-    ZSTD_outBuffer output{};
+    ZSTD_inBuffer input;
+    ZSTD_outBuffer output;
     /// Flipped on the first nextImpl call
     bool first_write = true;
 };

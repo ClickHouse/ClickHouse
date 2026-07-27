@@ -71,22 +71,6 @@ std::atomic_bool abort_on_logical_error = false;
 static int terminate_status_code = 128 + SIGABRT;
 std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> Exception::callback = {};
 
-namespace
-{
-thread_local bool suppress_error_codes = false;
-}
-
-Exception::SuppressErrorCodesScope::SuppressErrorCodesScope()
-    : previous(suppress_error_codes)
-{
-    suppress_error_codes = true;
-}
-
-Exception::SuppressErrorCodesScope::~SuppressErrorCodesScope()
-{
-    suppress_error_codes = previous;
-}
-
 constexpr bool debug_or_sanitizer_build =
 #ifdef DEBUG_OR_SANITIZER_BUILD
 true
@@ -98,7 +82,7 @@ false
 
 /// - Aborts the process if error code is LOGICAL_ERROR.
 /// - Increments error codes statistics.
-size_t Exception::handleErrorCode(
+static size_t handle_error_code(
     const std::string & msg, std::string_view format_string, int code, bool remote, const Exception::Trace & trace)
 {
     // In debug builds and builds with sanitizers, treat LOGICAL_ERROR as an assertion failure.
@@ -115,9 +99,6 @@ size_t Exception::handleErrorCode(
         /// So it does not include customer queries.
         Exception::callback(format_string, code, remote, trace);
     }
-
-    if (suppress_error_codes)
-        return static_cast<size_t>(Exception::ErrorIndexState::Suppressed);
 
     return ErrorCodes::increment(code, remote, msg, std::string(format_string), trace);
 }
@@ -151,7 +132,7 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
     message_format_string = msg_masked.format_string;
-    error_index = handleErrorCode(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
+    error_index = handle_error_code(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
@@ -162,13 +143,7 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
         std::_Exit(terminate_status_code);
     capture_thread_frame_pointers = getThreadFramePointers();
     message_format_string = msg_masked.format_string;
-    error_index = handleErrorCode(message(), message_format_string, code, remote, getStackFramePointers());
-}
-
-void Exception::recordToSystemErrors()
-{
-    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
-        error_index = ErrorCodes::increment(code(), remote, message(), std::string(message_format_string), getStackFramePointers());
+    error_index = handle_error_code(message(), message_format_string, code, remote, getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -207,8 +182,7 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 void Exception::addMessage(const MessageMasked & msg_masked)
 {
     extendedMessage(msg_masked.msg);
-    if (error_index != static_cast<size_t>(ErrorIndexState::NotRecorded)
-        && error_index != static_cast<size_t>(ErrorIndexState::Suppressed))
+    if (error_index != static_cast<size_t>(-1))
         ErrorCodes::extendedMessage(code(), remote, error_index, message());
 }
 
@@ -468,16 +442,6 @@ std::string getExtraExceptionInfo(const std::exception & e)
     return msg;
 }
 
-/// Formats the trailing ", Stack trace (...)\n\n<trace>" section of an exception message.
-/// Returns an empty string when there is no stack trace, so that the message never ends with the
-/// "always include the lines below" promise without any lines following it.
-static std::string formatStackTraceSection(const std::string & stack_trace)
-{
-    if (stack_trace.empty())
-        return {};
-    return ", Stack trace (when copying this message, always include the lines below):\n\n" + stack_trace;
-}
-
 std::string getCurrentExceptionMessage(
     bool with_stacktrace,
     bool check_embedded_stacktrace /*= false*/,
@@ -519,7 +483,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
                 << ", " << e.displayText()
-                << (with_stacktrace ? formatStackTraceSection(getExceptionStackTraceString(e)) : "")
+                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "");
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
@@ -537,7 +501,7 @@ PreformattedMessage getCurrentExceptionMessageAndPattern(
                 name += " (demangling status: " + toString(status) + ")";
 
             stream << "std::exception. Code: " << ErrorCodes::STD_EXCEPTION << ", type: " << name << ", e.what() = " << e.what()
-                << (with_stacktrace ? formatStackTraceSection(getExceptionStackTraceString(e)) : "")
+                << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "");
             if (with_version)
                 stream << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
@@ -698,7 +662,7 @@ PreformattedMessage getExceptionMessageAndPattern(const Exception & e, bool with
         stream << " (" << ErrorCodes::getName(e.code()) << ")";
 
         if (with_stacktrace && !has_embedded_stack_trace)
-            stream << formatStackTraceSection(e.getStackTraceString());
+            stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
     }
     catch (...) {} // NOLINT(bugprone-empty-catch) Ok: best-effort exception formatting, must not throw
 
@@ -733,20 +697,15 @@ void ExecutionStatus::deserializeText(const std::string & data)
 
 bool ExecutionStatus::tryDeserializeText(const std::string & data)
 {
-    /// Parse into a temporary and commit only on success: deserializeText reads `code` before it can
-    /// fail on the rest of the payload, so parsing in place would leave a partially-overwritten status
-    /// on failure (e.g. "0garbage" sets code=0 then throws). Callers rely on *this being untouched then.
-    ExecutionStatus tmp;
     try
     {
-        tmp.deserializeText(data);
+        deserializeText(data);
     }
     catch (...) // Ok: tryDeserializeText is a try-pattern, failure is expected
     {
         return false;
     }
 
-    *this = std::move(tmp);
     return true;
 }
 

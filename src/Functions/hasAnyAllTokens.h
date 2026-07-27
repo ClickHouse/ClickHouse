@@ -31,7 +31,7 @@ using TokensWithPosition = absl::flat_hash_map<String, UInt64>;
 struct ITokenizer;
 
 template <class HasTokensTraits>
-class ExecutableFunctionHasAnyAllTokens final : public IExecutableFunction
+class ExecutableFunctionHasAnyAllTokens : public IExecutableFunction
 {
 public:
     static constexpr auto name = HasTokensTraits::name;
@@ -53,7 +53,7 @@ private:
 };
 
 template <class HasTokensTraits>
-class FunctionBaseHasAnyAllTokens final : public IFunctionBase
+class FunctionBaseHasAnyAllTokens : public IFunctionBase
 {
 public:
     static constexpr auto name = HasTokensTraits::name;
@@ -85,7 +85,7 @@ private:
 };
 
 template <class HasTokensTraits>
-class FunctionHasAnyAllTokensOverloadResolver final : public IFunctionOverloadResolver
+class FunctionHasAnyAllTokensOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = HasTokensTraits::name;
