@@ -239,7 +239,9 @@ Argumentos:
 * `--echo [ <bool> ]` — imprime cada consulta antes da execução. Aceita um valor booleano opcional. Habilitado por padrão no modo interativo e desabilitado no modo batch. Nota: como `--echo` agora aceita um valor opcional, uma consulta posicional colocada imediatamente após um `--echo` sem valor é interpretada como seu valor; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false` ou `stdin` via pipe.
 * `--echo-formatted [ <bool> ]` — formata as consultas exibidas por `echo`. Aceita um valor booleano opcional. Habilitado por padrão no modo interativo e desabilitado no modo batch.
 * `--echo-query-id [ <bool> ]` — imprime o `query_id` antes da execução. Aceita um valor booleano opcional. Habilitado por padrão no modo interativo e desabilitado no modo batch.
+* `--echo-query-separator <string>` — imprime este separador antes da consulta formatada exibida por `echo` (requer `--echo-formatted`), facilitando distinguir a consulta digitada da sua versão reformatada exibida por `echo`. Vazio por padrão (desabilitado).
 * `--highlight`, `--hilite` `<bool>` — alterna o realce de sintaxe do prompt de comando e das consultas exibidas por `echo`. Habilitado por padrão. O realce é aplicado somente ao escrever em um terminal.
+* `--hints <bool>` — mostra dicas de autocompletar conforme você digita (texto &quot;fantasma&quot; em linha) para a melhor sugestão correspondente quando o cursor está no fim da entrada. Navegue pelas dicas com Up/Down (ou Ctrl-Up/Ctrl-Down); aceite a dica em linha com Tab ou Right; `Enter` aceita uma dica somente depois que uma tiver sido selecionada explicitamente e, caso contrário, executa a consulta; `Tab` também abre a lista clássica de preenchimento automático. Requer `--highlight` (as dicas precisam de cor) e o mecanismo de sugestão (portanto, `--disable_suggestion` também as desativa). Habilitado por padrão.
 * `--verbose` — mais detalhes sobre a execução da consulta.
 * `--logger.console` — Registrar no console.
 * `--logger.log` — Nome do arquivo de log.
@@ -371,6 +373,36 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+<div id="starting-listeners">
+  ## Iniciando listeners TCP e HTTP
+</div>
+
+O `clickhouse-local` pode ser transformado em um servidor leve que aceita conexões TCP (protocolo nativo) e HTTP. Isso é útil quando você quer permitir que outras ferramentas ou aplicações do ClickHouse acessem os bancos de dados e as tabelas de uma instância do `clickhouse-local` em execução. Observe que cada conexão de entrada recebe sua própria sessão: as tabelas temporárias e as configurações de sessão da sessão interativa do `clickhouse-local` não ficam visíveis para conexões externas.
+
+Use `SYSTEM START LISTEN` para abrir um listener e `SYSTEM STOP LISTEN` para fechá-lo:
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+As opções `--listen_host`, `--tcp_port` e `--http_port` configuram o endereço de escuta e as portas. As portas padrão são `9000` para TCP e `8123` para HTTP.
+
+<Warning>
+  **Segurança**
+
+  Por padrão, o `clickhouse-local` é executado com a configuração temporária de usuários, portanto qualquer porta de escuta que ele abra não terá autenticação. Vincule-o a um endereço de loopback (`127.0.0.1` ou `::1`), a menos que você tenha configurado explicitamente os usuários e o controle de acesso apontando a configuração `users_config` para um `users.xml` personalizado (por exemplo, via `--config-file`). Escutar em um endereço que não seja de loopback sem autenticação expõe os dados da instância local a qualquer pessoa que consiga acessar a porta escolhida.
+</Warning>
 
 <div id="related-content-1">
   ## Conteúdo relacionado

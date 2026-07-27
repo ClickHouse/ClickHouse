@@ -40,7 +40,7 @@ ClickPipes の設定でスキーマレジストリを統合するには、次の
 
 ClickPipes は、指定した URL を使用して HTTPS 経由でスキーマレジストリに接続します。スキーマレジストリをパブリックに公開しておく必要はありません。
 
-Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/aws-privatelink) (AWS PrivateLink または GCP Private Service Connect) 経由でアクセスしている場合、スキーマレジストリでも同じプライベート接続を利用できます。ClickPipes は reverse private endpoint のプライベート DNS を使ってレジストリのホスト名を名前解決するため、ブローカーと同じくプライベート環境でホストされているレジストリであっても、そのホスト名が reverse private endpoint のプライベート IP アドレスに解決される限り到達できます (エンドポイントのプライベート DNS サポート、またはカスタムのプライベート DNS マッピングを使用) 。
+Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/aws-privatelink) (AWS PrivateLink または GCP Private Service Connect) 経由でアクセスしている場合、スキーマレジストリでも同じプライベート接続を利用できます。ClickPipes は reverse private endpoint のプライベート DNS を使ってレジストリのホスト名を名前解決するため、ブローカーと同じくプライベート環境でホストされているレジストリであっても、そのホスト名が reverse private endpoint のプライベート IP アドレスに解決される限り到達できます (エンドポイントのプライベート DNS サポート、または [カスタムのプライベート DNS マッピング](/ja/integrations/clickpipes/aws-privatelink#custom-private-dns) を使用) 。
 
 次の点に注意してください。
 

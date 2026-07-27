@@ -25,25 +25,15 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Faça login na sua conta do ClickHouse Cloud.
-  </Step>
+  <Step title="1. Faça login na sua conta do ClickHouse Cloud." id="login" />
 
-  <Step>
-    ### 2. Selecione o serviço do ClickHouse no qual você deseja consultar dados do Iceberg.
-  </Step>
+  <Step title="2. Selecione o serviço do ClickHouse no qual você deseja consultar dados do Iceberg." id="select-service" />
 
-  <Step>
-    ### 3. Acesse a guia **Configurações**.
-  </Step>
+  <Step title={<>3. Acesse a guia <strong>Configurações</strong>.</>} id="settings-tab" />
 
-  <Step>
-    ### 4. Role até **Informações de segurança de rede**.
-  </Step>
+  <Step title={<>4. Role até <strong>Informações de segurança de rede</strong>.</>} id="network-security-information" />
 
-  <Step>
-    ### 5. Copie o valor de **ID da função de serviço (IAM)**.
-
+  <Step title={<>5. Copie o valor de <strong>ID da função de serviço (IAM)</strong>.</>} id="service-role-iam-value">
     Esse ARN é necessário para a política de confiança da função do IAM da AWS que acessará seus dados do Iceberg.
 
     <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Como obter o ARN da função do IAM do serviço ClickHouse" border />
@@ -55,19 +45,13 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
 </div>
 
 <Steps>
-  <Step>
-    ### 1. Faça login na AWS e acesse o serviço IAM.
-  </Step>
+  <Step title="1. Faça login na AWS e acesse o serviço IAM." id="aws-iam-service" />
 
-  <Step>
-    ### 2. Selecione Roles e, em seguida, Create função.
-
+  <Step title="2. Selecione Roles e, em seguida, Create função." id="create-role">
     Selecione `Trusted entity type` como `Custom trust policy` e insira os valores com base na etapa 3.
   </Step>
 
-  <Step>
-    ### 3. Adicione as políticas de confiança e do IAM.
-
+  <Step title="3. Adicione as políticas de confiança e do IAM." id="add-trust-iam-policies">
     Substitua `{service-role-id}` pelo Service Role ID (IAM) da sua instância do ClickHouse.
 
     ```json
@@ -122,9 +106,7 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
     </Note>
   </Step>
 
-  <Step>
-    ### 4. Conclua a criação da função.
-
+  <Step title="4. Conclua a criação da função." id="finish-role-creation">
     a. Clique em Next e depois em Next novamente na tela de atribuição de permissões.
 
     b. Adicione um nome (por exemplo, `iceberg-role-for-clickhouse`) e uma descrição.
@@ -136,9 +118,7 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
     e. Selecione `Create função`.
   </Step>
 
-  <Step>
-    ### 5. Copie o novo **ARN da IAM Função** após a criação.
-  </Step>
+  <Step title={<>5. Copie o novo <strong>ARN da IAM Função</strong> após a criação.</>} id="copy-role-arn" />
 </Steps>
 
 <div id="configure-iceberg-access">
