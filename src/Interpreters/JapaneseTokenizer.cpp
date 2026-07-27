@@ -99,16 +99,14 @@ bool JapaneseTokenizer::nextInStringLike(const char *, size_t, size_t &, String 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JapaneseTokenizer::nextInStringLike is not implemented");
 }
 
-void JapaneseTokenizer::substringToBloomFilter(
-    const char * data, size_t length, BloomFilter & bloom_filter, bool /*is_prefix*/, bool /*is_suffix*/) const
+void JapaneseTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
 {
-    stringToBloomFilter(data, length, bloom_filter);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The Japanese tokenizer does not support substring (LIKE) matching");
 }
 
-void JapaneseTokenizer::substringToTokens(
-    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+void JapaneseTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
 {
-    stringToTokens(data, length, tokens);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The Japanese tokenizer does not support substring (LIKE) matching");
 }
 
 }
