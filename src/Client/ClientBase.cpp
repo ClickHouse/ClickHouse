@@ -1677,11 +1677,15 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_)
 
 void ClientBase::onProgress(const Progress & value)
 {
-    if (!progress_indication.updateProgress(value))
-    {
-        // Just a keep-alive update.
+    /// `Progress::incrementPiecewiseAtomically` only reports an update when `read_rows` or `written_rows` is non-zero,
+    /// so a totals-only packet such as `Progress{0, 0, total_rows_to_read}` - which the server legitimately sends once
+    /// the first estimate of the total amount of data becomes known, before any data block - looks like a keep-alive here.
+    /// Such a packet still carries information that progress-aware output formats (`JSONEachRowWithProgress` and friends)
+    /// have to see, so only a genuinely empty progress packet is dropped.
+    const bool is_keep_alive = !progress_indication.updateProgress(value);
+
+    if (is_keep_alive && value.empty())
         return;
-    }
 
     /// Tracks inserted rows for server-side operations like INSERT ... SELECT where data bypasses the client and thus isn't captured in
     // `processed_rows_from_blocks`. We exclude `read_rows` to avoid incorrect counting:
@@ -1695,7 +1699,7 @@ void ClientBase::onProgress(const Progress & value)
     else
         pending_progress.incrementPiecewiseAtomically(value);
 
-    if (need_render_progress && tty_buf)
+    if (!is_keep_alive && need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
         progress_indication.writeProgress(*tty_buf, lock);

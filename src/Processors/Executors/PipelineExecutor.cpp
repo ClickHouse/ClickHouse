@@ -368,8 +368,13 @@ void PipelineExecutor::finalizeExecution()
                 if (read_progress->counters.total_bytes)
                     read_progress_callback->addTotalBytes(read_progress->counters.total_bytes);
 
-                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report
-                if (read_progress->counters.read_rows || read_progress->counters.read_bytes)
+                /// We are finalizing the execution, so no need to call onProgress if there is nothing to report.
+                /// Note that `addTotalRowsApprox`/`addTotalBytes` only stash the values inside `ReadProgressCallback`;
+                /// they reach the downstream progress callback only from `onProgress`. A drained `RemoteSource` can
+                /// contribute a trailing totals-only packet, and there will be no later progress event to flush it,
+                /// so the totals have to be taken into account by this condition as well.
+                if (read_progress->counters.read_rows || read_progress->counters.read_bytes
+                    || read_progress->counters.total_rows_approx || read_progress->counters.total_bytes)
                     read_progress_callback->onProgress(
                         read_progress->counters.read_rows, read_progress->counters.read_bytes, read_progress->limits);
             }
