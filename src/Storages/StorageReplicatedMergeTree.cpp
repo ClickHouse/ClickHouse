@@ -6833,8 +6833,23 @@ void StorageReplicatedMergeTree::alter(
     {
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
+        ///
+        /// Commit protocol: run every fallible step (build the new settings, write the durable .sql)
+        /// before the durable/coordinator commit, and publish the in-memory state only after it, so a
+        /// rejected commit leaves settings, metadata and .sql all unchanged (a failed ALTER is a no-op).
+        auto prepared_settings = prepareSettingsChange(future_metadata.settings_changes);
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        /// Safe because the early max_query_size check already passed.
+        auto prepared_alter = database->prepareAlterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+
+        /// Pivot: durable .sql rename, and the coordinator commit for a Replicated database.
+        database->commitAlterTable(table_id, prepared_alter.table_metadata_tmp_path, prepared_alter.table_metadata_path, prepared_alter.statement, query_context);
+
+        /// Infallible publish after the commit.
         merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        if (prepared_settings)
+            applySettingsChange(std::move(*prepared_settings));
 
         if (statistics_changed)
         {
@@ -6842,22 +6857,23 @@ void StorageReplicatedMergeTree::alter(
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
-
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
     if (commands.isCommentAlter())
     {
-        {
-            /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
-            ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-            setInMemoryMetadata(future_metadata);
-        }
-
+        /// Same commit protocol as the settings branch: durable/coordinator commit first, in-memory
+        /// publish after, so a rejected comment ALTER leaves both memory and .sql unchanged.
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
         /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+        auto prepared_alter = database->prepareAlterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+
+        /// Pivot: durable .sql rename, and the coordinator commit for a Replicated database.
+        database->commitAlterTable(table_id, prepared_alter.table_metadata_tmp_path, prepared_alter.table_metadata_path, prepared_alter.statement, query_context);
+
+        /// Infallible publish after the commit.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        setInMemoryMetadata(future_metadata);
         return;
     }
 
@@ -6867,25 +6883,38 @@ void StorageReplicatedMergeTree::alter(
     /// routing (ASTAlterQuery::isSettingsOrCommentAlter) that sends it to every replica.
     if (commands.areNonReplicatedAlterCommands())
     {
-        merge_strategy_picker.refreshState();
-        changeSettings(future_metadata.settings_changes, table_lock_holder);
+        /// Same commit protocol as the branches above (durable/coordinator commit first, publish
+        /// after) for the settings+comment combination.
+        auto prepared_settings = prepareSettingsChange(future_metadata.settings_changes);
 
-        /// changeSettings is the sole writer of the setting-derived escape fields and has
-        /// already committed them; carry them into future_metadata so the comment commit
-        /// below does not revert the index filename policy (commands.apply never sets them).
-        auto committed_metadata = getInMemoryMetadataUncached(query_context);
-        future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-        for (auto & index : future_metadata.secondary_indices)
-            index.escape_filenames = committed_metadata->escape_index_filenames;
+        /// changeSettings is the sole writer of the setting-derived escape fields; carry the prepared
+        /// values into future_metadata so the comment commit does not revert the index filename policy
+        /// (commands.apply never sets them). Read them from the prepared change instead of from
+        /// committed state, since nothing is committed yet at this point.
+        if (prepared_settings)
+        {
+            future_metadata.escape_index_filenames = prepared_settings->new_metadata.escape_index_filenames;
+            for (auto & index : future_metadata.secondary_indices)
+                index.escape_filenames = prepared_settings->new_metadata.escape_index_filenames;
+        }
+
+        auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+        /// Safe because the early max_query_size check already passed.
+        auto prepared_alter = database->prepareAlterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
+
+        /// Pivot: durable .sql rename, and the coordinator commit for a Replicated database.
+        database->commitAlterTable(table_id, prepared_alter.table_metadata_tmp_path, prepared_alter.table_metadata_path, prepared_alter.statement, query_context);
+
+        /// Infallible publish after the commit.
+        merge_strategy_picker.refreshState();
+        if (prepared_settings)
+            applySettingsChange(std::move(*prepared_settings));
 
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
         }
-
-        /// Safe because the early max_query_size check already passed.
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, future_metadata, /*validate_new_create_query=*/true);
         return;
     }
 
