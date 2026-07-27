@@ -131,4 +131,26 @@ TEST(IcebergMetadataGenerator, ThrowsWhenSnapshotsArrayMissingButParentSnapshotE
     EXPECT_FALSE(metadata->has(Iceberg::f_snapshots));
 }
 
+/// `refs` is optional per the Iceberg spec (an object, not an array), so external engines may
+/// omit it. generateManifestOnlySnapshot must seed it as an Object::Ptr and populate `main`,
+/// mirroring generateNextMetadata; seeding it with a raw Poco::JSON::Object pointer stores the
+/// wrong Var type, so getObject(f_refs) returns a null Ptr and the following ->has(f_main)
+/// dereferences it (Poco::NullPointerException).
+TEST(IcebergMetadataGenerator, ManifestOnlySnapshotWhenRefsMissing)
+{
+    auto metadata = makeMinimalV2Metadata();
+    appendSnapshot(metadata);
+    Int64 parent_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+
+    metadata->remove(Iceberg::f_refs);
+
+    FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
+    generator.setVersion(2);
+    auto metadata_info = generator.generateMetadataPathWithInfo();
+
+    EXPECT_NO_THROW(
+        MetadataGenerator(metadata).generateManifestOnlySnapshot(generator, metadata_info.path, parent_id));
+    EXPECT_TRUE(metadata->getObject(Iceberg::f_refs)->has(Iceberg::f_main));
+}
+
 #endif
