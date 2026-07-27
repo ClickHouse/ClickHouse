@@ -305,6 +305,14 @@ public:
 
     String getName() const override { return "ConvertingAggregatedToChunksByPartitionMergingSource"; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
 protected:
     Chunk generate() override
     {
