@@ -1418,18 +1418,4 @@ void registerArrowSchemaReader(FormatFactory & factory)
 
 }
 
-#else
-
-namespace DB
-{
-class FormatFactory;
-void registerInputFormatArrow(FormatFactory &);
-void registerArrowSchemaReader(FormatFactory &);
-void registerInputFormatArrow(FormatFactory &)
-{
-}
-
-void registerArrowSchemaReader(FormatFactory &) {}
-}
-
 #endif

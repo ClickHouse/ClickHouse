@@ -440,15 +440,4 @@ void registerOutputFormatArrow(FormatFactory & factory)
 
 }
 
-#else
-
-namespace DB
-{
-class FormatFactory;
-void registerOutputFormatArrow(FormatFactory &);
-void registerOutputFormatArrow(FormatFactory &)
-{
-}
-}
-
 #endif
