@@ -790,8 +790,11 @@ static bool writeConsolidatedManifestFile(
             for (const auto & lineage : pd.file_entry_lineage)
                 manifest_min_sequence_number = std::min(manifest_min_sequence_number, lineage.sequence_number.value_or(0));
 
-            existing_entry_counts.push_back(
-                {static_cast<Int64>(pd.file_paths.size()), manifest_existing_rows, manifest_min_sequence_number});
+            ManifestListEntryCounts consolidated_counts;
+            consolidated_counts.files_count = static_cast<Int64>(pd.file_paths.size());
+            consolidated_counts.rows_count = manifest_existing_rows;
+            consolidated_counts.min_sequence_number = manifest_min_sequence_number;
+            existing_entry_counts.push_back(consolidated_counts);
 
             /// Rewrite this manifest under the partition spec its source files used, not the default.
             const auto & resolved_spec = resolve_partition_spec(pd.partition_spec_id);
@@ -869,7 +872,6 @@ static bool writeConsolidatedManifestFile(
             false,
             /* per_entry_content_types */ {},
             existing_entry_counts,
-            /* entry_counts_are_added */ false,
             /* carry_forward_manifest_paths */ delete_manifest_paths,
             /* entry_partition_spec_ids */ entry_partition_spec_ids,
             /* entry_partition_summaries */ entry_partition_summaries);
@@ -1107,18 +1109,26 @@ static void writeMetadataFiles(
                 }
             }
 
-            /// Record the manifest's actual content counts for its manifest-list entries. The
-            /// files keep their original data sequence numbers, so min_sequence_number is the
-            /// sequence number of the snapshot whose manifest is being rewritten.
+            /// Record the manifest's actual content counts and lineage for its manifest-list
+            /// entries. The files keep their original data sequence numbers, so
+            /// min_sequence_number is the sequence number of the snapshot whose manifest is
+            /// being rewritten, and added_snapshot_id / added_sequence_number identify that
+            /// snapshot so later manifest lists that carry this manifest forward preserve its
+            /// lineage instead of claiming they added it.
             {
                 Int64 manifest_rows = 0;
                 for (const auto rows : file_row_counts)
                     manifest_rows += static_cast<Int64>(rows);
-                const Int64 manifest_min_sequence_number = snapshot->has(Iceberg::f_metadata_sequence_number)
+                const Int64 manifest_sequence_number = snapshot->has(Iceberg::f_metadata_sequence_number)
                     ? snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)
                     : 0;
-                manifest_file_counts[manifest_entry->patched_path]
-                    = {static_cast<Int64>(data_files_vec.size()), manifest_rows, manifest_min_sequence_number};
+                ManifestListEntryCounts counts;
+                counts.files_count = static_cast<Int64>(data_files_vec.size());
+                counts.rows_count = manifest_rows;
+                counts.min_sequence_number = manifest_sequence_number;
+                counts.added_snapshot_id = snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+                counts.added_sequence_number = manifest_sequence_number;
+                manifest_file_counts[manifest_entry->patched_path] = counts;
             }
             generateManifestFile(
                 metadata_object,
@@ -1183,18 +1193,21 @@ static void writeMetadataFiles(
         /// Pass the actual per-manifest counts: without them generateManifestList stamps the
         /// snapshot summary's `added-records` into EVERY entry, so any consumer summing the
         /// manifest-list row counts (including our own trivial count) would multiply the
-        /// table's row count by the number of manifests. The regenerated manifests carry no
-        /// entry lineage -- their entries are emitted as ADDED -- so the counts are reported
-        /// as added to keep the manifest-list entries consistent with the manifests they
-        /// point to.
+        /// table's row count by the number of manifests. Each manifest's entries are emitted
+        /// as ADDED in the snapshot that first added it, so its counts are reported as
+        /// added_* only in that snapshot's manifest list; manifest lists of later snapshots
+        /// carry the manifest forward and report the counts as existing_*, preserving the
+        /// original added_snapshot_id / sequence_number.
+        const Int64 list_snapshot_id = new_snapshots[i].snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         std::vector<ManifestListEntryCounts> entry_counts;
         entry_counts.reserve(renamed_manifest_entries.size());
         for (const auto & entry : renamed_manifest_entries)
         {
+            ManifestListEntryCounts counts;
             if (auto it = manifest_file_counts.find(entry); it != manifest_file_counts.end())
-                entry_counts.push_back(it->second);
-            else
-                entry_counts.push_back({});
+                counts = it->second;
+            counts.counts_are_added = counts.added_snapshot_id.has_value() && *counts.added_snapshot_id == list_snapshot_id;
+            entry_counts.push_back(counts);
         }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
@@ -1214,8 +1227,7 @@ static void writeMetadataFiles(
             Iceberg::FileContentType::DATA,
             false,
             /* per_entry_content_types */ {},
-            entry_counts,
-            /* entry_counts_are_added */ true);
+            entry_counts);
         buffer_manifest_list->finalize();
     }
 

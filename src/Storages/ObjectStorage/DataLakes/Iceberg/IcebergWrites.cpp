@@ -581,7 +581,6 @@ void generateManifestList(
     bool use_previous_snapshots,
     const std::vector<Iceberg::FileContentType> & per_entry_content_types,
     const std::vector<ManifestListEntryCounts> & entry_counts,
-    bool entry_counts_are_added,
     const std::unordered_set<String> & carry_forward_manifest_paths,
     const std::vector<Int64> & entry_partition_spec_ids,
     const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries)
@@ -630,26 +629,36 @@ void generateManifestList(
         if (version > 1)
         {
             entry.field(Iceberg::f_content) = static_cast<Int32>(entry_content);
-            /// For a manifest rewrite, min_sequence_number is the per-manifest minimum of the preserved original sequence numbers.
+            /// For a manifest rewrite, sequence_number is the sequence number of the snapshot
+            /// that first added the manifest (preserved for carried-forward manifests), and
+            /// min_sequence_number is the per-manifest minimum of the preserved original
+            /// sequence numbers.
             const Int64 new_sequence_number = new_snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number);
-            entry.field(Iceberg::f_sequence_number) = new_sequence_number;
+            entry.field(Iceberg::f_sequence_number) = manifest_rewrite
+                ? entry_counts[entry_idx].added_sequence_number.value_or(new_sequence_number)
+                : new_sequence_number;
             entry.field(Iceberg::f_min_sequence_number)
                 = manifest_rewrite ? entry_counts[entry_idx].min_sequence_number : new_sequence_number;
         }
 
-        entry.field(Iceberg::f_added_snapshot_id) = new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
+        /// For a manifest rewrite, preserve the id of the snapshot that first added the
+        /// manifest: a carried-forward manifest must not claim it was added by a later snapshot.
+        entry.field(Iceberg::f_added_snapshot_id) = manifest_rewrite && entry_counts[entry_idx].added_snapshot_id
+            ? *entry_counts[entry_idx].added_snapshot_id
+            : new_snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id);
         auto summary = new_snapshot->getObject(Iceberg::f_summary);
         if (manifest_rewrite)
         {
-            /// The counts must agree with the manifest's entry statuses: a metadata-only
-            /// rewrite (`replace`) preserves lineage and its entries stay EXISTING, while a
-            /// regenerated manifest without lineage emits its entries as ADDED.
+            /// The counts must agree per entry with the manifest's entry statuses: a manifest
+            /// whose entries are ADDED in this snapshot reports added_* counts, while a
+            /// carried-forward manifest (or a metadata-only rewrite that preserves lineage,
+            /// whose entries stay EXISTING) reports existing_* counts.
             const auto & counts = entry_counts[entry_idx];
-            setVersionedField(entry, entry_counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
-            setVersionedField(entry, entry_counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
+            setVersionedField(entry, counts.counts_are_added ? counts.files_count : 0, Iceberg::f_added_files_count);
+            setVersionedField(entry, counts.counts_are_added ? 0 : counts.files_count, Iceberg::f_existing_files_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
-            setVersionedField(entry, entry_counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
-            setVersionedField(entry, entry_counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
+            setVersionedField(entry, counts.counts_are_added ? counts.rows_count : 0, Iceberg::f_added_rows_count);
+            setVersionedField(entry, counts.counts_are_added ? 0 : counts.rows_count, Iceberg::f_existing_rows_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
 
             /// Recompute the `partitions` summary so pruning bounds survive the rewrite (lower_bound == upper_bound per field).
