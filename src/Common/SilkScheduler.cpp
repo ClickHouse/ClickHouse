@@ -45,9 +45,9 @@ void setSilkConfiguredButNotStarted(bool value)
 /// their introduction). A constexpr rather than a fallback `#define`: defining a
 /// double-underscore macro trips `-Wreserved-macro-identifier` under `-Weverything -Werror`.
 #if defined(__NR_io_uring_setup)
-constexpr long NR_IO_URING_SETUP = __NR_io_uring_setup;
+constexpr Int64 NR_IO_URING_SETUP = __NR_io_uring_setup;
 #elif defined(__x86_64__) || defined(__aarch64__)
-constexpr long NR_IO_URING_SETUP = 425;
+constexpr Int64 NR_IO_URING_SETUP = 425;
 #else
     #error "Unsupported architecture for the io_uring probe"
 #endif
