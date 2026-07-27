@@ -46,7 +46,12 @@ INCS=(
 
 CXXFLAGS=(
   --target=wasm32-wasip1 --sysroot="$WASI/share/wasi-sysroot"
-  -std=c++2b -Os -DNDEBUG
+  # -Oz rather than -Os: inlining is where most of the size goes - `std::string` and
+  # `std::vector` operations are inlined into their callers rather than emitted as members, so
+  # they do not show up in any per-symbol attribution. -Oz costs about 22% of parse throughput
+  # (155 -> 190 microseconds for a mid-sized query) and saves 19% of the module, which is the
+  # right way round for something downloaded once and then asked to parse one query at a time.
+  -std=c++2b -Oz -DNDEBUG
   -D_LIBCPP_HAS_NO_THREADS
   -D_WASI_EMULATED_SIGNAL -D_WASI_EMULATED_MMAN
   -D_WASI_EMULATED_PROCESS_CLOCKS -D_WASI_EMULATED_GETPID
