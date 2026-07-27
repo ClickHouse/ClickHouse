@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT \
     -n -q "$query"
 
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_dedup_prewarm"
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log, asynchronous_insert_log"
 
 # Sum DuplicationDataHashComputations over every flush that ingested our entries. With prewarm
 # each of the N tokens is hashed exactly once, so the total is N even though each token spans
