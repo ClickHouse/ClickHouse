@@ -19,6 +19,12 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04648_missing, url = 'htt
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(concat('https://user:', 'SEKRIT_EXPR@localhost:11111/x'), 'CSV', 'c UInt8');
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04648_missing, url = concat('https://user:', 'SEKRIT_NAMEDEXPR@localhost:11111/x'));
 
+-- A named-collection override key evaluated from a constant expression can name `url`, and a nested
+-- map placed as the value of any visible non-url override (format, description, ...) carries a secret;
+-- both are formatted before the collection is validated, so both must fail closed.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04648_missing, concat('u', 'rl') = concat('https://user:', 'SEKRIT_EXPRKEY@localhost/x'));
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04648_missing, format = headers('Authorization' = 'SEKRIT_URLFMTHDR'), structure = 'c UInt8');
+
 -- The URL table engine: SHOW CREATE must hide the userinfo and the headers values.
 DROP TABLE IF EXISTS t_04648_url;
 CREATE TABLE t_04648_url (x UInt8)
