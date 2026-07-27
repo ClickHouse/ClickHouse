@@ -496,6 +496,10 @@ def test_refreshable_mv_scheduling_missing_flags_lost_ownership_race(started_clu
     )
 
     aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    # The give-up path reaches Disabled whether or not the injected conflict fires, so the end state
+    # alone does not prove this test exercises the lost-ownership branch. Count the branch's own log
+    # line and require it to advance.
+    lost_lock_before = int(node.count_in_log("Lost the refresh coordination lock"))
 
     # Pause the refresh after the pre-exchange interrupt check has passed, before the exchange.
     node.query("SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
@@ -539,6 +543,14 @@ def test_refreshable_mv_scheduling_missing_flags_lost_ownership_race(started_clu
     aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
     assert aborts_after == aborts_before, (aborts_before, aborts_after)
 
+    # The injected conflict really did drive the terminal lost-ownership branch, and it reports the
+    # Keeper error code it swallowed.
+    lost_lock_after = int(node.count_in_log("Lost the refresh coordination lock"))
+    assert lost_lock_after > lost_lock_before, (lost_lock_before, lost_lock_after)
+    assert (
+        int(node.count_in_log("Lost the refresh coordination lock (ZBADVERSION)")) > 0
+    ), "give-up path did not report a ZBADVERSION lost-ownership conflict"
+
     # The view stays Disabled (no oscillation back into Scheduling on the next poke).
     node.query("SYSTEM REFRESH VIEW rdb6.mv")
     time.sleep(3)
@@ -550,3 +562,256 @@ def test_refreshable_mv_scheduling_missing_flags_lost_ownership_race(started_clu
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_coordination_version_conflict")
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("DROP DATABASE rdb6 SYNC")
+
+
+def test_refreshable_mv_scheduling_missing_flags_running_znode_lost(started_cluster):
+    # The other shape of the lost-ownership race on the same give-up path. The reconciliation is a
+    # multi of a version-checked set() plus a remove() of the ephemeral '/running' znode, and
+    # ZooKeeper::tryMulti returns user errors instead of throwing, so both ZBADVERSION (someone
+    # advanced the root znode) and ZNONODE (the '/running' znode is already gone) come back through
+    # KeeperMultiException::check identically.
+    #
+    # A Keeper session loss drops the ephemeral '/running' without necessarily advancing the root
+    # znode version, and on a single replica nothing advances that version at all, so ZNONODE is the
+    # likelier shape of the very race the ZBADVERSION handling was added for. If only ZBADVERSION is
+    # treated as terminal, the ZNONODE escapes to the outer Keeper handler, which reschedules; the
+    # give-up path then returns before readZnodesIfNeeded, so `running_znode_exists` stays cached
+    # true, the same doomed remove() is retried, and the view spins in Scheduling forever.
+    #
+    # Forced with refresh_mv_force_coordination_running_znode_lost, which deletes the real '/running'
+    # znode just before the reconciliation, so Keeper genuinely answers ZNONODE.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb7 ENGINE = Replicated('/clickhouse/rdb7', '{shard}', '{replica}')"
+    )
+    REFRESH_ROWS = 5
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW rdb7.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers({REFRESH_ROWS})
+        """
+    )
+
+    aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    lost_lock_before = int(node.count_in_log("Lost the refresh coordination lock"))
+
+    # Land execution.state == Finished exactly at the give-up pass, as in the ZBADVERSION test.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
+    node.query("SYSTEM REFRESH VIEW rdb7.mv")
+    node.query("SYSTEM WAIT FAILPOINT refresh_mv_pause_after_interrupt_check PAUSE", timeout=60)
+    assert node.query("SELECT count() FROM rdb7.mv").strip() == "0"
+
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_coordination_running_znode_lost")
+    node.query("SYSTEM REFRESH VIEW rdb7.mv")
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb7'"
+    ).strip()
+    assert status == "Running", status
+
+    # Resume. The attempt reaches Finished, the give-up pass runs the reconciliation, and its
+    # remove() of the now-deleted '/running' returns ZNONODE. With the fix that is terminal and the
+    # view converges to Disabled; without it the pass reschedules and re-enters the same doomed
+    # remove forever. Bounded poll so the missing-fix case fails instead of hanging.
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
+
+    status = None
+    for _ in range(120):
+        status = node.query(
+            "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb7'"
+        )
+        if "Disabled" in status:
+            break
+        time.sleep(0.5)
+    assert "Disabled" in status, status
+    assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
+
+    aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    assert aborts_after == aborts_before, (aborts_before, aborts_after)
+
+    # The ZNONODE really was the code the give-up path swallowed (not a ZBADVERSION reached by some
+    # other route), so this test covers the branch it is named for.
+    lost_lock_after = int(node.count_in_log("Lost the refresh coordination lock"))
+    assert lost_lock_after > lost_lock_before, (lost_lock_before, lost_lock_after)
+    assert (
+        int(node.count_in_log("Lost the refresh coordination lock (ZNONODE)")) > 0
+    ), "give-up path did not report a ZNONODE lost-ownership conflict"
+
+    # Stays Disabled, no oscillation.
+    node.query("SYSTEM REFRESH VIEW rdb7.mv")
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb7'"
+    ).strip()
+    assert status == "Disabled", status
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_coordination_running_znode_lost")
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("DROP DATABASE rdb7 SYNC")
+
+
+def test_refreshable_mv_missing_flags_shutdown_clears_running_lock(started_cluster):
+    # shutdown() deactivates both background tasks and then calls doScheduling(is_shutdown=true) for
+    # a best-effort final Keeper update. The normal path normalizes a Requested attempt (which can
+    # never run now that execution_task is deactivated) to Finished, so the reconciliation clears
+    # `refresh_running` and removes the '/running' znode. The missing-flags give-up path must do the
+    # same: interruptExecution() alone only sets a flag nobody will read, so without the
+    # normalization the give-up returns having written nothing to Keeper.
+    #
+    # A dangling '/running' znode plus refresh_running=true blocks the coordinated view on every
+    # other replica until this replica's Keeper session expires and the crashed-replica grace period
+    # elapses. This asserts a clean shutdown leaves Keeper's coordination state reconciled.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb8 ENGINE = Replicated('/clickhouse/rdb8', '{shard}', '{replica}')"
+    )
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW rdb8.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers(5)
+        """
+    )
+
+    uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'rdb8' AND name = 'mv'"
+    ).strip()
+    znode_path = f"/clickhouse/tables/{uuid}/1"
+
+    # Hold the attempt in the Requested state: make the execution task return without starting the
+    # refresh, so execution.state stays Requested. This is the state the normal path describes as
+    # "execution_task was deactivated by shutdown before refresh started" - the only state that needs
+    # the normalization, because a Running attempt is drained to Finished by shutdown and then
+    # reconciled by the Finished branch.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_skip_execution")
+    node.query("SYSTEM REFRESH VIEW rdb8.mv")
+    time.sleep(3)
+
+    # Keeper records this replica as running the refresh, with the ephemeral lock held.
+    assert (
+        node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}' AND name = 'running'"
+        ).strip()
+        == "1"
+    )
+
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM REFRESH VIEW rdb8.mv")
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb8'"
+    ).strip()
+    assert status == "Running", status
+
+    # DETACH runs flushAndShutdown() -> RefreshTask::shutdown() -> doScheduling(is_shutdown=true)
+    # synchronously on this connection, which is what makes the shutdown give-up path observable.
+    # (A server restart cannot be used: the test harness stops the process right after connections
+    # are closed, so per-table shutdown never runs. This node's Keeper is embedded too, so Keeper
+    # could not be read while the server is down anyway.)
+    # PERMANENTLY because a Replicated database rejects a plain DETACH; SYNC so the detach (and thus
+    # the shutdown pass) has completed before Keeper is inspected below.
+    node.query("DETACH TABLE rdb8.mv PERMANENTLY SYNC")
+
+    # The shutdown give-up path normalized the Requested attempt and reconciled it in Keeper before
+    # entering the permanent unavailable state: the ephemeral lock is released and Keeper no longer
+    # claims a refresh is running on this replica. Without the normalization the attempt is only
+    # interrupted, nothing is written to Keeper, and both dangle until this replica's Keeper session
+    # expires (+ the crashed-replica grace period), blocking the view on every other replica.
+    running_exists = node.query(
+        f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}' AND name = 'running'"
+    ).strip()
+    assert running_exists == "0", running_exists
+
+    # system.zookeeper lists the children of `path`, so the coordination znode's own value is read
+    # from its parent.
+    root = node.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/{uuid}' AND name = '1'"
+    )
+    assert "refresh_running: 0" in root, root
+    # Only the shutdown normalization writes this reason, so it pins that the normalization ran
+    # rather than the attempt having been reconciled by some other branch.
+    assert "last_attempt_error: shutdown" in root, root
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_skip_execution")
+    node.query("DROP DATABASE rdb8 SYNC")
+
+
+def test_refreshable_mv_unavailable_view_refuses_replicated_start(started_cluster):
+    # start() refuses to resume a view whose coordination is permanently unavailable, because running
+    # it would be an uncoordinated local refresh on a replicated target table. startReplicated() is
+    # the other resume entry point (SYSTEM START REPLICATED VIEW, and the restore-from-backup path),
+    # and it must refuse for the same reason: removing the '/paused' znode unpauses the view on EVERY
+    # replica, while this replica stays Disabled and can never refresh again.
+    #
+    # This also matters for correctness of the check itself. `unavailable` is guarded by `mutex`, and
+    # this PR adds the first asynchronous writer of it (markCoordinationUnavailable, on the scheduling
+    # thread). Checking it in finalizeRestoreFromBackup without the lock would be a data race that can
+    # read a stale false, so the check belongs here, under the lock startReplicated already takes.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb9 ENGINE = Replicated('/clickhouse/rdb9', '{shard}', '{replica}')"
+    )
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW rdb9.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers(5)
+        """
+    )
+    uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'rdb9' AND name = 'mv'"
+    ).strip()
+    znode_path = f"/clickhouse/tables/{uuid}/1"
+
+    # Drive the view into the permanent coordination-unavailable state on a healthy Keeper, so Keeper
+    # stays readable for the assertions below.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM REFRESH VIEW rdb9.mv")
+    node.query("SYSTEM WAIT VIEW rdb9.mv")
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb9'"
+    ).strip()
+    assert status == "Disabled", status
+
+    # Pause the view cluster-wide, which is the state startReplicated would clear.
+    node.query("SYSTEM STOP REPLICATED VIEW rdb9.mv")
+    assert (
+        node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}' AND name = 'paused'"
+        ).strip()
+        == "1"
+    )
+
+    # Must be refused: silently, like start(), because finalizeRestoreFromBackup calls this on the
+    # restore path and must not throw there.
+    node.query("SYSTEM START REPLICATED VIEW rdb9.mv")
+
+    # '/paused' survives, so no other replica was unpaused on behalf of a view that cannot refresh.
+    paused_exists = node.query(
+        f"SELECT count() FROM system.zookeeper WHERE path = '{znode_path}' AND name = 'paused'"
+    ).strip()
+    assert paused_exists == "1", paused_exists
+
+    # And this replica is still Disabled.
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb9'"
+    ).strip()
+    assert status == "Disabled", status
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("DROP DATABASE rdb9 SYNC")
