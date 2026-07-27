@@ -1,12 +1,17 @@
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Executors/ExecutorTasks.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Processors/StepWallClock.h>
 
+#include <memory>
 #include <shared_mutex>
 #include <stack>
+#include <unordered_map>
 #include <unordered_set>
 
 
@@ -182,8 +187,18 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updatePipeline(boost::container
         std::lock_guard guard(processors_mutex);
 
         /// Record new processors in pipeline
+        const IProcessor & parent = *cur_node.processor();
         for (const auto & new_proc : update.to_add)
+        {
+            /// Runtime-added processors (lazy reads, external sort, ...) usually have no step,
+            /// so `EXPLAIN ANALYZE` would drop their stats. Attribute them to the parent step.
+            /// The guard is deliberate: processors that already carry a step keep it.
+            /// New `updatePipeline` authors: tag processors of a different step explicitly.
+            if (!new_proc->getQueryPlanStep())
+                new_proc->inheritQueryPlanStepFromParent(parent, parent.getQueryPlanStepGroup());
+
             addNode(new_proc);
+        }
 
         /// Remove deleted processors from pipeline
         for (const auto & removed_proc : update.to_remove)

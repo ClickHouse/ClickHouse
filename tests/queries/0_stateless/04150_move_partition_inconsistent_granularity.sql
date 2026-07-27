@@ -1,4 +1,9 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: in Cloud/private CI ReplicatedMergeTree is substituted by
+--   SharedMergeTree, whose partition-move code does not go through this
+--   canReplacePartition granularity check, so the Replicated BAD_ARGUMENTS
+--   assertions below do not hold under SMT. The plain MergeTree cases still cover
+--   the fix on every configuration.
 -- Regression test for STID 4063-3b45.
 -- MOVE/REPLACE/ATTACH PARTITION between two tables with incompatible granularity
 -- settings (one adaptive, one non-adaptive) used to throw LOGICAL_ERROR in three of

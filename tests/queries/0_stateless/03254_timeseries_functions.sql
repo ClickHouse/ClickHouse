@@ -38,7 +38,8 @@ WITH
 SELECT
     arrayZip(grid, timeSeriesLastToGrid(start, end, step, window)(timestamp, value)) as last_5m,
     arrayZip(grid, timeSeriesRateToGrid(start, end, step, window)(timestamp, value)) as rate_5m,
-    arrayZip(grid, timeSeriesDeltaToGrid(start, end, step, window)(timestamp, value)) as delta_5m
+    arrayZip(grid, timeSeriesDeltaToGrid(start, end, step, window)(timestamp, value)) as delta_5m,
+    arrayZip(grid, timeSeriesIncreaseToGrid(start, end, step, window)(timestamp, value)) as increase_5m
 FROM ts_raw_data FORMAT Vertical;
 
 WITH
