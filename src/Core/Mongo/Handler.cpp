@@ -247,7 +247,9 @@ void handle(
             {
                 response_doc = makeErrorResponse();
             }
-            auto response = OpMessage(request.flags, 0, response_doc);
+            /// The reply carries no flags of its own. Echoing the flags of the request would
+            /// promise the client a checksum we do not write, or a message we do not send.
+            auto response = OpMessage(/* flags_= */ 0, /* kind_= */ 0, response_doc);
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());
             response_header.operation_code = static_cast<Int32>(OperationCode::OP_MSG);
             response.header = response_header;
