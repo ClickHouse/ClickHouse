@@ -106,6 +106,31 @@ $INITIAL_CLIENT -q "
     SELECT count(), sum(cityHash64(x)) FROM remote('127.0.0.1', currentDatabase(), mrg_all)
     SETTINGS enable_parallel_blocks_marshalling = 0, prefer_localhost_replica = 0"
 
+# A `Buffer` table plans the reads of its in-memory buffers with their own `SelectQueryOptions` and
+# unites them with the destination plan in this process, again with nothing unmarshalling them. The
+# buffers are only planned at all above `FetchColumns`, and a `Buffer` inherits its stage from the
+# destination table, so the destination has to be a `Distributed` one. Rows must still be in the
+# buffer at read time, hence the large flush thresholds.
+# Uses $INITIAL_CLIENT on purpose, like the `Merge` case: the secondary context comes from the inner
+# `remote(...)` hop.
+echo '-- Buffer table whose destination is distributed'
+$INITIAL_CLIENT -q "
+    CREATE TABLE buf_local (x UInt64, y UInt64, z UInt64) ENGINE = MergeTree ORDER BY x;
+    INSERT INTO buf_local SELECT number % 7, number, number FROM numbers(500);
+    CREATE TABLE buf_dist (x UInt64, y UInt64, z UInt64)
+        ENGINE = Distributed(test_shard_localhost, currentDatabase(), buf_local);
+    CREATE TABLE buf_all (x UInt64, y UInt64, z UInt64)
+        ENGINE = Buffer(currentDatabase(), buf_dist, 1, 10000, 10000, 1000000, 1000000, 100000000, 1000000000);
+    INSERT INTO buf_all SELECT number % 7, number, number FROM numbers(500, 500);
+"
+BUFFER_QUERY="
+    SELECT count(), sum(cityHash64(x, s)) FROM (
+        SELECT x, sum(y) AS s FROM remote('127.0.0.{1,2}', currentDatabase(), buf_all)
+        GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
+    )"
+$INITIAL_CLIENT -q "$BUFFER_QUERY SETTINGS enable_parallel_blocks_marshalling = 1, prefer_localhost_replica = 0"
+$INITIAL_CLIENT -q "$BUFFER_QUERY SETTINGS enable_parallel_blocks_marshalling = 0, prefer_localhost_replica = 0"
+
 # The plan shape is the invariant being fixed: the locally executed branch must carry no
 # `BlocksMarshalling` step, while the branch read from a remote replica must keep it.
 echo '-- BlocksMarshalling steps for remote(): total, above ReadFromRemote, ReadFromRemote steps'
@@ -119,6 +144,25 @@ marshalling_counts "
     SELECT x, sum(y) FROM tab
     GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
     SETTINGS enable_parallel_blocks_marshalling = 1, $PARALLEL_REPLICAS, serialize_query_plan = 0" "ReadFromRemoteParallelReplicas"
+
+# The same plan-shape invariant for the `Buffer` carrier, so that the assignment on the buffers
+# options is pinned structurally and not only through the result above. Each of the two replicas
+# contributes one `BlocksMarshalling` step for the blocks it really sends back; without the fix the
+# in-process buffers branch of each of them gets one of its own too, so the total doubles. The count
+# of buffer-reading steps is asserted as well, so the query cannot silently stop reading the buffers
+# and make the first count pass for the wrong reason.
+echo '-- BlocksMarshalling steps for a Buffer table: total, buffer-reading steps'
+$INITIAL_CLIENT -q "
+    SELECT
+        countIf(explain ILIKE '%BlocksMarshalling%'),
+        countIf(explain ILIKE '%Read from buffers%' OR explain ILIKE '%ReadFromStorage (Values)%')
+    FROM (
+        EXPLAIN distributed = 1
+        SELECT x, sum(y) FROM remote('127.0.0.{1,2}', currentDatabase(), buf_all)
+        GROUP BY GROUPING SETS ((x, z % 1), (intDiv(z, 100), z + 2))
+        SETTINGS enable_parallel_blocks_marshalling = 1, prefer_localhost_replica = 0, serialize_query_plan = 0
+    )
+    SETTINGS explain_query_plan_default = 'legacy'"
 
 # A plan that is serialized and shipped to a shard must keep marshalling: the shard sends its blocks
 # back over the network. EXPLAIN only, executing such a plan fails with
