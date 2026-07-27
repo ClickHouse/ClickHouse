@@ -20,9 +20,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 자체도 **ClickStack collector image를 사용하는 upstream OpenTelemetry Helm 차트를 통해 동일한 클러스터 내부에** 배포해야 합니다. 설치하려면 [collector 배포하기](/ko/clickstack/ingesting-data/collector#configuring-the-collector)의 Helm 경로를 따르십시오. **이 OTLP endpoint를 반드시 기록해 두십시오**.
 
 <Steps>
-  <Step>
-    ## 사전 요구 사항 준비
-
+  <Step title="사전 요구 사항 준비" id="gather-prerequisites">
     다음이 필요합니다:
 
     * `kubectl`이 구성된 **쿠버네티스 클러스터**(v1.20+ 권장)
@@ -37,9 +35,7 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
     </Info>
   </Step>
 
-  <Step>
-    ## 인증 시크릿과 ConfigMap 생성하기
-
+  <Step title="인증 시크릿과 ConfigMap 생성하기" id="create-secret-and-configmap">
     collector를 배치할 네임스페이스를 선택한 다음, `OTLP_AUTH_TOKEN`을 저장할 시크릿과 gateway를 가리키는 ConfigMap을 생성하세요:
 
     ```shell
@@ -61,18 +57,14 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
     아래의 두 collector는 `extraEnvs`를 통해 이 값들을 읽으므로, 동일한 시크릿과 ConfigMap을 둘 다에서 재사용합니다.
   </Step>
 
-  <Step>
-    ## OpenTelemetry Helm 저장소 추가
-
+  <Step title="OpenTelemetry Helm 저장소 추가" id="add-otel-helm-repo">
     ```shell
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
     helm repo update
     ```
   </Step>
 
-  <Step>
-    ## 클러스터 collector 배포
-
+  <Step title="클러스터 collector 배포" id="deploy-cluster-collector">
     이는 **Kubernetes 이벤트**와 **클러스터 전반의 메트릭**(노드 수, 파드 단계, 배포 상태 등)을 수집하는 단일 레플리카 배포입니다. 레플리카를 2개 이상 실행하면 중복 데이터가 수집됩니다.
 
     다음 내용을 `k8s_deployment.yaml`로 저장하십시오:
@@ -141,9 +133,7 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
     ```
   </Step>
 
-  <Step>
-    ## 노드 collector 배포
-
+  <Step title="노드 collector 배포" id="deploy-node-collector">
     이는 모든 노드에서 실행되는 데몬셋으로, **컨테이너 로그**, **호스트 메트릭**, **큐블릿 메트릭**(파드별 및 컨테이너별 CPU 및 메모리의 요청값과 제한값 대비 사용률)을 수집합니다.
 
     다음을 `k8s_daemonset.yaml`로 저장하십시오:
@@ -260,9 +250,7 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
     배포 파드 1개와 각 노드마다 데몬셋 파드 1개가 있으며, 모두 `Running` 상태로 표시되어야 합니다.
   </Step>
 
-  <Step>
-    ## Kubernetes 속성을 애플리케이션으로 전달하기 (권장)
-
+  <Step title="Kubernetes 속성을 애플리케이션으로 전달하기 (권장)" id="forward-k8s-attributes">
     애플리케이션 로그, 메트릭, 트레이스를 Kubernetes 메타데이터(파드 이름, 네임스페이스, 노드, 배포)와 연관시키려면 `OTEL_RESOURCE_ATTRIBUTES`를 통해 해당 메타데이터를 애플리케이션으로 전달하십시오. 그러면 데몬셋의 `k8sattributes` 프로세서가 수집되는 텔레메트리를 일치하는 파드 및 노드 속성으로 보강합니다.
 
     ```yaml
@@ -311,9 +299,7 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
     ```
   </Step>
 
-  <Step>
-    ## ClickStack UI에서 확인
-
+  <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
     <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 시작" border />
@@ -333,9 +319,7 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
     * 시크릿의 `OTLP_AUTH_TOKEN`이 gateway collector에 설정된 값과 일치하는지 확인합니다.
   </Step>
 
-  <Step>
-    ## 추가 참고 자료
-
+  <Step title="추가 참고 자료" id="further-reading">
     * 전체 수신기, processor 및 튜닝 옵션은 [Kubernetes 통합 참고](/ko/clickstack/integration-examples/kubernetes)를 참조하십시오.
     * 애플리케이션 측 보강에 대한 자세한 내용은 [resource 태그를 파드로 전달하기](/ko/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)를 참조하십시오.
     * OTLP endpoint에서 TLS를 사용하고 최소 권한 수집 사용자를 적용하는 방법은 [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 참조하십시오.

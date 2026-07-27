@@ -12,7 +12,6 @@
 
 #include <deque>
 #include <optional>
-#include <unordered_set>
 
 namespace DB
 {
@@ -187,15 +186,7 @@ struct Reader
 
         bool used_by_key_condition = false;
 
-        /// The hashes to look up in the bloom filter (a subset of the query constants hashed for this
-        /// column). Values from an `IN` set larger than `bloom_filter_max_set_size` are deliberately
-        /// left out - such a set is still hashed for the exact dictionary filter (which reads no extra
-        /// data per value), but probing the probabilistic bloom filter for it would read one filter
-        /// block per value for little benefit. So this is empty exactly when the only query constants
-        /// for the column come from such over-cap sets, in which case the bloom filter stays disabled
-        /// for the column (see hash_many and initializePrefetches). It can hold hashes for some atoms
-        /// while an over-cap `IN` on the same column contributes none, so the bloom filter still prunes
-        /// row groups using the smaller atoms.
+        /// If use_bloom_filter, these are the values that we need to find in bloom filter.
         std::vector<UInt64> bloom_filter_hashes;
 
         PrimitiveColumnInfo() = default;
@@ -526,11 +517,6 @@ struct Reader
     /// Returns false if it turned out that `dictionary_page_prefetch` is not actually a dictionary.
     bool decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info);
 
-    /// Whether the column chunk is eligible for dictionary-based row group filtering: it has a
-    /// dictionary page no larger than `options.dictionary_filter_limit_bytes`, and all of its data
-    /// pages are dictionary-encoded (so the dictionary holds the complete set of column values).
-    bool columnChunkCanUseDictionaryFilter(const parq::ColumnChunk & column_meta) const;
-
     /// Returns false if the row group was filtered out and should be skipped.
     bool applyBloomAndDictionaryFilters(RowGroup & row_group);
 
@@ -568,13 +554,6 @@ private:
 
         bool findAnyHash(const std::vector<uint64_t> & hashes) override;
     };
-
-    /// Like BloomFilterLookup, but backed by the (already decoded) dictionary page, which holds the
-    /// exact set of values present in the column chunk. Dictionary value hashes are computed lazily
-    /// on the first lookup. If the values can't be hashed, the lookup conservatively reports a match.
-    /// Defined out of line in Reader.cpp so that its `HashSet` member does not pull the hash-table
-    /// headers (and their transitive includes) into every translation unit that includes Reader.h.
-    struct DictionaryLookup;
 
     void getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrectangle & hyperrectangle) const;
     void adjustRangeFromIndexIfNeeded(Range & range, const PrimitiveColumnInfo & column_info, bool can_be_null) const;

@@ -129,7 +129,7 @@ public:
 
     OriginInfo getCommonOriginWithSegmentKeyType(const std::filesystem::path & filename) const;
 
-    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const;
+    String getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size = std::nullopt) const;
 
     String getKeyPath(const Key & key, const OriginInfo & origin) const;
 

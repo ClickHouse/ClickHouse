@@ -99,6 +99,8 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args{
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
+            /// `model` must be a plain (non-nullable) `String`; constness is enforced by the column validator.
+            {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
             {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
@@ -108,13 +110,13 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
     }
 
-    /// Parameters accepted in the trailing `Map(String, String)` argument. `aiEmbed` does not inherit
-    /// `FunctionBaseAI`, so it declares its own spec (no `max_tokens`, which embeddings do not use).
+    /// Parameters accepted in the optional trailing `Map(String, String)` argument. `aiEmbed` does not
+    /// inherit `FunctionBaseAI`, so it declares its own spec (no `max_tokens`, which embeddings do not
+    /// use; no `model`, which is a required positional argument for `aiEmbed`).
     static AIParamSpecs embeddingParams()
     {
         return {
             {"credentials", AIParamKind::String, std::nullopt},
-            {"model", AIParamKind::String, std::nullopt, /*inherit_from_collection=*/ true},
             {"dimensions", AIParamKind::UInt, Field(UInt64(0))},
         };
     }
@@ -126,7 +128,7 @@ public:
             getContext(), arguments, embeddingParams(), settings[Setting::ai_function_embedding_default_credentials]);
 
         UInt64 dimensions = params.getUInt("dimensions");
-        String model = params.getString("model");
+        String model(arguments[model_arg_index].column->getDataAt(0));
 
         auto provider = createAIProvider(
             params.collection.provider, params.collection.endpoint, params.collection.api_key, params.collection.api_version);
@@ -288,6 +290,7 @@ public:
 
 private:
     static constexpr size_t text_arg_index = 0;
+    static constexpr size_t model_arg_index = 1;
 
     ContextPtr context;
     ContextPtr getContext() const { return context; }
@@ -306,24 +309,29 @@ Within a single block of rows, inputs are grouped into batches of up to
 [`ai_function_embedding_max_batch_size`](/operations/settings/settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
-Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
-are taken from the `credentials` key of the optional parameter map, or from the
+Credentials (a named collection specifying the provider, endpoint, and optionally an API key)
+are taken from the `credentials` key of the parameter map, or from the
 `ai_function_embedding_default_credentials` setting when the map omits it. Note that `aiEmbed` uses a
-separate default-credentials setting from the text functions, since an embeddings endpoint and model
-differ from a chat one.
+separate default-credentials setting from the text functions, since an embeddings endpoint differs
+from a chat one.
+
+The `model` is a required positional argument (a constant `String`). Unlike the text functions,
+`aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
+that defines `model` is rejected rather than silently ignored.
 
 The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 )",
-        .syntax = "aiEmbed(text[, params])",
+        .syntax = "aiEmbed(text, model[, params])",
         .arguments
         = {{"text", "Text to embed.", {"String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"model", "Embedding model name.", {"const String"}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
-        = {{"Embed a single string (map parameter can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', map('credentials', 'ai_embedding_credentials'))", ""},
-           {"With explicit dimensions", "SELECT aiEmbed('Hello world', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
-           {"Embed a column of texts", "SELECT aiEmbed(title, map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
+        = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},
+           {"With explicit dimensions", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))", ""},
+           {"Embed a column of texts", "SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10", ""}},
         .introduced_in = {26, 6},
         .category = FunctionDocumentation::Category::AI});
 }
