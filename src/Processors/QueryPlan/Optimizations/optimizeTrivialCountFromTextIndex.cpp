@@ -171,20 +171,6 @@ bool guardsHold(const ReadFromMergeTree & reading)
 {
     auto context = reading.getContext();
 
-    /// A row policy filters rows the posting cardinalities do not reflect. `matchSubtree` also rejects it
-    /// as a non-text conjunct, but guard it explicitly like the planner trivial-count paths do.
-    if (auto storage_id = reading.getStorageID(); storage_id.hasDatabase())
-    {
-        auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-            return false;
-    }
-
-    if (const auto & mutations = reading.getMutationsSnapshot();
-        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
-        return false;
-
     /// Each parallel replica would independently sum all parts -> N-times overcount.
     if (reading.isParallelReadingFromReplicas())
         return false;
@@ -217,6 +203,23 @@ bool guardsHold(const ReadFromMergeTree & reading)
     for (const auto & useful : indexes->skip_indexes.useful_indices)
         if (!useful.index->isTextIndex())
             return false;
+
+    /// A row policy filters rows the posting cardinalities do not reflect. `matchSubtree` also rejects it
+    /// as a non-text conjunct, but guard it explicitly like the planner trivial-count paths do.
+    if (auto storage_id = reading.getStorageID(); storage_id.hasDatabase())
+    {
+        auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+            return false;
+    }
+
+    if (const auto & mutations = reading.getMutationsSnapshot();
+        mutations && (mutations->hasDataMutations() || mutations->hasPatchParts() || mutations->hasLightweightDeletedMask()))
+        return false;
+
+    if (reading.getStorageMetadata()->hasUniqueKey())
+        return false;
 
     return true;
 }
