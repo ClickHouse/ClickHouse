@@ -59,6 +59,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsString additional_result_filter;
+    extern const SettingsBool analyzer_compatibility_apply_final_to_all_joined_tables;
     extern const SettingsUInt64 max_bytes_to_read;
     extern const SettingsUInt64 max_bytes_to_read_leaf;
     extern const SettingsSeconds max_estimated_execution_time;
@@ -559,6 +560,8 @@ SelectQueryInfo buildSelectQueryInfo(const QueryTreeNodePtr & query_tree, const 
     select_query_info.query = queryNodeToSelectQuery(query_tree);
     select_query_info.query_tree = query_tree;
     select_query_info.planner_context = planner_context;
+    select_query_info.apply_query_level_final_if_no_modifiers
+        = planner_context->getQueryContext()->getSettingsRef()[Setting::analyzer_compatibility_apply_final_to_all_joined_tables];
     return select_query_info;
 }
 
