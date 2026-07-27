@@ -112,4 +112,58 @@ TEST(SilkFiberThrottling, ScopesSurviveMigration)
         EXPECT_EQ(future.wait(), 0);
 }
 
+/// A throttled fiber must suspend, not block: `Throttler::sleep` on a fiber
+/// has to release the carrier OS thread so other fibers can run on it.
+/// With 2x carrier oversubscription and every fiber sleeping S seconds,
+/// suspending sleeps all overlap (wall ~ S) while blocking sleeps serialize
+/// two fibers per carrier (wall >= 2*S). Silk's carrier count is per-CPU and
+/// not configurable, so oversubscription is the deterministic form available.
+TEST(SilkFiberThrottling, ThrottleSleepYieldsCarrier)
+{
+    constexpr UInt64 NS = 1'000'000'000;
+    constexpr size_t max_speed = 1000;   /// tokens per second; burst = 1 s worth
+    constexpr UInt64 sleep_ns = NS;      /// each fiber's forced throttle sleep
+
+    const size_t carriers_upper_bound = std::max<size_t>(1, std::thread::hardware_concurrency());
+    const size_t fiber_count = 2 * carriers_upper_bound;
+
+    struct Params
+    {
+        DB::SilkFiberJobHeader header;
+    };
+
+    auto fiber_main = +[](Params *) noexcept -> int
+    {
+        try
+        {
+            DB::ThreadStatus thread_status(DB::ThreadStatus::NoOSThreadTag{});
+            /// Fresh bucket holds `max_speed` tokens (1 s burst). Consuming
+            /// twice that in one call leaves it 1 s negative -> sleep of ~1 s.
+            DB::Throttler throttler(max_speed);
+            throttler.throttle(2 * max_speed, /*max_block_ns*/ 5 * NS);
+            return 0;
+        }
+        catch (...)
+        {
+            return 1;
+        }
+    };
+
+    Stopwatch watch;
+
+    std::vector<silk::FiberFuture> futures(fiber_count);
+    for (auto & future : futures)
+        ASSERT_EQ(DB::runSilkFiber(fiber_main, Params{}, 0, &future), 0);
+
+    for (auto & future : futures)
+        EXPECT_EQ(future.wait(), 0);
+
+    const UInt64 elapsed_ns = watch.elapsedNanoseconds();
+
+    /// The rate limit itself is still honored: nothing finished early.
+    EXPECT_GE(elapsed_ns, sleep_ns);
+    /// Suspending sleeps overlap; blocking sleeps would serialize to >= 2 s.
+    EXPECT_LT(elapsed_ns, sleep_ns + sleep_ns / 2);
+}
+
 #endif
