@@ -52,6 +52,7 @@ void serializeQueryPlanHeader(const Block & header, WriteBuffer & out)
 /// Sanity caps for hostile input; far above any real plan. Checked before allocation.
 static constexpr UInt64 MAX_QUERY_PLAN_HEADER_COLUMNS = 1'000'000;
 static constexpr UInt64 MAX_QUERY_PLAN_STRING_BYTES = 16ULL << 20;
+static constexpr UInt64 MAX_LEGACY_PLAN_CHILDREN = 1ULL << 20;
 
 Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 {
@@ -103,7 +104,16 @@ static UInt64 writerSerializationVersion(UInt64 requested_version)
     {
         UInt64 ceiling = global_context->getServerSettings()[ServerSetting::max_query_plan_serialization_version];
         if (ceiling != 0)
+        {
+            /// Lowering the default silently is the ceiling doing its job, but a query that named a
+            /// version has to hear that it did not get it.
+            if (requested_version != 0 && requested_version > ceiling)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Query plan serialization version {} was requested but this server is held at {} "
+                    "by `max_query_plan_serialization_version`", requested_version, ceiling);
+
             writer_version = std::min(writer_version, ceiling);
+        }
     }
 
     return writer_version;
@@ -266,7 +276,15 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         payload.finalize();
 
         /// The step may have emitted an older payload form and lowered the context value; the
-        /// outline must advertise the format of the bytes actually written.
+        /// outline must advertise the format of the bytes actually written. Lowering is the only
+        /// intended move: a format above the registered maximum was never classified, so nothing
+        /// would have told older readers whether they may prefix-read it.
+        const UInt64 registered_max = info ? info->max_step_format_version : 1;
+        if (ctx.step_format_version == 0 || ctx.step_format_version > registered_max)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Step {} wrote payload format {} but is registered up to {}",
+                outline_node.step_name, ctx.step_format_version, registered_max);
+
         outline_node.step_format_version = ctx.step_format_version;
         /// Stated rather than left to the reader to assume: a reader that knows less than this
         /// cannot prefix-read these bytes, whatever their format version suggests.
@@ -302,10 +320,15 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     serializeEnvelopeSets(registry, flags, outline, set_payloads, min_reader_plan_version);
 
     /// An honest writer never requires a reader newer than the version it writes: features are
-    /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate.
-    chassert(min_reader_plan_version <= flags.version);
+    /// gated on `ctx.version`, so a higher requirement here is a missing writer-side gate. Checked
+    /// in every build: sending the bytes anyway would make the receiver reject a plan this server
+    /// should not have written.
+    if (min_reader_plan_version > flags.version)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Query plan written at version {} declares that it needs a reader of version {}",
+            flags.version, min_reader_plan_version);
 
-    /// The payload sizes are known, so the envelope size the reader needs up front can be summed
+    /// The payload sizes are known, so the body size the reader needs up front can be summed
     /// without joining the payloads together.
     WriteBufferFromOwnString outline_bytes;
     writeQueryPlanOutline(outline, outline_bytes);
@@ -317,8 +340,9 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
     for (const auto & payload : set_payloads)
         body_size += payload.size();
 
-    /// The head carries the stream version, the "needed to read" version, the envelope size and
-    /// the outline; every payload then stays the chunk it was serialized into.
+    /// The head carries the stream version, the body layout, the body size and the "needed to
+    /// read" version, and is followed by the outline; every payload then stays the chunk it was
+    /// serialized into.
     SerializedChunks chunks;
     chunks.reserve(1 + payloads.size() + set_payloads.size());
 
@@ -373,23 +397,31 @@ static void skipPlanBody(ReadBuffer & in, UInt64 body_size)
 
 QueryPlanAndSets QueryPlan::deserializeEnvelope(
     ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
-    size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 envelope_size)
+    size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 body_size)
 {
-    const size_t envelope_start = in.count();
+    const size_t body_start = in.count();
 
-    auto outline = readQueryPlanOutline(in, max_type_complexity, envelope_size);
+    auto outline = readQueryPlanOutline(in, max_type_complexity, body_size);
 
-    size_t consumed = in.count() - envelope_start;
-    if (consumed > envelope_size)
+    size_t consumed = in.count() - body_start;
+    if (consumed > body_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan outline of {} bytes does not fit the envelope of {}", consumed, envelope_size);
+            "Query plan outline of {} bytes does not fit the body of {}", consumed, body_size);
+
+    /// Everything the outline can rule out is decided before any payload is read, and the body is
+    /// taken off the stream first: these are the mixed-version failures the outline exists to
+    /// report, so they should cost the query and not the connection.
+    auto skip_rest_of_body = [&] { skipPlanBody(in, body_size - (in.count() - body_start)); };
 
     /// One pass over the outline reports every problem at once (unknown steps, unsupported step
     /// versions, unknown settings) instead of failing on the first byte deep inside a payload.
     auto validation = validateQueryPlanOutline(outline, flags.version, min_reader_plan_version);
     if (!validation.ok())
+    {
+        skip_rest_of_body();
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
             "Query plan cannot be deserialized: {}", validation.describe());
+    }
 
     const size_t node_count = outline.nodes.size();
 
@@ -404,24 +436,33 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
     /// plan whose sizes do not add up is rejected without constructing anything. Subtracting from
     /// the budget keeps a hostile size from overflowing.
     {
-        UInt64 budget = envelope_size - consumed;
+        UInt64 budget = body_size - consumed;
         for (const auto & outline_node : outline.nodes)
         {
             if (outline_node.payload_size > budget)
+            {
+                skip_rest_of_body();
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Query plan payload of step '{}' extends past the envelope", outline_node.step_name);
+            }
             budget -= outline_node.payload_size;
         }
         for (const auto & set : outline.sets)
         {
             if (set.payload_size > budget)
+            {
+                skip_rest_of_body();
                 throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                     "Serialized set {}_{} extends past the envelope", set.hash.low64, set.hash.high64);
+            }
             budget -= set.payload_size;
         }
         if (budget != 0)
+        {
+            skip_rest_of_body();
             throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
                 "Query plan envelope has {} bytes that no frame accounts for", budget);
+        }
     }
 
     QueryPlanStepRegistry & step_registry = QueryPlanStepRegistry::instance();
@@ -515,12 +556,12 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(
     auto res = deserializeEnvelopeSets(
         std::move(plan), sets_registry, outline, in, flags, context, max_type_complexity);
 
-    /// The budget above proved the declared frames fill the envelope exactly; this proves the
+    /// The budget above proved the declared frames fill the body exactly; this proves the
     /// reader consumed exactly those frames and nothing else.
-    const size_t total_consumed = in.count() - envelope_start;
-    if (total_consumed != envelope_size)
+    const size_t total_consumed = in.count() - body_start;
+    if (total_consumed != body_size)
         throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
-            "Query plan envelope declared {} bytes but {} were read", envelope_size, total_consumed);
+            "Query plan body declared {} bytes but {} were read", body_size, total_consumed);
 
     return res;
 }
@@ -674,6 +715,12 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         {
             UInt64 num_children = 0;
             readVarUInt(num_children, in);
+            /// Without a cap the count alone would size the vector, so a few bytes could ask for an
+            /// arbitrary allocation. The legacy stream declares no size to measure against.
+            if (num_children > MAX_LEGACY_PLAN_CHILDREN)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Serialized query plan node declares {} children which exceeds the limit of {}",
+                    num_children, MAX_LEGACY_PLAN_CHILDREN);
             frame.children.resize(num_children);
         }
 

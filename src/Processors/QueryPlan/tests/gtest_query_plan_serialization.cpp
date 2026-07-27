@@ -529,18 +529,6 @@ TEST(QueryPlanSerialization, PayloadTailIsRejectedAtAKnownStepFormat)
     EXPECT_THROW(deserializePlan(serializePlan(plan)), Exception);
 }
 
-TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
-{
-    registerStepsOnce();
-
-    QueryPlan plan;
-    plan.addStep(std::make_unique<TestTailStep>(makeTestHeader(), /*declared_format_version=*/5));
-
-    /// The same unread bytes are an ignorable append once the payload declares a format this
-    /// build does not know: that is what keeps a rolling upgrade working.
-    EXPECT_NO_THROW(deserializePlan(serializePlan(plan)));
-}
-
 TEST(QueryPlanSerialization, ConcurrentSendersGetTheWholePlan)
 {
     registerStepsOnce();
@@ -625,6 +613,58 @@ std::string writeOutlineToString(const PlanOutline & outline)
     return out.str();
 }
 
+/// A whole stream built by hand, for the streams a writer of this build cannot produce.
+std::string writeEnvelopeToString(const PlanOutline & outline, const std::vector<std::string> & payloads)
+{
+    const std::string outline_bytes = writeOutlineToString(outline);
+
+    size_t body_size = outline_bytes.size();
+    for (const auto & payload : payloads)
+        body_size += payload.size();
+
+    UInt64 min_reader = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+    for (const auto & node : outline.nodes)
+        min_reader = std::max(min_reader, node.min_reader_plan_version);
+
+    WriteBufferFromOwnString out;
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), out);
+    writeVarUInt(UInt64(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE), out);
+    writeVarUInt(body_size, out);
+    writeVarUInt(min_reader, out);
+    out.write(outline_bytes.data(), outline_bytes.size());
+    for (const auto & payload : payloads)
+        out.write(payload.data(), payload.size());
+    out.finalize();
+    return out.str();
+}
+
+}
+
+TEST(QueryPlanSerialization, PayloadTailIsSkippedForANewerStepFormat)
+{
+    registerStepsOnce();
+
+    /// A payload from a future writer: its format is above everything this build knows, and the
+    /// writer says the part this build understands still comes first, so the bytes the step's
+    /// deserializer leaves behind are an ignorable append. That is what keeps a rolling upgrade
+    /// working. No writer of this build can produce such a stream, hence the hand-built one.
+    WriteBufferFromOwnString payload;
+    writeVarUInt(UInt64(12345), payload);
+    payload.finalize();
+
+    PlanOutline outline;
+    PlanOutline::Node node;
+    node.child_count = 0;
+    node.step_name = "TestTailStep";
+    node.step_format_version = 5;
+    node.payload_prefix_readable_from = 1;
+    node.min_reader_plan_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE;
+    node.has_output_header = true;
+    node.header = makeTestHeader();
+    node.payload_size = payload.str().size();
+    outline.nodes.push_back(std::move(node));
+
+    EXPECT_NO_THROW(deserializePlan(writeEnvelopeToString(outline, {payload.str()})));
 }
 
 TEST(QueryPlanOutline, WriteReadRoundTrip)
@@ -692,6 +732,7 @@ TEST(QueryPlanOutline, ValidationChecksStepVersionAgainstRegistryInfo)
     auto outline = makeTestOutline();
     outline.nodes[1].step_name = "TestGatedStep";
     outline.nodes[1].step_format_version = 2;
+    outline.nodes[1].payload_prefix_readable_from = 2;
     outline.nodes[1].min_reader_plan_version = 5;
 
     /// Format version 2 of this step requires plan version 5.
@@ -796,7 +837,9 @@ TEST(QueryPlanSerialization, RejectedPlansAreStillTakenOffTheStream)
     {
         std::string unknown_kind = plan_bytes;
         unknown_kind[1] = static_cast<char>(DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE + 1);
-        ReadBufferFromString in(unknown_kind + sentinel);
+        /// `ReadBufferFromString` does not own its bytes, so the stream has to outlive the reader.
+        const std::string stream = unknown_kind + sentinel;
+        ReadBufferFromString in(stream);
         EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
 
         String rest;
@@ -808,12 +851,27 @@ TEST(QueryPlanSerialization, RejectedPlansAreStillTakenOffTheStream)
     {
         std::string too_new = plan_bytes;
         too_new[3] = static_cast<char>(DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1);
-        ReadBufferFromString in(too_new + sentinel);
+        const std::string stream = too_new + sentinel;
+        ReadBufferFromString in(stream);
         EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
 
         String rest;
         readStringUntilEOF(rest, in);
         EXPECT_EQ(rest, sentinel) << "a too-new plan left bytes on the stream";
+    }
+
+    /// A plan refused after its outline was read: the payloads behind it are still plan bytes.
+    {
+        auto outline = makeTestOutline();
+        outline.nodes[0].step_name = "NoSuchStep";
+        const std::string stream = writeEnvelopeToString(outline, {}) + sentinel;
+
+        ReadBufferFromString in(stream);
+        EXPECT_THROW(QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0), Exception);
+
+        String rest;
+        readStringUntilEOF(rest, in);
+        EXPECT_EQ(rest, sentinel) << "a plan rejected on its outline left bytes on the stream";
     }
 }
 
@@ -937,6 +995,37 @@ TEST(QueryPlanOutline, ShapeRestoresChildrenLeftToRight)
     ASSERT_EQ(shape.children[2].size(), 2u);
     EXPECT_EQ(shape.children[2][0], 0u);
     EXPECT_EQ(shape.children[2][1], 1u);
+}
+
+TEST(QueryPlanOutline, ReservedFlagBitsAreRejected)
+{
+    registerStepsOnce();
+
+    /// The spare bits of both flag bytes mean nothing yet. A writer that sets one is asking for
+    /// behavior this reader does not have, so it cannot pretend the bit was not there.
+    {
+        auto bytes = writeOutlineToString(makeTestOutline());
+
+        /// Everything before the first node's flag byte is a one-byte varint except the step name:
+        /// frame size, node count, child count, name length, name, format version, prefix base and
+        /// reader version.
+        const std::string first_step_name = "TestSource";
+        const size_t flags_at = 6 + first_step_name.size() + 1;
+        ASSERT_EQ(bytes[flags_at], char(1)) << "the node flag byte is not where this test expects it";
+        bytes[flags_at] = char(1 | 2);
+
+        ReadBufferFromString in(bytes);
+        EXPECT_THROW(readQueryPlanOutline(in, /*max_type_complexity=*/0, /*max_frame_bytes=*/bytes.size()), Exception);
+    }
+
+    {
+        auto outline = makeTestOutline();
+        outline.nodes[0].settings.push_back({.name = "future_setting", .flags = 0x80, .value = ""});
+        auto bytes = writeOutlineToString(outline);
+
+        ReadBufferFromString in(bytes);
+        EXPECT_THROW(readQueryPlanOutline(in, /*max_type_complexity=*/0, /*max_frame_bytes=*/bytes.size()), Exception);
+    }
 }
 
 TEST(QueryPlanOutline, TruncatedOutlineIsRejected)

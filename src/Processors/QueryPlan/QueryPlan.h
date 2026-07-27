@@ -227,7 +227,7 @@ private:
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags, size_t max_type_complexity);
     static QueryPlanAndSets deserializeEnvelope(
         ReadBuffer & in, const ContextPtr & context, const SerializationFlags & flags,
-        size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 envelope_size);
+        size_t max_type_complexity, UInt64 min_reader_plan_version, UInt64 body_size);
 
     static void serializeSets(SerializedSetsRegistry & registry, WriteBuffer & out, const QueryPlan::SerializationFlags & flags);
     static QueryPlanAndSets deserializeSets(QueryPlan plan, DeserializedSetsRegistry & registry, ReadBuffer & in, const SerializationFlags & flags, const ContextPtr & context, size_t max_type_complexity);

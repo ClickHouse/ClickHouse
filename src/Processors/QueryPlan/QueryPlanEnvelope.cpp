@@ -118,6 +118,11 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
 
         UInt8 node_flags = 0;
         readIntBinary(node_flags, in);
+        /// Only bit 0 is assigned. Ignorable additions go in `extension_bytes`, so a bit set here
+        /// means something this reader would have to act on and cannot.
+        if (node_flags & ~UInt8(1))
+            throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                "Query plan node carries unknown flags {:#x}", UInt32(node_flags));
         node.has_output_header = node_flags & 1;
 
         readStringBinary(node.step_description, in, MAX_OUTLINE_FIELD_BYTES);
@@ -131,6 +136,9 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
             PlanOutline::SettingEntry entry;
             readStringBinary(entry.name, in, MAX_OUTLINE_FIELD_BYTES);
             readIntBinary(entry.flags, in);
+            if (entry.flags & ~PlanOutline::SettingEntry::FLAG_IGNORABLE)
+                throw Exception(ErrorCodes::CANNOT_PARSE_QUERY_PLAN,
+                    "Query plan setting '{}' carries unknown flags {:#x}", entry.name, UInt32(entry.flags));
             entry.value = readCappedSizedBytes(in, MAX_OUTLINE_FIELD_BYTES, "setting value bytes");
             node.settings.push_back(std::move(entry));
         }
@@ -296,15 +304,32 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
         /// A payload newer than this binary knows is only readable when the writer says the part we
         /// understand still comes first. Restructured payloads say otherwise and are refused here,
         /// before any payload byte is decoded.
+        if (node.payload_prefix_readable_from == 0 || node.payload_prefix_readable_from > node.step_format_version)
+            result.issues.push_back(fmt::format(
+                "step '{}' (node #{}) says its payload format {} is readable from format {}, which is "
+                "not a format it could have",
+                node.step_name, i, node.step_format_version, node.payload_prefix_readable_from));
+
         if (const auto * info = registry.getStepSerializationInfo(node.step_name))
         {
-            if (node.step_format_version > info->max_step_format_version
-                && node.payload_prefix_readable_from > info->max_step_format_version)
+            if (node.step_format_version > info->max_step_format_version)
+            {
+                if (node.payload_prefix_readable_from > info->max_step_format_version)
+                    result.issues.push_back(fmt::format(
+                        "step '{}' (node #{}) has payload format {} readable only by format {} and up, "
+                        "this server knows up to {}",
+                        node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
+                        info->max_step_format_version));
+            }
+            /// For a format this server knows, the writer's claim is checkable against the step's
+            /// own history: a writer understating it would have old readers accept bytes they must
+            /// not read positionally.
+            else if (node.payload_prefix_readable_from != info->prefixReadableFrom(node.step_format_version))
                 result.issues.push_back(fmt::format(
-                    "step '{}' (node #{}) has payload format {} readable only by format {} and up, "
-                    "this server knows up to {}",
+                    "step '{}' (node #{}) says payload format {} is readable from format {} but this "
+                    "server's history of that step says {}",
                     node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
-                    info->max_step_format_version));
+                    info->prefixReadableFrom(node.step_format_version)));
         }
 
         /// Writer-honesty cross-checks: a node's declared "needed to read" version must cover the

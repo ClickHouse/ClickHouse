@@ -170,8 +170,16 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
     }
 }
 
-/// The "needed to read" floor of a complete nested plan body: v4+ bodies declare it in their
-/// second head varint; a legacy body is readable exactly by readers of its leading version.
+/// The oldest plan version whose readers know a body layout.
+static UInt64 planVersionIntroducingFormatKind(UInt64 format_kind)
+{
+    if (format_kind == DBMS_QUERY_PLAN_FORMAT_KIND_OUTLINE)
+        return DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FORMAT_KIND_OUTLINE;
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Nested query plan has unknown body layout {}", format_kind);
+}
+
+/// The "needed to read" floor of a complete nested plan body: a v4+ body declares it in its head;
+/// a legacy body is readable exactly by readers of its leading version.
 static UInt64 nestedPlanBodyMinReader(const String & body)
 {
     ReadBufferFromMemory in(body.data(), body.size());
@@ -188,7 +196,10 @@ static UInt64 nestedPlanBodyMinReader(const String & body)
 
     UInt64 min_reader = 0;
     readVarUInt(min_reader, in);
-    return min_reader;
+
+    /// A reader decides at the outer head, without looking inside the set payloads, so the floor
+    /// of the nested body layout has to be folded in here.
+    return std::max(min_reader, planVersionIntroducingFormatKind(format_kind));
 }
 
 void serializeEnvelopeSets(
