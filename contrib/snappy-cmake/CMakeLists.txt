@@ -6,17 +6,33 @@ else ()
     set (SNAPPY_IS_BIG_ENDIAN 0)
 endif()
 
-set (HAVE_BYTESWAP_H 1)
-set (HAVE_SYS_MMAN_H 1)
-set (HAVE_SYS_RESOURCE_H 1)
-set (HAVE_SYS_TIME_H 1)
-set (HAVE_SYS_UIO_H 1)
-set (HAVE_UNISTD_H 1)
+if (OS_WINDOWS)
+    # None of these exist in mingw-w64. Snappy only uses them in its benchmark/test support
+    # code (`mmap`-backed test inputs, `sysconf` for the page size), so the library itself
+    # builds fine without them, but the headers are included unconditionally when the
+    # corresponding `HAVE_*` is set.
+    set (HAVE_BYTESWAP_H 0)
+    set (HAVE_SYS_MMAN_H 0)
+    set (HAVE_SYS_RESOURCE_H 0)
+    set (HAVE_SYS_TIME_H 0)
+    set (HAVE_SYS_UIO_H 0)
+    set (HAVE_UNISTD_H 0)
+    set (HAVE_FUNC_MMAP 0)
+    set (HAVE_FUNC_SYSCONF 0)
+    set (HAVE_WINDOWS_H 1)
+else ()
+    set (HAVE_BYTESWAP_H 1)
+    set (HAVE_SYS_MMAN_H 1)
+    set (HAVE_SYS_RESOURCE_H 1)
+    set (HAVE_SYS_TIME_H 1)
+    set (HAVE_SYS_UIO_H 1)
+    set (HAVE_UNISTD_H 1)
+    set (HAVE_FUNC_MMAP 1)
+    set (HAVE_FUNC_SYSCONF 1)
+endif ()
 
 set (HAVE_BUILTIN_EXPECT 1)
 set (HAVE_BUILTIN_CTZ 1)
-set (HAVE_FUNC_MMAP 1)
-set (HAVE_FUNC_SYSCONF 1)
 
 if (ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2)
     set (SNAPPY_HAVE_SSSE3 1)
@@ -30,7 +46,13 @@ configure_file(
   "${SOURCE_DIR}/cmake/config.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/config.h")
 
-set(HAVE_SYS_UIO_H_01 1)
+if (OS_WINDOWS)
+    # Selects whether `snappy-stubs-public.h` declares `struct iovec` itself (there is no
+    # `sys/uio.h` to pull it in from).
+    set(HAVE_SYS_UIO_H_01 0)
+else ()
+    set(HAVE_SYS_UIO_H_01 1)
+endif ()
 
 configure_file(
   "${SOURCE_DIR}/snappy-stubs-public.h.in"

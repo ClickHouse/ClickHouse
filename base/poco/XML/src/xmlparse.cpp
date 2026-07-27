@@ -140,9 +140,9 @@
 #  include "random_getrandom.h"
 #endif /* defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM) */
 
-#if defined(_WIN32)
+#if defined(_WIN32) && ! defined(EXPAT_POCO)
 #  include "random_rand_s.h"
-#endif /* defined(_WIN32) */
+#endif /* defined(_WIN32) && ! defined(EXPAT_POCO) */
 
 #if ! defined(HAVE_GETRANDOM) && ! defined(HAVE_SYSCALL_GETRANDOM)             \
     && ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)            \

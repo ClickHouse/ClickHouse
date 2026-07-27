@@ -20,7 +20,10 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
     else if (n <= 1)
         return n;
 
-    return size_t(1) << (64 - __builtin_clzl(n - 1));
+    /// `clzll`, not `clzl`, to match the hardcoded 64 and the 64-bit `size_t` argument:
+    /// `unsigned long` is only 64 bits wide on LP64 platforms, and on LLP64 (Windows) the
+    /// argument would be truncated to 32 bits.
+    return size_t(1) << (64 - __builtin_clzll(n - 1));
 }
 
 

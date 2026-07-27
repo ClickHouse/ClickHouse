@@ -496,6 +496,14 @@ class JobConfigs:
             provides=[],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
+        Job.ParamSet(
+            # No artifact: the Windows port does not link a binary yet, this builds the
+            # `clickhouse-windows-ported` target. See
+            # docs/en/development/build-cross-windows.md.
+            parameter=BuildTypes.AMD_WINDOWS,
+            provides=[],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
     )
     install_check_jobs = Job.Config(
         name=JobNames.INSTALL_TEST,

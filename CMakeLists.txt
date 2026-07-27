@@ -560,6 +560,8 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
+elseif (OS_WINDOWS)
+    include(cmake/windows/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -831,4 +833,11 @@ if (NATIVE_BUILD_TARGETS
         COMMAND_ECHO STDOUT
         COMMAND_ERROR_IS_FATAL ANY
     )
+endif ()
+
+if (OS_WINDOWS)
+    # Defines the `clickhouse-windows-ported` aggregate target that CI builds while the
+    # Windows port is in progress. Must come after every `add_subdirectory` so that it can
+    # see the targets.
+    include (cmake/windows/ported_targets.cmake)
 endif ()

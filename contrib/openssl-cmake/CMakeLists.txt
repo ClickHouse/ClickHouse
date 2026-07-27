@@ -39,6 +39,11 @@ if(ARCH_AMD64)
     if(OS_DARWIN)
         set(PLATFORM_DIRECTORY darwin_x86_64)
         add_definitions(-DL_ENDIAN)
+    elseif(OS_WINDOWS)
+        # Built with 'no-asm', like the other non-Linux platforms: the checked-in .s files
+        # under asm/ are ELF and would need to be regenerated for COFF.
+        set(PLATFORM_DIRECTORY windows_x86_64)
+        add_definitions(-DL_ENDIAN)
     else()
         set(PLATFORM_DIRECTORY linux_x86_64)
         add_definitions(-DAES_ASM -DBSAES_ASM -DCMLL_ASM -DECP_NISTZ256_ASM -DGHASH_ASM -DKECCAK1600_ASM -DMD5_ASM -DOPENSSL_BN_ASM_GF2m -DOPENSSL_BN_ASM_MONT -DOPENSSL_BN_ASM_MONT5 -DOPENSSL_CPUID_OBJ -DOPENSSL_IA32_SSE2 -DPOLY1305_ASM -DRC4_ASM -DSHA1_ASM -DSHA256_ASM -DSHA512_ASM -DVPAES_ASM -DWHIRLPOOL_ASM -DX25519_ASM -DL_ENDIAN)
@@ -1086,7 +1091,7 @@ set(CRYPTO_SRC ${CRYPTO_SRC}
 
 
 if(ARCH_AMD64)
-    if (OS_DARWIN)
+    if (OS_DARWIN OR OS_WINDOWS)
         set(CRYPTO_SRC ${CRYPTO_SRC}
             ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_cbc.c
             ${OPENSSL_SOURCE_DIR}/crypto/aes/aes_core.c

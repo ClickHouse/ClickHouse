@@ -44,9 +44,12 @@ if (NOT LINKER_NAME)
         ch_find_program (LLD_PATH NAMES "ld64.lld-${COMPILER_VERSION_MAJOR}" "ld64.lld" "ld")
         # Duplicate libraries passed to the linker is not a problem.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no_warn_duplicate_libraries")
+    elseif (OS_WINDOWS)
+        # `ld.lld`, not `lld-link`: the mingw driver drives LLD through its GNU interface.
+        ch_find_program (LLD_PATH NAMES "ld.lld-${COMPILER_VERSION_MAJOR}" "ld.lld")
     endif ()
     if (LLD_PATH)
-        if (OS_LINUX OR OS_DARWIN)
+        if (OS_LINUX OR OS_DARWIN OR OS_WINDOWS)
             # Clang driver simply allows full linker path.
             set (LINKER_NAME ${LLD_PATH})
         endif ()

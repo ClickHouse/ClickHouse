@@ -37,12 +37,19 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         clang-tidy-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         bolt-${LLVM_VERSION} \
+        mingw-w64 \
     && ln -sf /usr/bin/llvm-profdata-${LLVM_VERSION} /usr/bin/llvm-profdata \
     && ln -sf /usr/bin/llvm-cov-${LLVM_VERSION} /usr/bin/llvm-cov \
     && ln -sf /usr/bin/llvm-bolt-${LLVM_VERSION} /usr/bin/llvm-bolt \
     && ln -sf /usr/bin/merge-fdata-${LLVM_VERSION} /usr/bin/merge-fdata \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
+
+# `mingw-w64` above installs the Win32 API headers and the CRT import libraries under
+# /usr/x86_64-w64-mingw32, which is where cmake/windows/toolchain-x86_64.cmake looks for them.
+# Unlike the macOS SDK below it needs no unpacking - it is a distribution package. Only the
+# headers and import libraries are used: the compiler, linker and C++ runtime all come from our
+# own clang/lld and contrib/llvm-project.
 
 # Optional PGO+BOLT optimized toolchain override
 ARG TOOLCHAIN_COMMIT=9ba77fe643bd2b46b341a07320cf9b95a3e87384

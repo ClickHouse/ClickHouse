@@ -17,7 +17,9 @@
 #include "Poco/DirectoryIterator.h"
 
 
-#if   defined(POCO_OS_FAMILY_UNIX)
+#if   defined(POCO_OS_FAMILY_WINDOWS)
+#include "File_WIN32U.cpp"
+#elif defined(POCO_OS_FAMILY_UNIX)
 #include "File_UNIX.cpp"
 #endif
 #include "Poco/Thread.h"

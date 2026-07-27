@@ -114,6 +114,12 @@ elseif (OS_FREEBSD)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/freebsd")
 elseif (OS_SUNOS)
     target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/solaris")
+elseif (OS_WINDOWS)
+    target_include_directories(_c-ares SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/c-ares-cmake/windows")
+    # `iphlpapi` provides `GetAdaptersAddresses`/`GetNetworkParams`, from which c-ares reads
+    # the configured DNS servers and the search domain list - the job `/etc/resolv.conf` does
+    # elsewhere. `ws2_32` is Winsock.
+    target_link_libraries(_c-ares PRIVATE iphlpapi ws2_32)
 endif()
 
 add_library(ch_contrib::c-ares ALIAS _c-ares)
