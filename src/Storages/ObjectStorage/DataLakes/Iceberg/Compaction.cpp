@@ -95,15 +95,15 @@ struct Plan
     std::vector<PartitionPlan> partitions;
     IcebergHistory history;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_to_first_snapshot;
-    /// Original manifest-list entry lineage per manifest path: `added_snapshot_id` and
-    /// `sequence_number` of the snapshot that actually added the manifest. This is taken from
-    /// the source manifest-list entries rather than derived from retained history order,
-    /// because the adding snapshot may already be expired from table metadata while later
-    /// snapshots still carry the manifest forward.
+    /// Original manifest-list entry lineage per manifest path: `added_snapshot_id` of the
+    /// snapshot that actually added the manifest. This is taken from the source manifest-list
+    /// entries rather than derived from retained history order, because the adding snapshot
+    /// may already be expired from table metadata while later snapshots still carry the
+    /// manifest forward. Sequence numbers are not preserved here: the rewrite renumbers the
+    /// history, so they are remapped onto the new numbering when the manifests are rewritten.
     struct ManifestFileLineage
     {
         Int64 added_snapshot_id = 0;
-        Int64 added_sequence_number = 0;
     };
     std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestFileLineage> manifest_file_lineage;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
@@ -237,8 +237,7 @@ static Plan getPlan(
             if (!plan.manifest_file_to_first_snapshot.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_to_first_snapshot[manifest_file.manifest_file_path] = snapshot.snapshot_id;
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
-                plan.manifest_file_lineage[manifest_file.manifest_file_path]
-                    = {manifest_file.added_snapshot_id, manifest_file.added_sequence_number};
+                plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id));
 
@@ -1130,12 +1129,30 @@ static void writeMetadataFiles(
             /// snapshot referencing the manifest) would wrongly re-attribute it.
             const auto manifest_lineage = plan.manifest_file_lineage[manifest_entry->path];
 
+            /// The rewritten history is renumbered by generateNextMetadata (sequence numbers
+            /// restart from 1), so the source sequence number must be remapped onto the new
+            /// numbering rather than copied verbatim: a stale higher value would make the
+            /// compacted files sort as *newer* than deletes committed after OPTIMIZE, and
+            /// those deletes would silently stop applying. Snapshot ids are preserved by the
+            /// rewrite, so the adding snapshot's new sequence number is used when that
+            /// snapshot is retained; when it has been expired, fall back to the first
+            /// retained snapshot referencing the manifest -- the earliest point in the
+            /// rewritten history where the manifest exists.
+            Int64 remapped_sequence_number = 0;
+            {
+                Poco::JSON::Object::Ptr sequence_source = snapshot;
+                if (auto it = snapshot_id_to_snapshot.find(manifest_lineage.added_snapshot_id);
+                    it != snapshot_id_to_snapshot.end() && it->second)
+                    sequence_source = it->second;
+                if (sequence_source->has(Iceberg::f_metadata_sequence_number))
+                    remapped_sequence_number = sequence_source->getValue<Int64>(Iceberg::f_metadata_sequence_number);
+            }
+
             /// Record the manifest's actual content counts and lineage for its manifest-list
-            /// entries. The files keep their original data sequence numbers, so
-            /// min_sequence_number is the manifest's original sequence number, and
-            /// added_snapshot_id / added_sequence_number preserve which snapshot added it, so
-            /// manifest lists of later snapshots that carry this manifest forward do not claim
-            /// they added it.
+            /// entries. added_snapshot_id preserves which snapshot added the manifest, so
+            /// manifest lists of later snapshots that carry it forward do not claim they added
+            /// it; the sequence numbers use the remapped value, consistent with the entries
+            /// written into the regenerated manifest below.
             {
                 Int64 manifest_rows = 0;
                 for (const auto rows : file_row_counts)
@@ -1143,9 +1160,9 @@ static void writeMetadataFiles(
                 ManifestListEntryCounts counts;
                 counts.files_count = static_cast<Int64>(data_files_vec.size());
                 counts.rows_count = manifest_rows;
-                counts.min_sequence_number = manifest_lineage.added_sequence_number;
+                counts.min_sequence_number = remapped_sequence_number;
                 counts.added_snapshot_id = manifest_lineage.added_snapshot_id;
-                counts.added_sequence_number = manifest_lineage.added_sequence_number;
+                counts.added_sequence_number = remapped_sequence_number;
                 manifest_file_counts[manifest_entry->patched_path] = counts;
             }
             generateManifestFile(
@@ -1164,10 +1181,10 @@ static void writeMetadataFiles(
                 partition_spec_id,
                 *buffer_manifest_entry,
                 Iceberg::FileContentType::DATA,
-                /// Stamp the rewritten entries with the manifest's original lineage instead of
-                /// the first retained snapshot's, keeping the manifest file consistent with
-                /// the manifest-list entries written above.
-                /* user_defined_sequence_number */ manifest_lineage.added_sequence_number,
+                /// Stamp the rewritten entries with the manifest's original adding snapshot and
+                /// the remapped sequence number, keeping the manifest file consistent with the
+                /// manifest-list entries written above and with the renumbered history.
+                /* user_defined_sequence_number */ remapped_sequence_number,
                 /* user_defined_snapshot_id */ manifest_lineage.added_snapshot_id);
 
             buffer_manifest_entry->finalize();
