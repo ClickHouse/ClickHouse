@@ -6,6 +6,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/Transforms/RemovingSparseTransform.h>
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -102,6 +103,8 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
+    extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 min_insert_block_size_rows_for_materialized_views;
@@ -1449,6 +1452,17 @@ Chain InsertDependenciesBuilder::createPreSink(StorageIDMaybeEmpty view_id) cons
     result.addSink(std::make_shared<ConvertingTransform>(input_headers.at(view_id), std::make_shared<ExpressionActions>(std::move(merged_dag))));
 
     inner_metadata->check(result.getOutputHeader().getColumnsWithTypeAndName());
+
+    /// Shrink over-allocated columns produced by materialization (e.g. a String materialized into a
+    /// JSON column over-allocates its buffers) to fit, right after they are built and before the sink,
+    /// to reduce peak memory usage on INSERT.
+    const auto & insert_settings = insert_context->getSettingsRef();
+    const double shrink_min_waste_ratio = static_cast<double>(insert_settings[Setting::shrink_over_allocated_columns_min_waste_ratio]);
+    if (shrink_min_waste_ratio > 1.0)
+        result.addSink(std::make_shared<ShrinkColumnsTransform>(
+            result.getOutputSharedHeader(),
+            shrink_min_waste_ratio,
+            insert_settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     return result;
 }
