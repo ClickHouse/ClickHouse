@@ -233,6 +233,19 @@ Create a data source for the table populated by your Vector pipeline. ClickStack
 
 For the Nginx example in this guide, select `time_local` as the timestamp column and `logs.nginx_logs` as the source table.
 
+The form pre-populates expressions for the default OpenTelemetry schema. Replace them with expressions that match the Nginx table:
+
+| Setting | Value |
+|---|---|
+| **Service Name Expression** | `'nginx'` |
+| **Log Level Expression** | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')` |
+| **Log Attributes Expression** | `map('http.remote_addr', remote_addr, 'http.status_code', toString(status), 'http.request', request)` |
+| **Resource Attributes Expression** | `map('service.name', 'nginx')` |
+| **Displayed Timestamp Column** | `time_local` |
+| **Trace ID Expression** | `''` |
+| **Span ID Expression** | `''` |
+| **Implicit Column Expression** | `request` |
+
 Set **Default SELECT** to:
 
 ```sql
