@@ -11,6 +11,8 @@
 set automatic_parallel_replicas_mode=0, enable_parallel_replicas=0;
 set parallel_replicas_local_plan=1;
 
+SET enable_analyzer = 1;
+
 -- Keep the WHERE in a `FilterStep` so the AND chain split is exercised, and make sure nothing else prunes the granules.
 SET optimize_move_to_prewhere = 0;
 SET query_plan_optimize_prewhere = 0;
