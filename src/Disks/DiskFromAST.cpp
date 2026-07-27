@@ -1,10 +1,12 @@
+#include <Disks/DiskBackup.h>
 #include <Disks/DiskFromAST.h>
+#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/getDiskConfigurationFromAST.h>
+#include <Disks/DiskSelector.h>
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Disks/getDiskConfigurationFromAST.h>
-#include <Disks/DiskSelector.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +19,7 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
+#include <memory>
 
 namespace DB
 {
@@ -125,7 +128,7 @@ static std::string getOrCreateCustomDisk(
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
 
-    if (!attach && !disk->isRemote() && disk->getName() != "backup")
+    if (!attach && !std::dynamic_pointer_cast<DiskObjectStorage>(disk) && !std::dynamic_pointer_cast<DiskBackup>(disk))
     {
         static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
         auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
