@@ -1,5 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
+#include <algorithm>
 #include <Databases/DataLake/ICatalog.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -74,23 +75,45 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
     /// receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects the user
     /// `field_id` settings at write time in that case. The format settings are frozen here at table
     /// definition time, so accepting these settings would produce a table whose every `INSERT`
-    /// fails — reject the definition up front instead. The check runs only when the definition is
-    /// freshly supplied by the user: a `CREATE` query, or a full-definition
-    /// `ATTACH TABLE t (...) ENGINE = ...` query, which introduces a new definition just like
-    /// `CREATE` does. Replaying a definition that was already accepted once — server startup
-    /// (`FORCE_ATTACH` / `FORCE_RESTORE`), replicated or `ON CLUSTER` DDL replay and `RESTORE`
-    /// from backup (`SECONDARY_CREATE`), a short `ATTACH TABLE t`, the tables attached by
-    /// `ATTACH DATABASE` (`attach_short_syntax`) — is exempt, so existing tables always load;
-    /// the write-time guard in `ParquetBlockOutputFormat` still protects such legacy tables.
-    const bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
-        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-    if (fresh_user_definition && configuration->isIcebergConfiguration() && format_settings
+    /// fails.
+    if (configuration->isIcebergConfiguration() && format_settings
         && (!format_settings->parquet.column_field_ids.empty() || format_settings->parquet.auto_assign_field_ids))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
-            "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
-            "column-id mapping, so every write to such a table would fail");
+    {
+        /// `format_settings` above also carries the ambient server/profile defaults, not only what
+        /// the definition says. Only settings written in the definition itself express an intent to
+        /// give this table its own `field_id`s; the ambient ones would otherwise silently make every
+        /// existing Iceberg table unwritable for a user whose profile enables them.
+        const bool set_in_definition = args.storage_def->settings
+            && std::ranges::any_of(
+                   args.storage_def->settings->changes,
+                   [](const auto & change)
+                   {
+                       return change.name == "output_format_parquet_column_field_ids"
+                           || change.name == "output_format_parquet_auto_assign_field_ids";
+                   });
+
+        if (!set_in_definition)
+        {
+            /// Ambient defaults are ignored for Iceberg engines: the table metadata wins.
+            format_settings->parquet.column_field_ids.clear();
+            format_settings->parquet.auto_assign_field_ids = false;
+        }
+        /// Reject the definition up front when the settings are freshly supplied by the user: a
+        /// `CREATE` query, or a full-definition `ATTACH TABLE t (...) ENGINE = ...` query, which
+        /// introduces a new definition just like `CREATE` does. Replaying a definition that was
+        /// already accepted once — server startup (`FORCE_ATTACH` / `FORCE_RESTORE`), replicated or
+        /// `ON CLUSTER` DDL replay and `RESTORE` from backup (`SECONDARY_CREATE`), a short
+        /// `ATTACH TABLE t`, the tables attached by `ATTACH DATABASE` (`attach_short_syntax`) — is
+        /// exempt, so existing tables always load; the write-time guard in
+        /// `ParquetBlockOutputFormat` still protects such legacy tables.
+        else if (args.mode == LoadingStrictnessLevel::CREATE
+                 || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
+                "cannot be used in the definition of an Iceberg table: the table metadata provides its own "
+                "column-id mapping, so every write to such a table would fail");
+    }
 
     ASTPtr partition_by;
     if (args.storage_def->partition_by)

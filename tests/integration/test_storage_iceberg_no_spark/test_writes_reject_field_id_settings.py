@@ -120,6 +120,34 @@ def test_writes_reject_field_id_settings(
     assert "column-id mapping" in error
     assert instance.query(f"EXISTS TABLE {explicit_table}") == "0\n"
 
+    # The same settings coming from the session (or a profile) rather than from
+    # the table definition are ignored for Iceberg engines: the table metadata
+    # is the source of truth, and rejecting them would make every existing
+    # Iceberg table unusable for such a user.
+    ambient_table = make_table_name("ambient")
+    ambient_settings = {
+        "output_format_parquet_auto_assign_field_ids": 1,
+        "output_format_parquet_column_field_ids": "{'x': '1'}",
+    }
+    create_iceberg_table(
+        storage_type,
+        instance,
+        ambient_table,
+        started_cluster_iceberg_no_spark,
+        "(x Int32)",
+        format_version,
+        settings=ambient_settings,
+    )
+    instance.query(
+        f"INSERT INTO {ambient_table} VALUES (1);", settings=ambient_settings
+    )
+    assert (
+        instance.query(
+            f"SELECT * FROM {ambient_table} ORDER BY ALL", settings=ambient_settings
+        )
+        == "1\n"
+    )
+
     # A legacy table created before the definition-time guard existed can still
     # carry these settings in its stored definition. Replaying such a stored
     # definition (short ATTACH, server startup, replica recovery, RESTORE) must
@@ -135,6 +163,20 @@ def test_writes_reject_field_id_settings(
         format_version,
     )
     instance.query(f"INSERT INTO {legacy_table} VALUES (1);")
+    metadata_path = f"/var/lib/clickhouse/metadata/default/{legacy_table}.sql"
+    # The stored definition can only be patched when the database disk is the
+    # local filesystem. With a remote `database_disk` (the `db disk` CI job) the
+    # metadata lives in object storage and there is no file to edit, so the rest
+    # of this scenario is not reproducible there.
+    metadata_is_local_file = (
+        instance.exec_in_container(
+            ["bash", "-c", f"test -f {metadata_path} && echo yes || echo no"]
+        ).strip()
+        == "yes"
+    )
+    if not metadata_is_local_file:
+        return
+
     instance.query(f"DETACH TABLE {legacy_table}")
     # Simulate the pre-guard table by injecting the setting into the stored
     # metadata, then replay it with a short ATTACH.
@@ -142,8 +184,9 @@ def test_writes_reject_field_id_settings(
         [
             "bash",
             "-c",
-            f"sed -i 's/^SETTINGS /SETTINGS output_format_parquet_auto_assign_field_ids = 1, /' "
-            f"/var/lib/clickhouse/metadata/default/{legacy_table}.sql",
+            f"sed -i --follow-symlinks "
+            f"'s/^SETTINGS /SETTINGS output_format_parquet_auto_assign_field_ids = 1, /' "
+            f"{metadata_path}",
         ]
     )
     instance.query(f"ATTACH TABLE {legacy_table}")
