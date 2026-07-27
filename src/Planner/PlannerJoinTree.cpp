@@ -1863,7 +1863,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (query_plan.isInitialized() && !select_query_options.build_logical_plan
                     && parallelReplicasEnabledForStorage(storage, query_context, settings))
                 {
-                    if (query_context->canUseParallelReplicasCustomKey() && query_context->getClientInfo().distributed_depth == 0)
+                    /// Parallel replicas over a `Merge` table or the `merge` table function are implemented only for the
+                    /// read-tasks mode, where every underlying table forms its own data stream in the reading coordinator.
+                    /// The custom-key mode addresses the remote read by the storage id, which for a table function is the
+                    /// synthetic `_table_function` id that does not exist on the replicas, so exclude `Merge` from it and
+                    /// let such a query run on a single replica, as it did before `parallel_replicas_allow_merge_tables`.
+                    const bool is_merge_storage = typeid_cast<const StorageMerge *>(storage.get()) != nullptr;
+
+                    if (!is_merge_storage && query_context->canUseParallelReplicasCustomKey()
+                        && query_context->getClientInfo().distributed_depth == 0)
                     {
                         if (auto cluster = query_context->getClusterForParallelReplicas();
                             query_context->canUseParallelReplicasCustomKeyForCluster(*cluster))

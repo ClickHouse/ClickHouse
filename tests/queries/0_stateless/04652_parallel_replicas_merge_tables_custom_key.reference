@@ -1,0 +1,10 @@
+-- non-parallel
+2000	1999000	1498500
+-- custom_key_range, Merge table
+2000	1999000	1498500
+-- custom_key_range, merge() table function
+2000	1999000	1498500
+-- custom_key_sampling, Merge table
+2000	1999000	1498500
+-- custom_key_sampling, merge() table function
+2000	1999000	1498500
