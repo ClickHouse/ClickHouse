@@ -22,7 +22,7 @@ Ce processus réduit le besoin de jointures complexes au moment de la requête e
 
 <br />
 
-Une technique courante, popularisée par les solutions NoSQL, consiste à dénormaliser les données en l’absence de prise en charge de `JOIN`, en stockant effectivement toutes les statistiques ou les lignes associées sur une ligne parente sous forme de colonnes et d’objets imbriqués. Par exemple, dans un schéma de blog, nous pouvons stocker tous les `Comments` sous forme d’`Array` d’objets sur leur post respectif.
+Une technique courante, popularisée par les solutions NoSQL, consiste à dénormaliser les données en l’absence de prise en charge de `JOIN`, en stockant effectivement toutes les statistiques ou les lignes associées sur une ligne parente sous forme de colonnes et d’objets imbriqués. Par exemple, dans un schéma d’exemple pour un blog, nous pouvons stocker tous les `Comments` sous forme d’`Array` d’objets dans leurs posts respectifs.
 
 <div id="when-to-use-denormalization">
   ## Quand utiliser la dénormalisation
@@ -417,4 +417,4 @@ Les utilisateurs disposent de plusieurs options pour orchestrer cela dans ClickH
   ### Streaming
 </div>
 
-Vous pouvez également choisir d’effectuer cette opération en dehors de ClickHouse, avant l’insertion, à l’aide de technologies de streaming telles qu’[Apache Flink](/fr/integrations/connectors/data-ingestion/apache-flink). Des [vues matérialisées](/fr/concepts/features/materialized-views/cascading-materialized-views) incrémentales peuvent aussi être utilisées pour effectuer ce traitement au fur et à mesure de l’insertion des données.
+Vous pouvez également choisir d’effectuer cette opération en dehors de ClickHouse, avant l’insertion, à l’aide de technologies de streaming comme [Apache Flink](/fr/integrations/connectors/data-ingestion/apache-flink). Autrement, des [vues matérialisées](/fr/concepts/features/materialized-views/cascading-materialized-views) incrémentales peuvent être utilisées pour exécuter ce processus au moment de l’insertion des données.
