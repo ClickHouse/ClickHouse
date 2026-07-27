@@ -350,6 +350,81 @@ def test_postgresql_dictionary_wrong_ca_is_rejected(started_cluster):
     assert "POSTGRESQL_CONNECTION_FAILURE" in error
 
 
+def test_postgresql_dictionary_named_collection_over_ssl(started_cluster):
+    # `SOURCE(POSTGRESQL(NAME ...))` takes a different branch in
+    # `PostgreSQLDictionarySource`: it copies `sslmode`/`sslrootcert`/`sslcert`/`sslkey`
+    # out of the named collection instead of reading them from the DDL keys, so the
+    # inline cases above cannot falsify a regression there. Read through a collection
+    # with the TLS parameters supplied as overrides.
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_nc_ssl")
+    node.query(
+        f"""
+        CREATE DICTIONARY dict_pg_nc_ssl (key UInt32, value UInt32)
+        PRIMARY KEY key
+        SOURCE(POSTGRESQL(NAME pg_ssl sslmode 'verify-full' sslrootcert '{CA_CERT_PATH}'))
+        LAYOUT(HASHED())
+        LIFETIME(MIN 0 MAX 0)
+        """
+    )
+    assert node.query("SELECT count() FROM dict_pg_nc_ssl").strip() == "10"
+    assert node.query("SELECT dictGetUInt32(dict_pg_nc_ssl, 'value', toUInt64(5))").strip() == "50"
+    node.query("DROP DICTIONARY dict_pg_nc_ssl")
+
+
+def test_postgresql_dictionary_named_collection_wrong_ca_is_rejected(started_cluster):
+    # The named-collection positive case connects to a server that accepts any SSL
+    # session, so it would still pass if the named-collection branch dropped
+    # `sslmode`/`sslrootcert` and libpq fell back to `sslmode=prefer`. A CA that did not
+    # sign the server certificate must fail. Depending on `dictionaries_lazy_load` the
+    # source is instantiated either at CREATE or on first use, so accept either.
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_nc_wrong_ca")
+    try:
+        node.query(
+            f"""
+            CREATE DICTIONARY dict_pg_nc_wrong_ca (key UInt32, value UInt32)
+            PRIMARY KEY key
+            SOURCE(POSTGRESQL(NAME pg_ssl sslmode 'verify-full' sslrootcert '{WRONG_CA_CERT_PATH}'))
+            LAYOUT(HASHED())
+            LIFETIME(MIN 0 MAX 0)
+            """
+        )
+    except Exception as e:
+        error = str(e)
+    else:
+        error = node.query_and_get_error("SELECT dictGetUInt32(dict_pg_nc_wrong_ca, 'value', toUInt64(1))")
+        node.query("DROP DICTIONARY dict_pg_nc_wrong_ca")
+    assert "POSTGRESQL_CONNECTION_FAILURE" in error
+
+
+def test_postgresql_dictionary_named_collection_client_certificate(started_cluster):
+    # The client-certificate half of the same branch: `certdb` only accepts a connection
+    # presenting a verified client certificate, so a dropped `sslcert`/`sslkey` would
+    # fail before any row is read. The `table` key of the collection is overridden to the
+    # dedicated table used by the inline dictionary case.
+    pg_exec(
+        f"psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "
+        f'"CREATE TABLE IF NOT EXISTS dict_cert_table (key integer PRIMARY KEY, value integer); '
+        f"TRUNCATE dict_cert_table; "
+        f'INSERT INTO dict_cert_table SELECT i, i * 10 FROM generate_series(0, 9) AS i"'
+    )
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_nc_cert")
+    node.query(
+        f"""
+        CREATE DICTIONARY dict_pg_nc_cert (key UInt32, value UInt32)
+        PRIMARY KEY key
+        SOURCE(POSTGRESQL(
+            NAME pg_ssl_cert table 'dict_cert_table'
+            sslmode 'verify-full' sslrootcert '{CA_CERT_PATH}'
+            sslcert '{CLIENT_CERT_PATH}' sslkey '{CLIENT_KEY_PATH}'))
+        LAYOUT(HASHED())
+        LIFETIME(MIN 0 MAX 0)
+        """
+    )
+    assert node.query("SELECT count() FROM dict_pg_nc_cert").strip() == "10"
+    assert node.query("SELECT dictGetUInt32(dict_pg_nc_cert, 'value', toUInt64(5))").strip() == "50"
+    node.query("DROP DICTIONARY dict_pg_nc_cert")
+
+
 def test_postgresql_database_engine_wrong_ca_is_rejected(started_cluster):
     # Same argument for the `PostgreSQL` database engine, which parses the SSL
     # parameters on its own path in `DatabasePostgreSQL.cpp`: a wrong CA must break the
@@ -567,6 +642,9 @@ def test_materialized_postgresql_table_engine_wrong_ca_is_rejected(started_clust
     # A CA that did not sign the server certificate must break the connection, which
     # only happens when both settings reach libpq. On a fresh CREATE (not an attach) the
     # table engine starts replication synchronously, so the error surfaces at CREATE.
+    # The replication handler lets the `pqxx` exception through unwrapped, so the error
+    # is a generic `STD_EXCEPTION` rather than `POSTGRESQL_CONNECTION_FAILURE`; assert on
+    # the verification failure itself, which is what proves the settings reached libpq.
     seed_table("tbl_wrong_ca_table", 5)
     node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
     error = node.query_and_get_error(
@@ -580,7 +658,7 @@ def test_materialized_postgresql_table_engine_wrong_ca_is_rejected(started_clust
         """,
         settings={"allow_experimental_materialized_postgresql_table": 1},
     )
-    assert "POSTGRESQL_CONNECTION_FAILURE" in error
+    assert "certificate verify failed" in error
     node.query("DROP TABLE IF EXISTS mpg_tbl_wrong_ca SYNC")
 
 
