@@ -10,15 +10,30 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 FUNC="f_${CLICKHOUSE_DATABASE}"
 VIEWS="v_arity0 v_arity1 v_arity2 v_arity3 v_arity4 v_arity5 v_params v_window v_respect v_ignore v_filter v_all v_mid4 v_byteslice4 v_canonical4 v_sqlstandard"
 
+VIEWS_SQL_LIST=$(for v in $VIEWS; do printf "'%s'," "$v"; done | sed 's/,$//')
+
 # `DROP VIEW` must pin `ignore_drop_queries_probability`: the stress runner injects 0.2, and for a
 # storage whose `storesDataOnDisk` is false (a view) `InterpreterDropQuery` rewrites the DROP to a
 # TRUNCATE, which `StorageView` does not implement, so the statement would fail with
 # `NOT_IMPLEMENTED`. The setting is pinned per statement, not with `SET`, because the runner passes
-# its value as a client option, which beats a session `SET`.
+# its value as a client option, which beats a session `SET`; a statement-level `SETTINGS` clause is
+# applied per statement inside a batch too, so all the DROPs share one client invocation.
 drop_views() {
+    local sql
+    # A view left detached by an attempt that died between DETACH and ATTACH keeps its metadata
+    # file, which `DROP VIEW IF EXISTS` skips (it only sees attached objects) and which makes the
+    # next `CREATE VIEW` fail with `TABLE_ALREADY_EXISTS ... (detached)`, so reattach those first.
+    # `ATTACH TABLE IF NOT EXISTS` cannot be used unconditionally: it throws when there is no
+    # metadata at all.
+    sql=$($CLICKHOUSE_CLIENT -q "
+SELECT 'ATTACH TABLE ' || table || ';'
+FROM system.detached_tables
+WHERE database = currentDatabase() AND table IN (${VIEWS_SQL_LIST})
+")
     for v in $VIEWS; do
-        $CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS $v SETTINGS ignore_drop_queries_probability = 0"
+        sql+="DROP VIEW IF EXISTS $v SETTINGS ignore_drop_queries_probability = 0; "
     done
+    $CLICKHOUSE_CLIENT -q "$sql"
 }
 
 $CLICKHOUSE_CLIENT -q "SELECT '-- parser: canonical name accepts the comma form with any argument count'"
