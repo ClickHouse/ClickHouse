@@ -365,6 +365,7 @@ namespace Setting
     extern const SettingsString workload;
     extern const SettingsString compatibility;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
@@ -6889,6 +6890,11 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
+    /// The selector is built once and shared, so the experimental-codec gate must come from the
+    /// server-level policy (the default profile), not from the settings of whichever query happens
+    /// to construct it first. Read it before taking the lock.
+    const bool allow_experimental_codecs = getGlobalContext()->getSettingsRef()[Setting::allow_experimental_codecs];
+
     std::lock_guard lock(shared->mutex);
 
     if (!shared->compression_codec_selector)
@@ -6897,7 +6903,8 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
         const auto & config = shared->getConfigRefWithLock(lock);
 
         if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
+            shared->compression_codec_selector
+                = std::make_unique<CompressionCodecSelector>(config, "compression", allow_experimental_codecs);
         else
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
     }

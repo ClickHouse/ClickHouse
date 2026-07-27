@@ -7,9 +7,9 @@ cluster = ClickHouseCluster(__file__)
 
 # The server-level <compression> selector chooses the default codec of every part. That codec is
 # fed raw (without a column type) into the statistics and text-index streams, so a codec that
-# requires a column type (e.g. PCO) must be rejected when the configuration is loaded. (An
-# experimental codec that is safe for untyped data is allowed there: writing it into the server
-# configuration is the operator's opt-in.)
+# requires a column type (e.g. PCO) must be rejected when the configuration is loaded. An
+# experimental codec (e.g. ZXC) is rejected as well, unless the server-level
+# `allow_experimental_codecs` policy (the default profile) enables it.
 node_pco = cluster.add_instance(
     "node_pco",
     main_configs=["configs/pco_compression_selector.xml"],
@@ -17,6 +17,15 @@ node_pco = cluster.add_instance(
 node_zstd = cluster.add_instance(
     "node_zstd",
     main_configs=["configs/zstd_compression_selector.xml"],
+)
+node_zxc = cluster.add_instance(
+    "node_zxc",
+    main_configs=["configs/zxc_compression_selector.xml"],
+)
+node_zxc_allowed = cluster.add_instance(
+    "node_zxc_allowed",
+    main_configs=["configs/zxc_compression_selector.xml"],
+    user_configs=["configs/allow_experimental_codecs.xml"],
 )
 
 
@@ -44,6 +53,47 @@ def test_pco_in_compression_selector_is_rejected(start_cluster):
     assert "PCO" in message, message
 
     node_pco.query("DROP TABLE t_pco_selector")
+
+
+def test_experimental_codec_in_compression_selector_is_rejected(start_cluster):
+    node_zxc.query(
+        "CREATE TABLE t_zxc_selector (x UInt32) ENGINE = MergeTree ORDER BY tuple()"
+    )
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node_zxc.query("INSERT INTO t_zxc_selector SELECT number FROM numbers(1000)")
+
+    message = str(exc.value)
+    assert "allow_experimental_codecs" in message, message
+    assert "ZXC" in message, message
+
+    # The query-level setting does not open the server-level configuration.
+    with pytest.raises(QueryRuntimeException) as exc:
+        node_zxc.query(
+            "INSERT INTO t_zxc_selector SELECT number FROM numbers(1000)",
+            settings={"allow_experimental_codecs": 1},
+        )
+    assert "allow_experimental_codecs" in str(exc.value), str(exc.value)
+
+    node_zxc.query("DROP TABLE t_zxc_selector")
+
+
+def test_experimental_codec_in_compression_selector_is_allowed_by_the_policy(
+    start_cluster,
+):
+    node_zxc_allowed.query(
+        "CREATE TABLE t_zxc_allowed (x UInt32) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_zxc_allowed.query(
+        "INSERT INTO t_zxc_allowed SELECT number FROM numbers(1000)"
+    )
+    assert node_zxc_allowed.query("SELECT count() FROM t_zxc_allowed").strip() == "1000"
+    default_codec = node_zxc_allowed.query(
+        "SELECT default_compression_codec FROM system.parts"
+        " WHERE table = 't_zxc_allowed' AND active"
+    ).strip()
+    assert "ZXC" in default_codec, default_codec
+    node_zxc_allowed.query("DROP TABLE t_zxc_allowed")
 
 
 def test_normal_compression_selector_still_works(start_cluster):

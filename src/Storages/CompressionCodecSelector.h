@@ -71,7 +71,10 @@ private:
 public:
     CompressionCodecSelector() = default;    /// Always returns the default method.
 
-    CompressionCodecSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    /// `allow_experimental_codecs` is the server-level policy (the default profile), not the setting of
+    /// whichever query happens to construct the selector first: the selector is built once and shared.
+    CompressionCodecSelector(
+        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_experimental_codecs)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);
@@ -91,15 +94,23 @@ public:
             /// Reject it here — mirroring how the `default_compression_codec`, `marks_compression_codec`
             /// and `primary_key_compression_codec` settings are validated — so a misconfiguration is
             /// reported when the server configuration is loaded. A lossy codec (e.g. `SZ3`) is rejected
-            /// by `get` itself while resolving without a column type. Experimental codecs are not
-            /// rejected: writing one into the server configuration is the operator's opt-in, and the
-            /// session `allow_experimental_codecs` gate applies only where per-query user input enters.
+            /// by `get` itself while resolving without a column type.
+            /// An experimental codec is rejected as well, unless the server-level `allow_experimental_codecs`
+            /// policy enables it: the selected codec becomes the default codec of every new part, so putting
+            /// an experimental codec there must be as explicit an opt-in as using one in a query.
             auto codec = factory.get(element.family_name, element.level);
             if (codec->requiresColumnTypeToCompress())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "The '{}' configuration cannot use the codec {} because it requires a column type and is applied"
                     " to untyped data",
+                    config_prefix,
+                    element.family_name);
+            if (codec->isExperimental() && !allow_experimental_codecs)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The '{}' configuration cannot use the experimental codec {} without the"
+                    " 'allow_experimental_codecs' setting enabled in the default profile",
                     config_prefix,
                     element.family_name);
         }
