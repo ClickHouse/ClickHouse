@@ -227,7 +227,7 @@ SELECT * FROM error_log LIMIT 5
 └─────────────────────┴─────────┴─────────────┴──────────────────────────────┴──────────┘
 ```
 
-By default, ClickHouse will raise an error in case of unmatched rows. If you want to skip unmatched rows instead, enable it using [format_regexp_skip_unmatched](/reference/settings/formats#format_regexp_skip_unmatched) option:
+By default, ClickHouse will raise an error in case of unmatched rows. If you want to skip unmatched rows instead, enable it using [format_regexp_skip_unmatched](/reference/settings/formats/format-regexp#format_regexp_skip_unmatched) option:
 
 ```sql
 SET format_regexp_skip_unmatched = 1;

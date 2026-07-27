@@ -65,7 +65,7 @@ In these versions, no special settings need to be configured to use the text ind
 We strongly recommend using ClickHouse versions >= 26.2 for production use cases.
 
 <Note>
-Text indexes can be used with any ClickHouse version >= 26.2, regardless of the [compatibility](/reference/settings/session-settings#compatibility) setting.
+Text indexes can be used with any ClickHouse version >= 26.2, regardless of the [compatibility](/reference/settings/session-settings/compatibility#compatibility) setting.
 </Note>
 
 To create a text index use the following syntax:
@@ -470,12 +470,12 @@ Experimental parameter `support_phrase_search` (default: `0`) controls whether t
 When set to `1`, the index additionally stores positional data (in a `.pos` file) which enables exact phrase matching via direct reads for the [`hasPhrase`](#functions-example-hasphrase) function.
 Storing positions increases the on-disk size of the index and the write cost, so it is opt-in.
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
-Creating an index with `support_phrase_search = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) to be enabled.
+Creating an index with `support_phrase_search = 1` therefore requires the MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to be enabled.
 Set `support_phrase_search = 0` (the default) to keep the posting-list-only storage; text indexes created without this argument remain position-less.
 
 <Warning>
 This argument is experimental and should only be used for testing.
-Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) to enable storing positions.
+Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) to enable storing positions.
 </Warning>
 
 <details markdown="1">
@@ -495,7 +495,7 @@ Optional parameter `posting_list_codec` (default: `none`) specifies the codec fo
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
 
-The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.
 
 The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
@@ -1191,8 +1191,8 @@ The direct read optimization answers the query exclusively using the text index 
 Text index lookups read relatively little data and are therefore much faster than usual skip indexes in ClickHouse (which do a skip index lookup, followed by loading and filtering remaining granules).
 
 Direct read is controlled by two settings:
-- Setting [query_plan_direct_read_from_text_index](/reference/settings/session-settings#query_plan_direct_read_from_text_index) (true by default) which specifies if direct read is generally enabled.
-- Setting [use_skip_indexes_on_data_read](/reference/settings/session-settings#use_skip_indexes_on_data_read) was a prerequisite for direct read in ClickHouse versions < 26.4.
+- Setting [query_plan_direct_read_from_text_index](/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (true by default) which specifies if direct read is generally enabled.
+- Setting [use_skip_indexes_on_data_read](/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) was a prerequisite for direct read in ClickHouse versions < 26.4.
 
 **Supported functions**
 
@@ -1261,7 +1261,7 @@ Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `has
 
 The additional filter can provide additional selectivity to restrict the result set in combination with other filters further, helping to reduce the amount of data read from other columns.
 
-Direct read as a hint is controlled by setting [query_plan_text_index_add_hint](/reference/settings/session-settings#query_plan_text_index_add_hint) (enabled by default).
+Direct read as a hint is controlled by setting [query_plan_text_index_add_hint](/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (enabled by default).
 
 Example of query without hint:
 
@@ -1312,11 +1312,11 @@ When a LIKE/ILIKE query pattern is `%<alpha-numeric-characters-without-spaces>%`
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
 
 The optimization is controlled by a setting:
-- [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+- [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 The fallback mechanism is controlled by two settings:
-- [text_index_like_min_pattern_length](/reference/settings/session-settings#text_index_like_min_pattern_length)
-- [text_index_like_max_postings_to_read](/reference/settings/session-settings#text_index_like_max_postings_to_read)
+- [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+- [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 This optimization supports only functions `like` and `ilike`.
 
@@ -1324,7 +1324,7 @@ This optimization supports only functions `like` and `ilike`.
 
 Different server-wide caches exist to buffer parts of the text index in memory (see section [Implementation Details](#implementation)):
 Currently, there are caches for the deserialized headers, tokens, and posting lists of the text index to reduce I/O.
-Use settings [use_text_index_header_cache](/reference/settings/session-settings#use_text_index_header_cache), [use_text_index_tokens_cache](/reference/settings/session-settings#use_text_index_tokens_cache), and [use_text_index_postings_cache](/reference/settings/session-settings#use_text_index_postings_cache) to disable reading and writing from/to the individual caches by queries.
+Use settings [use_text_index_header_cache](/reference/settings/session-settings/use-text#use_text_index_header_cache), [use_text_index_tokens_cache](/reference/settings/session-settings/use-text#use_text_index_tokens_cache), and [use_text_index_postings_cache](/reference/settings/session-settings/use-text#use_text_index_postings_cache) to disable reading and writing from/to the individual caches by queries.
 
 To clear the caches, use statement [SYSTEM CLEAR TEXT INDEX CACHES](/reference/statements/system#drop-text-index-caches)
 
@@ -1334,28 +1334,28 @@ Please refer the following server settings to configure the caches.
 
 | Setting                                                                                                                                                  | Description                                                                                                    |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| [text_index_tokens_cache_policy](/reference/settings/server-settings/settings#text_index_tokens_cache_policy)                | Text index tokens cache policy name.                                                                 |
-| [text_index_tokens_cache_size](/reference/settings/server-settings/settings#text_index_tokens_cache_size)                    | Maximum cache size in bytes.                                                                                   |
-| [text_index_tokens_cache_max_entries](/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries)      | Maximum number of deserialized tokens in cache.                                                     |
-| [text_index_tokens_cache_size_ratio](/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)        | The size of the protected queue in the text index tokens cache relative to the cache\'s total size.  |
+| [text_index_tokens_cache_policy](/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)                | Text index tokens cache policy name.                                                                 |
+| [text_index_tokens_cache_size](/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                    | Maximum cache size in bytes.                                                                                   |
+| [text_index_tokens_cache_max_entries](/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries)      | Maximum number of deserialized tokens in cache.                                                     |
+| [text_index_tokens_cache_size_ratio](/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)        | The size of the protected queue in the text index tokens cache relative to the cache\'s total size.  |
 
 #### Header cache settings {#caching-header}
 
 | Setting                                                                                                                              | Description                                                                                          |
 |--------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|
-| [text_index_header_cache_policy](/reference/settings/server-settings/settings#text_index_header_cache_policy)                | Text index header cache policy name.                                                                 |
-| [text_index_header_cache_size](/reference/settings/server-settings/settings#text_index_header_cache_size)                    | Maximum cache size in bytes.                                                                         |
-| [text_index_header_cache_max_entries](/reference/settings/server-settings/settings#text_index_header_cache_max_entries)      | Maximum number of deserialized headers in cache.                                                     |
-| [text_index_header_cache_size_ratio](/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)        | The size of the protected queue in the text index header cache relative to the cache\'s total size.  |
+| [text_index_header_cache_policy](/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)                | Text index header cache policy name.                                                                 |
+| [text_index_header_cache_size](/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                    | Maximum cache size in bytes.                                                                         |
+| [text_index_header_cache_max_entries](/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries)      | Maximum number of deserialized headers in cache.                                                     |
+| [text_index_header_cache_size_ratio](/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)        | The size of the protected queue in the text index header cache relative to the cache\'s total size.  |
 
 #### Posting lists cache settings {#caching-posting-lists}
 
 | Setting                                                                                                                               | Description                                                                                             |
 |---------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| [text_index_postings_cache_policy](/reference/settings/server-settings/settings#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  |
-| [text_index_postings_cache_size](/reference/settings/server-settings/settings#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            |
-| [text_index_postings_cache_max_entries](/reference/settings/server-settings/settings#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
-| [text_index_postings_cache_size_ratio](/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
+| [text_index_postings_cache_policy](/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)             | Text index postings cache policy name.                                                                  |
+| [text_index_postings_cache_size](/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                 | Maximum cache size in bytes.                                                                            |
+| [text_index_postings_cache_max_entries](/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries)   | Maximum number of deserialized postings in cache.                                                       |
+| [text_index_postings_cache_size_ratio](/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)     | The size of the protected queue in the text index postings cache relative to the cache\'s total size.   |
 
 ## Limitations {#limitations}
 
