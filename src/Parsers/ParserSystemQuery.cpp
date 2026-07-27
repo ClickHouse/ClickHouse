@@ -14,7 +14,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
 #include <Common/Exception.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
 
 #include <base/EnumReflection.h>
 

@@ -21,7 +21,10 @@
 #define INSTANTIATION(T) char * itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)
 
-#if defined(OS_DARWIN)
+/// On platforms where `int64_t` is not `long` (Darwin) and on 32-bit platforms where
+/// `int32_t` is not `long` either (WebAssembly), plain `long` is a distinct type that is
+/// not covered by the list above, and calls with a `long` argument would be ambiguous.
+#if defined(OS_DARWIN) || !defined(__LP64__)
 INSTANTIATION(unsigned long)
 INSTANTIATION(long)
 #endif

@@ -37,7 +37,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <fmt/core.h>
 
 using namespace std::literals;
