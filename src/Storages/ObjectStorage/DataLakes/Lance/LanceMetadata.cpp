@@ -673,13 +673,26 @@ std::optional<Pipe> LanceMetadata::read(
         dataset = std::move(session_handle);
     }
 
+    Names scan_projection = read_from_format_info.requested_columns.getNames();
+    bool discard_output_columns = false;
+    if (!need_only_count && scan_projection.empty())
+    {
+        const auto schema = dataset.tableSchema(snapshot, local_context);
+        if (schema.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scan a `Lance` dataset without physical columns");
+
+        scan_projection.push_back(schema.front().name);
+        discard_output_columns = true;
+    }
+
     Lance::ScanDescription scan
     {
         .snapshot = snapshot,
-        .projection = read_from_format_info.requested_columns.getNames(),
+        .projection = std::move(scan_projection),
         .predicate = extractLancePredicate(format_filter_info),
         .max_block_size = max_block_size,
         .need_only_count = need_only_count,
+        .discard_output_columns = discard_output_columns,
     };
 
     ColumnsWithTypeAndName physical_columns;

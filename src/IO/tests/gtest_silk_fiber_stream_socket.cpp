@@ -28,16 +28,31 @@
 
 #include <cstdint>
 #include <latch>
+#include <memory>
 #include <string>
 
 
 namespace
 {
 
-class SilkEnvironment : public ::testing::Environment
+enum class SocketPolicy
+{
+    Plain,
+    Secure,
+};
+
+const char * socketPolicyName(const ::testing::TestParamInfo<SocketPolicy> & info)
+{
+    return info.param == SocketPolicy::Plain ? "Plain" : "Secure";
+}
+
+}
+
+
+class SilkFiberSocketTest : public ::testing::TestWithParam<SocketPolicy>
 {
 public:
-    void SetUp() override
+    static void SetUpTestSuite()
     {
         /// TODO(mstetsyuk): Silk::initializeFiberScheduler and Silk::destroyFiberScheduler are coming in another PR.
         silk::initialize();
@@ -47,55 +62,48 @@ public:
         silk::FiberScheduler::initialize(&options);
     }
 
-    void TearDown() override
+    static void TearDownTestSuite()
     {
         silk::FiberScheduler::destroy();
         silk::destroy();
     }
-};
 
-::testing::Environment * const silk_env = ::testing::AddGlobalTestEnvironment(new SilkEnvironment);
-
-
-struct PlainPolicy
-{
-    using Listener = Poco::Net::ServerSocket;
-
-    Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1); }
-
-    Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::FiberStreamSocketImpl; }
-};
-
-struct SecurePolicy
-{
-    using Listener = Poco::Net::SecureServerSocket;
-
-    EphemeralCert cert;
-    Poco::Net::Context::Ptr server_ctx{cert.makeContext(Poco::Net::Context::SERVER_USE)};
-    Poco::Net::Context::Ptr client_ctx{cert.makeContext(Poco::Net::Context::CLIENT_USE)};
-
-    Listener makeListener() const { return Listener(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx); }
-
-    Poco::Net::StreamSocketImpl * makeClient() const { return new Silk::SecureFiberStreamSocketImpl(client_ctx); }
-};
-
-}
-
-
-template <typename Policy>
-class SilkFiberSocketTest : public ::testing::Test
-{
 protected:
-    Policy policy;
+    void SetUp() override
+    {
+        if (GetParam() == SocketPolicy::Secure)
+        {
+            cert = std::make_unique<EphemeralCert>();
+            server_ctx = cert->makeContext(Poco::Net::Context::SERVER_USE);
+            client_ctx = cert->makeContext(Poco::Net::Context::CLIENT_USE);
+        }
+    }
+
+    Poco::Net::ServerSocket makeListener() const
+    {
+        if (GetParam() == SocketPolicy::Secure)
+            return Poco::Net::SecureServerSocket(Poco::Net::SocketAddress("127.0.0.1", 0), 1, server_ctx);
+
+        return Poco::Net::ServerSocket(Poco::Net::SocketAddress("127.0.0.1", 0), 1);
+    }
+
+    Poco::Net::StreamSocketImpl * makeClient() const
+    {
+        if (GetParam() == SocketPolicy::Secure)
+            return new Silk::SecureFiberStreamSocketImpl(client_ctx);
+
+        return new Silk::FiberStreamSocketImpl;
+    }
+
+private:
+    std::unique_ptr<EphemeralCert> cert;
+    Poco::Net::Context::Ptr server_ctx;
+    Poco::Net::Context::Ptr client_ctx;
 };
 
-using Policies = ::testing::Types<PlainPolicy, SecurePolicy>;
-TYPED_TEST_SUITE(SilkFiberSocketTest, Policies);
-
-
-TYPED_TEST(SilkFiberSocketTest, RequestResponse)
+TEST_P(SilkFiberSocketTest, RequestResponse)
 {
-    auto listener = this->policy.makeListener();
+    auto listener = makeListener();
     const uint16_t port = listener.address().port();
 
     struct Params
@@ -135,7 +143,7 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient()},
+        Params{port, makeClient()},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -156,9 +164,9 @@ TYPED_TEST(SilkFiberSocketTest, RequestResponse)
 }
 
 
-TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
+TEST_P(SilkFiberSocketTest, PollAndReceiveTimeout)
 {
-    auto listener = this->policy.makeListener();
+    auto listener = makeListener();
     const uint16_t port = listener.address().port();
 
     std::latch negative_poll_done{1};
@@ -201,7 +209,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient(), &negative_poll_done},
+        Params{port, makeClient(), &negative_poll_done},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -224,7 +232,7 @@ TYPED_TEST(SilkFiberSocketTest, PollAndReceiveTimeout)
 }
 
 
-TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
+TEST_P(SilkFiberSocketTest, ConnectRefused)
 {
     /// Plain bound socket suffices for both variants.
     /// TCP-layer refusal happens before any TLS handshake would start.
@@ -248,7 +256,7 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
                 Poco::Net::ConnectionRefusedException);
             return 0;
         },
-        Params{closed_port, this->policy.makeClient()},
+        Params{closed_port, makeClient()},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -256,9 +264,9 @@ TYPED_TEST(SilkFiberSocketTest, ConnectRefused)
 }
 
 
-TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
+TEST_P(SilkFiberSocketTest, ThrottlerLimitEnforced)
 {
-    auto listener = this->policy.makeListener();
+    auto listener = makeListener();
     const uint16_t port = listener.address().port();
 
     struct Params
@@ -290,7 +298,7 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
             socket.close();
             return 0;
         },
-        Params{port, this->policy.makeClient()},
+        Params{port, makeClient()},
         &client_future);
     ASSERT_EQ(run_result, 0);
 
@@ -302,6 +310,12 @@ TYPED_TEST(SilkFiberSocketTest, ThrottlerLimitEnforced)
     client_future.wait();
     peer.close();
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    Policies,
+    SilkFiberSocketTest,
+    ::testing::Values(SocketPolicy::Plain, SocketPolicy::Secure),
+    socketPolicyName);
 
 
 #endif
