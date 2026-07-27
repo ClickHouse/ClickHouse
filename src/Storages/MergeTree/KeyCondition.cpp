@@ -2643,7 +2643,8 @@ static bool tryPrepareSetColumnsForIndex(
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool & set_is_approximate)
 {
     Columns new_columns;
     DataTypes new_types;
@@ -2720,6 +2721,7 @@ static bool tryPrepareSetColumnsForIndex(
             return false;
 
         const NullMap * set_column_null_map = nullptr;
+        bool conversion_preserves_equality = false;
 
         // Keep a reference to the original set_column to ensure the data remains valid
         ColumnPtr original_set_column = set_column;
@@ -2733,6 +2735,14 @@ static bool tryPrepareSetColumnsForIndex(
             }
 
             set_element_type = removeNullable(set_element_type);
+
+            /// `castColumnAccurateOrNull` below only proves that no value overflowed, not that the
+            /// conversion preserves `IN` equality: runtime membership casts the KEY into the set's type,
+            /// while here we cast set values into the KEY's type. `String -> UInt64` converts `'01'` to `1`
+            /// even though `toUInt64(1) IN ('01')` is false, so a set built this way is a SUPERSET image of
+            /// the predicate and, after negation, could prune a partition that still holds matching rows.
+            /// Only a conversion the type system considers safe may keep the atom exact.
+            conversion_preserves_equality = canBeSafelyCast(set_element_type, key_column_type);
 
             // Obtain the nullable column without reassigning set_column immediately
             const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
@@ -2759,6 +2769,7 @@ static bool tryPrepareSetColumnsForIndex(
 
         if (set_column_null_map)
         {
+            size_t retained_rows = 0;
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
                 /// A top-level source NULL cannot match this key (its outer type is never Nullable),
@@ -2768,7 +2779,14 @@ static bool tryPrepareSetColumnsForIndex(
                     filter[i] = 0;
                 else
                     filter[i] &= !nullable_set_column_null_map[i];
+
+                retained_rows += filter[i];
             }
+
+            /// An empty set is exact by construction (`NOT IN ()` is universally true), so only a
+            /// non-empty set built through a conversion that is not equality-preserving is approximate.
+            if (!conversion_preserves_equality && retained_rows != 0)
+                set_is_approximate = true;
 
             set_column = nullable_set_column;
         }
@@ -2862,8 +2880,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    bool set_is_approximate = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, set_is_approximate))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2888,7 +2907,12 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// - `set_is_approximate`
+    ///    The source-to-key conversion is not equality-preserving, so the set is a superset image of
+    ///    the predicate: `k NOT IN (Nullable(String) '01')` builds the set `{1}` for a `UInt64` key even
+    ///    though `toUInt64(1) IN ('01')` is false at runtime.
+    if (adjusted_indexes_mapping.size() < set_types.size() || set_is_approximate)
         out.relaxed = true;
 
     return true;
@@ -2946,8 +2970,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    bool set_is_approximate = false;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, set_is_approximate))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -2973,7 +2998,12 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
     ///    which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// - `set_is_approximate`
+    ///    The source-to-key conversion is not equality-preserving, so the set is a superset image of
+    ///    the predicate: `NOT has([Nullable(String) '01'], k)` builds the set `{1}` for a `UInt64` key
+    ///    even though `has(['01'], toUInt64(1))` is false at runtime.
+    if (adjusted_indexes_mapping.size() < set_types.size() || set_is_approximate)
         out.relaxed = true;
 
     return true;

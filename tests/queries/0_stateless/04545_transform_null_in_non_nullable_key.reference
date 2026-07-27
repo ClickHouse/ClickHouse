@@ -37,7 +37,16 @@ Int64 key NOT IN, partition pruning
 7
 1
 1
-Cross-type UInt64 key NOT IN Nullable(String), partition pruning
+5
+7
+1
+1
+Cross-type UInt64 key NOT IN Nullable(String), relaxed
+2
+3
+1
+1
+1
 2
 3
 1
@@ -71,15 +80,22 @@ Tuple(Nullable, Nullable) key unchanged
 (3,NULL)
 (NULL,NULL)
 (NULL,NULL)
+1
+1
 Duplicate key mapping stays relaxed
 1
 2
 3
+1
 1
 Nullable(String) key IN
 a
 b
 c
 \N
+1
+LowCardinality(Nullable(String)) array, Nullable(String) key has
+a
+1
 1
 Column count mismatch still rejected

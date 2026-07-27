@@ -1,7 +1,15 @@
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- no-parallel-replicas: the assertions are about local `KeyCondition` part pruning; parallel replicas
+--   reshape the plan into a `Union` with `ReadFromRemoteParallelReplicas` and duplicated `Indexes` blocks.
+-- no-replicated-database: the DBReplicated job replaces engines and can change the plan shape.
+-- no-random-merge-tree-settings: `Parts: N/M` prints the part counts around each pruning stage, so an
+--   extra randomized stage (implicit column statistics) shifts both numbers.
+
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
 
 SET transform_null_in = 1;
+SET explain_query_plan_default = 'legacy';
 
 SELECT 'String key IN';
 DROP TABLE IF EXISTS t_str SETTINGS ignore_drop_queries_probability = 0;
@@ -67,20 +75,38 @@ SELECT 'Int64 key NOT IN, partition pruning';
 DROP TABLE IF EXISTS t_ip SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_ip (s Int64) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_ip VALUES (5), (7), (0);
--- Case D: numeric analogue of case A, the folded default is 0.
+-- Case D: numeric analogue of case A, the folded default would have been 0. `Int64 -> Int64` is
+-- equality-preserving, so the atom stays exact and the third partition is pruned.
+SELECT s FROM t_ip WHERE s NOT IN (SELECT CAST(0, 'Nullable(Int64)') UNION ALL SELECT NULL) ORDER BY s;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (SELECT CAST(0, 'Nullable(Int64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (SELECT CAST(0, 'Nullable(Int64)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
+
+-- Case D2: a bare integer literal is `Nullable(UInt8)`, and `canBeSafelyCast` conservatively rejects
+-- `UInt8 -> Int64` (its unsigned branch only accepts an unsigned target), so the atom is relaxed even
+-- though this particular conversion does round-trip. Results stay correct either way; only pruning is
+-- given up. This documents the exactness gate's granularity: it is a type-level, not a value-level, test.
 SELECT s FROM t_ip WHERE s NOT IN (SELECT 0 UNION ALL SELECT NULL) ORDER BY s;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (SELECT 0 UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (SELECT 0 UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_ip WHERE s NOT IN (SELECT 0 UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
--- Case C: cross-type source. Both the NULL and a value that fails the String -> UInt64 cast are
--- removed, so the surviving set is exact and pruning is preserved.
-SELECT 'Cross-type UInt64 key NOT IN Nullable(String), partition pruning';
+-- Case C: cross-type source. The NULL row is dropped, but `String -> UInt64` is not
+-- equality-preserving (`canBeSafelyCast` is false for it): the set is built by casting set values into
+-- the key type while runtime `IN` casts the key into the set type, so the set is only a superset image
+-- of the predicate. The atom is therefore marked relaxed and nothing is pruned.
+SELECT 'Cross-type UInt64 key NOT IN Nullable(String), relaxed';
 DROP TABLE IF EXISTS t_ct SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_ct (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
 INSERT INTO t_ct VALUES (1), (2), (3);
 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('1', 'Nullable(String)') UNION ALL SELECT NULL) ORDER BY k;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('1', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('1', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 2/3%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('1', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C2: the counterexample that makes the relaxation load-bearing. `'01'` converts to `1` without
+-- overflowing, yet `toUInt64(1) IN (CAST('01', 'Nullable(String)'))` is false, so all three rows must be
+-- returned. Treating the set as exact would prune the `k = 1` partition and drop that row.
+SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('01', 'Nullable(String)') UNION ALL SELECT NULL) ORDER BY k;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('01', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('01', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
 -- Case E: the `NOT has` sibling caller shares the same helper and must get the same treatment.
 -- `optimize_rewrite_has_to_in = 0` keeps the query on the `has` path.
@@ -128,6 +154,10 @@ CREATE TABLE t_tk (k Tuple(Nullable(UInt32), Nullable(UInt32))) ENGINE = MergeTr
 INSERT INTO t_tk VALUES ((1, 2)), ((NULL, NULL)), ((3, NULL));
 SELECT k FROM t_tk WHERE k NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt32)'), CAST(10, 'Nullable(UInt32)'))) ORDER BY k;
 SELECT k FROM t_tk WHERE k IN (SELECT tuple(CAST(NULL, 'Nullable(UInt32)'), CAST(NULL, 'Nullable(UInt32)'))) ORDER BY k;
+-- "Unchanged" must be pinned in the plan too, not only in the values: this shape is the STOP condition
+-- for the outer-versus-nested argument the changed block relies on.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tk WHERE k NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt32)'), CAST(10, 'Nullable(UInt32)')))) WHERE explain ILIKE '%notIn 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_tk WHERE k IN (SELECT tuple(CAST(NULL, 'Nullable(UInt32)'), CAST(NULL, 'Nullable(UInt32)')))) WHERE explain ILIKE '%in 1-element set%';
 
 -- Case K: the pre-existing relaxation for a non 1:1 key mapping must survive. `tuple(i, i)` maps
 -- both set elements onto one key column, so the atom is still relaxed and nothing is pruned.
@@ -136,6 +166,9 @@ DROP TABLE IF EXISTS t_k SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_k (i UInt64) ENGINE = MergeTree ORDER BY i PARTITION BY i;
 INSERT INTO t_k VALUES (1), (2), (3);
 SELECT i FROM t_k WHERE tuple(i, i) NOT IN (tuple(1, 2)) ORDER BY i;
+-- `Parts: 3/3` alone is also the output when set-index construction declines entirely, so pin that the
+-- set condition is PRESENT with the deduplicated single-column size.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT i FROM t_k WHERE tuple(i, i) NOT IN (tuple(1, 2))) WHERE explain ILIKE '%notIn 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT i FROM t_k WHERE tuple(i, i) NOT IN (tuple(1, 2))) WHERE explain ILIKE '%Parts: 3/3%';
 
 -- A Nullable key must keep working and keep using the set index; NULL on the left matches NULL
@@ -145,7 +178,20 @@ DROP TABLE IF EXISTS t_nk SETTINGS ignore_drop_queries_probability = 0;
 CREATE TABLE t_nk (s Nullable(String)) ENGINE = MergeTree ORDER BY s SETTINGS allow_nullable_key = 1;
 INSERT INTO t_nk VALUES ('a'), ('b'), ('c'), (NULL);
 SELECT s FROM t_nk WHERE s IN (SELECT s FROM t_nk) ORDER BY s;
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nk WHERE s IN (SELECT s FROM t_nk)) WHERE explain ILIKE '%Condition:%in%set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nk WHERE s IN (SELECT s FROM t_nk)) WHERE explain ILIKE '%in 4-element set%';
+
+-- A `LowCardinality(Nullable(T))` source against a `Nullable(T)` key only reaches `canBeSafelyCast`'s
+-- LowCardinality branch through the `has` caller, whose array element type keeps its `LowCardinality`
+-- wrapper. Recursing against the LowCardinality-stripped TARGET (rather than the fully unwrapped one)
+-- is what preserves the target's `Nullable`, so the cast is judged safe and a set condition is built.
+-- Without that, the atom degrades to `Condition: true` and no partition is pruned at all.
+SELECT 'LowCardinality(Nullable(String)) array, Nullable(String) key has';
+DROP TABLE IF EXISTS t_nkp SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_nkp (s Nullable(String)) ENGINE = MergeTree ORDER BY s PARTITION BY s SETTINGS allow_nullable_key = 1;
+INSERT INTO t_nkp VALUES ('a'), ('b'), (NULL);
+SELECT s FROM t_nkp WHERE has([CAST('a', 'LowCardinality(Nullable(String))')], s) ORDER BY s SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nkp WHERE has([CAST('a', 'LowCardinality(Nullable(String))')], s) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_nkp WHERE has([CAST('a', 'LowCardinality(Nullable(String))')], s) SETTINGS optimize_rewrite_has_to_in = 0) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- IN error semantics must be preserved: a column-count mismatch still throws.
 SELECT 'Column count mismatch still rejected';
@@ -164,3 +210,4 @@ DROP TABLE t_mc;
 DROP TABLE t_tk;
 DROP TABLE t_k;
 DROP TABLE t_nk;
+DROP TABLE t_nkp;
