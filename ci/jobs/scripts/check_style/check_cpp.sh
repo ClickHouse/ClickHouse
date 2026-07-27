@@ -495,6 +495,22 @@ find $ROOT_PATH/src/Parsers \( -name '*.h' -or -name '*.cpp' \) |
     echo "Do not catch exceptions in src/Parsers: a parser that does not match should return false. See check 19 in ci/jobs/scripts/check_style/check_cpp.sh"
 } > "$O.19" 2>&1 &
 
+# 20: No locale-dependent case conversion where the locale must not be linked
+{
+# `boost::to_lower` and friends convert according to `std::locale`, which is wrong for SQL keywords,
+# identifiers and access-type names - all of which are ASCII - and drags `<locale>` into the binary:
+# libc++'s locale.cpp alone is over 150 KB. Use `toLowerASCII` / `toUpperASCII` /
+# `toLowerCopyASCII` / `toUpperCopyASCII` from `Common/StringUtils.h`.
+#
+# Enforced for the parser and the access code, which a standalone build of the parser links and
+# which are therefore already free of it. The rest of the tree still has around ninety call sites;
+# widen the paths below as they are converted.
+find $ROOT_PATH/src/Parsers $ROOT_PATH/src/Access $ROOT_PATH/base/poco \( -name '*.h' -or -name '*.cpp' \) |
+    xargs rg -n 'boost::(algorithm::)?to_(lower|upper)(_copy)?\b' |
+    grep . &&
+    echo "Do not use boost::to_lower/to_upper here: they depend on the locale and pull <locale> into the binary. Use toLowerASCII/toUpperASCII from Common/StringUtils.h. See check 20 in ci/jobs/scripts/check_style/check_cpp.sh"
+} > "$O.20" 2>&1 &
+
 # Wait for all parallel checks to complete, then output results in order
 wait
 cat "$O".* 2>/dev/null

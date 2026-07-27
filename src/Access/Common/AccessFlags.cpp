@@ -1,12 +1,10 @@
+#include <algorithm>
+#include <Common/StringUtils.h>
 #include <Access/Common/AccessFlags.h>
 
 #include <array>
 #include <Access/Common/AccessType.h>
 #include <Common/Exception.h>
-#include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <unordered_map>
 
 
@@ -43,7 +41,7 @@ namespace
             if (it == keyword_to_flags_map.end())
             {
                 String uppercased_keyword{keyword};
-                boost::to_upper(uppercased_keyword);
+                toUpperASCII(uppercased_keyword);
                 it = keyword_to_flags_map.find(uppercased_keyword);
                 if (it == keyword_to_flags_map.end())
                     return false;
@@ -168,16 +166,21 @@ namespace
         static String replaceUnderscoreWithSpace(std::string_view str)
         {
             String res{str};
-            boost::replace_all(res, "_", " ");
+            std::replace(res.begin(), res.end(), '_', ' ');
             return res;
         }
 
         static Strings splitAliases(std::string_view str)
         {
             Strings aliases;
-            boost::split(aliases, str, boost::is_any_of(","));
-            for (auto & alias : aliases)
-                boost::trim(alias);
+            for (size_t begin = 0; begin <= str.length();)
+            {
+                size_t end = str.find(',', begin);
+                if (end == std::string_view::npos)
+                    end = str.length();
+                aliases.emplace_back(trim(String{str.substr(begin, end - begin)}, isWhitespaceASCII));
+                begin = end + 1;
+            }
             return aliases;
         }
 
@@ -297,7 +300,7 @@ namespace
             start_node->aliases.emplace_back(start_node->keyword);
             for (auto & alias : start_node->aliases)
             {
-                boost::to_upper(alias);
+                toUpperASCII(alias);
                 keyword_to_flags_map[alias] = start_node->flags;
             }
 
