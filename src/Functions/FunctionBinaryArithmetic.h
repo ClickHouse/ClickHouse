@@ -3511,6 +3511,17 @@ public:
         if (isNaNField(left_point) || isNaNField(right_point))
             return {false, true, false, false};
 
+        if ((name_view == "divide" || name_view == "intDiv") && left.column && isColumnConst(*left.column))
+        {
+            // `const / variable` monotonicity is modelled only for plain numeric operands. `IPv4`/`IPv6`
+            // are substituted with `UInt32`/`UInt128`, so their declared width does not describe the
+            // arithmetic, and their `Field` cannot be compared with a numeric zero (the comparisons
+            // against zero below would raise `BAD_TYPE_OF_FIELD` during key analysis).
+            if (!isNumber(removeNullable(recursiveRemoveLowCardinality(left.type)))
+                || !isNumber(removeNullable(recursiveRemoveLowCardinality(right.type))))
+                return {false, true, false, false};
+        }
+
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())
         {
@@ -3655,6 +3666,20 @@ public:
             if (left.column && isColumnConst(*left.column))
             {
                 auto constant = (*left.column)[0];
+
+                auto const_type = removeNullable(recursiveRemoveLowCardinality(left.type));  // the constant
+                auto arg_type = removeNullable(recursiveRemoveLowCardinality(right.type));   // the variable
+
+                // With a `Decimal` operand and no `Float` operand the division computes in the decimal's
+                // native width (`DecimalBinaryOperation` casts both operands to `NativeResultType` and
+                // substitutes the integral operation even for `divide`), so the divisor is truncated and
+                // an unsigned constant reinterprets at a boundary set by the decimal width and scale
+                // rather than by either operand's own type. The quotient is then not even monotonic in
+                // the variable. A `Decimal`/`Float` pair is converted to `Float64` beforehand and is
+                // unaffected.
+                if ((isDecimal(const_type) || isDecimal(arg_type)) && !isFloat(const_type) && !isFloat(arg_type))
+                    return {false, true, false, false};
+
                 if (accurateEquals(constant, Field(0)))
                 {
                     /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
@@ -3669,16 +3694,17 @@ public:
                 }
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
-                if (accurateLess(left_point, Field(0))
-                    && accurateLess(right_point, Field(0)))
-                {
-                    return {true, is_constant_positive, false, is_strict};
-                }
-                if (accurateLess(Field(0), left_point)
-                    && accurateLess(Field(0), right_point))
-                {
+                if (name_view == "intDiv"
+                    && intDivConstDividendReinterpretsNegative(const_type, arg_type, constant))
+                    is_constant_positive = false;
+
+                // `c / x` has derivative `-c / x^2`, whose sign is `-sign(c)` for every `x != 0`: the
+                // direction is the same on the negative and the positive branch, only the values differ.
+                // The range must strictly exclude 0 (the function is undefined there and the two
+                // branches are not joined).
+                if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
+                    || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
                     return {true, !is_constant_positive, false, is_strict};
-                }
             }
             // variable / constant
             else if (right.column && isColumnConst(*right.column))
@@ -3868,6 +3894,22 @@ public:
             return false;
         const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
         const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
+        return accurateLessOrEqual(wrap_field, constant);
+    }
+
+    /// `intDiv` casts the dividend through `make_signed_t` whenever either operand is a signed integer
+    /// (see `DivideIntegralImpl`), so a constant *dividend* of unsigned type whose high bit is set
+    /// (`>= 2^(8 * width - 1)`) divides as a negative number even though the raw `Field` compares as
+    /// positive (`intDiv(toUInt8(200), x)` == `intDiv(toInt8(-56), x)`). Unlike
+    /// `intDivConstReinterpretsNegative` the operand widths do not matter: the dividend is cast in its
+    /// own width.
+    static bool intDivConstDividendReinterpretsNegative(
+        const DataTypePtr & dividend_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        if (!isUInt(dividend_type) || !isInt(divisor_type))
+            return false;
+        const size_t width_bytes = dividend_type->getSizeOfValueInMemory();
+        const Field wrap_field(UInt256(1) << (8 * width_bytes - 1));
         return accurateLessOrEqual(wrap_field, constant);
     }
 
