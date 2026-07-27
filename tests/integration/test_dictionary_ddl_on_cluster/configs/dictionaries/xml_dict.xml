@@ -1,0 +1,33 @@
+<clickhouse>
+    <!-- An XML dictionary is referenced by its bare name, without a database.
+         It is deployed only to the worker nodes, so that the node initiating an
+         `ON CLUSTER` query does not have it. -->
+    <dictionary>
+        <name>xml_only_dict</name>
+        <source>
+            <clickhouse>
+                <host>localhost</host>
+                <port>9000</port>
+                <user>default</user>
+                <password></password>
+                <db>default</db>
+                <table>xml_dict_source</table>
+            </clickhouse>
+        </source>
+        <!-- Never reload on its own, so that a reload is observable. -->
+        <lifetime>0</lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>key</name>
+            </id>
+            <attribute>
+                <name>value</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</clickhouse>
