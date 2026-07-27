@@ -1046,7 +1046,11 @@ BlockIO InterpreterInsertQuery::execute()
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, context, no_destination, allow_materialized);
     /// For table functions we check access while executing
     /// getTable() -> ITableFunction::execute().
-    if (!query.table_function)
+    /// `skip_target_insert_access_check` is set only for the internal populate of `CREATE TABLE ... AS
+    /// SELECT` into a temporary `_tmp_replace_*` table; the final-name `INSERT` privilege is verified up
+    /// front by the caller, so re-authorizing `INSERT` on the meaningless temporary name would be a
+    /// spurious `ACCESS_DENIED` for table-scoped grants. Source `SELECT` access is still checked below.
+    if (!query.table_function && !skip_target_insert_access_check)
         context->checkAccess(AccessType::INSERT, query.table_id, query_sample_block.getNames());
 
     if (!allow_materialized)
