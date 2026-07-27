@@ -83,6 +83,13 @@ run_clean_query csv_skip "SELECT groupArray(x) FROM format(CSV, 'x UInt64', '1\n
 run_clean_query http_retry "SELECT x FROM url('http://127.0.0.1:${http_port}/retry', 'TSV', 'x UInt8') SETTINGS http_max_tries = 2, http_retry_initial_backoff_ms = 1"
 run_clean_query url_failover "SELECT x FROM url('http://127.0.0.1:${http_port}/{always_fail|data}', 'TSV', 'x UInt8') SETTINGS http_max_tries = 1, send_logs_level = 'fatal'"
 
+format_query_depth_query_id="${query_id_prefix}_format_query_depth"
+format_query_depth_count_before=$($CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM system.errors WHERE name = 'TOO_DEEP_RECURSION' AND NOT remote")
+$CLICKHOUSE_CLIENT --query_id "$format_query_depth_query_id" --query "SELECT formatQueryOrNull('SELECT (((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))') IS NULL SETTINGS max_parser_depth = 20"
+$CLICKHOUSE_CLIENT --query "SELECT value = ${format_query_depth_count_before} + 1 FROM system.errors WHERE name = 'TOO_DEEP_RECURSION' AND NOT remote AND query_id = '${format_query_depth_query_id}'"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS error_log"
+$CLICKHOUSE_CLIENT --query "SELECT sum(value) = 1 FROM system.error_log WHERE error = 'TOO_DEEP_RECURSION' AND NOT remote AND last_error_query_id = '${format_query_depth_query_id}'"
+
 terminal_http_query_id="${query_id_prefix}_terminal_http"
 terminal_http_error_count_before=$($CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM system.errors WHERE name = 'RECEIVED_ERROR_FROM_REMOTE_IO_SERVER' AND NOT remote")
 if $CLICKHOUSE_CLIENT --query_id "$terminal_http_query_id" --query "SELECT x FROM url('http://127.0.0.1:${http_port}/always_fail', 'TSV', 'x UInt8') SETTINGS http_max_tries = 2, http_retry_initial_backoff_ms = 1" >/dev/null 2>&1; then
