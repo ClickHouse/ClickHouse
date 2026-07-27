@@ -3,6 +3,7 @@
 #include <Common/maskURIPassword.h>
 #include <Common/re2.h>
 
+#include <random>
 #include <string>
 #include <vector>
 
@@ -16,6 +17,13 @@ namespace
 bool maskURIPasswordWithRE2(std::string * uri)
 {
     return RE2::Replace(uri, R"(([^:]+://[^:]*):([^@]*)@(.*))", "\\1:[HIDDEN]@\\3");
+}
+
+/// The regular expressions `maskConnectionStringKey` replaced, one per key it is used with.
+bool maskConnectionStringKeyWithRE2(std::string & str, const std::string & key_with_eq)
+{
+    const re2::RE2 pattern(key_with_eq + ".*?(;|$)");
+    return RE2::Replace(&str, pattern, key_with_eq + "[HIDDEN]\\1");
 }
 
 const std::vector<std::string> corpus = {
@@ -89,4 +97,89 @@ TEST(MaskURIPassword, LeavesURIsWithoutAPasswordAlone)
     std::string uri = "https://example.com/db";
     EXPECT_FALSE(maskURIPassword(&uri));
     EXPECT_EQ(uri, "https://example.com/db");
+}
+
+
+TEST(MaskURIPassword, AgreesWithTheRegularExpressionOnRandomStrings)
+{
+    /// The alphabet is the one the expression is sensitive to: the separator characters, something
+    /// to put between them, and a newline, which `[^:]` matches but `.` does not.
+    static constexpr std::string_view ALPHABET = "ab:@/.\n";
+
+    std::mt19937 random(0);
+    std::uniform_int_distribution<size_t> length(0, 24);
+    std::uniform_int_distribution<size_t> character(0, ALPHABET.length() - 1);
+
+    for (size_t iteration = 0; iteration < 200000; ++iteration)
+    {
+        std::string input(length(random), ' ');
+        for (char & c : input)
+            c = ALPHABET[character(random)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        EXPECT_EQ(maskURIPassword(&with_scan), maskURIPasswordWithRE2(&with_re2)) << "return value differs for: " << input;
+        EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
+    }
+}
+
+TEST(MaskConnectionStringKey, MasksTheValueUpToTheSeparator)
+{
+    std::string connection_string = "DefaultEndpointsProtocol=https;AccountKey=c2VjcmV0;AccountName=n";
+    EXPECT_TRUE(maskConnectionStringKey(connection_string, "AccountKey="));
+    EXPECT_EQ(connection_string, "DefaultEndpointsProtocol=https;AccountKey=[HIDDEN];AccountName=n");
+
+    std::string at_the_end = "AccountName=n;SharedAccessSignature=sv=2021";
+    EXPECT_TRUE(maskConnectionStringKey(at_the_end, "SharedAccessSignature="));
+    EXPECT_EQ(at_the_end, "AccountName=n;SharedAccessSignature=[HIDDEN]");
+
+    std::string without_the_key = "AccountName=n";
+    EXPECT_FALSE(maskConnectionStringKey(without_the_key, "AccountKey="));
+    EXPECT_EQ(without_the_key, "AccountName=n");
+}
+
+TEST(MaskConnectionStringKey, MasksAtLeastAsMuchAsTheRegularExpression)
+{
+    /// `;` and `=` delimit the connection string, `\n` is where the scan and the expression differ:
+    /// `.*?` cannot cross a newline, so the expression left a value containing one exposed. The scan
+    /// masks it, which is why the two are compared for "masks at least as much" rather than for
+    /// equality.
+    static constexpr std::string_view ALPHABET = "ab;=\n";
+    static constexpr std::string_view KEY = "AccountKey=";
+
+    std::mt19937 random(0);
+    std::uniform_int_distribution<size_t> length(0, 16);
+    std::uniform_int_distribution<size_t> character(0, ALPHABET.length() - 1);
+
+    for (size_t iteration = 0; iteration < 200000; ++iteration)
+    {
+        std::string input{KEY};
+        input.resize(KEY.length() + length(random), ' ');
+        for (size_t i = KEY.length(); i < input.length(); ++i)
+            input[i] = ALPHABET[character(random)];
+
+        std::string with_scan = input;
+        std::string with_re2 = input;
+
+        EXPECT_TRUE(maskConnectionStringKey(with_scan, KEY)) << "the key is always present in: " << input;
+        maskConnectionStringKeyWithRE2(with_re2, std::string{KEY});
+
+        std::string_view value{input};
+        value.remove_prefix(KEY.length());
+        value = value.substr(0, value.find(';'));
+
+        if (value.find('\n') == std::string::npos)
+        {
+            EXPECT_EQ(with_scan, with_re2) << "result differs for: " << input;
+        }
+        else
+        {
+            /// A value containing a newline is what the expression used to miss: `.*?` cannot cross
+            /// one, so it did not match and left the secret in place. The scan masks it.
+            EXPECT_EQ(with_scan, std::string{KEY} + "[HIDDEN]" + input.substr(KEY.length() + value.length()))
+                << "the value was not masked in: " << input;
+            EXPECT_EQ(with_re2, input) << "re2 was expected to leave this alone: " << input;
+        }
+    }
 }
