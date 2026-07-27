@@ -86,7 +86,7 @@ Converts a ClickHouse geometry object to its [Well-Known Text (WKT)](https://en.
     )";
     FunctionDocumentation::Syntax syntax = "wkt(geometry)";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry object (Point, Ring, Polygon, MultiPolygon).", {"Point", "Ring", "Polygon", "MultiPolygon"}}
+        {"geometry", "Geometry object (Point, MultiPoint, Ring, LineString, MultiLineString, Polygon, MultiPolygon).", {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the WKT string representation of the geometry.", {"String"}};
     FunctionDocumentation::Examples examples = {{"Basic point", "SELECT wkt((0.0, 1.0))", "POINT (0 1)"}};

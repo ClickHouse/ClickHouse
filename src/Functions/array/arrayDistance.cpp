@@ -7,6 +7,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/checkLpNormPArgument.h>
 
 #include <cmath>
 
@@ -18,7 +19,6 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
@@ -738,6 +738,18 @@ public:
                " -> selectIf(isFloat32OrSmaller(leastSupertype(A, B)), Float32, Float64)";
     }
 
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// The declarative signature above only constrains the *type* of `p`. Its value range
+        /// `[1, inf)` is still validated here, so that analysis-only paths (e.g. `toTypeName`)
+        /// reject an out-of-range `p` such as `0.5`, `nan` or `inf` instead of advertising a
+        /// return type for a call that execution rejects with `ARGUMENT_OUT_OF_BOUND`.
+        DataTypePtr result_type = IFunction::getReturnTypeImpl(arguments);
+        if constexpr (std::is_same_v<Kernel, LpDistance>)
+            checkLpNormPArgumentForAnalysis(arguments[2], getName());
+        return result_type;
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         switch (result_type->getTypeId())
@@ -960,24 +972,13 @@ LpDistance::ConstParams FunctionArrayDistance<LpDistance>::initConstParams(const
                     "Argument p of function {} was not provided",
                     getName());
 
-    if (!arguments[2].column->isNumeric())
-        throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument p of function {} must be numeric constant",
-                    getName());
-
     if (!isColumnConst(*arguments[2].column) && arguments[2].column->size() != 1)
         throw Exception(
                     ErrorCodes::ILLEGAL_COLUMN,
-                    "Second argument for function {} must be either constant Float64 or constant UInt",
+                    "Argument p of function {} must be constant",
                     getName());
 
-    Float64 p = arguments[2].column->getFloat64(0);
-    if (p < 1 || p >= HUGE_VAL)
-        throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "Second argument for function {} must be not less than one and not be an infinity",
-                    getName());
+    Float64 p = extractLpNormPArgument(*arguments[2].column, getName());
 
     return LpDistance::ConstParams{p, 1 / p};
 }
