@@ -117,7 +117,7 @@ namespace
     /// records, a small share of a repeat-dominated stream.
     constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
     constexpr size_t adaptive_thaw_min_staged_records = 524'288;
-    constexpr size_t adaptive_thaw_repeat_factor = 16;
+    constexpr size_t adaptive_thaw_repeat_factor = 12;
 
     /// Staged batches smaller than this are coalesced into one bucket-grouped chunk before they
     /// reach the backlogs, so the merge-time drain processes a few large contiguous slices per
