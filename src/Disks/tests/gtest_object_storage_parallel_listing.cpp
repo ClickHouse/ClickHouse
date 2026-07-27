@@ -52,6 +52,11 @@ struct FakeS3
     /// both modes; the default models real S3.
     bool start_after_excludes_common_prefixes = true;
 
+    /// S3 Express / directory buckets reject `StartAfter` outright (not only its empty-delimiter variant).
+    /// With this set, the fake models such an endpoint: any request carrying a `StartAfter` fails, so a test
+    /// listing must complete using the '/' delimiter and continuation tokens only.
+    bool reject_start_after = false;
+
     /// Optional `ObjectMetadata` payload attached to every listed object. Real S3 listings buffer an
     /// `etag` per object and a `_tags` scan fills `metadata.tags`, so tests of the buffered-object byte
     /// accounting need objects whose metadata dwarfs the path.
@@ -71,7 +76,11 @@ struct FakeS3
     {
         requests.fetch_add(1, std::memory_order_relaxed);
         if (!start_after.empty())
+        {
             requests_with_start_after.fetch_add(1, std::memory_order_relaxed);
+            if (reject_start_after)
+                throw std::logic_error("FakeS3: this bucket does not support StartAfter: " + start_after);
+        }
         if (delimiter.empty())
             requests_with_empty_delimiter.fetch_add(1, std::memory_order_relaxed);
 
@@ -740,6 +749,73 @@ TEST(ObjectStorageParallelListing, BudgetTrimKeepsListingExactlyOnce)
             EXPECT_EQ(got, expected) << "threads=" << threads << " real_s3_start_after=" << real_s3_start_after;
         }
     }
+}
+
+TEST(ObjectStorageParallelListing, BudgetTrimAvoidsStartAfterOnDirectoryBuckets)
+{
+    /// Regression test: the pending-range budget trim used to rebuild a hierarchical page's overflow work as
+    /// a `StartAfter` resume of the parent unconditionally. S3 Express / directory buckets reject `StartAfter`
+    /// entirely, so a wide hierarchical glob started failing on those endpoints as soon as the budget trimmed
+    /// a page — even though disabling keyspace splitting for them promised the '/'-delimiter walk stays
+    /// supported. With `allow_start_after = false` the resume must instead re-list the parent from the
+    /// beginning and discard locally what the kept children already cover: no request may carry a
+    /// `StartAfter` (the fake fails such a request, as the endpoint would), and every key must still be
+    /// produced exactly once.
+    FakeS3 s3;
+    s3.page_size = 7;
+    s3.reject_start_after = true;
+    s3.add("x/aa.csv");
+    for (int d = 0; d < 60; ++d)
+    {
+        s3.add(fmt::format("x/d{:03}/", d)); /// directory-marker object
+        s3.add(fmt::format("x/d{:03}/f0.csv", d));
+        s3.add(fmt::format("x/d{:03}/f1.csv", d));
+        s3.add(fmt::format("x/d{:03}/skip/deep.bin", d)); /// pruned below
+    }
+    for (size_t i = 0; i < 200; ++i)
+        s3.add("x/flat/" + hexName(i, 10)); /// paginated serially: keyspace splitting is unavailable here
+    s3.add("x/zz.csv"); /// plain files sorting after all the groups
+    s3.finalize();
+
+    auto should_descend = [](const std::string & prefix) { return prefix.find("skip") == std::string::npos; };
+    std::vector<std::string> expected;
+    for (const auto & key : s3.keys)
+        if (key.find("skip") == std::string::npos)
+            expected.push_back(key);
+    std::sort(expected.begin(), expected.end());
+
+    /// The same listing with a budget large enough to never trim: the reference for both the result and the
+    /// request count (re-listing a trimmed parent from its beginning costs extra requests).
+    s3.requests.store(0);
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "x/", /* num_threads */ 1, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend,
+            /* allow_keyspace_split */ false, /* check_cancellation */ {},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected);
+    }
+    const size_t requests_without_trimming = s3.requests.load();
+
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        s3.requests.store(0);
+        ObjectStorageParallelListingIterator iterator(
+            "x/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), should_descend,
+            /* allow_keyspace_split */ false, /* check_cancellation */ {}, /* max_pending_range_bytes */ 512,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false);
+        auto got = drain(iterator);
+        std::sort(got.begin(), got.end());
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+        /// The trim really engaged (otherwise the test would pass vacuously): re-listing trimmed parents
+        /// takes strictly more requests than the untrimmed walk of the same layout.
+        EXPECT_GT(s3.requests.load(), requests_without_trimming) << "threads=" << threads;
+    }
+    EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
 }
 
 TEST(ObjectStorageParallelListing, MixedHierarchicalAndFlat)

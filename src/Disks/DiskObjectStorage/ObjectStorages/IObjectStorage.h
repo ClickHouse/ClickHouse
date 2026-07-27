@@ -260,13 +260,19 @@ public:
     /// bucket root) is always allowed. Storages without this restriction just answer `supportsDelimitedListing`.
     virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
 
+    /// Whether `listObjectsSingleLevel` may resume strictly after an arbitrary key (`start_after`, i.e. the
+    /// `StartAfter` parameter of `ListObjectsV2`). Some endpoints (e.g. S3 Express / directory buckets) reject
+    /// it outright, so every listing path that would resume by key must first ask this: such a listing has to
+    /// be expressed with the '/' delimiter and continuation tokens only (see `ObjectStorageParallelListingIterator`).
+    virtual bool supportsStartAfterListing() const { return false; }
+
     /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
     /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
-    /// key (`start_after`) and use an empty delimiter to list a raw key range recursively. Some endpoints
-    /// (e.g. S3 Express / directory buckets) do not support `StartAfter` and only allow the '/' delimiter,
-    /// so for them this must return false and flat ranges fall back to serial pagination (the hierarchical
-    /// delimiter walk, which uses only '/' and continuation tokens, stays available).
-    virtual bool supportsListingKeyspaceSplit() const { return false; }
+    /// key (`start_after`) and use an empty delimiter to list a raw key range recursively. Endpoints without
+    /// `StartAfter` support (see `supportsStartAfterListing`) must answer false here, and flat ranges then
+    /// fall back to serial pagination (the hierarchical delimiter walk, which uses only '/' and continuation
+    /// tokens, stays available).
+    virtual bool supportsListingKeyspaceSplit() const { return supportsStartAfterListing(); }
 
     /// The page size that list requests actually use when the caller passes `max_keys = 0`
     /// ("use the storage-configured default", see `iterate` and `listObjectsSingleLevel`).

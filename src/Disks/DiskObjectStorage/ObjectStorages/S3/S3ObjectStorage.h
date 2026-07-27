@@ -116,9 +116,13 @@ public:
         return true;
     }
 
-    /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter, so keyspace
-    /// splitting of flat directories must be disabled for them (they keep the hierarchical delimiter walk).
-    bool supportsListingKeyspaceSplit() const override { return !client.get()->isS3ExpressBucket(); }
+    /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter.
+    bool supportsStartAfterListing() const override { return !client.get()->isS3ExpressBucket(); }
+
+    /// Keyspace splitting of flat directories resumes by key, so it is available exactly where `StartAfter`
+    /// is; without it, flat ranges are paginated serially and only the hierarchical delimiter walk runs
+    /// in parallel.
+    bool supportsListingKeyspaceSplit() const override { return supportsStartAfterListing(); }
 
     /// The same fallback `iterate` and `listObjectsSingleLevel` apply to `max_keys = 0`.
     size_t getListObjectsDefaultPageSize() const override;

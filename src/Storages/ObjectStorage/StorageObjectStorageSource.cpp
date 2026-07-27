@@ -1627,7 +1627,10 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
                 std::move(probe_level),
                 makeShouldDescendPredicate(key_with_globs.path),
                 /* allow_keyspace_split */ object_storage->supportsListingKeyspaceSplit(),
-                std::move(check_cancellation));
+                std::move(check_cancellation),
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+                ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+                /* allow_start_after */ object_storage->supportsStartAfterListing());
         }
         else
         {

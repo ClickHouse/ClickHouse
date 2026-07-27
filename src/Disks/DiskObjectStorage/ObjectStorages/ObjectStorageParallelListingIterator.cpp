@@ -50,7 +50,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     bool allow_keyspace_split_,
     std::function<void()> check_cancellation_,
     size_t max_pending_range_bytes_,
-    size_t max_buffered_object_bytes_)
+    size_t max_buffered_object_bytes_,
+    bool allow_start_after_)
     : num_threads(std::max<size_t>(num_threads_, 1))
     , max_buffered_objects(std::max<size_t>(max_buffered_keys_, 1))
     , max_buffered_object_bytes(std::max<size_t>(max_buffered_object_bytes_, 1))
@@ -58,6 +59,7 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     /// of the listing size): the bulk of a wide walk lives on the workers' private depth-first frontiers.
     , max_pending_ranges(std::max<size_t>(num_threads * 4, 64))
     , max_pending_range_bytes(std::max<size_t>(max_pending_range_bytes_, 1))
+    , allow_start_after(allow_start_after_)
     , list_level(std::move(list_level_))
     , probe_level(std::move(probe_level_))
     , should_descend(std::move(should_descend_))
@@ -76,7 +78,8 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     root.split_pos = root.prefix.size();
     /// A zero budget disables flat keyspace splitting (and the `StartAfter` requests it issues), so a flat
     /// directory is paginated serially; the hierarchical delimiter walk is unaffected.
-    root.split_budget = allow_keyspace_split_ ? FLAT_SPLIT_BUDGET : 0;
+    /// A storage that rejects `start_after` cannot be keyspace-split either, whatever the caller passed.
+    root.split_budget = allow_keyspace_split_ && allow_start_after_ ? FLAT_SPLIT_BUDGET : 0;
     root.use_delimiter = true;
     pending_range_bytes = rangeBytes(root);
     peak_pending_range_bytes = pending_range_bytes;
@@ -240,6 +243,10 @@ void ObjectStorageParallelListingIterator::trimToBudgetLocked(
         /// implementations instead treat `StartAfter` as a plain key filter and re-emit the group (its keys
         /// are all greater than `start_after`); the flag skips it there, so the subtree is not listed twice.
         resume.skip_prefixes_not_after = true;
+        /// A storage that rejects `StartAfter` altogether (S3 Express / directory buckets) would fail the
+        /// resume request: express the same range with the '/' delimiter only, by re-listing the parent from
+        /// its beginning and discarding locally what the kept children already cover.
+        resume.resume_by_relisting = !allow_start_after;
 
         /// Objects of this page sorting after the resume point will be re-listed by the resume range; emit
         /// them only once, from there. (Objects before it are excluded by `StartAfter` on the resume.)
@@ -501,7 +508,10 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                     return true;
             }
 
-            auto result = list_level(range.prefix, delimiter, first ? range.start_after : std::string{}, continuation_token);
+            /// A `resume_by_relisting` range must not send `start_after` at all (the storage rejects it): it
+            /// re-lists `prefix` from the beginning and filters everything not after `start_after` below.
+            const bool send_start_after = first && !range.resume_by_relisting;
+            auto result = list_level(range.prefix, delimiter, send_start_after ? range.start_after : std::string{}, continuation_token);
             first = false;
 
             /// Common prefixes and objects are each returned in ascending order, so once one is past
@@ -542,6 +552,10 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
                     reached_end = true;
                     break;
                 }
+                /// The lower bound that `StartAfter` would have enforced, applied locally on a re-listing
+                /// resume: these objects were already emitted by the page that the trim replaced.
+                if (range.resume_by_relisting && object->getPath() <= range.start_after)
+                    continue;
                 last_key = object->getPath();
                 batch.push_back(std::move(object));
             }

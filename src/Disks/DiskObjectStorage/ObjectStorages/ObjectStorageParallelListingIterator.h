@@ -129,6 +129,12 @@ public:
     /// overridable only so tests can shrink it to force trimming on small fixtures.
     /// `max_buffered_object_bytes` is the hard byte budget on buffered listed objects (see
     /// `DEFAULT_MAX_BUFFERED_OBJECT_BYTES`); overridable only so tests can shrink it.
+    /// `allow_start_after` states whether the storage accepts a `start_after` at all (`StartAfter` of
+    /// `ListObjectsV2`; see `IObjectStorage::supportsStartAfterListing`). When false, no request issued by
+    /// this iterator carries one: flat keyspace splitting is off (as with `allow_keyspace_split = false`) and
+    /// the pending-range budget trim resumes a hierarchical parent by re-listing it from the beginning with
+    /// the '/' delimiter and locally discarding what the kept child ranges already cover, instead of
+    /// resuming after the last kept child by key.
     ObjectStorageParallelListingIterator(
         std::string root_prefix_,
         size_t num_threads_,
@@ -139,7 +145,8 @@ public:
         bool allow_keyspace_split_ = true,
         std::function<void()> check_cancellation_ = {},
         size_t max_pending_range_bytes_ = DEFAULT_MAX_PENDING_RANGE_BYTES,
-        size_t max_buffered_object_bytes_ = DEFAULT_MAX_BUFFERED_OBJECT_BYTES);
+        size_t max_buffered_object_bytes_ = DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+        bool allow_start_after_ = true);
 
     ~ObjectStorageParallelListingIterator() override;
 
@@ -201,6 +208,14 @@ private:
                                    /// semantics. Never set on keyspace-split slices, whose `start_after` is
                                    /// a plain key boundary (its byte past the shared base comes from keys of
                                    /// a delimited page, so it never falls inside a sub-directory group).
+        bool resume_by_relisting = false; /// Set on a budget-trim "resume" range when the storage rejects
+                                   /// `StartAfter` (S3 Express / directory buckets, see
+                                   /// `IObjectStorage::supportsStartAfterListing`): the range is then listed
+                                   /// from the *beginning* of `prefix` with the '/' delimiter only, and
+                                   /// everything not after `start_after` is discarded locally (common
+                                   /// prefixes by `skip_prefixes_not_after`, objects by the same bound). The
+                                   /// result is identical to a `StartAfter` resume, at the cost of re-listing
+                                   /// the pages before the resume point.
     };
 
     void worker();
@@ -260,6 +275,8 @@ private:
     /// Hard budget on the total bytes of pending ranges (shared queue + all private frontiers); see the
     /// class comment and `trimToBudgetLocked`.
     const size_t max_pending_range_bytes;
+    /// Whether the storage accepts `start_after` (`StartAfter` of `ListObjectsV2`); see the constructor.
+    const bool allow_start_after;
     const ListLevelFunction list_level;
     /// Tags-free existence probe for the flat keyspace split; see `ProbeLevelFunction`.
     const ProbeLevelFunction probe_level;
