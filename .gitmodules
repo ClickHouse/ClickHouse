@@ -359,7 +359,7 @@
 	url = https://github.com/brainhub/SHA3IUF.git
 [submodule "contrib/xgboost"]
 	path = contrib/xgboost
-	url = https://github.com/dmlc/xgboost.git
+	url = https://github.com/ClickHouse/xgboost
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -417,6 +417,9 @@
 [submodule "contrib/zxc"]
 	path = contrib/zxc
 	url = https://github.com/ClickHouse/zxc
+[submodule "contrib/dmlc-core"]
+	path = contrib/dmlc-core
+	url = https://github.com/dmlc/dmlc-core
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext

@@ -3,7 +3,7 @@ set(XGBOOST_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/xgboost")
 set(XGBOOST_SOURCE_DIR "${XGBOOST_DIR}/src")
 set(XGBOOST_INCLUDE_DIR "${XGBOOST_DIR}/include")
 
-set(DMLC_CORE_LIB "${XGBOOST_DIR}/dmlc-core")
+set(DMLC_CORE_LIB "${ClickHouse_SOURCE_DIR}/contrib/dmlc-core")
 set(DMLC_CORE_BINARY_DIR "${XGBOOST_BINARY_DIR}/dmlc-core")
 set(DMLC_CORE_SOURCE_DIR "${DMLC_CORE_LIB}/src")
 set(DMLC_CORE_INCLUDE_DIR "${DMLC_CORE_LIB}/include")
@@ -15,7 +15,7 @@ set(DMLC_CORE_INCLUDE_DIR "${DMLC_CORE_LIB}/include")
 # and toolchain are fixed. The values below are resolved statically
 # from the known target.
 
-# find contrib/xgboost/dmlc-core/src/ -type f -name "*.cc"
+# find contrib/dmlc-core/src/ -type f -name "*.cc"
 set(DMLC_CORE_SOURCES
     ${DMLC_CORE_SOURCE_DIR}/data.cc
     ${DMLC_CORE_SOURCE_DIR}/io.cc
@@ -33,7 +33,7 @@ set(DMLC_CORE_SOURCES
     # ${DMLC_CORE_SOURCE_DIR}/io/hdfs_filesys.cc
 )
 
-# find contrib/xgboost/dmlc-core/include/ -type f -name "*.h"
+# find contrib/dmlc-core/include/ -type f -name "*.h"
 set(DMLC_CORE_HEADERS
     ${DMLC_CORE_INCLUDE_DIR}/dmlc/timer.h
     ${DMLC_CORE_INCLUDE_DIR}/dmlc/io.h
