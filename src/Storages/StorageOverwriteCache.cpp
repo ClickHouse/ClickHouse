@@ -597,13 +597,6 @@ void StorageOverwriteCache::EntryTable::grow(size_t new_size)
     entry_count.store(new_size, std::memory_order_release);
 }
 
-void StorageOverwriteCache::EntryTable::shrink(size_t new_size)
-{
-    for (size_t index = new_size; index < entry_count.load(std::memory_order_relaxed); ++index)
-        at(index + 1) = Entry{};
-    entry_count.store(new_size, std::memory_order_release);
-}
-
 void StorageOverwriteCache::EntryTable::clear()
 {
     entry_count.store(0, std::memory_order_release);
@@ -631,13 +624,70 @@ StorageOverwriteCache::ReadGuard::ReadGuard(const StorageOverwriteCache & storag
             storage.active_readers[epoch].notify_all();
     }
 
+    /// Registering the snapshot under the same lock a writer uses to compute the pruning watermark
+    /// keeps a writer from dropping a version this guard is about to rely on.
+    std::lock_guard registry_lock(storage.snapshot_registry_mutex);
     snapshot_generation = storage.published_generation.load(std::memory_order_acquire);
+    ++storage.live_snapshots[snapshot_generation];
 }
 
 StorageOverwriteCache::ReadGuard::~ReadGuard()
 {
+    {
+        std::lock_guard registry_lock(storage.snapshot_registry_mutex);
+        const auto it = storage.live_snapshots.find(snapshot_generation);
+        if (it != storage.live_snapshots.end() && --it->second == 0)
+            storage.live_snapshots.erase(it);
+    }
+
     if (storage.active_readers[epoch].fetch_sub(1, std::memory_order_acq_rel) == 1)
         storage.active_readers[epoch].notify_all();
+}
+
+UInt64 StorageOverwriteCache::oldestLiveGeneration() const
+{
+    std::lock_guard registry_lock(snapshot_registry_mutex);
+    if (live_snapshots.empty())
+        return published_generation.load(std::memory_order_acquire);
+    return live_snapshots.begin()->first;
+}
+
+std::unique_ptr<StorageOverwriteCache::EntryVersion> StorageOverwriteCache::takeVersion()
+{
+    if (!recycled_versions)
+        return std::make_unique<EntryVersion>();
+    auto version = std::move(recycled_versions);
+    recycled_versions = std::move(version->older);
+    --recycled_version_count;
+    return version;
+}
+
+void StorageOverwriteCache::recycleVersions(std::unique_ptr<EntryVersion> chain)
+{
+    while (chain)
+    {
+        auto version = std::move(chain);
+        chain = std::move(version->older);
+        if (recycled_version_count >= max_recycled_versions)
+            continue;
+        /// Drop the row so a recycled version stops keeping its segment alive.
+        version->row = RowData{};
+        version->generation = 0;
+        version->older = std::move(recycled_versions);
+        recycled_versions = std::move(version);
+        ++recycled_version_count;
+    }
+}
+
+void StorageOverwriteCache::drainReaders()
+{
+    const UInt8 old_epoch = active_reader_epoch.fetch_xor(1, std::memory_order_acq_rel);
+    UInt64 active = active_readers[old_epoch].load(std::memory_order_acquire);
+    while (active != 0)
+    {
+        active_readers[old_epoch].wait(active, std::memory_order_relaxed);
+        active = active_readers[old_epoch].load(std::memory_order_acquire);
+    }
 }
 
 size_t StorageOverwriteCache::rowLockIndex(EntryId entry_id) const
@@ -659,10 +709,12 @@ StorageOverwriteCache::RowDataPtr StorageOverwriteCache::resolveEntry(EntryId en
     if (entry_id == 0 || entry_id > entries.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Corrupted `OverwriteCache` entry identifier");
     std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
-    const auto & entry = entries.at(entry_id);
-    if (entry.pending_generation != 0 && entry.pending_generation <= snapshot_generation)
-        return *entry.pending;
-    return entry.committed;
+    for (const auto * version = entries.at(entry_id).head.get(); version; version = version->older.get())
+    {
+        if (version->generation <= snapshot_generation)
+            return version->row;
+    }
+    return {};
 }
 
 void StorageOverwriteCache::insertBlock(const Block & input_block)
@@ -720,7 +772,7 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         std::optional<RowData> previous;
         bool is_new = false;
         bool primary_inserted = false;
-        bool pending_installed = false;
+        bool version_installed = false;
     };
 
     FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_lookup_catalog_snapshot);
@@ -853,10 +905,10 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
                 continue;
             const auto & entry = entries.at(entry_id);
             std::lock_guard row_lock(row_mutexes[rowLockIndex(entry_id)]);
-            if (!entry.committed || entry.committed->segment.get() != compaction.source.get()
-                || entry.committed->segment_row != row)
+            if (!entry.head || entry.head->row.segment.get() != compaction.source.get()
+                || entry.head->row.segment_row != row)
                 continue;
-            compaction.live_entries.emplace_back(entry_id, *entry.committed);
+            compaction.live_entries.emplace_back(entry_id, entry.head->row);
         }
     }
 
@@ -1099,17 +1151,18 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
                 prospective_bytes,
                 settings.max_memory_bytes);
 
-        /// Install the pending rows before the keys become reachable, so a reader that finds a key
-        /// either resolves the new row or sees nothing committed yet.
+        /// Push the new versions before the keys become reachable. They carry the not-yet-published
+        /// generation, so no reader can see them until `published_generation` is bumped.
         for (auto & mutation : mutations)
         {
             auto & entry = entries.at(mutation.entry_id);
+            auto version = takeVersion();
+            version->row = std::move(*mutation.row);
+            version->generation = new_generation;
             std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
-            if (entry.pending_generation != 0)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Concurrent `OverwriteCache` publication for the same entry");
-            entry.pending = std::move(mutation.row);
-            entry.pending_generation = new_generation;
-            mutation.pending_installed = true;
+            version->older = std::move(entry.head);
+            entry.head = std::move(version);
+            mutation.version_installed = true;
         }
 
         for (size_t shard_index = 0; shard_index < primary_shard_count; ++shard_index)
@@ -1157,12 +1210,17 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
             retained_bytes += bucket_delta;
         for (auto & mutation : mutations)
         {
-            if (!mutation.pending_installed)
+            if (!mutation.version_installed)
                 continue;
             auto & entry = entries.at(mutation.entry_id);
-            std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
-            entry.pending.reset();
-            entry.pending_generation = 0;
+            std::unique_ptr<EntryVersion> discarded;
+            {
+                std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
+                discarded = std::move(entry.head);
+                entry.head = std::move(discarded->older);
+            }
+            discarded->older.reset();
+            recycleVersions(std::move(discarded));
         }
         for (const auto & prepared : prepared_postings)
         {
@@ -1187,19 +1245,10 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         for (size_t index = 0; index < lookup_bytes_delta.size(); ++index)
             lookup_indexes[index]->accounted_bytes.fetch_add(lookup_bytes_delta[index], std::memory_order_relaxed);
 
-        if (new_entries != 0)
-        {
-            /// A reader may have copied an identifier from a posting before rollback removed it.
-            /// Keep the dense entry slots alive until every such reader has left its epoch.
-            const UInt8 old_epoch = active_reader_epoch.fetch_xor(1, std::memory_order_acq_rel);
-            UInt64 active = active_readers[old_epoch].load(std::memory_order_acquire);
-            while (active != 0)
-            {
-                active_readers[old_epoch].wait(active, std::memory_order_relaxed);
-                active = active_readers[old_epoch].load(std::memory_order_acquire);
-            }
-        }
-        entries.shrink(old_entry_count);
+        /// The slots staged for this block keep their identifiers: a reader may have copied one from a
+        /// posting before rollback removed it, and an empty slot resolves to no row. Reusing them would
+        /// need a wait for readers, which is exactly what publication must never do.
+        next_entry_id = staged_next_entry_id;
         throw;
     }
 
@@ -1219,25 +1268,29 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
             retired_segments.push_back(mutation.previous->segment);
     }
 
-    const UInt8 old_epoch = active_reader_epoch.fetch_xor(1, std::memory_order_acq_rel);
-    UInt64 active = active_readers[old_epoch].load(std::memory_order_acquire);
-    while (active != 0)
-    {
-        active_readers[old_epoch].wait(active, std::memory_order_relaxed);
-        active = active_readers[old_epoch].load(std::memory_order_acquire);
-    }
-
     for (const auto & retired_segment : retired_segments)
         reclaim_bytes += retired_segment->allocated_bytes;
     total_size_bytes.fetch_sub(reclaim_bytes, std::memory_order_relaxed);
 
-    for (auto & mutation : mutations)
+    /// Drop the versions no live snapshot can reach any more. A reader holding an older snapshot keeps
+    /// its versions instead of forcing this writer to wait for it.
+    const UInt64 watermark = oldestLiveGeneration();
+    for (const auto & mutation : mutations)
     {
         auto & entry = entries.at(mutation.entry_id);
-        std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
-        entry.committed = std::move(*entry.pending);
-        entry.pending.reset();
-        entry.pending_generation = 0;
+        std::unique_ptr<EntryVersion> obsolete;
+        {
+            std::lock_guard lock(row_mutexes[rowLockIndex(mutation.entry_id)]);
+            for (auto * version = entry.head.get(); version; version = version->older.get())
+            {
+                if (version->generation <= watermark)
+                {
+                    obsolete = std::move(version->older);
+                    break;
+                }
+            }
+        }
+        recycleVersions(std::move(obsolete));
     }
 }
 
@@ -1516,14 +1569,10 @@ void StorageOverwriteCache::clearData()
         shard.arena = std::make_unique<Arena>();
     }
     /// Entries are reachable without a lock, so no reader that already resolved an identifier may
-    /// still be inside the table when its storage is released.
-    const UInt8 old_epoch = active_reader_epoch.fetch_xor(1, std::memory_order_acq_rel);
-    UInt64 active = active_readers[old_epoch].load(std::memory_order_acquire);
-    while (active != 0)
-    {
-        active_readers[old_epoch].wait(active, std::memory_order_relaxed);
-        active = active_readers[old_epoch].load(std::memory_order_acquire);
-    }
+    /// still be inside the table when its storage is released. Unlike publication, releasing storage
+    /// outright has no alternative to waiting - and `TRUNCATE` and `DROP` already hold the table
+    /// exclusively, so nothing can be reading through this storage anyway.
+    drainReaders();
     entries.clear();
     next_entry_id = 1;
     published_generation.store(0, std::memory_order_release);
@@ -1634,14 +1683,8 @@ void StorageOverwriteCache::alter(const AlterCommands & commands, ContextPtr con
         }
         next_lookup_indexes.clear();
         published_generation.store(current_generation + 1, std::memory_order_release);
-        const UInt8 old_epoch = active_reader_epoch.fetch_xor(1, std::memory_order_acq_rel);
         FailPointInjection::pauseFailPoint(FailPoints::overwrite_cache_pause_after_drop_index_publication);
-        UInt64 active = active_readers[old_epoch].load(std::memory_order_acquire);
-        while (active != 0)
-        {
-            active_readers[old_epoch].wait(active, std::memory_order_relaxed);
-            active = active_readers[old_epoch].load(std::memory_order_acquire);
-        }
+        drainReaders();
         removed_index.reset();
         total_size_bytes.fetch_sub(removed_bytes, std::memory_order_relaxed);
         setInMemoryMetadata(std::move(prepared_metadata));

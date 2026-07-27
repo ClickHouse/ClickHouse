@@ -18,6 +18,7 @@
 #include <bit>
 #include <deque>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -177,11 +178,44 @@ public:
     void insertBlock(const Block & block);
 
 private:
+    struct EntryVersion
+    {
+        RowData row;
+        /// The publication generation at which this version became visible.
+        UInt64 generation = 0;
+        std::unique_ptr<EntryVersion> older;
+    };
+
+    /// Chains are normally one version long. They grow only while a reader holds an older snapshot,
+    /// which is what lets a writer publish without ever waiting for readers to finish.
+    static void releaseVersions(std::unique_ptr<EntryVersion> version)
+    {
+        /// Iteratively, because a chain can outgrow the stack if a reader lags far behind.
+        while (version)
+            version = std::move(version->older);
+    }
+
+    /// A publication takes one version per row and usually hands it straight back once the previous
+    /// one becomes unreachable, so recycling keeps that off the allocator. Writer-only: every caller
+    /// holds `writer_mutex`.
+    std::unique_ptr<EntryVersion> takeVersion();
+    void recycleVersions(std::unique_ptr<EntryVersion> chain);
+    static constexpr size_t max_recycled_versions = 1 << 16;
+
     struct Entry
     {
-        std::optional<RowData> committed;
-        std::unique_ptr<RowData> pending;
-        UInt64 pending_generation = 0;
+        Entry() = default;
+        Entry(Entry &&) = default;
+        Entry & operator=(Entry && rhs) noexcept
+        {
+            releaseVersions(std::move(head));
+            head = std::move(rhs.head);
+            return *this;
+        }
+        ~Entry() { releaseVersions(std::move(head)); }
+
+        /// Newest first. A reader takes the first version at or below its snapshot generation.
+        std::unique_ptr<EntryVersion> head;
     };
 
     /// Chunked, never-relocating entry array. Chunk sizes double, so a tiny table costs a few entries
@@ -202,9 +236,8 @@ private:
             return chunks[level].load(std::memory_order_acquire)[index - (1ULL << (level + base_shift - 1))];
         }
 
-        /// Both grow and shrink run under the writer lock.
+        /// Runs under the writer lock.
         void grow(size_t new_size);
-        void shrink(size_t new_size);
         void clear();
 
         UInt64 allocatedBytes() const { return static_cast<UInt64>(allocated_entries) * sizeof(Entry); }
@@ -370,6 +403,9 @@ private:
     /// The hash tables index themselves by the low bits, so the shard is chosen from the high ones.
     static size_t shardIndex(size_t hash) { return hash >> 56; }
     size_t rowLockIndex(EntryId entry_id) const;
+    /// The oldest snapshot any live reader can still observe. Versions below it are unreachable.
+    UInt64 oldestLiveGeneration() const;
+    void drainReaders();
     std::optional<EntryId> findEntry(std::string_view key, size_t hash) const;
     RowDataPtr resolveEntry(EntryId entry_id, UInt64 snapshot_generation) const;
     std::vector<EntryId> getPostingIds(const LookupIndexPtr & index, const std::vector<String> & serialized_keys) const;
@@ -403,9 +439,16 @@ private:
     std::vector<LookupIndexPtr> lookup_indexes;
     EntryTable entries;
     mutable std::array<std::mutex, row_lock_count> row_mutexes;
+    std::unique_ptr<EntryVersion> recycled_versions;
+    size_t recycled_version_count = 0;
     EntryId next_entry_id = 1;
 
     std::atomic<UInt64> published_generation = 0;
+    /// Snapshot generations of the live read guards, so a writer knows which versions it may drop.
+    mutable std::mutex snapshot_registry_mutex;
+    mutable std::map<UInt64, size_t> live_snapshots;
+    /// Only the paths that release entry storage outright - `TRUNCATE`, `DROP` and `DROP INDEX` -
+    /// wait for readers. Publishing a block never does.
     mutable std::atomic<UInt8> active_reader_epoch = 0;
     mutable std::array<std::atomic<UInt64>, 2> active_readers{};
 

@@ -49,7 +49,11 @@ Conflict and memory-limit validation occurs before publishing mutations from an 
 
 `OverwriteCache` addresses primary keys and lookup-index postings through fixed hash shards. Existing rows use a fixed set of striped row locks rather than one lock per row. This bounds lock memory independently of the number of stored keys.
 
-An inserted block is prepared as a pending publication. Readers continue using the previously committed rows while the writer installs pending rows across the affected shards. One atomic generation change then makes the complete block visible. A query captures one generation, so it does not mix rows from before and after the same publication.
+An inserted block is prepared as a pending publication. Each affected row gets a new version tagged with the not-yet-published generation, so readers keep resolving the previous version while the writer works. One atomic generation change then makes the complete block visible. A query captures one generation, so it does not mix rows from before and after the same publication.
+
+A writer never waits for readers. A query that captured an older generation keeps its own versions of the rows it can still reach, and those versions are released once no live query can observe them. A long-running `SELECT` therefore delays reclamation rather than blocking concurrent inserts, and `INSERT INTO ... SELECT` reading the same table completes normally. While such a query is open, replaced rows stay resident and are reported as reclaimed by `system.tables.total_bytes` before their memory is actually returned.
+
+`TRUNCATE`, `DROP`, and `ALTER ... DROP INDEX` release storage outright rather than superseding it, so those do wait for in-flight readers to finish.
 
 The atomicity boundary is one input block received by the table-engine sink. A SQL `INSERT` can be divided into multiple input blocks by its pipeline; earlier blocks remain committed if a later block is rejected. Buffering a complete statement would make publication size unbounded and is intentionally not part of this in-memory engine's contract.
 
