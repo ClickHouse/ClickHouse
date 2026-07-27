@@ -516,7 +516,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     size_t replica_number)
 {
     const bool enable_parallel_reading = true;
-    return std::make_unique<ReadFromMergeTree>(
+    auto step = std::make_unique<ReadFromMergeTree>(
         /// Optimized version of getParts() to avoid extra copy
         analyzed_result_ptr ? std::make_shared<RangesInDataParts>(analyzed_result_ptr->parts_with_ranges) : prepared_parts,
         mutations_snapshot,
@@ -535,6 +535,12 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
         all_ranges_callback_,
         read_task_callback_,
         replica_number);
+
+    /// `prefer_multiple_streams` lives outside `SelectQueryInfo`, so it is not carried by the
+    /// constructor — propagate it explicitly, like `clone` does.
+    step->prefer_multiple_streams = prefer_multiple_streams;
+
+    return step;
 }
 
 Pipe ReadFromMergeTree::readFromPoolParallelReplicas(

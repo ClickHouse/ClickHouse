@@ -367,6 +367,7 @@ public:
     /// Signal that downstream needs multiple output streams (e.g. aggregation-in-order).
     /// When set, PrefetchingConcatProcessor will not be used to avoid collapsing parallel streams.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
+    bool getPreferMultipleStreams() const { return prefer_multiple_streams; }
 
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }

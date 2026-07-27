@@ -234,6 +234,14 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 
     non_final_reading->disableQueryConditionCache();
 
+    /// `optimizeReadInOrder` runs before this optimization and may have already opted the original
+    /// read out of `PrefetchingConcatProcessor` (aggregation-, distinct- or `LIMIT BY`-in-order, or a
+    /// residual filter above the read). The flag is a property of the plan around the read, not of
+    /// `SelectQueryInfo`, so a freshly constructed step starts with it unset — carry it over,
+    /// otherwise the replacement read would collapse the parallel streams the optimizer asked for.
+    if (reading_step->getPreferMultipleStreams())
+        non_final_reading->setPreferMultipleStreams();
+
     /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
     /// from the index.
     /// Copy them over, otherwise the filter drops every row.
@@ -653,6 +661,11 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
         /// This is an internal read — don't pollute or use the query condition cache.
         set_reading->disableQueryConditionCache();
+
+        /// Same as for `non_final_reading` above: preserve the `PrefetchingConcatProcessor` opt-out
+        /// that `optimizeReadInOrder` has possibly already applied to the original read.
+        if (reading_step->getPreferMultipleStreams())
+            set_reading->setPreferMultipleStreams();
 
         set_plan.addStep(std::move(set_reading));
     }
