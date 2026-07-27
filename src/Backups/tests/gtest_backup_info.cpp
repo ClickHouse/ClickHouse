@@ -260,6 +260,10 @@ TEST(BackupInfo, CopyCredentialsSupportsS3)
         "S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')",
         "S3('https://s3.example.com/base')",
         "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
+    checkCopyCredentials(
+        "S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')",
+        "S3('https://s3.example.com/base', 'OLDKEY', 'OLDSECRET', 'extra')",
+        "S3('https://s3.example.com/base', 'KEYID', 'KEYSECRET')");
     checkCopyCredentials("S3(collection)", "S3('https://s3.example.com/base')", nullptr);
     checkCopyCredentials("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "S3(collection)", nullptr);
     checkCopyCredentials("Disk('backups', 'path')", "S3('https://s3.example.com/base')", nullptr);
@@ -514,9 +518,23 @@ TEST(BackupInfo, CopyCredentialsSupportsAzure)
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
         "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET', 'container', 'base')");
     check_copy(
+        "AzureBlobStorage('AccountKey=SECRET;AccountName=account;DefaultEndpointsProtocol=https', 'container', 'incremental')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=SECRET', 'container', 'base')");
+    check_copy(
         "AzureBlobStorage('https://account.blob.core.windows.net?sig=SECRET', 'container', 'incremental')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
         "AzureBlobStorage('https://account.blob.core.windows.net?sig=SECRET', 'container', 'base')");
+    check_copy(
+        "AzureBlobStorage('https://account.blob.core.windows.net?sp=rw&sig=SECRET&se=2026-07-25', 'container', 'incremental')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
+        "AzureBlobStorage('https://account.blob.core.windows.net?se=2026-07-25&sp=rw&sig=SECRET', 'container', 'base')");
+    check_copy(
+        "AzureBlobStorage('SharedAccessSignature=sp=rw&sig=SECRET;BlobEndpoint=https://account.blob.core.windows.net', "
+        "'container', 'incremental')",
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
+        "AzureBlobStorage('BlobEndpoint=https://account.blob.core.windows.net;SharedAccessSignature=sig=SECRET&sp=rw', "
+        "'container', 'base')");
     check_copy(
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'incremental', 'account', 'SECRET')",
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')",
@@ -537,6 +555,38 @@ TEST(BackupInfo, CopyCredentialsSupportsAzure)
     auto different_syntax = BackupInfo::fromString(
         "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base', 'account', 'SECRET')");
     EXPECT_FALSE(BackupFactory::instance().copyCredentials(source, destination, context, &different_syntax));
+
+    auto different_connection_string = BackupInfo::fromString(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=OTHER', 'container', 'base')");
+    EXPECT_FALSE(BackupFactory::instance().copyCredentials(source, destination, context, &different_connection_string));
+
+    auto sas_connection_source = BackupInfo::fromString(
+        "AzureBlobStorage('BlobEndpoint=https://account.blob.core.windows.net;SharedAccessSignature=sp=rw&sig=SECRET', "
+        "'container', 'incremental')");
+    auto sas_connection_destination = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')");
+    auto different_sas_connection = BackupInfo::fromString(
+        "AzureBlobStorage('BlobEndpoint=https://account.blob.core.windows.net;SharedAccessSignature=sp=rw&sig=OTHER', "
+        "'container', 'base')");
+    EXPECT_FALSE(BackupFactory::instance().copyCredentials(
+        sas_connection_source, sas_connection_destination, context, &different_sas_connection));
+
+    auto raw_sas = BackupInfo::fromString(
+        "AzureBlobStorage('https://account.blob.core.windows.net?sp=rw&sig=SECRET', 'container', 'base')");
+    EXPECT_FALSE(BackupFactory::instance().copyCredentials(sas_connection_source, sas_connection_destination, context, &raw_sas));
+
+    for (const auto * malformed_source_str : {
+             "AzureBlobStorage('AccountKey=TOPSECRET', 'container', 'incremental')",
+             "AzureBlobStorage('https://account.blob.core.windows.net:A1?sig=TOPSECRET', 'container', 'incremental')"})
+    {
+        auto malformed_source = BackupInfo::fromString(malformed_source_str);
+        auto unchanged_destination = BackupInfo::fromString(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'base')");
+        const String original_destination = unchanged_destination.toString();
+        EXPECT_FALSE(BackupFactory::instance().copyCredentials(malformed_source, unchanged_destination, context));
+        EXPECT_EQ(unchanged_destination.toString(), original_destination);
+        EXPECT_EQ(unchanged_destination.toString().find("TOPSECRET"), String::npos);
+    }
 }
 
 

@@ -327,10 +327,13 @@ def test_incremental_backup_credentials_metadata(cluster):
     node = cluster.instances["node"]
     port = cluster.env_variables["AZURITE_PORT"]
     connection_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
+    reordered_connection_string = ";".join(
+        reversed([part for part in connection_string.split(";") if part])
+    )
     base_name = new_backup_name()
     incremental_name = new_backup_name()
     base = f"AzureBlobStorage('{connection_string}', 'cont', '{base_name}')"
-    incremental = f"AzureBlobStorage('{connection_string}', 'cont', '{incremental_name}')"
+    incremental = f"AzureBlobStorage('{reordered_connection_string}', 'cont', '{incremental_name}')"
 
     node.query("DROP TABLE IF EXISTS incremental_credentials")
     node.query("CREATE TABLE incremental_credentials (x UInt64) ENGINE=MergeTree ORDER BY x")
@@ -402,6 +405,10 @@ def test_incremental_backup_inherited_named_collection_sas(cluster):
         expiry=datetime.now(timezone.utc) + timedelta(hours=1),
     )
     sas_url = f"http://azurite1:{port}/devstoreaccount1/cont/?{sas_token}"
+    reordered_sas_url = (
+        f"http://azurite1:{port}/devstoreaccount1/cont/?"
+        + "&".join(reversed(sas_token.split("&")))
+    )
     base_name = new_backup_name()
     incremental_name = new_backup_name()
     base = f"AzureBlobStorage('{sas_url}', '', '{base_name}')"
@@ -410,7 +417,7 @@ def test_incremental_backup_inherited_named_collection_sas(cluster):
     node.query(f"DROP NAMED COLLECTION IF EXISTS {collection_name}")
     node.query(
         f"CREATE NAMED COLLECTION {collection_name} AS "
-        f"storage_account_url = '{sas_url}', container = ''"
+        f"storage_account_url = '{reordered_sas_url}', container = ''"
     )
     try:
         node.query("DROP TABLE IF EXISTS incremental_inherited_sas")

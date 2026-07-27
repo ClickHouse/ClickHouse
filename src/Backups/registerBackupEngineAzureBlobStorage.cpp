@@ -6,6 +6,7 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <map>
 #include <optional>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -20,6 +21,8 @@
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 
 #include <Poco/URI.h>
+
+#include <azure/storage/common/storage_credential.hpp>
 
 #endif
 
@@ -65,8 +68,7 @@ namespace
     struct AzureCredentials
     {
         AzureCredentialsType type;
-        String first;
-        String second;
+        std::map<String, String> values;
 
         bool operator==(const AzureCredentials &) const = default;
     };
@@ -112,17 +114,64 @@ namespace
         if (has_shared_key || has_workload_identity)
         {
             if (account_name && account_key && !has_workload_identity)
-                return AzureCredentials{AzureCredentialsType::SharedKey, *account_name, *account_key};
+                return AzureCredentials{
+                    AzureCredentialsType::SharedKey,
+                    {{"account_name", *account_name}, {"account_key", *account_key}}};
             if (client_id && tenant_id && !has_shared_key)
-                return AzureCredentials{AzureCredentialsType::WorkloadIdentity, *client_id, *tenant_id};
+                return AzureCredentials{
+                    AzureCredentialsType::WorkloadIdentity,
+                    {{"client_id", *client_id}, {"tenant_id", *tenant_id}}};
             return std::nullopt;
         }
 
         if (!connection.starts_with("http"))
-            return AzureCredentials{AzureCredentialsType::ConnectionString, std::move(connection), {}};
+        {
+#if USE_AZURE_BLOB_STORAGE
+            try
+            {
+                auto parsed = Azure::Storage::_internal::ParseConnectionString(connection);
+                std::map<String, String> values;
+                if (!parsed.AccountKey.empty())
+                {
+                    values.emplace("account_name", std::move(parsed.AccountName));
+                    values.emplace("account_key", std::move(parsed.AccountKey));
+                }
+                for (const auto & [key, value] : parsed.BlobServiceUrl.GetQueryParameters())
+                    values.emplace("sas:" + key, value);
+                return AzureCredentials{AzureCredentialsType::ConnectionString, std::move(values)};
+            }
+            catch (const std::logic_error &)
+            {
+                return std::nullopt;
+            }
+            catch (const std::runtime_error &)
+            {
+                return std::nullopt;
+            }
+#else
+            return std::nullopt;
+#endif
+        }
         if (connection.find('?') != String::npos)
-            return AzureCredentials{AzureCredentialsType::SAS, std::move(connection), {}};
-        return AzureCredentials{AzureCredentialsType::Default, {}, {}};
+        {
+#if USE_AZURE_BLOB_STORAGE
+            try
+            {
+                return AzureCredentials{AzureCredentialsType::SAS, Azure::Core::Url(connection).GetQueryParameters()};
+            }
+            catch (const std::logic_error &)
+            {
+                return std::nullopt;
+            }
+            catch (const std::runtime_error &)
+            {
+                return std::nullopt;
+            }
+#else
+            return std::nullopt;
+#endif
+        }
+        return AzureCredentials{AzureCredentialsType::Default, {}};
     }
 
     bool copyAzureCredentials(
