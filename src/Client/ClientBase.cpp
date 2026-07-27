@@ -278,6 +278,16 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress)
     return in;
 }
 
+/// Whether a `Progress` packet carries anything worth passing on to the output format.
+/// `Progress::empty` deliberately ignores the volatile `elapsed_ns` / `memory_usage`, but it also
+/// ignores `total_bytes_to_read`, while the protocol allows a packet that reports only a total size
+/// in bytes - `Progress(FileProgress)` produces exactly that shape for sources that cannot estimate
+/// the number of rows. Such a packet is not a keep-alive and must not be dropped.
+static bool progressHasContent(const Progress & value)
+{
+    return !value.empty() || value.total_bytes_to_read != 0;
+}
+
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
     if (dst.empty())
@@ -885,12 +895,13 @@ try
         /// (e.g. from scalar subqueries evaluated during query analysis on the server,
         /// or with parallel replicas on small tables where reading can complete before
         /// any data blocks are sent).
-        /// Note that we replay any non-empty progress, not only progress with non-zero `read_rows`/`read_bytes`:
+        /// Note that we replay any progress that carries content (see `progressHasContent`), not only
+        /// progress with non-zero `read_rows`/`read_bytes`:
         /// the server legitimately sends totals-only packets such as `Progress{0, 0, total_rows_to_read}`
         /// when the first estimate of the total amount of data becomes known before any data block is sent,
         /// and progress-aware formats such as `JSONEachRowWithProgress` have to see them.
         auto replayed = pending_progress.fetchAndResetPiecewiseAtomically();
-        if (!replayed.empty())
+        if (progressHasContent(replayed))
             output_format->onProgress(replayed);
 
         if ((!select_into_file || select_into_file_and_stdout)
@@ -1684,7 +1695,7 @@ void ClientBase::onProgress(const Progress & value)
     /// have to see, so only a genuinely empty progress packet is dropped.
     const bool is_keep_alive = !progress_indication.updateProgress(value);
 
-    if (is_keep_alive && value.empty())
+    if (is_keep_alive && !progressHasContent(value))
         return;
 
     /// Tracks inserted rows for server-side operations like INSERT ... SELECT where data bypasses the client and thus isn't captured in
