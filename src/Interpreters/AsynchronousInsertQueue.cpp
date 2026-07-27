@@ -945,7 +945,7 @@ try
         elem.flush_time_microseconds = timeInMicroseconds(flush_time);
         elem.exception = flush_exception;
         elem.status = flush_exception.empty() ? Status::Ok : Status::FlushError;
-        log.add(std::move(elem));
+        log.add([&](AsynchronousInsertLogElement & element) { element = elem; });
     }
 }
 catch (...)
@@ -1150,7 +1150,7 @@ try
         else if (!elem.exception.empty())
         {
             elem.status = AsynchronousInsertLogElement::ParsingError;
-            async_insert_log->add(std::move(elem));
+            async_insert_log->add([&](AsynchronousInsertLogElement & element) { element = elem; });
         }
         else
         {
