@@ -77,7 +77,9 @@ In the generated command, replace `CLICKHOUSE_USER="default"` with `CLICKHOUSE_U
 
 </Accordion>
 
-To continue with the `default` administrator credentials, copy the command from the **Start Collector** tab. It follows this format:
+To continue with the `default` administrator credentials, copy the command from the **Start Collector** tab. ClickStack pre-populates the service endpoint. Replace the password placeholder with your service password. If you no longer have it, [gather or reset your connection details](/products/cloud/guides/sql-console/connection-details).
+
+The command follows this format:
 
 ```shell
 docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
@@ -363,6 +365,8 @@ Select the data source for your table and confirm that the logs view contains th
 You now have a Managed ClickStack service, a working ingestion path, and a test event that you can inspect in ClickStack.
 
 ## Next steps {#next-steps}
+
+If another guide requires your ClickHouse Cloud endpoint or password, [gather or reset your connection details](/products/cloud/guides/sql-console/connection-details) before continuing.
 
 ### Send application and infrastructure data {#send-application-and-infrastructure-data}
 

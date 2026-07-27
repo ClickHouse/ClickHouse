@@ -92,6 +92,10 @@ connectors:
         statement: route() where IsMatch(attributes["rr-web.event"], ".*")
         pipelines: [logs/out-rrweb]
 exporters:
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
   clickhouse/rrweb:
     database: ${env:CLICKHOUSE_DATABASE}
     endpoint: ${env:CLICKHOUSE_ENDPOINT}
