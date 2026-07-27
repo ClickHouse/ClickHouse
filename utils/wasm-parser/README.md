@@ -23,9 +23,11 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | `ch_check(ptr, size)` | parse; 1 = ok, 0 = syntax error |
 | `ch_format(ptr, size, one_line)` | parse and format; 1 = ok, 0 = parse error |
 | `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
+| `ch_features()` | bit 0: `ch_format` is exported; bit 1: DCL parses |
 
-`build.sh --no-formatting` builds a module that only answers whether a query parses. It has no
-`ch_format`, and is 21% smaller - see below.
+`build.sh --no-formatting` builds a module that only answers whether a query parses; it has no
+`ch_format`. `build.sh --no-dcl` builds one that does not accept access management. Both are
+described below; `ch_features` reports which of them a given module was built with.
 
 Nothing here needs the WebAssembly exception-handling proposal. `tryParseQuery` reports a syntax
 error by returning null rather than by throwing, and no code in `src/Parsers` catches anything, so
@@ -37,8 +39,10 @@ Stripped, 320 translation units, `-Oz` with full LTO and `-fvirtual-function-eli
 
 | build | bytes | gzip -9 |
 | --- | ---: | ---: |
-| parse and format | 1168631 | 362812 |
-| `--no-formatting` | 926506 | 297990 |
+| everything | 1168636 | 362827 |
+| `--no-dcl` | 966857 | 296331 |
+| `--no-formatting` | 926511 | 298006 |
+| `--no-formatting --no-dcl` | 754152 | 242329 |
 
 The first version of this build was 2.7 MB. Most of what went is listed under "What is left out";
 the rest came from compiling for size rather than speed, from dropping locale support, and from
@@ -95,13 +99,50 @@ stores `CAST(x, 'Enum8(\'hello\' = 1)')` today, and would store the newlines and
 the parser kept the source text - `SHOW CREATE TABLE` would then print them back. A build that only
 answers whether a query parses never looks at the string, so there it does not matter.
 
+## What each kind of query costs
+
+`--no-dcl` leaves out access management - `CREATE USER`, `CREATE ROLE`, quotas, row policies,
+settings profiles, masking policies, `GRANT`, `REVOKE`, `CHECK GRANT`, `SET ROLE`, `EXECUTE AS`,
+`SHOW GRANTS`, `SHOW ACCESS`, `SHOW CREATE USER` and `SHOW PRIVILEGES`. `CLICKHOUSE_PARSER_NO_DCL`
+takes them out of the two dispatch functions in `ParserQuery.cpp` and `ParserQueryWithOutput.cpp`,
+and the linker then drops `src/Parsers/Access` and `src/Access/Common` with them. `DEFINER` on a
+view still parses: it is part of `CREATE`, not of access management.
+
+It is worth a build option because nothing else comes close. Below is what each family of
+statements costs at the margin - the whole module, minus that one family:
+
+| left out | bytes | gzip -9 |
+| --- | ---: | ---: |
+| DCL (`--no-dcl`) | 201779 | 66496 |
+| `CREATE TABLE` / `VIEW` / `DATABASE` | 56533 | 16731 |
+| functions, workloads, resources, named collections, indexes | 45644 | 13070 |
+| `ALTER` | 35978 | 7857 |
+| `SYSTEM` | 32086 | 10810 |
+| `KILL`, `WATCH`, `CHECK`, `OPTIMIZE`, `RENAME`, `DROP`, `UNDROP` | 23858 | 6987 |
+| `BACKUP` / `RESTORE` | 17431 | 5772 |
+| `DESCRIBE`, `EXISTS`, table properties | 13356 | 2412 |
+| `SHOW` (other than the access ones) | 12803 | 3231 |
+| `INSERT` | 11611 | 3734 |
+| `DELETE`, `UPDATE`, `COPY`, transactions | 9254 | 2318 |
+| `USE`, `SET` | 1352 | 425 |
+
+DCL is 3.6x the next entry, and costs about as much as the five below it together. The reason is that it
+is not only grammar: `GRANT` needs the privilege lattice in `src/Access/Common` - `AccessFlags`,
+`AccessRightsElement`, the full list of privileges and their hierarchy - and `CREATE USER` needs
+authentication types, host patterns and IP subnets.
+
+The rest do not merit an option each. They are grammar and AST nodes, they overlap heavily, and
+the numbers do not add up the way the table might suggest: `ALTER` and `CREATE` share the column
+and index declarations, everything shares expressions, and no combination of them removes the
+shared core. Measure any combination before promising it - each row was measured on its own,
+against the full build.
+
+Three of these were misleading at first. `SYSTEM`, `INSERT` and `CREATE` are also instantiated by
+`ParserExplainQuery`, so taking them out of `ParserQuery` alone saves almost nothing - `SYSTEM`
+appeared to cost 41 bytes. The table is from a build that removes them from both.
+
 ## Where the remaining size is
 
-Roughly 30% of the bundle is access-entity DDL: `CREATE USER`/`ROLE`/`QUOTA`/`ROW POLICY` and
-`GRANT` cost 334 KB of parser and `Access` code directly. A "queries only" profile would be a
-large, easy cut for a Web UI that never issues those statements.
-
-re2 and abseil (377 KB together) are pulled in by `COLUMNS('regexp')` matchers, by
-`ASTFunction`'s secret-argument finder, and by access-rights parsing. `ASTColumnsRegexpMatcher`
-compiles the pattern while *parsing*, which is what forces a regex engine into a component that
-otherwise only builds a syntax tree.
+re2 and abseil are pulled in by `COLUMNS('regexp')` matchers and by `ASTFunction`'s
+secret-argument finder. `ASTColumnsRegexpMatcher` compiles the pattern while *parsing*, which is
+what forces a regex engine into a component that otherwise only builds a syntax tree.

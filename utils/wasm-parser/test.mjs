@@ -7,12 +7,14 @@ const bytes = await readFile(process.argv[2] ?? 'tmp/wasmexp/parser_stripped.was
 const { instance } = await WebAssembly.instantiate(bytes, wasi.getImportObject());
 wasi.initialize(instance);
 
-const { memory, ch_alloc, ch_free, ch_check, ch_format, ch_result_data, ch_result_size } = instance.exports;
+const { memory, ch_features, ch_alloc, ch_free, ch_check, ch_format, ch_result_data, ch_result_size } = instance.exports;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/// A --no-formatting build exports only ch_check.
-const canFormat = typeof ch_format === 'function';
+const FEATURE_FORMAT = 1, FEATURE_DCL = 2;
+const features = ch_features();
+const canFormat = !!(features & FEATURE_FORMAT);
+const hasDcl = !!(features & FEATURE_DCL);
 
 function call(sql, entry) {
     const bytes = encoder.encode(sql);
@@ -40,21 +42,28 @@ const cases = [
     "SELECT * FROM t1 ANY LEFT JOIN t2 USING (id) SETTINGS max_threads = 4",
     "INSERT INTO t (a,b) VALUES (1,'x')",
     "SYSTEM DROP REPLICA 'r' FROM ZKPATH '/clickhouse/tables/x//'",
-    "CREATE USER u IDENTIFIED WITH sha256_password BY 'p' HOST IP '192.168.0.0/16'",
-    "GRANT SELECT(a, b) ON db.tbl TO u WITH GRANT OPTION",
     'SELECT 1 +',                     // expected to fail
     'SELCT 1',                        // expected to fail
 ];
 
+/// Only a build with DCL accepts these.
+const dclCases = [
+    "CREATE USER u IDENTIFIED WITH sha256_password BY 'p' HOST IP '192.168.0.0/16'",
+    "GRANT SELECT(a, b) ON db.tbl TO u WITH GRANT OPTION",
+    "SHOW GRANTS FOR u",
+];
+cases.push(...dclCases);
+
 let pass = 0;
 for (const sql of cases) {
     const r = format(sql, 1);
-    const expectFail = sql === 'SELECT 1 +' || sql === 'SELCT 1';
+    const expectFail = sql === 'SELECT 1 +' || sql === 'SELCT 1' || (!hasDcl && dclCases.includes(sql));
     const good = expectFail ? !r.ok : r.ok;
     pass += good ? 1 : 0;
     console.log(`${good ? 'ok  ' : 'FAIL'} ${r.ok ? '' : '[error] '}${r.out.replace(/\n/g, ' ').slice(0, 110)}`);
 }
 if (canFormat)
     console.log(`\n--- multi-line formatting ---\n${format(cases[1], 0).out}`);
-console.log(`\n${pass}/${cases.length} passed${canFormat ? '' : ' (parse only, this build cannot format)'}`);
+const notes = [canFormat ? null : 'no formatting', hasDcl ? null : 'no DCL'].filter(Boolean);
+console.log(`\n${pass}/${cases.length} passed${notes.length ? ` (${notes.join(', ')})` : ''}`);
 process.exit(pass === cases.length ? 0 : 1);

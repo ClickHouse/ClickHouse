@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Build the ClickHouse SQL parser as a standalone WebAssembly module.
 #
-#   ./utils/wasm-parser/build.sh [--no-formatting] [output-directory]
+#   ./utils/wasm-parser/build.sh [--no-formatting] [--no-dcl] [output-directory]
 #
 # With --no-formatting the module can only answer whether a query parses, and is about a fifth
 # smaller: turning an AST back into SQL is one virtual call away from every AST node, so it is all
 # or nothing.
+#
+# With --no-dcl it does not accept access management - `CREATE USER`, `GRANT`, row policies,
+# quotas, `SHOW GRANTS` and the rest - which a Web UI has little use for and which costs another
+# quarter of what is left.
 #
 # Requires a wasi-sdk in $WASI_SDK (or ./tmp/wasi-sdk-*), for example:
 #   curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m)-linux.tar.gz | tar xz -C tmp
@@ -17,10 +21,14 @@
 set -euo pipefail
 
 NO_FORMATTING=
-if [ "${1:-}" = "--no-formatting" ]; then
-    NO_FORMATTING=1
-    shift
-fi
+NO_DCL=
+while true; do
+    case "${1:-}" in
+        --no-formatting) NO_FORMATTING=1; shift ;;
+        --no-dcl) NO_DCL=1; shift ;;
+        *) break ;;
+    esac
+done
 
 CH=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 HERE=$CH/utils/wasm-parser
@@ -80,6 +88,10 @@ CXXFLAGS=(
 
 if [ -n "$NO_FORMATTING" ]; then
     CXXFLAGS+=(-DCLICKHOUSE_PARSER_NO_FORMATTING)
+fi
+
+if [ -n "$NO_DCL" ]; then
+    CXXFLAGS+=(-DCLICKHOUSE_PARSER_NO_DCL)
 fi
 
 # The transitive closure the parser actually needs. Everything not listed here is either
@@ -178,7 +190,7 @@ printf '%s\n' "${SOURCES[@]}" | xargs -P "$(getconf _NPROCESSORS_ONLN)" -I{} \
     bash -c 'obj="$1/$(echo "$2" | sed "s|/|__|g; s|\.cpp$|.o|; s|\.cc$|.o|")"; shift 2; "$@" -c "$0" -o "$obj"' \
     {} "$OUT/obj" {} "$CXX" "${CXXFLAGS[@]}" "${INCS[@]}" 2>&1 | grep -E 'error:' | head -20 || true
 
-EXPORTS=(--export=ch_check --export=ch_alloc --export=ch_free --export=ch_result_data --export=ch_result_size)
+EXPORTS=(--export=ch_features --export=ch_check --export=ch_alloc --export=ch_free --export=ch_result_data --export=ch_result_size)
 if [ -z "$NO_FORMATTING" ]; then
     EXPORTS+=(--export=ch_format)
 fi

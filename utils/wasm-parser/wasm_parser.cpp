@@ -3,6 +3,7 @@
 /// The exported interface is deliberately tiny and C-like, so that it can be driven from
 /// JavaScript without any glue-code generator:
 ///
+///   uint32_t  ch_features()                    - what this build can do, see CH_FEATURE_* below
 ///   uint8_t * ch_alloc(uint32_t size)          - allocate a buffer to write the query into
 ///   void      ch_free(uint8_t * ptr)           - release it
 ///   int       ch_check(const char *, uint32_t) - parse; 1 = ok, 0 = syntax error
@@ -50,6 +51,27 @@ DB::ASTPtr parse(const char * query, uint32_t size, std::string & error)
 
 extern "C"
 {
+
+/** What the module was built with. The build leaves out whole classes of work - see `build.sh` -
+  * and a caller that has to cope with more than one build should ask rather than guess.
+  */
+enum : uint32_t
+{
+    CH_FEATURE_FORMAT = 1,  /// `ch_format` is exported
+    CH_FEATURE_DCL = 2,     /// `CREATE USER`, `GRANT` and the rest of access management parse
+};
+
+uint32_t ch_features()
+{
+    uint32_t features = 0;
+#if !defined(CLICKHOUSE_PARSER_NO_FORMATTING)
+    features |= CH_FEATURE_FORMAT;
+#endif
+#if !defined(CLICKHOUSE_PARSER_NO_DCL)
+    features |= CH_FEATURE_DCL;
+#endif
+    return features;
+}
 
 uint8_t * ch_alloc(uint32_t size)
 {
