@@ -789,6 +789,7 @@ def test_geography_read_and_write():
         "4\tMultiLineString\tMULTILINESTRING((0 0,1 1),(2 2,3 3))\n"
         "5\tMultiPolygon\tMULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))\n"
         "6\tNone\t\\N\n"
+        "7\tMultiPoint\tMULTIPOINT((0 0),(1 1))\n"
     )
 
     # The write path serializes a `Geometry` value back to WKT, and a NULL stays a NULL.
@@ -802,23 +803,56 @@ def test_geography_read_and_write():
 
     node.query(
         f"INSERT INTO FUNCTION {bq('test_geo')} (i, g) "
-        "SELECT 7, readWKTPoint('POINT(5 6)')::Geometry"
+        "SELECT 8, readWKTPoint('POINT(5 6)')::Geometry"
     )
-    node.query(f"INSERT INTO FUNCTION {bq('test_geo')} (i, g) SELECT 8, NULL::Geometry")
+    node.query(f"INSERT INTO FUNCTION {bq('test_geo')} (i, g) SELECT 9, NULL::Geometry")
+    # A MultiPoint round-trips through the write path as well.
+    node.query(
+        f"INSERT INTO FUNCTION {bq('test_geo')} (i, g) "
+        "SELECT 10, readWKTMultiPoint('MULTIPOINT(7 8, 9 10)')::Geometry"
+    )
     assert node.query(
-        f"SELECT i, variantType(g), wkt(g) FROM {bq('test_geo')} WHERE i > 6 ORDER BY i FORMAT TSV"
-    ) == ("7\tPoint\tPOINT(5 6)\n" "8\tNone\t\\N\n")
+        f"SELECT i, variantType(g), wkt(g) FROM {bq('test_geo')} WHERE i > 7 ORDER BY i FORMAT TSV"
+    ) == (
+        "8\tPoint\tPOINT(5 6)\n"
+        "9\tNone\t\\N\n"
+        "10\tMultiPoint\tMULTIPOINT((7 8),(9 10))\n"
+    )
+
+
+def test_geography_null_rejected_where_bigquery_forbids_it():
+    # `Geometry` is a `Variant` that carries its own NULL, so a NULL value can reach the write path even
+    # for a REQUIRED field and for an element of a REPEATED field, where BigQuery accepts no NULL. Such a
+    # value is rejected locally instead of being sent as JSON `null` and failing inside `insertAll`.
+    mock_reset()
+    error = node.query_and_get_error(
+        f"INSERT INTO FUNCTION {bq('test_geo_required')} (i, g) SELECT 1, NULL::Geometry"
+    )
+    assert "REQUIRED" in error and "NULL" in error
+    assert mock_stats()["insert_requests"] == []
+
+    error = node.query_and_get_error(
+        f"INSERT INTO FUNCTION {bq('test_geo')} (i, garr) "
+        "SELECT 11, [readWKTPoint('POINT(1 2)')::Geometry, NULL::Geometry]"
+    )
+    assert "REPEATED" in error and "NULL" in error
+    assert mock_stats()["insert_requests"] == []
+
+    # A non-NULL value of the same shape is accepted.
+    node.query(
+        f"INSERT INTO FUNCTION {bq('test_geo_required')} (i, g) "
+        "SELECT 2, readWKTPoint('POINT(1 2)')::Geometry"
+    )
+    assert (
+        node.query(f"SELECT i, wkt(g) FROM {bq('test_geo_required')} FORMAT TSV")
+        == "2\tPOINT(1 2)\n"
+    )
 
 
 def test_geography_unsupported_shape_rejected():
-    # A MULTIPOINT or a GEOMETRYCOLLECTION has no counterpart in the `Geometry` type, so reading such a
-    # value raises an error instead of silently coercing it to a different shape.
+    # A GEOMETRYCOLLECTION has no counterpart in the `Geometry` type, so reading such a value raises an
+    # error instead of silently coercing it to a different shape.
     mock_reset()
-    error = node.query_and_get_error(
-        f"SELECT g FROM {bq('test_geo_multipoint')} FORMAT TSV"
-    )
-    assert "MULTIPOINT" in error and "not supported" in error
-
     error = node.query_and_get_error(
         f"SELECT g FROM {bq('test_geo_collection')} FORMAT TSV"
     )

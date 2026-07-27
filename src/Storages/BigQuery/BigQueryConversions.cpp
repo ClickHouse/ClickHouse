@@ -65,8 +65,8 @@ T parseStrict(const String & text, const BigQueryField & field)
 
 /// BigQuery returns a GEOGRAPHY value as WKT, and it is mapped to the ClickHouse `Geometry` type, which is
 /// a `Variant` of the geometric types, so the shape of the WKT text selects the variant.
-/// `MULTIPOINT` and `GEOMETRYCOLLECTION` are valid GEOGRAPHY shapes that have no ClickHouse counterpart;
-/// they are rejected as unsupported instead of being silently coerced to another shape.
+/// `GEOMETRYCOLLECTION` is a valid GEOGRAPHY shape that has no ClickHouse counterpart;
+/// it is rejected as unsupported instead of being silently coerced to another shape.
 void insertGeographyValue(IColumn & column, const DataTypePtr & type, const BigQueryField & field, const String & text)
 {
     auto & column_variant = assert_cast<ColumnVariant &>(column);
@@ -105,13 +105,21 @@ void insertGeographyValue(IColumn & column, const DataTypePtr & type, const BigQ
 
     /// The longer prefixes are matched first, because `multilinestring` also starts with `multi`
     /// and `linestring` is a prefix of nothing else only after `multilinestring` is excluded.
-    if (shape.starts_with("multipoint") || shape.starts_with("geometrycollection"))
+    if (shape.starts_with("geometrycollection"))
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "The BigQuery GEOGRAPHY field '{}' contains a value that is not supported by the ClickHouse "
             "`Geometry` type: '{}'", field.name, text);
 
-    if (shape.starts_with("point"))
+    if (shape.starts_with("multipoint"))
+    {
+        MultiPoint<CartesianPoint> multipoint;
+        read_wkt(multipoint);
+        MultiPointSerializer<CartesianPoint> serializer;
+        serializer.add(multipoint);
+        insert_geometry("MultiPoint", serializer);
+    }
+    else if (shape.starts_with("point"))
     {
         /// A ClickHouse `Point` is a `Tuple(Float64, Float64)` with no empty representation, while
         /// `POINT EMPTY` is valid WKT that `read_wkt` accepts without writing the coordinates.
@@ -391,8 +399,22 @@ Poco::Dynamic::Var leafJSONValue(const BigQueryField & field, const DataTypePtr 
         {
             /// A `Geometry` column is a `Variant`, which represents a NULL by itself instead of being
             /// wrapped in `Nullable`, so the NULL of a NULLABLE GEOGRAPHY field is handled here.
+            /// The `Variant` also carries its own NULL inside `Array(Geometry)` and for a REQUIRED field,
+            /// where BigQuery accepts no NULL at all, so such a value is rejected locally instead of
+            /// being sent as JSON `null` and failing remotely in `tabledata.insertAll`.
             if (assert_cast<const ColumnVariant &>(column).globalDiscriminatorAt(row) == ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                if (field.repeated)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "An element of the BigQuery REPEATED GEOGRAPHY field '{}' is NULL, "
+                        "but a BigQuery array cannot contain NULL elements", field.name);
+                if (field.required)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "The BigQuery GEOGRAPHY field '{}' is REQUIRED, but the value is NULL", field.name);
                 return {};
+            }
             return Poco::Dynamic::Var(geographyWKT(type, column, row));
         }
         case BigQueryField::Type::Range:

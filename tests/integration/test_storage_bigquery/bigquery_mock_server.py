@@ -240,18 +240,24 @@ GEO_ROWS = [
     row("4", "MULTILINESTRING((0 0, 1 1), (2 2, 3 3))", []),
     row("5", "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))", []),
     row("6", None, []),
+    row("7", "MULTIPOINT(0 0, 1 1)", []),
 ]
 
-# MULTIPOINT and GEOMETRYCOLLECTION are valid GEOGRAPHY shapes that the ClickHouse `Geometry` type
-# cannot represent, so reading such a value must raise an error instead of coercing it to another shape.
+# A REQUIRED GEOGRAPHY field. `Geometry` is a `Variant` that carries its own NULL, so a NULL value can
+# reach the write path even for a field where BigQuery accepts no NULL; the writer must reject it.
+GEO_REQUIRED_SCHEMA = [
+    f("i", "INTEGER", "REQUIRED"),
+    f("g", "GEOGRAPHY", "REQUIRED"),
+]
+
+# GEOMETRYCOLLECTION is a valid GEOGRAPHY shape that the ClickHouse `Geometry` type cannot represent,
+# so reading such a value must raise an error instead of coercing it to another shape.
 GEO_UNSUPPORTED_SCHEMA = [
     f("i", "INTEGER", "REQUIRED"),
     f("g", "GEOGRAPHY"),
 ]
 
 # One shape per table: predicates are not pushed down, so a query always reads every row of the table.
-GEO_MULTIPOINT_ROWS = [row("1", "MULTIPOINT(0 0, 1 1)")]
-
 GEO_COLLECTION_ROWS = [row("1", "GEOMETRYCOLLECTION(POINT(0 0), LINESTRING(1 1, 2 2))")]
 
 # A deliberately wide table. BigQuery allows up to 10000 columns with names up to 300 bytes, so the
@@ -327,10 +333,10 @@ def reset_tables():
             "schema": GEO_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in GEO_ROWS],
         },
-        "test_geo_multipoint": {
+        "test_geo_required": {
             "type": "TABLE",
-            "schema": GEO_UNSUPPORTED_SCHEMA,
-            "rows": [json.loads(json.dumps(r)) for r in GEO_MULTIPOINT_ROWS],
+            "schema": GEO_REQUIRED_SCHEMA,
+            "rows": [],
         },
         "test_geo_collection": {
             "type": "TABLE",
