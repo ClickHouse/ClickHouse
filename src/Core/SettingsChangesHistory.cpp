@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"reader_executor_window_size", 4194304, 4194304, "New experimental ReaderExecutor setting: bytes served per read window."},
+            {"reader_executor_block_size", 1048576, 1048576, "New experimental ReaderExecutor setting: buffer chunk size for source reads."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
@@ -100,8 +102,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_use_long_connections", false, false, "New experimental ReaderExecutor setting (off by default): reuse a held source connection across sequential windows."},
             {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},
-            {"reader_executor_window_size", 4194304, 4194304, "New experimental ReaderExecutor setting: bytes served per read window."},
-            {"reader_executor_block_size", 1048576, 1048576, "New experimental ReaderExecutor setting: buffer chunk size for source reads."},
             {"precise_float_parsing", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"iceberg_manifest_min_count_to_compact", 30, 30, "New setting to control manifest compaction for Iceberg tables."},
