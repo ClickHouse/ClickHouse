@@ -757,22 +757,27 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     /// to avoid modification of hardlinked files.
     const String archive_path = file_is_rewriten ? getRelativeDataPath() + ".tmp" : getRelativeDataPath();
 
+    /// Validate the metadata changes and calculate the index before the destination file is
+    /// opened: on a disk without a real transaction `writeFile` truncates the destination right
+    /// away, so a throwing preparation would leave a truncated archive behind.
+    auto plan = writer->prepareFinalize(preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
     /// The writer keeps the whole part in memory, so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
     auto buf = transaction->writeFile(
         archive_path, DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode::Rewrite, writer->getWriteSettings());
 
-    auto [new_index, need_sync] = writer->finalize(*buf, preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    writer->finalize(*buf, plan);
 
     buf->finalize();
-    if (need_sync)
+    if (plan.need_sync)
         buf->sync();
 
     if (file_is_rewriten)
         transaction->replaceFile(archive_path, getRelativeDataPath());
 
-    reader.emplace(new_index);
+    reader.emplace(plan.index);
     writer.reset();
 }
 

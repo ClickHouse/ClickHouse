@@ -132,3 +132,50 @@ TEST(PackedFilesWriter, Removes)
     auto in = reader.readFile(disk, data_filename, "file3", ReadSettings{}, {});
     assertString("101", *in);
 }
+
+/// `prepareFinalize` performs every check that can throw, so a caller can open the destination
+/// file only after it succeeded and never truncate an existing archive on a failed finalization.
+TEST(PackedFilesWriter, PrepareFinalizeDoesNotTouchDestination)
+{
+    static constexpr auto data_filename = "data_prepare.packed";
+
+    fs::create_directory("tmp/");
+    DiskPtr disk = std::make_shared<DiskLocal>("local_disk", "tmp/");
+
+    PackedFilesWriter writer1;
+
+    {
+        auto out1 = writer1.writeFile("file1");
+        writeString("123", *out1);
+        out1->finalize();
+    }
+
+    auto old_index = writeArchive(disk, data_filename, writer1);
+    const auto old_archive_size = disk->getFileSize(data_filename);
+
+    PackedFilesWriter writer2;
+
+    {
+        auto out2 = writer2.writeFile("file2");
+        writeString("456", *out2);
+        out2->finalize();
+
+        /// There is no such file, neither in the writer nor in the old index, so the change
+        /// remains unapplied and finalization must fail.
+        writer2.removeFile("file_that_does_not_exist");
+    }
+
+    writer2.applyMetadataChanges(old_index);
+
+    ASSERT_THROW(
+        writer2.prepareFinalize({}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE),
+        Exception);
+
+    /// The old archive is intact: it was never opened for writing.
+    ASSERT_EQ(disk->getFileSize(data_filename), old_archive_size);
+
+    PackedFilesReader reader(disk, data_filename, getReadSettings());
+    auto in = reader.readFile(disk, data_filename, "file1", ReadSettings{}, {});
+    assertString("123", *in);
+    assertEOF(*in);
+}

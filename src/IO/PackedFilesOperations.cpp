@@ -216,11 +216,15 @@ void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskP
         out->finalize();
     }
 
+    /// Prepare the index before the destination file is opened, so that a failure does not leave
+    /// a truncated archive behind.
+    auto plan = writer.prepareFinalize(file_order_hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+
     auto buf = disk_out->writeFile(output_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, writer.getWriteSettings());
-    auto [_, need_sync] = writer.finalize(*buf, file_order_hint, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    writer.finalize(*buf, plan);
 
     buf->finalize();
-    if (need_sync)
+    if (plan.need_sync)
         buf->sync();
 }
 
