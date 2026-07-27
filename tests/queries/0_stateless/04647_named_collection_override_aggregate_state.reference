@@ -1,0 +1,19 @@
+aggregate state override is rejected
+Cannot use a value of type AggregateFunctionState as the override for key 'filename'
+Cannot use a value of type AggregateFunctionState as the override for key 'format'
+aggregate state override is rejected for BACKUP
+Cannot use a value of type AggregateFunctionState as the override for key 'filename'
+the error is BAD_ARGUMENTS, not an assertion
+other value types are still accepted and stored verbatim
+Unknown format NoSuchFormat1. (UNKNOWN_FORMAT)
+Unknown format 42. (UNKNOWN_FORMAT)
+Unknown format 61f0c404-5cb3-11e7-907b-a6006ad3dba0. (UNKNOWN_FORMAT)
+Unknown format 1.2.3.4. (UNKNOWN_FORMAT)
+Unknown format ::1. (UNKNOWN_FORMAT)
+Unknown format 1.5. (UNKNOWN_FORMAT)
+Unknown format 170141183460469231722463931679029329921. (UNKNOWN_FORMAT)
+Unknown format 255. (UNKNOWN_FORMAT)
+Unknown format 1.5. (UNKNOWN_FORMAT)
+Unknown format 1. (UNKNOWN_FORMAT)
+an aggregate state nested in a container is still accepted
+1

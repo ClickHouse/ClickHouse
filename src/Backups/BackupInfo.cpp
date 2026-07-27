@@ -387,7 +387,7 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
             /// could be reused against a user-chosen endpoint under the S3 credential restriction.
             if (!mutable_collection->isOverridable(key, allow_override_by_default))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
-            mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
+            mutable_collection->setOrUpdate<String>(key, convertOverrideValueToString(key, value), {});
             mutable_collection->markQueryOverridden(key);
         }
         collection = std::move(mutable_collection);

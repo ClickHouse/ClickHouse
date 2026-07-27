@@ -100,6 +100,47 @@ std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context)
     return params;
 }
 
+String convertOverrideValueToString(const String & key, const Field & value)
+{
+    /// The switch is exhaustive with no `default:`, so a new Field type has to be classified here.
+    switch (value.getType())
+    {
+        /// An aggregate function state has no textual form: `fieldToString` reaches the
+        /// `writeText(const AggregateFunctionStateData &)` stub in Core/Field.cpp, which throws
+        /// LOGICAL_ERROR. Reject it as bad user input instead.
+        case Field::Types::Which::AggregateFunctionState:
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use a value of type {} as the override for key '{}' of a named collection: "
+                "it has no textual representation",
+                fieldTypeToString(value.getType()),
+                key);
+        case Field::Types::Which::Null:
+        case Field::Types::Which::Bool:
+        case Field::Types::Which::UInt64:
+        case Field::Types::Which::Int64:
+        case Field::Types::Which::UInt128:
+        case Field::Types::Which::Int128:
+        case Field::Types::Which::UInt256:
+        case Field::Types::Which::Int256:
+        case Field::Types::Which::Float64:
+        case Field::Types::Which::Decimal32:
+        case Field::Types::Which::Decimal64:
+        case Field::Types::Which::Decimal128:
+        case Field::Types::Which::Decimal256:
+        case Field::Types::Which::String:
+        case Field::Types::Which::UUID:
+        case Field::Types::Which::IPv4:
+        case Field::Types::Which::IPv6:
+        case Field::Types::Which::Array:
+        case Field::Types::Which::Tuple:
+        case Field::Types::Which::Map:
+        case Field::Types::Which::Object:
+        case Field::Types::Which::CustomType:
+            return fieldToString(value);
+    }
+}
+
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,
@@ -161,7 +202,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
         }
 
         const auto & [key, value] = *value_override;
-        collection_copy->setOrUpdate<String>(key, fieldToString(std::get<Field>(value)), {});
+        collection_copy->setOrUpdate<String>(key, convertOverrideValueToString(key, std::get<Field>(value)), {});
         collection_copy->markQueryOverridden(key);
     }
 

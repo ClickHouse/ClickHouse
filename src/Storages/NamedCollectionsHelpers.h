@@ -53,6 +53,11 @@ std::pair<std::string, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
 /// Parses asts as key value pairs and returns a map of them.
 std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context);
 
+/// Converts the value of a `key = value` override into the string stored in a named collection.
+/// Throws BAD_ARGUMENTS if the value has no textual representation, because a named collection
+/// stores every value as text and the converter is partial (see Core/Field.cpp).
+String convertOverrideValueToString(const String & key, const Field & value);
+
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
 
 struct ExternalDatabaseEqualKeysSet
