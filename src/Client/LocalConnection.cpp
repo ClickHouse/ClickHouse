@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Client/LocalConnection.h>
 #include <memory>
 #include <Client/ClientBase.h>
