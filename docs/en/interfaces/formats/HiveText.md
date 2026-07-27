@@ -148,7 +148,9 @@ value range. Likewise, `Decimal` values with a precision above 38 (that is,
 as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
 `Map` or `Tuple` (which ClickHouse permits) is rejected with a
 `NOT_IMPLEMENTED` exception, because no Hive schema could read such values
-back. All these checks are applied upfront to the declared column types, before
+back. The empty map literal `map()` is rejected for the same reason: its type
+is `Map(Nothing, Nothing)`, and `Nothing` is not a type that a Hive
+`MAP<key_type, data_type>` declaration could name. All these checks are applied upfront to the declared column types, before
 any row is written: a query whose header contains an unsupported type anywhere
 in its type tree is rejected even when the actual values would never reach the
 unsupported serialization (for example, a `Nullable` of an unsupported type

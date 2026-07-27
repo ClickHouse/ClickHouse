@@ -77,6 +77,16 @@ void assertTypeIsSupported(const DataTypePtr & type, size_t nesting_level)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Type {} is not supported by the HiveText output format: Hive supports only primitive types as Map keys",
                 type_map->getName());
+        /// `Nothing` is accepted as a leaf below, because it has no values to serialize, but it is
+        /// not a type any Hive schema could declare. That is harmless for the `NULL` and `[]`
+        /// literals, whose types are `Nullable(Nothing)` and `Array(Nothing)` and which serialize
+        /// the same way for any element type, but not for a Map key: `map()` is typed
+        /// `Map(Nothing, Nothing)`, and `MAP<key_type, data_type>` needs a concrete primitive key,
+        /// so such a map has to be rejected for the same reason as a composite one.
+        if (key_type.isNothing())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Type {} is not supported by the HiveText output format: Hive requires a concrete primitive type as a Map key",
+                type_map->getName());
         assertTypeIsSupported(type_map->getKeyType(), nesting_level + 2);
         assertTypeIsSupported(type_map->getValueType(), nesting_level + 2);
     }
@@ -93,6 +103,8 @@ void assertTypeIsSupported(const DataTypePtr & type, size_t nesting_level)
             /// Types with a serializeTextHive implementation. `Nothing` is allowed because it has
             /// no values to serialize: rejecting it would break, e.g., `SELECT NULL FORMAT HiveText`
             /// (whose type is `Nullable(Nothing)`) and `SELECT [] FORMAT HiveText` (`Array(Nothing)`).
+            /// The one position where it cannot be allowed is a Map key, which the Map branch above
+            /// rejects separately.
             case TypeIndex::Nothing:
             case TypeIndex::UInt8:
             case TypeIndex::UInt16:
@@ -359,7 +371,9 @@ Likewise, `Map` keys must be of a primitive type: Hive declares maps
 as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
 `Map` or `Tuple` (which ClickHouse permits) is rejected with a
 `NOT_IMPLEMENTED` exception, because no Hive schema could read such values
-back. All these checks are applied upfront to the declared column types, before
+back. The empty map literal `map()` is rejected for the same reason: its type
+is `Map(Nothing, Nothing)`, and `Nothing` is not a type that a Hive
+`MAP<key_type, data_type>` declaration could name. All these checks are applied upfront to the declared column types, before
 any row is written: a query whose header contains an unsupported type anywhere
 in its type tree is rejected even when the actual values would never reach the
 unsupported serialization (for example, a `Nullable` of an unsupported type
