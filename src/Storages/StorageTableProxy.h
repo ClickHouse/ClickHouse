@@ -89,6 +89,14 @@ public:
             nested->flushAndPrepareForShutdown();
     }
 
+    void prepareForDrop(ContextPtr query_context) override
+    {
+        std::lock_guard lock{nested_mutex};
+        drop_query_context = query_context;
+        if (nested)
+            nested->prepareForDrop(query_context);
+    }
+
     void drop() override
     {
         std::lock_guard lock{nested_mutex};
@@ -110,6 +118,8 @@ public:
             }
 
             auto nested_storage = get_nested();
+            if (drop_query_context)
+                nested_storage->prepareForDrop(drop_query_context);
             nested_storage->drop();
             get_nested = {};
         }
@@ -203,6 +213,7 @@ private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
     mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
+    ContextPtr drop_query_context; /// Set by `prepareForDrop`, forwarded to a nested storage materialized in `drop`.
     LoggerPtr log;
 };
 

@@ -84,6 +84,8 @@ public:
         return getNested()->write(query, metadata_snapshot, context, async_insert);
     }
 
+    void prepareForDrop(ContextPtr query_context) override { getNested()->prepareForDrop(query_context); }
+
     void drop() override { getNested()->drop(); }
 
     void truncate(

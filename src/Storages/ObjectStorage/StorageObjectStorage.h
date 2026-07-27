@@ -89,6 +89,8 @@ public:
         ContextPtr local_context,
         TableExclusiveLockHolder &) override;
 
+    void prepareForDrop(ContextPtr query_context) override;
+
     void drop() override;
 
     bool supportsPartitionBy() const override { return true; }
@@ -241,6 +243,9 @@ protected:
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID storage_id;
     BackgroundJobsAssignee background_operations_assignee;
+
+    std::mutex drop_context_mutex;
+    ContextPtr drop_context TSA_GUARDED_BY(drop_context_mutex);
 };
 
 }

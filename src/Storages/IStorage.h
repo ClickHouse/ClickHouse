@@ -460,6 +460,9 @@ public:
       */
     virtual void drop() {}
 
+    /// Called from `DROP TABLE` with the query context, before `drop` is scheduled in the background.
+    virtual void prepareForDrop(ContextPtr /* query_context */) {}
+
     virtual void dropInnerTableIfAny(bool /* sync */, ContextPtr /* context */) {}
 
     /// Return true if the storage supports TRUNCATE operation.
