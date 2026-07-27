@@ -195,10 +195,24 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
     {
         const UInt64 row = row_offsets[base + i];
         const size_t from_mark = index_granularity.getMarkRangeForRowOffset(row).begin;
-        const size_t granule_start = index_granularity.getMarkStartingRow(from_mark);
+
+        /// `MergeTreeReaderWide::readRows` seeks back to the mark and drops its substream caches on every call, so asking
+        /// for one row at a time would decompress the whole granule once per survivor - for a granule holding several
+        /// shortlisted rows that is worse than the plain granule read this source replaces. The offsets are ascending,
+        /// so survivors of the same granule arrive consecutively: keep the streams where the previous call left them and
+        /// skip the rows in between (`continue_reading` suppresses the seek, `rows_offset` does the skipping). Each
+        /// granule is then decompressed at most once, regardless of how many of its rows survive.
+        const bool continue_reading = from_mark == last_read_mark && row >= next_unread_row;
+        const size_t rows_offset = continue_reading
+            ? row - next_unread_row
+            : row - index_granularity.getMarkStartingRow(from_mark);
+
         other_reader->readRows(
-            from_mark, /*current_task_last_mark=*/ from_mark + 1, /*continue_reading=*/ false,
-            /*max_rows_to_read=*/ 1, /*rows_offset=*/ row - granule_start, dst_columns);
+            from_mark, /*current_task_last_mark=*/ from_mark + 1, continue_reading,
+            /*max_rows_to_read=*/ 1, rows_offset, dst_columns);
+
+        last_read_mark = from_mark;
+        next_unread_row = row + 1;
     }
 
     /// Normalize exactly like the standard read path: synthesize columns and defaults that are absent from older parts

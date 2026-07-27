@@ -52,8 +52,8 @@ SELECT 'int8_wide_parts',
 -- Point-read (aligned) vs granule-read (unaligned) two-stage search return the identical top-k.
 WITH (SELECT vec FROM quantize_pr_int8_aligned WHERE id = 2500) AS ref
 SELECT 'int8_aligned_eq_unaligned',
-    (SELECT groupArray(id) FROM (SELECT id FROM quantize_pr_int8_aligned   ORDER BY L2Distance(vec, ref) ASC, id LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
-    = (SELECT groupArray(id) FROM (SELECT id FROM quantize_pr_int8_unaligned ORDER BY L2Distance(vec, ref) ASC, id LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
+    (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_int8_aligned   ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
+    = (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_int8_unaligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
 
 -- A row's own vector rescores to itself as the nearest neighbour via the point read.
 WITH (SELECT vec FROM quantize_pr_int8_aligned WHERE id = 2500) AS ref
@@ -89,8 +89,8 @@ SELECT 'bf16_wide_parts',
 
 WITH (SELECT vec FROM quantize_pr_bf16_aligned WHERE id = 2500) AS ref
 SELECT 'bf16_aligned_eq_unaligned',
-    (SELECT groupArray(id) FROM (SELECT id FROM quantize_pr_bf16_aligned   ORDER BY L2Distance(vec, ref) ASC, id LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
-    = (SELECT groupArray(id) FROM (SELECT id FROM quantize_pr_bf16_unaligned ORDER BY L2Distance(vec, ref) ASC, id LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
+    (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_bf16_aligned   ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
+    = (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_bf16_unaligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
 
 WITH (SELECT vec FROM quantize_pr_bf16_aligned WHERE id = 2500) AS ref
 SELECT 'bf16_nearest_is_self',
@@ -128,8 +128,8 @@ FROM quantize_pr_pq_aligned SETTINGS max_block_size = 512;
 -- Point-read (aligned) vs granule-read (unaligned) product-codec search return the identical top-k.
 WITH (SELECT vec FROM quantize_pr_pq_aligned WHERE id = 2500) AS ref
 SELECT 'pq_aligned_eq_unaligned',
-    (SELECT groupArray(id) FROM (SELECT id FROM quantize_pr_pq_aligned   ORDER BY L2Distance(vec, ref) ASC, id LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
-    = (SELECT groupArray(id) FROM (SELECT id FROM quantize_pr_pq_unaligned ORDER BY L2Distance(vec, ref) ASC, id LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
+    (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_pq_aligned   ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20))
+    = (SELECT arraySort(groupArray(id)) FROM (SELECT id FROM quantize_pr_pq_unaligned ORDER BY L2Distance(vec, ref) ASC LIMIT 20 SETTINGS vector_search_index_fetch_multiplier = 20));
 
 WITH (SELECT vec FROM quantize_pr_pq_aligned WHERE id = 2500) AS ref
 SELECT 'pq_nearest_is_self',

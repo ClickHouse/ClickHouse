@@ -8,6 +8,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/PODArray.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -78,6 +80,12 @@ private:
 
     bool initialized = false;
     size_t next_offset_index = 0;
+
+    /// Position `other_reader` was left at by the previous `readRows` call: the mark it read from, and the first row it
+    /// has not consumed yet. Used to keep reading forward instead of re-seeking for survivors in the same granule.
+    static constexpr size_t no_mark = std::numeric_limits<size_t>::max();
+    size_t last_read_mark = no_mark;
+    UInt64 next_unread_row = 0;
 
     std::shared_ptr<IMergeTreeDataPartInfoForReader> part_info;
     std::unique_ptr<CompressedReadBufferFromFile> vector_buffer;

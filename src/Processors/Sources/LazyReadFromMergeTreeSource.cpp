@@ -232,6 +232,10 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
     /// instead of decompressing whole granules. Any other lazy columns are read normally (granule read) alongside it and
     /// merged into the same chunk. Requires the whole batch to be eligible; otherwise fall through to the ordinary
     /// granule read below. See MergeTreePointReadSource.
+    ///
+    /// The step does not know which column the vector search ranks by, so the fast path engages only when the lazy header
+    /// holds exactly one quantized vector column - that one must be the rescored column. With several of them we could
+    /// pick the payload column and leave the heavy rescored one on the granule read, so stay on the ordinary path.
     {
         const Block & lazy_header = outputs.front().getHeader();
         std::optional<NameAndTypePair> vector_column;
@@ -243,9 +247,13 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
                 continue;
             if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
             {
+                if (vector_column)
+                {
+                    vector_column.reset();
+                    break;
+                }
                 vector_column = NameAndTypePair(col.name, col.type);
                 point_read_dims = params->dimensions;
-                break;
             }
         }
 
