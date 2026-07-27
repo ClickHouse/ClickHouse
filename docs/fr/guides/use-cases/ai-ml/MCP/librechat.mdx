@@ -14,9 +14,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 > et le connecter aux jeux de données d’exemple de ClickHouse.
 
 <Steps>
-  <Step>
-    ## Installer Docker
-
+  <Step title="Installer Docker" id="install-docker">
     Vous aurez besoin de Docker pour exécuter LibreChat et le serveur MCP. Pour installer Docker :
 
     1. Rendez-vous sur [docker.com](https://www.docker.com/products/docker-desktop)
@@ -29,9 +27,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     Pour en savoir plus, consultez la [documentation Docker](https://docs.docker.com/get-docker/).
   </Step>
 
-  <Step>
-    ## Cloner le dépôt LibreChat
-
+  <Step title="Cloner le dépôt LibreChat" id="clone-librechat-repo">
     Ouvrez un terminal (invite de commandes, terminal ou PowerShell) et clonez le
     dépôt LibreChat à l’aide de la commande suivante :
 
@@ -41,9 +37,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Créez et modifiez le fichier .env
-
+  <Step title="Créez et modifiez le fichier .env" id="create-and-edit-env-file">
     Copiez le fichier de configuration d’exemple `.env.example` dans `.env` :
 
     ```bash
@@ -74,9 +68,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ## Créez un fichier librechat.yaml
-
+  <Step title="Créez un fichier librechat.yaml" id="create-librechat-yaml-file">
     Exécutez la commande suivante pour créer un fichier `librechat.yaml` :
 
     ```bash
@@ -86,9 +78,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     Cela crée le [fichier de configuration](https://www.librechat.ai/docs/configuration/librechat_yaml) principal de LibreChat.
   </Step>
 
-  <Step>
-    ## Ajouter le serveur MCP ClickHouse à Docker Compose
-
+  <Step title="Ajouter le serveur MCP ClickHouse à Docker Compose" id="add-clickhouse-mcp-server-to-docker-compose">
     Ensuite, nous allons ajouter le serveur MCP ClickHouse au fichier Docker Compose de LibreChat
     afin que le LLM puisse interagir avec le
     [ClickHouse SQL playground](https://sql.clickhouse.com/).
@@ -123,9 +113,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     </Card>
   </Step>
 
-  <Step>
-    ## Configurer le serveur MCP dans librechat.yaml
-
+  <Step title="Configurer le serveur MCP dans librechat.yaml" id="configure-mcp-server-in-librechat-yaml">
     Ouvrez `librechat.yaml` et ajoutez la configuration suivante à la fin du fichier :
 
     ```yml
@@ -150,9 +138,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Ajouter un LLM local avec Ollama (facultatif)
-
+  <Step title="Ajouter un LLM local avec Ollama (facultatif)" id="add-local-llm-using-ollama">
     ### Installer Ollama
 
     Rendez-vous sur le [site d’Ollama](https://ollama.com/download) et installez Ollama pour votre système.
@@ -191,9 +177,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     ```
   </Step>
 
-  <Step>
-    ## Démarrer tous les services
-
+  <Step title="Démarrer tous les services" id="start-all-services">
     Depuis la racine du dossier du projet LibreChat, exécutez la commande suivante pour démarrer les services :
 
     ```bash
@@ -203,9 +187,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     Attendez que tous les services soient entièrement opérationnels.
   </Step>
 
-  <Step>
-    ## Ouvrez LibreChat dans votre navigateur
-
+  <Step title="Ouvrez LibreChat dans votre navigateur" id="open-librechat-in-browser">
     Une fois tous les services démarrés, ouvrez votre navigateur et accédez à `http://localhost:3080/`
 
     Créez un compte LibreChat gratuit si vous n’en avez pas encore, puis connectez-vous. Vous devriez
