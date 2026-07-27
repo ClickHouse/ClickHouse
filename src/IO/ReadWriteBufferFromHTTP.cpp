@@ -2,6 +2,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -387,8 +388,15 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          attempt + 1, read_settings.http_settings.max_tries,
                          milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
 
+            /// Checked only on the retry path: an error from the first attempt must keep propagating
+            /// as itself, and a cancelled query must not start another attempt.
+            CurrentThread::checkIfNotCancelled();
+
             sleepForMilliseconds(milliseconds_to_wait);
             milliseconds_to_wait = std::min(milliseconds_to_wait * 2, read_settings.http_settings.retry_max_backoff_ms);
+
+            /// The sleep above is not interruptible, so check again after it.
+            CurrentThread::checkIfNotCancelled();
         }
     }
 }
