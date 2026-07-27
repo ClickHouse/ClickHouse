@@ -108,7 +108,16 @@ std::vector<TableNode *> collectTableNodesWithTemporaryTableName(const std::stri
 /// parallel-replica-eligible unless it is clearly not one, so the force-or-throw
 /// contract is only relaxed when no table in the subtree could be read with parallel
 /// replicas at all.
-bool mayEngageParallelReplicas(IQueryTreeNode * root)
+///
+/// The walk is scoped to `scope_context`: subqueries with a `SETTINGS` clause of their
+/// own get their own context, and the settings that decide whether parallel replicas
+/// are engaged are read from that context, not from `scope_context`. Descending into
+/// them would attribute their tables to an unrelated context, so a branch-local
+/// `SETTINGS allow_experimental_parallel_reading_from_replicas = 2` on a purely
+/// self-referential branch would be rejected because of a sibling branch that reads a
+/// `MergeTree` table. Nodes that share `scope_context` are the ones whose settings
+/// really are the ones being examined, so only those are walked.
+bool mayEngageParallelReplicas(IQueryTreeNode * root, const Context * scope_context)
 {
     std::vector<IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push_back(root);
@@ -117,6 +126,18 @@ bool mayEngageParallelReplicas(IQueryTreeNode * root)
     {
         auto * subtree_node = nodes_to_process.back();
         nodes_to_process.pop_back();
+
+        if (subtree_node != root)
+        {
+            const Context * node_context = nullptr;
+            if (const auto * query_node = subtree_node->as<QueryNode>())
+                node_context = query_node->getContext().get();
+            else if (const auto * union_node = subtree_node->as<UnionNode>())
+                node_context = union_node->getContext().get();
+
+            if (node_context && node_context != scope_context)
+                continue;
+        }
 
         StoragePtr storage;
         if (const auto * table_node = subtree_node->as<TableNode>())
@@ -645,10 +666,41 @@ public:
         /// interpreter context, so overriding only the interpreter context is not enough.
         /// We rewrite the contexts once at construction time and preserve sharing: nodes
         /// that originally pointed to the same context will share the same copy afterwards.
-        const bool recursive_query_may_engage_parallel_replicas = mayEngageParallelReplicas(recursive_query.get());
+        /// Whether parallel replicas could be engaged is a property of a context, not of the
+        /// whole recursive query: a branch with its own `SETTINGS` clause has its own context,
+        /// and the throw below is evaluated per context. Precompute the property for every
+        /// context in the recursive query, so that the result does not depend on the order in
+        /// which the nodes sharing a context happen to be visited. A context counts as
+        /// parallel-replica-eligible if any node using it may engage parallel replicas.
+        std::map<const Context *, bool> context_may_engage_parallel_replicas;
+        {
+            std::vector<IQueryTreeNode *> nodes_to_scan;
+            nodes_to_scan.push_back(recursive_query.get());
+            while (!nodes_to_scan.empty())
+            {
+                auto * node = nodes_to_scan.back();
+                nodes_to_scan.pop_back();
+
+                const Context * node_context = nullptr;
+                if (const auto * qn = node->as<QueryNode>())
+                    node_context = qn->getContext().get();
+                else if (const auto * un = node->as<UnionNode>())
+                    node_context = un->getContext().get();
+
+                if (node_context)
+                {
+                    bool & may_engage = context_may_engage_parallel_replicas[node_context];
+                    may_engage = may_engage || mayEngageParallelReplicas(node, node_context);
+                }
+
+                for (auto & child : node->getChildren())
+                    if (child)
+                        nodes_to_scan.push_back(child.get());
+            }
+        }
 
         std::map<Context *, ContextMutablePtr> context_copies;
-        auto rewrite_context = [&context_copies, recursive_query_may_engage_parallel_replicas](ContextMutablePtr & ctx)
+        auto rewrite_context = [&context_copies, &context_may_engage_parallel_replicas](ContextMutablePtr & ctx)
         {
             if (auto it = context_copies.find(ctx.get()); it != context_copies.end())
             {
@@ -683,15 +735,21 @@ public:
             /// below (setting the mode to `0`) does turn off all of them, since
             /// every `canUse*` predicate requires the setting to be `> 0`.
             ///
-            /// The settings alone are not enough, though: the recursive query also has to
-            /// contain a table parallel replicas could be engaged for (see
-            /// `recursive_query_may_engage_parallel_replicas`). A self-referential
-            /// recursion that reads only the in-memory working table would never use
-            /// parallel replicas in the planner either, so rejecting it merely because the
-            /// profile enables the forcing mode would be a backwards-incompatible change
-            /// unrelated to the stale `GLOBAL JOIN` cache hazard guarded here.
+            /// The settings alone are not enough, though: the part of the recursive query
+            /// governed by this very context also has to contain a table parallel replicas
+            /// could be engaged for (see `context_may_engage_parallel_replicas`). A
+            /// self-referential recursion that reads only the in-memory working table would
+            /// never use parallel replicas in the planner either, so rejecting it merely
+            /// because the profile enables the forcing mode would be a backwards-incompatible
+            /// change unrelated to the stale `GLOBAL JOIN` cache hazard guarded here. The
+            /// property is per context rather than per query, so that a branch-local
+            /// `SETTINGS` clause is not rejected because of a sibling branch.
+            auto may_engage_it = context_may_engage_parallel_replicas.find(ctx.get());
+            const bool may_engage_parallel_replicas
+                = may_engage_it != context_may_engage_parallel_replicas.end() && may_engage_it->second;
+
             if (ctx->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2
-                && recursive_query_may_engage_parallel_replicas
+                && may_engage_parallel_replicas
                 && (ctx->canUseTaskBasedParallelReplicas()
                     || ctx->canUseParallelReplicasCustomKey()
                     || ctx->canUseOffsetParallelReplicas()))

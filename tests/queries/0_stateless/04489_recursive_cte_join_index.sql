@@ -750,6 +750,38 @@ SELECT sum(n) FROM joined_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- The rejection is decided per branch context, not once for the whole recursive query:
+-- a branch that carries the forcing mode in its own `SETTINGS` clause but reads nothing
+-- but the working table must keep running, even when a sibling branch reads a
+-- `MergeTree` table with parallel replicas disabled for itself.
+WITH RECURSIVE mixed_branch_pr AS
+(
+    SELECT toUInt64(1) AS n
+  UNION ALL
+    SELECT n + 1 FROM mixed_branch_pr WHERE n < 10
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+        parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0
+  UNION ALL
+    SELECT e.to_id FROM edges AS e INNER JOIN mixed_branch_pr AS t ON e.from_id = t.n WHERE t.n > 1000000
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 0
+)
+SELECT sum(n) FROM mixed_branch_pr;
+
+-- Conversely, the branch that does read the `MergeTree` table still fails closed when
+-- the forcing mode is set in its own `SETTINGS` clause.
+WITH RECURSIVE mixed_branch_pr_throw AS
+(
+    SELECT toUInt64(1) AS n
+  UNION ALL
+    SELECT n + 1 FROM mixed_branch_pr_throw WHERE n < 10
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 0
+  UNION ALL
+    SELECT e.to_id FROM edges AS e INNER JOIN mixed_branch_pr_throw AS t ON e.from_id = t.n WHERE t.n > 1000000
+    SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+        parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0
+)
+SELECT sum(n) FROM mixed_branch_pr_throw; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE edges;
 DROP TABLE two_hop;
 DROP TABLE t_a;
