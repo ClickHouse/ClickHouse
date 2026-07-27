@@ -273,6 +273,7 @@ public:
     }
 
     virtual bool isReadOnly() const = 0;
+    virtual bool isRemote() const = 0;
 
     virtual bool isTransactional() const
     {

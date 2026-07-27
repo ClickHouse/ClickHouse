@@ -498,7 +498,7 @@ bool DiskObjectStorage::isRemote() const
         if (object_storages->takePointingTo(location)->isRemote())
             return true;
 
-    return false;
+    return metadata_storage->isRemote();
 }
 
 struct stat DiskObjectStorage::stat(const String & path) const
