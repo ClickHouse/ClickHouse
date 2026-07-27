@@ -179,6 +179,58 @@ static MergeTreeTransactionPtr tryGetTransactionForMutation(const MergeTreeMutat
     return {};
 }
 
+/// Terminal state of the transaction that started a mutation, resolved from the entry's cached CSN,
+/// the running transaction list and the transaction log (the authoritative source).
+enum class MutationTransactionState
+{
+    NonTransactional,   /// The mutation does not belong to a transaction.
+    Pending,            /// The transaction is still running, so the outcome is not known yet.
+    Committed,          /// The transaction committed, so the mutation must be applied.
+    RolledBack,         /// The transaction was rolled back; `killMutation` is removing the entry.
+    Orphaned,           /// The transaction is gone from the running list and never committed.
+};
+
+/// `finalizeCommittedTransaction` erases the transaction from the running list only after
+/// `afterCommit` cached the CSN in the entry, and `rollbackTransaction` erases it only after the
+/// `killMutation` sweep, so a missing transaction with an unknown CSN in the log means the entry is
+/// an orphan left by the mutation-registration/`KILL TRANSACTION` race (see the failpoint in
+/// `startMutation`). `resolved_csn` is the CSN of a committed transaction and `Tx::UnknownCSN` or
+/// `Tx::RolledBackCSN` otherwise.
+static MutationTransactionState getMutationTransactionState(const MergeTreeMutationEntry & mutation, CSN & resolved_csn)
+{
+    resolved_csn = Tx::UnknownCSN;
+
+    if (mutation.tid.isNonTransactional())
+        return MutationTransactionState::NonTransactional;
+
+    resolved_csn = mutation.csn;
+    if (resolved_csn == Tx::UnknownCSN)
+    {
+        if (tryGetTransactionForMutation(mutation))
+            return MutationTransactionState::Pending;
+
+        resolved_csn = TransactionLog::getCSN(mutation.tid);
+    }
+
+    if (resolved_csn == Tx::UnknownCSN)
+        return MutationTransactionState::Orphaned;
+    if (resolved_csn == Tx::RolledBackCSN)
+        return MutationTransactionState::RolledBack;
+    return MutationTransactionState::Committed;
+}
+
+/// A rolled-back or orphaned transactional mutation describes changes that will never be applied,
+/// so every consumer of `current_mutations_by_version` has to ignore such an entry until it is
+/// removed (by `killMutation` and by `selectPartsToMutate` respectively): otherwise the on-fly
+/// mutation snapshot would return rolled-back data and merge predicates would treat a dead mutation
+/// version as real. Related: https://github.com/ClickHouse/ClickHouse/issues/83252
+static bool isDeadTransactionalMutation(const MergeTreeMutationEntry & mutation)
+{
+    CSN resolved_csn = Tx::UnknownCSN;
+    auto state = getMutationTransactionState(mutation, resolved_csn);
+    return state == MutationTransactionState::Orphaned || state == MutationTransactionState::RolledBack;
+}
+
 static bool supportTransaction(const Disks & disks, LoggerPtr log)
 {
     for (const auto & disk : disks)
@@ -1255,10 +1307,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
         /// previous mutation via `waitForMutation(..., /* from_another_mutation */ true)`,
         /// and reporting a committed mutation against the latest active parts instead of
         /// its snapshot would count parts it never had to touch and hang the waiter.
-        CSN mutation_csn = mutation_entry.csn;
-        if (mutation_csn == Tx::UnknownCSN)
-            mutation_csn = TransactionLog::getCSN(mutation_entry.tid);
-        if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
+        if (isDeadTransactionalMutation(mutation_entry))
             return {};
         committed_without_txn = true;
     }
@@ -1383,10 +1432,7 @@ StorageMergeTree::DataPartsVector StorageMergeTree::getVisibleDataPartsVectorFor
     /// `getMutationsStatus` would count a dead mutation as unfinished until `selectPartsToMutate`
     /// removes the entry, wrongly throttling later mutations via `delayMutationOrThrowIfNeeded` and
     /// keeping `system.mutations.is_done` at 0.
-    CSN mutation_csn = entry.csn;
-    if (mutation_csn == Tx::UnknownCSN)
-        mutation_csn = TransactionLog::getCSN(entry.tid);
-    if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
+    if (isDeadTransactionalMutation(entry))
         return {};
 
     return getVisibleDataPartsVector(entry.tid.start_csn, entry.tid);
@@ -1915,41 +1961,22 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
     {
         auto & entry = it->second;
 
-        /// Non-transactional entries are never orphaned, and an entry whose CSN is already cached
-        /// has been resolved on an earlier round.
-        if (entry.tid.isNonTransactional() || entry.csn != Tx::UnknownCSN)
-        {
-            ++it;
-            continue;
-        }
+        CSN mutation_csn = Tx::UnknownCSN;
+        auto state = getMutationTransactionState(entry, mutation_csn);
 
-        if (tryGetTransactionForMutation(entry))
+        if (state == MutationTransactionState::Committed && entry.csn == Tx::UnknownCSN)
         {
-            /// The transaction is still running; the mutation is pending its outcome.
-            ++it;
-            continue;
-        }
-
-        /// The transaction has reached a terminal state: `finalizeCommittedTransaction` erases it
-        /// from the running list only after `afterCommit` cached the CSN in the entry, and
-        /// `rollbackTransaction` erases it only after the `killMutation` sweep. The cached CSN is
-        /// still unknown, so consult the transaction log — the authoritative source, the same check
-        /// that `loadMutations` and `clearOldMutations` use.
-        CSN mutation_csn = TransactionLog::getCSN(entry.tid);
-
-        if (mutation_csn != Tx::UnknownCSN && mutation_csn != Tx::RolledBackCSN)
-        {
-            /// The transaction committed. Cache the CSN in the entry (as `setMutationCSN` does,
-            /// under the same mutex) so that `system.mutations` shows it and later scheduling rounds
-            /// do not consult the transaction log again; the part selection below applies it.
+            /// The transaction committed but the entry's CSN cache is not filled in (the commit
+            /// happened while this entry was not registered yet). Cache the CSN (as `setMutationCSN`
+            /// does, under the same mutex) so that `system.mutations` shows it and later scheduling
+            /// rounds do not consult the transaction log again.
             entry.writeCSN(mutation_csn);
-            ++it;
-            continue;
         }
 
-        if (mutation_csn == Tx::RolledBackCSN)
+        /// `NonTransactional` and `Pending` entries are not resolved yet, and a `RolledBack` one is
+        /// being removed by `killMutation`.
+        if (state != MutationTransactionState::Orphaned)
         {
-            /// The transaction was rolled back and `killMutation` is removing the entry; leave it.
             ++it;
             continue;
         }
@@ -2332,19 +2359,27 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
 UInt64 StorageMergeTree::getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /*currently_processing_in_background_mutex_lock*/) const
 {
+    /// A rolled-back or orphaned transactional mutation is not a real mutation version: the parts
+    /// will never reach it, so merge predicates must not take it into account.
     auto it = current_mutations_by_version.upper_bound(data_version);
-    if (it == current_mutations_by_version.begin())
-        return 0;
-    --it;
-    return it->first;
+    while (it != current_mutations_by_version.begin())
+    {
+        --it;
+        if (!isDeadTransactionalMutation(it->second))
+            return it->first;
+    }
+    return 0;
 }
 
 UInt64 StorageMergeTree::getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const
 {
-    auto it = current_mutations_by_version.upper_bound(data_version);
-    if (it == current_mutations_by_version.end())
-        return 0;
-    return it->first;
+    /// Skip mutation versions that will never be applied, see `getCurrentMutationVersion`.
+    for (auto it = current_mutations_by_version.upper_bound(data_version); it != current_mutations_by_version.end(); ++it)
+    {
+        if (!isDeadTransactionalMutation(it->second))
+            return it->first;
+    }
+    return 0;
 }
 
 size_t StorageMergeTree::clearOldMutations(bool truncate)
@@ -3744,6 +3779,12 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
 
     for (const auto & [version, entry] : current_mutations_by_version)
     {
+        /// A rolled-back or orphaned transactional mutation will never be applied to the parts, so
+        /// it must not be applied on the fly either (`apply_mutations_on_fly`) — otherwise a
+        /// `SELECT` would return data of a transaction that never committed.
+        if (isDeadTransactionalMutation(entry))
+            continue;
+
         /// Copy a pointer to all commands to avoid extracting and copying them.
         /// Required commands will be copied later only for specific parts.
         if (version <= max_mutation_version && MergeTreeData::IMutationsSnapshot::needIncludeMutationToSnapshot(params, *entry.commands))

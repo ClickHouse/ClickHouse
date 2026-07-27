@@ -948,3 +948,107 @@ def test_kill_transaction_mutation_registration_race(start_cluster):
     assert node.query("SELECT sum(value) FROM mt_kill_txn_race").strip() == "200"
 
     node.query("DROP TABLE IF EXISTS mt_kill_txn_race SYNC")
+
+
+def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
+    """
+    Regression test for the orphaned transactional mutation entry leaking into
+    the consumers of current_mutations_by_version other than the mutation
+    selection path (https://github.com/ClickHouse/ClickHouse/issues/83252).
+
+    The orphan is created exactly as in
+    test_kill_transaction_mutation_registration_race, but merges (and thus the
+    background mutation selection that removes the entry) are stopped, so the
+    entry is observable for as long as the test needs it.
+
+    While the entry is there, getMutationsSnapshot must not report it: the
+    transaction it belongs to was rolled back and never committed, so
+    SELECT ... SETTINGS apply_mutations_on_fly = 1 must return the original
+    data.  Without the shared terminal-state filter, the read would apply an
+    UPDATE of a transaction that never committed.
+    """
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_on_fly SYNC")
+    node.query(
+        "CREATE TABLE mt_kill_txn_on_fly (key UInt64, value UInt64)"
+        " ENGINE=MergeTree ORDER BY key"
+    )
+    node.query("INSERT INTO mt_kill_txn_on_fly SELECT number, 0 FROM numbers(100)")
+
+    # Keep the orphaned entry in place: selectPartsToMutate (which removes it)
+    # is not reached while merges are stopped.
+    node.query("SYSTEM STOP MERGES mt_kill_txn_on_fly")
+
+    session = 43
+    alter_thread = None
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT mt_start_mutation_pause_before_register")
+
+        tx(session, "BEGIN TRANSACTION")
+        tid = tx(session, "SELECT transactionID()").strip()
+        assert tid.startswith("("), f"Unexpected transactionID() result: {tid}"
+
+        def run_alter():
+            try:
+                tx(
+                    session,
+                    "ALTER TABLE mt_kill_txn_on_fly UPDATE value = 1 WHERE 1"
+                    " SETTINGS max_execution_time = 60",
+                )
+            except Exception:
+                pass
+
+        alter_thread = threading.Thread(target=run_alter)
+        alter_thread.start()
+
+        node.query(
+            "SYSTEM WAIT FAILPOINT mt_start_mutation_pause_before_register PAUSE"
+        )
+
+        node.query(f"KILL TRANSACTION WHERE tid = {tid}")
+        assert_eq_with_retry(
+            node,
+            f"SELECT count() FROM system.transactions WHERE tid = {tid}",
+            "0",
+        )
+    finally:
+        node.query(
+            "SYSTEM DISABLE FAILPOINT mt_start_mutation_pause_before_register"
+        )
+
+        if alter_thread is not None:
+            alter_thread.join()
+
+        try:
+            tx(session, "ROLLBACK")
+        except Exception:
+            pass
+
+    # The orphaned entry is registered now and, with merges stopped, nothing
+    # removes it.  Reading with apply_mutations_on_fly must ignore it.
+    assert (
+        node.query(
+            "SELECT sum(value) FROM mt_kill_txn_on_fly",
+            settings={"apply_mutations_on_fly": 1},
+        ).strip()
+        == "0"
+    )
+
+    # And the entry must not be reported as an unfinished mutation either.
+    assert (
+        node.query(
+            "SELECT count() FROM system.mutations WHERE database=currentDatabase()"
+            " AND table='mt_kill_txn_on_fly' AND is_done = 0"
+        ).strip()
+        == "0"
+    )
+
+    # Once the background scheduling runs again, the orphan is removed and
+    # subsequent mutations of the same parts are not blocked.
+    node.query("SYSTEM START MERGES mt_kill_txn_on_fly")
+    node.query(
+        "ALTER TABLE mt_kill_txn_on_fly UPDATE value = 2 WHERE 1",
+        settings={"mutations_sync": 1},
+    )
+    assert node.query("SELECT sum(value) FROM mt_kill_txn_on_fly").strip() == "200"
+
+    node.query("DROP TABLE IF EXISTS mt_kill_txn_on_fly SYNC")
