@@ -283,6 +283,16 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
             /// The local database may be another `Remote` database that (indirectly) refers back to
             /// this one; the guard rejects such a cycle instead of recursing forever.
             LocalTraversalGuard guard(this);
+            /// The underlying database may itself be a `Remote` database: `tryGetTable` below has then
+            /// already validated the caller's `SHOW_COLUMNS` right on the objects that it proxies in
+            /// turn, which live under a different database name, so checking the name of the
+            /// intermediate proxy on top of that would only demand a grant on an object that holds no
+            /// metadata of its own, and would hide from the caller a table it may in fact describe (a
+            /// chain `outer` -> `inner` -> `db` needs no grants on `inner`, only on `db`) — exactly
+            /// like in `fetchTablesList`. Reading and writing the data still requires the rights on
+            /// every hop of the chain, because the query is really executed against the table of the
+            /// intermediate database, as it is for a `Distributed` table over another one.
+            const bool local_database_is_remote = typeid_cast<const DatabaseRemote *>(local_database.get()) != nullptr;
             if (auto storage = local_database->tryGetTable(table_name, local_context))
             {
                 /// Resolution reads the structure of the underlying local table, so it requires the
@@ -291,7 +301,8 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
                 /// actually serves the table: on the remote-replica fallback below no local object
                 /// is touched, so a caller without any grants on the local objects must not be
                 /// rejected there.
-                local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
+                if (!local_database_is_remote)
+                    local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
                 return metadata_snapshot->getColumns();
             }

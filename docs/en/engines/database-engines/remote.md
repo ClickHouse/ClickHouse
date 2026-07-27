@@ -51,6 +51,7 @@ ENGINE = Remote(my_named_collection, database = 'default');
 
 - The engine is a read-through view of the remote server: `CREATE TABLE`, `DROP TABLE`, `ALTER` and similar DDL statements against the `Remote` database are not supported. Manage the schema on the remote server directly.
 - Access rights are enforced on the remote server for the configured remote user, and locally by the usual privileges on the database and its tables.
+- A `Remote` database may point to another `Remote` database on the same server. Listing and describing the tables of such a chain needs no privileges on the intermediate database — it holds neither data nor metadata of its own, and every hop already checks the caller's rights on the objects that it proxies in turn. Reading and writing the data, in contrast, needs `SELECT` / `INSERT` on every hop of the chain, because the query is really executed against the table of the intermediate database, exactly like for a `Distributed` table over another `Distributed` table.
 
 ## Example {#example}
 

@@ -25,6 +25,15 @@ t
 1
 -- ...but the tables invisible in the innermost database stay hidden (prints nothing, then 0)
 0
+-- DESCRIBE through the chain needs no grants on the intermediate database either (prints id UInt64)
+id	UInt64
+-- reading and writing the data, in contrast, needs the rights on every hop of the chain (prints 1, 1)
+1
+1
+-- ...and then they work through the whole chain (prints 1, 2, 3)
+1
+2
+3
 -- system.tables keeps the row of a table whose structure cannot be fetched, with an empty engine
 t	
 -- a table of a multi-shard proxy resolves with the grants on the table alone (prints 4)

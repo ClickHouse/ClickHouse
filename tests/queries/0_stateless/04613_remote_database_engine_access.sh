@@ -88,7 +88,32 @@ ${CLICKHOUSE_CLIENT} --query "REVOKE SHOW TABLES ON ${CLICKHOUSE_DATABASE}.* FRO
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "SHOW TABLES FROM ${REMOTE_DB}_outer"
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "EXISTS TABLE ${REMOTE_DB}_outer.t"
 
+echo '-- DESCRIBE through the chain needs no grants on the intermediate database either (prints id UInt64)'
+# Resolving the table of the outer database resolves the table of the inner one, which has already
+# checked `SHOW COLUMNS` against the object it finally proxies, so the outer database must not
+# additionally require it on the name of the intermediate proxy: the rights on the outer database and
+# on the innermost table are enough.
 ${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.t_nested (id UInt64) ENGINE = MergeTree ORDER BY id;
+    INSERT INTO ${CLICKHOUSE_DATABASE}.t_nested VALUES (1), (2);
+    GRANT SHOW COLUMNS, SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.t_nested TO ${TEST_USER}_nested;
+    GRANT SELECT, INSERT ON ${REMOTE_DB}_outer.* TO ${TEST_USER}_nested;
+"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "DESCRIBE TABLE ${REMOTE_DB}_outer.t_nested" | cut -f1,2
+
+echo '-- reading and writing the data, in contrast, needs the rights on every hop of the chain (prints 1, 1)'
+# The query is really executed against the table of the intermediate database, exactly like for a
+# `Distributed` table over another `Distributed` table, so the caller needs `SELECT` / `INSERT` on it.
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "SELECT * FROM ${REMOTE_DB}_outer.t_nested" 2>&1 | grep -c -m1 "ACCESS_DENIED"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "INSERT INTO ${REMOTE_DB}_outer.t_nested VALUES (3)" 2>&1 | grep -c -m1 "ACCESS_DENIED"
+
+echo '-- ...and then they work through the whole chain (prints 1, 2, 3)'
+${CLICKHOUSE_CLIENT} --query "GRANT SELECT, INSERT ON ${REMOTE_DB}.t_nested TO ${TEST_USER}_nested"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "INSERT INTO ${REMOTE_DB}_outer.t_nested VALUES (3)"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "SELECT * FROM ${REMOTE_DB}_outer.t_nested ORDER BY id"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP TABLE ${CLICKHOUSE_DATABASE}.t_nested;
     DROP USER ${TEST_USER}_nested;
     DROP DATABASE ${REMOTE_DB}_outer;
 "
