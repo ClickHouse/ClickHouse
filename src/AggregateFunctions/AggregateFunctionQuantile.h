@@ -6,6 +6,7 @@
 #include <AggregateFunctions/QuantilesCommon.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -29,6 +30,19 @@ namespace ErrorCodes
 template <typename> class QuantileTiming;
 template <typename> class QuantileGK;
 template <typename> class QuantileDD;
+
+/** Latest serialization version of a quantile data structure, or 0 for the ones that never changed
+  * their state format. A data structure opts in by declaring `static constexpr size_t state_version`,
+  * and then takes the version as the second argument of `serialize` and `deserialize`.
+  */
+template <typename Data>
+constexpr size_t quantileStateVersion()
+{
+    if constexpr (requires { Data::state_version; })
+        return Data::state_version;
+    else
+        return 0;
+}
 
 /** Generic aggregate function for calculation of quantiles.
   * It depends on quantile calculation data structure. Look at Quantile*.h for various implementations.
@@ -60,6 +74,7 @@ private:
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static constexpr bool is_quantile_ddsketch = std::is_same_v<Data, QuantileDD<Value>>;
+    static constexpr size_t state_version = quantileStateVersion<Data>();
     static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
@@ -243,14 +258,34 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    bool isVersioned() const override { return state_version > 0; }
+
+    size_t getDefaultVersion() const override { return state_version; }
+
+    size_t getVersionFromRevision(size_t revision) const override
     {
-        this->data(place).serialize(buf);
+        if constexpr (state_version >= 1)
+        {
+            if (revision >= DBMS_MIN_REVISION_WITH_QUANTILE_DETERMINISTIC_SKIP_DEGREE)
+                return 1;
+        }
+        return 0;
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        this->data(place).deserialize(buf);
+        if constexpr (state_version > 0)
+            this->data(place).serialize(buf, version.value_or(getDefaultVersion()));
+        else
+            this->data(place).serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
+    {
+        if constexpr (state_version > 0)
+            this->data(place).deserialize(buf, version.value_or(getDefaultVersion()));
+        else
+            this->data(place).deserialize(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
