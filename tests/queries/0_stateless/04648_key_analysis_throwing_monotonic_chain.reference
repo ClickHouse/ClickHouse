@@ -16,8 +16,10 @@ exact-range candidate spanning several marks (full primary key representation)
 1	1	false
 exact-range candidate spanning several marks (sparse primary key representation)
 1	1	true
-the same via the set index
-1	1
+the same via the set index (full primary key representation)
+1	1	false
+the same via the set index (sparse primary key representation)
+1	1	true
 generic exclusion search instead of binary search
 1	1
 repeated probes over one part after the first failure
@@ -30,6 +32,8 @@ an honestly non-monotonic chain is not an application failure
 2	2
 rows that really divide by zero still throw
 a healthy chain still prunes granules
+1
+a healthy chain still prunes granules via the set index
 1
 a healthy range still yields an exact row count
 1

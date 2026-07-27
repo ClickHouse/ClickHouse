@@ -12,7 +12,7 @@ SET allow_suspicious_low_cardinality_types = 1;
 SET query_plan_merge_filters = 1;
 
 -- The two closing controls read `EXPLAIN` output as text. Measured: both strings survive the `PRETTY` default, so this
--- is defence-in-depth against a future layout change in that renderer, matching 478 other stateless tests.
+-- is defence-in-depth against a future layout change in that renderer, matching 477 other stateless tests that pin it.
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
@@ -127,8 +127,10 @@ INSERT INTO t_wide_mt_04648 VALUES (-128), (-127), (-100), (-60), (-50), (-40), 
 INSERT INTO t_wide_mem_04648 VALUES (-128), (-127), (-100), (-60), (-50), (-40), (50), (60);
 
 -- `use_lightweight_primary_key_index_analysis` selects between the two `checkInRange`/`checkInHyperrectangle` overload
--- families, and it too is randomized, so one run covers only one of them. This shape - the simplest of the four - is
--- emitted once per family; the other three keep the runner's choice.
+-- families, and it too is randomized, so one run covers only one of them. Two shapes are therefore emitted once per
+-- family: the range one below, and the `IN` one after it - the set index has its own call site inside each family's
+-- `checkInHyperrectangle`, so a single shape would leave one of them to a coin flip. The remaining cases keep the
+-- runner's choice.
 SELECT 'exact-range candidate spanning several marks (full primary key representation)';
 SELECT
     (SELECT count() FROM t_wide_mt_04648 WHERE a > -60 AND intDiv(a, toInt8(-1)) = -50) AS mergetree,
@@ -143,11 +145,19 @@ SELECT
     getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk
 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_lightweight_primary_key_index_analysis = 1;
 
-SELECT 'the same via the set index';
+SELECT 'the same via the set index (full primary key representation)';
 SELECT
     (SELECT count() FROM t_wide_mt_04648 WHERE a > -60 AND intDiv(a, toInt8(-1)) IN (-50)) AS mergetree,
-    (SELECT count() FROM t_wide_mem_04648 WHERE a > -60 AND intDiv(a, toInt8(-1)) IN (-50)) AS oracle
-SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
+    (SELECT count() FROM t_wide_mem_04648 WHERE a > -60 AND intDiv(a, toInt8(-1)) IN (-50)) AS oracle,
+    getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_lightweight_primary_key_index_analysis = 0;
+
+SELECT 'the same via the set index (sparse primary key representation)';
+SELECT
+    (SELECT count() FROM t_wide_mt_04648 WHERE a > -60 AND intDiv(a, toInt8(-1)) IN (-50)) AS mergetree,
+    (SELECT count() FROM t_wide_mem_04648 WHERE a > -60 AND intDiv(a, toInt8(-1)) IN (-50)) AS oracle,
+    getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk
+SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1, use_lightweight_primary_key_index_analysis = 1;
 
 -- A set with more than one element relaxes the condition, so this takes the generic exclusion search instead of the
 -- binary search. It must stay unaffected.
@@ -188,8 +198,12 @@ SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
 
 -- Negative controls.
 
--- An honestly non-monotonic chain must keep behaving exactly as before: it is not an application failure, so it must
--- not switch off the exact-range consistency check.
+-- An honestly non-monotonic chain must keep behaving exactly as before: "not monotonic on this range" is an answer,
+-- not an application failure, so the result and the pruning stay what they were before this fix.
+-- This shape cannot observe the exact-range consistency check at all: a chain that is not always monotonic makes
+-- `matchesExactContinuousRange` false, so key analysis takes the generic exclusion search, which never reads the
+-- failure flag. That the check stays armed is argued from that code path and pinned by the #111421 reproducer
+-- recorded in the pull request description, not by the statement below.
 CREATE TABLE t_nonmono_mt_04648 (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
 CREATE TABLE t_nonmono_mem_04648 (a UInt64) ENGINE = Memory;
 INSERT INTO t_nonmono_mt_04648 VALUES (1), (9223372036854775807), (9223372036854775808), (18446744073709551615);
@@ -216,6 +230,15 @@ INSERT INTO t_prune_04648 SELECT number FROM numbers(100);
 SELECT 'a healthy chain still prunes granules';
 SELECT count() > 0 FROM (
     EXPLAIN indexes = 1 SELECT count() FROM t_prune_04648 WHERE intDiv(a, 10) = 5
+    SETTINGS parallel_replicas_local_plan = 1
+) WHERE explain ILIKE '%Granules: 11/100%';
+
+-- The same for the set index: a chain it can apply cleanly must still prune, i.e. the failure flag threaded through
+-- `MergeTreeSetIndex::checkInRange` did not turn the success path into "unknown". Measured: the set index selects the
+-- same 11/100 as the range predicate above, in both primary key representations.
+SELECT 'a healthy chain still prunes granules via the set index';
+SELECT count() > 0 FROM (
+    EXPLAIN indexes = 1 SELECT count() FROM t_prune_04648 WHERE intDiv(a, 10) IN (5)
     SETTINGS parallel_replicas_local_plan = 1
 ) WHERE explain ILIKE '%Granules: 11/100%';
 
