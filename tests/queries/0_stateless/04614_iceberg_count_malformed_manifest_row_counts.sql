@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
+-- Suppress expected warnings about the corrupted snapshot summary.
+SET send_logs_level = 'fatal';
+
 -- The fixture is a copy of the `iceberg_corrupted_summary_test` table (1 row, snapshot
 -- summary corrupted to claim `total-records = 100`) whose manifest list additionally has
 -- a malformed `added_rows_count = -1` (the field is required non-negative in format v2).

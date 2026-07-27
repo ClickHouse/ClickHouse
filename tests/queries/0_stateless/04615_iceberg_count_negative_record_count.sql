@@ -1,6 +1,9 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: Depends on AWS
 
+-- Suppress expected warnings about the corrupted snapshot summary.
+SET send_logs_level = 'fatal';
+
 -- The fixture is a copy of the `iceberg_malformed_manifest_row_counts_test` table (1 row,
 -- snapshot summary corrupted to claim `total-records = 100`, manifest list with a
 -- malformed `added_rows_count = -1`) whose manifest file additionally carries a malformed

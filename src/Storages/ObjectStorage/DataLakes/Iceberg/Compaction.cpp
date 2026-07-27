@@ -1030,6 +1030,9 @@ static void writeMetadataFiles(
     Poco::JSON::Object::Ptr initial_metadata_object = plan.initial_metadata_object;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Iceberg::IcebergPathFromMetadata> manifest_file_renamings;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_sizes;
+    /// Per rewritten manifest: actual file/row counts of its content, written into the
+    /// manifest-list entries so that metadata row counts stay exact after compaction.
+    std::unordered_map<Iceberg::IcebergPathFromMetadata, ManifestListEntryExistingCounts> manifest_file_counts;
 
     {
         std::unordered_map<std::shared_ptr<ManifestFilePlan>, std::unordered_set<Iceberg::IcebergPathFromMetadata>> grouped_by_manifest_files_result;
@@ -1102,6 +1105,20 @@ static void writeMetadataFiles(
                     file_byte_counts.push_back(0);
                 }
             }
+
+            /// Record the manifest's actual content counts for its manifest-list entries. The
+            /// files keep their original data sequence numbers, so min_sequence_number is the
+            /// sequence number of the snapshot whose manifest is being rewritten.
+            {
+                Int64 manifest_rows = 0;
+                for (const auto rows : file_row_counts)
+                    manifest_rows += static_cast<Int64>(rows);
+                const Int64 manifest_min_sequence_number = snapshot->has(Iceberg::f_metadata_sequence_number)
+                    ? snapshot->getValue<Int64>(Iceberg::f_metadata_sequence_number)
+                    : 0;
+                manifest_file_counts[manifest_entry->patched_path]
+                    = {static_cast<Int64>(data_files_vec.size()), manifest_rows, manifest_min_sequence_number};
+            }
             generateManifestFile(
                 metadata_object,
                 partition_columns,
@@ -1162,6 +1179,20 @@ static void writeMetadataFiles(
         {
             per_manifest_sizes.push_back(manifest_file_sizes[entry]);
         }
+        /// Pass the actual per-manifest counts: without them generateManifestList stamps the
+        /// snapshot summary's `added-records` into EVERY entry, so any consumer summing the
+        /// manifest-list row counts (including our own trivial count) would multiply the
+        /// table's row count by the number of manifests. The rewritten manifests reference
+        /// pre-existing data, so the counts are reported as existing, not added.
+        std::vector<ManifestListEntryExistingCounts> entry_counts;
+        entry_counts.reserve(renamed_manifest_entries.size());
+        for (const auto & entry : renamed_manifest_entries)
+        {
+            if (auto it = manifest_file_counts.find(entry); it != manifest_file_counts.end())
+                entry_counts.push_back(it->second);
+            else
+                entry_counts.push_back({});
+        }
         auto buffer_manifest_list = object_storage->writeObject(
             StoredObject(path_resolver.resolve(renamed_manifest_list)),
             WriteMode::Rewrite,
@@ -1178,7 +1209,9 @@ static void writeMetadataFiles(
             per_manifest_sizes,
             *buffer_manifest_list,
             Iceberg::FileContentType::DATA,
-            false);
+            false,
+            /* per_entry_content_types */ {},
+            entry_counts);
         buffer_manifest_list->finalize();
     }
 
