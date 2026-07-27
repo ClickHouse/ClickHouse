@@ -37,14 +37,14 @@ struct JapaneseTokenizer::JapaneseImpl
 };
 
 JapaneseTokenizer::JapaneseTokenizer()
-    : ITokenizerHelper(Type::Japanese), impl(std::make_shared<JapaneseImpl>())
+    : ITokenizerHelper(Type::Japanese), impl(std::make_unique<JapaneseImpl>())
 {
 }
 
 /// Clones (per-thread copies) start with fresh parsing state; the dictionary is re-fetched cheaply
 /// from the process-wide cache on first use.
 JapaneseTokenizer::JapaneseTokenizer(const JapaneseTokenizer &)
-    : ITokenizerHelper(Type::Japanese), impl(std::make_shared<JapaneseImpl>())
+    : ITokenizerHelper(Type::Japanese), impl(std::make_unique<JapaneseImpl>())
 {
 }
 

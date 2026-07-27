@@ -467,8 +467,8 @@ struct JapaneseTokenizer final : public ITokenizerHelper<JapaneseTokenizer>
 
 private:
     struct JapaneseImpl;
-    /// Shared model + mutable per-string state; like `SparseGramsTokenizer`, not concurrency-safe — clone per thread.
-    std::shared_ptr<JapaneseImpl> impl;
+    /// Mutable per-string parsing state; like `SparseGramsTokenizer`, not concurrency-safe — clone per thread.
+    std::unique_ptr<JapaneseImpl> impl;
 };
 #endif
 
