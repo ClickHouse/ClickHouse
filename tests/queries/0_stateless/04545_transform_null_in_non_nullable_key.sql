@@ -132,6 +132,32 @@ SELECT a, b FROM t_mc WHERE (a, b) NOT IN (SELECT tuple(CAST('x', 'Nullable(Stri
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_mc WHERE (a, b) NOT IN (SELECT tuple(CAST('x', 'Nullable(String)'), CAST(1, 'Nullable(UInt64)')) UNION ALL SELECT tuple(CAST(NULL, 'Nullable(String)'), CAST(2, 'Nullable(UInt64)')))) WHERE explain ILIKE '%notIn 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_mc WHERE (a, b) NOT IN (SELECT tuple(CAST('x', 'Nullable(String)'), CAST(1, 'Nullable(UInt64)')) UNION ALL SELECT tuple(CAST(NULL, 'Nullable(String)'), CAST(2, 'Nullable(UInt64)')))) WHERE explain ILIKE '%Parts: 2/3%';
 
+-- Case H2: the emptiness half of the exactness decision must be taken AFTER the shared filter has been
+-- applied to EVERY set column, because one shared filter is built across all of them. Here the FIRST
+-- component's `String -> UInt64` conversion is not equality-preserving, so it marks the set approximate
+-- while its own row is still surviving; the SECOND component's `'bad' -> UInt64` cast then fails and
+-- drops that last row, leaving the pruning set EMPTY. An empty set is exact by construction (`NOT IN ()`
+-- is universally true), so the atom must not stay relaxed. Deciding this per column, from the filter as
+-- it stands mid-loop, cannot see the later column and leaves the empty set marked approximate.
+-- Both key columns are numeric on purpose: the approximate component has to be processed BEFORE the
+-- emptying one, which is what makes the ordering observable.
+-- `Parts: 3/3` alone cannot pin this (it is also the relaxed output), so the load-bearing assertion is
+-- the trivial-count optimization, which `PartitionPruner`'s strict mode switches off for a relaxed
+-- condition: it is available for an exact empty set and unavailable for a relaxed one. That path is
+-- reached through `totalRowsByPartitionPredicate`, which only the old analyzer uses for this shape, and
+-- `optimize_trivial_count_query` is randomized, so both are pinned per statement.
+SELECT 'Multi-column set, final set empty after the shared filter';
+DROP TABLE IF EXISTS t_me SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_me (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
+INSERT INTO t_me VALUES (1, 2), (3, 4), (0, 0);
+SELECT a, b FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)'))) ORDER BY a;
+SELECT count() = 0 FROM t_me WHERE (a, b) IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)')));
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)')))) WHERE explain ILIKE '%notIn 0-element set%';
+SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)')))) WHERE explain ILIKE '%Optimized trivial count%' SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+-- Control: a relaxed NON-empty set of the same cross-type shape must NOT get the optimization, so the
+-- assertion above really distinguishes exact-empty from relaxed rather than always being true.
+SELECT count() = 0 FROM (EXPLAIN SELECT count() FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('2', 'Nullable(String)')))) WHERE explain ILIKE '%Optimized trivial count%' SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
+
 -- Case I: every source row is NULL, so the pruning set becomes empty. `NOT IN` an empty set is
 -- always true, so no part may be pruned and all three rows are returned.
 SELECT 'All-NULL source set NOT IN';
@@ -211,3 +237,4 @@ DROP TABLE t_tk;
 DROP TABLE t_k;
 DROP TABLE t_nk;
 DROP TABLE t_nkp;
+DROP TABLE t_me;

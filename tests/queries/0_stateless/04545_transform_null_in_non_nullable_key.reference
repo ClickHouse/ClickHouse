@@ -66,6 +66,14 @@ Multi-column set NOT IN, one component NULL
 y	2
 1
 1
+Multi-column set, final set empty after the shared filter
+0	0
+1	2
+3	4
+1
+1
+1
+1
 All-NULL source set NOT IN
 
 a

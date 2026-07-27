@@ -2681,6 +2681,7 @@ static bool tryPrepareSetColumnsForIndex(
 
     IColumn::Filter filter(transformed_set_columns.front()->size(), 1);
     bool filter_used = false;
+    bool any_column_conversion_is_approximate = false;
 
     for (size_t indexes_mapping_index = 0; indexes_mapping_index < indexes_mapping.size(); ++indexes_mapping_index)
     {
@@ -2769,7 +2770,6 @@ static bool tryPrepareSetColumnsForIndex(
 
         if (set_column_null_map)
         {
-            size_t retained_rows = 0;
             for (size_t i = 0; i < nullable_set_column_null_map_size; ++i)
             {
                 /// A top-level source NULL cannot match this key (its outer type is never Nullable),
@@ -2779,14 +2779,10 @@ static bool tryPrepareSetColumnsForIndex(
                     filter[i] = 0;
                 else
                     filter[i] &= !nullable_set_column_null_map[i];
-
-                retained_rows += filter[i];
             }
 
-            /// An empty set is exact by construction (`NOT IN ()` is universally true), so only a
-            /// non-empty set built through a conversion that is not equality-preserving is approximate.
-            if (!conversion_preserves_equality && retained_rows != 0)
-                set_is_approximate = true;
+            if (!conversion_preserves_equality)
+                any_column_conversion_is_approximate = true;
 
             set_column = nullable_set_column;
         }
@@ -2806,6 +2802,14 @@ static bool tryPrepareSetColumnsForIndex(
     {
         for (size_t set_element_index = 0; set_element_index < transformed_set_columns.size(); ++set_element_index)
             set_columns[set_element_index] = transformed_set_columns[set_element_index]->filter(filter, 0);
+
+        /// An empty set is exact by construction (`NOT IN ()` is universally true, `IN ()` universally
+        /// false), and both `extractPlainRanges` and `MergeTreeSetIndex` special-case size 0 before
+        /// consulting `relaxed`. Decide this only here, after the shared filter has been applied to
+        /// every column: the filter is built across all of them, so a later column's failed cast can
+        /// remove the last row that was still surviving when an earlier column set the flag.
+        if (any_column_conversion_is_approximate && !set_columns.front()->empty())
+            set_is_approximate = true;
     }
     else
     {
