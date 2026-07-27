@@ -9,11 +9,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS table_with_unsuccessful_commits"
 
 # will be flaky in 2031
-# number_of_free_entries_in_pool_to_execute_mutation=0 unthrottles the mutations below. Concurrent
-# tests can hold enough of the server-global merges/mutations pool that the default threshold refuses
-# to assign a mutation; that refusal re-arms the merge-selecting backoff, which the OPTIMIZE FINAL
-# loop below has already driven to its 60s ceiling, and no wake-up fires when the pool frees up. The
-# mutations_sync=2 ALTERs then wait past the 60s max_execution_time of the Fast test profile.
+# `number_of_free_entries_in_pool_to_execute_mutation = 0` isolates this table's mutations from global
+# pool contention: concurrent tests can occupy enough of the server-global merges/mutations pool that
+# the default threshold refuses to assign a mutation, and nothing wakes assignment when it frees up.
 $CLICKHOUSE_CLIENT --query "CREATE TABLE table_with_unsuccessful_commits (key UInt64, value String) ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/unsuccessful', '1') ORDER BY tuple() SETTINGS cleanup_delay_period=1000, max_cleanup_delay_period=1000, old_parts_lifetime = 1949748529, remove_rolled_back_parts_immediately=0, replicated_max_ratio_of_wrong_parts=1, max_suspicious_broken_parts=1000000, max_suspicious_broken_parts_bytes=10000000000, number_of_free_entries_in_pool_to_execute_mutation=0"
 
 $CLICKHOUSE_CLIENT --query "INSERT INTO table_with_unsuccessful_commits SELECT rand(), toString(rand()) FROM numbers(10)"
