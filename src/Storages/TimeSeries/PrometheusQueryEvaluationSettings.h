@@ -33,6 +33,10 @@ struct PrometheusQueryEvaluationSettings
     DataTypePtr timestamp_data_type;
     DataTypePtr scalar_data_type;
 
+    /// Whether the TimeSeries table stores samples in the chunked layout (`store_samples_in_chunks`),
+    /// in which case `timeSeriesSelector` returns per-series arrays of samples instead of sample rows.
+    bool samples_stored_in_chunks = false;
+
     PrometheusQueryEvaluationMode mode = PrometheusQueryEvaluationMode::QUERY;
 
     /// Specifies that a prometheus query should be evaluated at the current time.

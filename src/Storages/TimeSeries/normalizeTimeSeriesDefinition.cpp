@@ -44,6 +44,7 @@ namespace TimeSeriesSetting
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_samples_in_chunks;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
@@ -391,8 +392,32 @@ namespace
                 /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
-                add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
-                add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
+
+                if (time_series_settings[TimeSeriesSetting::store_samples_in_chunks])
+                {
+                    /// Chunked layout: one row per (series, time interval) with arrays of samples. The arrays
+                    /// use `SimpleAggregateFunction(groupArrayArray, ...)` so that merges of the aggregating
+                    /// engine concatenate the chunks written by separate inserts.
+                    auto make_group_array_array_type = [&](const DataTypePtr & element_type) -> ASTPtr
+                    {
+                        DataTypePtr array_type = std::make_shared<DataTypeArray>(element_type);
+                        AggregateFunctionProperties properties;
+                        auto func = AggregateFunctionFactory::instance().get(
+                            "groupArrayArray", NullsAction::EMPTY, {array_type}, {}, properties);
+                        auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{array_type}, Array{});
+                        auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+                        return dataTypeToAST(type);
+                    };
+
+                    add_column_if_missing(TimeSeriesColumnNames::ChunkStart, dataTypeToAST(resolved_types.timestamp_type));
+                    add_column_if_missing(TimeSeriesColumnNames::Timestamps, make_group_array_array_type(resolved_types.timestamp_type));
+                    add_column_if_missing(TimeSeriesColumnNames::Values, make_group_array_array_type(resolved_types.scalar_type));
+                }
+                else
+                {
+                    add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
+                    add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
+                }
 
                 break;
             }
@@ -735,13 +760,28 @@ namespace
 
         if (target_kind == ViewTarget::Samples)
         {
-            auto engine = makeASTFunction("MergeTree");
-            engine->setNoEmptyArgs(false);
-            storage->set(storage->engine, engine);
-            storage->set(storage->order_by,
-                makeASTOperator("tuple",
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
-                    make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
+            if (settings[TimeSeriesSetting::store_samples_in_chunks])
+            {
+                /// Merges of the aggregating engine concatenate the sample arrays of the rows sharing
+                /// (id, chunk_start), consolidating each series' chunk over time.
+                auto engine = makeASTFunction("AggregatingMergeTree");
+                engine->setNoEmptyArgs(false);
+                storage->set(storage->engine, engine);
+                storage->set(storage->order_by,
+                    makeASTOperator("tuple",
+                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
+                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ChunkStart)));
+            }
+            else
+            {
+                auto engine = makeASTFunction("MergeTree");
+                engine->setNoEmptyArgs(false);
+                storage->set(storage->engine, engine);
+                storage->set(storage->order_by,
+                    makeASTOperator("tuple",
+                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
+                        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp)));
+            }
         }
         else if (target_kind == ViewTarget::Tags)
         {
@@ -883,8 +923,37 @@ namespace
             case ViewTarget::Samples:
             {
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
-                check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
-                check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
+
+                if (time_series_settings[TimeSeriesSetting::store_samples_in_chunks])
+                {
+                    /// A `SimpleAggregateFunction(f, Array(T))` column has `Array(T)` as its storage type,
+                    /// so a single array check accepts both the plain and the aggregating declaration.
+                    auto check_column_samples_array = [&](std::string_view column_name, const DataTypePtr & element_type)
+                    {
+                        check_column(column_name);
+                        const auto * col = target_table_columns.tryGet(String(column_name));
+                        const auto * array_type = typeid_cast<const DataTypeArray *>(col->type.get());
+                        if (!array_type || !array_type->getNestedType()->equals(*element_type))
+                            throw Exception(
+                                ErrorCodes::BAD_TYPE_OF_FIELD,
+                                "{}: Column {} in the {} table has type {}, but expected Array({}) "
+                                "(optionally wrapped in SimpleAggregateFunction(groupArrayArray, ...))",
+                                table_id.getNameForLogs(),
+                                column_name,
+                                target_kind,
+                                col->type->getName(),
+                                element_type->getName());
+                    };
+
+                    check_column_type(TimeSeriesColumnNames::ChunkStart, resolved_types.timestamp_type);
+                    check_column_samples_array(TimeSeriesColumnNames::Timestamps, resolved_types.timestamp_type);
+                    check_column_samples_array(TimeSeriesColumnNames::Values, resolved_types.scalar_type);
+                }
+                else
+                {
+                    check_column_type(TimeSeriesColumnNames::Timestamp, resolved_types.timestamp_type);
+                    check_column_type(TimeSeriesColumnNames::Value, resolved_types.scalar_type);
+                }
                 break;
             }
 

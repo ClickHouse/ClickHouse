@@ -3,6 +3,8 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Columns/IColumn.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -64,7 +66,9 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
+    extern const TimeSeriesSettingsUInt64 samples_chunk_interval;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_samples_in_chunks;
 }
 
 StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfiguration(ASTs & args, const ContextPtr & context)
@@ -144,6 +148,15 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     config.selector = std::move(selector);
     config.min_time = min_time;
     config.max_time = max_time;
+
+    const auto & storage_settings = *time_series_storage->getStorageSettings();
+    config.samples_stored_in_chunks = storage_settings[TimeSeriesSetting::store_samples_in_chunks];
+    if (config.samples_stored_in_chunks)
+    {
+        config.samples_chunk_interval = static_cast<Int64>(UInt64{storage_settings[TimeSeriesSetting::samples_chunk_interval]})
+            * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale);
+    }
+
     return config;
 }
 
@@ -325,7 +338,9 @@ namespace
         ASTPtr select_query_from_tags_table,
         DateTime64 min_time,
         DateTime64 max_time,
-        const DataTypePtr & timestamp_data_type)
+        const DataTypePtr & timestamp_data_type,
+        bool samples_stored_in_chunks,
+        Int64 samples_chunk_interval)
     {
         ASTs conditions;
 
@@ -334,17 +349,40 @@ namespace
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
-        /// timestamp >= min_time
-        conditions.push_back(makeASTFunction(
-            "greaterOrEquals",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-            timeSeriesTimestampToAST(min_time, timestamp_data_type)));
+        if (samples_stored_in_chunks)
+        {
+            /// A chunk covers `[chunk_start, chunk_start + interval)`; it intersects `[min_time, max_time]`
+            /// iff `chunk_start > min_time - interval` and `chunk_start <= max_time`.
+            Int64 lower_bound = (min_time.value > std::numeric_limits<Int64>::min() + samples_chunk_interval)
+                ? (min_time.value - samples_chunk_interval + 1)
+                : std::numeric_limits<Int64>::min();
 
-        /// timestamp <= max_time
-        conditions.push_back(makeASTFunction(
-            "lessOrEquals",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
-            timeSeriesTimestampToAST(max_time, timestamp_data_type)));
+            /// chunk_start >= min_time - interval + 1
+            conditions.push_back(makeASTFunction(
+                "greaterOrEquals",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ChunkStart),
+                timeSeriesTimestampToAST(DateTime64(lower_bound), timestamp_data_type)));
+
+            /// chunk_start <= max_time
+            conditions.push_back(makeASTFunction(
+                "lessOrEquals",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ChunkStart),
+                timeSeriesTimestampToAST(max_time, timestamp_data_type)));
+        }
+        else
+        {
+            /// timestamp >= min_time
+            conditions.push_back(makeASTFunction(
+                "greaterOrEquals",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                timeSeriesTimestampToAST(min_time, timestamp_data_type)));
+
+            /// timestamp <= max_time
+            conditions.push_back(makeASTFunction(
+                "lessOrEquals",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                timeSeriesTimestampToAST(max_time, timestamp_data_type)));
+        }
 
         return makeASTForLogicalAnd(std::move(conditions));
     }
@@ -356,47 +394,56 @@ namespace
                                         const DataTypePtr & id_data_type,
                                         const DataTypePtr & timestamp_data_type,
                                         const DataTypePtr & scalar_data_type,
-                                        const ColumnsDescription & data_table_columns)
+                                        const ColumnsDescription & data_table_columns,
+                                        bool samples_stored_in_chunks,
+                                        Int64 samples_chunk_interval)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-        /// SELECT id, timestamp, value
+        /// SELECT id, timestamp, value  (or, for the chunked layout: SELECT id, timestamps, `values`)
         /// Casts to the expected types are added only when a column's type in the data table differs:
         /// a same-type CAST would not be a no-op - it would be evaluated for every sample row.
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            if (data_table_columns.get(TimeSeriesColumnNames::ID).type->equals(*id_data_type))
+            /// Adds a column to the select list, casting it to `expected_type` if the data table declares
+            /// a different type (e.g. a `SimpleAggregateFunction(groupArrayArray, ...)` wrapper).
+            auto add_column = [&](const char * column_name, const DataTypePtr & expected_type, bool timestamp_cast)
             {
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-            }
-            else
-            {
-                select_list.push_back(makeASTFunction(
-                    "CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
-                select_list.back()->setAlias(TimeSeriesColumnNames::ID);
-            }
+                if (data_table_columns.get(column_name).type->equals(*expected_type))
+                {
+                    select_list.push_back(make_intrusive<ASTIdentifier>(column_name));
+                    return;
+                }
+                if (timestamp_cast)
+                    select_list.push_back(timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(column_name), expected_type));
+                else
+                    select_list.push_back(makeASTFunction(
+                        "CAST", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(expected_type->getName())));
+                select_list.back()->setAlias(column_name);
+            };
 
-            if (data_table_columns.get(TimeSeriesColumnNames::Timestamp).type->equals(*timestamp_data_type))
-            {
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
-            }
-            else
-            {
-                select_list.push_back(
-                    timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), timestamp_data_type));
-                select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
-            }
+            add_column(TimeSeriesColumnNames::ID, id_data_type, /* timestamp_cast = */ false);
 
-            if (data_table_columns.get(TimeSeriesColumnNames::Value).type->equals(*scalar_data_type))
+            if (samples_stored_in_chunks)
             {
-                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                add_column(TimeSeriesColumnNames::Timestamps, std::make_shared<DataTypeArray>(timestamp_data_type), /* timestamp_cast = */ false);
+                add_column(TimeSeriesColumnNames::Values, std::make_shared<DataTypeArray>(scalar_data_type), /* timestamp_cast = */ false);
             }
             else
             {
-                select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
-                select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                add_column(TimeSeriesColumnNames::Timestamp, timestamp_data_type, /* timestamp_cast = */ true);
+
+                if (data_table_columns.get(TimeSeriesColumnNames::Value).type->equals(*scalar_data_type))
+                {
+                    select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+                }
+                else
+                {
+                    select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
+                    select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+                }
             }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
@@ -422,7 +469,9 @@ namespace
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
-            auto where_filter = makeWhereFilterForDataTable(select_query_from_tags_table, min_time, max_time, timestamp_data_type);
+            auto where_filter = makeWhereFilterForDataTable(
+                select_query_from_tags_table, min_time, max_time, timestamp_data_type,
+                samples_stored_in_chunks, samples_chunk_interval);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -498,7 +547,9 @@ void StorageTimeSeriesSelector::readImpl(
         config.id_data_type,
         config.timestamp_data_type,
         config.scalar_data_type,
-        samples_table_columns);
+        samples_table_columns,
+        config.samples_stored_in_chunks,
+        config.samples_chunk_interval);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());

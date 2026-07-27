@@ -27,6 +27,15 @@ public:
         /// The scale of these fields is the same as the scale used in `timestamp_data_type`.
         DateTime64 min_time{};
         DateTime64 max_time{};
+
+        /// Whether the TimeSeries table stores samples in the chunked layout (`store_samples_in_chunks`).
+        /// In that case the selector returns columns (id, timestamps, values) with per-series arrays of
+        /// samples covering whole chunks (at least the [min_time, max_time] range), instead of one row
+        /// per sample clipped to exactly that range.
+        bool samples_stored_in_chunks = false;
+
+        /// The chunk interval in raw timestamp units (valid when `samples_stored_in_chunks` is set).
+        Int64 samples_chunk_interval = 0;
     };
 
     static Configuration getConfiguration(ASTs & args, const ContextPtr & context);

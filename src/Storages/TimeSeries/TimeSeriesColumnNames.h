@@ -11,6 +11,14 @@ struct TimeSeriesColumnNames
     static constexpr const char * Timestamp = "timestamp";
     static constexpr const char * Value = "value";
 
+    /// The "samples" table with the `store_samples_in_chunks` setting enabled stores samples as per-series
+    /// arrays chunked by time intervals: "chunk_start" is the beginning of the chunk's time interval, and
+    /// "timestamps"/"values" (the latter already declared below for the query evaluation steps) are arrays
+    /// of the samples' timestamps and values within that interval.
+    static constexpr const char * ChunkStart = "chunk_start";
+    static constexpr const char * Timestamps = "timestamps";
+
+
     /// The "tags" table contains identifiers for each combination of a metric name with corresponding tags (labels):
 
     /// The default expression specified for the "id" column contains an expression for calculating an identifier of a time series by a metric name and tags.

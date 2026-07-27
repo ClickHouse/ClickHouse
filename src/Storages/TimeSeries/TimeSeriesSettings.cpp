@@ -28,6 +28,8 @@ namespace ErrorCodes
     DECLARE(Bool, store_min_time_and_max_time, true, "If set to true then the table will store 'min_time' and 'max_time' for each time series", 0) \
     DECLARE(Bool, aggregate_min_time_and_max_time, true, "When creating an inner target 'tags' table, this flag enables using 'SimpleAggregateFunction(min, Nullable(DateTime64(3)))' instead of just 'Nullable(DateTime64(3))' as the type of the 'min_time' column, and the same for the 'max_time' column", 0) \
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
+    DECLARE(Bool, store_samples_in_chunks, false, "If set to true then the inner 'samples' table stores samples as per-series arrays chunked by time intervals instead of one row per sample. This speeds up range queries (like 'rate' over long ranges) considerably because the series identifier is stored once per chunk instead of once per sample.", 0) \
+    DECLARE(UInt64, samples_chunk_interval, 86400, "The length in seconds of the time interval covered by one chunk of samples when 'store_samples_in_chunks' is enabled.", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)
@@ -115,6 +117,10 @@ void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
             throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                 "Setting `aggregate_min_time_and_max_time` cannot be enabled when `store_min_time_and_max_time` is disabled");
     }
+
+    if (settings[TimeSeriesSetting::store_samples_in_chunks] && (settings[TimeSeriesSetting::samples_chunk_interval] == 0))
+        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting `samples_chunk_interval` must be greater than zero when `store_samples_in_chunks` is enabled");
 
     const Map & tags_to_columns = settings[TimeSeriesSetting::tags_to_columns];
     if (!tags_to_columns.empty())

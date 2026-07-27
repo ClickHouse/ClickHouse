@@ -23,6 +23,7 @@
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <optional>
 
@@ -33,11 +34,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool store_samples_in_chunks;
 }
 
 namespace
@@ -228,6 +235,11 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     out_time_series.Clear();
 
     auto time_series_storage_id = time_series_storage->getStorageID();
+
+    if ((*time_series_storage->getStorageSettings())[TimeSeriesSetting::store_samples_in_chunks])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "{}: The remote-read protocol is not implemented for TimeSeries tables with `store_samples_in_chunks` enabled",
+            time_series_storage_id.getNameForLogs());
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
         time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);

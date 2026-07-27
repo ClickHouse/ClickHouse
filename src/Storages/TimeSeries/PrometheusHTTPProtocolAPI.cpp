@@ -10,6 +10,7 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -36,6 +37,11 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool store_samples_in_chunks;
+}
+
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
     : WithMutableContext{context_}
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
@@ -55,6 +61,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
         = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    evaluation_settings.samples_stored_in_chunks = (*time_series_storage->getStorageSettings())[TimeSeriesSetting::store_samples_in_chunks];
     UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();

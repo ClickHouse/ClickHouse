@@ -282,10 +282,24 @@ SQLQueryPiece applyFunctionOverRange(
             /// FROM <raw_data>
             /// GROUP BY id
             has_group = true;
-            group_by_raw_id = argument.select_query && rewriteGroupColumnToRawID(argument.select_query);
 
-            timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
-            values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
+            if (argument.chunked_select_query)
+            {
+                /// Chunked samples: consume the array form of the selector's output directly. Whole chunks
+                /// are unclipped by the selector's time range, which is fine for the ToGrid aggregate
+                /// functions - samples outside the grid don't fall into any bucket.
+                argument.select_query = std::move(argument.chunked_select_query);
+                group_by_raw_id = true;
+                timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamps);
+                values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+            }
+            else
+            {
+                group_by_raw_id = argument.select_query && rewriteGroupColumnToRawID(argument.select_query);
+                timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
+                values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
+            }
+
             res.store_method = StoreMethod::VECTOR_GRID;
 
             break;

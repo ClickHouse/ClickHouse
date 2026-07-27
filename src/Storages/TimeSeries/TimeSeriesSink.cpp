@@ -1,9 +1,12 @@
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/DecimalFunctions.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
@@ -41,7 +44,9 @@ namespace DB
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsUInt64 samples_chunk_interval;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsBool store_samples_in_chunks;
     extern const TimeSeriesSettingsMap tags_to_columns;
     extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
@@ -179,6 +184,86 @@ namespace
                 out_id_column.insertManyFrom(id_column, id_index, num_samples);
                 out_timestamp_column.insertRangeFrom(ts_timestamps, ts_start, num_samples);
                 out_value_column.insertRangeFrom(ts_values, ts_start, num_samples);
+            }
+
+            ++id_index;
+        }
+    }
+
+    /// Reads the raw integer representation of a timestamp (the decimal mantissa for DateTime64).
+    Int64 getRawTimestamp(const IColumn & column, size_t index)
+    {
+        if (const auto * decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(&column))
+            return decimal_column->getData()[index].value;
+        if (const auto * uint32_column = typeid_cast<const ColumnVector<UInt32> *>(&column))
+            return uint32_column->getData()[index];
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for timestamps", column.getName());
+    }
+
+    /// Inserts a timestamp given by its raw integer representation.
+    void insertRawTimestamp(IColumn & column, Int64 raw_value)
+    {
+        if (auto * decimal_column = typeid_cast<ColumnDecimal<DateTime64> *>(&column))
+        {
+            decimal_column->getData().push_back(DateTime64(raw_value));
+            return;
+        }
+        if (auto * uint32_column = typeid_cast<ColumnVector<UInt32> *>(&column))
+        {
+            uint32_column->getData().push_back(static_cast<UInt32>(raw_value));
+            return;
+        }
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected column {} for timestamps", column.getName());
+    }
+
+    /// Fills columns for the "samples" table in the chunked layout (`store_samples_in_chunks`):
+    /// one output row per run of one series' samples falling into one chunk interval.
+    void fillSamplesChunkedColumns(
+        const PaddedPODArray<UInt8> & filter,
+        const IColumn & id_column,
+        const IColumn & ts_timestamps,
+        const IColumn & ts_values,
+        const ColumnArray::Offsets & ts_offsets,
+        Int64 chunk_interval,
+        IColumn & out_id_column,
+        IColumn & out_chunk_start_column,
+        ColumnArray & out_timestamps_column,
+        ColumnArray & out_values_column)
+    {
+        auto floor_div = [](Int64 x, Int64 y) { return (x >= 0) ? (x / y) : -((-x + y - 1) / y); };
+
+        size_t id_index = 0;
+        for (size_t i = 0; i < filter.size(); ++i)
+        {
+            size_t ts_start = (i == 0) ? 0 : ts_offsets[i - 1];
+            size_t ts_end = ts_offsets[i];
+
+            if (!filter[i])
+            {
+                if (ts_end != ts_start)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Got {} samples without a metric name or tags", ts_end - ts_start);
+                continue;
+            }
+
+            /// Split the series' samples into runs falling into one chunk interval. Timestamps usually come
+            /// sorted, so this normally produces one output row per (series, chunk); out-of-order samples
+            /// just produce more rows, which the merges of the aggregating engine concatenate later.
+            size_t j = ts_start;
+            while (j < ts_end)
+            {
+                const Int64 chunk_index = floor_div(getRawTimestamp(ts_timestamps, j), chunk_interval);
+                size_t run_end = j + 1;
+                while ((run_end < ts_end) && (floor_div(getRawTimestamp(ts_timestamps, run_end), chunk_interval) == chunk_index))
+                    ++run_end;
+
+                out_id_column.insertFrom(id_column, id_index);
+                insertRawTimestamp(out_chunk_start_column, chunk_index * chunk_interval);
+                out_timestamps_column.getData().insertRangeFrom(ts_timestamps, j, run_end - j);
+                out_timestamps_column.getOffsets().push_back(out_timestamps_column.getData().size());
+                out_values_column.getData().insertRangeFrom(ts_values, j, run_end - j);
+                out_values_column.getOffsets().push_back(out_values_column.getData().size());
+
+                j = run_end;
             }
 
             ++id_index;
@@ -604,8 +689,17 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// Build source header for samples block.
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
-    samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
-    samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
+    if ((*time_series_settings)[TimeSeriesSetting::store_samples_in_chunks])
+    {
+        samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::ChunkStart});
+        samples_header.insert(ColumnWithTypeAndName{std::make_shared<DataTypeArray>(timestamp_type), TimeSeriesColumnNames::Timestamps});
+        samples_header.insert(ColumnWithTypeAndName{std::make_shared<DataTypeArray>(scalar_type), TimeSeriesColumnNames::Values});
+    }
+    else
+    {
+        samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
+        samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
+    }
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 }
 
@@ -774,22 +868,47 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto samples_id_column = id_type->createColumn();
         samples_id_column->reserve(total_samples);
 
-        auto timestamp_column = timestamp_type->createColumn();
-        timestamp_column->reserve(total_samples);
-
-        auto value_column = scalar_type->createColumn();
-        value_column->reserve(total_samples);
-
-        fillSamplesColumns(
-            filter,
-            *id_column, ts_timestamps, ts_values, ts_offsets,
-            *samples_id_column, *timestamp_column, *value_column);
-
-        /// Assemble the block and push it to the "samples" table.
         Block samples_block;
-        samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
-        samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
-        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+
+        if (settings[TimeSeriesSetting::store_samples_in_chunks])
+        {
+            Int64 chunk_interval = static_cast<Int64>(UInt64{settings[TimeSeriesSetting::samples_chunk_interval]});
+            if (auto scale = tryGetDecimalScale(*timestamp_type))
+                chunk_interval *= DecimalUtils::scaleMultiplier<Int64>(*scale);
+
+            auto chunk_start_column = timestamp_type->createColumn();
+            auto timestamps_column = ColumnArray::create(timestamp_type->createColumn());
+            auto values_column = ColumnArray::create(scalar_type->createColumn());
+
+            fillSamplesChunkedColumns(
+                filter,
+                *id_column, ts_timestamps, ts_values, ts_offsets,
+                chunk_interval,
+                *samples_id_column, *chunk_start_column,
+                *timestamps_column, *values_column);
+
+            samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
+            samples_block.insert(ColumnWithTypeAndName{std::move(chunk_start_column), timestamp_type, TimeSeriesColumnNames::ChunkStart});
+            samples_block.insert(ColumnWithTypeAndName{std::move(timestamps_column), std::make_shared<DataTypeArray>(timestamp_type), TimeSeriesColumnNames::Timestamps});
+            samples_block.insert(ColumnWithTypeAndName{std::move(values_column), std::make_shared<DataTypeArray>(scalar_type), TimeSeriesColumnNames::Values});
+        }
+        else
+        {
+            auto timestamp_column = timestamp_type->createColumn();
+            timestamp_column->reserve(total_samples);
+
+            auto value_column = scalar_type->createColumn();
+            value_column->reserve(total_samples);
+
+            fillSamplesColumns(
+                filter,
+                *id_column, ts_timestamps, ts_values, ts_offsets,
+                *samples_id_column, *timestamp_column, *value_column);
+
+            samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
+            samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
+            samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+        }
 
         samples_pipeline->push(std::move(samples_block));
     }

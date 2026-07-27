@@ -16,6 +16,7 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -26,6 +27,11 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+namespace TimeSeriesSetting
+{
+    extern const TimeSeriesSettingsBool store_samples_in_chunks;
 }
 
 namespace
@@ -140,6 +146,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
     evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
     evaluation_settings.scalar_data_type = std::move(scalar_data_type);
+    evaluation_settings.samples_stored_in_chunks = (*time_series_storage->getStorageSettings())[TimeSeriesSetting::store_samples_in_chunks];
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;

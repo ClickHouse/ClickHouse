@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
+#include <DataTypes/DataTypeArray.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -27,6 +28,16 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
+    if (config.samples_stored_in_chunks)
+    {
+        /// For the chunked samples layout the selector returns per-series arrays of samples.
+        return ColumnsDescription({
+            {TimeSeriesColumnNames::ID, config.id_data_type},
+            {TimeSeriesColumnNames::Timestamps, std::make_shared<DataTypeArray>(config.timestamp_data_type)},
+            {TimeSeriesColumnNames::Values, std::make_shared<DataTypeArray>(config.scalar_data_type)}
+        });
+    }
+
     return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.id_data_type},
         {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},

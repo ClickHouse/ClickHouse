@@ -86,6 +86,14 @@ struct SQLQueryPiece
     /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type).
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
+
+    /// Used only if `store_method` is RAW_DATA and the samples are stored in the chunked layout
+    /// (see the `store_samples_in_chunks` setting of the TimeSeries engine). An alternative SELECT query
+    /// which outputs three columns `id`, `timestamps` (array of timestamps), `values` (array of scalars),
+    /// with whole chunks unclipped by the selector's time range. The `timeSeries*ToGrid` aggregate functions
+    /// accept this form directly (and ignore out-of-range samples), skipping the per-sample ARRAY JOIN
+    /// of `select_query`.
+    ASTPtr chunked_select_query;
 };
 
 String getPromQLText(const SQLQueryPiece & query_piece, const ConverterContext & context);
