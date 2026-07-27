@@ -99,7 +99,7 @@ As a result of this, it is slower than `addressToLine`.
 To enable this introspection function:
 
 - Install the `clickhouse-common-static-dbg` package.
-- Set setting [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) to `1`.
+- Set setting [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) to `1`.
     )";
     FunctionDocumentation::Syntax syntax = "addressToLineWithInlines(address_of_binary_instruction)";
     FunctionDocumentation::Arguments arguments = {

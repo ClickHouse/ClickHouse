@@ -1,9 +1,9 @@
 ---
 slug: /use-cases/AI_ML/AIChat
-sidebarTitle: 'استخدام ClickHouse Assistant chat في ClickHouse Cloud'
-title: 'استخدام ClickHouse Assistant chat في ClickHouse Cloud'
+sidebarTitle: 'استخدام دردشة ClickHouse Assistant في ClickHouse Cloud'
+title: 'استخدام دردشة ClickHouse Assistant في ClickHouse Cloud'
 description: 'دليل لتمكين ميزة AI Chat واستخدامها في ClickHouse Cloud Console'
-keywords: ['الذكاء الاصطناعي', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
+keywords: ['AI', 'ClickHouse Cloud', 'دردشة', 'SQL Console', 'Agent', 'Docs AI']
 show_related_blogs: true
 doc_type: 'guide'
 ---
@@ -13,102 +13,80 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 > يشرح هذا الدليل كيفية تمكين ميزة AI Chat واستخدامها في ClickHouse Cloud Console.
 
 <Steps>
-  <Step>
-    ## المتطلبات الأساسية
-
-    1. يجب أن تكون لديك صلاحية الوصول إلى organization في ClickHouse Cloud مع تمكين ميزات الذكاء الاصطناعي (تواصل مع مسؤول org أو فريق الدعم إذا لم تكن متاحة).
+  <Step title="المتطلبات المسبقة" id="prerequisites">
+    1. يجب أن تكون لديك صلاحية الوصول إلى organization في ClickHouse Cloud مع تمكين ميزات AI (تواصل مع مسؤول org أو فريق الدعم إذا لم تكن الميزة متاحة).
   </Step>
 
-  <Step>
-    ## افتح لوحة AI Chat
-
-    1. انتقل إلى خدمة ClickHouse Cloud.
-    2. في الشريط الجانبي الأيسر، انقر على أيقونة الوميض المسمّاة “ClickHouse Assistant”.
-    3. (اختصار) اضغط <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) أو <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) للتبديل إلى الفتح.
+  <Step title="فتح لوحة AI Chat" id="open-panel">
+    1. انتقل إلى ClickHouse Cloud service.
+    2. في الشريط الجانبي الأيسر، انقر على أيقونة اللمعان المسمّاة “ClickHouse Assistant”.
+    3. (اختصار) اضغط <kbd>⌘</kbd> + <kbd>&#39;</kbd> (macOS) أو <kbd>Ctrl</kbd> + <kbd>&#39;</kbd> (Linux/Windows) لفتح اللوحة أو إغلاقها.
 
     <Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="فتح لوحة AI Chat الجانبية" size="md" />
   </Step>
 
-  <Step>
-    ## قبول الموافقة على استخدام البيانات (عند أول تشغيل)
+  <Step title="قبول الموافقة على استخدام البيانات (عند أول تشغيل)" id="consent">
+    1. عند الاستخدام لأول مرة، سيظهر لك مربع حوار للموافقة يوضح كيفية التعامل مع البيانات والمعالِجات الفرعية الخارجية الخاصة بـ LLM.
+    2. راجعه ووافق عليه للمتابعة. إذا رفضت، فلن تفتح اللوحة.
 
-    1. عند الاستخدام الأول، ستظهر لك نافذة موافقة توضّح كيفية التعامل مع البيانات والمعالِجات الفرعية التابعة لجهات خارجية الخاصة بنماذج LLM.
-    2. راجعها ثم وافق عليها للمتابعة. إذا رفضت، فلن تُفتح اللوحة.
-
-    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="نافذة الموافقة" size="md" />
+    <Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="مربع حوار الموافقة" size="md" />
   </Step>
 
-  <Step>
-    ## اختر وضع الدردشة
+  <Step title="اختيار وضع الدردشة" id="modes">
+    يدعم AI Chat حاليًا:
 
-    يدعم AI Chat حاليًا ما يلي:
+    * **Agent**: استدلال متعدد الخطوات على schema وmetadata (يجب أن تكون service نشطة).
+    * **Docs AI (Ask)**: أسئلة وأجوبة مركّزة تستند إلى وثائق ClickHouse الرسمية ومراجع أفضل الممارسات.
 
-    * **Agent**: استدلال متعدد الخطوات على مستوى schema وmetadata (يجب أن تكون الخدمة نشطة).
-    * **Docs AI (Ask)**: أسئلة وأجوبة مركزة تستند إلى وثائق ClickHouse الرسمية ومراجع أفضل الممارسات.
-
-    استخدم محدد الأوضاع في أسفل يسار اللوحة الجانبية للتبديل.
+    استخدم mode selector في أسفل يسار اللوحة الجانبية للتبديل بين الأوضاع.
 
     <Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="اختيار الوضع" size="sm" />
   </Step>
 
-  <Step>
-    ## اكتب رسالة وأرسلها
-
-    1. اكتب سؤالك (مثل: “أنشئ materialized view لتجميع الأحداث اليومية حسب المستخدم”).
-    2. اضغط <kbd>Enter</kbd> للإرسال (استخدم <kbd>Shift</kbd> + <kbd>Enter</kbd> لإضافة سطر جديد).
-    3. أثناء معالجة model، يمكنك النقر على “Stop” للمقاطعة.
+  <Step title="كتابة رسالة وإرسالها" id="compose">
+    1. اكتب سؤالك (مثلًا: “Create a materialized view to aggregate daily events by user”).
+    2. اضغط <kbd>Enter</kbd> للإرسال (استخدم <kbd>Shift</kbd> + <kbd>Enter</kbd> للانتقال إلى سطر جديد).
+    3. أثناء processing لدى model، يمكنك النقر على “Stop” للمقاطعة.
   </Step>
 
-  <Step>
-    ## فهم خطوات Thinking في “Agent”
-
-    في وضع Agent، قد ترى خطوات وسيطة قابلة للتوسيع لـ “Thinking” أو التخطيط. توفّر هذه الخطوات شفافية حول كيفية صياغة المساعد لإجابته. اطوِها أو وسّعها حسب الحاجة.
+  <Step title="فهم خطوات Thinking في “Agent”" id="thinking-steps">
+    في وضع Agent، قد تظهر لك خطوات وسيطة قابلة للتوسيع خاصة بـ “thinking” أو التخطيط. توفّر هذه الخطوات شفافية حول كيفية صياغة المساعد لإجابته. قم بطيّها أو توسيعها حسب الحاجة.
 
     <Image img="/images/use-cases/AI_ML/AIChat/4_thinking.webp" alt="خطوات Thinking" size="md" />
   </Step>
 
-  <Step>
-    ## بدء دردشات جديدة
-
+  <Step title="بدء دردشات جديدة" id="new-chats">
     انقر على زر “New Chat” لمسح Context وبدء session جديدة.
   </Step>
 
-  <Step>
-    ## عرض history الدردشة
-
-    1. يعرض القسم السفلي دردشاتك الأخيرة.
-    2. حدّد دردشة سابقة لتحميل رسائلها.
+  <Step title="عرض history الدردشة" id="history">
+    1. يسرد القسم السفلي دردشاتك الأخيرة.
+    2. اختر دردشة سابقة لتحميل رسائلها.
     3. احذف conversation باستخدام أيقونة سلة المهملات.
 
     <Image img="/images/use-cases/AI_ML/AIChat/5_history.webp" alt="قائمة history الدردشة" size="md" />
   </Step>
 
-  <Step>
-    ## العمل مع generated SQL
-
+  <Step title="العمل مع generated SQL" id="sql-actions">
     عندما يعرض المساعد SQL:
 
     * راجعه للتأكد من صحته.
-    * انقر على “Open in editor” لتحميل query في SQL tab جديدة.
+    * انقر على “Open in editor” لتحميل query في tab SQL جديدة.
     * عدّله ونفّذه داخل Console.
 
     <Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="إجراءات النتائج" size="md" />
 
-    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="فتح query المُنشأة في المحرر" size="md" />
+    <Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="فتح query المُنشأ في المحرر" size="md" />
   </Step>
 
-  <Step>
-    ## إيقاف response أو مقاطعتها
-
+  <Step title="إيقاف response أو مقاطعته" id="interrupt">
     إذا كانت response تستغرق وقتًا طويلًا أو تنحرف عن المطلوب:
 
-    1. انقر على زر “Stop” (يكون مرئيًا أثناء processing).
-    2. تُعلَّم الرسالة على أنها متوقفة؛ ويمكنك تحسين prompt ثم إعادة الإرسال.
+    1. انقر على زر “Stop” (يكون ظاهرًا أثناء processing).
+    2. ستُعلَّم الرسالة على أنها مقاطَعة؛ ويمكنك تحسين prompt ثم إعادة الإرسال.
   </Step>
 
-  <Step>
-    ## اختصارات لوحة المفاتيح
-
+  <Step title="اختصارات لوحة المفاتيح" id="shortcuts">
     | الإجراء     | الاختصار             |
     | ----------- | -------------------- |
     | فتح AI Chat | `⌘ + '` / `Ctrl + '` |

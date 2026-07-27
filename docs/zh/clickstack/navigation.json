@@ -1,0 +1,247 @@
+{
+  "icon": "/images/icons/icon-clickstack.svg",
+  "item": "ClickStack",
+  "pages": [
+    "zh/clickstack/index",
+    {
+      "expanded": true,
+      "group": "开始使用",
+      "pages": [
+        {
+          "expanded": true,
+          "group": "快速入门",
+          "pages": [
+            "zh/clickstack/getting-started/managed",
+            "zh/clickstack/getting-started/oss"
+          ],
+          "root": "zh/clickstack/getting-started/index"
+        },
+        {
+          "group": "示例数据集",
+          "pages": [
+            "zh/clickstack/example-datasets/sample-data",
+            "zh/clickstack/example-datasets/kubernetes",
+            "zh/clickstack/example-datasets/local-data",
+            "zh/clickstack/example-datasets/remote-demo-data",
+            "zh/clickstack/example-datasets/session-replay",
+            "zh/clickstack/example-datasets/chrome-extension",
+            "zh/clickstack/example-datasets/otelgen"
+          ],
+          "root": "zh/clickstack/example-datasets/index"
+        },
+        "zh/clickstack/architecture",
+        "zh/clickstack/faq"
+      ],
+      "root": "zh/clickstack/overview"
+    },
+    {
+      "group": "功能特性",
+      "pages": [
+        {
+          "group": "部署",
+          "pages": [
+            {
+              "group": "开源版",
+              "pages": [
+                "zh/clickstack/deployment/all-in-one",
+                {
+                  "group": "Helm",
+                  "pages": [
+                    {
+                      "group": "v2.x",
+                      "pages": [
+                        "zh/clickstack/deployment/helm-configuration",
+                        "zh/clickstack/deployment/helm-deployment-options",
+                        "zh/clickstack/deployment/helm-cloud",
+                        "zh/clickstack/deployment/helm-additional-manifests",
+                        "zh/clickstack/deployment/helm-upgrade"
+                      ],
+                      "root": "zh/clickstack/deployment/helm"
+                    },
+                    {
+                      "group": "v1.x（已弃用）",
+                      "pages": [
+                        "zh/clickstack/deployment/helm-configuration-v1",
+                        "zh/clickstack/deployment/helm-deployment-options-v1",
+                        "zh/clickstack/deployment/helm-cloud-v1"
+                      ],
+                      "root": "zh/clickstack/deployment/helm-v1"
+                    }
+                  ]
+                },
+                "zh/clickstack/deployment/docker-compose",
+                "zh/clickstack/deployment/hyperdx-only",
+                "zh/clickstack/deployment/local-mode-only",
+                "zh/clickstack/deployment/clickhouse-embedded"
+              ],
+              "root": "zh/clickstack/deployment/oss"
+            },
+            "zh/clickstack/deployment/managed"
+          ],
+          "root": "zh/clickstack/deployment/overview"
+        },
+        "zh/clickstack/features/search",
+        {
+          "group": "仪表盘",
+          "pages": [
+            "zh/clickstack/features/dashboards/dashboard-templates",
+            "zh/clickstack/features/dashboards/sql-visualizations",
+            "zh/clickstack/features/dashboards/row-click-drilldowns"
+          ],
+          "root": "zh/clickstack/features/dashboards/overview"
+        },
+        "zh/clickstack/notebooks",
+        "zh/clickstack/text-to-chart",
+        "zh/clickstack/features/event-patterns",
+        "zh/clickstack/features/event-deltas",
+        "zh/clickstack/features/alerts",
+        "zh/clickstack/service-maps",
+        "zh/clickstack/features/session-replay",
+        "zh/clickstack/mcp",
+        {
+          "group": "演示日",
+          "pages": [
+            {
+              "group": "2026",
+              "pages": [
+                "zh/clickstack/demo-days/2026/2026-07-10",
+                "zh/clickstack/demo-days/2026/2026-07-02",
+                "zh/clickstack/demo-days/2026/2026-06-12",
+                "zh/clickstack/demo-days/2026/2026-06-05",
+                "zh/clickstack/demo-days/2026/2026-05-29",
+                "zh/clickstack/demo-days/2026/2026-05-22",
+                "zh/clickstack/demo-days/2026/2026-05-15",
+                "zh/clickstack/demo-days/2026/2026-05-08",
+                "zh/clickstack/demo-days/2026/2026-04-17",
+                "zh/clickstack/demo-days/2026/2026-04-10",
+                "zh/clickstack/demo-days/2026/2026-04-03"
+              ]
+            }
+          ],
+          "root": "zh/clickstack/demo-days/index"
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "管理 ClickStack",
+      "pages": [
+        "zh/clickstack/managing/admin",
+        "zh/clickstack/managing/config",
+        "zh/clickstack/managing/estimating-resources",
+        "zh/clickstack/managing/materialized-views",
+        "zh/clickstack/managing/performance-tuning",
+        "zh/clickstack/managing/production",
+        "zh/clickstack/managing/rbac",
+        "zh/clickstack/managing/ttl"
+      ],
+      "root": "zh/clickstack/managing/overview"
+    },
+    {
+      "group": "指南",
+      "pages": [
+        {
+          "group": "摄取数据",
+          "pages": [
+            "zh/clickstack/ingesting-data/overview",
+            "zh/clickstack/ingesting-data/opentelemetry",
+            "zh/clickstack/ingesting-data/vector",
+            "zh/clickstack/ingesting-data/collector",
+            "zh/clickstack/ingesting-data/schemas",
+            "zh/clickstack/ingesting-data/schema/map-vs-json",
+            "zh/clickstack/ingesting-data/trace-sampling",
+            {
+              "group": "集成",
+              "pages": [
+                "zh/clickstack/integration-examples/nginx-logs",
+                "zh/clickstack/integration-examples/nginx-traces",
+                "zh/clickstack/integration-examples/redis-logs",
+                "zh/clickstack/integration-examples/redis-metrics",
+                "zh/clickstack/integration-examples/cloudwatch",
+                "zh/clickstack/integration-examples/aws-lambda",
+                {
+                  "group": "主机日志",
+                  "pages": [
+                    "zh/clickstack/integration-examples/host-logs",
+                    "zh/clickstack/integration-examples/host-logs/ec2"
+                  ]
+                },
+                "zh/clickstack/integration-examples/jvm-metrics",
+                "zh/clickstack/integration-examples/kafka-metrics",
+                "zh/clickstack/integration-examples/kubernetes",
+                "zh/clickstack/integration-examples/mysql",
+                "zh/clickstack/integration-examples/nodejs-traces",
+                "zh/clickstack/integration-examples/postgres-logs",
+                "zh/clickstack/integration-examples/postgres-metrics",
+                "zh/clickstack/integration-examples/systemd",
+                "zh/clickstack/integration-examples/temporal",
+                "zh/clickstack/integration-examples/cloudflare",
+                "zh/clickstack/integration-examples/kafka-logs",
+                "zh/clickstack/integration-examples/mongodb-logs"
+              ],
+              "root": "zh/clickstack/integration-examples/index"
+            },
+            {
+              "group": "语言 SDK",
+              "pages": [
+                "zh/clickstack/ingesting-data/sdks/browser",
+                "zh/clickstack/ingesting-data/sdks/nodejs",
+                "zh/clickstack/ingesting-data/sdks/python",
+                "zh/clickstack/ingesting-data/sdks/golang",
+                "zh/clickstack/ingesting-data/sdks/java",
+                "zh/clickstack/ingesting-data/sdks/ruby",
+                "zh/clickstack/ingesting-data/sdks/elixir",
+                "zh/clickstack/ingesting-data/sdks/deno",
+                "zh/clickstack/ingesting-data/sdks/nestjs",
+                "zh/clickstack/ingesting-data/sdks/nextjs",
+                "zh/clickstack/ingesting-data/sdks/react-native",
+                "zh/clickstack/ingesting-data/sdks/aws-lambda"
+              ],
+              "root": "zh/clickstack/ingesting-data/sdks/index"
+            }
+          ],
+          "root": "zh/clickstack/ingesting-data/index"
+        },
+        {
+          "expanded": true,
+          "group": "迁移指南",
+          "pages": [
+            {
+              "group": "从 Elastic 迁移",
+              "pages": [
+                "zh/clickstack/migration/elastic/intro",
+                "zh/clickstack/migration/elastic/concepts",
+                "zh/clickstack/migration/elastic/types",
+                "zh/clickstack/migration/elastic/search",
+                "zh/clickstack/migration/elastic/migrating-data",
+                "zh/clickstack/migration/elastic/migrating-agents",
+                "zh/clickstack/migration/elastic/migrating-sdks"
+              ],
+              "root": "zh/clickstack/migration/elastic/index"
+            },
+            "zh/clickstack/migration/datadog/index"
+          ],
+          "root": "zh/clickstack/migration/index"
+        }
+      ]
+    },
+    {
+      "expanded": true,
+      "group": "集成合作伙伴",
+      "pages": [
+        "zh/clickstack/integration-partners/bindplane",
+        "zh/clickstack/integration-partners/odigos"
+      ],
+      "root": "zh/clickstack/integration-partners/index"
+    },
+    {
+      "expanded": true,
+      "group": "API 参考文档",
+      "openapi": {
+        "directory": "zh/clickstack/api-reference",
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json"
+      },
+      "root": "zh/clickstack/api-reference"
+    }
+  ]
+}

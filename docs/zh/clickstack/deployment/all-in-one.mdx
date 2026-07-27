@@ -32,9 +32,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <br />
 
 <Steps>
-  <Step>
-    ### 使用 Docker 部署
-
+  <Step title="使用 Docker 部署" id="deploy-with-docker">
     以下命令将启动 OpenTelemetry collector (监听 4317 和 4318 端口) 以及 HyperDX UI (监听 8080 端口) 。
 
     ```shell
@@ -48,9 +46,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step>
-    ### 前往 HyperDX UI
-
+  <Step title="前往 HyperDX UI" id="navigate-to-hyperdx-ui">
     访问 [http://localhost:8080](http://localhost:8080) 进入 HyperDX UI。
 
     创建用户，并提供符合要求的用户名和密码。
@@ -59,12 +55,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
 
-    有关使用其他 ClickHouse 实例的示例，请参阅 [“Using ClickHouse Cloud”](#using-clickhouse-cloud)。
+    有关使用其他 ClickHouse 实例的示例，请参阅 [“使用 ClickHouse Cloud”](#using-clickhouse-cloud)。
   </Step>
 
-  <Step>
-    ### 摄取数据
-
+  <Step title="摄取数据" id="ingest-data">
     要摄取数据，请参阅 [“Ingesting data”](/zh/clickstack/ingesting-data/index)。
   </Step>
 </Steps>
