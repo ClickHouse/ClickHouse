@@ -213,6 +213,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ASTPtr collation_expression;
     ASTPtr settings;
     bool primary_key_specifier = false;
+    /// The type as written in the query - what `astText` needs when there is no formatter.
+    std::string_view type_text;
 
     auto null_check_without_moving = [&]() -> bool
     {
@@ -243,8 +245,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (check_type_keyword && !s_type.ignore(pos, expected))
             return false;
+        Pos type_begin = pos;
         if (!type_parser.parse(pos, type, expected))
             return false;
+        type_text = textBetween(type_begin, pos);
         if (s_collate.ignore(pos, expected)
             && !collation_parser.parse(pos, collation_expression, expected))
             return false;
@@ -305,8 +309,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
-            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
-            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
+            /// Reached only when a type was parsed above, which is what fills in `type_text`.
+            chassert(!type_text.empty());
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(astText(*type, type_text)));
             default_expression = default_function;
         }
 

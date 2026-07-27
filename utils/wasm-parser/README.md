@@ -12,7 +12,7 @@ without a round trip to the server.
 ```bash
 curl -sL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-$(uname -m)-linux.tar.gz | tar xz -C tmp
 ./utils/wasm-parser/build.sh
-node --experimental-wasm-exnref utils/wasm-parser/test.mjs tmp/wasm-parser/parser.wasm
+node utils/wasm-parser/test.mjs tmp/wasm-parser/parser.wasm
 ```
 
 The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
@@ -20,32 +20,32 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 | export | meaning |
 | --- | --- |
 | `ch_alloc(size)` / `ch_free(ptr)` | allocate a buffer to write the query into |
+| `ch_check(ptr, size)` | parse; 1 = ok, 0 = syntax error |
 | `ch_format(ptr, size, one_line)` | parse and format; 1 = ok, 0 = parse error |
 | `ch_result_data()` / `ch_result_size()` | the formatted query, or the error message |
 
-It needs an engine with the WebAssembly exception-handling proposal. `-fwasm-exceptions` is not
-optional: the parser reports errors by throwing, and the wasi-sdk headers refuse `setjmp.h`
-without it.
+`build.sh --no-formatting` builds a module that only answers whether a query parses. It has no
+`ch_format`, and is 21% smaller - see below.
+
+Nothing here needs the WebAssembly exception-handling proposal. `tryParseQuery` reports a syntax
+error by returning null rather than by throwing, and no code in `src/Parsers` catches anything, so
+the build passes `-fignore-exceptions` and a `throw` that does escape aborts.
 
 ## What it costs
 
-`-Os`, stripped, all 220 parser translation units plus their transitive closure:
+Stripped, 320 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`:
 
-| component | KB | share |
+| build | bytes | gzip -9 |
 | --- | ---: | ---: |
-| `src/Parsers` | 1063 | 45% |
-| `src/Common` + `base` | 356 | 15% |
-| abseil | 196 | 8% |
-| re2 | 181 | 8% |
-| `src/Parsers/Access` | 178 | 7% |
-| `src/Access` | 156 | 7% |
-| fmt, double-conversion, zmij | 94 | 4% |
-| Poco | 63 | 3% |
-| `src/IO` + `src/Core` | 46 | 2% |
-| cctz | 30 | 1% |
-| entry point + runtime shim | 11 | 0% |
+| parse and format | 1168420 | 362693 |
+| `--no-formatting` | 926077 | 297843 |
 
-2.7 MB total, 789 KB gzipped.
+The first version of this build was 2.7 MB. Most of what went is listed under "What is left out";
+the rest came from compiling for size rather than speed, from dropping locale support, and from
+letting LTO remove the virtual functions nothing calls.
+
+A per-component table is no longer meaningful: LTO inlines across translation units, so most of
+the module cannot be attributed to any one source file.
 
 ## What is left out, and why
 
@@ -66,6 +66,20 @@ something a browser has no use for, and each would otherwise dominate the bundle
 The `shim/` directory supplies the POSIX headers wasi-libc omits (`netdb.h`, `ucontext.h`,
 `sched.h`, `pwd.h`, rounding modes in `fenv.h`, `sun_path`, `__u6_addr`). Nothing in the build
 calls into them - they exist so that headers naming those types in signatures still compile.
+
+## Formatting is all or nothing
+
+Turning an AST back into SQL costs 242 KB, a fifth of the module, and none of it can be dropped
+piecemeal. `formatImpl` is virtual, every AST class overrides it, and the linker has to keep all
+116 implementations as long as one call goes through that slot - so the only way to leave it out
+is to leave out the last call, which is what `-DCLICKHOUSE_PARSER_NO_FORMATTING` does.
+
+That means it also has to stay out of parsing. Several parsers used to build a string by parsing a
+fragment into an AST and formatting that AST back - `CAST(x AS T)` and `x::T` store `T` as a string
+literal, `EPHEMERAL` stores the column type inside `defaultValueOfTypeName`, and
+`(EXPLAIN ... SELECT ...)` becomes `viewExplain('<kind>', '<settings>', ...)`. They now take the
+text straight from the query instead (`textBetween` in `Parsers/TokenIterator.h`), which is both
+cheaper and closer to what the user wrote.
 
 ## Where the remaining size is
 

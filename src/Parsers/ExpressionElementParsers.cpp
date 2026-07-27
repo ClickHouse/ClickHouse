@@ -234,7 +234,9 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_ast->as<ASTSetQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
-            settings_str = settings_ast->formatWithSecretsOneLine();
+            if (explain_query.getSettingsText().empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN settings have no source text");
+            settings_str = astText(*settings_ast, explain_query.getSettingsText());
         }
 
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
@@ -568,10 +570,19 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 }
 
 
-ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
+std::optional<String> parseDataTypeAsText(IParser::Pos & pos, Expected & expected)
+{
+    ASTPtr type_ast;
+    IParser::Pos type_begin = pos;
+    if (!ParserDataType().parse(pos, type_ast, expected))
+        return {};
+    return astText(*type_ast, textBetween(type_begin, pos));
+}
+
+ASTPtr createFunctionCast(const ASTPtr & expr_ast, String type_text)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = make_intrusive<ASTLiteral>(type_ast->formatWithSecretsOneLine());
+    auto type_literal = make_intrusive<ASTLiteral>(std::move(type_text));
     return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 
@@ -1098,23 +1109,23 @@ bool ParserCastOperator::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    ASTPtr type_ast;
-    if (ParserToken(DoubleColon).ignore(pos, expected)
-        && ParserDataType().parse(pos, type_ast, expected))
-    {
-        size_t data_size = data_end - data_begin;
-        if (string_literal)
-        {
-            node = createFunctionCast(string_literal, type_ast);
-            return true;
-        }
+    if (!ParserToken(DoubleColon).ignore(pos, expected))
+        return false;
 
-        auto literal = make_intrusive<ASTLiteral>(String(data_begin, data_size));
-        node = createFunctionCast(literal, type_ast);
+    std::optional<String> type_text = parseDataTypeAsText(pos, expected);
+    if (!type_text)
+        return false;
+
+    if (string_literal)
+    {
+        node = createFunctionCast(string_literal, std::move(*type_text));
         return true;
     }
 
-    return false;
+    size_t data_size = data_end - data_begin;
+    auto literal = make_intrusive<ASTLiteral>(String(data_begin, data_size));
+    node = createFunctionCast(literal, std::move(*type_text));
+    return true;
 }
 
 

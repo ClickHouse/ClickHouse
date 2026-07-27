@@ -7,18 +7,27 @@ const bytes = await readFile(process.argv[2] ?? 'tmp/wasmexp/parser_stripped.was
 const { instance } = await WebAssembly.instantiate(bytes, wasi.getImportObject());
 wasi.initialize(instance);
 
-const { memory, ch_alloc, ch_free, ch_format, ch_result_data, ch_result_size } = instance.exports;
+const { memory, ch_alloc, ch_free, ch_check, ch_format, ch_result_data, ch_result_size } = instance.exports;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-function format(sql, oneLine = 0) {
+/// A --no-formatting build exports only ch_check.
+const canFormat = typeof ch_format === 'function';
+
+function call(sql, entry) {
     const bytes = encoder.encode(sql);
     const ptr = ch_alloc(bytes.length);
     new Uint8Array(memory.buffer, ptr, bytes.length).set(bytes);
-    const ok = ch_format(ptr, bytes.length, oneLine);
+    const ok = entry(ptr, bytes.length);
     const out = decoder.decode(new Uint8Array(memory.buffer, ch_result_data(), ch_result_size()).slice());
     ch_free(ptr);
     return { ok: !!ok, out };
+}
+
+function format(sql, oneLine = 0) {
+    if (!canFormat)
+        return call(sql, ch_check);
+    return call(sql, (ptr, len) => ch_format(ptr, len, oneLine));
 }
 
 const cases = [
@@ -45,6 +54,7 @@ for (const sql of cases) {
     pass += good ? 1 : 0;
     console.log(`${good ? 'ok  ' : 'FAIL'} ${r.ok ? '' : '[error] '}${r.out.replace(/\n/g, ' ').slice(0, 110)}`);
 }
-console.log(`\n--- multi-line formatting ---\n${format(cases[1], 0).out}`);
-console.log(`\n${pass}/${cases.length} passed`);
+if (canFormat)
+    console.log(`\n--- multi-line formatting ---\n${format(cases[1], 0).out}`);
+console.log(`\n${pass}/${cases.length} passed${canFormat ? '' : ' (parse only, this build cannot format)'}`);
 process.exit(pass === cases.length ? 0 : 1);

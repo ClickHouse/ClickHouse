@@ -2,7 +2,9 @@
 
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
+#include <base/defines.h>
 
+#include <string_view>
 #include <vector>
 
 
@@ -103,6 +105,21 @@ public:
     ALWAYS_INLINE const Token & max() { return tokens->max(); }
 };
 
+
+/** The query text spanned by the tokens `[begin, end)`, exactly as the user wrote it.
+  *
+  * Whitespace and comments are part of the result when they fall inside the range, and are never
+  * part of it at the edges, because the iterator does not stop on them.
+  *
+  * Parsers use this for error messages, and to hand `astText` something to fall back on when the
+  * build has no formatter to ask.
+  */
+inline std::string_view textBetween(TokenIterator begin, TokenIterator end)
+{
+    chassert(begin < end);
+    --end;
+    return {begin->begin, static_cast<size_t>(end->end - begin->begin)};
+}
 
 /// Returns positions of unmatched parentheses.
 using UnmatchedParentheses = std::vector<Token>;
