@@ -29,7 +29,24 @@ The engine allows to import and export data to SQLite and supports queries to SQ
 **Engine Parameters**
 
 - `db_path` — Path to SQLite file with a database.
-- `table` — Name of a table in the SQLite database.
+- `table` — Name of a table in the SQLite database, or a query passed to SQLite as is (see [Passing a query instead of a table name](#passing-a-query)).
+
+## Passing a query instead of a table name {#passing-a-query}
+
+Instead of a table name, the `table` argument can be a `SELECT` query that is passed to SQLite as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
+
+```sql
+CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
+CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col2 > 1'));
+```
+
+Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`sqlite`](/sql-reference/table-functions/sqlite) table function.
+
+:::note
+The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized before being sent to SQLite. It must therefore be valid ClickHouse SQL. To pass SQLite-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to SQLite verbatim.
+
+Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from SQLite, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
+:::
 
 ## Data types support {#data-types-support}
 

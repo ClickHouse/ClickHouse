@@ -1,0 +1,99 @@
+---
+position: 5
+slug: /clickhouse-operator/guides/scaling
+title: Scaling clusters
+keywords: ['kubernetes', 'scaling', 'replicas', 'shards', 'keeper', 'quorum']
+description: 'How to scale ClickHouse replicas and shards and Keeper quorum members, and what the operator does automatically.'
+doc_type: 'guide'
+---
+
+You scale a cluster by editing the replica and shard counts on the Custom Resource. The operator reconciles the running cluster toward the new topology: it creates or removes the per-replica StatefulSets, keeps the schema in sync, and surfaces progress through status conditions.
+
+This guide covers how to scale `ClickHouseCluster` replicas and shards, how to scale a `KeeperCluster` quorum safely, and which conditions to watch while a scale operation is in flight.
+
+<Note>
+A `ClickHouseCluster` always needs a Keeper, referenced through the required `spec.keeperClusterRef` field — the operator coordinates the cluster through it regardless of size. To run more than one replica per shard, the data must also live in `ReplicatedMergeTree` tables, since replication is what lets a second replica serve the same rows.
+</Note>
+
+## Scaling replicas {#scaling-replicas}
+
+`spec.replicas` sets the number of replicas in every shard. Each replica runs in its own StatefulSet named `<cluster>-clickhouse-<shard>-<replica>`, so a cluster with `shards: 2` and `replicas: 3` runs six StatefulSets.
+
+Raise or lower the count in place:
+
+```yaml
+spec:
+  replicas: 3   # was 1
+  keeperClusterRef:
+    name: my-keeper
+```
+
+On scale up the operator creates the new per-replica StatefulSets, waits for each pod to become ready, and then synchronizes the schema to the new replicas (see [Automatic schema sync](#automatic-schema-sync)). On scale down it removes the surplus StatefulSets and cleans up the stale replicated-database replica registrations the removed replicas left behind.
+
+## Scaling shards {#scaling-shards}
+
+`spec.shards` sets the number of shards. Each new shard adds a full set of per-replica StatefulSets, and the operator creates one [PodDisruptionBudget per shard](/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) so a disruption in one shard cannot count against another.
+
+```yaml
+spec:
+  shards: 3   # was 1
+  replicas: 2
+```
+
+Each shard holds a distinct slice of the data, and the operator does not copy or move rows between shards. A `Distributed` table or an explicit routing scheme decides which shard a row lands on, so adding a shard gives new writes somewhere to land without touching the rows already stored in the existing shards.
+
+## Automatic schema sync {#automatic-schema-sync}
+
+When `spec.settings.enableDatabaseSync` is `true` (the default), the operator keeps the schema aligned as the topology changes:
+
+- **On scale up** — once at least two replicas are ready, the operator replicates the database definitions to the newly created replicas, so a fresh replica joins with the same `Replicated` and integration databases as the rest of the cluster.
+- **On scale down** — before a replica disappears, the operator drops that replica's registration from each `Replicated` database with `SYSTEM DROP DATABASE REPLICA`, so the shrunk cluster does not wait on a `Replicated` database replica that no longer exists.
+
+This covers `Replicated` databases and integration database engines. It does not move table data — row data lives in `ReplicatedMergeTree` tables and replicates through Keeper independently of this schema sync. With a single ready replica there is nothing to replicate to, so the operator skips the step and logs that it has no target.
+
+Set `enableDatabaseSync: false` to turn the behavior off, for example when an external tool owns schema propagation. The operator then reports the `SchemaSyncDisabled` reason on the `SchemaInSync` condition.
+
+## Conditions to watch {#scaling-conditions}
+
+Inspect progress on the Custom Resource while a scale operation runs:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+| Condition | Reason | Meaning |
+|---|---|---|
+| `ClusterSizeAligned` | `UpToDate` | Running replica count matches the requested topology |
+| `ClusterSizeAligned` | `ScalingUp` | The operator is adding replicas |
+| `ClusterSizeAligned` | `ScalingDown` | The operator is removing replicas |
+| `SchemaInSync` | `ReplicasInSync` | Databases exist on all replicas and stale metadata is cleaned up |
+| `SchemaInSync` | `DatabasesNotCreated` | The operator has not finished creating databases on the new replicas |
+| `SchemaInSync` | `ReplicasNotCleanedUp` | Stale replica metadata from a scale down is not yet removed |
+| `SchemaInSync` | `SchemaSyncDisabled` | `enableDatabaseSync` is `false` |
+| `Ready` | `AllShardsReady` | Every shard has a ready replica |
+| `Ready` | `SomeShardsNotReady` | At least one shard has no ready replica |
+
+A scale operation is complete when `ClusterSizeAligned` reports `UpToDate`, `SchemaInSync` reports `ReplicasInSync`, and `Ready` reports `AllShardsReady`.
+
+## Scaling Keeper {#scaling-keeper}
+
+A `KeeperCluster` runs a RAFT quorum, so the operator changes its membership **one replica at a time** and only while the cluster is in a stable state. This protects the quorum: a `2F+1` cluster tolerates `F` members down, so a 3-node cluster keeps working with one member missing and a 5-node cluster with two.
+
+```yaml
+spec:
+  replicas: 5   # was 3
+```
+
+On scale up the operator adds the lowest free replica ID to the quorum; on scale down it removes the highest ID. Each step waits for the quorum to settle before the next one starts. The [Keeper PodDisruptionBudget](/products/kubernetes-operator/guides/configuration#pod-disruption-budgets) defaults to `maxUnavailable: replicas/2` to preserve the quorum during voluntary disruptions.
+
+The `ScaleAllowed` condition reports whether the quorum can change membership right now:
+
+| Reason | Meaning |
+|---|---|
+| `ReadyToScale` | The quorum is stable and the operator can add or remove a member |
+| `ReplicaHasPendingChanges` | A replica still has a pending configuration change |
+| `ReplicaNotReady` | A replica is not ready, so membership changes wait |
+| `NoQuorum` | The cluster has no quorum and cannot change membership safely |
+| `WaitingFollowers` | The operator is waiting for followers to catch up |
+
+Scale Keeper in single steps and let `ScaleAllowed` return to `ReadyToScale` between changes. Jumping several members at once does not bypass the one-at-a-time reconcile — the operator still walks the quorum one member per step.

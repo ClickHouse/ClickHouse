@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'ClickStack（The ClickHouse Observability Stack）で使用されるテーブルとスキーマ'
+sidebarTitle: 'テーブルとスキーマ'
+title: 'ClickStack で使用されるテーブルとスキーマ'
+doc_type: 'reference'
+keywords: ['clickstack', 'スキーマ', 'データモデル', 'テーブル設計', 'ログ']
+---
+
+import OtelLogsSchema from '/snippets/ja/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/ja/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/ja/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/ja/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/ja/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/ja/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/ja/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/ja/clickstack/_schema_hyperdx_sessions.mdx';
+
+ClickStack OpenTelemetry (OTel) collector は、[ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) を使用して ClickHouse にテーブルを作成し、データを挿入します。
+
+以下のテーブルは、`default` データベース内で各データ型について作成されます。OTel collector を実行するイメージの環境変数 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE` を変更することで、この移行先データベースを変更できます。
+
+<div id="logs">
+  ## ログ
+</div>
+
+<OtelLogsSchema />
+
+<div id="traces">
+  ## トレース
+</div>
+
+<OtelTracesSchema />
+
+<div id="metrics">
+  ## メトリクス
+</div>
+
+<div id="gauge">
+  ### Gauge メトリクス
+</div>
+
+<OtelMetricsGaugeSchema />
+
+<div id="sum">
+  ### Sumメトリクス
+</div>
+
+<OtelMetricsSumSchema />
+
+<div id="histogram">
+  ### ヒストグラムメトリクス
+</div>
+
+<OtelMetricsHistogramSchema />
+
+<div id="exponential-histograms">
+  ### 指数ヒストグラム
+</div>
+
+<Note>
+  HyperDX は、指数ヒストグラムメトリクスの取得や表示にはまだ対応していません。メトリクスソースで設定することはできますが、今後対応予定です。
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+<div id="summary-table">
+  ### 概要表
+</div>
+
+<OtelMetricsSummarySchema />
+
+<div id="sessions">
+  ## セッション
+</div>
+
+<HyperdxSessionsSchema />

@@ -1,0 +1,125 @@
+---
+description: 'TPC-H 벤치마크 데이터셋과 쿼리입니다.'
+sidebarTitle: 'TPC-H'
+slug: /getting-started/example-datasets/tpch
+title: 'TPC-H (1999)'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'tpch', '벤치마크', '샘플 데이터', '성능 테스트']
+---
+
+도매 공급업체의 내부 데이터 웨어하우스를 모델링한 대표적인 벤치마크입니다.
+데이터는 제3정규형으로 저장되므로, 쿼리 실행 시 많은 조인이 필요합니다.
+오래된 벤치마크이고 데이터가 균등하고 독립적으로 분포된다는 비현실적인 가정을 전제로 하지만, TPC-H는 현재까지도 가장 널리 사용되는 OLAP 벤치마크입니다.
+
+**참고 자료**
+
+* [TPC-H](https://www.tpc.org/tpc_documents_current_versions/current_specifications5.asp)
+* [New TPC Benchmarks for Decision Support and Web Commerce](https://doi.org/10.1145/369275.369291) (Poess et. al., 2000)
+* [TPC-H Analyzed: Hidden Messages and Lessons Learned from an Influential Benchmark](https://doi.org/10.1007/978-3-319-04936-6_5) (Boncz et. al.), 2013
+* [Quantifying TPC-H Choke Points and Their Optimizations](https://doi.org/10.14778/3389133.3389138) (Dresseler et. al.), 2020
+
+<div id="data-generation-and-import">
+  ## 데이터 생성 및 가져오기
+</div>
+
+먼저 TPC-H 리포지토리를 체크아웃한 다음 데이터 생성기를 컴파일합니다:
+
+```bash
+git clone https://github.com/gregrahn/tpch-kit.git
+cd tpch-kit/dbgen
+make
+```
+
+그런 다음 데이터를 생성합니다. 매개변수 `-s`는 스케일 팩터를 지정합니다. 예를 들어 `-s 100`을 사용하면 테이블 &#39;lineitem&#39;에 6억 개의 행이 생성됩니다.
+
+```bash
+./dbgen -s 100
+```
+
+속도를 높이기 위해 여러 프로세스를 사용하는 &quot;청크&quot; 생성을 사용할 수 있습니다:
+
+```bash
+for i in $(seq 1 8); do
+    ./dbgen -s 100 -C 8 -S $i &
+done
+wait
+```
+
+스케일 팩터 100 기준의 상세 테이블 크기:
+
+| Table    | size (in rows) | size (compressed in ClickHouse) |
+| -------- | -------------- | ------------------------------- |
+| nation   | 25             | 2 kB                            |
+| region   | 5              | 1 kB                            |
+| part     | 20.000.000     | 895 MB                          |
+| supplier | 1.000.000      | 75 MB                           |
+| partsupp | 80.000.000     | 4.37 GB                         |
+| customer | 15.000.000     | 1.19 GB                         |
+| orders   | 150.000.000    | 6.15 GB                         |
+| lineitem | 600.000.000    | 26.69 GB                        |
+
+(ClickHouse에서의 압축된 크기는 `system.tables.total_bytes` 값을 사용했으며, 아래 테이블 정의를 기준으로 합니다.)
+
+이제 ClickHouse에 테이블을 생성합니다. 테이블 정의는 ClickHouse 리포지토리의 [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql)에서 확인할 수 있습니다.
+
+데이터는 다음과 같이 가져올 수 있습니다:
+
+```bash
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO nation FORMAT CSV" < nation.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO region FORMAT CSV" < region.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO part FORMAT CSV" < part.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO partsupp FORMAT CSV" < partsupp.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO customer FORMAT CSV" < customer.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO orders FORMAT CSV" < orders.tbl
+clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMAT CSV" < lineitem.tbl
+```
+
+<Note>
+  tpch-kit을 사용하여 직접 테이블을 생성하는 대신, 공개 S3 버킷에서 데이터를 가져올 수도 있습니다. 이 경우 [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql)을 사용하여 빈 테이블을 먼저 생성해 두십시오.
+
+  ```sql
+  -- 스케일 팩터 1
+  INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/nation.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/region.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/part.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO supplier SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/supplier.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO partsupp SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/partsupp.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO customer SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/customer.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/orders.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/lineitem.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+
+  -- 스케일 팩터 10
+  INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/nation.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/region.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/part.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO supplier SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/supplier.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO partsupp SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/partsupp.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO customer SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/customer.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/orders.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/lineitem.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+
+  -- 스케일 팩터 100
+  INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/nation.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/region.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/part.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO supplier SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/supplier.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO partsupp SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/partsupp.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO customer SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/customer.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/orders.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/lineitem.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
+  ```
+</Note>
+
+<div id="queries">
+  ## 쿼리
+</div>
+
+22개의 TPC-H 쿼리는 ClickHouse 리포지토리의 [여기](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-h/queries)에서 확인할 수 있습니다.
+
+SQL 표준과 호환되는 동작과 예상 결과를 얻으려면 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json)에 있는 설정을 적용하십시오.
+알려진 문제와 특정 쿼리에 대한 참고 사항은 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md)를 참조하십시오.
+
+**정확성**
+
+별도로 명시된 경우를 제외하면 쿼리 결과는 공식 결과와 일치합니다. 이를 검증하려면 스케일 팩터가 1인 TPC-H 데이터베이스를 생성한 뒤(`dbgen`, 위 내용 참조), [tpch-kit의 예상 결과](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers)와 비교하십시오.

@@ -1,25 +1,13 @@
 #pragma once
 
-#include "config.h"
-
 namespace DB
 {
 
-struct KeeperMemNode;
-struct KeeperRocksNode;
+template<typename NodesStorage>
+class KeeperStorageImpl;
 
-template<typename TContainer>
-class KeeperStorage;
+struct KeeperMemNodesStorage;
 
-template <class V>
-class SnapshotableHashTable;
-
-template <class V>
-struct RocksDBContainer;
-
-using KeeperMemoryStorage = KeeperStorage<SnapshotableHashTable<KeeperMemNode>>;
-#if USE_ROCKSDB
-using KeeperRocksStorage = KeeperStorage<RocksDBContainer<KeeperRocksNode>>;
-#endif
+using KeeperMemoryStorage = KeeperStorageImpl<KeeperMemNodesStorage>;
 
 }

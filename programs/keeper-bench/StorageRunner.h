@@ -48,7 +48,7 @@ public:
     ~StorageRunner();
 
 private:
-    using Storage = DB::KeeperMemoryStorage;
+    using Storage = DB::KeeperStorage;
 
     struct QueueItem
     {

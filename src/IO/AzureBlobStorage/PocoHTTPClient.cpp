@@ -15,6 +15,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <azure/core/http/policies/policy.hpp>
 
@@ -308,6 +309,21 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     const auto & method = request.GetMethod().ToString();
     const auto url = request.GetUrl();
 
+    /// Enforce remote_url_allow_hosts on the host actually used: only redirects
+    /// were re-checked before, but the request host can differ from the endpoint
+    /// validated at CREATE time (OneLake writes go to the `.dfs` host, reads to
+    /// `.blob`). Normalize scheme and host as Poco::URI does at CREATE time (the
+    /// scheme resolves the default port; the host is lower-cased) so both agree.
+    {
+        Poco::URI request_uri;
+        request_uri.setScheme(url.GetScheme());
+        std::string request_host = url.GetHost();
+        Poco::toLowerInPlace(request_host);
+        request_uri.setHost(request_host);
+        request_uri.setPort(url.GetPort());
+        remote_host_filter.checkURL(request_uri);
+    }
+
     try
     {
         Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
@@ -346,6 +362,18 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
         {
             if (!header.value.empty())  // Skip empty headers
                 poco_request.set(header.name, header.value);
+        }
+
+        /// Some SDK clients (e.g. Key Vault) do not set the `Content-Length` header themselves
+        /// and rely on the transport to compute it from the body stream (the removed curl-based
+        /// transport did that). Without it the request body is sent with no framing at all,
+        /// and Azure responds with `411 Length Required`. Body-less requests get a `NullBodyStream`,
+        /// so mirror the curl transport and skip only the methods that never carry a body.
+        if (method != "GET" && method != "HEAD"
+            && !poco_request.has(Poco::Net::HTTPRequest::CONTENT_LENGTH))
+        {
+            if (const auto * request_body_stream = request.GetBodyStream())
+                poco_request.setContentLength(request_body_stream->Length());
         }
 
         if (method == "GET" || method == "HEAD")
@@ -504,6 +532,23 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     }
 }
 
+}
+
+/// Default transport for SDK pipelines created without an explicit transport,
+/// e.g. internal pipelines of `ManagedIdentityCredential` and `WorkloadIdentityCredential`.
+/// The SDK is built with `BUILD_TRANSPORT_CUSTOM_ADAPTER` and has no other transport.
+std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport()
+{
+    static const DB::RemoteHostFilter remote_host_filter;
+    static auto transport = std::make_shared<DB::PocoAzureHTTPClient>(
+        DB::PocoAzureHTTPClientConfiguration{
+            .remote_host_filter = remote_host_filter,
+            .max_redirects = 10,
+            .for_disk_azure = false,
+            .request_throttler = {},
+            .extra_headers = {},
+        });
+    return transport;
 }
 
 #endif

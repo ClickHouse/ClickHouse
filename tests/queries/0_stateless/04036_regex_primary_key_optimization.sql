@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 
 -- { echo }

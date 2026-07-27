@@ -1,0 +1,79 @@
+---
+description: 'Documentation sur le terminal web, une session `clickhouse-client` dans le navigateur via WebSocket'
+sidebarTitle: 'Terminal web'
+slug: /interfaces/web-terminal
+title: 'Terminal web'
+doc_type: 'reference'
+---
+
+Le terminal web est une interface dans le navigateur qui fournit une session interactive `clickhouse-client` via WebSocket. Il est accessible depuis n’importe quel port HTTP de ClickHouse à l’emplacement `/webterminal`.
+
+Accédez à `/webterminal` sur n’importe quel port HTTP de ClickHouse (par exemple, `http://localhost:8123/webterminal`) pour ouvrir le terminal.
+
+<div id="enabling-the-feature">
+  ## Activation et désactivation de la fonctionnalité
+</div>
+
+Le point de terminaison `/webterminal` est activé par défaut et contrôlé par le paramètre du serveur `enable_webterminal`. Pour le désactiver, définissez ce paramètre sur `false` ; les requêtes vers `/webterminal` renverront alors le code d’état HTTP `403 Forbidden`.
+
+```xml
+<clickhouse>
+    <enable_webterminal>false</enable_webterminal>
+</clickhouse>
+```
+
+<Note>
+  `enable_webterminal` remplace l’ancien paramètre `allow_experimental_webterminal`. L’ancien nom reste pris en charge par souci de rétrocompatibilité lorsque `enable_webterminal` n’est pas défini.
+</Note>
+
+<div id="authentication">
+  ## Authentification
+</div>
+
+Le terminal web authentifie l&#39;utilisateur en appliquant les mêmes vérifications de `Session` et de contrôle d&#39;accès que le protocole HTTP, mais les identifiants sont échangés directement sur la connexion WebSocket établie plutôt que via la requête de mise à niveau HTTP. Une fois la négociation initiale WebSocket terminée, le navigateur envoie le premier message au format JSON :
+
+```json
+{"type": "auth", "user": "<user>", "password": "<password>"}
+```
+
+Cela évite de placer des identifiants dans les paramètres d’URL ou les en-têtes `Authorization` associés à la requête d’upgrade, où ils pourraient se retrouver dans l’historique du navigateur, les journaux d’accès du serveur et les logs du proxy inverse. Les paramètres d’URL, l’authentification HTTP Basic et les en-têtes `X-ClickHouse-User`/`X-ClickHouse-Key` de la requête d’upgrade ne sont délibérément **pas** pris en compte par `/webterminal`.
+
+Des identifiants invalides entraînent la fermeture du WebSocket par le serveur avec le code `1008` ; l’UI du navigateur redemande les identifiants.
+
+<div id="session">
+  ## À quoi ressemble la session
+</div>
+
+Une fois authentifié, le serveur exécute `clickhouse-client`, rattaché à un pseudoterminal, et transmet ses entrées et sorties via WebSocket. La session prend en charge l’expérience complète de `clickhouse-client`, y compris :
+
+* Coloration syntaxique.
+* Autocomplétion.
+* Requêtes sur plusieurs lignes.
+* Historique des commandes (stocké côté serveur pendant toute la durée de la session).
+
+Le terminal utilise [xterm.js](https://xtermjs.org/) pour l’affichage. Toutes les ressources sont servies directement par le binaire ClickHouse lui-même — aucun CDN tiers n’est chargé.
+
+<div id="play-integration">
+  ## Intégration avec `/play`
+</div>
+
+L’[interface Web SQL `/play`](/fr/concepts/features/interfaces/http) intègre le terminal web dans un panneau ancrable. Affichez-le ou masquez-le à l’aide de l’icône du terminal dans la barre latérale, ou appuyez sur la touche `~` lorsque l’éditeur de requêtes est vide. La page `/play` détecte la disponibilité de `/webterminal` au chargement et masque les commandes du terminal lorsque le point de terminaison n’est pas disponible (par exemple, lorsque `enable_webterminal` est défini sur `false`).
+
+<div id="security">
+  ## Considérations de sécurité
+</div>
+
+Le terminal web expose une session interactive de type shell à quiconque peut s’authentifier sur le point de terminaison HTTP de ClickHouse. Les mêmes précautions que pour le protocole HTTP s’appliquent donc ici :
+
+* Servez toujours `/webterminal` via HTTPS dans les environnements non fiables afin de protéger les informations d’identification et le trafic de session.
+* Restreignez l’accès au niveau du réseau (pare-feu, proxy inverse ou configuration `listen_host`) de la même façon que vous restreignez l’accès au protocole HTTP.
+* Le point de terminaison valide l’en-tête `Origin` par rapport à `Host` afin d’atténuer les détournements WebSocket inter-origines ; configurez les proxys inverses en conséquence si vous terminez TLS de façon externe.
+* Derrière un proxy inverse qui termine TLS, la connexion en amont vers ClickHouse se fait en `http` simple même si le navigateur utilise `https`, de sorte que la vérification stricte de même origine rejetterait des connexions légitimes. Pour ces déploiements, définissez `webterminal_allowed_origins` sur une liste d’origines complètes autorisées à ouvrir des sessions WebSocket, séparées par des virgules ; lorsque ce paramètre n’est pas vide, il remplace la vérification de même origine par défaut. Exemple : `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`.
+
+Le gestionnaire applique également la conformité au protocole WebSocket conformément à la RFC 6455 : les trames client non masquées, les opcodes réservés, les trames de contrôle surdimensionnées ou fragmentées, ainsi que les bits RSV réservés sont rejetés avec des codes de fermeture pour erreur de protocole.
+
+<div id="platform">
+  ## Disponibilité de la plateforme
+</div>
+
+Ce composant est compilé sur toutes les plateformes prises en charge par ClickHouse. La couche de pseudoterminal utilisée par le moteur d’exécution `clickhouse-client` intégré repose sur des primitives POSIX portables (`posix_openpt`/`grantpt`/`unlockpt`), avec un chemin de code spécifique à Linux qui utilise `ptsname_r`, thread-safe. Les liens vers `/webterminal` sur la page d’accueil de ClickHouse et dans `/play` sont automatiquement masqués lorsque le point de terminaison n’est pas disponible (par exemple, lorsque `enable_webterminal` est défini sur `false`).

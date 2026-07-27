@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/ttl
+title: 'إدارة TTL'
+sidebarTitle: 'إدارة TTL'
+description: 'إدارة TTL في ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'ttl', 'الاحتفاظ بالبيانات', 'دورة الحياة', 'إدارة التخزين']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
+
+<div id="ttl-clickstack">
+  ## TTL في ClickStack
+</div>
+
+تُعد Time-to-Live (TTL) ميزة أساسية في ClickStack لإدارة البيانات والاحتفاظ بها بكفاءة، لا سيما مع التوليد المستمر لكميات هائلة من البيانات. تتيح TTL انتهاء صلاحية البيانات الأقدم وحذفها تلقائيًا، مما يضمن الاستخدام الأمثل للتخزين والحفاظ على الأداء دون تدخل يدوي. وتُعد هذه الإمكانية ضرورية للحفاظ على قاعدة البيانات خفيفة، وخفض تكاليف التخزين، وضمان بقاء الاستعلامات سريعة وفعّالة من خلال التركيز على البيانات الأحدث والأكثر صلة. إضافةً إلى ذلك، فهي تساعد على الامتثال لسياسات الاحتفاظ بالبيانات عبر إدارة دورة حياة البيانات بشكل منهجي، مما يعزّز الاستدامة وقابلية التوسع بشكل عام في حل observability.
+
+**بشكل افتراضي، يحتفظ ClickStack بالبيانات لمدة 3 أيام. لتعديل ذلك، راجع [&quot;تعديل TTL&quot;](#modifying-ttl).**
+
+يتم التحكم في TTL على مستوى الجدول في ClickHouse. على سبيل المثال، يظهر أدناه المخطط الافتراضي للسجلات؛ ويتم استبدال `${TABLES_TTL}` بفترة الاحتفاظ المُعدّة (3 أيام ما لم يتم تغييرها) عندما ينشئ الـ collector الجدول:
+
+<OtelLogsSchema />
+
+يتيح التقسيم في ClickHouse فصل البيانات منطقيًا على القرص وفقًا لعمود أو تعبير SQL. ومن خلال هذا الفصل المنطقي، يمكن التعامل مع كل partition بشكل مستقل، مثل حذفه عند انتهاء صلاحيته وفقًا لسياسة TTL.
+
+كما هو موضح في المثال أعلاه، يتم تحديد التقسيم للجدول عند تعريفه أول مرة عبر عبارة `PARTITION BY`. ويمكن أن تحتوي هذه العبارة على تعبير SQL يستند إلى أي عمود أو أعمدة، وتحدد نتيجته partition الذي سيُرسل إليه كل row. ويؤدي ذلك إلى ربط البيانات منطقيًا (عبر بادئة اسم مجلد مشتركة) بكل partition على القرص، بحيث يمكن بعد ذلك الاستعلام عنه بشكل مستقل. وفي المثال أعلاه، يستخدم المخطط الافتراضي لـ `otel_logs` التقسيم حسب اليوم باستخدام التعبير `toDate(Timestamp)`. وعند insert rows في ClickHouse، يُقيَّم هذا التعبير على كل row ويُوجَّه إلى partition الناتج إذا كان موجودًا (وإذا كان هذا row هو الأول لذلك اليوم، فسيتم إنشاء partition). لمزيد من التفاصيل حول التقسيم وتطبيقاته الأخرى، راجع [&quot;Table Partitions&quot;](/ar/concepts/core-concepts/partitions).
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="الأقسام" size="lg" />
+
+يتضمن مخطط الجدول أيضًا `TTL toDateTime(Timestamp) + ${TABLES_TTL}` والإعداد `ttl_only_drop_parts = 1`. تضمن العبارة الأولى حذف البيانات بمجرد أن تصبح أقدم من TTL المُعدّة (3 أيام افتراضيًا). أما الإعداد `ttl_only_drop_parts = 1` فيفرض انتهاء صلاحية أجزاء البيانات فقط عندما تكون كل البيانات فيها قد انتهت صلاحيتها (بدلًا من محاولة حذف rows جزئيًا). ومع ضمان التقسيم عدم &quot;دمج&quot; البيانات من أيام مختلفة مطلقًا، يمكن بالتالي حذف البيانات بكفاءة.
+
+<Warning>
+  **`ttl_only_drop_parts`**
+
+  نوصي دائمًا باستخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings#ttl_only_drop_parts). عند تمكين هذا الإعداد، يحذف ClickHouse part كاملًا عندما تكون جميع rows الموجودة فيه منتهية الصلاحية. إن حذف parts كاملة بدلًا من تنظيف rows المنتهية صلاحيتها وفق TTL بشكل جزئي (وهو ما يتحقق عبر mutations كثيفة الموارد عندما يكون `ttl_only_drop_parts=0`) يتيح استخدام قيم `merge_with_ttl_timeout` أقصر وتأثيرًا أقل على أداء النظام. وإذا كانت البيانات مقسّمة وفق نفس الوحدة التي تُطبَّق عندها صلاحية TTL، مثل اليوم، فستحتوي parts بطبيعتها على بيانات من interval المحدد فقط. وهذا يضمن إمكانية تطبيق `ttl_only_drop_parts=1` بكفاءة.
+</Warning>
+
+بشكل افتراضي، تُزال البيانات ذات TTL المنتهية عندما يقوم ClickHouse [بدمج أجزاء البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). وعندما يكتشف ClickHouse أن البيانات منتهية الصلاحية، فإنه ينفّذ عملية دمج خارج الجدول الزمني.
+
+<Info>
+  **جدولة TTL**
+
+  لا تُطبّق قيم TTL فورًا، بل وفق جدول زمني كما ذُكر أعلاه. يحدد إعداد جدول MergeTree ‏`merge_with_ttl_timeout` الحد الأدنى للتأخير بالثواني قبل تكرار عملية دمج مع delete TTL. والقيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا ليس سوى الحد الأدنى للتأخير؛ فقد يستغرق الأمر وقتًا أطول قبل تشغيل عملية TTL merge. وإذا كانت القيمة منخفضة جدًا، فسينفّذ العديد من عمليات الدمج خارج الجدول الزمني التي قد تستهلك قدرًا كبيرًا من الموارد. ويمكن فرض انتهاء صلاحية TTL باستخدام الأمر `ALTER TABLE my_table MATERIALIZE TTL`.
+</Info>
+
+<div id="modifying-ttl">
+  ## تعديل TTL
+</div>
+
+لتعديل TTL، يمكنك اختيار أحد الخيارين التاليين:
+
+1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/cli) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
+
+```sql
+ALTER TABLE default.otel_logs
+MODIFY TTL TimestampTime + toIntervalDay(7);
+```
+
+2. **عدّل OTel collector**. ينشئ ClickStack OpenTelemetry collector جداول في ClickHouse إذا لم تكن موجودة. ويتم ذلك عبر ClickHouse exporter، الذي يوفّر بدوره المعلَمة `ttl` المستخدمة للتحكم في تعبير TTL الافتراضي، مثل:
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+<div id="column-level-ttl">
+  ### TTL على مستوى العمود
+</div>
+
+تُظهر الأمثلة أعلاه انتهاء صلاحية البيانات على مستوى الجدول. ويمكنك أيضًا تطبيق انتهاء الصلاحية على مستوى العمود. ومع تقادم البيانات، يمكن استخدام ذلك لحذف الأعمدة التي لا تبرر قيمتها في الاستقصاءات العبء الإضافي على الموارد المترتب على الاحتفاظ بها. على سبيل المثال، نوصي بالاحتفاظ بالعمود `Body` تحسبًا لإضافة بيانات وصفية ديناميكية جديدة لم تُستخرج عند وقت الإدراج، مثل label جديد في Kubernetes. وبعد فترة، مثل شهر واحد، قد يتضح أن هذه البيانات الوصفية الإضافية غير مفيدة، وبالتالي تقل جدوى الاحتفاظ بالعمود `Body`.
+
+فيما يلي، نوضح كيف يمكن حذف العمود `Body` بعد 30 يومًا.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+ ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  يتطلب تحديد TTL على مستوى العمود من المستخدمين تحديد المخطط الخاص بهم. ولا يمكن تحديد ذلك في OTel collector.
+</Note>

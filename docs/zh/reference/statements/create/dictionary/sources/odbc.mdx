@@ -1,0 +1,289 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/odbc
+title: 'ODBC 字典源'
+sidebarTitle: 'ODBC'
+description: '在 ClickHouse 中将 ODBC 连接配置为字典源。'
+doc_type: 'reference'
+---
+
+你可以使用此方法连接任何带有 ODBC 驱动程序 的数据库。
+
+设置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(ODBC(
+        db 'DatabaseName'
+        table 'SchemaName.TableName'
+        connection_string 'DSN=some_parameters'
+        invalidate_query 'SQL_QUERY'
+        query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <source>
+        <odbc>
+            <db>DatabaseName</db>
+            <table>ShemaName.TableName</table>
+            <connection_string>DSN=some_parameters</connection_string>
+            <invalidate_query>SQL_QUERY</invalidate_query>
+            <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
+        </odbc>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+设置字段：
+
+| Setting                | Description                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `db`                   | 数据库名称。如果数据库名称已在 `<connection_string>` 参数中设置，则可省略。                                                                        |
+| `table`                | 表名称，以及 schema (如果有) 。                                                                                                    |
+| `connection_string`    | connection string。                                                                                                       |
+| `invalidate_query`     | 用于检查字典状态的查询。可选。更多信息请参见 [Refreshing dictionary data using LIFETIME](/zh/reference/statements/create/dictionary/lifetime) 部分。 |
+| `background_reconnect` | 如果 connection 失败，则在后台重新连接到副本。可选。                                                                                         |
+| `query`                | 自定义查询。可选。                                                                                                                |
+
+<Note>
+  `table` 和 `query` 字段不能同时使用，并且必须声明其中一个。
+</Note>
+
+ClickHouse 会从 ODBC 驱动程序 接收引号符号，并在发送给 driver 的查询中为所有设置加上引号，因此必须按照数据库中的表名大小写正确设置表名。
+
+如果你在使用 Oracle 时遇到编码问题，请参阅相应的 [FAQ](/zh/resources/support-center/knowledge-base/integrations/oracle-odbc) 条目。
+
+<div id="known-vulnerability-of-the-odbc-dictionary-functionality">
+  ### ODBC 字典功能的已知漏洞
+</div>
+
+<Note>
+  通过 ODBC 驱动程序连接到数据库时，可以替换连接参数 `Servername`。在这种情况下，`odbc.ini` 中的 `USERNAME` 和 `PASSWORD` 值会被发送到远程服务器，可能导致泄露。
+</Note>
+
+**不安全用法示例**
+
+下面为 PostgreSQL 配置 unixODBC。`/etc/odbc.ini` 的内容如下：
+
+```text
+[gregtest]
+Driver = /usr/lib/psqlodbca.so
+Servername = localhost
+PORT = 5432
+DATABASE = test_db
+#OPTION = 3
+USERNAME = test
+PASSWORD = test
+```
+
+如果你随后执行如下查询
+
+```sql
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
+```
+
+ODBC 驱动程序会将 `odbc.ini` 中 `USERNAME` 和 `PASSWORD` 的值发送到 `some-server.com`。
+
+<div id="example-of-connecting-postgresql">
+  ### 连接 PostgreSQL 的示例
+</div>
+
+Ubuntu 操作系统。
+
+安装 unixODBC 和 PostgreSQL 的 ODBC 驱动程序：
+
+```bash
+$ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
+```
+
+配置 `/etc/odbc.ini` (如果你是以运行 ClickHouse 的用户身份登录，则使用 `~/.odbc.ini`) ：
+
+```text
+    [DEFAULT]
+    Driver = myconnection
+
+    [myconnection]
+    Description         = PostgreSQL connection to my_db
+    Driver              = PostgreSQL Unicode
+    Database            = my_db
+    Servername          = 127.0.0.1
+    UserName            = username
+    Password            = password
+    Port                = 5432
+    Protocol            = 9.3
+    ReadOnly            = No
+    RowVersioning       = No
+    ShowSystemTables    = No
+    ConnSettings        =
+```
+
+ClickHouse 中的字典配置如下：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY table_name (
+        id UInt64,
+        some_column UInt64 DEFAULT 0
+    )
+    PRIMARY KEY id
+    SOURCE(ODBC(connection_string 'DSN=myconnection' table 'postgresql_table'))
+    LAYOUT(HASHED())
+    LIFETIME(MIN 300 MAX 360)
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            <name>table_name</name>
+            <source>
+                <odbc>
+                    <!-- 你可以在 connection_string 中指定以下参数： -->
+                    <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+                    <connection_string>DSN=myconnection</connection_string>
+                    <table>postgresql_table</table>
+                </odbc>
+            </source>
+            <lifetime>
+                <min>300</min>
+                <max>360</max>
+            </lifetime>
+            <layout>
+                <hashed/>
+            </layout>
+            <structure>
+                <id>
+                    <name>id</name>
+                </id>
+                <attribute>
+                    <name>some_column</name>
+                    <type>UInt64</type>
+                    <null_value>0</null_value>
+                </attribute>
+            </structure>
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+你可能需要编辑 `odbc.ini`，通过 `DRIVER=/usr/local/lib/psqlodbcw.so` 指定驱动库的完整路径。
+
+<div id="example-of-connecting-ms-sql-server">
+  ### 连接 MS SQL Server 示例
+</div>
+
+Ubuntu 操作系统。
+
+安装用于连接 MS SQL 的 ODBC 驱动程序：
+
+```bash
+$ sudo apt-get install tdsodbc freetds-bin sqsh
+```
+
+配置驱动：
+
+```bash
+    $ cat /etc/freetds/freetds.conf
+    ...
+
+    [MSSQL]
+    host = 192.168.56.101
+    port = 1433
+    tds version = 7.0
+    client charset = UTF-8
+
+    # 测试 TDS 连接
+    $ sqsh -S MSSQL -D database -U user -P password
+
+    $ cat /etc/odbcinst.ini
+
+    [FreeTDS]
+    Description     = FreeTDS
+    Driver          = /usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so
+    Setup           = /usr/lib/x86_64-linux-gnu/odbc/libtdsS.so
+    FileUsage       = 1
+    UsageCount      = 5
+
+    $ cat /etc/odbc.ini
+    # $ cat ~/.odbc.ini # 如果您以运行 ClickHouse 的用户身份登录
+
+    [MSSQL]
+    Description     = FreeTDS
+    Driver          = FreeTDS
+    Servername      = MSSQL
+    Database        = test
+    UID             = test
+    PWD             = test
+    Port            = 1433
+
+    # （可选）测试 ODBC 连接（如需使用 isql 工具，请安装 [unixodbc](https://packages.debian.org/sid/unixodbc) 软件包）
+    $ isql -v MSSQL "user" "password"
+```
+
+说明：
+
+* 如需确定某个 SQL Server 版本支持的最早 TDS 版本，请参阅产品文档，或查看 [MS-TDS Product Behavior](https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-tds/135d0ebe-5c4c-4a94-99bf-1811eccb9f4a)
+
+在 ClickHouse 中配置字典：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY test (
+        k UInt64,
+        s String DEFAULT ''
+    )
+    PRIMARY KEY k
+    SOURCE(ODBC(table 'dict' connection_string 'DSN=MSSQL;UID=test;PWD=test'))
+    LAYOUT(FLAT())
+    LIFETIME(MIN 300 MAX 360)
+    ```
+  </Tab>
+
+  <Tab title="Configuration file">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            <name>test</name>
+            <source>
+                <odbc>
+                    <table>dict</table>
+                    <connection_string>DSN=MSSQL;UID=test;PWD=test</connection_string>
+                </odbc>
+            </source>
+
+            <lifetime>
+                <min>300</min>
+                <max>360</max>
+            </lifetime>
+
+            <layout>
+                <flat />
+            </layout>
+
+            <structure>
+                <id>
+                    <name>k</name>
+                </id>
+                <attribute>
+                    <name>s</name>
+                    <type>String</type>
+                    <null_value></null_value>
+                </attribute>
+            </structure>
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>

@@ -205,6 +205,13 @@ def create_clickhouse_glue_database(
         "region": "us-east-1",
     }
 
+    # The Glue catalog API client is subject to the server-managed credential restriction. Unless the session
+    # opts in via `s3_allow_server_credentials_in_user_queries`, the creator must pass explicit catalog
+    # credentials instead of falling back to the server's AWS identity (moto accepts any non-empty values).
+    if not query_settings.get("s3_allow_server_credentials_in_user_queries"):
+        settings["aws_access_key_id"] = minio_access_key
+        settings["aws_secret_access_key"] = minio_secret_key
+
     settings.update(additional_settings)
 
     credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
@@ -218,6 +225,7 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         settings={
             "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            **query_settings,
         },
     )
 
@@ -239,6 +247,103 @@ CREATE TABLE {CATALOG_NAME}.`{database_name}.{table_name}` {schema} ENGINE = Ice
 
     show_result = node.query(f"SHOW DATABASE {CATALOG_NAME}")
     assert minio_secret_key not in show_result
+
+def create_glue_table_directly(
+    started_cluster, database_name, table_name, table_type=None, columns=None
+):
+    """Create a raw (non-Iceberg) table directly in Glue via boto3.
+
+    Such a table - e.g. a Delta Lake table (table_type != 'ICEBERG') or a raw parquet
+    file registered by a crawler (no table_type at all) - is visible in the Glue catalog
+    but cannot be read by ClickHouse, whose Glue engine only supports Iceberg tables.
+    """
+    client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    if columns is None:
+        columns = [
+            {"Name": "id", "Type": "bigint"},
+            {"Name": "value", "Type": "string"},
+        ]
+    parameters = {} if table_type is None else {"table_type": table_type}
+    client.create_table(
+        DatabaseName=database_name,
+        TableInput={
+            "Name": table_name,
+            "StorageDescriptor": {
+                "Columns": columns,
+                "Location": f"s3://warehouse-glue/{table_name}/",
+            },
+            "TableType": "EXTERNAL_TABLE",
+            "Parameters": parameters,
+        },
+    )
+
+
+def test_show_tables_hides_unreadable_tables(started_cluster):
+    """
+    Regression test: SHOW TABLES and system.tables must agree for a Glue catalog that
+    mixes Iceberg tables with non-Iceberg tables (Delta Lake tables, raw parquet files,
+    ...). ClickHouse can only read Iceberg tables via the Glue catalog, so the
+    non-Iceberg tables must appear in NEITHER listing.
+
+    Before the fix, the lightweight name-only listing path (used by SHOW TABLES and by
+    SELECT name FROM system.tables) did not filter unreadable tables, while the full
+    system.tables path dropped them - so the two disagreed and SHOW TABLES listed tables
+    that could not be queried. This test fails on master and passes with the fix.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hide_unreadable_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    iceberg_table = f"{test_ref}_iceberg"
+    delta_table = f"{test_ref}_delta"
+    parquet_table = f"{test_ref}_parquet"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    # Readable Iceberg table (pyiceberg sets table_type=ICEBERG in Glue).
+    table = create_table(catalog, namespace, iceberg_table)
+    table.append(generate_arrow_data(10))
+
+    # Unreadable tables registered directly in Glue.
+    create_glue_table_directly(started_cluster, namespace, delta_table, table_type="delta")
+    create_glue_table_directly(started_cluster, namespace, parquet_table, table_type=None)
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+    iceberg_full = f"{namespace}.{iceberg_table}"
+    delta_full = f"{namespace}.{delta_table}"
+    parquet_full = f"{namespace}.{parquet_table}"
+
+    settings = "SETTINGS show_data_lake_catalogs_in_system_tables = true"
+
+    # SHOW TABLES (lightweight name-only path): only the Iceberg table is listed.
+    show_tables = node.query(
+        f"SHOW TABLES FROM {CATALOG_NAME} LIKE '%{test_ref}%'"
+    ).split()
+    assert iceberg_full in show_tables, show_tables
+    assert delta_full not in show_tables, show_tables
+    assert parquet_full not in show_tables, show_tables
+
+    # system.tables name-only path (same lightweight iterator as SHOW TABLES).
+    names_only = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '%{test_ref}%' ORDER BY name {settings}"
+    ).split()
+    assert names_only == [iceberg_full], names_only
+
+    # system.tables full path (references engine -> fetches per-table metadata).
+    full = node.query(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND name LIKE '%{test_ref}%' AND engine != '' ORDER BY name {settings}"
+    ).split()
+    assert full == [iceberg_full], full
+
+    # The two listings agree - this is exactly the property that was broken.
+    assert sorted(show_tables) == sorted(names_only)
+
 
 def drop_clickhouse_glue_table(
     node, database_name, table_name
@@ -291,6 +396,31 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def clean_catalog(started_cluster):
+    # All tests share one module-scoped Glue catalog. Listing operations such as
+    # SHOW TABLES enumerate every namespace and make one sequential Glue call per
+    # namespace, so leftover namespaces from earlier tests make these calls grow
+    # unbounded and eventually exceed query timeouts. Drop everything each test
+    # created so the catalog stays bounded to the running test.
+    yield
+    catalog = load_catalog_impl(started_cluster)
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    for namespace in catalog.list_namespaces():
+        # Drop Iceberg tables via pyiceberg so their data and metadata are removed too.
+        for table in catalog.list_tables(namespace):
+            catalog.drop_table(table)
+        # Drop any remaining tables registered directly in Glue (e.g. non-Iceberg tables
+        # such as Delta Lake tables or raw data files). pyiceberg's list_tables ignores
+        # them, and drop_namespace refuses to drop a namespace that still contains them.
+        database_name = ".".join(namespace)
+        for table in glue_client.get_tables(DatabaseName=database_name).get("TableList", []):
+            glue_client.delete_table(DatabaseName=database_name, Name=table["Name"])
+        catalog.drop_namespace(namespace)
+
+
 def test_no_secrets_in_logs(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -306,6 +436,10 @@ def test_no_secrets_in_logs(started_cluster):
         "warehouse": "test",
         "storage_endpoint": "http://minio1:9001/warehouse-glue",
         "region": "us-east-1",
+        # The Glue catalog API client is restricted; pass explicit catalog credentials instead of relying on
+        # the server's AWS identity (moto accepts any non-empty values).
+        "aws_access_key_id": minio_access_key,
+        "aws_secret_access_key": minio_secret_key,
     }
 
     qid_db = uuid.uuid4().hex
@@ -708,6 +842,59 @@ def test_create(started_cluster):
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
+def test_create_gzip_metadata(started_cluster):
+    # Regression for issue #109801: a catalog-backed CREATE TABLE from ClickHouse
+    # with gzip metadata compression exercises IcebergMetadata::createInitial and
+    # the catalog->createTable registration. The first revision of the fix wrote
+    # v1.gz.metadata.json on disk but registered a hardcoded v1.metadata.json as
+    # the catalog metadata_location, so a reopen through the catalog failed.
+    #
+    # Glue is the concrete broken path: GlueCatalog::createTable persists the
+    # supplied new_metadata_path verbatim as parameters["metadata_location"]
+    # (unlike RestCatalog, which ignores new_metadata_path). We therefore read
+    # the registered metadata_location straight from Glue immediately after
+    # CREATE TABLE, before any INSERT, so the assertion validates createInitial's
+    # registration itself rather than a later updateMetadata pointer advance.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_gzip_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(
+        started_cluster,
+        node,
+        root_namespace,
+        table_name,
+        "(x String)",
+        additional_settings={"iceberg_metadata_compression_method": "gzip"},
+    )
+
+    # Validate the catalog registration produced by createInitial, before INSERT.
+    glue_client = boto3.client(
+        "glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster)
+    )
+    table_info = glue_client.get_table(DatabaseName=root_namespace, Name=table_name)["Table"]
+    metadata_location = table_info["Parameters"]["metadata_location"]
+    assert metadata_location.endswith(".gz.metadata.json"), metadata_location
+    assert not metadata_location.endswith(".gzip.metadata.json"), metadata_location
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    # Reopen through the catalog (fresh database) and confirm read still works.
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
 def test_schema_evolution(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -900,6 +1087,82 @@ def test_show_tables_optimization(started_cluster):
     node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
     node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
 
+
+def test_typo_hint_does_not_trigger_heavyweight_fetch(started_cluster):
+    """
+    Regression test for the high-memory typo-hint path on a DataLake (Glue) database.
+
+    When a query references a table that does not exist, the UNKNOWN_TABLE error
+    path builds a "maybe you meant ...?" suggestion through
+    TableNameHints -> getAllRegisteredNames -> IDatabase::getAllTableNames. Before
+    this fix DatabaseDataLake did not override getAllTableNames, so the base
+    implementation iterated getTablesIterator and fetched per-table metadata from
+    the catalog (one heavyweight S3 read per table). With many tables this hint
+    lookup alone could exhaust the server's memory. The fix overrides
+    getAllTableNames to return getCatalog()->getTables() (table names only).
+
+    INSERT resolves its target table through the throwing DatabaseCatalog::getTable
+    overload independently of the analyzer, so it deterministically drives the
+    hint path. show_data_lake_catalogs_in_system_tables=1 is required: otherwise
+    getAllRegisteredNames short-circuits for remote databases and getAllTableNames
+    is never reached, so the override would not be exercised at all.
+
+    Signal: the log line emitted once per table inside
+    DatabaseDataLake::getTablesIterator. Counting it scoped to this namespace
+    makes the measurement exact and immune to other tables in the catalog. A
+    global S3GetObject counter is deliberately NOT used: catalog metadata is
+    cached across queries, so a repeated heavyweight iteration issues no new S3
+    GET requests even though it still walks every table.
+
+    Pre-fix the marker fires once per table (N). With the fix it stays at 0.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hint_heavy_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    N = 20
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    try:
+        for i in range(N):
+            tbl = create_table(catalog, namespace, f"{test_ref}_t{i:02d}")
+            tbl.append(generate_arrow_data(1))
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        # Emitted once per table inside DatabaseDataLake::getTablesIterator. If the
+        # message is ever rephrased, update this marker.
+        marker = f"Get table information for table {namespace}."
+        baseline = int(node.count_in_log(marker).strip())
+
+        # Reference a non-existent table; this must raise UNKNOWN_TABLE and on the
+        # way build the typo hint that walks getAllTableNames.
+        error = node.query_and_get_error(
+            f"INSERT INTO {CATALOG_NAME}.`{namespace}.does_not_exist` VALUES (1)",
+            settings={"show_data_lake_catalogs_in_system_tables": 1},
+        )
+        assert "UNKNOWN_TABLE" in error or "does not exist" in error, (
+            f"Expected an UNKNOWN_TABLE error for a non-existent table, got: {error}"
+        )
+
+        fetches = int(node.count_in_log(marker).strip()) - baseline
+        assert fetches == 0, (
+            f"The typo-hint lookup for a non-existent table triggered {fetches} "
+            f"per-table metadata fetches (expected 0; the namespace has {N} tables). "
+            f"DatabaseDataLake.getAllTableNames is falling through to "
+            f"IDatabase::getAllTableNames -> getTablesIterator instead of using "
+            f"getCatalog()->getTables() directly."
+        )
+    finally:
+        try:
+            for i in range(N):
+                catalog.drop_table(f"{namespace}.{test_ref}_t{i:02d}")
+            catalog.drop_namespace(namespace)
+        except Exception:
+            pass
+
+
 def test_table_without_metadata_location(started_cluster):
     """
     Test that ClickHouse can read Iceberg tables from Glue when 'metadata_location' is not present in Glue parameters.
@@ -1073,7 +1336,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "wrongsession",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1099,7 +1362,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1151,7 +1414,7 @@ def test_sts_external_id(started_cluster):
             "aws_role_session_name": "miniorole",
             "aws_external_id": "wrong_external_id",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1177,7 +1440,7 @@ def test_sts_external_id(started_cluster):
             "aws_role_session_name": "miniorole",
             "aws_external_id": "miniexternalid",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1238,6 +1501,7 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1301,3 +1565,73 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
     )
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluster):
+    # A Glue `DataLakeCatalog` whose catalog credentials are server-managed (no explicit keys -> resolved from
+    # the server environment) is created under the per-session opt-in. After a restart it is reloaded under the
+    # default restriction (`s3_allow_server_credentials_in_user_queries = 0`); the server must still start, but
+    # the catalog is left unavailable (governed by `s3_load_table_anonymously_if_credentials_restricted`) rather
+    # than silently reusing the server identity or aborting startup.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_server_cred_restart_{uuid.uuid4().hex}"
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        with_credentials=False,
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    # Works while the creating session allows server-managed credentials for the catalog.
+    node.query(
+        f"SHOW TABLES FROM {db_name}",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    node.restart_clickhouse()
+
+    # The server starts even though the catalog can no longer resolve its (server-managed) credentials.
+    assert node.query("SELECT 1").strip() == "1"
+    # Reloaded under the default restriction, the catalog is unavailable. Querying a table goes through the
+    # catalog client (`getCatalog`) and reports the restriction, rather than silently reusing the server
+    # identity. (`SHOW TABLES` intentionally swallows catalog errors so `system.tables` does not fail, so it
+    # is not a reliable probe here.)
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster):
+    # A user ATTACH DATABASE of a catalog that resolves server-managed credentials must stay fail-closed for a
+    # restricted user. The catalog is built lazily (on first access, not at ATTACH), so the ATTACH itself
+    # succeeds but the database is inaccessible: the first query against it is refused because the catalog
+    # resolves server-managed credentials that are restricted for user queries.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_user_attach_{uuid.uuid4().hex}"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+
+    create_clickhouse_glue_database(
+        started_cluster, node, db_name, with_credentials=False, query_settings=allow
+    )
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # Re-attaching as a user query under the default restriction succeeds (lazy), but the database is
+    # fail-closed: accessing a table goes through the catalog client (`getCatalog`), which resolves the
+    # restricted server credentials and is refused. (`SHOW TABLES` intentionally swallows catalog errors, so it
+    # is not a reliable probe.)
+    node.query(f"ATTACH DATABASE {db_name}")
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    # With the opt-in the database is usable again, so it can be cleaned up.
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)

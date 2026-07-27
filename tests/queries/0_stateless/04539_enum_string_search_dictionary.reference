@@ -1,0 +1,39 @@
+Enum8 transform path
+like	0
+like ESCAPE	0
+notLike	0
+ilike	0
+match	0
+position	0
+positionCaseInsensitive	0
+positionUTF8	0
+countSubstrings	0
+countSubstringsCaseInsensitive	0
+hasToken	0
+hasTokenCaseInsensitive	0
+hasTokenOrNull	0
+Enum8 fallback (non-const needle)
+position non-const needle	0
+Enum8 fallback (per-row start position)
+position per-row start	0
+position const start	0
+Enum16 transform path (narrow range)
+like	0
+position	0
+match	0
+countSubstrings	0
+Enum16 wide sparse range, small block (castColumn path)
+like	0
+position	0
+match	0
+countSubstrings	0
+Enum16 wide sparse range, large block (transform path)
+like	0
+position	0
+match	0
+countSubstrings	0
+Enum8 non-transform path (few rows)
+like	0
+position	0
+Undefined enum codes rejected
+Undefined enum codes reported before needle validation

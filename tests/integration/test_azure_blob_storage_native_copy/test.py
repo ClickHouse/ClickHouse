@@ -9,9 +9,12 @@ from helpers.cluster import ClickHouseCluster
 
 
 def generate_config(port):
+    # Per-worker suffix so parallel xdist workers don't race on the generated file.
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
+    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        "./_gen/storage_conf.xml",
+        f"./_gen/storage_conf{suffix}.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
@@ -309,6 +312,77 @@ def test_backup_restore_native_copy_disabled_in_query(cluster):
     )
 
     assert not node4.contains_in_log("using native copy")
+
+
+@pytest.mark.parametrize("inflight", [1, 2])
+def test_backup_restore_read_write_multipart_inflight_limit(cluster, inflight):
+    # Force the read-then-write (non-native) copy path through a multipart upload
+    # bounded by a small `azure_max_inflight_parts_for_one_file`, and verify the
+    # restored contents are byte-for-byte identical. This guards the `TaskTracker`
+    # path that limits the number of concurrently staged parts: a block-order
+    # regression or a broken throttled path would corrupt the restored file.
+    node1 = cluster.instances["node1"]
+    table = f"test_read_write_multipart_{inflight}"
+    restored = f"{table}_restored"
+    azure_query(node1, f"DROP TABLE IF EXISTS {table} SYNC")
+    azure_query(node1, f"DROP TABLE IF EXISTS {restored} SYNC")
+    azure_query(
+        node1,
+        f"""
+        CREATE TABLE {table} (key UInt64, data String CODEC(NONE))
+        ENGINE = MergeTree() ORDER BY key
+        SETTINGS storage_policy='policy_azure', min_bytes_for_wide_part=0
+        """,
+    )
+    # ~300 KiB of incompressible, position-sensitive data stored in a single wide
+    # part, so `data.bin` is large enough to be split into many parts and any
+    # out-of-order block commit produces detectably different contents.
+    azure_query(
+        node1,
+        f"INSERT INTO {table} SELECT number, randomPrintableASCII(1024) FROM numbers(300)",
+    )
+
+    expected = azure_query(
+        node1, f"SELECT count(), sum(cityHash64(key, data)) FROM {table}"
+    )
+
+    copy_settings = {
+        # Force multipart upload for every non-empty file.
+        "azure_max_single_part_upload_size": 1,
+        # Small parts so the ~300 KiB `data.bin` is split into many blocks.
+        "azure_min_upload_part_size": 16 * 1024,
+        # The throttle under test: at most `inflight` parts staged concurrently.
+        "azure_max_inflight_parts_for_one_file": inflight,
+    }
+
+    cont = "cont" + str(time.time_ns())
+    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{cont}', '{table}_backup')"
+
+    # `allow_azure_native_copy = 0` disables server-side copy, so the data is read
+    # back and re-uploaded via the multipart path on both backup and restore.
+    azure_query(
+        node1,
+        f"BACKUP TABLE {table} TO {backup_destination} SETTINGS allow_azure_native_copy = 0",
+        settings=copy_settings,
+    )
+
+    azure_query(
+        node1,
+        f"RESTORE TABLE {table} AS {restored} FROM {backup_destination} SETTINGS allow_azure_native_copy = 0",
+        settings=copy_settings,
+    )
+
+    assert node1.contains_in_log(f"Reading and writing Blob.*from Container: {cont}")
+
+    assert (
+        azure_query(
+            node1, f"SELECT count(), sum(cityHash64(key, data)) FROM {restored}"
+        )
+        == expected
+    )
+
+    azure_query(node1, f"DROP TABLE {table} SYNC")
+    azure_query(node1, f"DROP TABLE {restored} SYNC")
 
 
 def test_clickhouse_disks_azure(cluster):

@@ -1,0 +1,65 @@
+---
+description: 'توثيق QUOTA'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/create/quota
+title: 'CREATE QUOTA'
+doc_type: 'reference'
+---
+
+ينشئ [QUOTA](/ar/concepts/features/security/access-rights#quotas-management) يمكن إسنادها إلى مستخدم أو دور.
+
+الصيغة:
+
+```sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+المفاتيح `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address`, و `normalized_query_hash` تتوافق مع الحقول في جدول [system.quotas](/ar/reference/system-tables/quotas).
+
+لا يمكن استخدام الخيارين `IPV4_PREFIX_BITS` و `IPV6_PREFIX_BITS` إلا عندما تكون `KEYED BY` هي `ip_address` أو `forwarded_ip_address`. وهما يتوافقان مع الحقل في جدول [system.quotas](/ar/reference/system-tables/quotas).
+
+المعاملات `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications`, `queries_per_normalized_hash` تتوافق مع الحقول في جدول [system.quotas&#95;usage](/ar/reference/system-tables/quotas_usage).
+
+تتيح عبارة `ON CLUSTER` إنشاء quotas على cluster، راجع [Distributed DDL](/ar/reference/statements/distributed-ddl).
+
+**أمثلة**
+
+قيِّد الحد الأقصى لعدد الاستعلامات للمستخدم الحالي إلى 123 استعلامًا ضمن قيد مدته 15 شهرًا:
+
+```sql
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+بالنسبة إلى المستخدم default، اجعل الحد الأقصى لوقت التنفيذ نصف ثانية خلال 30 دقيقة، وحدِّد الحد الأقصى لعدد الاستعلامات بـ 321 والحد الأقصى لعدد الأخطاء بـ 10 خلال خمسة أرباع ساعة:
+
+```sql
+CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+أنشئ quota بحيث يكون لكل نمط استعلام مُطبَّع ومميّز bucket خاص به، بحد أقصى 100 تنفيذ في الساعة:
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+قيِّد كل نمط استعلام موحَّد بحيث لا يتجاوز 50 تنفيذًا في الساعة (بغض النظر عن نوع مفتاح الحصة):
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
+```
+
+يمكن العثور على أمثلة إضافية تستخدم إعدادات XML (غير المدعومة في ClickHouse Cloud) في [دليل الحصص](/ar/concepts/features/configuration/server-config/quotas).
+
+<div id="related-content">
+  ## محتوى ذي صلة
+</div>
+
+* مدونة: [بناء تطبيقات أحادية الصفحة باستخدام ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

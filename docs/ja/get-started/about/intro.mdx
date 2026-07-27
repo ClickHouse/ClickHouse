@@ -1,0 +1,207 @@
+---
+slug: /intro
+sidebarTitle: 'ClickHouseとは？'
+description: 'ClickHouse® は、オンライン分析処理（OLAP）のためのカラム指向SQLデータベース管理システム（DBMS）です。オープンソースソフトウェアとしても、クラウドサービスとしても利用できます。'
+title: 'ClickHouseとは？'
+keywords: ['ClickHouse', '列指向データベース', 'OLAPデータベース', '分析データベース', '高性能データベース']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse® は、オンライン分析処理 (OLAP) 向けの高性能なカラム指向 SQL データベース管理システム (DBMS) です。[オープンソースソフトウェア](https://github.com/ClickHouse/ClickHouse)としても、[クラウドサービス](https://clickhouse.com/cloud)としても提供されています。
+
+<div id="what-are-analytics">
+  ## アナリティクスとは何か？
+</div>
+
+アナリティクスは、OLAP (オンライン分析処理) とも呼ばれ、膨大なデータセットに対して複雑な計算 (例: 集計、文字列処理、算術演算) を行うSQLクエリを指します。
+
+1回のクエリで数行だけを読み書きするためミリ秒単位で完了するトランザクションクエリ (またはOLTP、Online Transaction Processing) とは異なり、アナリティクスクエリは通常、数十億から数兆の行を処理します。
+
+多くのユースケースでは、[アナリティクスクエリは「リアルタイム」である必要があります](https://clickhouse.com/engineering-resources/what-is-real-time-analytics)。つまり、1秒未満で結果を返す必要があります。
+
+<div id="row-oriented-vs-column-oriented-storage">
+  ## 行指向ストレージとカラム指向ストレージの比較
+</div>
+
+このレベルの性能は、データが適切に&quot;指向化&quot;されていてこそ実現できます。
+
+データベースは、データを[行指向またはカラム指向](https://clickhouse.com/engineering-resources/what-is-columnar-database)のいずれかで格納します。
+
+行指向データベースでは、テーブルの連続する行が1つずつ順番に格納されます。このレイアウトでは、各行のカラム値がまとめて保存されるため、行を高速に取り出せます。
+
+ClickHouse はカラム指向データベースです。このようなシステムでは、テーブルはカラムの集合として格納され、各カラムの値が順番に連続して保存されます。このレイアウトでは、単一の行を取り出しにくくなります (行の値の間にギャップが生じるため) 。一方で、フィルタや集約などのカラム単位の操作は、行指向データベースに比べてはるかに高速になります。
+
+この違いは、[実際の匿名化されたウェブアナリティクスデータ](/ja/get-started/sample-datasets/anon-web-analytics-metrica)の1億行に対して実行するクエリ例を見ると、最もわかりやすく理解できます。
+
+```sql
+SELECT MobilePhoneModel, COUNT() AS c
+FROM metrica.hits
+WHERE
+      RegionID = 229
+  AND EventDate >= '2013-07-01'
+  AND EventDate <= '2013-07-31'
+  AND MobilePhone != 0
+  AND MobilePhoneModel not in ['', 'iPad']
+GROUP BY MobilePhoneModel
+ORDER BY c DESC
+LIMIT 8;
+```
+
+[ClickHouse SQL Playground でこのクエリを実行](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)できます。このクエリは、存在する100以上の[カラムのうちごく一部だけを選択して絞り込み](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true)、結果を数ミリ秒で返します。
+
+<Image img="/images/column-oriented-example-query.webp" alt="カラム指向データベースでのクエリ例" size="lg" />
+
+上の図の統計セクションを見るとわかるように、このクエリは1億行を92ミリ秒で処理しました。これは、スループットにすると1秒あたり10億行超、または1秒あたり7 GB弱のデータ転送に相当します。
+
+**行指向DBMS**
+
+行指向データベースでは、上記のクエリが既存のカラムのうち数個しか処理しない場合でも、システムは他のカラムのデータもディスクからメモリに読み込む必要があります。これは、データがディスク上で[ブロック](https://en.wikipedia.org/wiki/Block_\(data_storage\))と呼ばれる単位 (通常は 4 KB や 8 KB などの固定サイズ) で格納されているためです。ブロックは、ディスクからメモリに読み込まれるデータの最小単位です。アプリケーションまたはデータベースがデータを要求すると、オペレーティングシステムのディスクI/Oサブシステムが必要なブロックをディスクから読み取ります。ブロックの一部だけが必要な場合でも、ブロック全体がメモリに読み込まれます (これはディスクおよびファイルシステムの設計によるものです) 。
+
+<Image img="/images/row-oriented.webp" alt="行指向データベースの構造" size="lg" />
+
+**カラム指向DBMS**
+
+各カラムの値はディスク上に連続して順番に格納されるため、上記のクエリを実行しても不要なデータは読み込まれません。
+また、ディスクからメモリへのブロック単位での保存と転送は、分析クエリのデータアクセスパターンに適しているため、クエリに必要なカラムだけがディスクから読み込まれ、使用しないデータに対する不要な I/O を回避できます。これは、無関係なカラムも含めて行全体を読み込む行指向の保存方式と比べて、[はるかに高速](https://benchmark.clickhouse.com/)です。
+
+<Image img="/images/column-oriented.webp" alt="カラム指向データベースの構造" size="lg" />
+
+<div id="data-replication-and-integrity">
+  ## データのレプリケーションと整合性
+</div>
+
+ClickHouse は、データを複数のノードに冗長保存するために、非同期のマルチマスター レプリケーション方式を採用しています。利用可能な任意のレプリカに書き込まれると、残りのすべてのレプリカがバックグラウンドでそのコピーを取得します。システムは、異なるレプリカ間で同一のデータを維持します。ほとんどの障害からの復旧は自動的に行われ、複雑な場合は半自動的に行われます。
+
+<div id="role-based-access-control">
+  ## ロールベースのアクセス制御
+</div>
+
+ClickHouse では、SQLクエリを使用してユーザーアカウントを管理でき、ANSI SQL 標準や一般的なリレーショナルデータベース管理システムと同様のロールベースのアクセス制御を設定できます。
+
+<div id="sql-support">
+  ## SQL サポート
+</div>
+
+ClickHouse は、[SQL ベースの宣言型クエリ言語](/ja/reference/home)をサポートしており、多くのケースで ANSI SQL 標準と同等です。サポートされるクエリ句には、[GROUP BY](/ja/reference/statements/select/group-by)、[ORDER BY](/ja/reference/statements/select/order-by)、[FROM](/ja/reference/statements/select/from) 内のサブクエリ、[JOIN](/ja/reference/statements/select/join) 句、[IN](/ja/reference/statements/in) 演算子、[window functions](/ja/reference/functions/window-functions/index)、およびスカラーサブクエリが含まれます。
+
+<div id="approximate-calculation">
+  ## 近似計算
+</div>
+
+ClickHouse には、精度と性能をトレードオフするための方法が用意されています。たとえば、一部の集約関数では、一意な値の数、中央値、分位点を近似的に計算します。また、データのサンプルに対してクエリを実行し、近似結果をすばやく求めることもできます。さらに、集計はすべてのキーではなく、限られた数のキーだけを対象に実行することもできます。キーの分布の偏り具合によっては、これにより、厳密な計算よりもはるかに少ないリソースで、十分に正確な結果を得られる場合があります。
+
+<div id="adaptive-join-algorithms">
+  ## 適応型JOIN アルゴリズム
+</div>
+
+ClickHouse は、JOIN アルゴリズムを適応的に選択します。まず高速なハッシュ結合を使用し、大規模なテーブルが複数ある場合はマージ結合に切り替えます。
+
+<div id="superior-query-performance">
+  ## 優れたクエリパフォーマンス
+</div>
+
+ClickHouseは、クエリパフォーマンスが極めて高いことで広く知られています。
+ClickHouseがこれほど高速である理由については、[ClickHouse が高速な理由](/ja/get-started/about/why-clickhouse-is-so-fast)ガイドを参照してください。
+
+{/*
+  ## OLAPとは？ {#what-is-olap}
+  OLAPシナリオでは、以下の特性を持つ複雑な分析クエリに対して、大規模なデータセット上でのリアルタイム応答が求められます。
+  - データセットは膨大な規模になり得る（数十億〜数兆行）
+  - データは多数のカラムを含むテーブルに整理されている
+  - 特定のクエリへの回答に使用されるカラムはごく少数である
+  - 結果はミリ秒〜秒単位で返される必要がある
+
+  ## カラム指向データベースと行指向データベース {#column-oriented-vs-row-oriented-databases}
+  行指向DBMSでは、データは行単位で格納され、同じ行に属するすべての値が物理的に隣接して保存されます。
+
+  カラム指向DBMSでは、データはカラム単位で格納され、同じカラムの値がまとめて保存されます。
+
+  ## カラム指向データベースがOLAPシナリオに適している理由 {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+
+  カラム指向データベースはOLAPシナリオに適しており、ほとんどのクエリ処理において少なくとも100倍高速です。その理由は以下で詳しく説明しますが、視覚的に確認する方がわかりやすいでしょう。
+
+  違いがわかりますか？
+
+  この記事の残りでは、カラム指向データベースがこれらのシナリオに適している理由と、特にClickHouseがこのカテゴリで[他を凌駕する](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated)理由を説明します。
+
+  ## ClickHouseはなぜ高速なのか？ {#why-is-clickhouse-so-fast}
+
+  ClickHouseは、利用可能なすべてのシステムリソースを最大限に活用し、各分析クエリを可能な限り高速に処理します。これは、最速のOLAPデータベースを実現するために必要な低レベルの実装への細かな配慮と、分析機能のユニークな組み合わせによって実現されています。
+
+  このトピックをさらに深く掘り下げるための参考記事：
+  - [ClickHouseのパフォーマンス](/get-started/about/why-clickhouse-is-so-fast)
+  - [ClickHouseの特徴的な機能](/get-started/about/distinctive-features)
+  - [よくある質問：ClickHouseはなぜ高速なのか？](/get-started/about/why-clickhouse-is-so-fast)
+
+  ## リアルタイム分析クエリの処理 {#processing-analytical-queries-in-real-time}
+
+  行指向DBMSでは、データは次の順序で格納されます。
+
+  | Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+  |-----|-------------|------------|--------------------|-----------|---------------------|
+  | #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+  | #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+  | #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+  | #N | ...           | ...          | ...                  | ...         | ...                   |
+
+  つまり、同じ行に属するすべての値が物理的に隣接して保存されます。
+
+  行指向DBMSの例としては、MySQL、Postgres、MS SQL Serverが挙げられます。
+
+  カラム指向DBMSでは、データは次のように格納されます。
+
+  | Row:        | #0                 | #1                 | #2                 | #N |
+  |-------------|---------------------|---------------------|---------------------|-----|
+  | WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
+  | JavaEnable: | 1                   | 0                   | 1                   | ...   |
+  | Title:      | Investor Relations  | Contact us          | Mission             | ...   |
+  | GoodEvent:  | 1                   | 1                   | 1                   | ...   |
+  | EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
+
+  これらの例はデータの配置順序のみを示しています。異なるカラムの値は別々に格納され、同じカラムのデータはまとめて格納されます。
+
+  カラム指向DBMSの例：Vertica、Paraccel（Actian MatrixおよびAmazon Redshift）、Sybase IQ、Exasol、Infobright、InfiniDB、MonetDB（VectorWiseおよびActian Vector）、LucidDB、SAP HANA、Google Dremel、Google PowerDrill、Druid、kdb+。
+
+  データの格納順序はシナリオによって向き不向きがあります。データアクセスシナリオとは、どのようなクエリが、どの程度の頻度で、どのような割合で実行されるか、クエリの種類ごとに読み取られるデータ量（行、カラム、バイト数）、データの読み取りと更新の関係、データの作業サイズとその局所性、トランザクションの使用有無とその分離レベル、データのレプリケーションと論理的整合性の要件、クエリの種類ごとのレイテンシとスループットの要件などを指します。
+
+  システムへの負荷が高くなるほど、使用シナリオの要件に合わせたシステムのカスタマイズが重要になり、そのカスタマイズはより細粒度になります。大きく異なる複数のシナリオに等しく適したシステムは存在しません。幅広いシナリオに対応できるシステムであっても、高負荷時にはすべてのシナリオで等しく低いパフォーマンスしか出せないか、考えられるシナリオのうち一つまたは少数のみで良好に動作するかのどちらかになります。
+
+  ### OLAPシナリオの主要な特性 {#key-properties-of-olap-scenario}
+
+  - テーブルは「ワイド」であり、多数のカラムを含む。
+  - データセットは大規模で、単一クエリの処理に高いスループットが必要（サーバー1台あたり最大数十億行/秒）。
+  - カラムの値は比較的小さい（数値や短い文字列、例えばURLあたり60バイト）。
+  - クエリは多数の行を抽出するが、選択されるカラムはごく一部のみ。
+  - 単純なクエリでは50ms程度のレイテンシが許容される。
+  - クエリごとに大きなテーブルが1つあり、それ以外のテーブルはすべて小さい。
+  - クエリ結果はソースデータよりも大幅に小さい。つまり、データはフィルタリングまたは集計され、結果は単一サーバーのRAMに収まる。
+  - クエリは比較的少ない（通常、サーバーあたり毎秒数百件以下）。
+  - 挿入は単一行ではなく、比較的大きなバッチ（1000行超）で行われる。
+  - トランザクションは不要。
+
+  OLAPシナリオが他の一般的なシナリオ（OLTPやキー・バリューアクセスなど）と大きく異なることは明らかです。そのため、適切なパフォーマンスを求めるなら、分析クエリの処理にOLTPやキー・バリューDBを使おうとすることは得策ではありません。例えば、MongoDBやRedisを分析用途に使用しようとすると、OLAPデータベースと比較して著しく低いパフォーマンスしか得られません。
+
+  ### 入出力 {#inputoutput}
+
+  1.  分析クエリでは、読み取る必要があるテーブルのカラム数はごく少数です。カラム指向データベースでは、必要なデータだけを読み取ることができます。例えば、100カラムのうち5カラムだけが必要な場合、I/Oを20分の1に削減できます。
+  2.  データはパケット単位で読み取られるため、圧縮が容易です。カラム単位のデータも圧縮しやすく、これによりI/O量がさらに削減されます。
+  3.  I/Oの削減により、より多くのデータをシステムキャッシュに収めることができます。
+
+  例えば、「広告プラットフォームごとのレコード数をカウントする」クエリでは、「広告プラットフォームID」カラムを1つ読み取るだけで済み、非圧縮で1バイトを占有します。トラフィックの大部分が広告プラットフォーム以外からのものであれば、このカラムで少なくとも10倍の圧縮が期待できます。高速な圧縮アルゴリズムを使用すれば、少なくとも毎秒数ギガバイトの非圧縮データを展開できます。つまり、このクエリは単一サーバーで毎秒約数十億行という速度で処理できます。この速度は実際に達成されています。
+
+  ### CPU {#cpu}
+
+  クエリの実行には大量の行の処理が必要なため、個々の行ではなくベクター全体に対してすべての操作をディスパッチするか、ディスパッチコストがほぼゼロになるようにクエリエンジンを実装することが有効です。これを行わないと、どれほど優れたディスクサブシステムを使用していても、クエリインタープリターが必然的にCPUをストールさせます。データをカラム単位で格納し、可能な限りカラム単位で処理することは理にかなっています。
+
+  これを実現する方法は2つあります。
+
+  1.  ベクターエンジン。すべての操作は個々の値ではなくベクターに対して記述されます。これにより操作の呼び出し頻度が大幅に減り、ディスパッチコストは無視できる程度になります。操作コードには最適化された内部サイクルが含まれます。
+
+  2.  コード生成。クエリのために生成されたコードには、すべての間接呼び出しが含まれます。
+
+  これは行指向データベースでは行われません。単純なクエリを実行する際には意味がないからです。ただし例外もあります。例えば、MemSQLはSQLクエリ処理時のレイテンシを削減するためにコード生成を使用しています（比較として、分析DBMSはレイテンシではなくスループットの最適化を必要とします）。
+
+  CPU効率の観点から、クエリ言語は宣言型（SQLまたはMDX）であるか、少なくともベクター型（J、K）である必要があります。クエリには暗黙のループのみを含めることで最適化が可能になります。
+  */}

@@ -1,0 +1,15 @@
+---
+title: 常见 RowBinary 格式设置
+---
+
+{/* 注意：凡是导入它的文件，都会复用此代码片段 */}
+
+以下设置适用于所有 `RowBinary` 类型的格式。
+
+| Setting                                                                                                                               | Description                                                                                                                                                                                      | Default |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| [`format_binary_max_string_size`](/zh/reference/settings/formats#format_binary_max_string_size)                                          | `RowBinary` 格式中 String 的最大允许大小。                                                                                                                                                                  | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/zh/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | 允许在请求头中使用[`binary encoding`](/zh/reference/data-types/data-types-binary-encoding)写入类型，而不是在[`RowBinaryWithNamesAndTypes`](/zh/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)输出格式中使用包含类型名称的字符串。 | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/zh/reference/settings/formats#input_format_binary_decode_types_in_binary_format)  | 允许在请求头中使用[`binary encoding`](/zh/reference/data-types/data-types-binary-encoding)读取类型，而不是在[`RowBinaryWithNamesAndTypes`](/zh/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)输入格式中使用包含类型名称的字符串。 | `false` |
+| [`output_format_binary_write_json_as_string`](/zh/reference/settings/formats#output_format_binary_write_json_as_string)                  | 允许在[`RowBinary`](/zh/reference/formats/RowBinary/RowBinary)输出格式中，将[`JSON`](/zh/reference/data-types/newjson)数据类型的值写为 `JSON` [String](/zh/reference/data-types/string) 值。                                  | `false` |
+| [`input_format_binary_read_json_as_string`](/zh/reference/settings/formats#input_format_binary_read_json_as_string)                      | 允许在[`RowBinary`](/zh/reference/formats/RowBinary/RowBinary)输入格式中，将[`JSON`](/zh/reference/data-types/newjson)数据类型的值读取为 `JSON` [String](/zh/reference/data-types/string) 值。                                 | `false` |

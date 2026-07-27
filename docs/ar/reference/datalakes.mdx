@@ -1,0 +1,60 @@
+---
+description: 'توثيق بحيرات البيانات'
+sidebarTitle: 'بحيرات البيانات'
+slug: /sql-reference/datalakes
+title: 'بحيرات البيانات'
+doc_type: 'reference'
+---
+
+في هذا القسم، نستعرض دعم ClickHouse لبحيرات البيانات.
+يدعم ClickHouse العديد من أشهر تنسيقات الجداول وكتالوجات البيانات، بما في ذلك Iceberg وDelta Lake وHudi وAWS Glue وREST Catalog وUnity Catalog وMicrosoft OneLake.
+
+<div id="open-table-formats">
+  # تنسيقات الجداول المفتوحة
+</div>
+
+<div id="iceberg">
+  ## Iceberg
+</div>
+
+راجع [iceberg](/ar/reference/functions/table-functions/iceberg) التي تدعم القراءة من Amazon S3 والخدمات المتوافقة مع S3 وHDFS وAzure وأنظمة الملفات المحلية. وتُعد [icebergCluster](/ar/reference/functions/table-functions/icebergCluster) النسخة الموزعة من الدالة `iceberg`.
+
+<div id="delta-lake">
+  ## Delta Lake
+</div>
+
+اطّلع على [deltaLake](/ar/reference/functions/table-functions/deltalake)، التي تدعم القراءة من Amazon S3 والخدمات المتوافقة مع S3 وAzure وأنظمة الملفات المحلية. وتُعد [deltaLakeCluster](/ar/reference/functions/table-functions/deltalakeCluster) النسخة الموزعة من الدالة `deltaLake`.
+
+<div id="hudi">
+  ## Hudi
+</div>
+
+راجع [hudi](/ar/reference/functions/table-functions/hudi)، فهي تدعم القراءة من Amazon S3 والخدمات المتوافقة مع S3. وتُعد [hudiCluster](/ar/reference/functions/table-functions/hudiCluster) النسخة الموزعة من الدالة `hudi`.
+
+<div id="data-catalogs">
+  # كتالوج البيانات
+</div>
+
+<div id="aws-glue">
+  ## AWS Glue
+</div>
+
+يمكن استخدام Glue Data Catalog من AWS مع جداول Iceberg. ويمكنك استخدامه مع محرك الجداول `iceberg`، أو مع محرك قاعدة البيانات [DataLakeCatalog](/ar/reference/engines/database-engines/datalake).
+
+<div id="iceberg-rest-catalog">
+  ## كتالوج REST لـ Iceberg
+</div>
+
+يمكن استخدام كتالوج REST لـ Iceberg مع جداول Iceberg. كما يمكن استخدامه مع محرك الجدول `iceberg`، أو مع محرك قاعدة البيانات [DataLakeCatalog](/ar/reference/engines/database-engines/datalake).
+
+<div id="unity-catalog">
+  ## Unity Catalog
+</div>
+
+يمكن استخدام Unity Catalog مع جداول Delta Lake وIceberg على حدّ سواء. كما يمكنك استخدامه مع محركي الجداول `iceberg` و`deltaLake`، أو مع محرك قاعدة البيانات [DataLakeCatalog](/ar/reference/engines/database-engines/datalake).
+
+<div id="microsoft-onelake">
+  ## Microsoft OneLake
+</div>
+
+يمكن استخدام Microsoft OneLake مع جداول Delta Lake وIceberg. كما يمكنك استخدامه مع محرك قاعدة البيانات [DataLakeCatalog](/ar/reference/engines/database-engines/datalake).

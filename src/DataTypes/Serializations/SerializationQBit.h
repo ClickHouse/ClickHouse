@@ -16,10 +16,12 @@ private:
 
     /* Nested tuple serialization that handles all the FixedString columns */
     SerializationPtr nested;
-    /* Size of the vector element: 16, 32, 64 */
+    /* Size of the vector element: 8, 16, 32, 64 */
     size_t element_size;
     /* Number of elements in the vector */
     size_t dimension;
+    /* Number of dimensions stored together in one group of streams. Equal to `dimension` when not strided. */
+    size_t stride;
 
     /// Helper template for serialization from Field tuple. Untransposes tuple data and writes floats
     template <typename FloatType>
@@ -45,16 +47,20 @@ private:
     template <typename Func>
     void dispatchByElementSize(Func && func) const;
 
-    SerializationQBit(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+    SerializationQBit(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_)
         : nested(nested_)
         , element_size(element_size_)
         , dimension(dimension_)
+        , stride(stride_)
     {
     }
 
+    /// Number of stride groups. Equal to 1 when not strided.
+    size_t getNumStrides() const { return dimension / stride; }
+
 public:
-    static UInt128 getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_);
-    static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_);
+    static UInt128 getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_);
+    static SerializationPtr create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const override;
 

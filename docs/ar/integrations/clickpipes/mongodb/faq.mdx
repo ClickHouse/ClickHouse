@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'الأسئلة الشائعة'
+description: 'الأسئلة الشائعة حول ClickPipes for MongoDB.'
+slug: /integrations/clickpipes/mongodb/faq
+title: 'الأسئلة الشائعة حول ClickPipes for MongoDB'
+doc_type: 'reference'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', 'استيعاب البيانات', 'المزامنة في الوقت الفعلي']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="can-i-query-for-individual-fields-in-the-json-datatype">
+  ### هل يمكنني الاستعلام عن حقول منفصلة في نوع البيانات JSON؟
+</div>
+
+للوصول مباشرةً إلى الحقول، مثل `{"user_id": 123}`، يمكنك استخدام **ترميز النقطة**:
+
+```sql
+SELECT doc.user_id as user_id FROM your_table;
+```
+
+للوصول مباشرةً إلى حقول الكائنات المتداخلة، مثل `{"address": { "city": "San Francisco", "state": "CA" }}`, استخدم العامل `^`:
+
+```sql
+SELECT doc.^address.city AS city FROM your_table;
+```
+
+بالنسبة إلى عمليات التجميع، حوِّل الحقل إلى النوع المناسب باستخدام الدالة `CAST` أو صيغة `::`:
+
+```sql
+SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
+```
+
+لمعرفة المزيد عن العمل مع JSON، راجع [دليل Working with JSON](/ar/integrations/clickpipes/mongodb/quickstart).
+
+<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
+  ### كيف أُسطّح مستندات MongoDB المتداخلة في ClickHouse؟
+</div>
+
+تُكرَّر مستندات MongoDB في ClickHouse افتراضيًا بوصفها من النوع JSON، مع الحفاظ على البنية المتداخلة. لديك عدة خيارات لتسطيح هذه البيانات. إذا كنت تريد تسطيح البيانات إلى أعمدة، فيمكنك استخدام العروض العادية أو العروض المادية أو الوصول إليها وقت الاستعلام.
+
+1. **العروض العادية**: استخدم العروض العادية لتغليف منطق التسطيح.
+2. **العروض المادية**: بالنسبة إلى مجموعات البيانات الأصغر، يمكنك استخدام العروض المادية القابلة للتحديث مع [المُعدِّل `FINAL`](/ar/reference/statements/select/from#final-modifier) لتسطيح البيانات وإزالة التكرار منها دوريًا. أما بالنسبة إلى مجموعات البيانات الأكبر، فنوصي باستخدام العروض المادية التزايدية بدون `FINAL` لتسطيح البيانات في الوقت الفعلي، ثم إزالة التكرار وقت الاستعلام.
+3. **الوصول وقت الاستعلام**: بدلًا من التسطيح، استخدم ترميز النقطة للوصول مباشرةً إلى الحقول المتداخلة في الاستعلامات.
+
+للاطلاع على أمثلة مفصلة، راجع [دليل Working with JSON](/ar/integrations/clickpipes/mongodb/quickstart).
+
+<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### هل يمكنني الاتصال بقواعد بيانات MongoDB التي لا تحتوي على عنوان IP عام أو الموجودة ضمن شبكات خاصة؟
+</div>
+
+ندعم AWS PrivateLink للاتصال بقواعد بيانات MongoDB التي لا تحتوي على عنوان IP عام أو الموجودة ضمن شبكات خاصة. ولا يتوفر حاليًا دعم Azure Private Link وGCP Private Service Connect.
+
+<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
+  ### ماذا يحدث إذا حذفت قاعدة بيانات أو جدولًا من قاعدة بيانات MongoDB الخاصة بي؟
+</div>
+
+عند حذف قاعدة بيانات أو جدول من MongoDB، سيواصل ClickPipes العمل، لكن قاعدة البيانات أو الجدول المحذوف سيتوقف عن تكرار التغييرات. وستظل الجداول المقابلة في ClickHouse محفوظة.
+
+<div id="how-does-mongodb-cdc-connector-handle-transactions">
+  ### كيف يتعامل موصل MongoDB CDC مع المعاملات؟
+</div>
+
+تُعالَج كل تغييرات المستندات داخل المعاملة كلٌّ على حدة في ClickHouse. وتُطبَّق التغييرات بالترتيب الذي تظهر به في `oplog`؛ ولا تُنسَخ إلى ClickHouse إلا التغييرات التي تم تثبيتها. وإذا أُلغيت معاملة في MongoDB، فلن تظهر هذه التغييرات في تدفق التغييرات.
+
+للاطّلاع على مزيد من الأمثلة، راجع [دليل Working with JSON](/ar/integrations/clickpipes/mongodb/quickstart).
+
+<div id="resume-point-may-no-longer-be-in-the-oplog-error">
+  ### كيف أتعامل مع خطأ `resume of change stream was not possible, as the resume point may no longer be in the oplog.`؟
+</div>
+
+يحدث هذا الخطأ عادةً عند اقتطاع oplog وتعذّر على ClickPipe استئناف تدفق التغييرات من النقطة المتوقعة. لحل هذه المشكلة، [أعِد مزامنة ClickPipe](/ar/integrations/clickpipes/mongodb/resync). ولتجنّب تكرار هذه المشكلة، نوصي بزيادة فترة الاحتفاظ بـ oplog. راجع الإرشادات الخاصة بـ [MongoDB Atlas](/ar/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention)، و[MongoDB المُدار ذاتيًا](/ar/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention)، أو [Amazon DocumentDB](/ar/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention).
+
+<div id="how-is-replication-managed">
+  ### كيف تتم إدارة النسخ المتماثل؟
+</div>
+
+نستخدم واجهة برمجة تطبيقات Change Streams الأصلية في MongoDB لتتبّع التغييرات في قاعدة البيانات. توفّر واجهة برمجة تطبيقات Change Streams تدفقًا قابلاً للاستئناف لتغييرات قاعدة البيانات بالاستفادة من `oplog` (سجل العمليات) في MongoDB. ويستخدم ClickPipe رموز الاستئناف في MongoDB لتتبّع الموضع داخل `oplog` وضمان نسخ كل تغيير إلى ClickHouse.
+
+<div id="which-read-preference-should-i-use">
+  ### ما تفضيل القراءة الذي ينبغي أن أستخدمه؟
+</div>
+
+يعتمد تفضيل القراءة المناسب على حالة الاستخدام لديك. إذا كنت تريد تقليل الحمل على العقدة الأساسية، فنوصي باستخدام تفضيل القراءة `secondaryPreferred`. وإذا كنت تريد تحسين كمون الإدخال، فنوصي باستخدام تفضيل القراءة `primaryPreferred`. لمزيد من التفاصيل، راجع [وثائق MongoDB](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1).
+
+<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
+  ### هل يدعم ClickPipe الخاص بـ MongoDB بنية Sharded Cluster؟
+</div>
+
+نعم، يدعم ClickPipe الخاص بـ MongoDB كلًا من Replica Set وSharded Cluster.
+
+<div id="documentdb-support">
+  ### هل يدعم MongoDB ClickPipe ‏Amazon DocumentDB؟
+</div>
+
+نعم، يدعم MongoDB ClickPipe ‏Amazon DocumentDB 5.0. راجع [دليل إعداد المصدر لـ Amazon DocumentDB](/ar/integrations/clickpipes/mongodb/source/documentdb) لمزيد من التفاصيل.
+
+<div id="privatelink-support">
+  ### هل يدعم MongoDB ClickPipe ‏PrivateLink؟
+</div>
+
+ندعم PrivateLink لعناقيد MongoDB (وDocumentDB) في AWS فقط.
+
+لاحظ أنه بخلاف قاعدة البيانات العلائقية ذات العقدة الواحدة، يحتاج عميل MongoDB إلى نجاح اكتشاف Replica Set حتى يتمكن من الالتزام بإعداد `ReadPreference` المحدد. ويتطلب ذلك إعداد PrivateLink مع جميع العقد في العنقود حتى يتمكن عميل MongoDB من إنشاء اتصال Replica Set بنجاح، وكذلك إعادة التوجيه إلى عقدة أخرى عند تعطل العقدة المتصل بها.
+
+إذا كنت تفضل الاتصال بعقدة واحدة في عنقودك، فيمكنك تجاوز اكتشاف Replica Set بتحديد `/?directConnection=true` في سلسلة الاتصال أثناء إعداد ClickPipes. وفي هذه الحالة، سيكون إعداد PrivateLink مشابهًا لإعداد قاعدة بيانات علائقية ذات عقدة واحدة، وهو الخيار الأبسط لدعم PrivateLink.
+
+بالنسبة إلى اتصال Replica Set، يمكنك إعداد PrivateLink لـ MongoDB باستخدام VPC Resource أو VPC Endpoint Service. وإذا اخترت VPC Resource، فستحتاج إلى إنشاء تهيئة مورد `GROUP`، بالإضافة إلى تهيئة مورد `CHILD` لكل عقدة في العنقود. أما إذا اخترت VPC Endpoint Service، فستحتاج إلى إنشاء Endpoint Service منفصلة (وموازن تحميل شبكة NLB منفصل) لكل عقدة في العنقود.
+
+راجع وثائق [AWS PrivateLink for ClickPipes](/ar/integrations/clickpipes/aws-privatelink) لمزيد من التفاصيل. يُرجى التواصل مع دعم ClickHouse للحصول على المساعدة.

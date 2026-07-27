@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Names.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
 #include <Processors/ISimpleTransform.h>
@@ -157,7 +158,9 @@ TEST(LimitBySortedStreamTransform, ClearsOutputSlicesWhenTransformThrows)
     });
 
     /// Sorted-stream `LIMIT 1 BY key` over the non-constant "key" column.
-    LimitBySortedStreamTransform transform(makeHeader(), /*group_length_=*/ 1, /*group_offset_=*/ 0, Names{"key"});
+    SortDescription sort_description;
+    sort_description.push_back(SortColumnDescription("key"));
+    LimitBySortedStreamTransform transform(makeHeader(), /*group_length_=*/ 1, /*group_offset_=*/ 0, sort_description);
 
     /// First chunk: a few large contiguous groups (already sorted by key). The sorted-stream
     /// variant has no grouping hash table, so its after-slice throw point is the chunk-sized
