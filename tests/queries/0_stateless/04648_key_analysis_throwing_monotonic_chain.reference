@@ -37,3 +37,11 @@ a healthy chain still prunes granules via the set index
 1
 a healthy range still yields an exact row count
 1
+a healthy chain still yields an exact row count (full primary key representation)
+1	false
+a healthy chain still yields an exact row count (sparse primary key representation)
+1	true
+the same exact row count via the set index (full primary key representation)
+1	false
+the same exact row count via the set index (sparse primary key representation)
+1	true

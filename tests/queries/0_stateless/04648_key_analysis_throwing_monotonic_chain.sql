@@ -11,8 +11,9 @@ SET allow_suspicious_low_cardinality_types = 1;
 -- behaviour this test is about. Pinned at its default; the CI runner randomizes it.
 SET query_plan_merge_filters = 1;
 
--- The two closing controls read `EXPLAIN` output as text. Measured: both strings survive the `PRETTY` default, so this
--- is defence-in-depth against a future layout change in that renderer, matching 477 other stateless tests that pin it.
+-- The closing controls read `EXPLAIN` output as text. Measured: every string they match survives the `PRETTY`
+-- default, so this is defence-in-depth against a future layout change in that renderer, matching 477 other
+-- stateless tests that pin it.
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
@@ -253,6 +254,51 @@ SELECT count() > 0 FROM (
     SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1,
              optimize_aggregation_in_order = 0, parallel_replicas_local_plan = 1
 ) WHERE explain ILIKE '%Exact count optimization is applied%';
+
+-- The control above carries no monotonic function, so `applyMonotonicFunctionsChainToRange` is never entered for it
+-- and the failure flag can never be set on its path. The four below drive the exact-count optimization through a
+-- chain that applies cleanly, which is what pins the flag's other direction: it must stay clear after a SUCCESSFUL
+-- transform, or exact ranges - and with them the trivial-count optimization - are lost for every chain-based
+-- predicate while every count in this file stays correct. Emitted once per primary key representation, and once per
+-- spelling so that the set index's own call sites are covered in this direction too. `intDiv(a, 10)` is always
+-- monotonic, which is what `matchesExactContinuousRange` requires of every chain function. The `IN` set has exactly
+-- one element on purpose: a larger one relaxes the condition, and a relaxed condition zeroes the exact ranges
+-- outright, so it could never assert this.
+SELECT 'a healthy chain still yields an exact row count (full primary key representation)';
+SELECT count() > 0 AS exact_count, getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk FROM (
+    EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_prune_04648 WHERE intDiv(a, 10) = 5
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+             optimize_aggregation_in_order = 0, parallel_replicas_local_plan = 1,
+             use_lightweight_primary_key_index_analysis = 0
+) WHERE explain ILIKE '%Exact count optimization is applied%'
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+SELECT 'a healthy chain still yields an exact row count (sparse primary key representation)';
+SELECT count() > 0 AS exact_count, getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk FROM (
+    EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_prune_04648 WHERE intDiv(a, 10) = 5
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+             optimize_aggregation_in_order = 0, parallel_replicas_local_plan = 1,
+             use_lightweight_primary_key_index_analysis = 1
+) WHERE explain ILIKE '%Exact count optimization is applied%'
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
+
+SELECT 'the same exact row count via the set index (full primary key representation)';
+SELECT count() > 0 AS exact_count, getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk FROM (
+    EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_prune_04648 WHERE intDiv(a, 10) IN (5)
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+             optimize_aggregation_in_order = 0, parallel_replicas_local_plan = 1,
+             use_lightweight_primary_key_index_analysis = 0
+) WHERE explain ILIKE '%Exact count optimization is applied%'
+SETTINGS use_lightweight_primary_key_index_analysis = 0;
+
+SELECT 'the same exact row count via the set index (sparse primary key representation)';
+SELECT count() > 0 AS exact_count, getSetting('use_lightweight_primary_key_index_analysis') AS sparse_pk FROM (
+    EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_prune_04648 WHERE intDiv(a, 10) IN (5)
+    SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1,
+             optimize_aggregation_in_order = 0, parallel_replicas_local_plan = 1,
+             use_lightweight_primary_key_index_analysis = 1
+) WHERE explain ILIKE '%Exact count optimization is applied%'
+SETTINGS use_lightweight_primary_key_index_analysis = 1;
 
 DROP TABLE t_mt_04648 SETTINGS ignore_drop_queries_probability = 0;
 DROP TABLE t_mem_04648 SETTINGS ignore_drop_queries_probability = 0;
