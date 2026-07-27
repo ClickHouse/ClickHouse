@@ -20,5 +20,11 @@ SELECT id FROM lance_local_predicate_pushdown WHERE `odd``name` = 30;
 SELECT id FROM lance_local_predicate_pushdown WHERE lower(name) = 'x' ORDER BY id;
 SELECT id FROM lance_local_predicate_pushdown WHERE id + 1 = 3;
 SELECT id FROM lance_local_predicate_pushdown WHERE score BETWEEN 1 AND 3 ORDER BY id;
+-- Partial AND: comparison is pushable, lower(name) is not. Residual filter keeps results correct.
+SELECT id, name FROM lance_local_predicate_pushdown WHERE id = 2 AND lower(name) = 'b';
+SELECT id FROM lance_local_predicate_pushdown WHERE id = 2 AND lower(name) = 'nope';
+SELECT id FROM lance_local_predicate_pushdown WHERE id IN (4, 7) AND lower(name) = 'x' ORDER BY id;
+-- OR atom must translate fully; residual still evaluates lower.
+SELECT id FROM lance_local_predicate_pushdown WHERE (id = 1 OR id = 3) AND lower(name) != 'zzz' ORDER BY id;
 
 DROP TABLE lance_local_predicate_pushdown;

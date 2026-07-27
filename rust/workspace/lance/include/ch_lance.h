@@ -91,6 +91,9 @@ typedef struct ch_lance_scan_options
     const char * predicate;
     bool need_only_count;
     uint64_t max_block_size;
+    /// Soft upper bound on rows from the Lance scanner. 0 means unlimited.
+    /// Corresponds to Scanner::limit(Some(limit), None).
+    uint64_t limit;
     /// Optional. When non-null, planScan is interruptible and the resulting scan shares this token.
     ch_lance_cancel_handle * cancel;
 } ch_lance_scan_options;

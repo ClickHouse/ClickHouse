@@ -46,6 +46,8 @@ private:
     ScanDescription scan;
     FormatSettings format_settings;
     bool is_finished = false;
+    /// Rows already emitted; used as a C++-side cap when scan.limit is set.
+    size_t rows_emitted = 0;
     /// Shared with plan/count/next so onCancel interrupts any in-flight Lance work.
     CancelHandlePtr cancel_handle = std::make_shared<CancelHandle>();
     /// Protects optional engagement of scan_handle for concurrent onCancel vs generate.

@@ -2556,6 +2556,7 @@ void registerStorageLance(StorageFactory & factory)
 }
 #endif
 
+void registerStorageHudi(StorageFactory & factory);
 void registerStorageHudi(StorageFactory & factory)
 {
 #if USE_AWS_S3

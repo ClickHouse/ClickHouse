@@ -231,7 +231,8 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     std::shared_ptr<IObjectIterator> file_iterator_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    bool need_only_count_)
+    bool need_only_count_,
+    std::optional<size_t> limit_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , storage_id(storage_id_)
     , name(std::move(name_))
@@ -242,6 +243,7 @@ StorageObjectStorageSource::StorageObjectStorageSource(
     , format_settings(format_settings_)
     , max_block_size(max_block_size_)
     , need_only_count(need_only_count_)
+    , limit(limit_)
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
     , read_from_format_info(info)
@@ -793,7 +795,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         max_block_size,
         parser_shared_resources,
         format_filter_info,
-        need_only_count);
+        need_only_count,
+        limit);
 }
 
 StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReader(
@@ -810,7 +813,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     size_t max_block_size,
     FormatParserSharedResourcesPtr parser_shared_resources,
     FormatFilterInfoPtr format_filter_info,
-    bool need_only_count)
+    bool need_only_count,
+    std::optional<size_t> limit)
 {
     ObjectInfoPtr object_info;
     auto query_settings = configuration->getQuerySettings(context_);
@@ -937,7 +941,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             max_block_size,
             parser_shared_resources,
             format_filter_info,
-            need_only_count))
+            need_only_count,
+            limit))
     {
         builder.init(std::move(*custom_pipe));
     }

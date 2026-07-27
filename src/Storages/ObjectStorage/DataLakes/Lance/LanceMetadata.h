@@ -67,7 +67,8 @@ public:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count) const override;
+        bool need_only_count,
+        std::optional<size_t> limit = {}) const override;
 
 private:
     /// When `local_context` is set, fills S3 HTTP timeouts from ClickHouse settings.

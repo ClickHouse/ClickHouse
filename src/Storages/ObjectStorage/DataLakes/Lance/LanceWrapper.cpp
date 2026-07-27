@@ -379,6 +379,7 @@ Scan DatasetHandle::planScan(const ScanDescription & scan_description, const Can
         .predicate = scan_description.predicate ? scan_description.predicate->c_str() : nullptr,
         .need_only_count = scan_description.need_only_count,
         .max_block_size = scan_description.max_block_size,
+        .limit = scan_description.limit.value_or(0),
         .cancel = cancel ? cancel->raw() : nullptr,
     };
 

@@ -512,6 +512,54 @@ def test_lance_s3_pushdown_queries(started_cluster):
         )
         == "4\n7\n"
     )
+    # Partial AND: id is pushable, lower(name) is residual-only.
+    assert (
+        node.query(
+            """
+            SELECT id
+            FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+            WHERE id IN (4, 7) AND lower(name) = 'x'
+            ORDER BY id
+            """
+        )
+        == "4\n7\n"
+    )
+    assert (
+        node.query(
+            """
+            SELECT id
+            FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+            WHERE id = 2 AND lower(name) = 'nope'
+            """
+        )
+        == ""
+    )
+    # LIMIT without WHERE (size only; any rows are fine).
+    assert (
+        node.query(
+            """
+            SELECT count()
+            FROM (
+                SELECT id
+                FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+                LIMIT 2
+            )
+            """
+        )
+        == "2\n"
+    )
+    assert (
+        node.query(
+            """
+            SELECT id
+            FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
+            WHERE id IN (1, 3, 5, 7)
+            ORDER BY id
+            LIMIT 2
+            """
+        )
+        == "1\n3\n"
+    )
     assert (
         node.query(
             """

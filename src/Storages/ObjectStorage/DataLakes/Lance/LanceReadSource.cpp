@@ -311,10 +311,31 @@ Chunk ReadSource::generate()
     if (isCancelled())
         return {};
 
+    size_t batch_rows = static_cast<size_t>(record_batch->num_rows());
+    if (scan.limit)
+    {
+        if (rows_emitted >= *scan.limit)
+        {
+            is_finished = true;
+            return {};
+        }
+        const size_t remaining = *scan.limit - rows_emitted;
+        if (batch_rows > remaining)
+        {
+            record_batch = record_batch->Slice(0, static_cast<int64_t>(remaining));
+            batch_rows = remaining;
+        }
+    }
+
     ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*record_batch);
 
     if (scan.discard_output_columns)
-        return Chunk(Columns{}, static_cast<size_t>(record_batch->num_rows()));
+    {
+        rows_emitted += batch_rows;
+        if (scan.limit && rows_emitted >= *scan.limit)
+            is_finished = true;
+        return Chunk(Columns{}, batch_rows);
+    }
 
     auto table = arrow::Table::FromRecordBatches({record_batch});
     if (!table.ok())
@@ -342,6 +363,9 @@ Chunk ReadSource::generate()
     /// Run this after conversion because `ArrowColumnToCHColumn` validates nested offsets before
     /// the nullability check uses Arrow `Flatten` to inspect the projected child values.
     validateRecordBatchNullability(*record_batch, getPort().getHeader());
+    rows_emitted += chunk.getNumRows();
+    if (scan.limit && rows_emitted >= *scan.limit)
+        is_finished = true;
     return chunk;
 }
 

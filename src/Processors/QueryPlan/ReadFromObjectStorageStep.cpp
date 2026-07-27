@@ -135,7 +135,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             iterator_wrapper,
             parser_shared_resources,
             format_filter_info,
-            need_only_count);
+            need_only_count,
+            limit);
 
         pipes.emplace_back(std::move(source));
     }
