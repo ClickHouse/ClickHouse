@@ -4168,6 +4168,17 @@ keeps read-in-order, even when `selected_marks_pk / total_marks_pk` is close to 
 This guard applies to the query-plan read-in-order path (`query_plan_read_in_order = 1`, the default).
 The legacy planner path (`query_plan_read_in_order = 0`) does not consult this setting and keeps the
 previous read-in-order behavior regardless of primary key selectivity.
+
+Even on the query-plan path the guard is deliberately exempt in the following cases, where it keeps
+read-in-order regardless of this setting:
+- reading from a projection: a projection is selected precisely because its own sorting key satisfies
+  the `ORDER BY`, so disabling read-in-order on it would defeat the reason it was chosen;
+- `optimize_aggregation_in_order` and `optimize_distinct_in_order`: there read-in-order selects a
+  different, memory-bound streaming algorithm rather than merely avoiding a sort;
+- reading with parallel replicas, to avoid coordination mismatches;
+- queries with a `LIMIT` that lets in-order reading finish early;
+- queries without a filter that the primary key could have used, where a granule ratio of `1.0` means
+  nothing was filtered rather than that the index failed.
 )", 0) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/sql-reference/statements/select/group-by) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries for aggregating data in corresponding order in [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
