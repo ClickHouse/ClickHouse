@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import shlex
 import subprocess
 import time
 from pathlib import Path
@@ -98,6 +99,18 @@ def _mark_infrastructure_errors(results: list) -> int:
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
     return count
+
+
+def quote_tests(tests: List[str]) -> str:
+    """Join test node IDs into a shell-safe, space-separated string.
+
+    A parametrized integration test node ID can contain spaces, parentheses and
+    quotes when the test is parametrized with SQL (e.g.
+    `test.py::test_simple_append[SELECT now() FROM numbers(2)]`). The pytest
+    command is executed through a shell, so each node ID must be quoted to
+    survive as a single argument instead of being split or mis-parsed.
+    """
+    return " ".join(shlex.quote(t) for t in tests)
 
 
 def start_docker_in_docker():
@@ -1072,7 +1085,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     if parallel_test_modules:
         log_file = f"{temp_path}/pytest_parallel.log"
         test_result_parallel, parallel_timed_out = run_pytest_and_collect_results(
-            command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+            command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {parallel_workers} {parallel_dist} --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
             env=test_env,
             report_name="parallel",
             timeout=session_timeout_parallel + 600,
@@ -1114,7 +1127,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     session_timeout_sequential, flaky_check_remaining_s
                 )
             test_result_sequential, sequential_timed_out = run_pytest_and_collect_results(
-                command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
+                command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={iter_session_timeout_sequential}",
                 env=test_env,
                 report_name="sequential",
                 timeout=iter_session_timeout_sequential + 600,
@@ -1165,7 +1178,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
                 if parallel_test_modules:
                     bt_result_parallel, _ = run_pytest_and_collect_results(
-                        command=f"{' '.join(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
+                        command=f"{quote_tests(parallel_test_modules)} --report-log-exclude-logs-on-passed-tests -n {workers} --dist=loadfile --tb=short {repeat_option} --session-timeout={session_timeout_parallel}",
                         env=test_env,
                         report_name=f"parallel_{bugfix_bt}",
                         timeout=session_timeout_parallel + 600,
@@ -1181,7 +1194,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 bt_fail_num = len([r for r in bt_test_results if not r.is_ok()])
                 if sequential_test_modules and bt_fail_num < MAX_FAILS_BEFORE_DROP and not has_error:
                     bt_result_sequential, _ = run_pytest_and_collect_results(
-                        command=f"{' '.join(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
+                        command=f"{quote_tests(sequential_test_modules)} --report-log-exclude-logs-on-passed-tests --tb=short {repeat_option} -n 1 --dist=loadfile --session-timeout={session_timeout_sequential}",
                         env=test_env,
                         report_name=f"sequential_{bugfix_bt}",
                         timeout=session_timeout_sequential + 600,
@@ -1238,7 +1251,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries, _ = run_pytest_and_collect_results(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
+            command=f"{quote_tests(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
             env=test_env,
             report_name="retries",
             timeout=1200 + 600,

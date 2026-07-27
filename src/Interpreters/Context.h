@@ -108,6 +108,7 @@ class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
+class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
@@ -793,6 +794,7 @@ public:
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
+        MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -1038,6 +1040,11 @@ public:
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names);
+
+    /// Remove a table (and any columns recorded under it) from the query access info. Used to drop an
+    /// internal temporary table that was accessed while executing the query but should not be exposed to
+    /// the user (e.g. the temporary table used to publish a `CREATE ... AS SELECT` atomically).
+    void removeQueryAccessInfoTable(const String & full_quoted_table_name);
 
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
@@ -1538,6 +1545,11 @@ public:
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
+
+    void setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<PaimonMetadataFilesCache> getPaimonMetadataFilesCache() const;
+    void clearPaimonMetadataFilesCache() const;
 #endif
 
 #if USE_PARQUET
@@ -1694,7 +1706,7 @@ public:
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
 
-    /// Server-wide override for the new analyzer in mutations.
+    /// Server-wide override for the analyzer in mutations.
     /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
     /// Set from the main config reload callback.
     void setMutationsUseAnalyzerOverride(std::optional<bool> value);

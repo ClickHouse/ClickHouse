@@ -28,9 +28,7 @@ doc_type: 'guide'
 يمكنك تنفيذ الخطوات التالية إما من مفسّر بايثون التفاعلي (REPL) أو عبر برنامج نصي.
 
 <Steps>
-  <Step>
-    ## ثبّت المكتبات
-
+  <Step title="ثبّت المكتبات" id="install-libraries">
     ثبّت المكتبات المطلوبة بتشغيل الأوامر التالية:
 
     ```python
@@ -40,9 +38,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## إعداد بيانات الاعتماد
-
+  <Step title="إعداد بيانات الاعتماد" id="setup-credentials">
     بعد ذلك، ستحتاج إلى توفير مفتاح API الخاص بـ Anthropic:
 
     ```python
@@ -61,7 +57,7 @@ doc_type: 'guide'
       فيمكنك العثور على تعليمات إعداد بيانات الاعتماد في [توثيق PydanticAI](https://ai.pydantic.dev/models/)
     </Info>
 
-    بعد ذلك، عرّف بيانات الاعتماد اللازمة للاتصال بـ ClickHouse SQL playground:
+    بعد ذلك، عرّف بيانات الاعتماد اللازمة للاتصال بـ SQL playground الخاص بـ ClickHouse:
 
     ```python
     env = {
@@ -74,10 +70,8 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## هيّئ خادم MCP ووكيل PydanticAI
-
-    الآن، اضبط ClickHouse MCP server بحيث يشير إلى ClickHouse SQL playground:
+  <Step title="هيّئ خادم MCP ووكيل PydanticAI" id="initialize-mcp">
+    الآن، اضبط ClickHouse MCP server بحيث يشير إلى SQL playground الخاص بـ ClickHouse:
 
     ```python
     from pydantic_ai import Agent
@@ -98,9 +92,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## اطرح سؤالًا على الوكيل
-
+  <Step title="اطرح سؤالًا على الوكيل" id="ask-agent">
     أخيرًا، يمكنك طرح سؤال على الوكيل:
 
     ```python

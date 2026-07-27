@@ -23,11 +23,15 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 #if USE_AVRO
 #    include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#    include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
 #endif
 #if USE_PARQUET
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #endif
 #include <Storages/System/ServerSettingColumnsParams.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#    include <Disks/IO/WriteBufferFromDistributedCache.h>
+#endif
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
@@ -167,7 +171,7 @@ A value of `0` means unlimited.
 )", 0) \
     DECLARE(UInt64, max_fetch_partition_thread_pool_size, 64, R"(The number of threads for ALTER TABLE FETCH PARTITION.)", 0) \
     DECLARE(UInt64, max_active_parts_loading_thread_pool_size, 64, R"(The number of threads to load active set of data parts (Active ones) at startup.)", 0) \
-    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 64, R"(The number of threads to commit snapshot.)", 0) \
+    DECLARE(UInt64, max_snapshot_commit_thread_pool_size, 16, R"(The number of threads to commit snapshot.)", 0) \
     DECLARE(UInt64, max_snapshot_commit_thread_pool_free_size, 0, R"(If the number of idle threads in the snapshot commit thread pool exceeds `max_snapshot_commit_thread_pool_free_size`, ClickHouse will release resources occupied by idling threads and decrease the pool size. Threads can be created again if necessary.)", 0) \
     DECLARE(UInt64, max_outdated_parts_loading_thread_pool_size, 32, R"(The number of threads to load inactive set of data parts (Outdated ones) at startup.)", 0) \
     DECLARE(UInt64, max_unexpected_parts_loading_thread_pool_size, 8, R"(The number of threads to load inactive set of data parts (Unexpected ones) at startup.)", 0) \
@@ -570,6 +574,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
     DECLARE(Double, iceberg_metadata_files_cache_size_ratio, DEFAULT_ICEBERG_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the iceberg metadata cache relative to the cache's total size.", 0) \
+    DECLARE(String, paimon_metadata_files_cache_policy, DEFAULT_PAIMON_METADATA_CACHE_POLICY, "Paimon metadata cache policy name.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_size, DEFAULT_PAIMON_METADATA_CACHE_MAX_SIZE, "Maximum size of paimon metadata cache in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, paimon_metadata_files_cache_max_entries, DEFAULT_PAIMON_METADATA_CACHE_MAX_ENTRIES, "Maximum size of paimon metadata files cache in entries. Zero means no entry-count limit.", 0) \
+    DECLARE(Double, paimon_metadata_files_cache_size_ratio, DEFAULT_PAIMON_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the paimon metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, parquet_metadata_cache_policy, DEFAULT_PARQUET_METADATA_CACHE_POLICY, "Parquet metadata cache policy name.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_size, DEFAULT_PARQUET_METADATA_CACHE_MAX_SIZE, "Maximum size of parquet metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, parquet_metadata_cache_max_entries, DEFAULT_PARQUET_METADATA_CACHE_MAX_ENTRIES, "Maximum size of parquet metadata files cache in entries. Zero means disabled.", 0) \
@@ -1251,23 +1259,23 @@ Whether background memory worker should correct internal memory tracker based on
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
-    On each `MemoryWorker` tick, reserve an additional
-    `ratio * min(resident - previous_resident, resident - tracked)` on top of
-    the observed RSS, on the assumption that the next tick may grow by the same
-    amount as the last one (`resident - previous_resident` is the RSS growth
-    over the last tick). The growth is capped by `resident - tracked`, the part
-    of RSS not visible to the global memory tracker, because growth that is
-    already tracked is handled by the ordinary hard-limit check. The reservation
-    is applied to the `rss` counter that the global hard-limit check consults
-    via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
-    `max_server_memory_usage`, subsequent allocations throw
-    `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
-    disables speculation (falling back to `rss = resident`); the default `1`
-    reserves one full growth delta of headroom for the next interval. Under
-    sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
-    `resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
-    rather than tracker bookkeeping lag.
-    )", 0) \
+On each `MemoryWorker` tick, reserve an additional
+`ratio * min(resident - previous_resident, resident - tracked)` on top of
+the observed RSS, on the assumption that the next tick may grow by the same
+amount as the last one (`resident - previous_resident` is the RSS growth
+over the last tick). The growth is capped by `resident - tracked`, the part
+of RSS not visible to the global memory tracker, because growth that is
+already tracked is handled by the ordinary hard-limit check. The reservation
+is applied to the `rss` counter that the global hard-limit check consults
+via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
+`max_server_memory_usage`, subsequent allocations throw
+`MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
+disables speculation (falling back to `rss = resident`); the default `1`
+reserves one full growth delta of headroom for the next interval. Under
+sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
+`resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
+rather than tracker bookkeeping lag.
+)", 0) \
     DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
 Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
 
@@ -1317,6 +1325,7 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
     DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
+    DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, a write goes through the cache inline (on the calling thread) instead of on a background thread, so it neither blocks waiting for a slot nor creates an unbounded number of threads.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -1395,6 +1404,7 @@ See [Controlling behavior on server CPU overload](/operations/settings/server-ov
     DECLARE(UInt64, handshake_timeout_milliseconds, 30000, R"(Wall-clock timeout in milliseconds for the entire TCP handshake phase (Hello + Addendum). Limits how long an unauthenticated connection can hold a thread. Set to 0 to disable.)", 0) \
     DECLARE(Bool, skip_binary_checksum_checks, false, R"(Skips ClickHouse binary checksum integrity checks)", 0) \
     DECLARE(Bool, abort_on_logical_error, false, R"(Crash the server on LOGICAL_ERROR exceptions. Only for experts.)", 0) \
+    DECLARE(UInt64, jemalloc_merge_tree_arenas, 1, R"(Number of dedicated jemalloc arenas for long-lived MergeTree per-part and per-table metadata. `0` disables the dedicated arena (metadata uses the default per-CPU arenas). `1` uses a single shared arena. `N > 1` creates a pool of `N` arenas and routes allocations per CPU; on many-core machines this avoids serializing metadata allocation on a single arena's locks. Capped at the number of CPUs the process may run on (its affinity mask), so a large value (or the core count) yields one arena per allowed CPU. Applied at startup.)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_interval_bytes, 0, R"(Flushing jemalloc profile will be done after global peak memory usage increased by jemalloc_flush_profile_interval_bytes)", 0) \
     DECLARE(Bool, jemalloc_flush_profile_on_memory_exceeded, 0, R"(Flushing jemalloc profile will be done on total memory exceeded errors)", 0) \
     DECLARE(UInt64, jemalloc_flush_profile_on_memory_exceeded_interval, 0, R"(If non-zero, sets the minimum interval in seconds between flushing jemalloc profiles on total memory exceeded errors. For example, 5 means at most one profile flush every 5 seconds. Takes priority over `jemalloc_flush_profile_on_memory_exceeded`.)", 0) \
@@ -1545,6 +1555,19 @@ The directory with top level domains.
 ```xml
 <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path>
 ```
+)", 0) \
+    DECLARE(Bool, interserver_tables_status_require_auth, true, R"(
+Require interserver `TablesStatusRequest` to be authenticated with the cluster
+`<secret>`. Clients new enough to send a secret hash (protocol revision
+`DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS`) are always validated; this
+setting additionally rejects older clients that send no hash, which is what closes the
+unauthenticated table-status disclosure by default.
+
+Defaults to `true` (secure by default). During a rolling upgrade a not-yet-upgraded
+node speaks the old protocol and sends no hash, so a `Distributed` query initiated on
+such a node against an already-upgraded node would have its `TablesStatusRequest`
+rejected. If you must run a mixed-version cluster, set this to `false` on the upgraded
+nodes until every node is upgraded, then remove the override.
 )", 0) \
     DECLARE(String, interserver_http_host, "", R"(
 The hostname that can be used by other servers to access this server.
@@ -2042,6 +2065,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
              {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+#if ENABLE_DISTRIBUTED_CACHE
+            {"distributed_cache_write_pool_size",
+             {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
+#endif
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_free_size",
@@ -2119,6 +2146,15 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         changeable_settings.insert(
             {"iceberg_metadata_files_cache_size",
              {std::to_string(context->getIcebergMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+    if (context->getPaimonMetadataFilesCache())
+    {
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_size",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}});
+        changeable_settings.insert(
+            {"paimon_metadata_files_cache_max_entries",
+             {std::to_string(context->getPaimonMetadataFilesCache()->maxCount()), ChangeableWithoutRestart::Yes}});
+    }
 #endif
 #if USE_PARQUET
     if (context->getParquetMetadataCache())
