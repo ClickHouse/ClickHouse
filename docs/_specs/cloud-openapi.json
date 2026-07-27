@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1047418",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1062602",
       "email": "support@clickhouse.com"
     }
   },
@@ -1024,6 +1024,232 @@
         "x-mint": {
           "content": "Deletes an existing custom role. System roles cannot be deleted. This operation will remove the role and all its associated policies."
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/quotas": {
+      "get": {
+        "summary": "Get organization quotas",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns the resource quotas enforced for the organization together with their current usage where available. Quotas that do not apply to the organization are omitted. Quota values reflect the limits currently enforced, so they can be polled to detect changes, for example after a billing status change. The response contains one entry per quota code; quotas enforced per resource may additionally appear under resource-scoped endpoints in the future.",
+        "operationId": "organizationQuotasGetList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OrganizationQuota"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/quotas/{quotaCode}": {
+      "get": {
+        "summary": "Get organization quota details",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns a single organization quota identified by its quota code. Responds with a not found error when the quota code is unknown or the quota does not apply to the organization.",
+        "operationId": "organizationQuotaGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the requested organization.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "quotaCode",
+            "description": "Code of the requested quota.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/OrganizationQuota"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Organization"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/services": {
@@ -8918,6 +9144,132 @@
                       "type": "string",
                       "description": "Unique id assigned to every request. UUIDv4",
                       "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 400
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "integer",
+                      "description": "HTTP status code.",
+                      "example": 500
+                    },
+                    "error": {
+                      "type": "string",
+                      "description": "Detailed error description."
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "ClickStack"
+        ],
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/validate": {
+      "post": {
+        "summary": "ClickStack: Validate Dashboard",
+        "description": "**This endpoint is in beta.** API contract is stable, and no breaking changes are expected in the future. <br /><br /> ClickStack: Validates a dashboard body against the same schema and tile rules used by POST /api/v2/dashboards. The dashboard is **never persisted**. Use this endpoint at plan time (e.g. from a Terraform provider) to check that a dashboard configuration is valid before applying it.",
+        "operationId": "clickStackValidateDashboard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "description": "ID of the organization that owns the service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "description": "ID of the ClickStack service.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClickStackCreateDashboardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "number",
+                      "description": "HTTP status code.",
+                      "example": 200
+                    },
+                    "requestId": {
+                      "type": "string",
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "format": "uuid"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/ClickStackValidateDashboardResponse"
                     }
                   }
                 }
@@ -21036,7 +21388,10 @@
               "organization_member_leave",
               "organization_member_delete",
               "organization_member_update_role",
+              "organization_member_update_roles",
               "organization_member_update_mfa_method",
+              "organization_saml_connection_create",
+              "organization_saml_connection_update",
               "user_login",
               "user_login_failed",
               "user_logout",
@@ -21059,6 +21414,7 @@
               "service_update_autoscaling_replicas",
               "service_update_max_allowable_replicas",
               "service_update_backup_configuration",
+              "service_update_snapshot_configuration",
               "service_restore_backup",
               "service_update_release_channel",
               "service_update_gpt_usage_consent",
@@ -24577,6 +24933,57 @@
           "tiles"
         ]
       },
+      "ClickStackValidateDashboardError": {
+        "properties": {
+          "path": {
+            "description": "Dot-separated field path, or empty string for top-level errors.",
+            "type": "string",
+            "example": "tiles.0.config"
+          },
+          "message": {
+            "description": "Human-readable error description.",
+            "type": "string",
+            "example": "Required"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ]
+      },
+      "ClickStackValidateDashboardResponseNormalized": {
+        "properties": {}
+      },
+      "ClickStackValidateDashboardResponse": {
+        "properties": {
+          "valid": {
+            "description": "True when the body passes all validation rules.",
+            "type": "boolean"
+          },
+          "errors": {
+            "type": "array",
+            "description": "Validation errors. Empty when valid is true.",
+            "items": {
+              "$ref": "#/components/schemas/ClickStackValidateDashboardError"
+            }
+          },
+          "normalized": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ClickStackValidateDashboardResponseNormalized"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "valid",
+          "errors",
+          "normalized"
+        ]
+      },
       "ClickStackUpdateDashboardRequest": {
         "properties": {
           "name": {
@@ -26334,55 +26741,6 @@
           "url"
         ]
       },
-      "ClickStackValidateDashboardResponseErrorsItem": {
-        "properties": {
-          "path": {
-            "description": "Dot-separated field path, or empty string for top-level errors.",
-            "type": "string"
-          },
-          "message": {
-            "description": "Human-readable error description.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "message"
-        ]
-      },
-      "ClickStackValidateDashboardResponseNormalized": {
-        "properties": {}
-      },
-      "ClickStackValidateDashboardResponse": {
-        "properties": {
-          "valid": {
-            "description": "True when the body passes all validation rules.",
-            "type": "boolean"
-          },
-          "errors": {
-            "type": "array",
-            "description": "Validation errors. Empty when valid is true.",
-            "items": {
-              "$ref": "#/components/schemas/ClickStackValidateDashboardResponseErrorsItem"
-            }
-          },
-          "normalized": {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/ClickStackValidateDashboardResponseNormalized"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "valid",
-          "errors",
-          "normalized"
-        ]
-      },
       "AssignedRole": {
         "properties": {
           "roleId": {
@@ -28006,6 +28364,62 @@
             "type": "string"
           }
         }
+      },
+      "OrganizationQuota": {
+        "properties": {
+          "quotaCode": {
+            "description": "Stable identifier of the quota. Use it to request a single quota by code.",
+            "type": "string",
+            "enum": [
+              "services-per-organization",
+              "postgres-services-per-organization",
+              "replicas-per-warehouse"
+            ],
+            "example": "services-per-organization"
+          },
+          "name": {
+            "description": "Human-readable name of the quota.",
+            "type": "string",
+            "example": "Services per organization"
+          },
+          "description": {
+            "description": "Explanation of the resource the quota limits and how the limit is applied.",
+            "type": "string"
+          },
+          "scope": {
+            "description": "Granularity at which the limit is applied. For example, `replicas-per-warehouse` is an organization-wide setting that limits each warehouse individually.",
+            "type": "string",
+            "enum": [
+              "organization",
+              "warehouse"
+            ],
+            "example": "organization"
+          },
+          "value": {
+            "description": "Limit currently applied to the organization, including any adjustments made for the organization. The value can change when the billing status of the organization changes.",
+            "type": "integer",
+            "minimum": 0,
+            "example": 20
+          },
+          "usage": {
+            "description": "Current consumption of the quota. Omitted for quotas that do not report usage. Usage can exceed `value` when a limit was lowered after resources were created; existing resources are not affected.",
+            "type": "integer",
+            "minimum": 0,
+            "example": 3
+          },
+          "adjustable": {
+            "description": "Whether the limit can be raised for the organization by contacting ClickHouse support.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "quotaCode",
+          "name",
+          "description",
+          "scope",
+          "value",
+          "adjustable"
+        ]
       },
       "ServiceClickhouseSetting": {
         "properties": {
