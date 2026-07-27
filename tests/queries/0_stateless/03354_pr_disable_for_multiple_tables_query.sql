@@ -62,5 +62,19 @@ select count() from (explain select id, n from X array join [1, 2] as n) where e
 set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%';
 
+-- A `UNION` table expression nested under a `JOIN` is planned branch by branch, and every branch is
+-- planned by an independent `Planner` built from the branch's own context, so disabling the setting
+-- must reach the branch contexts as well, not only the `UnionNode` context.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() from (explain select * from (select id from X union all select id from X) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() from (explain select * from (select id from X union all select id from X) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+
+-- The same for a `UNION` nested inside another `UNION`, which requires the descent to be recursive.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() from (explain select * from (select id from X union all (select id from X union all select id from X)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() from (explain select * from (select id from X union all (select id from X union all select id from X)) as u inner join Y as j on u.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
+
 -- drop table X sync;
 -- drop table Y sync;

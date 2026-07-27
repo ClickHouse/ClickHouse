@@ -1422,6 +1422,24 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
+/// Disables parallel replicas in the context of a subquery table expression.
+/// A `UNION` table expression is planned branch by branch (see `buildPlanForUnionNode`), and every
+/// branch is planned by an independent `Planner` built from the branch's own context, so it is not
+/// enough to update the context of the `UnionNode` itself: descend into the branches as well.
+void disableParallelReplicasForSubqueryTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    if (auto * query_node = table_expression->as<QueryNode>())
+    {
+        query_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+    }
+    else if (auto * union_node = table_expression->as<UnionNode>())
+    {
+        union_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+        for (const auto & union_query_node : union_node->getQueries().getNodes())
+            disableParallelReplicasForSubqueryTableExpression(union_query_node);
+    }
+}
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -2075,11 +2093,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             /// would not reach it, and a single-table subquery of a multi-table query could still be read
             /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
             /// which would clobber the subquery's own settings and bound resources) to the subquery.
-            if (query_node
-                && !settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+            if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
                 && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
             {
-                query_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+                disableParallelReplicasForSubqueryTableExpression(table_expression);
             }
 
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
