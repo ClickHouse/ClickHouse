@@ -35,13 +35,15 @@ SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text,
 SELECT '-- disabled by the parent optimize_trivial_count_query = 0';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%Trivial count from text index%';
 
-SELECT '-- fires: multi-token hasAllTokens (intersection) / hasAnyTokens (union)';
-SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta'])) WHERE explain LIKE '%ReadFromPreparedSource%';
+SELECT '-- fires: multi-token hasAnyTokens (union)';
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta'])) WHERE explain LIKE '%ReadFromPreparedSource%';
-SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']);
-SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS optimize_trivial_count_from_text_index = 0;
 SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']);
 SELECT count() FROM tab WHERE hasAnyTokens(text, ['alpha', 'zeta']) SETTINGS optimize_trivial_count_from_text_index = 0;
+
+SELECT '-- does not fire: multi-token hasAllTokens (intersection) uses the reader';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta'])) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']);
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS optimize_trivial_count_from_text_index = 0;
 
 SELECT '-- does not fire: residual non-text predicate';
 SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND id > 10) WHERE explain LIKE '%Trivial count from text index%';
