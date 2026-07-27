@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <string>
@@ -324,37 +325,65 @@ protected:
         /// by default stop after the first interrupt signal.
         void start(Int32 signals_before_stop = 1)
         {
-            exit_after_signals.store(signals_before_stop);
-            running.store(true);
+            state.store(signals_before_stop);
         }
 
-        /// Set value not greater then 0 to mark the query as stopped.
+        /// Disarm the handler: the query is no longer in flight.
         void stop()
         {
-            /// Clear `running` before `exit_after_signals` so a concurrent reader of the output
-            /// cancellation hook (the parallel-formatting collector) never observes a
-            /// running-and-cancelled state while we are stopping the handler during teardown.
-            running.store(false);
-            exit_after_signals.store(0);
+            state.store(NOT_RUNNING);
         }
 
         /// Return true while the handler is armed for an in-flight query, i.e. between start() and
-        /// stop(). This lets the output cancellation hook tell a genuine Ctrl+C (the handler is
-        /// running and cancelled) apart from a handler that has merely been stopped during query
-        /// teardown - where cancelled() also becomes true, see ClientBase::resetOutput.
-        bool isRunning() { return running.load(); }
+        /// stop().
+        bool isRunning() const { return state.load() != NOT_RUNNING; }
 
         /// Return true if the query was stopped.
         /// Query was stopped if it received at least "signals_before_stop" interrupt signals.
-        bool tryStop() { return exit_after_signals.fetch_sub(1) <= 0; }
-        bool cancelled() { return exit_after_signals.load() <= 0; }
+        /// A disarmed handler also reports the query as stopped: NOT_RUNNING is negative.
+        bool cancelled() const { return state.load() <= 0; }
+
+        /// Return true only for a genuine Ctrl+C on an in-flight query: the handler is armed and
+        /// it has received enough interrupt signals. This is what the output cancellation hooks
+        /// use to tell a real cancellation apart from a handler that has merely been stopped
+        /// during query teardown - where cancelled() also becomes true, see ClientBase::resetOutput.
+        /// The armed flag and the signal count live in a single atomic, so a concurrent reader (the
+        /// parallel-formatting collector) always observes one coherent state and can never mistake
+        /// a handler being stopped for a cancellation, which would discard already-produced output.
+        bool cancelledWhileRunning() const
+        {
+            const Int64 current = state.load();
+            return current != NOT_RUNNING && current <= 0;
+        }
+
+        /// Account for one interrupt signal. Called from a signal handler, hence only lock-free
+        /// atomic operations. A disarmed handler is left alone and reports the query as stopped.
+        bool tryStop()
+        {
+            Int64 current = state.load();
+            while (true)
+            {
+                if (current == NOT_RUNNING)
+                    return true;
+                if (state.compare_exchange_weak(current, current - 1))
+                    return current <= 0;
+            }
+        }
 
         /// Return how much interrupt signals remain before stop.
-        Int32 cancelled_status() { return exit_after_signals.load(); }
+        Int32 cancelled_status() const
+        {
+            const Int64 current = state.load();
+            return current == NOT_RUNNING ? 0 : static_cast<Int32>(current);
+        }
 
     private:
-        std::atomic<Int32> exit_after_signals = 0;
-        std::atomic<bool> running = false;
+        /// The state of a disarmed handler. Distinct from every armed value, which is a signal
+        /// count that starts at `signals_before_stop` and is decremented by each interrupt signal.
+        static constexpr Int64 NOT_RUNNING = std::numeric_limits<Int64>::min();
+
+        std::atomic<Int64> state = NOT_RUNNING;
+        static_assert(std::atomic<Int64>::is_always_lock_free);
     };
 
     QueryInterruptHandler query_interrupt_handler;

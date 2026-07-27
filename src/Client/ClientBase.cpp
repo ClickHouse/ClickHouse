@@ -748,12 +748,12 @@ try
             /// With `--pager` the result set is written through the pager's stdin pipe rather than
             /// through `std_out`, so install the cancellation hook here too. Otherwise a stuck or
             /// slow pager could fill its stdin pipe and the first Ctrl+C would appear to have no
-            /// effect. The `isRunning()` guard keeps this hook honest for its whole lifetime: once
+            /// effect. The `cancelledWhileRunning()` guard keeps this hook honest for its whole lifetime: once
             /// the interrupt handler is stopped during teardown, cancelled() becomes unconditionally
             /// true, so without the guard the final flush in resetOutput() would discard
             /// already-produced output on an exception path (where the query was never cancelled).
             pager_cmd->in.setCancellationHook(
-                [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
         }
         else
         {
@@ -835,11 +835,11 @@ try
                 /// stuck terminal does, so without a hook the first `Ctrl+C` would not promptly abort
                 /// the output. For a regular file `setCancellationHook` is a no-op (`fstat` marks it
                 /// as non-blocking), so nothing is dropped and the complete file is preserved. The
-                /// `isRunning()` guard keeps the final flush in `resetOutput()` from discarding
+                /// `cancelledWhileRunning()` guard keeps the final flush in `resetOutput()` from discarding
                 /// already-produced output on an exception path, where the query was never cancelled.
                 out_file_write_buf->setCancellationHook(
                     [this]()
-                    { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                    { return query_interrupt_handler.cancelledWhileRunning(); });
 
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::move(out_file_write_buf),
@@ -856,7 +856,7 @@ try
                     /// In `INTO OUTFILE ... AND STDOUT` mode the result is written to this separate
                     /// stdout buffer rather than through `std_out`, so install the same cancellation
                     /// hook here. Otherwise Ctrl+C would not promptly abort the output when the
-                    /// stdout sink (e.g. a slow terminal) is blocked. The `isRunning()` guard keeps
+                    /// stdout sink (e.g. a slow terminal) is blocked. The `cancelledWhileRunning()` guard keeps
                     /// the hook honest for its whole lifetime: once the interrupt handler is stopped
                     /// during teardown, cancelled() becomes unconditionally true, so without the
                     /// guard the final flush in resetOutput() would discard already-produced output
@@ -864,7 +864,7 @@ try
                     auto stdout_buf = std::make_shared<WriteBufferFromFileDescriptor>(stdout_fd);
                     stdout_buf->setCancellationHook(
                         [this]()
-                        { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                        { return query_interrupt_handler.cancelledWhileRunning(); });
 
                     /// Keep a handle so resetOutput() can re-point the hook before finalizing it.
                     select_into_file_and_stdout_buf = stdout_buf;
@@ -1033,7 +1033,7 @@ void ClientBase::initLogsOutputStream()
         /// non-regular sink such as a FIFO stays interruptible.
         if (server_logs_file != "-" && logs_out_terminal_buf)
             logs_out_terminal_buf->setCancellationHook(
-                [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
     }
 }
 
@@ -1534,7 +1534,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// Without this, a write to a slow or stuck sink (e.g. a slow terminal) blocks the
             /// client, so the first Ctrl+C appears to have no effect until the whole block is
             /// written. The hook lets the output buffer stop waiting and discard the rest. The
-            /// `isRunning()` guard keeps it honest for its whole lifetime: once the interrupt handler
+            /// `cancelledWhileRunning()` guard keeps it honest for its whole lifetime: once the interrupt handler
             /// is stopped during teardown, cancelled() becomes unconditionally true, so without the
             /// guard the output_format->finalize() flush in resetOutput() (which runs before the hook
             /// can be safely re-pointed - that has to wait until the parallel-formatting collector
@@ -1542,7 +1542,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// where the query was never cancelled. It is finally cleared in resetOutput() after that
             /// collector has been joined, so the hook is never mutated while that thread reads it.
             std_out->setCancellationHook(
-                [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
 
             /// The progress indication renders to the terminal through `tty_buf`, so those writes
             /// must stay responsive to cancellation as well: on a terminal that stopped draining,
@@ -1554,7 +1554,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// resetOutput().
             if (tty_buf)
                 tty_buf->setCancellationHook(
-                    [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+                    [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
 
             /// Allow cancellation during query analysis (e.g. scalar subqueries).
             /// For TCP connections this is handled by receivePacketsExpectCancel;
@@ -2017,7 +2017,7 @@ void ClientBase::resetOutput()
     /// that also reads it is only joined by this very finalize()/the reset() below, and re-pointing
     /// it while that thread reads it would be a data race). On an exception path the interrupt
     /// handler is already stopped, so the hook must not treat that as a cancellation and discard the
-    /// already-produced output - that is exactly what the hook's isRunning() guard ensures.
+    /// already-produced output - that is exactly what the hook's cancelledWhileRunning() guard ensures.
     try
     {
         if (output_format)
@@ -2043,15 +2043,15 @@ void ClientBase::resetOutput()
     /// re-pointed for the teardown flushes below and cleared at function end without racing it.
     /// Use the very same predicate as the in-query hooks: honor a cancellation only while the interrupt
     /// handler is still armed for this query. On exception paths the handler is already stopped here
-    /// (its cancelled() is then unconditionally true), so isRunning() is false and the teardown flush is
-    /// not treated as cancelled - this avoids discarding already-produced output. On normal completion
+    /// (its cancelled() is then unconditionally true), so cancelledWhileRunning() is false and the
+    /// teardown flush is not treated as cancelled - this avoids discarding already-produced output. On normal completion
     /// the handler is still armed, so a fresh Ctrl+C during a teardown flush to a slow/stuck stdout is
     /// honored regardless of whether the signal raced in before or after this point. Basing the
     /// predicate on a captured `!cancelled()` instead would go permanently inert if the signal arrived
     /// just before the capture (the handler's cancelled() flips, but the local `cancelled` flag is only
     /// set by cancelQuery inside receiveResult, which no longer runs once we are in this teardown).
     auto teardown_cancellation_hook = [this]
-    { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); };
+    { return query_interrupt_handler.cancelledWhileRunning(); };
     if (std_out)
         std_out->setCancellationHook(teardown_cancellation_hook);
     /// tty_buf carries the same per-query hook (installed alongside std_out's), and the teardown
@@ -2114,7 +2114,7 @@ void ClientBase::resetOutput()
     /// below would block as if nothing was cancelled, processOrdinaryQuery() would publish a
     /// partially flushed `INTO OUTFILE ... TRUNCATE` target as a success, and the
     /// "Query was cancelled." message would not be printed.
-    if (!cancelled && query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
+    if (!cancelled && query_interrupt_handler.cancelledWhileRunning())
         cancelled = true;
 
     if (pager_cmd)
@@ -2131,7 +2131,7 @@ void ClientBase::resetOutput()
         /// its first iteration, so no separate pre-wait re-check is needed.
         while (!cancelled && !pager_cmd->waitIfProccesTerminated())
         {
-            if (query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
+            if (query_interrupt_handler.cancelledWhileRunning())
             {
                 cancelled = true;
                 break;
@@ -2275,13 +2275,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     /// stopped and is finally cleared by the next resetOutput().
     if (std_out)
         std_out->setCancellationHook(
-            [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+            [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
 
     /// Progress for an INSERT (e.g. reading an INFILE) is rendered through `tty_buf` as well -
     /// keep it responsive to cancellation, for the same reason as in processOrdinaryQuery.
     if (tty_buf)
         tty_buf->setCancellationHook(
-            [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+            [this]() { return query_interrupt_handler.cancelledWhileRunning(); });
 
     const auto settings_without_compat = settingsWithoutCompatibilityDerived();
     const Settings * settings_to_send
