@@ -43,10 +43,39 @@ public:
         compacted = false;
     }
 
+    /// Appends `count` samples at once. Semantically `add` in a loop, but with a single size bump and
+    /// raw writes - this is the hot path when whole runs of samples fall into one bucket.
+    void addRun(const TimestampType * timestamps, const ValueType * values, size_t count)
+    {
+        const size_t old_size = buffer.size();
+        buffer.resize(old_size + count);
+        auto * out = buffer.data() + old_size;
+        for (size_t i = 0; i < count; ++i)
+        {
+            out[i].first = timestamps[i];
+            out[i].second = values[i];
+        }
+        compacted = false;
+    }
+
     void merge(const AggregateFunctionTimeseriesSamples & other)
     {
         buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
         compacted = false;
+    }
+
+    /// Merge that may leave `other` empty. During the merge of partial aggregation states each
+    /// (series, bucket) usually exists in exactly one source state, so the destination bucket is
+    /// empty and the samples are stolen instead of copied.
+    void mergeDestructive(AggregateFunctionTimeseriesSamples & other)
+    {
+        if (buffer.empty())
+        {
+            buffer.swap(other.buffer);
+            compacted = other.compacted;
+            return;
+        }
+        merge(other);
     }
 
     void serialize(WriteBuffer & buf) const
@@ -125,8 +154,10 @@ private:
             return;
 
         /// Sorting by (timestamp, value) makes the last sample of each equal-timestamp run the one with
-        /// the larger value.
-        ::sort(buffer.begin(), buffer.end());
+        /// the larger value. Samples arrive as ascending runs, so the buffer is usually sorted already -
+        /// checking is much cheaper than re-sorting.
+        if (!std::is_sorted(buffer.begin(), buffer.end()))
+            ::sort(buffer.begin(), buffer.end());
 
         auto out = buffer.begin();
         for (auto it = buffer.begin(); it != buffer.end();)

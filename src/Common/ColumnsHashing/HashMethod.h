@@ -420,6 +420,10 @@ struct HashMethodKeysFixed
 
     PaddedPODArray<Key> prepared_keys;
 
+    /// When a single key column exactly fills the Key, its raw data is used as the keys directly,
+    /// with no packing pass at all (see the constructor).
+    const Key * direct_keys = nullptr;
+
     static bool usePreparedKeys(const Sizes & key_sizes)
     {
         if (has_low_cardinality || has_nullable_keys || sizeof(Key) > 16)
@@ -455,7 +459,18 @@ struct HashMethodKeysFixed
 
         if (usePreparedKeys(key_sizes))
         {
-            packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            if (keys_size == 1 && key_sizes[0] == sizeof(Key))
+            {
+                /// The single key occupies the whole Key: the column's raw data already is the packed
+                /// keys array, so use it directly instead of zero-filling and copying a buffer.
+                /// (Same aliasing note as in fillFixedBatch.)
+                direct_keys = reinterpret_cast<const Key *>(
+                    static_cast<const ColumnFixedSizeHelper *>(Base::getActualColumns()[0])->template getRawDataBegin<sizeof(Key)>());
+            }
+            else
+            {
+                packFixedBatch(keys_size, Base::getActualColumns(), key_sizes, prepared_keys);
+            }
         }
 
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -523,6 +538,9 @@ struct HashMethodKeysFixed
             if constexpr (has_low_cardinality)
                 return packFixed<Key, true>(row, keys_size, low_cardinality_keys.nested_columns, key_sizes,
                                             &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
+
+            if (direct_keys)
+                return direct_keys[row];
 
             if (!prepared_keys.empty())
                 return prepared_keys[row];

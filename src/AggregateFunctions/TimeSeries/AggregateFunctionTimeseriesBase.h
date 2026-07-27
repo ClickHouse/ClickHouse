@@ -220,6 +220,39 @@ public:
         }
     }
 
+    /// The default implementation merges with a copy and then destroys the source. The source is doomed
+    /// anyway, so move the buckets out of it instead when the bucket type supports destructive merging.
+    void mergeAndDestroyBatch(
+        AggregateDataPtr * dst_places,
+        AggregateDataPtr * rhs_places,
+        size_t size,
+        size_t offset,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const override
+    {
+        if constexpr (!requires (Bucket & dst, Bucket & src) { dst.mergeDestructive(src); })
+        {
+            Base::mergeAndDestroyBatch(dst_places, rhs_places, size, offset, thread_pool, is_cancelled, arena);
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                chassert(dst_places[i] + offset != rhs_places[i] + offset,
+                         "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
+
+                auto & dst_buckets = data(dst_places[i] + offset)->buckets;
+                auto & src_buckets = data(rhs_places[i] + offset)->buckets;
+                dst_buckets.reserve(src_buckets.size());
+                for (auto & src_bucket : src_buckets)
+                    dst_buckets[src_bucket.getKey()].mergeDestructive(src_bucket.getMapped());
+
+                destroy(rhs_places[i] + offset);
+            }
+        }
+    }
+
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeBinaryLittleEndian(FORMAT_VERSION, buf);
@@ -907,8 +940,97 @@ private:
 
     void addMany(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, size_t start, size_t end) const
     {
-        for (size_t i = start; i < end; ++i)
-            add(place, timestamp_ptr[i], value_ptr[i]);
+        if (!use_int64_arithmetic)
+        {
+            for (size_t i = start; i < end; ++i)
+                add(place, timestamp_ptr[i], value_ptr[i]);
+            return;
+        }
+
+        /// Process the samples as runs over timestamp zones (see `bucketIndexAndZoneInt64`): samples arrive
+        /// in ascending-timestamp runs, so whole stretches share one bucket (bulk-appended) or fall into one
+        /// between-windows gap (skipped) with two comparisons per sample and no per-sample calls.
+        auto & state = *data(place);
+        size_t i = start;
+        while (i < end)
+        {
+            size_t bucket_index;
+            const Int64 ts = static_cast<Int64>(timestamp_ptr[i]);
+            if (ts > state.zone_lo && ts <= state.zone_hi)
+            {
+                bucket_index = state.zone_bucket;
+            }
+            else
+            {
+                bucket_index = bucketIndexAndZoneInt64(timestamp_ptr[i], state.zone_lo, state.zone_hi);
+                state.zone_bucket = bucket_index;
+            }
+
+            const Int64 zone_lo = state.zone_lo;
+            const Int64 zone_hi = state.zone_hi;
+            size_t run_end = i + 1;
+            while (run_end < end)
+            {
+                const Int64 t = static_cast<Int64>(timestamp_ptr[run_end]);
+                if (t > zone_lo && t <= zone_hi)
+                    ++run_end;
+                else
+                    break;
+            }
+
+            if (bucket_index != NO_BUCKET)
+            {
+                auto & bucket = state.buckets[bucket_index];
+                if constexpr (requires { bucket.addRun(timestamp_ptr, value_ptr, size_t{}); })
+                {
+                    bucket.addRun(timestamp_ptr + i, value_ptr + i, run_end - i);
+                }
+                else
+                {
+                    for (size_t k = i; k < run_end; ++k)
+                        bucket.add(timestamp_ptr[k], value_ptr[k]);
+                }
+            }
+
+            i = run_end;
+        }
+    }
+
+    /// The default `addBatch` dispatches row by row. The samples input is sorted by series, so consecutive
+    /// rows usually target the same aggregation state - process such runs with `addMany` instead.
+    void addBatch(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos) const override
+    {
+        if (array_arguments || (if_argument_pos >= 0))
+        {
+            Base::addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+            return;
+        }
+
+        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+        const TimestampType * timestamp_data = timestamp_column.getData().data();
+        const ValueType * value_data = value_column.getData().data();
+
+        size_t i = row_begin;
+        while (i < row_end)
+        {
+            AggregateDataPtr place = places[i];
+            size_t run_end = i + 1;
+            while (run_end < row_end && places[run_end] == place)
+                ++run_end;
+
+            if (place)
+                addMany(place + place_offset, timestamp_data, value_data, i, run_end);
+
+            i = run_end;
+        }
     }
 
     void addManyNotNull(AggregateDataPtr __restrict place, const TimestampType * __restrict timestamp_ptr, const ValueType * __restrict value_ptr, const UInt8 * __restrict null_map, size_t start, size_t end) const
