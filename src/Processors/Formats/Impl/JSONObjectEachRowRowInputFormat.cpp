@@ -271,7 +271,7 @@ Any set of bytes can be output in the strings. Use the [`JSONEachRow`](/referenc
 
 ### Usage of Nested Structures {#jsoneachrow-nested}
 
-If you have a table with the [`Nested`](/sql-reference/data-types/nested-data-structures/index.md) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](/reference/settings/formats/input-format#input_format_import_nested_json) setting.
+If you have a table with the [`Nested`](/reference/data-types/nested-data-structures/index) data type columns, you can insert JSON data with the same structure. Enable this feature with the [input_format_import_nested_json](/reference/settings/formats/input-format#input_format_import_nested_json) setting.
 
 For example, consider the following table:
 
