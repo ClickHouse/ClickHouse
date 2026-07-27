@@ -7,7 +7,7 @@ doc_type: '参考'
 keywords: ['clickstack', 'json', 'map', '属性', 'schema', '可观测性']
 ---
 
-import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 ClickStack 的[默认 schema](/zh/clickstack/ingesting-data/schemas)会将 resource、scope、日志和 span attribute 存储为 `Map(LowCardinality(String), String)` 列。ClickHouse 也支持强类型的 [`JSON` 类型](/zh/reference/formats/JSON/JSON)，而 ClickStack 也提供了可用其替代 `Map` 的 Beta 支持。
 
