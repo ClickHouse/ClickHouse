@@ -4885,11 +4885,24 @@ class QueryResultElement extends HTMLElement
     /// clickhouse-client's ProgressTable: only the per-query rows (thread_id 0) are used, each
     /// metric is aggregated per host, and ~1s snapshots feed the per-second rate. Reveals the
     /// Metrics toggle on the first metric and re-renders the table if it is the visible view.
-    updateMetrics(events)
+    ///
+    /// `time_sec` is the packet's own arrival time (seconds since the first packet of the stream).
+    /// It is passed when a SAVED stream is replayed, where the whole stream is dispatched
+    /// back-to-back: the wall clock would then collapse a multi-second query into milliseconds and
+    /// the restored rates and sparkline history would show the replay speed instead of the original
+    /// run (see `replayTimeSeconds` in `makeEventStreamHandler`). Live streaming leaves it undefined
+    /// and the wall clock is used.
+    updateMetrics(events, time_sec)
     {
-        if (!this._metrics_t0)
-            this._metrics_t0 = performance.now();
-        const now_sec = (performance.now() - this._metrics_t0) / 1000;
+        let now_sec;
+        if (time_sec === undefined)
+        {
+            if (!this._metrics_t0)
+                this._metrics_t0 = performance.now();
+            now_sec = (performance.now() - this._metrics_t0) / 1000;
+        }
+        else
+            now_sec = time_sec;
         this._metrics_last_sec = now_sec;
 
         let saw_any = false;
@@ -7522,6 +7535,30 @@ function makeEventStreamHandler(targetResultEl, options = {})
     let compact_extremes_rows = 0;
     const zipCompactRow = (values) => Object.fromEntries(compact_names.map((n, i) => [n, values[i]]));
 
+    /// The clock of a REPLAYED stream (`options.replay`): a saved stream is dispatched back-to-back,
+    /// so the wall clock would compress a multi-second query into milliseconds and the metric rates
+    /// and sparklines would show the replay speed instead of the original run. Every
+    /// `profile_events` packet carries the server-side `current_time` of the batch, so the replay is
+    /// timestamped from it: seconds since the first timestamped packet of the stream. A packet with
+    /// no parseable timestamp does not advance the clock (rather than jumping it to the replay's own
+    /// time), so its events fold into the previous sample.
+    let replay_time_base = null;
+    let replay_time_sec = 0;
+    const replayTimeSeconds = (events) =>
+    {
+        for (const e of events)
+        {
+            /// `current_time` is a `DateTime` rendered as "YYYY-MM-DD hh:mm:ss" in the server's
+            /// timezone; only differences are used, so parsing it as UTC is enough.
+            const t = Date.parse(String(e.current_time ?? '').replace(' ', 'T') + 'Z');
+            if (!Number.isFinite(t)) continue;
+            if (replay_time_base === null) replay_time_base = t;
+            replay_time_sec = Math.max(replay_time_sec, (t - replay_time_base) / 1000);
+            break;
+        }
+        return replay_time_sec;
+    };
+
     return (name, dataLines) =>
     {
         if (name === 'data' || name === 'totals' || name === 'extremes')
@@ -7613,9 +7650,11 @@ function makeEventStreamHandler(targetResultEl, options = {})
             }
             if (events.length)
             {
-                /// Feed the extended metrics table (the Metrics view) and, when running live, the
-                /// realtime resource meters in the progress line.
-                targetResultEl.updateMetrics(events);
+                /// Feed the extended metrics table (the Metrics view) and the resource meters of the
+                /// tab (live, and on replay of a saved stream). A replayed stream is timestamped
+                /// from the packets themselves (`replayTimeSeconds`), so the restored rates and
+                /// sparklines keep the timing of the original run.
+                targetResultEl.updateMetrics(events, options.replay ? replayTimeSeconds(events) : undefined);
                 if (options.resourceMeter) options.resourceMeter(events);
             }
         }
@@ -7655,12 +7694,24 @@ function dispatchEventStreamBlock(block, handleEvent)
 /// live `readEventStream`: the decoded bytes are collected and rendered as an image or raw text once
 /// the whole snapshot is replayed. `format` is the output format of the response, which decides both
 /// the image MIME type and how the raw text is reconstructed. Returns true if an image was rendered.
-function renderEventStreamText(text, targetResultEl, rawText, base64, format)
+///
+/// `tab`, when given, is the tab the replayed stream belongs to: its `profile_events` packets are
+/// accumulated into the TAB-OWNED resource state through the same `accumulateResourceEvents` path
+/// the live `readEventStream` uses, so a framed result reopened after a reload / Back / Forward -
+/// where `clearPanel` dropped that state - gets its shared CPU/RAM/peak-RAM line back. The state is
+/// only rebuilt here; the shared progress line is repainted from it by `syncActiveTabChrome` (which
+/// runs after the result is materialized), exactly as for a tab whose query streamed in the
+/// background. As live, it is one aggregate per run: every replayed statement of the tab
+/// accumulates into the same state.
+function renderEventStreamText(text, targetResultEl, rawText, base64, format, tab)
 {
     const binary_chunks = base64 ? [] : null;
+    if (tab && !tab.resources) tab.resources = freshResourceState();
     const handleEvent = makeEventStreamHandler(targetResultEl, {
         rawText,
         format,
+        replay: true,
+        resourceMeter: tab ? (events) => accumulateResourceEvents(tab.resources, events) : undefined,
         onBytes: base64 ? (bytes) => binary_chunks.push(bytes) : undefined,
     });
     for (const block of text.split('\n\n'))
@@ -8420,7 +8471,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             framing_kind = 'event_stream';
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
-            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, format);
+            renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, format, tab);
             /// `framed_error_stream` was read in full (uncapped), so the carrier is scanned from it
             /// at compaction time; no separate capture is needed here.
             reply = framed_error_stream;
@@ -9683,7 +9734,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         const base64 = !!snap.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        renderEventStreamText(snap.data, el, raw_text, base64, format);
+        renderEventStreamText(snap.data, el, raw_text, base64, format, tab);
         if (el.isExplainGraph) {
             try {
                 await el.renderGraph(() => matToken === tab.reqNum);
@@ -10028,7 +10079,7 @@ async function materializeResult(tab) {
         const base64 = !!result.base64;
         const raw_text = !base64 && !isDefaultFormat(format);
         el.enableViews();
-        const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, format);
+        const rendered_image = renderEventStreamText(result.data, el, raw_text, base64, format, tab);
         if (base64) { if (!rendered_image) is_raw = true; }
         else if (raw_text) is_raw = true; else is_table = true;
         if (!result.ok) {

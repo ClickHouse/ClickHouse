@@ -45,6 +45,10 @@ replay skips broken frames: OK
 failed-table finalization shared: OK
 live failures finalize the table: OK
 restored failures finalize the table: OK
+replay clock comes from the packets: OK
+replay time reaches the metrics model: OK
+replay rebuilds the resource state: OK
+every replay site passes its tab: OK
 --- an incompatible explicit format is rejected as a framed exception the page can match
 1
 text/event-stream

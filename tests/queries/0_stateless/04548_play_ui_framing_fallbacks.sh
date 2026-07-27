@@ -236,6 +236,18 @@ echo "$page" | grep -q -F 'try { dispatchEventStreamBlock(block, handleEvent); }
 echo "$page" | grep -q -F 'finalizeFailedTable(measureNow)' && echo 'failed-table finalization shared: OK'
 [ "$(echo "$page" | grep -c -F 'finalizeFailedTable(tab.id === activeTabId);')" -eq 2 ] && echo 'live failures finalize the table: OK'
 [ "$(echo "$page" | grep -c -F 'el.finalizeFailedTable(true);')" -eq 2 ] && echo 'restored failures finalize the table: OK'
+# Replaying a saved `EventStream` snapshot dispatches the whole stream back-to-back, so the metrics
+# model must be timestamped from the packets themselves (`current_time`) instead of the wall clock -
+# otherwise a multi-second query restores with the rates and the sparkline history of the replay
+# speed. Live streaming keeps the wall clock (`updateMetrics` called with no packet time).
+echo "$page" | grep -q -F "const t = Date.parse(String(e.current_time ?? '').replace(' ', 'T') + 'Z');" && echo 'replay clock comes from the packets: OK'
+echo "$page" | grep -q -F 'targetResultEl.updateMetrics(events, options.replay ? replayTimeSeconds(events) : undefined);' && echo 'replay time reaches the metrics model: OK'
+# A restored framed result rebuilds the tab-owned resource state from the replayed `profile_events`
+# through the same `accumulateResourceEvents` path the live reader uses, so the shared CPU/RAM/peak-RAM
+# line reappears after a reload / Back / Forward (`clearPanel` dropped that state); `syncActiveTabChrome`
+# repaints it. Every replay site passes its tab.
+echo "$page" | grep -q -F 'resourceMeter: tab ? (events) => accumulateResourceEvents(tab.resources, events) : undefined,' && echo 'replay rebuilds the resource state: OK'
+[ "$(echo "$page" | grep -c -E 'renderEventStreamText\(.*, format, tab\);')" -eq 3 ] && echo 'every replay site passes its tab: OK'
 
 echo '--- an incompatible explicit format is rejected as a framed exception the page can match'
 # The same request shape the page sends for a framed query.
