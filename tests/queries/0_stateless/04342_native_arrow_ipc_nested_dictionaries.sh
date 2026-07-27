@@ -29,12 +29,11 @@ for FMT in ArrowStream Arrow; do
              engine_file_truncate_on_insert = 1
     "
 
-    # Compare the row multiset (sort the rows): both readers see the same file, so they must return the
-    # same rows, but the row order within equal `(lc, arr_lc)` groups is not deterministic under the
-    # randomized thread/block settings the test runner injects, so do not depend on it.
-    NATIVE=$(${CLICKHOUSE_LOCAL}  --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 1" | sort)
-    LIBRARY=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 0" | sort)
-    [ "$NATIVE" = "$LIBRARY" ] && echo "OK   ${FMT}: native == library" || echo "MISMATCH   ${FMT}"
+    # Print the row multiset (sort the rows): the row order within equal `(lc, arr_lc)` groups is not
+    # deterministic under the randomized thread/block settings the test runner injects, so do not
+    # depend on it.
+    echo "--- ${FMT} ---"
+    ${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.${FMT}', '${FMT}')" | sort
 
     rm -f "${DATA_FILE}.${FMT}"
 done
@@ -49,9 +48,9 @@ FROM numbers(3)
 SETTINGS output_format_arrow_string_as_string = 1, output_format_arrow_low_cardinality_as_dictionary = 1,
          output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1
 "
-${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}.ArrowStream', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}.ArrowStream', 'ArrowStream')"
 
 echo "--- values (native) ---"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.ArrowStream', 'ArrowStream') ORDER BY lc SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}.ArrowStream', 'ArrowStream') ORDER BY lc"
 
 rm -f "${DATA_FILE}.ArrowStream"

@@ -34,14 +34,10 @@ PY
 for FMT in Arrow ArrowStream; do
     echo "--- ${FMT}: SELECT a (b unrequested) -> b's corrupt dictionary is skipped ---"
     ${CLICKHOUSE_LOCAL} --query "
-        SELECT a FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'a Int32')
-        SETTINGS input_format_arrow_use_native_reader = 1
-    "
+        SELECT a FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'a Int32')"
     echo "--- ${FMT}: SELECT b (requested) -> duplicate dictionary values rejected ---"
     ${CLICKHOUSE_LOCAL} --query "
-        SELECT b FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'a Int32, b LowCardinality(String)')
-        SETTINGS input_format_arrow_use_native_reader = 1
-    " 2>&1 | grep -o "INCORRECT_DATA" | head -1
+        SELECT b FROM file('${DATA_FILE}.${FMT}', '${FMT}', 'a Int32, b LowCardinality(String)')" 2>&1 | grep -o "INCORRECT_DATA" | head -1
 
     rm -f "${DATA_FILE}.${FMT}"
 done

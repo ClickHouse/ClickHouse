@@ -22,26 +22,15 @@ SELECT
     toLowCardinality(if(number % 2 = 0, NULL, toString(number)))::LowCardinality(Nullable(String)) AS lc_null,
     [[toUInt8(1), 2], [3]]::Array(Array(UInt8)) AS nested_arr
 FROM numbers(5)
-SETTINGS output_format_arrow_use_native_writer = 0,
-         output_format_arrow_string_as_string = 1,
+SETTINGS output_format_arrow_string_as_string = 1,
          output_format_arrow_compression_method = 'none',
          output_format_arrow_low_cardinality_as_dictionary = 1
 "
 
 echo "--- schema (native) ---"
-${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'ArrowStream')"
 
 echo "--- data (native) ---"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY arr SETTINGS input_format_arrow_use_native_reader = 1"
-
-echo "--- native vs library: schema identical? ---"
-NS=$(${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1")
-LS=$(${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 0")
-[ "$NS" = "$LS" ] && echo "OK" || echo "MISMATCH"
-
-echo "--- native vs library: data identical? ---"
-ND=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY arr SETTINGS input_format_arrow_use_native_reader = 1")
-LD=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY arr SETTINGS input_format_arrow_use_native_reader = 0")
-[ "$ND" = "$LD" ] && echo "OK" || echo "MISMATCH"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY arr"
 
 rm -f "${DATA_FILE}"

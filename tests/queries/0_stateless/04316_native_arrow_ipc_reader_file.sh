@@ -20,25 +20,19 @@ SELECT
     range(number % 4) AS arr,
     toLowCardinality(toString(number % 3)) AS lc
 FROM numbers(10)
-SETTINGS output_format_arrow_use_native_writer = 0,
-         output_format_arrow_string_as_string = 1,
+SETTINGS output_format_arrow_string_as_string = 1,
          output_format_arrow_compression_method = 'none',
          output_format_arrow_low_cardinality_as_dictionary = 1,
          max_block_size = 3
 "
 
 echo "--- schema (native) ---"
-${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'Arrow')"
 
 echo "--- data (native) ---"
-${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'Arrow') ORDER BY i SETTINGS input_format_arrow_use_native_reader = 1"
-
-echo "--- native vs library: data identical? ---"
-ND=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'Arrow') ORDER BY i SETTINGS input_format_arrow_use_native_reader = 1")
-LD=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'Arrow') ORDER BY i SETTINGS input_format_arrow_use_native_reader = 0")
-[ "$ND" = "$LD" ] && echo "OK" || echo "MISMATCH"
+${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'Arrow') ORDER BY i"
 
 echo "--- count only (native) ---"
-${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${DATA_FILE}', 'Arrow') SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${DATA_FILE}', 'Arrow')"
 
 rm -f "${DATA_FILE}"

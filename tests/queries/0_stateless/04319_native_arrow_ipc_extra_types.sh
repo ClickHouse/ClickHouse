@@ -20,22 +20,12 @@ ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${DATA_FILE}', 'ArrowStr
     toInt128(number) * 100000000000000000 AS i128,
     toInt256(number) AS i256
 FROM numbers(3)
-SETTINGS output_format_arrow_use_native_writer = 1, output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1"
+SETTINGS output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1"
 
 echo "--- schema (native) ---"
-${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
+${CLICKHOUSE_LOCAL} --query "DESCRIBE file('${DATA_FILE}', 'ArrowStream')"
 
 echo "--- UUID value (native reader) ---"
-${CLICKHOUSE_LOCAL} --query "SELECT DISTINCT u FROM file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1"
-
-echo "--- native reader == library reader (native-written file)? ---"
-N=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY i128 SETTINGS input_format_arrow_use_native_reader = 1")
-L=$(${CLICKHOUSE_LOCAL} --query "SELECT * FROM file('${DATA_FILE}', 'ArrowStream') ORDER BY i128 SETTINGS input_format_arrow_use_native_reader = 0")
-[ "$N" = "$L" ] && echo "OK" || echo "MISMATCH"
-
-echo "--- UUID cross-compat: native-written read by library == read by native ---"
-NU=$(${CLICKHOUSE_LOCAL} --query "SELECT DISTINCT u FROM file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 1")
-LU=$(${CLICKHOUSE_LOCAL} --query "SELECT DISTINCT u FROM file('${DATA_FILE}', 'ArrowStream') SETTINGS input_format_arrow_use_native_reader = 0")
-[ "$NU" = "$LU" ] && echo "OK" || echo "MISMATCH"
+${CLICKHOUSE_LOCAL} --query "SELECT DISTINCT u FROM file('${DATA_FILE}', 'ArrowStream')"
 
 rm -f "${DATA_FILE}"

@@ -13,7 +13,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TMP="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
-NAT="output_format_arrow_use_native_writer = 1"
 COMMON="output_format_arrow_string_as_string = 1, output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1"
 
 # All NULL, nested carries a distinctive marker; a sibling column has the same NULL structure but trivial nested.
@@ -28,23 +27,22 @@ for FMT in Arrow ArrowStream; do
     echo "=== ${FMT} ==="
 
     # String: the nested bytes of NULL rows must not reach the native output.
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s.${FMT}', '${FMT}') ${STR_MARK} SETTINGS ${NAT}, ${COMMON}"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s.${FMT}', '${FMT}') ${STR_MARK} SETTINGS ${COMMON}"
     echo "string: leaked marker occurrences in native output: $(grep -c -a SECRETLEAK "${TMP}.s.${FMT}")"
 
     # The native output must not depend on what a NULL row carries in its nested column.
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s2.${FMT}', '${FMT}') ${STR_PLAIN} SETTINGS ${NAT}, ${COMMON}"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.s2.${FMT}', '${FMT}') ${STR_PLAIN} SETTINGS ${COMMON}"
     cmp -s "${TMP}.s.${FMT}" "${TMP}.s2.${FMT}" && echo "string: native output independent of NULL-row nested bytes: OK" || echo "string: native output independent of NULL-row nested bytes: MISMATCH"
 
-    # Round-trips to all NULL, and the native reader agrees with the library reader.
-    SN=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(s IS NULL) = 64 FROM file('${TMP}.s.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 1")
-    SL=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(s IS NULL) = 64 FROM file('${TMP}.s.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 0")
-    echo "string: round-trips to all NULL (native reader / library reader): ${SN} / ${SL}"
+    # Round-trips to all NULL.
+    SN=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(s IS NULL) = 64 FROM file('${TMP}.s.${FMT}', '${FMT}')")
+    echo "string: round-trips to all NULL: ${SN}"
 
     # Binary fallback: same independence property and round-trip.
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.b.${FMT}', '${FMT}') ${BIN_VALS} SETTINGS ${NAT}, output_format_arrow_unsupported_types_as_binary = 1, ${COMMON}"
-    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.b2.${FMT}', '${FMT}') ${BIN_ZERO} SETTINGS ${NAT}, output_format_arrow_unsupported_types_as_binary = 1, ${COMMON}"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.b.${FMT}', '${FMT}') ${BIN_VALS} SETTINGS output_format_arrow_unsupported_types_as_binary = 1, ${COMMON}"
+    ${CLICKHOUSE_LOCAL} --query "INSERT INTO FUNCTION file('${TMP}.b2.${FMT}', '${FMT}') ${BIN_ZERO} SETTINGS output_format_arrow_unsupported_types_as_binary = 1, ${COMMON}"
     cmp -s "${TMP}.b.${FMT}" "${TMP}.b2.${FMT}" && echo "binary: native output independent of NULL-row nested bytes: OK" || echo "binary: native output independent of NULL-row nested bytes: MISMATCH"
-    BN=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(b IS NULL) = 64 FROM file('${TMP}.b.${FMT}', '${FMT}') SETTINGS input_format_arrow_use_native_reader = 1")
+    BN=$(${CLICKHOUSE_LOCAL} --query "SELECT count() = 64 AND countIf(b IS NULL) = 64 FROM file('${TMP}.b.${FMT}', '${FMT}')")
     echo "binary: round-trips to all NULL (native reader): ${BN}"
 
     rm -f "${TMP}.s.${FMT}" "${TMP}.s2.${FMT}" "${TMP}.b.${FMT}" "${TMP}.b2.${FMT}"
