@@ -736,7 +736,6 @@
 "caseWithExpression"
 "caseWithoutExpr"
 "caseWithoutExpression"
-"catboostEvaluate"
 "categoricalInformationValue"
 "categoricalInformationValueArgMax"
 "categoricalInformationValueArgMin"

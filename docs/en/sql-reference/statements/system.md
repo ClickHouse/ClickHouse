@@ -66,31 +66,6 @@ The `SYSTEM UNLOAD DICTIONARIES` query unloads all dictionaries with a `LOADED` 
 SYSTEM UNLOAD DICTIONARIES
 ```
 
-## SYSTEM RELOAD MODELS {#reload-models}
-
-:::note
-This statement and `SYSTEM RELOAD MODEL` merely unload catboost models from the clickhouse-library-bridge. The function `catboostEvaluate()`
-loads a model upon first access if it is not loaded yet.
-:::
-
-Unloads all CatBoost models.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
-```
-
-## SYSTEM RELOAD MODEL {#reload-model}
-
-Unloads a CatBoost model at `model_path`.
-
-**Syntax**
-
-```sql
-SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
-```
-
 ## SYSTEM RELOAD FUNCTIONS {#reload-functions}
 
 Reloads all registered [executable user defined functions](/sql-reference/functions/udf#executable-user-defined-functions) or one of them from a configuration file.
