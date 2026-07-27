@@ -154,6 +154,7 @@ void validateVariadicArgumentsImpl(
     size_t argument_offset,
     const FunctionArgumentDescriptor & variadic_descriptor)
 {
+    /// `i` is already the absolute zero-based argument index here, so it must not be offset again.
     for (size_t i = argument_offset; i < arguments.size(); ++i)
     {
         const auto & arg = arguments[i];
@@ -161,7 +162,7 @@ void validateVariadicArgumentsImpl(
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(argument_offset + i),
+                withOrdinalEnding(i),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,
