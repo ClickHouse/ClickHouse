@@ -220,6 +220,9 @@ void batchSerializeAsComparableImpl(
     const UInt8 * null_map,
     SerializeOne && serialize_one)
 {
+    if (out.size() < num_rows)
+        out.resize(num_rows);
+
     if (!permutation && !null_map)
     {
         for (size_t r = 0; r < num_rows; ++r)

@@ -45,7 +45,6 @@ void encodeBlock(
                         "UNIQUE KEY encoding: permutation contains an out-of-range index (number of rows {})",
                         num_rows);
 
-    out.resize(num_rows);
     if (num_rows == 0)
         return;
 

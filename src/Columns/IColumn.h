@@ -372,8 +372,11 @@ public:
     virtual void serializeAsComparable(size_t n, String & out) const;
 
     /// Batch serialize rows in column-outer fashion: one virtual dispatch per
-    /// column, tight row loop inside. `out[r]` gets the encoding of row `src`
-    /// where `src = permutation ? (*permutation)[r] : r`.
+    /// column, tight row loop inside. The encoding of row `src` (where
+    /// `src = permutation ? (*permutation)[r] : r`) is appended to `out[r]`;
+    /// existing contents of `out[r]` are preserved, not replaced. `out` is
+    /// grown to `num_rows` if it is shorter, so the caller may pass an empty
+    /// vector.
     /// When `null_map` is non-null (set by a Nullable wrapper), rows whose
     /// `null_map[src]` is set are skipped: nothing is appended for them, so the
     /// wrapper's null flag is the whole encoding of a NULL row. This keeps NULL
