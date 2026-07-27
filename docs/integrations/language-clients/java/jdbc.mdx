@@ -69,12 +69,12 @@ If you are using JDBC driver within an application that requires jar to be added
 **Driver Class**: `com.clickhouse.jdbc.ClickHouseDriver`
 
 <Note>
-`com.clickhouse.jdbc.ClickHouseDriver` is a facade class for the new and old JDBC implementations. It uses the new JDBC implementation by default. 
-You can use the old JDBC implementation by setting the `clickhouse.jdbc.v1` **system** property to `true`. This property should be set before calling 
-Driver class. 
+`com.clickhouse.jdbc.ClickHouseDriver` is a facade class for the new and old JDBC implementations. It uses the new JDBC implementation by default.
+You can use the old JDBC implementation by setting the `clickhouse.jdbc.v1` **system** property to `true`. This property should be set before calling
+Driver class.
 
-Alternative way to switch between version is to use Driver classes of each version directly: 
-- `com.clickhouse.jdbc.Driver` is new JDBC implementation (V2). 
+Alternative way to switch between version is to use Driver classes of each version directly:
+- `com.clickhouse.jdbc.Driver` is new JDBC implementation (V2).
 - `com.clickhouse.jdbc.DriverV1` is old JDBC implementation (V1).
 </Note>
 
@@ -91,7 +91,7 @@ There are a few things to note about the URL syntax:
 - `ssl` parameter isn't required when protocol is specified.
 
 ### Connection Properties
-Main configuration parameters are defined in the [java client](/integrations/language-clients/java/client#client-configuration). They should be passed 
+Main configuration parameters are defined in the [java client](/integrations/language-clients/java/client#client-configuration). They should be passed
 as is to the driver. Driver has some own properties that aren't part of the client configuration they're listed below.
 
 **Driver properties**:
@@ -139,7 +139,7 @@ Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", properties);
 what will be equivalent to the following JDBC URL:
 
 ```sql
-jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01
 // credentials shoud be passed in `Properties`. Here it is just for example.
 ```
 Note: no need to url encode JDBC URL or properties, they will be automatically encoded.
@@ -152,7 +152,7 @@ Read more about read-only profiles [here](/concepts/features/configuration/setti
 
 ### Client Identification {#client-identification}
 
-There are two ways to identify application originated a request: set `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` via 
+There are two ways to identify application originated a request: set `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` via
 connection properties or use `java.sql.Connection#setClientInfo(String name, String value)` method.
 
 ```java showLineNumbers
@@ -170,14 +170,14 @@ Both ways will result in the following `http_user_agent` value in the query log:
 my-app-01/1.0 jdbc-v2/0.9.7 clickhouse-java-v2/0.9.6 (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
 ```
 
-**Note:** We recommend using `app_name/version` format for `client_name` property because it helps to identify the application in the query log. 
+**Note:** We recommend using `app_name/version` format for `client_name` property because it helps to identify the application in the query log.
 
 ### Operation Identification {#operation-identification}
 
-JDBC driver generates `query_id` for each operation (Currently it is included in server exceptions). 
+JDBC driver generates `query_id` for each operation (Currently it is included in server exceptions).
 
-To set `log_comment` for an operation use `com.clickhouse.jdbc.StatementImpl#getLocalSettings` method. This requires 
-`Statement` or `PreparedStatement` to be cast to `com.clickhouse.jdbc.StatementImpl` first. 
+To set `log_comment` for an operation use `com.clickhouse.jdbc.StatementImpl#getLocalSettings` method. This requires
+`Statement` or `PreparedStatement` to be cast to `com.clickhouse.jdbc.StatementImpl` first.
 
 ```java showLineNumbers
 StatementImpl stmt = (StatementImpl) conn.createStatement();
@@ -192,7 +192,7 @@ JDBC driver supports the same data formats as the underlying [java client](/inte
 
 ### JDBC Type Mapping {#jdbc-type-mapping}
 
-Following mapping applies to: 
+Following mapping applies to:
 - `ResultSet#getObject(columnIndex)` - method will return object of the corresponding Java class. (`Int8` -> `java.lang.Byte`, `Int16` -> `java.lang.Short`, etc.)
 - `ResultSetMetaData#getColumnType(columnIndex)` - method will return the corresponding JDBC type. (`Int8` -> `java.lang.Byte`, `Int16` -> `java.lang.Short`, etc.)
 
@@ -230,7 +230,7 @@ There are few ways to change the mapping:
 - conversion from wider to narrower type isn't recommend because of data coruption risk.
 - `Bool` type acts as number, too.
 - All number types can be read as `java.lang.String`.
-- Storing java `Float.MAX_VALUE` as `Float` has issue (https://github.com/ClickHouse/clickhouse-java/issues/809). Saving same value as `Double` solves the issue.  
+- Storing java `Float.MAX_VALUE` as `Float` has issue (https://github.com/ClickHouse/clickhouse-java/issues/809). Saving same value as `Double` solves the issue.
 
 **String Types**
 
@@ -252,7 +252,7 @@ There are few ways to change the mapping:
 - `Enum8` and `Enum16` are mapped to `java.lang.String` by default.
 - Enum values can be read as numeric values using designtated getter method or `getObject(columnIndex, Integer.class)` method.
 - `Enum16` is mapped to short and Enum8 is mapped to byte internally. Reading `Enum16` as byte should be avoided because of data coruption risk.
-- Enum values can be set as string or numeric value in `PreparedStatement`. 
+- Enum values can be set as string or numeric value in `PreparedStatement`.
 
 **Date/Time Types**
 
@@ -269,8 +269,8 @@ There are few ways to change the mapping:
     - `rs.getObject(1, java.time.LocalDate.class)` will return `java.time.LocalDate` value of `Date` column.
     - `rs.getObject(1, java.time.LocalDateTime.class)` will return `java.time.LocalDateTime` value of `DateTime` column.
     - `rs.getObject(1, java.time.LocalTime.class)` will return `java.time.LocalTime` value of `Time` column.
-- `Date`, `Date32`, `Time`, `Time64` isn't affected by the timezone of the server. 
-- `DateTime`, `DateTime64` is affected by the timezone of the server or session timezone. 
+- `Date`, `Date32`, `Time`, `Time64` isn't affected by the timezone of the server.
+- `DateTime`, `DateTime64` is affected by the timezone of the server or session timezone.
 - `DateTime` and `DateTime64` can be retrieved as `ZonedDateTime` by using `getObject(colIndex, ZonedDateTime.class)`.
 
 **Nested Types**
@@ -284,11 +284,11 @@ There are few ways to change the mapping:
 
 - `Array` is mapped to `java.sql.Array` by default to be compatible with JDBC. This is also done to give more information about returned array value. Useful for type inference.
 - `Array` implements `getResultSet()` method to return `java.sql.ResultSet` with the same content as the original array.
-- Collection types shouldn't be read as `java.lang.String` because it isn't a valid way to represent the data (Ex. there is no quoting for string values in array). 
-- `Map` is mapped to `OTHER` because value can be read only with `getObject(columnIndex, Class<T>)` method. 
+- Collection types shouldn't be read as `java.lang.String` because it isn't a valid way to represent the data (Ex. there is no quoting for string values in array).
+- `Map` is mapped to `OTHER` because value can be read only with `getObject(columnIndex, Class<T>)` method.
     - `Map` isn't a `java.sql.Struct` because it doesn't have named columns.
-- `Tuple` is mapped to `Object[]` because it can contain different types and using `List` isn't valid. 
-- `Tuple` can be read as `Array` by using `getObject(columnIndex, Array.class)` method. In this case `Array#baseTypeName` will return `Tuple` column definition. 
+- `Tuple` is mapped to `Object[]` because it can contain different types and using `List` isn't valid.
+- `Tuple` can be read as `Array` by using `getObject(columnIndex, Array.class)` method. In this case `Array#baseTypeName` will return `Tuple` column definition.
 
 **Array Element Type Metadata**
 
@@ -348,7 +348,7 @@ Notes on the rules above:
 **Writing Arrays**
 
 Use `java.sql.Connection#createArrayOf` to instantiate `java.sql.Array` object. This object is designed to make array handling unified across different databases.
-Connection is required to pass configuration to Array factory method. 
+Connection is required to pass configuration to Array factory method.
 
 The method accepts two arguments:
 - `typeName` - type name of the array elements. For example `Array(Int32)` -> `"Int32"`.
@@ -357,7 +357,7 @@ The method accepts two arguments:
 Tuple can be presented as `Object[]` or as `java.sql.Struct` (See how to write tuples bellow).
 
 **Example**
-```java 
+```java
 try (Connection conn = ...) {
     Array array = conn.createArrayOf("Int32", new Integer[][] {{1, 2, 3}, {4, 5, 6}});
     try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (arr) VALUES (?)")) {
@@ -369,7 +369,7 @@ try (Connection conn = ...) {
 
 **Reading Arrays**
 
-Use `ResultSet#getArray(columnIndex)` to read `Array` object. Object can be used to access array of any nested depth. 
+Use `ResultSet#getArray(columnIndex)` to read `Array` object. Object can be used to access array of any nested depth.
 `Array#getResultSet()` method can be used to read array elements in more unified way as `java.sql.ResultSet`. It is useful
 when exact type of array elements is unknown.
 
@@ -392,14 +392,14 @@ try (Connection conn = ...) {
                 }
             }
         }
-    } 
+    }
 }
 ```
 
 **Writing Tuples**
 
 Tuples are mapped to `com.clickhouse.data.Tuple` object and should be written as this object by calling `setObject(columnIndex, tuple)` method.
-It is possible to use `java.sql.Struct` object to write tuples for better portability. 
+It is possible to use `java.sql.Struct` object to write tuples for better portability.
 
 **Example**
 ```java
@@ -481,7 +481,7 @@ try (Connection conn = ...) {
 **Writing Nested**
 
 Use `java.sql.Connection#createStruct` to instantiate `java.sql.Struct` object. This object is designed to make nested handling unified across different databases.
-Connection is required to pass configuration to Struct factory method. 
+Connection is required to pass configuration to Struct factory method.
 
 The method accepts two arguments:
 - `typeName` - type name of the nested elements. For example `Nested(Tuple(Int32, String))` -> `"Nested(Tuple(Int32, String))"`.
@@ -500,7 +500,7 @@ try (Connection conn = ...) {
 
 **Reading Nested**
 
-Use `ResultSet#getStruct(columnIndex, StructDescriptor)` to read `Nested` object. Object can be used to access nested of any nested depth. 
+Use `ResultSet#getStruct(columnIndex, StructDescriptor)` to read `Nested` object. Object can be used to access nested of any nested depth.
 `Struct#getResultSet()` method can be used to read nested elements in more unified way as `java.sql.ResultSet`. It is useful
 when exact type of nested elements is unknown.
 
@@ -537,7 +537,7 @@ try (Connection conn = ...) {
 
 **Nullable and LowCardinality Types**
 
-- `Nullable` and `LowCardinality` are special types that wrap other types. 
+- `Nullable` and `LowCardinality` are special types that wrap other types.
 - `Nullable` affects how type names are returned in `ResultSetMetaData`
 
 **Special Types**
@@ -609,8 +609,8 @@ properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_de
 
 ### Handling Dates, Times, and Timezones {#handling-dates-times-and-timezones}
 
-Please read [Date/Time Guide](/integrations/language-clients/java/date-time-guide) that explains common pitfalls 
-and logic of the driver when handling Date/Time and Timestamps. 
+Please read [Date/Time Guide](/integrations/language-clients/java/date-time-guide) that explains common pitfalls
+and logic of the driver when handling Date/Time and Timestamps.
 
 ## Creating Connection {#creating-connection}
 
@@ -773,7 +773,7 @@ There are only two enums:
 Connection properties are parsed in the following way:
 - URL is parsed first for properties. They override all other properties.
 - Driver properties aren't passed to the client.
-- Endpoints (host, port, protocol) are parsed from the URL. 
+- Endpoints (host, port, protocol) are parsed from the URL.
 
 Example:
 ```java
@@ -816,7 +816,7 @@ try (Connection conn = DriverManager.getConnection(url, properties)) {
 | Decimal256                  | ✅                 | DECIMAL                    | java.math.BigDecimal       | DECIMAL                    | java.math.BigDecimal                    |
 | Bool                        | ✅                 | BOOLEAN                    | java.lang.Boolean          | BOOLEAN                    | java.lang.Boolean                       |
 
-- The biggest differences is that unsigned types are mapped to java types for better portability. 
+- The biggest differences is that unsigned types are mapped to java types for better portability.
 
 **String Types**
 
@@ -840,7 +840,7 @@ try (Connection conn = DriverManager.getConnection(url, properties)) {
 | Time                        | ✅                 | TIME                       | java.sql.Time              | new type/not supported     | new type/not supported                  |
 | Time64                      | ✅                 | TIME                       | java.sql.Time              | new type/not supported     | new type/not supported                  |
 
-- `Time` and `Time64` are supported in V2 only as new types. 
+- `Time` and `Time64` are supported in V2 only as new types.
 - `DateTime` and `DateTime64` are mapped to `java.sql.Timestamp` for better compatibility with JDBC.
 
 **Enum Types**
@@ -881,7 +881,7 @@ try (Connection conn = DriverManager.getConnection(url, properties)) {
 
 **Nullable and LowCardinality Types**
 
-- `Nullable` and `LowCardinality` are special types that wrap other types. 
+- `Nullable` and `LowCardinality` are special types that wrap other types.
 - No changes are made to these types in V2.
 
 **Special Types**
@@ -908,7 +908,7 @@ try (Connection conn = DriverManager.getConnection(url, properties)) {
 
 - V2 uses only `Schema` term to name databases. `Catalog` term is reserved for future use.
 - V2 returns `false` for `DatabaseMetaData.supportsTransactions()` and `DatabaseMetaData.supportsSavepoints()`. This will be changed in the future development.
-- In `DatabaseMetaData.getTypeInfo()`, the `LITERAL_PREFIX` and `LITERAL_SUFFIX` columns now return `null` for data types where prefixes and suffixes are not expected (e.g., numeric types). 
+- In `DatabaseMetaData.getTypeInfo()`, the `LITERAL_PREFIX` and `LITERAL_SUFFIX` columns now return `null` for data types where prefixes and suffixes are not expected (e.g., numeric types).
 In V1, these columns returned non-null values for such types. These columns should be used when generating SQL queries to properly quote literal values according to their data type.
 
 </View>
@@ -1301,5 +1301,3 @@ try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.H
 ```
 
 </View>
-
-

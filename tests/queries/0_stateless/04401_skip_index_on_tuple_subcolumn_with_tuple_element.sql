@@ -5,7 +5,7 @@
 -- (named subcolumn p.s, tupleElement(p, 's'), tupleElement(p, 1), p.1) even when the full
 -- tuple column is also read (SELECT *). See https://github.com/ClickHouse/ClickHouse/issues/110040
 
--- The rewrite is done by FunctionToSubcolumnsPass (new analyzer only) under
+-- The rewrite is done by FunctionToSubcolumnsPass (analyzer only) under
 -- optimize_functions_to_subcolumns; a single part keeps the granule count stable.
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
