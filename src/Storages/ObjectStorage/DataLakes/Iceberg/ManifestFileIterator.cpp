@@ -179,25 +179,19 @@ std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCo
     return result;
 }
 
-std::optional<Int64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllDataFilesExcludingDeleted() const
+std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllDataFilesExcludingDeleted() const
 {
-    size_t result = 0;
+    UInt64 result = 0;
+    /// `file_size_in_bytes` is a required file-level field in all format versions, so the
+    /// sum is exact (the previous implementation summed the byte size of a single column
+    /// per file, which is not the file size at all). The field is parsed as a raw Int64,
+    /// so a corrupted manifest file may carry a negative value; it is reported as "size
+    /// unavailable" rather than summed or rejected, mirroring record_count above.
     for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
     {
-        /// Have at least one column with bytes count
-        bool found = false;
-        for (const auto & [column, column_info] : file->parsed_entry->columns_infos)
-        {
-            if (column_info.bytes_size.has_value())
-            {
-                result += *column_info.bytes_size;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
+        if (file->parsed_entry->file_size_in_bytes < 0)
             return std::nullopt;
+        result += static_cast<UInt64>(file->parsed_entry->file_size_in_bytes);
     }
     return result;
 }

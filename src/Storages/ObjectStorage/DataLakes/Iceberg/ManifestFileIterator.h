@@ -56,12 +56,13 @@ public:
 
         bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
-        /// Exact: sums the required file-level `record_count` of the entries.
         /// Sum of the file-level `record_count` over the live files of the given content type.
         /// Returns std::nullopt if any file carries a malformed (negative) record count.
         std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
-        std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
+        /// Sum of the file-level `file_size_in_bytes` over the live data files.
+        /// Returns std::nullopt if any file carries a malformed (negative) size.
+        std::optional<UInt64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     private:
         friend class ManifestFileIterator;
@@ -93,8 +94,6 @@ public:
 
     bool hasPartitionKey() const;
     const DB::KeyDescription & getPartitionKeyDescription() const;
-    /// Fields with bytes count in manifest files are optional, they can be absent.
-    std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;
 
     bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
