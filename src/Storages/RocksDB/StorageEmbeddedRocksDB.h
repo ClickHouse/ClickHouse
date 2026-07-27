@@ -139,6 +139,9 @@ private:
     RocksDBPtr rocksdb_ptr TSA_GUARDED_BY(rocksdb_ptr_mx);
 
     mutable SharedMutex rocksdb_ptr_mx;
+    /// Set when a rename left the table without a usable handle: the data is on disk
+    /// but this object cannot serve it. Reads must refuse rather than report zero rows.
+    bool handle_unusable TSA_GUARDED_BY(rocksdb_ptr_mx) = false;
     /// True when the directory was derived from the table's location instead of being given
     /// explicitly in the engine arguments. Only such a directory may be moved on rename.
     const bool implicit_path;

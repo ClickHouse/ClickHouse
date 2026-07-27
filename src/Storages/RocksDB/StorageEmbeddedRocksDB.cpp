@@ -36,6 +36,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/atomicRename.h>
 #include <Common/JSONBuilder.h>
@@ -73,6 +74,11 @@ extern const SettingsBool optimize_trivial_approximate_count_query;
 namespace RocksDBSetting
 {
 extern const RocksDBSettingsBool optimize_for_bulk_insert;
+}
+
+namespace FailPoints
+{
+extern const char rocksdb_rename_throw_filesystem_error[];
 }
 
 namespace ErrorCodes
@@ -333,9 +339,16 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
             try
             {
                 fs::create_directories(parentPath(new_rocksdb_dir));
+                fiu_do_on(FailPoints::rocksdb_rename_throw_filesystem_error,
+                {
+                    throw fs::filesystem_error(
+                        "injected", old_rocksdb_dir, new_rocksdb_dir,
+                        std::make_error_code(std::errc::no_such_file_or_directory));
+                });
                 renameNoReplace(old_rocksdb_dir, new_rocksdb_dir);
                 rocksdb_dir = new_rocksdb_dir;
                 initDB();
+                handle_unusable = false;
             }
             catch (...)
             {
@@ -351,6 +364,9 @@ void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const
                 }
                 catch (...)
                 {
+                    /// The table stays attached under the old name, so remember that it cannot
+                    /// serve its data: reads have to refuse instead of reporting zero rows.
+                    handle_unusable = true;
                     tryLogCurrentException(log, "Failed to restore RocksDB handle after a failed rename");
                 }
                 throw;
@@ -795,6 +811,11 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
             SharedLockGuard lock(storage.rocksdb_ptr_mx);
             if (!storage.rocksdb_ptr)
             {
+                if (storage.handle_unusable)
+                    throw Exception(
+                        ErrorCodes::ROCKSDB_ERROR,
+                        "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                        storage.getStorageID().getNameForLogs(), storage.rocksdb_dir);
                 pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
                 return;
             }
@@ -959,7 +980,14 @@ StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys
 {
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        if (handle_unusable)
+            throw Exception(
+                ErrorCodes::ROCKSDB_ERROR,
+                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                getStorageID().getNameForLogs(), rocksdb_dir);
         return {};
+    }
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
 }
 
@@ -1079,7 +1107,14 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
         return {};
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        if (handle_unusable)
+            throw Exception(
+                ErrorCodes::ROCKSDB_ERROR,
+                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                getStorageID().getNameForLogs(), rocksdb_dir);
         return {};
+    }
     UInt64 estimated_rows = 0;
     if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
         return {};
@@ -1090,7 +1125,14 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 {
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        if (handle_unusable)
+            throw Exception(
+                ErrorCodes::ROCKSDB_ERROR,
+                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                getStorageID().getNameForLogs(), rocksdb_dir);
         return {};
+    }
     UInt64 estimated_bytes = 0;
     if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};

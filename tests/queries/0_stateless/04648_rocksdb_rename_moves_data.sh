@@ -111,7 +111,7 @@ $CLIENT -q --multiline "
     CREATE TABLE $CLICKHOUSE_DATABASE.t8_writer (k UInt64, v String)
         ENGINE = EmbeddedRocksDB(0, '${EXPLICIT_DIR}/explicit8') PRIMARY KEY k;
     INSERT INTO $CLICKHOUSE_DATABASE.t8_writer SELECT number, toString(number) FROM numbers(6);
-    DROP TABLE $CLICKHOUSE_DATABASE.t8_writer SYNC;
+    DROP TABLE $CLICKHOUSE_DATABASE.t8_writer SYNC SETTINGS ignore_drop_queries_probability = 0;
     CREATE TABLE $CLICKHOUSE_DATABASE.t8 (k UInt64, v String)
         ENGINE = EmbeddedRocksDB(0, '${EXPLICIT_DIR}/explicit8', 1) PRIMARY KEY k;
 "
@@ -125,7 +125,8 @@ $CLIENT -q --multiline "
     CREATE TABLE $CLICKHOUSE_DATABASE.t9_seed (k UInt64, v String)
         ENGINE = EmbeddedRocksDB(0, '${EXPLICIT_DIR}/attach_src') PRIMARY KEY k;
     INSERT INTO $CLICKHOUSE_DATABASE.t9_seed SELECT number, toString(number) FROM numbers(7);
-    DROP TABLE $CLICKHOUSE_DATABASE.t9_seed SYNC;
+    DROP TABLE $CLICKHOUSE_DATABASE.t9_seed SYNC SETTINGS ignore_drop_queries_probability = 0;
+    DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t9 SYNC;
 "
 $CLIENT -q "ATTACH TABLE $CLICKHOUSE_DATABASE.t9 FROM '${CLICKHOUSE_TEST_UNIQUE_NAME}/attach_src' (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k"
 echo "9 attach from count $($CLIENT -q "SELECT count() FROM $CLICKHOUSE_DATABASE.t9")"
@@ -141,7 +142,19 @@ echo "10 table still readable $($CLIENT -q "SELECT count() FROM $ORD1.t10")"
 echo "10 table still reloadable $(reloaded_count "$ORD1" t10)"
 rm -rf "${ORD1_DATA_DIR}t10_target"
 
+# 11. A failure that is not a ClickHouse exception has to be handled too: the caller's catch-all
+# re-attaches the table, and the storage restores its handle, so the table stays fully usable.
+make_table "$ORD1" t11 4 "EmbeddedRocksDB"
+$CLIENT -q "SYSTEM ENABLE FAILPOINT rocksdb_rename_throw_filesystem_error"
+$CLIENT -q "RENAME TABLE $ORD1.t11 TO $ORD1.t11_target" 2>&1 | grep -c "injected" | sed 's/^/11 rename failed /'
+$CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_throw_filesystem_error"
+echo "11 table still readable $($CLIENT -q "SELECT count() FROM $ORD1.t11")"
+echo "11 table still reloadable $(reloaded_count "$ORD1" t11)"
+
 $CLIENT --force_remove_data_recursively_on_drop 1 -q --multiline "
+    DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t4 SYNC;
+    DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t9 SYNC;
+    DROP TABLE IF EXISTS $ORD1.t11 SYNC;
     DROP DATABASE IF EXISTS $ORD1 SYNC;
     DROP DATABASE IF EXISTS $ORD2 SYNC;
     DROP DATABASE IF EXISTS ${CLICKHOUSE_DATABASE}_at2 SYNC;

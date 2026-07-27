@@ -17,3 +17,6 @@
 10 rename refused 1
 10 table still readable 5
 10 table still reloadable 5
+11 rename failed 1
+11 table still readable 4
+11 table still reloadable 4
