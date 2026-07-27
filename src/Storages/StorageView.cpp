@@ -253,8 +253,8 @@ void validateViewSelectForInsert(const ASTSelectQuery & select, const StorageID 
     /// and should not prevent insertion.
 }
 
-/// Collects the short names of all identifiers referenced in an expression subtree, excluding
-/// names that are bound by an enclosing lambda parameter. A lambda parameter such as `a` in
+/// Collects the short names of all *unqualified* identifiers referenced in an expression subtree,
+/// excluding names that are bound by an enclosing lambda parameter. A lambda parameter such as `a` in
 /// `arrayExists(a -> a > 0, arr)` shadows any outer column or alias of the same name within the
 /// lambda body, so it is a local binding rather than a reference to the outer name. Recording it
 /// would make the ambiguity guard below reject a view whose WHERE merely uses the name as a lambda
@@ -290,6 +290,18 @@ void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names, NameSet & 
 
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
+        /// A compound identifier such as `t.a` (table-qualified) or `n.x` (a `Nested` subcolumn) is
+        /// never a reference to a SELECT-list alias: an alias is always a single-part name, so it can
+        /// only be matched by an unqualified identifier. `SELECT t.a AS b, t.b AS a FROM t AS t
+        /// WHERE t.a > 0` therefore has unambiguous read semantics — `t.a` is the underlying column
+        /// regardless of `prefer_column_name_to_alias` — and must not be recorded as a reference to
+        /// the colliding alias `a`. Only unqualified names can be ambiguous, and those still fall
+        /// through to the fail-close guard below. Query-parameter identifiers (`{name:Identifier}`)
+        /// carry an empty name and their value is not known at this point, so they keep the generic
+        /// (conservative) handling.
+        if (identifier->compound() && !identifier->isParam())
+            return;
+
         const String short_name = identifier->shortName();
         if (!bound_lambda_params.contains(short_name))
             names.insert(short_name);
@@ -297,6 +309,39 @@ void collectIdentifierShortNames(const ASTPtr & ast, NameSet & names, NameSet & 
 
     for (const auto & child : ast->children)
         collectIdentifierShortNames(child, names, bound_lambda_params);
+}
+
+/// Strips the target-table qualifier from the identifiers of an expression subtree, in place.
+///
+/// The view's `WHERE` is stored exactly as written, so it may qualify columns with the table name or
+/// its alias, as in `SELECT t.a AS b, t.b AS a FROM t AS t WHERE t.a > 0`. The write-time constraint
+/// check analyses the expression against a plain block of view and target column names, where a
+/// qualified `t.a` does not resolve. Strip the qualifier — exactly the way `extractColumnMapping`
+/// resolves the SELECT list — so a qualified predicate is evaluated instead of being rejected.
+///
+/// `IdentifierSemantic::extractNestedName` strips only a leading table/database/alias qualifier that
+/// actually matches the target table, so a compound subcolumn such as a `Nested` `n.x` is preserved.
+/// Independent subquery scopes are left untouched: their identifiers refer to their own tables, and
+/// a name that happens to match the outer table there is not ours to rewrite.
+void stripTargetTableQualifier(ASTPtr & ast, const DatabaseAndTableWithAlias & target_table_ref)
+{
+    if (!ast || ast->as<ASTSubquery>())
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->compound() && !identifier->isParam())
+    {
+        const String stripped = IdentifierSemantic::extractNestedName(*identifier, target_table_ref);
+        if (!stripped.empty() && stripped != identifier->name())
+        {
+            auto replacement = make_intrusive<ASTIdentifier>(stripped);
+            replacement->setAlias(identifier->tryGetAlias());
+            ast = replacement;
+        }
+        return;
+    }
+
+    for (auto & child : ast->children)
+        stripTargetTableQualifier(child, target_table_ref);
 }
 
 /// Extracts column mapping from view column names to target table column names.
@@ -1238,8 +1283,12 @@ SinkToStoragePtr StorageView::write(
         }
     }
 
-    /// The view's WHERE clause becomes a constraint for inserts.
+    /// The view's WHERE clause becomes a constraint for inserts. Qualified references such as
+    /// `t.a` are resolved against the target table the same way the SELECT list is, so that a
+    /// predicate written with table qualification is evaluated rather than rejected.
     ASTPtr where_condition = select.where() ? select.where()->clone() : nullptr;
+    if (where_condition)
+        stripTargetTableQualifier(where_condition, target_table_ref);
 
     auto view_header = std::make_shared<const Block>(metadata_snapshot->getSampleBlockNonMaterialized());
 
