@@ -2066,7 +2066,7 @@ The vectorized pass runs during query analysis, so it only takes effect when [us
 
 Some condition shapes (space-filling curves, polygon predicates, non-collapsed `IN`, relaxed predicates such as `match`) are not eligible for the vectorized path and fall back to per-granule evaluation.
 
-Composes with [use_skip_indexes_for_disjunctions](#use_skip_indexes_for_disjunctions) for the common observability shape `(time_range) AND (OR over another column)`. Queries where the index's own predicate contains an `OR` fall back to per-granule evaluation to preserve disjunction-merge precision.
+Composes with [use_skip_indexes_for_disjunctions](#use_skip_indexes_for_disjunctions). When that setting is enabled (the default), cross-index disjunction merging needs per-granule results for every leaf the index owns, so the vectorized path is used only when no `OR` encloses a leaf of this index — this still covers pure conjunctions and the common observability shape `(time_range) AND (OR over another column)`, where the `OR` is over columns the index does not own. A predicate that puts the index's own condition inside an `OR` falls back to per-granule evaluation in that case, to preserve disjunction-merge precision. When `use_skip_indexes_for_disjunctions` is disabled, no merging takes place and the vectorized path also handles `OR` over the index's own columns.
 
 Possible values:
 
