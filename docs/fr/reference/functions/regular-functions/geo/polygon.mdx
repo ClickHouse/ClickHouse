@@ -771,6 +771,78 @@ Deux polygones
 
 UInt8, 0 pour false, 1 pour true
 
+<div id="geometryintersectcartesian">
+  ## geometryIntersectCartesian
+</div>
+
+Renvoie true si deux géométries se recoupent (ont au moins un point, une ligne ou une zone en commun).
+
+Contrairement à [`polygonsIntersectCartesian`](#polygonsintersectcartesian), cette fonction accepte n&#39;importe quel type de données géométriques
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), y compris le type commun
+[`Geometry`](/fr/reference/data-types/geo#geometry), et les deux arguments peuvent être de types différents.
+
+Les coordonnées sont exprimées dans le système de coordonnées cartésien.
+
+<div id="example">
+  ### Exemple
+</div>
+
+```sql
+SELECT geometryIntersectCartesian([(2., 2.), (2., 3.), (3., 3.), (3., 2.)]::Ring, [(1., 1.), (1., 4.), (4., 4.), (4., 1.)]::Ring)
+```
+
+```response
+1
+```
+
+<div id="input-parameters-1">
+  ### Paramètres d’entrée
+</div>
+
+Deux géométries de tout type de données géométriques (ou `Geometry`).
+
+<div id="returned-value-2">
+  ### Valeur renvoyée
+</div>
+
+UInt8, 0 pour false, 1 pour true
+
+<div id="geometryintersectspherical">
+  ## geometryIntersectSpherical
+</div>
+
+Renvoie true si deux géométries se recoupent (partagent un point, une ligne ou une surface en commun).
+
+Contrairement à [`polygonsIntersectSpherical`](#polygonsintersectspherical), elle accepte n&#39;importe quel type de données géométriques
+(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), y compris le type
+[`Geometry`](/fr/reference/data-types/geo#geometry), et les deux arguments peuvent être de types différents.
+
+Les coordonnées sont interprétées comme appartenant à une sphère idéale.
+
+<div id="example">
+  ### Exemple
+</div>
+
+```sql
+SELECT geometryIntersectSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]]::MultiPolygon, (4.36, 50.85)::Point)
+```
+
+```response
+1
+```
+
+<div id="input-parameters-1">
+  ### Paramètres d’entrée
+</div>
+
+Deux géométries de tout type de données géométriques (ou `Geometry`).
+
+<div id="returned-value-2">
+  ### Valeur renvoyée
+</div>
+
+UInt8, 0 pour false, 1 pour true
+
 <div id="polygonconvexhullcartesian">
   ## polygonConvexHullCartesian
 </div>

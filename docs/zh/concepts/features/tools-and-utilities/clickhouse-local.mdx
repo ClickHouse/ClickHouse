@@ -239,13 +239,15 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 * `--echo [ <bool> ]` — 在执行前打印每个查询。接受可选的布尔值。在交互模式中默认启用，在批次模式中默认禁用。注意：由于 `--echo` 现在接受可选值，紧跟在单独的 `--echo` 后面的查询位置参数会被当作它的值；请改用 `--echo --query "..."`、`--echo -q "..."`、`--echo=false`，或通过管道传入 `stdin`。
 * `--echo-formatted [ <bool> ]` — 格式化回显的查询。接受可选的布尔值。在交互模式中默认启用，在批次模式中默认禁用。
 * `--echo-query-id [ <bool> ]` — 在执行前打印 `query_id`。接受可选的布尔值。在交互模式中默认启用，在批次模式中默认禁用。
+* `--echo-query-separator <string>` — 在格式化回显的查询前打印此分隔符 (需要 `--echo-formatted`) ，这样更容易区分输入的查询与其重新格式化后的回显。默认为空 (禁用) 。
 * `--highlight`, `--hilite` `<bool>` — 切换命令提示符和回显查询的语法高亮。默认启用。仅在输出到终端时应用高亮。
+* `--hints <bool>` — 当光标位于输入末尾时，显示输入时自动补全提示 (内联 &quot;ghost&quot; 文本) ，给出最佳匹配建议。可使用 Up/Down (或 Ctrl-Up/Ctrl-Down) 浏览提示；使用 Tab 或 Right 接受内联提示；`Enter` 仅在已显式选中某个提示后才会接受该提示，否则会运行查询；`Tab` 还会打开经典补全列表。需要启用 `--highlight` (提示需要颜色) 以及建议机制 (因此 `--disable_suggestion` 也会将其关闭) 。默认启用。
 * `--verbose` — 输出更多查询执行细节。
 * `--logger.console` — 输出到控制台。
 * `--logger.log` — 日志文件名。
 * `--logger.level` — 日志级别。
 * `--ignore-error` — 查询失败时不中止处理。
-* `-c`, `--config-file` — 配置文件路径，其格式与 ClickHouse server 相同；默认配置为空。
+* `-c`, `--config-file` — 配置文件路径，其格式与 ClickHouse 服务器 相同；默认配置为空。
 * `--no-system-tables` — 不加载系统表。
 * `--help` — `clickhouse-local` 的参数参考。
 * `-V`, `--version` — 打印版本信息并退出。
@@ -371,6 +373,36 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ├──────────┼──────────┤
 ...
 ```
+
+<div id="starting-listeners">
+  ## 启动 TCP 和 HTTP 监听器
+</div>
+
+`clickhouse-local` 可以转换为一个轻量级服务器，用于接受 TCP (native protocol) 和 HTTP 连接。当你希望让其他 ClickHouse 工具或应用程序访问正在运行的 `clickhouse-local` 实例中的数据库和表时，这会很有用。请注意，每个传入连接都会获得各自独立的会话：交互式 `clickhouse-local` 会话中的临时表和会话级设置对外部连接不可见。
+
+使用 `SYSTEM START LISTEN` 打开监听器，使用 `SYSTEM STOP LISTEN` 关闭它：
+
+```bash
+clickhouse-local \
+    --listen_host 127.0.0.1 \
+    --tcp_port 9000 \
+    --http_port 8123 \
+    --query "
+        SYSTEM START LISTEN TCP;
+        SYSTEM START LISTEN HTTP;
+        SELECT * FROM url('http://127.0.0.1:8123/?query=SELECT+42', LineAsString);
+        SYSTEM STOP LISTEN TCP;
+        SYSTEM STOP LISTEN HTTP;
+    "
+```
+
+`--listen_host`、`--tcp_port` 和 `--http_port` 选项用于配置绑定地址和端口。默认端口为：TCP 使用 `9000`，HTTP 使用 `8123`。
+
+<Warning>
+  **安全**
+
+  默认情况下，`clickhouse-local` 使用临时用户配置运行，因此它开启的任何监听都不进行身份验证。除非你已通过将 `users_config` 设置指向自定义 `users.xml` (例如通过 `--config-file`) 显式配置用户和访问控制，否则请绑定到回环地址 (`127.0.0.1` 或 `::1`) 。如果在未启用身份验证的情况下监听非回环地址，任何能够访问所选端口的人都可以访问本地实例的数据。
+</Warning>
 
 <div id="related-content-1">
   ## 相关内容
