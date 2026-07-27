@@ -278,12 +278,26 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     if (node->children.empty())
         return {};
 
-    /// Follow the single side parallelized for a JOIN; otherwise the only input.
     const auto * join = typeid_cast<const JoinStep *>(node->step.get());
     const auto * join_logical = typeid_cast<const JoinStepLogical *>(node->step.get());
-    if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-        || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
-        return collectReadsToDistribute(node->children.at(1));
+    if (join || join_logical)
+    {
+        const JoinKind kind = join ? join->getJoin()->getTableJoin().kind() : join_logical->getJoinOperator().kind;
+        const JoinStrictness strictness
+            = join ? join->getJoin()->getTableJoin().strictness() : join_logical->getJoinOperator().strictness;
+
+        /// Distribute only the join kinds where splitting one side across replicas and concatenating the
+        /// per-replica results yields the correct join: INNER (ALL) and LEFT drive the left side, RIGHT
+        /// drives the right side (SEMI/ANTI ride on the LEFT/RIGHT kind). FULL would duplicate the
+        /// non-split side's unmatched rows; CROSS/COMMA/PASTE and other kinds are kept local.
+        if ((kind == JoinKind::Inner && strictness == JoinStrictness::All) || kind == JoinKind::Left)
+            return collectReadsToDistribute(node->children.at(0));
+        if (kind == JoinKind::Right)
+            return collectReadsToDistribute(node->children.at(1));
+        return {};
+    }
+
+    /// Non-join single-input step (Expression/Filter/Sorting/...): follow the only input.
     return collectReadsToDistribute(node->children.at(0));
 }
 
