@@ -17,7 +17,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
   Para usar JDBC se requiere ClickHouse JDBC Bridge, por lo que deberá usar `clickhouse-local` en una máquina local para transmitir los datos desde su base de datos a ClickHouse Cloud. Visite la página [**Uso de clickhouse-local**](/es/get-started/migrate/other-methods/clickhouse-local-etl) en la sección **Migrate** de la documentación para obtener más detalles.
 </Note>
 
-**Descripción general:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>, en combinación con la [función de tabla jdbc](/es/reference/functions/table-functions/jdbc) o el [motor de tabla JDBC](/es/reference/engines/table-engines/integrations/jdbc) y con los [motores de integración](/es/reference/engines/table-engines/integrations/index), permite a ClickHouse acceder a datos desde cualquier fuente de datos externa para la que haya un <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">controlador JDBC</a> disponible:
+**Descripción general:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>, en combinación con la [función de tabla jdbc](/es/reference/functions/table-functions/jdbc) o el [motor de tabla JDBC](/es/reference/engines/table-engines/integrations/jdbc) o el [motor de integración](/es/reference/engines/table-engines/integrations/index), permite a ClickHouse acceder a datos desde cualquier fuente de datos externa para la que haya un <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">controlador JDBC</a> disponible:
 
 <Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="Diagrama de arquitectura de ClickHouse JDBC Bridge" background="white" />
 
@@ -155,7 +155,7 @@ Para instalar ClickHouse JDBC Bridge externamente, siga estos pasos:
 
 1. Instale, configure y ejecute ClickHouse JDBC Bridge en un host dedicado siguiendo los pasos descritos en la sección 1 de esta guía.
 
-2. En cada host de ClickHouse, añada el siguiente bloque de configuración a la <a href="/es/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">configuración del servidor de ClickHouse</a> (según el formato de configuración que haya elegido, use la versión XML o YAML):
+2. En cada host de ClickHouse, añada el siguiente bloque de configuración a la <a href="/es/concepts/features/configuration/server-config/configuration-files" target="_blank">configuración del servidor de ClickHouse</a> (según el formato de configuración que haya elegido, use la versión XML o YAML):
 
 <Tabs>
   <Tab title="XML">
@@ -181,18 +181,18 @@ Para instalar ClickHouse JDBC Bridge externamente, siga estos pasos:
   * hemos especificado el puerto predeterminado de ClickHouse JDBC Bridge, `9019`; si está usando un puerto diferente para JDBC Bridge, debe adaptar la configuración anterior en consecuencia
 </Note>
 
-[//]: # "## 4. Additional Info"
+[//]: # "## 4. Información adicional"
 
 [//]: #
 
 [//]: # "TODO: "
 
-[//]: # "- mention that for jdbc table function it is more performant (not two queries each time) to also specify the schema as a parameter"
+[//]: # "- mencionar que para jdbc table function es más eficiente (no hacer dos consultas cada vez) especificar también el schema como parámetro"
 
 [//]: #
 
-[//]: # "- mention ad hoc query vs table query, saved query, named query"
+[//]: # "- mencionar consulta ad hoc vs consulta de tabla, consulta guardada, consulta con nombre"
 
 [//]: #
 
-[//]: # "- mention insert into "
+[//]: # "- mencionar insert into "

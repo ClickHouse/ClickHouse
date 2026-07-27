@@ -63,6 +63,12 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"increase",
+             {
+                 "timeSeriesIncreaseToGrid",
+                 /* drop_metric_name = */ true,
+             }},
+
             {"irate",
              {
                  "timeSeriesInstantRateToGrid",
