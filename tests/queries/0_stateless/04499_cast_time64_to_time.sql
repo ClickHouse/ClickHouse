@@ -58,3 +58,7 @@ CREATE TABLE t_04499_time5 (t Tuple(Time, UInt8)) ENGINE = Memory;
 INSERT INTO t_04499_time5 VALUES (CAST((CAST('01:02:03.5' AS Time64(1)), 1) AS Nullable(Tuple(Time64(1), UInt8))));
 SELECT t.1 = CAST('01:02:03' AS Time), t.2 FROM t_04499_time5;
 DROP TABLE t_04499_time5;
+
+-- Subquery sets: probing a Time set with a sub-second Time64 must not match, mirroring DateTime64.
+SELECT CAST('01:02:03.5' AS Time64(1)) IN (SELECT CAST('01:02:03' AS Time));
+SELECT CAST('01:02:03.0' AS Time64(1)) IN (SELECT CAST('01:02:03' AS Time));

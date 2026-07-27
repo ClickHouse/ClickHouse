@@ -11,6 +11,7 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -304,18 +305,21 @@ Columns Set::getSetElements() const
     return result;
 }
 
+template <typename DataTypeWithSubSeconds>
 static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & column_to_cast)
 {
+    using FieldType = typename DataTypeWithSubSeconds::FieldType;
+
     // Handle nullable columns
     const ColumnNullable * original_nullable_column = typeid_cast<const ColumnNullable *>(column_to_cast.column.get());
     const IColumn * original_nested_column = original_nullable_column
         ? &original_nullable_column->getNestedColumn()
         : column_to_cast.column.get();
 
-    // Check if the original column is of ColumnDecimal<DateTime64> type
-    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<DateTime64> *>(original_nested_column);
+    // Check if the original column is of ColumnDecimal<DateTime64/Time64> type
+    const auto * original_decimal_column = typeid_cast<const ColumnDecimal<FieldType> *>(original_nested_column);
     if (!original_decimal_column)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for DateTime64");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected ColumnDecimal for {}", column_to_cast.type->getName());
 
     // Get the data array from the original column
     const auto & original_data = original_decimal_column->getData();
@@ -326,8 +330,8 @@ static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & col
     NullMap & precision_null_map = precision_null_map_column->getData();
 
     // Determine which rows should be null based on precision loss
-    const auto * datetime64_type = assert_cast<const DataTypeDateTime64 *>(column_to_cast.type.get());
-    auto scale = datetime64_type->getScale();
+    const auto * from_type = assert_cast<const DataTypeWithSubSeconds *>(column_to_cast.type.get());
+    auto scale = from_type->getScale();
     if (scale >= 1)
     {
         Int64 scale_multiplier = common::exp10_i32(scale);
@@ -374,7 +378,9 @@ void Set::processDateTime64Column(
     ConstNullMapPtr & null_map) const
 {
     // Check for sub-second precision and create a null map
-    ColumnUInt8::Ptr filtered_null_map_column = checkDateTimePrecision(column_to_cast);
+    ColumnUInt8::Ptr filtered_null_map_column = WhichDataType(removeNullable(column_to_cast.type)).isTime64()
+        ? checkDateTimePrecision<DataTypeTime64>(column_to_cast)
+        : checkDateTimePrecision<DataTypeDateTime64>(column_to_cast);
 
     // Extract existing null map and nested column from the result
     const ColumnNullable * result_nullable_column = typeid_cast<const ColumnNullable *>(result.get());
@@ -503,8 +509,9 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             }
         }
 
-        // If the original column is DateTime64, check for sub-second precision
-        if (isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
+        // If the original column is DateTime64 or Time64, check for sub-second precision
+        if ((isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
+            || (isTime64(column_to_cast.column->getDataType()) && !isTime64(removeNullable(result)->getDataType())))
         {
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
