@@ -8802,6 +8802,33 @@ PartitionIds MergeTreeData::getPartitionIdsAffectedByCommands(
     }
 }
 
+PartitionIds MergeTreeData::resolvePartitionIdsForCommands(
+    MutationCommands & commands, ContextPtr query_context) const
+{
+    bool all_commands_are_partition_scoped = !commands.empty();
+    std::vector<String> area;
+    area.reserve(commands.size());
+
+    for (auto & command : commands)
+    {
+        auto alter = command.ast();
+        if (!alter || !alter->partition)
+        {
+            all_commands_are_partition_scoped = false;
+            continue;
+        }
+
+        command.resolved_partition_id = getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
+        area.push_back(*command.resolved_partition_id);
+    }
+
+    /// A single command without `IN PARTITION` makes the whole mutation global.
+    if (!all_commands_are_partition_scoped)
+        return PartitionIds{};
+
+    return PartitionIds{area.begin(), area.end()};
+}
+
 PartitionIds MergeTreeData::getAllPartitionIds() const
 {
     auto lock = readLockParts();

@@ -1176,6 +1176,12 @@ public:
     PartitionIds getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
     PartitionIds getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
+    /// Resolves the partition scope of every partition-scoped (`IN PARTITION`) command into
+    /// `MutationCommand::resolved_partition_id` and returns the set of partitions affected by
+    /// the mutation as a whole. The returned set is empty when at least one command is not
+    /// partition-scoped, i.e. when the mutation affects all partitions.
+    PartitionIds resolvePartitionIdsForCommands(MutationCommands & commands, ContextPtr query_context) const;
+
     /// Returns set of partition_ids of all Active parts
     PartitionIds getAllPartitionIds() const;
 

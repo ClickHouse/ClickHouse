@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Backups/BackupEntryFromMemory.h>
 
 #include <utility>
@@ -20,6 +21,26 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CORRUPTED_DATA;
+}
+
+namespace
+{
+
+/// The commands in the order in which `MutationCommands::writeText` serializes them here
+/// (pure metadata commands are not serialized, see `MutationCommands::ast`). `readText` parses
+/// exactly these commands back, so this order is used to associate the per-command partition
+/// ids persisted next to the commands with them.
+std::vector<const MutationCommand *> commandsInTextForm(const MutationCommands & commands)
+{
+    std::vector<const MutationCommand *> result;
+    result.reserve(commands.size());
+    for (const auto & command : commands)
+        if (!command.isPureMetadataCommand() && command.ast())
+            result.push_back(&command);
+    return result;
+}
+
 }
 
 String MergeTreeMutationEntry::versionToFileName(UInt64 block_number_)
@@ -76,15 +97,20 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
         *out << "\n";
-        /// Persist the set of affected partitions so that `loadMutations` does not have to recompute it
-        /// from the current table metadata after a restart. Recomputing re-parses the `IN PARTITION`
-        /// literal through the current partition key, which can throw after a safe partition key type
-        /// change (e.g. `Enum8 -> Int8`), making an otherwise valid pending mutation block table loading.
-        *out << "partition ids: " << partition_ids.size();
-        for (const auto & partition_id : partition_ids)
+        /// Persist the resolved partition scope of the commands so that neither loading the mutation
+        /// nor executing it has to resolve the `IN PARTITION` literal through the current table
+        /// metadata again. Resolving it again can throw after a safe partition key type change
+        /// (e.g. `Enum8 -> Int8`), making an otherwise valid pending mutation block table loading or
+        /// fail during execution.
+        /// There is one (possibly empty, for a command without `IN PARTITION`) partition id per
+        /// command written above, in the same order: `writeText` skips pure metadata commands, so
+        /// they are skipped here too (see `MutationCommands::ast`).
+        auto persisted_commands = commandsInTextForm(*commands);
+        *out << "partition ids: " << persisted_commands.size();
+        for (const auto * command : persisted_commands)
         {
             *out << " ";
-            writeQuotedString(partition_id, *out);
+            writeQuotedString(command->resolved_partition_id.value_or(""), *out);
         }
         *out << "\n";
         if (tid.isNonTransactional())
@@ -162,22 +188,41 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     *buf >> "\n";
 
     /// `partition ids` is an optional line written after the commands (see the writing constructor above).
-    /// Older mutation files (written before this line was introduced) do not contain it; for those we fall
-    /// back to recomputing the affected partitions from the current table metadata below. The `tid` and `csn`
-    /// lines never start with 'p', so `checkString` cannot partially consume them for old-format files.
+    /// It holds one partition id per command, in the same order (an empty string for a command that is
+    /// not partition-scoped). Older mutation files (written before this line was introduced) do not
+    /// contain it; for those we fall back to resolving the affected partitions from the current table
+    /// metadata below. The `tid` and `csn` lines never start with 'p', so `checkString` cannot partially
+    /// consume them for old-format files.
     bool partition_ids_loaded = false;
     if (!buf->eof() && checkString("partition ids: ", *buf))
     {
         size_t num_partition_ids = 0;
         readIntText(num_partition_ids, *buf);
+        if (num_partition_ids != commands->size())
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Mutation file {} contains partition ids of {} commands, while {} commands were read from it",
+                file_name, num_partition_ids, commands->size());
+
+        bool all_commands_are_partition_scoped = num_partition_ids != 0;
         partition_ids.reserve(num_partition_ids);
         for (size_t i = 0; i < num_partition_ids; ++i)
         {
             assertChar(' ', *buf);
             String partition_id;
             readQuotedString(partition_id, *buf);
+            if (partition_id.empty())
+            {
+                all_commands_are_partition_scoped = false;
+                continue;
+            }
+            (*commands)[i].resolved_partition_id = partition_id;
             partition_ids.insert(partition_id);
         }
+
+        /// A single command without `IN PARTITION` makes the whole mutation global.
+        if (!all_commands_are_partition_scoped)
+            partition_ids.clear();
+
         *buf >> "\n";
         partition_ids_loaded = true;
     }
@@ -202,7 +247,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     assertEOF(*buf);
 
     if (!partition_ids_loaded)
-        partition_ids = storage_->getPartitionIdsAffectedByCommands(*commands, context_);
+        partition_ids = storage_->resolvePartitionIdsForCommands(*commands, context_);
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept

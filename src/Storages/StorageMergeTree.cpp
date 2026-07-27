@@ -903,8 +903,13 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    auto partitions = getPartitionIdsAffectedByCommands(commands, query_context);
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), std::move(partitions), current_tid, getContext()->getWriteSettings());
+    /// The entry keeps its own copy of the commands, and the resolved partition scope is
+    /// stored inside the commands, so resolve it on that copy.
+    MutationCommands commands_for_entry = commands;
+    auto partitions = resolvePartitionIdsForCommands(commands_for_entry, query_context);
+    MergeTreeMutationEntry entry(
+        std::move(commands_for_entry), disk, relative_data_path, insert_increment.get(),
+        std::move(partitions), current_tid, getContext()->getWriteSettings());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1232,14 +1237,48 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
     ///
     /// With partition-scoped (`IN PARTITION`) mutations all waits are partition-local:
     /// `selectPartsToMutate` skips non-affecting entries, and a part never changes its
-    /// partition. So the cycle above exists only when some partition is affected by all
-    /// three mutations: the current mutation waits for the intermediate one on the parts
-    /// of such a partition, and the intermediate one waits there for the earlier mutation
-    /// (and thus for the transaction) to commit. Otherwise there is no cycle and reporting
-    /// a deadlock would be a false positive. Note that the earlier mutation does not have
-    /// to be the most recent mutation of the transaction, so all pairs are checked.
+    /// partition. Moreover, a mutation waits for another one only while there is a part
+    /// that the other mutation still has to process, i.e. a currently visible part whose
+    /// data version is below the other mutation's version. So the cycle above exists only
+    /// when both of its wait edges really exist. Each edge is validated separately: the
+    /// `current -> intermediate` edge needs a part in a partition affected by both the
+    /// current and the intermediate mutation, and the `intermediate -> earlier` edge needs
+    /// a part in a partition affected by both the intermediate and the earlier mutation.
+    /// A single check on the partition common to all three mutations would be wrong in
+    /// both directions: it reports a false positive when no part is waiting at all (for
+    /// example when the partition is empty), and it masks a genuine multi-partition
+    /// deadlock, because the two edges may go through different partitions. Note that the
+    /// earlier mutation does not have to be the most recent mutation of the transaction,
+    /// so all pairs are checked.
+    auto data_parts = getVisibleDataPartsVector(txn);
+
+    /// Whether the `waiter` mutation is actually waiting for the `blocker` mutation (of
+    /// version `blocker_version`): there must be a part visible to the waiter, in a partition
+    /// affected by both of them, that the blocker still has to mutate.
+    auto is_waiting_for = [](
+        const DataPartsVector & parts_visible_to_waiter,
+        const MergeTreeMutationEntry & waiter,
+        const MergeTreeMutationEntry & blocker,
+        Int64 blocker_version)
+    {
+        for (const auto & data_part : parts_visible_to_waiter)
+        {
+            const auto & partition_id = data_part->info.getPartitionId();
+            if (data_part->info.getDataVersion() < blocker_version
+                && waiter.affectsPartition(partition_id)
+                && blocker.affectsPartition(partition_id))
+                return true;
+        }
+        return false;
+    };
+
     if (txn && !from_another_mutation)
     {
+        /// The intermediate mutation is not a mutation of this transaction, so it sees the
+        /// committed state of the table: the parts that the transaction has already mutated
+        /// are still visible to it with their original data versions.
+        auto committed_data_parts = getVisibleDataPartsVector(Tx::MaxCommittedCSN, Tx::EmptyTID);
+
         for (auto intermediate_it = current_mutations_by_version.begin(); intermediate_it != current_mutation_it; ++intermediate_it)
         {
             const auto & intermediate_mutation = intermediate_it->second;
@@ -1248,14 +1287,16 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             if (intermediate_mutation.tid == mutation_entry.tid)
                 continue;
 
+            if (!is_waiting_for(data_parts, mutation_entry, intermediate_mutation, intermediate_it->first))
+                continue;
+
             /// Is there an earlier mutation of the same transaction that blocks the
-            /// intermediate mutation in a partition where the intermediate one in turn
-            /// blocks the current mutation?
+            /// intermediate mutation, which in turn blocks the current mutation?
             for (auto earlier_it = current_mutations_by_version.begin(); earlier_it != intermediate_it; ++earlier_it)
             {
                 const auto & earlier_mutation = earlier_it->second;
                 if (earlier_mutation.tid == mutation_entry.tid
-                    && partitionIdsOverlap(mutation_entry.partition_ids, intermediate_mutation.partition_ids, earlier_mutation.partition_ids))
+                    && is_waiting_for(committed_data_parts, intermediate_mutation, earlier_mutation, earlier_it->first))
                 {
                     result.latest_failed_part = "";
                     result.latest_fail_reason = fmt::format(
@@ -1270,7 +1311,6 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
         }
     }
 
-    auto data_parts = getVisibleDataPartsVector(txn);
     for (const auto & data_part : data_parts)
     {
         Int64 data_version = data_part->info.getDataVersion();
