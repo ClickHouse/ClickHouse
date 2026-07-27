@@ -532,7 +532,7 @@ Arrays are written as a list of comma-separated values in `[]`. Number items in 
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](/reference/settings/formats/input-format#input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
-Each element of [Nested](/sql-reference/data-types/nested-data-structures/index.md) structures is represented as an array.
+Each element of [Nested](/reference/data-types/nested-data-structures/index) structures is represented as an array.
 
 For example:
 
