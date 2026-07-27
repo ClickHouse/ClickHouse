@@ -1359,6 +1359,18 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         case ActionsDAG::ActionType::ARRAY_JOIN:
         {
             auto key = arguments.at(0);
+
+            /// Carry the ACTUAL nested type, for the same reason as in the `ALIAS` case below: the
+            /// declared `result_type` was derived during analysis from the type the argument had
+            /// then, so keeping it would hide a difference from the argument-type check in the
+            /// `FUNCTION` branch above and let a parent fold against a stale type.
+            /// This runs before the early exits below, because those leave the column null while the
+            /// TYPE is still handed to the parent.
+            /// `ExpressionActions` derives both the column and the type here as well (see the
+            /// `ARRAY_JOIN` case in `ExpressionActions::executeAction`).
+            if (const auto & key_array_type = getArrayJoinDataType(key.type))
+                res_column.type = key_array_type->getNestedType();
+
             if (!key.column)
                 break;
 
@@ -1381,16 +1393,6 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                 data = array->getDataPtr();
 
             res_column.column = data;
-
-            /// Carry the ACTUAL nested type, for the same reason as in the `ALIAS` case below: the
-            /// declared `result_type` was derived during analysis from the type the argument had
-            /// then, so keeping it while extracting a drifted nested column would hide the drift
-            /// from the argument-type check in the `FUNCTION` branch above.
-            /// `ExpressionActions` derives both the column and the type here as well (see the
-            /// `ARRAY_JOIN` case in `ExpressionActions::executeAction`).
-            if (const auto & array_type = getArrayJoinDataType(key.type))
-                res_column.type = array_type->getNestedType();
-
             break;
         }
 

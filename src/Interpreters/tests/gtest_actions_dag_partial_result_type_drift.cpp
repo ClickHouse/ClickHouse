@@ -76,9 +76,17 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, BaseTypeDriftDoesNotAbortHeaderComp
     ASSERT_NO_THROW(result = dag.updateHeader(drifted_header));
 
     ASSERT_TRUE(result.has("negate_result"));
+    const auto & folded = result.getByName("negate_result");
     /// The declared result type is known from analysis and must be reported unchanged: the guard
     /// skips only the fold, it must not alter the computed header.
-    EXPECT_EQ(result.getByName("negate_result").type->getName(), expected_result_type);
+    EXPECT_EQ(folded.type->getName(), expected_result_type);
+    /// Pin the shape of the zero-row fallback as well, since the type alone does not distinguish it
+    /// from a null column or from a fabricated default constant. It must be a real but EMPTY and
+    /// NON-CONSTANT column: a constant would present a definitive folded value to header consumers,
+    /// which is exactly what skipping the fold is meant to avoid.
+    ASSERT_NE(folded.column, nullptr);
+    EXPECT_EQ(folded.column->size(), 0u);
+    EXPECT_FALSE(isColumnConst(*folded.column));
 }
 
 /// Wrapper-only drift (`String` -> `Nullable(String)`). This is the case a wrapper-stripped type
@@ -282,6 +290,38 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftInCapturedLambdaUnderArrayMapI
         EXPECT_EQ(e.message().find("Cannot capture column"), std::string::npos)
             << "the stale capture must not be executed: " << e.message();
     }
+}
+
+/// The one-row path needs the `ARRAY_JOIN` type carried too. There the branch leaves the column null
+/// (arrayJoin changes the row count, so it is skipped for non-header evaluation) but the TYPE is still
+/// handed to the parent. If that were the stale declared type, a wrapper-sensitive folder such as
+/// `isNullable` would see no difference and fold a definitive `0` for the optimizer callers instead of
+/// remaining unknown.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinFoldsNoValueForOneRowCallers)
+{
+    tryRegisterFunctions();
+
+    ActionsDAG dag;
+    const auto & input = dag.addInput("a", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()));
+    const auto & array_join = dag.addArrayJoin(input, "a_array_join");
+    auto function = FunctionFactory::instance().get("isNullable", getContext().context);
+    const auto & function_node = dag.addFunction(function, {&array_join}, "isNullable_result");
+    dag.getOutputs().clear();
+    dag.getOutputs().push_back(&function_node);
+
+    auto drifted_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+    ActionsDAG::IntermediateExecutionResult node_to_column;
+    node_to_column[dag.getInputs().front()]
+        = ColumnWithTypeAndName{drifted_type->createColumnConstWithDefaultValue(1), drifted_type, "a"};
+
+    ColumnsWithTypeAndName result;
+    ASSERT_NO_THROW(
+        result = ActionsDAG::evaluatePartialResult(
+            node_to_column, dag.getOutputs(), /* input_rows_count= */ 1, {.allow_unknown_function_arguments = true}));
+
+    ASSERT_EQ(result.size(), 1u);
+    EXPECT_EQ(result.front().column, nullptr)
+        << "a differently-typed array-join argument must not fold to a definitive value";
 }
 
 /// A header column whose type did NOT drift must still be constant-folded exactly as before, so the
