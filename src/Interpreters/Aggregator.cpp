@@ -12,6 +12,9 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/memcpySmall.h>
+#include <bit>
+#include <base/memcmpSmall.h>
 #include <Columns/ColumnTuple.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -53,6 +56,15 @@ namespace ProfileEvents
     extern const Event OverflowBreak;
     extern const Event OverflowAny;
     extern const Event AggregationOptimizedEqualRangesOfKeys;
+    extern const Event AdaptiveAggregationLocalFreezes;
+    extern const Event AdaptiveAggregationGiveUps;
+    extern const Event AdaptiveAggregationThaws;
+    extern const Event AdaptiveAggregationProbeBypasses;
+    extern const Event AdaptiveAggregationStagedRecords;
+    extern const Event AdaptiveAggregationStagedRecordsMerged;
+    extern const Event AdaptiveAggregationStagedBytes;
+    extern const Event AdaptiveAggregationSealedChunks;
+    extern const Event AdaptiveAggregationDrainedRecords;
 }
 
 namespace CurrentMetrics
@@ -1878,6 +1890,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             {
                 std::call_once(adaptive->shared_state->init_flag, [&] { initAdaptiveSharedState(result, *adaptive->shared_state); });
                 adaptive->local_table_frozen = true;
+                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationLocalFreezes);
                 LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result_size);
             }
 
@@ -1902,6 +1915,7 @@ bool Aggregator::executeOnBlock(Columns columns,
                 && result_size < params.adaptive_aggregator_freeze_threshold)
             {
                 adaptive->gave_up_freezing = true;
+                ProfileEvents::increment(ProfileEvents::AdaptiveAggregationGiveUps);
                 LOG_TRACE(log, "Adaptive aggregation: giving up on freezing after {} rows at {} keys", adaptive->rows_seen_unfrozen, result_size);
             }
 
@@ -2047,7 +2061,10 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         adaptive.bypass_sampled_rows += rows;
         if (adaptive.bypass_sampled_rows >= adaptive_bypass_sample_rows
             && adaptive.bypass_sampled_hits * adaptive_bypass_hit_rate_inverse < adaptive.bypass_sampled_rows)
+        {
             adaptive.bypass_local_probe = true;
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationProbeBypasses);
+        }
     };
     const bool bypass_local_probe = adaptive.bypass_local_probe;
 
@@ -2440,6 +2457,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
             && shared.thaw_sampled_records > adaptive_thaw_repeat_factor * shared.thaw_sampled_keys.size())
         {
             shared.thaw_all.store(true, std::memory_order_relaxed);
+            ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
             LOG_TRACE(
                 log,
                 "Adaptive aggregation: thawing the local tables after {} staged records (sampled repeat factor {})",
@@ -2565,6 +2583,10 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     adaptive.miss_run_lengths.clear();
 
     shared.pending_records.fetch_add(block->routing_hashes.size(), std::memory_order_relaxed);
+
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecords, total);
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, total - block->routing_hashes.size());
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, block->key_bytes.size());
 
     size_t staged_bytes = block->key_bytes.size() + block->key_offsets.size() * sizeof(UInt64)
         + block->routing_hashes.size() * sizeof(UInt64) + block->run_lengths.size() * sizeof(UInt32);
@@ -2857,6 +2879,13 @@ void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adap
             }
     }
 
+    size_t batch_records = 0;
+    for (const auto & mini : minis)
+        batch_records += mini->bucket_offsets[num_buckets];
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
+    ProfileEvents::increment(
+        ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - chunk->bucket_offsets[num_buckets]);
+
     LOG_TRACE(
         log,
         "Adaptive aggregation: sealed {} staged batches into one chunk of {} records",
@@ -2899,6 +2928,7 @@ void Aggregator::drainAdaptiveBucketForMerge(
         if (!block->value_staged)
             std::call_once(block->prepared_flag, [&] { prepareDelayedBlock(*block); });
     }
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationDrainedRecords, records_drained);
 
 #define M(NAME) \
     else if (dest.type == AggregatedDataVariants::Type::NAME) \
