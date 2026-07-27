@@ -22,3 +22,15 @@ Fallback selectivity uses non-null row count (b before a)
 1
 Const-null insert: basic null count drives correct prewhere ordering
 1
+String predicates: startsWith literal length drives prewhere ordering
+1
+String predicates: endsWith literal length drives prewhere ordering
+1
+String predicates: UTF8 literal length uses code points
+1
+String predicates: nullable empty prefix uses basic null count
+1
+String predicates: NOT inverts startsWith selectivity
+1
+String predicates: FixedString startsWith is estimated
+1

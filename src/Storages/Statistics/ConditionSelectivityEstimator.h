@@ -10,6 +10,7 @@ namespace DB
 {
 
 class RPNBuilderTreeNode;
+class RPNBuilderFunctionTreeNode;
 
 struct ColumnStats
 {
@@ -43,13 +44,55 @@ class ConditionSelectivityEstimator : public WithContext
     {
         Float64 true_sel;
         Float64 null_sel;
+        /// For per-column predicates, keep how the predicate behaves on rows where the column is NULL.
+        /// This lets same-column combinations with IS NULL / IS NOT NULL avoid treating NULL rows as
+        /// independent from the predicate they came from.
+        Float64 input_null_sel;
+        Float64 true_on_null_sel;
+        Float64 null_on_null_sel;
 
-        Selectivity() : true_sel(0), null_sel(0) {}
-        explicit Selectivity(Float64 true_sel_) : true_sel(true_sel_), null_sel(0) {}
-        Selectivity(Float64 true_sel_, Float64 null_sel_) : true_sel(true_sel_), null_sel(null_sel_) {}
+        Selectivity()
+            : true_sel(0)
+            , null_sel(0)
+            , input_null_sel(0)
+            , true_on_null_sel(0)
+            , null_on_null_sel(0)
+        {
+        }
+        explicit Selectivity(Float64 true_sel_)
+            : true_sel(true_sel_)
+            , null_sel(0)
+            , input_null_sel(0)
+            , true_on_null_sel(0)
+            , null_on_null_sel(0)
+        {
+        }
+        /// Ordinary predicates over Nullable columns evaluate to NULL exactly on the column's NULL rows.
+        Selectivity(Float64 true_sel_, Float64 null_sel_)
+            : true_sel(true_sel_)
+            , null_sel(null_sel_)
+            , input_null_sel(null_sel_)
+            , true_on_null_sel(0)
+            , null_on_null_sel(null_sel_)
+        {
+        }
+        Selectivity(Float64 true_sel_, Float64 null_sel_, Float64 input_null_sel_, Float64 true_on_null_sel_, Float64 null_on_null_sel_)
+            : true_sel(true_sel_)
+            , null_sel(null_sel_)
+            , input_null_sel(input_null_sel_)
+            , true_on_null_sel(true_on_null_sel_)
+            , null_on_null_sel(null_on_null_sel_)
+        {
+        }
+
+        static Selectivity isNull(Float64 input_null_sel_);
+        static Selectivity isNotNull(Float64 input_null_sel_);
+
         Selectivity applyNot() const;
         Selectivity applyOr(const Selectivity & other) const;
         Selectivity applyAnd(const Selectivity & other) const;
+        Selectivity applyOrSameColumn(const Selectivity & other) const;
+        Selectivity applyAndSameColumn(const Selectivity & other) const;
     };
 
     friend class ConditionSelectivityEstimatorBuilder;
@@ -84,8 +127,11 @@ public:
 
         Function function = FUNCTION_UNKNOWN;
         using ColumnRanges = std::unordered_map<String, PlainRanges>;
+        using ColumnSelectivities = std::unordered_map<String, Selectivity>;
         /// column in range (a, b) ...
         ColumnRanges column_ranges;
+        /// column predicates that cannot be represented as ranges but still share the column's NULL domain.
+        ColumnSelectivities column_selectivities;
         /// column not in range (a, b) ...
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
@@ -114,6 +160,8 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool
+    tryExtractStringPredicateAtom(const StorageMetadataPtr & metadata, const RPNBuilderFunctionTreeNode & func, RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.

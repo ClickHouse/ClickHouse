@@ -6,23 +6,27 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -236,19 +240,63 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+ColumnStatisticsPtr buildStringStats(const DataTypePtr & data_type, size_t total, size_t null_every = 0, const String & value = "abcdef")
+{
+    MutableColumnPtr col = data_type->createColumn();
+    if (auto * nullable_col = typeid_cast<ColumnNullable *>(col.get()))
+    {
+        for (size_t i = 0; i < total; ++i)
+        {
+            if (null_every && i % null_every == 0)
+                nullable_col->insertDefault();
+            else
+                nullable_col->insert(value);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < total; ++i)
+            col->insert(value);
+    }
+
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+    return stats;
+}
+
 /// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
 template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+Float64 estimateRowsFor(Estimator & estimator, const StorageMetadataPtr & metadata, const String & expression)
 {
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
     RPNBuilderTreeContext tree_context(
-        context,
-        Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}},
-        {});
+        context, Block{{DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy"}}, {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, node).rows);
+}
+
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    return estimateRowsFor(estimator, nullptr, expression);
+}
+
+Float64 estimateRowsForDAG(
+    const ConditionSelectivityEstimatorPtr & estimator,
+    const StorageMetadataPtr & metadata,
+    const String & function_name,
+    const String & column_name,
+    const DataTypePtr & column_type,
+    const String & needle)
+{
+    ActionsDAG dag;
+    const auto & column_node = dag.addInput(column_name, column_type);
+    const auto & needle_node = dag.addColumn(DataTypeString().createColumnConst(0, needle), std::make_shared<DataTypeString>(), "needle");
+    auto resolver = FunctionFactory::instance().get(function_name, getContext().context);
+    const auto & function_node = dag.addFunction(resolver, {&column_node, &needle_node}, "predicate");
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, &function_node).rows);
 }
 
 }
@@ -409,6 +457,97 @@ TEST(Statistics, LikeSelectivity)
     /// notILike function directly: 0.9 * 10000 = 9000 rows.
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
+}
+
+TEST(Statistics, StringPredicateFunctionSelectivity)
+{
+    tryRegisterFunctions();
+
+    auto string_type = std::make_shared<DataTypeString>();
+    auto nullable_string_type = std::make_shared<DataTypeNullable>(string_type);
+    auto fixed_string_type = std::make_shared<DataTypeFixedString>(8);
+    auto short_fixed_string_type = std::make_shared<DataTypeFixedString>(2);
+    auto nullable_short_fixed_string_type = std::make_shared<DataTypeNullable>(short_fixed_string_type);
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(
+        ColumnsDescription{
+            ColumnDescription{"s", string_type},
+            ColumnDescription{"ns", nullable_string_type},
+            ColumnDescription{"fs", fixed_string_type},
+            ColumnDescription{"fs2", short_fixed_string_type},
+            ColumnDescription{"nfs2", nullable_short_fixed_string_type},
+        });
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("s", buildStringStats(string_type, 10000));
+    builder.addStatistics("ns", buildStringStats(nullable_string_type, 10000, /*null_every=*/4));
+    builder.addStatistics("fs", buildStringStats(fixed_string_type, 10000, /*null_every=*/0, "abcdefgh"));
+    builder.addStatistics("fs2", buildStringStats(short_fixed_string_type, 10000, /*null_every=*/0, "ab"));
+    builder.addStatistics("nfs2", buildStringStats(nullable_short_fixed_string_type, 10000, /*null_every=*/4, "ab"));
+    builder.incrementRowCount(10000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps = 1e-6)
+    {
+        Float64 actual = estimateRowsFor(estimator, metadata, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    for (const String & function_name : Strings{
+             "startsWith",
+             "startsWithCaseInsensitive",
+             "startsWithUTF8",
+             "startsWithCaseInsensitiveUTF8",
+         })
+    {
+        check(function_name + "(s, 'abc')", 156.0);
+    }
+
+    for (const String & function_name : Strings{
+             "endsWith",
+             "endsWithCaseInsensitive",
+             "endsWithUTF8",
+             "endsWithCaseInsensitiveUTF8",
+         })
+    {
+        check(function_name + "(s, 'abc')", 428.0);
+    }
+
+    check("startsWith(s, '')", 10000.0);
+    check("endsWith(s, '')", 10000.0);
+    check("startsWithUTF8(s, '你')", 1000.0);
+    check("endsWithUTF8(s, '你')", 1000.0);
+    check("not(startsWith(s, 'abc'))", 9843.0);
+    check("not(startsWith(s, ''))", 0.0);
+
+    /// Nullable(String), 10000 rows, every 4th row NULL: 2500 NULLs and 7500 non-NULLs.
+    check("startsWith(ns, '')", 7500.0);
+    check("endsWith(ns, '')", 7500.0);
+    check("not(startsWith(ns, ''))", 0.0);
+    check("startsWith(ns, 'abc')", 117.0);
+    check("endsWithCaseInsensitive(ns, 'xyz')", 321.0);
+    check("not(startsWith(ns, 'abc'))", 7382.0);
+    check("startsWith(ns, '') AND ns IS NULL", 0.0);
+    check("startsWith(ns, '') OR ns IS NULL", 10000.0);
+    check("startsWith(ns, 'abc') OR ns IS NULL", 2617.0);
+    check("startsWith(ns, 'abc') AND ns IS NOT NULL", 117.0);
+    check("(startsWith(ns, 'abc') OR ns IS NULL) AND ns IS NOT NULL", 117.0);
+    check("(startsWith(ns, 'abc') OR ns IS NULL) AND ns IS NULL", 2500.0);
+    check("startsWith(ns, '') OR ns IS NOT NULL", 7500.0);
+    check("not(startsWith(ns, '')) OR ns IS NULL", 2500.0);
+
+    /// Non-UTF8 variants support FixedString, while UTF8 variants require String and fall back safely.
+    check("startsWith(fs, 'abc')", 156.0);
+    check("endsWith(fs, 'xyz')", 428.0);
+    check("startsWith(fs2, 'abc')", 0.0);
+    check("endsWith(fs2, 'abc')", 0.0);
+    check("not(startsWith(fs2, 'abc'))", 10000.0);
+    check("startsWith(nfs2, 'abc')", 0.0);
+    check("not(startsWith(nfs2, 'abc'))", 7500.0);
+    check("startsWithUTF8(fs, 'abc')", 3300.0);
+
+    EXPECT_NEAR(estimateRowsForDAG(estimator, metadata, "startsWith", "s", string_type, "abc"), 156.0, 1e-6);
 }
 
 /// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared
