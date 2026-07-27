@@ -10,6 +10,8 @@ SET max_threads = 4;
 SET group_by_two_level_threshold = 100000;
 SET group_by_two_level_threshold_bytes = 50000000;
 SET collect_hash_table_stats_during_aggregation = 0;
+-- The test pins the merge path; in-order aggregation would bypass it.
+SET optimize_aggregation_in_order = 0;
 
 SELECT 'key64 sum';
 SELECT count(), sum(c), sum(s) FROM (SELECT intDiv(number, 15) AS g, count() AS c, sum(number) AS s FROM numbers_mt(300000) GROUP BY g);
@@ -33,7 +35,7 @@ SELECT 'keys128';
 SELECT count(), sum(c) FROM (SELECT intDiv(number, 30) AS a, number % 7 AS b, count() AS c FROM numbers_mt(300000) GROUP BY a, b);
 
 SELECT 'nullable key with NULLs';
-SELECT g, c FROM (SELECT nullIf(intDiv(number, 20) % 1000, 3) AS g, count() AS c FROM numbers_mt(300000) GROUP BY g) WHERE g IS NULL OR g < 2 ORDER BY g;
+SELECT g, c FROM (SELECT nullIf(intDiv(number, 20) % 5000, 3) AS g, count() AS c FROM numbers_mt(300000) GROUP BY g) WHERE g IS NULL OR g < 2 ORDER BY g;
 
 SELECT 'low cardinality string key';
 SELECT count(), sum(c) FROM (SELECT toLowCardinality(toString(number % 5000)) AS g, count() AS c FROM numbers_mt(300000) GROUP BY g);
@@ -42,7 +44,7 @@ SELECT 'uniqExact heavy states';
 SELECT count(), sum(u) FROM (SELECT intDiv(number, 40) AS g, uniqExact(number % 997) AS u FROM numbers_mt(300000) GROUP BY g);
 
 SELECT 'with totals';
-SELECT intDiv(number, 12345) AS g, count() FROM numbers_mt(300000) GROUP BY g WITH TOTALS ORDER BY g LIMIT 3;
+SELECT intDiv(number, 50) AS g, count() FROM numbers_mt(300000) GROUP BY g WITH TOTALS ORDER BY g LIMIT 3;
 
 SELECT 'early limit';
 SELECT intDiv(number, 15) AS g, count() FROM numbers_mt(3000000) GROUP BY g LIMIT 1 FORMAT Null;
@@ -50,6 +52,9 @@ SELECT 'ok';
 
 SELECT 'two threads';
 SELECT count(), sum(c) FROM (SELECT intDiv(number, 15) AS g, count() AS c FROM numbers_mt(300000) GROUP BY g) SETTINGS max_threads = 2;
+
+SELECT 'tables under the partition threshold take the serial fallback';
+SELECT count(), sum(c), sum(s) FROM (SELECT intDiv(number, 3000) AS g, count() AS c, sum(number) AS s FROM numbers_mt(300000) GROUP BY g);
 
 SELECT 'empty result set';
 SELECT number AS g, count() FROM numbers_mt(300000) WHERE 0 GROUP BY g;

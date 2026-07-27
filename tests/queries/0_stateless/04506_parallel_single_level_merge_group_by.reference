@@ -11,23 +11,25 @@ serialized two keys
 keys128
 70000	300000
 nullable key with NULLs
-0	300
-1	300
-\N	300
+0	60
+1	60
+\N	60
 low cardinality string key
 5000	300000
 uniqExact heavy states
 7500	300000
 with totals
-0	12345
-1	12345
-2	12345
+0	50
+1	50
+2	50
 
 0	300000
 early limit
 ok
 two threads
 20000	300000
+tables under the partition threshold take the serial fallback
+100	300000	44999850000
 empty result set
 ok
 equivalence with the serial merge
