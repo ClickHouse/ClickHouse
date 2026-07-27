@@ -3728,6 +3728,7 @@ def test_concurrent_queries(started_cluster, partitioned):
             try:
                 instance.query(
                     f"INSERT INTO {TABLE_NAME} SELECT number, toString(number) FROM numbers(50)",
+                    settings={"async_insert": 0},
                 )
                 success[i] += 1
             except Exception as e:

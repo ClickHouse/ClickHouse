@@ -111,13 +111,16 @@ def test_jbod_balanced_merge(start_cluster):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
-                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node1.query(
-                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node1.query(
-                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
 
         p.map(task, range(200))
@@ -176,21 +179,26 @@ def test_replicated_balanced_merge_fetch(start_cluster):
             print("Processing insert {}/{}".format(i, 200))
             # around 1k per block
             node1.query(
-                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tbl select number % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
 
             # Fill jbod disks with garbage data
             node1.query(
-                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node1.query(
-                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node2.query(
-                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp1 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
             node2.query(
-                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)"
+                "insert into tmp2 select randConstant() % 2, randomPrintableASCII(16) from numbers(50)",
+                settings={"async_insert": 0},
             )
 
         p.map(task, range(200))

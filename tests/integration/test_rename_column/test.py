@@ -149,6 +149,7 @@ def insert(
     with_many_parts=False,
     offset=0,
     with_time_column=False,
+    async_insert=False,
 ):
     if col_names is None:
         col_names = ["num", "num2"]
@@ -157,33 +158,29 @@ def insert(
             query = ["SET max_partitions_per_insert_block = 10000000"]
             if with_many_parts:
                 query.append("SET max_insert_block_size = 256")
+            col0 = col_names[0]
+            col1 = col_names[1]
             if with_time_column:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}, time) SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time FROM numbers_mt({chunk}) ORDER BY ALL".format(
-                        table_name=table_name,
-                        chunk=chunk,
-                        col0=col_names[0],
-                        col1=col_names[1],
-                    )
+                    f"INSERT INTO {table_name} ({col0}, {col1}, time)"
+                    f" SELECT number AS {col0}, number + 1 AS {col1}, now() + 10 AS time"
+                    f" FROM numbers_mt({chunk}) ORDER BY ALL"
+                    f" SETTINGS async_insert={int(async_insert)}"
                 )
             elif slow:
                 query.append(
-                    "INSERT INTO {table_name} ({col0}, {col1}) SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL SETTINGS function_sleep_max_microseconds_per_block = 0".format(
-                        table_name=table_name,
-                        chunk=chunk,
-                        col0=col_names[0],
-                        col1=col_names[1],
-                    )
+                    f"INSERT INTO {table_name} ({col0}, {col1})"
+                    f" SELECT number + sleepEachRow(0.001) AS {col0}, number + 1 AS {col1}"
+                    f" FROM numbers_mt({chunk}) ORDER BY ALL"
+                    f" SETTINGS function_sleep_max_microseconds_per_block = 0,"
+                    f" async_insert={int(async_insert)}"
                 )
             else:
                 query.append(
-                    "INSERT INTO {table_name} ({col0},{col1}) SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1} FROM numbers_mt({chunk}) ORDER BY ALL".format(
-                        table_name=table_name,
-                        chunk=chunk,
-                        col0=col_names[0],
-                        col1=col_names[1],
-                        offset=str(offset),
-                    )
+                    f"INSERT INTO {table_name} ({col0},{col1})"
+                    f" SELECT number + {offset} AS {col0}, number + 1 + {offset} AS {col1}"
+                    f" FROM numbers_mt({chunk}) ORDER BY ALL"
+                    f" SETTINGS async_insert={int(async_insert)}"
                 )
             node.query(";\n".join(query))
         except QueryRuntimeException:
@@ -626,6 +623,69 @@ def test_rename_with_parallel_slow_insert(started_cluster):
         select(node1, table_name, "num2", "11089\n")
         select(node2, table_name, "num2", "11089\n", poll=30)
         select(node3, table_name, "num2", "11089\n", poll=30)
+    finally:
+        drop_table(nodes, table_name)
+
+
+def test_rename_with_async_insert_select(started_cluster):
+    """With async_insert=1, RENAME COLUMN must not be blocked by a running INSERT ... SELECT.
+
+    The async path does not hold a table write lock while the SELECT is executing,
+    so the rename can proceed immediately.  The insert itself always waits for the
+    flush (wait_for_async_insert is forced to 1 on the async INSERT ... SELECT path),
+    so the data must be queryable under the original column name once insert() returns.
+    """
+    if node1.is_built_with_sanitizer():
+        pytest.skip("Consume tons of memory with sanitizer")
+
+    table_name = "test_rename_with_async_insert_select"
+    drop_table(nodes, table_name)
+    try:
+        create_table(nodes, table_name)
+
+        rename_start = None
+        rename_end = None
+        insert_end = None
+
+        def timed_rename():
+            nonlocal rename_start, rename_end
+            rename_start = time.time()
+            rename_column(node1, table_name, "num2", "foo2")
+            rename_end = time.time()
+
+        def timed_insert():
+            nonlocal insert_end
+            # With async_insert=True the SELECT runs without holding the table write lock,
+            # so the rename can proceed immediately.  The flush may fail with Code 16 if
+            # the rename beat it to the column; that is expected async-insert behaviour.
+            insert(
+                node1, table_name, 10000, ["num", "num2"],
+                1,
+                True,   # ignore_exception — flush may legitimately fail after rename
+                True,   # slow — SELECT sleeps ~10 s so the rename has a clear window
+                async_insert=True,
+            )
+            insert_end = time.time()
+
+        p = Pool(2)
+        insert_task = p.apply_async(timed_insert)
+        time.sleep(0.5)  # let the SELECT start before firing the rename
+        rename_task = p.apply_async(timed_rename)
+
+        insert_task.get(timeout=60)
+        rename_task.get(timeout=10)
+
+        # The rename must have completed well before the insert finished,
+        # demonstrating it was not blocked by the running SELECT.
+        assert rename_end is not None and insert_end is not None
+        assert rename_end < insert_end, (
+            f"rename finished at {rename_end:.2f} but insert finished at {insert_end:.2f}: "
+            "rename was blocked by the async INSERT ... SELECT"
+        )
+
+        # Restore the original column name and verify the table is still readable.
+        rename_column(node1, table_name, "foo2", "num2")
+        select(node1, table_name, "num2")
     finally:
         drop_table(nodes, table_name)
 
