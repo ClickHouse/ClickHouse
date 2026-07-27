@@ -142,8 +142,6 @@ private:
 };
 
 
-
-
 /// `ICacheProvider` wrapping FileCache. Safe for concurrent use (the
 /// `readBigAt` fan-out shares one provider): lookups only read immutable
 /// members and the internally-locked `FileCache`; the shared mutable state
