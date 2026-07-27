@@ -51,6 +51,24 @@ Cross-type UInt64 key NOT IN Nullable(String), relaxed
 3
 1
 1
+String key, numeric source, declined
+01
+1
+2
+1
+1
+Decimal key, coarser-scale source, declined
+1.23
+1.2345
+2
+1
+1
+Injective numeric narrowing stays exact
+50000
+10
+90000
+1
+1
 String key NOT has, partition pruning
 a
 b

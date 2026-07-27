@@ -4,6 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -2637,6 +2638,42 @@ void KeyCondition::analyzeKeyExpressionForSetIndex(const RPNBuilderTreeNode & ar
     }
 }
 
+/// Index preparation casts set values INTO the key type, while runtime membership
+/// (`Set::execute`) casts the KEY into the set's type with `castColumnAccurate`. The set-index
+/// atom may only be treated as exact when neither direction can lose a match.
+/// `canBeSafelyCast(set -> key)` covers the first direction; this predicate covers the second by
+/// asking whether the runtime `key -> set` cast can map two DISTINCT key values onto ONE set
+/// value *silently*.
+///
+/// For same-family numeric narrowing it cannot: `castColumnAccurate` REJECTS an out-of-range
+/// value (`accurateCast(4294967297::UInt64, 'UInt32')` throws CANNOT_CONVERT_TYPE) rather than
+/// truncating it, so the conversion is injective on the domain it accepts and the whole query
+/// fails loudly instead of answering from a collapsed set. The conversions that DO collapse
+/// silently are:
+///   - a text key against a non-text set element: `accurateCast('01', 'UInt8')` and
+///     `accurateCast('1', 'UInt8')` are both 1, so two distinct keys share one set value;
+///   - a loss of Decimal / DateTime64 / Time64 SCALE: 1.2345 and 1.2300 both become 1.23.
+static bool keyToSetConversionMayCollapse(const DataTypePtr & key_type, const DataTypePtr & set_element_type)
+{
+    auto key_which = WhichDataType(key_type);
+    auto set_which = WhichDataType(set_element_type);
+
+    /// A text key parsed into any non-text set element loses the textual representation,
+    /// so distinct spellings of one value become indistinguishable.
+    if (key_which.isStringOrFixedString() && !set_which.isStringOrFixedString())
+        return true;
+
+    /// A scale reduction maps a whole interval of key values onto one set value.
+    auto key_scale = tryGetDecimalScale(*key_type);
+    auto set_scale = tryGetDecimalScale(*set_element_type);
+    if (key_scale && set_scale && *key_scale > *set_scale)
+        return true;
+
+    /// Anything else either fails the `canBeSafelyCast` check at the call site, or is a
+    /// same-family conversion whose `castColumnAccurate` rejects rather than truncates.
+    return false;
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -2739,11 +2776,22 @@ static bool tryPrepareSetColumnsForIndex(
 
             /// `castColumnAccurateOrNull` below only proves that no value overflowed, not that the
             /// conversion preserves `IN` equality: runtime membership casts the KEY into the set's type,
-            /// while here we cast set values into the KEY's type. `String -> UInt64` converts `'01'` to `1`
-            /// even though `toUInt64(1) IN ('01')` is false, so a set built this way is a SUPERSET image of
-            /// the predicate and, after negation, could prune a partition that still holds matching rows.
-            /// Only a conversion the type system considers safe may keep the atom exact.
-            conversion_preserves_equality = canBeSafelyCast(set_element_type, key_column_type);
+            /// while here we cast set values into the KEY's type. Both directions must be lossless.
+            /// `canBeSafelyCast` rejects a set-to-key conversion that cannot represent every source
+            /// value; `keyToSetConversionMayCollapse` rejects the mirror case, where the runtime
+            /// key-to-set cast can map two distinct keys onto one set value.
+            conversion_preserves_equality = canBeSafelyCast(set_element_type, key_column_type)
+                && !keyToSetConversionMayCollapse(key_column_type, set_element_type);
+
+            /// A conversion that is safe in the set-to-key direction but can collapse distinct keys in
+            /// the runtime key-to-set direction makes the pruning set an UNDER-approximation of the
+            /// predicate: `String` key `'01'` matches the set value `1` at runtime, yet the set built
+            /// here holds only the canonical `'1'`. `relaxed` only ever forces `can_be_false = true` and
+            /// never widens `can_be_true`, so it cannot protect the positive `IN` direction here and the
+            /// atom must decline instead.
+            if (canBeSafelyCast(set_element_type, key_column_type)
+                && keyToSetConversionMayCollapse(key_column_type, set_element_type))
+                return false;
 
             // Obtain the nullable column without reassigning set_column immediately
             const auto * set_column_nullable = typeid_cast<const ColumnNullable *>(transformed_set_columns[set_element_index].get());
@@ -2804,10 +2852,12 @@ static bool tryPrepareSetColumnsForIndex(
             set_columns[set_element_index] = transformed_set_columns[set_element_index]->filter(filter, 0);
 
         /// An empty set is exact by construction (`NOT IN ()` is universally true, `IN ()` universally
-        /// false), and both `extractPlainRanges` and `MergeTreeSetIndex` special-case size 0 before
-        /// consulting `relaxed`. Decide this only here, after the shared filter has been applied to
-        /// every column: the filter is built across all of them, so a later column's failed cast can
-        /// remove the last row that was still surviving when an earlier column set the flag.
+        /// false), and it MUST NOT be marked approximate: `extractPlainRanges` bails on any relaxed
+        /// atom before it can reach its size-0 branches, so relaxing an empty set would silently give
+        /// up the exact-range fast paths it exists to enable. Decide this only here, after the shared
+        /// filter has been applied to every column: the filter is built across all of them, so a later
+        /// column's failed cast can remove the last row that was still surviving when an earlier
+        /// column set the flag.
         if (any_column_conversion_is_approximate && !set_columns.front()->empty())
             set_is_approximate = true;
     }

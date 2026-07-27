@@ -7,6 +7,13 @@
 
 -- Regression test for issue #111340: `transform_null_in = 1`, non-Nullable key column, `IN`/`NOT IN`
 -- a subquery whose result is Nullable. Previously threw CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN (349).
+--
+-- Cases A, B, D, D2, C, C2 -- C5, E, F, H, H2, I, J, G, K cover, in order: the folded-default pair,
+-- the numeric analogue and its type-level-granularity sibling, the cross-type superset direction and
+-- its counterexample, the two silent-collapse families (text key / coarser-scale key) with the
+-- injective-narrowing control, the `NOT has` caller, the `LowCardinality(Nullable(T))` source, the
+-- multi-column set and its emptiness ordering, the all-NULL empty set, the positive `IN` direction,
+-- and the two shapes that must stay unchanged (`Tuple(Nullable, Nullable)` key, duplicate key mapping).
 
 SET transform_null_in = 1;
 SET explain_query_plan_default = 'legacy';
@@ -107,6 +114,51 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (
 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('01', 'Nullable(String)') UNION ALL SELECT NULL) ORDER BY k;
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('01', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%notIn 1-element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_ct WHERE k NOT IN (SELECT CAST('01', 'Nullable(String)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C3: the MIRROR of case C2 -- the same conversion in the other direction. Here the set-to-key
+-- cast `UInt8 -> String` IS safe, so the atom used to be treated as exact, but runtime membership
+-- casts the KEY into the set's type: both `'01'` and `'1'` become `1`, so the set built here (holding
+-- only the canonical `'1'`) UNDER-approximates the predicate. `relaxed` cannot repair that, because it
+-- only ever widens `can_be_false`, so the atom must decline entirely.
+SELECT 'String key, numeric source, declined';
+DROP TABLE IF EXISTS t_sk SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_sk (s String) ENGINE = MergeTree ORDER BY s PARTITION BY s;
+INSERT INTO t_sk VALUES ('01'), ('1'), ('2');
+-- BOTH '01' and '1' must come back; treating the set as exact prunes the '01' partition.
+SELECT s FROM t_sk WHERE s IN (SELECT CAST(1, 'Nullable(UInt8)') UNION ALL SELECT NULL) ORDER BY s;
+SELECT s FROM t_sk WHERE s NOT IN (SELECT CAST(1, 'Nullable(UInt8)') UNION ALL SELECT NULL) ORDER BY s;
+-- Pin that the atom DECLINED rather than merely relaxed: a declined atom prints no set condition at
+-- all, whereas a relaxed one still prints one with `Parts: 3/3`.
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sk WHERE s IN (SELECT CAST(1, 'Nullable(UInt8)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_sk WHERE s IN (SELECT CAST(1, 'Nullable(UInt8)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C4: the second silent-collapse family, a loss of Decimal SCALE. `accurateCast` maps both
+-- 1.2345 and 1.2300 onto 1.23 without rejecting either, so a `Decimal(10, 4)` key against a
+-- `Nullable(Decimal(10, 2))` set element collapses two distinct keys onto one set value. Note the
+-- direction: the KEY carries the finer scale, because it is the key that is cast at runtime.
+SELECT 'Decimal key, coarser-scale source, declined';
+DROP TABLE IF EXISTS t_dk SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_dk (d Decimal(10, 4)) ENGINE = MergeTree ORDER BY d PARTITION BY d;
+INSERT INTO t_dk VALUES (1.2345), (1.2300), (2.0000);
+-- Both 1.23 and 1.2345 match the set value 1.23 at runtime, so both must come back, and `NOT IN`
+-- must keep only the 2.0 row.
+SELECT d FROM t_dk WHERE d IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL) ORDER BY d;
+SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT d FROM t_dk WHERE d NOT IN (SELECT CAST(1.23, 'Nullable(Decimal(10, 2))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
+
+-- Case C5 (CONTROL, must NOT change): an injective same-family numeric narrowing stays exact and
+-- keeps pruning. `castColumnAccurate` REJECTS an out-of-range `UInt64 -> UInt32` value rather than
+-- truncating it, so no two keys can share a set value and the atom is genuinely exact. This control
+-- is what stops the exactness gate from being "fixed" by declining every cross-type conversion.
+SELECT 'Injective numeric narrowing stays exact';
+DROP TABLE IF EXISTS t_nn SETTINGS ignore_drop_queries_probability = 0;
+CREATE TABLE t_nn (k UInt64) ENGINE = MergeTree ORDER BY k PARTITION BY k;
+INSERT INTO t_nn VALUES (10), (50000), (90000);
+SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL) ORDER BY k;
+SELECT k FROM t_nn WHERE k NOT IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL) ORDER BY k;
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%in 1-element set%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT k FROM t_nn WHERE k IN (SELECT CAST(50000, 'Nullable(UInt32)') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 1/3%';
 
 -- Case E: the `NOT has` sibling caller shares the same helper and must get the same treatment.
 -- `optimize_rewrite_has_to_in = 0` keeps the query on the `has` path.
@@ -238,3 +290,6 @@ DROP TABLE t_k;
 DROP TABLE t_nk;
 DROP TABLE t_nkp;
 DROP TABLE t_me;
+DROP TABLE t_sk;
+DROP TABLE t_dk;
+DROP TABLE t_nn;
