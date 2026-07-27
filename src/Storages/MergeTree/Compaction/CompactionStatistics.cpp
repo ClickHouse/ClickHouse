@@ -1535,9 +1535,14 @@ UInt64 estimateNeededMemoryForMerge(
                 /// store any projection-required column contributes no projected bytes at all: a patch on an
                 /// unrelated column, or an old part predating an ALTER ... ADD COLUMN ... DEFAULT the projection
                 /// reads, must not flip a genuinely Compact rebuild to Wide with bytes the temp part never
-                /// writes. The whole-part size stands in only for a part that DOES store a required column but
-                /// tracks no per-column sizes (a Compact part, whose each_columns_size is left empty) - an
-                /// over-approximation bounded by bytes that part really stores. Rows of parts that lack a
+                /// writes. A projection may require a SUBCOLUMN (SELECT json.a ORDER BY json.a): the merge
+                /// normalizes such a name through getColumnNameInStorage and reads only that subcolumn's
+                /// streams, but columns_sizes is keyed by the storage column, so getColumnSize returns nothing
+                /// for it - price it the way the read path does (MergeTreeBlockReadUtils), through
+                /// getSubcolumnSize, or the whole (possibly huge) parent column would stand in for a tiny
+                /// subcolumn. The whole-part size stands in only for a part that DOES store a required column
+                /// but tracks no per-column sizes at all (a Compact part, whose each_columns_size is left
+                /// empty) - an over-approximation bounded by bytes that part really stores. Rows of parts that lack a
                 /// required column get it synthesized from its default: a fixed-size type writes exactly
                 /// (rows of those parts alone, see countRowsMissingColumn) * value size, so add that - the
                 /// rows of the parts that do store it are already counted through their own projected column
@@ -1554,11 +1559,15 @@ UInt64 estimateNeededMemoryForMerge(
                     bool part_stores_required_column = false;
                     for (const auto & required_column : required_columns)
                     {
-                        if (part->tryGetColumn(required_column))
-                            part_stores_required_column = true;
-                        part_projection_bytes += part->getColumnSize(required_column).data_uncompressed;
+                        const auto part_column = part->tryGetColumn(required_column);
+                        if (!part_column)
+                            continue;
+                        part_stores_required_column = true;
+                        part_projection_bytes += part_column->isSubcolumn()
+                            ? part->getSubcolumnSize(required_column).data_uncompressed
+                            : part->getColumnSize(part_column->getNameInStorage()).data_uncompressed;
                     }
-                    if (part_projection_bytes == 0 && part_stores_required_column)
+                    if (part_stores_required_column && part->getColumnSizes()->empty())
                         part_projection_bytes = part->getBytesUncompressedOnDisk();
                     projection_uncompressed_bytes += part_projection_bytes;
                 }
