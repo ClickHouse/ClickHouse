@@ -1021,6 +1021,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
             dst_disk->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
     }
 
+    /// Record which system columns the frozen copy no longer carries (invalidated-system-columns feature).
+    IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
+
     std::vector<std::string> all_files;
     src_disk->listFiles(getRelativePath(), all_files);
     for (const auto & file : all_files)

@@ -657,6 +657,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (!params.keep_metadata_version)
         remove_file_if_exists(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
 
+    /// Record which system columns the frozen copy no longer carries (invalidated-system-columns feature).
+    if (params.external_transaction)
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
+    else
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dst_disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
+
     /// The SingleDiskVolume and the storage built by `create` are stored on the frozen part for its whole
     /// lifetime; route them into the dedicated MergeTree arena, like the builder-owned storage path.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -1504,6 +1510,7 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
+        request.emplace_back(fs::path(dir) / IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME, true);
 
         disk->removeSharedFiles(request, !can_remove_shared_data, names_not_to_remove);
         disk->removeDirectory(dir);
