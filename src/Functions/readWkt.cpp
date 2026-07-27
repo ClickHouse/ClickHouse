@@ -9,6 +9,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <boost/geometry/core/tags.hpp>
 
+#include <cctype>
 #include <string>
 #include <memory>
 #include <type_traits>
@@ -37,6 +38,17 @@ bool isEmptyPointWKT(const String & str)
         return false;
     auto rest = normalized.substr(strlen("point"));
     boost::trim(rest);
+    /// Strip an optional WKT dimension tag (Z, M or ZM), matched only as a whole space-separated token.
+    for (std::string_view tag : {"zm", "z", "m"})
+    {
+        if (rest.starts_with(tag) && rest.size() > tag.size()
+            && isspace(static_cast<unsigned char>(rest[tag.size()])))
+        {
+            rest.erase(0, tag.size());
+            boost::trim(rest);
+            break;
+        }
+    }
     return rest == "empty";
 }
 
