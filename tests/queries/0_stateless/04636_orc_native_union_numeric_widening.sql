@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: requires the ORC input format, which is not built in fasttest.
+
 -- Widening conversions inside an ORC union branch: the branch of a union column is read with a
 -- per-branch type hint, because the final Variant -> Variant cast can only extend the set of
 -- alternatives by exact type name, not widen one of them.
