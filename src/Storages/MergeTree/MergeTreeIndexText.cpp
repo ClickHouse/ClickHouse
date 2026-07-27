@@ -1540,7 +1540,7 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
 
 void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
 {
-    if (!postprocessor_drop_filter)
+    if (!postprocessor_drop_filter || postprocessor_drop_filter->drop_on_match)
         return;
 
     bool inserted = false;
@@ -1573,8 +1573,19 @@ void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 t
     {
         tokens_map.emplace(key_holder, it, inserted);
 
-        if (it->getMapped().isFiltered())
-            return;
+        if (postprocessor_drop_filter)
+        {
+            if (inserted)
+            {
+                if (postprocessor_drop_filter->tokens.contains(token))
+                {
+                    it->getMapped().markFiltered();
+                    return;
+                }
+            }
+            else if (it->getMapped().isFiltered())
+                return;
+        }
     }
 
     PostingListBuilder & posting_list_builder = it->getMapped();
