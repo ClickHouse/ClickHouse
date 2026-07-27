@@ -172,7 +172,7 @@ awk -F'\t' '$1 == "math" && $2 == 2 && $3 == "CPU"' tmp/report/stacks.right.tsv 
   | cut -f 5- | sed 's/\t/ /g' > tmp/math2_right.collapsed
 ```
 
-The resulting `.collapsed` file can be processed with `flamegraph.pl` or the `analyze-assembly.py --perf-map` tool. Compare left (master) vs right (PR) to see what changed.
+The resulting `.collapsed` file can be processed with `flamegraph.pl`. Compare left (master) vs right (PR) to see what changed. Not with `analyze-assembly.py --perf-map`: that flag reads JSONL records keyed by instruction address, so every folded `symbol;...;symbol count` line is rejected as a JSON parse error and the weighting silently comes out empty.
 
 **This is the fastest way to identify the root cause of a regression.** Example: for a 31x `exp10` regression, the trace log immediately showed `modf` consuming 577/1200 CPU samples on the PR binary vs 28/60 on master — pinpointing the exact function responsible without needing to reproduce locally.
 
