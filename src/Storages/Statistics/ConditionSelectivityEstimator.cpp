@@ -1,23 +1,25 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
-#include <stack>
+#include <algorithm>
 #include <cmath>
+#include <optional>
+#include <stack>
 
-#include <Common/logger_useful.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Interpreters/misc.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Formats/ParseError.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Storages/StorageInMemoryMetadata.h>
-#include <Storages/MergeTree/RPNBuilder.h>
+#include <Interpreters/convertFieldToType.h>
+#include <Interpreters/misc.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Formats/ParseError.h>
+#include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -155,9 +157,20 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 auto* last_element = rpn_stack.top();
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
+                else if (last_element->function == RPNElement::FUNCTION_NULL_SAFE_EQUAL)
+                {
+                    last_element->function = RPNElement::FUNCTION_NULL_SAFE_NOT_EQUAL;
+                    std::swap(last_element->null_safe_column_ranges, last_element->null_safe_column_not_ranges);
+                }
+                else if (last_element->function == RPNElement::FUNCTION_NULL_SAFE_NOT_EQUAL)
+                {
+                    last_element->function = RPNElement::FUNCTION_NULL_SAFE_EQUAL;
+                    std::swap(last_element->null_safe_column_ranges, last_element->null_safe_column_not_ranges);
+                }
                 else
                 {
                     std::swap(last_element->column_ranges, last_element->column_not_ranges);
+                    std::swap(last_element->null_safe_column_ranges, last_element->null_safe_column_not_ranges);
                     std::swap(last_element->null_check_columns, last_element->not_null_check_columns);
                     switch (last_element->function)
                     {
@@ -178,8 +191,15 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     }
     auto * final_element = rpn_stack.top();
     final_element->finalize(column_estimators, metadata);
+    return final_element->selectivity;
+}
+
+RelationProfile
+ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+{
+    Selectivity final_selectivity = estimateSelectivityImpl(rpn, metadata);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(total_rows);
+    Float64 final_rows = final_selectivity.true_sel * static_cast<Float64>(total_rows);
     /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
     /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
     if (!std::isfinite(final_rows) || final_rows < 0)
@@ -213,6 +233,16 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 {
     RPNBuilderTreeContext tree_context(getContext());
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
+}
+
+ConditionSelectivityEstimator::Selectivity
+ConditionSelectivityEstimator::estimateSelectivity(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const
+{
+    std::vector<RPNElement> rpn
+        = RPNBuilder<RPNElement>(
+              node, [&](const RPNBuilderTreeNode & node_, RPNElement & out) { return extractAtomFromTree(metadata, node_, out); })
+              .extractRPN();
+    return estimateSelectivityImpl(rpn, metadata);
 }
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
@@ -249,6 +279,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         size_t num_args = func.getArgumentsSize();
 
         String func_name = func.getFunctionName();
+        const bool is_null_safe_comparison = func_name == "isNotDistinctFrom" || func_name == "isDistinctFrom";
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
@@ -284,6 +315,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         if (num_args == 2)
         {
             const bool is_in_operator = functionIsInOperator(func_name);
+            bool const_value_is_null = false;
+            std::optional<size_t> const_arg_pos;
 
             /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly
             /// extracts constant value from `ASTLiteral`. Otherwise we try to build `Set` from `ActionsDAG::Node`,
@@ -310,26 +343,19 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 for (size_t i = 0; i < columns[0]->size(); ++i)
                     tuple[i] = (*columns[0])[i];
 
-                const_value = std::move(tuple);
+                const_value = tuple;
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(1).tryGetConstant(const_value, const_type))
             {
-                if (const_value.isNull())
-                {
-                    out.function = RPNElement::ALWAYS_FALSE;
-                    return true;
-                }
+                const_arg_pos = 1;
+                const_value_is_null = const_value.isNull();
                 column_name = func.getArgumentAt(0).getColumnName();
             }
             else if (func.getArgumentAt(0).tryGetConstant(const_value, const_type))
             {
-                if (const_value.isNull())
-                {
-                    out.function = RPNElement::ALWAYS_FALSE;
-                    return true;
-                }
-
+                const_arg_pos = 0;
+                const_value_is_null = const_value.isNull();
                 column_name = func.getArgumentAt(1).getColumnName();
                 if (func_name == "less")
                     func_name = "greater";
@@ -343,6 +369,114 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
             else
                 return false;
 
+            auto clamp_selectivity_value = [](Float64 value)
+            {
+                if (!std::isfinite(value))
+                    return default_unknown_cond_factor;
+                return std::max(0.0, std::min(1.0, value));
+            };
+
+            auto try_get_bool_constant = [](const Field & value, bool & bool_value)
+            {
+                switch (value.getType())
+                {
+                    case Field::Types::Bool: bool_value = value.safeGet<bool>() != 0; return true;
+                    case Field::Types::UInt64: {
+                        UInt64 numeric_value = value.safeGet<UInt64>();
+                        if (numeric_value > 1)
+                            return false;
+                        bool_value = numeric_value != 0;
+                        return true;
+                    }
+                    case Field::Types::Int64: {
+                        Int64 numeric_value = value.safeGet<Int64>();
+                        if (numeric_value < 0 || numeric_value > 1)
+                            return false;
+                        bool_value = numeric_value != 0;
+                        return true;
+                    }
+                    default: return false;
+                }
+            };
+
+            auto is_boolean_predicate = [](const RPNBuilderTreeNode & predicate_node)
+            {
+                if (!predicate_node.isFunction())
+                    return false;
+
+                const String predicate_func_name = predicate_node.toFunctionNode().getFunctionName();
+                return predicate_func_name == "and" || predicate_func_name == "or" || predicate_func_name == "not"
+                    || predicate_func_name == "equals" || predicate_func_name == "notEquals" || predicate_func_name == "less"
+                    || predicate_func_name == "greater" || predicate_func_name == "lessOrEquals" || predicate_func_name == "greaterOrEquals"
+                    || predicate_func_name == "isNull" || predicate_func_name == "isNotNull" || predicate_func_name == "isNotDistinctFrom"
+                    || predicate_func_name == "isDistinctFrom" || predicate_func_name == "like" || predicate_func_name == "notLike"
+                    || predicate_func_name == "ilike" || predicate_func_name == "notILike" || predicate_func_name == "__applyFilter"
+                    || functionIsInOperator(predicate_func_name);
+            };
+
+            if (is_null_safe_comparison && const_arg_pos)
+            {
+                const auto predicate_arg = func.getArgumentAt(1 - *const_arg_pos);
+                if (is_boolean_predicate(predicate_arg))
+                {
+                    Selectivity predicate_selectivity = estimateSelectivity(metadata, predicate_arg);
+
+                    if (const_value_is_null)
+                    {
+                        out.selectivity.true_sel = func_name == "isNotDistinctFrom"
+                            ? clamp_selectivity_value(predicate_selectivity.null_sel)
+                            : clamp_selectivity_value(1.0 - predicate_selectivity.null_sel);
+                        out.selectivity.null_sel = 0;
+                        out.finalized = true;
+                        return true;
+                    }
+
+                    bool bool_value = false;
+                    if (try_get_bool_constant(const_value, bool_value))
+                    {
+                        if (func_name == "isNotDistinctFrom")
+                        {
+                            out.selectivity.true_sel = bool_value
+                                ? clamp_selectivity_value(predicate_selectivity.true_sel)
+                                : clamp_selectivity_value(1.0 - predicate_selectivity.true_sel - predicate_selectivity.null_sel);
+                        }
+                        else
+                        {
+                            out.selectivity.true_sel = bool_value
+                                ? clamp_selectivity_value(1.0 - predicate_selectivity.true_sel)
+                                : clamp_selectivity_value(predicate_selectivity.true_sel + predicate_selectivity.null_sel);
+                        }
+                        out.selectivity.null_sel = 0;
+                        out.finalized = true;
+                        return true;
+                    }
+                }
+            }
+
+            if (const_value_is_null)
+            {
+                if (is_null_safe_comparison)
+                {
+                    if (metadata && !metadata->getColumns().tryGet(column_name))
+                        return false;
+
+                    if (func_name == "isNotDistinctFrom")
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NULL;
+                        out.null_check_columns.insert(column_name);
+                    }
+                    else
+                    {
+                        out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+                        out.not_null_check_columns.insert(column_name);
+                    }
+                    return true;
+                }
+
+                out.function = RPNElement::ALWAYS_FALSE;
+                return true;
+            }
+
             if (metadata)
             {
                 const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
@@ -353,9 +487,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// Not a real column (e.g. a function expression like lower(col) or toDecimal64(col, 3)).
                     /// Skip range analysis to avoid bad cast when merging ranges of incompatible Field types.
                     /// Pre-set selectivity based on the function type so prewhere ordering is still reasonable.
-                    if (func_name == "equals" || func_name == "in")
+                    if (func_name == "equals" || func_name == "in" || func_name == "isNotDistinctFrom")
                         out.selectivity.true_sel = default_cond_equal_factor;
-                    else if (func_name == "notEquals" || func_name == "notIn")
+                    else if (func_name == "notEquals" || func_name == "notIn" || func_name == "isDistinctFrom")
                         out.selectivity.true_sel = 1.0 - default_cond_equal_factor;
                     else /// less, greater, lessOrEquals, greaterOrEquals
                         out.selectivity.true_sel = default_cond_range_factor;
@@ -363,12 +497,16 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     return false;
                 }
             }
-            /// In some cases we need to cast the type of const
-            bool cast_not_needed = !column_type || !const_type ||
-                ((isNativeInteger(column_type) || isDateTime(column_type))
-                && (isNativeInteger(const_type) || isDateTime(const_type)));
+            /// In some cases we need to cast the type of const.
+            /// AST literals may arrive with an imprecise type hint from RPNBuilderTreeContext,
+            /// so still convert a String Field when the real column type is not String-compatible.
+            const bool force_string_conversion = column_type && const_value.getType() == Field::Types::String
+                && (!const_type || !isStringOrFixedString(column_type) || !column_type->equals(*const_type));
+            bool cast_not_needed = !column_type || (!const_type && !force_string_conversion)
+                || (!force_string_conversion && (isNativeInteger(column_type) || isDateTime(column_type))
+                    && (isNativeInteger(const_type) || isDateTime(const_type)));
 
-            if (!cast_not_needed && !column_type->equals(*const_type))
+            if (!cast_not_needed && (force_string_conversion || !column_type->equals(*const_type)))
             {
                 if (const_value.getType() == Field::Types::String)
                 {
@@ -387,9 +525,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                         LOG_DEBUG(getLogger("ConditionSelectivityEstimator"),
                             "Cannot convert value to column type, skipping statistics estimation. The exception is : {}",
                             getCurrentExceptionMessage(false));
-                        if (func_name == "equals")
+                        if (func_name == "equals" || func_name == "isNotDistinctFrom")
                         {
                             out.function = RPNElement::ALWAYS_FALSE;
+                            return true;
+                        }
+                        if (func_name == "isDistinctFrom")
+                        {
+                            out.function = RPNElement::ALWAYS_TRUE;
                             return true;
                         }
                         return false;
@@ -425,7 +568,14 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
                         Field converted = tryConvertFieldToType(const_value, *column_type, const_type.get(), {});
                         if (converted.isNull())
+                        {
+                            if (is_null_safe_comparison)
+                            {
+                                out.function = func_name == "isNotDistinctFrom" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
                             return false;
+                        }
 
                         /// Narrowing to the column type is only semantically sound when the literal is
                         /// exactly representable in that type. At execution time the column value is
@@ -435,12 +585,13 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                         /// representable value and make an impossible predicate look selective, which can
                         /// reorder PREWHERE incorrectly. Detect this with a round-trip and short-circuit
                         /// equality/inequality instead of estimating from the narrowed value.
-                        if (func_name == "equals" || func_name == "notEquals")
+                        if (func_name == "equals" || func_name == "notEquals" || is_null_safe_comparison)
                         {
                             Field round_trip = tryConvertFieldToType(converted, *common_type, column_type.get(), {});
                             if (round_trip.isNull() || round_trip != const_value)
                             {
-                                out.function = func_name == "equals" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
+                                out.function = (func_name == "equals" || func_name == "isNotDistinctFrom") ? RPNElement::ALWAYS_FALSE
+                                                                                                           : RPNElement::ALWAYS_TRUE;
                                 return true;
                             }
                         }
@@ -576,116 +727,107 @@ UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() con
     return stats->estimateCardinality();
 }
 
-const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map
-{
-        {
-            "notEquals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_not_ranges.emplace(column, Range(value));
-            }
-        },
-        {
-            "equals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range(value));
-            }
-        },
-        {
-            "in",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                Ranges ranges;
-                for (const Field & field : value.safeGet<Tuple>())
-                {
-                    ranges.emplace_back(field);
-                }
-                out.column_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
-            }
-        },
-        {
-            "notIn",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                Ranges ranges;
-                for (const Field & field : value.safeGet<Tuple>())
-                {
-                    ranges.emplace_back(field);
-                }
-                out.column_not_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
-            }
-        },
-        {
-            "less",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createRightBounded(value, false));
-            }
-        },
-        {
-            "greater",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createLeftBounded(value, false));
-            }
-        },
-        {
-            "lessOrEquals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createRightBounded(value, true));
-            }
-        },
-        {
-            "greaterOrEquals",
-            [] (RPNElement & out, const String & column, const Field & value)
-            {
-                out.function = RPNElement::FUNCTION_IN_RANGE;
-                out.column_ranges.emplace(column, Range::createLeftBounded(value, true));
-            }
-        },
-        {
-            "isNull",
-            [] (RPNElement & out, const String & column, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(column);
-            }
-        },
-        {
-            "isNotNull",
-            [] (RPNElement & out, const String & column, const Field &)
-            {
-                out.function = RPNElement::FUNCTION_IS_NOT_NULL;
-                out.not_null_check_columns.insert(column);
-            }
-        }
-};
+const ConditionSelectivityEstimator::AtomMap ConditionSelectivityEstimator::atom_map{
+    {"notEquals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_not_ranges.emplace(column, Range(value));
+     }},
+    {"equals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range(value));
+     }},
+    {"isNotDistinctFrom",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_NULL_SAFE_EQUAL;
+         out.null_safe_column_ranges.emplace(column, Range(value));
+     }},
+    {"isDistinctFrom",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_NULL_SAFE_NOT_EQUAL;
+         out.null_safe_column_not_ranges.emplace(column, Range(value));
+     }},
+    {"in",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         Ranges ranges;
+         for (const Field & field : value.safeGet<Tuple>())
+         {
+             ranges.emplace_back(field);
+         }
+         out.column_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
+     }},
+    {"notIn",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         Ranges ranges;
+         for (const Field & field : value.safeGet<Tuple>())
+         {
+             ranges.emplace_back(field);
+         }
+         out.column_not_ranges.emplace(column, PlainRanges(ranges, /*intersect*/ true, /*ordered*/ false));
+     }},
+    {"less",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createRightBounded(value, false));
+     }},
+    {"greater",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createLeftBounded(value, false));
+     }},
+    {"lessOrEquals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createRightBounded(value, true));
+     }},
+    {"greaterOrEquals",
+     [](RPNElement & out, const String & column, const Field & value)
+     {
+         out.function = RPNElement::FUNCTION_IN_RANGE;
+         out.column_ranges.emplace(column, Range::createLeftBounded(value, true));
+     }},
+    {"isNull",
+     [](RPNElement & out, const String & column, const Field &)
+     {
+         out.function = RPNElement::FUNCTION_IS_NULL;
+         out.null_check_columns.insert(column);
+     }},
+    {"isNotNull",
+     [](RPNElement & out, const String & column, const Field &)
+     {
+         out.function = RPNElement::FUNCTION_IS_NOT_NULL;
+         out.not_null_check_columns.insert(column);
+     }}};
 
 /// merge CNF or DNF
 bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & lhs, RPNElement & rhs)
 {
     auto can_merge_with = [](const RPNElement & e, Function function_to_merge)
     {
-        return (e.function == FUNCTION_IN_RANGE
+        return (e.function == FUNCTION_IN_RANGE || e.function == FUNCTION_NULL_SAFE_EQUAL || e.function == FUNCTION_NULL_SAFE_NOT_EQUAL
                 || e.function == FUNCTION_IS_NULL
                 || e.function == FUNCTION_IS_NOT_NULL
                 /// if the sub-clause is also cnf/dnf, it's good to merge
                 || e.function == function_to_merge
                 /// if the sub-clause is different, but has only one column, it also works, e.g
                 /// (a > 0 and a < 5) or (a > 3 and a < 10) can be merged to (a > 0 and a < 10)
-                || (e.column_ranges.size() + e.column_not_ranges.size()
-                    + e.null_check_columns.size() + e.not_null_check_columns.size()) == 1
+                || (e.column_ranges.size() + e.column_not_ranges.size() + e.null_safe_column_ranges.size()
+                    + e.null_safe_column_not_ranges.size() + e.null_check_columns.size() + e.not_null_check_columns.size())
+                    == 1
                 || e.function == FUNCTION_UNKNOWN)
-                && !e.finalized;
+            && !e.finalized;
     };
     /// we will merge normal expression and not expression separately.
     auto merge_column_ranges = [this](ColumnRanges & result_ranges, ColumnRanges & l_ranges, ColumnRanges & r_ranges, bool is_not)
@@ -714,6 +856,8 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
     {
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
         merge_column_ranges(column_not_ranges, lhs.column_not_ranges, rhs.column_not_ranges, true);
+        merge_column_ranges(null_safe_column_ranges, lhs.null_safe_column_ranges, rhs.null_safe_column_ranges, false);
+        merge_column_ranges(null_safe_column_not_ranges, lhs.null_safe_column_not_ranges, rhs.null_safe_column_not_ranges, true);
         null_check_columns.insert(lhs.null_check_columns.begin(), lhs.null_check_columns.end());
         null_check_columns.insert(rhs.null_check_columns.begin(), rhs.null_check_columns.end());
         not_null_check_columns.insert(lhs.not_null_check_columns.begin(), lhs.not_null_check_columns.end());
@@ -773,12 +917,201 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         return &it->second;
     };
 
+    auto clamp_probability = [](Float64 value, Float64 fallback = default_unknown_cond_factor)
+    {
+        if (!std::isfinite(value))
+            return fallback;
+        return std::max(0.0, std::min(1.0, value));
+    };
+
+    auto estimate_ranges_selectivity = [&](const String & column_name, const PlainRanges & ranges) -> Selectivity
+    {
+        Selectivity result;
+        if (const auto * est = get_estimator(column_name))
+            result = est->estimateRanges(ranges);
+        else
+            result = estimate_unknown_ranges(ranges);
+
+        result.true_sel = clamp_probability(result.true_sel);
+        result.null_sel = clamp_probability(result.null_sel, 0.0);
+        if (result.true_sel + result.null_sel > 1.0)
+            result.null_sel = std::max(0.0, 1.0 - result.true_sel);
+        return result;
+    };
+
+    auto estimate_ranges_true
+        = [&](const String & column_name, const PlainRanges & ranges) { return estimate_ranges_selectivity(column_name, ranges).true_sel; };
+
+    auto get_ranges = [](const ColumnRanges & ranges_by_column, const String & column_name) -> const PlainRanges *
+    {
+        auto it = ranges_by_column.find(column_name);
+        return it == ranges_by_column.end() ? nullptr : &it->second;
+    };
+
+    auto union_into = [](std::optional<PlainRanges> & result, const PlainRanges & ranges)
+    {
+        if (result)
+        {
+            PlainRanges current = *result;
+            result = current.unionWith(ranges);
+        }
+        else
+            result = ranges;
+    };
+
+    auto intersect_into = [](std::optional<PlainRanges> & result, const PlainRanges & ranges)
+    {
+        if (result)
+        {
+            PlainRanges current = *result;
+            result = current.intersectWith(ranges);
+        }
+        else
+            result = ranges;
+    };
+
+    std::unordered_set<String> null_safe_columns;
+    for (const auto & entry : null_safe_column_ranges)
+        null_safe_columns.insert(entry.first);
+    for (const auto & entry : null_safe_column_not_ranges)
+        null_safe_columns.insert(entry.first);
+
+    auto estimate_column_with_null_safe = [&](const String & column_name) -> Selectivity
+    {
+        const PlainRanges * positive_ranges = get_ranges(column_ranges, column_name);
+        const PlainRanges * negative_ranges = get_ranges(column_not_ranges, column_name);
+        const PlainRanges * null_safe_equal_ranges = get_ranges(null_safe_column_ranges, column_name);
+        const PlainRanges * null_safe_not_equal_ranges = get_ranges(null_safe_column_not_ranges, column_name);
+        const bool has_null_check = null_check_columns.contains(column_name);
+        const bool has_not_null_check = not_null_check_columns.contains(column_name);
+        const bool is_or = function == FUNCTION_OR;
+
+        PlainRanges universe = PlainRanges::makeUniverse();
+        Selectivity universe_selectivity = estimate_ranges_selectivity(column_name, universe);
+        Float64 domain_non_null_sel = universe_selectivity.true_sel;
+        Float64 domain_null_sel = universe_selectivity.null_sel;
+
+        Float64 explicit_null_sel = domain_null_sel;
+        if (has_null_check)
+        {
+            explicit_null_sel = default_cond_equal_factor;
+            if (const auto * est = get_estimator(column_name))
+                explicit_null_sel = est->stats->estimateIsNull();
+            explicit_null_sel = clamp_probability(explicit_null_sel, 0.0);
+        }
+
+        Float64 non_null_true_sel = 0.0;
+        if (is_or)
+        {
+            if (has_not_null_check)
+            {
+                non_null_true_sel = domain_non_null_sel;
+            }
+            else
+            {
+                std::optional<PlainRanges> included_ranges;
+                if (positive_ranges)
+                    union_into(included_ranges, *positive_ranges);
+                if (null_safe_equal_ranges)
+                    union_into(included_ranges, *null_safe_equal_ranges);
+
+                std::optional<PlainRanges> complement_excluded_ranges;
+                if (negative_ranges)
+                    intersect_into(complement_excluded_ranges, *negative_ranges);
+                if (null_safe_not_equal_ranges)
+                    intersect_into(complement_excluded_ranges, *null_safe_not_equal_ranges);
+
+                if (complement_excluded_ranges)
+                {
+                    PlainRanges false_ranges = *complement_excluded_ranges;
+                    Float64 false_sel = estimate_ranges_true(column_name, false_ranges);
+                    if (included_ranges)
+                    {
+                        PlainRanges included_in_false = false_ranges.intersectWith(*included_ranges);
+                        false_sel -= estimate_ranges_true(column_name, included_in_false);
+                    }
+                    non_null_true_sel = domain_non_null_sel - false_sel;
+                }
+                else if (included_ranges)
+                    non_null_true_sel = estimate_ranges_true(column_name, *included_ranges);
+            }
+        }
+        else
+        {
+            if (!has_null_check)
+            {
+                std::optional<PlainRanges> allowed_ranges;
+                if (positive_ranges)
+                    intersect_into(allowed_ranges, *positive_ranges);
+                if (null_safe_equal_ranges)
+                    intersect_into(allowed_ranges, *null_safe_equal_ranges);
+
+                PlainRanges non_null_true_ranges = allowed_ranges ? *allowed_ranges : universe;
+                non_null_true_sel = estimate_ranges_true(column_name, non_null_true_ranges);
+
+                std::optional<PlainRanges> excluded_ranges;
+                if (negative_ranges)
+                    union_into(excluded_ranges, *negative_ranges);
+                if (null_safe_not_equal_ranges)
+                    union_into(excluded_ranges, *null_safe_not_equal_ranges);
+
+                if (excluded_ranges)
+                {
+                    PlainRanges excluded_from_true = non_null_true_ranges.intersectWith(*excluded_ranges);
+                    non_null_true_sel -= estimate_ranges_true(column_name, excluded_from_true);
+                }
+            }
+        }
+
+        non_null_true_sel = clamp_probability(non_null_true_sel, 0.0);
+
+        enum class NullTruth
+        {
+            False,
+            Null,
+            True,
+        };
+
+        const bool ordinary_value_predicate = positive_ranges || negative_ranges;
+        NullTruth null_truth = NullTruth::False;
+        if (is_or)
+        {
+            if (null_safe_not_equal_ranges || has_null_check)
+                null_truth = NullTruth::True;
+            else if (ordinary_value_predicate)
+                null_truth = NullTruth::Null;
+        }
+        else
+        {
+            if (null_safe_equal_ranges || has_not_null_check)
+                null_truth = NullTruth::False;
+            else if (ordinary_value_predicate)
+                null_truth = NullTruth::Null;
+            else if (null_safe_not_equal_ranges || has_null_check)
+                null_truth = NullTruth::True;
+        }
+
+        Float64 null_sel = has_null_check ? explicit_null_sel : domain_null_sel;
+        Selectivity result(non_null_true_sel, 0.0);
+        if (null_truth == NullTruth::True)
+            result.true_sel = clamp_probability(result.true_sel + null_sel);
+        else if (null_truth == NullTruth::Null)
+            result.null_sel = std::min(null_sel, std::max(0.0, 1.0 - result.true_sel));
+        return result;
+    };
+
     /// Per-column accumulator. The map enforces independence across columns: each column
     /// contributes a single `Selectivity` to the final AND/OR product, with intra-column
     /// merging (e.g. `col > 0 AND col IS NOT NULL`) folded in via `applyAnd`/`applyOr`.
     std::unordered_map<String, Selectivity> estimate_results;
+    for (const auto & column_name : null_safe_columns)
+        estimate_results.emplace(column_name, estimate_column_with_null_safe(column_name));
+
     for (const auto & [column_name, ranges] : column_ranges)
     {
+        if (null_safe_columns.contains(column_name))
+            continue;
+
         if (const auto * est = get_estimator(column_name))
             estimate_results.emplace(column_name, est->estimateRanges(ranges));
         else
@@ -787,6 +1120,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & [column_name, ranges] : column_not_ranges)
     {
+        if (null_safe_columns.contains(column_name))
+            continue;
+
         Selectivity not_ranges_selectivity;
         if (const auto * est = get_estimator(column_name))
             not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
@@ -816,6 +1152,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         /// because range predicates have `true_sel = 0` on rows where the column is NULL.
         for (const auto & col : null_check_columns)
         {
+            if (null_safe_columns.contains(col))
+                continue;
+
             if (not_null_check_columns.contains(col))
             {
                 selectivity = Selectivity();
@@ -828,6 +1167,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         /// `x IS NULL OR x IS NOT NULL` is a tautology → selectivity = 1
         for (const auto & col : null_check_columns)
         {
+            if (null_safe_columns.contains(col))
+                continue;
+
             if (not_null_check_columns.contains(col))
             {
                 selectivity = Selectivity(1, 0);
@@ -838,6 +1180,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & column_name : null_check_columns)
     {
+        if (null_safe_columns.contains(column_name))
+            continue;
+
         Float64 cur_selectivity = default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNull();
@@ -864,6 +1209,9 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     for (const auto & column_name : not_null_check_columns)
     {
+        if (null_safe_columns.contains(column_name))
+            continue;
+
         Float64 cur_selectivity = 1.0 - default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNotNull();

@@ -70,6 +70,11 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_IN_RANGE,
+            /// Column <=> non-NULL constant / column IS DISTINCT FROM non-NULL constant.
+            /// These predicates are two-valued, so NULL input is folded into TRUE/FALSE directly
+            /// instead of being carried in Selectivity::null_sel like ordinary comparisons.
+            FUNCTION_NULL_SAFE_EQUAL,
+            FUNCTION_NULL_SAFE_NOT_EQUAL,
             FUNCTION_IS_NULL,
             FUNCTION_IS_NOT_NULL,
             FUNCTION_UNKNOWN,
@@ -89,6 +94,12 @@ public:
         /// column not in range (a, b) ...
         /// we use 'not ranges' to estimate condition a != 1 and a != 2 better.
         ColumnRanges column_not_ranges;
+        /// column IS NOT DISTINCT FROM a non-NULL constant/range. Unlike ordinary ranges,
+        /// these predicates are FALSE (not NULL) when the input column is NULL.
+        ColumnRanges null_safe_column_ranges;
+        /// column IS DISTINCT FROM a non-NULL constant/range. These predicates are TRUE
+        /// when the input column is NULL, and TRUE for non-NULL values outside the range.
+        ColumnRanges null_safe_column_not_ranges;
         /// columns checked with IS NULL predicate
         std::unordered_set<String> null_check_columns;
         /// columns checked with IS NOT NULL predicate
@@ -113,8 +124,9 @@ private:
     };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    Selectivity estimateSelectivityImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
+    Selectivity estimateSelectivity(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
-    UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
     static constexpr Float64 default_cond_range_factor = 0.33;
