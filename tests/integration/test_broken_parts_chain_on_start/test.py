@@ -24,14 +24,15 @@ def part_path(table, part):
         f"SELECT path FROM system.parts WHERE database = currentDatabase()"
         f" AND table = '{table}' AND name = '{part}'"
     ).strip()
-    # The path is interpolated into a shell command below.
+    # The path is handed to a root `rm` below, so a wrong or empty answer from
+    # `system.parts` must fail loudly here instead of deleting something else.
     assert path.startswith("/var/lib/clickhouse/"), f"unexpected part path: {path}"
     return path
 
 
 def remove_data_bin(path):
     node.exec_in_container(
-        ["bash", "-c", f"rm -f {path}/data.bin"], privileged=True, user="root"
+        ["rm", "-f", f"{path}/data.bin"], privileged=True, user="root"
     )
 
 
