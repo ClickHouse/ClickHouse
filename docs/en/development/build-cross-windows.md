@@ -13,10 +13,12 @@ always cross-compiled, as they are for macOS and FreeBSD.
 
 :::note
 The Windows port is **not finished**. `clickhouse-client` and `clickhouse-local` do not link
-yet. What does build is the `clickhouse-windows-ported` target, described in
-[Current state](#current-state) below, which CI builds on every pull request so that the
-cross-build cannot regress while the remaining work lands. If you are picking this up, start
-from [Remaining work](#remaining-work).
+yet: the C++ runtime, the third-party libraries and all of Poco compile, and `src/` is in
+progress - `clickhouse_common_io`, the first library of it, is down to 141 errors in 70
+translation units from 497 in 112. What CI builds on every pull request is the
+`clickhouse-windows-ported` target, described in [Current state](#current-state) below, so the
+cross-build cannot regress while the rest lands. If you are picking this up, start from
+[Remaining work](#remaining-work) - it is an inventory of what is left, by subsystem.
 :::
 
 The cross-build for Windows is based on the [Build instructions](../development/build.md),
@@ -130,32 +132,61 @@ gate on its own once `src/Common` builds - no change to `ported_targets.cmake` n
 
 ## Remaining work {#remaining-work}
 
-What stands between the current state and a working `clickhouse-local.exe`, in the order it
-is worth attacking:
+What stands between the current state and a working `clickhouse-local.exe`. The numbers are
+from `ninja -C build-windows -k 0 clickhouse_common_io`, which is the first library to get
+through and is currently at **141 errors in 70 translation units** (it started at 497 in 112).
+Everything after it - `dbms`, the parsers, the functions, the storages - is untouched and far
+larger.
 
-1. **`src/Common` and `src/IO`.** The bulk of it. These reach for interfaces Windows does not
-   have: `epoll`, `eventfd`, `timerfd`, `mmap`/`madvise`, POSIX signals and `siginfo_t`
-   (`QueryProfiler`), `ucontext.h` (`StackTrace`), `/proc` (`AsynchronousMetrics`),
-   `getrusage` (`ThreadProfileEvents`), `fork`/`exec` (`ShellCommand`), `O_CLOEXEC`, and
-   `dlopen`. Each needs either a Windows implementation or an explicit, documented opt-out -
-   a client does not need the query profiler.
-2. **LLP64 fallout.** `-Wshorten-64-to-32` fires wherever a `size_t` meets a `long`-typed
-   platform type, `off_t` being the most common. These are real narrowing conversions and
-   each wants a look rather than a cast.
-3. **`std::filesystem::path` conversions.** On Windows `path::value_type` is `wchar_t`, so
-   `path` does not convert to `std::string` implicitly and the many places that return one
-   from the other stop compiling. Deciding on one conversion helper - and on UTF-8 as the
-   internal encoding - is a prerequisite.
-4. **`MSG_DONTWAIT`.** Winsock has no per-call non-blocking flag; `SocketDefs.h` currently
-   emulates it with a bit that is stripped before the call, and `SocketImpl::connectionOpen`
-   polls with a zero timeout instead. `src/IO/SocketPeerClosed.cpp` needs the same treatment.
-5. **replxx.** Its Windows console backend is intact upstream, but our fork broke it when it
-   added support for custom descriptors: it writes to descriptors with `dprintf`/`fsync`
-   outside any `#ifdef` and dropped the `tty::out` that `windows.cxx` reads.
-   `contrib/replxx-cmake/replxx-windows-compat.h` patches around both; the fix belongs in
-   [ClickHouse/replxx](https://github.com/ClickHouse/replxx).
-6. **Runtime verification.** Nothing here has been *run* yet - only compiled and linked. The
-   Wine smoke test above is the cheapest way in.
+The error classes that remain are no longer mechanical: each is a subsystem that needs either
+a Windows implementation or an explicit, documented opt-out. Grouped by what has to be
+decided:
+
+**Process and thread introspection** (no Windows equivalent of the POSIX interface; a client
+arguably needs none of it, so an opt-out is defensible - but it must be a stated one, not a
+silent no-op):
+
+| File | Needs |
+|---|---|
+| `Common/QueryProfiler.*` | `SIGPROF`/`SIGUSR1`/`SIGUSR2`, `siginfo_t`, `sigaction`. 16 of the errors are `constexpr` signal numbers. |
+| `Common/StackTrace.h` | `ucontext.h`. Windows equivalent is `RtlCaptureContext` + `CaptureStackBackTrace`. |
+| `Common/ThreadFuzzer.cpp` | POSIX signals and `pthread` interposition. |
+| `Common/ThreadProfileEvents.h`, `Common/AsynchronousMetrics.cpp` | `getrusage`, `/proc`. Windows has `GetProcessTimes`/`GetProcessMemoryInfo`. |
+| `Common/MemoryWorker.cpp` | `/proc`-based resident-set reads. |
+| `Common/setThreadName.cpp` | `prctl`. Windows has `SetThreadDescription`. |
+| `Common/checkStackSize.cpp`, `Common/FiberStack.cpp` | `getrlimit`. The stack bounds are in the TIB on Windows. |
+
+**Files and file descriptors:**
+
+| File | Needs |
+|---|---|
+| `Common/Allocator.cpp`, `Common/PageCache.cpp`, `Common/memory.cpp`, `IO/MMap*` | `sys/mman.h`. Windows has `CreateFileMapping`/`MapViewOfFile`, but no `MADV_DONTNEED`. |
+| `Common/StatusFile.cpp` | `flock`. Windows has `LockFileEx`. |
+| `Common/filesystemHelpers.h` | `statvfs`. Windows has `GetDiskFreeSpaceEx`. |
+| `Common/assertProcessUserMatchesDataOwner.cpp` | `pwd.h`. Windows has no `uid_t`; the check needs rethinking or skipping. |
+| `Common/ShellCommand.cpp`, `Common/waitForPid.cpp` | `fork`/`exec`/`waitpid`. Windows has `CreateProcess`. |
+| 13 sites | `O_CLOEXEC`. The Windows CRT spells it `_O_NOINHERIT`. |
+
+**Sockets and terminal:**
+
+| File | Needs |
+|---|---|
+| `Common/CaresPTRResolver.h`, `IO/SocketPeerClosed.cpp` | `poll.h`, `sys/socket.h`, and `MSG_DONTWAIT` - see the note on the emulated flag in `Poco/Net/SocketDefs.h`. |
+| `Common/isLocalAddress.cpp` | `getifaddrs`. Windows has `GetAdaptersAddresses`. |
+| `Common/TerminalSize.cpp` | `ioctl(TIOCGWINSZ)`. Windows has `GetConsoleScreenBufferInfo`. |
+| `Common/PipeFDs.cpp` | `pipe2`, `O_NONBLOCK`, `F_SETFL`. |
+
+**Odds and ends:** `timegm` (`_mkgmtime`), `strptime` (absent from mingw-w64), `setenv`
+(`_putenv_s`), `link` (`CreateHardLink`), `lstat`, `sysconf(_SC_PAGESIZE)`/`_SC_PHYS_PAGES`,
+`NAME_MAX`, `PIPE_BUF`.
+
+**Then, and only then:** the `std::filesystem::path` question in full. `base/base/pathToString.h`
+covers the sites that block `clickhouse_common_io`, but the codebase relies on the implicit
+`path`/`std::string` conversion in many more places, and every one of them has to choose an
+encoding. UTF-8 is the answer - `path::string()` is not, it goes through the active code page.
+
+**Also unverified:** nothing here has been *run*, only compiled. See the Wine note above; an
+`x86_64` PE binary needs an `x86_64` host or an emulator such as FEX.
 
 ## CI {#ci}
 
