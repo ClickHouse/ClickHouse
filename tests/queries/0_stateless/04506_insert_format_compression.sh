@@ -215,3 +215,19 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 rm -f "${CLICKHOUSE_TMP}"/04506_data9.csv "${CLICKHOUSE_TMP}"/04506_data9.csv.gz
+
+# Regression: `COMPRESSION` immediately after `FORMAT`, with no valid string literal following, must not
+# be mistaken for the new clause -- it must fall through as ordinary inline insert data, exactly as it
+# did before COMPRESSION-next-to-FORMAT was supported (e.g. a `LineAsString` row that is just the word
+# `COMPRESSION`). Covers both the bare-FORMAT branch and the mirrored input() branch.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (line String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT LineAsString
+COMPRESSION"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (line String) ENGINE = Memory"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression SELECT * FROM input('line String') FORMAT LineAsString
+COMPRESSION"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"

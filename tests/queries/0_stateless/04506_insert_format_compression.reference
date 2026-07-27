@@ -25,3 +25,5 @@ INSERT INTO test_insert_format_compression SELECT * FROM input(\'id UInt32, text
 22	V
 23	W
 24	X
+COMPRESSION
+COMPRESSION

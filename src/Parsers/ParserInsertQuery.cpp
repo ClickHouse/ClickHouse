@@ -209,11 +209,22 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// Check for 'COMPRESSION' parameter (optional), only meaningful when there is no FROM INFILE
         /// (in that case COMPRESSION, if any, was already consumed right after the infile name).
-        if (!infile && s_compression.ignore(pos, expected))
+        /// This clause is ambiguous with inline insert data starting with the literal word
+        /// "COMPRESSION" (the same ambiguity SETTINGS-after-FORMAT has): only commit to it when a
+        /// valid string literal actually follows, otherwise rewind and let it fall through as
+        /// ordinary insert data. Data is allowed to immediately follow a recognized clause here
+        /// (e.g. `COMPRESSION 'none'` or `'auto'` next to inline data) -- that combination is
+        /// accepted or rejected later based on what the method actually resolves to, not by the
+        /// parser, so the clause must not be required to end the query.
+        if (!infile)
         {
-            ParserStringLiteral compression_p;
-            if (!compression_p.parse(pos, compression, expected))
-                return false;
+            Pos before_compression = pos;
+            if (s_compression.ignore(pos, expected))
+            {
+                ParserStringLiteral compression_p;
+                if (!compression_p.parse(pos, compression, expected))
+                    pos = before_compression;
+            }
         }
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
@@ -255,12 +266,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// reads inline data through the `input` table function (otherwise there is no
             /// data to decompress, the rows come from the SELECT itself), and only when
             /// there is no FROM INFILE (whose own COMPRESSION, if any, was already consumed
-            /// right after the infile name).
-            if (!infile && selectReadsInlineDataViaInputFunction(select) && s_compression.ignore(pos, expected))
+            /// right after the infile name). Same ambiguity-avoidance as the bare-FORMAT branch
+            /// above: only commit to the clause when a valid string literal actually follows.
+            if (!infile && selectReadsInlineDataViaInputFunction(select))
             {
-                ParserStringLiteral compression_p;
-                if (!compression_p.parse(pos, compression, expected))
-                    return false;
+                Pos before_compression = pos;
+                if (s_compression.ignore(pos, expected))
+                {
+                    ParserStringLiteral compression_p;
+                    if (!compression_p.parse(pos, compression, expected))
+                        pos = before_compression;
+                }
             }
         }
         else
