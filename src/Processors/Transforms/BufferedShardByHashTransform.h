@@ -22,12 +22,23 @@ class BufferedShardByHashTransform;
 
 /// Bookkeeping for one physical buffer (by pointer) referenced by at least one currently-buffered charge
 /// somewhere in a shuffle stage. `refcount` counts every live *visit* that currently holds a reference to it
-/// via `BufferedShardByHashTransform::chargeColumnAndDescendants` (a block visits a buffer once per shard chunk
-/// that reaches it, so a dictionary shared across `num_shards` shard chunks of one block has
+/// via `BufferedShardByHashTransform::chargeColumnAndDescendants` (a buffer is visited once per buffered chunk
+/// that reaches it, so a dictionary shared across the `num_shards` shard chunks of one block has
 /// `refcount == num_shards`, released by exactly that many calls to `releaseTouchedObjects`); `bytes` is the
 /// buffer's own size (excluding whatever is reachable from it, which is tracked as separate entries), cached at
 /// the moment it was first ever registered - it must not be re-measured at release time, since the underlying
 /// chunk that kept the column alive may already be gone by then.
+///
+/// The key is a raw address, so an entry must never outlive the object it accounts for: a buffer allocated later
+/// could land on the freed address and be mistaken for this one (charged nothing, then billed this entry's stale
+/// `bytes` when it is released). Two properties keep that from happening. Every charge is released as soon as the
+/// chunk holding it stops being reachable - per buffered chunk, not per input block, so the exclusive buffers of
+/// a shard chunk the downstream has consumed are forgotten even while its siblings from the same block stay
+/// buffered. And the one charge whose release is inherently deferred - a chunk parked in an output port, released
+/// only once the port shows the downstream pulled it, which the owning scatter can notice no earlier than its
+/// next `prepare()` - is reclaimed across the whole stage before any new registration
+/// (`BufferedShardByHashTransform::reclaimAllPortResidentChunks`), so no registration can ever consult the table
+/// while it still holds an entry for a chunk that has left the pipeline.
 struct SharedObjectAccounting
 {
     size_t refcount = 0;
@@ -43,8 +54,8 @@ struct SharedObjectAccounting
 struct BufferedShardByHashBudget
 {
     /// Guards `shared_object_refcounts`, `scatters`, the accounting updates to `total_buffered_bytes`, and the
-    /// per-scatter bookkeeping of everything currently charged (each scatter's `block_budgets` and
-    /// `port_resident_block`) - a scatter reclaims the stale charges of its siblings through `scatters`, so that
+    /// per-scatter bookkeeping of everything currently charged (each scatter's `output_queues` charges and
+    /// `port_resident_touched`) - a scatter reclaims the stale charges of its siblings through `scatters`, so that
     /// bookkeeping is not private to one scatter any more.
     std::mutex mutex;
     /// Total resident buffered bytes across all scatters of the stage. Updated under `mutex` together with the
@@ -60,12 +71,13 @@ struct BufferedShardByHashBudget
     /// evaluates once and every stream references) be charged exactly once for as long as any reference holds it.
     std::unordered_map<const void *, SharedObjectAccounting> shared_object_refcounts;
     /// Every scatter of the stage, so that any of them can reclaim the charges of chunks the downstream merges
-    /// have already pulled out of ANY scatter's output ports before consulting the counter. A scatter can only
-    /// notice a pull of its own by running `prepare()` again (nothing calls back into it at the pull event), so
-    /// without this a scatter that is not scheduled for a while would keep bytes charged that are no longer
-    /// resident, and a sibling would raise TOO_MANY_ROWS_OR_BYTES against them (see
-    /// `BufferedShardByHashTransform::isOverBudget`). Entries are added by the constructor and removed by the
-    /// destructor, which also releases whatever that scatter still had charged.
+    /// have already pulled out of ANY scatter's output ports before consulting - or adding to - the table and the
+    /// counter. A scatter can only notice a pull of its own by running `prepare()` again (nothing calls back into
+    /// it at the pull event), so without this a scatter that is not scheduled for a while would keep bytes charged
+    /// that are no longer resident: a sibling would raise TOO_MANY_ROWS_OR_BYTES against them, and a buffer
+    /// allocated at a freed address would be taken for one of them (see
+    /// `BufferedShardByHashTransform::reclaimAllPortResidentChunks`). Entries are added by the constructor and
+    /// removed by the destructor, which also releases whatever that scatter still had charged.
     std::vector<BufferedShardByHashTransform *> scatters;
 };
 
@@ -134,50 +146,48 @@ private:
     /// input until the slow consumer drains it. Otherwise, we can have very high memory usage.
     static constexpr size_t MAX_QUEUE_LENGTH = 10;
 
-    /// A queued shard chunk, tagged with the id of the input block it was scattered from so the block's
-    /// budget charge can be released once its last shard chunk leaves the pipeline (see `block_budgets`).
+    /// A buffered shard chunk, carrying the physical buffers (by pointer) its own budget charge registered, so
+    /// that charge is reversed exactly when this chunk - and no other - stops being buffered. Accounting is per
+    /// buffered chunk, not per input block: `scatter` shares one physical buffer across all shard chunks of a
+    /// block (the canonical cases are a `LowCardinality` dictionary - `ColumnLowCardinality::scatter` keeps a
+    /// single dictionary shared across the shards, at any nesting depth - and a `ColumnConst` payload, wrapped
+    /// unchanged for every shard), but such a buffer is charged once for the whole stage anyway, by refcounting
+    /// it in `BufferedShardByHashBudget::shared_object_refcounts`: every shard chunk that reaches it registers a
+    /// reference, and it stays billed until the last of them releases it. Holding the charge of a whole input
+    /// block together until its last shard chunk drained would bill the same bytes for exactly as long, but it
+    /// would also keep an entry for the exclusive buffers of a shard chunk the downstream has long consumed,
+    /// which the table (keyed by address) must not do - see `SharedObjectAccounting`.
     struct QueuedChunk
     {
         Chunk chunk;
-        size_t block_id;
-    };
-
-    /// Budget bookkeeping for one input block. Accounting is per input block, NOT per queued chunk, because
-    /// `scatter` can share one physical buffer across all shard chunks of a block (the canonical cases are a
-    /// `LowCardinality` dictionary - `ColumnLowCardinality::scatter` keeps a single dictionary shared across
-    /// the shards, at any nesting depth - and a `ColumnConst` payload, wrapped unchanged for every shard).
-    /// `generateOutputChunks` charges the exact bytes actually resident after the split via
-    /// `chargeColumnAndDescendants`, which also de-duplicates a buffer shared with any OTHER block still
-    /// buffered or with a sibling scatter (see `BufferedShardByHashBudget::shared_object_refcounts`), not only
-    /// within this one block. `touched_objects` records every physical buffer (pointer) this block's charge
-    /// registered, so its exact contribution can be reversed - one buffer at a time, correctly leaving alone
-    /// whatever another still-live reference shares with it - once the block no longer keeps any of its shard
-    /// chunks alive (see `releaseTouchedObjects`).
-    struct BlockBudget
-    {
         std::vector<const void *> touched_objects;
-        size_t outstanding_chunks = 0; /// Shard chunks from this block still buffered (in a queue or an output port).
     };
 
     /// Queue bookkeeping that maintains the shared buffered-bytes counter. All of it - like everything else that
-    /// touches `block_budgets` or `port_resident_block` - runs with `budget->mutex` held: a sibling scatter
-    /// reclaims this scatter's stale port-resident charges through `BufferedShardByHashBudget::scatters`.
-    void enqueue(size_t shard, Chunk chunk, size_t block_id);
+    /// touches the charges recorded in `output_queues` or `port_resident_touched` - runs with `budget->mutex`
+    /// held: a sibling scatter reclaims this scatter's stale port-resident charges through
+    /// `BufferedShardByHashBudget::scatters`.
+    void enqueue(size_t shard, Chunk chunk, std::vector<const void *> touched_objects);
     QueuedChunk dequeue(size_t shard);
     void clearQueue(size_t shard);
-    /// Account for one shard chunk of `block_id` leaving the pipeline (consumed downstream or discarded on a
-    /// finished output); release the block's charge once its last shard chunk is gone.
-    void releaseQueuedChunk(size_t block_id);
+    /// Account for one shard chunk leaving the pipeline (consumed downstream or discarded on a finished output):
+    /// release its charge, which frees every buffer no other buffered chunk references any more.
+    void releaseQueuedChunk(const std::vector<const void *> & touched_objects);
     /// Release the charge for a chunk parked in an output port once the downstream merge has pulled it
     /// (`OutputPort::hasData()` is false again) or the downstream closed the port without pulling, making the
     /// chunk unreachable. A pushed chunk stays resident in the port state until the merge pulls it, so its
     /// bytes must remain counted until then; the transform never finishes a port that still holds a parked
     /// chunk and never returns Finished while one remains (see the EOF drain in prepare()).
     void reclaimPortResidentChunks();
-    /// The same, for every scatter of the stage (`BufferedShardByHashBudget::scatters`), so that the shared
-    /// counter holds no bytes that some sibling's downstream has already pulled. A scatter learns of a pull only
-    /// when it is scheduled again, so its own charges can be stale for as long as the executor leaves it alone,
-    /// while every scatter reads the shared counter on every admission decision.
+    /// The same, for every scatter of the stage (`BufferedShardByHashBudget::scatters`), so that neither the
+    /// shared counter nor the de-duplication table holds anything for a chunk some sibling's downstream has
+    /// already pulled. A scatter learns of a pull only when it is scheduled again, so its own charges can be
+    /// stale for as long as the executor leaves it alone, while every scatter reads the shared counter on every
+    /// admission decision and registers new objects in the shared table on every chunk it buffers. Hence this
+    /// runs both before enforcement (`isOverBudget`) and before any registration (`chargePendingInput`,
+    /// `generateOutputChunks`): a stale entry consulted by a registration would make a buffer allocated at the
+    /// freed address of a consumed chunk's column look like an already-charged one (charged nothing, then billed
+    /// the stale entry's bytes when the stale reference is finally released), permanently corrupting the budget.
     void reclaimAllPortResidentChunks();
     /// True when the bytes actually resident across the stage exceed `max_buffered_bytes`. Reads the shared
     /// counter locklessly first, and only when that (possibly stale) reading is over the cap takes
@@ -263,16 +273,10 @@ private:
     /// Per-shard FIFO of chunks waiting to be pushed downstream. Bounded at MAX_QUEUE_LENGTH.
     std::vector<std::deque<QueuedChunk>> output_queues;
 
-    /// For each shard, the block id of the chunk currently parked in its output port (empty if the port holds
-    /// no chunk we pushed). The chunk's budget charge stays held until the downstream merge pulls it out of the
+    /// For each shard, the budget charge of the chunk currently parked in its output port (empty if the port
+    /// holds no chunk we pushed). The charge stays held until the downstream merge pulls the chunk out of the
     /// port; only then is it truly gone from the pipeline (a port can hold at most one chunk at a time).
-    std::vector<std::optional<size_t>> port_resident_block;
-
-    /// Per-block budget charges, keyed by the block id carried in each `QueuedChunk`. An entry lives from the
-    /// moment a block is split until its last shard chunk leaves the pipeline (a queue or an output port).
-    std::unordered_map<size_t, BlockBudget> block_budgets;
-    /// Monotonic id assigned to each input block when it is split.
-    size_t next_block_id = 0;
+    std::vector<std::optional<std::vector<const void *>>> port_resident_touched;
 
     /// Reused across input chunks to skip per-chunk reallocation.
     PaddedPODArray<UInt32> hash_buffer;

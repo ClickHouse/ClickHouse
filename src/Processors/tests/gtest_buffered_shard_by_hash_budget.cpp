@@ -451,16 +451,21 @@ ConnectedScatter makeConnectedScatter(
 struct StalePullOutcome
 {
     Int64 bytes_while_first_parked = 0; /// Shared counter with the first scatter's block parked in its ports.
+    Int64 bytes_after_second_buffered = 0; /// Shared counter once the second scatter has buffered its own block.
     bool second_threw_budget_error = false; /// The second scatter threw TOO_MANY_ROWS_OR_BYTES.
 };
 
-/// Two scatters sharing one budget, as a shuffle stage runs them (one per input stream). The first buffers a big
-/// block, which its downstream merges then pull out of its ports - but the first scatter is NOT scheduled again,
-/// so it has not yet released those charges. The second scatter then runs a small block through its own admission
-/// check. With `pull_first_scatter_chunks` the bytes the first scatter still has charged are no longer resident,
-/// so the second must be admitted; without it they are genuinely held, so the second must throw (control).
+/// Two scatters sharing one budget, as a shuffle stage runs them (one per input stream). The first buffers a
+/// block, and its downstream merges then pull `first_sinks_to_pull` of the parked chunks out of its ports and
+/// destroy them - but the first scatter is NOT scheduled again, so it has not itself released those charges. The
+/// second scatter then runs its own block through the admission check and buffers it.
+///
+/// The second scatter's block is deliberately built AFTER the pulled chunks are freed, so its columns can be
+/// allocated at their recycled addresses: the budget's de-duplication table is keyed by column address, so this
+/// is exactly the interleaving in which a stale entry for a consumed chunk would be mistaken for the new block's
+/// buffer (charged nothing, then billed the stale entry's bytes when it is eventually released).
 StalePullOutcome runSecondScatterAfterFirstIsDrained(
-    size_t first_rows, size_t second_rows, size_t num_shards, size_t max_buffered_bytes, bool pull_first_scatter_chunks)
+    size_t first_rows, size_t second_rows, size_t num_shards, size_t max_buffered_bytes, size_t first_sinks_to_pull)
 {
     Block header_block{
         ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
@@ -472,13 +477,8 @@ StalePullOutcome runSecondScatterAfterFirstIsDrained(
     auto first = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
     auto second = makeConnectedScatter(header, num_shards, ColumnNumbers{0}, max_buffered_bytes, budget);
 
-    /// Both blocks are built and handed to their scatters up front, before anything is freed: the budget's
-    /// de-duplication table is keyed by column address, so a block allocated after the first scatter's chunks
-    /// were destroyed could land on a recycled address and be mistaken for an already-charged buffer. A pulled
-    /// chunk is only dropped once both blocks exist, so every address in play here is distinct and live.
     first.source->push(
         Chunk(Columns{makeDistinctKeyColumn(first_rows), makeUInt64ValueColumn(first_rows)}, first_rows));
-    Chunk second_chunk(Columns{makeDistinctKeyColumn(second_rows), makeUInt64ValueColumn(second_rows)}, second_rows);
 
     /// The first scatter buffers its block: one chunk parked in each of its output ports, all charged.
     drive(first);
@@ -486,16 +486,25 @@ StalePullOutcome runSecondScatterAfterFirstIsDrained(
     StalePullOutcome outcome;
     outcome.bytes_while_first_parked = budget->total_buffered_bytes.load();
 
-    /// Its downstream merges pull every parked chunk. Nothing calls back into the first scatter at the pull, and
-    /// the executor does not have to schedule it before the second scatter runs, so its charges stay in the
-    /// shared counter although the bytes are gone.
-    if (pull_first_scatter_chunks)
-        for (auto & sink : first.sinks)
-            if (sink->hasData())
-                sink->pull();
+    /// Its downstream merges pull the parked chunks and drop them. Nothing calls back into the first scatter at
+    /// the pull, and the executor does not have to schedule it before the second scatter runs, so its charges
+    /// stay in the shared counter although the bytes are gone.
+    size_t pulled = 0;
+    for (auto & sink : first.sinks)
+    {
+        if (pulled == first_sinks_to_pull)
+            break;
+        if (sink->hasData())
+        {
+            sink->pull();
+            ++pulled;
+        }
+    }
 
-    second.source->push(std::move(second_chunk));
+    second.source->push(
+        Chunk(Columns{makeDistinctKeyColumn(second_rows), makeUInt64ValueColumn(second_rows)}, second_rows));
     outcome.second_threw_budget_error = drive(second);
+    outcome.bytes_after_second_buffered = budget->total_buffered_bytes.load();
 
     return outcome;
 }
@@ -856,7 +865,7 @@ TEST(BufferedShardByHashTransform, SiblingNotFailedByAlreadyPulledPortResidentBy
     ASSERT_GE(max_buffered_bytes, chunk_bytes);
 
     const auto drained = runSecondScatterAfterFirstIsDrained(
-        num_rows, num_rows, num_shards, static_cast<size_t>(max_buffered_bytes), /*pull_first_scatter_chunks=*/ true);
+        num_rows, num_rows, num_shards, static_cast<size_t>(max_buffered_bytes), /*first_sinks_to_pull=*/ num_shards);
     /// The first scatter buffered its own block without tripping the cap (so the run reaches the interleaving
     /// under test)...
     ASSERT_GT(drained.bytes_while_first_parked, 0);
@@ -866,8 +875,70 @@ TEST(BufferedShardByHashTransform, SiblingNotFailedByAlreadyPulledPortResidentBy
 
     /// Control: with the first scatter's chunks still parked, those bytes ARE resident and the sibling throws.
     const auto parked = runSecondScatterAfterFirstIsDrained(
-        num_rows, num_rows, num_shards, static_cast<size_t>(max_buffered_bytes), /*pull_first_scatter_chunks=*/ false);
+        num_rows, num_rows, num_shards, static_cast<size_t>(max_buffered_bytes), /*first_sinks_to_pull=*/ 0);
     EXPECT_TRUE(parked.second_threw_budget_error);
+}
+
+/// The de-duplication table is keyed by raw column address, so it must never keep an entry for a buffer that no
+/// longer exists: a later chunk allocated at the recycled address would be taken for that buffer, charged nothing
+/// (`chargeColumnAndDescendants` treats an entry it finds as already billed), and the stale cached bytes would
+/// stay attached to it - the shared counter is then permanently wrong, letting an over-budget query through or
+/// failing a query whose bytes fit. The charges of chunks the downstream has already pulled out of the ports are
+/// the ones that can go stale, because their owning scatter only notices the pull when it is scheduled again, so
+/// they are reclaimed across the whole stage before any registration, not only before enforcement.
+///
+/// This runs the interleaving that makes such an entry stale: the first scatter's parked chunks are all pulled and
+/// destroyed while it is not scheduled again, and only then is the second scatter's (much smaller) block built and
+/// buffered, so its columns can land on the freed addresses. Under a cap with room for everything, the counter
+/// must then hold exactly the second block's own resident bytes: neither the first scatter's stale bytes (kept if
+/// nothing reclaims them before the registration) nor zero for a second block mistaken for the freed one.
+TEST(BufferedShardByHashTransform, ConsumedChunkChargesDoNotAliasLaterBuffers)
+{
+    const size_t num_shards = 8;
+    const size_t first_rows = 4000;
+    const size_t second_rows = 250; /// Much smaller, so the expected counter cannot be confused with the first.
+
+    Block header_block{
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k"),
+        ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "v"),
+    };
+    auto header = std::make_shared<const Block>(std::move(header_block));
+
+    const Int64 second_resident = bufferedBytesAfterSplit(
+        header, Columns{makeDistinctKeyColumn(second_rows), makeUInt64ValueColumn(second_rows)}, num_shards, ColumnNumbers{0});
+    ASSERT_GT(second_resident, 0);
+
+    /// A cap far above anything buffered here: what is under test is what the counter holds, not enforcement.
+    const auto drained = runSecondScatterAfterFirstIsDrained(
+        first_rows, second_rows, num_shards, static_cast<size_t>(100 * second_resident), /*first_sinks_to_pull=*/ num_shards);
+    ASSERT_FALSE(drained.second_threw_budget_error);
+    ASSERT_GT(drained.bytes_while_first_parked, 4 * second_resident); /// The first block dominates, as intended.
+    EXPECT_EQ(drained.bytes_after_second_buffered, second_resident);
+}
+
+/// A charge is released per buffered chunk, not per input block: the shard chunks of one block leave the pipeline
+/// one at a time, as their own downstream merges consume them, so holding the whole block's charge until its last
+/// shard chunk drained would keep the de-duplication table populated with the exclusive buffers of chunks that
+/// were consumed - and freed - long before (see `ConsumedChunkChargesDoNotAliasLaterBuffers` for what a stale
+/// entry does), and would bill their bytes all that time. Buffers genuinely shared across the shard chunks stay
+/// charged for as long as any of them holds them, because the table refcounts them.
+///
+/// This buffers one block, has the downstream consume half of the parked chunks, and then makes a sibling scatter
+/// buffer a small block, which reclaims the pulled chunks' charges. With per-chunk release the counter has to drop
+/// below what the whole block held; with per-block release it would still carry every byte of it.
+TEST(BufferedShardByHashTransform, PartiallyConsumedBlockReleasesTheConsumedChunks)
+{
+    const size_t num_shards = 8;
+    const size_t first_rows = 4000;
+    const size_t second_rows = 250; /// Small enough that what it adds cannot mask the release of half a block.
+
+    const auto partially_drained = runSecondScatterAfterFirstIsDrained(
+        first_rows, second_rows, num_shards, /*max_buffered_bytes=*/ 0, /*first_sinks_to_pull=*/ num_shards / 2);
+    ASSERT_GT(partially_drained.bytes_while_first_parked, 0);
+    /// Half the block's shard chunks are gone, so their exclusive buffers must no longer be charged...
+    EXPECT_LT(partially_drained.bytes_after_second_buffered, partially_drained.bytes_while_first_parked);
+    /// ...while the half still parked, and the second scatter's block, are.
+    EXPECT_GT(partially_drained.bytes_after_second_buffered, partially_drained.bytes_while_first_parked / 4);
 }
 
 /// The buffer budget must de-duplicate a physical buffer shared, by pointer, across SIBLING SCATTERS of the
