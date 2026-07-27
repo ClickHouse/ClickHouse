@@ -25,7 +25,8 @@
 # and waitTableFinallyDropped never returned.
 #
 # Expected (after fix):  the replica recovers, the TimeSeries table and its 3 inner tables are
-#                        back, and no Code 80 inner-drop rejection is logged.
+#                        back, the inner tables were really dropped and re-created (so they are
+#                        empty again), and no Code 80 inner-drop rejection is logged.
 # Observed (before fix): recovery never completes -- the table count stays at 3 (only the
 #                        orphaned inner tables), `ts` is gone, and DatabaseCatalog logs
 #                        `Cannot drop table <db>.ts (<uuid>). Will retry later.: Code: 80 ...`
@@ -71,12 +72,18 @@ function diverge_from_keeper()
     ${CLICKHOUSE_KEEPER_CLIENT} -q "set '${ZK_PATH}/metadata/${table}' '${zk_meta_orig}'"
 }
 
-# Recovery is asynchronous, so poll (bounded) until the table is back.
-function wait_for_table()
+# Recovery is asynchronous: ATTACH DATABASE only waits for the load and startup tasks, and the
+# Replicated startup task ends once the DDL worker threads are launched, so recoverLostReplica runs
+# afterwards. Poll for the RESTORED KEEPER-SIDE DEFINITION rather than for mere existence: the
+# diverged table is present the whole time, so an existence probe is satisfiable before recovery has
+# done anything. 240 * 0.5 s = 120 s is generous enough for a debug build yet leaves the unfixed
+# build well inside the runner timeout, so it reports a reference diff instead of being killed.
+function wait_for_recovery()
 {
     local table="$1"
-    for _ in {1..120}; do
-        [ "$(${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.${table}")" = "1" ] && return
+    for _ in {1..240}; do
+        [ "$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables
+              WHERE database = '${DB}' AND name = '${table}' AND comment = ''")" = "1" ] && return
         sleep 0.5
     done
 }
@@ -127,7 +134,7 @@ ${CLIENT} --allow_experimental_time_series_table=1 \
 
 diverge_from_keeper ts_ext
 force_recovery
-wait_for_table ts_ext
+wait_for_recovery ts_ext
 
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts_ext"
 # Recovery restored the Keeper-side definition, i.e. the local divergence really was discarded.
@@ -143,15 +150,29 @@ ${CLIENT} --allow_experimental_time_series_table=1 -q "CREATE TABLE ${DB}.ts ENG
 # The outer TimeSeries table plus its 3 inner tables (data, tags, metrics).
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 
+# Fill one inner table, so that afterwards the inner tables can be shown to be genuinely NEW rather
+# than the pre-existing ones left in place. The inner table names cannot show this: they embed the
+# OUTER table's UUID (getTimeSeriesInnerTableName), which recovery preserves, and neither can their
+# own UUIDs -- the Keeper CREATE carries explicit `<KIND> INNER UUID` clauses and recovery replays it
+# as an ATTACH, so the inner UUIDs are preserved too. The row count is the discriminator: the drop
+# and re-create leaves the inner tables empty, so a regression that made the eager inner drop a
+# silent no-op would leave these rows in place.
+SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.samples.%'")
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` SELECT generateUUIDv4(), now64(3), number FROM numbers(50)"
+${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
+
 diverge_from_keeper ts
 force_recovery
-wait_for_table ts
+wait_for_recovery ts
 
 # Before the fix this stays at 3: only the orphaned inner tables survive, `ts` never comes back.
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${DB}' AND (name = 'ts' OR name LIKE '.inner_id.%')"
 # `ts` specifically exists again (a count of 4 made only of inner tables would be wrong).
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${DB}.ts"
 ${CLICKHOUSE_CLIENT} -q "SELECT comment = '' FROM system.tables WHERE database = '${DB}' AND name = 'ts'"
+# The inner tables really were dropped and re-created, so they are empty again. If the eager inner
+# drop silently did nothing, the 50 rows inserted above would still be here.
+${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
 
 # Vacuity guard: assert recovery actually ran and actually took the DROP branch for `ts`. Without
 # this the assertions above would also pass on a run where recovery never triggered at all.
