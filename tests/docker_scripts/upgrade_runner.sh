@@ -125,21 +125,12 @@ clickhouse-client --receive_timeout 30 --query="SELECT 'Server version: ', versi
 
 mkdir tmp_stress_output
 
-# `02255_broken_parts_chain_on_start` deletes `data.bin` from a part the server itself wrote, and it is
-#       killed mid-run often enough that its own `detach`/`attach` recovery never executes. The upgrade
-#       stage neutralizes both cleanup paths for that leftover table: `--upgrade-check` implies
-#       `--fake-drop` (every `DROP TABLE` of a table that stores data on disk is a no-op), and the odd
-#       stress workers run with `--database=test_N`, which disables `clickhouse-test`'s per-test database
-#       cleanup. The damaged part therefore survives the restart, and the NEW binary reports it as a
-#       broken part with three `<Error>` lines whose text ("...likely because of backward
-#       incompatibility...") is exactly the signal this job exists to catch, so allow-listing it below
-#       would mask real part-format regressions.
-#       The skip must live here rather than in the test file: this stage runs the FROZEN
-#       previous-release checkout (see `previous_release_repository` above), so neither deleting the test
-#       nor adding a tag on master can affect what runs. `--skip` is matched by `clickhouse-test` against
-#       the test name, so it applies to the previous-release copy.
-#       Removable once no supported previous release ships `tests/queries/0_stateless/02255_broken_parts_chain_on_start.sh`
-#       (it is converted to `tests/integration/test_broken_parts_chain_on_start` on master).
+# `02255_broken_parts_chain_on_start` corrupts a part the server itself wrote, and its leftover damaged table
+#       reddens this job after the restart. The skip must live here, not in the test file: this stage runs the
+#       FROZEN previous-release checkout (`previous_release_repository` above), so neither deleting nor tagging
+#       the test on master changes what runs, while `--skip` is matched by `clickhouse-test` against the test
+#       name. Removable once no supported previous release ships
+#       `tests/queries/0_stateless/02255_broken_parts_chain_on_start.sh` (converted to `tests/integration/test_broken_parts_chain_on_start` on master).
 stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\""  --skip-func-tests "--skip 02255_broken_parts_chain_on_start" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
     && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
     || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
