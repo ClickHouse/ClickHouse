@@ -47,3 +47,21 @@ JOIN ${DB}.tbl USING (id)
 SETTINGS enable_materialized_cte = 1, enable_analyzer = 1,
     analyzer_compatibility_prefer_alias_over_subcolumn = 1, single_join_prefer_left_table = 0;
 "
+
+# The qualifier of a qualified matcher is looked up as a table expression after the expression lookup
+# misses, and a materialized CTE is stored under an internal temporary table name. The CTE name has to
+# be accepted there as well, otherwise `${DB}.*` throws `Qualified matcher does not find table`.
+$CLICKHOUSE_CLIENT --query "
+WITH ${DB} AS MATERIALIZED (SELECT 42 AS id, 7 AS v)
+SELECT ${DB}.*
+FROM ${DB}
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+"
+
+# The same matcher shape with a CTE name that does not collide with any database name.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS MATERIALIZED (SELECT 42 AS id)
+SELECT cte.*
+FROM cte
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
+"

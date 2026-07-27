@@ -825,8 +825,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else
-            return {};
+
+        /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
+          * by its CTE name in the same way as by a table name. The qualifier of a qualified matcher is looked
+          * up as a table expression after the expression lookup misses, so without this the matcher variant
+          * of a materialized CTE reference is not resolved.
+          * Example: WITH cte AS MATERIALIZED (SELECT 42 AS id) SELECT cte.* FROM cte;
+          */
+        if (parts_size == 1 && table_expression_node_type == QueryTreeNodeType::TABLE)
+        {
+            const auto * table_node = table_expression_node->as<TableNode>();
+            if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+                return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        }
+
+        return {};
     }
 
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
