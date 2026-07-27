@@ -1,0 +1,199 @@
+[
+  {
+    "group": "Организация",
+    "pages": [
+      {
+        "group": "Организация",
+        "pages": [
+          "GET /v1/organizations",
+          "GET /v1/organizations/{organizationId}",
+          "PATCH /v1/organizations/{organizationId}",
+          "GET /v1/organizations/{organizationId}/activities",
+          "GET /v1/organizations/{organizationId}/activities/{activityId}",
+          "products/cloud/api-reference/organization/organization-private-endpoint-config-get-list",
+          "POST /v1/organizations/{organizationId}/byocInfrastructure",
+          "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+          "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}"
+        ]
+      },
+      {
+        "group": "Биллинг",
+        "pages": [
+          "GET /v1/organizations/{organizationId}/usageCost"
+        ]
+      },
+      {
+        "group": "Управление пользователями",
+        "pages": [
+          "GET /v1/organizations/{organizationId}/members",
+          "GET /v1/organizations/{organizationId}/members/{userId}",
+          "PATCH /v1/organizations/{organizationId}/members/{userId}",
+          "DELETE /v1/organizations/{organizationId}/members/{userId}",
+          "GET /v1/organizations/{organizationId}/invitations",
+          "POST /v1/organizations/{organizationId}/invitations",
+          "GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+          "DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+        ]
+      },
+      {
+        "group": "Управление ролями",
+        "pages": [
+          "GET /v1/organizations/{organizationId}/roles",
+          "POST /v1/organizations/{organizationId}/roles",
+          "GET /v1/organizations/{organizationId}/roles/{roleId}",
+          "PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+          "DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+        ]
+      }
+    ]
+  },
+  {
+    "group": "Сервис",
+    "pages": [
+      {
+        "group": "Сервис",
+        "pages": [
+          "GET /v1/organizations/{organizationId}/services",
+          "POST /v1/organizations/{organizationId}/services",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}",
+          "PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+          "PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+          "products/cloud/api-reference/service/instance-scaling-update",
+          "PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+          "PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+          "POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+          "products/cloud/api-reference/service/scaling-schedule-get",
+          "products/cloud/api-reference/service/scaling-schedule-upsert",
+          "products/cloud/api-reference/service/scaling-schedule-delete",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+          "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+          "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+          "products/cloud/api-reference/service/service-clickhouse-settings-list-get",
+          "products/cloud/api-reference/service/service-clickhouse-settings-update",
+          "products/cloud/api-reference/service/service-clickhouse-settings-schema-get",
+          "products/cloud/api-reference/service/service-clickhouse-setting-get",
+          "products/cloud/api-reference/service/service-clickhouse-setting-delete"
+        ]
+      },
+      {
+        "group": "Backup",
+        "pages": [
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+          "GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+          "PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+          "products/cloud/api-reference/backup/backup-bucket-get",
+          "products/cloud/api-reference/backup/backup-bucket-create",
+          "products/cloud/api-reference/backup/backup-bucket-update",
+          "products/cloud/api-reference/backup/backup-bucket-delete"
+        ]
+      }
+    ]
+  },
+  {
+    "group": "OpenAPI",
+    "pages": [
+      "GET /v1/organizations/{organizationId}/keys",
+      "POST /v1/organizations/{organizationId}/keys",
+      "GET /v1/organizations/{organizationId}/keys/{keyId}",
+      "PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+      "DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+    ]
+  },
+  {
+    "group": "Prometheus",
+    "pages": [
+      "GET /v1/organizations/{organizationId}/prometheus",
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+      "products/cloud/api-reference/prometheus/postgres-org-prometheus-get",
+      "products/cloud/api-reference/prometheus/postgres-instance-prometheus-get"
+    ]
+  },
+  {
+    "group": "ClickPipes",
+    "pages": [
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+      "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+      "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+      "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+      "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+      "products/cloud/api-reference/clickpipes/click-pipe-schema-discovery",
+      "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+      "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+      "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+      "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+      "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+      "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+      "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+    ]
+  },
+  {
+    "group": "ClickStack",
+    "pages": [
+      "products/cloud/api-reference/clickstack/click-stack-list-dashboards",
+      "products/cloud/api-reference/clickstack/click-stack-create-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-get-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-update-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-delete-dashboard",
+      "products/cloud/api-reference/clickstack/click-stack-list-alerts",
+      "products/cloud/api-reference/clickstack/click-stack-create-alert",
+      "products/cloud/api-reference/clickstack/click-stack-list-sources",
+      "products/cloud/api-reference/clickstack/click-stack-create-source",
+      "products/cloud/api-reference/clickstack/click-stack-get-source",
+      "products/cloud/api-reference/clickstack/click-stack-update-source",
+      "products/cloud/api-reference/clickstack/click-stack-delete-source",
+      "products/cloud/api-reference/clickstack/click-stack-get-alert",
+      "products/cloud/api-reference/clickstack/click-stack-update-alert",
+      "products/cloud/api-reference/clickstack/click-stack-delete-alert",
+      "products/cloud/api-reference/clickstack/click-stack-list-connections",
+      "products/cloud/api-reference/clickstack/click-stack-create-connection",
+      "products/cloud/api-reference/clickstack/click-stack-get-connection",
+      "products/cloud/api-reference/clickstack/click-stack-update-connection",
+      "products/cloud/api-reference/clickstack/click-stack-delete-connection",
+      "products/cloud/api-reference/clickstack/click-stack-list-webhooks",
+      "products/cloud/api-reference/clickstack/click-stack-create-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-update-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-delete-webhook",
+      "products/cloud/api-reference/clickstack/click-stack-list-roles",
+      "products/cloud/api-reference/clickstack/click-stack-create-role",
+      "products/cloud/api-reference/clickstack/click-stack-get-role",
+      "products/cloud/api-reference/clickstack/click-stack-update-role",
+      "products/cloud/api-reference/clickstack/click-stack-delete-role",
+      "products/cloud/api-reference/clickstack/click-stack-list-saved-searches",
+      "products/cloud/api-reference/clickstack/click-stack-create-saved-search",
+      "products/cloud/api-reference/clickstack/click-stack-get-saved-search",
+      "products/cloud/api-reference/clickstack/click-stack-update-saved-search",
+      "products/cloud/api-reference/clickstack/click-stack-delete-saved-search"
+    ]
+  },
+  {
+    "group": "Postgres",
+    "pages": [
+      "products/cloud/api-reference/postgres/postgres-service-create",
+      "products/cloud/api-reference/postgres/postgres-service-get-list",
+      "products/cloud/api-reference/postgres/postgres-service-get",
+      "products/cloud/api-reference/postgres/postgres-service-delete",
+      "products/cloud/api-reference/postgres/postgres-service-patch",
+      "products/cloud/api-reference/postgres/postgres-service-certs-get",
+      "products/cloud/api-reference/postgres/postgres-instance-restore",
+      "products/cloud/api-reference/postgres/postgres-service-set-password",
+      "products/cloud/api-reference/postgres/postgres-service-patch-state",
+      "products/cloud/api-reference/postgres/postgres-instance-create-read-replica",
+      "products/cloud/api-reference/postgres/postgres-instance-config-get",
+      "products/cloud/api-reference/postgres/postgres-instance-config-post",
+      "products/cloud/api-reference/postgres/postgres-instance-config-patch",
+      "products/cloud/api-reference/postgres/postgres-instance-metrics-get",
+      "products/cloud/api-reference/postgres/slow-query-patterns-get-list",
+      "products/cloud/api-reference/postgres/slow-query-pattern-get"
+    ]
+  }
+]

@@ -350,8 +350,6 @@ Set to `0` to disable this limit.
 )", 0) \
     DECLARE(Bool, use_concurrency_control, true, R"(
 Respect the server's concurrency control (see the `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` global server settings). If disabled, it allows using a larger number of threads even if the server is overloaded (not recommended for normal usage, and needed mostly for tests).
-
-Cloud default value: `0`.
 )", 0) \
     DECLARE(MaxThreads, max_download_threads, 4, R"(
 The maximum number of threads to download data (e.g. for URL engine).
@@ -363,13 +361,13 @@ The maximum number of threads to parse data in input formats that support parall
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
     DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the buffer to read from the filesystem.
+The maximum size of the buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
-The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
-The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_distributed_connections, 1024, R"(
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
@@ -1606,11 +1604,11 @@ Possible values:
 - Any positive even integer.
 )", 0) \
     DECLARE(UInt64, merge_tree_generic_exclusion_search_max_steps, 0, R"(
-When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. This setting limits the number of steps (index checks) the algorithm spends on each data part.
+When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. The same algorithm is used for the analysis of the text index. This setting limits the number of steps (index checks) the algorithm spends on each data part.
 
 The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
 
-The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` profile event counts how many times the budget was exhausted.
+The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` and `TextIndexGenericExclusionSearchStepLimitReached` profile events count how many times the budget was exhausted.
 
 The (default) value 0 means unlimited steps.
 
@@ -3202,8 +3200,6 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
-Cloud default value: `0`.
-
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 No limit is applied when the value is `0`.
 
@@ -3227,8 +3223,6 @@ The setting is fairly low level and should be used with caution
 :::
 )", 0) \
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
-Cloud default value: `throw`
-
 Sets what to do if the volume of the result exceeds one of the limits.
 
 Possible values:
@@ -3559,10 +3553,12 @@ Default value: `THROW`.
 - [Join table engine](/engines/table-engines/special/join)
 )", 0) \
     DECLARE(Bool, join_any_take_last_row, false, R"(
-Changes the behaviour of join operations with `ANY` strictness.
+Changes the behaviour of join operations with `ANY` strictness when the right table has more than one matching row for a key.
 
 :::note
-This setting applies only for `JOIN` operations with [Join](../../engines/table-engines/special/join.md) engine tables.
+This setting applies to [`Join`](../../engines/table-engines/special/join.md) engine tables and hash-based join algorithms.
+
+If a join is built in parallel, the order of rows can be non-deterministic. This means that `join_any_take_last_row = 1` can return a non-deterministic row for `ANY JOIN` queries.
 :::
 
 Possible values:
@@ -4331,7 +4327,7 @@ Controls whether function [splitBy*()](../../sql-reference/functions/splitting-m
 Possible values:
 
 - `0` - The remaining string will not be included in the last element of the result array.
-- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/3.1.2/api/python/reference/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
 )", 0) \
     \
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
@@ -4372,10 +4368,10 @@ Function 'geoToH3' accepts (lon, lat) if set to 'lon_lat' and (lat, lon) if set 
 Maximum number of points, rings, or polygons allowed in a single WKB geometry element during parsing by `readWKB` and related functions. This protects against excessive memory allocations from malformed WKB data. Set to 0 to use the hard-coded limit (100 million).
 )", 0) \
     DECLARE(UInt64, max_rand_distribution_trials, 1'000'000'000, R"(
-Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts.
+Maximum number of trials allowed for random distribution functions such as `randBinomial` and `randNegativeBinomial`. This prevents extremely long computation times with large trial counts. `0` disables the limit, and the setting may be raised above its default, except for `randBinomial`, which always rejects more than 10^9 trials because the cost of a single sample is proportional to the number of trials in the worst case, with a probability that grows with it.
 )", 0) \
     DECLARE(Float, max_rand_distribution_parameter, 1e6, R"(
-Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values.
+Maximum value for distribution shape parameters in random distribution functions such as `randChiSquared`, `randStudentT`, and `randFisherF`. This prevents extremely long computation times with extreme parameter values. `0` disables the limit; values for which the sampler does not terminate at all are still rejected.
 )", 0) \
     DECLARE(UInt64, max_partitions_per_insert_block, 100, R"(
 Limits the maximum number of partitions in a single inserted block
@@ -5330,12 +5326,13 @@ Possible values:
 - 0 — Disabled. Histograms with `count = 0` are not emitted; emitted histograms include only buckets that received at least one observation.
 - 1 — Enabled. All histograms are written, and every bucket boundary appears in `histogram`.
 )", 0) \
-    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32", R"(
-Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32` or `date2String`. All modern mappings (`decimal`, `datetime64`, `date2Date32`) are enabled by default.
+    DECLARE(MySQLDataTypesSupport, mysql_datatypes_support_level, "decimal,datetime64,date2Date32,geometry", R"(
+Defines how MySQL types are converted to corresponding ClickHouse types. A comma separated list in any combination of `decimal`, `datetime64`, `date2Date32`, `date2String` or `geometry`. All modern mappings (`decimal`, `datetime64`, `date2Date32`, `geometry`) are enabled by default.
 - `decimal`: convert `NUMERIC` and `DECIMAL` types to `Decimal` when precision allows it.
 - `datetime64`: convert `DATETIME` and `TIMESTAMP` types to `DateTime64` instead of `DateTime` when precision is not `0`.
 - `date2Date32`: convert `DATE` to `Date32` instead of `Date`. Takes precedence over `date2String`.
 - `date2String`: convert `DATE` to `String` instead of `Date`. Overridden by `datetime64`.
+- `geometry`: convert MySQL's spatial types (`LINESTRING`, `POLYGON`, `MULTILINESTRING`, `MULTIPOLYGON`, `MULTIPOINT`) to the corresponding ClickHouse geometric types, and the generic `GEOMETRY` type to the umbrella `Geometry` type. `POINT` is always converted to `Point` regardless of this option. Because a generic `GEOMETRY` column can hold any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; columns declared as `GEOMETRYCOLLECTION` map to `String`.
 )", 0) \
     DECLARE(Bool, optimize_trivial_insert_select, false, R"(
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
@@ -6200,11 +6197,6 @@ UInt64 to minimize public part
 
 Cloud default value: `2`.
 )", 0) \
-    DECLARE(UInt64, cloud_mode_database_engine, 1, R"(
-The database engine allowed in Cloud. 1 - rewrite DDLs to use Replicated database, 2 - rewrite DDLs to use Shared database
-
-Cloud default value: `2`.
-)", 0) \
     DECLARE(DistributedDDLOutputMode, distributed_ddl_output_mode, DistributedDDLOutputMode::THROW, R"(
 Sets format of distributed DDL query result.
 
@@ -6406,6 +6398,9 @@ Possible values:
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
+)", 0) \
+    DECLARE(Bool, query_plan_short_circuit_constant_false_join, true, R"(
+Short-circuit a `JOIN` whose `ON` condition folds to a constant false by replacing each input side that cannot contribute a row (both sides for `INNER`/`CROSS`/`SEMI`, the non-preserved side for `LEFT`/`RIGHT`) with an empty source, so the non-contributing side is not read. Applies to the analyzer (`enable_analyzer = 1`) and to non-distributed plans.
 )", 0) \
     DECLARE(Bool, query_plan_convert_any_join_to_semi_or_anti_join, true, R"(
 Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evaluates to false for not-matched or matched rows
@@ -6882,7 +6877,7 @@ Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the prefetch buffer to read from the filesystem.
+The maximum size of the prefetch buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetch_step_bytes, 0, R"(
 Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
@@ -7288,8 +7283,6 @@ Possible values:
 - Positive integer.
 - 0 — Retries are disabled
 
-Cloud default value: `20`.
-
 Keeper request retries are done after some timeout. The timeout is controlled by the following settings: `insert_keeper_retry_initial_backoff_ms`, `insert_keeper_retry_max_backoff_ms`.
 The first retry is done after `insert_keeper_retry_initial_backoff_ms` timeout. The consequent timeouts will be calculated as follows:
 ```
@@ -7448,6 +7441,9 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 │ {'a':[0,1],'b':2,'c':'str_2'} │
 └───────────────────────────────┘
 ```
+)", 0) \
+    DECLARE(Bool, allow_lossy_numeric_supertype, false, R"(
+When enabled, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` over a set of numeric arguments that has no lossless common type (for example a `Decimal` and a `Float64`, or an `Int64` and a `Float64`) resolve to a numeric supertype (`Float64`) instead of failing, with possible precision loss. This allows the result to be used directly with value-combining aggregate functions like `sum`, `avg`, `min` and `max`. This is independent of `use_variant_as_common_type`: the numeric supertype is produced whether or not `use_variant_as_common_type` is enabled. When disabled (the default), such argument sets have no common type, so they either become a `Variant` (if `use_variant_as_common_type` is enabled) or raise `NO_COMMON_TYPE`.
 )", 0) \
     DECLARE(Bool, enable_order_by_all, true, R"(
 Enables or disables sorting with `ORDER BY ALL` syntax, see [ORDER BY](../../sql-reference/statements/select/order-by.md).
@@ -7655,7 +7651,7 @@ Enables delta-kernel writes feature.
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
     DECLARE(FileLikeEngineDefaultPartitionStrategy, file_like_engine_default_partition_strategy, FileLikeEngineDefaultPartitionStrategy::HIVE, R"(
-Default partition strategy for file like engines.
+Default partition strategy for file like engines. Applied only when the path does not contain a `{_partition_id}` placeholder: such a path is compatible only with the `wildcard` strategy, so it always implies `wildcard`.
 )", 0) \
     DECLARE(Bool, use_iceberg_partition_pruning, true, R"(
 Use Iceberg partition pruning for Iceberg tables
@@ -7857,6 +7853,14 @@ When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AN
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_apply_final_to_all_joined_tables, false, R"(
+Restores the behavior of versions before 26.6, where the `FINAL` modifier specified on the left-most table of a JOIN was incorrectly applied to all other joined tables as well (for engines that support `FINAL`, e.g. `ReplacingMergeTree`). By default `FINAL` applies only to the table it is written on. Enable for compatibility with queries that rely on the old behavior; the recommended fix is to write `FINAL` explicitly on every table that needs it.
+
+Possible values:
+
+- 0 - `FINAL` applies only to the table it is specified on.
+- 1 - `FINAL` on the left-most table of a JOIN is applied to all joined tables.
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
 )", 0) \
@@ -7936,8 +7940,11 @@ The size of the dynamic candidate list when searching the vector similarity inde
     DECLARE(Bool, vector_search_with_rescoring, false, R"(
 If ClickHouse performs rescoring for queries that use the vector similarity index.
 Without rescoring, the vector similarity index returns the rows containing the best matches directly.
-With rescoring, the rows are extrapolated to granule level and all rows in the granule are checked again.
-In most situations, rescoring helps only marginally with accuracy but it deteriorates performance of vector search queries significantly.
+With rescoring, the vector similarity index fetches candidate rows and ClickHouse computes the exact distance
+for these rows from the original full-precision vectors in the regular SQL pipeline.
+When possible, ClickHouse filters the scan to candidate rows before the final distance computation.
+Increase `vector_search_index_fetch_multiplier` if more candidate rows are needed for better recall, especially
+with additional filters or quantized vector indexes.
 Note: A query run without rescoring and with parallel replicas enabled may fall back to rescoring.
 )", 0) \
     DECLARE(VectorSearchFilterStrategy, vector_search_filter_strategy, VectorSearchFilterStrategy::AUTO, R"(
@@ -7969,6 +7976,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+)", 0) \
+    DECLARE(Bool, optimize_redundant_comparisons, true, R"(
+Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
 )", 0) \
     DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
 Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
@@ -8252,6 +8262,14 @@ Allows creation of tables with the [TimeSeries](../../engines/table-engines/inte
     DECLARE(UInt64, unique_key_max_encoded_size, 256, R"(
 Maximum size (in bytes) of the order-preserving binary encoding of a single `UNIQUE KEY` row.
 )", EXPERIMENTAL) \
+    DECLARE(UniqueKeyProbeImplementation, unique_key_probe_implementation, UniqueKeyProbeImplementation::Auto, R"(
+Selects the UNIQUE KEY write-path probe implementation. Currently only a single-threaded
+baseline exists, so `auto` and `simple` both resolve to it.
+
+Reserved: this setting has no effect yet — the value is not read until the UNIQUE KEY INSERT
+write path that constructs the probe is wired up. Declared now so the lever ships with the
+implementation.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL) \
@@ -8501,9 +8519,15 @@ Number of blocks that are skipped before trying to dynamically re-enable a runti
     DECLARE(Double, join_runtime_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the number of set bits in a runtime bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, join_runtime_filter_min_probe_rows, 1000, R"(
+If, at query planning time, the probe side of a JOIN is estimated to produce no more than this number of rows, the JOIN runtime filter is not created. Building and applying a runtime filter for a tiny probe side costs more than it saves. Set to 0 to always create the runtime filter regardless of the estimated probe size.
+)", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
+Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+)", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
@@ -8608,10 +8632,10 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_text_default_credentials, "", R"(
-Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint differs from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 )", EXPERIMENTAL) \
     DECLARE(String, ai_function_embedding_default_credentials, "", R"(
-Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint and model differ from a chat one.
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. `aiEmbed` takes `model` as a required positional argument, not from the named collection. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint differs from a chat one.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
@@ -8737,7 +8761,8 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
     MAKE_OBSOLETE(M, BoolAuto, insert_select_deduplicate, Field{"auto"}) \
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
-    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true)
+    MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
+    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
@@ -8770,6 +8795,9 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     /// Dumps profile events to column of type Map(String, String)
     void dumpToMapColumn(IColumn * column, bool changed_only = true);
 
+    /// The changed settings as an owning name -> value-string map (same values as dumpToMapColumn).
+    std::map<String, String> changedToMap() const;
+
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
@@ -8777,6 +8805,9 @@ struct SettingsImpl : public BaseSettings<SettingsTraits>, public IHints<2>
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     void set(std::string_view name, const Field & value) override;
+
+    bool hasSettingsChangedByCompatibility() const { return !settings_changed_by_compatibility_setting.empty(); }
+    void resetSettingsChangedByCompatibility();
 
 private:
     void applyCompatibilitySetting(const String & compatibility);
@@ -8867,6 +8898,22 @@ void SettingsImpl::dumpToMapColumn(IColumn * column, bool changed_only)
     offsets.push_back(offsets.back() + size);
 }
 
+std::map<String, String> SettingsImpl::changedToMap() const
+{
+    std::map<String, String> result;
+
+    const auto & accessor = Traits::Accessor::instance();
+    for (size_t i = 0; i < accessor.size(); ++i)
+        if (accessor.isValueChanged(*this, i))
+            result.emplace(accessor.getName(i), accessor.getValueString(*this, i));
+
+    for (const auto & custom : custom_settings_map)
+        if (custom.second.changed)
+            result.emplace(custom.first, custom.second.toString());
+
+    return result;
+}
+
 void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path)
 {
     if (config.getBool("skip_check_for_incorrect_settings", false))
@@ -8916,13 +8963,19 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     BaseSettings::set(name, value);
 }
 
-void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
+void SettingsImpl::resetSettingsChangedByCompatibility()
 {
-    /// First, revert all changes applied by previous compatibility setting
     for (const auto & setting_name : settings_changed_by_compatibility_setting)
         resetToDefault(setting_name);
 
     settings_changed_by_compatibility_setting.clear();
+}
+
+void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
+{
+    /// First, revert all changes applied by previous compatibility setting
+    resetSettingsChangedByCompatibility();
+
     /// If setting value is empty, we don't need to change settings
     if (compatibility_value.empty())
         return;
@@ -9036,6 +9089,16 @@ void Settings::set(std::string_view name, const Field & value)
 void Settings::setDefaultValue(std::string_view name)
 {
     impl->resetToDefault(name);
+}
+
+bool Settings::hasSettingsChangedByCompatibility() const
+{
+    return impl->hasSettingsChangedByCompatibility();
+}
+
+void Settings::resetSettingsChangedByCompatibility()
+{
+    impl->resetSettingsChangedByCompatibility();
 }
 
 VectorWithMemoryTracking<String> Settings::getHints(const String & name) const
@@ -9170,17 +9233,37 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-NameToNameMap Settings::toNameToNameMap() const
+std::map<String, String> Settings::changedToMap() const
 {
-    NameToNameMap query_parameters;
-    for (const auto & param : *impl)
+    return impl->changedToMap();
+}
+
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
+{
+    for (const auto & [name, value] : parameters)
     {
-        std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
+        BaseSettingsHelpers::writeString(name, out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+        BaseSettingsHelpers::writeString(SettingFieldCustom(Field(value)).toString(), out);
     }
-    return query_parameters;
+    BaseSettingsHelpers::writeString(std::string_view{}, out);
+}
+
+NameToNameMap readQueryParameters(ReadBuffer & in)
+{
+    NameToNameMap parameters;
+    while (true)
+    {
+        String name = BaseSettingsHelpers::readString(in);
+        if (name.empty())
+            break;
+        std::ignore = BaseSettingsHelpers::readFlags(in);
+        String value;
+        ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
+        readQuoted(value, buf);
+        parameters.insert_or_assign(std::move(name), std::move(value));
+    }
+    return parameters;
 }
 
 void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const

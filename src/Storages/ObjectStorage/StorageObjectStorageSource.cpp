@@ -1015,14 +1015,32 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             {
                 if (auto mapper = configuration->getColumnMapperForObject(object_info))
                 {
-                    if (format_supports_prewhere)
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, format_filter_info->row_level_filter, format_filter_info->prewhere_info);
-                    else
-                        return std::make_shared<FormatFilterInfo>(
-                            format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
-                            mapper, nullptr, nullptr);
+                    /// `schema_changed` is true for real schema evolution (a schema-id
+                    /// mismatch: renamed / type-changed columns) AND for current-schema
+                    /// files that merely carry equality deletes. Strip the reader-side
+                    /// filters ONLY for the former: there the old-schema mapper resolves
+                    /// field-ids to the file's OLD names while PREWHERE / row-level filter
+                    /// reference the CURRENT names, so in-reader evaluation matches nothing
+                    /// (re-applied as fallback FilterTransforms after the schema transform
+                    /// renames the columns below). For equality-delete-only files
+                    /// (getSchemaTransformer() == null, no rename) the mapper already yields
+                    /// the current names, so keep the filters in the reader to preserve
+                    /// Parquet row-group / page pruning.
+                    const bool has_schema_transform
+                        = configuration->getSchemaTransformer(context_, object_info) != nullptr;
+                    if (format_supports_prewhere && has_schema_transform)
+                    {
+                        if (format_filter_info->row_level_filter)
+                            stripped_row_level_filter = format_filter_info->row_level_filter;
+                        if (format_filter_info->prewhere_info)
+                            stripped_prewhere_info = format_filter_info->prewhere_info;
+                    }
+                    const bool keep_in_reader = format_supports_prewhere && !has_schema_transform;
+                    return std::make_shared<FormatFilterInfo>(
+                        format_filter_info->filter_actions_dag, format_filter_info->context.lock(),
+                        mapper,
+                        keep_in_reader ? format_filter_info->row_level_filter : nullptr,
+                        keep_in_reader ? format_filter_info->prewhere_info : nullptr);
                 }
             }
 
@@ -1082,7 +1100,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && !object_info->getObjectMetadata()->etag.empty())
+            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1329,9 +1347,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
-    if (use_page_cache && object_info.metadata->etag.empty())
+    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
     {
-        LOG_WARNING(log, "Cannot use page cache, no etag specified");
+        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
         use_page_cache = false;
     }
 
@@ -1405,9 +1423,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (object_info.metadata->etag.empty())
+        if (!object_info.metadata->isEtagUsableAsCacheKey())
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
+            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
         }
         else
         {
