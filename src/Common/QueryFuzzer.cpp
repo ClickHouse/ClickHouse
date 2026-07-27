@@ -3885,25 +3885,24 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
 {
     if (const auto * func = node->as<ASTFunction>())
     {
-        if (func->name == "and" || func->name == "or" || func->name == "xor")
+        if (func->name == op && func->arguments)
         {
-            /// A degenerate call such as `and()` has no operands to flatten, so it contributes
-            /// exactly one opaque leaf, which is why the extraction can no longer come back empty.
-            /// With a null `arguments` the branch below would recurse on this very same node.
-            if (!func->arguments || func->arguments->children.empty())
+            /// A degenerate call such as `and()` has nothing to flatten, so it contributes one
+            /// opaque leaf instead of nothing, keeping the extraction non-empty
+            if (func->arguments->children.empty())
             {
                 predicates.emplace_back(node);
                 return;
             }
-            if (func->name == op)
+            /// Recursively extract predicates from children
+            for (const auto & entry : func->arguments->children)
             {
-                /// Recursively extract predicates from children
-                for (const auto & entry : func->arguments->children)
-                {
-                    extractPredicates(entry, predicates, op, negProb);
-                }
-                return;
+                extractPredicates(entry, predicates, op, negProb);
             }
+            return;
+        }
+        if (func->name == "and" || func->name == "or" || func->name == "xor")
+        {
             /// Hit another AND/OR/XOR tree, permute it recursively
             predicates.emplace_back(permutePredicateClause(node, negProb));
             return;

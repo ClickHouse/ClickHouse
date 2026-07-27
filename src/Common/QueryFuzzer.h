@@ -16,12 +16,6 @@
 #include <Common/randomSeed.h>
 
 
-/// Fixtures of src/Common/tests/gtest_query_fuzzer_degenerate_predicate.cpp, which drives the
-/// private predicate helpers directly.
-class QueryFuzzer_ExtractPredicatesKeepsDegenerateLeaf_Test;
-class QueryFuzzer_ExtractPredicatesDoesNotRecurseOnNullArguments_Test;
-class QueryFuzzer_PermuteDoesNotRewrapDegeneratePredicate_Test;
-
 namespace DB
 {
 
@@ -280,10 +274,6 @@ private:
 
     void extractPredicates(const ASTPtr & node, ASTs & predicates, const std::string & op, int negProb);
     ASTPtr permutePredicateClause(const ASTPtr & predicate, int negProb);
-
-    friend class ::QueryFuzzer_ExtractPredicatesKeepsDegenerateLeaf_Test;
-    friend class ::QueryFuzzer_ExtractPredicatesDoesNotRecurseOnNullArguments_Test;
-    friend class ::QueryFuzzer_PermuteDoesNotRewrapDegeneratePredicate_Test;
 
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)
