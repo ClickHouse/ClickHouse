@@ -889,6 +889,35 @@ void RefreshTask::doScheduling(bool is_shutdown)
                         /// fmt formatter for Coordination::Error would print errorMessage()'s prose
                         /// instead, which is harder to grep for and to match against Keeper docs.
                         LOG_INFO(getLogger(), "Lost the refresh coordination lock ({}) while giving up coordination on this Keeper. Treating as terminal and stopping the view.", magic_enum::enum_name(e.code));
+
+                        /// A multi is atomic, so if only the '/running' removal failed (ZNONODE, the
+                        /// znode is already gone) the root update was rolled back even though its
+                        /// version check passed - which would silently discard this attempt's result
+                        /// (last_success_*/last_attempt_*) and leave persistent `refresh_running`
+                        /// set. '/running' being absent is the state we wanted anyway, so redo the
+                        /// root update alone. ZBADVERSION means someone else owns the state now, so
+                        /// there is nothing of ours left to write.
+                        const auto * multi = dynamic_cast<const zkutil::KeeperMultiException *>(&e);
+                        if (e.code == Coordination::Error::ZNONODE && multi != nullptr && multi->failed_op_index > 0)
+                        {
+                            coordination.running_znode_exists = false;
+                            try
+                            {
+                                CoordinationZnode znode = execution.znode.version == coordination.root_znode.version
+                                    ? execution.znode
+                                    : coordination.root_znode;
+                                znode.refresh_running = false;
+                                updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
+                            }
+                            catch (const Coordination::Exception & retry_error)
+                            {
+                                if (retry_error.code != Coordination::Error::ZBADVERSION)
+                                    throw;
+                                if (!lock.owns_lock())
+                                    lock.lock();
+                                LOG_INFO(getLogger(), "Lost the refresh coordination lock (ZBADVERSION) while recording the finished refresh. Treating as terminal and stopping the view.");
+                            }
+                        }
                     }
                     execution.state = ExecutionState::State::None;
                 }

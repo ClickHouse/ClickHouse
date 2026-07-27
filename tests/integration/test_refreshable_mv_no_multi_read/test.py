@@ -599,6 +599,9 @@ def test_refreshable_mv_scheduling_missing_flags_running_znode_lost(started_clus
 
     aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
     lost_lock_before = int(node.count_in_log("Lost the refresh coordination lock"))
+    uuid7 = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'rdb7' AND name = 'mv'"
+    ).strip()
 
     # Land execution.state == Finished exactly at the give-up pass, as in the ZBADVERSION test.
     node.query("SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
@@ -642,6 +645,19 @@ def test_refreshable_mv_scheduling_missing_flags_running_znode_lost(started_clus
     assert (
         int(node.count_in_log("Lost the refresh coordination lock (ZNONODE)")) > 0
     ), "give-up path did not report a ZNONODE lost-ownership conflict"
+
+    # A Keeper multi is atomic, so the failed '/running' removal also rolled back the root update
+    # even though its version check passed. Only '/running' was actually lost, so the finished
+    # attempt's result must still be recorded and persistent refresh_running cleared - otherwise a
+    # coordinated APPEND view would re-append the same timeslot on a later retry.
+    last_success = node.query(
+        "SELECT last_success_time IS NOT NULL FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb7'"
+    ).strip()
+    assert last_success == "1", last_success
+    root = node.query(
+        f"SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/{uuid7}' AND name = '1'"
+    )
+    assert "refresh_running: 0" in root, root
 
     # Stays Disabled, no oscillation.
     node.query("SYSTEM REFRESH VIEW rdb7.mv")
