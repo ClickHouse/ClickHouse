@@ -1,0 +1,12 @@
+-- enable_analyzer = 1
+SELECT      base_only: ACCESS_DENIED
+SELECT      full     : OK, view body not revealed
+EXPLAIN AST base_only: ACCESS_DENIED
+EXPLAIN AST full     : OK, view body revealed
+EXPLAIN AST base_only, analyzer forced on : ACCESS_DENIED
+-- enable_analyzer = 0
+SELECT      base_only: OK, view body not revealed
+SELECT      full     : OK, view body not revealed
+EXPLAIN AST base_only: OK, view body revealed
+EXPLAIN AST full     : OK, view body revealed
+EXPLAIN AST base_only, analyzer forced on : ACCESS_DENIED

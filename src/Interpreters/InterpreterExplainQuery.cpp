@@ -921,8 +921,9 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
     return resolved;
 }
 
-/// Reproduce the planner's per-table `SELECT` access check for the tables referenced by
-/// `explained_query`, without producing any dump. Used by `EXPLAIN SYNTAX` when a parameterized view
+/// Reproduce the planner's per-table `SELECT` access check for the tables referenced by one explained
+/// `SELECT`, without producing any dump. Used by `EXPLAIN SYNTAX` / `EXPLAIN AST optimize = 1` when a
+/// parameterized view
 /// was expanded into its inner subquery: the expanded query no longer contains the view object, so the
 /// check must run on the original query, where the parameterized view still resolves to its own
 /// `TableNode`. That matches real execution, which turns `pv(...)` into a fake `TableNode` for the view
@@ -932,11 +933,8 @@ bool resolveThenCheckAccessRights(QueryTreeNodePtr query_tree, QueryTreePassMana
 /// Returns whether the access check was actually performed: for a query that cannot be resolved (a
 /// "format but do not resolve" shape) `resolveThenCheckAccessRights` deliberately skips the check, and
 /// the caller must then not dump anything the skipped check was supposed to protect.
-bool checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
+bool checkAccessForExplainedSelect(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
 {
-    if (explained_query->as<ASTSelectWithUnionQuery>() == nullptr)
-        return false;
-
     auto query_tree = buildQueryTree(explained_query, query_context);
     auto query_tree_pass_manager = QueryTreePassManager(query_context);
     addQueryTreePasses(query_tree_pass_manager);
@@ -950,6 +948,43 @@ bool checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextP
     }
 
     return resolveThenCheckAccessRights(std::move(query_tree), query_tree_pass_manager, query_context);
+}
+
+/// Collect the outermost `SELECT`s of an explained statement. For a plain `EXPLAIN SYNTAX SELECT ...`
+/// that is the statement itself, but `EXPLAIN` also accepts statements that merely wrap a `SELECT`
+/// (`INSERT INTO ... SELECT`, `CREATE [MATERIALIZED] VIEW ... AS SELECT`, ...), and
+/// `ExpandParameterizedViewsMatcher` rewrites the parameterized view calls inside those nested
+/// `SELECT`s too. The access check must therefore descend into the wrapper instead of treating every
+/// non-`SELECT` root as "no check possible", otherwise the expanded view body would be dumped without
+/// the `SELECT` grant on the view object ever being enforced.
+void collectExplainedSelects(const ASTPtr & ast, ASTs & selects)
+{
+    if (!ast)
+        return;
+
+    if (ast->as<ASTSelectWithUnionQuery>())
+    {
+        selects.push_back(ast);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        collectExplainedSelects(child, selects);
+}
+
+bool checkAccessForExplainedQuery(const ASTPtr & explained_query, const ContextPtr & query_context, bool run_passes, Int64 passes)
+{
+    ASTs selects;
+    collectExplainedSelects(explained_query, selects);
+
+    /// Nothing that can be resolved into a query tree - the caller must treat this as "check skipped".
+    if (selects.empty())
+        return false;
+
+    bool checked = true;
+    for (const auto & select : selects)
+        checked = checkAccessForExplainedSelect(select, query_context, run_passes, passes) && checked;
+    return checked;
 }
 
 bool explainQueryTree(
@@ -1295,7 +1330,21 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         explain_query_context->setSetting("use_query_condition_cache", false);
     }
 
+    /// `EXPLAIN AST optimize = 1` rewrites the query with the old interpreter's visitor, which the
+    /// analyzer does not support, so the explained query is always processed in legacy mode here.
+    if (ast.getKind() == ASTExplainQuery::ParsedAST)
+        explain_query_context->setSetting("allow_experimental_analyzer", false);
+
     InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+
+    /// Whether the explained query, run for real, would use the analyzer. For `EXPLAIN AST` that is
+    /// not the mode this interpreter works in (see above), but forcing the legacy interpreter is an
+    /// implementation detail of the rewriting visitor: which privileges a query requires must follow
+    /// what really running it would require, not how `EXPLAIN` happens to process it.
+    const bool analyzer_enabled_for_explained_query
+        = query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+        || explain_query_context->getSettingsRef()[Setting::allow_experimental_analyzer];
+
     query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
@@ -1318,21 +1367,47 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
                 const bool expanded_parameterized_view = expand_views_data.expanded_parameterized_view;
 
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+                /// The visitor below only enforces the base-table grants (through the recursive analysis of
+                /// the expanded subquery). With the analyzer, a real `SELECT ... FROM pv(...)` additionally
+                /// requires `SELECT` on the parameterized view object itself, because
+                /// `QueryAnalyzer::resolveTableFunction` turns the call into a view `TableNode` that
+                /// `prepareBuildQueryPlanForTableExpression` checks. Run that check on the original,
+                /// unexpanded query - exactly as the `EXPLAIN SYNTAX` path does - so `EXPLAIN AST` cannot
+                /// dump the inlined body for a user who may read the base tables but not the view.
+                ///
+                /// As there, the check is analyzer-only: the old interpreter resolves `pv(...)` without
+                /// requiring any grant on the view object, so running it in the legacy path would deny a
+                /// query whose real execution succeeds.
+                bool access_check_performed = true;
+                if (expanded_parameterized_view && analyzer_enabled_for_explained_query)
+                    access_check_performed = checkAccessForExplainedQuery(
+                        explained_query_before_expansion, query_context, /*run_passes=*/ false, /*passes=*/ -1);
 
-                /// As on the `EXPLAIN SYNTAX` path: the expanded query may be unresolvable, and dumping it
-                /// then would reveal the parameter-substituted view body without any check having run. Fall
-                /// back to the original, unexpanded query - the user's own text - in that case. An
-                /// `ACCESS_DENIED` is still propagated.
-                try
+                if (!access_check_performed)
                 {
-                    ExplainAnalyzedSyntaxVisitor(data).visit(query);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::ACCESS_DENIED || !expanded_parameterized_view)
-                        throw;
+                    /// The pre-check skips itself for a query the analyzer cannot resolve. Dumping the
+                    /// expanded query then would reveal the parameter-substituted view body with no check
+                    /// having run at all, so dump the original, unexpanded query - the user's own text.
                     query_to_dump = explained_query_before_expansion;
+                }
+                else
+                {
+                    ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+
+                    /// As on the `EXPLAIN SYNTAX` path: the expanded query may be unresolvable, and dumping it
+                    /// then would reveal the parameter-substituted view body without any check having run. Fall
+                    /// back to the original, unexpanded query - the user's own text - in that case. An
+                    /// `ACCESS_DENIED` is still propagated.
+                    try
+                    {
+                        ExplainAnalyzedSyntaxVisitor(data).visit(query);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::ACCESS_DENIED || !expanded_parameterized_view)
+                            throw;
+                        query_to_dump = explained_query_before_expansion;
+                    }
                 }
             }
 
@@ -1356,6 +1431,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             ExpandParameterizedViewsMatcher::Data expand_views_data(query_context);
             ExpandParameterizedViewsVisitor(expand_views_data).visit(query);
             const bool expanded_parameterized_view = expand_views_data.expanded_parameterized_view;
+
+            /// Set when the analyzer pre-check below was supposed to run but skipped itself. The legacy
+            /// fallback must then not dump the expanded query either.
+            bool analyzer_pre_check_skipped = false;
 
             if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
@@ -1386,8 +1465,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 /// formatting the original, unexpanded query instead. That dump carries no view metadata:
                 /// it is the user's own query text, unresolved (the skip can only happen when the query
                 /// tree passes do not run, so `explainQueryTree` dumps the unresolved tree).
+                analyzer_pre_check_skipped = expanded_parameterized_view && !access_check_performed;
+
                 const ASTPtr & query_to_explain
-                    = (expanded_parameterized_view && !access_check_performed) ? explained_query_before_expansion : ast.getExplainedQuery();
+                    = analyzer_pre_check_skipped ? explained_query_before_expansion : ast.getExplainedQuery();
 
                 bool explain_ok = explainQueryTree(query_to_explain, query_context, QueryTreeSettings{
                     .run_passes = settings.run_query_tree_passes,
@@ -1414,17 +1495,30 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             /// user's own text and carries no parameter-substituted view body, so nothing the (now skipped)
             /// access check was supposed to protect is revealed. An `ACCESS_DENIED` is still propagated, so a
             /// user without access to the view's base tables is denied instead of getting the fallback dump.
+            ///
+            /// The same fallback applies when the analyzer pre-check above skipped itself and
+            /// `explainQueryTree` then declined to dump the query - as it does for a statement that only
+            /// wraps a `SELECT` (`EXPLAIN SYNTAX INSERT INTO dst SELECT ... FROM pv(...)`). Reaching the
+            /// legacy visitor with the analyzer enabled must not turn into a dump of the expanded body
+            /// that the (skipped) view-object check was supposed to protect.
             ASTPtr query_to_format;
-            try
+            if (analyzer_pre_check_skipped)
             {
-                ExplainAnalyzedSyntaxVisitor(data).visit(query);
-                query_to_format = ast.getExplainedQuery();
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::ACCESS_DENIED || !expanded_parameterized_view)
-                    throw;
                 query_to_format = explained_query_before_expansion;
+            }
+            else
+            {
+                try
+                {
+                    ExplainAnalyzedSyntaxVisitor(data).visit(query);
+                    query_to_format = ast.getExplainedQuery();
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::ACCESS_DENIED || !expanded_parameterized_view)
+                        throw;
+                    query_to_format = explained_query_before_expansion;
+                }
             }
 
             IAST::FormatSettings format_settings(settings.oneline);

@@ -244,10 +244,9 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExplainQuery>())
     {
-        const auto kind = query->as<ASTExplainQuery>()->getKind();
-        if (kind == ASTExplainQuery::ParsedAST)
-            context->setSetting("allow_experimental_analyzer", false);
-
+        /// `EXPLAIN AST` used to disable the analyzer here. It is disabled in
+        /// `InterpreterExplainQuery` instead, so that the interpreter can still see the mode the
+        /// explained query itself would run in - which decides which access checks apply to it.
         interpreter_name = "InterpreterExplainQuery";
     }
     else if (query->as<ASTShowProcesslistQuery>())

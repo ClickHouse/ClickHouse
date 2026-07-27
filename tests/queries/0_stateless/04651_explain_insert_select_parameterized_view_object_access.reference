@@ -1,0 +1,14 @@
+-- enable_analyzer = 1
+INSERT SELECT         base_only: ACCESS_DENIED
+INSERT SELECT         full     : OK, view body not revealed
+EXPLAIN SYNTAX INSERT base_only: ACCESS_DENIED
+EXPLAIN SYNTAX INSERT full     : OK, view body revealed
+EXPLAIN AST    INSERT base_only: ACCESS_DENIED
+EXPLAIN AST    INSERT full     : OK, view body revealed
+-- enable_analyzer = 0
+INSERT SELECT         base_only: OK, view body not revealed
+INSERT SELECT         full     : OK, view body not revealed
+EXPLAIN SYNTAX INSERT base_only: OK, view body revealed
+EXPLAIN SYNTAX INSERT full     : OK, view body revealed
+EXPLAIN AST    INSERT base_only: OK, view body revealed
+EXPLAIN AST    INSERT full     : OK, view body revealed
