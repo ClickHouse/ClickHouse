@@ -364,6 +364,11 @@ public:
         size_t rows_seen_unfrozen = 0;
         bool gave_up_freezing = false;
 
+        /// Scratch for the value-staged publish grouping (see `publishValueStagedRecordsSorted`).
+        std::vector<std::pair<UInt64, UInt32>> sort_pairs_scratch;
+        std::vector<UInt32> group_offsets_scratch;
+        std::vector<UInt32> group_cursor_scratch;
+
         /// Small per-block staging batches buffered for coalescing: they are merged into one
         /// bucket-grouped chunk before they reach the backlogs (see `stageDelayedBlock`), so the
         /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
@@ -683,6 +688,17 @@ private:
         Arena & scratch_pool,
         bool value_staged,
         std::optional<UInt32> key_row_override = std::nullopt) const;
+
+    /// Fills a value-staged block with the current misses ordered by (bucket, hash) and merged:
+    /// duplicate keys within the block collapse into one record with a summed run length, so a
+    /// repeat-heavy staged stream copies each key's bytes once and the drain emplaces it once.
+    template <typename SharedKey, typename State>
+    void publishValueStagedRecordsSorted(
+        const AdaptiveAggregationSharedState::DelayedBlockPtr & block,
+        AdaptiveAggregationThreadContext & adaptive,
+        State & local_find_state,
+        Arena & scratch_pool,
+        std::optional<UInt32> key_row_override) const;
 
     /// Enqueues one batch for the merge-time drain: a batch of at least half the seal target
     /// goes straight to the backlogs, a small one is buffered, and the buffer is sealed into

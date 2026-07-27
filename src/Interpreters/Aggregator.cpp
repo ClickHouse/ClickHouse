@@ -2243,6 +2243,156 @@ void NO_INLINE Aggregator::executeFrozenImpl(
 }
 
 template <typename SharedKey, typename State>
+void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
+    const AdaptiveAggregationSharedState::DelayedBlockPtr & block,
+    AdaptiveAggregationThreadContext & adaptive,
+    State & local_find_state,
+    Arena & scratch_pool,
+    std::optional<UInt32> key_row_override) const
+{
+    constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
+    const size_t total = adaptive.miss_hashes.size();
+
+    /// Group (hash, record) pairs by (bucket, a few extra hash bits): a duplicate key always
+    /// lands in the same group, so the dedup below only compares within a group, and group-id
+    /// order is bucket-major, which is the block's slice layout. The group count scales with
+    /// the batch (~16 records per group), so the histogram stays cache-resident and small
+    /// batches do not pay for counters they cannot fill.
+    const UInt32 sub_bits = std::min<UInt32>(8, std::bit_width(total >> 12));
+    const size_t num_groups = num_buckets << sub_bits;
+
+    auto & pairs = adaptive.sort_pairs_scratch;
+    pairs.resize(total);
+    auto & offsets = adaptive.group_offsets_scratch;
+    auto & cursor = adaptive.group_cursor_scratch;
+    offsets.assign(num_groups + 1, 0);
+    cursor.resize(num_groups);
+
+    const auto group_of = [&](size_t i) -> UInt32
+    {
+        const UInt32 bucket = adaptive.miss_buckets[i];
+        return (bucket << sub_bits) | (static_cast<UInt32>(adaptive.miss_hashes[i] >> 10) & ((1u << sub_bits) - 1));
+    };
+
+    for (size_t i = 0; i < total; ++i)
+        ++offsets[group_of(i) + 1];
+    for (size_t g = 0; g < num_groups; ++g)
+    {
+        cursor[g] = offsets[g];
+        offsets[g + 1] += offsets[g];
+    }
+    for (size_t i = 0; i < total; ++i)
+        pairs[cursor[group_of(i)]++] = {adaptive.miss_hashes[i], static_cast<UInt32>(i)};
+
+    UInt64 total_bytes = 0;
+    for (const auto size : adaptive.miss_key_sizes)
+        total_bytes += size;
+
+    block->routing_hashes.resize(total);
+    block->run_lengths.resize(total);
+    block->key_offsets.resize(total + 1);
+    block->key_bytes.resize(total_bytes);
+
+    size_t out = 0;
+    UInt64 byte_pos = 0;
+    for (size_t g = 0; g < num_groups; ++g)
+    {
+        if ((g & ((1u << sub_bits) - 1)) == 0)
+            block->bucket_offsets[g >> sub_bits] = static_cast<UInt32>(out);
+        const size_t group_begin = offsets[g];
+        const size_t group_end = offsets[g + 1];
+        if (group_begin == group_end)
+            continue;
+
+        const size_t group_out_begin = out;
+        for (size_t i = group_begin; i < group_end; ++i)
+        {
+            const auto [hash, idx] = pairs[i];
+            const size_t size = adaptive.miss_key_sizes[idx];
+            const size_t key_row = key_row_override ? *key_row_override : adaptive.miss_source_rows[idx];
+
+            /// The key bytes are read straight from the hashing state's column when it exposes
+            /// them: the generic key holder of the packed method would re-pack the key and
+            /// re-compute its content hash per record, and the staged arrays already hold both.
+            const char * key_data;
+            [[maybe_unused]] SharedKey widened{};
+            if constexpr (requires { local_find_state.chars; local_find_state.offsets; })
+            {
+                key_data = reinterpret_cast<const char *>(local_find_state.chars)
+                    + local_find_state.offsets[static_cast<ssize_t>(key_row) - 1];
+            }
+            else if constexpr (adaptive_key_stages_bytes<SharedKey>)
+            {
+                auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
+                key_data = adaptiveStagedKeyBytes(keyHolderGetKey(key_holder)).data();
+                keyHolderDiscardKey(key_holder);
+            }
+            else
+            {
+                auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
+                widened = keyHolderGetKey(key_holder);
+                key_data = reinterpret_cast<const char *>(&widened);
+                keyHolderDiscardKey(key_holder);
+            }
+
+            /// A duplicate key can only be one of this group's survivors (usually zero or one):
+            /// merge the run lengths instead of staging another copy of the key. Equal hashes
+            /// of distinct keys are split by the byte comparison. String-like keys use the
+            /// overflow-tolerant small copy and compare: both sides live in padded containers
+            /// (the column's chars, the scratch arena, and the staged bytes), and the staging
+            /// copies are small enough that the libc call itself dominates a plain memcpy.
+            const auto keys_equal = [&](const char * a, const char * b) -> bool
+            {
+                /// The 16-byte-loop small primitives beat a libc call only for short keys.
+                if constexpr (adaptive_key_stages_bytes<SharedKey>)
+                    return size <= 64 ? memequalSmallAllowOverflow15(a, size, b, size) : memcmp(a, b, size) == 0;
+                else
+                    return memcmp(a, b, size) == 0;
+            };
+
+            bool merged = false;
+            for (size_t j = group_out_begin; j < out; ++j)
+            {
+                if (block->routing_hashes[j] != hash)
+                    continue;
+                const UInt64 j_end = (j + 1 == out) ? byte_pos : block->key_offsets[j + 1];
+                if (j_end - block->key_offsets[j] != size
+                    || !keys_equal(block->key_bytes.data() + block->key_offsets[j], key_data))
+                    continue;
+                block->run_lengths[j] += adaptive.miss_run_lengths[idx];
+                merged = true;
+                break;
+            }
+            if (merged)
+                continue;
+
+            block->routing_hashes[out] = hash;
+            block->run_lengths[out] = adaptive.miss_run_lengths[idx];
+            block->key_offsets[out] = byte_pos;
+            if constexpr (adaptive_key_stages_bytes<SharedKey>)
+            {
+                if (size <= 64)
+                    memcpySmallAllowReadWriteOverflow15(block->key_bytes.data() + byte_pos, key_data, size);
+                else
+                    memcpy(block->key_bytes.data() + byte_pos, key_data, size);
+            }
+            else
+                memcpy(block->key_bytes.data() + byte_pos, key_data, size);
+            byte_pos += size;
+            ++out;
+        }
+    }
+
+    block->bucket_offsets[num_buckets] = static_cast<UInt32>(out);
+    block->key_offsets[out] = byte_pos;
+
+    block->routing_hashes.resize(out);
+    block->run_lengths.resize(out);
+    block->key_offsets.resize(out + 1);
+    block->key_bytes.resize(byte_pos);
+}
+
+template <typename SharedKey, typename State>
 void NO_INLINE Aggregator::publishDelayedRecords(
     const Columns & columns,
     size_t num_rows,
@@ -2297,6 +2447,13 @@ void NO_INLINE Aggregator::publishDelayedRecords(
 
     auto block = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
     block->value_staged = value_staged;
+
+    if (value_staged)
+    {
+        publishValueStagedRecordsSorted<SharedKey>(block, adaptive, local_find_state, scratch_pool, key_row_override);
+    }
+    else
+    {
     block->routing_hashes.resize(total);
 
     /// Counting sort of the staged misses by bucket.
@@ -2380,24 +2537,22 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         keyHolderDiscardKey(key_holder);
     }
 
-    if (!value_staged)
-    {
-        block->source_columns.assign(columns.size(), nullptr);
-        for (const auto & argument_positions : aggregates_positions)
-            for (const auto position : argument_positions)
-            {
-                if (block->source_columns[position])
-                    continue;
-                /// A constant argument stays constant: resizing it to the record count is
-                /// exact and avoids materializing the whole block just to gather from it.
-                /// A sparse argument is materialized before the gather: the staged rows are
-                /// an arbitrary subset of the block, and the drain applies plain dense
-                /// batches to them, so nothing downstream wants the sparse representation.
-                if (isColumnConst(*columns[position]))
-                    block->source_columns[position] = columns[position]->cloneResized(total);
-                else
-                    block->source_columns[position] = recursiveRemoveSparse(columns[position]->getPtr())->index(*gather_indexes, 0);
-            }
+    block->source_columns.assign(columns.size(), nullptr);
+    for (const auto & argument_positions : aggregates_positions)
+        for (const auto position : argument_positions)
+        {
+            if (block->source_columns[position])
+                continue;
+            /// A constant argument stays constant: resizing it to the record count is
+            /// exact and avoids materializing the whole block just to gather from it.
+            /// A sparse argument is materialized before the gather: the staged rows are
+            /// an arbitrary subset of the block, and the drain applies plain dense
+            /// batches to them, so nothing downstream wants the sparse representation.
+            if (isColumnConst(*columns[position]))
+                block->source_columns[position] = columns[position]->cloneResized(total);
+            else
+                block->source_columns[position] = recursiveRemoveSparse(columns[position]->getPtr())->index(*gather_indexes, 0);
+        }
     }
 
     adaptive.miss_source_rows.clear();
@@ -2406,7 +2561,7 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     adaptive.miss_key_sizes.clear();
     adaptive.miss_run_lengths.clear();
 
-    shared.pending_records.fetch_add(total, std::memory_order_relaxed);
+    shared.pending_records.fetch_add(block->routing_hashes.size(), std::memory_order_relaxed);
 
     size_t staged_bytes = block->key_bytes.size() + block->key_offsets.size() * sizeof(UInt64)
         + block->routing_hashes.size() * sizeof(UInt64) + block->run_lengths.size() * sizeof(UInt32);
