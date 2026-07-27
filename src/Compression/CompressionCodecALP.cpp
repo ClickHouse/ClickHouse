@@ -241,8 +241,8 @@ struct ALPFloatTraits
     static constexpr size_t RD_SIZE_THRESHOLD_LIMIT = (IS_FLOAT32 ? 22 : 48) * ALP_PARAMS_ESTIMATION_SAMPLE_FLOATS;
 
     /**
-    * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
-    */
+     * Unsigned integer type with the same size as the float type, used for bit-level operations and reinterpretation.
+     */
     using Unsigned = std::conditional_t<IS_FLOAT32, UInt32, UInt64>;
 };
 
