@@ -104,7 +104,7 @@ Connect to your RDS MariaDB instance as an admin user and execute the following 
 ### Using IAM authentication (optional) {#iam-authentication}
 
 <Note>
-AWS IAM database authentication for RDS for MariaDB requires MariaDB 10.11 or later and is only available in supported AWS Regions. It isn't available for MariaDB 10.6 or earlier. Check [AWS's supported Regions and engine versions](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html) before using this option.
+AWS [introduced IAM database authentication for RDS for MariaDB in version 10.6.5](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). Support depends on the exact engine version and AWS Region. Check [AWS's current supported Regions and engine versions](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html) before using this option.
 </Note>
 
 <IAMAuthentication engine="mysql" service="rds" />
