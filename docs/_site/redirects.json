@@ -52528,12 +52528,48 @@
     "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes"
   },
   {
+    "destination": "/chdb/api/python",
+    "source": "/chdb/guides/python-udf"
+  },
+  {
+    "destination": "/products/cloud/features/sql-console-features/clickstack",
+    "source": "/cloud/manage/clickstack"
+  },
+  {
+    "destination": "/products/cloud/features/data-catalogs",
+    "source": "/integrations/data-catalogs"
+  },
+  {
+    "destination": "/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
+  },
+  {
+    "destination": "/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
+  },
+  {
+    "destination": "/reference/functions/table-functions",
+    "source": "/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
+    "destination": "/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/use-cases/data-lake/best-practices"
+  },
+  {
     "destination": "https://clickhouse.com/company/our-story",
     "source": "/jp/about-us/history"
   },
   {
     "destination": "/ja/resources/changelogs/oss/2026",
     "source": "/jp/category/changelog"
+  },
+  {
+    "destination": "/ja/chdb/api/python",
+    "source": "/jp/chdb/guides/python-udf"
   },
   {
     "destination": "/ja/products/cloud/guides/best-practices",
@@ -52550,6 +52586,10 @@
   {
     "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/jp/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/ja/products/cloud/features/sql-console-features/clickstack",
+    "source": "/jp/cloud/manage/clickstack"
   },
   {
     "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
@@ -52592,6 +52632,14 @@
     "source": "/jp/integrations/airflow"
   },
   {
+    "destination": "/ja/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/jp/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/ja/products/cloud/features/data-catalogs",
+    "source": "/jp/integrations/data-catalogs"
+  },
+  {
     "destination": "/ja/integrations/language-clients/js/index",
     "source": "/jp/integrations/language-clients/nodejs"
   },
@@ -52622,6 +52670,10 @@
   {
     "destination": "/ja/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
     "source": "/jp/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/jp/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
   },
   {
     "destination": "/ja/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
@@ -52658,6 +52710,10 @@
   {
     "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
     "source": "/jp/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/ja/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/jp/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
   },
   {
     "destination": "/ja/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
@@ -52896,8 +52952,16 @@
     "source": "/jp/sql-reference/table-functions/eval"
   },
   {
+    "destination": "/ja/reference/functions/table-functions",
+    "source": "/jp/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
     "destination": "/ja/reference/functions/window-functions/ntile",
     "source": "/jp/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/ja/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/jp/use-cases/data-lake/best-practices"
   },
   {
     "destination": "/ja/clickstack/demo-days/2026/2026-06-12",
@@ -52932,6 +52996,10 @@
     "source": "/ko/category/changelog"
   },
   {
+    "destination": "/ko/chdb/api/python",
+    "source": "/ko/chdb/guides/python-udf"
+  },
+  {
     "destination": "/ko/products/cloud/guides/best-practices",
     "source": "/ko/cloud/bestpractices"
   },
@@ -52946,6 +53014,10 @@
   {
     "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/ko/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/ko/products/cloud/features/sql-console-features/clickstack",
+    "source": "/ko/cloud/manage/clickstack"
   },
   {
     "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
@@ -52988,6 +53060,14 @@
     "source": "/ko/integrations/airflow"
   },
   {
+    "destination": "/ko/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/ko/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/ko/products/cloud/features/data-catalogs",
+    "source": "/ko/integrations/data-catalogs"
+  },
+  {
     "destination": "/ko/integrations/language-clients/js/index",
     "source": "/ko/integrations/language-clients/nodejs"
   },
@@ -53018,6 +53098,10 @@
   {
     "destination": "/ko/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
     "source": "/ko/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/ko/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
   },
   {
     "destination": "/ko/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
@@ -53054,6 +53138,10 @@
   {
     "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
     "source": "/ko/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/ko/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/ko/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
   },
   {
     "destination": "/ko/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
@@ -53288,8 +53376,16 @@
     "source": "/ko/sql-reference/table-functions/eval"
   },
   {
+    "destination": "/ko/reference/functions/table-functions",
+    "source": "/ko/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
     "destination": "/ko/reference/functions/window-functions/ntile",
     "source": "/ko/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/ko/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/ko/use-cases/data-lake/best-practices"
   },
   {
     "destination": "/ko/clickstack/demo-days/2026/2026-06-12",
@@ -53302,6 +53398,10 @@
   {
     "destination": "/ru/resources/changelogs/oss/2026",
     "source": "/ru/category/changelog"
+  },
+  {
+    "destination": "/ru/chdb/api/python",
+    "source": "/ru/chdb/guides/python-udf"
   },
   {
     "destination": "/ru/products/cloud/guides/best-practices",
@@ -53318,6 +53418,10 @@
   {
     "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/ru/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/ru/products/cloud/features/sql-console-features/clickstack",
+    "source": "/ru/cloud/manage/clickstack"
   },
   {
     "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
@@ -53360,6 +53464,14 @@
     "source": "/ru/integrations/airflow"
   },
   {
+    "destination": "/ru/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/ru/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/ru/products/cloud/features/data-catalogs",
+    "source": "/ru/integrations/data-catalogs"
+  },
+  {
     "destination": "/ru/integrations/language-clients/js/index",
     "source": "/ru/integrations/language-clients/nodejs"
   },
@@ -53390,6 +53502,10 @@
   {
     "destination": "/ru/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
     "source": "/ru/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/ru/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
   },
   {
     "destination": "/ru/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
@@ -53426,6 +53542,10 @@
   {
     "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
     "source": "/ru/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/ru/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/ru/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
   },
   {
     "destination": "/ru/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
@@ -53660,8 +53780,16 @@
     "source": "/ru/sql-reference/table-functions/eval"
   },
   {
+    "destination": "/ru/reference/functions/table-functions",
+    "source": "/ru/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
     "destination": "/ru/reference/functions/window-functions/ntile",
     "source": "/ru/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/ru/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/ru/use-cases/data-lake/best-practices"
   },
   {
     "destination": "/ru/clickstack/demo-days/2026/2026-06-12",
@@ -53674,6 +53802,10 @@
   {
     "destination": "/zh/resources/changelogs/oss/2026",
     "source": "/zh/category/changelog"
+  },
+  {
+    "destination": "/zh/chdb/api/python",
+    "source": "/zh/chdb/guides/python-udf"
   },
   {
     "destination": "/zh/products/cloud/guides/best-practices",
@@ -53690,6 +53822,10 @@
   {
     "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/zh/cloud/manage/api/swagger"
+  },
+  {
+    "destination": "/zh/products/cloud/features/sql-console-features/clickstack",
+    "source": "/zh/cloud/manage/clickstack"
   },
   {
     "destination": "https://clickhouse.com/resources/engineering/what-is-olap",
@@ -53732,6 +53868,14 @@
     "source": "/zh/integrations/airflow"
   },
   {
+    "destination": "/zh/integrations/connectors/data-ingestion/community-integrations/estuary",
+    "source": "/zh/integrations/estuary/clickpipes"
+  },
+  {
+    "destination": "/zh/products/cloud/features/data-catalogs",
+    "source": "/zh/integrations/data-catalogs"
+  },
+  {
     "destination": "/zh/integrations/language-clients/js/index",
     "source": "/zh/integrations/language-clients/nodejs"
   },
@@ -53762,6 +53906,10 @@
   {
     "destination": "/zh/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
     "source": "/zh/knowledgebase/async_vs_optimize_read_in_order"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
+    "source": "/zh/knowledgebase/aws-privatelink-vpc-endpoint-service-for-msk-cluster"
   },
   {
     "destination": "/zh/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
@@ -53798,6 +53946,10 @@
   {
     "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
     "source": "/zh/knowledgebase/configure_cap_ipc_lock_and_cap_sys_nice_in_docker"
+  },
+  {
+    "destination": "/zh/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
+    "source": "/zh/knowledgebase/confluent-cloud-private-connectivity-for-clickpipes"
   },
   {
     "destination": "/zh/resources/support-center/knowledge-base/troubleshooting/connection-timeout-remote-remoteSecure",
@@ -54032,8 +54184,16 @@
     "source": "/zh/sql-reference/table-functions/eval"
   },
   {
+    "destination": "/zh/reference/functions/table-functions",
+    "source": "/zh/sql-reference/table-functions/mergeTreeCodecBlockCounts"
+  },
+  {
     "destination": "/zh/reference/functions/window-functions/ntile",
     "source": "/zh/sql-reference/window-functions/ntile"
+  },
+  {
+    "destination": "/zh/guides/use-cases/data-warehousing/getting-started/best-practices",
+    "source": "/zh/use-cases/data-lake/best-practices"
   },
   {
     "destination": "/zh/clickstack/demo-days/2026/2026-06-12",
