@@ -227,7 +227,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeRecursive(const std
     {
         const auto & child = it->path();
         if (metadata_storage.existsFile(child))
-            unlinkFile(child, /*if_exists=*/true, should_remove_objects(child));
+            unlinkFile(child, /*if_exists=*/true, /*should_remove_objects=*/true);
         else
             removeRecursive(child, should_remove_objects);
     }
