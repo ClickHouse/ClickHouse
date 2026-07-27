@@ -1,6 +1,7 @@
 #include <map>
 
 #include <mysqlxx/PoolFactory.h>
+#include <Common/SipHash.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -77,6 +78,14 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
     const unsigned pool_size = config.getUInt(config_name + ".connection_pool_size", default_max_connections);
     const auto wait_timeout = config.getUInt64(config_name + ".connection_wait_timeout", MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT);
     entry_name += "&pool_size=" + std::to_string(pool_size) + "&wait_timeout=" + std::to_string(wait_timeout);
+
+    /// The TLS credentials belong to the connection, so two sources that share an endpoint but not
+    /// their credentials must not share a pool: one of them would authenticate as the other. A hash
+    /// keeps the certificates themselves out of the key.
+    SipHash ssl_hash;
+    for (const auto & key : {"ssl_ca", "ssl_cert", "ssl_key", "ssl_ca_pem", "ssl_cert_pem", "ssl_key_pem"})
+        ssl_hash.update(config.getString(config_name + "." + std::string(key), ""));
+    entry_name += "&ssl=" + std::to_string(ssl_hash.get64());
 
     return entry_name;
 }

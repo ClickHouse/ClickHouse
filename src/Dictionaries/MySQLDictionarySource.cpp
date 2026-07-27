@@ -112,6 +112,11 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
         MySQLSettings mysql_settings;
 
+        /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
+        /// named collection, so this covers both of the branches below.
+        if (created_from_ddl)
+            checkNoSSLPaths(config, settings_config_prefix);
+
         std::optional<MySQLDictionarySource::Configuration> dictionary_configuration;
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, global_context) : nullptr;
         if (named_collection)
@@ -182,8 +187,6 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
             if (created_from_ddl)
             {
-                checkNoSSLPaths(config, settings_config_prefix);
-
                 if (config.has(settings_config_prefix + ".replica"))
                 {
                     Poco::Util::AbstractConfiguration::Keys replica_keys;
