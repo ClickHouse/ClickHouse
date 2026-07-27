@@ -43,6 +43,8 @@
 #include <base/types.h>
 #include <fmt/ranges.h>
 
+#include <numeric>
+
 namespace ProfileEvents
 {
     extern const Event TextIndexReadDictionaryBlocks;
@@ -1543,11 +1545,23 @@ void MergeTreeIndexTextGranuleBuilder::seedDropFilter()
     if (!postprocessor_drop_filter || postprocessor_drop_filter->drop_on_match)
         return;
 
+    const auto & filter_tokens = postprocessor_drop_filter->tokens;
+
+    static constexpr size_t pad_left = 8;
+    const size_t total_size = std::accumulate(
+        filter_tokens.begin(), filter_tokens.end(), pad_left,
+        [](size_t sum, const auto & filter_token) { return sum + filter_token.size(); });
+
+    char * data = arena->alloc(total_size) + pad_left;
+
     bool inserted = false;
     TokenToPostingsBuilderMap::LookupResult it;
-    for (const auto & filter_token : postprocessor_drop_filter->tokens)
+    for (const auto & filter_token : filter_tokens)
     {
-        std::string_view key(arena->insert(filter_token.data(), filter_token.size()), filter_token.size());
+        memcpy(data, filter_token.data(), filter_token.size());
+        std::string_view key(data, filter_token.size());
+        data += filter_token.size();
+
         tokens_map.emplace(key, it, inserted);
         chassert(inserted);
         it->getMapped().markFiltered();
