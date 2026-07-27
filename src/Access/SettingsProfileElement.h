@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
 #include <Core/Field.h>
 #include <Core/UUID.h>
 #include <Common/SettingConstraintWritability.h>
@@ -45,8 +44,8 @@ struct SettingsProfileElement
     /// The constructor from AST requires the AccessControl if `ast.id_mode == false`.
     SettingsProfileElement(const ASTSettingsProfileElement & ast); /// NOLINT
     SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControl & access_control);
-    boost::intrusive_ptr<ASTSettingsProfileElement> toAST() const;
-    boost::intrusive_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControl & access_control) const;
+    std::shared_ptr<ASTSettingsProfileElement> toAST() const;
+    std::shared_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControl & access_control) const;
 
     bool empty() const { return !parent_profile && (setting_name.empty() || (!value && !min_value && !max_value && disallowed_values.empty() && !writability)); }
 
@@ -66,8 +65,8 @@ public:
     SettingsProfileElements(const ASTSettingsProfileElements & ast, bool normalize_ = true); /// NOLINT
     SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControl & access_control, bool normalize_ = true);
 
-    boost::intrusive_ptr<ASTSettingsProfileElements> toAST() const;
-    boost::intrusive_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
+    std::shared_ptr<ASTSettingsProfileElements> toAST() const;
+    std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
 
     std::vector<UUID> findDependencies() const;
     bool hasDependencies(const std::unordered_set<UUID> & ids) const;
@@ -80,7 +79,7 @@ public:
     Settings toSettings() const;
     SettingsChanges toSettingsChanges() const;
     SettingsConstraints toSettingsConstraints(const AccessControl & access_control) const;
-    UUIDs toProfileIDs() const;
+    std::vector<UUID> toProfileIDs() const;
 
     /// Normalizes this list of profile elements: removes duplicates and empty elements, and also sorts the elements
     /// in the following order: first profiles, then settings.

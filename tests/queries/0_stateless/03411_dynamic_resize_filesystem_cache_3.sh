@@ -18,25 +18,15 @@ CREATE TABLE ${table_name} (a String) engine=MergeTree() ORDER BY tuple() SETTIN
 INSERT INTO ${table_name} SELECT randomString(10000000);
 "
 
-# `s3_cache` is shared, so a concurrent test dropping the filesystem cache (or eviction) can
-# transiently empty it between the warm-up read and the check. Re-warm and re-check in a short
-# bounded loop so a transient empty instant does not fail the test.
-cache_populated=0
-for _ in {1..10}
-do
-    $CLICKHOUSE_CLIENT --enable_filesystem_cache 1 --query "SELECT * FROM ${table_name} FORMAT Null"
-    cache_populated=$($CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
-    [ "$cache_populated" = "1" ] && break
-    sleep 0.5
-done
-echo "$cache_populated"
+$CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null"
 
 prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
+$CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
 
 config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 
 new_max_size=$($CLICKHOUSE_CLIENT --query "SELECT multiply(max_size, 3) FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
-sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|" $config_path
+sed -i "s|<max_size>$prev_max_size<\/max_size>|<max_size>$new_max_size<\/max_size>|"  $config_path
 
 TIMEOUT=5
 
@@ -44,7 +34,7 @@ function select_func {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null SETTINGS enable_filesystem_cache=1, filesystem_cache_segments_batch_size=1, max_read_buffer_size_remote_fs=50000"
+        $CLICKHOUSE_CLIENT --query "SELECT * FROM ${table_name} FORMAT Null SETTINGS filesystem_cache_segments_batch_size=1, max_read_buffer_size_remote_fs=50000"
     done
 }
 

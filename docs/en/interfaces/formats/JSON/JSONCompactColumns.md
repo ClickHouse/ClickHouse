@@ -6,7 +6,6 @@ keywords: ['JSONCompactColumns']
 output_format: true
 slug: /interfaces/formats/JSONCompactColumns
 title: 'JSONCompactColumns'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

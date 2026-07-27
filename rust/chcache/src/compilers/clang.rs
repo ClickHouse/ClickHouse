@@ -1,18 +1,14 @@
-use std::cell::Cell;
 use std::error::Error;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use blake3::Hasher;
 use log::trace;
-use tokio::time::Instant;
 
 use crate::traits::compiler::Compiler;
 use crate::traits::compiler::CompilerMeta;
 
 pub struct ClangLike {
-    compiler_path: PathBuf,
+    compiler_path: String,
 
     args: Vec<String>,
     stripped_args: Vec<String>,
@@ -21,12 +17,10 @@ pub struct ClangLike {
     output: String,
 
     relative_output: String,
-
-    elapsed_compile_time_ms: Cell<Duration>,
 }
 
 impl ClangLike {
-    pub fn from_args(compiler_path: &Path, args: Vec<String>) -> Self {
+    pub fn from_args(compiler_path: String, args: Vec<String>) -> Self {
         let cwd = std::env::current_dir()
             .unwrap()
             .into_os_string()
@@ -45,7 +39,7 @@ impl ClangLike {
             .collect::<Vec<String>>();
 
         ClangLike {
-            compiler_path: compiler_path.to_path_buf(),
+            compiler_path,
 
             input: ClangLike::get_input_from_args(&args),
             output: ClangLike::get_output_from_args(&args),
@@ -54,8 +48,6 @@ impl ClangLike {
 
             args,
             stripped_args,
-
-            elapsed_compile_time_ms: Cell::new(Duration::ZERO),
         }
     }
 
@@ -107,10 +99,10 @@ impl ClangLike {
         basepath.trim_end_matches('/').to_string()
     }
 
-    pub fn compiler_version(compiler_path: &Path) -> String {
-        trace!("Using compiler: {}", compiler_path.display());
+    pub fn compiler_version(compiler_path: String) -> String {
+        trace!("Using compiler: {}", compiler_path);
 
-        let compiler_version = std::process::Command::new(compiler_path)
+        let compiler_version = std::process::Command::new(compiler_path.clone())
             .arg("-dM")
             .arg("-E")
             .arg("-x")
@@ -202,13 +194,8 @@ impl ClangLike {
 impl CompilerMeta for Clang {
     const NAME: &'static str = "clang";
 
-    fn from_args(compiler_path: &Path, args: Vec<String>) -> Box<dyn Compiler> {
-        let binary_name = compiler_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap();
-
-        assert!(binary_name.starts_with(Clang::NAME));
+    fn from_args(compiler_path: String, args: Vec<String>) -> Box<dyn Compiler> {
+        assert!(compiler_path.ends_with(Clang::NAME));
 
         Box::new(Clang(ClangLike::from_args(compiler_path, args)))
     }
@@ -217,13 +204,8 @@ impl CompilerMeta for Clang {
 impl CompilerMeta for ClangXX {
     const NAME: &'static str = "clang++";
 
-    fn from_args(compiler_path: &Path, args: Vec<String>) -> Box<dyn Compiler> {
-        let binary_name = compiler_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap();
-
-        assert!(binary_name.starts_with(ClangXX::NAME));
+    fn from_args(compiler_path: String, args: Vec<String>) -> Box<dyn Compiler> {
+        assert!(compiler_path.ends_with(ClangXX::NAME));
 
         Box::new(ClangXX(ClangLike::from_args(compiler_path, args)))
     }
@@ -231,14 +213,10 @@ impl CompilerMeta for ClangXX {
 
 impl Compiler for ClangLike {
     fn compile(&self) -> Result<Vec<u8>, Box<dyn Error>> {
-        let start_time = Instant::now();
-
         let output = std::process::Command::new(self.compiler_path.clone())
             .args(&self.args)
             .output()
             .unwrap();
-
-        self.elapsed_compile_time_ms.set(start_time.elapsed());
 
         if !output.status.success() {
             println!("{}", String::from_utf8_lossy(&output.stdout));
@@ -250,7 +228,7 @@ impl Compiler for ClangLike {
     }
 
     fn version(&self) -> String {
-        ClangLike::compiler_version(self.compiler_path.as_path())
+        ClangLike::compiler_version(self.compiler_path.clone())
     }
 
     fn cache_key(&self) -> String {
@@ -295,14 +273,6 @@ impl Compiler for ClangLike {
     fn cacheable(&self) -> bool {
         true
     }
-
-    fn get_args(&self) -> Vec<String> {
-        self.stripped_args.to_vec()
-    }
-
-    fn get_compile_duration(&self) -> u128 {
-        self.elapsed_compile_time_ms.get().as_millis()
-    }
 }
 
 pub struct Clang(ClangLike);
@@ -328,14 +298,6 @@ impl Compiler for ClangXX {
     fn version(&self) -> String {
         self.0.version()
     }
-
-    fn get_args(&self) -> Vec<String> {
-        self.0.get_args()
-    }
-
-    fn get_compile_duration(&self) -> u128 {
-        self.0.get_compile_duration()
-    }
 }
 
 impl Compiler for Clang {
@@ -357,13 +319,5 @@ impl Compiler for Clang {
 
     fn version(&self) -> String {
         self.0.version()
-    }
-
-    fn get_args(&self) -> Vec<String> {
-        self.0.get_args()
-    }
-
-    fn get_compile_duration(&self) -> u128 {
-        self.0.get_compile_duration()
     }
 }

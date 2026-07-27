@@ -17,7 +17,7 @@ struct ASTCheckTableQuery : public ASTQueryWithTableAndOutput
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTCheckTableQuery>(*this);
+        auto res = std::make_shared<ASTCheckTableQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         cloneTableOptions(*res);
@@ -75,7 +75,7 @@ struct ASTCheckAllTablesQuery : public ASTQueryWithOutput
 
     ASTPtr clone() const override
     {
-        auto res = make_intrusive<ASTCheckAllTablesQuery>(*this);
+        auto res = std::make_shared<ASTCheckAllTablesQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
         return res;

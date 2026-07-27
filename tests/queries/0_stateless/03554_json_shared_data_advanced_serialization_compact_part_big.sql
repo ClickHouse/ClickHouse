@@ -1,4 +1,4 @@
--- Tags: long, no-msan
+-- Tags: long
 -- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 
 drop table if exists test_compact_without_substreams_advanced;

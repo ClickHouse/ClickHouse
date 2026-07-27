@@ -122,10 +122,10 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
 
             __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
 
-            const uint16_t non_regular_width_mask = static_cast<uint16_t>(_mm_movemask_epi8(
+            const uint16_t non_regular_width_mask = _mm_movemask_epi8(
                 _mm_or_si128(
                     _mm_cmplt_epi8(bytes, lower_bound),
-                    _mm_cmpgt_epi8(bytes, upper_bound))));
+                    _mm_cmpgt_epi8(bytes, upper_bound)));
 
             if (non_regular_width_mask)
             {
@@ -222,21 +222,6 @@ size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, s
 }
 
 
-size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept
-{
-    size_t code_point = 0;
-    size_t bytes = 0;
-
-    while (bytes < size && code_point < limit)
-    {
-        bytes += seqLength(data[bytes]);
-        ++code_point;
-    }
-
-    return std::min(bytes, size);
-}
-
-
 size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_length)
 {
     static const Poco::UTF8Encoding utf8;
@@ -244,7 +229,7 @@ size_t convertCodePointToUTF8(int code_point, char * out_bytes, size_t out_lengt
         code_point,
         reinterpret_cast<uint8_t *>(out_bytes),
         static_cast<int>(out_length));
-    chassert(res >= 0);
+    assert(res >= 0);
     return res;
 }
 

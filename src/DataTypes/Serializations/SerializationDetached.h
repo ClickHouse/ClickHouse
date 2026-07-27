@@ -10,16 +10,10 @@ namespace DB
 /// `deserialize` method will return a `ColumnBLOB` with the same BLOB as input. Deserialization and decompression of the BLOB will be done later by `UnmarshallBlocksTransform`.
 class SerializationDetached final : public ISerialization
 {
-private:
+public:
     explicit SerializationDetached(const SerializationPtr & nested_);
 
-public:
-    static UInt128 getHash(const SerializationPtr & nested_);
-    static SerializationPtr create(const SerializationPtr & nested_);
-    bool supportsPooling() const override { return nested->supportsPooling(); }
-    const SerializationPtr & getNested() const { return nested; }
-
-    KindStack getKindStack() const override;
+    Kind getKind() const override { return nested->getKind() == Kind::DEFAULT ? Kind::DETACHED : Kind::DETACHED_OVER_SPARSE; }
 
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
 

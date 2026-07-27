@@ -118,14 +118,11 @@ ORDER BY t1.number, t2.number
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
-      Expression (Post Join Actions)
-        Join (JOIN FillRightFirst)
-          Expression (Left Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
-          Expression (Right Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+      Join (JOIN FillRightFirst)
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -165,14 +162,11 @@ ORDER BY t1.number, t2.number
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
     Expression ((Before ORDER BY + Projection))
-      Expression (Post Join Actions)
-        Join (JOIN FillRightFirst)
-          Expression (Left Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
-          Expression (Right Pre Join Actions)
-            Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
-              ReadFromSystemNumbers
+      Join (JOIN FillRightFirst)
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
+        Expression ((Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + (Change column names to column identifiers + (Project names + (Before ORDER BY + (Projection + Change column names to column identifiers)))))))))
+          ReadFromSystemNumbers
 -- execute
 0	0
 0	1
@@ -333,7 +327,7 @@ FROM
 )
 WHERE a > 0
 ORDER BY a
-SETTINGS optimize_aggregators_of_group_by_keys=0, enable_optimize_predicate_expression=1, query_plan_merge_filters=1 -- CI may inject False for either; enable_optimize_predicate_expression=False: WHERE a>0 not pushed as HAVING; query_plan_merge_filters=False: WHERE+HAVING not merged into single Filter step; avoid removing any() as it depends on order and we need it for the test
+SETTINGS optimize_aggregators_of_group_by_keys=0 -- avoid removing any() as it depends on order and we need it for the test
 -- explain
 Expression (Project names)
   Sorting (Sorting for ORDER BY)
@@ -399,11 +393,11 @@ Expression ((Project names + Projection))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
 -- sum() with Nullable(Floats) depends on order, -> sorting is not removed here
@@ -431,11 +425,11 @@ Expression ((Project names + Projection))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
 -- execute
 Nullable(Float64)	9007199254740994
 -- sumIf() with Floats depends on order, -> sorting is not removed here
@@ -463,11 +457,11 @@ Expression ((Project names + Projection))
       Sorting (Sorting for ORDER BY)
         Union
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
           Expression ((Before ORDER BY + (Projection + (Change column names to column identifiers + (Conversion before UNION + (Project names + (Projection + Change column names to column identifiers)))))))
-            ReadFromSystemOne
+            ReadFromStorage (SystemOne)
 -- execute
 Float64	9007199254740994
 -- presence of an inner OFFSET retains the ORDER BY

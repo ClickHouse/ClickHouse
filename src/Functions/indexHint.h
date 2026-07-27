@@ -1,5 +1,4 @@
 #pragma once
-#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -21,7 +20,7 @@ namespace DB
   *
   * The function can be used for debugging purposes, as well as for (hidden from the user) query conversions.
   */
-class FunctionIndexHint final : public IFunction
+class FunctionIndexHint : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";

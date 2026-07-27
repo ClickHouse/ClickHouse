@@ -24,17 +24,18 @@ uint64_t dateTimeToMillisecond(UInt32 date_time)
 }
 
 
-class FunctionDateTimeToUUIDv7 : public IFunction
+#define DECLARE_SEVERAL_IMPLEMENTATIONS(...) \
+DECLARE_DEFAULT_CODE      (__VA_ARGS__) \
+DECLARE_AVX2_SPECIFIC_CODE(__VA_ARGS__)
+
+DECLARE_SEVERAL_IMPLEMENTATIONS(
+
+class FunctionDateTimeToUUIDv7Base : public IFunction
 {
 public:
     static constexpr auto name = "dateTimeToUUIDv7";
 
-    static FunctionPtr create(ContextPtr)
-    {
-        return std::make_shared<FunctionDateTimeToUUIDv7>();
-    }
-
-    String getName() const final { return name; }
+    String getName() const final {  return name; }
     size_t getNumberOfArguments() const final { return 1; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const final { return false; }
@@ -94,57 +95,54 @@ public:
     }
 };
 
+) // DECLARE_SEVERAL_IMPLEMENTATIONS
+#undef DECLARE_SEVERAL_IMPLEMENTATIONS
+
+class FunctionDateTimeToUUIDv7 : public TargetSpecific::Default::FunctionDateTimeToUUIDv7Base
+{
+public:
+    using Self = FunctionDateTimeToUUIDv7;
+    using Parent = TargetSpecific::Default::FunctionDateTimeToUUIDv7Base;
+
+    explicit FunctionDateTimeToUUIDv7(ContextPtr context)
+        : selector(context)
+    {
+        selector.registerImplementation<TargetArch::Default, Parent>();
+
+#if USE_MULTITARGET_CODE
+        using ParentAVX2 = TargetSpecific::AVX2::FunctionDateTimeToUUIDv7Base;
+        selector.registerImplementation<TargetArch::AVX2, ParentAVX2>();
+#endif
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return selector.selectAndExecute(arguments, result_type, input_rows_count);
+    }
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<Self>(context);
+    }
+
+private:
+    ImplementationSelector<IFunction> selector;
+};
+
 
 REGISTER_FUNCTION(DateTimeToUUIDv7)
 {
-    /// dateTimeToUUIDv7 documentation
-    FunctionDocumentation::Description description = R"(
-Converts a [DateTime](../data-types/datetime.md) value to a [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the given time.
-
-See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
-
-:::note
-As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
-    )";
+    FunctionDocumentation::Description description = R"(Converts a [DateTime](../data-types/datetime.md) value to the first [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) at the giving time.)";
     FunctionDocumentation::Syntax syntax = "dateTimeToUUIDv7(value)";
     FunctionDocumentation::Arguments arguments = {
         {"value", "Date with time.", {"DateTime"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a UUIDv7.", {"UUID"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
-        )",
-        R"(
-┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
-        )"
-    },
-    {
-        "multiple UUIDs for the same timestamp",
-        R"(
-SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
-SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
-        )",
-        R"(
-┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
-│ 017b4b2d-7720-76ed-ae44-bbcc23a8c550 │
-└──────────────────────────────────────┘
-┌─dateTimeToUUIDv7(t⋯08-15 18:57:56'))─┐
-│ 017b4b2d-7720-76ed-ae44-bbcf71ed0fd3 │
-└──────────────────────────────────────┘
-       )"
-    }
-    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Input value converted to", {"UUID"}};
+    FunctionDocumentation::Examples examples = {{"simple", "SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))", "6832626392367104000"}};
     FunctionDocumentation::IntroducedIn introduced_in = {25, 8};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::UUID;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionDateTimeToUUIDv7>(documentation);
+    factory.registerFunction<FunctionDateTimeToUUIDv7>({description, syntax, arguments, returned_value, examples, introduced_in, category});
 
 }
 }

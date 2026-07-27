@@ -8,7 +8,7 @@
 namespace DB
 {
 
-struct AddSequenceNumber final : ISimpleTransform
+struct AddSequenceNumber : ISimpleTransform
 {
 public:
     explicit AddSequenceNumber(SharedHeader header_)
@@ -24,7 +24,7 @@ private:
     UInt64 chunk_sequence_number = 0;
 };
 
-class SortChunksBySequenceNumber final : public IProcessor
+class SortChunksBySequenceNumber : public IProcessor
 {
 public:
     SortChunksBySequenceNumber(const Block & header_, size_t num_inputs_);

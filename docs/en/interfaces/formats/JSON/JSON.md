@@ -6,7 +6,6 @@ keywords: ['JSON']
 output_format: true
 slug: /interfaces/formats/JSON
 title: 'JSON'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

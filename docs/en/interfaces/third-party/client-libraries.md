@@ -5,8 +5,9 @@ sidebar_label: 'Client Libraries'
 sidebar_position: 26
 slug: /interfaces/third-party/client-libraries
 title: 'Client Libraries from Third-party Developers'
-doc_type: 'reference'
 ---
+
+# Client libraries from third-party developers
 
 :::note
 ClickHouse Inc does **not** maintain the libraries listed below and hasn't done any extensive testing to ensure their quality.
@@ -31,8 +32,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [glushkovds/php-clickhouse-schema-builder](https://packagist.org/packages/glushkovds/php-clickhouse-schema-builder)
 - [kolya7k ClickHouse PHP extension](https://github.com//kolya7k/clickhouse-php)
 - [hyvor/clickhouse-php](https://github.com/hyvor/clickhouse-php)
-- [beeterty/clickhouse-php-client](https://github.com/beeterty-technologies/clickhouse-php-client) 
-- [laravel-clickhouse/laravel-clickhouse](https://github.com/laravel-clickhouse/laravel-clickhouse)
 ### Go {#go}
 - [clickhouse](https://github.com/kshvakov/clickhouse/)
 - [go-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -52,7 +51,6 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
 - [clickhouse-ts](https://github.com/bytadaniel/clickhouse-ts)
 - [clickcache](https://github.com/bytadaniel/clickcache)
-- [ck-orm](https://github.com/MunMunMiao/ck-orm)
 ### Perl {#perl}
 - [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
 - [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -73,11 +71,10 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 ### Kotlin {#kotlin}
 - [AORM](https://github.com/TanVD/AORM)
-### C++ {#cpp}
-- [ClickHouse driver for userver framework](https://userver.tech/dd/ddb/clickhouse_driver.html)
 ### C# {#c}
 - [Octonica.ClickHouseClient](https://github.com/Octonica/ClickHouseClient)
 - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+- [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
 - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
 ### Elixir {#elixir}
 - [clickhousex](https://github.com/appodeal/clickhousex/)

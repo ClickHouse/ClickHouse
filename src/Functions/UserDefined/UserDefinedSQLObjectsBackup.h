@@ -3,10 +3,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <base/types.h>
 
-#include <vector>
-
-#include <Common/VectorWithMemoryTracking.h>
-
 
 namespace DB
 {
@@ -21,9 +17,9 @@ void backupUserDefinedSQLObjects(
     BackupEntriesCollector & backup_entries_collector,
     const String & data_path_in_backup,
     UserDefinedSQLObjectType object_type,
-    const VectorWithMemoryTracking<std::pair<String, ASTPtr>> & objects);
+    const std::vector<std::pair<String, ASTPtr>> & objects);
 
 /// Restores user-defined SQL objects from the backup.
-VectorWithMemoryTracking<std::pair<String, ASTPtr>>
+std::vector<std::pair<String, ASTPtr>>
 restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_path_in_backup, UserDefinedSQLObjectType object_type);
 }

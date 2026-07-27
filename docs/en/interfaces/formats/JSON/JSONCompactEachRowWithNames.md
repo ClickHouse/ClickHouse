@@ -6,7 +6,6 @@ keywords: ['JSONCompactEachRowWithNames']
 output_format: true
 slug: /interfaces/formats/JSONCompactEachRowWithNames
 title: 'JSONCompactEachRowWithNames'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/Exception.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Field.h>
 
@@ -47,7 +46,7 @@ public:
 
     void updateHashImpl(SipHash &) const override {}
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { throwNoSerialization(); }
+    SerializationPtr doGetDefaultSerialization() const override { throwNoSerialization(); }
 };
 
 }

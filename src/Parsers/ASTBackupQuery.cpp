@@ -1,8 +1,7 @@
-#include <IO/Operators.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSnapshotQuery.h>
+#include <IO/Operators.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -187,22 +186,10 @@ namespace
         changes.emplace_back("async", true);
         changes.emplace_back("host_id", params.host_id);
 
-        auto out_settings = make_intrusive<ASTSetQuery>();
+        auto out_settings = std::make_shared<ASTSetQuery>();
         out_settings->changes = std::move(changes);
         out_settings->is_standalone = false;
         return out_settings;
-    }
-
-    constexpr ASTBackupQuery::ElementType toBackupElementType(ASTSnapshotQuery::ElementType snapshot_type)
-    {
-        switch (snapshot_type)
-        {
-            case ASTSnapshotQuery::ElementType::TABLE:
-                return ASTBackupQuery::ElementType::TABLE;
-            case ASTSnapshotQuery::ElementType::ALL:
-                return ASTBackupQuery::ElementType::ALL;
-        }
-        std::unreachable();
     }
 }
 
@@ -237,35 +224,6 @@ void ASTBackupQuery::Element::setCurrentDatabase(const String & current_database
     }
 }
 
-ASTPtr ASTBackupQuery::fromSnapshotQuery(const ASTSnapshotQuery & query)
-{
-    auto res = make_intrusive<ASTBackupQuery>();
-    res->children.clear();
-
-    const auto & element = query.element;
-    res->elements.push_back(
-        ASTBackupQuery::Element{
-            toBackupElementType(element.type),
-            element.table_name,
-            element.database_name,
-            element.table_name,
-            element.database_name,
-            /*partitions*/ {},
-            element.except_tables,
-            element.except_databases});
-    if (query.snapshot_destination)
-        res->set(res->backup_name, query.snapshot_destination->clone());
-
-    SettingsChanges changes;
-    changes.emplace_back("experimental_lightweight_snapshot", true);
-    changes.emplace_back("snapshot", true);
-    auto settings = make_intrusive<ASTSetQuery>();
-    settings->changes = std::move(changes);
-    settings->is_standalone = false;
-    res->settings = settings;
-
-    return res;
-};
 
 void ASTBackupQuery::setCurrentDatabase(ASTBackupQuery::Elements & elements, const String & current_database)
 {
@@ -282,7 +240,7 @@ String ASTBackupQuery::getID(char) const
 
 ASTPtr ASTBackupQuery::clone() const
 {
-    auto res = make_intrusive<ASTBackupQuery>(*this);
+    auto res = std::make_shared<ASTBackupQuery>(*this);
     res->children.clear();
 
     if (backup_name)
@@ -290,9 +248,6 @@ ASTPtr ASTBackupQuery::clone() const
 
     if (base_backup_name)
         res->set(res->base_backup_name, base_backup_name->clone());
-
-    if (base_snapshot_name)
-        res->set(res->base_snapshot_name, base_snapshot_name->clone());
 
     if (cluster_host_ids)
         res->cluster_host_ids = cluster_host_ids->clone();
@@ -310,17 +265,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 {
     ostr << ((kind == Kind::BACKUP) ? "BACKUP " : "RESTORE ");
 
-    if (base_snapshot_name)
-    {
-        /// BACKUP FROM SNAPSHOT <snapshot_name> [ON CLUSTER ...] TO <backup_name>
-        ostr << "FROM SNAPSHOT ";
-        base_snapshot_name->format(ostr, fs);
-    }
-    else
-    {
-        formatElements(elements, ostr, fs);
-    }
-
+    formatElements(elements, ostr, fs);
     formatOnCluster(ostr, fs);
 
     ostr << ((kind == Kind::BACKUP) ? " TO " : " FROM ");
@@ -332,7 +277,7 @@ void ASTBackupQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
 ASTPtr ASTBackupQuery::getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
-    auto new_query = boost::static_pointer_cast<ASTBackupQuery>(clone());
+    auto new_query = std::static_pointer_cast<ASTBackupQuery>(clone());
     new_query->cluster.clear();
     new_query->settings = rewriteSettingsWithoutOnCluster(new_query->settings, params);
     ASTBackupQuery::setCurrentDatabase(new_query->elements, params.default_database);
