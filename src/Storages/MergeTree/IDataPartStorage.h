@@ -275,6 +275,7 @@ public:
         bool make_source_readonly = false;
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
+        NameSet invalidated_columns_to_write = {};
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
