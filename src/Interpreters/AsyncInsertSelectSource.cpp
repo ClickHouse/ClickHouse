@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Common/logger_useful.h>
+#include <Core/Block.h>
 #include <Core/DeduplicateInsert.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
@@ -9,6 +10,8 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/addMissingDefaults.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -186,6 +189,9 @@ Chunk AsyncInsertSelectSource::generate()
         /// The pushed block is Preprocessed (Native-encoded). `preprocessInsertQuery` rejects an
         /// empty format, and a plain `INSERT ... SELECT` carries none, so set `Native` explicitly.
         async_query->as<ASTInsertQuery &>().format = "Native";
+        /// De-sparse all columns so processPreprocessedEntries can insertRangeFrom
+        /// into non-sparse result columns without offset corruption.
+        materializeBlockInplace(single_block);
         auto result = queue->pushQueryWithBlock(async_query, std::move(single_block), insert_context);
         /// `report_read_progress=false`: reads were already counted by the SELECT pipeline.
         waitForAsyncInsertAndReportProgress(
@@ -289,10 +295,8 @@ void buildAsyncInsertSelectPipeline(
                 "Number of columns in INSERT ... SELECT doesn't match: SELECT returns {}, but the target expects {}",
                 src_cols.size(), dst_cols.size());
 
-        /// The queue flush converts the preprocessed block to the target header without a defaults
-        /// step, so a Nullable-to-non-Nullable column under insert_null_as_default must fall back
-        /// to the synchronous insert (which substitutes the default). Mirror the column test used
-        /// by InterpreterInsertQuery::convertSelectToInsertSchema.
+        /// The queue flush has no defaults step, so a Nullable-to-non-Nullable column under
+        /// insert_null_as_default cannot be substituted there.
         if (settings[Setting::insert_null_as_default])
         {
             for (size_t i = 0; i < src_cols.size(); ++i)
@@ -306,16 +310,44 @@ void buildAsyncInsertSelectPipeline(
             }
         }
 
-        ColumnsWithTypeAndName rename_cols;
-        rename_cols.reserve(src_cols.size());
-        for (size_t i = 0; i < src_cols.size(); ++i)
-            rename_cols.push_back({nullptr, src_cols[i].type, dst_cols[i].name});
+        if (needs_null_default_sync)
+        {
+            /// Apply the full type-conversion and NULL-to-default substitution on the SELECT
+            /// pipeline so the blocks handed downstream already match the non-nullable insert schema.
+            auto nullable_schema = InterpreterInsertQuery::convertSelectToInsertSchema(
+                select_pipeline, insert_query, destination, context,
+                /* no_destination */ false,
+                settings[Setting::insert_allow_materialized_columns]);
 
-        auto rename_dag = ActionsDAG::makeConvertingActions(src_cols, rename_cols, ActionsDAG::MatchColumnsMode::Position, context);
-        auto rename_actions = std::make_shared<ExpressionActions>(std::move(rename_dag));
-        select_pipeline.addSimpleTransform(
-            [&](const SharedHeader & in_header) -> ProcessorPtr
-            { return std::make_shared<ExpressionTransform>(in_header, rename_actions); });
+            auto defaults_dag = addMissingDefaults(
+                nullable_schema,
+                insert_schema.getNamesAndTypesList(),
+                metadata_snapshot->getColumns(),
+                context,
+                /* null_as_default */ true);
+
+            auto subcolumns_dag = createSubcolumnsExtractionActions(
+                nullable_schema, defaults_dag.getRequiredColumnsNames(), context);
+
+            auto merged_dag = ActionsDAG::merge(std::move(subcolumns_dag), std::move(defaults_dag));
+            auto defaults_actions = std::make_shared<ExpressionActions>(std::move(merged_dag));
+            select_pipeline.addSimpleTransform(
+                [&](const SharedHeader & in_header) -> ProcessorPtr
+                { return std::make_shared<ExpressionTransform>(in_header, defaults_actions); });
+        }
+        else
+        {
+            ColumnsWithTypeAndName rename_cols;
+            rename_cols.reserve(src_cols.size());
+            for (size_t i = 0; i < src_cols.size(); ++i)
+                rename_cols.push_back({nullptr, src_cols[i].type, dst_cols[i].name});
+
+            auto rename_dag = ActionsDAG::makeConvertingActions(src_cols, rename_cols, ActionsDAG::MatchColumnsMode::Position, context);
+            auto rename_actions = std::make_shared<ExpressionActions>(std::move(rename_dag));
+            select_pipeline.addSimpleTransform(
+                [&](const SharedHeader & in_header) -> ProcessorPtr
+                { return std::make_shared<ExpressionTransform>(in_header, rename_actions); });
+        }
     }
 
     /// Register the SELECT pipeline with the process list so that KILL QUERY and

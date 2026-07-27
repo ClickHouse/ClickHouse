@@ -2,9 +2,11 @@
 -- Tag no-fasttest: Depends on S3
 
 SET enable_blob_storage_log_for_read_operations = 1;
+-- async_insert=0: the test queries blob_storage_log right after the INSERT; async writes
+-- flush in a background thread after the client returns, so the log entries would be missing.
 
 INSERT INTO FUNCTION s3(s3_conn, url = 'http://localhost:11111/test/04039_data/file_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)
-    SETTINGS s3_truncate_on_insert = 1
+    SETTINGS s3_truncate_on_insert = 1, async_insert = 0
     SELECT number FROM numbers(100);
 
 SELECT sum(number) FROM s3(s3_conn, url = 'http://localhost:11111/test/04039_data/file_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV);
@@ -21,7 +23,7 @@ WHERE event_type = 'Read'
 -- Negative test: with enable_blob_storage_log_for_read_operations=0 (default), no Read events should be logged.
 -- Use a different file name to distinguish from the positive test above.
 INSERT INTO FUNCTION s3(s3_conn, url = 'http://localhost:11111/test/04039_data/neg_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)
-    SETTINGS s3_truncate_on_insert = 1
+    SETTINGS s3_truncate_on_insert = 1, async_insert = 0
     SELECT number FROM numbers(10);
 
 SELECT sum(number) FROM s3(s3_conn, url = 'http://localhost:11111/test/04039_data/neg_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)
@@ -38,7 +40,7 @@ WHERE remote_path LIKE '%04039_data/neg_' || currentDatabase() || '.csv'
 -- Gate test: enable_blob_storage_log_for_read_operations=1 but enable_blob_storage_log=0 must not produce any Read events,
 -- because the blob storage log writer is gated by the parent setting.
 INSERT INTO FUNCTION s3(s3_conn, url = 'http://localhost:11111/test/04039_data/gate_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)
-    SETTINGS s3_truncate_on_insert = 1
+    SETTINGS s3_truncate_on_insert = 1, async_insert = 0
     SELECT number FROM numbers(10);
 
 SELECT sum(number) FROM s3(s3_conn, url = 'http://localhost:11111/test/04039_data/gate_'||currentDatabase()||'.csv', structure = 'number UInt64', format = CSV)
