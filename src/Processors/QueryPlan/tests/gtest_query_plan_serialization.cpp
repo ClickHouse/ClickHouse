@@ -412,15 +412,14 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
             Exception);
     }
 
-    /// A restructure has to name the plan version that carries it, or older readers are never
-    /// told to reject the plan.
+    /// A restructure needs nothing beyond the classification: the outline tells readers, per node,
+    /// how far back the payload can be prefix-read.
     {
         QueryPlanStepRegistry::StepSerializationInfo info;
         info.max_step_format_version = 2;
         info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Restructure;
-        EXPECT_THROW(
-            registry.registerStep("TestUngatedRestructure", TestSourceStep::deserialize, std::move(info)),
-            Exception);
+        EXPECT_NO_THROW(
+            registry.registerStep("TestClassifiedRestructure", TestSourceStep::deserialize, std::move(info)));
     }
 
     /// An append needs nothing beyond the classification: older readers prefix-read it.
@@ -431,6 +430,21 @@ TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
         EXPECT_NO_THROW(
             registry.registerStep("TestClassifiedAppend", TestSourceStep::deserialize, std::move(info)));
     }
+}
+
+TEST(QueryPlanSerialization, PrefixReadableBaseFollowsTheLastRestructure)
+{
+    QueryPlanStepRegistry::StepSerializationInfo info;
+    info.max_step_format_version = 4;
+    info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Append;
+    info.payload_changes[3] = QueryPlanStepRegistry::PayloadChange::Restructure;
+    info.payload_changes[4] = QueryPlanStepRegistry::PayloadChange::Append;
+
+    /// Appends stack onto whatever came before; a restructure resets the base to itself.
+    EXPECT_EQ(info.prefixReadableFrom(1), 1u);
+    EXPECT_EQ(info.prefixReadableFrom(2), 1u);
+    EXPECT_EQ(info.prefixReadableFrom(3), 3u);
+    EXPECT_EQ(info.prefixReadableFrom(4), 3u);
 }
 
 TEST(QueryPlanSerialization, QueryPicksTheWriterVersion)
@@ -864,6 +878,25 @@ TEST(QueryPlanSerialization, SetRowCountCannotExceedItsFrame)
         /// of the frame and throws anyway, which would pass with the row count never looked at.
         EXPECT_NE(e.message().find("rows but only"), std::string::npos) << e.message();
     }
+}
+
+TEST(QueryPlanOutline, ValidationRefusesPayloadItCannotPrefixRead)
+{
+    registerStepsOnce();
+
+    /// `TestSource` is known up to payload format 1 here, so a payload from a much newer format is
+    /// only readable if the writer says the part this server understands still comes first.
+    auto appended = makeTestOutline();
+    appended.nodes[0].step_format_version = 5;
+    appended.nodes[0].payload_prefix_readable_from = 1;
+    EXPECT_TRUE(validateQueryPlanOutline(appended, 4, 4).ok());
+
+    auto restructured = makeTestOutline();
+    restructured.nodes[0].step_format_version = 5;
+    restructured.nodes[0].payload_prefix_readable_from = 5;
+    auto result = validateQueryPlanOutline(restructured, 4, 4);
+    EXPECT_FALSE(result.ok());
+    EXPECT_NE(result.describe().find("readable only by format 5"), std::string::npos) << result.describe();
 }
 
 TEST(QueryPlanOutline, ValidationRejectsMalformedChildCounts)

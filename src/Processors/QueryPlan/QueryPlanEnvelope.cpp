@@ -44,6 +44,7 @@ void writeOutlineBody(const PlanOutline & outline, WriteBuffer & out)
         writeVarUInt(node.child_count, out);
         writeStringBinary(node.step_name, out);
         writeVarUInt(node.step_format_version, out);
+        writeVarUInt(node.payload_prefix_readable_from, out);
         writeVarUInt(node.min_reader_plan_version, out);
 
         UInt8 node_flags = node.has_output_header ? 1 : 0;
@@ -112,6 +113,7 @@ PlanOutline readOutlineBody(ReadBuffer & in, size_t max_type_complexity, UInt64 
         node.child_count = readCappedVarUInt(in, MAX_OUTLINE_NODES, "node children");
         readStringBinary(node.step_name, in, MAX_OUTLINE_FIELD_BYTES);
         readVarUInt(node.step_format_version, in);
+        readVarUInt(node.payload_prefix_readable_from, in);
         readVarUInt(node.min_reader_plan_version, in);
 
         UInt8 node_flags = 0;
@@ -290,6 +292,20 @@ QueryPlanOutlineValidationResult validateQueryPlanOutline(
 
         if (node.step_format_version == 0)
             result.issues.push_back(fmt::format("step '{}' has format version 0", node.step_name));
+
+        /// A payload newer than this binary knows is only readable when the writer says the part we
+        /// understand still comes first. Restructured payloads say otherwise and are refused here,
+        /// before any payload byte is decoded.
+        if (const auto * info = registry.getStepSerializationInfo(node.step_name))
+        {
+            if (node.step_format_version > info->max_step_format_version
+                && node.payload_prefix_readable_from > info->max_step_format_version)
+                result.issues.push_back(fmt::format(
+                    "step '{}' (node #{}) has payload format {} readable only by format {} and up, "
+                    "this server knows up to {}",
+                    node.step_name, i, node.step_format_version, node.payload_prefix_readable_from,
+                    info->max_step_format_version));
+        }
 
         /// Writer-honesty cross-checks: a node's declared "needed to read" version must cover the
         /// static requirements this binary knows about, and the head value must cover every node.

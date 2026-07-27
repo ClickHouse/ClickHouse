@@ -38,6 +38,9 @@ struct PlanOutline
         UInt64 child_count = 0;
         String step_name;                       /// QueryPlanStepRegistry key
         UInt64 step_format_version = 1;
+        /// The oldest payload format able to prefix-read this node's payload. A reader that knows
+        /// less than this rejects the plan rather than reading a restructured payload positionally.
+        UInt64 payload_prefix_readable_from = 1;
         /// The oldest plan version able to read this node's content ("needed to read"), computed
         /// by the writer from the step's registry info, its value-dependent requirements, header
         /// types and settings. Lets a rejection name the blocking step.

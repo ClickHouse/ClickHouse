@@ -40,6 +40,22 @@ public:
         /// inherently must-understand, so plans containing the step need at least this version.
         /// 0 means "as old as serialization itself" (folded to the base version).
         UInt64 introduced_in_plan_version = 0;
+
+        /// The oldest payload format whose reader can prefix-read `format_version`: everything
+        /// after the last restructure is an append onto it, so a reader that knows that much reads
+        /// the part it understands and the frame skips the rest.
+        UInt64 prefixReadableFrom(UInt64 format_version) const
+        {
+            UInt64 base = 1;
+            for (const auto & [version, change] : payload_changes)
+            {
+                if (version > format_version)
+                    break;
+                if (change == PayloadChange::Restructure)
+                    base = version;
+            }
+            return base;
+        }
     };
 
     QueryPlanStepRegistry() = default;

@@ -268,6 +268,9 @@ QueryPlan::SerializedChunks QueryPlan::serializeEnvelopeToChunks(const Serializa
         /// The step may have emitted an older payload form and lowered the context value; the
         /// outline must advertise the format of the bytes actually written.
         outline_node.step_format_version = ctx.step_format_version;
+        /// Stated rather than left to the reader to assume: a reader that knows less than this
+        /// cannot prefix-read these bytes, whatever their format version suggests.
+        outline_node.payload_prefix_readable_from = info ? info->prefixReadableFrom(ctx.step_format_version) : 1;
         outline_node.payload_size = payload.str().size();
 
         /// "Needed to read" for this node: the step's registry requirements for the format
