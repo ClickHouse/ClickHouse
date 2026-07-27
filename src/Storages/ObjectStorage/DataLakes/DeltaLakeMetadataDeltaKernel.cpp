@@ -649,8 +649,8 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             "Writing to DeltaLake tables with column mapping enabled is not supported");
     }
 
-    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create(partition_columns, snapshot->getTableSchema());
+    auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, snapshot->getTableSchema());
+    delta_transaction->create(partition_columns);
 
     if (partition_columns.empty())
     {
@@ -748,8 +748,8 @@ bool DeltaLakeMetadataDeltaKernel::createTable(
     /// Use `getAllPhysical()` so the Delta schema matches the physical columns the writer emits to Parquet.
     auto schema_list = columns.getAllPhysical();
 
-    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    write_transaction->createTable(schema_list, partition_columns);
+    auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper, schema_list);
+    write_transaction->createTable(partition_columns);
 
     LOG_DEBUG(
         log,

@@ -652,9 +652,10 @@ void DeltaLakeMetadata::createInitial(
     const StorageID & table_id_)
 {
     auto configuration_ptr = configuration.lock();
+    chassert(configuration_ptr);
 
 #if USE_DELTA_KERNEL_RS
-    const bool kernel_enabled = configuration_ptr && isDeltaKernelEnabled(local_context, configuration_ptr->getType());
+    const bool kernel_enabled = isDeltaKernelEnabled(local_context, configuration_ptr->getType());
 #else
     const bool kernel_enabled = false;
 #endif
@@ -662,7 +663,7 @@ void DeltaLakeMetadata::createInitial(
     /// Without the kernel there is no Delta Lake writer, so a fresh CREATE (no `_delta_log`) must fail.
     if (!kernel_enabled)
     {
-        if (configuration_ptr && !deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
+        if (!deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Creating a new Delta Lake table requires allow_experimental_delta_kernel_rs = 1 "

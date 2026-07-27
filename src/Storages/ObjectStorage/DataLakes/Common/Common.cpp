@@ -51,13 +51,12 @@ std::vector<String> listFiles(
 
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
 {
-    /// Keep only entries inside the `_delta_log/` directory (not sibling prefixes like `_delta_log_backup/`), matching any file, not only `*.json` commits.
+    /// List with the `_delta_log/` directory prefix (the trailing slash excludes sibling prefixes like
+    /// `_delta_log_backup/`) and fetch at most one object: we only need to know the directory is non-empty.
     const auto delta_log_dir = (std::filesystem::path(path) / "_delta_log").string() + "/";
-    return !listFiles(
-        object_storage,
-        path,
-        "_delta_log",
-        [&delta_log_dir](const RelativePathWithMetadata & file) { return file.relative_path.starts_with(delta_log_dir); }).empty();
+    RelativePathsWithMetadata files;
+    object_storage.listObjects(delta_log_dir, files, /* max_keys */ 1);
+    return !files.empty();
 }
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)

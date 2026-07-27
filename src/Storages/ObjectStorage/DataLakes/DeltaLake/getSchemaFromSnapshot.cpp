@@ -836,15 +836,8 @@ Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * sn
 namespace
 {
 
-uintptr_t visitFieldFromClickHouseType(
-    ffi::KernelSchemaVisitorState * state,
-    const std::string & name,
-    const DB::DataTypePtr & full_type);
-
-uintptr_t visitElementFromClickHouseType(
-    ffi::KernelSchemaVisitorState * state,
-    const DB::DataTypePtr & full_type);
-
+/// Register one ClickHouse column as a Delta field; nested types recurse (array elements and map
+/// keys/values are registered as anonymous fields with an empty name).
 uintptr_t visitFieldFromClickHouseType(
     ffi::KernelSchemaVisitorState * state,
     const std::string & name,
@@ -865,7 +858,7 @@ uintptr_t visitFieldFromClickHouseType(
         case DB::TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DB::DataTypeArray &>(*type);
-            auto element_id = visitElementFromClickHouseType(state, array_type.getNestedType());
+            auto element_id = visitFieldFromClickHouseType(state, /* name */ "", array_type.getNestedType());
             return unwrap(
                 ffi::visit_field_array(state, name_slice, element_id, nullable, &KernelUtils::allocateError),
                 "visit_field_array");
@@ -873,8 +866,8 @@ uintptr_t visitFieldFromClickHouseType(
         case DB::TypeIndex::Map:
         {
             const auto & map_type = assert_cast<const DB::DataTypeMap &>(*type);
-            auto key_id = visitElementFromClickHouseType(state, map_type.getKeyType());
-            auto value_id = visitElementFromClickHouseType(state, map_type.getValueType());
+            auto key_id = visitFieldFromClickHouseType(state, /* name */ "", map_type.getKeyType());
+            auto value_id = visitFieldFromClickHouseType(state, /* name */ "", map_type.getValueType());
             return unwrap(
                 ffi::visit_field_map(state, name_slice, key_id, value_id, nullable, &KernelUtils::allocateError),
                 "visit_field_map");
@@ -931,14 +924,8 @@ uintptr_t visitFieldFromClickHouseType(
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unhandled DeltaPrimitiveType for `{}`", type->getName());
 }
 
-uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, const DB::DataTypePtr & full_type)
-{
-    /// Array elements / map keys & values are visited as anonymous fields (empty name).
-    return visitFieldFromClickHouseType(state, /* name */ "", full_type);
-}
-
 /// Stored in `EngineSchema::visitor` and called once by the kernel; the anonymous namespace gives it internal linkage.
-uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
+uintptr_t visitClickHouseSchema(void * schema_void, ffi::KernelSchemaVisitorState * state)
 {
     auto * ctx = static_cast<KernelCreateSchemaState *>(schema_void);
     try
@@ -1005,7 +992,7 @@ ffi::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state)
     /// `schema` is an opaque `void *` the kernel never mutates; the visitor reads `state.schema_list` and stores any error in `state.exception`.
     return ffi::EngineSchema{
         /* schema */  &state,
-        /* visitor */ &kernelEngineSchemaVisitorTrampoline,
+        /* visitor */ &visitClickHouseSchema,
     };
 }
 

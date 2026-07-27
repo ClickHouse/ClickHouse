@@ -129,8 +129,9 @@ std::shared_ptr<arrow::Table> getWriteMetadata(
 
 static constexpr auto engine_info = "ClickHouse";
 
-WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_)
+WriteTransaction::WriteTransaction(DeltaLake::KernelHelperPtr kernel_helper_, DB::NamesAndTypesList table_schema_)
     : kernel_helper(kernel_helper_)
+    , table_schema(std::move(table_schema_))
     , log(getLogger("WriteTransaction"))
 {
 }
@@ -147,7 +148,7 @@ const std::string & WriteTransaction::getDataPath() const
     return path_prefix;
 }
 
-void WriteTransaction::create(const DB::Names & partition_columns, const DB::NamesAndTypesList & table_schema)
+void WriteTransaction::create(const DB::Names & partition_columns)
 {
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
@@ -275,15 +276,15 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Commit version: {}", version);
 }
 
-void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const DB::Names & partition_columns)
+void WriteTransaction::createTable(const DB::Names & partition_columns)
 {
     /// Reject non-round-tripping column types before the kernel FFI, so unsupported types raise a normal exception.
-    DeltaLake::validateSchemaForDeltaCreate(schema);
+    DeltaLake::validateSchemaForDeltaCreate(table_schema);
 
     if (!partition_columns.empty())
     {
         /// Partition columns are kept only in ClickHouse metadata: the v0.23.0 FFI `get_create_table_builder` has no `with_data_layout(Partitioned)` setter yet.
-        LOG_INFO(log,
+        LOG_WARNING(log,
             "PARTITION BY columns are not yet persisted into the Delta log "
             "(kernel FFI does not expose with_data_layout): {}",
             fmt::join(partition_columns, ", "));
@@ -296,7 +297,7 @@ void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const D
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
     DeltaLake::KernelCreateSchemaState schema_state;
-    schema_state.schema_list = &schema;
+    schema_state.schema_list = &table_schema;
     auto engine_schema = DeltaLake::buildKernelEngineSchema(schema_state);
 
     using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
@@ -325,7 +326,7 @@ void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const D
     auto * committed_handle = committed.get();
     auto version = ffi::committed_transaction_version(&committed_handle);
 
-    LOG_TEST(log, "Created table at version {}", version);
+    LOG_TRACE(log, "Created table at version {}", version);
 }
 
 }
