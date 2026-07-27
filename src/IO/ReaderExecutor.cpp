@@ -883,17 +883,13 @@ void ReaderExecutor::collectInFlightInto()
     /// data progress, and the serve reads them back from the cache (the cache is the
     /// buffer). What remains is a bypass window's transport (`r.into.empty()`) or a
     /// populating window's STILL-REFUSED residue; bank both - the bank is their only
-    /// route to the display. Refused residue also raises the launch backpressure: no
-    /// new lead until the serve consumed it.
+    /// route to the display. Banked bytes are memory-held until consumed; the launcher
+    /// budgets new lead against them (`bankAheadBytes`), so the no-commit paths run a
+    /// one-window cadence instead of banking the whole lead.
     if (!collected.empty())
     {
-        if (r.into.empty())
+        if (r.into.empty() || !display.covers(collected.range()))
             fill_lane.bank.append(std::move(collected));
-        else if (!display.covers(collected.range()))
-        {
-            fill_lane.bank.append(std::move(collected));
-            fill_lane.bank_refused = true;
-        }
     }
     /// The lane's ahead cursor: attempted through what the fetch actually REACHED. A full
     /// fetch (or one that saw EOF) attempted the window end to end; an interrupted or
@@ -1947,7 +1943,12 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     size_t allowance = prefetchAllowance(base);
     if (allowance)
         allowance = std::min(r.range.end(), cellCeil(r, base + allowance)) - base;
-    const size_t chunk = std::min({r.range.end() - base, capacity, allowance});
+    size_t chunk = std::min({r.range.end() - base, capacity, allowance});
+    /// A bypass job commits nothing - its whole window is memory-held transport
+    /// (banked, launch-gated until consumed) - so never fetch more per machine
+    /// than the serve consumes per window.
+    if (r.into.empty())
+        chunk = std::min(chunk, effectiveWindowSize(read_plan.geometry()->pressure_level));
     if (chunk == 0)
         return;
     /// Refill hysteresis: a launch costs a machine round-trip (and, on the stateless arm, its
@@ -1989,17 +1990,16 @@ void ReaderExecutor::prefetch()
         return;
     drainAbandonedMachines();
 
-    /// FULL-CACHE BACKPRESSURE: a collect banked residue the cells refused. Launching
-    /// more lead would only fetch more bytes the cache cannot take - hold until the
-    /// serve consumed the refused bank, then resume.
-    if (fill_lane.bank_refused)
-    {
-        if (!fill_lane.bank.empty())
-            return;
-        fill_lane.bank_refused = false;
-    }
-
     const size_t position_phys = toPhys(position);
+    /// BANK BACKPRESSURE: banked bytes (bypass transport, refused residue) are
+    /// memory-held until the serve consumes them - hold the lead while a full
+    /// (pressure-scaled) window of them lies ahead of the consumer. Partial
+    /// consumption frees the budget and the next launch tops it up, so the
+    /// held-ahead footprint stays ~one window without serializing the pipeline.
+    if (read_plan.geometry()
+        && fill_lane.bankAheadBytes(position_phys)
+            >= effectiveWindowSize(read_plan.geometry()->pressure_level))
+        return;
     const size_t probe = std::min(window_size, prefetchAllowance(position_phys));
     if (probe == 0)
         return;

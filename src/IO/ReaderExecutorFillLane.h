@@ -67,11 +67,17 @@ public:
     /// seek may swing back into it. 0 = trim to the served prefix (the pre-reuse rule).
     size_t bank_keep_behind = 0;
 
-    /// FULL-CACHE BACKPRESSURE: raised when a collect banked the still-refused residue
-    /// of a POPULATING window (the cells took nothing - cache full or sibling-claimed);
-    /// while it holds bytes the launcher runs no new lead (more fetch would only grow
-    /// the in-memory residue). Cleared when the serve consumes the bank; reset with it.
-    bool bank_refused = false;
+    /// Banked bytes AT/AFTER `cursor` - the unconsumed-ahead holding the launch
+    /// backpressure budgets against. Behind-retention bytes are deliberately
+    /// excluded, so `bank_keep_behind` cannot latch the budget shut.
+    size_t bankAheadBytes(size_t cursor) const
+    {
+        size_t total = 0;
+        for (const auto & iv : bank.getIntervals())
+            if (iv.end() > cursor)
+                total += iv.end() - std::max(iv.offset, cursor);
+        return total;
+    }
 
     /// RESTART: the ahead cursor re-derives from the fresh display truth and
     /// the bank drops with the plan it served.
@@ -79,7 +85,6 @@ public:
     {
         attempted_end = 0;
         bank = {};
-        bank_refused = false;
     }
 
     /// Fold the bank's coverage clamped to `window` into `cov` - per INTERVAL, never the

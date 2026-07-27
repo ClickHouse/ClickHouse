@@ -877,11 +877,10 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
 TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 {
     /// Read-ahead is speculative, so it tracks memory pressure: suppressed entirely at
-    /// High/Critical. At Normal/Elevated the ASK is no longer window-gated for a bypass
-    /// bottom (the worker's one-window residue cap self-limits the fetch instead), so the
-    /// machine window spans the plan remainder - EOF-bounded here. Uses the stateless path
-    /// (a present-but-zero-capacity long_connection_limit, so no slot is acquired) so the
-    /// window read is observable.
+    /// High/Critical. A bypass bottom commits nothing - its whole window is memory-held
+    /// transport - so the machine window is clamped to ONE pressure-scaled fetch window,
+    /// halved at Elevated. Uses the stateless path (a present-but-zero-capacity
+    /// long_connection_limit, so no slot is acquired) so the window read is observable.
     struct Reading { size_t sync_window; bool scheduled; size_t prefetch_window; };
     auto measure = [](double pressure) -> Reading
     {
@@ -909,13 +908,13 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 
     const Reading normal = measure(0.50);
     EXPECT_TRUE(normal.scheduled);
-    EXPECT_EQ(normal.prefetch_window, (1u << 20) - normal.sync_window)
-        << "Normal: the ask spans the file remainder";
+    EXPECT_EQ(normal.prefetch_window, 256u << 10)
+        << "Normal: the bypass ask is clamped to one fetch window";
 
     const Reading elevated = measure(0.80);
     EXPECT_TRUE(elevated.scheduled);
-    EXPECT_EQ(elevated.prefetch_window, (1u << 20) - elevated.sync_window)
-        << "Elevated: the ask spans the (pressure-shrunk) remainder";
+    EXPECT_EQ(elevated.prefetch_window, 128u << 10)
+        << "Elevated: the clamp is the pressure-halved window";
 
     const Reading high = measure(0.92);
     EXPECT_FALSE(high.scheduled) << "High pressure: prefetch suppressed";
