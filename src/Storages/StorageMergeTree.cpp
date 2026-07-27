@@ -471,10 +471,10 @@ void StorageMergeTree::alter(
     auto old_storage_settings = getSettings();
     const auto & query_settings = local_context->getSettingsRef();
 
-    /// Command-application base, read under the caller's lockForAlter. Equals (and for MergeTree is
-    /// the pinned identical handle to) the interpreter's entry snapshot in
-    /// InterpreterAlterQuery::runCommandSegments — the alter lock freezes committed metadata.
-    auto metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
+    /// Fresh command-application base, read under the caller's lockForAlter. The lock freezes
+    /// committed metadata, so it equals the interpreter's entry snapshot in
+    /// InterpreterAlterQuery::runCommandSegments.
+    auto metadata_snapshot = getInMemoryMetadataUncached(local_context);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
 

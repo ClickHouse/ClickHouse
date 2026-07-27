@@ -20,7 +20,6 @@
 #include <Interpreters/MutationsDateTimeLiteralVisitor.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
@@ -315,20 +314,12 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
         if (auto * alter_commands = std::get_if<AlterCommands>(&segment))
         {
             auto alter_lock = table->lockForAlter(settings[Setting::lock_acquire_timeout]);
-            /// Drop the query-scoped metadata cache, which may hold a snapshot pinned before this
-            /// lock. The reads below (validate/prepare/checkAlterIsPossible and the storage's alter)
-            /// then all repopulate from the metadata committed as of holding the lock.
-            if (auto metadata_cache = context->getQueryMetadataCache())
-            {
-                auto [cache, cache_lock] = metadata_cache->getStorageMetadataCache();
-                cache->clear();
-            }
-            /// Single entry base for the whole ALTER pipeline: threaded explicitly into validate and
-            /// prepare, and (because the read above repopulated the just-cleared query pin) resolved
-            /// to the same handle by the storage-internal QueryCached reads in checkAlterIsPossible
-            /// and alter for MergeTree. The alter lock freezes the locked storage's committed
-            /// metadata, so every phase observes this exact base.
-            auto metadata_snapshot = table->getInMemoryMetadataQueryCached(context);
+            /// Single entry base for the whole ALTER pipeline, read uncached so it bypasses any
+            /// snapshot the query may have pinned in the query-scoped metadata cache before taking
+            /// this lock. Threaded explicitly into validate and prepare; checkAlterIsPossible and
+            /// the storage's alter read the same committed base uncached under this lock (which
+            /// freezes the locked storage's metadata), so every phase observes the same value.
+            auto metadata_snapshot = table->getInMemoryMetadataUncached(context);
             alter_commands->validate(table, *metadata_snapshot, context);
 
             bool share_nested = true;

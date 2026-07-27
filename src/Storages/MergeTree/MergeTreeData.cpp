@@ -4787,9 +4787,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     }
 
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    /// Base read under the caller's lockForAlter; equals (and for MergeTree is the pinned identical
-    /// handle to) the interpreter's entry snapshot in InterpreterAlterQuery::runCommandSegments.
-    auto storage_metadata_snapshot = getInMemoryMetadataQueryCached(local_context);
+    /// Fresh command-application base, read under the caller's lockForAlter; the lock freezes committed
+    /// metadata, so it equals the interpreter's entry snapshot in InterpreterAlterQuery::runCommandSegments.
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(local_context);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     const StorageInMemoryMetadata & old_metadata = *storage_metadata_snapshot;
 

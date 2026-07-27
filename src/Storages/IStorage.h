@@ -223,7 +223,9 @@ public:
     ///   getInMemoryMetadataQueryCached - the query-scoped cached snapshot (MergeTree pins it for the whole
     ///                                     query, giving all subqueries a consistent view). Use for reads.
     /// Both keep the context because wrappers (Merge/MV/Alias/Proxy) compose metadata from it; pass nullptr
-    /// when no query context is available.
+    /// when no query context is available. The base implementations are identical (a fresh read); only
+    /// MergeTreeData overrides getInMemoryMetadataQueryCached to consult the per-query pin, so for every
+    /// other engine the two are interchangeable.
     virtual StorageMetadataHandle getInMemoryMetadataUncached(ContextPtr /*context*/) const
     {
         return metadata.get();
@@ -232,13 +234,6 @@ public:
     virtual StorageMetadataHandle getInMemoryMetadataQueryCached(ContextPtr /*context*/) const
     {
         return metadata.get();
-    }
-
-    /// Compatibility bridge (non-virtual): dispatches to the two accessors above so existing callers keep
-    /// working unchanged. TODO(metadata-accessor-split): migrate call sites to the named accessors and drop this.
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const
-    {
-        return bypass_metadata_cache ? getInMemoryMetadataUncached(context) : getInMemoryMetadataQueryCached(context);
     }
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.

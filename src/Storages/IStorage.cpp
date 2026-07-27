@@ -227,7 +227,7 @@ Pipe IStorage::alterPartition(
 void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    auto storage_metadata_snapshot = getInMemoryMetadataQueryCached(context);
+    auto storage_metadata_snapshot = getInMemoryMetadataUncached(context);
     StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
     params.apply(new_metadata, context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, new_metadata, /*validate_new_create_query=*/true);
