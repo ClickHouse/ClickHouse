@@ -1059,7 +1059,7 @@ TEST(ZipArchiveReaderTest, SeekCurOutsideWorkingBufferUsesLogicalPosition)
     EXPECT_EQ(in->seek(relative_offset, SEEK_CUR), expected_position);
 
     /// Without `resetWorkingBuffer`, the next read returns stale bytes from the old position.
-    char c;
+    char c = 0;
     readChar(c, *in);
     EXPECT_EQ(c, static_cast<char>('a' + expected_position % 26));
     EXPECT_EQ(in->getPosition(), expected_position + 1);
