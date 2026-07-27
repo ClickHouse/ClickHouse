@@ -190,7 +190,7 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
             auto tmp_column = arg_types.createColumn();
             ReadBufferFromString buf(value_str);
             arg_types.getDefaultSerialization()->deserializeWholeText(*tmp_column, buf, settings);
-            ColumnRawPtrs columns_ptrs;
+            std::vector<const IColumn *> columns_ptrs;
             for (const auto & col : assert_cast<ColumnTuple*>(tmp_column.get())->getColumns())
                 columns_ptrs.push_back(col.get());
             function->add(place, columns_ptrs.data(), 0, &arena);

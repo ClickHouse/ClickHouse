@@ -183,9 +183,6 @@ public:
     virtual bool hasPostBuildPhase() const { return false; }
     virtual void runPostBuildPhase() { }
 
-    /// Enables lazy columns indexing optimization on hash join variants
-    virtual void setEnableLazyColumnsIndexing(bool /*value*/) { }
-
 private:
     Block totals;
 };

@@ -84,7 +84,7 @@ struct WriteBufferFromS3::PartData
     }
 };
 
-static BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
+BufferAllocationPolicyPtr createBufferAllocationPolicy(const S3::S3RequestSettings & settings)
 {
     BufferAllocationPolicy::Settings allocation_settings;
     allocation_settings.strict_size = settings[S3RequestSetting::strict_upload_part_size];
@@ -105,7 +105,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t buf_size_,
     const S3::S3RequestSettings & request_settings_,
     BlobStorageLogWriterPtr blob_log_,
-    std::optional<ObjectAttributes> object_metadata_,
+    std::optional<std::map<String, String>> object_metadata_,
     ThreadPoolCallbackRunnerUnsafe<void> schedule_,
     const WriteSettings & write_settings_)
     : WriteBufferFromFileBase(std::min(buf_size_, static_cast<size_t>(DBMS_DEFAULT_BUFFER_SIZE)), nullptr, 0)
@@ -195,11 +195,6 @@ void WriteBufferFromS3::preFinalize()
     else
     {
         writeMultipartUpload();
-        task_tracker->addFinal([this]()
-        {
-            if (completeMultipartUpload())
-                multipart_upload_finished = true;
-        });
     }
 }
 
@@ -223,6 +218,12 @@ void WriteBufferFromS3::finalizeImpl()
     task_tracker->waitAll();
 
     span.addAttributeIfNotZero("clickhouse.multipart_upload_parts", multipart_tags.size());
+
+    if (!multipart_upload_id.empty())
+    {
+        completeMultipartUpload();
+        multipart_upload_finished = true;
+    }
 
     if (request_settings[S3RequestSetting::check_objects_after_upload])
     {
@@ -418,11 +419,6 @@ void WriteBufferFromS3::createMultipartUpload()
     if (object_metadata.has_value())
         req.SetMetadata(object_metadata.value());
 
-    /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
-    /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
-    if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
-        req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
-
     client_ptr->setKMSHeaders(req);
 
     ProfileEvents::increment(ProfileEvents::S3CreateMultipartUpload);
@@ -617,7 +613,7 @@ void WriteBufferFromS3::writePart(WriteBufferFromS3::PartData && data)
     task_tracker->add(std::move(upload_worker));
 }
 
-bool WriteBufferFromS3::completeMultipartUpload()
+void WriteBufferFromS3::completeMultipartUpload()
 {
     LOG_TEST(limited_log, "Completing multipart upload. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
 
@@ -626,13 +622,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
                 ErrorCodes::LOGICAL_ERROR,
                 "Failed to complete multipart upload. No parts have uploaded");
 
-    for (const auto & tag : multipart_tags)
+    for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
+        const auto tag = multipart_tags.at(i);
         if (tag.empty())
-        {
-            // One of the earlier uploads failed.
-            return false;
-        }
+            throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Failed to complete multipart upload. Part {} haven't been uploaded.", i);
     }
 
     S3::CompleteMultipartUploadRequest req;
@@ -679,7 +675,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
         if (outcome.IsSuccess())
         {
             LOG_TRACE(limited_log, "Multipart upload has completed. {}, Parts: {}", getShortLogDetails(), multipart_tags.size());
-            return true;
+            return;
         }
 
         ProfileEvents::increment(ProfileEvents::WriteBufferFromS3RequestsErrors, 1);

@@ -3,7 +3,6 @@
 #include <Processors/Port.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 #include <shared_mutex>
 #include <stack>

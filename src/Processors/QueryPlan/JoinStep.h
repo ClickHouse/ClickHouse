@@ -14,7 +14,7 @@ struct LogicalJoinInfo
 {
     String readable_relation_name;
     std::optional<UInt64> result_rows_estimation;
-    JoinLocality locality{};
+    JoinLocality locality;
 };
 
 /// Join two data streams.

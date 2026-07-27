@@ -57,7 +57,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
 {
     try
     {
-        chassert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
+        assert(database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA ||
                database.getDatabaseName() == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         if (database.getEngineName() != "Memory")
             return;
@@ -74,7 +74,7 @@ static void createInformationSchemaView(ContextMutablePtr context, IDatabase & d
                                 DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
         auto & ast_create = ast->as<ASTCreateQuery &>();
-        chassert(view_name == ast_create.getTable());
+        assert(view_name == ast_create.getTable());
         ast_create.attach = false;
         ast_create.setDatabase(database.getDatabaseName());
 

@@ -1,6 +1,5 @@
 #include <Formats/ReadSchemaUtils.h>
 
-#include <Core/Block_fwd.h>
 #include <Core/Settings.h>
 
 #include <IO/ReadBufferFromString.h>
@@ -126,7 +125,7 @@ Block TableFunctionFormat::parseData(const ColumnsDescription & columns, const S
     auto pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     auto reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
-    Blocks blocks;
+    std::vector<Block> blocks;
     while (reader->pull(block))
         blocks.push_back(std::move(block));
 
@@ -172,33 +171,51 @@ Returned value: A table with data parsed from `data` argument according specifie
     {
         {
             "First example",
-            R"(SELECT * FROM format(JSONEachRow,
+            R"(
+Query:
+```
+:) select * from format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
 {"a": "Hello", "b": 112}
 {"a": "World", "b": 124}
-$$))",
-            R"(┌───b─┬─a─────┐
+$$)
+```
+
+Result:
+```
+┌───b─┬─a─────┐
 │ 111 │ Hello │
 │ 123 │ World │
 │ 112 │ Hello │
 │ 124 │ World │
-└─────┴───────┘)"
+└─────┴───────┘
+```
+)", ""
         },
         {
             "Second example",
-            R"(DESCRIBE format(JSONEachRow,
+            R"(
+Query:
+```
+:) desc format(JSONEachRow,
 $$
 {"a": "Hello", "b": 111}
 {"a": "World", "b": 123}
 {"a": "Hello", "b": 112}
 {"a": "World", "b": 124}
-$$))",
-            R"(┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+$$)
+```
+
+Result:
+```
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ b    │ Nullable(Float64) │              │                    │         │                  │                │
 │ a    │ Nullable(String)  │              │                    │         │                  │                │
-└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘)"
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+)", ""
         },
     },
     .category = FunctionDocumentation::Category::TableFunction
@@ -207,7 +224,6 @@ $$))",
 }
 
 
-void registerTableFunctionFormat(TableFunctionFactory & factory);
 void registerTableFunctionFormat(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionFormat>(format_table_function_documentation, {false}, TableFunctionFactory::Case::Insensitive);

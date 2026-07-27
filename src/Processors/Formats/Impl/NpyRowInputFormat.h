@@ -57,7 +57,7 @@ private:
     size_t read_rows = 0;
 };
 
-class NpySchemaReader final : public ISchemaReader
+class NpySchemaReader : public ISchemaReader
 {
 public:
     explicit NpySchemaReader(ReadBuffer & in_);

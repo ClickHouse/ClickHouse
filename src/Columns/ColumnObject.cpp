@@ -5,8 +5,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
-#include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
@@ -1055,13 +1053,13 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
 {
     size_t current_size = size();
-    size_t num_paths = 0;
+    size_t num_paths;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     const auto [shared_data_paths, shared_data_values] = getSharedDataPathsAndValues();
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size = 0;
+        size_t path_size;
         readBinaryLittleEndian<size_t>(path_size, in);
 
         if (in.available() < path_size)
@@ -1074,7 +1072,7 @@ void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in
         in.ignore(path_size);
 
         /// Deserialize binary value and try to insert it to dynamic paths or shared data.
-        size_t value_size = 0;
+        size_t value_size;
         readBinaryLittleEndian<size_t>(value_size, in);
 
         /// Check if we have this path in dynamic paths.
@@ -1121,16 +1119,16 @@ void ColumnObject::skipSerializedInArena(ReadBuffer & in) const
         typed_paths.find(path)->second->skipSerializedInArena(in);
 
     /// Second, skip all other paths and values.
-    size_t num_paths = 0;
+    size_t num_paths;
     readBinaryLittleEndian<size_t>(num_paths, in);
 
     for (size_t i = 0; i != num_paths; ++i)
     {
-        size_t path_size = 0;
+        size_t path_size;
         readBinaryLittleEndian<size_t>(path_size, in);
         in.ignore(path_size);
 
-        size_t value_size = 0;
+        size_t value_size;
         readBinaryLittleEndian<size_t>(value_size, in);
         in.ignore(value_size);
     }
@@ -1196,46 +1194,15 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnObject::getWeakHash32() const
 {
-    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
-    /// equal hashes for a logically equal object whose paths are split differently between dynamic
-    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
-    /// per-query partitioning.
-    ///
-    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
-    /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
-    /// buffer is always seeded (no empty-object special case needed).
-    auto computeFinalizedInto = [&](UInt32 * out)
-    {
-        bool first = true;
-        for (const auto & [_, column] : typed_paths)
-        {
-            column->computeHashInto(row_begin, row_end, out, first);
-            first = false;
-        }
-        for (const auto & [_, column] : dynamic_paths_ptrs)
-        {
-            column->computeHashInto(row_begin, row_end, out, first);
-            first = false;
-        }
-        shared_data->computeHashInto(row_begin, row_end, out, first);
-    };
-
-    if (initial)
-    {
-        computeFinalizedInto(hash_out);
-        return;
-    }
-
-    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
-    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
-    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
-    const size_t n = row_end - row_begin;
-    PaddedPODArray<UInt32> object_hash(n);
-    computeFinalizedInto(object_hash.data());
-    for (size_t i = 0; i < n; ++i)
-        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
+    WeakHash32 hash(size());
+    for (const auto & [_, column] : typed_paths)
+        hash.update(column->getWeakHash32());
+    for (const auto & [_, column] : dynamic_paths_ptrs)
+        hash.update(column->getWeakHash32());
+    hash.update(shared_data->getWeakHash32());
+    return hash;
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const
@@ -2397,38 +2364,7 @@ void ColumnObject::validateDynamicPathsSizes() const
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
-}
 
-bool ColumnObject::isEmptyAt(size_t n) const
-{
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
-        return false;
-
-    /// Check if all dynamic paths have NULL at this row
-    for (const auto & [path, column] : dynamic_paths_ptrs)
-    {
-        if (!column->isNullAt(n))
-            return false;
-    }
-
-    /// Check if there is no paths in shared data.
-    return shared_data->isDefaultAt(n);
-}
-
-bool ColumnObject::hasNonEmptyRows() const
-{
-    /// If object column has at least 1 typed path, it will never be empty, because these paths always have values.
-    if (!typed_paths.empty())
-        return true;
-
-    for (size_t i = 0; i != size(); ++i)
-    {
-        if (!isEmptyAt(i))
-            return true;
-    }
-
-    return false;
 }
 
 }

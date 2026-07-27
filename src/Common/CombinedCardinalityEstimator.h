@@ -158,7 +158,7 @@ public:
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
-        UInt8 v = 0;
+        UInt8 v;
         readBinary(v, in);
         auto container_type = static_cast<details::ContainerType>(v);
 

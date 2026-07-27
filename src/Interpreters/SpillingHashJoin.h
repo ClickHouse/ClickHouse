@@ -53,8 +53,7 @@ public:
         SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        size_t max_num_buckets_);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
     SpillingHashJoin(
@@ -102,8 +101,6 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
-
-    void setEnableLazyColumnsIndexing(bool value) override;
 
 private:
     enum class State

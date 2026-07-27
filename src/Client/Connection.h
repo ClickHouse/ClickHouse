@@ -131,8 +131,6 @@ public:
 
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
-    void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
-
     void sendExternalTablesData(ExternalTablesData & data) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
@@ -159,6 +157,8 @@ public:
     void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response);
     /// Send all scalars.
     void sendScalarsData(Scalars & data);
+    /// Send parts' uuids to excluded them from query processing
+    void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids);
 
     TablesStatusResponse getTablesStatus(const ConnectionTimeouts & timeouts,
                                          const TablesStatusRequest & request);

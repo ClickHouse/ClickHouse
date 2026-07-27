@@ -1,4 +1,3 @@
-#include <Databases/enableAllExperimentalSettings.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
 
@@ -20,24 +19,22 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_fuzz_query_functions", 1);
     context->setSetting("allow_experimental_hash_functions", 1);
     context->setSetting("allow_experimental_vector_similarity_index", 1);
-    context->setSetting("allow_experimental_text_index_lazy_apply", 1);
     context->setSetting("allow_experimental_window_functions", 1);
     context->setSetting("allow_experimental_geo_types", 1);
     context->setSetting("allow_experimental_map_type", 1);
     context->setSetting("allow_experimental_bigint_types", 1);
     context->setSetting("allow_experimental_bfloat16_type", 1);
     context->setSetting("allow_experimental_time_time64_type", 1);
-    context->setSetting("allow_experimental_nullable_tuple_type", 1);
     context->setSetting("allow_experimental_correlated_subqueries", 1);
     context->setSetting("allow_experimental_unique_key", 1);
     context->setSetting("allow_deprecated_error_prone_window_functions", 1);
+    context->setSetting("allow_experimental_nullable_tuple_type", 1);
 
     context->setSetting("allow_suspicious_low_cardinality_types", 1);
     context->setSetting("allow_suspicious_fixed_string_types", 1);
     context->setSetting("allow_suspicious_types_in_group_by", 1);
     context->setSetting("allow_suspicious_types_in_order_by", 1);
     context->setSetting("allow_suspicious_indices", 1);
-    context->setSetting("allow_minmax_index_for_json", 1);
     context->setSetting("allow_suspicious_codecs", 1);
     context->setSetting("allow_hyperscan", 1);
     context->setSetting("allow_simdjson", 1);
@@ -72,7 +69,6 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_experimental_database_paimon_rest_catalog", 1);
     context->setSetting("allow_experimental_object_storage_queue_hive_partitioning", 1);
     context->setSetting("allow_experimental_json_lazy_type_hints", 1);
-    context->setSetting("allow_experimental_url_wildcard_from_index_pages", 1);
     context->setSetting("allow_experimental_full_text_index", 1);
 
     context->setSetting("allow_experimental_ai_functions", 1);

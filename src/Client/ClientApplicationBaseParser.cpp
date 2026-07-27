@@ -65,7 +65,7 @@ void ClientApplicationBase::parseAndCheckOptions(OptionsDescription & options_de
             const auto & token = op.original_tokens[0];
             po::variable_value value(boost::any(op.value), false);
 
-            const char * option = nullptr;
+            const char * option;
             std::error_code ec;
             if (token.contains(' '))
                 option = "query";

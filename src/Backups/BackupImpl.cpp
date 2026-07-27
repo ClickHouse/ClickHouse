@@ -13,7 +13,6 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/XMLUtils.h>
-#include <Core/UUID.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
@@ -345,27 +344,6 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
     return base_backup;
 }
 
-std::map<String, String> BackupImpl::getEngineSettings() const
-{
-    std::lock_guard lock{mutex};
-
-    /// Both a BACKUP and a RESTORE can involve more than one engine with different endpoint settings, which
-    /// a flat map cannot represent: an incremental BACKUP writes through `writer` but also reads from the
-    /// base backup, and a RESTORE reads from the base backup (incremental restores) and/or the lightweight
-    /// snapshot reader in addition to the top-level backup. Report the engine settings only when a single
-    /// engine is involved; otherwise omit them.
-    if (base_backup_info || lightweight_snapshot_reader)
-        return {};
-
-    if (writer)
-        return writer->getSerializedSettings();
-
-    if (reader)
-        return reader->getSerializedSettings();
-
-    return {};
-}
-
 size_t BackupImpl::getNumFiles() const
 {
     std::lock_guard lock{mutex};
@@ -419,7 +397,7 @@ void BackupImpl::writeBackupMetadata()
     LOG_TRACE(log, "Backup {}: Writing metadata", backup_name_for_logging);
     auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::BackupWriteMetadataMicroseconds);
 
-    chassert(!params.is_internal_backup);
+    assert(!params.is_internal_backup);
     checkLockFile(true);
 
     std::unique_ptr<WriteBuffer> out;
@@ -697,7 +675,7 @@ void BackupImpl::checkBackupDoesntExist() const
     /// Check that no other backup (excluding internal backups) is writing to the same destination.
     if (!params.is_internal_backup)
     {
-        chassert(!lock_file_name.empty());
+        assert(!lock_file_name.empty());
         if (writer->fileExists(lock_file_name))
             throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} is being written already", backup_name_for_logging);
     }
@@ -706,9 +684,9 @@ void BackupImpl::checkBackupDoesntExist() const
 void BackupImpl::createLockFile()
 {
     /// Internal backup must not create the lock file (it should be created by the initiator).
-    chassert(!params.is_internal_backup);
+    assert(!params.is_internal_backup);
 
-    chassert(uuid);
+    assert(uuid);
     auto out = writer->writeFile(lock_file_name);
     writeUUIDText(*uuid, *out);
     out->finalize();
@@ -1294,3 +1272,4 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
 }
 
 }
+

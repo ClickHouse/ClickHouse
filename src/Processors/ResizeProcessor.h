@@ -28,6 +28,8 @@ public:
     ResizeProcessor(SharedHeader header, size_t num_inputs, size_t num_outputs);
 
     String getName() const override { return "Resize"; }
+
+    Status prepare() override;
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
@@ -36,8 +38,8 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<OutputPort *> waiting_outputs;
-    std::queue<InputPort *> inputs_with_data;
+    std::queue<UInt64> waiting_outputs;
+    std::queue<UInt64> inputs_with_data;
     bool initialized = false;
     bool is_reading_started = false;
 
@@ -55,14 +57,28 @@ private:
         Finished,
     };
 
-    std::unordered_map<const InputPort *, InputStatus> input_status;
-    std::unordered_map<const OutputPort *, OutputStatus> output_status;
+    struct InputPortWithStatus
+    {
+        InputPort * port;
+        InputStatus status;
+    };
+
+    struct OutputPortWithStatus
+    {
+        OutputPort * port;
+        OutputStatus status;
+    };
+
+    std::vector<InputPortWithStatus> input_ports;
+    std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
 };
 
 /// This is an analog of ResizeProcessor, but it tries to bind one specific input to one specific output.
 /// This is an attempt to keep thread locality of data, but support rebalance when some inputs are finished earlier.
 /// Usually, it's N to N mapping. Probably, we can simplify the implementation because of it.
-class StrictResizeProcessor final : public IProcessor
+class StrictResizeProcessor : public IProcessor
 {
 public:
     /// TODO Check that there is non zero number of inputs and outputs.
@@ -81,6 +97,7 @@ public:
     }
 
     String getName() const override { return "StrictResize"; }
+
     Status prepare(const UpdatedInputPorts &, const UpdatedOutputPorts &) override;
 
 private:
@@ -89,8 +106,8 @@ private:
 
     size_t num_finished_inputs = 0;
     size_t num_finished_outputs = 0;
-    std::queue<InputPort *> disabled_input_ports;
-    std::queue<OutputPort *> waiting_outputs;
+    std::queue<UInt64> disabled_input_ports;
+    std::queue<UInt64> waiting_outputs;
     bool initialized = false;
 
     enum class OutputStatus : uint8_t
@@ -107,19 +124,23 @@ private:
         Finished,
     };
 
-    struct InputPortState
+    struct InputPortWithStatus
     {
+        InputPort * port;
         InputStatus status;
-        OutputPort * waiting_output;
+        ssize_t waiting_output;
     };
 
-    struct OutputPortState
+    struct OutputPortWithStatus
     {
+        OutputPort * port;
         OutputStatus status;
     };
 
-    std::unordered_map<const InputPort *, InputPortState> input_port_state;
-    std::unordered_map<const OutputPort *, OutputPortState> output_port_state;
+    std::vector<InputPortWithStatus> input_ports;
+    std::vector<OutputPortWithStatus> output_ports;
+    std::unordered_map<const InputPort *, UInt64> input_port_index;
+    std::unordered_map<const OutputPort *, UInt64> output_port_index;
 
     /// This field contained chunks which were read for output which had became finished while reading was happening.
     /// They will be pushed to any next waiting output.

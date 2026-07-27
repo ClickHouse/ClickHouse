@@ -2,10 +2,8 @@
 #include <base/sleep.h>
 
 #include <filesystem>
-#include <thread>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
@@ -196,9 +194,9 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
     logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
 
-    UInt64 digest = 0;
+    UInt64 digest;
     String digest_str;
-    UInt64 local_digest = 0;
+    UInt64 local_digest;
     if (zookeeper->tryGet(database->replica_path + "/digest", digest_str))
     {
         digest = parse<UInt64>(digest_str);
@@ -461,7 +459,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     task->entry = entry;
     task->parseQueryFromEntry(context);
     chassert(!task->entry.query.empty());
-    chassert(!zookeeper->exists(task->getFinishedNodePath()));
+    assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
@@ -473,7 +471,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
         {
-            chassert(zookeeper->expired() || current_task <= entry_name);
+            assert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
             {
@@ -691,8 +689,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     if (task->is_initial_query)
     {
-        chassert(!zookeeper->exists(fs::path(entry_path) / "try"));
-        chassert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
+        assert(!zookeeper->exists(fs::path(entry_path) / "try"));
+        assert(zookeeper->exists(fs::path(entry_path) / "committed") == (zookeeper->get(task->getFinishedNodePath()) == ExecutionStatus(0).serializeText()));
         out_reason = fmt::format("Entry {} has been executed as initial query", entry_name);
         return {};
     }
