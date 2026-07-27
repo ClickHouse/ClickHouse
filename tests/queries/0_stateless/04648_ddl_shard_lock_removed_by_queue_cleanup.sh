@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-fasttest, no-shared-merge-tree
-# no-fasttest: needs ZooKeeper/Keeper and a Replicated database.
-# no-shared-merge-tree: uses an explicit ReplicatedMergeTree zookeeper_path for the second replica.
+# no-fasttest: needs ZooKeeper/Keeper and a `Replicated` database.
+# no-shared-merge-tree: uses an explicit `ReplicatedMergeTree` `zookeeper_path` for the second replica.
 #
-# Regression test: DDLWorker::tryExecuteQueryOnSingleReplica takes an ephemeral lock at
-# <ddl entry>/shards/<shard>/lock and holds it until processTask returns. DDLWorker::cleanupQueue
-# recursively deletes an outdated entry's whole subtree (its keep list holds only "finished"), so
-# that lock node can legitimately disappear while the executing session is still healthy.
-# ~ZooKeeperLock -> unlock() used to raise
-#   LOGICAL_ERROR "Lock is lost, node does not exist. Path: .../shards/<shard>/lock"
-# for exactly that case, which aborts the server in debug/sanitizer builds and whenever
-# abort_on_logical_error is set (as CI does). The DDL lock is now constructed with
-# throw_if_lost = false, so a missing node is logged instead.
+# Regression test: the DDL shard lock at `<ddl entry>/shards/<shard>/lock` may legitimately
+# disappear while its owning session is still healthy, because `DDLWorker::cleanupQueue` removes
+# the whole entry subtree. `ZooKeeperLock::unlock` must tolerate that instead of raising
+# `LOGICAL_ERROR` "Lock is lost, node does not exist", which aborts the server.
 #
-# The window is produced the same way as in the original occurrence: alter_sync = 2 blocks inside
-# StorageReplicatedMergeTree::alter waiting for an inactive replica, so the executor sits in
-# processTask holding the lock; the entry subtree is then removed (what cleanupQueue does), and the
-# subsequent Code 341 UNFINISHED is rethrown on the initial-query path, unwinding processTask and
-# destroying the lock.
+# Synchronization invariant: the test proceeds only once the lock node is observed to EXIST, which
+# is the point at which the executor provably holds it; the node is then removed, and its absence
+# is re-checked. Both checks fail loudly, so a pass cannot mean the race was never set up.
+#
+# The `ALTER` under test is EXPECTED to end in Code 341 UNFINISHED on every build (the
+# `alter_sync = 2` wait for the detached replica genuinely times out), so its own status can never
+# be the assertion.
 
 set -e
 
@@ -40,16 +37,16 @@ cleanup
 
 start_time=$(${CLICKHOUSE_CLIENT} -q "SELECT now64(6)")
 
-# distributed_ddl_output_mode = 'none' on every setup statement: the per-host status rows a
-# Replicated database prints otherwise are not part of what this test asserts.
+# `distributed_ddl_output_mode = 'none'` on every setup statement: the per-host status rows a
+# `Replicated` database prints otherwise are not part of what this test asserts.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "CREATE DATABASE ${RDB} ENGINE = Replicated('${DB_ZK}', 's1', 'r1')"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "CREATE TABLE ${RDB}.t (x UInt64, y String) ENGINE = ReplicatedMergeTree ORDER BY x"
 
 table_zk=$(${CLICKHOUSE_CLIENT} -q "SELECT zookeeper_path FROM system.replicas WHERE database = '${RDB}' AND table = 't'")
 
 # Register a second replica of the same table and detach it, so it never processes the log entry.
-# alter_sync = 2 then waits for it and finally fails with Code 341 UNFINISHED. DETACH must be SYNC:
-# a later ATTACH is not performed here, but SYNC keeps the shutdown deterministic.
+# `alter_sync = 2` then waits for it and finally fails with Code 341 UNFINISHED. `DETACH` must be
+# `SYNC`: a later `ATTACH` is not performed here, but `SYNC` keeps the shutdown deterministic.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "CREATE DATABASE ${AUX}"
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
     CREATE TABLE ${AUX}.t2 (x UInt64, y String)
@@ -58,8 +55,8 @@ ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "
 "
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode none -q "DETACH TABLE ${AUX}.t2 SYNC"
 
-# MODIFY COLUMN on a ReplicatedMergeTree is routed to a single replica per shard
-# (DDLWorker::taskShouldBeExecutedOnLeader), which is what makes the shard lock be taken.
+# `MODIFY COLUMN` on a `ReplicatedMergeTree` is routed to a single replica per shard
+# (`DDLWorker::taskShouldBeExecutedOnLeader`), which is what makes the shard lock be taken.
 ${CLICKHOUSE_CLIENT} -q "
     ALTER TABLE ${RDB}.t MODIFY COLUMN y Nullable(String)
     SETTINGS alter_sync = 2, replication_wait_for_inactive_replica_timeout = 15,
@@ -89,8 +86,8 @@ if [ -z "$lock_entry" ]; then
     exit 1
 fi
 
-# This is what DDLWorker::cleanupQueue does to an outdated entry: recursively remove the entry
-# subtree, which takes the live ephemeral shard lock with it.
+# What `DDLWorker::cleanupQueue` does to an outdated entry: recursively remove the entry subtree,
+# which takes the live ephemeral shard lock with it.
 ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${DB_ZK}/log/${lock_entry}'" > /dev/null 2>&1
 
 # Assert the lock node is really gone, so a passing test cannot mean "the race was not set up".
@@ -103,21 +100,32 @@ if [ "$gone" != "0" ]; then
     exit 1
 fi
 
-# The ALTER is EXPECTED to fail with Code 341 UNFINISHED on both the fixed and the broken build
-# (the wait for the detached replica genuinely times out), so its status is not the assertion.
 wait "$alter_pid" 2>/dev/null ||:
 
-# The server must still be running: without the fix the LOGICAL_ERROR above aborted it.
+# Liveness half: without the fix the `LOGICAL_ERROR` aborted the server here.
 ${CLICKHOUSE_CLIENT} -q "SELECT 'server is alive'"
 
-# The discriminating observable. ~ZooKeeperLock swallows unlock() exceptions, and with the fix the
-# very same text is still emitted at <Information> from the tolerant branch, so neither server
-# liveness alone nor the absence of the message can tell the fixed and the broken build apart on a
-# build where LOGICAL_ERROR does not abort. Assert instead that the message was never Fatal, i.e.
-# that no LOGICAL_ERROR was raised for it.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+
+# Positive control: the tolerant branch of `unlock` reported the loss for OUR lock path exactly
+# once. Liveness alone cannot see this, so without it a change turning `unlock` into a silent
+# no-op would pass. `max_rows_to_read = 0` is required because `system.text_log` is ordered by
+# `event_date, event_time`, so the timestamp predicate is not a primary-key range.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT count() FROM system.text_log
     WHERE event_time_microseconds >= toDateTime64('${start_time}', 6)
-      AND level = 'Fatal' AND message LIKE '%Lock is lost%'
+      AND level = 'Information'
+      AND message LIKE '%Lock is lost, node does not exist%'
+      AND message LIKE '%${DB_ZK}/log/${lock_entry}/shards/s1/lock%'
+    SETTINGS max_rows_to_read = 0
+"
+
+# Negative control: that loss was not reported as an error for OUR lock path.
+${CLICKHOUSE_CLIENT} -q "
+    SELECT count() FROM system.text_log
+    WHERE event_time_microseconds >= toDateTime64('${start_time}', 6)
+      AND level IN ('Fatal', 'Critical', 'Error')
+      AND message LIKE '%Lock is lost%'
+      AND message LIKE '%${DB_ZK}/log/${lock_entry}/shards/s1/lock%'
+    SETTINGS max_rows_to_read = 0
 "
