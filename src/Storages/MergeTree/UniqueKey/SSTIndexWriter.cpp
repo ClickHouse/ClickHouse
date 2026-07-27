@@ -353,9 +353,19 @@ SSTIndexWriter::~SSTIndexWriter()
 #if USE_ROCKSDB
     /// Not finalized → abandoned on some error path; cancel the live
     /// `WriteBuffer` so an object-storage writer aborts its multipart
-    /// upload instead of leaking it.
+    /// upload instead of leaking it. On local disk `cancel()` is a no-op
+    /// and the file created by `writeFile` remains, so remove it too.
     if (impl && impl->out_file && !finalized)
+    {
         impl->out_file->cancel();
+        try
+        {
+            part_storage.removeFileIfExists(FILE_NAME);
+        }
+        catch (...)
+        {
+        }
+    }
 #endif
 }
 
