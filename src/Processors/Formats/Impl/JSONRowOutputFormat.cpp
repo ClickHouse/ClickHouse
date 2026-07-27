@@ -165,6 +165,19 @@ bool JSONRowOutputFormat::hasDeferredStatistics() const
 
 void JSONRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
+    /// An exception can be reported after phase 1 has already been written (e.g. a late failure
+    /// while flushing or draining the connections). Write the exception instead of a success
+    /// trailer - otherwise the document would look like a complete successful result.
+    if (!exception_message.empty())
+    {
+        writeCString(",\n\n", *ostr);
+        JSONUtils::writeException(exception_message, *ostr, settings, 1);
+        JSONUtils::writeObjectEnd(*ostr);
+        writeChar('\n', *ostr);
+        ostr->next();
+        return;
+    }
+
     /// hasDeferredStatistics() only guarantees there is no exception; the statistics object is
     /// still gated on write_statistics, while the rows-before-* fields are gated on
     /// applied_limit / applied_aggregation inside writeRowsBeforeAndStatistics.

@@ -218,9 +218,14 @@ void XMLRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
     writeRowsBeforeLimitAtLeast();
     writeRowsBeforeAggregationAtLeast();
-    /// hasDeferredStatistics() only guarantees there is no exception; the statistics section is
-    /// still gated on write_statistics.
-    if (format_settings.write_statistics)
+    /// An exception can be reported after phase 1 has already been written (e.g. a late failure
+    /// while flushing or draining the connections). Write the exception instead of the statistics -
+    /// otherwise the document would look like a complete successful result.
+    if (!exception_message.empty())
+        writeException();
+    /// hasDeferredStatistics() only guarantees there was no exception at phase 1; the statistics
+    /// section is still gated on write_statistics.
+    else if (format_settings.write_statistics)
         writeStatistics();
     writeCString("</result>\n", *ostr);
     ostr->next();

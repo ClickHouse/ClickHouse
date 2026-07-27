@@ -65,6 +65,10 @@ namespace DB
     {
         auto formatter = internal_formatter_creator(out);
         formatter->statistics = std::move(statistics);
+        /// An exception can be reported after phase 1: pass it on so the internal formatter writes
+        /// the exception trailer instead of a success one.
+        if (!exception_message.empty())
+            formatter->setException(exception_message);
         formatter->writeDeferredStatisticsAndFinalize();
         /// Flush and finalize the formatter's internal write buffers
         /// (e.g. UTF8 validation wrapper) to ensure all data reaches `out`.

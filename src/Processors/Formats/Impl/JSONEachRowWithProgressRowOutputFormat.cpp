@@ -129,6 +129,16 @@ bool JSONEachRowWithProgressRowOutputFormat::hasDeferredStatistics() const
 void JSONEachRowWithProgressRowOutputFormat::writeDeferredStatisticsAndFinalize()
 {
     writeRowsBeforeFields();
+
+    /// An exception can be reported after phase 1 has already been written (e.g. a late failure
+    /// while flushing or draining the connections), so the exception row still has to be emitted
+    /// here - otherwise the output would look like a complete successful result.
+    if (!exception_message.empty())
+    {
+        writeCString("{\"exception\":", *ostr);
+        writeJSONString(exception_message, *ostr, settings);
+        writeCString("}\n", *ostr);
+    }
 }
 
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
