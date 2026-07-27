@@ -1704,3 +1704,92 @@ def test_batch_publish_undone_when_lease_goes_stale_mid_rename(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DETACHED_EPOCH = "12345678-abcd-abcd-abcd-12345678ab16"
+
+
+def test_detached_ddl_rejected_on_stale_epoch(started_cluster):
+    """
+    Regression for epoch fencing (not just lease freshness) of the permanent `detached/`
+    mutations. `DROP DETACHED` deletes shared directories and `ATTACH PARTITION` renames them
+    (`ignored_`/`inactive_`) and strips `txn_version.txt*` before the commit-time epoch fence.
+    Checking only `mayMutateSharedStorage()` there is not enough: a node that lost leadership and
+    reacquired it as a NEW epoch has a fresh lease again, so the freshness check passes, the
+    permanent detached-namespace changes are made, and only the later publish fence rejects the
+    command — leaving the next leader with a detached set the operator never asked to change.
+
+    The `merge_tree_leader_election_stale_epoch_before_commit` failpoint presents a stale
+    admission epoch while the lease itself stays fresh, so it exercises exactly this window: both
+    commands must be rejected with the epoch error and leave the detached set byte-identical.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    table = "test_detached_epoch_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DETACHED_EPOCH}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+
+        def detached_names():
+            return sorted(
+                node1.query(
+                    f"SELECT name FROM system.detached_parts"
+                    f" WHERE database = currentDatabase() AND table = '{table}'"
+                )
+                .strip()
+                .splitlines()
+            )
+
+        detached_before = detached_names()
+        assert detached_before, "DETACH PARTITION did not produce detached parts"
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(
+                    f"ALTER TABLE {table} DROP DETACHED PARTITION 1",
+                    settings={"allow_drop_detached": 1},
+                )
+            assert detached_names() == detached_before, (
+                "DROP DETACHED was admitted under an older leadership epoch and still deleted"
+                " directories of the shared detached namespace"
+            )
+
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+            assert detached_names() == detached_before, (
+                "ATTACH PARTITION was admitted under an older leadership epoch and still"
+                " renamed directories of the shared detached namespace"
+            )
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared the same commands succeed on the current epoch.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        node1.query(
+            f"ALTER TABLE {table} DROP DETACHED PARTITION 1",
+            settings={"allow_drop_detached": 1},
+        )
+        assert detached_names() == []
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

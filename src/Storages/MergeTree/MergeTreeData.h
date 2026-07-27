@@ -721,6 +721,12 @@ public:
     /// time — can fence each individual rename.
     virtual void assertWritableLeaderAtEpoch(UInt64 /*admission_epoch*/) const {}
 
+    /// The leadership epoch under which the currently executing command was admitted, captured at
+    /// the start of the command and passed back to `assertWritableLeaderAtEpoch` before each
+    /// irreversible shared-storage side effect. Returns 0 for every engine but `StorageMergeTree`
+    /// with `leader_election` (see the override there), where 0 also means "no lease".
+    virtual UInt64 currentLeadershipEpoch() const { return 0; }
+
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks, std::optional<std::unordered_set<std::string>> expected_parts);
 
@@ -900,7 +906,7 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context, std::optional<UInt64> admission_epoch = {});
 
     /// Under `leader_election`, throws `TABLE_IS_READ_ONLY` if the leader lease is no longer
     /// fresh (`mayMutateSharedStorage`). `DROP DETACHED` and `ATTACH` mutate the shared
@@ -908,7 +914,14 @@ public:
     /// before the commit-time epoch fence, so each such side effect is re-fenced individually:
     /// a node that loses the lease mid-command must not keep mutating directories the new
     /// leader now owns. No-op for tables without `leader_election`.
-    void assertLeaseFreshForDetachedOperation(std::string_view action, const String & dir_name) const;
+    /// When `admission_epoch` is set, the side effect is additionally fenced by
+    /// `assertWritableLeaderAtEpoch`: lease freshness alone is not enough, because a node that
+    /// lost leadership and reacquired it as a NEW epoch has a fresh lease again, while the
+    /// detached-namespace changes it is about to make belong to a command admitted under the
+    /// previous epoch — and the command's own publish fence will reject it afterwards, leaving
+    /// those permanent changes behind.
+    void assertLeaseFreshForDetachedOperation(
+        std::string_view action, const String & dir_name, std::optional<UInt64> admission_epoch = {}) const;
 
     /// Execute a merge of the specified parts to a temporary directory without committing.
     /// Used by OPTIMIZE ... DRY RUN PARTS.
@@ -920,7 +933,15 @@ public:
         bool cleanup,
         ContextPtr context);
 
-    MutableDataPartsVector tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr context, PartsTemporaryRename & renamed_parts);
+    /// `admission_epoch`, when set, fences every permanent change of the shared `detached/`
+    /// namespace made here (`ignored_` / `inactive_` renames, `attaching_` renames, stripping
+    /// `txn_version.txt*`) against the leadership epoch that admitted the `ATTACH` command, not
+    /// merely against lease freshness. See `assertLeaseFreshForDetachedOperation`.
+    MutableDataPartsVector tryLoadPartsToAttach(
+        const PartitionCommand & command,
+        ContextPtr context,
+        PartsTemporaryRename & renamed_parts,
+        std::optional<UInt64> admission_epoch = {});
 
     bool assertNoPatchesForParts(const DataPartsVector & parts, const DataPartsVector & patches, std::string_view command, bool throw_on_error = true) const;
 

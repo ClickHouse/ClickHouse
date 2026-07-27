@@ -8050,7 +8050,11 @@ Pipe MergeTreeData::alterPartition(
             break;
 
             case PartitionCommand::DROP_DETACHED_PARTITION:
-                dropDetached(command.partition, command.part, query_context);
+                /// Capture the leadership epoch before resolving the partition and scanning
+                /// `detached/` (both take arbitrary time), so that every permanent change of the
+                /// shared detached namespace below is fenced against the epoch that admitted this
+                /// command, not merely against the current lease freshness.
+                dropDetached(command.partition, command.part, query_context, currentLeadershipEpoch());
                 break;
 
             case PartitionCommand::FORGET_PARTITION:
@@ -9170,7 +9174,8 @@ void MergeTreeData::validateDetachedPartName(const String & name)
                             "most likely it is used by another DROP or ATTACH query.", name);
 }
 
-void MergeTreeData::assertLeaseFreshForDetachedOperation(std::string_view action, const String & dir_name) const
+void MergeTreeData::assertLeaseFreshForDetachedOperation(
+    std::string_view action, const String & dir_name, std::optional<UInt64> admission_epoch) const
 {
     bool lease_is_fresh = mayMutateSharedStorage();
     fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_detached_ddl, { lease_is_fresh = false; });
@@ -9179,9 +9184,16 @@ void MergeTreeData::assertLeaseFreshForDetachedOperation(std::string_view action
             "The leader lease was not renewed within the session timeout; refusing to {} detached part "
             "directory {} as a possibly stale leader",
             action, dir_name);
+
+    /// A fresh lease is not sufficient: leadership may have been lost and reacquired since this
+    /// command was admitted, in which case the detached namespace now belongs to a newer epoch
+    /// (see the header). The command would be rejected by its own publish fence anyway, so refuse
+    /// before making the permanent change instead of after.
+    if (admission_epoch.has_value())
+        assertWritableLeaderAtEpoch(*admission_epoch);
 }
 
-void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context)
+void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context, std::optional<UInt64> admission_epoch)
 {
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
 
@@ -9212,7 +9224,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     /// above take arbitrary time). A failure here (or below) leaves the temporary `deleting_`
     /// renames to be rolled back by the `PartsTemporaryRename` destructor.
     if (!renamed_parts.old_and_new_names.empty())
-        assertLeaseFreshForDetachedOperation("rename for deletion", renamed_parts.old_and_new_names.front().old_dir);
+        assertLeaseFreshForDetachedOperation("rename for deletion", renamed_parts.old_and_new_names.front().old_dir, admission_epoch);
 
     renamed_parts.tryRenameAll();
 
@@ -9221,7 +9233,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
         /// The deletion is irreversible, so re-check the lease before EACH removed directory:
         /// once the lease goes stale mid-sequence, the remaining (still renamed) directories are
         /// rolled back instead of deleted by a possibly stale leader.
-        assertLeaseFreshForDetachedOperation("drop", old_dir);
+        assertLeaseFreshForDetachedOperation("drop", old_dir, admission_epoch);
         bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / DETACHED_DIR_NAME / new_dir / "", old_dir);
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_dir, keep_shared);
         old_dir.clear();
@@ -9359,7 +9371,11 @@ void MergeTreeData::optimizeDryRun(
     new_part->remove();
 }
 
-MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const PartitionCommand & command, ContextPtr local_context, PartsTemporaryRename & renamed_parts)
+MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(
+    const PartitionCommand & command,
+    ContextPtr local_context,
+    PartsTemporaryRename & renamed_parts,
+    std::optional<UInt64> admission_epoch)
 {
     const fs::path source_dir = DETACHED_DIR_NAME;
 
@@ -9422,8 +9438,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
                 LOG_WARNING(log, "Ignoring detached part {} because it intersects another detached part: {}", part_info.dir_name, reason);
                 /// The `ignored_` rename permanently mutates the shared `detached/` namespace and
                 /// happens before the commit-time epoch fence in `attachPartition`, so re-check
-                /// the lease before each one.
-                assertLeaseFreshForDetachedOperation("rename to ignored_", part_info.dir_name);
+                /// the lease — and the admitting leadership epoch — before each one.
+                assertLeaseFreshForDetachedOperation("rename to ignored_", part_info.dir_name, admission_epoch);
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("ignored_" + part_info.dir_name));
             }
@@ -9457,7 +9473,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
             if (containing_part != part_info.dir_name)
             {
                 /// Same as the `ignored_` rename above: permanent, pre-fence, shared-namespace.
-                assertLeaseFreshForDetachedOperation("rename to inactive_", part_info.dir_name);
+                assertLeaseFreshForDetachedOperation("rename to inactive_", part_info.dir_name, admission_epoch);
                 part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
                     fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
             }
@@ -9471,7 +9487,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     /// leader may be operating on. A failure here or below rolls the temporary renames back via
     /// the caller's `PartsTemporaryRename` destructor.
     if (!renamed_parts.old_and_new_names.empty())
-        assertLeaseFreshForDetachedOperation("rename to attaching_", renamed_parts.old_and_new_names.front().old_dir);
+        assertLeaseFreshForDetachedOperation("rename to attaching_", renamed_parts.old_and_new_names.front().old_dir, admission_epoch);
     renamed_parts.tryRenameAll();
 
     /// Synchronously check that added parts exist and are not broken. We will write checksums.txt if it does not exist.
@@ -9491,9 +9507,9 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         /// EACH of them: the lease may go stale between the two removals, and stripping only the
         /// main `txn_version.txt` of a part whose attach is then rolled back would silently turn
         /// detached transactional data into non-transactional data for the next leader.
-        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir);
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
-        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir);
+        assertLeaseFreshForDetachedOperation("strip transaction metadata from", new_dir, admission_epoch);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         /// The per-part `SingleDiskVolume` lives for the part's lifetime, so create it in the dedicated

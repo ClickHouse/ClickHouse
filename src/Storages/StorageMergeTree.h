@@ -238,7 +238,7 @@ private:
     /// The current leadership epoch (0 when `leader_election` is disabled). A write path captures
     /// this at admission / block-number allocation and passes it back to `assertWritableLeaderAtEpoch`
     /// before publishing the part.
-    UInt64 currentLeadershipEpoch() const;
+    UInt64 currentLeadershipEpoch() const override;
 
     /// Guard called by write paths immediately BEFORE the first irreversible rename that publishes
     /// a part on (possibly shared) storage (`MergeTreeSink::commitPart`, the merge finalize). For a

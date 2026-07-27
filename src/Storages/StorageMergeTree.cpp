@@ -3509,7 +3509,7 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     assertNotReadonly();
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
-    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts);
+    MutableDataPartsVector loaded_parts = tryLoadPartsToAttach(command, local_context, renamed_parts, admission_epoch);
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
