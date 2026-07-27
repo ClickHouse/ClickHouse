@@ -904,6 +904,8 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
     // Create a stream for each consumer and join them in a union stream
     // Only insert into dependent views and expect that input blocks contain virtual columns
 
+    Stopwatch watch;
+
     auto table_id = getStorageID();
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (!table)
@@ -1066,6 +1068,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
                     error_code);
 
                 file_iterator->releaseFinishedBuckets();
+                file_iterator->refreshExpiringBucketLocks();
 
                 if (interrupted)
                 {
@@ -1103,6 +1106,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
+        file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;
 
@@ -1118,7 +1122,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
             break;
     }
 
-    LOG_TEST(log, "Processed rows: {}", total_rows);
+    LOG_TEST(log, "Processed rows: {}, elapsed: {} ms", total_rows, watch.elapsedMilliseconds());
     return total_rows > 0;
 }
 
