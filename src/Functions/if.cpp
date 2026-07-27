@@ -1397,9 +1397,16 @@ public:
         // `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and functions
         // that opt out of the default LowCardinality implementation (e.g. `arrayReduce`, `joinGet`,
         // `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain `String` then.
+        /// The condition is not the only way for the result to be constant: when both branches carry the same
+        /// constant value, `executeImpl` returns that column as is (see the `arg_then.column == arg_else.column`
+        /// fast path below), so the result is constant regardless of the condition - e.g. in
+        /// `WITH 'sum' AS f SELECT arrayReduce(if(number % 2, f, f), [1, 2, 3])`.
         auto const is_condition_constant = arguments[0].column && isColumnConst(*arguments[0].column);
-        if (use_low_cardinality_optimisation && !is_condition_constant && arguments[1].column && arguments[2].column
-            && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column))
+        auto const are_branches_constant = arguments[1].column && arguments[2].column
+            && isColumnConst(*arguments[1].column) && isColumnConst(*arguments[2].column);
+        auto const are_branches_identical = are_branches_constant && arguments[1].type->equals(*arguments[2].type)
+            && (*arguments[1].column)[0] == (*arguments[2].column)[0];
+        if (use_low_cardinality_optimisation && !is_condition_constant && !are_branches_identical && are_branches_constant)
         {
             auto const is_string1 = isString(arguments[1].type);
             auto const is_string2 = isString(arguments[2].type);

@@ -140,13 +140,42 @@ public:
         size_t nullable_string_branches_count = 0;
         size_t non_null_string_value_branches_count = 0;
         size_t only_null_branches_count = 0;
-        size_t const_conditions_count = 0;
-        size_t conditions_count = 0;
+        /// Whether a constant prefix of the conditions already determines which branch is selected,
+        /// mirroring the way `executeImpl` walks the conditions: it skips the always-false ones and
+        /// stops at the first always-true one. It is not enough for *all* conditions to be constant -
+        /// a constant prefix is already sufficient, e.g. in `multiIf(1, 'max', number = 1, 'sum', 'avg')`
+        /// the first branch is always selected. If no condition is left to evaluate at runtime, the whole
+        /// expression (with all branches constant) folds into a single constant value.
+        auto is_selected_branch_decided_by_constants = [&args]()
+        {
+            size_t conditions_end = args.size() - 1;
+            for (size_t i = 0; i < conditions_end; i += 2)
+            {
+                const auto & condition = args[i];
+                if (!condition.column)
+                    return false;
+
+                const auto condition_column = condition.column->convertToFullColumnIfLowCardinality();
+                /// An always-NULL condition is never true - `executeImpl` skips it.
+                if (condition_column->onlyNull())
+                    continue;
+
+                const auto * condition_const_column = checkAndGetColumn<ColumnConst>(&*condition_column);
+                if (!condition_const_column)
+                    return false;
+
+                const Field value = condition_const_column->getField();
+                /// A constant false or NULL condition is skipped, a constant true one selects its branch.
+                if (value.isNull() || value.safeGet<UInt64>() == 0)
+                    continue;
+                return true;
+            }
+            /// Every condition is constant and false - the `else` branch is selected.
+            return true;
+        };
 
         for_conditions([&](const ColumnWithTypeAndName & arg)
         {
-            ++conditions_count;
-            const_conditions_count += arg.column && isColumnConst(*arg.column);
             const auto & arg_type = recursiveRemoveLowCardinality(arg.type);
             const IDataType * nested_type = nullptr;
             if (arg_type->isNullable())
@@ -193,12 +222,13 @@ public:
 
         auto const num_branches = types_of_branches.size();
 
-        /// If all conditions are constant too, the whole expression is constant and gets folded into a single
-        /// `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a constant, and functions
-        /// that opt out of the default LowCardinality implementation (e.g. `arrayReduce`, `joinGet`,
-        /// `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain `String` then.
+        /// If the selected branch is decided by constant conditions too, the whole expression is constant and gets
+        /// folded into a single `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a
+        /// constant, and functions that opt out of the default LowCardinality implementation (e.g. `arrayReduce`,
+        /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain
+        /// `String` then.
         if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches
-            && const_conditions_count < conditions_count)
+            && !is_selected_branch_decided_by_constants())
         {
             if (string_branches_count == num_branches)
                 return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
