@@ -19,6 +19,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+}
+
 namespace
 {
 
@@ -220,6 +225,63 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftOnNonInstantiableResultTypeIsS
     ASSERT_NO_THROW(result = dag.updateHeader(drifted_header));
     ASSERT_TRUE(result.has("lambda_result"));
     EXPECT_EQ(result.getByName("lambda_result").column, nullptr);
+}
+
+/// A captured lambda consumed by a higher-order function is the case that matters in practice: the
+/// capture is a CHILD of `arrayMap`, not a terminal output. Its column stays null (see above), so the
+/// consuming function reports a recoverable `NOT_FOUND_COLUMN_IN_BLOCK`. That is the improvement being
+/// pinned here: executing the stale capture instead raises
+/// `Cannot capture column N because it has incompatible type`, a `LOGICAL_ERROR` that aborts the
+/// server in debug and sanitizer builds.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftInCapturedLambdaUnderArrayMapIsRecoverable)
+{
+    tryRegisterFunctions();
+
+    /// Lambda `x -> x + c`, capturing `c`.
+    ActionsDAG lambda_dag;
+    const auto & captured = lambda_dag.addInput("c", std::make_shared<DataTypeFloat64>());
+    const auto & lambda_argument = lambda_dag.addInput("x", std::make_shared<DataTypeFloat64>());
+    auto plus = FunctionFactory::instance().get("plus", getContext().context);
+    const auto & body = lambda_dag.addFunction(plus, {&lambda_argument, &captured}, "body");
+    lambda_dag.getOutputs().clear();
+    lambda_dag.getOutputs().push_back(&body);
+
+    auto capture = std::make_shared<FunctionCaptureOverloadResolver>(
+        std::move(lambda_dag),
+        ExpressionActionsSettings(getContext().context),
+        Names{"c"},
+        NamesAndTypesList{{"x", std::make_shared<DataTypeFloat64>()}},
+        std::make_shared<DataTypeFloat64>(),
+        "body",
+        /* allow_constant_folding= */ true);
+
+    auto array_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+
+    ActionsDAG dag;
+    const auto & array_input = dag.addInput("arr", array_type);
+    const auto & captured_input = dag.addInput("c", std::make_shared<DataTypeFloat64>());
+    const auto & capture_node = dag.addFunction(capture, {&captured_input}, "lambda");
+    auto array_map = FunctionFactory::instance().get("arrayMap", getContext().context);
+    const auto & mapped = dag.addFunction(array_map, {&capture_node, &array_input}, "mapped");
+    dag.getOutputs().clear();
+    dag.getOutputs().push_back(&mapped);
+
+    auto drifted_type = std::make_shared<DataTypeInt256>();
+    Block drifted_header{
+        ColumnWithTypeAndName{array_type->createColumn(), array_type, "arr"},
+        ColumnWithTypeAndName{drifted_type->createColumn(), drifted_type, "c"}};
+
+    try
+    {
+        dag.updateHeader(drifted_header);
+        FAIL() << "a drifted capture cannot produce a usable header";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+        EXPECT_EQ(e.message().find("Cannot capture column"), std::string::npos)
+            << "the stale capture must not be executed: " << e.message();
+    }
 }
 
 /// A header column whose type did NOT drift must still be constant-folded exactly as before, so the

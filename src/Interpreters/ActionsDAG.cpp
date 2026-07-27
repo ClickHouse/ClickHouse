@@ -3,7 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/IDataTypeDummy.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1313,13 +1313,15 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
                 if (argument_types_drifted)
                 {
-                    /// A few result types cannot be instantiated at all: everything deriving from
-                    /// `IDataTypeDummy` (`DataTypeFunction`, the result type of a captured lambda,
-                    /// and `DataTypeSet`) throws `NOT_IMPLEMENTED` from `createColumn`. Leave the
-                    /// column null for those rather than turning a skipped fold into an error.
-                    /// `dynamic_cast` rather than `typeid_cast`: the latter compares `typeid` for
-                    /// exact equality and so never matches a base class.
-                    if (input_rows_count == 0 && !dynamic_cast<const IDataTypeDummy *>(res_column.type.get()))
+                    /// `DataTypeFunction` - the result type of a captured lambda - is the one result
+                    /// type here that cannot be instantiated: it inherits `IDataTypeDummy::createColumn`,
+                    /// which throws `NOT_IMPLEMENTED`. (`DataTypeNothing` and `DataTypeSet` derive from
+                    /// the same base but do override `createColumn`, so they are instantiated normally.)
+                    /// Leave the column null in that one case rather than turning a skipped fold into
+                    /// that error. A parent that consumes the lambda then reports a recoverable
+                    /// `NOT_FOUND_COLUMN_IN_BLOCK` instead of aborting the server, which is what
+                    /// executing the stale capture used to do.
+                    if (input_rows_count == 0 && !typeid_cast<const DataTypeFunction *>(res_column.type.get()))
                         res_column.column = res_column.type->createColumn();
                     break;
                 }
