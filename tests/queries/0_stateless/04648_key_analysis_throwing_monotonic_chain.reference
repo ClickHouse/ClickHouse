@@ -12,8 +12,10 @@ DECIMAL_OVERFLOW from a correctly always-monotonic function
 0	0
 LowCardinality key column
 0	0
-exact-range candidate spanning several marks
-1	1
+exact-range candidate spanning several marks (full primary key representation)
+1	1	false
+exact-range candidate spanning several marks (sparse primary key representation)
+1	1	true
 the same via the set index
 1	1
 generic exclusion search instead of binary search

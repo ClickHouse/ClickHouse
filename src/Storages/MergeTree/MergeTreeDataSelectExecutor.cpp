@@ -2140,7 +2140,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// Set by `check_in_range` when a monotonic function chain could not be applied to a range: the resulting mask is
     /// then only an over-approximation, so the exactness guarantee `matchesExactContinuousRange` gives does not hold for
     /// it. Reset per analysed `part_range` below, because a chain can fail on one range and succeed on another (whether
-    /// it throws depends on the endpoint values).
+    /// it throws depends on the endpoint values). Only the binary search consults it: the generic exclusion search
+    /// derives exactness from the mask itself, so an over-approximated mask there already yields no exact range.
     bool chain_application_failed = false;
 
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
