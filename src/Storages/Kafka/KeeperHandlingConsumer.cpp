@@ -293,20 +293,18 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
         return ActiveReplicasInfo{replicas_count, replicas_with_lock.size() < replicas_count};
     }
 
-    /// Only count replicas whose shard number matches this replica's shard.
-    /// Replicas with a different shard number form a disjoint rebalancing group
-    /// and must not be counted.
-    const auto my_shard_num = std::to_string(partition_shard_num);
+    /// Only count replicas with the same shard num (stored as replica_path znode data).
+    const auto my_shard_num = toString(partition_shard_num);
 
     size_t matching_replica_count = 0;
     size_t matching_replicas_with_lock = 0;
     for (const auto & name : replica_names)
     {
-        String shard_num_data;
-        if (!keeper->tryGet(keeper_path / "replicas" / name / "shard_number", shard_num_data))
+        String remote_replica_data;
+        if (!keeper->tryGet(keeper_path / "replicas" / name, remote_replica_data))
             continue;
 
-        if (shard_num_data != my_shard_num)
+        if (remote_replica_data != my_shard_num)
             continue;
 
         matching_replica_count++;
@@ -314,7 +312,7 @@ KeeperHandlingConsumer::getActiveReplicasInfo(const std::unordered_set<String> &
             matching_replicas_with_lock++;
     }
 
-    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total (shard={})",
+    LOG_TEST(log, "There are {} replicas with lock and there are {} replicas in total (shard_num={})",
              matching_replicas_with_lock, matching_replica_count, my_shard_num);
     return ActiveReplicasInfo{matching_replica_count, matching_replicas_with_lock < matching_replica_count};
 }

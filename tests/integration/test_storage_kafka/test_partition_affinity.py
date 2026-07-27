@@ -699,6 +699,58 @@ def test_partition_affinity_shard_macro_reattach(kafka_cluster):
         assert leaked == "0", f"Re-attached macro shard leaked {leaked} messages"
 
 
+def test_partition_affinity_layout_change_rejected(kafka_cluster):
+    """
+    The stored shard_num in replica_path is immutable: changing
+    kafka_partition_shard_num for an existing table (same keeper_path and
+    replica_name) must fail with an exception. This prevents silent data
+    corruption when the shard assignment changes after a restart or ATTACH.
+    """
+    admin = k.get_admin_client(kafka_cluster)
+    topic_name = "affinity_layout_change_topic"
+    num_partitions = 4
+    shared_keeper_path = "/clickhouse/test/affinity_layout_change"
+
+    k.kafka_create_topic(admin, topic_name, num_partitions=num_partitions)
+    with k.existing_kafka_topic(admin, topic_name):
+        for p in range(num_partitions):
+            msgs = [json.dumps({"partition_id": p, "value": i}) for i in range(2)]
+            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
+
+        # Create with (shard_num=1, shard_count=2): partitions {0, 2} -> 4 msgs
+        create_affinity_shard(instance, topic_name, 1, 2, shared_keeper_path, "lc_s1")
+        wait_for_count(instance, "test.dst_lc_s1", 4)
+
+        # DETACH so keeper nodes persist but table is inactive
+        instance.query("DETACH TABLE test.kafka_lc_s1")
+
+        # Different shard_num (2, 2) - must fail
+        with pytest.raises(QueryRuntimeException) as exc_info:
+            instance.query(
+                f"""
+                CREATE TABLE test.kafka_lc_bad_num (partition_id UInt64, value UInt64)
+                ENGINE = Kafka('{instance.cluster.kafka_host}:19092', '{topic_name}', '{topic_name}_cg_lc', 'JSONEachRow', '\\n')
+                SETTINGS kafka_keeper_path = '{shared_keeper_path}',
+                         kafka_replica_name = 'r1',
+                         kafka_partition_shard_num = '2',
+                         kafka_shard_count = 2
+                SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+                """
+            )
+        assert "does not match" in str(exc_info.value)
+
+        # Produce more messages while detached
+        for p in range(num_partitions):
+            msgs = [json.dumps({"partition_id": p, "value": 100 + i}) for i in range(2)]
+            kafka_produce_to_partition(kafka_cluster, topic_name, p, msgs)
+
+        # Same shard_num, same replica_name - ATTACH must succeed, keeper state intact
+        instance.query("ATTACH TABLE test.kafka_lc_s1")
+        wait_for_count(instance, "test.dst_lc_s1", 8, timeout=120)
+
+        verify_shard_partitions(instance, "lc_s1", 1, 2, num_partitions)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -620,15 +620,16 @@ void StorageKafka2::parsePartitionAffinitySettings()
     const auto & raw_partition_shard_num = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
     const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
 
-    /// Neither setting specified — affinity disabled.
+    /// Neither setting specified - affinity disabled.
     if (raw_partition_shard_num.empty() && shard_count_val == 0)
         return;
 
-    /// Both must be specified together.
+    /// Both must be specified together (enforced by KafkaSettings::sanityCheck).
     if (raw_partition_shard_num.empty() || shard_count_val == 0)
         throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
+            ErrorCodes::LOGICAL_ERROR,
+            "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together "
+            "(this should have been caught by sanityCheck)");
 
     /// Validate macro expansion produces a valid integer.
     const auto & expanded = getContext()->getMacros()->expand(raw_partition_shard_num, macros_info);
@@ -784,15 +785,10 @@ bool StorageKafka2::createTableIfNotExists()
         const auto topic_partition_locks_path = fs_keeper_path / "topic_partition_locks";
         ops.emplace_back(zkutil::makeCreateRequest(topic_partition_locks_path, "", zkutil::CreateMode::Persistent));
 
-        // Create the first replica
+        // Create the first replica - store shard_num as znode data when affinity is enabled
         ops.emplace_back(zkutil::makeCreateRequest(replicas_path, "", zkutil::CreateMode::Persistent));
-        ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
-
-        if (shard_count > 0)
-            ops.emplace_back(zkutil::makeCreateRequest(
-                fs_keeper_path / "replicas" / (*kafka_settings)[KafkaSetting::kafka_replica_name].value / "shard_number",
-                fmt::format("{}", partition_shard_num),
-                zkutil::CreateMode::Persistent));
+        const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, replica_data, zkutil::CreateMode::Persistent));
 
 
         Coordination::Responses responses;
@@ -871,7 +867,8 @@ void StorageKafka2::createReplica()
     LOG_INFO(log, "Creating replica {}", replica_path);
     // TODO: This can cause issues if a new table is created with the same path. To make this work, we should store some
     // metadata about the table to be able to identify that the same table is created, not a new one.
-    const auto code = keeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
+    const String replica_data = shard_count > 0 ? std::to_string(partition_shard_num) : "";
+    const auto code = keeper->tryCreate(replica_path, replica_data, zkutil::CreateMode::Persistent);
 
     switch (code)
     {
@@ -887,9 +884,20 @@ void StorageKafka2::createReplica()
             throw Coordination::Exception::fromPath(code, replica_path);
     }
 
-    if (shard_count > 0)
-        keeper->createIfNotExists(fs_keeper_path / "replicas" / (*kafka_settings)[KafkaSetting::kafka_replica_name].value / "shard_number",
-            fmt::format("{}", partition_shard_num));
+    if (shard_count > 0 && code == Coordination::Error::ZNODEEXISTS)
+    {
+        String stored_data;
+        if (keeper->tryGet(replica_path, stored_data))
+        {
+            if (stored_data != replica_data)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot attach replica: the stored shard num '{}' does not match the current value '{}'. "
+                    "Changing kafka_partition_shard_num for an existing table is not supported; "
+                    "use a different kafka_keeper_path for a new shard assignment",
+                    stored_data, replica_data);
+        }
+    }
 }
 
 
