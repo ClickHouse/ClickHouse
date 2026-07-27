@@ -165,7 +165,7 @@ public:
         if (rhs.empty())
             return;
 
-        for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < Base::numBuckets(); ++i)
             this->impls[i].merge(rhs.impls[i]);
     }
 
@@ -182,7 +182,7 @@ public:
         DB::writeVarUInt(this->size(), wb);
 
         bool zero_written = false;
-        for (size_t i = 0; i < Base::NUM_BUCKETS; ++i)
+        for (size_t i = 0; i < Base::numBuckets(); ++i)
         {
             if (this->impls[i].hasZero())
             {

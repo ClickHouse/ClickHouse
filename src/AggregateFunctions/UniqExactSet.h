@@ -209,7 +209,7 @@ public:
 
         /// All sets are two-level, perform parallel bucket-wise merge.
         auto & first_two_level = first->asTwoLevelChecked();
-        constexpr size_t NUM_BUCKETS = TwoLevelSet::NUM_BUCKETS;
+        constexpr size_t NUM_BUCKETS = TwoLevelSet::numBuckets();
 
         /// Pre-fetch all two-level set pointers to avoid concurrent access to getTwoLevelSet().
         VectorWithMemoryTracking<TwoLevelSet *> two_level_ptrs;
@@ -283,7 +283,7 @@ public:
             const auto & rhs = rhs_ptr->set;
             if (!thread_pool)
             {
-                for (size_t i = 0; i < rhs.NUM_BUCKETS; ++i)
+                for (size_t i = 0; i < rhs.numBuckets(); ++i)
                 {
                     lhs.impls[i].merge(rhs.impls[i]);
                 }
@@ -305,15 +305,15 @@ public:
                                 return;
 
                             const auto bucket = next_bucket_to_merge->fetch_add(1);
-                            if (bucket >= rhs.NUM_BUCKETS)
+                            if (bucket >= rhs.numBuckets())
                                 return;
                             lhs.impls[bucket].merge(rhs.impls[bucket]);
                         }
                     };
 
-                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
+                    const size_t max_threads_to_enqueue = std::min<size_t>(thread_pool->getMaxThreads(), rhs.numBuckets());
                     for (size_t i = 0; i < max_threads_to_enqueue
-                         && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.NUM_BUCKETS; ++i)
+                         && next_bucket_to_merge->load(std::memory_order_relaxed) < rhs.numBuckets(); ++i)
                         runner.enqueueAndKeepTrack(thread_func, Priority{});
                 }
                 catch (...)
@@ -439,7 +439,7 @@ private:
         {
             const auto & src = two_level_set->set;
             auto copy = std::make_shared<SharedTwoLevelSet>(src.size());
-            for (size_t i = 0; i < TwoLevelSet::NUM_BUCKETS; ++i)
+            for (size_t i = 0; i < TwoLevelSet::numBuckets(); ++i)
                 copy->set.impls[i].merge(src.impls[i]);
             two_level_set = std::move(copy);
         }
