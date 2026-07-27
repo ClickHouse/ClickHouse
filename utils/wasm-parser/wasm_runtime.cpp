@@ -17,6 +17,7 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Core/Settings.h>
 
+#include <csetjmp>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -281,15 +282,48 @@ const SettingFieldTimezone & Settings::operator[](SettingsTimezone) const
 /// Exceptions.
 ///
 /// The build uses `-fignore-exceptions`: `throw`, `try` and `catch` still compile, but no landing
-/// pads or unwind tables are emitted, so nothing can be caught. That is sound here because an
-/// exception can only mean a bug or a resource limit - a syntax error is reported by
-/// `tryParseQuery` returning null, and `src/Parsers` contains no `catch` at all, which a style
-/// check enforces. Defining `__cxa_throw` here keeps libc++abi's exception machinery out of the
-/// bundle entirely; the exception object is constructed and then we stop.
+/// pads or unwind tables are emitted, so nothing can be caught, and defining `__cxa_throw` here
+/// keeps libc++abi's exception machinery out of the bundle entirely.
+///
+/// A syntax error does not come this way - `tryParseQuery` returns null and fills in the message,
+/// and `src/Parsers` contains no `catch` at all, which a style check enforces. But a handful of
+/// checks in the parser still report an invalid query by throwing (`Frame start cannot be
+/// UNBOUNDED FOLLOWING`, for one), and stopping the module on an ordinary user mistake is not
+/// acceptable. So `ch_format` arms a `setjmp` boundary and a throw returns to it, with the
+/// message, as a parse failure.
+///
+/// The unwinding this replaces would have run destructors; `longjmp` does not, so a throw leaks
+/// whatever the parser allocated below the boundary. The alternative is `-fwasm-exceptions`, which
+/// costs 262 KB and an engine implementing the exception-handling proposal - too much to pay for
+/// tidiness on a path that a browser hits only on an invalid query.
 /// ---------------------------------------------------------------------------------------------
+
+namespace
+{
+
+jmp_buf recovery_point;
+bool recovery_armed = false;
+std::string recovery_message;
+
+}
 
 extern "C"
 {
+
+jmp_buf * chParserRecoveryPoint()
+{
+    return &recovery_point;
+}
+
+void chParserArmRecovery(bool armed)
+{
+    recovery_armed = armed;
+}
+
+const char * chParserRecoveryMessage()
+{
+    return recovery_message.c_str();
+}
 
 void * __cxa_allocate_exception(size_t size) noexcept
 {
@@ -305,6 +339,15 @@ void __cxa_free_exception(void *) noexcept
 {
     /// `DB::Exception` derives from `Poco::Exception`, whose `what()` is the message.
     const auto * as_std_exception = static_cast<const std::exception *>(static_cast<const Poco::Exception *>(thrown));
+
+    if (recovery_armed)
+    {
+        /// Disarm first: assigning the message allocates, and a throw from there would loop.
+        recovery_armed = false;
+        recovery_message = as_std_exception->what();
+        longjmp(recovery_point, 1);
+    }
+
     std::fprintf(stderr, "ClickHouse parser: unrecoverable error: %s\n", as_std_exception->what());
     std::abort();
 }

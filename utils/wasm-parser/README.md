@@ -27,8 +27,10 @@ The module is a WASI reactor and exports a C interface (see `wasm_parser.cpp`):
 It runs on a plain engine: the build is compiled with `-fignore-exceptions`, so no unwinding is
 emitted and the WebAssembly exception-handling proposal is not needed. A parser that does not
 match returns `false` rather than throwing (see check 19 in
-`ci/jobs/scripts/check_style/check_cpp.sh`), and the one exception left - the syntax error itself
-- is reported through `ch_format` returning 0.
+`ci/jobs/scripts/check_style/check_cpp.sh`), and a syntax error is reported through `ch_format`
+returning 0. The handful of parser checks that still report an invalid query by throwing - `Frame
+start cannot be UNBOUNDED FOLLOWING`, for one - reach the same place through a `setjmp` boundary
+that `wasm_runtime.cpp` jumps to instead of aborting.
 
 ## What it costs
 
