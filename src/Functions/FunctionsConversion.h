@@ -344,11 +344,12 @@ struct ToDateTransformFromSecondsOrDays
                     if (static_cast<Float64>(from) > static_cast<Float64>(MAX_DATETIME_TIMESTAMP))
                         return static_cast<UInt16>(time_zone.toDayNum(MAX_DATETIME_TIMESTAMP));
                 }
-                if constexpr (std::is_same_v<FromType, UInt64>)
+                if constexpr (is_integer<FromType> && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
                 {
-                    /// A `UInt64` value above `Int64::max` wraps to a negative `time_t`, escaping the
-                    /// `std::min` clamp below, so compare in the unsigned domain before the cast.
-                    if (from > static_cast<UInt64>(MAX_DATETIME_TIMESTAMP))
+                    /// An integer above `Int64::max` (`UInt64` as well as every wide integer) wraps when it is
+                    /// cast to `time_t`, escaping the `std::min` clamp below, so compare in the source domain
+                    /// before the cast.
+                    if (from > static_cast<FromType>(MAX_DATETIME_TIMESTAMP))
                         return static_cast<UInt16>(time_zone.toDayNum(MAX_DATETIME_TIMESTAMP));
                 }
                 return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
@@ -409,11 +410,12 @@ struct ToDate32TransformFromSecondsOrDays
                 /// which would then map far outside the Date32 range. Cap it in the floating-point domain first.
                 if constexpr (is_floating_point<FromType>)
                     return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
-                if constexpr (std::is_same_v<FromType, UInt64>)
+                if constexpr (is_integer<FromType> && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
                 {
-                    /// A `UInt64` value above `Int64::max` wraps to a negative `time_t`, escaping the
-                    /// `std::min` clamp below, so compare in the unsigned domain before the cast.
-                    if (from > static_cast<UInt64>(MAX_DATE32_TIMESTAMP))
+                    /// An integer above `Int64::max` (`UInt64` as well as every wide integer) wraps when it is
+                    /// cast to `time_t`, escaping the `std::min` clamp below, so compare in the source domain
+                    /// before the cast.
+                    if (from > static_cast<FromType>(MAX_DATE32_TIMESTAMP))
                         return time_zone.toDayNum(time_t(MAX_DATE32_TIMESTAMP));
                 }
                 return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
