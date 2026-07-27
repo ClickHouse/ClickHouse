@@ -6,6 +6,8 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <base/sort.h>
+
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -27,6 +29,13 @@ template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
 public:
+    /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source, which is safe for
+    /// any type without pointers into itself. `absl::flat_hash_map` qualifies: the address of its inline
+    /// single-element storage (small object optimization) is computed from `this`, the rest is on the heap.
+    /// No standard trait expresses this (weaker than `std::is_trivially_copyable`) property, hence the
+    /// explicit declaration.
+    static constexpr bool is_position_independent = true;
+
     void add(TimestampType timestamp, ValueType value)
     {
         auto [it, inserted] = buffer.emplace(timestamp, value);
@@ -100,7 +109,7 @@ public:
         temp_buffer.reserve(buffer.size());
         for (const auto & [timestamp, value] : buffer)
             temp_buffer.emplace_back(timestamp, value);
-        std::sort(temp_buffer.begin(), temp_buffer.end());
+        ::sort(temp_buffer.begin(), temp_buffer.end());
         for (const auto & [timestamp, value] : temp_buffer)
             f(timestamp, value);
     }
