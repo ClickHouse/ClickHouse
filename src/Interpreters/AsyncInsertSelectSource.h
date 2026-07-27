@@ -28,10 +28,10 @@ struct Settings;
 /// or an empty result) falls back to a synchronous insert that reuses the already pulled blocks,
 /// so the SELECT is never run again.
 ///
-/// The queue flush converts the preprocessed block straight to the target header and does not run
-/// the defaults step, so `insert_null_as_default` cannot substitute NULL for a Nullable-to-non-
-/// Nullable column there. Such queries are routed through the synchronous insert instead, which
-/// applies the defaults; this is decided in `buildAsyncInsertSelectPipeline` and signalled here.
+/// When `insert_null_as_default` is on and a Nullable SELECT column feeds a non-nullable target,
+/// the queue flush cannot substitute the default. `buildAsyncInsertSelectPipeline` detects this
+/// and applies the full type-conversion + NULL-to-default substitution on the SELECT pipeline,
+/// then forces the synchronous fallback (`needs_null_default_sync`).
 class AsyncInsertSelectSource final : public ISource
 {
 public:
