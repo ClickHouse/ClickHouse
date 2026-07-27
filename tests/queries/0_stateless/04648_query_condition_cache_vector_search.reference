@@ -1,12 +1,16 @@
 The table contains 298 rows with flag = 1.
 298
 --- optimized plan (vector_search_with_rescoring = 0)
-A vector-search query must NOT write to the query condition cache.
+The vector index is read and the plan uses `_distance`.
+1	1
+A vector-search query must NOT write to the query condition cache. It returns no rows.
 0
 A later ordinary query must still find all 298 rows.
 298
 --- rescoring plan (vector_search_with_rescoring = 1)
-A vector-search query must NOT write to the query condition cache.
+The vector index is read and rescoring does not use `_distance`.
+1	0
+A vector-search query must NOT write to the query condition cache. It returns no rows.
 0
 A later ordinary query must still find all 298 rows.
 298
