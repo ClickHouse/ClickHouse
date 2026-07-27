@@ -1,4 +1,4 @@
-INSERT INTO input SELECT * FROM numbers(1)
+INSERT INTO input SELECT * FROM numbers(1) SETTINGS async_insert = 0
 SELECT * FROM system.one WHERE dummy IN (SELECT * FROM system.one) FORMAT Null
 WITH (SELECT * FROM system.one) AS x SELECT x FORMAT Null
 WITH (SELECT * FROM system.one) AS x SELECT x, x FORMAT Null
