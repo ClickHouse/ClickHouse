@@ -825,32 +825,40 @@ DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr &
     if (isBool(type))
         return DeltaPrimitiveType::Boolean;
 
+    /// ClickHouse does the query processing, not Delta, so a column only needs a Delta type that stores its
+    /// values without loss; the type read back from the `_delta_log` may differ (e.g. `UInt8` -> Delta
+    /// `short` -> `Int16`, `FixedString` -> Delta `string` -> `String`). Types with no loss-free Delta
+    /// representation are still rejected.
     switch (type->getTypeId())
     {
         case TypeIndex::Int8:    return DeltaPrimitiveType::Byte;
         case TypeIndex::Int16:   return DeltaPrimitiveType::Short;
         case TypeIndex::Int32:   return DeltaPrimitiveType::Integer;
         case TypeIndex::Int64:   return DeltaPrimitiveType::Long;
+        /// Unsigned integers widen to the narrowest signed Delta integer that holds all their values.
+        case TypeIndex::UInt8:   return DeltaPrimitiveType::Short;
+        case TypeIndex::UInt16:  return DeltaPrimitiveType::Integer;
+        case TypeIndex::UInt32:  return DeltaPrimitiveType::Long;
         case TypeIndex::Float32: return DeltaPrimitiveType::Float;
         case TypeIndex::Float64: return DeltaPrimitiveType::Double;
-        case TypeIndex::String:  return DeltaPrimitiveType::String;
-        case TypeIndex::Date32:  return DeltaPrimitiveType::Date;
+        case TypeIndex::String:
+        case TypeIndex::FixedString:
+            return DeltaPrimitiveType::String;
+        case TypeIndex::Date:
+        case TypeIndex::Date32:
+            return DeltaPrimitiveType::Date;
+        case TypeIndex::DateTime:
+            return DeltaPrimitiveType::Timestamp;
         case TypeIndex::DateTime64:
         {
             const auto & datetime64 = assert_cast<const DataTypeDateTime64 &>(*type);
-            /// Delta `timestamp` is microsecond precision; only `DateTime64(6)` round-trips.
-            if (datetime64.getScale() != 6)
+            /// Delta `timestamp` is microsecond precision; a finer scale would lose sub-microsecond digits.
+            /// The time zone is display-only (the instant is stored in UTC either way), so it is accepted.
+            if (datetime64.getScale() > 6)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
-                    "DeltaLake `timestamp` is microsecond precision; declare the column as `DateTime64(6)` "
-                    "instead of `{}` for CREATE TABLE",
-                    type->getName());
-            /// Delta `timestamp` carries no time zone, so a `DateTime64(6, 'TZ')` would not round-trip.
-            if (datetime64.hasExplicitTimeZone())
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "DeltaLake `timestamp` has no time zone; declare the column as `DateTime64(6)` without a "
-                    "time zone instead of `{}` for CREATE TABLE",
+                    "DeltaLake `timestamp` is microsecond precision; `{}` has a finer scale and cannot be "
+                    "stored without loss for CREATE TABLE",
                     type->getName());
             return DeltaPrimitiveType::Timestamp;
         }
@@ -858,35 +866,17 @@ DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr &
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
         case TypeIndex::Decimal256:
-            /// Delta `decimal` supports precision up to 38, so a higher precision cannot round-trip.
+            /// Delta `decimal` supports precision up to 38, so a higher precision cannot be stored.
             if (getDecimalPrecision(*type) > 38)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "DeltaLake `decimal` supports precision up to 38; `{}` exceeds it for CREATE TABLE",
                     type->getName());
             return DeltaPrimitiveType::Decimal;
-        case TypeIndex::UInt8:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DeltaLake has no unsigned 8-bit type; use `Bool` or a signed integer instead of `UInt8` for CREATE TABLE");
-        case TypeIndex::FixedString:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DeltaLake has no fixed-length string; use `String` instead of `{}` for CREATE TABLE",
-                type->getName());
-        case TypeIndex::Date:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DeltaLake `date` maps back to `Date32`; declare the column as `Date32` instead of `Date` for CREATE TABLE");
-        case TypeIndex::DateTime:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "DeltaLake `timestamp` maps back to `DateTime64(6)`; declare the column as `DateTime64(6)` "
-                "instead of `DateTime` for CREATE TABLE");
         default:
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,
-                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
+                "ClickHouse type `{}` has no compatible Delta Lake type for CREATE TABLE",
                 type->getName());
     }
 }

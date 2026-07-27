@@ -83,11 +83,12 @@ echo "commit-json: contains all declared column names"
 
 rm -rf "$TABLE_PATH"
 
-# Types that cannot round-trip through Delta metadata must be rejected before commit 0 is written
-# (Code: 48 = NOT_IMPLEMENTED). `UInt8` is the important one: it must NOT be silently committed as
-# Delta `boolean` (that is `Bool`), which would lose values 2..255.
+# Types with no loss-free Delta representation must be rejected before commit 0 is written
+# (Code: 48 = NOT_IMPLEMENTED): `UInt64` (exceeds Delta's signed 64-bit `long`), `Decimal` with precision
+# above 38, and `LowCardinality` (no Delta equivalent). Compatible types (`UInt8`, `FixedString`, `Date`,
+# `DateTime`, ...) are instead accepted and mapped to a wider/looser Delta type - see the compatible-types test.
 echo "rejections:"
-for spec in "UInt8" "UInt32" "FixedString(4)" "Date" "DateTime" "DateTime64(3)" "DateTime64(6, 'UTC')" "Decimal(50, 2)" "LowCardinality(String)"; do
+for spec in "UInt64" "Decimal(50, 2)" "LowCardinality(String)"; do
     reject_path="${TABLE_PATH}_reject"
     rm -rf "$reject_path"
     if $CLICKHOUSE_CLIENT --query "
