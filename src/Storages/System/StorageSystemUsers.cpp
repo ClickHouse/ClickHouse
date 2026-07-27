@@ -251,7 +251,10 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
             "Authentication parameters in the JSON format depending on the auth_type."
         },
         {"valid_until", std::make_shared<DataTypeArray>(std::make_shared<DataTypeDateTime64>(0)),
-            "The expiration date and time for user credentials."
+            "The expiration date and time for user credentials, one per authentication method. "
+            "The stored value is an absolute instant rendered in the server or session time zone; "
+            "the stored value `0` (the Unix epoch, rendered as `1970-01-01 00:00:00` on a server in `UTC`) "
+            "is the sentinel meaning the credentials never expire."
         },
         {"host_ip", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "IP addresses of hosts that are allowed to connect to the ClickHouse server."
