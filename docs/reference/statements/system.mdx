@@ -6,7 +6,7 @@ title: 'SYSTEM Statements'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
 
@@ -133,6 +133,10 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
+
+## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+
+Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
 
 ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
 

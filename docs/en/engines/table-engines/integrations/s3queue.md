@@ -448,6 +448,8 @@ Constructions with `{}` are similar to the [remote](../../../sql-reference/table
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
 
+3. Lost rows on a device-level power loss of the ClickHouse node. A consumed file is recorded as processed in Keeper (and its source object removed when `after_processing = 'delete'`) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). Keeper is force-synced and usually runs on a separate node, so it survives this node's power loss. If the node loses power after the file is committed as processed but before the target part is fsynced, the file is not re-read on restart and its rows are lost (unrecoverable with `after_processing = 'delete'`). A plain process kill does not expose this, because the page cache survives it. For the recommended materialized-view consumption path (the file is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table makes the inserted part durable before the file is committed as processed, which narrows this window substantially. This does not apply to direct `INSERT ... SELECT` with `commit_on_select = 1`, where the file is committed at the end of the read before the destination sink finalizes its last part.
+
 ## Introspection {#introspection}
 
 For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.

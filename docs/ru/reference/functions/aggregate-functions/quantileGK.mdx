@@ -39,11 +39,11 @@ quantileGK(accuracy, level)(expr)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, дающее значения числовых типов данных, Date или DateTime. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, возвращающее значения числовых типов данных, `Date`, `DateTime` или `DateTime64`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Int128`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`Int256`](/ru/reference/data-types/int-uint) или [`UInt256`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Возвращаемое значение**
 
-Возвращает квантиль с указанными уровнем и точностью. [`Float64`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+Возвращает квантиль с указанными уровнем и точностью. Для числовых типов данных выходной формат совпадает с входным. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Int128`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`Int256`](/ru/reference/data-types/int-uint) или [`UInt256`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 
