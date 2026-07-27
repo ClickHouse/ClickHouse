@@ -14,36 +14,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-bool checkedSub(std::atomic<size_t> & value, size_t delta) noexcept
-{
-    size_t current = value.load(std::memory_order_relaxed);
-    while (current >= delta)
-    {
-        if (value.compare_exchange_weak(current, current - delta, std::memory_order_relaxed))
-            return true;
-    }
-    return false;
-}
-}
-
 void FileCacheUsageCounters::add(size_t size_delta, size_t elements_delta) noexcept
 {
-    if (!valid.load(std::memory_order_relaxed))
-        return;
-
     size.fetch_add(size_delta, std::memory_order_relaxed);
     elements.fetch_add(elements_delta, std::memory_order_relaxed);
 }
 
 void FileCacheUsageCounters::sub(size_t size_delta, size_t elements_delta) noexcept
 {
-    if (!valid.load(std::memory_order_relaxed))
-        return;
-
-    if (!checkedSub(size, size_delta) || !checkedSub(elements, elements_delta))
-        valid.store(false, std::memory_order_relaxed);
+    size.fetch_sub(size_delta, std::memory_order_relaxed);
+    elements.fetch_sub(elements_delta, std::memory_order_relaxed);
 }
 
 FileCacheUsageCountersPtr FileCacheUsageTracker::getOrCreate(const String & user_id)
@@ -65,21 +45,6 @@ std::unordered_map<String, FileCacheUsageStat> FileCacheUsageTracker::snapshot()
     for (auto it = usage_by_user.begin(); it != usage_by_user.end();)
     {
         const auto & [user_id, usage] = *it;
-        if (!usage->valid.load(std::memory_order_relaxed))
-        {
-            if (!usage->error_reported)
-            {
-                LOG_ERROR(log, "Filesystem cache usage counters became inconsistent for user '{}'", user_id);
-                usage->error_reported = true;
-            }
-
-            if (usage.use_count() == 1)
-                it = usage_by_user.erase(it);
-            else
-                ++it;
-            continue;
-        }
-
         const size_t size = usage->size.load(std::memory_order_relaxed);
         const size_t elements = usage->elements.load(std::memory_order_relaxed);
         if (size == 0 && elements == 0)

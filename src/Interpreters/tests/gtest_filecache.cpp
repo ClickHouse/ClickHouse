@@ -3788,18 +3788,6 @@ TEST_F(FileCacheTest, UsageTrackerOmitsZeroUsage)
     EXPECT_TRUE(tracker.snapshot().empty());
 }
 
-TEST_F(FileCacheTest, UsageTrackerDetectsUnderflow)
-{
-    FileCacheUsageTracker tracker;
-    auto counters = tracker.getOrCreate("underflow_user");
-    counters->add(10, 1);
-    counters->sub(11, 1);
-
-    EXPECT_EQ(counters->size.load(std::memory_order_relaxed), 10);
-    EXPECT_EQ(counters->elements.load(std::memory_order_relaxed), 1);
-    EXPECT_TRUE(tracker.snapshot().empty());
-}
-
 TEST_F(FileCacheTest, SLRUDowngradeMetric)
 {
     ServerUUID::setRandomForUnitTests();
