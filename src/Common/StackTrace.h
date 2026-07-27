@@ -11,12 +11,19 @@
 #include <csignal>
 #include <csetjmp>
 
+/// Windows has neither `ucontext_t` nor `siginfo_t`: it reports faults through Structured
+/// Exception Handling rather than signals, so the parts of this interface that take a signal
+/// context are declared only where signals exist. Capturing the *current* stack is portable and
+/// stays available - only the "reconstruct the stack of a faulting thread from its signal
+/// context" entry points are gone.
+#if !defined(OS_WINDOWS)
 #ifdef OS_DARWIN
 // ucontext is not available without _XOPEN_SOURCE
 #   pragma clang diagnostic ignored "-Wreserved-id-macro"
 #   define _XOPEN_SOURCE 700
 #endif
 #include <ucontext.h>
+#endif
 
 struct NoCapture
 {
@@ -44,9 +51,11 @@ public:
     /// NO_INLINE to get correct line of StackTrace() caller in captured stack trace
     NO_INLINE StackTrace();
 
+#if !defined(OS_WINDOWS)
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
     explicit StackTrace(const ucontext_t & signal_context);
+#endif
 
     /// Creates empty object for deferred initialization
     explicit StackTrace(NoCapture) {}
@@ -86,10 +95,12 @@ protected:
     FramePointers frame_pointers{};
 };
 
+#if !defined(OS_WINDOWS)
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
 
 std::optional<UInt64> getFaultAddress(int sig, const siginfo_t & info);
 std::string getFaultMemoryAccessType(int sig, const ucontext_t & context);
+#endif
 std::string getSignalCodeDescription(int sig, int si_code);
 
 /// Special handling for errors during asynchronous stack unwinding,
