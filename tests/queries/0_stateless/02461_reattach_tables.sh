@@ -350,6 +350,36 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_src"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${MV_USER}"
 
+# The `TO dst` target of `CREATE MATERIALIZED VIEW ... AS SELECT` must also exist:
+# `InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine` resolves it through
+# `DatabaseCatalog::getTable` before anything is created, so the query fails with `UNKNOWN_TABLE` and the
+# source `src` must not be detached on the way — the existence preflight has to cover external targets too.
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_dst"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mv_to_src (a UInt64) ENGINE = MergeTree ORDER BY a"
+
+REATTACH_OUTPUT=$(${MY_CLICKHOUSE_CLIENT} \
+    --reattach_tables_before_query_execution=1 \
+    --query "CREATE MATERIALIZED VIEW t_reattach_mv_to TO t_reattach_mv_to_missing_dst AS SELECT * FROM t_reattach_mv_to_src" 2>&1)
+REATTACH_STATUS=$?
+if [ "$REATTACH_STATUS" -eq 0 ]; then
+    echo "FAIL (query unexpectedly succeeded)"
+elif ! echo "$REATTACH_OUTPUT" | grep -q "UNKNOWN_TABLE"; then
+    echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.t_reattach_mv_to_src"; then
+    echo "FAIL (source detached for a query failing on a missing target)"
+else
+    echo "OK"
+fi
+
+# Positive control: with the target present the same statement succeeds and the source is reattached.
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_mv_to_dst (a UInt64) ENGINE = MergeTree ORDER BY a"
+check_if_detached "CREATE MATERIALIZED VIEW t_reattach_mv_to TO t_reattach_mv_to_dst AS SELECT * FROM t_reattach_mv_to_src" "t_reattach_mv_to_src"
+
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_mv_to"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_src"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_mv_to_dst"
+
 # `ALTER TABLE dst REPLACE PARTITION ... FROM src` needs `SELECT` on the source `src` (see
 # `InterpreterAlterQuery::getRequiredAccessForCommand`), which is kept in the command's `from_*` string
 # fields, not in a child AST node. A user who can `DETACH`/`ATTACH` the target `dst` but lacks `SELECT` on

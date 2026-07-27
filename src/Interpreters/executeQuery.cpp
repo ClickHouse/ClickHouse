@@ -166,6 +166,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_materialized_view_with_bad_select;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsFloat ast_fuzzer_runs;
@@ -1643,14 +1644,26 @@ void collectTablesInQuery(const ASTPtr & ast, CollectTablesData & data, std::uno
             /// and only then fail on the missing access to `dst`. An inner (non-external) target carries no
             /// table name and is skipped by `addTableIfNotEmpty` naturally. The target is completed with the
             /// current database by `InterpreterCreateQuery` and never resolved against session temporary
-            /// tables, hence `ResolveOrdinary`; it is not required to exist, because a view may name a target
-            /// that is created only later.
+            /// tables, hence `ResolveOrdinary`.
+            ///
+            /// Most targets are not required to exist, because a view may name a target that is created only
+            /// later. The `TO dst` target of a `CREATE MATERIALIZED VIEW ... AS SELECT` is the exception:
+            /// `InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine` resolves it through
+            /// `DatabaseCatalog::getTable` and rethrows unless `allow_materialized_view_with_bad_select` is
+            /// set, and it does so before creating anything — so `CREATE MATERIALIZED VIEW mv TO missing_dst
+            /// AS SELECT * FROM src` fails and must not detach `src` on the way. That validation runs for a
+            /// `CREATE` only (`mode <= LoadingStrictnessLevel::CREATE`), hence the `attach` exclusion.
             if (create->targets)
+            {
+                const bool to_target_existence_required = create->is_materialized_view && create->select && !create->attach
+                    && !data.context->getSettingsRef()[Setting::allow_materialized_view_with_bad_select];
+
                 for (const auto & target : create->targets->targets)
                     data.addTableIfNotEmpty(
                         target.table_id.database_name, target.table_id.table_name, active_ctes,
                         Context::ResolveOrdinary, AccessType::SELECT | AccessType::INSERT,
-                        /* existence_required */ false);
+                        /* existence_required */ target.kind == ViewTarget::To && to_target_existence_required);
+            }
         }
     }
     else if (const auto * function = ast->as<ASTFunction>())
