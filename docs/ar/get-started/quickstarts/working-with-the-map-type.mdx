@@ -14,7 +14,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">قابلية الرصد</Badge>
+  <Badge size="lg" color="blue">Observability</Badge>
   <Badge size="lg" color="orange">OSS</Badge>
 </div>
 
@@ -30,14 +30,12 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   ## ما الذي ستبنيه
 </div>
 
-في OpenTelemetry، يحمل كل `trace span` مجموعة من **سمات المورد** — وهي بيانات وصفية بتنسيق key-value تصف الكيان الذي أنتج بيانات telemetry (مثل اسم الخدمة، والمضيف، والمنطقة السحابية، وpod في Kubernetes، وغير ذلك). وتختلف مجموعة المفاتيح بين الخدمات والبيئات، مما يجعل نوع `Map` في ClickHouse مناسبًا لهذا الاستخدام بطبيعته: فالمفاتيح ديناميكية وخاصّة بالتطبيق، لكن أي صف معيّن لا يحتوي عادةً إلا على عدد قليل منها.
+في OpenTelemetry، يحمل كل `trace span` مجموعة من **سمات الموارد** — وهي بيانات وصفية بتنسيق مفتاح-قيمة تصف الكيان الذي أنتج بيانات telemetry (مثل اسم الخدمة، والمضيف، والمنطقة السحابية، وpod في Kubernetes، وغير ذلك). وتختلف مجموعة المفاتيح بين الخدمات والبيئات، مما يجعل نوع `Map` في ClickHouse مناسبًا لهذا الاستخدام بطبيعته: فالمفاتيح ديناميكية وخاصّة بالتطبيق، لكن أي صف معيّن لا يحتوي عادةً إلا على عدد قليل منها.
 
 في هذا الدليل السريع، ستستخدم `clickhouse-local` لتحميل بيانات trace حقيقية من OTel من ملف CSV إلى جدول يحتوي على أعمدة `Map(LowCardinality(String), String)`، وستتعلّم كيفية الاستعلام عن بيانات Map وتصفيتها وتجميعها وتحسينها.
 
 <Steps titleSize="h3">
-  <Step>
-    ### نزّل بيانات العيّنة
-
+  <Step title="نزّل بيانات العيّنة" id="download-the-sample-data">
     تتضمن مجموعة البيانات 6,120 امتداد تتبّع OTel مُصدَّرًا من تطبيق تجريبي للخدمات المصّغرة. ويتضمن كل صف العمودين `ResourceAttributes` و`SpanAttributes`، ويحتويان على أزواج مفتاح-قيمة ديناميكية على شكل خرائط JSON.
     احفظ الملف في دليل يسهل الرجوع إليه، على سبيل المثال `~/data/data-otel-traces.csv`.
 
@@ -66,9 +64,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### أنشئ الجدول وحمّل البيانات
-
+  <Step title="أنشئ الجدول وحمّل البيانات" id="create-the-table-and-load-the-data">
     شغّل `clickhouse-local` وأنشئ الجدول التالي بمخطط يتوافق مع ملف CSV.
     عمود المفتاح هو `ResourceAttributes Map(LowCardinality(String), String)` — ويُستخدم `LowCardinality` مع نوع المفتاح لأن مفاتيح سمات OTel مأخوذة من مجموعة صغيرة نسبيًا ومتكررة.
 
@@ -107,9 +103,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     من المفترض أن ترى 6,120 صفًا.
   </Step>
 
-  <Step>
-    ### الاستعلام عن البيانات
-
+  <Step title="الاستعلام عن البيانات" id="query-the-data">
     **الوصول إلى مفتاح محدد** — استخدم صيغة الأقواس المربعة لاستخراج قيمة من `map`. إذا لم يكن المفتاح موجودًا في صف معيّن، فستحصل على القيمة الافتراضية لنوع القيمة (سلسلة فارغة من النوع `String`):
 
     ```sql
@@ -136,7 +130,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     LIMIT 10;
     ```
 
-    **تحقّق مما إذا كان المفتاح موجودًا** — لا يحتوي كل `span` على بيانات Kubernetes الوصفية. استخدم `mapContains` لمعرفة أيّها يحتوي عليها:
+    **تحقّق مما إذا كان المفتاح موجودًا** â لا يحتوي كل `span` على بيانات Kubernetes الوصفية. استخدم `mapContains` لمعرفة أيّها يحتوي عليها:
 
     ```sql
     SELECT
@@ -155,7 +149,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ORDER BY key;
     ```
 
-    **فكِّك Map إلى صفوف باستخدام ARRAY JOIN** — حوِّل كل زوج مفتاح وقيمة إلى صف مستقل، مما يفيد في إنشاء فهرس للسمات أو في تعبئة لوحات المعلومات:
+    **فكِّك Map إلى صفوف باستخدام ARRAY JOIN** — حوِّل كل زوج مفتاح-قيمة إلى صف مستقل، مما يفيد في إنشاء فهرس للسمات أو في تعبئة لوحات المعلومات:
 
     ```sql
     SELECT
@@ -181,7 +175,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     LIMIT 10;
     ```
 
-    **اعثر على مقاطع التتبّع الخاصة بالأخطاء وسياق المورد المرتبط بها** — اجمع بين مرشحات الأعمدة العادية والوصول إلى `map`:
+    **اعثر على مقاطع التتبّع الخاصة بالأخطاء وسياق المورد المرتبط بها** â اجمع بين مرشحات الأعمدة العادية والوصول إلى `map`:
 
     ```sql
     SELECT
@@ -197,9 +191,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ```
   </Step>
 
-  <Step>
-    ### التجميع عبر خرائط `Map` باستخدام المبدِّل `-Map`
-
+  <Step title="التجميع عبر خرائط `Map` باستخدام المبدِّل `-Map`" id="aggregate-across-maps-with-the--map-combinator">
     يتيح المبدِّل التجميعي `-Map` في ClickHouse تطبيق أي دالة aggregate على عمود `Map` بحيث تعمل على كل مفتاح بشكل مستقل. وتكون النتيجة أيضًا `Map` — مع مُدخل واحد لكل مفتاح، يتضمن القيمة المُجمَّعة. ويكون هذا مفيدًا بشكل خاص مع metrics في OTel، حيث تُخزَّن counters أو gauges كقيم في map.
 
     للتوضيح، أنشئ table صغيرًا للـ metrics حيث يسجّل كل row أعداد رموز حالة HTTP بصيغة `Map(String, UInt64)`:
@@ -257,9 +249,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     **لماذا يهم هذا بالنسبة إلى OTel:** عندما يكتب OTel Collector تفاصيل رموز الحالة لكل دقيقة في ClickHouse، تتيح لك `sumMap` تجميعها في إجماليات لكل ساعة أو لكل يوم ضمن استعلام واحد — من دون `ARRAY JOIN`، ومن دون إلغاء التمحور، ومن دون الحاجة إلى معرفة المجموعة الكاملة للمفاتيح مسبقًا. ويُدرَج تلقائيًا في النتيجة أي مفتاح يظهر في أي صف.
   </Step>
 
-  <Step>
-    ### حسّن الأداء للمفاتيح التي يُكثر الاستعلام عنها
-
+  <Step title="حسّن الأداء للمفاتيح التي يُكثر الاستعلام عنها" id="optimise-for-frequently-queried-keys">
     إذا وجدت نفسك تُجري التصفية باستمرار على المفتاح نفسه في `map` — ويُعد `host.name` مثالًا شائعًا — فيمكنك استخراجه إلى عمود مُجسَّد. وهذا يجنّبك الفحص الخطي داخل `map` في كل استعلام:
 
     ```sql
@@ -278,7 +268,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   </Step>
 </Steps>
 
-## النقاط الرئيسية
+<div id="key-takeaways">
+  ## النقاط الرئيسية
+</div>
 
 * **`Map(LowCardinality(String), String)`** هو النوع الأكثر شيوعًا لسمات OTel — مرن بما يكفي للتعامل مع مجموعات مفاتيح متغيرة، كما يحافظ `LowCardinality` على كفاءة تخزين المفاتيح.
 * **صياغة الأقواس** (`map['key']`) هي الطريقة الأكثر شيوعًا للوصول إلى القيم، لكن تذكّر أنها تفحص خطيًا — وهذا مناسب للخرائط التي تحتوي على عشرات المفاتيح، لكنه ليس مثاليًا عند وجود المئات.
@@ -286,7 +278,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 * **`mapContains`, `mapKeys`, `mapValues`, `mapFilter`** و `ARRAY JOIN` توفّر لك مجموعة أدوات قوية لاستكشاف بيانات الخرائط وتحويلها دون مغادرة SQL.
 * **مُركِّب التجميع `-Map`** (`sumMap`, `avgMap`, `maxMap`, etc.) يجمّع كل مفتاح على نحو مستقل عبر الصفوف — وهو مثالي لتجميع عدّادات مقاييس OTel دون الحاجة إلى معرفة مجموعة المفاتيح مسبقًا. كما يمكن تركيبه مع مُركِّبات أخرى أيضًا (مثل `sumMapIf`).
 
-## الخطوات التالية
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
 
 اطّلع بعد ذلك على أدلة البدء السريع التالية:
 
