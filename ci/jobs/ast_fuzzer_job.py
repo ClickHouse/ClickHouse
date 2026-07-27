@@ -6,6 +6,7 @@ import re
 import sys
 import traceback
 from pathlib import Path
+from typing import NamedTuple
 
 from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.find_tests import Targeting
@@ -110,20 +111,55 @@ def _clean_stale_run_state() -> None:
         )
 
 
-def _sanitizer_findings(workspace: Path) -> list:
-    """Named, non-benign sanitizer reports produced by this run.
+SANITIZER_PARSE_FAILURE_NAME = "Sanitizer report parse failure"
+
+
+def _parse_failure_result(parse_failures: list) -> Result:
+    """One named sub-result for the reports that could not be classified.
+
+    Named with a fixed, greppable string so the failure is countable in CIDB
+    rather than leaving the run green on an unexamined report - the very outcome
+    this classification exists to prevent.
+    """
+    return Result(
+        name=SANITIZER_PARSE_FAILURE_NAME,
+        info="\n".join(
+            ["Could not classify sanitizer report(s):"]
+            + [f"  {path}: {reason}" for path, reason in parse_failures]
+        ),
+        status=Result.Status.FAIL,
+        files=[path for path, _ in parse_failures],
+    )
+
+
+class SanitizerReports(NamedTuple):
+    """Outcome of classifying this run's raw sanitizer reports.
+
+    `findings` holds one (name, info, files) tuple per report that names a real,
+    non-benign diagnostic. `unreadable` holds one (path, reason) tuple per report
+    that exists but could not be classified at all, which must fail CLOSED: an
+    unclassified report may BE a real finding, so it can neither be silently
+    dropped nor allowed to leave the run green.
+    """
+
+    findings: list
+    unreadable: list
+
+
+def _sanitizer_findings(workspace: Path) -> SanitizerReports:
+    """Classify the sanitizer reports produced by this run.
 
     run-fuzzer.sh points every runtime at *SAN_OPTIONS=log_path, so each process
     that reports writes its own `sanitizer.log.<pid>`, and an EXIT trap merges
-    them all into stderr.log/server.log. Returns one (name, info, files) tuple
-    per file holding a real finding, so a report is NAMED (and therefore
-    countable in CIDB) no matter which verdict branch the run lands in.
+    them all into stderr.log/server.log. Returns one entry per file holding a
+    real finding, so a report is NAMED (and therefore countable in CIDB) no
+    matter which verdict branch the run lands in.
 
     Every file is parsed - never just the newest or the first: distinct processes
     report independently, so a benign report must not shadow a real one.
 
     The report path is passed as BOTH parser inputs so no pattern can reach the
-    real server.log: parse_failure() reads stderr_log only for the sanitizer
+    real server.log: `parse_failure` reads stderr_log only for the sanitizer
     patterns and server_log for all the others, one of which matches the normal
     shutdown's "Received signal 15".
 
@@ -137,8 +173,18 @@ def _sanitizer_findings(workspace: Path) -> list:
     - not the name, because the parser normalizes it to e.g.
       "MemorySanitizer (STID: ...)", dropping "failed to allocate", so a
       name-based test would promote every benign report to a real finding.
+
+    A report the parser cannot classify is reported separately instead of being
+    discarded. Two distinct ways that happens, both observed: the parser raises
+    (a missing `rg`/`head` on PATH surfaces as a non-zero exit code), and a
+    report that cannot be READ parses to `UNKNOWN_ERROR` without raising - the
+    container runs as root and the reports are chown'd afterwards, so a
+    permission problem is a plausible CI trigger. Readability is what separates
+    that from the legitimate "present but holds no recognizable diagnostic" case,
+    so it is tested directly rather than through a proxy such as file size.
     """
     findings = []
+    unreadable = []
     for report in sorted(workspace.glob("sanitizer.log.*")):
         try:
             name, info, files = FuzzerLogParser(
@@ -146,21 +192,51 @@ def _sanitizer_findings(workspace: Path) -> list:
             ).parse_failure()
         except Exception as e:  # a malformed report must not abort the job
             logging.warning("Failed to parse sanitizer report %s: %s", report, e)
+            unreadable.append((str(report), f"parser failed: {e}"))
             continue
         if not name or name == FuzzerLogParser.UNKNOWN_ERROR:
+            if not os.access(report, os.R_OK):
+                logging.warning("Sanitizer report %s is not readable", report)
+                unreadable.append((str(report), "report file is not readable"))
+                continue
             # No recognizable diagnostic (empty/truncated/garbage report).
             continue
-        if re.search(SANITIZER_OOM_PATTERN, _selected_diagnostic(info)):
+        if _is_benign_sanitizer_report(info):
             logging.info("Sanitizer report %s is benign (OOM/allocation)", report)
             continue
         findings.append((name, info, [str(report)] + list(files)))
-    return findings
+    return SanitizerReports(findings=findings, unreadable=unreadable)
+
+
+def _is_benign_sanitizer_report(info: str) -> bool:
+    """Recoverable allocator pressure rather than a bug worth reddening a run.
+
+    The single definition of benign-ness, applied to every parsed sanitizer
+    result: the per-report pass in `_sanitizer_findings` and the merged-log parse
+    in `run_fuzz_job`, which selects whichever record the runner concatenated
+    first and so can select an OOM record too.
+    """
+    return bool(re.search(SANITIZER_OOM_PATTERN, _selected_diagnostic(info)))
+
+
+def _merged_row_is_benign(name: str, info: str) -> bool:
+    """Whether the merged-log parse selected a benign SANITIZER record.
+
+    Scoped to sanitizer records - the ones `_sanitizer_findings` parses per file
+    and therefore covers - because dropping this row is only safe when another
+    pass already accounts for it. `SANITIZER_OOM_PATTERN` also matches the
+    watchdog's "Child process was terminated by signal 9", which is not a
+    sanitizer report and is named by nothing else, so it must keep its row.
+    `parse_failure` names every sanitizer record "<tool>Sanitizer..." (or plain
+    "Sanitizer" when the record carries no tool name).
+    """
+    return "Sanitizer" in name and _is_benign_sanitizer_report(info)
 
 
 def _selected_diagnostic(info: str) -> str:
-    """The raw diagnostic block parse_failure() matched, cut out of its info.
+    """The raw diagnostic block `parse_failure` matched, cut out of its info.
 
-    parse_failure() renders "Error:\\n<selected diagnostic>\\n" first and then
+    `parse_failure` renders "Error:\\n<selected diagnostic>\\n" first and then
     appends "---\\n\\n<section>" blocks (failed query, reproduce commands, stack
     trace). Only the diagnostic is used to decide benign-ness; the stack trace
     must be excluded because a real finding's frames can legitimately mention an
@@ -440,14 +516,19 @@ def run_fuzz_job(check_name: str):
     paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
 
     # Name any sanitizer report this run produced BEFORE reading status.tsv: the
-    # early-return below ends in complete_job(), which sys.exit()s, so nothing
-    # after it runs - while the runner's EXIT trap has already collected reports
-    # even for an abort so early that status.tsv was never written.
-    sanitizer_findings = _sanitizer_findings(WORKSPACE_PATH)
+    # early-return below ends in `complete_job`, which calls `sys.exit`, so
+    # nothing after it runs - while the runner's EXIT trap has already collected
+    # reports even for an abort so early that status.tsv was never written.
+    sanitizer_reports = _sanitizer_findings(WORKSPACE_PATH)
+    sanitizer_findings = sanitizer_reports.findings
     sanitizer_results = [
         Result(name=name, info=info, status=Result.Status.FAIL, files=files)
         for name, info, files in sanitizer_findings
     ]
+    # Reports that could not be classified at all. The merged-log parse further
+    # down can fail for the same reasons and appends here too, so this stays
+    # mutable and is turned into a sub-result at each reporting site.
+    parse_failures = list(sanitizer_reports.unreadable)
 
     server_died = False
     server_exit_code = 0
@@ -469,7 +550,8 @@ def run_fuzz_job(check_name: str):
             # Keep ERROR explicitly: create_from derives the status from the
             # sub-results when given none, and a FAIL sub-result would downgrade
             # this ERROR.
-            results=sanitizer_results,
+            results=sanitizer_results
+            + ([_parse_failure_result(parse_failures)] if parse_failures else []),
         )
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
@@ -520,7 +602,11 @@ def run_fuzz_job(check_name: str):
             Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
         )
 
-    if sanitizer_findings:
+    # An unclassifiable report counts exactly like a real finding here: it may BE
+    # one, so it must not leave the run green (that is the outcome this whole
+    # classification exists to prevent, and swallowing a parse error would
+    # recreate it).
+    if sanitizer_findings or parse_failures:
         # A sanitizer report is a finding whatever the exit code says. *SAN_OPTIONS
         # is exported to every process the runner starts, so a runtime can kill a
         # server-side thread or an ignored client probe while the fuzzer itself
@@ -554,9 +640,14 @@ def run_fuzz_job(check_name: str):
             # The leniency is vetoed by a real finding: a recoverable allocation
             # warning is merged into the same server.log a real report lands in,
             # so sanitizer_oom alone would forgive a run that also reported a
-            # genuine bug. Order is load-bearing - the veto must be evaluated
-            # here, before the status is set to OK.
-            if (sanitizer_oom or kernel_oom_kill) and not sanitizer_findings:
+            # genuine bug. An unclassifiable report vetoes it for the same reason.
+            # Order is load-bearing - the veto must be evaluated here, before the
+            # status is set to OK.
+            if (
+                (sanitizer_oom or kernel_oom_kill)
+                and not sanitizer_findings
+                and not parse_failures
+            ):
                 print("Sanitizer OOM")
                 if sanitizer_oom:
                     info.append("WARNING: Sanitizer OOM - test considered passed")
@@ -589,7 +680,30 @@ def run_fuzz_job(check_name: str):
                 WORKSPACE_PATH / "fuzzerout.sql" if buzzhouse else fuzzer_log
             ),
         )
-        parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        try:
+            parsed_name, parsed_info, files = fuzzer_log_parser.parse_failure()
+        except Exception as e:
+            # Fail closed, like the per-report pass: a parse that raised here
+            # would otherwise leave a red run with no named sub-result at all,
+            # which is the unsearchable-CIDB-row outcome this job now avoids.
+            logging.warning("Failed to parse the merged logs: %s", e)
+            parsed_name, parsed_info, files = "", "", []
+            parse_failures.append((str(stderr_log), f"parser failed: {e}"))
+
+        if parsed_name and _merged_row_is_benign(parsed_name, parsed_info):
+            # This parse reads the MERGED stderr.log and selects whichever record
+            # the runner concatenated first, so it can select a benign allocator
+            # record. Appending it unfiltered would emit a FAIL sub-result - hence
+            # a CIDB test_name row - for something the per-report pass already
+            # classified as benign, and one the name-based dedupe below cannot
+            # remove because a benign report normalizes to a different name. The
+            # per-report pass covers every record in the merged log, so dropping
+            # this row loses nothing.
+            logging.info(
+                "Merged-log parse selected a benign sanitizer record (%s), skipping it",
+                parsed_name,
+            )
+            parsed_name = ""
 
         if parsed_name:
             results.append(
@@ -602,7 +716,7 @@ def run_fuzz_job(check_name: str):
             )
 
     # Add the per-report findings on every path. This also covers the branch
-    # above: that single parse_failure() reads the MERGED stderr.log, into which
+    # above: that single `parse_failure` reads the MERGED stderr.log, into which
     # the runner concatenates every report in glob order, so a fatal OOM record
     # ordered first would be the only thing named even when a real finding
     # follows it. Dedupe by name so one finding is never reported twice.
@@ -611,6 +725,11 @@ def run_fuzz_job(check_name: str):
         if sub.name not in seen_names:
             seen_names.add(sub.name)
             results.append(sub)
+
+    # Built here rather than above so it also carries whatever the merged-log
+    # parse failed on.
+    if parse_failures:
+        results.append(_parse_failure_result(parse_failures))
 
     result = Result.create_from(
         results=extra_results + results,

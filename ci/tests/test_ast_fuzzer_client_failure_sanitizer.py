@@ -30,7 +30,11 @@ container run and the ownership fix are stubbed; nothing else is) and pin:
   - an upstream ERROR is not downgraded to FAIL by the added sub-results, and
     BuzzHouse's own diagnostic is preserved,
   - a missing/malformed status.tsv still names the report (that path ends in
-    complete_job(), which sys.exit()s),
+    `complete_job`, which calls `sys.exit`),
+  - a report that cannot be classified at all fails CLOSED with its own named
+    sub-result instead of leaving the run green,
+  - the merged-log parse, which selects whichever record was concatenated first,
+    does not emit a FAIL row for a record the per-report pass calls benign,
   - stale state from a previous run - status.tsv above all - is removed before
     the container runs, fail-closed.
 """
@@ -81,7 +85,8 @@ BENIGN_ALLOC_REPORT = (
     "==500==WARNING: MemorySanitizer failed to allocate 0x100000000 bytes\n"
 )
 
-# A FATAL allocator report does have the colon, and Die()s, so nothing follows it.
+# A FATAL allocator report does have the colon, and calls `Die`, so nothing
+# follows it.
 FATAL_OOM_REPORT = textwrap.dedent("""\
     ==501==ERROR: MemorySanitizer: out-of-memory: allocator is trying to allocate 0x10000000000 bytes
         #0 0x1 in DB::hugeAlloc() src/Alloc.cpp:7:3
@@ -227,12 +232,18 @@ def run_job(tmp_path, monkeypatch):
         check_name="AST fuzzer (amd_msan)",
         stale=(),
         keep_preseeded=True,
+        after_seed=None,
     ):
         """Seed the workspace as the runner would have left it, then classify.
 
         `stale` seeds files BEFORE the (stubbed) container runs, i.e. leftovers of
         a previous run, and disables the keep-preseeded opt-in so the production
         cleanup really runs.
+
+        `after_seed` runs once the workspace is written and stands in for whatever
+        the real environment did to the artifacts after the container exited - the
+        ownership repair at the end of `run_fuzz_job` is what can leave a report
+        unreadable.
         """
         _Info.job_name = check_name
         for name, text in stale:
@@ -247,6 +258,8 @@ def run_job(tmp_path, monkeypatch):
             # the cleanup cannot delete it; wrap Shell.check to do it there.
             def _seed():
                 _write_run_output(status_tsv, reports, server_log, fuzzer_log)
+                if after_seed is not None:
+                    after_seed()
 
             monkeypatch.setattr(
                 _Shell,
@@ -261,6 +274,8 @@ def run_job(tmp_path, monkeypatch):
             )
         if keep_preseeded:
             _write_run_output(status_tsv, reports, server_log, fuzzer_log)
+            if after_seed is not None:
+                after_seed()
         try:
             job.run_fuzz_job(check_name)
         except _JobCompleted as done:
@@ -542,12 +557,20 @@ def test_report_with_clean_fuzzer_exit_is_still_red(run_job, exit_code):
     assert "server.log" in attached, attached
 
 
-# 17. An OOM record ordered FIRST in the merged log must not be the only name.
-def test_oom_record_first_does_not_hide_the_real_finding(run_job):
+# 17. An OOM record ordered FIRST in the merged log must not be the only name -
+#     and must not add a name of its own. The merged-log parse selects whichever
+#     record the runner concatenated first; a benign selection there would emit a
+#     FAIL sub-result, hence a CIDB test_name row, for something already
+#     classified as benign, and the name-based dedupe cannot remove it because a
+#     benign record normalizes to a DIFFERENT name (the bare tool name).
+@pytest.mark.parametrize(
+    "benign_report", [FATAL_OOM_REPORT, BENIGN_ALLOC_REPORT], ids=["fatal", "warning"]
+)
+def test_oom_record_first_does_not_hide_the_real_finding(run_job, benign_report):
     result = run_job(
         status_tsv="1\t0\t0",
         reports=(
-            ("sanitizer.log.501", FATAL_OOM_REPORT),
+            ("sanitizer.log.501", benign_report),
             ("sanitizer.log.914", MSAN_UAF_REPORT),
         ),
     )
@@ -555,6 +578,8 @@ def test_oom_record_first_does_not_hide_the_real_finding(run_job):
     real = [n for n in named if "use-of-uninitialized-value" in n]
     assert real, _names(result)
     assert len(real) == 1, f"finding reported more than once: {named}"
+    # EXACT set: no extra sanitizer row for the benign record.
+    assert set(named) == set(real), f"benign record named too: {named}"
     assert result.status != Result.Status.OK
 
 
@@ -589,8 +614,8 @@ def test_clean_stale_run_state_keeps_preseeded_input(run_job, monkeypatch):
     assert seeded.exists()
 
 
-# 19. Missing / malformed status.tsv: that path ends in complete_job(), which
-#     sys.exit()s, so the finding has to be named BEFORE it.
+# 19. Missing / malformed status.tsv: that path ends in `complete_job`, which
+#     calls `sys.exit`, so the finding has to be named BEFORE it.
 @pytest.mark.parametrize("status_tsv", [None, "not-a-status-line"])
 def test_early_abort_still_names_the_report(run_job, status_tsv):
     result = run_job(
@@ -601,6 +626,145 @@ def test_early_abort_still_names_the_report(run_job, status_tsv):
     assert len(named) == 1, _names(result)
     assert "use-of-uninitialized-value" in named[0]
     assert any("sanitizer.log.914" in str(f) for f in result.files), result.files
+
+
+# ---------------------------------------------------------------------------
+# 20. A report the parser cannot classify must fail CLOSED. Swallowing the parse
+#     error would leave the run green on an unexamined report, which is exactly
+#     the hidden-finding outcome this classification exists to prevent. There are
+#     two distinct ways it happens and each needs its own case: the parser raises,
+#     and the report cannot be READ (which returns UNKNOWN_ERROR without raising).
+def _assert_parse_failure_is_reported(result, report_name):
+    assert result.status != Result.Status.OK, result.info
+    named = _names(result)
+    assert job.SANITIZER_PARSE_FAILURE_NAME in named, named
+    sub = next(r for r in result.results if r.name == job.SANITIZER_PARSE_FAILURE_NAME)
+    assert sub.status == Result.Status.FAIL
+    assert report_name in sub.info, sub.info
+    assert any(report_name in str(f) for f in sub.files), sub.files
+    # The run must also be marked FAILED, not merely reported red. A red verdict
+    # is DERIVED from the FAIL sub-result by `create_from` regardless, so the
+    # status cannot witness the is_failed force - the ARTIFACT UPLOAD is what it
+    # actually gates, and a named failure with nothing attached is not
+    # investigable.
+    attached = {os.path.basename(str(f)) for f in result.files}
+    assert report_name in attached, attached
+    assert "server.log" in attached, attached
+
+
+def test_parser_exception_does_not_leave_the_run_green(run_job, monkeypatch):
+    def _raise(self):
+        raise RuntimeError("command failed with, exit_code 127")
+
+    monkeypatch.setattr(job.FuzzerLogParser, "parse_failure", _raise)
+    result = run_job(
+        status_tsv="0\t0\t0", reports=(("sanitizer.log.914", MSAN_UAF_REPORT),)
+    )
+    _assert_parse_failure_is_reported(result, "sanitizer.log.914")
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="root bypasses file permissions, so chmod 000 is not enforced"
+)
+@pytest.mark.parametrize("status_tsv", ["0\t0\t0", "0\t0\t143"])
+def test_unreadable_report_does_not_leave_the_run_green(run_job, status_tsv):
+    # The container runs as root and the reports are chown'd afterwards, so an
+    # unreadable report is a plausible CI state, not a synthetic one.
+    report = run_job.workspace / "sanitizer.log.914"
+
+    def _make_unreadable():
+        report.chmod(0)
+
+    try:
+        result = run_job(
+            status_tsv=status_tsv,
+            reports=(("sanitizer.log.914", MSAN_UAF_REPORT),),
+            after_seed=_make_unreadable,
+        )
+    finally:
+        if report.exists():
+            report.chmod(0o644)
+    _assert_parse_failure_is_reported(result, "sanitizer.log.914")
+
+
+# 21. An unclassifiable report also vetoes the sanitized-build OOM leniency: it
+#     may BE the real finding the leniency would forgive.
+@pytest.mark.skipif(
+    os.geteuid() == 0, reason="root bypasses file permissions, so chmod 000 is not enforced"
+)
+def test_unreadable_report_vetoes_the_oom_leniency(run_job):
+    report = run_job.workspace / "sanitizer.log.914"
+
+    def _make_unreadable():
+        report.chmod(0)
+
+    try:
+        result = run_job(
+            status_tsv="1\t0\t0",
+            reports=(
+                ("sanitizer.log.500", BENIGN_ALLOC_REPORT),
+                ("sanitizer.log.914", MSAN_UAF_REPORT),
+            ),
+            after_seed=_make_unreadable,
+        )
+    finally:
+        if report.exists():
+            report.chmod(0o644)
+    assert result.status != Result.Status.OK
+    assert "considered passed" not in result.info
+    _assert_parse_failure_is_reported(result, "sanitizer.log.914")
+
+
+# 22. The watchdog's "terminated by signal 9" matches the same OOM pattern but is
+#     NOT a sanitizer record: no sanitizer.log.* holds it, so the per-report pass
+#     cannot name it and the merged-log filter must not drop it - otherwise a dead
+#     server would produce no named row at all. Scoping the filter to sanitizer
+#     records is what keeps this row. A NON-sanitized build is used because on a
+#     sanitized one that same grep triggers the OOM leniency before the merged
+#     parse is ever reached (pre-existing behavior, unchanged here).
+def test_signal_9_row_survives_the_merged_log_filter(run_job):
+    result = run_job(
+        status_tsv="1\t0\t0",
+        reports=(),
+        server_log="2026.07.21 10:00:00.000000 [ 1 ] {} <Fatal> Application: Child process was terminated by signal 9\n",
+        check_name="AST fuzzer (amd_debug)",
+    )
+    assert any("signal 9" in n for n in _names(result)), _names(result)
+
+
+# 23. The merged-log filter is scoped to SANITIZER records, asserted directly on
+#     the predicate. `SANITIZER_OOM_PATTERN` has a non-sanitizer alternative (the
+#     watchdog's "terminated by signal 9"), which no sanitizer.log.* holds and the
+#     per-report pass therefore cannot name - so an UNSCOPED filter would drop the
+#     only row a kernel-OOM-killed server produces. Pinned here rather than end to
+#     end because for the log-prefixed spelling `parse_failure` truncates the
+#     diagnostic to empty (its own bound, not touched by this change), so no
+#     end-to-end fixture can currently distinguish the two variants.
+@pytest.mark.parametrize(
+    "name,info,expected",
+    [
+        # Non-sanitizer record: must keep its row.
+        (
+            "Child process was terminated by signal 9 (KILL) (STID: abcd-1234)",
+            "Error:\nChild process was terminated by signal 9 (KILL)\n",
+            False,
+        ),
+        # Benign sanitizer record: the per-report pass covers it, so drop the row.
+        (
+            "MemorySanitizer (STID: abcd-1234)",
+            "Error:\n" + BENIGN_ALLOC_REPORT,
+            True,
+        ),
+        # Real finding: never dropped.
+        (
+            "MemorySanitizer: use-of-uninitialized-value (STID: abcd-1234)",
+            "Error:\n==914==WARNING: MemorySanitizer: use-of-uninitialized-value\n",
+            False,
+        ),
+    ],
+)
+def test_merged_log_filter_is_scoped_to_sanitizer_records(name, info, expected):
+    assert job._merged_row_is_benign(name, info) is expected
 
 
 # ---------------------------------------------------------------------------
