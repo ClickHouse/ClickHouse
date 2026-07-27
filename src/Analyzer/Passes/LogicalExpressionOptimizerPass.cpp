@@ -2169,8 +2169,11 @@ private:
                 return;
 
             auto * argument_function = argument->as<FunctionNode>();
+            /// `notEquals` never forms a chain edge (it matches no branch below), but it must seed
+            /// the conflict map: a derived conjunct contradicting it (e.g. `x = 3` derived against
+            /// `x != 3`) has to stay plain so the next pass folds the AND to `false`.
             const auto valid_functions = std::unordered_set<std::string>{
-                "less", "greater", "lessOrEquals", "greaterOrEquals", "equals"};
+                "less", "greater", "lessOrEquals", "greaterOrEquals", "equals", "notEquals"};
             if (!argument_function || !valid_functions.contains(argument_function->getFunctionName()))
                 continue;
 

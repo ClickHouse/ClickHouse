@@ -66,4 +66,8 @@ TEST(OptimizeAndCompareChain, compare)
 
     /// A contradicting derived comparison is added plain, so the AND still folds to `false`.
     test_f("a < b AND b < 5 AND a > 10", "false");
+    /// `notEquals` seeds the conflict map too: a derived equality contradicting it stays plain.
+    test_f("a = b AND b = 5 AND a != 5", "false");
+    /// A non-contradicting `notEquals` seed does not block the derivation.
+    test_f("a = b AND b = 5 AND a != 3", "(a = b) AND (b = 5) AND (a != 3) AND indexHint(a = 5)");
 }

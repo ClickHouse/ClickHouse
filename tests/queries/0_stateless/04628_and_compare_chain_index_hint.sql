@@ -35,4 +35,10 @@ SELECT count() FROM t_chain_hint WHERE a < b AND b < 5 AND a > 10;
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a < b AND b < 5 AND a > 10)
     WHERE explain LIKE '%function_name: indexHint%';
 
+-- A derived equality contradicting a `!=` conjunct also stays plain and folds the AND.
+SELECT 'not_equals_contradiction';
+SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND a != 5;
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_chain_hint WHERE a = b AND b = 5 AND a != 5)
+    WHERE explain LIKE '%function_name: indexHint%';
+
 DROP TABLE t_chain_hint;
