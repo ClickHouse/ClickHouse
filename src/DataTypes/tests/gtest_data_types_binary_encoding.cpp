@@ -20,6 +20,12 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <base/scope_guard.h>
+#include <Common/CurrentThread.h>
+#include <Common/QueryScope.h>
+#include <Common/ThreadStatus.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
 using namespace DB;
@@ -129,4 +135,38 @@ GTEST_TEST(DataTypesBinaryEncoding, EncodeAndDecode)
     check(DataTypeFactory::instance().get("JSON"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10)"));
     check(DataTypeFactory::instance().get("JSON(max_dynamic_paths=10, max_dynamic_types=10, a.b.c UInt32, SKIP a.c, b.g String, SKIP l.d.f)"));
+}
+
+/// `Variant(Int64, Float64)` has no lossless numeric supertype, so resolving `sum` over it needs the lossy `Float64`
+/// promotion, which a query opts into with `allow_lossy_numeric_supertype`. A declared aggregate state type must be
+/// decodable regardless of that setting, otherwise data written with the setting enabled becomes unreadable.
+GTEST_TEST(DataTypesBinaryEncoding, DeclaredAggregateStateTypeWithVariantIsSettingIndependent)
+{
+    tryRegisterAggregateFunctions();
+
+    /// Build the type without a query context, the same way the binary encoding of an existing column is produced.
+    auto type = DataTypeFactory::instance().get("AggregateFunction(sum, Variant(Int64, Float64))");
+    WriteBufferFromOwnString ostr;
+    encodeDataType(type, ostr);
+
+    /// Reset `current_thread` to avoid conflicts of `ThreadStatus` with `MainThreadStatus`.
+    auto * previous_thread = current_thread;
+    current_thread = nullptr;
+    SCOPE_EXIT({ current_thread = previous_thread; });
+
+    ThreadStatus thread_status;
+    auto query_context = Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("gtest_data_types_binary_encoding");
+    query_context->setSetting("allow_lossy_numeric_supertype", false);
+    auto query_scope_holder = QueryScope::create(query_context);
+
+    ReadBufferFromString istr(ostr.str());
+    DataTypePtr decoded_type = decodeDataType(istr);
+    ASSERT_TRUE(istr.eof());
+    ASSERT_EQ(type->getName(), decoded_type->getName());
+    ASSERT_TRUE(type->equals(*decoded_type));
+
+    /// Parsing the declared type from its textual form is setting-independent as well.
+    ASSERT_EQ(DataTypeFactory::instance().get("AggregateFunction(sum, Variant(Int64, Float64))")->getName(), type->getName());
 }
