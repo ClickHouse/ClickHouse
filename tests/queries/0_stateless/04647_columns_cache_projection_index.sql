@@ -29,9 +29,11 @@ INSERT INTO t_cc_proj_index SELECT number, if(number < 8, 'eu', 'us'), toString(
 OPTIMIZE TABLE t_cc_proj_index FINAL;
 
 -- Guard against the test going vacuous: the projection index must really be read.
-SELECT trimLeft(explain)
+-- Only the presence of the line is asserted, because its indentation differs between
+-- read variants (with parallel replicas the remote plan is drawn inside a box).
+SELECT count() > 0
 FROM (EXPLAIN projections = 1 SELECT count(), sum(id) FROM t_cc_proj_index WHERE region = 'eu')
-WHERE explain LIKE '%Description%';
+WHERE explain LIKE '%Projection has been analyzed and will be applied during reading%';
 
 SYSTEM DROP COLUMNS CACHE;
 
