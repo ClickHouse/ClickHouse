@@ -36,6 +36,7 @@ using namespace DB;
 
 namespace DB::ServerSetting
 {
+    extern const ServerSettingsUInt64 max_query_plan_serialization_version;
     extern const ServerSettingsUInt64 max_serialized_query_plan_size;
 }
 
@@ -393,6 +394,33 @@ TEST(QueryPlanSerialization, EnvelopeIsCopiedWhenTheStreamIsNotFullyBuffered)
     auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
     auto restored = QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
     EXPECT_EQ(serializePlan(restored), bytes);
+}
+
+TEST(QueryPlanSerialization, WriterVersionCanBeHeldBack)
+{
+    registerStepsOnce();
+    auto plan = makeSourcePlan();
+
+    /// Server settings live in the shared context, so the old value has to come back.
+    const UInt64 old_clamp = getContext().context->getServerSettings()[ServerSetting::max_query_plan_serialization_version];
+    SCOPE_EXIT({ getContext().context->setServerSetting("max_query_plan_serialization_version", old_clamp); });
+
+    /// Held at 3, the writer emits the legacy stream even though it can write the current version,
+    /// and even for a peer that could read the newer one.
+    getContext().context->setServerSetting("max_query_plan_serialization_version", UInt64(3));
+    const std::string held = serializePlan(plan, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    ASSERT_FALSE(held.empty());
+    EXPECT_EQ(static_cast<UInt8>(held[0]), 3);
+    EXPECT_EQ(debugExplainPlan(deserializePlan(held)), debugExplainPlan(plan));
+
+    /// The cache is keyed by the version actually written, so a held-back sender does not serve
+    /// bytes cached before the clamp was applied.
+    plan.ensureSerialized(DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_EQ(static_cast<UInt8>(cachedPlanBytes(plan, DBMS_QUERY_PLAN_SERIALIZATION_VERSION)[0]), 3);
+
+    getContext().context->setServerSetting("max_query_plan_serialization_version", UInt64(0));
+    const std::string current = serializePlan(plan, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    EXPECT_EQ(static_cast<UInt8>(current[0]), DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
 }
 
 TEST(QueryPlanSerialization, EnvelopeSizeLimitComesFromTheServerSetting)

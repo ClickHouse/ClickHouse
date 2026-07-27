@@ -24,6 +24,7 @@ namespace DB
 
 namespace ServerSetting
 {
+    extern const ServerSettingsUInt64 max_query_plan_serialization_version;
     extern const ServerSettingsUInt64 max_serialized_query_plan_size;
 }
 
@@ -86,9 +87,21 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 /// stream clamped down to what they can parse.
 static UInt64 effectiveSerializationVersion(size_t max_supported_version)
 {
+    UInt64 writer_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+
+    /// An operator can hold writers at an older version while a fleet is mixed, so a plan the
+    /// not-yet-upgraded servers cannot read is never written. A missing global context means there
+    /// is no configuration to read, as in unit tests.
+    if (auto global_context = Context::getGlobalContextInstance())
+    {
+        UInt64 clamp = global_context->getServerSettings()[ServerSetting::max_query_plan_serialization_version];
+        if (clamp != 0)
+            writer_version = std::min(writer_version, clamp);
+    }
+
     if (max_supported_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
-        return DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
-    return std::min<UInt64>(max_supported_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+        return writer_version;
+    return std::min<UInt64>(max_supported_version, writer_version);
 }
 
 void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const

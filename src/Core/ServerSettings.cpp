@@ -1386,6 +1386,21 @@ Disabled by default to avoid possible security issues which can be caused by bug
 <process_query_plan_packet>true</process_query_plan_packet>
 ```
 )", 0) \
+    DECLARE(UInt64, max_query_plan_serialization_version, 0, R"(
+Holds this server's query plan writers at an older serialization version. `0`, the default, writes
+the newest version the server has.
+
+Use it while a fleet is being upgraded and a newer version would carry something the not-yet-upgraded
+servers cannot read: with the clamp in place those plans are never written, instead of being written
+and rejected. Remove it once every server is upgraded. It also lets one binary produce older plans
+in tests.
+
+**Example**
+
+```xml
+<max_query_plan_serialization_version>4</max_query_plan_serialization_version>
+```
+)", 0) \
     DECLARE(UInt64, max_serialized_query_plan_size, 2_GiB, R"(
 The maximum size in bytes of a serialized query plan this server accepts in a QueryPlan packet.
 
