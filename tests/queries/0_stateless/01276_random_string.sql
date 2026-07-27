@@ -1,1 +1,1 @@
-SELECT DISTINCT c > 30000 FROM (SELECT arrayJoin(arrayMap(x -> reinterpretAsUInt8(substring(randomString(100), x + 1, 1)), range(100))) AS byte, count() AS c FROM numbers(100000) GROUP BY byte ORDER BY byte);
+SELECT DISTINCT c > 30000 FROM (SELECT arrayJoin(reinterpret(randomString(100), 'Array(UInt8)')) AS byte, count() AS c FROM numbers(100000) GROUP BY byte ORDER BY byte);
