@@ -10,11 +10,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Part 2/4 of the Iceberg write/mutation/compaction schema-drift guard regression
+# Part 2/5 of the Iceberg write/mutation/compaction schema-drift guard regression
 # (issues #109835 / #109838): UPDATE/DELETE mutation (Mutations.cpp).
 # Part 1 (INSERT sink) lives in 04365_iceberg_write_schema_drift_guards_insert_109838.sh.
-# Part 3 (OPTIMIZE compaction) lives in 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
-# Part 4 (metadata edge cases) lives in 04372_iceberg_write_schema_drift_guards_metadata_109838.sh.
+# Part 3 (OPTIMIZE compaction - schema/field-id drift) lives in
+# 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
+# Part 4 (OPTIMIZE compaction - spec/leak/evolution) lives in
+# 04372_iceberg_write_schema_drift_guards_compaction_spec_109838.sh.
+# Part 5 (metadata edge cases) lives in 04373_iceberg_write_schema_drift_guards_metadata_109838.sh.
 # The Iceberg write paths map input block columns positionally onto schema fields, so a stale
 # attached table or malformed metadata could abort the server (field_ids[] out of bounds) or
 # silently commit data files with the wrong names/types/field-ids. Each scenario asserts a clean
@@ -47,8 +50,10 @@ publish_next_metadata() {
 
 # --- UPDATE same-width rename drift: rejected -------------------------------------------------
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2;
+INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3);
+"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata rename_c0_to_c9_new_schema <<'PY'
 import json, os, sys
@@ -70,8 +75,10 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_
 # --- DELETE same-width rename drift: rejected ------------------------------------------------
 # A partitioned DELETE builds ChunkPartitioner from the current schema against the stale header.
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0) SETTINGS iceberg_format_version=2"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0) SETTINGS iceberg_format_version=2;
+INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3);
+"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata rename_c1_to_c9_new_schema <<'PY'
 import json, os, sys
@@ -92,8 +99,10 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_
 
 # --- UPDATE on a malformed table (current-schema-id resolves to no schema): rejected ----------
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2;
+INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3);
+"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata current_schema_id_absent <<'PY'
 import json, os, sys
@@ -109,10 +118,12 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_
 
 # --- UPDATE without drift: still works --------------------------------------------------------
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} UPDATE c1 = 'y' WHERE c0 = 1"
-${CLICKHOUSE_CLIENT} --query "SELECT c0, c1 FROM ${TABLE} ORDER BY c0"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2;
+INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3);
+ALTER TABLE ${TABLE} UPDATE c1 = 'y' WHERE c0 = 1;
+SELECT c0, c1 FROM ${TABLE} ORDER BY c0;
+"
 
 # --- UPDATE across a same-layout partition-spec rebind: allowed ------------------------------
 # Another engine may republish the identical partition layout under a new spec-id. The mutation
@@ -121,8 +132,10 @@ ${CLICKHOUSE_CLIENT} --query "SELECT c0, c1 FROM ${TABLE} ORDER BY c0"
 # same fields, so position deletes still land in the right partitions. The UPDATE must succeed
 # and supersede the old row.
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c1) SETTINGS iceberg_format_version=2"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'a')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c1) SETTINGS iceberg_format_version=2;
+INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'a');
+"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata rebind_same_layout_new_spec_id <<'PY'
 import json, os, sys, glob, re
@@ -141,10 +154,11 @@ next_n = int(re.search(r'v(\d+)', os.path.basename(latest)).group(1)) + 1
 tmp = os.path.join(md, '.tmp_next'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, f'v{next_n}.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 \
-    --query "ALTER TABLE ${TABLE} UPDATE c0 = 99 WHERE c1 = 'b'"
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --query "SELECT c0, c1 FROM ${TABLE} ORDER BY c1, c0"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 --query "
+ALTER TABLE ${TABLE} UPDATE c0 = 99 WHERE c1 = 'b';
+SYSTEM DROP ICEBERG METADATA CACHE;
+SELECT c0, c1 FROM ${TABLE} ORDER BY c1, c0;
+"
 
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"

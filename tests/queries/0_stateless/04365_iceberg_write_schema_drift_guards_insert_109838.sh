@@ -6,11 +6,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Part 1/4 of the Iceberg write/mutation/compaction schema-drift guard regression
+# Part 1/5 of the Iceberg write/mutation/compaction schema-drift guard regression
 # (issues #109835 / #109838): INSERT sink column-count mismatch and same-width rename drift.
 # Part 2 (UPDATE/DELETE mutation) lives in 04369_iceberg_write_schema_drift_guards_mutation_109838.sh.
-# Part 3 (OPTIMIZE compaction) lives in 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
-# Part 4 (metadata edge cases) lives in 04372_iceberg_write_schema_drift_guards_metadata_109838.sh.
+# Part 3 (OPTIMIZE compaction - schema/field-id drift) lives in
+# 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
+# Part 4 (OPTIMIZE compaction - spec/leak/evolution) lives in
+# 04372_iceberg_write_schema_drift_guards_compaction_spec_109838.sh.
+# Part 5 (metadata edge cases) lives in 04373_iceberg_write_schema_drift_guards_metadata_109838.sh.
 # The Iceberg write paths map input block columns positionally onto schema fields, so a stale
 # attached table could abort the server (field_ids[] out of bounds) or silently commit data
 # files with the wrong names/types/field-ids. Each scenario asserts a clean query error, not an

@@ -10,12 +10,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Part 4/4 of the Iceberg write/mutation/compaction schema-drift guard regression
+# Part 5/5 of the Iceberg write/mutation/compaction schema-drift guard regression
 # (issues #109835 / #109838): first-load missing partition-spec, INSERT metadata-conflict
 # retry, and UPDATE across a partition-spec evolution.
 # Part 1 (INSERT sink) lives in 04365_iceberg_write_schema_drift_guards_insert_109838.sh.
 # Part 2 (UPDATE/DELETE mutation) lives in 04369_iceberg_write_schema_drift_guards_mutation_109838.sh.
-# Part 3 (OPTIMIZE compaction) lives in 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
+# Part 3 (OPTIMIZE compaction - schema/field-id drift) lives in
+# 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
+# Part 4 (OPTIMIZE compaction - spec/leak/evolution) lives in
+# 04372_iceberg_write_schema_drift_guards_compaction_spec_109838.sh.
 # Each scenario gets a fresh table name+path (see reset), removing cross-scenario cache coupling.
 
 _scenario=0
@@ -48,8 +51,10 @@ make_missing_spec_table() {
     reset
     # Unpinned: the write path loads the latest metadata version, so a crafted latest v3 whose
     # default-spec-id points at an absent partition-specs entry leaves partititon_spec null.
-    ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}')"
-    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 1, 'a'"
+    ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}');
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
     publish_next_metadata default_spec_id_absent <<'PY'
 import json, os, sys, glob, re
 md = sys.argv[1]
@@ -87,8 +92,10 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 \
 
 # --- retry: default-spec-id change (schema id unchanged) -> NOT_IMPLEMENTED --------------------
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json'"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 1, 'a'"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
 publish_next_metadata retry_default_spec_change <<'PY'
 import json, os, sys
 md = sys.argv[1]
@@ -100,14 +107,17 @@ m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
 tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 \
-    --query "INSERT INTO ${TABLE} SELECT 2, 'b'" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+INSERT INTO ${TABLE} SELECT 2, 'b';
+" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
 
 # --- retry: same-spec-id structural rebind -> NOT_IMPLEMENTED ----------------------------------
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY (c0) SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json'"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 1, 'a'"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY (c0) SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
 publish_next_metadata retry_same_spec_rebind <<'PY'
 import json, os, sys
 md = sys.argv[1]
@@ -122,14 +132,17 @@ m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
 tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 \
-    --query "INSERT INTO ${TABLE} SELECT 2, 'b'" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+INSERT INTO ${TABLE} SELECT 2, 'b';
+" 2>&1 | grep -oF "NOT_IMPLEMENTED" | head -1
 
 # --- retry: dropped partition-specs entry for current default-spec-id -> ICEBERG_SPEC_VIOLATION
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY (c0) SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json'"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 1, 'a'"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') PARTITION BY (c0) SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
 publish_next_metadata retry_drop_spec_entry <<'PY'
 import json, os, sys
 md = sys.argv[1]
@@ -140,14 +153,17 @@ m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
 tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 \
-    --query "INSERT INTO ${TABLE} SELECT 2, 'b'" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+INSERT INTO ${TABLE} SELECT 2, 'b';
+" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
 # --- retry: same-schema-id content rebind -> ICEBERG_SPECIFICATION_VIOLATION -------------------
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json'"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 1, 'a'"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
 publish_next_metadata retry_same_schema_id_rebind <<'PY'
 import json, os, sys
 md = sys.argv[1]
@@ -161,14 +177,17 @@ m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
 tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 \
-    --query "INSERT INTO ${TABLE} SELECT 2, 'b'" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+INSERT INTO ${TABLE} SELECT 2, 'b';
+" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 
 # --- retry: no semantics-affecting drift -> still succeeds -------------------------------------
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json'"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 1, 'a'"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}') SETTINGS iceberg_metadata_file_path='metadata/v1.metadata.json';
+INSERT INTO ${TABLE} SELECT 1, 'a';
+"
 publish_next_metadata retry_noop <<'PY'
 import json, os, sys
 md = sys.argv[1]
@@ -177,8 +196,10 @@ m['last-updated-ms'] = m.get('last-updated-ms', 0) + 60000
 tmp = os.path.join(md, '.tmp_v3'); json.dump(m, open(tmp, 'w'))
 os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT 2, 'b'" 2>&1 \
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+INSERT INTO ${TABLE} SELECT 2, 'b';
+" 2>&1 \
     | grep -qF "Exception" && echo "UNEXPECTED_ERROR" || echo "INSERT_OK"
 
 # ============================================================================================
@@ -188,8 +209,10 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INS
 # deletes are partitioned by the current spec, so they would never match rows written under the
 # old spec and would silently fail to supersede them (rare row duplication under the flaky check).
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c1)"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} VALUES (1, 'k'), (2, 'k'), (3, 'k')"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c1);
+INSERT INTO ${TABLE} VALUES (1, 'k'), (2, 'k'), (3, 'k');
+"
 publish_next_metadata evolve_spec_to_c0 <<'PY'
 import json, os, sys, glob, re
 md = sys.argv[1]
@@ -204,17 +227,21 @@ ver = int(re.search(r'v(\d+)', os.path.basename(f)).group(1))
 out = os.path.join(md, f'v{ver + 1}.metadata.json')
 tmp = os.path.join(md, '.tmp_next'); json.dump(m, open(tmp, 'w')); os.rename(tmp, out)
 PY
-${CLICKHOUSE_CLIENT} --query "SYSTEM DROP ICEBERG METADATA CACHE"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2, 3)" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
+SYSTEM DROP ICEBERG METADATA CACHE;
+ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2, 3);
+" 2>&1 | grep -oF "ICEBERG_SPECIFICATION_VIOLATION" | head -1
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
 
 # --- Sanity: a partitioned UPDATE spanning >1 partition (per-partition slicing) still works ----
 # Without per-partition slicing the mutated block would be written into every per-partition file.
 reset
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0)"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c')"
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2)"
-${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE}"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "
+CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0);
+INSERT INTO ${TABLE} VALUES (1, 'a'), (2, 'b'), (3, 'c');
+ALTER TABLE ${TABLE} UPDATE c1 = 'z' WHERE c0 IN (1, 2);
+SELECT count() FROM ${TABLE};
+"
 
 # The server must still be alive after all scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
