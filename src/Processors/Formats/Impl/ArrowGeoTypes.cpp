@@ -7,7 +7,7 @@
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Functions/geometryConverters.h>
-#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -144,7 +144,7 @@ inline bool readWKTEmptyToken(ReadBuffer & in_buffer)
         token.push_back(ch);
         in_buffer.ignore();
     }
-    if (boost::to_upper_copy(token) != "EMPTY")
+    if (!boost::iequals(token, "EMPTY"))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Error while reading WKT format: expected '(' or EMPTY, got {}", token);
     return true;
@@ -346,12 +346,10 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
         in_buffer.ignore();
     }
 
-    /// The keyword is matched case-insensitively, like readWKT (boost::geometry::read_wkt).
-    /// Diagnostics keep the original spelling.
-    const std::string upper_type = boost::to_upper_copy(type);
-
+    /// The keyword is matched case-insensitively with boost::iequals, like readWKT
+    /// (boost::geometry::read_wkt). Diagnostics keep the original spelling.
     GeometricObject result;
-    if (upper_type == "POINT")
+    if (boost::iequals(type, "POINT"))
     {
         /// A ClickHouse Point is Tuple(Float64, Float64) with no empty representation, so
         /// "POINT EMPTY" is rejected here as it is in readWKT (#110692). Report it explicitly
@@ -363,35 +361,35 @@ GeometricObject parseWKTFormat(ReadBuffer & in_buffer, bool precise_float_parsin
         readCloseBracket(in_buffer);
         result = point;
     }
-    else if (upper_type == "LINESTRING")
+    else if (boost::iequals(type, "LINESTRING"))
     {
         if (readWKTEmptyToken(in_buffer))
             result = LineString<CartesianPoint>{};
         else
             result = parseWKTLine(in_buffer, precise_float_parsing);
     }
-    else if (upper_type == "POLYGON")
+    else if (boost::iequals(type, "POLYGON"))
     {
         if (readWKTEmptyToken(in_buffer))
             result = Polygon<CartesianPoint>{};
         else
             result = parseWKTPolygon(in_buffer, precise_float_parsing);
     }
-    else if (upper_type == "MULTIPOINT")
+    else if (boost::iequals(type, "MULTIPOINT"))
     {
         if (readWKTEmptyToken(in_buffer))
             result = MultiPoint<CartesianPoint>{};
         else
             result = parseWKTMultiPoint(in_buffer, precise_float_parsing);
     }
-    else if (upper_type == "MULTILINESTRING")
+    else if (boost::iequals(type, "MULTILINESTRING"))
     {
         if (readWKTEmptyToken(in_buffer))
             result = MultiLineString<CartesianPoint>{};
         else
             result = parseWKTMultiLineString(in_buffer, precise_float_parsing);
     }
-    else if (upper_type == "MULTIPOLYGON")
+    else if (boost::iequals(type, "MULTIPOLYGON"))
     {
         if (readWKTEmptyToken(in_buffer))
             result = MultiPolygon<CartesianPoint>{};
