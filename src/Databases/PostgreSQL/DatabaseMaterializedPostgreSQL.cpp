@@ -814,7 +814,7 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](/reference/engines/database-engines/materialized-postgresql) database engine.
 
 Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
@@ -848,7 +848,7 @@ A user-created replication slot. Must be used together with `materialized_postgr
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](/reference/engines/database-engines/materialized-postgresql) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
 ```sql
 CREATE DATABASE database1

@@ -6,8 +6,8 @@ title: 'WebAssembly 用户自定义函数'
 doc_type: 'guide'
 ---
 
-import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse 支持创建以 WebAssembly 编写的用户自定义函数 (UDF) 。这样一来，你可以将 Rust、C、C++ 等语言编译为 WebAssembly 模块，并执行用这些语言编写的自定义逻辑。
 

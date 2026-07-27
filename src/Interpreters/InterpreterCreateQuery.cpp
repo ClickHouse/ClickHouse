@@ -581,14 +581,15 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
 {
     /// First, deduce implicit types.
 
     /** all default_expressions as a single expression list,
      *  mixed with conversion-columns for each explicitly specified type */
 
-    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
+    DefaultExpressionsInfo default_expr_info;
+    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
     NamesAndTypesList column_names_and_types;
 
     /// On a DDL worker (ON CLUSTER / Replicated database) the query was already normalized on the initiator.
@@ -626,7 +627,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     if (!default_expr_info.expr_list->children.empty()
         && (default_expr_info.has_columns_with_default_without_type || (mode <= LoadingStrictnessLevel::CREATE)))
     {
-        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_);
+        /// Ordinary views never evaluate column defaults over an insert block, so a default over a
+        /// virtual column is inert there and must not be rejected.
+        NameSet insert_time_default_columns;
+        if (check_defaults_over_virtual_columns)
+            insert_time_default_columns = default_expr_info.insert_time_default_columns;
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, column_names_and_types, context_, insert_time_default_columns);
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
@@ -773,7 +779,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         if (create.columns_list->columns)
         {
-            properties.columns = getColumnsDescription(*create.columns_list->columns, getContext(), mode, is_restore_from_backup);
+            /// An ordinary view and an external-target (`TO`) materialized view never evaluate their own
+            /// column defaults over an insert block (a `TO` MV forwards inserts to the target using the
+            /// target metadata), so a default over a virtual column is inert there and must not be rejected.
+            const bool check_defaults_over_virtual_columns
+                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
         }
 
         if (create.columns_list->indices)

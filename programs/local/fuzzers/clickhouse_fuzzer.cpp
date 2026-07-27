@@ -18,7 +18,7 @@
 #include <ctime>
 #include <pthread.h>
 #include <sanitizer/common_interface_defs.h>
-#include <sys/poll.h>
+#include <poll.h>
 #include <unistd.h>
 
 #include <new>

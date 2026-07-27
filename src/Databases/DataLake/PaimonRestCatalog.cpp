@@ -248,9 +248,10 @@ void PaimonRestCatalog::createAuthHeaders(
         String date_time = get_or_default(headers_map, DLF_DATE_HEADER_KEY, fmt::format(AUTH_DATE_TIME_FORMATTER, *utc_tm));
         String date = date_time.substr(0, 8);
         generate_sign_headers(data, date_time, std::nullopt);
-        String authorization
-            = token->dlf_generated_authorization.empty() ? get_authorization(date, date_time) : token->dlf_generated_authorization;
-        token->dlf_generated_authorization = authorization;
+        /// The DLF v4 signature covers the canonical request (method, resource path, query
+        /// parameters and signed headers), so it must be computed for every request anew:
+        /// a signature from an earlier request is invalid for any other one.
+        String authorization = get_authorization(date, date_time);
         headers_map.emplace(DLF_AUTHORIZATION_HEADER_KEY, authorization);
         current_headers.clear();
         for (const auto & entry : headers_map)
@@ -301,29 +302,8 @@ DB::ReadWriteBufferFromHTTPPtr PaimonRestCatalog::createReadBuffer(
             .create(credentials);
     };
 
-    bool refresh_token = true;
     LOG_TRACE(log, "Requesting endpoint: {}", endpoint);
-    try
-    {
-        DB::Exception::SuppressErrorCodesScope suppress_error_codes;
-        return create_buffer();
-    }
-    catch (DB::HTTPException & e)
-    {
-        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED && refresh_token && token->token_provider == "dlf")
-        {
-            refresh_token = false;
-            token->dlf_generated_authorization = "";
-            return create_buffer();
-        }
-        e.recordToSystemErrors();
-        throw;
-    }
-    catch (DB::Exception & e)
-    {
-        e.recordToSystemErrors();
-        throw;
-    }
+    return create_buffer();
 }
 
 void PaimonRestCatalog::forEachDatabase(DB::Strings & databases, StopCondition stop_condition, ExecuteFunc execute_func) const
