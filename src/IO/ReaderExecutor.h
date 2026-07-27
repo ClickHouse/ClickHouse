@@ -124,7 +124,6 @@ private:
             IncompleteConnections,
             CacheGetRequests,
             CachePopulateRequests,
-            SiblingDeferredBytes,   /// fetch bytes skipped: a sibling is downloading them
             SiblingWaits,           /// waits for a sibling downloading the window start
             WorkMicroseconds,
             DecryptMicroseconds,        /// time spent decrypting served payload

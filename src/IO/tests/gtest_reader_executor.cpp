@@ -42,7 +42,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
-    extern const Event ReaderExecutorSiblingDeferredBytes;
     extern const Event ReaderExecutorSiblingWaits;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorLongConnectionOpened;
@@ -583,63 +582,37 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
         << "warm read fetched from source -> a boundary block missed the cache";
 }
 
-TEST_F(ReaderExecutorTest, SiblingLedRangeDefersFetchUntilCached)
+TEST_F(ReaderExecutorTest, SiblingLedCellIsServedFromCacheAfterWait)
 {
-    /// A sibling downloads [512, 768) while we read. The first window is served only up to the
-    /// sibling range (the fetch is trimmed - those bytes are not fetched twice); once the
-    /// sibling's bytes land in the cache, the next window reads them from cache.
+    /// A sibling downloads the cell [512, 768), NOT at the file start. Serving block by block, the
+    /// scan reaches that cell, waits once (holding no claims), the sibling completes, and the
+    /// re-probe serves those bytes from cache — they are never fetched from source a second time.
     StoredObjects objects{makeFile("a.bin", 2048)};
     const size_t block = 256;
 
     auto state = std::make_shared<MockCacheState>(/*file_size=*/2048);
     state->addSibling(ByteRange{512, 256});
+    state->sibling_completes_on_wait = true;
     CacheChain chain;
     chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
 
     TestThreadGroup tg;
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
-        ReaderExecutor::Options{.window_size = 1024, .cache_chain = std::move(chain)});
+        ReaderExecutor::Options{.window_size = 4096, .cache_chain = std::move(chain)});
 
-    std::vector<char> out;
-    auto append = [&](ChainedBuffers && w)
-    {
-        while (!w.atEnd())
-        {
-            auto span = w.peek();
-            out.insert(out.end(), span.data, span.data + span.size);
-            w.advance(span.size);
-        }
-    };
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 2048u);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// Window 1: [0, 1024) wanted, trimmed at the sibling range -> [0, 512) served.
-    append(ex.readNextWindow());
-    EXPECT_EQ(out.size(), 512u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingDeferredBytes), 512u);
+    /// Exactly one wait (at the sibling cell); the sibling's 256 bytes never came from source.
+    ASSERT_EQ(state->waits.size(), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 2048u - 256u);
+    /// We never wrote the sibling's cell — it filled it.
     for (const auto & wr : state->writes)
         EXPECT_TRUE(wr.end() <= 512 || wr.offset >= 768)
-            << "a write touched the sibling-led range: [" << wr.offset << ", " << wr.end() << ")";
-
-    /// The sibling finishes: its bytes appear in the cache.
-    for (size_t i = 512; i < 768; ++i)
-        state->store[i] = static_cast<char>(patternByte(i));
-    state->resident.add(ByteRange{512, 256});
-
-    /// Window 2: the sibling's range is a hit at the window start - served from cache, no fetch.
-    append(ex.readNextWindow());
-    EXPECT_EQ(out.size(), 768u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u);
-
-    /// The tail is fetched normally and the whole stream is byte-correct.
-    const auto rest = drain(ex);
-    out.insert(out.end(), rest.begin(), rest.end());
-    ASSERT_EQ(out.size(), 2048u);
-    for (size_t i = 0; i < out.size(); ++i)
-        ASSERT_EQ(static_cast<unsigned char>(out[i]), patternByte(i)) << "at " << i;
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 512u + 1280u);
-    /// A mid-window sibling never triggers a wait.
-    EXPECT_TRUE(state->waits.empty());
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 0u);
+            << "a write touched the sibling-led cell: [" << wr.offset << ", " << wr.end() << ")";
 }
 
 TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsServedAfterWait)
@@ -692,11 +665,10 @@ TEST_F(ReaderExecutorTest, SiblingAtWindowStartIsFetchedThrough)
     for (size_t i = 0; i < data.size(); ++i)
         ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
 
-    /// One wait attempt, then one full fetch (no trim: the sibling range contains the start).
+    /// One wait attempt, then a fetch-through (the sibling range contains the start).
     ASSERT_EQ(state->waits.size(), 1u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingWaits), 1u);
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
-    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSiblingDeferredBytes), 0u);
     /// The sibling's block stayed theirs: not written, not resident.
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, 256u) << "wrote into the sibling-led block";

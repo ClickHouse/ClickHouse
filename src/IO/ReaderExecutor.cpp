@@ -16,7 +16,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorCacheGetRequests;
     extern const Event ReaderExecutorCachePopulateRequests;
-    extern const Event ReaderExecutorSiblingDeferredBytes;
     extern const Event ReaderExecutorSiblingWaits;
     extern const Event ReaderExecutorIncompleteConnections;
     extern const Event ReaderExecutorWorkMicroseconds;
@@ -95,9 +94,6 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case CachePopulateRequests:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 100 * value);
-            break;
-        case SiblingDeferredBytes:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorSiblingDeferredBytes, value);
             break;
         case SiblingWaits:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorSiblingWaits, value);
@@ -386,113 +382,82 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
 {
     chassert(!cache_chain.empty());
     const ByteRange window{window_offset, want};
-    const auto pieces = offset_map.map(window);
+    /// Resolve only the window START, block by block. Probe each tier there (front = fastest); the
+    /// first hit serves a block-sized slice straight from cache. If every tier misses, populate the
+    /// start cell of each writing tier and serve one block from the fetch. Coarse fetch, fine serve:
+    /// a miss fetches the whole aligned cell (the page tier needs the whole block; the disk tier
+    /// aligns), so the cell's tail primes the following windows as hits.
+    const auto start_piece = offset_map.map(ByteRange{window_offset, 1});
+    chassert(!start_piece.empty());
+    const StoredObject & object = start_piece.front().object;
+    const size_t object_file_offset = window_offset - start_piece.front().object_offset;
 
-    /// Walk each (tier, object-piece) one resolution at a time (a fresh cursor per walk): collect the
-    /// hit runs with their readers and the miss cells overlapping the window. The filesystem cache
-    /// keys per object; the page cache is file-level.
-    struct HitRun { CacheReaderPtr reader; ByteRange range; };
-    struct MissCell { ICacheProvider * cache; StoredObject object; size_t object_file_offset; ByteRange range; };
-    VectorWithMemoryTracking<HitRun> hits;
-    VectorWithMemoryTracking<MissCell> misses;
+    struct MissTier { ICacheProvider * cache; ByteRange cell; };
+    VectorWithMemoryTracking<MissTier> miss_tiers;
     for (auto & cache : cache_chain)
     {
-        size_t piece_start = window.offset;
-        for (const auto & pr : pieces)
+        stats.add(Stats::CacheGetRequests);
+        auto cursor = cache->probe();
+        auto r = cursor->lookAt(object, object_file_offset, window_offset);
+        if (r.kind == ICacheProvider::Resolution::Kind::Hit && r.reader)
         {
-            const size_t object_file_offset = piece_start - pr.object_offset;
-            const ByteRange piece{piece_start, pr.size};
-            stats.add(Stats::CacheGetRequests);
-            auto cursor = cache->probe();
-            size_t pos = piece.offset;
-            while (pos < piece.end())
-            {
-                auto r = cursor->lookAt(pr.object, object_file_offset, pos);
-                if (r.kind == ICacheProvider::Resolution::Kind::End)
-                    break;
-                if (r.kind == ICacheProvider::Resolution::Kind::Hit)
-                    hits.push_back(HitRun{std::move(r.reader), r.range});
-                else
-                    misses.push_back(MissCell{cache.get(), pr.object, object_file_offset, r.range});
-                pos = std::max(pos + 1, r.range.end());
-            }
-            piece_start += pr.size;
+            const size_t len = std::min({block_size, want, r.range.end() - window_offset});
+            return r.reader->read(ByteRange{window_offset, len});
         }
+        if (r.kind == ICacheProvider::Resolution::Kind::Miss)
+            miss_tiers.push_back(MissTier{cache.get(), r.range});
     }
 
-    /// Serve a hit at the window start (a short window is fine).
-    for (const auto & h : hits)
-        if (h.reader && h.range.offset <= window.offset && window.offset < h.range.end())
-            return h.reader->read(ByteRange{window.offset, std::min(h.range.end(), window.end()) - window.offset});
-
-    /// Fetch the miss expanded to whole cells, across the objects it spans.
-    size_t fetch_lo = window.offset;
-    size_t fetch_hi = window.end();
-    for (const auto & m : misses)
-        if (m.range.offset < window.end() && window.offset < m.range.end())
-        {
-            fetch_lo = std::min(fetch_lo, m.range.offset);
-            fetch_hi = std::max(fetch_hi, m.range.end());
-        }
-    if (!offset_map.hasUnknownSize())
-        fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
-
-    /// Claim the miss cells BEFORE the fetch and serve only up to the first range a sibling
-    /// already downloads: a later window reads it from cache instead of fetching it twice.
-    /// Greedy - never wait: a sibling range AT the window start is fetched through (its write
-    /// lands 0). Roles won past a trim are released unfilled when `claimed` goes out of scope.
-    struct ClaimedCell { CacheWriterPtr writer; ByteRange range; CacheWriter::FillClaim claim; };
-    VectorWithMemoryTracking<ClaimedCell> claimed;
-    for (const auto & m : misses)
+    /// Every tier missed. Open + claim the start cell of each writing tier BEFORE the fetch.
+    struct Claimed { CacheWriterPtr writer; ByteRange cell; CacheWriter::FillClaim claim; };
+    VectorWithMemoryTracking<Claimed> claimed;
+    for (const auto & m : miss_tiers)
     {
-        const size_t lo = std::max(m.range.offset, fetch_lo);
-        const size_t hi = std::min(m.range.end(), fetch_hi);
-        if (lo >= hi)
-            continue;
-        auto writer = m.cache->openWriter(m.object, m.object_file_offset, m.range);
+        auto writer = m.cache->openWriter(object, object_file_offset, m.cell);
         if (!writer)
-            continue;
-        const ByteRange cell{lo, hi - lo};
-        auto claim = writer->claim(cell);
-        claimed.push_back(ClaimedCell{std::move(writer), cell, std::move(claim)});
+            continue;  /// a bypass tier populates nothing
+        auto claim = writer->claim(m.cell);
+        claimed.push_back(Claimed{std::move(writer), m.cell, std::move(claim)});
     }
-    /// A sibling already downloads the very range the window starts in: wait for its first byte at
-    /// our position - holding NO claims, a bare waiter cannot be part of a hold-and-wait cycle -
-    /// then re-probe: the committed prefix is a hit, or the freed role becomes ours. One attempt;
-    /// if the sibling still leads the start afterwards, fetch through it (its write lands 0).
+
+    /// A sibling already downloads the window start: wait once for its first byte at our position -
+    /// holding NO claims, so a bare waiter is never part of a hold-and-wait cycle - then re-probe
+    /// (the committed prefix is a hit, or the freed role becomes ours). One attempt; a still-leading
+    /// sibling is fetched through below (its write lands 0).
     if (allow_sibling_wait)
-    {
         for (const auto & c : claimed)
-        {
             for (const auto & s : c.claim.sibling_led)
-            {
-                if (s.offset <= window.offset && window.offset < s.end())
+                if (s.offset <= window_offset && window_offset < s.end())
                 {
-                    CacheWriter * lead_writer = c.writer.get();
-                    claimed.clear();
+                    CacheWriter * lead = c.writer.get();
                     stats.add(Stats::SiblingWaits);
-                    lead_writer->waitAndReadSiblingLed(ByteRange{window.offset, 1});
+                    lead->waitAndReadSiblingLed(ByteRange{window_offset, 1});
+                    claimed.clear();
                     return serveThroughCaches(window_offset, want, /*allow_sibling_wait=*/false);
                 }
-            }
-        }
-    }
 
-    const size_t untrimmed_hi = fetch_hi;
+    /// No writing tier (all bypass): stream the window straight from source, no populate.
+    if (claimed.empty())
+        return readSource(window_offset, want).slice(window);
+
+    /// Fetch the whole start cells (across the objects they span), populate each, serve one block.
+    size_t fetch_lo = window_offset;
+    size_t fetch_hi = window_offset;
     for (const auto & c : claimed)
-        for (const auto & s : c.claim.sibling_led)
-            if (s.offset > window.offset && s.offset < fetch_hi)
-                fetch_hi = s.offset;
-    if (fetch_hi < untrimmed_hi)
-        stats.add(Stats::SiblingDeferredBytes, untrimmed_hi - fetch_hi);
+    {
+        fetch_lo = std::min(fetch_lo, c.cell.offset);
+        fetch_hi = std::max(fetch_hi, c.cell.end());
+    }
+    if (!offset_map.hasUnknownSize())
+        fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
 
     ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
 
     for (const auto & c : claimed)
     {
-        const size_t lo = std::max(c.range.offset, fetch_lo);
-        const size_t hi = std::min(c.range.end(), fetched_end);
+        const size_t lo = std::max(c.cell.offset, fetch_lo);
+        const size_t hi = std::min(c.cell.end(), fetched_end);
         if (lo >= hi)
             continue;
         /// From the whole file-level fetch, so a block straddling objects is covered.
@@ -503,7 +468,8 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
         c.writer->write(fetched.slice(write_range));
     }
 
-    return fetched.slice(window);
+    const size_t serve_len = std::min({block_size, want, fetched_end - window_offset});
+    return fetched.slice(ByteRange{window_offset, serve_len});
 }
 
 void ReaderExecutor::dropLongConnection()
