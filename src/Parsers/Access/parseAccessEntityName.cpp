@@ -23,7 +23,7 @@ String backQuoteAccessEntityNameIfNeed(const String & name)
     /// PARALLEL WITH are two tokens and so can never be a single bare identifier.
     auto equals_keyword = [&](Keyword keyword)
     {
-        return std::ranges::equal(name, toStringView(keyword), equalsCaseInsensitive);
+        return equalsCaseInsensitive(name, toStringView(keyword));
     };
 
     if (equals_keyword(Keyword::FORMAT) || equals_keyword(Keyword::SETTINGS))
