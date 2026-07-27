@@ -17,9 +17,10 @@ use std::future::Future;
 use std::os::raw::c_char;
 use std::pin::Pin;
 use std::ptr;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use tokio::runtime::{Builder as RuntimeBuilder, Runtime};
+use tokio::sync::Notify;
 use url::Url;
 
 /// Process-wide multi-thread Tokio runtime shared by all Lance FFI calls.
@@ -107,6 +108,7 @@ enum ChLanceErrorKind {
     VersionNotFound = 7,
     Storage = 8,
     Internal = 9,
+    Cancelled = 10,
 }
 
 #[repr(u32)]
@@ -180,10 +182,83 @@ pub struct ch_lance_dataset {
     origin: ChLanceErrorOrigin,
 }
 
-#[repr(C)]
+/// Cooperative cancel signal for a scan. Thread-safe: cancel may be requested from
+/// any thread while next_batch runs on the pipeline thread.
+struct ScanCancel {
+    cancelled: AtomicBool,
+    notify: Notify,
+}
+
+impl ScanCancel {
+    fn new() -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+            notify: Notify::new(),
+        }
+    }
+
+    fn cancel(&self) {
+        // Release store so a subsequent Acquire load in next_batch observes the flag.
+        self.cancelled.store(true, Ordering::Release);
+        self.notify.notify_waiters();
+    }
+
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+}
+
+type LanceBatchStream = Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>;
+
+/// Opaque to C; only ever manipulated via FFI entry points.
+///
+/// `stream` is behind a mutex so `ch_lance_cancel_scan` may run concurrently with
+/// `ch_lance_next_batch` without taking an exclusive borrow of the whole struct.
+/// Cancel only touches `cancel` (Arc atomics + Notify); stream drop on cancel happens
+/// inside `next_batch` (or `free_scan`) while the mutex is held.
+#[allow(non_camel_case_types)]
 pub struct ch_lance_scan {
-    stream: Pin<Box<dyn Stream<Item = lance::Result<arrow_array::RecordBatch>> + Send>>,
+    /// Taken (set to None) when cancelled or fully consumed so drop cancels Lance I/O queue.
+    stream: Mutex<Option<LanceBatchStream>>,
     origin: ChLanceErrorOrigin,
+    cancel: Arc<ScanCancel>,
+}
+
+/// Wait for the next stream item or cooperative cancellation.
+///
+/// On cancel, returns `Err` with Cancelled without dropping the stream; the caller must
+/// `take()` the stream while holding exclusive access to `ch_lance_scan`.
+async fn next_batch_or_cancel(
+    stream: &mut LanceBatchStream,
+    cancel: &ScanCancel,
+) -> Result<Option<lance::Result<arrow_array::RecordBatch>>, FfiError> {
+    loop {
+        if cancel.is_cancelled() {
+            return Err(FfiError::cancelled());
+        }
+
+        // Subscribe before re-checking the flag so a cancel between the check and
+        // select cannot be lost (standard Notify pattern).
+        let notified = cancel.notify.notified();
+        tokio::pin!(notified);
+
+        if cancel.is_cancelled() {
+            return Err(FfiError::cancelled());
+        }
+
+        tokio::select! {
+            biased;
+            _ = &mut notified => {
+                if cancel.is_cancelled() {
+                    return Err(FfiError::cancelled());
+                }
+                // Spurious wake: retry.
+            }
+            item = stream.next() => {
+                return Ok(item);
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -243,6 +318,14 @@ impl FfiError {
 
     fn internal(origin: ChLanceErrorOrigin, message: impl Into<String>) -> Self {
         Self::new(ChLanceErrorKind::Internal, origin, message)
+    }
+
+    fn cancelled() -> Self {
+        Self::new(
+            ChLanceErrorKind::Cancelled,
+            ChLanceErrorOrigin::Unknown,
+            "Lance scan was cancelled",
+        )
     }
 
     fn from_lance(
@@ -1156,8 +1239,9 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
 
     match stream_result {
         Ok(Ok(stream)) => Box::into_raw(Box::new(ch_lance_scan {
-            stream: Box::pin(stream),
+            stream: Mutex::new(Some(Box::pin(stream))),
             origin,
+            cancel: Arc::new(ScanCancel::new()),
         })),
         Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
@@ -1184,27 +1268,73 @@ pub unsafe extern "C" fn ch_lance_next_batch(
     }
     *has_batch = false;
 
-    let scan = &mut *scan;
+    // Shared borrow only: concurrent ch_lance_cancel_scan only touches Arc cancel state.
+    let scan = &*scan;
     LANCE_NEXT_BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
-    let next = match block_on_lance(scan.stream.as_mut().next()) {
-        Ok(next) => next,
+
+    let mut stream_guard = match scan.stream.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+
+    if scan.cancel.is_cancelled() {
+        // Drop stream so Lance ScanScheduler cancels queued I/O.
+        let _ = stream_guard.take();
+        set_error(error, FfiError::cancelled());
+        return false;
+    }
+
+    if stream_guard.is_none() {
+        // Already cancelled / EOF'd: surface cancel if requested, else EOF.
+        if scan.cancel.is_cancelled() {
+            set_error(error, FfiError::cancelled());
+            return false;
+        }
+        return true;
+    }
+
+    let cancel = Arc::clone(&scan.cancel);
+    let stream = stream_guard.as_mut().expect("stream checked above");
+    // Hold the mutex across block_on: only one next_batch at a time (pipeline serial),
+    // and cancel_scan never acquires this mutex.
+    let next = match block_on_lance(next_batch_or_cancel(stream, cancel.as_ref())) {
+        Ok(result) => result,
         Err(ffi_error) => {
             set_error(error, ffi_error);
             return false;
         }
     };
+
+    let next = match next {
+        Ok(item) => item,
+        Err(ffi_error) => {
+            // Cancelled while waiting: drop stream under the mutex.
+            let _ = stream_guard.take();
+            set_error(error, ffi_error);
+            return false;
+        }
+    };
+
     match next {
-        None => true,
-        Some(Ok(batch)) => match write_record_batch(batch, array, schema, scan.origin) {
-            Ok(()) => {
-                *has_batch = true;
-                true
+        None => {
+            // EOF: drop stream to release scheduler resources promptly.
+            let _ = stream_guard.take();
+            true
+        }
+        Some(Ok(batch)) => {
+            // Release the stream mutex before Arrow export (CPU work).
+            drop(stream_guard);
+            match write_record_batch(batch, array, schema, scan.origin) {
+                Ok(()) => {
+                    *has_batch = true;
+                    true
+                }
+                Err(ffi_error) => {
+                    set_error(error, ffi_error);
+                    false
+                }
             }
-            Err(ffi_error) => {
-                set_error(error, ffi_error);
-                false
-            }
-        },
+        }
         Some(Err(err)) => {
             set_error(
                 error,
@@ -1215,9 +1345,22 @@ pub unsafe extern "C" fn ch_lance_next_batch(
     }
 }
 
+/// Request cooperative cancellation. Thread-safe w.r.t. ch_lance_next_batch.
+/// Does not free the scan or drop the stream (that happens in next_batch / free_scan).
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_scan(scan: *mut ch_lance_scan) {
+    if scan.is_null() {
+        return;
+    }
+    // Shared borrow: only signals Arc cancel state; does not touch the stream mutex.
+    (*scan).cancel.cancel();
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn ch_lance_free_scan(scan: *mut ch_lance_scan) {
     if !scan.is_null() {
+        // Dropping the box drops the stream (if still present), which cancels queued I/O.
+        // Caller must ensure no concurrent next_batch (ClickHouse Scan lifetime).
         drop(Box::from_raw(scan));
     }
 }
@@ -1465,6 +1608,157 @@ mod tests {
             ch_lance_free_scan(scan);
             ch_lance_free_dataset(dataset);
         }
+    }
+
+    fn plan_full_scan(dataset: *mut ch_lance_dataset, version: u64, error: *mut ch_lance_error) -> *mut ch_lance_scan {
+        let column = CString::new("id").unwrap();
+        let projection_values = [column.as_ptr()];
+        let scan_options = ch_lance_scan_options {
+            version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
+        assert!(!scan.is_null());
+        scan
+    }
+
+    #[test]
+    fn ffi_cancel_before_next_returns_cancelled() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let scan = plan_full_scan(dataset, snapshot.version, addr_of_mut!(error));
+        unsafe { ch_lance_cancel_scan(scan) };
+
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut has_batch = false;
+        let ok = unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_schema),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert!(!has_batch);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(scan);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_cancel_after_partial_scan_returns_cancelled() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let scan = plan_full_scan(dataset, snapshot.version, addr_of_mut!(error));
+
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut has_batch = false;
+        assert!(unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_schema),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        });
+        assert!(has_batch);
+        // Release the imported batch so free is clean if any.
+        drop(unsafe { from_ffi(array, &batch_schema) }.unwrap());
+
+        unsafe { ch_lance_cancel_scan(scan) };
+
+        let mut array2 = FFI_ArrowArray::empty();
+        let mut batch_schema2 = FFI_ArrowSchema::empty();
+        let mut has_batch2 = false;
+        let ok = unsafe {
+            ch_lance_next_batch(
+                scan,
+                addr_of_mut!(array2),
+                addr_of_mut!(batch_schema2),
+                addr_of_mut!(has_batch2),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert!(!has_batch2);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+
+        // Double cancel + free must be safe.
+        unsafe {
+            ch_lance_cancel_scan(scan);
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(scan);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_cancel_wakes_pending_next_batch() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        // Synthetic stream that stays pending until dropped / cancelled via select.
+        let cancel = Arc::new(ScanCancel::new());
+        let cancel_for_thread = Arc::clone(&cancel);
+        let started = Arc::new(AtomicBool::new(false));
+        let started_flag = Arc::clone(&started);
+
+        let join = thread::spawn(move || {
+            let runtime = ensure_lance_runtime().expect("runtime");
+            runtime.block_on(async move {
+                let mut stream: LanceBatchStream = Box::pin(futures::stream::pending());
+                started_flag.store(true, Ordering::Release);
+                next_batch_or_cancel(&mut stream, cancel_for_thread.as_ref()).await
+            })
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !started.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "worker did not start");
+            thread::sleep(Duration::from_millis(1));
+        }
+        // Give the worker time to enter select!.
+        thread::sleep(Duration::from_millis(20));
+        let t0 = Instant::now();
+        cancel.cancel();
+        let result = join.join().expect("worker thread");
+        assert!(t0.elapsed() < Duration::from_secs(2), "cancel did not wake promptly");
+        let err = result.expect_err("expected cancel error");
+        assert_eq!(err.kind, ChLanceErrorKind::Cancelled);
     }
 
     #[test]

@@ -25,6 +25,8 @@ enum
     CH_LANCE_ERROR_VERSION_NOT_FOUND = 7,
     CH_LANCE_ERROR_STORAGE = 8,
     CH_LANCE_ERROR_INTERNAL = 9,
+    /// Cooperative cancellation requested via ch_lance_cancel_scan (or equivalent).
+    CH_LANCE_ERROR_CANCELLED = 10,
 };
 
 typedef uint32_t ch_lance_error_origin;
@@ -114,6 +116,11 @@ bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * h
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);
 bool ch_lance_next_batch(ch_lance_scan * scan, struct ArrowArray * array, struct ArrowSchema * schema, bool * has_batch, ch_lance_error * error);
+/// Thread-safe: request cooperative cancellation of a scan. Does not free the scan.
+/// Concurrent with ch_lance_next_batch: wakes a pending next and causes it to return CANCELLED.
+/// Safe to call multiple times. Does not race with ch_lance_free_scan if free happens only after
+/// next_batch has returned (ClickHouse guarantees this via Scan lifetime).
+void ch_lance_cancel_scan(ch_lance_scan * scan);
 void ch_lance_free_scan(ch_lance_scan * scan);
 
 void ch_lance_free_error(ch_lance_error * error);

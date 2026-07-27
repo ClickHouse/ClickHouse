@@ -41,6 +41,7 @@ extern const int CANNOT_OPEN_FILE;
 extern const int FILE_DOESNT_EXIST;
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
+extern const int QUERY_WAS_CANCELLED;
 extern const int S3_ERROR;
 extern const int UNKNOWN_EXCEPTION;
 }
@@ -80,6 +81,8 @@ int toClickHouseErrorCode(UInt32 kind, UInt32 origin)
             return ErrorCodes::UNKNOWN_EXCEPTION;
         case CH_LANCE_ERROR_INTERNAL:
             return ErrorCodes::UNKNOWN_EXCEPTION;
+        case CH_LANCE_ERROR_CANCELLED:
+            return ErrorCodes::QUERY_WAS_CANCELLED;
     }
     return ErrorCodes::UNKNOWN_EXCEPTION;
 }
@@ -116,7 +119,7 @@ LanceError takeError(ch_lance_error & error)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance FFI call failed without an error kind: {}", message);
 
     const auto code = ErrorMapping::toClickHouseErrorCode(lance_error.kind, lance_error.origin);
-    if (lance_error.kind > CH_LANCE_ERROR_INTERNAL)
+    if (lance_error.kind > CH_LANCE_ERROR_CANCELLED)
         throw Exception(code, "Unknown Lance FFI error kind {}: {}", lance_error.kind, message);
     throw Exception(code, "{}", message);
 }
@@ -371,6 +374,12 @@ Scan::~Scan()
 {
     if (scan)
         ch_lance_free_scan(scan);
+}
+
+void Scan::requestCancel() noexcept
+{
+    if (scan)
+        ch_lance_cancel_scan(scan);
 }
 
 std::shared_ptr<arrow::RecordBatch> Scan::nextBatch() const

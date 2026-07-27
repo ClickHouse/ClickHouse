@@ -114,6 +114,9 @@ public:
     Scan & operator=(Scan && other) noexcept;
     ~Scan();
 
+    /// Thread-safe cooperative cancel. Wakes a pending nextBatch; does not free the scan.
+    void requestCancel() noexcept;
+
     std::shared_ptr<arrow::RecordBatch> nextBatch() const;
 
 private:

@@ -22,6 +22,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int INCORRECT_DATA;
 extern const int LOGICAL_ERROR;
+extern const int QUERY_WAS_CANCELLED;
 extern const int UNKNOWN_EXCEPTION;
 }
 }
@@ -195,13 +196,25 @@ ReadSource::ReadSource(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lance ReadSource requires a non-empty DatasetHandle");
 }
 
+void ReadSource::onCancel() noexcept
+{
+    /// Thread-safe: only signals the Rust cancel token. Does not free the scan
+    /// (free happens in Scan destructor after generate has returned).
+    std::lock_guard lock(scan_mutex);
+    if (scan_handle)
+        scan_handle->requestCancel();
+}
+
 Chunk ReadSource::generate()
 {
-    if (is_finished)
+    if (is_finished || isCancelled())
         return {};
 
     if (scan.need_only_count && scan.projection.empty())
     {
+        if (isCancelled())
+            return {};
+
         const auto rows = scan.predicate ? dataset.countRows(scan.snapshot, scan.predicate) : dataset.totalRows(scan.snapshot);
         if (rows)
         {
@@ -211,14 +224,58 @@ Chunk ReadSource::generate()
     }
 
     if (!scan_handle)
-        scan_handle.emplace(dataset.planScan(scan));
+    {
+        if (isCancelled())
+            return {};
 
-    auto record_batch = scan_handle->nextBatch();
+        /// Plan outside the mutex so a concurrent cancel is not blocked on metadata I/O.
+        auto planned = dataset.planScan(scan);
+        {
+            std::lock_guard lock(scan_mutex);
+            if (!scan_handle)
+                scan_handle.emplace(std::move(planned));
+            if (isCancelled())
+            {
+                scan_handle->requestCancel();
+                return {};
+            }
+        }
+    }
+    else if (isCancelled())
+    {
+        std::lock_guard lock(scan_mutex);
+        if (scan_handle)
+            scan_handle->requestCancel();
+        return {};
+    }
+
+    std::shared_ptr<arrow::RecordBatch> record_batch;
+    try
+    {
+        /// nextBatch without scan_mutex: requestCancel is thread-safe on the Scan/FFI side.
+        /// scan_handle stays engaged until the source is destroyed (after generate returns).
+        record_batch = scan_handle->nextBatch();
+    }
+    catch (const Exception & e)
+    {
+        /// Cooperative cancel: finish the source without propagating an error so the
+        /// process-list cancel status remains the query outcome (same idea as object storage sources).
+        if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || isCancelled())
+        {
+            is_finished = true;
+            return {};
+        }
+        throw;
+    }
+
     if (!record_batch)
     {
         is_finished = true;
         return {};
     }
+
+    if (isCancelled())
+        return {};
 
     ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*record_batch);
 
