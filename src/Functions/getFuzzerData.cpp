@@ -37,11 +37,14 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// The result must not be a constant column: `fuzz_data` is process-local state, so folding
+    /// the call on the initiator of a distributed query would ship this node's fuzz payload to
+    /// every shard instead of letting each shard observe its own (same as `hasThreadFuzzer`).
     ColumnPtr executeImpl(const ColumnsWithTypeAndName &,
                           const DataTypePtr &,
                           size_t input_rows_count) const override
     {
-        return DataTypeString().createColumnConst(input_rows_count, fuzz_data);
+        return DataTypeString().createColumnConst(input_rows_count, fuzz_data)->convertToFullColumnIfConst();
     }
 
     [[maybe_unused]] static void update(const String & fuzz_data_)
