@@ -4,12 +4,12 @@ title: 'بدء استخدام ClickStack مفتوح المصدر'
 sidebarTitle: 'مفتوح المصدر'
 description: 'بدء استخدام ClickStack مفتوح المصدر'
 doc_type: 'guide'
-keywords: ['ClickStack Open Source', 'بدء الاستخدام', 'نشر Docker', 'واجهة HyperDX', 'نشر محلي']
+keywords: ['ClickStack مفتوح المصدر', 'بدء الاستخدام', 'نشر Docker', 'HyperDX UI', 'نشر محلي']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-لنشر **ClickStack Open Source**، حيث تتولى تشغيل ClickHouse وClickStack UI وإدارتهما بنفسك، نوفر صور Docker جاهزة تجمع واجهة المستخدم وOpenTelemetry Collector وClickHouse في حاوية واحدة، مما يجعل بدء التطوير المحلي والاختبار وعمليات النشر المُدارة ذاتيًا أمرًا سهلًا.
+لنشر **ClickStack مفتوح المصدر**، حيث تتولى تشغيل ClickHouse وClickStack UI وإدارتهما بنفسك، نوفر صور Docker جاهزة تجمع واجهة المستخدم وOpenTelemetry Collector وClickHouse في حاوية واحدة، مما يجعل بدء التطوير المحلي والاختبار وعمليات النشر المُدارة ذاتيًا أمرًا سهلًا.
 
 <Tip>
   تتوفر أيضًا نسخة مُدارة من ClickStack — راجع [Managed ClickStack](/ar/clickstack/getting-started/managed).
@@ -26,9 +26,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تتيح لك هذه الصورة المتكاملة تشغيل الحزمة بالكامل بأمر واحد، مما يجعلها مثالية للاختبار والتجربة أو لعمليات النشر المحلية السريعة.
 
 <Steps>
-  <Step>
-    ## انشر الحزمة باستخدام docker
-
+  <Step title="انشر الحزمة باستخدام docker" id="deploy-stack-with-docker">
     سيؤدي الأمر التالي إلى تشغيل OpenTelemetry Collector (على المنفذين 4317 و4318)، وHyperDX UI (على المنفذ 8080)، وClickHouse (على المنفذ 8123).
 
     ```shell
@@ -44,12 +42,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Tip>
       **الاحتفاظ بالبيانات والإعدادات**
 
-      للاحتفاظ بالبيانات والإعدادات عبر عمليات إعادة تشغيل الحاوية، يمكنك تعديل أمر docker أعلاه لتركيب المسارات `/data/db` و`/var/lib/clickhouse` و`/var/log/clickhouse-server`.
+      للاحتفاظ بالبيانات والإعدادات عبر عمليات إعادة تشغيل الحاوية، يمكنك تعديل أمر docker أعلاه لربط المسارات `/data/db` و`/var/lib/clickhouse` و`/var/log/clickhouse-server`.
 
       على سبيل المثال:
 
       ```shell
-      # عدّل الأمر لتركيب المسارات
+      # عدّل الأمر لربط المسارات
       docker run \
         --name clickstack \
         -p 8123:8123 \
@@ -64,21 +62,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     </Tip>
   </Step>
 
-  <Step>
-    ## انتقل إلى ClickStack UI
-
+  <Step title="انتقل إلى ClickStack UI" id="navigate-to-hyperdx-ui">
     زُر [http://localhost:8080](http://localhost:8080) للوصول إلى ClickStack UI ‏(HyperDX).
 
     أنشئ مستخدمًا بإدخال اسم مستخدم وكلمة مرور يستوفيان متطلبات التعقيد.
 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
 
-    سيتصل HyperDX تلقائيًا بالعنقود المحلي وينشئ مصادر البيانات الخاصة بالسجلات والتتبعات والمقاييس والجلسات، مما يتيح لك استكشاف المنتج فورًا.
+    سيتصل HyperDX تلقائيًا بالعنقود المحلي وينشئ مصادر بيانات للسجلات والتتبعات والمقاييس والجلسات، مما يتيح لك استكشاف المنتج فورًا.
   </Step>
 
-  <Step>
-    ## استكشف المنتج
-
+  <Step title="استكشف المنتج" id="explore-the-product">
     بعد نشر الحزمة، جرّب إحدى مجموعات البيانات التجريبية لدينا.
 
     لمتابعة استخدام العنقود المحلي:
@@ -90,7 +84,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     بدلاً من ذلك، يمكنك الاتصال بعنقود تجريبي حيث يمكنك استكشاف مجموعة بيانات أكبر:
 
-    * [Remote demo dataset](/ar/clickstack/example-datasets/remote-demo-data) - استكشف مجموعة بيانات تجريبية في ClickHouse service التجريبية الخاصة بنا.
+    * [Remote demo dataset](/ar/clickstack/example-datasets/remote-demo-data) - استكشف مجموعة بيانات تجريبية في خدمة ClickHouse التجريبية الخاصة بنا.
   </Step>
 </Steps>
 
@@ -114,16 +108,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### الإصدار المستضاف
 </div>
 
-يمكنك استخدام نسخة مستضافة من ClickStack في الوضع المحلي، وهي متاحة على [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+يمكنك استخدام نسخة مستضافة من ClickStack في الوضع المحلي والمتاحة على [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
 
 <div id="self-hosted-version">
   ### الإصدار المستضاف ذاتيًا
 </div>
 
 <Steps>
-  <Step>
-    ### التشغيل باستخدام Docker
-
+  <Step title="التشغيل باستخدام Docker" id="run-local-with-docker">
     تأتي صورة الوضع المحلي للإصدار المستضاف ذاتيًا مزوّدة مسبقًا بكلٍّ من OpenTelemetry Collector وClickStack UI وClickHouse server. وهذا يسهّل استقبال بيانات telemetry من تطبيقاتك وعرضها بأقل قدر من الإعدادات الخارجية. للبدء بالإصدار المستضاف ذاتيًا، ما عليك سوى تشغيل حاوية Docker مع إعادة توجيه المنافذ المناسبة:
 
     ```shell
@@ -133,10 +125,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     وعلى خلاف صورة &quot;All in one&quot;، لن يُطلب منك إنشاء مستخدم لأن **الوضع المحلي لا يتضمن مصادقة**.
   </Step>
 
-  <Step>
-    ### أكمل بيانات اعتماد الاتصال
-
-    للاتصال بـ **تجمّع ClickHouse خارجي** خاص بك، يمكنك إدخال بيانات اعتماد الاتصال يدويًا.
+  <Step title="أكمل بيانات اعتماد الاتصال" id="complete-connection-credentials">
+    للاتصال بـ **عنقود ClickHouse خارجي** خاص بك، يمكنك إدخال بيانات اعتماد الاتصال يدويًا.
 
     وبدلاً من ذلك، لاستكشاف المنتج بسرعة، يمكنك أيضًا النقر على **Connect to Demo Server** للوصول إلى مجموعات بيانات محمّلة مسبقًا وتجربة ClickStack من دون أي إعداد.
 
