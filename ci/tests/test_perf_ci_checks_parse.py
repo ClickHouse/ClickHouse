@@ -360,6 +360,21 @@ def test_import_of_a_truncated_file_warns_and_assigns_nothing(tmp_path, capsys):
     assert "is empty or truncated" in capsys.readouterr().out
 
 
+def test_import_of_an_absent_file_warns_and_assigns_nothing(tmp_path, capsys):
+    # This is the path the atomic publish takes on a failed write: upload_results
+    # deliberately leaves the final ci-checks.tsv missing rather than publishing
+    # a torn one, so an absent file is now an EXPECTED outcome rather than a
+    # freak one. An unguarded open() here raises FileNotFoundError out of main()
+    # before praktika uploads the artifacts - the shard-level ERROR with no
+    # report that this change exists to remove.
+    path = str(tmp_path / "ci-checks.tsv")
+    assert not os.path.exists(path)
+    target, results = _import_stub()
+    assert import_ci_checks_results(path, results) is False
+    assert target.results is _SENTINEL
+    assert "did not generate ci-checks.tsv" in capsys.readouterr().out
+
+
 def test_import_reports_malformed_rows_and_keeps_the_intact_ones(tmp_path, capsys):
     # A partially written file still imports its intact rows, but the drop has
     # to be visible in the log - otherwise the shard reports fewer queries than
@@ -388,14 +403,20 @@ def test_ci_checks_import_is_wired_into_main():
         "A bare next() on the file object raises StopIteration on an empty or "
         "header-only ci-checks.tsv, which is exactly the ENOSPC shape."
     )
-    assert 'Path(f"{perf_wd}/ci-checks.tsv").is_file()' in source, (
+    # The presence check and its warning live in the helper, not in main(), so
+    # that all three outcomes (absent / truncated / complete) are behaviourally
+    # testable. They are still asserted, just against the function that now owns
+    # them.
+    helper_source = inspect.getsource(performance_tests.import_ci_checks_results)
+    assert "Path(path).is_file()" in helper_source, (
         "A shard that died before compare.sh wrote ci-checks.tsv at all leaves "
-        "no file: the importer must stay behind the is_file() guard, or open() "
-        "raises FileNotFoundError and kills the job before the artifacts upload."
+        "no file: import_ci_checks_results() must keep its is_file() guard, or "
+        "open() raises FileNotFoundError and kills the job before the artifacts "
+        "upload."
     )
-    assert "did not generate ci-checks.tsv" in source, (
-        "The absent-file case must be reported too, otherwise the shard goes "
-        "red with no query rows and no explanation."
+    assert "did not generate ci-checks.tsv" in helper_source, (
+        "import_ci_checks_results() must report the absent-file case too, "
+        "otherwise the shard goes red with no query rows and no explanation."
     )
 
 

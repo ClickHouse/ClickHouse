@@ -21,6 +21,13 @@ leave the final path ABSENT, and a successful one must leave it complete.
 The `&&` chaining is what makes that hold: with errexit suppressed by the call
 site's `||:`, a separate `mv` statement on the next line would still run after a
 failed write and publish the torn file.
+
+The stub APPENDS rather than truncates, because the real writer is a ClickHouse
+`File(TSVWithNamesAndTypes)` table: `StorageFile.cpp` opens the file with
+`O_WRONLY | O_APPEND | O_CREAT` and `engine_file_truncate_on_insert` defaults to
+false, so an insert adds to whatever is already there. A truncating stub cannot
+see a stale temporary file left by an earlier attempt being folded into the
+published one, which is why the block's leading `rm -f` covers both paths.
 """
 
 import os
@@ -58,6 +65,13 @@ CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX=performance_comparison_amd_r
 # which path it ends up at, not its contents beyond this marker.
 _TORN = "torn-partial-row"
 
+# A previous run's completed ci-checks.tsv, still sitting at the final path
+# because the working directory is reused across runs and re-entries.
+_STALE_FINAL = "STALE-OLD-FINAL"
+# A previous attempt's torn temporary file. The File engine appends, so anything
+# left here is prepended to the new content and then published by the rename.
+_STALE_TMP = "STALE-TORN-TMP"
+
 # The stub derives its target from the SQL it is given rather than hardcoding
 # `ci-checks.tsv.tmp`, so it stays correct if the temporary name changes, and the
 # same harness can drive a form of the block that writes the final path directly.
@@ -69,7 +83,7 @@ while [ $# -gt 0 ]; do
 done
 target=$(printf '%s' "$query" | sed -n "s/.*File(TSVWithNamesAndTypes, '\\\\([^']*\\\\)').*/\\\\1/p")
 printf 'STUB_TARGET=%s\\n' "$target" >&2
-printf '%s' "$TORN_CONTENT" > "$target"
+printf '%s' "$TORN_CONTENT" >> "$target"
 exit $STUB_EXIT_CODE
 """
 
@@ -83,12 +97,19 @@ def _extract_publish_block(text):
     return text[begin:end].rstrip() + "\n}\n"
 
 
-def _run_block(tmp_path, block, stub_exit_code):
+def _run_block(tmp_path, block, stub_exit_code, seed=False):
     # `report.html` is real input: the block `sed`s the status and message out of
     # it into the SQL.
     (tmp_path / "report.html").write_text(
         "<!--status: failure-->\n<!--message: 5 slower-->\n", encoding="utf-8"
     )
+
+    if seed:
+        # A reused working directory: `perf_wd` (ci/tmp/perf_wd) is never wiped at
+        # job start, and `main` supports `--param <stage>` re-entry, so both paths
+        # can already hold a previous attempt's bytes.
+        (tmp_path / "ci-checks.tsv").write_text(_STALE_FINAL, encoding="utf-8")
+        (tmp_path / "ci-checks.tsv.tmp").write_text(_STALE_TMP, encoding="utf-8")
 
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -151,3 +172,33 @@ def test_a_failed_write_leaves_no_file_at_the_final_path(tmp_path):
     # reports a missing file instead of a plausible-looking short one.
     assert not (tmp_path / "ci-checks.tsv").exists()
     assert (tmp_path / "ci-checks.tsv.tmp").read_text() == _TORN
+
+
+def test_a_failed_write_does_not_publish_a_previous_runs_file(tmp_path):
+    # The working directory already holds a previous run's COMPLETE
+    # ci-checks.tsv. Without the block's leading `rm -f`, a failed write leaves
+    # that file untouched at the final path, and the importer then reads a
+    # previous run's complete-looking file and silently reports the wrong run's
+    # queries - worse than the truncation this PR fixes, because nothing warns.
+    proc = _run_block(tmp_path, _head_block(), stub_exit_code=1, seed=True)
+
+    assert proc.returncode == 0, proc.stderr
+    assert "REACHED_NEXT_STAGE" in proc.stdout
+    assert not (tmp_path / "ci-checks.tsv").exists()
+    # The stale temporary file was removed before the write, so the torn bytes
+    # left behind are only this attempt's.
+    assert (tmp_path / "ci-checks.tsv.tmp").read_text() == _TORN
+
+
+def test_a_successful_write_does_not_inherit_a_stale_temporary_file(tmp_path):
+    # A previous attempt left a torn ci-checks.tsv.tmp. The File engine opens
+    # with O_APPEND and does not truncate, so without the `.tmp` half of the
+    # `rm -f` the stale bytes are prepended to the new content and the rename
+    # publishes the concatenation as if it were complete. That is why this is an
+    # exact equality rather than an `in`/`endswith` check.
+    proc = _run_block(tmp_path, _head_block(), stub_exit_code=0, seed=True)
+
+    assert proc.returncode == 0, proc.stderr
+    assert "REACHED_NEXT_STAGE" in proc.stdout
+    assert (tmp_path / "ci-checks.tsv").read_text() == _TORN
+    assert not (tmp_path / "ci-checks.tsv.tmp").exists()
