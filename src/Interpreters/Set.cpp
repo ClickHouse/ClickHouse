@@ -330,7 +330,7 @@ static ColumnUInt8::Ptr checkDateTimePrecision(const ColumnWithTypeAndName & col
     NullMap & precision_null_map = precision_null_map_column->getData();
 
     // Determine which rows should be null based on precision loss
-    const auto * from_type = assert_cast<const DataTypeWithSubSeconds *>(column_to_cast.type.get());
+    const auto * from_type = assert_cast<const DataTypeWithSubSeconds *>(removeNullable(column_to_cast.type).get());
     auto scale = from_type->getScale();
     if (scale >= 1)
     {
@@ -509,9 +509,10 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             }
         }
 
-        // If the original column is DateTime64 or Time64, check for sub-second precision
-        if ((isDateTime64(column_to_cast.column->getDataType()) && !isDateTime64(removeNullable(result)->getDataType()))
-            || (isTime64(column_to_cast.column->getDataType()) && !isTime64(removeNullable(result)->getDataType())))
+        // If the original column is DateTime64 or Time64 (possibly Nullable, e.g. with transform_null_in), check for sub-second precision
+        WhichDataType probe_which(removeNullable(column_to_cast.type));
+        if ((probe_which.isDateTime64() && !isDateTime64(removeNullable(result)->getDataType()))
+            || (probe_which.isTime64() && !isTime64(removeNullable(result)->getDataType())))
         {
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }

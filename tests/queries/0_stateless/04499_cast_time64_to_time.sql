@@ -62,3 +62,8 @@ DROP TABLE t_04499_time5;
 -- Subquery sets: probing a Time set with a sub-second Time64 must not match, mirroring DateTime64.
 SELECT CAST('01:02:03.5' AS Time64(1)) IN (SELECT CAST('01:02:03' AS Time));
 SELECT CAST('01:02:03.0' AS Time64(1)) IN (SELECT CAST('01:02:03' AS Time));
+
+-- Nullable probes must be precision-filtered too; with transform_null_in they reach the set unwrapped.
+SELECT CAST('01:02:03.5' AS Nullable(Time64(1))) IN (SELECT CAST('01:02:03' AS Time));
+SELECT CAST('01:02:03.5' AS Nullable(Time64(1))) IN (SELECT CAST('01:02:03' AS Time)) SETTINGS transform_null_in = 1;
+SELECT materialize(CAST('2020-01-01 00:00:00.5' AS Nullable(DateTime64(1)))) IN (SELECT CAST('2020-01-01 00:00:00' AS DateTime)) SETTINGS transform_null_in = 1;
