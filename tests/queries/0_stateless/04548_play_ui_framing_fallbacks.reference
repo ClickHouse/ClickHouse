@@ -26,6 +26,10 @@ ndjson truncation stops the run: OK
 event-stream truncation carrier saved in snapshot: OK
 ndjson truncation carrier saved in snapshot: OK
 multi keeps compact failed snapshots: OK
+failure carrier locator present: OK
+framed failure message helper present: OK
+framed failures persist display_error: OK
+dropped multi failures keep an error text: OK
 log queue bounded: OK
 metric history bounded: OK
 view is tab-owned: OK

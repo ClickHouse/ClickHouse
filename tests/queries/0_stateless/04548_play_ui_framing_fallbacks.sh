@@ -180,6 +180,17 @@ echo "$page" | grep -q -F "+ exception_block + '\\n\\n');" && echo 'event-stream
 # snapshot for each failed statement (dropping only oversized SUCCESSFUL payloads), so a large
 # statement that failed still restores its error instead of the whole run reopening blank.
 echo "$page" | grep -q -F 'if (failed && data != null && data.length > 100000)' && echo 'multi keeps compact failed snapshots: OK'
+# The framed failure paths render the exception from the stream itself and used to return no
+# `display_error` at all. When a "Run all" is still over the budget after dropping the successful
+# payloads, every body (and the framing kind) is dropped, and the restore renders a bodyless
+# statement only from `display_error` - so those paths must persist the exception text, extracted
+# from the failure carrier by `framedFailureMessage` (shared with `compactFailureSnapshot` through
+# `findFailureCarrier`). A failure that carried no exception at all keeps the not-stored notice, so
+# no failed statement can restore blank.
+echo "$page" | grep -q -F 'function findFailureCarrier(' && echo 'failure carrier locator present: OK'
+echo "$page" | grep -q -F 'function framedFailureMessage(' && echo 'framed failure message helper present: OK'
+[ "$(echo "$page" | grep -c -F 'display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;')" -eq 3 ] && echo 'framed failures persist display_error: OK'
+echo "$page" | grep -q -F "s.display_error = 'The query failed, but its error output was not stored.';" && echo 'dropped multi failures keep an error text: OK'
 # The pending log queue is bounded, not just the rendered DOM: `appendLog` drops the oldest queued
 # lines beyond the retained budget so a burst faster than the per-frame flush cannot grow it without
 # limit. The sparkline history is bounded too - `downsampleHistoryByHalf` halves every metric's

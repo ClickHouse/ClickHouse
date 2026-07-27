@@ -8424,7 +8424,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// `framed_error_stream` was read in full (uncapped), so the carrier is scanned from it
             /// at compaction time; no separate capture is needed here.
             reply = framed_error_stream;
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
+            /// The error was rendered from the stream, but the snapshot still needs its text: a
+            /// `Run all` whose total size exceeds the budget drops the bodies (and the framing kind)
+            /// of the failed statements too, and only `display_error` restores them as their error.
+            display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
+            return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok && content_type.startsWith('application/x-ndjson')) {
             /// A query carrying its own `JSONEachPacket*` framing can also fail before the response
             /// reaches `200 OK` - e.g. `SELECT 1 FORMAT JSONEachRowWithProgress SETTINGS
@@ -8457,7 +8461,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 /// show only the partial output and lose the truncation error.
                 reply = appendCappedSnapshot(reply, (reply === '' || reply.endsWith('\n') ? '' : '\n') + exception_carrier + '\n');
             }
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
+            /// See the `EventStream` branch above: persist the error text for the size-capped save.
+            display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
+            return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok) {
             is_error = true;
             reply = await response.text();
@@ -8533,7 +8539,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 /// table — and so the snapshot-restore paths, which apply the same finalization,
                 /// reopen the tab in the same state the live run showed.
                 if (is_table) targetResultEl.finalizeFailedTable(tab.id === activeTabId);
-                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
+                /// See the non-OK `EventStream` branch above: persist the error text, so a failed
+                /// statement whose body the `Run all` size cap drops still restores as its error.
+                display_error = framedFailureMessage(reply, framing_kind, exception_carrier) ?? undefined;
+                return { format, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
             }
         } else if (format == default_format) {
             is_table = true;
@@ -8905,22 +8914,76 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 /// `exception_carrier` is the carrier captured at stream-read time: for a long stream the capped
 /// `reply` stops growing before the terminal exception arrives, so the carrier usually is NOT in
 /// `reply` (a fully buffered non-200 stream is the exception, and is scanned here as the fallback).
+/// Locate the failure carrier of a reply: the terminal `event: exception` block of an `EventStream`,
+/// the terminal exception packet line of a packet stream, or the `{"exception":...}` line of a plain
+/// stream. The carrier captured while the stream was read wins; a fully buffered reply (a non-200
+/// body, read uncapped) is scanned as the fallback. Returns `null` when the reply carries none.
+function findFailureCarrier(reply, framing_kind, exception_carrier)
+{
+    if (exception_carrier != null) return exception_carrier;
+    if (framing_kind === 'event_stream')
+    {
+        let start = reply.startsWith('event: exception') ? 0 : reply.lastIndexOf('\nevent: exception');
+        if (start === -1) return null;
+        if (start > 0) ++start;   /// skip the leading newline
+        const end = reply.indexOf('\n\n', start);
+        return end === -1 ? reply.slice(start) : reply.slice(start, end);
+    }
+    if (framing_kind === 'ndjson_packets')
+    {
+        for (const marker of ['{"packet":"exception"', '{"exception":'])
+        {
+            let start = reply.startsWith(marker) ? 0 : reply.lastIndexOf('\n' + marker);
+            if (start === -1) continue;
+            if (start > 0) ++start;
+            const end = reply.indexOf('\n', start);
+            return end === -1 ? reply.slice(start) : reply.slice(start, end);
+        }
+        return null;
+    }
+    let start = reply.startsWith(`{"exception":`) ? 0 : reply.indexOf(`\n{"exception":`);
+    if (start === -1) return null;
+    if (start > 0) ++start;
+    let end = reply.indexOf('\n', start);
+    if (end === -1) end = reply.length;
+    return reply.slice(start, end);
+}
+
+/// The human-readable message of a framed failure. The framed paths render the exception from the
+/// stream itself and have no separate error string, but a saved snapshot needs one: when the
+/// `Run all` total-size cap drops the bodies of many failed statements, only `display_error` is left
+/// to restore each statement's error with (`renderSnapshotIntoElement` / `renderFailedSnapshot`) -
+/// without it the statement reopens blank. Returns `null` when no carrier is present.
+function framedFailureMessage(reply, framing_kind, exception_carrier)
+{
+    const carrier = findFailureCarrier(reply, framing_kind, exception_carrier);
+    if (carrier == null) return null;
+    /// An `EventStream` block carries its JSON across `data:` fields; a packet stream is one line.
+    let text = carrier;
+    if (framing_kind === 'event_stream')
+    {
+        const data_lines = [];
+        for (const raw of carrier.split('\n'))
+            if (raw.startsWith('data:')) data_lines.push(raw.slice(5).replace(/^ /, ''));
+        text = data_lines.join('\n');
+    }
+    try
+    {
+        const parsed = JSON.parse(text);
+        if (typeof parsed.exception === 'string') return parsed.exception;
+    }
+    catch (e) {}
+    /// An unparseable carrier is still better than nothing: show it as the error text.
+    return text === '' ? null : text;
+}
+
 function compactFailureSnapshot(reply, framing_kind, exception_carrier)
 {
+    const carrier = findFailureCarrier(reply, framing_kind, exception_carrier);
     if (framing_kind === 'event_stream')
     {
         /// The terminal `event: exception` block, replayed on restore by `renderEventStreamText`.
-        let block = exception_carrier;
-        if (block == null)
-        {
-            let start = reply.startsWith('event: exception') ? 0 : reply.lastIndexOf('\nevent: exception');
-            if (start !== -1)
-            {
-                if (start > 0) ++start;   /// skip the leading newline
-                const end = reply.indexOf('\n\n', start);
-                block = end === -1 ? reply.slice(start) : reply.slice(start, end);
-            }
-        }
+        const block = carrier;
         if (block != null)
         {
             if (block.length <= 100000) return block;
@@ -8945,36 +9008,12 @@ function compactFailureSnapshot(reply, framing_kind, exception_carrier)
     {
         /// The terminal exception packet line, shown verbatim by `updateRaw` on restore (the same
         /// way the live run showed it). The captured carrier is already bounded by the budget.
-        let line = exception_carrier;
-        if (line == null)
-        {
-            for (const marker of ['{"packet":"exception"', '{"exception":'])
-            {
-                let start = reply.startsWith(marker) ? 0 : reply.lastIndexOf('\n' + marker);
-                if (start === -1) continue;
-                if (start > 0) ++start;
-                const end = reply.indexOf('\n', start);
-                line = end === -1 ? reply.slice(start) : reply.slice(start, end);
-                break;
-            }
-        }
-        if (line != null) return line.slice(0, 100000);
+        if (carrier != null) return carrier.slice(0, 100000);
         return reply.slice(0, 100000);
     }
     /// A plain stream: keep the `{"exception":...}` line - the captured carrier, or the line
     /// located in the reply itself (a non-200 plain error body is read in full, uncapped).
-    let line = exception_carrier;
-    if (line == null)
-    {
-        let start = reply.startsWith(`{"exception":`) ? 0 : reply.indexOf(`\n{"exception":`);
-        if (start !== -1)
-        {
-            if (start > 0) ++start;   /// skip the leading newline
-            let end = reply.indexOf('\n', start);
-            if (end === -1) end = reply.length;
-            line = reply.slice(start, end);
-        }
-    }
+    const line = carrier;
     if (line != null)
     {
         /// Keep the whole exception line when it fits, so the restore replays it as the exception.
@@ -9410,7 +9449,16 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     /// `display_error` (see `renderFailedSnapshot`) rather than the framing path calling
     /// `updateRaw(null)` / `renderEventStreamText(null)` on the dropped data.
     if (multi_size > 100000)
-        for (const s of multi) { s.data = null; s.framing_kind = ''; }
+        for (const s of multi)
+        {
+            s.data = null;
+            s.framing_kind = '';
+            /// Fail closed for a failure that carried no error text at all (a stream that broke
+            /// without an exception carrier): show the same notice the single-query restore shows,
+            /// so the statement reopens as failed instead of blank.
+            if (s.failed && typeof s.display_error !== 'string')
+                s.display_error = 'The query failed, but its error output was not stored.';
+        }
     for (const s of multi) delete s.failed;
 
     /// Save all queries to browser history, using the full editor content captured at launch.
