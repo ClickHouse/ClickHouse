@@ -44,10 +44,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"join_runtime_filter_min_probe_rows", 0, 1000, "New setting to control minimum probe side size for installing JOIN runtime filters. It wasn't limited before, so previous value is 0 meaning always install."},
-            {"cross_to_inner_join_rewrite", 2, 1, "Fix settings history drift: record the actual default value change (issue #111750)."},
-            {"extract_key_value_pairs_max_pairs_per_row", 0, 1000, "Fix settings history drift: record the actual default value change (issue #111750)."},
-            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 100, 10, "Fix settings history drift: record the actual default value change (issue #111750)."},
-            {"rewrite_count_distinct_if_with_count_distinct_implementation", 1, 0, "Fix settings history drift: record the actual default value change (issue #111750)."}
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -505,8 +501,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"jemalloc_collect_profile_samples_in_trace_log", false, false, "New setting"},
             {"delta_lake_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New setting."},
             {"delta_lake_insert_max_rows_in_data_file", 1000000, 1000000, "New setting."},
-            {"promql_evaluation_time", Field{"auto"}, Field{"auto"}, "The setting was renamed. The previous name is `evaluation_time`."},
-            {"evaluation_time", 0, 0, "Old setting which popped up here being renamed."},
+            {"promql_evaluation_time", 0, Field{"auto"}, "The setting was renamed (the previous name is `evaluation_time`) and its default was changed to `auto`."},
             {"os_threads_nice_value_query", 0, 0, "New setting."},
             {"os_threads_nice_value_materialized_view", 0, 0, "New setting."},
             {"os_thread_priority", 0, 0, "Alias for os_threads_nice_value_query."},
@@ -774,7 +769,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_column_name_width_min_chars_to_cut", 0, 4, "A new setting"},
             {"output_format_pretty_multiline_fields", false, true, "A new setting"},
             {"output_format_pretty_fallback_to_vertical", false, true, "A new setting"},
-            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 100, "A new setting"},
+            {"output_format_pretty_fallback_to_vertical_max_rows_per_chunk", 0, 10, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_columns", 0, 5, "A new setting"},
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 250, "A new setting"},
             {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
@@ -1092,7 +1087,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"min_external_table_block_size_bytes", DEFAULT_INSERT_BLOCK_SIZE * 256, DEFAULT_INSERT_BLOCK_SIZE * 256, "Squash blocks passed to external table to specified size in bytes, if blocks are not big enough."},
             {"parallel_replicas_prefer_local_join", true, true, "If true, and JOIN can be executed with parallel replicas algorithm, and all storages of right JOIN part are *MergeTree, local JOIN will be used instead of GLOBAL JOIN."},
             {"optimize_time_filter_with_preimage", true, true, "Optimize Date and DateTime predicates by converting functions into equivalent comparisons without conversions (e.g. toYear(col) = 2023 -> col >= '2023-01-01' AND col <= '2023-12-31')"},
-            {"extract_key_value_pairs_max_pairs_per_row", 0, 0, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."},
+            {"extract_key_value_pairs_max_pairs_per_row", 0, 1000, "Max number of pairs that can be produced by the `extractKeyValuePairs` function. Used as a safeguard against consuming too much memory."},
             {"default_view_definer", "CURRENT_USER", "CURRENT_USER", "Allows to set default `DEFINER` option while creating a view"},
             {"default_materialized_view_sql_security", "DEFINER", "DEFINER", "Allows to set a default value for SQL SECURITY option when creating a materialized view"},
             {"default_normal_view_sql_security", "INVOKER", "INVOKER", "Allows to set default `SQL SECURITY` option while creating a normal view"},
@@ -1148,7 +1143,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "23.8",
         {
-            {"rewrite_count_distinct_if_with_count_distinct_implementation", false, true, "Rewrite countDistinctIf with count_distinct_implementation configuration"}
+            {"rewrite_count_distinct_if_with_count_distinct_implementation", false, false, "New setting to rewrite countDistinctIf with count_distinct_implementation configuration. It is disabled by default"}
         });
         addSettingsChanges(settings_changes_history, "23.7",
         {
@@ -1219,7 +1214,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "22.7",
         {
-            {"cross_to_inner_join_rewrite", 1, 2, "Force rewrite comma join to inner"},
             {"enable_positional_arguments", false, true, "Enable positional arguments feature by default"},
             {"format_csv_allow_single_quotes", true, false, "Most tools don't treat single quote in CSV specially, don't do it by default too"}
         });
