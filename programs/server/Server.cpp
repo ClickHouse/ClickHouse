@@ -1569,11 +1569,6 @@ try
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
     std::vector<ProtocolServerAdapter> introspection_servers;
 
-    /// Introspection server query can invoke the config-reload callback.
-    /// The mutex serializes the callback with the reset in the termination block.
-    std::mutex main_config_reloader_mutex;
-    std::unique_ptr<ConfigReloader> main_config_reloader;
-
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
         Stopwatch watch;
@@ -1666,11 +1661,6 @@ try
     SCOPE_EXIT_SAFE({
         /// Required for the startup exception case where the termination block that should set is_cancelled=true never runs.
         is_cancelled = true;
-
-        {
-            std::lock_guard lock(main_config_reloader_mutex);
-            main_config_reloader.reset();
-        }
 
         /// Stop accepting connections on the regular servers. In the normal shutdown path they are
         /// already stopped, but on startup failure some of them can still be running: the Prometheus
@@ -2542,7 +2532,7 @@ try
         dns_cache_updater->start();
     }
 
-    main_config_reloader = std::make_unique<ConfigReloader>(
+    auto main_config_reloader = std::make_unique<ConfigReloader>(
         config_path,
         extra_paths,
         server_settings[ServerSetting::path],
@@ -3220,23 +3210,26 @@ try
         throw;
     }
 
+    auto disable_config_reload_callbacks = [&]
+    {
+        global_context->setConfigReloadCallback([]
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cannot reload config because the server is shutting down");
+        });
+        if (cgroups_memory_usage_observer)
+            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([] {});
+    };
+    SCOPE_EXIT({ disable_config_reload_callbacks(); });
+
     if (cgroups_memory_usage_observer)
     {
-        cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]()
-        {
-            std::lock_guard lock(main_config_reloader_mutex);
-            if (main_config_reloader)
-                main_config_reloader->reload();
-        });
+        cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
         cgroups_memory_usage_observer->startThread();
     }
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
     {
-        std::lock_guard lock(main_config_reloader_mutex);
-        if (!main_config_reloader)
-            throw Exception(ErrorCodes::ABORTED, "Cannot reload config because the server is shutting down");
         main_config_reloader->reload();
         access_control.reload(AccessControl::ReloadMode::USERS_CONFIG_ONLY);
     });
@@ -3677,10 +3670,8 @@ try
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
-            {
-                std::lock_guard lock(main_config_reloader_mutex);
-                main_config_reloader.reset();
-            }
+            disable_config_reload_callbacks();
+            main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
             stop_acme_instance();
