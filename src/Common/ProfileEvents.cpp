@@ -1124,6 +1124,8 @@ The server successfully detected this situation and will download merged part fr
     M(ObjectStorageQueueTaggedObjects, "Number of objects tagged as part of after_processing = tag", ValueType::Number) \
     M(ObjectStorageQueueInsertIterations, "Number of insert iterations", ValueType::Number) \
     M(ObjectStorageQueueCommitRequests, "Number of keeper requests to commit files as either failed or processed", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockLostOwnership, "Number of times ownership of a bucket lock was detected as lost in S3(Azure)Queue. Non-zero value indicates too small persistent_processing_node_ttl_seconds or a bug", ValueType::Number) \
+    M(ObjectStorageQueueBucketLockRefreshes, "Number of successful bucket lock refreshes in S3(Azure)Queue", ValueType::Number) \
     M(ObjectStorageQueueSuccessfulCommits, "Number of successful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueUnsuccessfulCommits, "Number of unsuccessful keeper commits", ValueType::Number) \
     M(ObjectStorageQueueCancelledFiles, "Number cancelled files in StorageS3(Azure)Queue", ValueType::Number) \
@@ -1758,6 +1760,19 @@ Counters::Snapshot::Snapshot()
     : counters_holder(new Count[num_counters] {})
 {}
 
+Counters::Snapshot::Snapshot(const Snapshot & other)
+    : counters_holder(new Count[num_counters] {})
+{
+    std::copy(other.counters_holder.get(), other.counters_holder.get() + num_counters, counters_holder.get());
+}
+
+Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
+{
+    Snapshot tmp(other);
+    counters_holder = std::move(tmp.counters_holder);
+    return *this;
+}
+
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
@@ -1957,6 +1972,8 @@ void Counters::incrementNoTrace(Event event, Count amount)
 
 void Counters::incrementSignalSafe(Event event, Count amount)
 {
+    static_assert(std::atomic_ref<Count>::is_always_lock_free);
+
     Counters * current = this;
     /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
