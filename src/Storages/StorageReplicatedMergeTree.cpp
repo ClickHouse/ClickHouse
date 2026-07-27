@@ -6952,57 +6952,65 @@ void StorageReplicatedMergeTree::alter(
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
             /// in KeyDescription, but it contain version column for VersionedCollapsingMergeTree, which shouldn't be defined as a part of key definition AST.
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
-            future_metadata_in_zk.sorting_key = extractKeyExpressionList(future_metadata.sorting_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sorting_key
+                = ReplicatedMergeTreeTableMetadata::formatDefinition(extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
         }
 
         if (key_changed(future_metadata.sampling_key, current_metadata->sampling_key))
-            future_metadata_in_zk.sampling_expression = extractKeyExpressionList(future_metadata.sampling_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sampling_expression
+                = ReplicatedMergeTreeTableMetadata::formatDefinition(extractKeyExpressionList(future_metadata.sampling_key.definition_ast));
 
         if (key_changed(future_metadata.partition_key, current_metadata->partition_key))
-            future_metadata_in_zk.partition_key = extractKeyExpressionList(future_metadata.partition_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.partition_key
+                = ReplicatedMergeTreeTableMetadata::formatDefinition(extractKeyExpressionList(future_metadata.partition_key.definition_ast));
 
+        /// `formatDefinition` returns an empty string for a null AST, which is exactly what
+        /// removing the TTL has to write.
         if (!sameAST(future_metadata.table_ttl.definition_ast, current_metadata->table_ttl.definition_ast))
+            future_metadata_in_zk.ttl_table = ReplicatedMergeTreeTableMetadata::formatDefinition(future_metadata.table_ttl.definition_ast);
+
+        /// The definition lists are both compared as ASTs and, when changed, serialized with the
+        /// same backward-compatible serializer the `ReplicatedMergeTreeTableMetadata` constructor
+        /// uses, so that an `ALTER` never publishes a noncanonical (parenthesized) form of a field
+        /// into `/metadata` — an older replica compares those strings verbatim.
+        auto same_definitions = [](const ASTs & lhs, const ASTs & rhs)
         {
-            if (future_metadata.table_ttl.definition_ast)
-                future_metadata_in_zk.ttl_table = future_metadata.table_ttl.definition_ast->formatWithSecretsOneLine();
-            else /// TTL was removed
-                future_metadata_in_zk.ttl_table = "";
-        }
+            ASTExpressionList lhs_list;
+            lhs_list.children = lhs;
+            ASTExpressionList rhs_list;
+            rhs_list.children = rhs;
+            return sameAST(lhs_list, rhs_list);
+        };
 
         auto explicit_index_definitions = [](const IndicesDescription & indices)
         {
-            auto list = make_intrusive<ASTExpressionList>();
+            ASTs definitions;
             for (const auto & index : indices)
                 if (!index.isImplicitlyCreated())
-                    list->children.push_back(index.definition_ast);
-            return list;
+                    definitions.push_back(index.definition_ast);
+            return definitions;
         };
 
-        if (!sameAST(*explicit_index_definitions(future_metadata.secondary_indices),
-                     *explicit_index_definitions(current_metadata->secondary_indices)))
-            future_metadata_in_zk.skip_indices = future_metadata.secondary_indices.explicitToString();
+        if (!same_definitions(explicit_index_definitions(future_metadata.secondary_indices),
+                              explicit_index_definitions(current_metadata->secondary_indices)))
+            future_metadata_in_zk.skip_indices
+                = ReplicatedMergeTreeTableMetadata::formatDefinitionList(explicit_index_definitions(future_metadata.secondary_indices));
 
         auto projection_definitions = [](const ProjectionsDescription & projections_description)
         {
-            auto list = make_intrusive<ASTExpressionList>();
+            ASTs definitions;
             for (const auto & projection : projections_description)
-                list->children.push_back(projection.definition_ast);
-            return list;
+                definitions.push_back(projection.definition_ast);
+            return definitions;
         };
 
-        if (!sameAST(*projection_definitions(future_metadata.projections), *projection_definitions(current_metadata->projections)))
-            future_metadata_in_zk.projections = future_metadata.projections.toString();
+        if (!same_definitions(projection_definitions(future_metadata.projections), projection_definitions(current_metadata->projections)))
+            future_metadata_in_zk.projections
+                = ReplicatedMergeTreeTableMetadata::formatDefinitionList(projection_definitions(future_metadata.projections));
 
-        auto constraint_definitions = [](const ConstraintsDescription & constraints_description)
-        {
-            auto list = make_intrusive<ASTExpressionList>();
-            for (const auto & constraint : constraints_description.getConstraints())
-                list->children.push_back(constraint);
-            return list;
-        };
-
-        if (!sameAST(*constraint_definitions(future_metadata.constraints), *constraint_definitions(current_metadata->constraints)))
-            future_metadata_in_zk.constraints = future_metadata.constraints.toString();
+        if (!same_definitions(future_metadata.constraints.getConstraints(), current_metadata->constraints.getConstraints()))
+            future_metadata_in_zk.constraints
+                = ReplicatedMergeTreeTableMetadata::formatDefinitionList(future_metadata.constraints.getConstraints());
 
         Coordination::Requests ops;
         size_t alter_path_idx = std::numeric_limits<size_t>::max();

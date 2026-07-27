@@ -61,6 +61,16 @@ struct ReplicatedMergeTreeTableMetadata
     void write(WriteBuffer & out) const;
     String toString() const;
 
+    /// Serialization of a stored definition expression for Keeper in the canonical form: the
+    /// redundant parentheses the user wrote (kept in the AST since #92340) are stripped, because
+    /// an older replica compares this text against its own canonical form and would otherwise
+    /// reject an equal definition with `METADATA_MISMATCH`. Use these instead of formatting the
+    /// AST directly whenever a field of this structure is filled in.
+    /// `formatDefinition` also normalizes function names; `formatDefinitionList` (skip indices,
+    /// projections, constraints) intentionally does not — those were never normalized before.
+    static String formatDefinition(const ASTPtr & ast);
+    static String formatDefinitionList(const ASTs & definitions);
+
     struct Diff
     {
         bool sorting_key_changed = false;

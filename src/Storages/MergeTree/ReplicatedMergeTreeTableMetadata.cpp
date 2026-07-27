@@ -66,7 +66,7 @@ static void stripArtificialParens(IAST & ast)
     }
 }
 
-static String formattedASTNormalized(const ASTPtr & ast)
+String ReplicatedMergeTreeTableMetadata::formatDefinition(const ASTPtr & ast)
 {
     if (!ast)
         return "";
@@ -76,11 +76,11 @@ static String formattedASTNormalized(const ASTPtr & ast)
     return ast_normalized->formatWithSecretsOneLine();
 }
 
-/// Same as `formattedASTNormalized`, but for the comma-separated lists of declarations
+/// Same as `formatDefinition`, but for the comma-separated lists of declarations
 /// (skip indices, projections, constraints). Function names are intentionally not normalized
 /// here: unlike the key fields, these were never normalized before, and the canonical form of an
 /// older version is the definition as written.
-static String formattedASTListNormalized(const ASTs & definitions)
+String ReplicatedMergeTreeTableMetadata::formatDefinitionList(const ASTs & definitions)
 {
     if (definitions.empty())
         return "";
@@ -160,7 +160,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     }
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
+    sampling_expression = formatDefinition(metadata_snapshot->getSamplingKeyAST());
     index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
@@ -184,26 +184,26 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
     if (metadata_snapshot->isPrimaryKeyDefined())
     {
-        primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().expression_list_ast);
+        primary_key = formatDefinition(metadata_snapshot->getPrimaryKey().expression_list_ast);
         /// We don't use preparsed AST `sorting_key.expression_list_ast` because
         /// it contain version column for VersionedCollapsingMergeTree, which
         /// is not stored in ZooKeeper for compatibility reasons. So the best
         /// compatible way is just to convert definition_ast to list and
         /// serialize it. In all other places key.expression_list_ast should be
         /// used.
-        sorting_key = formattedASTNormalized(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+        sorting_key = formatDefinition(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
     }
     else
     {
-        primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().getOriginalExpressionList());
+        primary_key = formatDefinition(metadata_snapshot->getPrimaryKey().getOriginalExpressionList());
     }
 
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().expression_list_ast);
+        partition_key = formatDefinition(metadata_snapshot->getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
+    ttl_table = formatDefinition(metadata_snapshot->getTableTTLs().definition_ast);
 
     /// We only store skip indices that are explicitly defined by user
     {
@@ -211,14 +211,14 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
             if (!index.isImplicitlyCreated())
                 explicit_indices.push_back(index.definition_ast);
-        skip_indices = formattedASTListNormalized(explicit_indices);
+        skip_indices = formatDefinitionList(explicit_indices);
     }
 
     {
         ASTs projection_definitions;
         for (const auto & projection : metadata_snapshot->getProjections())
             projection_definitions.push_back(projection.definition_ast);
-        projections = formattedASTListNormalized(projection_definitions);
+        projections = formatDefinitionList(projection_definitions);
     }
 
     if (data.canUseAdaptiveGranularity())
@@ -226,7 +226,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     else
         index_granularity_bytes = 0;
 
-    constraints = formattedASTListNormalized(metadata_snapshot->getConstraints().getConstraints());
+    constraints = formatDefinitionList(metadata_snapshot->getConstraints().getConstraints());
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
