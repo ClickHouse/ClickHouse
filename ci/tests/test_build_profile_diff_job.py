@@ -46,6 +46,29 @@ _PR = 111164
 _PR_SHA = "prsha"
 _BASE_SHA = "basesha"
 _OLD_WARMUP_SHA = "oldwarmupsha"
+
+# Section-wide compile-time shift. Twelve translation units that the master
+# warmup build compiled at 30 s each, recompiled by two PR runs:
+#   * ``prsha-uniform-slowdown`` takes 65 s for every one of them - the kind of
+#     shift a heavy common header produces. It moves the median ratio itself,
+#     so every per-TU delta measured against that ratio is exactly zero and the
+#     section can only catch it on its own level;
+#   * ``prsha-machine-skew`` takes 33 s - the few percent the runners really do
+#     differ by, which must stay an informational note.
+_SKEW_TUS = [f"skew_tu{i}.cpp" for i in range(12)]
+
+
+def _skew_rows(pr_number, sha, check_start_time, check_name, instance_id, dur_us):
+    return ",\n    ".join(
+        f"({pr_number}, '{sha}', '{check_start_time}', '{check_name}', '{instance_id}', '{tu}', 'ExecuteCompiler', '', {dur_us})"
+        for tu in _SKEW_TUS
+    )
+
+
+_SKEW_BASE_ROWS = _skew_rows(0, _BASE_SHA, "2026-06-30 00:00:00", "arm_release_pr_cache_warmup", "W0", 30000000)
+_SKEW_SLOW_ROWS = _skew_rows(_PR, "prsha-uniform-slowdown", "2026-07-02 00:00:00", "arm_release", "I11", 65000000)
+_SKEW_NOISE_ROWS = _skew_rows(_PR, "prsha-machine-skew", "2026-07-02 00:00:00", "arm_release", "I12", 33000000)
+
 _SCHEMA = f"""
 CREATE TABLE binary_sizes
 (
@@ -175,6 +198,21 @@ INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time,
 INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
     ({_PR}, 'prsha-tiny-keeper', '2026-07-02 00:00:00', 'arm_release', 'I9', '{_MAIN}', 'OptFunction', 'main_fn', 10000000),
     ({_PR}, 'prsha-tiny-keeper', '2026-07-02 00:00:00', 'arm_release', 'I9', '{_KEEPER}', 'OptFunction', 'keeper_fn', 40000);
+
+-- Section-wide compile-time shift (see _SKEW_TUS): the same twelve baseline
+-- translation units recompiled twice as slowly by one PR run and marginally
+-- more slowly by another.
+INSERT INTO binary_sizes (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, size) VALUES
+    ({_PR}, 'prsha-uniform-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I11', '{_MAIN}', 1500),
+    ({_PR}, 'prsha-uniform-slowdown', '2026-07-02 00:00:00', 'arm_release', 'I11', '{_STRIPPED}', 1500),
+    ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_MAIN}', 1500),
+    ({_PR}, 'prsha-machine-skew', '2026-07-02 00:00:00', 'arm_release', 'I12', '{_STRIPPED}', 1500);
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_SKEW_BASE_ROWS};
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_SKEW_SLOW_ROWS};
+INSERT INTO build_time_trace (pull_request_number, commit_sha, check_start_time, check_name, instance_id, file, name, detail, dur) VALUES
+    {_SKEW_NOISE_ROWS};
 """
 
 
@@ -598,8 +636,15 @@ def test_comment_attributes_only_object_sizes_to_the_warmup_sha():
     assert "object sizes and compile times against" not in body
 
 
-def test_get_master_shas_prefers_the_anchored_track():
-    """``master_track_commits_sha`` (PR's master parent chain) wins over the tip."""
+def test_get_master_shas_uses_only_the_anchored_track():
+    """Only ``master_track_commits_sha`` (the PR's master parent chain) is used.
+
+    ``master_commits`` is the global master tip, not anchored to this PR's
+    merge base, so a commit from it can be newer than the master the PR was
+    built on - comparing against it attributes unrelated master changes to the
+    PR. A missing anchored chain must therefore come back empty (the caller
+    fails the job) rather than fall back to the tip.
+    """
 
     class FakeInfo:
         def get_kv_data(self, key):
@@ -614,4 +659,37 @@ def test_get_master_shas_prefers_the_anchored_track():
         def get_kv_data(self, key):
             return {"master_commits": ["x", "y"]}.get(key)
 
-    assert job.get_master_shas(TipOnlyInfo()) == ["x", "y"]
+    assert job.get_master_shas(TipOnlyInfo()) == []
+
+
+def test_uniform_compile_time_slowdown_is_significant():
+    """A change that slows every translation unit down is caught section-wide.
+
+    Per-TU deltas are measured against the median PR/baseline ratio, which
+    estimates the machine-speed difference between the two runs. When every
+    matched TU moves by the same factor, that factor *is* the median: each
+    delta becomes zero, no per-TU finding survives, and the section would
+    report "no significant changes" while total compile time doubled.
+    """
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, "prsha-uniform-slowdown")
+    assert pr_side is not None
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
+    # 12 TUs, 30 s -> 65 s each: x2.17 and +420 s in total.
+    assert section.significant
+    assert "slower" in section.summary
+    assert "+420.0 s" in section.body
+    # No per-TU finding: relative to the median every TU is unchanged.
+    assert "| Translation unit |" not in section.body
+
+
+def test_machine_speed_skew_alone_is_not_significant():
+    """A few percent of runner difference stays an informational note."""
+    db = FixtureDb()
+    pr_side = job.resolve_run(db, job.PR_DAYS, _PR, "prsha-machine-skew")
+    assert pr_side is not None
+    section = job.compare_compile_times(db, pr_side, [_BASE_SHA])
+    # 12 TUs, 30 s -> 33 s each: x1.1, below TU_SKEW_SIG_RATIO.
+    assert not section.significant
+    assert not section.summary
+    assert "×1.10" in section.body

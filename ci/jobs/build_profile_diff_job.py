@@ -114,6 +114,16 @@ TU_REPORT_SECONDS = 5  # per-TU compile time: report at |delta| >= 5s
 TU_REPORT_RATIO = 1.3  # and 1.3x, significant at 20s and 1.5x
 TU_SIG_SECONDS = 20
 TU_SIG_RATIO = 1.5
+# Section-wide compile-time shift: the median PR/baseline ratio is subtracted
+# from every per-TU delta as machine-speed skew, so a change that slows every
+# translation unit down by the same factor produces no per-TU finding at all.
+# It is judged on the section level instead: a uniform slowdown of this ratio,
+# costing this much aggregate compile time across the matched translation
+# units, is significant on its own. The margins are wide because both sides
+# really do run on different machines - warmup baselines use the PR's flags,
+# but not the PR's runner.
+TU_SKEW_SIG_RATIO = 1.2
+TU_SKEW_SIG_SECONDS = 300
 SYMBOL_REPORT_BYTES = 16 << 10  # per-symbol size: report at 16 KiB,
 SYMBOL_SIG_BYTES = 256 << 10  # significant at 256 KiB
 MAX_TABLE_ROWS = 20
@@ -339,18 +349,20 @@ def get_master_shas(info) -> List[str]:
     already stores ~100 commits, so it needs no more. The per-TU compile
     baseline is different: it looks back TU_BASE_DAYS, far past ~100 commits
     of master history - `extend_master_shas` pages the older ancestors for it.
+
+    Fail-close: the anchored chain is the only source in CI. `master_commits`
+    (the global master tip) is deliberately not used as a fallback - it is not
+    anchored to the PR's merge base, so it can offer a baseline commit that is
+    newer than the master the PR was built on and attribute unrelated master
+    changes to the PR. An absent chain returns an empty list, and the caller
+    fails the job (a local run seeds the chain from `--base-sha` instead).
     """
     seen = set()
     shas = []
-    # `master_track_commits_sha` is anchored to the PR's master parent; fall back
-    # to `master_commits` (the global tip) only if the anchored chain is absent.
-    for key in ("master_track_commits_sha", "master_commits"):
-        for sha in list(info.get_kv_data(key) or []):
-            if sha not in seen:
-                seen.add(sha)
-                shas.append(sha)
-        if shas:
-            break
+    for sha in list(info.get_kv_data("master_track_commits_sha") or []):
+        if sha not in seen:
+            seen.add(sha)
+            shas.append(sha)
     return shas
 
 
@@ -876,11 +888,16 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
     # master baselines carry a uniform machine-speed skew: with enough matched
     # TUs the whole table shifts by the same ratio. The median ratio estimates
     # that skew; individual TUs are flagged only when they deviate from it, and
-    # the skew itself is reported as an informational line (it can also be a
-    # genuine everything-got-slower change, e.g. a heavy common header - that
-    # still shows up, just not as per-TU findings).
+    # the skew itself is judged separately on the section level (below): a
+    # heavy common header slowing down every TU by the same factor cancels out
+    # of every per-TU delta by construction, so it can only be caught there.
     ratios = sorted(pr_durs[tu] / max(base_dur, 1) for tu, (base_dur, *_) in base_durs.items() if tu in pr_durs)
     skew = ratios[len(ratios) // 2] if len(ratios) >= 10 else 1.0
+
+    # The aggregate cost of that shift, measured without applying the skew:
+    # what the matched translation units really cost on each side.
+    matched = [(pr_durs[tu], base_dur) for tu, (base_dur, *_) in base_durs.items() if tu in pr_durs]
+    matched_delta_s = sum(pr_dur - base_dur for pr_dur, base_dur in matched) / 1e6
 
     total_s = sum(pr_durs.values()) / 1e6
     findings = []
@@ -901,7 +918,14 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
         lines += [
             "",
             f"Median compile-time ratio to the baselines is ×{skew:.2f} (machine-speed difference or a change affecting every TU); per-TU deltas below are relative to that ratio.",
+            f"The matched translation units cost {format_seconds_delta(matched_delta_s, sum(base for _, base in matched) / 1e6)} in total before that adjustment.",
         ]
+    # A section-wide slowdown is invisible per TU: every delta is measured
+    # against the median ratio, so a change that makes everything slower moves
+    # the ratio itself and leaves the deltas at zero. Judge it here instead.
+    if skew >= TU_SKEW_SIG_RATIO and matched_delta_s >= TU_SKEW_SIG_SECONDS:
+        section.significant = True
+        section.summary = f"every translation unit is ×{skew:.2f} slower (+{matched_delta_s:.0f} s over {len(matched)} matched translation units)"
     if findings:
         lines += [
             "",
@@ -912,7 +936,8 @@ def compare_compile_times(db: Db, pr_side, master_shas) -> Section:
             if abs(delta_s) >= TU_SIG_SECONDS and ratio >= TU_SIG_RATIO:
                 section.significant = True
             lines.append(f"| {md_code(tu_label(*tu))} | {base_dur / 1e6:.1f} s | {pr_dur / 1e6:.1f} s | {format_seconds_delta(delta_s, base_dur * skew / 1e6)} |")
-        section.summary = f"{len(findings)} translation units changed compile time"
+        findings_summary = f"{len(findings)} translation units changed compile time"
+        section.summary = f"{section.summary}; {findings_summary}" if section.summary else findings_summary
 
         # Attribute the biggest slowdowns to concrete frontend/backend entities
         # (template instantiations, included headers, function codegen).
@@ -1158,7 +1183,12 @@ def main():
         return
 
     master_shas = get_master_shas(info)
-    if args.local and not master_shas:
+    if not master_shas:
+        if not args.local:
+            # Fail-close: in CI the anchored chain is the only baseline set. A
+            # run that lost it must not fall back to the global master tip -
+            # that would let the baseline be a commit the PR is not built on.
+            raise RuntimeError("No `master_track_commits_sha` metadata - cannot anchor the baseline on the PR's master parent")
         # Local runs have no CI kv metadata: without a chain the warmup and
         # per-TU baseline lookups find nothing and `commit_sha IN ()` is not
         # even a valid query, so anchor the chain on the provided baseline.
