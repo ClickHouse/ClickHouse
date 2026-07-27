@@ -152,8 +152,8 @@ void reserveSpaceInHashMaps(
                         actual_reserve_size = std::min(reserve_size, budget_entries);
                     }
 
-                    for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
-                        map.impls[j].reserve(actual_reserve_size / map.NUM_BUCKETS);
+                    for (size_t j = idx; j < map.numBuckets(); j += slots)
+                        map.impls[j].reserve(actual_reserve_size / map.numBuckets());
                 })
         };
 
@@ -271,7 +271,7 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
                             maps,
                             [&](auto & map)
                             {
-                                for (size_t j = idx; j < map.NUM_BUCKETS; j += slots)
+                                for (size_t j = idx; j < map.numBuckets(); j += slots)
                                     map.impls[j].clearAndShrink();
                             })
                     };
@@ -856,7 +856,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                     rhs_maps,
                     [&](auto & lhs_map, auto & rhs_map)
                     {
-                        for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
+                        for (size_t j = idx; j < lhs_map.numBuckets(); j += slots)
                         {
                             if (!lhs_map.impls[j].empty())
                                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");

@@ -18,8 +18,16 @@ struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
 {
 };
 
-template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
-struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
+template <
+    typename Key,
+    typename Cell,
+    typename Hash,
+    typename Grower,
+    typename Allocator,
+    template <typename...> typename ImplTable,
+    Int32 bits_for_bucket>
+struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable, bits_for_bucket>>
+    : std::true_type
 {
 };
 
@@ -28,8 +36,17 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 {
 };
 
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Ts...>> : std::true_type
+template <
+    typename Key,
+    typename Cell,
+    typename Hash,
+    typename Grower,
+    typename Allocator,
+    typename ImplTable,
+    Int32 bits_for_bucket,
+    typename BucketHash>
+struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable, bits_for_bucket, BucketHash>>
+    : std::true_type
 {
 };
 

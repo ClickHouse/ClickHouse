@@ -1828,7 +1828,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -1882,7 +1882,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2055,7 +2055,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         std::vector<Map> local_maps(num_threads);
         MapTwoLevel global_map;
-        std::vector<Mutex> mutexes(MapTwoLevel::NUM_BUCKETS);
+        std::vector<Mutex> mutexes(MapTwoLevel::numBuckets());
 
         Stopwatch watch;
 
@@ -2262,7 +2262,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2320,7 +2320,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2378,7 +2378,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { merge2Prefetch(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2436,7 +2436,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevel::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { merge2(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2879,7 +2879,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevelRobinHood::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevelRobinHood::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { mergeTwoLevelRobinHood(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2936,7 +2936,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevelRobinHood::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevelRobinHood::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { mergeTwoLevelRobinHood(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -2993,7 +2993,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevelSwiss::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevelSwiss::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { mergeTwoLevelSwiss(maps.data(), num_threads, i); });
 
         pool.wait();
@@ -3050,7 +3050,7 @@ int mainEntryExampleParallelAggregation(int argc, char ** argv)
 
         watch.restart();
 
-        for (unsigned i = 0; i < MapTwoLevelSwiss::NUM_BUCKETS; ++i)
+        for (unsigned i = 0; i < MapTwoLevelSwiss::numBuckets(); ++i)
             pool.scheduleOrThrowOnError([&, i] { mergeTwoLevelSwiss(maps.data(), num_threads, i); });
 
         pool.wait();

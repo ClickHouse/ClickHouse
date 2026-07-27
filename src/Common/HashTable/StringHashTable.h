@@ -248,7 +248,7 @@ protected:
     using Ts = typename SubMaps::Ts;
     using Self = StringHashTable;
 
-    template <typename, typename, size_t>
+    template <typename, typename, Int32>
     friend class TwoLevelStringHashTable;
 
     T0 m0;
