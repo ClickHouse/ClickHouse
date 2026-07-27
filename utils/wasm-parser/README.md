@@ -31,14 +31,16 @@ unwind to.
 
 ## What it costs
 
-`-Os`, stripped, all 220 parser translation units plus their transitive closure: **1.6 MB, 463 KB
-gzipped**.
+`-Oz`, full LTO with `-fvirtual-function-elimination`, stripped, all 320 translation units of the
+parser and its transitive closure: **1.17 MB, 362 KB gzipped, 273 KB brotli**.
 
 It started at 2.7 MB (789 KB gzipped), and almost none of the difference was parser code:
 abseil (196 KB) and re2 (181 KB), the timezone database and cctz (30 KB plus tzdata), exception
 landing pads and unwind tables (262 KB), `abi::__cxa_demangle` (132 KB), the per-error-code
 statistics behind `system.errors` (150 KB of data), and `<locale>`, which twelve objects were
-pulling in - 181 KB of it through a single `ostringstream` in Poco's `Bugcheck::what`.
+pulling in - 181 KB of it through a single `ostringstream` in Poco's `Bugcheck::what`. `-Oz` over
+`-Os` accounts for a further 19%, at the cost of about 22% of parse throughput - the right way
+round for something downloaded once and then asked to parse one query at a time.
 
 The largest remaining components are `src/Parsers` itself, `src/Common` + `base`, then
 `src/Parsers/Access` + `src/Access`, followed by fmt, double-conversion, zmij, Poco, `src/IO` and
@@ -63,9 +65,10 @@ something a browser has no use for, and each would otherwise dominate the bundle
 
 `Core/Settings.cpp` is no longer among them: `ParserSetQuery` used to call `Settings::castValueUtil`
 to ask whether a bare `SET x` names a `Bool` setting, which pulled in every `SettingField*Traits`
-specialization. It now records that the value was omitted and `BaseSettings::applyChange` checks
-the type, where the schema is known - so the whole settings schema is out of the parser's closure,
-in this build and in the server.
+specialization. It now records that the value was omitted, and the layers that apply a
+`SettingChange` - `BaseSettings::applyChange`, `Context::applySettingChange` and
+`Context::checkSettingsConstraints` - check the type where the schema is known. So the whole
+settings schema is out of the parser's closure, in this build and in the server.
 
 The `shim/` directory supplies the POSIX headers wasi-libc omits (`netdb.h`, `ucontext.h`,
 `sched.h`, `pwd.h`, rounding modes in `fenv.h`, `sun_path`, `__u6_addr`). Nothing in the build
@@ -74,8 +77,8 @@ calls into them - they exist so that headers naming those types in signatures st
 ## Where the remaining size is
 
 Access-entity DDL is the largest single share: `CREATE USER`/`ROLE`/`QUOTA`/`ROW POLICY` and
-`GRANT` cost 334 KB of parser and `Access` code directly. A "queries only" profile would be a
-large, easy cut for a Web UI that never issues those statements.
+`GRANT` cost 334 KB of parser and `Access` code directly, as measured before `-Oz` and LTO. A
+"queries only" profile would be a large, easy cut for a Web UI that never issues those statements.
 
 What is *not* here any more is a regex engine. re2 and abseil used to cost 377 KB, reached from
 `COLUMNS('regexp')` matchers, from `ASTFunction`'s secret-argument finder, and from access-rights
