@@ -2334,7 +2334,7 @@ void NO_INLINE Aggregator::publishValueStagedRecordsSorted(
             /// The key bytes are read straight from the hashing state's column when it exposes
             /// them: the generic key holder of the packed method would re-pack the key and
             /// re-compute its content hash per record, and the staged arrays already hold both.
-            const char * key_data;
+            const char * key_data = nullptr;
             [[maybe_unused]] SharedKey widened{};
             if constexpr (requires { local_find_state.chars; local_find_state.offsets; })
             {
