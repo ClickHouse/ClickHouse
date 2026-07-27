@@ -314,7 +314,9 @@ public:
         /// counter of the other statistics kinds - the caller applies the compression ratio below to it.
         size_t bytes = 0;
         /// Serialized size of the sample the extrapolation is based on, and the size of the same sample
-        /// after compression. Their quotient is the compression ratio of the states.
+        /// after compression. Their quotient is the compression ratio of the states. `compressed_bytes`
+        /// never exceeds `sample_bytes`: a sample too small to outweigh the per-block framing of the
+        /// compressed format is reported as incompressible rather than as expanding.
         size_t sample_bytes = 0;
         size_t compressed_bytes = 0;
     };

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <optional>
 #include <Core/Settings.h>
 #include <IO/NullWriteBuffer.h>
@@ -238,6 +239,21 @@ UInt64 & getInlineCountState(DB::AggregateDataPtr & ptr)
 namespace DB
 {
 
+namespace
+{
+
+/// The compressed format writes a checksum and a block header in front of every compressed block, so a sample
+/// of a few bytes comes out of `CompressedWriteBuffer` larger than it went in. When the states are actually sent,
+/// that framing is amortized over `min_compress_block_size` of data, so a sample that is dominated by it says
+/// nothing about how well the states compress. Report such a sample as incompressible instead of as expanding:
+/// the compression ratio derived from it stays at 1, exactly what the caller assumed before the ratio was measured.
+size_t compressedSampleSize(size_t sample_bytes, size_t compressed_bytes)
+{
+    return std::min(sample_bytes, compressed_bytes);
+}
+
+}
+
 Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result, ssize_t bucket) const
 {
     auto estimate_size_of_compressed_state = [&](auto & table)
@@ -276,7 +292,7 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
                 /// is the size of the compressed data that reached the underlying buffer.
                 res.bytes += static_cast<size_t>(table.size() * compressed_buf.count() / ((it + period - 1) / period));
                 res.sample_bytes += compressed_buf.count();
-                res.compressed_bytes += null_buf.count();
+                res.compressed_bytes += compressedSampleSize(compressed_buf.count(), null_buf.count());
             }
         }
         return res;
@@ -301,7 +317,7 @@ Aggregator::CompressedStateSizeEstimate Aggregator::estimateSizeOfCompressedStat
             compressed_buf.finalize();
             res.bytes += compressed_buf.count();
             res.sample_bytes += compressed_buf.count();
-            res.compressed_bytes += null_buf.count();
+            res.compressed_bytes += compressedSampleSize(compressed_buf.count(), null_buf.count());
         }
         return res;
     }
