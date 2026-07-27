@@ -27,8 +27,9 @@ as the fuzzer's was.
 The script fails closed: it aborts before starting the memory-destructive workload unless every cgroup
 setup step is proven (the memory controller is enabled, the hard limits read back as written, and the
 server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside the cgroup
-and OOM the whole host. The cgroup name is unique per run, so `cleanup` (which tears the cgroup down
-with `cgroup.kill`) can only ever kill this run's own processes; the port is one the run binds and
+and OOM the whole host. The cgroup name is unique per run and `cleanup` tears it down with
+`cgroup.kill` only when this run created it (a pre-existing cgroup - a recycled PID - aborts the run
+and is left untouched), so the teardown can only ever kill this run's own processes; the port is one the run binds and
 HOLDS from before any setup until the moment the server is started (an explicit PORT is bound the same
 way, so a collision fails fast instead of burning the startup loop), so concurrent invocations cannot
 claim the same port and do not interfere with each other. It also refuses to run when the scratch data directory
@@ -65,6 +66,12 @@ RUN_USER = os.environ.get("SUDO_USER") or pwd.getpwuid(os.getuid()).pw_name
 # per-run name, `cgroup.kill` can only ever hit processes this run started itself.
 CG_NAME = f"ch_merge_oom.{os.getpid()}"
 CG = f"/sys/fs/cgroup/{CG_NAME}"
+# Set only once this run has actually created `CG` itself. A PID is recyclable, so `CG` can already
+# exist when the script starts (a leaked cgroup from a dead run, or - worse - a live cgroup belonging
+# to something else that happens to use the same name). The setup step fails closed in that case, but
+# the abort still unwinds through `finally: cleanup(base)`, so the teardown must not touch a cgroup
+# this run does not own: `cleanup` writes `cgroup.kill` only when this flag is set.
+CG_OWNED = False
 
 
 def reserve_port(port):
@@ -213,7 +220,10 @@ def cleanup(base):
     for proc in outstanding:
         kill_client_group(proc)
     time.sleep(1)
-    if os.path.isdir(CG):
+    # Only tear down a cgroup this run created. If `CG` already existed at startup the run aborted
+    # without adopting it, and killing its processes here would be exactly the host-destructive act the
+    # per-run name is meant to rule out.
+    if CG_OWNED and os.path.isdir(CG):
         try:
             write_file(f"{CG}/cgroup.kill", 1)
         except OSError:
@@ -281,6 +291,9 @@ def main():
         if os.path.isdir(CG):
             die(f"cgroup {CG} already exists; remove it first (rmdir {CG})")
         os.makedirs(CG)
+        # From here on the cgroup is ours, so `cleanup` may kill and remove it.
+        global CG_OWNED
+        CG_OWNED = True
         # Enabling +memory is a no-op if it is already enabled, so the write itself is tolerated, but the
         # memory controller must then actually be present in the child cgroup (memory.max appears only
         # when it is).
