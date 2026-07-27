@@ -23,3 +23,7 @@ SELECT countIf(explain LIKE '%SEKRIT_DAGKEY%') AS pretty_dag_leaks
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (SELECT encrypt('aes-128-ecb', materialize('plaintext'), leftPad('SEKRIT_DAGKEY', 16, '*')) FROM numbers(1)));
 SELECT countIf(explain LIKE '%SEKRIT_DAGKEY%') AS legacy_dag_leaks
 FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 0', (SELECT encrypt('aes-128-ecb', materialize('plaintext'), leftPad('SEKRIT_DAGKEY', 16, '*')) FROM numbers(1)));
+
+-- EXPLAIN QUERY TREE with the passes disabled runs no analysis, so an ordinary secret function must be
+-- masked by the dump itself; both the plaintext and the key literal must show as [HIDDEN].
+EXPLAIN QUERY TREE run_passes = 0 SELECT encrypt('aes-128-ecb', 'SEKRIT_PLAINTEXT', 'SEKRIT_LITERALKEY');
