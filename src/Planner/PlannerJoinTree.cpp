@@ -1765,6 +1765,15 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     table_expression_query_info.cacheable_logical_plan = true;
                 }
 
+                /// Record the identity of every storage the cacheable plan is built from, so that the
+                /// query plan cache can bind both the stored dependencies and the execution of the plan
+                /// to exactly the storages that were analyzed here - a name can start resolving to a
+                /// different table right after this point (see `Context::PlanCacheStorageIdentities`).
+                /// Temporary tables are never cacheable dependencies, so they are not recorded.
+                if (select_query_options.cacheable_logical_plan && table_node && table_node->getTemporaryTableName().empty())
+                    if (auto identities = query_context->getPlanCacheStorageIdentities())
+                        identities->add(table_node->getStorageID());
+
                 if (!select_query_options.build_logical_plan || expand_view_in_logical_plan)
                     till_stage = storage->getQueryProcessingStage(
                         query_context, select_query_options.to_stage, storage_snapshot, table_expression_query_info);

@@ -257,6 +257,7 @@ namespace FailPoints
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
     extern const char trigger_sanitizer_error[];
+    extern const char query_plan_cache_pause_after_logical_plan[];
 }
 
 static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
@@ -1251,6 +1252,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     auto planning_context = Context::createCopy(context);
     planning_context->setSetting("compile_expressions", Field(false));
 
+    /// Collect the identities of the storages this plan is built from. The plan bakes in their row
+    /// policies, expanded view bodies and schema assumptions, while both the dependency collection
+    /// below and `resolveStorages` resolve the table names again through the catalog - in an `Atomic`
+    /// database a concurrent `DROP`/`CREATE` can make the same name point at a different table in
+    /// between. Binding both to the analyzed identities keeps the "analyzed storage == executed
+    /// storage" invariant that a cache hit enforces through `validated_identities`.
+    auto planning_identities = std::make_shared<Context::PlanCacheStorageIdentities>();
+    planning_context->setPlanCacheStorageIdentities(planning_identities);
+
     auto analyzer_interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(ast, planning_context, logical_plan_options);
     auto & logical_plan = analyzer_interpreter->getQueryPlan();
 
@@ -1269,6 +1279,10 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
         return nullptr;
     }
 
+    /// Lets a test replace a table between analysis and execution of the plan, which is otherwise a
+    /// narrow race; see `04655_query_plan_cache_table_replaced_while_planning`.
+    FailPointInjection::pauseFailPoint(FailPoints::query_plan_cache_pause_after_logical_plan);
+
     auto dependencies = collectQueryPlanCacheDependencies(
         logical_plan, ast, context, settings[Setting::query_plan_cache_allow_scalar_subqueries]);
     if (!dependencies)
@@ -1277,6 +1291,26 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             "Not caching plan: query references an unsupported dependency (table function, "
             "temporary/system/remote/Merge table, or a non-INVOKER view)");
         return nullptr;
+    }
+
+    /// The dependencies were resolved by name after the plan was built. If any of them is not the
+    /// storage that was analyzed, the entry would fingerprint one table while the plan carries the
+    /// semantics of another, and executing the plan here would run the swapped table with the old
+    /// table's row policies or schema. Neither store nor execute such a plan: fall back to the normal
+    /// interpreter, which analyzes the current tables from scratch.
+    /// A dependency that is not among the analyzed identities is a table that has no place in the
+    /// plan at all - a table read only inside a scalar subquery, whose result is folded into a
+    /// constant during analysis (only possible with `query_plan_cache_allow_scalar_subqueries`).
+    const auto analyzed_identities = planning_identities->get();
+    for (const auto & dep : *dependencies)
+    {
+        auto it = analyzed_identities.find({dep.database, dep.table});
+        if (it != analyzed_identities.end() && it->second != dep.uuid)
+        {
+            LOG_DEBUG(getLogger("QueryPlanCache"),
+                "Not caching plan: table {}.{} was replaced while the plan was being built", dep.database, dep.table);
+            return nullptr;
+        }
     }
 
     try
@@ -1299,9 +1333,25 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     }
 
     /// Execute the logical plan by resolving storage reads against current snapshots -
-    /// the same path a cache hit takes, so hit and miss behave identically.
+    /// the same path a cache hit takes, so hit and miss behave identically. The reads are bound to
+    /// the analyzed identities, so a table replaced since analysis cannot be executed with this
+    /// plan's baked semantics; that is reported as `INCORRECT_DATA` and handled by falling back to
+    /// the normal interpreter, exactly like a stale cache entry is.
     auto plan = std::move(*analyzer_interpreter).extractQueryPlan();
-    plan.resolveStorages(context);
+    try
+    {
+        plan.resolveStorages(context, &analyzed_identities);
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
+            throw;
+        /// Concurrent DDL is a normal thing to lose a race with, so this is not logged as an error:
+        /// the query is executed by the normal interpreter, which analyzes the current tables.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "A table was replaced while the plan was being built, falling back to normal planning: {}", e.message());
+        return nullptr;
+    }
     return std::make_unique<InterpreterSelectQueryFromPlan>(std::move(plan), context, select_query_options);
 }
 

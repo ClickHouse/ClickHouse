@@ -485,10 +485,41 @@ public:
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
+    /// Records the identities of the storages that were resolved while a cacheable logical plan was
+    /// built for the query plan cache. The plan bakes in the semantics (row policies, expanded view
+    /// bodies, schema) of exactly these storages, so both the dependencies stored in the cache entry
+    /// and the storages the plan is finally executed against must be the very same ones - in an
+    /// `Atomic` database a concurrent `DROP`/`CREATE` can otherwise make the same name resolve to a
+    /// different table between analysis and execution (see `QueryPlan::resolveStorages`).
+    /// Nested plan building (expanded view bodies, subqueries) happens in contexts copied from the
+    /// planning context, and the pointer is shared by those copies, so all of it is recorded here.
+    struct PlanCacheStorageIdentities
+    {
+        void add(const StorageID & storage_id)
+        {
+            std::lock_guard lock(mutex);
+            identities.emplace(std::pair{storage_id.getDatabaseName(), storage_id.table_name}, storage_id.uuid);
+        }
+
+        std::map<std::pair<String, String>, UUID> get() const
+        {
+            std::lock_guard lock(mutex);
+            return identities;
+        }
+
+        mutable std::mutex mutex;
+        std::map<std::pair<String, String>, UUID> identities TSA_GUARDED_BY(mutex);
+    };
+    using PlanCacheStorageIdentitiesPtr = std::shared_ptr<PlanCacheStorageIdentities>;
+
 protected:
     /// In some situations, we want to be able to transfer the access info from children back to parents (e.g. definers context).
     /// Therefore, query_access_info must be a pointer.
     QueryAccessInfoPtr query_access_info;
+
+    /// Set only while a cacheable logical plan is being built; nullptr otherwise. A pointer, so that
+    /// nested contexts (view bodies, subqueries) record into the same collector.
+    PlanCacheStorageIdentitiesPtr plan_cache_storage_identities;
 
 public:
     /// Record names of created objects of factories (for testing, etc)
@@ -1033,6 +1064,9 @@ public:
     const QueryAccessInfo & getQueryAccessInfo() const { return *getQueryAccessInfoPtr(); }
     QueryAccessInfoPtr getQueryAccessInfoPtr() const { return query_access_info; }
     void setQueryAccessInfo(QueryAccessInfoPtr other) { query_access_info = other; }
+
+    PlanCacheStorageIdentitiesPtr getPlanCacheStorageIdentities() const { return plan_cache_storage_identities; }
+    void setPlanCacheStorageIdentities(PlanCacheStorageIdentitiesPtr other) { plan_cache_storage_identities = std::move(other); }
 
     void addQueryAccessInfo(
         const StorageID & table_id,
