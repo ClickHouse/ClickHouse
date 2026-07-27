@@ -30,3 +30,13 @@ limit_by_correctness
 1
 limit_by_per_group_count
 1
+order_by_limit_by_reads_in_order
+1
+order_by_limit_by_multi_part_no_prefetching
+1
+order_by_limit_by_prefetching_without_hint
+1
+order_by_limit_by_with_sort_suffix_keeps_prefetching
+1
+order_by_limit_by_correctness
+1

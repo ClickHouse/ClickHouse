@@ -223,4 +223,54 @@ SELECT min(c) = 3 AND max(c) = 3 FROM (
     ) GROUP BY grp
 );
 
+-- `ORDER BY ... LIMIT BY ...` reaches the same per-stream prefilter through a different route:
+-- `pushLimitByIntoSort` hands the `LIMIT BY` hint to the `SortingStep`, which attaches
+-- `LimitBySortedStreamTransform` to every input stream before merging them. Read-in-order makes
+-- that sort a `FinishSorting` whose prefix covers the whole `ORDER BY`, so the prefilter really
+-- does run per stream and scales with their number. `PrefetchingConcat` must therefore stay
+-- disabled here too, exactly as for the bare `LIMIT BY` above.
+-- Non-vacuous: the very same query with `query_plan_push_limit_by_into_sort = 0` (no hint, so no
+-- per-stream prefilter to protect) keeps `PrefetchingConcat`, as does a plain `ORDER BY` without
+-- `LIMIT BY` — see `order_by_limit_by_prefetching_without_hint` below.
+SELECT 'order_by_limit_by_reads_in_order';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+) WHERE explain LIKE '%LimitBySortedStreamTransform × %';
+
+SELECT 'order_by_limit_by_multi_part_no_prefetching';
+SELECT count() = 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+SELECT 'order_by_limit_by_prefetching_without_hint';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1, query_plan_push_limit_by_into_sort = 0,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+-- When a suffix of the `ORDER BY` is not covered by the read-in-order prefix, `SortingStep` cannot
+-- run the prefilter per stream (the suffix keys decide which rows come first inside a group), so
+-- there is nothing to protect and the per-part prefetching stays enabled.
+SELECT 'order_by_limit_by_with_sort_suffix_keeps_prefetching';
+SELECT count() > 0 FROM (
+    EXPLAIN PIPELINE SELECT * FROM t_prefetching_concat_limit_by ORDER BY grp, key, value LIMIT 3 BY grp
+    SETTINGS enable_parallel_replicas = 0, max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+) WHERE explain LIKE '%PrefetchingConcat%';
+
+-- With an outer `ORDER BY` the result is fully deterministic: the 3 smallest keys of every group.
+SELECT 'order_by_limit_by_correctness';
+-- Every group `g` holds the keys `g`, `g + 100`, `g + 200`, ...; the three smallest are the first
+-- three of those, so the expected sum is `sum(3 * g + 300)` over `g` in `[0, 100)` = 44850.
+SELECT count() = 300 AND uniqExact(grp) = 100 AND sum(key) = 44850 FROM (
+    SELECT grp, key FROM t_prefetching_concat_limit_by ORDER BY grp, key LIMIT 3 BY grp
+    SETTINGS max_threads = 6, optimize_read_in_order = 1,
+             merge_tree_min_rows_for_concurrent_read = 1024, merge_tree_min_bytes_for_concurrent_read = 0, merge_tree_min_read_task_size = 2
+);
+
 DROP TABLE t_prefetching_concat_limit_by;
