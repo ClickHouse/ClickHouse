@@ -135,6 +135,10 @@ $CLIENT -q --multiline "
 $CLIENT -q "ATTACH TABLE $CLICKHOUSE_DATABASE.t9 FROM '${CLICKHOUSE_TEST_UNIQUE_NAME}/attach_src' (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k"
 echo "9 attach from count $($CLIENT -q "SELECT count() FROM $CLICKHOUSE_DATABASE.t9")"
 echo "9 attach from moved $($CLIENT -q "SELECT data_paths[1] NOT LIKE '%${CLICKHOUSE_TEST_UNIQUE_NAME}%' FROM system.tables WHERE database = '$CLICKHOUSE_DATABASE' AND name = 't9'")"
+# The live handle keeps answering from wherever it was opened, so only a reload proves the data
+# is at the table's own directory and the source directory is empty.
+echo "9 attach from reloaded $(reloaded_count "$CLICKHOUSE_DATABASE" t9)"
+echo "9 source dir gone $(ls -d "${EXPLICIT_DIR}/attach_src" >/dev/null 2>&1 && echo 0 || echo 1)"
 
 # 10. An existing destination directory must not be replaced, and a failed rename must leave the
 # table attached and fully readable (the handle is restored, the caller re-attaches it).
@@ -168,9 +172,40 @@ $CLIENT -q "SYSTEM DISABLE FAILPOINT rocksdb_rename_fail_reopen"
 # The data was never moved, so a reload recovers the table completely.
 echo "12 reloaded $(reloaded_count "$ORD1" t12)"
 
+# 13. ATTACH TABLE ... FROM publishes the table and only then relocates its directory, so without
+# a table lock a concurrent reader could hold an iterator into the RocksDB the relocation is about
+# to close. The PAUSEABLE failpoint stops the attach exactly in that window.
+$CLIENT -q --multiline "
+    DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t13_seed SYNC;
+    CREATE TABLE $CLICKHOUSE_DATABASE.t13_seed (k UInt64, v String)
+        ENGINE = EmbeddedRocksDB(0, '${EXPLICIT_DIR}/attach_src13') PRIMARY KEY k;
+    INSERT INTO $CLICKHOUSE_DATABASE.t13_seed SELECT number, toString(number) FROM numbers(5);
+    DROP TABLE $CLICKHOUSE_DATABASE.t13_seed SYNC SETTINGS ignore_drop_queries_probability = 0;
+    DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t13 SYNC;
+"
+$CLIENT -q "SYSTEM ENABLE FAILPOINT attach_from_path_pause_before_relocation"
+$CLIENT -q "ATTACH TABLE $CLICKHOUSE_DATABASE.t13 FROM '${CLICKHOUSE_TEST_UNIQUE_NAME}/attach_src13' (k UInt64, v String) ENGINE = EmbeddedRocksDB PRIMARY KEY k" &
+ATTACH_PID=$!
+# Returns as soon as the attach has paused; no sleeping and no polling.
+$CLIENT -q "SYSTEM WAIT FAILPOINT attach_from_path_pause_before_relocation PAUSE"
+# A short lock timeout keeps this bounded: with the lock held the reader cannot get the table,
+# without it the reader would read through the handle that is about to be closed.
+CONCURRENT_READ=$($CLIENT --lock_acquire_timeout 1 -q "SELECT count() FROM $CLICKHOUSE_DATABASE.t13" 2>&1)
+if [ "$CONCURRENT_READ" = "5" ]; then
+    echo "13 concurrent read excluded 0"
+else
+    echo "13 concurrent read excluded 1"
+fi
+# DISABLE resumes the paused attach and removes the failpoint in one step.
+$CLIENT -q "SYSTEM DISABLE FAILPOINT attach_from_path_pause_before_relocation"
+wait $ATTACH_PID
+echo "13 attach from count $($CLIENT -q "SELECT count() FROM $CLICKHOUSE_DATABASE.t13")"
+echo "13 attach from reloaded $(reloaded_count "$CLICKHOUSE_DATABASE" t13)"
+
 $CLIENT --force_remove_data_recursively_on_drop 1 -q --multiline "
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t4 SYNC;
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t9 SYNC;
+    DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t13 SYNC;
     DROP TABLE IF EXISTS $ORD1.t11 SYNC;
     DROP TABLE IF EXISTS $ORD1.t12 SYNC;
     DROP DATABASE IF EXISTS $ORD1 SYNC;

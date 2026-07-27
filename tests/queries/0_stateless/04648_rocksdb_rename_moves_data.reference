@@ -14,6 +14,8 @@
 8 read_only explicit path reloaded 6
 9 attach from count 7
 9 attach from moved 1
+9 attach from reloaded 7
+9 source dir gone 1
 10 rename refused 1
 10 table still readable 5
 10 table still reloadable 5
@@ -24,3 +26,6 @@
 12 full scan refuses 1
 12 key lookup refuses 1
 12 reloaded 3
+13 concurrent read excluded 1
+13 attach from count 5
+13 attach from reloaded 5
