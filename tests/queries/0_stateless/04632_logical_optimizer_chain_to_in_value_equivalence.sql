@@ -180,6 +180,20 @@ CREATE TABLE t_date (c Date) ENGINE = Memory;
 INSERT INTO t_date VALUES (toDate(100)), (toDate(200)), (toDate(300)), (toDate(400));
 SELECT countIf(c = toDateTime(100)::Variant(DateTime, UInt64) OR c = toDateTime(200)::Variant(DateTime, UInt64) OR c = toDateTime(300)::Variant(DateTime, UInt64)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = toDateTime(100)::Variant(DateTime, UInt64) AS g0, c = toDateTime(200)::Variant(DateTime, UInt64) AS g1, c = toDateTime(300)::Variant(DateTime, UInt64) AS g2 FROM t_date)) AS ground_truth FROM t_date;
 
+-- A SINGLE-alternative Variant expression is just as unsound: the shared semantic-point rule cannot
+-- see through a Variant TARGET (it matches none of its string / Tuple / Array / Map branches), so the
+-- alternative count is not what makes the shape safe and the decline has to key on the type.
+DROP TABLE IF EXISTS t_var1s;
+CREATE TABLE t_var1s (c Variant(String)) ENGINE = Memory;
+INSERT INTO t_var1s VALUES ('ab'), ('cd'), ('ef'), ('zz');
+SELECT countIf(c = toFixedString('ab', 5) OR c = toFixedString('cd', 5) OR c = toFixedString('ef', 5)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = toFixedString('ab', 5) AS g0, c = toFixedString('cd', 5) AS g1, c = toFixedString('ef', 5) AS g2 FROM t_var1s)) AS ground_truth FROM t_var1s;
+SELECT countIf(c = 'ab'::Enum8('ab' = 1, 'cd' = 2, 'ef' = 3) OR c = 'cd'::Enum8('ab' = 1, 'cd' = 2, 'ef' = 3) OR c = 'ef'::Enum8('ab' = 1, 'cd' = 2, 'ef' = 3)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = 'ab'::Enum8('ab' = 1, 'cd' = 2, 'ef' = 3) AS g0, c = 'cd'::Enum8('ab' = 1, 'cd' = 2, 'ef' = 3) AS g1, c = 'ef'::Enum8('ab' = 1, 'cd' = 2, 'ef' = 3) AS g2 FROM t_var1s)) AS ground_truth FROM t_var1s;
+
+DROP TABLE IF EXISTS t_tvar1s;
+CREATE TABLE t_tvar1s (c Tuple(Variant(String))) ENGINE = Memory;
+INSERT INTO t_tvar1s VALUES (tuple('ab')), (tuple('cd')), (tuple('zz'));
+SELECT countIf(c = tuple(toFixedString('ab', 5)) OR c = tuple(toFixedString('cd', 5)) OR c = tuple(toFixedString('ef', 5))) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = tuple(toFixedString('ab', 5)) AS g0, c = tuple(toFixedString('cd', 5)) AS g1, c = tuple(toFixedString('ef', 5)) AS g2 FROM t_tvar1s)) AS ground_truth FROM t_tvar1s;
+
 -- =====================================================================================
 -- (b) The optimization must still FIRE wherever the converted value IS a semantic point.
 --     A blanket exclusion (e.g. rejecting all floats by type) makes these drop to 0.
@@ -243,6 +257,27 @@ SELECT 'uuid string const', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELE
 -- upstream (the resulting notIn would be Nullable where the notEquals chain was not), on both an
 -- unfixed and a fixed build, so a 0 here pins that no rule was added rather than a lost rewrite.
 SELECT 'variant expr notIn declined upstream', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_var WHERE c != 1 AND c != 2 AND c != 3) WHERE explain ILIKE '%function_name: notIn%';
+
+-- The measured COST of declining Variant expressions by type: these three are correct today, so their
+-- results must stay right while the rewrite is forgone. They are asserted as `fired = 0` deliberately -
+-- a `1` here would mean the decline had been narrowed and the carriers above are live again.
+DROP TABLE IF EXISTS t_vf32;
+CREATE TABLE t_vf32 (c Variant(Float32)) ENGINE = Memory;
+INSERT INTO t_vf32 VALUES (1.5), (2.5), (3.5), (9.5);
+SELECT 'variant float32 forgone', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_vf32 WHERE c = toFloat64(1.5) OR c = toFloat64(2.5) OR c = toFloat64(3.5)) WHERE explain ILIKE '%function_name: in%';
+SELECT countIf(c = toFloat64(1.5) OR c = toFloat64(2.5) OR c = toFloat64(3.5)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = toFloat64(1.5) AS g0, c = toFloat64(2.5) AS g1, c = toFloat64(3.5) AS g2 FROM t_vf32)) AS ground_truth FROM t_vf32;
+
+DROP TABLE IF EXISTS t_venum;
+CREATE TABLE t_venum (c Variant(Enum8('a' = 1, 'b' = 2, 'c' = 3, 'z' = 9))) ENGINE = Memory;
+INSERT INTO t_venum VALUES ('a'), ('b'), ('c'), ('z');
+SELECT 'variant enum forgone', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_venum WHERE c = 'a' OR c = 'b' OR c = 'c') WHERE explain ILIKE '%function_name: in%';
+SELECT countIf(c = 'a' OR c = 'b' OR c = 'c') AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = 'a' AS g0, c = 'b' AS g1, c = 'c' AS g2 FROM t_venum)) AS ground_truth FROM t_venum;
+
+DROP TABLE IF EXISTS t_vu256;
+CREATE TABLE t_vu256 (c Variant(UInt256)) ENGINE = Memory;
+INSERT INTO t_vu256 VALUES (1), (2), (3), (9);
+SELECT 'variant uint256 forgone', count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT count() FROM t_vu256 WHERE c = toInt64(1) OR c = toInt64(2) OR c = toInt64(3)) WHERE explain ILIKE '%function_name: in%';
+SELECT countIf(c = toInt64(1) OR c = toInt64(2) OR c = toInt64(3)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = toInt64(1) AS g0, c = toInt64(2) AS g1, c = toInt64(3) AS g2 FROM t_vu256)) AS ground_truth FROM t_vu256;
 
 -- =====================================================================================
 -- (d) The 2-term AND fold shares the root cause but has its OWN rule partition: NaN is
@@ -311,6 +346,17 @@ CREATE TABLE t_json (c JSON(x String)) ENGINE = Memory;
 INSERT INTO t_json VALUES ('{"x":"a"}'), ('{"x":"b"}'), ('{"x":"1"}');
 SELECT countIf(c = '{"x":"a"}'::JSON(x Enum8('a' = 1, 'b' = 2)) AND c != '{"x":1}'::JSON(x Int64)) FROM t_json; -- { serverError NO_COMMON_TYPE }
 
+-- Two expressions, so a contradiction on the ORDINARY column reaches the global fold: it may only
+-- collapse the whole AND to `false` if no parked filter is opaque. Routing the dynamic-structure term
+-- aside with an EMPTY converted value is what vetoes that collapse and keeps the query's own failure
+-- visible; without the veto the answer depends on `optimize_redundant_comparisons`.
+DROP TABLE IF EXISTS t_jveto;
+CREATE TABLE t_jveto (i Int32, c JSON(x String)) ENGINE = Memory;
+INSERT INTO t_jveto VALUES (1, '{"x":"a"}'), (2, '{"x":"b"}');
+SELECT countIf((i = 1) AND (i = 2) AND (c != '{"x":1}'::JSON(x Int64))) FROM t_jveto; -- { serverError NO_COMMON_TYPE }
+-- ... and the veto is not over-broad: a SAFE comparison in the same shape still folds away.
+SELECT countIf((i = 1) AND (i = 2) AND (c != '{"x":"zz"}')) AS safe_still_folds FROM t_jveto;
+
 -- =====================================================================================
 -- (c) Queries that the rewrite used to FAIL outright. Kept last: on an unfixed build these
 --     throw, and a raw exception would abort the rest of the file.
@@ -324,6 +370,25 @@ SELECT countIf(c != toFixedString('ab', 5) AND c != toFixedString('cd', 5) AND c
 -- converted value's size and not on the source type.
 SELECT countIf(c = 'ab\0\0\0' OR c = 'cd\0\0\0' OR c = 'ef\0\0\0') AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = 'ab\0\0\0' AS g0, c = 'cd\0\0\0' AS g1, c = 'ef\0\0\0' AS g2 FROM t_foldfs)) AS ground_truth FROM t_foldfs;
 SELECT countIf(c = 'ab\0\0\0\0\0' OR c = 'cd\0\0\0\0\0' OR c = 'ef\0\0\0\0\0') AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = 'ab\0\0\0\0\0' AS g0, c = 'cd\0\0\0\0\0' AS g1, c = 'ef\0\0\0\0\0' AS g2 FROM t_fs5)) AS ground_truth FROM t_fs5;
+
+-- Single-alternative Variant EXPRESSIONS the rewrite used to fail on, one per mechanism. The last one
+-- is the reason the decline cannot be a value or leaf check: with constants of the IDENTICAL type there
+-- is no conversion at all, so every value-level test passes, and the failure comes from the Set column
+-- for a Variant expression being built nullable while ColumnNullable refuses a ColumnVariant.
+DROP TABLE IF EXISTS t_vfs3;
+CREATE TABLE t_vfs3 (c Variant(FixedString(3))) ENGINE = Memory;
+INSERT INTO t_vfs3 VALUES (toFixedString('ab', 3)), (toFixedString('cd', 3)), (toFixedString('ef', 3));
+SELECT countIf(c = 'abcde' OR c = 'cdcde' OR c = 'efcde') AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = 'abcde' AS g0, c = 'cdcde' AS g1, c = 'efcde' AS g2 FROM t_vfs3)) AS ground_truth FROM t_vfs3;
+
+DROP TABLE IF EXISTS t_vtvar;
+CREATE TABLE t_vtvar (c Variant(Tuple(Variant(Float64, UInt64)))) ENGINE = Memory;
+INSERT INTO t_vtvar VALUES (tuple(1.0)), (tuple(2.0)), (tuple(3.0));
+SELECT countIf(c = tuple(1) OR c = tuple(2) OR c = tuple(3)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = tuple(1) AS g0, c = tuple(2) AS g1, c = tuple(3) AS g2 FROM t_vtvar)) AS ground_truth FROM t_vtvar;
+
+DROP TABLE IF EXISTS t_vdt64;
+CREATE TABLE t_vdt64 (c Variant(DateTime64(1, 'UTC'))) ENGINE = Memory;
+INSERT INTO t_vdt64 VALUES (toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC')), (toDateTime64('1970-01-01 00:00:02.2', 1, 'UTC')), (toDateTime64('1970-01-01 00:00:03.2', 1, 'UTC')), (toDateTime64('1970-01-01 00:00:09.9', 1, 'UTC'));
+SELECT countIf(c = toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') OR c = toDateTime64('1970-01-01 00:00:02.2', 1, 'UTC') OR c = toDateTime64('1970-01-01 00:00:03.2', 1, 'UTC')) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = toDateTime64('1970-01-01 00:00:01.2', 1, 'UTC') AS g0, c = toDateTime64('1970-01-01 00:00:02.2', 1, 'UTC') AS g1, c = toDateTime64('1970-01-01 00:00:03.2', 1, 'UTC') AS g2 FROM t_vdt64)) AS ground_truth FROM t_vdt64;
 
 -- A Variant constant whose alternative is a Tuple used to fail size validation in the set.
 SELECT countIf(c = tuple('a'::Enum8('a' = 1, 'b' = 2, 'c' = 3))::Variant(Tuple(Enum8('a' = 1, 'b' = 2, 'c' = 3)), UInt64) OR c = tuple('b'::Enum8('a' = 1, 'b' = 2, 'c' = 3))::Variant(Tuple(Enum8('a' = 1, 'b' = 2, 'c' = 3)), UInt64) OR c = tuple('c'::Enum8('a' = 1, 'b' = 2, 'c' = 3))::Variant(Tuple(Enum8('a' = 1, 'b' = 2, 'c' = 3)), UInt64)) AS res, (SELECT countIf(g0 OR g1 OR g2) FROM (SELECT c = tuple('a'::Enum8('a' = 1, 'b' = 2, 'c' = 3))::Variant(Tuple(Enum8('a' = 1, 'b' = 2, 'c' = 3)), UInt64) AS g0, c = tuple('b'::Enum8('a' = 1, 'b' = 2, 'c' = 3))::Variant(Tuple(Enum8('a' = 1, 'b' = 2, 'c' = 3)), UInt64) AS g1, c = tuple('c'::Enum8('a' = 1, 'b' = 2, 'c' = 3))::Variant(Tuple(Enum8('a' = 1, 'b' = 2, 'c' = 3)), UInt64) AS g2 FROM t_tenum)) AS ground_truth FROM t_tenum;
@@ -360,3 +425,12 @@ DROP TABLE IF EXISTS t_foldfs;
 DROP TABLE IF EXISTS t_afnan;
 DROP TABLE IF EXISTS t_mfnan;
 DROP TABLE IF EXISTS t_json;
+DROP TABLE IF EXISTS t_jveto;
+DROP TABLE IF EXISTS t_var1s;
+DROP TABLE IF EXISTS t_tvar1s;
+DROP TABLE IF EXISTS t_vf32;
+DROP TABLE IF EXISTS t_venum;
+DROP TABLE IF EXISTS t_vu256;
+DROP TABLE IF EXISTS t_vfs3;
+DROP TABLE IF EXISTS t_vtvar;
+DROP TABLE IF EXISTS t_vdt64;

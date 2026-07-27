@@ -8,6 +8,7 @@
 #include <Analyzer/Utils.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
+#include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -491,7 +492,12 @@ static std::optional<Field> tryConvertToColumnType(const ConstantNode * constant
 static bool hasVariantTypeRecursively(const DataTypePtr & type)
 {
     bool result = false;
-    auto check = [&](const IDataType & t) { result |= isVariant(t); };
+    /// `forEachChild` recurses into the children itself.
+    auto check = [&](const IDataType & t)
+    {
+        checkStackSize();
+        result |= isVariant(t);
+    };
     check(*type);
     type->forEachChild(check);
     return result;
@@ -516,16 +522,10 @@ static bool hasVariantTypeRecursively(const DataTypePtr & type)
 /// Modelled on the `FixedString` rule in `KeyCondition.cpp` (see `should_keep_original_string_constant`
 /// there), which declines index analysis for the same padding reasons and with the same `M >= N`
 /// exemption.
-static bool convertedConstantIsSemanticPoint(const Field & converted_value, const DataTypePtr & from_type, const DataTypePtr & expr_type)
+static bool convertedConstantIsSemanticPointImpl(const Field & converted_value, const DataTypePtr & from_type, const DataTypePtr & expr_type)
 {
     const auto source = removeLowCardinalityAndNullable(from_type);
     const auto target = removeLowCardinalityAndNullable(expr_type);
-
-    /// A source that erases its own type behind the value cannot be reasoned about at all. One nested
-    /// constant can carry a different active alternative per element, so there is no single
-    /// alternative to recover: decline outright.
-    if (source->hasDynamicStructure() || hasVariantTypeRecursively(source))
-        return false;
 
     if (isStringOrFixedString(target))
     {
@@ -546,6 +546,7 @@ static bool convertedConstantIsSemanticPoint(const Field & converted_value, cons
     /// is just as unsound as a top-level one, at any depth.
     if (const auto * tuple_target = typeid_cast<const DataTypeTuple *>(target.get()))
     {
+        checkStackSize();
         const auto * tuple_source = typeid_cast<const DataTypeTuple *>(source.get());
         if (!tuple_source || converted_value.getType() != Field::Types::Tuple)
             return false;
@@ -555,24 +556,26 @@ static bool convertedConstantIsSemanticPoint(const Field & converted_value, cons
         if (elements.size() != target_elements.size() || elements.size() != source_elements.size())
             return false;
         for (size_t i = 0; i < elements.size(); ++i)
-            if (!convertedConstantIsSemanticPoint(elements[i], source_elements[i], target_elements[i]))
+            if (!convertedConstantIsSemanticPointImpl(elements[i], source_elements[i], target_elements[i]))
                 return false;
         return true;
     }
 
     if (const auto * array_target = typeid_cast<const DataTypeArray *>(target.get()))
     {
+        checkStackSize();
         const auto * array_source = typeid_cast<const DataTypeArray *>(source.get());
         if (!array_source || converted_value.getType() != Field::Types::Array)
             return false;
         for (const auto & element : converted_value.safeGet<Array>())
-            if (!convertedConstantIsSemanticPoint(element, array_source->getNestedType(), array_target->getNestedType()))
+            if (!convertedConstantIsSemanticPointImpl(element, array_source->getNestedType(), array_target->getNestedType()))
                 return false;
         return true;
     }
 
     if (const auto * map_target = typeid_cast<const DataTypeMap *>(target.get()))
     {
+        checkStackSize();
         const auto * map_source = typeid_cast<const DataTypeMap *>(source.get());
         if (!map_source || converted_value.getType() != Field::Types::Map)
             return false;
@@ -584,14 +587,27 @@ static bool convertedConstantIsSemanticPoint(const Field & converted_value, cons
             const auto & key_and_value = entry.safeGet<Tuple>();
             if (key_and_value.size() != 2)
                 return false;
-            if (!convertedConstantIsSemanticPoint(key_and_value[0], map_source->getKeyType(), map_target->getKeyType())
-                || !convertedConstantIsSemanticPoint(key_and_value[1], map_source->getValueType(), map_target->getValueType()))
+            if (!convertedConstantIsSemanticPointImpl(key_and_value[0], map_source->getKeyType(), map_target->getKeyType())
+                || !convertedConstantIsSemanticPointImpl(key_and_value[1], map_source->getValueType(), map_target->getValueType()))
                 return false;
         }
         return true;
     }
 
     return true;
+}
+
+/// A source that erases its own type behind the value cannot be reasoned about at all. One nested
+/// constant can carry a different active alternative per element, so there is no single alternative to
+/// recover: decline outright. Both predicates walk the whole remaining type tree, so they are checked
+/// ONCE here rather than at every recursion level of the body.
+static bool convertedConstantIsSemanticPoint(const Field & converted_value, const DataTypePtr & from_type, const DataTypePtr & expr_type)
+{
+    const auto source = removeLowCardinalityAndNullable(from_type);
+    if (source->hasDynamicStructure() || hasVariantTypeRecursively(source))
+        return false;
+
+    return convertedConstantIsSemanticPointImpl(converted_value, from_type, expr_type);
 }
 
 /// SET-SPECIFIC (the `in`/`notIn` builders only). `equals` compares floats with `accurateEquals`
@@ -611,6 +627,7 @@ static bool convertedConstantIsSetSafeZeroFree(const Field & converted_value)
 
     if (converted_value.getType() == Field::Types::Tuple)
     {
+        checkStackSize();
         for (const auto & element : converted_value.safeGet<Tuple>())
             if (!convertedConstantIsSetSafeZeroFree(element))
                 return false;
@@ -619,6 +636,7 @@ static bool convertedConstantIsSetSafeZeroFree(const Field & converted_value)
 
     if (converted_value.getType() == Field::Types::Array)
     {
+        checkStackSize();
         for (const auto & element : converted_value.safeGet<Array>())
             if (!convertedConstantIsSetSafeZeroFree(element))
                 return false;
@@ -627,6 +645,7 @@ static bool convertedConstantIsSetSafeZeroFree(const Field & converted_value)
 
     if (converted_value.getType() == Field::Types::Map)
     {
+        checkStackSize();
         for (const auto & entry : converted_value.safeGet<Map>())
             if (!convertedConstantIsSetSafeZeroFree(entry))
                 return false;
@@ -654,6 +673,7 @@ static bool convertedConstantHasNoNaN(const Field & converted_value, bool stop_a
 
     if (converted_value.getType() == Field::Types::Tuple)
     {
+        checkStackSize();
         for (const auto & element : converted_value.safeGet<Tuple>())
             if (!convertedConstantHasNoNaN(element, stop_at_array_or_map))
                 return false;
@@ -665,6 +685,7 @@ static bool convertedConstantHasNoNaN(const Field & converted_value, bool stop_a
 
     if (converted_value.getType() == Field::Types::Array)
     {
+        checkStackSize();
         for (const auto & element : converted_value.safeGet<Array>())
             if (!convertedConstantHasNoNaN(element, stop_at_array_or_map))
                 return false;
@@ -673,6 +694,7 @@ static bool convertedConstantHasNoNaN(const Field & converted_value, bool stop_a
 
     if (converted_value.getType() == Field::Types::Map)
     {
+        checkStackSize();
         for (const auto & entry : converted_value.safeGet<Map>())
             if (!convertedConstantHasNoNaN(entry, stop_at_array_or_map))
                 return false;
@@ -702,6 +724,7 @@ static bool expressionTypeIsSetSafe(const DataTypePtr & expr_type)
 
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
+        checkStackSize();
         for (const auto & element : tuple_type->getElements())
             if (!expressionTypeIsSetSafe(element))
                 return false;

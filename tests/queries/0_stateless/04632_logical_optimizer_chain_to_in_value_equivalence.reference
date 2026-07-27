@@ -40,6 +40,9 @@
 3	3
 3	3
 0	0
+3	3
+3	3
+2	2
 --- still rewritten ---
 float nonzero in	1
 float nonzero notIn	1
@@ -64,6 +67,12 @@ integer widths	1
 lowcardinality string	1
 uuid string const	1
 variant expr notIn declined upstream	0
+variant float32 forgone	0
+3	3
+variant enum forgone	0
+3	3
+variant uint256 forgone	0
+3	3
 --- 2-term AND fold ---
 1	1
 0	0
@@ -84,7 +93,11 @@ map NaN fold still collapses	0
 int contradiction folded	1
 float zero contradiction folded	1
 enum mis-fold gone	0
+0
 --- no longer an error ---
+3	3
+0	0
+3	3
 3	3
 0	0
 3	3
