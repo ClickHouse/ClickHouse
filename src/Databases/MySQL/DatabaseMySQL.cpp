@@ -157,6 +157,11 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_cont
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
+/// Note: DatabaseMySQL does not own the underlying data -- it lives on the remote MySQL server.
+/// dropTable() is implemented as detachTablePermanently() for this engine, so a "dropped" table
+/// here is really just a locally-detached, remotely-recoverable table (same semantics as an
+/// explicit DETACH TABLE PERMANENTLY). It is therefore correct for such tables to show up here
+/// with is_permanently = 1, tracked via remove_or_detach_tables.
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseMySQL::getDetachedTablesIterator(
     ContextPtr /* context */, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
