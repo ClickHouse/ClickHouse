@@ -4,45 +4,88 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const assetBase = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
   const withBase = (p) => (p && p.startsWith("/") ? assetBase + p : p)
 
-  // localStorage에서 저장된 문자열 배열을 안전하게 읽습니다. 손상되었거나
-  // 직접 수정된 값이 useState 초기화 함수 내에서 예외를 발생시키면
-  // 페이지 전체 렌더링이 중단될 수 있으므로, 이 경우 기본값으로 폴백합니다.
-  const readStoredList = (key, fallback) => {
-    if (typeof window === "undefined") return fallback
+  // Filter options. `value` is a stable slug matched against the tag slugs in
+  // quickstarts-data.jsx (the generator emits the same slug form), so
+  // filtering keeps working when the translation pipeline localizes the
+  // labels. Only `label` is display text.
+  const useCaseOptions = [
+    { value: "real-time-analytics", label: "실시간 분석" },
+    { value: "data-warehousing", label: "데이터 웨어하우징" },
+    { value: "observability", label: "관측성" },
+    { value: "ai-ml", label: "AI/ML" }
+  ]
+  const productOptions = [
+    { value: "self-managed", label: "ClickHouse (Open-Source)" },
+    { value: "cloud", label: "ClickHouse Cloud" },
+    { value: "clickpipes", label: "ClickPipes" },
+    { value: "language-clients", label: "언어 클라이언트" },
+    { value: "clickstack", label: "ClickStack" },
+    { value: "chdb", label: "chDB" }
+  ]
+
+  // Only offer categories that at least one explorable quickstart belongs to
+  // (an "all"-tagged quickstart belongs to every use case).
+  const explorable = data.filter((qs) => !featuredIds.includes(qs.id))
+  const visibleUseCaseOptions = useCaseOptions.filter((o) =>
+    explorable.some((qs) => {
+      const u = qs.useCases || []
+      return u.includes("all") || u.includes(o.value)
+    })
+  )
+  const visibleProductOptions = productOptions.filter((o) => explorable.some((qs) => (qs.products || []).includes(o.value)))
+
+  // All localStorage access goes through these guards. Storage may be absent
+  // (SSR) or throw SecurityError (storage-restricted browsers or enterprise
+  // policies); persistence is optional, so a failure means "not persisted"
+  // rather than a render or effect exception that would take down the page.
+  const readStored = (key) => {
+    if (typeof window === "undefined") return null
     try {
-      const raw = localStorage.getItem(key)
-      if (!raw) return fallback
-      const parsed = JSON.parse(raw)
-      return Array.isArray(parsed) ? parsed : fallback
+      return localStorage.getItem(key)
     } catch {
-      return fallback
+      return null
+    }
+  }
+  const writeStored = (key, value) => {
+    if (typeof window === "undefined") return
+    try {
+      localStorage.setItem(key, value)
+    } catch {
+      // Storage unavailable — persistence is best-effort, so drop it.
     }
   }
 
-  // localStorage를 활용한 상태 관리
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("quickstarts-search") || ""
+  // Read a persisted selection. A corrupted or hand-edited value must never
+  // throw out of a useState initializer, which would crash the whole page
+  // render — fall back to the default instead. Values not present in the
+  // options (e.g. display strings persisted by an older version of this
+  // component) are dropped. An empty selection means no filter.
+  const readStoredSelection = (key, options) => {
+    const raw = readStored(key)
+    if (!raw) return []
+    try {
+      const parsed = JSON.parse(raw)
+      if (!Array.isArray(parsed)) return []
+      return parsed.filter((v) => options.some((o) => o.value === v))
+    } catch {
+      return []
     }
-    return ""
-  })
+  }
 
-  const [selectedUseCases, setSelectedUseCases] = useState(() => readStoredList("quickstarts-usecases", ["All"]))
+  // State management with localStorage
+  const [searchTerm, setSearchTerm] = useState(() => readStored("quickstarts-search") || "")
 
-  const [selectedProducts, setSelectedProducts] = useState(() => readStoredList("quickstarts-products", ["All"]))
+  const [selectedUseCases, setSelectedUseCases] = useState(() => readStoredSelection("quickstarts-usecases", visibleUseCaseOptions))
+
+  const [selectedProducts, setSelectedProducts] = useState(() => readStoredSelection("quickstarts-products", visibleProductOptions))
 
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 6
 
-  const [showFilters, setShowFilters] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("quickstarts-show-filters") !== "false"
-    }
-    return true
-  })
+  const [showFilters, setShowFilters] = useState(() => readStored("quickstarts-show-filters") !== "false")
 
-  // lg 브레이크포인트를 추적하여 드로어가 왼쪽(데스크톱) 또는 위쪽(모바일)으로
-  // 접힐 수 있도록 합니다. 인라인 스타일은 반응형을 지원하지 않으므로 JS에서 분기 처리합니다.
+  // Track the lg breakpoint so the drawer can collapse left (desktop) or up
+  // (mobile). Inline styles can't be responsive, so we branch on this in JS.
   const [isDesktop, setIsDesktop] = useState(true)
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return
@@ -53,78 +96,70 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     return () => mq.removeEventListener("change", update)
   }, [])
 
-  // localStorage에 저장
+  // Persist to localStorage
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("quickstarts-search", searchTerm)
+    writeStored("quickstarts-search", searchTerm)
   }, [searchTerm])
 
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("quickstarts-usecases", JSON.stringify(selectedUseCases))
+    writeStored("quickstarts-usecases", JSON.stringify(selectedUseCases))
   }, [selectedUseCases])
 
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("quickstarts-products", JSON.stringify(selectedProducts))
+    writeStored("quickstarts-products", JSON.stringify(selectedProducts))
   }, [selectedProducts])
 
   useEffect(() => {
-    if (typeof window !== "undefined") localStorage.setItem("quickstarts-show-filters", String(showFilters))
+    writeStored("quickstarts-show-filters", String(showFilters))
   }, [showFilters])
 
-  // 필터 변경 시 페이지 초기화
+  // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1)
   }, [searchTerm, selectedUseCases, selectedProducts])
 
-  // 범용 다중 선택 토글: "All" 클릭 시 나머지 선택 해제, 선택 항목이 없으면 ['All']로 설정.
+  // Generic multi-select toggle; an empty selection means no filter.
   const makeToggle = (setter) => (value) => {
-    setter((prev) => {
-      if (value === "All") return ["All"]
-      const withoutAll = prev.filter((v) => v !== "All")
-      const result = withoutAll.includes(value) ? withoutAll.filter((v) => v !== value) : [...withoutAll, value]
-      return result.length === 0 ? ["All"] : result
-    })
+    setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
   }
 
   const toggleUseCase = makeToggle(setSelectedUseCases)
   const toggleProduct = makeToggle(setSelectedProducts)
 
-  const useCaseOptions = ["All", "실시간 분석", "데이터 웨어하우징", "관측성", "AI/ML"]
-  const productOptions = ["All", "자가 관리형", "Cloud", "ClickPipes", "언어 클라이언트", "ClickStack", "chDB"]
-
   const resetFilters = () => {
     setSearchTerm("")
-    setSelectedUseCases(["All"])
-    setSelectedProducts(["All"])
+    setSelectedUseCases([])
+    setSelectedProducts([])
   }
 
-  const hasActiveFilters = searchTerm !== "" || !selectedUseCases.includes("All") || !selectedProducts.includes("All")
+  const hasActiveFilters = searchTerm !== "" || selectedUseCases.length > 0 || selectedProducts.length > 0
 
-  // 필터링 로직
+  // Filtering logic
   const filteredQuickStarts = useMemo(() => {
     const term = searchTerm.toLowerCase()
     return data.filter((quickStart) => {
-      // 추천 빠른 시작 항목은 탐색 섹션에서 제외
+      // Exclude featured quickstarts from the explore section
       if (featuredIds.includes(quickStart.id)) return false
 
       const matchesSearch = term === "" || quickStart.title.toLowerCase().includes(term) || (quickStart.description || "").toLowerCase().includes(term)
 
-      // 선택 항목에 "All"이 포함된 경우 필터를 적용하지 않습니다. 그렇지 않으면
-      // 빠른 시작의 모든 태그가 선택 항목에 포함될 때만 일치로 처리합니다. 예를 들어
-      // "데이터 웨어하우징"을 선택하면 다른 사용 사례 태그(또는 "All" 태그)가
-      // 함께 지정된 빠른 시작은 결과에서 제외됩니다.
+      // An empty selection means no filter. Otherwise a quickstart matches a
+      // group if any of its tags is selected (groups combine with AND). A
+      // quickstart tagged "all" applies to every use case, so it matches any
+      // use-case selection.
       const useCases = quickStart.useCases || []
-      const matchesUseCases = selectedUseCases.includes("All") || (useCases.length > 0 && useCases.every((uc) => selectedUseCases.includes(uc)))
+      const matchesUseCases = selectedUseCases.length === 0 || useCases.includes("all") || useCases.some((uc) => selectedUseCases.includes(uc))
 
       const products = quickStart.products || []
-      const matchesProducts = selectedProducts.includes("All") || (products.length > 0 && products.every((p) => selectedProducts.includes(p)))
+      const matchesProducts = selectedProducts.length === 0 || products.some((p) => selectedProducts.includes(p))
 
       return matchesSearch && matchesUseCases && matchesProducts
     })
   }, [data, searchTerm, selectedUseCases, selectedProducts, featuredIds])
 
-  // Mintlify의 클라이언트 사이드 라우팅이 탐색기 스크롤 위치를 유지하는 대신,
-  // 빠른 시작이 맨 위로 스크롤된 상태로 열리도록 전체 페이지 탐색을 강제합니다.
-  // 수정자 키 또는 가운데 버튼 클릭은 기본 동작(새 탭에서 열기)으로 처리됩니다.
+  // Force a full page navigation so the quickstart opens scrolled to the top,
+  // instead of Mintlify's client-side routing keeping the explorer scroll
+  // position. Modifier/middle clicks fall through to default (open in new tab).
   const handleCardClick = (e, href) => {
     if (e.defaultPrevented) return
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
@@ -132,24 +167,24 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     window.location.assign(withBase(href))
   }
 
-  // `featured`에 나열된 순서대로 표시되는 추천 빠른 시작 항목입니다. 각 항목은
-  // 배너 이미지를 유지하며, 데이터가 아직 로드되지 않은 경우에도 카드를 즉시
-  // 클릭할 수 있도록 href가 기본 빠른 시작 경로로 폴백됩니다.
+  // Featured quickstarts, in the order listed in `featured`. The banner art is
+  // drawn in code from the title (see below), so no per-locale image is needed.
+  // The href falls back to the conventional quickstart path if the data hasn't
+  // loaded yet so the cards are clickable immediately.
   const featuredQuickStarts = featured
     .map((f) => {
       const qs = data.find((q) => q.id === f.id)
       return {
         id: f.id,
-        image: f.image,
         href: (qs && qs.href) || `/ko/get-started/quickstarts/${f.id}`,
         title: (qs && qs.title) || ""
       }
     })
-    .filter((f) => f.image)
+    .filter((f) => f.title)
 
-  // 항상 표시되는 필터 그룹 (접기 불가)
+  // Always-visible filter group (not collapsible)
   const FilterGroup = ({ label, options, selectedOptions, onToggle }) => {
-    const activeCount = selectedOptions.filter((o) => o !== "All").length
+    const activeCount = selectedOptions.length
     const displayLabel = activeCount > 0 ? `${label} (${activeCount})` : label
 
     return (
@@ -160,27 +195,27 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
         <div className="mt-1">
           {options.map((option) => (
             <label
-              key={option}
+              key={option.value}
               className="flex items-center gap-2 py-1.5 cursor-pointer transition-colors"
               onClick={(e) => {
                 e.preventDefault()
-                onToggle(option)
+                onToggle(option.value)
               }}
             >
               <span
                 className="flex items-center justify-center w-4 h-4 rounded border flex-shrink-0"
                 style={{
-                  borderColor: selectedOptions.includes(option) ? "#FAFF69" : "rgba(156, 163, 175, 0.6)",
-                  backgroundColor: selectedOptions.includes(option) ? "#FAFF69" : "transparent"
+                  borderColor: selectedOptions.includes(option.value) ? "#FAFF69" : "rgba(156, 163, 175, 0.6)",
+                  backgroundColor: selectedOptions.includes(option.value) ? "#FAFF69" : "transparent"
                 }}
               >
-                {selectedOptions.includes(option) && (
+                {selectedOptions.includes(option.value) && (
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M2 5L4 7L8 3" stroke="black" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 )}
               </span>
-              <span className="text-sm text-black dark:text-white">{option}</span>
+              <span className="text-sm text-black dark:text-white">{option.label}</span>
             </label>
           ))}
         </div>
@@ -192,11 +227,11 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
     <>
       <div style={{ maxWidth: "1312px", marginLeft: "max(0px, calc((100vw - 1312px) / 2 - 19rem))", marginRight: "auto", paddingLeft: "1.75rem", paddingRight: "1.75rem" }}>
         <div className="my-8">
-          {/* 추천 빠른 시작 section - full width banner image cards */}
+          {/* Featured quickstarts section - full width banner image cards */}
           {featuredQuickStarts.length > 0 && (
             <div className="mb-12">
               <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">추천 빠른 시작</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {featuredQuickStarts.map((quickStart) => (
                   <a
                     key={quickStart.id}
@@ -204,14 +239,15 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     onClick={(e) => handleCardClick(e, quickStart.href)}
                     className="group block rounded-xl overflow-hidden border border-gray-200 dark:border-white/10 transition-all hover:border-black dark:hover:border-[#FAFF69] hover:shadow-md"
                   >
-                    {/* Rendered as a background image (not <img>) so Mintlify's
-                        click-to-zoom doesn't hijack the link navigation. */}
-                    <div
-                      role="img"
-                      aria-label={quickStart.title}
-                      className="w-full aspect-[16/9] bg-cover bg-center transition-transform duration-200 group-hover:scale-[1.02]"
-                      style={{ backgroundImage: `url(${withBase(quickStart.image)})` }}
-                    />
+                    {/* Banner art is drawn in code from the title so it
+                        translates automatically — no per-locale PNG needed. */}
+                    <div className="relative w-full aspect-[2/1] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 pb-12">
+                      <span className="relative z-10 mx-auto max-w-[90%] text-center text-base font-bold leading-tight text-black line-clamp-4">{quickStart.title}</span>
+                      <div className="absolute inset-x-0 bottom-0 h-12 bg-[#E7EA5B] flex items-center justify-between px-5">
+                        <img src={withBase("/images/clickhouse.svg")} alt="" aria-hidden="true" className="h-[18px] w-auto" style={{ borderRadius: 0, filter: "brightness(0)" }} />
+                        <span className="text-sm font-medium text-black">시작하기</span>
+                      </div>
+                    </div>
                   </a>
                 ))}
               </div>
@@ -232,8 +268,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {/* Toggle button, centered on the divider line */}
                 <button
                   onClick={() => setShowFilters((prev) => !prev)}
-                  aria-label={showFilters ? "필터 숨기기" : "필터 표시"}
-                  title={showFilters ? "필터 숨기기" : "필터 표시"}
+                  aria-label={showFilters ? "Hide filters" : "Show filters"}
+                  title={showFilters ? "Hide filters" : "Show filters"}
                   className="flex items-center justify-center absolute z-20 cursor-pointer rounded-full border transition-colors border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-[#FAFF69] shadow-sm"
                   style={
                     isDesktop
@@ -298,8 +334,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                     {/* Filters */}
                     <div>
                       <div className="space-y-5">
-                        <FilterGroup label="사용 사례" options={useCaseOptions} selectedOptions={selectedUseCases} onToggle={toggleUseCase} />
-                        <FilterGroup label="제품 영역" options={productOptions} selectedOptions={selectedProducts} onToggle={toggleProduct} />
+                        <FilterGroup label="사용 사례" options={visibleUseCaseOptions} selectedOptions={selectedUseCases} onToggle={toggleUseCase} />
+                        <FilterGroup label="제품 영역" options={visibleProductOptions} selectedOptions={selectedProducts} onToggle={toggleProduct} />
                       </div>
                     </div>
 
@@ -319,7 +355,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
             {/* Right content area */}
             <div className="flex-1 min-w-0">
-              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">빠른 시작 둘러보기</h2>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">빠른 시작 탐색</h2>
 
               {filteredQuickStarts.length > 0 ? (
                 <>
@@ -382,7 +418,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
               ) : (
                 <div className="text-center py-12 flex flex-col items-center">
                   <p className="text-gray-600 dark:text-gray-400 text-lg block">검색 조건에 맞는 빠른 시작 가이드가 없습니다.</p>
-                  <p className="text-gray-500 dark:text-gray-500 text-sm mt-2 block">필터 또는 검색어를 변경하여 다시 시도해 보십시오.</p>
+                  <p className="text-gray-500 dark:text-gray-500 text-sm mt-2 block">필터 또는 검색어를 조정하여 다시 시도해 보십시오.</p>
                 </div>
               )}
             </div>

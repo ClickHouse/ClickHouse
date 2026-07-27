@@ -13,13 +13,11 @@ import Recommendations from '/snippets/recommendations.mdx';
 > It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages isn't possible.
 
 <Steps>
-<Step>
-## Review recommendations {#review-recommendations}
+<Step title="Review recommendations" id="review-recommendations">
 
 <Recommendations />
 </Step>
-<Step>
-## Download and install the latest stable version {#install-latest-stable}
+<Step title="Download and install the latest stable version" id="install-latest-stable">
 
 The required version can be downloaded with `curl` or `wget` from repository https://packages.clickhouse.com/tgz/.
 After that downloaded archives should be unpacked and installed with installation scripts.
@@ -32,8 +30,7 @@ You can find the release number on this [GitHub page](https://github.com/ClickHo
 with postfix `-stable`.
 </Note>
 </Step>
-<Step>
-## Get the latest ClickHouse version {#get-latest-version}
+<Step title="Get the latest ClickHouse version" id="get-latest-version">
 
 Get the latest ClickHouse version from GitHub and store it in `LATEST_VERSION` variable.
 
@@ -43,8 +40,7 @@ LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse
 export LATEST_VERSION
 ```
 </Step>
-<Step>
-## Detect your system architecture {#detect-system-architecture}
+<Step title="Detect your system architecture" id="detect-system-architecture">
 
 Detect the system architecture and set the ARCH variable accordingly:
 
@@ -56,8 +52,7 @@ case $(uname -m) in
 esac
 ```
 </Step>
-<Step>
-## Download tarballs for each ClickHouse component {#download-tarballs}
+<Step title="Download tarballs for each ClickHouse component" id="download-tarballs">
 
 Download tarballs for each ClickHouse component. The loop tries architecture-specific 
 packages first, then falls back to generic ones.
@@ -70,8 +65,7 @@ do
 done
 ```
 </Step>
-<Step>
-## Extract and install packages {#extract-and-install}
+<Step title="Extract and install packages" id="extract-and-install">
 
 Run the commands below to extract and install the following packages:
 - `clickhouse-common-static`
