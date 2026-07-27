@@ -26,6 +26,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool distributed_aggregation_memory_efficient;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
+    extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
 
 namespace Setting
@@ -200,6 +201,7 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
     settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
+    settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation] = params.enable_packed_string_keys;
 }
 
 void MergingAggregatedStep::serialize(Serialization & ctx) const
@@ -315,7 +317,8 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         settings[Setting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
-        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte]);
+        ctx.settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte],
+        ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation]);
 
     auto merging_aggregated_step = std::make_unique<MergingAggregatedStep>(
         ctx.input_headers.front(),

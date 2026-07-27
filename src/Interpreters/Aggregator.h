@@ -135,6 +135,13 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
+        /// Use the `PackedStringRef`-based hash table for a single non-nullable `String` key
+        /// (`key_packed_string`); if false, fall back to the legacy `StringHashMap`-based method
+        /// (`key_string`). The two methods hash keys differently, so all participants of a
+        /// distributed query must agree on this value for two-level bucket exchange to be correct;
+        /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).
+        bool enable_packed_string_keys = true;
+
         /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
         /// aggregation-method state is constructed for every contiguous run of equal order-key
         /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
@@ -171,7 +178,8 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_,
             bool enable_producing_buckets_out_of_order_in_aggregation_,
-            bool serialize_string_with_zero_byte_);
+            bool serialize_string_with_zero_byte_,
+            bool enable_packed_string_keys_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -181,7 +189,8 @@ public:
             size_t max_threads_,
             size_t max_block_size_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
-            bool serialize_string_with_zero_byte_);
+            bool serialize_string_with_zero_byte_,
+            bool enable_packed_string_keys_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {

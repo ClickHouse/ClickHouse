@@ -168,3 +168,71 @@ def test_single_string_key_aggregation_compatibility(started_cluster):
         run_query(node1, extra_settings={"serialize_string_in_memory_with_zero_byte": 0})
         == 1000
     )
+
+
+def test_packed_string_keys_setting(started_cluster):
+    # `enable_packed_string_keys_in_aggregation=0` falls back to the legacy
+    # `StringHashTable`-based method for a single `String` key. The setting propagates
+    # with the query, so distributed two-level aggregation must stay self-consistent:
+    # remote shards bucket with the legacy hash and the initiator splits any stray
+    # single-level blocks the same way (the merge-only `Aggregator::Params` wiring).
+    def create_tables(table, node, other_node_name):
+        node.query(
+            f"DROP TABLE IF EXISTS {table} SYNC; CREATE TABLE {table} (s String) ENGINE = MergeTree ORDER BY s"
+        )
+        node.query(
+            f"INSERT INTO {table} SELECT concat('k', toString(number % 500)) FROM numbers(5000)"
+        )
+        node.query(
+            f"INSERT INTO {table} SELECT concat('long_string_key_', toString(number % 500)) FROM numbers(5000)"
+        )
+        node.query(
+            f"CREATE TABLE IF NOT EXISTS dist_{table} (s String) AS remote('{other_node_name}', 'default.{table}', 'default', '')"
+        )
+        node.query(
+            f"CREATE TABLE IF NOT EXISTS global_{table} (s String) ENGINE = Merge('default', '.*{table}')"
+        )
+
+    def run_query(table, node, extra_settings={}):
+        return int(
+            node.query(
+                f"""
+        SELECT count()
+        FROM
+        (
+            SELECT s
+            FROM global_{table}
+            GROUP BY s
+        )""",
+                settings={"group_by_two_level_threshold": 1} | extra_settings,
+            )
+        )
+
+    # Both servers are current: legacy two-level bucketing must agree between the
+    # remote shard and the initiator.
+    create_tables("repro4", node1, other_node_name=node2.name)
+    create_tables("repro4", node2, other_node_name=node1.name)
+    for initiator in (node1, node2):
+        assert (
+            run_query(
+                "repro4",
+                initiator,
+                extra_settings={"enable_packed_string_keys_in_aggregation": 0},
+            )
+            == 1000
+        )
+
+    # Mixed with an old (25.6) server that does not know the setting: it is not
+    # IMPORTANT, so the old server skips it with a warning, uses its own (legacy)
+    # method, and the result must still be correct. Initiate from the new server
+    # only - the old one would reject the unknown setting coming from the client.
+    create_tables("repro5", node1, other_node_name=node256.name)
+    create_tables("repro5", node256, other_node_name=node1.name)
+    assert (
+        run_query(
+            "repro5",
+            node1,
+            extra_settings={"enable_packed_string_keys_in_aggregation": 0},
+        )
+        == 1000
+    )
