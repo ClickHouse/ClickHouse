@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Core/SettingsChangesHistory.h>
 #include <Core/SettingsTierType.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -369,9 +370,111 @@ void addDocumentedWithAliases(MutableColumns & res_columns, EntityType type, con
     }
 }
 
+/// A value of a setting as it appears in the documentation. An empty value would render as empty backticks
+/// (an empty code span), which reads as if the value were missing; spell it out as italic prose instead.
+String renderSettingValue(const String & value)
+{
+    return value.empty() ? "*empty string*" : "`" + value + "`";
+}
+
+/// One recorded change of the default value of one setting: the version that introduced the change, together with
+/// the change itself. The change is referenced rather than copied — it is owned by the static change history, which
+/// is built once and never modified afterwards.
+struct SettingHistoryEntry
+{
+    String version;
+    const SettingsChangesHistory::SettingChange * change;
+};
+
+/// The change history of every setting of a collection, keyed by setting name and ordered from the oldest recorded
+/// version to the newest. The keys reference the names owned by the static change history.
+using SettingsHistoryIndex = std::unordered_map<std::string_view, std::vector<SettingHistoryEntry>>;
+
+/// Inverts the change history — a map of version to the changes made in that version — into a per-setting index.
+SettingsHistoryIndex buildSettingsHistoryIndex(const VersionToSettingsChangesMap & history)
+{
+    SettingsHistoryIndex index;
+    /// The history is ordered by version, so every per-setting vector comes out ordered by version as well.
+    for (const auto & [version, changes] : history)
+    {
+        const String version_string = version.toString();
+        for (const auto & change : changes)
+            index[change.name].push_back({version_string, &change});
+    }
+    return index;
+}
+
+/// Whether the oldest recorded change of a setting is the introduction of that setting. It is, when the change is
+/// from a value to itself: such a record has no effect on `compatibility` and exists only to make a setting that did
+/// not exist before known to it. A setting introduced with a compatibility value that differs from its default is
+/// instead recorded as an ordinary change of the default and is indistinguishable from one, so it is reported as
+/// such rather than claimed to be an introduction that the history does not actually record.
+bool isIntroduction(const std::vector<SettingHistoryEntry> & entries)
+{
+    return entries.front().change->previous_value == entries.front().change->new_value;
+}
+
+/// The history of the default value of a setting, appended to its documentation as a Markdown list, newest change
+/// first: in which version the setting was introduced, if that is recorded, and how its default value changed since.
+/// Every change also carries the reason it was made, as authored in `SettingsChangesHistory.cpp`.
+///
+/// Not every setting has a recorded history: the history exists to implement the `compatibility` setting, so it
+/// covers the changes made since that mechanism was introduced, and a setting that is older than it and never
+/// changed its default has no records at all.
+void appendSettingHistory(String & result, const std::vector<SettingHistoryEntry> & entries)
+{
+    if (entries.empty())
+        return;
+
+    if (!result.empty())
+        result += "\n\n";
+
+    /// The introducing version is called out separately, ahead of the list, because it is the single most
+    /// looked-up fact of the history while being the last item of a list that can be long.
+    if (isIntroduction(entries))
+        result += "**Introduced in:** v" + entries.front().version + "\n\n";
+
+    result += "**History**\n\n";
+
+    /// The entries are ordered from the oldest to the newest, and are listed in the opposite order.
+    for (size_t i = entries.size(); i > 0; --i)
+    {
+        const auto & entry = entries[i - 1];
+        const auto & change = *entry.change;
+
+        if (i != entries.size())
+            result += "\n";
+
+        result += "- **" + entry.version + "** — ";
+        if (change.previous_value == change.new_value)
+        {
+            /// A change to the same value leaves the default as it was; it is recorded either to introduce a new
+            /// setting or, for a setting that already exists, to note something else about it (that it became
+            /// obsolete, or that it graduated from experimental to beta, say) — hence the reason below.
+            if (i == 1)
+                result += "introduced with the default value " + renderSettingValue(fieldToString(change.new_value)) + ".";
+            else
+                result += "the default value remained " + renderSettingValue(fieldToString(change.new_value)) + ".";
+        }
+        else
+            result += "the default value changed from " + renderSettingValue(fieldToString(change.previous_value))
+                + " to " + renderSettingValue(fieldToString(change.new_value)) + ".";
+
+        const String reason = boost::algorithm::trim_copy(change.reason);
+        if (!reason.empty())
+            result += " " + reason;
+    }
+}
+
 /// The documentation of a setting is its description (already authored as Markdown), followed by its type and
-/// default value, with a note appended for the settings that are not yet generally available.
-String renderSettingDoc(std::string_view description, std::string_view type_name, const String & default_value, SettingsTierType tier)
+/// default value, with a note appended for the settings that are not yet generally available, and the history of
+/// the changes of its default value across ClickHouse versions.
+String renderSettingDoc(
+    std::string_view description,
+    std::string_view type_name,
+    const String & default_value,
+    SettingsTierType tier,
+    const std::vector<SettingHistoryEntry> * history)
 {
     String result = boost::algorithm::trim_copy(String(description));
 
@@ -385,26 +488,37 @@ String renderSettingDoc(std::string_view description, std::string_view type_name
     if (!type_name.empty())
         add_note("**Type:** `" + String(type_name) + "`");
 
-    /// An empty default value would render as empty backticks (an empty code span), which reads as if
-    /// the value were missing; spell it out as italic prose instead.
-    if (default_value.empty())
-        add_note("**Default:** *empty string*");
-    else
-        add_note("**Default:** `" + default_value + "`");
+    add_note("**Default:** " + renderSettingValue(default_value));
 
     if (tier == SettingsTierType::EXPERIMENTAL)
         add_note("**Tier:** Experimental");
     else if (tier == SettingsTierType::BETA)
         add_note("**Tier:** Beta");
 
+    if (history)
+        appendSettingHistory(result, *history);
+
     return result;
+}
+
+/// The change history of a setting, or `nullptr` if the setting has no recorded changes.
+const std::vector<SettingHistoryEntry> * findSettingHistory(const SettingsHistoryIndex & history, std::string_view name)
+{
+    const auto it = history.find(name);
+    return it == history.end() ? nullptr : &it->second;
 }
 
 /// For the settings collections (`Settings`, `MergeTreeSettings`, `ServerSettings`), which expose the name,
 /// description, type, default value and tier of every registered setting. All settings of a collection are
-/// declared in a single source file, passed as `source`.
+/// declared in a single source file, passed as `source`. `history` is the change history of the collection, which
+/// is empty for the collections that do not have one (server settings are not covered by `compatibility`).
 template <typename SettingsCollection>
-void addSettingsLike(MutableColumns & res_columns, EntityType type, const SettingsCollection & settings, std::string_view source)
+void addSettingsLike(
+    MutableColumns & res_columns,
+    EntityType type,
+    const SettingsCollection & settings,
+    std::string_view source,
+    const SettingsHistoryIndex & history)
 {
     for (const auto & name : settings.getAllRegisteredNames())
     {
@@ -414,16 +528,23 @@ void addSettingsLike(MutableColumns & res_columns, EntityType type, const Settin
         if (tier == SettingsTierType::OBSOLETE)
             continue;
         addRow(res_columns, type, String(name),
-            renderSettingDoc(settings.getDescription(name), settings.getTypeName(name), settings.getDefaultValueString(name), tier),
+            renderSettingDoc(settings.getDescription(name), settings.getTypeName(name), settings.getDefaultValueString(name), tier,
+                findSettingHistory(history, name)),
             source);
     }
 }
 
 /// Settings can have aliases (e.g. `enable_analyzer` for `allow_experimental_analyzer`). As for the other
 /// entities with aliases, the alias is rendered as a reference to the canonical setting rather than
-/// duplicating its documentation.
+/// duplicating its documentation. An alias is introduced in a particular version and can have a history of its
+/// own, distinct from the history of the setting it resolves to, so it is appended when there is one.
 template <typename SettingsCollection>
-void addSettingAliases(MutableColumns & res_columns, EntityType type, const SettingsCollection & settings, std::string_view source)
+void addSettingAliases(
+    MutableColumns & res_columns,
+    EntityType type,
+    const SettingsCollection & settings,
+    std::string_view source,
+    const SettingsHistoryIndex & history)
 {
     for (const auto & alias : settings.getAllAliasNames())
     {
@@ -431,7 +552,10 @@ void addSettingAliases(MutableColumns & res_columns, EntityType type, const Sett
         /// consistent with the canonical settings, which are not exposed either.
         if (settings.getTier(alias) == SettingsTierType::OBSOLETE)
             continue;
-        addRow(res_columns, type, String(alias), "Alias of `" + String(SettingsCollection::resolveName(alias)) + "`.", source);
+        String description = "Alias of `" + String(SettingsCollection::resolveName(alias)) + "`.";
+        if (const auto * alias_history = findSettingHistory(history, alias))
+            appendSettingHistory(description, *alias_history);
+        addRow(res_columns, type, String(alias), description, source);
     }
 }
 
@@ -526,11 +650,16 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     addDocumented(res_columns, EntityType::DataSkippingIndex, MergeTreeIndexFactory::instance());
     addDocumented(res_columns, EntityType::DiskType, DiskFactory::instance());
 
-    addSettingsLike(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE);
-    addSettingAliases(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE);
-    addSettingsLike(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{}, MERGE_TREE_SETTINGS_SOURCE);
-    addSettingAliases(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{}, MERGE_TREE_SETTINGS_SOURCE);
-    addSettingsLike(res_columns, EntityType::ServerSetting, ServerSettings{}, SERVER_SETTINGS_SOURCE);
+    const SettingsHistoryIndex settings_history = buildSettingsHistoryIndex(getSettingsChangesHistory());
+    const SettingsHistoryIndex merge_tree_settings_history = buildSettingsHistoryIndex(getMergeTreeSettingsChangesHistory());
+    /// Server settings are not covered by the `compatibility` setting, so no history of their changes is recorded.
+    const SettingsHistoryIndex server_settings_history;
+
+    addSettingsLike(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE, settings_history);
+    addSettingAliases(res_columns, EntityType::Setting, Settings{}, SETTINGS_SOURCE, settings_history);
+    addSettingsLike(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{}, MERGE_TREE_SETTINGS_SOURCE, merge_tree_settings_history);
+    addSettingAliases(res_columns, EntityType::MergeTreeSetting, MergeTreeSettings{}, MERGE_TREE_SETTINGS_SOURCE, merge_tree_settings_history);
+    addSettingsLike(res_columns, EntityType::ServerSetting, ServerSettings{}, SERVER_SETTINGS_SOURCE, server_settings_history);
 
     /// The format dictionary is keyed by the lower-cased name; `creators.name` carries the original case.
     for (const auto & name_and_creators : FormatFactory::instance().getAllFormats())

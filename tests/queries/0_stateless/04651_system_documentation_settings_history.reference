@@ -1,0 +1,9 @@
+0
+0
+0
+0
+0
+1
+1
+Maximum size in bytes of unparsed data collected per query before being inserted\n\nCloud default value: `104857600` (100 MiB).\n\n**Type:** `UInt64`\n\n**Default:** `10485760`\n\n**History**\n\n- **24.2** — the default value changed from `1000000` to `10485760`. The previous value appeared to be too small.
+Alias of `allow_experimental_analyzer`.\n\n**Introduced in:** v24.8\n\n**History**\n\n- **24.8** — introduced with the default value `1`. Added an alias to a setting `allow_experimental_analyzer`.
