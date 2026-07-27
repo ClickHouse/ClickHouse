@@ -1656,8 +1656,8 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// Cached metadata used to read patch parts, by patch partition id.
-    /// Patch parts in one partition always have the same structure.
+    /// Cached metadata used to read patch parts, by the structure hash from their partition id.
+    /// Bounded by the number of distinct structures of patch parts, not by the number of patch partitions.
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
 

@@ -68,6 +68,10 @@ bool isPatchForPartition(const MergeTreePartInfo & info, const String & partitio
 String getOriginalPartitionIdOfPatch(const String & partition_id);
 String getPartitionIdForPatch(const MergeTreePartition & partition);
 
+/// Returns the hash of the patch structure from the partition id of a patch part.
+/// Patch parts with the same hash have the same structure, regardless of the partition of their source parts.
+String getStructureHashOfPatch(const String & partition_id);
+
 /// Returns true if patch max data version of the patch if higher than max_data_version.
 /// Asserts that the patch's min and max data versions don't intersect max_data_version.
 bool patchHasHigherDataVersion(const IMergeTreeDataPart & patch, Int64 max_data_version);

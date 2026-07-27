@@ -423,6 +423,14 @@ String getOriginalPartitionIdOfPatch(const String & partition_id)
     return partition_id.substr(MergeTreePartInfo::PATCH_PART_PREFIX_SIZE);
 }
 
+String getStructureHashOfPatch(const String & partition_id)
+{
+    assertValidPartitionIdOfPatch(partition_id);
+    static constexpr size_t hash_offset = MergeTreePartInfo::PATCH_PART_PREFIX.size();
+    static constexpr size_t hash_size = MergeTreePartInfo::PATCH_PART_PREFIX_SIZE - hash_offset - 1;
+    return partition_id.substr(hash_offset, hash_size);
+}
+
 String getPartitionIdForPatch(const MergeTreePartition & partition)
 {
     if (partition.value.size() != 1)
