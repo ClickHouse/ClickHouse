@@ -7,12 +7,14 @@ CREATE TABLE equal_keys_default_04413
     k UInt8,
     payload String,
     values Array(UInt32),
-    n Nullable(Int64)
+    n Nullable(Int64),
+    INDEX idx_payload payload TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1) GRANULARITY 1
 )
 ENGINE = MergeTree
 ORDER BY k
 SETTINGS
     merge_sorting_queue_strategy = 'default',
+    allow_experimental_text_index_phrase_search = 1,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     enable_vertical_merge_algorithm = 1,
@@ -29,6 +31,7 @@ ENGINE = MergeTree
 ORDER BY k
 SETTINGS
     merge_sorting_queue_strategy = 'batch',
+    allow_experimental_text_index_phrase_search = 1,
     enable_block_number_column = 1,
     enable_block_offset_column = 1,
     enable_vertical_merge_algorithm = 1,
@@ -136,6 +139,18 @@ SELECT throwIf(
         FROM (SELECT id, k, payload, values, n, _block_number, _block_offset FROM equal_keys_batch_04413 ORDER BY k, _part_offset)
     ),
     'Equal-key merge order or row identity differs between default and batch sorting queue strategies')
+FORMAT Null;
+
+SET force_data_skipping_indices = 'idx_payload';
+
+WITH
+    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_default_04413 WHERE hasToken(payload, '17') ORDER BY id)) AS default_token,
+    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_batch_04413 WHERE hasToken(payload, '17') ORDER BY id)) AS batch_token,
+    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_default_04413 WHERE hasPhrase(payload, 'payload 17') ORDER BY id)) AS default_phrase,
+    (SELECT groupArray(id) FROM (SELECT id FROM equal_keys_batch_04413 WHERE hasPhrase(payload, 'payload 17') ORDER BY id)) AS batch_phrase
+SELECT throwIf(
+    default_token != [17] OR batch_token != default_token OR default_phrase != [17] OR batch_phrase != default_phrase,
+    'Text index results differ between default and batch sorting queue strategies')
 FORMAT Null;
 
 SELECT 'equal keys ok';
