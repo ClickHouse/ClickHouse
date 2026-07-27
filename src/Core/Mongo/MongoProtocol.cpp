@@ -6,7 +6,12 @@
 #include <Interpreters/executeQuery.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Common/QueryScope.h>
-#include "Common/randomSeed.h"
+#include <Common/randomSeed.h>
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB::MongoProtocol
 {
@@ -49,7 +54,25 @@ void Header::serialize(WriteBuffer & out) const
 
 Int32 Header::size() const
 {
-    return 16;
+    return SIZE;
+}
+
+String MessageTransport::receivePayload(const Header & header)
+{
+    /// `message_length` comes from the wire before anything is authenticated, so it is
+    /// validated before it is used for an allocation.
+    if (header.message_length < static_cast<UInt32>(Header::SIZE) || header.message_length > MAX_MESSAGE_SIZE)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Invalid Mongo message length {}, expected between {} and {}",
+            header.message_length,
+            Header::SIZE,
+            MAX_MESSAGE_SIZE);
+
+    String payload;
+    payload.resize(header.message_length - Header::SIZE);
+    in->readStrict(payload.data(), payload.size());
+    return payload;
 }
 
 QueryExecutor::QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Net::SocketAddress & address_)

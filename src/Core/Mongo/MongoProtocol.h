@@ -4,8 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include "Interpreters/Session.h"
-#include "base/types.h"
+#include <Interpreters/Session.h>
+#include <base/types.h>
 
 #include <bson/bson.h>
 
@@ -33,6 +33,14 @@ enum class OperationCode : Int32
     OP_KILL_CURSORS = 2007,
     OP_COMPRESSED = 2012
 };
+
+/// The largest message we are willing to read from the wire. It matches the
+/// `maxMessageSizeBytes` we advertise in the reply to `isMaster`, so a well behaved
+/// client never sends anything bigger.
+static constexpr UInt32 MAX_MESSAGE_SIZE = 48000000;
+
+/// The smallest possible BSON document: a 4-byte length and the terminating zero byte.
+static constexpr UInt32 MIN_DOCUMENT_SIZE = 5;
 
 /** Basic class for messages sent by client or server. */
 
@@ -66,10 +74,13 @@ class BackendMessage : public ISerializable
 
 struct Header : public FrontMessage, BackendMessage
 {
-    UInt32 message_length;
-    UInt32 request_id;
-    UInt32 response_to;
-    UInt32 operation_code;
+    /// Size of the header on the wire.
+    static constexpr Int32 SIZE = 16;
+
+    UInt32 message_length = 0;
+    UInt32 request_id = 0;
+    UInt32 response_to = 0;
+    UInt32 operation_code = 0;
 
     Header() = default;
     Header(const Header & other);
@@ -96,20 +107,19 @@ public:
     MessageTransport(ReadBuffer * in_, WriteBuffer * out_) : in(in_), out(out_) { }
 
     template <typename TMessage>
-    std::unique_ptr<TMessage> receiveWithPayloadSize(Int32 payload_size)
-    {
-        std::unique_ptr<TMessage> message = std::make_unique<TMessage>(payload_size);
-        message->deserialize(*in);
-        return message;
-    }
-
-    template <typename TMessage>
     std::unique_ptr<TMessage> receive()
     {
         std::unique_ptr<TMessage> message = std::make_unique<TMessage>();
         message->deserialize(*in);
         return message;
     }
+
+    /** Reads the payload of a single message (everything after the header) into a string.
+     * Mongo messages are length-delimited by `Header::message_length`, and a single TCP read
+     * may return a part of a message or several messages at once. Parsing the payload from
+     * its own bounded buffer is what keeps message boundaries intact.
+     */
+    String receivePayload(const Header & header);
 
     template <typename TMessage>
     void send(TMessage & message, bool flush = false)
@@ -130,13 +140,6 @@ public:
         out->write(message);
         if (flush)
             out->next();
-    }
-
-    void dropMessage()
-    {
-        Int32 size;
-        readBinaryBigEndian(size, *in);
-        in->ignore(size - 4);
     }
 
     void flush() { out->next(); }

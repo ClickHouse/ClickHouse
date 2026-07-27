@@ -4,7 +4,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <iostream>
 #include <bson/bson.h>
 #include <bsoncxx/exception/error_code.hpp>
 #include <rapidjson/document.h>
@@ -14,27 +13,31 @@
 namespace DB::MongoProtocol
 {
 
-std::string bsonToJson(const std::string & bsonData);
-
+/// Owns a single BSON document, both in its wire representation (`document`) and as a
+/// parsed `bson_t` (`bson_doc`). The `bson_t` is owned by this object: it is released in
+/// the destructor, copied on copy and stolen on move.
 class Document : public FrontMessage, BackendMessage
 {
 public:
     Document() = default;
+
     Document(const Document & other)
     {
         doc_size = other.doc_size;
         document = other.document;
-        bson_doc = bson_copy(other.bson_doc);
+        bson_doc = other.bson_doc ? bson_copy(other.bson_doc) : nullptr;
     }
 
     Document(Document && other) noexcept
     {
         doc_size = other.doc_size;
-        document = other.document;
+        document = std::move(other.document);
         bson_doc = other.bson_doc;
         other.bson_doc = nullptr;
     }
 
+    /// Takes ownership of `bson_doc_`, which must have been created by one of the
+    /// `bson_new*` functions.
     explicit Document(bson_t * bson_doc_);
     explicit Document(const String & json);
 
@@ -51,29 +54,16 @@ public:
     /// Returns the document as an owning rapidjson value. The returned Document
     /// owns its allocator, so the JSON stays valid after this function returns
     /// (the data must not reference the temporary local document's allocator).
-    rapidjson::Document getRapidJsonRepresentation() const
-    {
-        char * json_str = bson_as_legacy_extended_json(bson_doc, nullptr);
-        rapidjson::Document json_doc;
-        json_doc.Parse(json_str);
-        bson_free(json_str);
-        return json_doc;
-    }
+    rapidjson::Document getRapidJsonRepresentation() const;
 
     bson_t * getBson() const { return bson_doc; }
 
-    String getJson() const
-    {
-        char * json_str = bson_as_legacy_extended_json(bson_doc, nullptr);
-        String result(json_str);
-        bson_free(json_str);
-        return result;
-    }
+    String getJson() const;
 
     ~Document() override;
 
 private:
-    UInt32 doc_size;
+    UInt32 doc_size = 0;
     String document;
     mutable bson_t * bson_doc = nullptr;
 };

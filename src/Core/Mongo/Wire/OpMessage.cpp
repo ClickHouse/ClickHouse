@@ -1,13 +1,20 @@
-#include "OpMessage.h"
-#include <Core/Mongo/Handler.h>
+#include <Core/Mongo/Wire/OpMessage.h>
+
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/types.h>
-#include "IO/ReadHelpers.h"
+#include <Common/Exception.h>
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB::MongoProtocol
 {
 
-OpMessageSection::OpMessageSection(OpMessageSection && other) noexcept : kind(other.kind), documents(std::move(other.documents))
+OpMessageSection::OpMessageSection(OpMessageSection && other) noexcept
+    : kind(other.kind), identifier(std::move(other.identifier)), documents(std::move(other.documents))
 {
 }
 
@@ -15,7 +22,8 @@ OpMessageSection::OpMessageSection(UInt8 kind_, const std::vector<Document> & do
 {
 }
 
-OpMessageSection::OpMessageSection(const OpMessageSection & other) : kind(other.kind), documents(other.documents)
+OpMessageSection::OpMessageSection(const OpMessageSection & other)
+    : kind(other.kind), identifier(other.identifier), documents(other.documents)
 {
 }
 
@@ -33,7 +41,7 @@ Int32 OpMessageSection::size() const
     Int32 result = sizeof(UInt8);
     for (const auto & doc : documents)
     {
-        result += doc.getDoc().size();
+        result += static_cast<Int32>(doc.getDoc().size());
     }
     return result;
 }
@@ -43,23 +51,43 @@ void OpMessageSection::deserialize(ReadBuffer & in)
     readBinaryLittleEndian(kind, in);
     if (kind == 0)
     {
+        /// Body section: exactly one document.
         Document doc;
         doc.deserialize(in);
-        documents.push_back(doc);
+        documents.push_back(std::move(doc));
     }
-    else
+    else if (kind == 1)
     {
-        UInt32 size_section;
+        /// Document sequence section: its own size, a NUL terminated identifier and then
+        /// documents filling the rest of the section.
+        UInt32 size_section = 0;
+        const size_t section_start = in.count();
         readBinaryLittleEndian(size_section, in);
+
+        if (size_section < sizeof(size_section) + 1 || size_section - sizeof(size_section) > in.available())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Mongo document sequence section of size {}", size_section);
+
         readNullTerminated(identifier, in);
 
-        size_t rest_available = static_cast<size_t>(in.available()) - (size_section - 5 - identifier.size());
-        while (in.available() > rest_available)
+        const size_t section_end = section_start + size_section;
+        if (in.count() > section_end)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Invalid Mongo document sequence section: the identifier does not fit into it");
+
+        while (in.count() < section_end)
         {
             Document doc;
             doc.deserialize(in);
-            documents.push_back(doc);
+            documents.push_back(std::move(doc));
         }
+
+        if (in.count() != section_end)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Invalid Mongo document sequence section: the documents do not fit into it");
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported Mongo message section kind {}", static_cast<UInt16>(kind));
     }
 }
 
@@ -71,12 +99,19 @@ OpMessage::OpMessage(UInt32 flags_, UInt8 kind_, const std::vector<Document> & d
 void OpMessage::deserialize(ReadBuffer & in)
 {
     readBinaryLittleEndian(flags, in);
-    while (in.available() > 0)
+
+    /// `in` holds exactly the payload of one message, so reading until it is exhausted
+    /// can neither consume a part of the next message nor stop in the middle of this one.
+    /// The optional checksum at the end of the message is not supported.
+    while (!in.eof())
     {
         OpMessageSection section;
         section.deserialize(in);
         sections.push_back(std::move(section));
     }
+
+    if (sections.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo message without sections");
 }
 
 void OpMessage::serialize(WriteBuffer & out) const

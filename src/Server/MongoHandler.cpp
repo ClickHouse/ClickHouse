@@ -1,48 +1,26 @@
-#include "MongoHandler.h"
+#include <Server/MongoHandler.h>
 
-#if USE_MONGODB
+/// The Mongo wire protocol needs BSON (mongo-cxx-driver) and the Mongo dialect (rapidjson).
+#if USE_MONGODB && USE_RAPIDJSON
 
 #include <memory>
-#include <Core/Settings.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
-#include <pcg_random.hpp>
 #include <Poco/Util/LayeredConfiguration.h>
-#include "Common/Exception.h"
-#include <Common/CurrentThread.h>
-#include <Common/config_version.h>
-#include <Common/randomSeed.h>
+#include <Common/Exception.h>
 #include <Common/setThreadName.h>
-#include "Processors/QueryPlan/IQueryPlanStep.h"
 
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/MongoProtocol.h>
 
-#include <bson/bson.h>
-
 namespace DB
 {
-namespace Setting
-{
-extern const SettingsBool allow_settings_after_format_in_insert;
-extern const SettingsUInt64 max_parser_backtracks;
-extern const SettingsUInt64 max_parser_depth;
-extern const SettingsUInt64 max_query_size;
-extern const SettingsBool implicit_select;
-}
-
-namespace ErrorCodes
-{
-extern const int SYNTAX_ERROR;
-}
 
 MongoHandler::MongoHandler(
     const Poco::Net::StreamSocket & socket_,
@@ -88,14 +66,25 @@ void MongoHandler::run()
                 if (!tcp_server.isOpen())
                     return;
 
-            auto header_bytes = message_transport->receive<MongoProtocol::Header>();
+            /// A Mongo message is length-delimited by its header. Read the header, then read
+            /// exactly the rest of the message and parse it from its own bounded buffer, so
+            /// that the parser can neither run into the next message nor stop in the middle
+            /// of this one when TCP splits or coalesces reads.
+            auto header = message_transport->receive<MongoProtocol::Header>();
+            String payload = message_transport->receivePayload(*header);
+            ReadBufferFromString payload_buffer(payload);
+
             auto executor = std::make_shared<MongoProtocol::QueryExecutor>(session, socket().peerAddress());
-            MongoProtocol::handle(*header_bytes, message_transport, executor);
+            MongoProtocol::handle(*header, payload_buffer, message_transport, executor);
         }
     }
     catch (const Poco::Exception & exc)
     {
         log->log(exc);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Error while handling a Mongo connection");
     }
 }
 

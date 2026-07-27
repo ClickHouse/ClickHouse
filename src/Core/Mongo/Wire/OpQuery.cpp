@@ -1,8 +1,8 @@
 #include <Core/Mongo/Wire/OpQuery.h>
-#include "IO/WriteHelpers.h"
-#include "base/types.h"
 
-#include <iostream>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <base/types.h>
 
 namespace DB::MongoProtocol
 {
@@ -12,7 +12,7 @@ void OpQuery::deserialize(ReadBuffer & in)
     readBinaryLittleEndian(flags, in);
     readNullTerminated(full_collection_name, in);
     readBinaryLittleEndian(number_to_skip, in);
-    readBinaryLittleEndian(number_to_skip, in);
+    readBinaryLittleEndian(number_to_return, in);
     query.deserialize(in);
 }
 
