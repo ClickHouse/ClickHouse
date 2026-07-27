@@ -2026,7 +2026,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             }
             if (rg.nextBool())
             {
-                idef->add_params()->set_unescaped_sval("positions = " + std::to_string(rg.nextBool() ? 1 : 0));
+                idef->add_params()->set_unescaped_sval("support_phrase_search = " + std::to_string(rg.nextBool() ? 1 : 0));
             }
             if (rg.nextBool())
             {
