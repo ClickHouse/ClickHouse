@@ -128,6 +128,44 @@ TEST(DistinctSortedStreamTransform, LimitHintStopsReadingAcrossSortPrefixRanges)
     EXPECT_EQ(countDistinctOutputRows(/*num_runs=*/ 100, /*run_rows=*/ 5, no_limits, /*limit_hint=*/ 25), 25u);
 }
 
+TEST(DistinctSortedStreamTransform, ThrowLimitIsNotMaskedByLimitHint)
+{
+    /// One chunk can reach the limit hint and exceed the size limit at the same time: here the
+    /// third range takes the total from 20 to 30, which satisfies both limit_hint = 25 and
+    /// max_rows = 25. The size limit must be evaluated first: in the 'throw' overflow mode the
+    /// query has to fail with SET_SIZE_LIMIT_EXCEEDED, not stop silently as if it were 'break'.
+    SizeLimits set_size_limits(/*max_rows_=*/ 25, /*max_bytes_=*/ 0, OverflowMode::THROW);
+    DistinctSortedStreamTransform transform(
+        makeHeader(), set_size_limits, /*limit_hint_=*/ 25, makeSortDescription(), Names{"a", "b"});
+
+    for (UInt64 run = 0; run < 2; ++run)
+    {
+        Chunk chunk = makeRunChunk(run, /*rows=*/ 10);
+        ASSERT_NO_THROW(runTransform(transform, chunk));
+        EXPECT_EQ(chunk.getNumRows(), 10u);
+    }
+
+    Chunk crossing_chunk = makeRunChunk(/*run_key=*/ 2, /*rows=*/ 10);
+    try
+    {
+        runTransform(transform, crossing_chunk);
+        FAIL() << "expected SET_SIZE_LIMIT_EXCEEDED on the range that pushes the total to 30 > 25";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    }
+}
+
+TEST(DistinctSortedStreamTransform, LimitHintReachedWithoutExceedingThrowLimit)
+{
+    /// The limit hint stops reading on its own when the size limit is not exceeded: totals go
+    /// 10, 20, the hint fires at 20 >= 20, and max_rows = 25 in the 'throw' mode stays satisfied,
+    /// so the transform stops silently with the complete LIMIT-sized result and no exception.
+    SizeLimits set_size_limits(/*max_rows_=*/ 25, /*max_bytes_=*/ 0, OverflowMode::THROW);
+    EXPECT_EQ(countDistinctOutputRows(/*num_runs=*/ 100, /*run_rows=*/ 10, set_size_limits, /*limit_hint=*/ 20), 20u);
+}
+
 TEST(DistinctSortedStreamTransform, ThrowLimitIsCumulativeAcrossSortPrefixRanges)
 {
     /// 'throw' fails at >, so ranges totalling exactly 25 pass and the next one must throw
