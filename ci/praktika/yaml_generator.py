@@ -499,8 +499,6 @@ class PullRequestPushYamlGen:
                 "EVENT": self.workflow_config.event,
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
-                    # if not Settings.USE_CUSTOM_GH_AUTH
-                    # else ""
                 ),
             }
             if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):

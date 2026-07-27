@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_broken_proj_check SYNC"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_broken_proj_check (id UInt64, v UInt64, PROJECTION p1 (SELECT v, count() GROUP BY v))
-    ENGINE = MergeTree ORDER BY id"
+    ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_broken_proj_check SELECT number, number % 10 FROM numbers(1000)"
 
 DATA_PATH=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 't_broken_proj_check' AND active")
@@ -42,7 +42,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_broken_proj_check SYNC"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_broken_proj_check_lagging SYNC"
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE t_broken_proj_check_lagging (id UInt64, v UInt16, PROJECTION p1 (SELECT * ORDER BY v))
-    ENGINE = MergeTree ORDER BY id"
+    ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_full_part_storage = 0"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_broken_proj_check_lagging SELECT number, number % 10 FROM numbers(1000)"
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_broken_proj_check_lagging ADD COLUMN extra UInt8"
 

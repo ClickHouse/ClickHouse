@@ -2574,6 +2574,11 @@ void registerStorageURL(StorageFactory & factory)
             auto configuration = std::make_shared<StorageWebConfiguration>();
             StorageObjectStorageConfiguration::initialize(*configuration, engine_args, context, /* with_table_structure */ false);
 
+            /// Same contract as `createStorageObjectStorage`: only a user-issued `CREATE` applies the
+            /// `file_like_engine_default_partition_strategy` default; ATTACH / startup / RESTORE must
+            /// load pre-existing `{_partition_id}` tables as wildcard (see `initPartitionStrategy`).
+            configuration->is_create_query = args.mode == LoadingStrictnessLevel::CREATE;
+
             ContextMutablePtr context_copy = Context::createCopy(args.getContext());
             Settings settings_copy = args.getLocalContext()->getSettingsCopy();
             context_copy->setSettings(settings_copy);
