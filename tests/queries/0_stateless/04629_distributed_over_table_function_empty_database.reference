@@ -11,5 +11,6 @@ CREATE TABLE default.dist_mcbc_empty\n(\n    `part_name` String\n)\nENGINE = Dis
 1
 1
 1
+CREATE TABLE default.dist_mti_cd\n(\n    `part_name` String\n)\nENGINE = Distributed(\'test_shard_localhost\', mergeTreeIndex(\'default\', \'bind_db_src\'))
 CREATE TABLE default.dist_ts_empty\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'default\', \'ts_bind\'))
 CREATE TABLE default.dist_ts_tmp\n(\n    `metric_family_name` String,\n    `type` LowCardinality(String),\n    `unit` LowCardinality(String),\n    `help` String\n)\nENGINE = Distributed(\'test_shard_localhost\', timeSeriesMetrics(\'\', \'tmp_ts_bind\'))

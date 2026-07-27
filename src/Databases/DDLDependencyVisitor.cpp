@@ -400,8 +400,10 @@ namespace
                 /// (`evaluateConstantExpressionForDatabaseName`), not necessarily that of this CREATE, so it
                 /// does not name a stable object (the same rule `addDependencyFromLeadingTableNameArguments`
                 /// applies; a persisted `Distributed(..., mergeTree*(...))` target has the create-time database
-                /// baked into an empty argument by `bindTableFunctionTargetToCurrentDatabase`).
-                auto qualified_name = tryGetDatabaseAndTableNameFromArguments(function, 0, 1, /* apply_current_database= */ false);
+                /// baked into an empty argument - and any other database expression folded to a literal - by
+                /// `bindTableFunctionTargetToCurrentDatabase`, so it keeps yielding a dependency here).
+                auto qualified_name = tryGetDatabaseAndTableNameFromArguments(
+                    function, 0, 1, /* apply_current_database= */ false, /* evaluate_database= */ false);
                 if (qualified_name && !qualified_name->database.empty())
                     dependencies.emplace(std::move(qualified_name).value());
             }
@@ -608,10 +610,22 @@ namespace
         }
 
         /// Returns a database name and a table name extracted from two separate arguments.
+        /// With `evaluate_database = false` only a syntactically stable spelling of the database argument is
+        /// accepted - a string literal or an identifier, i.e. a name that is stored in the metadata as is.
+        /// An arbitrary expression such as `currentDatabase()` is not accepted then: it survives in a stored
+        /// query body unchanged (`AddDefaultDatabaseVisitor` folds `currentDatabase()` only in DDL, not in the
+        /// `SELECT` of a view) and is therefore re-evaluated against the current database of the *querying*
+        /// session at read time, so it does not name a stable object. Evaluating it here would record a
+        /// dependency on the create-time database instead, which both blocks `DROP` / `RENAME` of a table the
+        /// query does not read and leaves the table it does read unprotected.
         std::optional<QualifiedTableName> tryGetDatabaseAndTableNameFromArguments(
-            const ASTFunction & function, size_t database_arg_idx, size_t table_arg_idx, bool apply_current_database = true) const
+            const ASTFunction & function,
+            size_t database_arg_idx,
+            size_t table_arg_idx,
+            bool apply_current_database = true,
+            bool evaluate_database = true) const
         {
-            auto database = tryGetStringFromArgument(function, database_arg_idx);
+            auto database = tryGetStringFromArgument(function, database_arg_idx, evaluate_database);
             if (!database)
                 return {};
 
@@ -639,7 +653,9 @@ namespace
         /// Adds a dependency from a table function whose leading arguments name a table as `[database, ] table`:
         /// in the short form (`short_form_num_args` arguments) the first argument is the table name, and the
         /// long form (one argument more) carries the database and the table in the first two arguments.
-        /// Only spellings with an explicit database yield a dependency. An unqualified short-form name - a bare
+        /// Only spellings with an explicit, syntactically stable database yield a dependency: a name spelled out
+        /// in the metadata (a string literal or an identifier), not an expression such as `currentDatabase()`
+        /// re-evaluated per querying session. An unqualified short-form name - a bare
         /// identifier, or a string, which is the whole table name and is never split at a dot - is resolved
         /// through `Context::resolveStorageID` at execution time, against the current database and the session
         /// temporary tables of the *querying* session, not necessarily those of this CREATE, so it does not name
@@ -665,7 +681,8 @@ namespace
             }
             else if (num_args == short_form_num_args + 1)
             {
-                auto qualified_name = tryGetDatabaseAndTableNameFromArguments(function, 0, 1, /* apply_current_database= */ false);
+                auto qualified_name = tryGetDatabaseAndTableNameFromArguments(
+                    function, 0, 1, /* apply_current_database= */ false, /* evaluate_database= */ false);
                 if (qualified_name && !qualified_name->database.empty())
                     dependencies.emplace(std::move(qualified_name).value());
             }

@@ -14,8 +14,12 @@ DROP TABLE IF EXISTS dist_merge_empty;
 DROP TABLE IF EXISTS dist_loop_empty;
 DROP TABLE IF EXISTS dist_loop_cd;
 DROP TABLE IF EXISTS dist_mti_empty;
+DROP TABLE IF EXISTS dist_mti_cd;
 DROP TABLE IF EXISTS dist_mcbc_empty;
 DROP TABLE IF EXISTS bind_db_src;
+DROP VIEW IF EXISTS v_mti_empty;
+DROP VIEW IF EXISTS v_mti_cd;
+DROP VIEW IF EXISTS v_loop_cd;
 
 CREATE TABLE bind_db_src (n UInt64) ENGINE = MergeTree ORDER BY n;
 INSERT INTO bind_db_src VALUES (1), (2), (3);
@@ -73,6 +77,14 @@ DROP TABLE dist_mti_empty;
 DROP TABLE bind_db_src SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
 DROP TABLE dist_mcbc_empty;
 
+-- A `currentDatabase()` database argument is folded to a literal by the binder as well, and that literal -
+-- not the expression - is what the dependency is taken from, so a `Distributed` target spelled that way
+-- keeps blocking the drop of its source on its own (created here, with every other target already gone).
+CREATE TABLE dist_mti_cd (part_name String) ENGINE = Distributed(test_shard_localhost, mergeTreeIndex(currentDatabase(), 'bind_db_src'));
+SHOW CREATE TABLE dist_mti_cd;
+DROP TABLE bind_db_src SETTINGS check_referential_table_dependencies = 1; -- { serverError HAVE_DEPENDENT_OBJECTS }
+DROP TABLE dist_mti_cd;
+
 -- The `timeSeries*` / `prometheusQuery*` family resolves the pair through `Context::resolveStorageID`,
 -- which looks up session-local temporary tables only when the database is empty - so the long form keeps
 -- the temporary/external-table exemption the short form takes (see 04603): an empty database paired with
@@ -107,8 +119,16 @@ DROP TEMPORARY TABLE tmp_ts_bind;
 -- Control for the dependency rule outside a Distributed target: a stored SELECT (a view) is never bound,
 -- so its `mergeTreeIndex('', 'table')` still resolves per querying session and must NOT register a
 -- create-time dependency - the source stays droppable under `check_referential_table_dependencies`.
+-- The same holds for any other database expression that is not a name spelled out in the metadata:
+-- `AddDefaultDatabaseVisitor` folds `currentDatabase()` only in DDL, so the `SELECT` of a view keeps it and
+-- resolves it per querying session. Evaluating it while collecting dependencies would record the wrong
+-- table - the one in the database of the `CREATE VIEW` - and leave the one actually read unprotected.
 CREATE VIEW v_mti_empty AS SELECT part_name FROM mergeTreeIndex('', 'bind_db_src');
+CREATE VIEW v_mti_cd AS SELECT part_name FROM mergeTreeIndex(currentDatabase(), 'bind_db_src');
+CREATE VIEW v_loop_cd AS SELECT n FROM loop(currentDatabase(), 'bind_db_src');
 DROP TABLE bind_db_src SETTINGS check_referential_table_dependencies = 1;
 DROP VIEW v_mti_empty;
+DROP VIEW v_mti_cd;
+DROP VIEW v_loop_cd;
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
