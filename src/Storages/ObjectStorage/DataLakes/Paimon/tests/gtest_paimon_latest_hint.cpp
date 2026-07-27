@@ -84,7 +84,7 @@ public:
         const StoredObject & object,
         const ReadSettings & read_settings,
         size_t max_size_bytes,
-        std::optional<size_t> read_hint = {}) const override
+        std::optional<size_t> read_hint) const override
     {
         small_object_reads.fetch_add(1, std::memory_order_relaxed);
         last_local_buffer_size.store(read_settings.local_fs_settings.buffer_size, std::memory_order_relaxed);
