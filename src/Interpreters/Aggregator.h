@@ -136,7 +136,7 @@ public:
         bool serialize_string_with_zero_byte = false;
 
         /// Use the `PackedStringRef`-based hash table for a single non-nullable `String` key
-        /// (`key_packed_string`); if false, fall back to the legacy `StringHashMap`-based method
+        /// (`key_packed_string`); if false, fall back to the legacy `StringHashTable`-based method
         /// (`key_string`). The two methods hash keys differently, so all participants of a
         /// distributed query must agree on this value for two-level bucket exchange to be correct;
         /// that is why it also matters for merge-only aggregators (`convertBlockToTwoLevel`).

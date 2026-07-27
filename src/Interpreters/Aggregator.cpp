@@ -693,9 +693,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
-    /// The packed method dereferences an arena pointer on every probe for keys longer than its
-    /// 11-byte inline capacity, which loses to the legacy method (inline cells up to 24 bytes)
-    /// on very low cardinality GROUP BY. See `enable_packed_string_keys_in_aggregation`.
+    /// See `enable_packed_string_keys_in_aggregation` for why the legacy method may be preferred.
     if (!params.enable_packed_string_keys && method_chosen == AggregatedDataVariants::Type::key_packed_string)
         method_chosen = AggregatedDataVariants::Type::key_string;
 
