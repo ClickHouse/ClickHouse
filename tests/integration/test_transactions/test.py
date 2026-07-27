@@ -1042,13 +1042,18 @@ def test_kill_transaction_mutation_orphan_not_applied_on_fly(start_cluster):
         == "0"
     )
 
+    # A barrier ALTER waits for the latest mutation before changing the metadata.
+    # The orphan must not be picked as that mutation: it never finishes and is
+    # reported as killed, so the ALTER would fail with "Mutation ... was killed".
+    node.query("ALTER TABLE mt_kill_txn_on_fly RENAME COLUMN value TO val")
+
     # Once the background scheduling runs again, the orphan is removed and
     # subsequent mutations of the same parts are not blocked.
     node.query("SYSTEM START MERGES mt_kill_txn_on_fly")
     node.query(
-        "ALTER TABLE mt_kill_txn_on_fly UPDATE value = 2 WHERE 1",
+        "ALTER TABLE mt_kill_txn_on_fly UPDATE val = 2 WHERE 1",
         settings={"mutations_sync": 1},
     )
-    assert node.query("SELECT sum(value) FROM mt_kill_txn_on_fly").strip() == "200"
+    assert node.query("SELECT sum(val) FROM mt_kill_txn_on_fly").strip() == "200"
 
     node.query("DROP TABLE IF EXISTS mt_kill_txn_on_fly SYNC")

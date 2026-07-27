@@ -589,10 +589,19 @@ void StorageMergeTree::alter(
         {
             int64_t prev_mutation = 0;
             {
+                /// A rolled-back or orphaned transactional mutation will never finish, and
+                /// `getIncompleteMutationsStatusUnlocked` reports it as killed, so waiting for it
+                /// would fail the barrier `ALTER` with `Mutation ... was killed`. Wait for the
+                /// latest entry that can still be applied instead, like the merge predicates do.
                 std::lock_guard lock(currently_processing_in_background_mutex);
-                auto it = current_mutations_by_version.rbegin();
-                if (it != current_mutations_by_version.rend())
-                    prev_mutation = it->first;
+                for (auto it = current_mutations_by_version.rbegin(); it != current_mutations_by_version.rend(); ++it)
+                {
+                    if (!isDeadTransactionalMutation(it->second))
+                    {
+                        prev_mutation = it->first;
+                        break;
+                    }
+                }
             }
 
             /// Always wait previous mutations synchronously, because alters
