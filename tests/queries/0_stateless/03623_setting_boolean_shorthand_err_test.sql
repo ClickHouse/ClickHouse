@@ -23,6 +23,19 @@ SET max_threads = 4;
 SELECT getSetting('max_threads');
 SELECT 'ok';
 
+SELECT '-- A rejected shorthand leaves the setting alone';
+SET max_threads; -- { serverError TYPE_MISMATCH }
+SELECT getSetting('max_threads');
+SELECT 'ok';
+
+-- The client applies a query's SETTINGS to its own context as well, and rejects the shorthand
+-- there, so the error can surface from either side.
+SELECT '-- The same check applies to the SETTINGS clause of a query';
+SELECT 1 SETTINGS optimize_on_insert;
+SELECT 1 SETTINGS max_threads; -- { error TYPE_MISMATCH }
+SELECT getSetting('max_threads');
+SELECT 'ok';
+
 SELECT '-- An unknown setting is still reported as unknown';
 SET this_setting_does_not_exist; -- { serverError UNKNOWN_SETTING }
 SELECT 'ok';
