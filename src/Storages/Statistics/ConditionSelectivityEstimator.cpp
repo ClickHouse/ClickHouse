@@ -3,6 +3,7 @@
 #include <stack>
 #include <cmath>
 #include <limits>
+#include <set>
 
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -311,8 +312,106 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                         return true;
                     };
 
+                    auto plain_ranges_contain = [](const PlainRanges & ranges, const Field & value) -> bool
+                    {
+                        Range point(value);
+                        for (const Range & range : ranges.ranges)
+                        {
+                            if (range.containsRange(point))
+                                return true;
+                        }
+                        return false;
+                    };
+
+                    auto try_combine_tuple_predicate_with_filter = [&](const RPNElement & tuple_predicate, const RPNElement & filter) -> bool
+                    {
+                        if (element.function != RPNElement::FUNCTION_AND || !tuple_predicate.finalized
+                            || tuple_predicate.tuple_alternatives.empty() || tuple_predicate.tuple_negated
+                            || filter.finalized || filter.function == RPNElement::FUNCTION_OR)
+                            return false;
+
+                        std::unordered_set<String> tuple_columns;
+                        for (const auto & alternative : tuple_predicate.tuple_alternatives)
+                        {
+                            for (const auto & equality : alternative.equalities)
+                                tuple_columns.insert(equality.first);
+                        }
+
+                        bool touches_tuple_column = false;
+                        for (const String & column_name : tuple_columns)
+                        {
+                            if (filter.column_ranges.contains(column_name) || filter.column_not_ranges.contains(column_name)
+                                || filter.null_check_columns.contains(column_name) || filter.not_null_check_columns.contains(column_name))
+                            {
+                                touches_tuple_column = true;
+                                break;
+                            }
+                        }
+                        if (!touches_tuple_column)
+                            return false;
+
+                        std::vector<RPNElement::TupleAlternative> surviving_alternatives;
+                        Float64 tuple_selectivity = 0.0;
+                        for (const auto & alternative : tuple_predicate.tuple_alternatives)
+                        {
+                            bool possible = true;
+                            for (const auto & [column_name, value] : alternative.equalities)
+                            {
+                                if (filter.null_check_columns.contains(column_name))
+                                {
+                                    possible = false;
+                                    break;
+                                }
+
+                                if (auto it = filter.column_ranges.find(column_name);
+                                    it != filter.column_ranges.end() && !plain_ranges_contain(it->second, value))
+                                {
+                                    possible = false;
+                                    break;
+                                }
+
+                                if (auto it = filter.column_not_ranges.find(column_name);
+                                    it != filter.column_not_ranges.end() && plain_ranges_contain(it->second, value))
+                                {
+                                    possible = false;
+                                    break;
+                                }
+                            }
+
+                            if (possible)
+                            {
+                                surviving_alternatives.push_back(alternative);
+                                tuple_selectivity = std::min(1.0, tuple_selectivity + alternative.selectivity);
+                            }
+                        }
+
+                        if (surviving_alternatives.empty())
+                        {
+                            element.selectivity = Selectivity();
+                            element.finalized = true;
+                            return true;
+                        }
+
+                        RPNElement residual_filter = filter;
+                        for (const String & column_name : tuple_columns)
+                        {
+                            residual_filter.column_ranges.erase(column_name);
+                            residual_filter.column_not_ranges.erase(column_name);
+                            residual_filter.null_check_columns.erase(column_name);
+                            residual_filter.not_null_check_columns.erase(column_name);
+                        }
+                        residual_filter.finalize(column_estimators, metadata);
+
+                        element.selectivity = Selectivity(tuple_selectivity, 0.0).applyAnd(residual_filter.selectivity);
+                        element.tuple_alternatives = std::move(surviving_alternatives);
+                        element.finalized = true;
+                        return true;
+                    };
+
                     if (try_combine_null_sensitive_predicate_with_null_check(*left_element, *right_element)
-                        || try_combine_null_sensitive_predicate_with_null_check(*right_element, *left_element))
+                        || try_combine_null_sensitive_predicate_with_null_check(*right_element, *left_element)
+                        || try_combine_tuple_predicate_with_filter(*left_element, *right_element)
+                        || try_combine_tuple_predicate_with_filter(*right_element, *left_element))
                     {
                         rpn_stack.push(&element);
                     }
@@ -711,6 +810,322 @@ bool ConditionSelectivityEstimator::tryBuildColumnConstantAtom(
     return true;
 }
 
+bool ConditionSelectivityEstimator::tryExtractTupleComparison(
+    const StorageMetadataPtr & metadata,
+    const String & function_name,
+    const RPNBuilderTreeNode & lhs,
+    const RPNBuilderTreeNode & rhs,
+    RPNElement & out) const
+{
+    if (!metadata)
+        return false;
+
+    const bool is_in_operator = functionIsInOperator(function_name);
+    const bool is_equality_operator = function_name == "equals" || function_name == "notEquals";
+    if (!is_in_operator && !is_equality_operator)
+        return false;
+
+    auto collect_tuple_columns = [&](const RPNBuilderTreeNode & tuple_node, std::vector<String> & column_names) -> bool
+    {
+        if (!tuple_node.isFunction())
+            return false;
+
+        auto tuple_func = tuple_node.toFunctionNode();
+        if (tuple_func.getFunctionName() != "tuple")
+            return false;
+
+        size_t tuple_size = tuple_func.getArgumentsSize();
+        if (tuple_size < 2)
+            return false;
+
+        column_names.reserve(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            auto component = tuple_func.getArgumentAt(i);
+            if (component.isConstant())
+                return false;
+
+            String column_name = component.getColumnName();
+            const ColumnDescription * column_desc = metadata->getColumns().tryGet(column_name);
+            if (!column_desc || isNullableOrLowCardinalityNullable(column_desc->type))
+                return false;
+
+            column_names.push_back(column_name);
+        }
+
+        return true;
+    };
+
+    std::vector<String> column_names;
+    const RPNBuilderTreeNode * constant_tuple_node = &rhs;
+    if (!collect_tuple_columns(lhs, column_names))
+    {
+        if (!is_equality_operator)
+            return false;
+
+        column_names.clear();
+        if (!collect_tuple_columns(rhs, column_names))
+            return false;
+        constant_tuple_node = &lhs;
+    }
+
+    const size_t tuple_size = column_names.size();
+    std::vector<Tuple> alternatives;
+
+    auto add_tuple_alternative = [&](const Tuple & tuple_value) -> bool
+    {
+        if (tuple_value.size() != tuple_size)
+            return false;
+        alternatives.push_back(tuple_value);
+        return true;
+    };
+
+    auto collect_from_constant_field = [&](const Field & field, bool in_operator) -> bool
+    {
+        if (field.getType() != Field::Types::Tuple)
+            return false;
+
+        const Tuple & tuple_value = field.safeGet<Tuple>();
+        if (!in_operator)
+            return add_tuple_alternative(tuple_value);
+
+        if (tuple_value.empty())
+            return true;
+
+        /// Multi-column IN normally arrives as a tuple of tuple alternatives.
+        /// Accept a single tuple of scalars too so `(a, b) IN tuple(1, 2)`-like
+        /// folded forms can still be estimated safely.
+        if (tuple_value.size() == tuple_size && tuple_value.front().getType() != Field::Types::Tuple)
+            return add_tuple_alternative(tuple_value);
+
+        for (const Field & alternative : tuple_value)
+        {
+            if (alternative.getType() != Field::Types::Tuple)
+                return false;
+            if (!add_tuple_alternative(alternative.safeGet<Tuple>()))
+                return false;
+        }
+        return true;
+    };
+
+    auto collect_tuple_from_node = [&](const RPNBuilderTreeNode & tuple_node, Tuple & tuple_value) -> bool
+    {
+        Field field;
+        DataTypePtr field_type;
+        if (tuple_node.tryGetConstant(field, field_type))
+        {
+            if (field.getType() != Field::Types::Tuple)
+                return false;
+            tuple_value = field.safeGet<Tuple>();
+            return tuple_value.size() == tuple_size;
+        }
+
+        if (!tuple_node.isFunction())
+            return false;
+
+        auto tuple_func = tuple_node.toFunctionNode();
+        if (tuple_func.getFunctionName() != "tuple" || tuple_func.getArgumentsSize() != tuple_size)
+            return false;
+
+        tuple_value.resize(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            Field component;
+            DataTypePtr component_type;
+            if (!tuple_func.getArgumentAt(i).tryGetConstant(component, component_type))
+                return false;
+            tuple_value[i] = component;
+        }
+        return true;
+    };
+
+    auto collect_from_constant_node = [&](const RPNBuilderTreeNode & constant_node, bool in_operator) -> bool
+    {
+        Field field;
+        DataTypePtr field_type;
+        if (constant_node.tryGetConstant(field, field_type))
+            return collect_from_constant_field(field, in_operator);
+
+        if (!constant_node.isFunction())
+            return false;
+
+        auto tuple_func = constant_node.toFunctionNode();
+        if (tuple_func.getFunctionName() != "tuple")
+            return false;
+
+        if (!in_operator)
+        {
+            Tuple tuple_value;
+            return collect_tuple_from_node(constant_node, tuple_value) && add_tuple_alternative(tuple_value);
+        }
+
+        size_t before = alternatives.size();
+        bool saw_tuple_alternative = false;
+        for (size_t i = 0; i < tuple_func.getArgumentsSize(); ++i)
+        {
+            Tuple tuple_value;
+            if (!collect_tuple_from_node(tuple_func.getArgumentAt(i), tuple_value))
+                break;
+            saw_tuple_alternative = true;
+            if (!add_tuple_alternative(tuple_value))
+                return false;
+        }
+
+        if (saw_tuple_alternative && alternatives.size() - before == tuple_func.getArgumentsSize())
+            return true;
+
+        alternatives.resize(before);
+        Tuple tuple_value;
+        return collect_tuple_from_node(constant_node, tuple_value) && add_tuple_alternative(tuple_value);
+    };
+
+    if (is_in_operator && !constant_tuple_node->getASTNode())
+    {
+        if (!constant_tuple_node->isConstant())
+            return false;
+
+        auto future_set = constant_tuple_node->tryGetPreparedSet();
+        if (!future_set)
+            return false;
+
+        auto prepared_set = future_set->buildOrderedSetInplace(constant_tuple_node->getTreeContext().getQueryContext());
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
+            return false;
+
+        Columns columns = prepared_set->getSetElements();
+        if (columns.size() != tuple_size)
+            return false;
+
+        size_t rows = columns.empty() ? 0 : columns[0]->size();
+        for (const auto & column : columns)
+        {
+            if (column->size() != rows)
+                return false;
+        }
+
+        alternatives.reserve(rows);
+        for (size_t row = 0; row < rows; ++row)
+        {
+            Tuple tuple_value(tuple_size);
+            for (size_t column = 0; column < tuple_size; ++column)
+                tuple_value[column] = (*columns[column])[row];
+            alternatives.push_back(tuple_value);
+        }
+    }
+    else
+    {
+        if (!collect_from_constant_node(*constant_tuple_node, is_in_operator))
+            return false;
+    }
+
+    std::set<Tuple> distinct_tuples;
+    for (Tuple tuple_value : alternatives)
+    {
+        Tuple converted_tuple(tuple_size);
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            const Field & component_value = tuple_value[i];
+            if (component_value.isNull())
+                return false;
+
+            RPNElement scalar_atom;
+            DataTypePtr component_type = getFieldTypeForExactConversion(component_value, nullptr);
+            if (!tryBuildColumnConstantAtom(metadata, "equals", column_names[i], component_value, component_type, scalar_atom))
+                return false;
+
+            /// Store the normalized range point so duplicate tuple alternatives are
+            /// deduplicated after the same conversion used for estimation.
+            if (scalar_atom.function == RPNElement::FUNCTION_IN_RANGE)
+            {
+                auto range_it = scalar_atom.column_ranges.find(column_names[i]);
+                if (range_it == scalar_atom.column_ranges.end() || range_it->second.ranges.size() != 1)
+                    return false;
+                const Range & range = range_it->second.ranges.front();
+                if (range.left != range.right)
+                    return false;
+                converted_tuple[i] = range.left;
+            }
+            else if (scalar_atom.function == RPNElement::ALWAYS_FALSE)
+            {
+                converted_tuple[i] = component_value;
+            }
+            else
+                return false;
+        }
+        distinct_tuples.insert(converted_tuple);
+    }
+
+    Float64 in_selectivity = 0.0;
+    for (const Tuple & tuple_value : distinct_tuples)
+    {
+        std::vector<std::pair<String, Field>> unique_column_constraints;
+        bool tuple_impossible = false;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            RPNElement scalar_atom;
+            DataTypePtr component_type = getFieldTypeForExactConversion(tuple_value[i], nullptr);
+            if (!tryBuildColumnConstantAtom(metadata, "equals", column_names[i], tuple_value[i], component_type, scalar_atom))
+                return false;
+
+            if (scalar_atom.function == RPNElement::ALWAYS_FALSE)
+            {
+                tuple_impossible = true;
+                break;
+            }
+
+            if (scalar_atom.function != RPNElement::FUNCTION_IN_RANGE)
+                return false;
+            auto range_it = scalar_atom.column_ranges.find(column_names[i]);
+            if (range_it == scalar_atom.column_ranges.end() || range_it->second.ranges.size() != 1)
+                return false;
+            const Range & range = range_it->second.ranges.front();
+            if (range.left != range.right)
+                return false;
+
+            bool found_existing_column = false;
+            for (const auto & [existing_column, existing_value] : unique_column_constraints)
+            {
+                if (existing_column != column_names[i])
+                    continue;
+                found_existing_column = true;
+                if (existing_value != range.left)
+                    tuple_impossible = true;
+                break;
+            }
+            if (tuple_impossible)
+                break;
+            if (!found_existing_column)
+                unique_column_constraints.emplace_back(column_names[i], range.left);
+        }
+
+        if (tuple_impossible)
+            continue;
+
+        Float64 tuple_selectivity = 1.0;
+        for (const auto & [column_name, value] : unique_column_constraints)
+        {
+            RPNElement scalar_atom;
+            DataTypePtr component_type = getFieldTypeForExactConversion(value, nullptr);
+            if (!tryBuildColumnConstantAtom(metadata, "equals", column_name, value, component_type, scalar_atom))
+                return false;
+            scalar_atom.finalize(column_estimators, metadata);
+            tuple_selectivity *= scalar_atom.selectivity.true_sel;
+        }
+
+        RPNElement::TupleAlternative tuple_alternative;
+        tuple_alternative.equalities = unique_column_constraints;
+        tuple_alternative.selectivity = tuple_selectivity;
+        out.tuple_alternatives.push_back(std::move(tuple_alternative));
+        in_selectivity = std::min(1.0, in_selectivity + tuple_selectivity);
+    }
+
+    const bool is_negative = function_name == "notIn" || function_name == "notEquals";
+    out.tuple_negated = is_negative;
+    out.selectivity = Selectivity(is_negative ? 1.0 - in_selectivity : in_selectivity, 0.0);
+    out.finalized = true;
+    return true;
+}
+
 bool ConditionSelectivityEstimator::tryExtractExpressionDerivedRange(
     const StorageMetadataPtr & metadata,
     const String & function_name,
@@ -961,6 +1376,9 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
 
         if (num_args == 2)
         {
+            if (tryExtractTupleComparison(metadata, func_name, func.getArgumentAt(0), func.getArgumentAt(1), out))
+                return true;
+
             const bool is_in_operator = functionIsInOperator(func_name);
 
             /// If the second argument is built from `ASTNode`, it should fall into next branch, which directly

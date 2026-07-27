@@ -75,6 +75,8 @@ TEST(Statistics, TDigestLessThan)
 
 TEST(Statistics, Estimator)
 {
+    tryRegisterFunctions();
+
     DataTypePtr data_type = std::make_shared<DataTypeInt32>();
     /// column a, distribution 1,2...,10000
     /// column b, distribution 500,600,500,600...
@@ -459,6 +461,65 @@ TEST(Statistics, ExpressionDerivedRanges)
     EXPECT_EQ(estimate("0.0 + a < 500"), 330.0);
     EXPECT_EQ(estimate("a + -1 < 9223372036854775807"), 330.0);
     EXPECT_EQ(estimate("big + 1 < 0"), 330.0);
+}
+
+TEST(Statistics, TupleInComparisons)
+{
+    tryRegisterAggregateFunctions();
+
+    auto int32_type = std::make_shared<DataTypeInt32>();
+    auto nullable_int32_type = std::make_shared<DataTypeNullable>(int32_type);
+    auto metadata = makeStorageMetadata({
+        ColumnDescription("a", int32_type),
+        ColumnDescription("b", int32_type),
+        ColumnDescription("na", nullable_int32_type),
+    });
+
+    std::vector<Int32> a_values;
+    std::vector<Int32> b_values;
+    a_values.reserve(10000);
+    b_values.reserve(10000);
+    for (Int32 i = 0; i < 10000; ++i)
+    {
+        a_values.push_back(i % 10);
+        b_values.push_back((i / 10) % 10);
+    }
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, a_values));
+    builder.addStatistics("b", buildInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, b_values));
+    builder.addStatistics("na", buildNullableInt32Stats({StatisticsType::Basic, StatisticsType::Uniq}, /*total=*/10000, /*null_every=*/5));
+    builder.incrementRowCount(10000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps = 1.0)
+    {
+        Float64 actual = estimateRowsFor(estimator, expression, metadata);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    check("(a, b) = (1, 2)", 100.0, 1e-6);
+    check("(1, 2) = (a, b)", 100.0, 1e-6);
+    check("(1, 2) != (a, b)", 9900.0, 1e-6);
+    check("(a, b) IN ((1, 2), (3, 4))", 200.0, 1e-6);
+    check("(a, b) IN ((1, 2), (1, 2))", 100.0, 1e-6);
+    check("(a, b) NOT IN ((1, 2), (3, 4))", 9800.0, 1e-6);
+
+    /// Scalar predicates on tuple columns are correlated with tuple alternatives.
+    check("(a, b) = (1, 2) AND a = 1", 100.0, 1e-6);
+    check("(a, b) = (1, 2) AND a = 3", 0.0, 1e-6);
+    check("(a, b) IN ((1, 2), (3, 4)) AND a = 3", 100.0, 1e-6);
+    check("(a, b) IN ((1, 2), (3, 4)) AND a = 5", 0.0, 1e-6);
+
+    /// Repeated LHS columns are correlated, not independent scalar predicates.
+    check("(a, a) = (1, 1)", 1000.0, 1e-6);
+    check("(a, a) = (1, 2)", 0.0, 1e-6);
+    check("(a, a) IN ((1, 1), (2, 3))", 1000.0, 1e-6);
+    check("(a, a) NOT IN ((1, 2))", 10000.0, 1e-6);
+
+    /// Nullable tuple components are deliberately left to the old expression fallback
+    /// until their SQL NULL semantics are modeled explicitly.
+    check("(na, b) IN ((1, 2), (3, 4))", 100.0, 1e-6);
 }
 
 TEST(Statistics, NullableEstimatorWithBasic)
