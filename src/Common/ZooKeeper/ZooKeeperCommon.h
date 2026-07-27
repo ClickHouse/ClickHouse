@@ -896,7 +896,7 @@ enum class PathMatchResult : uint8_t
 {
     NOT_MATCH,
     EXACT,
-    IS_CHILD
+    IS_CHILD // descendant, not necessarily direct child
 };
 
 PathMatchResult matchPath(std::string_view path, std::string_view match_to);

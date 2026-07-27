@@ -221,7 +221,7 @@ SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
 
 19k個のオブジェクトを1つの行に非正規化するのは、おそらく現実的ではありません。この関係は、別々のテーブルのままにしておくか、統計情報を追加するのがよいでしょう。
 
-> バッジに関する統計情報をUsersに非正規化したい場合もあります。たとえば、バッジの数などです。このデータセットに対して書き込み時にディクショナリを使用する際に、そのような例を取り上げます。
+> バッジに関する統計情報をUsersに非正規化したい場合もあります。たとえば、バッジの数などです。このデータセットに対して書き込み時に辞書を使用する際に、そのような例を取り上げます。
 
 <div id="posts-and-postlinks">
   ### Posts と PostLinks
@@ -417,4 +417,4 @@ DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',
   ### ストリーミング
 </div>
 
-あるいは、[Apache Flink](/ja/integrations/connectors/data-ingestion/apache-flink) のようなストリーミング技術を使用して、ClickHouse の外部で、データを挿入する前にこの処理を実行することもできます。別の方法としては、増分 [materialized view](/ja/concepts/features/materialized-views/cascading-materialized-views) を使用して、データの挿入時にこの処理を実行することもできます。
+別の方法として、[Apache Flink](/ja/integrations/connectors/data-ingestion/apache-flink) などのストリーミング技術を使用し、ClickHouse の外部でデータを挿入する前にこの処理を実行することもできます。あるいは、インクリメンタルな [materialized view](/ja/concepts/features/materialized-views/cascading-materialized-views) を使用して、データの挿入時にこの処理を実行することもできます。

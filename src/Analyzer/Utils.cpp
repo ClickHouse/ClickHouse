@@ -24,8 +24,13 @@
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/typeid_cast.h>
+
+#include <base/unit.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -39,6 +44,7 @@
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -1016,6 +1022,54 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
     function_node->resolveAsFunction(cast_function->build(function_node->getArgumentColumns()));
 
     return function_node;
+}
+
+QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node)
+{
+    const auto * cast_function = cast_node->as<FunctionNode>();
+    if (!cast_function || !cast_function->isResolved())
+        return cast_node;
+
+    auto function_base = cast_function->getFunction();
+    if (!function_base || !function_base->isSuitableForConstantFolding())
+        return cast_node;
+
+    auto argument_columns = cast_function->getArgumentColumns();
+    if (!std::all_of(argument_columns.begin(), argument_columns.end(), [](const auto & arg) { return arg.column && isColumnConst(*arg.column); }))
+        return cast_node;
+
+    auto result_type = function_base->getResultType();
+    auto executable_function = function_base->prepare(argument_columns);
+    auto column = executable_function->execute(argument_columns, result_type, 1, /* dry_run = */ true);
+    if (column && column->empty() && isColumnConst(*column))
+        column = column->cloneResized(1);
+
+    const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr;
+    if (!column_const || column_const->getDataColumn().isDummy())
+        return cast_node;
+
+    /// Sanity check mirrored from resolveFunction.
+    if (!columnMatchesType(*column, *result_type))
+        return cast_node;
+
+    /// Match resolveFunction's `byteSize() < 1_MiB` guard. A large folded value is left as a `_CAST` function
+    /// by the shard, so the initiator must not fold it either, otherwise the action-node names diverge again.
+    if (column->byteSize() >= 1_MiB)
+        return cast_node;
+
+    /// Mirror resolveFunction's determinism propagation: a value folded from a non-deterministic source must
+    /// stay non-deterministic, otherwise downstream hasNonDeterministic()/assertDeterministic() see a different
+    /// contract than normal folding.
+    bool all_arguments_are_deterministic = true;
+    for (const auto & argument : cast_function->getArguments().getNodes())
+    {
+        if (const auto * argument_constant = argument->as<ConstantNode>())
+            all_arguments_are_deterministic &= argument_constant->isDeterministic();
+    }
+    const bool is_deterministic = all_arguments_are_deterministic && function_base->isDeterministic();
+
+    return std::make_shared<ConstantNode>(
+        ConstantValue{column_const->getPtr(), std::move(result_type)}, cast_node, is_deterministic);
 }
 
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context)

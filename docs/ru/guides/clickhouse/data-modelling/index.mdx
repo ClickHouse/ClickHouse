@@ -4,15 +4,49 @@ title: 'Обзор моделирования данных'
 description: 'Обзор моделирования данных'
 keywords: ['моделирование данных', 'проектирование схемы', 'словарь', 'materialized view', 'сжатие данных', 'денормализация данных']
 doc_type: 'landing-page'
+mode: wide
 ---
 
-Этот раздел посвящен моделированию данных в ClickHouse и включает следующие темы:
+Этот раздел посвящен моделированию данных в ClickHouse и охватывает следующие темы:
 
-| Страница                                                                                 | Описание                                                                                                                                                                                                          |
-| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Проектирование схемы](/ru/guides/clickhouse/data-modelling/schema-design)                  | Рассматривается проектирование схем в ClickHouse для достижения оптимальной производительности с учетом таких факторов, как запросы, обновление данных, задержка и объем данных.                                  |
-| [Словарь](/ru/concepts/features/dictionaries/index)                                         | Объясняется, как определять и использовать словари для повышения производительности запросов и обогащения данных.                                                                                                 |
-| [Materialized Views](/ru/concepts/features/materialized-views/index)                        | Информация о Materialized Views и Refreshable Materialized Views в ClickHouse.                                                                                                                                    |
-| [Проекции](/ru/concepts/features/projections/projections)                                   | Информация о проекциях в ClickHouse.                                                                                                                                                                              |
-| [Сжатие данных](/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | Рассматриваются различные режимы сжатия в ClickHouse и способы оптимизации хранения данных и производительности запросов за счет выбора подходящего метода сжатия для конкретных типов данных и рабочих нагрузок. |
-| [Денормализация данных](/ru/guides/clickhouse/data-modelling/denormalization)               | Рассматривается подход денормализации, используемый в ClickHouse для повышения производительности запросов за счет хранения связанных данных в одной таблице.                                                     |
+<CardGroup cols={2}>
+  <Card title="Проектирование схемы" icon="pen-ruler" href="/ru/guides/clickhouse/data-modelling/schema-design">
+    Проектирование схемы в ClickHouse для оптимальной производительности с учетом таких факторов, как запросы, обновление данных, задержка и объем.
+  </Card>
+
+  <Card title="Разреженные первичные индексы" icon="key" href="/ru/guides/clickhouse/data-modelling/sparse-primary-indexes">
+    Практическое введение в первичные индексы в ClickHouse.
+  </Card>
+
+  <Card title="Денормализация данных" icon="table-list" href="/ru/guides/clickhouse/data-modelling/denormalization">
+    Подход денормализации, направленный на повышение производительности запросов за счет хранения связанных данных в одной таблице.
+  </Card>
+
+  <Card title="Дозагрузка данных" icon="clock-rotate-left" href="/ru/guides/clickhouse/data-modelling/backfilling">
+    Методы эффективной дозагрузки данных в таблицы ClickHouse.
+  </Card>
+
+  <Card title="Табличная функция Merge" icon="code-merge" href="/ru/guides/clickhouse/data-modelling/merge-table-function">
+    Использование табличной функции `merge` для выполнения запросов к нескольким таблицам как к одной.
+  </Card>
+
+  <Card title="Хранимые процедуры и подготовленные операторы" icon="database" href="/ru/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements">
+    Хранимые процедуры и параметры запроса в ClickHouse.
+  </Card>
+
+  <Card title="Генерация тестовых данных" icon="flask" href="/ru/guides/clickhouse/data-modelling/generating-test-data">
+    Как генерировать случайные тестовые данные в ClickHouse.
+  </Card>
+
+  <Card title="Сжатие данных" icon="file-zipper" href="/ru/guides/clickhouse/data-modelling/compression/compression-in-clickhouse">
+    Сжатие в ClickHouse, доступные режимы сжатия и выбор подходящего варианта для ваших типов данных и рабочих нагрузок.
+  </Card>
+
+  <Card title="Работа с массивами" icon="list-ol" href="/ru/guides/clickhouse/working-with-arrays">
+    Работа с массивами в ClickHouse.
+  </Card>
+
+  <Card title="Работа с JOIN" icon="link" href="/ru/guides/clickhouse/working-with-joins">
+    Работа с JOIN в ClickHouse.
+  </Card>
+</CardGroup>

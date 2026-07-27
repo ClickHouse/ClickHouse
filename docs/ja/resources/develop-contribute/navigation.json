@@ -1,0 +1,65 @@
+{
+  "groups": [
+    {
+      "group": "はじめに",
+      "pages": [
+        "ja/resources/develop-contribute/introduction/developer-instruction",
+        "ja/resources/develop-contribute/introduction/architecture"
+      ]
+    },
+    {
+      "group": "ビルド",
+      "pages": [
+        "ja/resources/develop-contribute/build/build",
+        "ja/resources/develop-contribute/build/build-osx",
+        "ja/resources/develop-contribute/build/build-cross-osx",
+        "ja/resources/develop-contribute/build/build-cross-arm",
+        "ja/resources/develop-contribute/build/build-cross-riscv",
+        "ja/resources/develop-contribute/build/build-cross-s390x",
+        "ja/resources/develop-contribute/build/build-cross-loongarch",
+        "ja/resources/develop-contribute/build/build-e2k"
+      ]
+    },
+    {
+      "group": "ネイティブプロトコル",
+      "pages": [
+        "ja/resources/develop-contribute/native-protocol/basics",
+        "ja/resources/develop-contribute/native-protocol/client",
+        "ja/resources/develop-contribute/native-protocol/server",
+        "ja/resources/develop-contribute/native-protocol/columns",
+        "ja/resources/develop-contribute/native-protocol/hash"
+      ]
+    },
+    {
+      "group": "コントリビューション",
+      "pages": [
+        "ja/resources/develop-contribute/contribute/tests",
+        "ja/resources/develop-contribute/contribute/continuous-integration",
+        "ja/resources/develop-contribute/contribute/contrib",
+        "ja/resources/develop-contribute/contribute/style",
+        "ja/resources/develop-contribute/contribute/building-and-benchmarking-deflate-qpl",
+        "ja/resources/develop-contribute/contribute/integrating-rust-libraries",
+        "ja/resources/develop-contribute/contribute/profile-guided-optimization",
+        "ja/resources/develop-contribute/contribute/backports"
+      ]
+    },
+    {
+      "group": "インテグレーション開発",
+      "pages": [
+        "ja/resources/develop-contribute/integrations/building-integrations",
+        "ja/resources/develop-contribute/integrations/testing-your-integration",
+        "ja/resources/develop-contribute/integrations/documenting-your-integration"
+      ],
+      "root": "ja/resources/develop-contribute/integrations/index"
+    },
+    {
+      "group": "ロードマップ",
+      "pages": [
+        "ja/resources/develop-contribute/roadmap"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-contribute.svg",
+  "item": "開発とコントリビューション",
+  "root": "ja/resources/develop-contribute/index"
+}

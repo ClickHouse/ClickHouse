@@ -1,0 +1,13 @@
+{
+  "expanded": true,
+  "group": "Go",
+  "icon": "/images/integrations/logos/golang.svg",
+  "pages": [
+    "zh/integrations/language-clients/go/clickhouse-api",
+    "zh/integrations/language-clients/go/configuration",
+    "zh/integrations/language-clients/go/config-reference",
+    "zh/integrations/language-clients/go/data-types",
+    "zh/integrations/language-clients/go/database-sql-api"
+  ],
+  "root": "zh/integrations/language-clients/go/index"
+}

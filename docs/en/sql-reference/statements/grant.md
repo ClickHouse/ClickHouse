@@ -272,6 +272,9 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SQLITE`
     - `URL`
   - [`SYSTEM`](#system)
+    - `SYSTEM BACKGROUND`
+      - `SYSTEM STREAMING ENGINES`
+      - `SYSTEM VIEWS`
     - `SYSTEM CLEANUP`
     - `SYSTEM DROP CACHE`
       - `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -331,7 +334,6 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM TTL MERGES`
     - `SYSTEM UNFREEZE`
     - `SYSTEM UNLOAD PRIMARY KEY`
-    - `SYSTEM VIEWS`
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
@@ -605,6 +607,9 @@ Allows a user to execute [SYSTEM](../../sql-reference/statements/system.md) quer
   - `SYSTEM REPLICATION QUEUES`. Level: `TABLE`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   - `SYSTEM SYNC REPLICA`. Level: `TABLE`. Aliases: `SYNC REPLICA`
   - `SYSTEM RESTART REPLICA`. Level: `TABLE`. Aliases: `RESTART REPLICA`
+  - `SYSTEM BACKGROUND`. Level: `GROUP`
+    - `SYSTEM STREAMING ENGINES`. Level: `TABLE`
+    - `SYSTEM VIEWS`. Level: `VIEW`. Aliases: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   - `SYSTEM FLUSH`. Level: `GROUP`
     - `SYSTEM FLUSH DISTRIBUTED`. Level: `TABLE`. Aliases: `FLUSH DISTRIBUTED`
     - `SYSTEM FLUSH LOGS`. Level: `GLOBAL`. Aliases: `FLUSH LOGS`
@@ -728,9 +733,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 
 ### dictGet {#dictget}
 
-- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictGetRoot`, `dictGetChildren`, `dictGetDescendants`, `dictIsIn`
 
-Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictGet), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dictHas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictIsIn) functions.
+Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictGet), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dictHas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictGetHierarchy), [dictGetRoot](../../sql-reference/functions/ext-dict-functions.md#dictGetRoot), [dictGetChildren](../../sql-reference/functions/ext-dict-functions.md#dictGetChildren), [dictGetDescendants](../../sql-reference/functions/ext-dict-functions.md#dictGetDescendants), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictIsIn) functions.
 
 Privilege level: `DICTIONARY`.
 

@@ -82,8 +82,10 @@ public:
         return join->hasDelayedBlocks();
     }
 
-    /// May switch from HashJoin to MergeJoin (join-on-disk) at runtime, so it cannot promise the
-    /// left stream order and inherits the fail-closed `IJoin::preservesLeftBlockOrder() == false`.
+    /// May switch to PartialMergeJoin at runtime, which re-sorts left blocks by the join key.
+    /// The read-in-order decision is made at plan time (before any switch), so we must be
+    /// conservative and never claim to preserve the left stream order. See issue #110662.
+    bool preservesLeftBlockOrder() const override { return false; }
 
     void onBuildPhaseFinish() override { join->onBuildPhaseFinish(); }
 

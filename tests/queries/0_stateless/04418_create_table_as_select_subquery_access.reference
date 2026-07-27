@@ -1,0 +1,24 @@
+-- [inferred columns] denied because of missing SELECT on t2 (referenced in a WHERE-IN subquery):
+ACCESS_DENIED
+-- [inferred columns] the denied query must not leave an orphan table:
+0
+-- [inferred columns] a retry must still be ACCESS_DENIED, not TABLE_ALREADY_EXISTS:
+ACCESS_DENIED
+-- [explicit columns] denied because of missing SELECT on t2 (referenced in a WHERE-IN subquery):
+ACCESS_DENIED
+-- [explicit columns] the denied query must not leave an orphan table:
+0
+-- [explicit columns] a retry must still be ACCESS_DENIED, not TABLE_ALREADY_EXISTS:
+ACCESS_DENIED
+-- [if not exists, table exists] no-op must succeed even though t2 is denied:
+succeeded
+-- [if not exists, table exists] and the no-op must not raise ACCESS_DENIED:
+-- [if not exists, table exists] the existing table must be left unchanged:
+42
+-- [if not exists, table missing] still denied because of missing SELECT on t2:
+ACCESS_DENIED
+-- [if not exists, table missing] the denied query must not leave an orphan table:
+0
+-- once column-level SELECT(y) on t2 is granted, both queries succeed and populate the table:
+1
+1

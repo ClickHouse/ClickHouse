@@ -35,9 +35,7 @@ Vous aurez également besoin de :
 ***
 
 <Steps>
-  <Step>
-    ## Phase 1 : Créer un rôle IAM pour l’accès à ECR
-
+  <Step title="Phase 1 : Créer un rôle IAM pour l’accès à ECR" id="phase-1-create-iam-role-for-ecr-access">
     Créez un rôle IAM autorisant le pull d’images depuis l’ECR privé de ClickHouse. Déployez ce CloudFormation template dans votre AWS account :
 
     ```yaml expandable
@@ -94,9 +92,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 2: Copier les images de conteneurs
-
+  <Step title="Phase 2: Copier les images de conteneurs" id="phase-2-copy-container-images">
     Créez des dépôts ECR dans votre compte pour chaque artefact, puis utilisez skopeo pour copier les images depuis l’ECR de ClickHouse vers les vôtres. Le flag `--all` conserve toutes les architectures (amd64, arm64).
 
     ```ini
@@ -125,9 +121,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 3 : Créer un VPC
-
+  <Step title="Phase 3 : Créer un VPC" id="phase-3-create-vpc">
     Créez un VPC avec au moins 3 zones de disponibilité pour assurer la haute disponibilité. Voici un exemple de configuration :
 
     | Paramètre                 | Valeur                                  |
@@ -157,9 +151,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 4 : Créer un cluster EKS
-
+  <Step title="Phase 4 : Créer un cluster EKS" id="phase-4-create-eks-cluster">
     Créez un cluster EKS associé au VPC de la phase 3. Le cluster nécessite :
 
     * Un plugin CNI utilisant IPv4 (par exemple, [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s) avec IRSA)
@@ -181,9 +173,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 5 : Créer des groupes de nœuds
-
+  <Step title="Phase 5 : Créer des groupes de nœuds" id="phase-5-create-node-groups">
     Créez trois groupes de nœuds. **Tous les nœuds nécessitent [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) pour l&#39;authentification.**
 
     Pour les groupes de nœuds Keeper et server, créez un groupe de nœuds par zone de disponibilité si vous souhaitez prendre en charge le cluster autoscaler sur plusieurs zones de disponibilité.
@@ -341,7 +331,7 @@ Vous aurez également besoin de :
     | Paramètre            | Valeur                                       |
     | -------------------- | -------------------------------------------- |
     | AMI                  | `AL2023_x86_64`                              |
-    | Taille du disque     | 20 GB                                        |
+    | Taille du disque     | 20 GB                                        |
     | Taille de l’instance | xlarge au minimum (tout type compatible x86) |
 
     Il peut s&#39;agir d&#39;un groupe de nœuds existant si le cluster EKS existe déjà.
@@ -349,9 +339,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 6 : Créer un bucket S3 et des rôles IAM
-
+  <Step title="Phase 6 : Créer un bucket S3 et des rôles IAM" id="phase-6-create-s3-bucket-and-iam-roles">
     ### Bucket S3
 
     Créez un bucket S3 (classe Standard) avec le chiffrement activé dans la même région que le cluster EKS. Vous pouvez utiliser un bucket par cluster ClickHouse, ou un bucket unique avec un préfixe distinct pour chaque cluster.
@@ -395,9 +383,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 7 : Installer les prérequis Kubernetes
-
+  <Step title="Phase 7 : Installer les prérequis Kubernetes" id="phase-7-install-kubernetes-prerequisites">
     ### Installer les CRD VolumeSnapshot
 
     Ces CRD sont requises par le ClickHouse Operator.
@@ -443,9 +429,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 8 : Installer l’opérateur
-
+  <Step title="Phase 8 : Installer l’opérateur" id="phase-8-install-the-operator">
     Connectez-vous à ECR depuis Helm si nécessaire :
 
     ```ini
@@ -489,9 +473,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 9 : Déployer un cluster ClickHouse
-
+  <Step title="Phase 9 : Déployer un cluster ClickHouse" id="phase-9-deploy-a-clickhouse-cluster">
     ### Nommer votre cluster
 
     Chaque cluster ClickHouse doit avoir un **nom unique** au sein du cluster EKS. Utilisez la convention `$DESCRIPTOR-$LETTERS-$ORDINAL` :
@@ -579,9 +561,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 10 : Exécuter les vérifications préalables
-
+  <Step title="Phase 10 : Exécuter les vérifications préalables" id="phase-10-run-preflight-checks">
     Pour vérifier que votre cluster est prêt, nous vous recommandons d’exécuter des vérifications préalables. Ces vérifications s’appuient sur [Troubleshoot](https://troubleshoot.sh/), un plugin Kubernetes de diagnostic des clusters.
 
     ### Installer le plugin
@@ -621,9 +601,7 @@ Vous aurez également besoin de :
     ***
   </Step>
 
-  <Step>
-    ## Phase 11 : Vérifier l’installation
-
+  <Step title="Phase 11 : Vérifier l’installation" id="phase-11-verify-installation">
     ### Rediriger un port vers le service ClickHouse
 
     ```bash

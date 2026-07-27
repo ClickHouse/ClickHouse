@@ -14,7 +14,21 @@ killed mid-flight or server crashed without a synthetic `Server died` leaf
 reaching `test_result.results`), the inverter must preserve `ERROR` rather
 than overwrite it with a validation verdict.
 
-See ClickHouse/ClickHouse#105789 and #103541.
+This module also tests `reconcile_bugfix_crash_repro`, which runs BEFORE the
+inverter and folds a build type's fatal-log rows into its per-test result. A
+`BLOCKER` fatal on the master-HEAD binary is the bug crashing the server (with
+`-fno-sanitize-recover=all` a reproduced UBSan bug aborts the runner, poisoning
+the per-test rows with `ERROR`), so it downgrades those `ERROR` rows to `FAIL`
+for the inverter to flip into a reproduction; a run that ends in `ERROR` with
+no `BLOCKER` fatal (genuine infra failure) is preserved as inconclusive. The
+same reconciliation now runs on every build type (`build_types[0]` and each of
+`build_types[1:]`); the tests below pin the helper's behaviour on the
+crash-repro input that the later build types depend on. They call the helper
+directly (not through `main`'s build-type loop, which swaps binaries and reads
+real server logs), so they guard the reconciliation logic itself rather than
+the caller wiring.
+
+See ClickHouse/ClickHouse#105789, #103541 and #110158.
 """
 
 import os
@@ -24,7 +38,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
-from ci.jobs.functional_tests import invert_bugfix_validation_status
+from ci.jobs.functional_tests import (
+    invert_bugfix_validation_status,
+    reconcile_bugfix_crash_repro,
+)
 from ci.praktika.result import Result
 
 
@@ -37,6 +54,14 @@ def _make_log_check(name, status):
     `check_fatal_messages_in_logs` and labelled `LOG_CHECK`."""
     leaf = Result(name=name, status=status)
     leaf.set_label(Result.Label.LOG_CHECK)
+    return leaf
+
+
+def _make_fatal(name="Sanitizer assert or Fatal messages in server logs"):
+    """A `BLOCKER` sanitizer/fatal row, as produced by the fatal branches of
+    `check_fatal_messages_in_logs` (clickhouse_proc.py): FAIL + BLOCKER."""
+    leaf = Result(name=name, status=Result.Status.FAIL)
+    leaf.set_label(Result.Label.BLOCKER)
     return leaf
 
 
@@ -256,6 +281,92 @@ def test_log_check_failure_counts_as_reproduced_bug():
     assert Result.Label.XFAIL in _labels(log_fail)
     assert outer.status == Result.Status.OK
     assert "Failed to reproduce" not in outer.info
+
+
+# ---------------------------------------------------------------------------
+# reconcile_bugfix_crash_repro (PR #110158): runs on every build type, before
+# the inverter. Its crash-repro downgrade is what the later-build-type
+# (`build_types[1:]`) flow relies on - the PR's own WITH FILL overflow
+# reproduces on `build_types[0]` and short-circuits before the later loop, so
+# no bugfix-validation run exercises that helper call there. These tests pin
+# the helper's behaviour directly on the runner_level_error + per-test ERROR +
+# BLOCKER fatal input that flow feeds it.
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_crash_repro_downgrades_runner_error_to_fail():
+    """The later-build-type scenario that PR #110158 repairs: a sanitizer crash
+    on the master-HEAD binary aborts the runner, so the build type's result is
+    `ERROR` with per-test `ERROR` rows, and a `BLOCKER` fatal is present. The
+    reconciler must downgrade the per-test `ERROR`s to `FAIL` and recompute the
+    aggregate to `FAIL` (not `ERROR`), so the inverter counts a reproduction.
+    """
+    poisoned = _make_leaf("01234_regression_test", Result.Status.ERROR)
+    bt_result = _make_outer(Result.Status.ERROR, [poisoned])
+    fatals = [_make_fatal()]
+
+    crash_repro = reconcile_bugfix_crash_repro(bt_result, fatals)
+
+    assert crash_repro is True
+    # Per-test ERROR downgraded to FAIL.
+    assert poisoned.status == Result.Status.FAIL
+    # Aggregate is FAIL, not ERROR: the runner-level ERROR is NOT restored
+    # because a crash reproduction was detected.
+    assert bt_result.status == Result.Status.FAIL
+    # The fatal row is folded in for the report.
+    assert any(r.has_label(Result.Label.BLOCKER) for r in bt_result.results)
+
+
+def test_reconcile_crash_repro_then_inverter_flips_to_ok():
+    """End-to-end for the later build type: after the reconciler turns the
+    poisoned `ERROR` run into `FAIL`, the inverter flips it to a successful
+    reproduction (`OK`) instead of preserving it as inconclusive `ERROR`.
+    """
+    poisoned = _make_leaf("01234_regression_test", Result.Status.ERROR)
+    bt_result = _make_outer(Result.Status.ERROR, [poisoned])
+
+    reconcile_bugfix_crash_repro(bt_result, [_make_fatal()])
+    no_repro = invert_bugfix_validation_status(bt_result)
+
+    assert no_repro is not True
+    assert bt_result.status == Result.Status.OK
+
+
+def test_reconcile_infra_error_without_blocker_is_preserved():
+    """#105789 contract: a run that ends in `ERROR` with no `BLOCKER` fatal is
+    a genuine infra failure, not a reproduction. The reconciler must NOT
+    downgrade its `ERROR` rows and must restore the runner-level `ERROR`.
+    """
+    err_row = _make_leaf("01234_regression_test", Result.Status.ERROR)
+    bt_result = _make_outer(Result.Status.ERROR, [err_row])
+    # A clean (OK) health-check row - no BLOCKER fatal.
+    clean = [_make_log_check("Lost s3 keys", Result.Status.OK)]
+
+    crash_repro = reconcile_bugfix_crash_repro(bt_result, clean)
+
+    assert crash_repro is False
+    # ERROR row untouched.
+    assert err_row.status == Result.Status.ERROR
+    # Runner-level ERROR restored (not left as OK/FAIL by extend_sub_results).
+    assert bt_result.status == Result.Status.ERROR
+
+
+def test_reconcile_ok_run_with_blocker_fatal_still_flips_to_fail():
+    """A clean per-test run (OK) that nevertheless produced a `BLOCKER` fatal in
+    the server log is the bug reproducing via a crash: the reconciler folds the
+    fatal in and the aggregate becomes FAIL, which the inverter later flips to
+    a reproduction. (No runner-level ERROR to restore here.)
+    """
+    ok_row = _make_leaf("01234_regression_test", Result.Status.OK)
+    bt_result = _make_outer(Result.Status.OK, [ok_row])
+
+    crash_repro = reconcile_bugfix_crash_repro(bt_result, [_make_fatal()])
+
+    assert crash_repro is True
+    # No per-test ERROR to downgrade; the OK row stays OK.
+    assert ok_row.status == Result.Status.OK
+    # The BLOCKER fatal makes the aggregate FAIL.
+    assert bt_result.status == Result.Status.FAIL
 
 
 if __name__ == "__main__":

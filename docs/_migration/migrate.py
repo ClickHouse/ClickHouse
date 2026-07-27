@@ -2046,6 +2046,72 @@ class FileResult:
     issues: list[str]
 
 
+def transform_body_content(
+    text: str,
+    *,
+    title: str | None,
+    lk: Lookups,
+    issues: list[str],
+    source_docu_path: Path | None,
+    dest_path: Path | None,
+    source_docu_file: str | None = None,
+    row: dict | None = None,
+) -> str:
+    """Apply the full Docusaurus->Mintlify body pipeline to a page body.
+
+    This is the sequence migrate_file runs between reading the source and
+    writing the destination (frontmatter handling excluded). It is factored
+    out so other producers of Mintlify page bodies -- notably the reference
+    doc autogenerator, which turns Docusaurus-flavoured `Documentation`
+    strings from the ClickHouse binary into pages -- get byte-for-byte the
+    same treatment as migrated pages from a single source of truth.
+    """
+    text = drop_redundant_h1(text, title)
+    text = transform_heading_anchors(text)
+    json_vars: dict[str, str] = {}
+    text, image_vars = transform_imports(text, lk, issues, source_docu_path=source_docu_path, json_vars=json_vars, dest_path=dest_path)
+    text = transform_use_base_url(text)
+    text = transform_tocinline(text)
+    text = transform_iframes(text)
+    text = transform_admonitions(text)
+    text = transform_details(text)
+    text = transform_tabs(text)
+    text = transform_inline_image_requires(text)
+    text = transform_image_components(text, image_vars)
+    text = transform_svg_components(text, image_vars)
+    text = transform_image_logo_to_img(text)
+    text = transform_static_image_paths(text)
+    text = transform_inline_anchor(text)
+    text = transform_vertical_stepper(text)
+    text = transform_card_primary(text)
+    text = transform_horizontal_divide(text)
+    text = transform_two_column_list(text, json_vars)
+    text, used_runnable = transform_runnable(text)
+    text = transform_highlight_comments(text)
+
+    text = rewrite_links(text, source_docu_file, lk, issues, dest_path=dest_path)
+
+    if used_runnable and "RunnableCode/RunnableCode.jsx" not in text:
+        text = _inject_import(text, RUNNABLE_IMPORT)
+    if image_vars and "/snippets/components/Image.jsx" not in text:
+        text = _inject_import(text, IMAGE_IMPORT)
+    if re.search(r"<AgentPrompt(?:[\s/>])", text) and "AgentPrompt/AgentPrompt.jsx" not in text:
+        text = _inject_import(text, AGENT_PROMPT_IMPORT)
+
+    # Remove unused nested snippet imports. Imports that remain stay local to
+    # the file that renders the imported snippet.
+    text = prune_unused_mdx_imports(text)
+
+    # Apply any per-file override (rare; for upstream patterns that don't map
+    # cleanly to a generic transform, e.g. <Link><CardSecondary/></Link>).
+    if row and row.get("docusaurus_file") in POST_TRANSFORM_OVERRIDES:
+        text = POST_TRANSFORM_OVERRIDES[row["docusaurus_file"]](text)
+
+    text = transform_html_comments(text)
+    text = ensure_blank_after_imports(text)
+    return text
+
+
 def migrate_file(path: Path, lk: Lookups, force: bool, dry_run: bool, docusaurus_root: Path) -> FileResult:
     rel = str(path.relative_to(THIS_REPO)).replace("\\", "/")
     # Allow lookup to succeed for either .md or .mdx form (extension may have
@@ -2157,50 +2223,17 @@ def migrate_file(path: Path, lk: Lookups, force: bool, dry_run: bool, docusaurus
                 }
     original = source_path.read_text(encoding="utf-8")
     text, slug, title = transform_frontmatter(original)
-    text = drop_redundant_h1(text, title)
-    text = transform_heading_anchors(text)
-    json_vars: dict[str, str] = {}
-    text, image_vars = transform_imports(text, lk, issues, source_docu_path=source_path, json_vars=json_vars, dest_path=path)
-    text = transform_use_base_url(text)
-    text = transform_tocinline(text)
-    text = transform_iframes(text)
-    text = transform_admonitions(text)
-    text = transform_details(text)
-    text = transform_tabs(text)
-    text = transform_inline_image_requires(text)
-    text = transform_image_components(text, image_vars)
-    text = transform_svg_components(text, image_vars)
-    text = transform_image_logo_to_img(text)
-    text = transform_static_image_paths(text)
-    text = transform_inline_anchor(text)
-    text = transform_vertical_stepper(text)
-    text = transform_card_primary(text)
-    text = transform_horizontal_divide(text)
-    text = transform_two_column_list(text, json_vars)
-    text, used_runnable = transform_runnable(text)
-    text = transform_highlight_comments(text)
-
     source_docu_file = row["docusaurus_file"] if row else None
-    text = rewrite_links(text, source_docu_file, lk, issues, dest_path=path)
-
-    if used_runnable and "RunnableCode/RunnableCode.jsx" not in text:
-        text = _inject_import(text, RUNNABLE_IMPORT)
-    if image_vars and "/snippets/components/Image.jsx" not in text:
-        text = _inject_import(text, IMAGE_IMPORT)
-    if re.search(r"<AgentPrompt(?:[\s/>])", text) and "AgentPrompt/AgentPrompt.jsx" not in text:
-        text = _inject_import(text, AGENT_PROMPT_IMPORT)
-
-    # Remove unused nested snippet imports. Imports that remain stay local to
-    # the file that renders the imported snippet.
-    text = prune_unused_mdx_imports(text)
-
-    # Apply any per-file override (rare; for upstream patterns that don't map
-    # cleanly to a generic transform, e.g. <Link><CardSecondary/></Link>).
-    if row and row.get("docusaurus_file") in POST_TRANSFORM_OVERRIDES:
-        text = POST_TRANSFORM_OVERRIDES[row["docusaurus_file"]](text)
-
-    text = transform_html_comments(text)
-    text = ensure_blank_after_imports(text)
+    text = transform_body_content(
+        text,
+        title=title,
+        lk=lk,
+        issues=issues,
+        source_docu_path=source_path,
+        dest_path=path,
+        source_docu_file=source_docu_file,
+        row=row,
+    )
 
     # Standardize on `.mdx` for every page so contributors don't have to
     # think about which extension to use. Mintlify renders both, but a single

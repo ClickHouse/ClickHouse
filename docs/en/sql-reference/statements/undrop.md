@@ -8,9 +8,12 @@ doc_type: 'reference'
 
 Cancels the dropping of the table.
 
-Beginning with ClickHouse version 23.3 it is possible to UNDROP a table in an Atomic database
-within `database_atomic_delay_before_drop_table_sec` (8 minutes by default) of issuing the DROP TABLE statement.  Dropped tables are listed in 
-a system table called `system.dropped_tables`.
+Beginning with ClickHouse version 23.3, you can recover a table in an `Atomic` database with `UNDROP TABLE`
+during the period set by [`database_atomic_delay_before_drop_table_sec`](/operations/server-configuration-parameters/settings.md#database_atomic_delay_before_drop_table_sec) (8 minutes by default) after issuing `DROP TABLE`.
+Tables dropped from `Atomic` databases are listed in `system.dropped_tables`.
+
+For a `Shared` database in ClickHouse Cloud, this period is instead controlled by [`database_shared_drop_table_delay_seconds`](/operations/settings/settings.md#database_shared_drop_table_delay_seconds), which defaults to 8 hours.
+Tables dropped from `Shared` databases aren't listed in `system.dropped_tables`.
 
 If you have a materialized view without a `TO` clause associated with the dropped table, then you will also have to UNDROP the inner table of that view.
 

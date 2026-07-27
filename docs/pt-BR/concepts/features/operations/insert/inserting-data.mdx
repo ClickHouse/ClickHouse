@@ -195,9 +195,7 @@ Neste exemplo, você verá como inserir um arquivo CSV no ClickHouse pela linha 
 Usaremos o [Hacker News dataset](/pt-BR/get-started/sample-datasets/hacker-news) neste exemplo, que contém 28 milhões de linhas de dados do Hacker News.
 
 <Steps>
-  <Step>
-    ### Baixe o CSV
-
+  <Step title="Baixe o CSV" id="download-csv">
     Execute o comando a seguir para baixar uma versão CSV do dataset do nosso bucket público do S3:
 
     ```bash
@@ -207,9 +205,7 @@ Usaremos o [Hacker News dataset](/pt-BR/get-started/sample-datasets/hacker-news)
     Com 4,6 GB e 28 milhões de linhas, esse arquivo compactado deve levar de 5 a 10 minutos para ser baixado.
   </Step>
 
-  <Step>
-    ### Crie a tabela
-
+  <Step title="Crie a tabela" id="create-table">
     Com o `clickhouse-server` em execução, você pode criar uma tabela vazia com o esquema a seguir diretamente pela linha de comando usando o `clickhouse-client` em batch mode:
 
     ```bash
@@ -239,9 +235,7 @@ Usaremos o [Hacker News dataset](/pt-BR/get-started/sample-datasets/hacker-news)
     Se não houver erros, a tabela foi criada com sucesso. No comando acima, aspas simples são usadas ao redor do delimitador heredoc (`_EOF`) para evitar qualquer interpolação. Sem as aspas simples, seria necessário escapar os backticks ao redor dos nomes das colunas.
   </Step>
 
-  <Step>
-    ### Insira os dados pela linha de comando
-
+  <Step title="Insira os dados pela linha de comando" id="insert-data-via-cmd">
     Em seguida, execute o comando abaixo para inserir na tabela os dados do arquivo que você baixou anteriormente:
 
     ```bash
@@ -268,9 +262,7 @@ Usaremos o [Hacker News dataset](/pt-BR/get-started/sample-datasets/hacker-news)
     ```
   </Step>
 
-  <Step>
-    ### inserindo dados pela linha de comando com curl
-
+  <Step title="inserindo dados pela linha de comando com curl" id="insert-using-curl">
     Nas etapas anteriores, você primeiro baixou o arquivo CSV para sua máquina local usando `wget`. Também é possível inserir os dados diretamente da URL remota com um único comando.
 
     Execute o comando a seguir para truncar os dados da tabela `hackernews`, para que você possa inseri-los novamente sem a etapa intermediária de baixar o arquivo para sua máquina local:
