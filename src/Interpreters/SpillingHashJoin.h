@@ -125,7 +125,8 @@ private:
         IN_MEMORY_JOIN // All blocks fit in memory, using HashJoin / ConcurrentHashJoin directly without switching.
     };
 
-    /// Whether the spill threshold is allowed to trigger a switch at all. A `false` result must be
+    /// Whether the spill threshold is allowed to trigger a switch at all. Call only once the
+    /// threshold has actually been crossed - it logs the suppression. A `false` result must be
     /// treated by callers as "threshold not reached", so the build still ends in the in-memory
     /// promotion of `onBuildPhaseFinish` and `chosen_join` is always set.
     bool maySwitchToGraceHashJoin();

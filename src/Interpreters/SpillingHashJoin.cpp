@@ -127,19 +127,9 @@ bool SpillingHashJoin::addBlockToJoin(const Block & block, bool check_limits)
     /// allocator exception. Threshold is half of `max_bytes_before_external_join` so that after
     /// the switch the live buffer (already at half) plus the conversion peak still fit under the
     /// configured cap.
-    if (maySwitchToGraceHashJoin())
-    {
-        if (concurrent_join)
-        {
-            if (concurrent_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-                switchToGraceHashJoin();
-        }
-        else
-        {
-            if (hash_join->getTotalByteCount() * 2 >= max_bytes_before_external_join)
-                switchToGraceHashJoin();
-        }
-    }
+    const size_t total_bytes = concurrent_join ? concurrent_join->getTotalByteCount() : hash_join->getTotalByteCount();
+    if (total_bytes * 2 >= max_bytes_before_external_join && maySwitchToGraceHashJoin())
+        switchToGraceHashJoin();
 
     /// Re-check: we may have just switched.
     if (state.load(std::memory_order_acquire) != State::COLLECTING)
@@ -181,7 +171,9 @@ bool SpillingHashJoin::maySwitchToGraceHashJoin()
     ///
     /// Callers must treat a `false` here as "the threshold was not reached", so that the build
     /// still finishes through the in-memory promotion in `onBuildPhaseFinish` - returning early
-    /// from `switchToGraceHashJoin` instead would leave `chosen_join` unset.
+    /// from `switchToGraceHashJoin` instead would leave `chosen_join` unset. They must also call
+    /// this only after the byte threshold check, otherwise the log below would fire on the very
+    /// first build block of every pinned join, however small.
     if (!keep_left_in_order.load(std::memory_order_acquire))
         return true;
 
