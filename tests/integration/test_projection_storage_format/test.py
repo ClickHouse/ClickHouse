@@ -190,6 +190,16 @@ def packed_archive_files(part_path, n=node, disk="default"):
     return out.split()
 
 
+# Storage kinds a test runs for; 'packed' appends the packed-threshold clause to the table settings.
+@pytest.fixture(params=["full", "packed"])
+def storage_kind(request):
+    return request.param
+
+
+def with_storage(extra_settings, storage_kind):
+    return extra_settings + (", " + PACKED if storage_kind == "packed" else "")
+
+
 def minio_keys():
     return {
         o.object_name
@@ -246,9 +256,11 @@ def test_layout_default_is_nested():
 # - INSERT a second part and MERGE (OPTIMIZE TABLE FINAL)
 # - assert structure: the merged part keeps the flat layout, SELECT matches
 # - restart, assert the part and SELECT survive
-def test_layout_flat_setting_persists():
+def test_layout_flat_setting_persists(storage_kind):
     # create table with a 'flat' projection
-    setup_table("t_flat_setting", "projection_storage_format = 'flat'")
+    setup_table(
+        "t_flat_setting", with_storage("projection_storage_format = 'flat'", storage_kind)
+    )
 
     # assert structure: the server wrote the projection as a flat sibling, not nested
     p = part_dir("t_flat_setting")
@@ -354,14 +366,15 @@ def test_layout_flat_compact_part():
 # - MERGE (OPTIMIZE TABLE FINAL)
 # - assert structure: the merged part is a flat sibling, no nested dir
 # - assert SELECT and CHECK TABLE
-def test_layout_convert_nested_to_flat():
+def test_layout_convert_nested_to_flat(storage_kind):
     # create table with a default (nested) projection, insert two parts
     node.query("DROP TABLE IF EXISTS t_n2f SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_n2f (key UInt64, id UInt64, value String,
+        f"""CREATE TABLE t_n2f (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
-           ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0"""
+           ENGINE = MergeTree ORDER BY key
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0", storage_kind)}"""
     )
     for rng in ("numbers(1000)", "numbers(1000, 1000)"):
         node.query(
@@ -399,15 +412,15 @@ def test_layout_convert_nested_to_flat():
 # - MERGE (OPTIMIZE TABLE FINAL)
 # - assert structure: the merged part is nested, no flat sibling
 # - assert SELECT and CHECK TABLE
-def test_layout_convert_flat_to_nested():
+def test_layout_convert_flat_to_nested(storage_kind):
     # create table with a 'flat' projection, insert two parts
     node.query("DROP TABLE IF EXISTS t_f2n SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_f2n (key UInt64, id UInt64, value String,
+        f"""CREATE TABLE t_f2n (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
     )
     for rng in ("numbers(1000)", "numbers(1000, 1000)"):
         node.query(
@@ -450,7 +463,7 @@ def test_layout_convert_flat_to_nested():
 # - assert structure: the fetched part carries a flat sibling
 # - assert SELECT matches across replicas
 # @pytest.mark.xfail(reason=REVIEW + "3473479560", strict=False)
-def test_carry_replicated_fetch():
+def test_carry_replicated_fetch(storage_kind):
     # create the replicated 'flat' table on both replicas
     for n, replica in ((node, "1"), (node2, "2")):
         n.query("DROP TABLE IF EXISTS t_repl SYNC")
@@ -460,7 +473,7 @@ def test_carry_replicated_fetch():
                 PROJECTION p (SELECT key, id, value ORDER BY id))
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_repl', '{replica}')
                 ORDER BY key
-                SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+                SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
         )
 
     # insert on replica 1, sync replica 2 (which fetches the part)
@@ -483,7 +496,7 @@ def test_carry_replicated_fetch():
 # - MERGE (OPTIMIZE TABLE FINAL), SYNC replica 2
 # - assert structure: both replicas expose a single flat-sibling part
 # - assert SELECT matches across replicas
-def test_carry_replicated_merge():
+def test_carry_replicated_merge(storage_kind):
     # create the replicated 'flat' table on both replicas
     for n, replica in ((node, "1"), (node2, "2")):
         n.query("DROP TABLE IF EXISTS t_rmerge SYNC")
@@ -493,7 +506,7 @@ def test_carry_replicated_merge():
                 PROJECTION p (SELECT key, id, value ORDER BY id))
                 ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_rmerge', '{replica}')
                 ORDER BY key
-                SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+                SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
         )
 
     # insert two parts on replica 1, sync replica 2
@@ -529,10 +542,10 @@ def test_carry_replicated_merge():
 # - assert structure: the destination part carries a flat sibling
 # - assert SELECT matches the source
 # @pytest.mark.xfail(reason=REVIEW + "3472535412", strict=False)
-def test_carry_attach_partition_from():
+def test_carry_attach_partition_from(storage_kind):
     # create 'flat' source and destination tables
-    setup_table("t_src", "projection_storage_format = 'flat'")
-    setup_table("t_dst", "projection_storage_format = 'flat'")
+    setup_table("t_src", with_storage("projection_storage_format = 'flat'", storage_kind))
+    setup_table("t_dst", with_storage("projection_storage_format = 'flat'", storage_kind))
 
     # clear the destination and attach the source partition into it
     node.query("TRUNCATE TABLE t_dst")
@@ -552,9 +565,9 @@ def test_carry_attach_partition_from():
 # - assert structure: the flat sibling is at the attached location and nothing is left under detached/
 # - assert the projection is healthy and SELECT matches baseline
 # @pytest.mark.xfail(reason=REVIEW + "3473543140", strict=False)
-def test_carry_detach_attach_part():
+def test_carry_detach_attach_part(storage_kind):
     # create table with a 'flat' projection, capture baseline
-    setup_table("t_da", "projection_storage_format = 'flat'")
+    setup_table("t_da", with_storage("projection_storage_format = 'flat'", storage_kind))
     baseline = proj_query("t_da")
     name = part_name("t_da")
 
@@ -587,9 +600,9 @@ def test_carry_detach_attach_part():
 # - DETACH PART; assert nothing of the part stays at live names, both parent and sibling under detached/
 # - ATTACH PART; assert parent and sibling live again, nothing left under detached/
 # - assert the projection is healthy and SELECT matches baseline
-def test_carry_detach_attach_no_mixed_state():
+def test_carry_detach_attach_no_mixed_state(storage_kind):
     # create table with a 'flat' projection, capture baseline
-    setup_table("t_mix", "projection_storage_format = 'flat'")
+    setup_table("t_mix", with_storage("projection_storage_format = 'flat'", storage_kind))
     baseline = proj_query("t_mix")
     live = part_dir("t_mix")
     name = part_name("t_mix")
@@ -712,14 +725,14 @@ def test_carry_detached_parts_surface():
 # - ADD PROJECTION, then MATERIALIZE PROJECTION (mutation)
 # - assert structure: a flat sibling, no nested dir, no *.tmp_proj residue
 # - assert CHECK TABLE and SELECT survive a restart
-def test_carry_materialize_projection():
+def test_carry_materialize_projection(storage_kind):
     # create a 'flat' table without a projection, insert data
     node.query("DROP TABLE IF EXISTS t_mat SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_mat (key UInt64, id UInt64, value String)
+        f"""CREATE TABLE t_mat (key UInt64, id UInt64, value String)
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
     )
     node.query(
         "INSERT INTO t_mat SELECT number, number * 2, toString(number) FROM numbers(1000)"
@@ -798,16 +811,16 @@ def test_carry_lightweight_delete_rebuild():
 # - MERGE (OPTIMIZE TABLE FINAL)
 # - assert structure: both flat siblings present, neither nested
 # - assert both projection parts are active and CHECK TABLE passes
-def test_carry_multiple_projections():
+def test_carry_multiple_projections(storage_kind):
     # create a 'flat' table with two projections, insert two parts
     node.query("DROP TABLE IF EXISTS t_multi SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_multi (key UInt64, id UInt64, value String,
+        f"""CREATE TABLE t_multi (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id ORDER BY id),
            PROJECTION q (SELECT id, key ORDER BY key))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
     )
     for rng in ("numbers(1000)", "numbers(1000, 1000)"):
         node.query(
@@ -840,15 +853,15 @@ def test_carry_multiple_projections():
 # - MERGE (OPTIMIZE TABLE FINAL)
 # - assert structure: each active part has a flat sibling, none nested
 # - assert SELECT and CHECK TABLE
-def test_carry_partitioned_merge():
+def test_carry_partitioned_merge(storage_kind):
     # create a partitioned 'flat' table, insert across partitions
     node.query("DROP TABLE IF EXISTS t_part SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_part (key UInt64, id UInt64, value String,
+        f"""CREATE TABLE t_part (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree PARTITION BY key % 2 ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
     )
     for rng in ("numbers(1000)", "numbers(1000, 1000)"):
         node.query(
@@ -942,9 +955,9 @@ def test_carry_rename_table():
 # - DROP PART
 # - assert the flat sibling is removed
 # @pytest.mark.xfail(reason=REVIEW + "3472535408", strict=False)
-def test_cleanup_drop_part_removes_sibling():
+def test_cleanup_drop_part_removes_sibling(storage_kind):
     # create table with a 'flat' projection
-    setup_table("t_rm", "projection_storage_format = 'flat'")
+    setup_table("t_rm", with_storage("projection_storage_format = 'flat'", storage_kind))
     p = part_dir("t_rm")
     assert path_exists(f"{p}.p.proj")
 
@@ -962,9 +975,11 @@ def test_cleanup_drop_part_removes_sibling():
 # - DROP PROJECTION p (mutation)
 # - assert structure: no flat sibling on the new part and no active projection part
 # - assert the base data reads and CHECK TABLE passes
-def test_cleanup_drop_projection_removes_sibling():
+def test_cleanup_drop_projection_removes_sibling(storage_kind):
     # create table with a 'flat' projection
-    setup_table("t_drop_proj", "projection_storage_format = 'flat'")
+    setup_table(
+        "t_drop_proj", with_storage("projection_storage_format = 'flat'", storage_kind)
+    )
 
     # assert structure: the flat sibling exists
     p = part_dir("t_drop_proj")
@@ -1057,15 +1072,15 @@ def test_cleanup_tolerates_missing_sibling():
 # - assert neither the part nor its projection adopted stale files, and no stale sibling is left
 # - assert the projection is healthy, SELECT and CHECK TABLE pass
 # @pytest.mark.xfail(reason=REVIEW + "3544856348", strict=False)
-def test_residue_insert_tmp_collision():
+def test_residue_insert_tmp_collision(storage_kind):
     # create a 'flat' table
     node.query("DROP TABLE IF EXISTS t_ins SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_ins (key UInt64, id UInt64, value String,
+        f"""CREATE TABLE t_ins (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
     )
 
     # plant a stale tmp dir at the name the first insert reuses (tmp_insert_all_1_1_0)
@@ -1186,15 +1201,15 @@ def test_residue_live_not_adopted():
 # - plant a stale sibling at the future live part name
 # - INSERT a part WITH a projection at that name
 # - assert the real sibling replaced the stale one and CHECK TABLE passes
-def test_residue_live_replaced_by_real():
+def test_residue_live_replaced_by_real(storage_kind):
     # create a 'flat' table
     node.query("DROP TABLE IF EXISTS t_repl_sib SYNC")
     node.query("SYSTEM STOP MERGES")
     node.query(
-        """CREATE TABLE t_repl_sib (key UInt64, id UInt64, value String,
+        f"""CREATE TABLE t_repl_sib (key UInt64, id UInt64, value String,
            PROJECTION p (SELECT key, id, value ORDER BY id))
            ENGINE = MergeTree ORDER BY key
-           SETTINGS min_bytes_for_wide_part = 0, projection_storage_format = 'flat'"""
+           SETTINGS {with_storage("min_bytes_for_wide_part = 0, projection_storage_format = 'flat'", storage_kind)}"""
     )
 
     # plant a stale sibling at the future live name, then insert a real projection there
