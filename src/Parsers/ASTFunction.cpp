@@ -249,6 +249,12 @@ static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
     const auto * equals_func = arg->as<ASTFunction>();
     if (!equals_func || equals_func->name != "equals" || !equals_func->arguments || equals_func->arguments->children.size() != 2)
         return false;
+    /// Keep the value visible only when it is a plain literal or identifier; a non-literal value (e.g.
+    /// `role_arn = headers('Authorization' = '...')`) can hide a nested secret and is formatted verbatim
+    /// before the parser rejects it, so fail closed.
+    const auto & value_ast = equals_func->arguments->children[1];
+    if (!value_ast->as<ASTLiteral>() && !value_ast->as<ASTIdentifier>())
+        return false;
     const auto & key_ast = equals_func->arguments->children[0];
     if (const auto * key_literal = key_ast->as<ASTLiteral>())
         return key_literal->value.getType() == Field::Types::String

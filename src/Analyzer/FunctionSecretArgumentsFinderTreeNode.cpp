@@ -26,6 +26,11 @@ namespace
         const auto * function_node = node->as<FunctionNode>();
         if (!function_node || function_node->getFunctionName() != "equals" || function_node->getArguments().getNodes().size() != 2)
             return false;
+        /// Keep the value visible only when it is a plain literal or identifier; a non-literal value
+        /// (e.g. `role_arn = headers('Authorization' = '...')`) can hide a nested secret, so fail closed.
+        const auto & value_node = function_node->getArguments().getNodes()[1];
+        if (!value_node->as<ConstantNode>() && !value_node->as<IdentifierNode>())
+            return false;
         const auto & key_node = function_node->getArguments().getNodes()[0];
         if (const auto * key_constant = key_node->as<ConstantNode>())
             return key_constant->getValue().getType() == Field::Types::String

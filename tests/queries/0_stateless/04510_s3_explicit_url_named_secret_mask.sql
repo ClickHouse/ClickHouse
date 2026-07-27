@@ -132,6 +132,16 @@ SELECT * FROM s3('url_exprkey', 'ak', 'SEKRIT_SAK',
                  concat('session_', 'token') = 'SEKRIT_EXPRTOK',
                  format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- A nested map placed as the value of a visible non-secret key must be hidden, not formatted verbatim:
+-- the value is not a plain literal, so it fails closed before the parser rejects the non-literal value.
+SELECT * FROM s3('url_fmthdr', format = headers('Authorization' = 'SEKRIT_FMTHDR'),
+                 structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS, UNKNOWN_FUNCTION }
+
+-- Same inside extra_credentials: role_arn stays visible only for a literal/identifier value; a nested
+-- map value carries a secret and must be hidden.
+SELECT * FROM s3('url_rolehdr', 'ak', 'SEKRIT_SAK',
+                 extra_credentials(role_arn = headers('Authorization' = 'SEKRIT_ROLEHDR'))); -- { serverError BAD_ARGUMENTS, UNKNOWN_FUNCTION }
+
 -- A `structure = ...` override given as a constant expression is evaluated by the parser, which then
 -- drops the positional structure slot: the leading positional is then a secret_access_key, not a
 -- format, and must be hidden even though it reads as a format name. The masker cannot evaluate the

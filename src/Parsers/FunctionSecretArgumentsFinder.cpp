@@ -99,6 +99,15 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
                             markSecretArgument(i, /* argument_is_named= */ true);
                         }
                     }
+                    else if (!f->arguments->at(1)->tryGetString(nullptr, /* allow_identifier= */ true)
+                             && !f->arguments->at(1)->tryGetLiteralText(nullptr))
+                    {
+                        /// A visible non-secret override (`format`, `structure`, `role_arn`, ...) whose
+                        /// value is not a plain literal or identifier can be a nested secret carrier,
+                        /// e.g. `format = headers('Authorization' = '...')`, formatted verbatim before
+                        /// the parser rejects the non-literal value. Fail closed and hide the value.
+                        markSecretArgument(i, /* argument_is_named= */ true);
+                    }
                 }
                 else
                 {
