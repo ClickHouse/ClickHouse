@@ -720,29 +720,29 @@ SETTINGS enable_compression = 1;
 
 | MySQL                            | ClickHouse                                                   |
 |----------------------------------|--------------------------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](../../sql-reference/data-types/int-uint.md)          |
-| TINYINT                          | [Int8](../../sql-reference/data-types/int-uint.md)           |
-| UNSIGNED SMALLINT                | [UInt16](../../sql-reference/data-types/int-uint.md)         |
-| SMALLINT                         | [Int16](../../sql-reference/data-types/int-uint.md)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql-reference/data-types/int-uint.md)         |
-| INT, MEDIUMINT                   | [Int32](../../sql-reference/data-types/int-uint.md)          |
-| UNSIGNED BIGINT                  | [UInt64](../../sql-reference/data-types/int-uint.md)         |
-| BIGINT                           | [Int64](../../sql-reference/data-types/int-uint.md)          |
-| FLOAT                            | [Float32](../../sql-reference/data-types/float.md)           |
-| DOUBLE                           | [Float64](../../sql-reference/data-types/float.md)           |
-| DATE                             | [Date](../../sql-reference/data-types/date.md)               |
-| DATETIME, TIMESTAMP              | [DateTime](../../sql-reference/data-types/datetime.md)       |
-| BINARY                           | [FixedString](../../sql-reference/data-types/fixedstring.md) |
-| POINT                            | [Point](../../sql-reference/data-types/geo.md#point)         |
-| LINESTRING                       | [LineString](../../sql-reference/data-types/geo.md#linestring) |
-| POLYGON                          | [Polygon](../../sql-reference/data-types/geo.md#polygon)     |
-| MULTILINESTRING                  | [MultiLineString](../../sql-reference/data-types/geo.md#multilinestring) |
-| MULTIPOLYGON                     | [MultiPolygon](../../sql-reference/data-types/geo.md#multipolygon) |
-| GEOMETRY                         | [Geometry](../../sql-reference/data-types/geo.md#geometry)   |
+| UNSIGNED TINYINT                 | [UInt8](/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/reference/data-types/float)           |
+| DATE                             | [Date](/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/reference/data-types/fixedstring) |
+| POINT                            | [Point](/reference/data-types/geo#point)         |
+| LINESTRING                       | [LineString](/reference/data-types/geo#linestring) |
+| POLYGON                          | [Polygon](/reference/data-types/geo#polygon)     |
+| MULTILINESTRING                  | [MultiLineString](/reference/data-types/geo#multilinestring) |
+| MULTIPOLYGON                     | [MultiPolygon](/reference/data-types/geo#multipolygon) |
+| GEOMETRY                         | [Geometry](/reference/data-types/geo#geometry)   |
 
-The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](../../operations/settings/settings.md#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](../../sql-reference/data-types/geo.md#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](../../sql-reference/data-types/string.md) (the raw WKB) like all other MySQL data types.
+The conversion of the spatial types (other than `POINT`, which is always converted) is controlled by the `geometry` flag of the [`mysql_datatypes_support_level`](/reference/settings/session-settings/mysql-datatype#mysql_datatypes_support_level) setting, enabled by default. The generic `GEOMETRY` column type is mapped to the umbrella [`Geometry`](/reference/data-types/geo#geometry) type (a `Variant` over the concrete geometric types). Because such a column can hold a value of any subtype, reading a value whose subtype has no ClickHouse counterpart (`GEOMETRYCOLLECTION`) throws an exception at read time; this incompatibility is accepted in exchange for a proper geometric type. Columns declared with the `GEOMETRYCOLLECTION` type are converted into [String](/reference/data-types/string) (the raw WKB) like all other MySQL data types.
 
-[Nullable](../../sql-reference/data-types/nullable.md) is supported.
+[Nullable](/reference/data-types/nullable) is supported.
 
 ## Global variables support {#global-variables-support}
 

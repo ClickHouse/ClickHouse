@@ -68,7 +68,7 @@ Install the `clickhouse-common-static-dbg` package:
 4. Run `clickhouse-client`. The debug symbols from clickhouse-common-static-dbg will automatically be picked up by the server - you don't need to do anything special to enable them
 </Step>
 <Step title="Check server config" id="server-config">
-Ensure that the [`trace_log`](/reference/settings/server-settings/settings#trace_log) section of your [server configuration file](/concepts/features/configuration/server-config/configuration-files) is set up. It is enabled by default:
+Ensure that the [`trace_log`](/reference/settings/server-settings/settings/other#trace_log) section of your [server configuration file](/concepts/features/configuration/server-config/configuration-files) is set up. It is enabled by default:
 
 ```xml
 <!-- Trace log. Stores stack traces collected by query profilers.
@@ -99,7 +99,7 @@ ClickHouse does not clean up the table on restart, so stale raw addresses can re
 The pre-symbolized `symbols` and `lines` columns, on the other hand, remain valid across restarts and upgrades, so prefer them when analyzing historical data.
 </Step>
 <Step title="Configure profile timers" id="configure-profile-timers">
-Set up the [`query_profiler_cpu_time_period_ns`](/reference/settings/session-settings#query_profiler_cpu_time_period_ns) or [`query_profiler_real_time_period_ns`](/reference/settings/session-settings#query_profiler_real_time_period_ns) settings.
+Set up the [`query_profiler_cpu_time_period_ns`](/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) or [`query_profiler_real_time_period_ns`](/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns) settings.
 Both settings can be used simultaneously.
 
 These settings allow you to configure profiler timers.
@@ -115,7 +115,7 @@ You can aggregate data by individual functions or by the whole stack traces.
 
 When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so no additional setup is required. Symbolization is not supported on FreeBSD, where these columns are always empty. `lines` entries may be empty for frames that lack debug info or fall outside the main ClickHouse binary (see [above](#server-config)).
 
-If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), allow introspection functions with the [`allow_introspection_functions`](/reference/settings/session-settings#allow_introspection_functions) setting:
+If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), allow introspection functions with the [`allow_introspection_functions`](/reference/settings/session-settings/allow#allow_introspection_functions) setting:
 
 ```sql
 SET allow_introspection_functions=1
