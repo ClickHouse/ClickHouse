@@ -60,9 +60,11 @@ public:
         /// Returns std::nullopt if any file carries a malformed (negative) record count.
         std::optional<UInt64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
-        /// Sum of the file-level `file_size_in_bytes` over the live data files.
+        /// Sum of the file-level `file_size_in_bytes` over all live files: data files and
+        /// position/equality delete files, matching the snapshot summary's `total-files-size`
+        /// contract, which tracks all live table files.
         /// Returns std::nullopt if any file carries a malformed (negative) size.
-        std::optional<UInt64> getBytesCountInAllDataFilesExcludingDeleted() const;
+        std::optional<UInt64> getBytesCountInAllFilesExcludingDeleted() const;
 
     private:
         friend class ManifestFileIterator;

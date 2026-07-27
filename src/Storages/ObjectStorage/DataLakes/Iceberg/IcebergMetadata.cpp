@@ -1209,9 +1209,10 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     /// same reason `total-records` is not in totalRows(): it is maintained incrementally by
     /// writers (parent total +/- delta), so a corrupted commit in the table history poisons
     /// it silently, and a negative value would wrap into an absurdly huge unsigned size.
-    /// Instead, sum the file-level `file_size_in_bytes` over the live data files: the field
-    /// is required in all format versions, so the result is exact at the cost of opening
-    /// the manifest files (served from the Iceberg metadata cache on repeated calls).
+    /// Instead, sum the file-level `file_size_in_bytes` over all live files -- data files
+    /// and position/equality delete files, matching what `total-files-size` tracks: the
+    /// field is required in all format versions, so the result is exact at the cost of
+    /// opening the manifest files (served from the Iceberg metadata cache on repeated calls).
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
@@ -1219,7 +1220,7 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
         /// nullopt means a corrupted manifest file with a negative `file_size_in_bytes`:
         /// fail closed to "unknown" instead of returning a wrong size.
-        auto bytes = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
+        auto bytes = manifest_file_ptr.getBytesCountInAllFilesExcludingDeleted();
         if (!bytes.has_value())
             return {};
 

@@ -179,19 +179,24 @@ std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getRowsCo
     return result;
 }
 
-std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllDataFilesExcludingDeleted() const
+std::optional<UInt64> ManifestFileIterator::ManifestFileEntriesHandle::getBytesCountInAllFilesExcludingDeleted() const
 {
     UInt64 result = 0;
     /// `file_size_in_bytes` is a required file-level field in all format versions, so the
     /// sum is exact (the previous implementation summed the byte size of a single column
-    /// per file, which is not the file size at all). The field is parsed as a raw Int64,
-    /// so a corrupted manifest file may carry a negative value; it is reported as "size
-    /// unavailable" rather than summed or rejected, mirroring record_count above.
-    for (const auto & file : getFilesWithoutDeleted(FileContentType::DATA))
+    /// per file, which is not the file size at all). Live position/equality delete files
+    /// are included, matching the `total-files-size` summary contract, which tracks all
+    /// live table files. The field is parsed as a raw Int64, so a corrupted manifest file
+    /// may carry a negative value; it is reported as "size unavailable" rather than summed
+    /// or rejected, mirroring record_count above.
+    for (const auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
     {
-        if (file->parsed_entry->file_size_in_bytes < 0)
-            return std::nullopt;
-        result += static_cast<UInt64>(file->parsed_entry->file_size_in_bytes);
+        for (const auto & file : getFilesWithoutDeleted(content_type))
+        {
+            if (file->parsed_entry->file_size_in_bytes < 0)
+                return std::nullopt;
+            result += static_cast<UInt64>(file->parsed_entry->file_size_in_bytes);
+        }
     }
     return result;
 }
