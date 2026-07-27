@@ -1,3 +1,4 @@
+#include <array>
 #include <memory>
 
 #include <filesystem>
@@ -10,6 +11,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
@@ -2918,29 +2920,20 @@ namespace
 /// `... POPULATE AS SELECT ... SETTINGS enable_parallel_replicas = 1` would otherwise re-enable remote
 /// reads for the population. Both the setting name and its alias have to be listed, because a `SETTINGS`
 /// clause keeps the name as it was written and resolves the alias only when the change is applied.
-const std::unordered_set<std::string_view> settings_incompatible_with_pinned_snapshot
+///
+/// `removeSettingsFromQuery` drops both the `name = value` and the `name = DEFAULT` forms - the latter
+/// matters just as much, because `InterpreterSetQuery::resetSettingsToDefaultValue` restores the built-in
+/// default, and for two of these settings that default is the dangerous value
+/// (`parallel_distributed_insert_select = 2`, `enable_shared_storage_snapshot_in_query = true`). It also
+/// detaches a `SETTINGS` clause that ends up empty, so the population query never formats to a bare
+/// `SETTINGS` keyword, which would throw on re-parse.
+constexpr std::array<std::string_view, 4> settings_incompatible_with_pinned_snapshot
 {
     "allow_experimental_parallel_reading_from_replicas",
     "enable_parallel_replicas",
     "parallel_distributed_insert_select",
     "enable_shared_storage_snapshot_in_query",
 };
-
-/// Drop those settings from every `SETTINGS` clause of the population query (the view's `SELECT` and any
-/// nested subquery), so that the values forced on the population context win at every level.
-void removeSettingsIncompatibleWithPinnedSnapshot(const ASTPtr & ast)
-{
-    if (auto * set_query = ast->as<ASTSetQuery>())
-    {
-        std::erase_if(set_query->changes, [](const SettingChange & change)
-        {
-            return settings_incompatible_with_pinned_snapshot.contains(change.name);
-        });
-    }
-
-    for (const auto & child : ast->children)
-        removeSettingsIncompatibleWithPinnedSnapshot(child);
-}
 
 }
 
@@ -3018,7 +3011,7 @@ std::optional<BlockIO> InterpreterCreateQuery::fillMaterializedViewAtomically(co
     /// are applied on top of the context afterwards and could re-enable remote reads, which do not carry the
     /// pin. Scrub them from the population query - it is a copy, so the view's stored definition (used for
     /// the live pushes, which are not bound to a pinned snapshot) keeps them.
-    removeSettingsIncompatibleWithPinnedSnapshot(insert->select);
+    removeSettingsFromQuery(insert->select, settings_incompatible_with_pinned_snapshot);
 
     return InterpreterInsertQuery(
                insert,

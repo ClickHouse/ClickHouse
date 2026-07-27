@@ -33,4 +33,18 @@ CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id POPULATE AS
 SELECT 'query_local_settings_nested', count(), uniqExact(id), sum(id) FROM mv;
 
 DROP TABLE mv;
+
+-- The `name = DEFAULT` carrier lives in a separate list of the `SETTINGS` clause, so it has to be scrubbed
+-- too. It is not a harmless no-op: `DEFAULT` restores the built-in default, and for two of these settings
+-- that default is the dangerous value (`parallel_distributed_insert_select = 2`,
+-- `enable_shared_storage_snapshot_in_query = true`), which would undo what the population context forces.
+-- Here the clause holds nothing but scrubbed settings, so it is detached entirely - had it been left empty,
+-- the population query would format to a bare `SETTINGS` keyword that fails to re-parse.
+CREATE MATERIALIZED VIEW mv ENGINE = MergeTree ORDER BY id POPULATE AS
+    SELECT id FROM src
+    SETTINGS parallel_distributed_insert_select = DEFAULT, enable_shared_storage_snapshot_in_query = DEFAULT;
+
+SELECT 'query_local_settings_default', count(), uniqExact(id), sum(id) FROM mv;
+
+DROP TABLE mv;
 DROP TABLE src;
