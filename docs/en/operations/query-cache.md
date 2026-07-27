@@ -33,7 +33,10 @@ effort and avoids redundancy.
 
 Alternatively, setting [query_cache_use_only_when_data_was_not_changed](/operations/settings/settings#query_cache_use_only_when_data_was_not_changed)
 makes the query cache consistent with respect to data changes: a cached result is reused only while none of the tables referenced by the query
-were changed since the entry was cached. Once any referenced table changes, the query is recomputed. This relies on each table engine being
+were changed since the entry was cached. Once any referenced table changes, the query is recomputed. The referenced tables are examined once, at
+the start of the query: the decision to reuse a cache entry is made against that snapshot, and no second check is performed just before the
+cached result is returned. A write that commits after the query started can therefore still be missed by that particular query, which will
+observe the same data as if it had started slightly earlier; the next query recomputes the result. This relies on each table engine being
 able to report whether its data changed; if a query references a table that cannot do so (for example a table function such as `url`), the
 query cache is not used for that query. For `URL` and object-storage tables this report is based on the resource's strong `ETag` and is
 best-effort: a result could in rare cases be reused if the content is rewritten back to a byte-identical state during the read. `Merge` and
