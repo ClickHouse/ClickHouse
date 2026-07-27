@@ -145,9 +145,9 @@ TEST(ColumnString, InsertRangeFromInconsistentOffsetsLargeOvershoot)
     EXPECT_THROW(destination->insertRangeFrom(*source, 0, source->size()), DB::Exception);
 }
 
-/// Build a ColumnString whose offsets are non-monotonic: a later offset is smaller than an earlier
-/// one. `chars` is left untouched (large enough that the naive wrapped-sum check would pass), so the
-/// only inconsistency is the decreasing offset itself.
+/// Build a ColumnString whose final offset decreases below an earlier one ([4, 8, 2]), leaving `chars`
+/// (12 bytes) untouched. The end offset offsetAt(start + length) then drops below offsetAt(start), so the
+/// only inconsistency is the decreasing endpoint itself.
 static ColumnString::MutablePtr makeStringColumnWithDecreasingOffsets()
 {
     auto column = ColumnString::create();
@@ -163,10 +163,11 @@ static ColumnString::MutablePtr makeStringColumnWithDecreasingOffsets()
     return column;
 }
 
-/// Decreasing (non-monotonic) source offsets make `nested_length` underflow inside insertRangeFrom.
-/// The naive guard `nested_offset + nested_length > chars.size()` wraps the sum back to the smaller end
-/// offset and silently passes, letting the huge wrapped length reach resize()/memcpy(). Validating the
-/// end offset before the subtraction catches it. Range [1, 3) has offsetAt(3) == 2 < offsetAt(1) == 4.
+/// A decreasing end offset makes `nested_length` underflow inside insertRangeFrom. The naive guard
+/// `nested_offset + nested_length > chars.size()` wraps the sum back to the smaller end offset and
+/// silently passes, letting the huge wrapped length reach resize()/memcpy(). Validating the end offset
+/// before the subtraction catches it. Range [1, 3) has offsetAt(3) == 2 < offsetAt(1) == 4. The endpoint
+/// guard is a memory-safety check, so it fires in all builds.
 TEST(ColumnString, InsertRangeFromDecreasingOffsetsThrows)
 {
     auto source = makeStringColumnWithDecreasingOffsets();
@@ -184,10 +185,9 @@ TEST(ColumnString, InsertRangeFromDecreasingOffsetsThrows)
     }
 }
 
-/// Build a ColumnString whose offsets dip in the middle: an intermediate offset is smaller than the
-/// one before it, while the final offset still matches `chars.size()`. Unlike the decreasing-endpoint
-/// case, here offsetAt(start + length) stays a valid, in-bounds end offset, so the endpoint guard alone
-/// would not notice the corruption.
+/// Build a ColumnString whose offsets dip in the middle ([4, 2, 12]) while the final offset still equals
+/// chars.size() (12). Unlike the decreasing-endpoint case, offsetAt(start + length) stays a valid,
+/// in-bounds end offset, so the endpoint guard alone would not notice the corruption.
 static ColumnString::MutablePtr makeStringColumnWithDippingOffset()
 {
     auto column = ColumnString::create();
@@ -195,24 +195,44 @@ static ColumnString::MutablePtr makeStringColumnWithDippingOffset()
     column->insertData("bbbb", 4);
     column->insertData("cccc", 4);
 
-    /// offsets == [4, 8, 12], chars.size() == 12. Drop the middle offset below the first one, giving
-    /// offsets [4, 2, 12]: offsetAt(1) == 4, offsetAt(3) == 12 (both within chars), but the copied
-    /// offset offsets[1] == 2 < 4 dips in between.
-    auto & offsets = column->getOffsets();
-    offsets[1] = 2;
+    /// offsets == [4, 8, 12]; drop the middle offset below the first one, giving offsets [4, 2, 12].
+    column->getOffsets()[1] = 2;
 
     return column;
 }
 
-/// An intermediate copied offset decreases (offsets[1] == 2 < nested_offset == 4) while the end offset
-/// offsetAt(start + length) == 12 is still within chars.size() == 12, so the endpoint guard passes.
-/// The rewrite loop would then compute offsets[1] - nested_offset == 2 - 4 and underflow, storing a
-/// huge destination offset and leaving the result internally inconsistent. Validating every copied
-/// offset for monotonicity catches it. Range [1, 3) copies offsets[1] == 2 then offsets[2] == 12.
-TEST(ColumnString, InsertRangeFromDippingIntermediateOffsetThrows)
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+/// A dipping intermediate offset keeps offsetAt(start + length) in bounds, so it slips past the endpoint
+/// guard; the per-offset monotonicity scan catches it instead. That scan is compiled in only for
+/// debug/sanitizer builds (to keep the release copy loops vectorizable), so the next expectations are
+/// guarded accordingly. The scan runs before any mutation, on both the fast and slow copy paths.
+
+/// Fast path: empty destination with start == 0 bulk-assigns the source offsets verbatim.
+TEST(ColumnString, InsertRangeFromDippingOffsetFastPathThrows)
 {
     auto source = makeStringColumnWithDippingOffset();
     auto destination = ColumnString::create();
+
+    try
+    {
+        destination->insertRangeFrom(*source, 0, source->size());
+        FAIL() << "insertRangeFrom did not detect a dipping intermediate source offset";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("non-monotonic offsets"));
+    }
+}
+
+/// Slow path: a non-empty destination shifts the copied offsets by nested_offset. Using start == 1 also
+/// exercises the boundary against the previous string (offsets[1] == 2 < nested_offset == 4). The
+/// destination must be left untouched because the scan fires before any mutation.
+TEST(ColumnString, InsertRangeFromDippingOffsetSlowPathThrows)
+{
+    auto source = makeStringColumnWithDippingOffset();
+    auto destination = ColumnString::create();
+    destination->insertData("xyz", 3);
 
     try
     {
@@ -222,6 +242,9 @@ TEST(ColumnString, InsertRangeFromDippingIntermediateOffsetThrows)
     catch (const DB::Exception & e)
     {
         ASSERT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
-        ASSERT_NE(std::string::npos, std::string(e.message()).find("inconsistent with chars"));
+        ASSERT_NE(std::string::npos, std::string(e.message()).find("non-monotonic offsets"));
+        ASSERT_EQ(destination->size(), 1u);
+        ASSERT_EQ(destination->getDataAt(0), "xyz");
     }
 }
+#endif
