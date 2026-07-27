@@ -12,7 +12,8 @@ skipped on exactly that branch, leaving CIDB's test_name empty: the finding was
 unsearchable and read as benign.
 
 These tests drive the real run_fuzz_job against a seeded temp workspace (the
-container run and the ownership fix are stubbed; nothing else is) and pin:
+container run, the ownership fix and the host `dmesg` read are stubbed; nothing
+else is) and pin:
 
   - a report is NAMED and the run is red in every exit-code branch, including
     the benign (0, 137, 143) one - *SAN_OPTIONS reaches the server and the
@@ -135,9 +136,9 @@ class _JobCompleted(Exception):
 def run_job(tmp_path, monkeypatch):
     """Drive the real run_fuzz_job against a seeded temp workspace.
 
-    Only the container run, the docker image, the ownership repair and the core
-    collection are stubbed - the classification code under test is the real one,
-    and so is FuzzerLogParser.
+    Only the container run, the docker image, the ownership repair, the core
+    collection and the host `dmesg` read are stubbed - the classification code
+    under test is the real one, and so is FuzzerLogParser.
     """
     workspace = tmp_path / "ci" / "tmp" / "workspace"
     workspace.mkdir(parents=True)
@@ -193,12 +194,27 @@ def run_job(tmp_path, monkeypatch):
     real_check = job.Shell.check
     real_get_output = job.Shell.get_output
 
+    shelled = []
+
+    def _check(command=None, *args, **kwargs):
+        shelled.append(str(command))
+        if str(command).startswith("dmesg "):
+            # The non-sanitized branch reads the HOST's kernel ring buffer, which
+            # is not an input to these tests: on a host that has seen an OOM kill
+            # the real dmesg flips the verdict to ERROR and suppresses the
+            # merged-log parse a test may exist to exercise. Seed an EMPTY
+            # dmesg.log instead. Only this one command is intercepted - the grep
+            # over dmesg.log runs for real, so the branch logic stays under test.
+            (workspace / "dmesg.log").write_text("")
+            return True
+        return real_check(command, *args, **kwargs)
+
     class _Shell:
         @staticmethod
         def check(command=None, *args, **kwargs):
             if "docker run" in str(command):
                 return True  # the container is what the seeded state stands in for
-            return real_check(command, *args, **kwargs)
+            return _check(command, *args, **kwargs)
 
         get_output = staticmethod(real_get_output)
 
@@ -268,7 +284,7 @@ def run_job(tmp_path, monkeypatch):
                     lambda command=None, *a, **kw: (
                         (_seed(), True)[1]
                         if "docker run" in str(command)
-                        else real_check(command, *a, **kw)
+                        else _check(command, *a, **kw)
                     )
                 ),
             )
@@ -297,6 +313,7 @@ def run_job(tmp_path, monkeypatch):
             (workspace / "status.tsv").write_text(status_tsv + "\n")
 
     _run.workspace = workspace
+    _run.shelled = shelled
     return _run
 
 
@@ -730,6 +747,14 @@ def test_signal_9_row_survives_the_merged_log_filter(run_job):
         check_name="AST fuzzer (amd_debug)",
     )
     assert any("signal 9" in n for n in _names(result)), _names(result)
+    # The non-sanitized branch really ran: the fixture seeded dmesg.log and the
+    # grep over it was executed for real, so the branch is exercised rather than
+    # mocked out of existence.
+    assert (run_job.workspace / "dmesg.log").exists()
+    assert any(c.startswith("dmesg ") for c in run_job.shelled), run_job.shelled
+    assert any(
+        "dmesg.log | grep -a -e 'Out of memory" in c for c in run_job.shelled
+    ), run_job.shelled
 
 
 # 23. The merged-log filter is scoped to SANITIZER records, asserted directly on
