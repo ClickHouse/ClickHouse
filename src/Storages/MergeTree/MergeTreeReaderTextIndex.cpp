@@ -871,7 +871,7 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
     PostingList result;
     for (const auto & block_idx : blocks_to_read)
     {
-        MergeTreeReaderStream * postings_stream;
+        MergeTreeReaderStream * postings_stream = nullptr;
         if (auto stream_it = large_postings_streams.find(token); stream_it != large_postings_streams.end())
         {
             postings_stream = stream_it->second.get();
