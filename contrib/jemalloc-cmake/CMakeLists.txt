@@ -77,6 +77,20 @@ if (ENABLE_JEMALLOC_UAF_SAN)
     set (JEMALLOC_CONFIG_MALLOC_CONF "${JEMALLOC_CONFIG_MALLOC_CONF},abort_conf:true,junk:true,san_guard_small:100,san_guard_large:1,lg_san_uaf_align:12")
 endif ()
 
+# Arms `config_opt_safety_checks` / `config_opt_size_checks` so a sized-deallocation
+# mismatch or a double free aborts on the offending thread, instead of the mismatched
+# `bitmap_unset` in `bin_dalloc_locked_step` corrupting `edata_t` and surfacing much later
+# as a SIGSEGV in `edata_list_inactive_remove` on the background decay thread.
+#
+# x86-64 only: `include_linux_e2k/.../jemalloc_internal_defs.h.in` `#undef`s these macros
+# unconditionally (every other platform comments those lines out), so a `-D` is silently
+# cancelled there.
+option (ENABLE_JEMALLOC_SAFETY_CHECKS "Enable jemalloc sized-deallocation and double-free safety checks (diagnostic lane; x86-64 only)")
+if (ENABLE_JEMALLOC_SAFETY_CHECKS AND NOT ARCH_AMD64)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "ENABLE_JEMALLOC_SAFETY_CHECKS is supported on x86-64 only. Use -DENABLE_JEMALLOC_SAFETY_CHECKS=0")
+    set (ENABLE_JEMALLOC_SAFETY_CHECKS OFF)
+endif ()
+
 message (STATUS "jemalloc malloc_conf: ${JEMALLOC_CONFIG_MALLOC_CONF}")
 
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/jemalloc")
@@ -215,6 +229,10 @@ target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
 if (ENABLE_JEMALLOC_UAF_SAN)
     target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_UAF_DETECTION)
+endif ()
+
+if (ENABLE_JEMALLOC_SAFETY_CHECKS)
+    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)
 endif ()
 
 # jemalloc provides support two unwind flavors:

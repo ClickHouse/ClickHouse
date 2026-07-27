@@ -357,6 +357,8 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     LOONGARCH64 = "loongarch64"
     ARM_FUZZERS = "arm_fuzzers"
     AMD_CFI = "amd_cfi"
+    # amd_debug plus -DENABLE_JEMALLOC_SAFETY_CHECKS=1; see ci/workflows/weekly_jemalloc_safety.py
+    AMD_JEMALLOC_SAFETY = "amd_jemalloc_safety"
 
 
 class JobNames:
@@ -502,6 +504,7 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
     CH_AMD_CFI = "CH_AMD_CFI"
     DEB_AMD_CFI = "DEB_AMD_CFI"
+    CH_AMD_JEMALLOC_SAFETY = "CH_AMD_JEMALLOC_SAFETY"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -608,6 +611,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
+            ArtifactNames.CH_AMD_JEMALLOC_SAFETY,
         ]
     )
     llvm_profdata_file = Artifact.Config(

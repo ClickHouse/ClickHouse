@@ -404,6 +404,13 @@ class JobConfigs:
             requires=[ArtifactNames.DEB_AMD_CFI],
         ),
     )
+    jemalloc_safety_build_job = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_JEMALLOC_SAFETY,
+            provides=[ArtifactNames.CH_AMD_JEMALLOC_SAFETY],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+    )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
@@ -1281,6 +1288,27 @@ class JobConfigs:
             parameter="amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
             requires=[ArtifactNames.CH_AMD_MSAN],
+        ),
+    )
+    jemalloc_safety_ast_fuzzer_job = Job.Config(
+        name=JobNames.ASTFUZZER,
+        runs_on=[],  # from parametrize()
+        command="python3 ./ci/jobs/ast_fuzzer_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/docker/fuzzer",
+                "./ci/jobs/ast_fuzzer_job.py",
+                "./ci/jobs/scripts/log_parser.py",
+                "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
+                "./ci/jobs/scripts/fuzzer/",
+                "./ci/docker/fuzzer",
+            ],
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_JEMALLOC_SAFETY,
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.CH_AMD_JEMALLOC_SAFETY],
         ),
     )
     ast_fuzzer_targeted_pr_jobs = Job.Config(
