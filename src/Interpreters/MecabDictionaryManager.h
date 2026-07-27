@@ -6,7 +6,6 @@
 
 #include <base/types.h>
 #include <base/defines.h>
-#include <Interpreters/Context_fwd.h>
 
 #include <memory>
 #include <mutex>
@@ -55,11 +54,10 @@ public:
     MecabDictionaryPtr getJapaneseDictionary();
 
 private:
-    MecabDictionaryPtr loadJapaneseDictionary(const ContextPtr & context, const String & expected_sha);
+    MecabDictionaryPtr loadJapaneseDictionary();
 
     std::mutex mutex;
     MecabDictionaryPtr cached_dictionary TSA_GUARDED_BY(mutex);
-    String dictionary_sha TSA_GUARDED_BY(mutex);
 };
 
 }

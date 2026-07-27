@@ -275,10 +275,18 @@ MecabDictionaryManager & MecabDictionaryManager::instance()
 MecabDictionaryPtr MecabDictionaryManager::getJapaneseDictionary()
 {
     std::lock_guard lock(mutex);
+    /// Loaded lazily on first use and cached for the process lifetime; changing the configured
+    /// dictionary requires a server restart. A failed load is not cached, so the next call retries.
+    if (!cached_dictionary)
+        cached_dictionary = loadJapaneseDictionary();
+    return cached_dictionary;
+}
 
+MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary()
+{
     auto context = Context::getGlobalContextInstance();
     if (!context)
-        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Cannot load MeCab dictionary: global context is not available");
+        throw Exception(ErrorCodes::CANNOT_LOAD_CONFIG, "Cannot load the MeCab dictionary: the global context is not available");
 
     const auto & config = context->getConfigRef();
     if (!config.has(CONFIG_PREFIX))
@@ -286,23 +294,10 @@ MecabDictionaryPtr MecabDictionaryManager::getJapaneseDictionary()
             ErrorCodes::NO_ELEMENTS_IN_CONFIG,
             "The Japanese tokenizer requires a dictionary configured under <tokenizer><japanese> in the server configuration");
 
-    const String sha = Poco::toLower(config.getString(configKey("dictionary_sha"), ""));
-
-    /// Reuse the cached dictionary if the configuration still points at the same one.
-    if (cached_dictionary && dictionary_sha == sha)
-        return cached_dictionary;
-
-    cached_dictionary = loadJapaneseDictionary(context, sha);
-    dictionary_sha = sha;
-    return cached_dictionary;
-}
-
-MecabDictionaryPtr MecabDictionaryManager::loadJapaneseDictionary(const ContextPtr & context, const String & expected_sha)
-{
-    const auto & config = context->getConfigRef();
     LoggerPtr log = getLogger("MecabDictionaryManager");
 
     const String location = config.getString(configKey("dictionary_location"), "");
+    const String expected_sha = Poco::toLower(config.getString(configKey("dictionary_sha"), ""));
 
     if (location.empty())
         throw Exception(
