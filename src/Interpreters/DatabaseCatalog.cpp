@@ -146,7 +146,7 @@ private:
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
     : WithContext(context_->getGlobalContext())
-    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables().get())
+    , temporary_tables(DatabaseCatalog::instance().getDatabaseForTemporaryTables())
 {
     ASTPtr original_create;
     ASTCreateQuery * create = dynamic_cast<ASTCreateQuery *>(query.get());
@@ -169,7 +169,7 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
     auto table_id = StorageID(DatabaseCatalog::TEMPORARY_DATABASE, global_name, id);
     auto table = creator(table_id);
     DatabaseCatalog::instance().addUUIDMapping(id);
-    temporary_tables->createTable(getContext(), global_name, table, original_create);
+    getDatabase()->createTable(getContext(), global_name, table, original_create);
     table->startup();
 }
 
@@ -196,7 +196,7 @@ TemporaryTableHolder::TemporaryTableHolder(
 }
 
 TemporaryTableHolder::TemporaryTableHolder(TemporaryTableHolder && rhs) noexcept
-        : WithContext(rhs.context), temporary_tables(rhs.temporary_tables), id(rhs.id), future_set(std::move(rhs.future_set))
+        : WithContext(rhs.context), temporary_tables(std::move(rhs.temporary_tables)), id(rhs.id), future_set(std::move(rhs.future_set))
 {
     rhs.id = UUIDHelpers::Nil;
 }
@@ -216,7 +216,7 @@ TemporaryTableHolder::~TemporaryTableHolder()
         {
             auto table = getTable();
             table->flushAndShutdown(/*is_drop=*/ true);
-            temporary_tables->dropTable(getContext(), "_tmp_" + toString(id));
+            getDatabase()->dropTable(getContext(), "_tmp_" + toString(id));
         }
         catch (...)
         {
@@ -230,9 +230,19 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
     return StorageID{DatabaseCatalog::TEMPORARY_DATABASE, "_tmp_" + toString(id), id};
 }
 
+std::shared_ptr<IDatabase> TemporaryTableHolder::getDatabase() const
+{
+    auto database = temporary_tables.lock();
+    if (!database)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Database for temporary tables is already destroyed, but TemporaryTableHolder for {} is still alive",
+            getGlobalTableID().getNameForLogs());
+    return database;
+}
+
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id), getContext());
+    auto table = getDatabase()->tryGetTable("_tmp_" + toString(id), getContext());
     if (!table)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary table {} not found", getGlobalTableID().getNameForLogs());
     return table;
