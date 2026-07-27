@@ -734,7 +734,13 @@ StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::alterTable");
+    auto prepared = prepareAlterTable(local_context, table_id, metadata, validate_new_create_query);
+    commitAlterTable(table_id, prepared.table_metadata_tmp_path, prepared.table_metadata_path, prepared.statement, local_context);
+}
+
+IDatabase::PreparedAlterTable DatabaseOrdinary::prepareAlterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)
+{
+    auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::prepareAlterTable");
     auto db_disk = getDisk();
     waitDatabaseStarted();
 
@@ -788,7 +794,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     /// The create query of the table has been just changed, we need to update dependencies too.
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{});
 
-    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
+    return {table_metadata_tmp_path, table_metadata_path, statement};
 }
 
 void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path, const String & /*statement*/, ContextPtr /*query_context*/)

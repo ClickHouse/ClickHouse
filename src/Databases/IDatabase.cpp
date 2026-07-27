@@ -232,6 +232,25 @@ void IDatabase::alterTable(
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: alterTable() is not supported", getEngineName());
 }
 
+IDatabase::PreparedAlterTable IDatabase::prepareAlterTable(
+    ContextPtr /*context*/,
+    const StorageID & /*table_id*/,
+    const StorageInMemoryMetadata & /*metadata*/,
+    const bool /*validate_new_create_query*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: prepareAlterTable() is not supported", getEngineName());
+}
+
+void IDatabase::commitAlterTable(
+    const StorageID & /*table_id*/,
+    const String & /*table_metadata_tmp_path*/,
+    const String & /*table_metadata_path*/,
+    const String & /*statement*/,
+    ContextPtr /*query_context*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: commitAlterTable() is not supported", getEngineName());
+}
+
 void IDatabase::renameDatabase(ContextPtr, const String & /*new_name*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: RENAME DATABASE is not supported", getEngineName());

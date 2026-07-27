@@ -78,6 +78,12 @@ public:
         const StorageInMemoryMetadata & metadata,
         bool validate_new_create_query) override;
 
+    PreparedAlterTable prepareAlterTable(
+        ContextPtr context,
+        const StorageID & table_id,
+        const StorageInMemoryMetadata & metadata,
+        bool validate_new_create_query) override;
+
     Strings getNamesOfPermanentlyDetachedTables() const override
     {
         std::lock_guard lock(mutex);
@@ -93,12 +99,12 @@ protected:
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
     void eraseAsyncLoadState(const String & table_name) TSA_REQUIRES(mutex);
 
-    virtual void commitAlterTable(
+    void commitAlterTable(
         const StorageID & table_id,
         const String & table_metadata_tmp_path,
         const String & table_metadata_path,
         const String & statement,
-        ContextPtr query_context);
+        ContextPtr query_context) override;
 
     Strings permanently_detached_tables TSA_GUARDED_BY(mutex);
 
