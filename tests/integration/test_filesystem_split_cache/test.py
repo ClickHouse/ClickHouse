@@ -165,31 +165,49 @@ def test_split_cache_system_files_no_eviction(started_cluster, storage_policy):
     node.restart_clickhouse()
     wait_for_cache_initialized(node, storage_policy)
 
-    count = int(
-        node.query(
-            f"SELECT count(*) FROM system.filesystem_cache WHERE cache_name = '{filesystem_cache_name}' AND segment_type='System'"
-        )
-    )
-    assert count > 0
-
-    def assert_cache_state():
-        """
-        The state of cache can change with background processes, so make sure that the state does not change dramatically.
-        """
-        current_count = int(
+    def get_system_cache_count():
+        return int(
             node.query(
                 f"SELECT count(*) FROM system.filesystem_cache WHERE cache_name = '{filesystem_cache_name}' AND segment_type='System'"
             )
         )
-        fraction = abs(current_count - count) / count
-        assert fraction <= 0.5, f"System cache count changed too much: {count} -> {current_count}"
+
+    def wait_for_stable_system_cache_count(max_attempts=50):
+        """
+        `wait_for_cache_initialized` only reports that the cache became usable; background
+        loading keeps adding System segments afterwards. Sample until the count stops
+        changing, otherwise a partially populated snapshot is compared and the assertions
+        below measure that race instead of eviction.
+        """
+        previous = -1
+        for _ in range(max_attempts):
+            current = get_system_cache_count()
+            if current > 0 and current == previous:
+                return current
+            previous = current
+            time.sleep(0.5)
+        return previous
+
+    count = wait_for_stable_system_cache_count()
+    assert count > 0
+
+    def assert_no_eviction(current_count):
+        """
+        System files live in their own cache partition, so the full scan (17 MiB of data through
+        a separate 4 MiB data partition) must not push them out, and they must survive a restart.
+        Nothing in this test removes them either: merges are stopped, so no part becomes outdated
+        and no cleanup invalidates their cache entries. The count may only stay the same or grow.
+        """
+        assert current_count >= count, f"System cache count dropped: {count} -> {current_count}"
 
     node.query("SELECT * FROM t0 FORMAT NULL")
 
-    assert_cache_state()
+    assert_no_eviction(get_system_cache_count())
 
     node.restart_clickhouse()
     wait_for_cache_initialized(node, storage_policy)
-    assert_cache_state()
+    # Same race as the baseline: a cache that is still reloading looks like eviction, so only
+    # compare once the count has settled.
+    assert_no_eviction(wait_for_stable_system_cache_count())
 
     node.query("DROP TABLE t0 SYNC")
