@@ -52,6 +52,7 @@ SELECT c1 = CAST(-1 AS Time), c1 = CAST('01:02:03' AS Time), a = [CAST('02:00:00
 DROP TABLE t_04499_time4;
 
 -- Nullable(Tuple(...)) source hints are unwrapped before propagating element types.
+SET enable_nullable_tuple_type = 1;
 DROP TABLE IF EXISTS t_04499_time5;
 CREATE TABLE t_04499_time5 (t Tuple(Time, UInt8)) ENGINE = Memory;
 INSERT INTO t_04499_time5 VALUES (CAST((CAST('01:02:03.5' AS Time64(1)), 1) AS Nullable(Tuple(Time64(1), UInt8))));
