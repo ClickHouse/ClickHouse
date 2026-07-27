@@ -24,11 +24,12 @@ line has to be dropped rather than trusted.
 import inspect
 import os
 import sys
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
 import ci.jobs.performance_tests as performance_tests
-from ci.jobs.performance_tests import read_ci_checks_results
+from ci.jobs.performance_tests import import_ci_checks_results, read_ci_checks_results
 
 # Column names and types exactly as compare.sh's `create table ci_checks engine
 # File(TSVWithNamesAndTypes, 'ci-checks.tsv')` writes them, so the fixture
@@ -139,11 +140,17 @@ def test_both_headers_no_data_rows_is_complete_and_empty(tmp_path):
 
 
 def test_row_truncated_mid_field_keeps_intact_rows(tmp_path):
-    # The row is cut inside test_name, so DictReader fills test_status and
-    # test_duration_ms with None. Unguarded, float(None) raises TypeError.
+    # The row is cut inside test_name and is a COMPLETE line (the fixture is
+    # newline-terminated), so it reaches the row guards rather than the
+    # trailing-fragment rule. DictReader fills every field past the cut with
+    # None, so the guard block rejects it; without any row-level rejection
+    # float(None) would raise TypeError and kill the job. A cut row that is the
+    # file's LAST line is dropped by the trailing-newline rule instead - that
+    # shape is covered by test_row_cut_inside_duration_digits_is_not_imported
+    # and test_unterminated_types_line_is_reported_as_incomplete.
     truncated = QUERY_ROWS[1].split("\t")
     cut = "\t".join(truncated[:6]) + "\tarithmetic.xml #1"
-    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY, QUERY_ROWS[0], cut]))
+    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY, QUERY_ROWS[0], cut]) + "\n")
     results, malformed, complete = read_ci_checks_results(path)
     assert complete is True
     assert malformed == 1
@@ -151,11 +158,13 @@ def test_row_truncated_mid_field_keeps_intact_rows(tmp_path):
 
 
 def test_row_truncated_inside_duration_keeps_intact_rows(tmp_path):
-    # Cut inside test_duration_ms: the field is present but not a number, so
-    # the conversion raises ValueError rather than TypeError.
+    # Cut right at the start of test_duration_ms, on a COMPLETE line: the field
+    # itself is an empty string, but every column past it is missing, so the
+    # all-columns guard rejects the row. That guard is what makes a row's
+    # completeness independent of which fields the parser happens to consume.
     cells = QUERY_ROWS[1].split("\t")
     cut = "\t".join(cells[:8]) + "\t"
-    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY, QUERY_ROWS[0], cut]))
+    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY, QUERY_ROWS[0], cut]) + "\n")
     results, malformed, complete = read_ci_checks_results(path)
     assert complete is True
     assert malformed == 1
@@ -172,6 +181,23 @@ def test_truncated_header_line_does_not_raise(tmp_path):
     assert complete is True
     assert results == []
     assert malformed == 3
+
+
+def test_row_with_an_unparsable_duration_is_malformed(tmp_path):
+    # The one shape that reaches the float() conversion guard. The names line was
+    # cut just past test_duration_ms, so that column is the LAST field: the row
+    # carries a value for every declared field and the all-columns guard lets it
+    # through, but the value is the empty string left by a row cut at the start
+    # of the duration. float("") raises ValueError, which unguarded would kill
+    # main() before praktika uploads any artifacts.
+    short_names = "\t".join(c for c, _ in COLUMNS[:9])
+    cells = QUERY_ROWS[0].split("\t")
+    cut = "\t".join(cells[:8]) + "\t"
+    path = _write(tmp_path, "\n".join([short_names, TYPES, SUMMARY, cut]) + "\n")
+    results, malformed, complete = read_ci_checks_results(path)
+    assert complete is True
+    assert results == []
+    assert malformed == 1
 
 
 def test_summary_row_is_not_imported_as_a_test_case(tmp_path):
@@ -269,13 +295,69 @@ def test_every_truncation_offset_of_a_non_ascii_file_is_survivable(tmp_path):
         assert isinstance(complete, bool)
 
 
+# A value no import can produce, so its survival proves the assignment was
+# skipped rather than merely assigned something empty.
+_SENTINEL = object()
+
+
+def _import_stub():
+    # A stand-in for the praktika Result the importer assigns into. Constructing
+    # a real Result pulls in the job environment, and only the `.results`
+    # attribute matters here.
+    target = SimpleNamespace(results=_SENTINEL)
+    # The real call passes the whole results list and the importer addresses
+    # results[-2], so mirror that shape rather than passing the target directly.
+    return target, [target, SimpleNamespace(results=[])]
+
+
+def test_import_assigns_parsed_rows_and_prints_no_warning(tmp_path, capsys):
+    # The happy path: a complete file is imported into the previous subtask and
+    # neither warning is printed.
+    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY] + QUERY_ROWS) + "\n")
+    target, results = _import_stub()
+    assert import_ci_checks_results(path, results) is True
+    assert [(r.name, r.status, r.duration) for r in target.results] == [
+        ("arithmetic.xml #0::old", "slower", 1.2345),
+        ("arithmetic.xml #1::new", "unstable", 2.34575),
+    ]
+    out = capsys.readouterr().out
+    assert "is empty or truncated" not in out
+    assert "malformed row(s)" not in out
+
+
+def test_import_of_a_truncated_file_warns_and_assigns_nothing(tmp_path, capsys):
+    # The branch the whole fix exists for. An incomplete file must be reported
+    # and left unimported: assigning its partial row set would silently
+    # under-report the queries the shard ran. The sentinel proves the assignment
+    # did not happen, which is what an inverted `if not complete:` would break.
+    path = _write(tmp_path, NAMES + "\n" + "UInt32\tLowCardinality(Str")
+    target, results = _import_stub()
+    assert import_ci_checks_results(path, results) is False
+    assert target.results is _SENTINEL
+    assert "is empty or truncated" in capsys.readouterr().out
+
+
+def test_import_reports_malformed_rows_and_keeps_the_intact_ones(tmp_path, capsys):
+    # A partially written file still imports its intact rows, but the drop has
+    # to be visible in the log - otherwise the shard reports fewer queries than
+    # it ran and nothing says why.
+    cells = QUERY_ROWS[1].split("\t")
+    cut = "\t".join(cells[:6]) + "\tarithmetic.xml #1"
+    path = _write(
+        tmp_path, "\n".join([NAMES, TYPES, SUMMARY, QUERY_ROWS[0], cut]) + "\n"
+    )
+    target, results = _import_stub()
+    assert import_ci_checks_results(path, results) is True
+    assert [r.name for r in target.results] == ["arithmetic.xml #0::old"]
+    assert "had 1 malformed row(s)" in capsys.readouterr().out
+
+
 def test_ci_checks_import_is_wired_into_main():
-    # The helper is only half the guard: main() has to keep calling it and keep
-    # surfacing both of its signals. These couplings are invisible to the tests
-    # above, which call the helper directly.
+    # The importer is only half the guard: main() has to keep calling it. This
+    # coupling is invisible to the tests above, which call it directly.
     source = inspect.getsource(performance_tests.main)
-    assert "read_ci_checks_results(" in source, (
-        "main() must parse ci-checks.tsv through the guarded helper. An inlined "
+    assert "import_ci_checks_results(" in source, (
+        "main() must import ci-checks.tsv through the guarded helper. An inlined "
         "raw parse lets an exception escape main() and kill the job before "
         "praktika uploads any artifacts, which is the failure being fixed."
     )
@@ -283,6 +365,22 @@ def test_ci_checks_import_is_wired_into_main():
         "A bare next() on the file object raises StopIteration on an empty or "
         "header-only ci-checks.tsv, which is exactly the ENOSPC shape."
     )
+    assert 'Path(f"{perf_wd}/ci-checks.tsv").is_file()' in source, (
+        "A shard that died before compare.sh wrote ci-checks.tsv at all leaves "
+        "no file: the importer must stay behind the is_file() guard, or open() "
+        "raises FileNotFoundError and kills the job before the artifacts upload."
+    )
+    assert "did not generate ci-checks.tsv" in source, (
+        "The absent-file case must be reported too, otherwise the shard goes "
+        "red with no query rows and no explanation."
+    )
+
+
+def test_import_helper_reports_both_signals():
+    # The warning strings and the assignment target are pinned here as well as
+    # behaviourally, so that a rewrite cannot quietly drop a log line the
+    # operator greps for.
+    source = inspect.getsource(performance_tests.import_ci_checks_results)
     assert "is empty or truncated" in source, (
         "A truncated ci-checks.tsv must be reported. Without the warning the "
         "shard goes red with no query rows and nothing says why."
@@ -298,15 +396,31 @@ def test_ci_checks_import_is_wired_into_main():
 
 
 if __name__ == "__main__":
+    import contextlib
+    import io
     import tempfile
     from pathlib import Path
+
+    class _Capsys:
+        """Minimal stand-in for pytest's capsys, for running this file directly."""
+
+        def __init__(self, buffer):
+            self._buffer = buffer
+
+        def readouterr(self):
+            return SimpleNamespace(out=self._buffer.getvalue(), err="")
 
     for name, fn in sorted(globals().items()):
         if not (name.startswith("test_") and callable(fn)):
             continue
-        if "tmp_path" in inspect.signature(fn).parameters:
-            with tempfile.TemporaryDirectory() as d:
-                fn(Path(d))
-        else:
-            fn()
+        params = inspect.signature(fn).parameters
+        kwargs = {}
+        with contextlib.ExitStack() as stack:
+            if "tmp_path" in params:
+                kwargs["tmp_path"] = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+            if "capsys" in params:
+                buffer = io.StringIO()
+                stack.enter_context(contextlib.redirect_stdout(buffer))
+                kwargs["capsys"] = _Capsys(buffer)
+            fn(**kwargs)
     print("All perf ci-checks parse tests passed.")
