@@ -492,22 +492,21 @@ Pipe StorageBigQuery::read(
     /// The limit is budgeted against the *full* encoded request URI, not the raw field list: the URI also
     /// carries the table path and the fixed `prettyPrint` / `formatOptions.useInt64Timestamp` / `maxResults`
     /// parameters, and the field list is percent-encoded (each `,` becomes `%2C`), so the wire length is
-    /// larger than `selected_fields.size()`. This up-front check only measures the first page (the `pageToken`
-    /// that BigQuery adds from the second page onward is not known until a page is fetched); it rejects an
-    /// obviously-too-wide read early, with headroom for a typical `pageToken`. The authoritative guard is in
-    /// `BigQueryClient::listTableData`, which validates the actual URL of every paginated request — including
-    /// the real, opaque token — against the same `BigQueryClient::max_request_uri_length`, so a read cannot
-    /// start and then fail remotely on a later page when the token turns out to be larger than this reserve.
-    static constexpr size_t page_token_length_reserve = 1024;
+    /// larger than `selected_fields.size()`. This up-front check measures exactly the first page (the
+    /// `pageToken` that BigQuery adds from the second page onward is not known until a page has been
+    /// fetched) and rejects only a read whose *first* request already does not fit — no headroom is
+    /// reserved for the token, because a single-page read never carries one and reserving would reject
+    /// perfectly valid near-threshold reads. A later page whose real, opaque token pushes the URL over the
+    /// limit is caught by the authoritative guard in `BigQueryClient::listTableData`, which validates the
+    /// actual URL of every paginated request against the same `BigQueryClient::max_request_uri_length`.
     const size_t request_uri_length = client->tableDataRequestUriLength(selected_fields, max_block_size);
-    if (request_uri_length + page_token_length_reserve > BigQueryClient::max_request_uri_length)
+    if (request_uri_length > BigQueryClient::max_request_uri_length)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The list of selected BigQuery columns is too long: it makes the `tabledata.list` request URL "
-            "{} bytes (plus {} bytes reserved for pagination), over the {}-byte limit, while pinning the read "
-            "to the analyzed schema; select fewer columns",
+            "{} bytes, over the {}-byte limit, while pinning the read to the analyzed schema; "
+            "select fewer columns",
             request_uri_length,
-            page_token_length_reserve,
             BigQueryClient::max_request_uri_length);
 
     /// Fail-close schema-drift check. `selectedFields` pins the *set and names* of the columns that come
@@ -560,14 +559,38 @@ SinkToStoragePtr StorageBigQuery::write(
     ContextPtr context,
     bool /*async_insert*/)
 {
-    const auto & all_fields = getFields(context);
+    const auto & analyzed_fields = getFields(context);
     const auto sample_block = metadata_snapshot->getSampleBlock();
+
+    /// Fail-close write-side schema-drift check, the counterpart of the pre-read check in `read`. The
+    /// schema snapshot in `analyzed_fields` is fetched once and cached for the lifetime of the storage, so
+    /// it can be arbitrarily older than this `INSERT`. Validating the written columns against that stale
+    /// snapshot alone is not enough: `tabledata.insertAll` accepts a JSON representation that several
+    /// BigQuery types share, so if the remote table is replaced with the same column names but a different
+    /// type, the rows would be accepted and stored under the wrong type with no error. For example an
+    /// analyzed `INTEGER` column is serialized as decimal text (see `bigQueryJSONValue`), so after the
+    /// remote column becomes `STRING` the very same `"123"` payload keeps being accepted, silently storing
+    /// strings for a column the local table still declares as `Int64`. Re-fetch the live schema and check
+    /// the written columns against it, and against the analyzed snapshot, before streaming any row.
+    const auto current_fields = fetchTableSchema(configuration, context, token_provider);
 
     BigQueryFields sink_fields;
     for (const auto & column : sample_block)
     {
-        checkColumnMatchesSchema(NameAndTypePair{column.name, column.type}, all_fields);
-        const auto & field = *findBigQueryField(all_fields, column.name);
+        /// The declared column must match the *live* remote type, not just the analyzed one.
+        checkColumnMatchesSchema(NameAndTypePair{column.name, column.type}, current_fields);
+
+        const auto & field = *findBigQueryField(current_fields, column.name);
+        const auto * analyzed_field = findBigQueryField(analyzed_fields, column.name);
+        if (!analyzed_field || analyzed_field->type != field.type || analyzed_field->repeated != field.repeated
+            || analyzed_field->required != field.required || !analyzed_field->data_type->equals(*field.data_type))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "The schema of the BigQuery table `{}.{}` changed since it was analyzed: column '{}' no longer "
+                "matches the analyzed schema. Writing now could store the rows under a different type; "
+                "re-create the table or re-run the query",
+                configuration.dataset, configuration.table, column.name);
+
         checkFieldIsWritable(field);
         sink_fields.push_back(field);
     }

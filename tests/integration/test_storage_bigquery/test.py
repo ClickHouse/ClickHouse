@@ -405,14 +405,33 @@ def test_wide_projection_near_threshold_rejected():
     # comma-joined `selectedFields` payload. A 27-column projection of these ~297-byte names makes a raw
     # field list of 27 * 297 + 26 = 8045 bytes, which is under the 8192-byte budget; a naive check on the
     # raw payload alone would let it through. But the full request URI adds the table path, the fixed query
-    # parameters, the percent-encoding of each `,` (as `%2C`), and headroom for the `pageToken` on page 2+,
-    # so the actual URL exceeds the limit and the read is rejected up front rather than failing with an
-    # opaque HTTP error near the threshold.
+    # parameters and the percent-encoding of each `,` (as `%2C`), so the actual URL exceeds the limit and
+    # the read is rejected up front rather than failing with an opaque HTTP error near the threshold.
     columns = ", ".join(f"`{wide_column_name(i)}`" for i in range(27))
     error = node.query_and_get_error(f"SELECT {columns} FROM {bq('test_wide')}")
     assert "too long" in error
     # The oversized request is never sent.
     assert mock_stats()["data_requests"] == []
+
+
+def test_wide_projection_near_threshold_accepted():
+    mock_reset()
+    # The up-front guard must reject only reads whose *first-page* request URL does not fit: it reserves
+    # no headroom for a `pageToken`, because a single-page read never sends one, and a later page whose
+    # real token does not fit is rejected by `BigQueryClient::listTableData` when that page is requested.
+    # A 26-column projection of these ~297-byte names makes a request URI just under the 8192-byte limit
+    # (one column less than test_wide_projection_near_threshold_rejected), and `test_wide` has a single
+    # row, so this read fits in one page and must succeed.
+    columns = ", ".join(f"`{wide_column_name(i)}`" for i in range(26))
+    assert node.query(f"SELECT {columns} FROM {bq('test_wide')} FORMAT TSV") == (
+        "\t".join(["1"] * 26) + "\n"
+    )
+    # A single, explicitly pinned data request was sent.
+    data_requests = mock_stats()["data_requests"]
+    assert len(data_requests) == 1
+    assert data_requests[0]["params"]["selectedFields"] == ",".join(
+        wide_column_name(i) for i in range(26)
+    )
 
 
 def test_wide_page_token_rejected():
@@ -447,6 +466,40 @@ def test_read_schema_reorder_rejected():
     assert "changed between query analysis and execution" in error
     # The read was rejected before any data request was issued.
     assert mock_stats()["data_requests"] == []
+
+
+def test_write_schema_drift_rejected():
+    # The write path re-fetches the live schema before streaming any row, and rejects the INSERT if the
+    # touched columns no longer match the analyzed snapshot. Without that check the rows would be sent
+    # against a stale snapshot, and `tabledata.insertAll` would happily store them under the new type
+    # whenever the two types share a JSON representation.
+    mock_reset()
+    # STRING and BYTES both map to `String`, so the local column type still matches the live schema and
+    # only the snapshot comparison can catch the drift - yet a BYTES column expects base64-encoded data,
+    # so the rows would be stored corrupted.
+    mock_ctl("/__retype_schema_after_first_get__?table=writable&column=name&type=BYTES")
+    error = node.query_and_get_error(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'row1')"
+    )
+    assert "changed since it was analyzed" in error
+    # The write was rejected before any row was streamed.
+    assert mock_stats()["insert_requests"] == []
+
+    mock_reset()
+    # A drift that also changes the ClickHouse type is rejected by the column type check: an analyzed
+    # `INTEGER` column is serialized as decimal text, so a live `STRING` column would accept the very
+    # same payload and silently store `Int64` values as strings.
+    mock_ctl("/__retype_schema_after_first_get__?table=writable&column=id&type=STRING")
+    error = node.query_and_get_error(
+        f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'row1')"
+    )
+    assert "is declared as Int64" in error
+    assert mock_stats()["insert_requests"] == []
+
+    # Without drift the same INSERT succeeds.
+    mock_reset()
+    node.query(f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'row1')")
+    assert node.query(f"SELECT id, name FROM {bq('writable')}") == "1\trow1\n"
 
 
 def test_insert_roundtrip():
