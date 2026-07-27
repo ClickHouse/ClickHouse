@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/IDataType.h>
@@ -487,6 +489,15 @@ size_t ColumnAggregateFunction::byteSize() const
 
 size_t ColumnAggregateFunction::serializedSizeEstimate() const
 {
+    /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap upper bound, and their
+    /// serialized sizes can be arbitrarily skewed: most groups tiny, a few huge. Sampling underestimates
+    /// such columns whenever a large state falls outside the sample, which lets oversized granules survive.
+    /// Sum the exact serialized size of every state instead.
+    return sampledSerializedSizeEstimate(data.size());
+}
+
+size_t ColumnAggregateFunction::sampledSerializedSizeEstimate(size_t max_states_to_serialize) const
+{
     const size_t rows = data.size();
     if (rows == 0)
         return 0;
@@ -499,20 +510,24 @@ size_t ColumnAggregateFunction::serializedSizeEstimate() const
     if (func->hasTrivialDestructor() && !func->allocatesMemoryInArena())
         return ptr_bytes + rows * func->sizeOfData();
 
-    /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap upper bound, and their
-    /// serialized sizes can be arbitrarily skewed: most groups tiny, a few huge. Sampling underestimates
-    /// such columns whenever a large state falls outside the sample, which lets oversized granules survive.
-    /// Sum the exact serialized size of every state instead. States are immutable on the write path, so
-    /// serializing them here is safe even if they live in shared arenas.
-    size_t total_serialized = 0;
-    for (size_t i = 0; i < rows; ++i)
+    /// States are immutable once they are in a column, so serializing them here is safe even if they live
+    /// in shared arenas.
+    const size_t limit = std::max<size_t>(max_states_to_serialize, 1);
+    const size_t period = (rows + limit - 1) / limit;
+    size_t serialized_states = 0;
+    size_t serialized_bytes = 0;
+    for (size_t i = 0; i < rows; i += period)
     {
         NullWriteBuffer out;
         func->serialize(data[i], out, version);
-        total_serialized += out.count();
+        serialized_bytes += out.count();
+        ++serialized_states;
     }
 
-    return ptr_bytes + total_serialized;
+    if (serialized_states == rows)
+        return ptr_bytes + serialized_bytes;
+
+    return ptr_bytes + static_cast<size_t>(static_cast<double>(serialized_bytes) * static_cast<double>(rows) / static_cast<double>(serialized_states));
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const

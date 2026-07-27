@@ -2,6 +2,8 @@
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Common/typeid_cast.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/NullWriteBuffer.h>
@@ -111,6 +113,20 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
     return std::make_pair(compressed_buf.count(), null_buf.count());
 }
 
+/// Uncompressed size of a column for the purpose of the estimate. `byteSize` of a `ColumnAggregateFunction`
+/// counts the state pointers plus the arena the column owns, and a column of states assembled by
+/// `AggregatingInOrderTransform` (see `addArenasToAggregateColumns`) does not own the arena its states live in,
+/// so `byteSize` degenerates to one pointer per row there. Size such a column from its serialized states
+/// instead, sampling as many of them as `Aggregator::estimateSizeOfCompressedState` does per bucket, so that
+/// both producers of the `AggregationState` statistic measure the same thing.
+static size_t estimateUncompressedColumnSize(const IColumn & column)
+{
+    static constexpr size_t max_states_to_serialize = 100;
+    if (const auto * aggregate_column = typeid_cast<const ColumnAggregateFunction *>(&column))
+        return aggregate_column->sampledSerializedSizeEstimate(max_states_to_serialize);
+    return column.byteSize();
+}
+
 bool RuntimeDataflowStatisticsCacheUpdater::shouldSampleBlock(Statistics & statistics, size_t block_rows)
 {
     // Empty blocks produced during planning, when we calculate output headers. Skip them.
@@ -126,7 +142,7 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(Statistics & statistic
 
     size_t block_bytes = 0;
     for (const auto & col : cols)
-        block_bytes += col.column->byteSize();
+        block_bytes += estimateUncompressedColumnSize(*col.column);
 
     size_t sample_bytes = 0;
     size_t compressed_bytes = 0;

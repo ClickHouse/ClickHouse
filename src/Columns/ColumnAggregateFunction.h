@@ -195,6 +195,11 @@ public:
     /// figure never underestimates a skewed column. Used to honor index_granularity_bytes at write time.
     size_t serializedSizeEstimate() const;
 
+    /// Same figure as serializedSizeEstimate, but serializes at most `max_states_to_serialize` of the
+    /// variable-size states and extrapolates the total from them, for callers that need an estimate and
+    /// cannot afford serializing every state. Exact when the limit is not smaller than the column's size.
+    size_t sampledSerializedSizeEstimate(size_t max_states_to_serialize) const;
+
     size_t byteSizeAt(size_t n) const override;
 
     size_t allocatedBytes() const override;
