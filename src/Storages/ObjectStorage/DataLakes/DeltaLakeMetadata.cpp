@@ -335,6 +335,7 @@ struct DeltaLakeMetadataImpl
                             auto & current_partition_columns = file_partition_columns[full_path];
                             for (const auto & partition_name : partition_values->getNames())
                             {
+                                const auto value = partition_values->getValue<String>(partition_name);
                                 auto name_and_type = file_schema.tryGetByName(partition_name);
                                 if (!name_and_type)
                                 {
@@ -343,16 +344,6 @@ struct DeltaLakeMetadataImpl
                                         "No such column in schema: {} (schema: {})",
                                         partition_name, file_schema.toNamesAndTypesDescription());
                                 }
-
-                                /// A null-equivalent partition value is committed as a JSON null; read it
-                                /// back as NULL instead of throwing while extracting it as a String.
-                                if (partition_values->isNull(partition_name))
-                                {
-                                    current_partition_columns.emplace_back(*name_and_type, Field{});
-                                    continue;
-                                }
-
-                                const auto value = partition_values->getValue<String>(partition_name);
 
                                 LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
                                          partition_name, value, name_and_type->type->getName(), filename);
