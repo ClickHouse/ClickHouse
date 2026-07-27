@@ -279,7 +279,7 @@ std::optional<UInt64> computeCountForPart(
     const auto & data_part = part_with_ranges.data_part;
     const auto & index = resolved.index;
 
-    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
+    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
     if (!index_format)
         return {};
 
