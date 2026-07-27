@@ -128,7 +128,7 @@ std::string_view ColumnReplicated::getDataAt(size_t n) const
 namespace
 {
 
-/// Materialize Replicated(Array) by copying whole row ranges.
+/// Materialize Replicated(Array) by copying the entire row ranges for the specific type T
 template <typename T>
 ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPODArray<T> & row_indexes)
 {
@@ -140,10 +140,11 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     auto & res_offsets = res_offsets_column->getData();
 
     size_t total_elements = 0;
-    /// First extract the offsets fromt he indexes
+    /// First extract the offsets from the indexes
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
+        /// src_offsets[row] == src.sizeAt(row) and src_offsets[row -1] == src.OffsetAt(row)
         total_elements += src_offsets[row] - src_offsets[row - 1];
         res_offsets[i] = total_elements;
     }
@@ -153,7 +154,7 @@ ColumnPtr materializeReplicatedArrayImpl(const ColumnArray & src, const PaddedPO
     for (size_t i = 0; i < num_rows; ++i)
     {
         ssize_t row = row_indexes[i];
-        res_data->insertRangeFrom(src_data, src_offsets[row - 1], src_offsets[row] - src_offsets[row - 1]);
+        res_data->insertRangeFrom(src_data,/*start*/src_offsets[row - 1], /*length*/src_offsets[row] - src_offsets[row - 1]);
     }
 
     return ColumnArray::create(std::move(res_data), std::move(res_offsets_column));

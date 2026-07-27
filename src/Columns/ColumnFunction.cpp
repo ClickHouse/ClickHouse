@@ -428,7 +428,7 @@ void ColumnFunction::appendArgument(const ColumnWithTypeAndName & column)
 
     auto captured_column = column;
     /// Keep replicated captures lazy if allowed: functions inside the lambda handle
-    /// ColumnReplicated arguments themselves (see IExecutableFunction::execute).
+    /// ColumnReplicated arguments themselves
     if (!allow_lazy_replicated_captures)
         captured_column.column = captured_column.column->convertToFullColumnIfReplicated();
     captured_column.column = captured_column.column->convertToFullColumnIfSparse();

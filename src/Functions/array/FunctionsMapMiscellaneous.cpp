@@ -204,7 +204,7 @@ public:
     }
 
 private:
-    /// Adapters that synthesize a lambda-like ColumnFunction (see MapLikeAdapter) take the
+    /// Adapters that synthesize a lambda-like ColumnFunction take the
     /// lazy replication flag to avoid physically replicating the captured column per map entry.
     void extractNestedTypesAndColumns(ColumnsWithTypeAndName & nested_arguments) const
     {
