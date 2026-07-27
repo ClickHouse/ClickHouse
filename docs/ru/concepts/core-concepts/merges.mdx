@@ -9,7 +9,7 @@ doc_type: 'guide'
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <div id="what-are-part-merges-in-clickhouse">
-  ## Что такое слияние частей в ClickHouse?
+  ## Что такое слияния частей в ClickHouse?
 </div>
 
 <br />
@@ -30,7 +30,7 @@ ClickHouse [работает быстро](/ru/get-started/about/why-clickhouse-
 
 <br />
 
-`merge level` части увеличивается на единицу с каждым очередным слиянием. Уровень `0` означает, что часть новая и еще не была объединена. Части, объединенные в более крупные, помечаются как [неактивные](/ru/reference/system-tables/parts) и затем удаляются через [настраиваемый](/ru/reference/settings/merge-tree-settings#old_parts_lifetime) промежуток времени (по умолчанию 8 минут). Со временем это образует **дерево** слитых частей. Отсюда и название таблицы [MergeTree](/ru/reference/engines/table-engines/mergetree-family/index).
+`уровень слияния` части увеличивается на единицу с каждым очередным слиянием. Уровень `0` означает, что часть новая и еще не была объединена. Части, объединенные в более крупные, помечаются как [неактивные](/ru/reference/system-tables/parts) и затем удаляются через [настраиваемый](/ru/reference/settings/merge-tree-settings#old_parts_lifetime) промежуток времени (по умолчанию 8 минут). Со временем это образует **дерево** слитых частей. Отсюда и название таблицы [MergeTree](/ru/reference/engines/table-engines/mergetree-family/index).
 
 <div id="monitoring-merges">
   ## Мониторинг слияний
@@ -69,7 +69,7 @@ ORDER BY name ASC;
 
 В ClickHouse 24.10 во встроенные [панели мониторинга](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) была добавлена новая [панель мониторинга слияний](https://presentations.clickhouse.com/2024-release-24.10/index.html#17). Она доступна как в OSS, так и в Cloud через HTTP-обработчик `/merges` и позволяет визуализировать все слияния частей для таблицы из нашего примера:
 
-<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="СЛИЯНИЯ ЧАСТЕЙ" />
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
@@ -87,7 +87,7 @@ ORDER BY name ASC;
 
 Один сервер ClickHouse использует несколько фоновых [потоков слияния](/ru/reference/settings/server-settings/settings#background_pool_size) для выполнения параллельных слияний частей:
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="СЛИЯНИЯ ЧАСТЕЙ" />
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
 
 <br />
 
@@ -161,7 +161,7 @@ DDL-оператор на схеме выше создаёт таблицу `Mer
 
 DDL-оператор на диаграмме выше создаёт таблицу `ReplacingMergeTree` с ключом сортировки `(town, street, id)`, то есть данные на диске сортируются по этим столбцам, а соответствующим образом строится разреженный первичный индекс.
 
-На этапе ② слияние происходит так же, как и в стандартной таблице `MergeTree`: объединяются распакованные, предварительно отсортированные столбцы с сохранением глобального порядка сортировки.
+На этапе ② слияние происходит так же, как и в стандартной таблице `MergeTree`: объединяются распакованные, предварительно отсортированные столбцы с сохранением общего порядка сортировки.
 
 Однако `ReplacingMergeTree` удаляет дублирующиеся строки с одинаковым ключом сортировки, сохраняя только самую новую строку по временной метке создания части, в которой она находится.
 
