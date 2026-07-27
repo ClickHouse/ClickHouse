@@ -1,6 +1,6 @@
 -- Tags: shard
 
--- The nested set operations below need the new analyzer: the old one rejects the same queries
+-- The nested set operations below need the analyzer: the old one rejects the same queries
 -- with NO_COMMON_TYPE before a plan exists.
 SET enable_analyzer = 1;
 
