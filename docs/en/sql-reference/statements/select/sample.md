@@ -131,10 +131,21 @@ SET allow_experimental_bernoulli_sample = 1;
 
 ### How it differs from `SAMPLE BY` {#bernoulli-vs-sample-by}
 
-- There is no sampling key, so two Bernoulli samples on different tables are
-  statistically independent and not possible to join via `IN` subqueries - unlike
-  `SAMPLE BY`, which gives the cross-table consistency property described at
-  the top of this page.
+- There is no sampling key, so Bernoulli sampling does **not** give the
+  value-based cross-table consistency property described at the top of this
+  page: two tables sampled with the same coefficient do not select the same
+  subset of key values, so a Bernoulli sample is not a substitute for
+  `SAMPLE BY` in `IN` subqueries or joins on the sampling key.
+  Bernoulli samples are also **not** statistically independent of each other.
+  Rows are selected by their position within a part, and the per-part random
+  stream is derived from `bernoulli_sample_seed` and the position of the part in
+  the query, not from table identity. Two reads with a matching part layout and
+  the same seed therefore select the same row positions. For example, in
+  `t1 SAMPLE 0.1 JOIN t2 SAMPLE 0.1 USING x` over two identically-populated
+  tables, both sides keep the same rows, so the join retains about `p * N` rows
+  rather than the `p^2 * N` that independent sampling would give. Do not rely on
+  Bernoulli sampling to draw uncorrelated samples across several reads of the
+  same shape within one query.
 - With a nonzero `bernoulli_sample_seed` and an unchanged set of parts, the
   same query returns the same rows regardless of `max_threads`; `0` re-seeds
   randomly per query.
