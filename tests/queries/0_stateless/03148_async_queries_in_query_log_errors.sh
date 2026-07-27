@@ -55,9 +55,10 @@ function print_flush_query_logs()
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_insert_landing (id UInt32) ENGINE = MergeTree ORDER BY id"
 
 query_id="$(random_str 10)"
-# Unpinned, the server can auto-schedule the batch before `SYSTEM FLUSH ASYNC INSERT QUEUE` below,
-# which only waits for the jobs it scheduled itself. Keep these as client flags, not in the query's
-# own `SETTINGS` clause: the reference asserts the logged statement verbatim.
+# Both flags are load-bearing and close different drain paths: with the adaptive timeout on, `pushImpl`
+# can auto-schedule the batch immediately, and with the default 200 ms `max_ms` the deadline thread
+# drains it - either way before `SYSTEM FLUSH ASYNC INSERT QUEUE` below, which waits only for the jobs
+# it scheduled itself. Client flags, not `SETTINGS`: the reference asserts the logged statement verbatim.
 ${CLICKHOUSE_CLIENT} --async_insert_use_adaptive_busy_timeout=0 --async_insert_busy_timeout_max_ms=300000 \
     --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=0, async_insert=1 values ('Invalid')" 2>/dev/null || true
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_insert_landing"
