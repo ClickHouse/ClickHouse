@@ -11,9 +11,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # and turn a value-level parse error in an earlier row into a bogus "structure mismatch"
 # explanation. The bound is taken from the `(at row N)` part of the parse error.
 #
-# `input_format_parallel_parsing` is pinned: with parallel parsing the row number counts rows
-# within a chunk rather than the whole file, so it is not a valid bound and sampling stays
-# unbounded.
+# The bound holds regardless of `input_format_parallel_parsing`: `ParallelParsingInputFormat` gives
+# every unit's parser the number of rows read before it, so `(at row N)` counts rows from the
+# beginning of the file in both cases. Both values of the setting are checked.
 
 PHRASE="does not match the structure expected by the query"
 
@@ -32,13 +32,18 @@ printf 'text\t1\n' > "$DATA_FILE_MISMATCH"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE test_infile_row_bound (a UInt8, b UInt8) ENGINE = Memory"
 
-echo "-- the first row fails on a value; the conflicting second row is not sampled (no false positive)"
-$CLICKHOUSE_CLIENT --input_format_parallel_parsing 0 \
-    --query "INSERT INTO test_infile_row_bound FROM INFILE '${DATA_FILE_LATER_ROW}' FORMAT TSV" < /dev/null 2>&1 | check
+for parallel_parsing in 0 1
+do
+    echo "-- input_format_parallel_parsing = ${parallel_parsing}"
 
-echo "-- the failing row itself is sampled: text where a number is expected (explanation still fires)"
-$CLICKHOUSE_CLIENT --input_format_parallel_parsing 0 \
-    --query "INSERT INTO test_infile_row_bound FROM INFILE '${DATA_FILE_MISMATCH}' FORMAT TSV" < /dev/null 2>&1 | check
+    echo "-- the first row fails on a value; the conflicting second row is not sampled (no false positive)"
+    $CLICKHOUSE_CLIENT --input_format_parallel_parsing "${parallel_parsing}" \
+        --query "INSERT INTO test_infile_row_bound FROM INFILE '${DATA_FILE_LATER_ROW}' FORMAT TSV" < /dev/null 2>&1 | check
+
+    echo "-- the failing row itself is sampled: text where a number is expected (explanation still fires)"
+    $CLICKHOUSE_CLIENT --input_format_parallel_parsing "${parallel_parsing}" \
+        --query "INSERT INTO test_infile_row_bound FROM INFILE '${DATA_FILE_MISMATCH}' FORMAT TSV" < /dev/null 2>&1 | check
+done
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_infile_row_bound"
 rm -f "$DATA_FILE_LATER_ROW" "$DATA_FILE_MISMATCH"
