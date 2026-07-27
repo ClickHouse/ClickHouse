@@ -106,17 +106,7 @@ Ambas as abordagens garantem que o conector do ClickHouse esteja disponível no 
     </dependency>
     ```
 
-    Adicione o repositório abaixo se quiser usar a versão SNAPSHOT.
-
-    ```maven
-    <repositories>
-      <repository>
-        <id>sonatype-oss-snapshots</id>
-        <name>Sonatype OSS Snapshots Repository</name>
-        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
-      </repository>
-    </repositories>
-    ```
+    Para usar uma versão SNAPSHOT, siga as [instruções da Sonatype para consumir lançamentos SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) com Maven.
   </Tab>
 
   <Tab title="Gradle">
@@ -127,13 +117,7 @@ Ambas as abordagens garantem que o conector do ClickHouse esteja disponível no 
     }
     ```
 
-    Adicione o repositório abaixo se quiser usar a versão SNAPSHOT:
-
-    ```gradle
-    repositries {
-      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
-    }
-    ```
+    Para usar uma versão SNAPSHOT, siga as [instruções da Sonatype para consumir lançamentos SNAPSHOT](https://central.sonatype.org/publish/publish-portal-snapshots/#consuming-snapshot-releases-for-your-project) com Gradle.
   </Tab>
 
   <Tab title="SBT">
@@ -175,13 +159,13 @@ clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${versi
 ```
 
 Você pode encontrar todos os arquivos JAR de versões lançadas disponíveis
-no [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
-e todos os arquivos JAR SNAPSHOT de builds diárias no [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+no [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/).
+Os arquivos JAR SNAPSHOT de builds diárias estão disponíveis por meio do repositório de snapshots do Sonatype configurado acima.
 
 <Warning>
   É essencial incluir o [JAR do clickhouse-jdbc](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
   com o classificador &quot;all&quot;,
-  pois o connector depende de [clickhouse-http](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client)
+  pois o conector depende de [clickhouse-http](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client)
   e [clickhouse-client](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-client) — ambos já vêm incluídos
   em clickhouse-jdbc:all.
   Como alternativa, você pode adicionar [o JAR do clickhouse-client](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-client)

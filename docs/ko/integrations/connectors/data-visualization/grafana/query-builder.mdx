@@ -42,15 +42,15 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 
 가장 유연한 쿼리 유형은 테이블 쿼리입니다. 이는 단순 쿼리와 집계 쿼리를 처리하도록 설계된 다른 쿼리 빌더를 모두 포괄하는 유형입니다.
 
-| 필드           | 설명                                                                                                                                  |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Builder Mode | 단순 쿼리에서는 Aggregates와 Group By를 제외하며, 집계 쿼리에서는 이러한 옵션이 포함됩니다.                                                                        |
-| Columns      | 선택한 컬럼입니다. 함수와 컬럼 별칭을 사용할 수 있도록 이 필드에 Raw SQL을 직접 입력할 수 있습니다.                                                                       |
+| 필드           | 설명                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | 단순 쿼리에서는 Aggregates와 Group By를 제외하며, 집계 쿼리에서는 이러한 옵션이 포함됩니다.                                                                           |
+| Columns      | 선택한 컬럼입니다. 함수와 컬럼 별칭을 사용할 수 있도록 이 필드에 Raw SQL을 직접 입력할 수 있습니다.                                                                          |
 | Aggregates   | [집계 함수](/ko/reference/functions/aggregate-functions/index) 목록입니다. 함수와 컬럼에 사용자 지정 값을 지정할 수 있습니다. Aggregate 모드에서만 표시됩니다.                 |
 | Group By     | [GROUP BY](/ko/reference/statements/select/group-by) 표현식 목록입니다. Aggregate 모드에서만 표시됩니다.                                                 |
 | Order By     | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                                                        |
 | Limit        | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외됩니다. 일부 시각화에서는 모든 데이터를 표시하려면 이 값을 `0`으로 설정해야 할 수 있습니다. |
-| Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                                            |
+| Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                                               |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="집계 테이블 쿼리 예시" border />
 
@@ -70,17 +70,17 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 
 로그 쿼리 유형은 [데이터 링크](#data-links)를 지원합니다.
 
-| Field          | Description                                                                                                |
-| -------------- | ---------------------------------------------------------------------------------------------------------- |
-| Use OTel       | OpenTelemetry 컬럼을 활성화합니다. 선택한 OTel 스키마 버전에서 정의된 컬럼을 사용하도록 현재 선택된 컬럼을 덮어씁니다(컬럼 선택 비활성화).                    |
-| Columns        | 로그 행에 추가할 컬럼입니다. 함수와 컬럼 alias를 사용할 수 있도록 이 필드에 Raw SQL을 입력할 수 있습니다.                                        |
-| Time           | 로그의 기본 timestamp 컬럼입니다. 시간 관련 타입이 표시되며, 사용자 지정 값/함수도 허용됩니다.                                                |
-| Log Level      | 선택 사항입니다. 로그의 *level* 또는 *severity*입니다. 값은 일반적으로 `INFO`, `error`, `Debug` 등입니다.                            |
-| Message        | 로그 메시지 내용입니다.                                                                                              |
+| Field          | Description                                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------------- |
+| Use OTel       | OpenTelemetry 컬럼을 활성화합니다. 선택한 OTel 스키마 버전에서 정의된 컬럼을 사용하도록 현재 선택된 컬럼을 덮어씁니다(컬럼 선택 비활성화).                       |
+| Columns        | 로그 행에 추가할 컬럼입니다. 함수와 컬럼 alias를 사용할 수 있도록 이 필드에 Raw SQL을 입력할 수 있습니다.                                           |
+| Time           | 로그의 기본 timestamp 컬럼입니다. 시간 관련 타입이 표시되며, 사용자 지정 값/함수도 허용됩니다.                                                   |
+| Log Level      | 선택 사항입니다. 로그의 *level* 또는 *severity*입니다. 값은 일반적으로 `INFO`, `error`, `Debug` 등입니다.                               |
+| Message        | 로그 메시지 내용입니다.                                                                                                 |
 | Order By       | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                               |
 | Limit          | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외되지만, 대규모 로그 데이터셋에는 권장되지 않습니다. |
-| Filters        | `WHERE` 절에 적용할 필터 목록입니다.                                                                                   |
-| Message Filter | `LIKE %value%`를 사용해 로그를 편리하게 필터링할 수 있는 텍스트 입력란입니다. 입력이 비어 있으면 제외됩니다.                                       |
+| Filters        | `WHERE` 절에 적용할 필터 목록입니다.                                                                                      |
+| Message Filter | `LIKE %value%`를 사용해 로그를 편리하게 필터링할 수 있는 텍스트 입력란입니다. 입력이 비어 있으면 제외됩니다.                                          |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel 로그 쿼리 예시" border />
 
@@ -113,16 +113,16 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
   `LIMIT` 절을 `0`으로 설정해 제거해 보십시오(데이터셋에서 허용하는 경우).
 </Warning>
 
-| 필드           | 설명                                                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Builder Mode | Simple 쿼리에는 Aggregates와 Group By가 제외되고, 집계 쿼리에는 이러한 옵션이 포함됩니다.                                                        |
-| Time         | 쿼리의 기본 시간 컬럼입니다. 시간 관련 타입이 표시되지만, 사용자 지정 값이나 함수도 사용할 수 있습니다.                                                          |
-| Columns      | 선택한 컬럼입니다. 함수와 컬럼 별칭 지정을 위해 이 필드에 Raw SQL을 입력할 수 있습니다. Simple 모드에서만 표시됩니다.                                            |
+| 필드           | 설명                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Builder Mode | Simple 쿼리에는 Aggregates와 Group By가 제외되고, 집계 쿼리에는 이러한 옵션이 포함됩니다.                                                           |
+| Time         | 쿼리의 기본 시간 컬럼입니다. 시간 관련 타입이 표시되지만, 사용자 지정 값이나 함수도 사용할 수 있습니다.                                                             |
+| Columns      | 선택한 컬럼입니다. 함수와 컬럼 별칭 지정을 위해 이 필드에 Raw SQL을 입력할 수 있습니다. Simple 모드에서만 표시됩니다.                                               |
 | Aggregates   | [집계 함수](/ko/reference/functions/aggregate-functions/index) 목록입니다. 함수와 컬럼에 사용자 지정 값을 사용할 수 있습니다. Aggregate 모드에서만 표시됩니다.   |
 | Group By     | [GROUP BY](/ko/reference/statements/select/group-by) 표현식 목록입니다. Aggregate 모드에서만 표시됩니다.                                   |
 | Order By     | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                                          |
 | Limit        | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) 문을 추가합니다. `0`으로 설정하면 제외되며, 전체 시각화를 표시하기 위해 일부 시계열 데이터셋에서는 이를 권장합니다. |
-| Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                              |
+| Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                                 |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="시계열 쿼리 예시" border />
 
@@ -144,24 +144,24 @@ Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
 
 트레이스 쿼리 유형은 [데이터 링크](#data-links)를 지원합니다.
 
-| 필드                    | 설명                                                                                                           |
-| --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Trace Mode            | 쿼리를 Trace Search에서 Trace ID lookup으로 변경합니다.                                                                  |
-| Use OTel              | OpenTelemetry 컬럼을 활성화합니다. 선택한 OTel 스키마 버전에 정의된 컬럼을 사용하도록 선택된 컬럼을 덮어씁니다(컬럼 선택 비활성화).                          |
-| Trace ID Column       | 트레이스의 ID입니다.                                                                                                 |
-| Span ID Column        | 스팬 ID입니다.                                                                                                    |
-| Parent Span ID Column | 부모 스팬 ID입니다. 일반적으로 최상위 트레이스에서는 비어 있습니다.                                                                      |
-| Service Name Column   | 서비스 이름입니다.                                                                                                   |
-| Operation Name Column | 작업 이름입니다.                                                                                                    |
-| Start Time Column     | 트레이스 스팬의 프라이머리 시간 컬럼입니다. 스팬이 시작된 시점입니다.                                                                      |
-| Duration Time Column  | 스팬의 지속 시간입니다. 기본적으로 Grafana는 이를 밀리초 단위의 부동소수점 값으로 기대합니다. `Duration Unit` 드롭다운을 통해 변환이 자동으로 적용됩니다.            |
-| Duration Unit         | 지속 시간에 사용되는 시간 단위입니다. 기본값은 나노초입니다. 선택한 단위는 Grafana 요구사항에 맞게 밀리초 단위의 부동소수점 값으로 변환됩니다.                         |
-| Tags Column           | 스팬 태그입니다. 특정 Map 컬럼 유형이 필요하므로 OTel 기반 스키마를 사용하지 않는 경우 제외하십시오.                                                |
-| Service Tags Column   | 서비스 태그입니다. 특정 Map 컬럼 유형이 필요하므로 OTel 기반 스키마를 사용하지 않는 경우 제외하십시오.                                               |
+| 필드                    | 설명                                                                                                              |
+| --------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Trace Mode            | 쿼리를 Trace Search에서 Trace ID lookup으로 변경합니다.                                                                     |
+| Use OTel              | OpenTelemetry 컬럼을 활성화합니다. 선택한 OTel 스키마 버전에 정의된 컬럼을 사용하도록 선택된 컬럼을 덮어씁니다(컬럼 선택 비활성화).                             |
+| Trace ID Column       | 트레이스의 ID입니다.                                                                                                    |
+| Span ID Column        | 스팬 ID입니다.                                                                                                       |
+| Parent Span ID Column | 부모 스팬 ID입니다. 일반적으로 최상위 트레이스에서는 비어 있습니다.                                                                         |
+| Service Name Column   | 서비스 이름입니다.                                                                                                      |
+| Operation Name Column | 작업 이름입니다.                                                                                                       |
+| Start Time Column     | 트레이스 스팬의 프라이머리 시간 컬럼입니다. 스팬이 시작된 시점입니다.                                                                         |
+| Duration Time Column  | 스팬의 지속 시간입니다. 기본적으로 Grafana는 이를 밀리초 단위의 부동소수점 값으로 기대합니다. `Duration Unit` 드롭다운을 통해 변환이 자동으로 적용됩니다.               |
+| Duration Unit         | 지속 시간에 사용되는 시간 단위입니다. 기본값은 나노초입니다. 선택한 단위는 Grafana 요구사항에 맞게 밀리초 단위의 부동소수점 값으로 변환됩니다.                            |
+| Tags Column           | 스팬 태그입니다. 특정 Map 컬럼 유형이 필요하므로 OTel 기반 스키마를 사용하지 않는 경우 제외하십시오.                                                   |
+| Service Tags Column   | 서비스 태그입니다. 특정 Map 컬럼 유형이 필요하므로 OTel 기반 스키마를 사용하지 않는 경우 제외하십시오.                                                  |
 | Order By              | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                                 |
 | Limit                 | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외되지만, 대규모 트레이스 데이터셋에는 권장되지 않습니다. |
-| Filters               | `WHERE` 절에 적용할 필터 목록입니다.                                                                                     |
-| Trace ID              | 필터링할 트레이스 ID입니다. Trace ID 모드에서만 사용되며, 트레이스 ID [데이터 링크](#data-links)를 열 때도 사용됩니다.                             |
+| Filters               | `WHERE` 절에 적용할 필터 목록입니다.                                                                                        |
+| Trace ID              | 필터링할 트레이스 ID입니다. Trace ID 모드에서만 사용되며, 트레이스 ID [데이터 링크](#data-links)를 열 때도 사용됩니다.                                |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="예시 OTel 트레이스 쿼리" border />
 
@@ -188,7 +188,7 @@ Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
 </div>
 
 Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)를 사용해 새 쿼리로 연결할 수 있습니다.
-이 기능은 트레이스를 로그에 연결하고, 반대로 로그에서 트레이스로 연결할 수 있도록 ClickHouse 플러그인에서 활성화되어 있습니다. [데이터 소스 구성](/ko/integrations/connectors/data-visualization/grafana/config#opentelemetry)에서 로그와 트레이스 모두에 대해 OpenTelemetry를 구성하면 가장 효과적으로 작동합니다.
+이 기능은 트레이스를 로그에 연결하고, 반대로 로그에서 트레이스로 연결할 수 있도록 ClickHouse 플러그인에서 활성화되어 있습니다. [데이터 소스의 구성](/ko/integrations/connectors/data-visualization/grafana/config#opentelemetry)에서 로그와 트레이스 모두에 대해 OpenTelemetry를 구성하면 가장 효과적으로 작동합니다.
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   테이블의 트레이스 링크 예시
@@ -221,7 +221,7 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 &quot;**트레이스 보기**&quot;를 클릭하면 트레이스가 분할 패널로 열리고, &quot;**로그 보기**&quot;를 클릭하면 트레이스 ID로 필터링된 로그 쿼리가 열립니다.
 링크를 Explore 뷰가 아니라 대시보드에서 클릭한 경우에는 Explore 뷰의 새 탭에서 링크가 열립니다.
 
-쿼리 유형을 서로 전환할 때(로그에서 트레이스로, 트레이스에서 로그로) [logs](/ko/integrations/connectors/data-visualization/grafana/config#logs)와 [traces](/ko/integrations/connectors/data-visualization/grafana/config#traces) 모두에 대한 기본값이 구성되어 있어야 합니다. 동일한 쿼리 유형의 링크를 열 때는 쿼리를 그대로 복사하면 되므로 기본값이 필요하지 않습니다.
+쿼리 유형을 서로 전환할 때(로그에서 트레이스로, 트레이스에서 로그로) [로그](/ko/integrations/connectors/data-visualization/grafana/config#logs)와 [트레이스](/ko/integrations/connectors/data-visualization/grafana/config#traces) 모두에 대한 기본값이 구성되어 있어야 합니다. 동일한 쿼리 유형의 링크를 열 때는 쿼리를 그대로 복사하면 되므로 기본값이 필요하지 않습니다.
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   로그 쿼리(왼쪽 패널)에서 트레이스(오른쪽 패널)를 보는 예시

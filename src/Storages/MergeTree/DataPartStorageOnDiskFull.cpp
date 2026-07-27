@@ -51,7 +51,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) // NOLINT
 {
     /// Not owned: resolve where the dir would live (e.g. a broken-projection placeholder) without registering anything; directories come
-    /// into existence only through createProjection.
+    /// into existence only through createProjection. Not arena-scoped: callers use this as a short-lived filesystem handle (CHECK TABLE,
+    /// mutation hardlink/copy, existence probes); part-lifetime projection storage is created via getProjectionPartBuilder, which scopes
+    /// the arena itself.
     auto owned = tryGetProjection(dir_name);
     const auto projection = owned ? *owned : projectionPlacement(dir_name);
 

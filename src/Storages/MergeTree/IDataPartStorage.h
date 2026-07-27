@@ -376,6 +376,14 @@ public:
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
     };
 
+    /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever
+    /// any file it contains must be copied instead of hardlinked, the metadata version is overwritten,
+    /// or the version is dropped. When that happens none of the archive's logical members (of the part
+    /// or its packed projections) are hardlinked from the source, so the caller must not record them as
+    /// shared blobs. Full storage hardlinks members individually and has no such archive, so it never
+    /// copies a whole archive.
+    virtual bool cloneCopiesWholeArchive(const ClonePartParams & /*params*/) const { return false; }
+
     /// Materializes a copy of the part at 'to/dir_path' (FLAT projection siblings first, main dir last). `dst_disk` == nullptr means the
     /// part's own disk; a different disk cannot hardlink, so it always copies.
     virtual std::shared_ptr<IDataPartStorage> freeze(
@@ -424,6 +432,10 @@ public:
     /// If a dir exists at the placement, remove it with a log line: residue of a failed operation on a same-named
     /// part. Remote blobs are kept only when zero-copy replication may share them invisibly to the local refcount.
     virtual void removeProjectionResidue(const Projection & placement) = 0;
+
+    /// Hint for the preferred on-disk order of files. Packed storage uses it to lay out the
+    /// single archive; storages that keep files separately can ignore it (default no-op).
+    virtual void setPreferredFileOrder(const Strings & /*file_names*/) {}
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
@@ -512,6 +524,11 @@ private:
 inline bool isFullPartStorage(const IDataPartStorage & storage)
 {
     return storage.getType() == MergeTreeDataPartStorageType::Full;
+}
+
+inline bool isPackedPartStorage(const IDataPartStorage & storage)
+{
+    return storage.getType() == MergeTreeDataPartStorageType::Packed;
 }
 
 inline String IDataPartStorage::Projection::rootPath() const

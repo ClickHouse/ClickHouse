@@ -13,8 +13,9 @@ integration:
 import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/fr/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
 
-Vous pouvez utiliser ClickPipes pour ingérer des données depuis votre base de données Postgres source vers ClickHouse Cloud. La base de données Postgres source peut être hébergée sur site ou dans le cloud, notamment sur Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase et d&#39;autres services.
+Vous pouvez utiliser ClickPipes pour ingérer des données depuis votre base de données source Postgres vers ClickHouse Cloud. La base de données source Postgres peut être hébergée sur site ou dans le cloud, notamment sur Amazon RDS, Google Cloud SQL, Azure Database for Postgres, Supabase et d&#39;autres services.
 
 Les ClickPipes Postgres peuvent être déployés et gérés manuellement via la ClickPipes UI, ainsi que de manière programmatique à l&#39;aide d&#39;[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
 
@@ -54,13 +55,13 @@ Une fois votre base de données Postgres source configurée, vous pouvez poursui
 
 Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’avez pas encore de compte, vous pouvez vous inscrire [ici](https://cloud.clickhouse.com/).
 
-[//]: # "   TODO update image here"
+[//]: # "   TODO mettre à jour l’image ici"
 
 1. Dans la console ClickHouse Cloud, accédez à votre service ClickHouse Cloud.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Service ClickPipes" size="lg" border />
 
-2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe »
+2. Sélectionnez le bouton `Data Sources` dans le menu de gauche, puis cliquez sur « Set up a ClickPipe »
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Sélectionner les importations" size="lg" border />
 
@@ -88,6 +89,12 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 Vous pouvez utiliser AWS Private Link pour vous connecter à votre base de données source Postgres si elle est hébergée sur AWS. Cela est utile si vous
 souhaitez garder votre transfert de données privé.
 Vous pouvez suivre le [guide de configuration pour établir la connexion](/fr/integrations/clickpipes/aws-privatelink).
+
+<div id="optional-changing-tls-settings">
+  #### (Facultatif) Modification de la configuration TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-setting-up-ssh-tunneling">
   #### (Facultatif) Configuration du tunnel SSH
@@ -139,11 +146,15 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Sélectionner la base de données de destination" size="lg" border />
 
-7. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données Postgres source. Lors de la sélection des tables, vous pouvez également choisir de renommer les tables dans la base de données ClickHouse de destination et d’exclure certaines colonnes.
+7. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données source Postgres. Lors de la sélection des tables, vous pouvez également choisir de renommer les tables dans la base de données ClickHouse de destination et d’exclure certaines colonnes.
 
 <Warning>
   Si vous définissez dans ClickHouse une clé d’ordonnancement différente de la clé primaire de Postgres, n’oubliez pas de consulter toutes les [considérations](/fr/integrations/clickpipes/postgres/ordering-keys) à ce sujet
 </Warning>
+
+8. En outre, vous pouvez fournir une expression `PARTITION BY <expr>` personnalisée pour contrôler le [partitionnement des tables ClickHouse](/partitions) dans la destination.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/partition-by.png" alt="Partition by" size="lg" border />
 
 <div id="review-permissions-and-start-the-clickpipe">
   ### Vérifier les autorisations et démarrer le ClickPipe

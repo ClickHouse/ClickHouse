@@ -19,6 +19,8 @@ Private Service Connect (PSC) — это сетевая функция Google Cl
 <Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Обзор Private Service Connect" border />
 
 <Warning>
+  GCP Private Service Connect поддерживает только подключения, инициируемые из вашей GCP VPC к ClickHouse Cloud. Его нельзя использовать для подключений, инициируемых из ClickHouse Cloud к сервисам в вашей VPC, таким как [частная база данных](#connecting-to-a-remote-database).
+
   По умолчанию сервис ClickHouse недоступен через частное сервисное подключение, даже если подключение PSC одобрено и установлено; необходимо явно добавить PSC ID в список разрешённых на уровне экземпляра, выполнив [шаг](#add-endpoint-id-to-services-allow-list) ниже.
 </Warning>
 
@@ -94,7 +96,7 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
   ### Вариант 1: консоль ClickHouse Cloud
 </div>
 
-В консоли ClickHouse Cloud откройте сервис, к которому нужно подключиться через Private Service Connect, затем откройте меню **Settings**. Нажмите кнопку **Set up частную конечную точку**. Запишите **Service name** (`endpointServiceId`) и **DNS-имя** (`privateDnsHostname`) — они понадобятся на следующих этапах.
+В консоли ClickHouse Cloud откройте сервис, к которому нужно подключиться через Private Service Connect, затем откройте меню **Settings**. Нажмите кнопку **Set up private endpoint**. Запишите **Service name** (`endpointServiceId`) и **DNS-имя** (`privateDnsHostname`) — они понадобятся на следующих этапах.
 
 <Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="Частные конечные точки" border />
 
@@ -236,7 +238,7 @@ output "psc_connection_id" {
   ## Добавьте Endpoint ID в организацию ClickHouse Cloud
 </div>
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### Вариант 1: консоль ClickHouse Cloud
 </div>
 
@@ -303,7 +305,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 Необходимо добавить Endpoint ID в список разрешённых для каждого экземпляра, который должен быть доступен через Private Service Connect.
 
-<div id="option-1-clickhouse-cloud-console">
+<div id="option-1-clickhouse-cloud-console-1">
   ### Вариант 1: консоль ClickHouse Cloud
 </div>
 
@@ -471,13 +473,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X GET -H "Content-Type: appl
   ### Подключение к удалённой базе данных
 </div>
 
-Предположим, вы хотите использовать табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud и подключиться к своей базе данных, размещённой в GCP. GCP PSC нельзя использовать для безопасной организации такого подключения. PSC — это одностороннее, однонаправленное соединение. Оно позволяет вашей внутренней сети или GCP VPC безопасно подключаться к ClickHouse Cloud, но не позволяет ClickHouse Cloud подключаться к вашей внутренней сети.
-
 Согласно [документации GCP Private Service Connect](https://cloud.google.com/vpc/docs/private-service-connect):
 
 > Сервисно-ориентированная архитектура: сервисы-производители публикуются через балансировщики нагрузки, которые предоставляют сети VPC-потребителя один IP-адрес. Трафик потребителя, обращающийся к сервисам производителя, является однонаправленным и может получать доступ только к IP-адресу сервиса, а не ко всей VPC-сети, связанной через пиринг.
 
-Для этого настройте правила firewall в вашей GCP VPC так, чтобы разрешить подключения из ClickHouse Cloud к вашему внутреннему/приватному сервису базы данных. См. [IP-адреса egress по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
+Чтобы подключить табличные функции [MySQL](/ru/reference/functions/table-functions/mysql) или [PostgreSQL](/ru/reference/functions/table-functions/postgresql) в ClickHouse Cloud к базе данных, размещённой в вашей GCP VPC, настройте правила firewall в вашей GCP VPC так, чтобы разрешить подключения из ClickHouse Cloud. См. [IP-адреса egress по умолчанию для регионов ClickHouse Cloud](/ru/products/cloud/guides/data-sources/cloud-endpoints-api), а также [доступные статические IP-адреса](https://api.clickhouse.cloud/static-ips.json).
 
 <div id="more-information">
   ## Дополнительная информация
