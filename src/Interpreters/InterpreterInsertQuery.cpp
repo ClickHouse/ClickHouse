@@ -567,7 +567,7 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
     return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
-static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context)
+void InterpreterInsertQuery::applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context)
 {
     const Settings & settings = select_context->getSettingsRef();
 
