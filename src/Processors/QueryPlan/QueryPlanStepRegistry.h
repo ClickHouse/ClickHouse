@@ -25,7 +25,9 @@ public:
     /// its payload adds the next version here, so a change can never reach the wire unclassified.
     struct PayloadFormat
     {
-        PayloadChange change;
+        /// Defaulted to the strict one: a format whose entry says nothing must not let older
+        /// readers prefix-read it.
+        PayloadChange change = PayloadChange::Restructure;
         /// The oldest plan version that may carry this format. 0 means any: a reader that skips
         /// what it does not know needs nothing from this format.
         UInt64 min_plan_version = 0;
