@@ -3539,13 +3539,24 @@ public:
                         return {false, true, false, false};
 
                     // `intDiv(unsigned, signed-integer-const)` reinterprets the dividend through a signed
-                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`); a Float divisor
-                    // computes through floating point and never wraps. An unbounded range over an unsigned
-                    // domain always contains the discontinuity, so it is never always-monotonic; report
-                    // monotonicity only when an endpoint keeps the range on one side of it.
+                    // cast (see `DivideIntegralImpl`/`intDivRangeCrossesSignedWrap`). An unbounded range
+                    // over an unsigned domain always contains the discontinuity, so it is never
+                    // always-monotonic; report monotonicity only when an endpoint keeps the range on one
+                    // side of it.
                     if (name_view == "intDiv" && isUInt(arg_type) && isInt(divisor_type))
                     {
                         if (intDivRangeCrossesSignedWrap(arg_type, left_point, right_point))
+                            return {false, true, false, false};
+                        return {true, is_constant_positive, false};
+                    }
+
+                    // `intDiv(signed, -1)` folds the signed minimum onto itself instead of mapping it to
+                    // the maximum (see `intDivWrapsInsteadOfThrowing`), so it is non-monotonic on any range
+                    // containing that minimum. The whole domain of a signed type always contains its
+                    // minimum, so such a division is never always-monotonic.
+                    if (name_view == "intDiv" && intDivWrapsInsteadOfThrowing(arg_type, divisor_type, constant))
+                    {
+                        if (intDivRangeContainsResultWrapPoint(arg_type, left_point, right_point))
                             return {false, true, false, false};
                         return {true, is_constant_positive, false};
                     }
@@ -3715,6 +3726,17 @@ public:
                     return {true, is_constant_positive, false, is_strict};
                 }
 
+                // `intDiv(signed, -1)` folds the signed minimum onto itself instead of mapping it to the
+                // maximum (see `intDivWrapsInsteadOfThrowing`): a range containing that minimum is
+                // non-monotonic, so reject it (no pruning); a range excluding it is monotonic on that
+                // range, but never on the whole domain, which always contains the minimum.
+                if (name_view == "intDiv" && intDivWrapsInsteadOfThrowing(arg_type, divisor_type, constant))
+                {
+                    if (intDivRangeContainsResultWrapPoint(arg_type, left_point, right_point))
+                        return {false, true, false, false};
+                    return {true, is_constant_positive, false, is_strict};
+                }
+
                 // Mirror case: a signed dividend with an unsigned constant divisor whose high bit
                 // is set reinterprets the divisor as negative (see `intDivConstReinterpretsNegative`),
                 // so the function is monotonic decreasing even though the raw constant looks positive.
@@ -3869,6 +3891,46 @@ public:
         const size_t divisor_width_bytes = divisor_type->getSizeOfValueInMemory();
         const Field wrap_field(UInt256(1) << (8 * divisor_width_bytes - 1));
         return accurateLessOrEqual(wrap_field, constant);
+    }
+
+    /// `intDiv(x, -1)` is mathematically `-x`, which is not representable at the signed minimum of the
+    /// computation width: `TYPE_MIN / -1` overflows and folds back onto `TYPE_MIN`, while `TYPE_MIN + 1`
+    /// maps to `TYPE_MAX`. So on a range containing that minimum the function is neither non-decreasing
+    /// nor non-increasing, and reporting monotonicity makes key analysis drop matching rows.
+    ///
+    /// The generic `DivideIntegralImpl::apply` throws `ILLEGAL_DIVISION` in that situation, but
+    /// `DivideIntegralByConstantImpl::vectorConstant` (`src/Functions/intDiv.cpp`) short-circuits
+    /// `b == -1` and deliberately avoids the FPE, silently producing the wrapped value instead. Only
+    /// operand pairs taking that vectorized path can therefore be mis-pruned, and those are exactly the
+    /// registered specializations with a signed dividend: an `Int32`/`Int64` dividend and a native signed
+    /// divisor. Every other pair throws (on `ENGINE=Memory` too, i.e. at runtime), so it is not a
+    /// monotonicity problem. Returns true when this operand pair divides by an effective `-1` through
+    /// that FPE-suppressing path. `arg_type` and `divisor_type` are already stripped of
+    /// Nullable/LowCardinality.
+    static bool intDivWrapsInsteadOfThrowing(const DataTypePtr & arg_type, const DataTypePtr & divisor_type, const Field & constant)
+    {
+        if (!isInt32(arg_type) && !isInt64(arg_type))
+            return false;
+        if (!isNativeInt(divisor_type))
+            return false;
+        return accurateEquals(constant, Field(-1));
+    }
+
+    /// Does [left_point, right_point] contain the signed minimum of the computation width, i.e. the single
+    /// input at which `intDiv(x, -1)` wraps (see `intDivWrapsInsteadOfThrowing`)? The result width of
+    /// integer division is the dividend's width (`ResultOfIntegerDivision` in `NumberTraits.h`), so the
+    /// wrap point is `-2^(8 * dividend_width - 1)`. A null endpoint means the range is unbounded on that
+    /// side, which is decided per side: unbounded on the left reaches the minimum, unbounded on the right
+    /// does not by itself (a range like `[0, +Inf)` genuinely excludes it and must keep being pruned).
+    /// `arg_type` is the signed dividend type (already stripped of Nullable/LowCardinality).
+    static bool intDivRangeContainsResultWrapPoint(const DataTypePtr & arg_type, const Field & left_point, const Field & right_point)
+    {
+        const size_t width_bytes = arg_type->getSizeOfValueInMemory();
+        const Field wrap_field(-(Int256(1) << (8 * width_bytes - 1)));
+
+        const bool left_at_or_below = left_point.isNull() || accurateLessOrEqual(left_point, wrap_field);
+        const bool right_at_or_above = right_point.isNull() || accurateLessOrEqual(wrap_field, right_point);
+        return left_at_or_below && right_at_or_above;
     }
 
 private:

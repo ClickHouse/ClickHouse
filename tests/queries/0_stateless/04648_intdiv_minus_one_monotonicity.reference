@@ -1,0 +1,30 @@
+wrong results: keyed count must equal the Memory oracle
+Int64 / toInt64(-1)	1	1
+Int64 / toInt64(-1), IN	1	1
+Int64 / toInt32(-1)	1	1
+Int64 / toInt16(-1)	1	1
+Int64 / toInt8(-1)	1	1
+Int32 / toInt32(-1)	1	1
+Int32 / toInt16(-1)	1	1
+Int32 / toInt8(-1)	1	1
+Int32 / toInt64(-1)	1	1
+Nullable(Int64) / toInt64(-1)	1	1
+LowCardinality(Int64) / toInt64(-1)	1	1
+wrong ORDER BY: the keyed order must equal the Memory oracle
+ORDER BY intDiv(a, -1)	[-9223372036854775808,-5,5,9223372036854775807]	[-9223372036854775808,-5,5,9223372036854775807]
+preserved pruning: the guard must not fire outside the wrap
+single-point range at the minimum	2	2
+ordinary intDiv still prunes	1
+range excluding the minimum still prunes	1
+range excluding the minimum answers	1	1
+divisor -2 still prunes	1
+divisor -2 answers	1	1
+UInt8 / toUInt8(255)	4	4
+UInt16 / toUInt16(65535)	4	4
+Float divisor still prunes	1
+Float divisor answers	1	1
+Float divisor keeps read-in-order	1
+Int128 divisor keeps read-in-order	1
+Int16 dividend keeps read-in-order	1
+half-bounded range prunes exactly	1
+half-bounded range answers	17	17
