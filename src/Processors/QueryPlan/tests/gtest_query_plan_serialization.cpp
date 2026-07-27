@@ -135,6 +135,7 @@ void registerStepsOnce()
         /// A step whose payload format v2 is must-understand: requires plan version 5.
         QueryPlanStepRegistry::StepSerializationInfo info;
         info.max_step_format_version = 2;
+        info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Restructure;
         info.min_plan_version_for_step_version[2] = 5;
         QueryPlanStepRegistry::instance().registerStep("TestGatedStep", TestSourceStep::deserialize, std::move(info));
 
@@ -394,6 +395,42 @@ TEST(QueryPlanSerialization, EnvelopeIsCopiedWhenTheStreamIsNotFullyBuffered)
     auto plan_and_sets = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
     auto restored = QueryPlan::makeSets(std::move(plan_and_sets), getContext().context);
     EXPECT_EQ(serializePlan(restored), bytes);
+}
+
+TEST(QueryPlanSerialization, PayloadFormatBumpMustSayWhatChanged)
+{
+    registerStepsOnce();
+    auto & registry = QueryPlanStepRegistry::instance();
+
+    /// Raising the maximum without classifying the change is refused: an unclassified bump is
+    /// what lets an older reader prefix-read a restructured payload.
+    {
+        QueryPlanStepRegistry::StepSerializationInfo info;
+        info.max_step_format_version = 2;
+        EXPECT_THROW(
+            registry.registerStep("TestUnclassifiedBump", TestSourceStep::deserialize, std::move(info)),
+            Exception);
+    }
+
+    /// A restructure has to name the plan version that carries it, or older readers are never
+    /// told to reject the plan.
+    {
+        QueryPlanStepRegistry::StepSerializationInfo info;
+        info.max_step_format_version = 2;
+        info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Restructure;
+        EXPECT_THROW(
+            registry.registerStep("TestUngatedRestructure", TestSourceStep::deserialize, std::move(info)),
+            Exception);
+    }
+
+    /// An append needs nothing beyond the classification: older readers prefix-read it.
+    {
+        QueryPlanStepRegistry::StepSerializationInfo info;
+        info.max_step_format_version = 2;
+        info.payload_changes[2] = QueryPlanStepRegistry::PayloadChange::Append;
+        EXPECT_NO_THROW(
+            registry.registerStep("TestClassifiedAppend", TestSourceStep::deserialize, std::move(info)));
+    }
 }
 
 TEST(QueryPlanSerialization, QueryPicksTheWriterVersion)

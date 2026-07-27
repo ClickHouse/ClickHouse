@@ -25,6 +25,24 @@ void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFun
 {
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
+
+    for (UInt64 format_version = 2; format_version <= info.max_step_format_version; ++format_version)
+    {
+        auto change = info.payload_changes.find(format_version);
+        if (change == info.payload_changes.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Query plan step '{}' declares payload format version {} without saying how it "
+                "differs from {}", name, format_version, format_version - 1);
+
+        /// A restructured payload cannot be prefix-read, so readers that know only older formats
+        /// have to reject the plan instead. Only the plan-version mapping makes them do that.
+        if (change->second == PayloadChange::Restructure && !info.min_plan_version_for_step_version.contains(format_version))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Query plan step '{}' restructured its payload at format version {}, so that "
+                "version must map to a minimum plan version; older readers would prefix-read it "
+                "otherwise", name, format_version);
+    }
+
     steps[name] = Entry{std::move(create_function), std::move(info)};
 }
 

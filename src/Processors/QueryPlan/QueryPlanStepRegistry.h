@@ -17,9 +17,22 @@ public:
     /// ignore bumps only the step format version. A change an old reader must understand to
     /// execute correctly maps that step format version to a minimum plan version here, and the
     /// writer must not emit it for older streams.
+    /// How one payload format version differs from the one before it. A reader that knows an
+    /// older format prefix-reads an `Append` and lets the frame skip the rest, which would give it
+    /// garbage for a `Restructure`.
+    enum class PayloadChange
+    {
+        Append,
+        Restructure,
+    };
+
     struct StepSerializationInfo
     {
         UInt64 max_step_format_version = 1;
+        /// Required for every format version from 2 up to the maximum. Raising the maximum without
+        /// saying what changed is what lets an older reader misread a restructured payload, so
+        /// registration refuses it.
+        std::map<UInt64, PayloadChange> payload_changes;
         /// step format version -> minimum plan version that may carry it.
         /// Versions not listed are ignorable-extended and safe to prefix-read.
         std::map<UInt64, UInt64> min_plan_version_for_step_version;
