@@ -378,10 +378,10 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t want, bool allow_sibling_wait)
+ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t max_serve, bool allow_sibling_wait)
 {
     chassert(!cache_chain.empty());
-    const ByteRange window{window_offset, want};
+    const ByteRange window{window_offset, max_serve};
     /// Resolve only the window START, block by block. Probe each tier there (front = fastest); the
     /// first hit serves a block-sized slice straight from cache. If every tier misses, populate the
     /// start cell of each writing tier and serve one block from the fetch. Coarse fetch, fine serve:
@@ -392,6 +392,9 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
     const StoredObject & object = start_piece.front().object;
     const size_t object_file_offset = window_offset - start_piece.front().object_offset;
 
+    /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
+    auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
+
     struct MissTier { ICacheProvider * cache; ByteRange cell; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     for (auto & cache : cache_chain)
@@ -401,8 +404,7 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
         auto r = cursor->lookAt(object, object_file_offset, window_offset);
         if (r.kind == ICacheProvider::Resolution::Kind::Hit && r.reader)
         {
-            const size_t len = std::min({block_size, want, r.range.end() - window_offset});
-            return r.reader->read(ByteRange{window_offset, len});
+            return r.reader->read(ByteRange{window_offset, serve_len(r.range.end())});
         }
         if (r.kind == ICacheProvider::Resolution::Kind::Miss)
             miss_tiers.push_back(MissTier{cache.get(), r.range});
@@ -433,12 +435,12 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
                     stats.add(Stats::SiblingWaits);
                     lead->waitAndReadSiblingLed(ByteRange{window_offset, 1});
                     claimed.clear();
-                    return serveThroughCaches(window_offset, want, /*allow_sibling_wait=*/false);
+                    return serveThroughCaches(window_offset, max_serve, /*allow_sibling_wait=*/false);
                 }
 
     /// No writing tier (all bypass): stream the window straight from source, no populate.
     if (claimed.empty())
-        return readSource(window_offset, want).slice(window);
+        return readSource(window_offset, max_serve).slice(window);
 
     /// Fetch the whole start cells (across the objects they span), populate each, serve one block.
     size_t fetch_lo = window_offset;
@@ -468,8 +470,7 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
         c.writer->write(fetched.slice(write_range));
     }
 
-    const size_t serve_len = std::min({block_size, want, fetched_end - window_offset});
-    return fetched.slice(ByteRange{window_offset, serve_len});
+    return fetched.slice(ByteRange{window_offset, serve_len(fetched_end)});
 }
 
 void ReaderExecutor::dropLongConnection()
@@ -614,22 +615,23 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     const size_t position_physical = toPhysical(position);
 
-    /// Cap the window at the file end and the `read_until` bound.
-    size_t want = window_size;
+    /// The most this window may serve: `window_size`, clamped to the file end and the `read_until`
+    /// bound. The cache path serves at most `block_size` of it; the no-cache path serves it whole.
+    size_t max_serve = window_size;
     if (!offset_map.hasUnknownSize())
-        want = std::min(want, offset_map.totalSize() - position_physical);
+        max_serve = std::min(max_serve, offset_map.totalSize() - position_physical);
     chassert(!read_until || *read_until >= position);
-    if (read_until && *read_until - position < want)
-        want = *read_until - position;
-    if (want == 0)
+    if (read_until && *read_until - position < max_serve)
+        max_serve = *read_until - position;
+    if (max_serve == 0)
     {
         reached_eof = true;
         return {};
     }
 
     ChainedBuffers chain = cache_chain.empty()
-        ? readSource(position_physical, want)
-        : serveThroughCaches(position_physical, want);
+        ? readSource(position_physical, max_serve)
+        : serveThroughCaches(position_physical, max_serve);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)

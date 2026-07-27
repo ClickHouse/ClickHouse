@@ -230,7 +230,7 @@ private:
     /// cache), and populate. A sibling downloading the window start itself is waited for ONCE -
     /// holding no claims - then the window is re-probed; if it still leads the start, it is fetched
     /// through. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers serveThroughCaches(size_t window_offset, size_t want, bool allow_sibling_wait = true);
+    ChainedBuffers serveThroughCaches(size_t window_offset, size_t max_serve, bool allow_sibling_wait = true);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
