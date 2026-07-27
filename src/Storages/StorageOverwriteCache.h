@@ -394,11 +394,10 @@ private:
     String serializeRowColumns(const RowData & row, const std::vector<size_t> & positions, SegmentColumnCache & cache) const;
 
     /// Winner selection compares values in place: the version and tie-break columns are never compressed,
-    /// so no row payload is ever materialized to pick a winner.
+    /// so no row payload is ever materialized to pick a winner. A row that ties on both never replaces the
+    /// row already stored, whatever its payload is.
     int compareWinner(const Block & block, size_t lhs_row, size_t rhs_row) const;
     int compareWinner(const Block & block, size_t lhs_row, const RowData & rhs) const;
-    UInt128 rowDigest(const Block & block, size_t row) const;
-    UInt128 rowDigest(const RowData & row, SegmentColumnCache & cache) const;
 
     /// The hash tables index themselves by the low bits, so the shard is chosen from the high ones.
     static size_t shardIndex(size_t hash) { return hash >> 56; }

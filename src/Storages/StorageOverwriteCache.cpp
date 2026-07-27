@@ -27,7 +27,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/SipHash.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/quoteString.h>
 
@@ -36,6 +36,11 @@
 #include <iterator>
 #include <limits>
 #include <utility>
+
+namespace ProfileEvents
+{
+extern const Event OverwriteCacheEqualVersionTies;
+}
 
 namespace DB
 {
@@ -527,22 +532,6 @@ void StorageOverwriteCache::insertValueIntoColumn(
     column.insertFrom(cache.get(*row.segment, position), row.segment_row);
 }
 
-UInt128 StorageOverwriteCache::rowDigest(const Block & block, size_t row) const
-{
-    SipHash hash;
-    for (size_t position = 0; position < block.columns(); ++position)
-        block.getByPosition(position).column->updateHashWithValue(row, hash);
-    return hash.get128();
-}
-
-UInt128 StorageOverwriteCache::rowDigest(const RowData & row, SegmentColumnCache & cache) const
-{
-    SipHash hash;
-    for (size_t position = 0; position < sample_block.columns(); ++position)
-        cache.get(*row.segment, position).updateHashWithValue(row.segment_row, hash);
-    return hash.get128();
-}
-
 int StorageOverwriteCache::compareWinner(const Block & block, size_t lhs_row, size_t rhs_row) const
 {
     const auto & version = *block.getByPosition(version_position).column;
@@ -556,9 +545,6 @@ int StorageOverwriteCache::compareWinner(const Block & block, size_t lhs_row, si
             return result;
     }
 
-    if (rowDigest(block, lhs_row) != rowDigest(block, rhs_row))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Conflicting rows for the same `OverwriteCache` key have identical version and tie-break values");
     return 0;
 }
 
@@ -576,10 +562,6 @@ int StorageOverwriteCache::compareWinner(const Block & block, size_t lhs_row, co
             return result;
     }
 
-    SegmentColumnCache cache;
-    if (rowDigest(block, lhs_row) != rowDigest(rhs, cache))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Conflicting rows for the same `OverwriteCache` key have identical version and tie-break values");
     return 0;
 }
 
@@ -753,13 +735,25 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
     using CandidateMap = HashMapWithSavedHash<std::string_view, UInt32, StringViewHash>;
     CandidateMap candidates;
     candidates.reserve(input_rows);
+    /// A row that ties on version and tie-break loses to the row already chosen. That is a silent
+    /// resolution of an ambiguity in the data, so it is counted for the user to notice.
+    size_t equal_version_ties = 0;
     for (size_t row = 0; row < input_rows; ++row)
     {
         CandidateMap::LookupResult it = nullptr;
         bool inserted = false;
         candidates.emplace(primary_keys.at(row), it, inserted, primary_keys.hashes[row]);
-        if (inserted || compareWinner(block, row, it->getMapped()) > 0)
+        if (inserted)
+        {
             it->getMapped() = static_cast<UInt32>(row);
+            continue;
+        }
+
+        const int comparison = compareWinner(block, row, it->getMapped());
+        if (comparison > 0)
+            it->getMapped() = static_cast<UInt32>(row);
+        else if (comparison == 0)
+            ++equal_version_ties;
     }
 
     struct Mutation
@@ -807,13 +801,21 @@ void StorageOverwriteCache::insertBlock(const Block & input_block)
         if (!current)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Corrupted `OverwriteCache` primary index");
 
-        if (compareWinner(block, mutation.source_row, *current) <= 0)
+        const int comparison = compareWinner(block, mutation.source_row, *current);
+        if (comparison <= 0)
+        {
+            if (comparison == 0)
+                ++equal_version_ties;
             continue;
+        }
 
         mutation.entry_id = *entry;
         mutation.previous = current;
         mutations.push_back(std::move(mutation));
     }
+
+    if (equal_version_ties)
+        ProfileEvents::increment(ProfileEvents::OverwriteCacheEqualVersionTies, equal_version_ties);
 
     if (mutations.empty())
         return;

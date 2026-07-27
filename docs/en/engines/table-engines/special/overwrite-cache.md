@@ -40,10 +40,13 @@ For each composite key, an inserted row is handled as follows:
 1. A greater version replaces the current row.
 2. A lower version is ignored.
 3. Equal versions compare `equal_version_tiebreak_columns` in declaration order.
-4. Equal winner metadata and an identical payload is an idempotent no-op.
-5. Equal winner metadata and a different payload causes the complete inserted block to be rejected.
+4. A row that is equal on both the version and the tie-break columns is ignored, whatever its payload is.
 
-Conflict and memory-limit validation occurs before publishing mutations from an inserted block. `OverwriteCache` does not evict rows when its memory limit is reached.
+Rule 4 makes a repeated insert of the same data a no-op, so re-delivering rows from the upstream source is harmless. It also means that rows which are genuinely different but indistinguishable to winner selection do not fail the insert: the row already stored wins. Which row that is depends on insertion order, and insertion order is not stable — a `INSERT ... SELECT` is divided into blocks by its pipeline, and concurrent inserts are ordered by arrival. Two caches rebuilt from the same upstream source can therefore hold different payloads for such a key. If the result has to be reproducible, `equal_version_tiebreak_columns` must fully determine the winner.
+
+The `OverwriteCacheEqualVersionTies` profile event counts inserted rows ignored by rule 4. A nonzero value on a table whose tie-break columns are meant to be unique points at duplicate rows in the upstream query.
+
+Memory-limit validation occurs before publishing mutations from an inserted block. `OverwriteCache` does not evict rows when its memory limit is reached.
 
 ## Concurrent publication {#concurrent-publication}
 

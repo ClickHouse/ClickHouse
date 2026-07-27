@@ -91,15 +91,6 @@ FROM VALUES(
     (1, 100, 'A'),
     (9, 999, 'missing'));
 
-INSERT INTO overwrite_cache VALUES (1, 100, 'A', 2, 2, 'conflict'); -- { serverError BAD_ARGUMENTS }
-INSERT INTO overwrite_cache VALUES
-    (1, 400, 'D', 1, 1, 'conflict-a'),
-    (1, 400, 'D', 1, 1, 'conflict-b'); -- { serverError BAD_ARGUMENTS }
-SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 400 AND tag = 'D';
-INSERT INTO overwrite_cache VALUES
-    (1, 100, 'A', 3, 1, 'must-not-commit'),
-    (1, 300, 'B', 1, 1, 'conflict-existing'); -- { serverError BAD_ARGUMENTS }
-SELECT payload FROM overwrite_cache WHERE website_type = 1 AND user_id = 100 AND tag = 'A';
 SYSTEM ENABLE FAILPOINT overwrite_cache_throw_during_publish;
 INSERT INTO overwrite_cache VALUES
     (1, 500, 'E', 1, 1, 'must-roll-back'),
@@ -144,7 +135,7 @@ INSERT INTO overwrite_cache_small VALUES (1, 1, repeat('x', 200000)), (2, 1, rep
 SELECT payload FROM overwrite_cache_small WHERE key = 1;
 
 INSERT INTO overwrite_cache_small VALUES (1, 1, 'same-version-a');
-INSERT INTO overwrite_cache_small VALUES (1, 1, 'same-version-b'); -- { serverError BAD_ARGUMENTS }
+INSERT INTO overwrite_cache_small VALUES (1, 1, 'same-version-b');
 SELECT payload FROM overwrite_cache_small WHERE key = 1;
 
 TRUNCATE TABLE overwrite_cache_small;
