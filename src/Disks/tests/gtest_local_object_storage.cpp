@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -728,7 +729,8 @@ TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
     constexpr size_t increments_per_thread = 25;
 
     std::atomic<size_t> successful_writes{0};
-    std::atomic<bool> unexpected_failure{false};
+    std::mutex writer_failure_mutex;
+    std::exception_ptr writer_failure;
 
     auto writer_loop = [&]
     {
@@ -748,7 +750,9 @@ TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
                 }
                 catch (...)
                 {
-                    unexpected_failure.store(true, std::memory_order_relaxed);
+                    std::lock_guard lock(writer_failure_mutex);
+                    if (!writer_failure)
+                        writer_failure = std::current_exception();
                     return;
                 }
                 successful_writes.fetch_add(1, std::memory_order_relaxed);
@@ -763,7 +767,9 @@ TEST(LocalObjectStorage, ConcurrentConditionalWritesDoNotLoseUpdates)
     for (auto & thread : threads)
         thread.join();
 
-    ASSERT_FALSE(unexpected_failure.load()) << "a conditional write failed for an unexpected reason";
+    if (writer_failure)
+        std::rethrow_exception(writer_failure);
+
     EXPECT_EQ(successful_writes.load(), num_threads * increments_per_thread);
     EXPECT_EQ(readObject(storage, path).data, std::to_string(num_threads * increments_per_thread))
         << "concurrent compare-and-swap writers lost an update";
