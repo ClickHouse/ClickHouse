@@ -29,7 +29,26 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-static std::string getOrCreateCustomDisk(
+namespace
+{
+
+bool isDiskObjectStorage(DiskPtr disk)
+{
+    if (auto delegate_disk = disk->getDelegateDiskIfExists())
+        disk = delegate_disk;
+
+    return std::dynamic_pointer_cast<DiskObjectStorage>(disk) != nullptr;
+}
+
+bool isDiskBackup(DiskPtr disk)
+{
+    if (auto delegate_disk = disk->getDelegateDiskIfExists())
+        disk = delegate_disk;
+
+    return std::dynamic_pointer_cast<DiskBackup>(disk) != nullptr;
+}
+
+std::string getOrCreateCustomDisk(
     const ASTs & disk_args,
     const std::string & serialization,
     ContextPtr context,
@@ -128,7 +147,7 @@ static std::string getOrCreateCustomDisk(
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
 
-    if (!attach && !std::dynamic_pointer_cast<DiskObjectStorage>(disk) && !std::dynamic_pointer_cast<DiskBackup>(disk))
+    if (!attach && !isDiskObjectStorage(disk) && !isDiskBackup(disk))
     {
         static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
         auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
@@ -147,6 +166,8 @@ static std::string getOrCreateCustomDisk(
     }
 
     return disk_name;
+}
+
 }
 
 class DiskConfigurationFlattener
