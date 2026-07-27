@@ -345,6 +345,8 @@ Only one `GROUP BY` key can have the `WITH CLUSTER` modifier. The supported clus
 - A 2-element numeric tuple **inline expression** `(x, y)` — `<distance>` is interpreted as a Euclidean threshold; rows are merged when `sqrt((x1-x2)^2 + (y1-y2)^2) <= <distance>`. Tuples of any other arity are rejected. A pre-built `Tuple(...)` *column* must be unpacked at the call site (`GROUP BY (p.1, p.2) WITH CLUSTER d`); only the inline form is recognized for 2D.
 - `String` or `FixedString` — `<distance>` is interpreted as a non-negative integer maximum edit (Levenshtein) distance over raw bytes.
 
+Any of the above may be wrapped in `LowCardinality(...)`: the wrapper is a storage detail, so `LowCardinality(String)` and `LowCardinality(UInt64)` cluster exactly like `String` and `UInt64`, and the result keeps the `LowCardinality` type. `Nullable` keys are not supported.
+
 `WITH CLUSTER` cannot be combined with `WITH ROLLUP`, `WITH CUBE`, `GROUPING SETS` or `WITH TOTALS` — these finalize aggregate states before the cluster step can merge them.
 
 **Example**

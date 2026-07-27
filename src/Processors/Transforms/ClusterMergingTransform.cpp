@@ -8,6 +8,7 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/levenshteinDistance.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/Port.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -157,6 +158,31 @@ constexpr bool USE_BUCKET_OPTIMIZATION = true;
 /// which can split numerically-adjacent values into different buckets. Translate by
 /// the column minimum so values fit Float64's 53-bit integer-exact range; throw if
 /// the post-translation range still exceeds 2^53.
+/// A cluster key declared as `LowCardinality(T)` keeps its wrapper through aggregation, but
+/// every value reader below dispatches on the physical type (`ColumnVector`, `ColumnDecimal`,
+/// contiguous string data). Materialize the key column once and read it through the unwrapped
+/// type; the merged output columns keep their original `LowCardinality` form, so the result
+/// type of the query is unaffected.
+struct ClusterKeyView
+{
+    /// Keeps the materialized column alive when the key was `LowCardinality`.
+    ColumnPtr materialized;
+    const IColumn * column = nullptr;
+    DataTypePtr type;
+};
+
+ClusterKeyView makeClusterKeyView(const IColumn & column, const DataTypePtr & type)
+{
+    if (!type->lowCardinality())
+        return {nullptr, &column, type};
+
+    ClusterKeyView view;
+    view.materialized = column.convertToFullColumnIfLowCardinality();
+    view.column = view.materialized.get();
+    view.type = removeLowCardinality(type);
+    return view;
+}
+
 void readClusterValues(
     const IColumn & col,
     const DataTypePtr & type,
@@ -376,7 +402,7 @@ Chunk ClusterMergingTransform::generate()
 
     const auto & header = input.getHeader();
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
-    if (isStringOrFixedString(header.getByPosition(cluster_key_pos).type))
+    if (isStringOrFixedString(removeLowCardinality(header.getByPosition(cluster_key_pos).type)))
         return generateString();
 
     return generate1D();
@@ -507,18 +533,18 @@ Chunk ClusterMergingTransform::generate1D()
     /// wrongly rejected with `BAD_ARGUMENTS` even though no arithmetic is needed.
     std::vector<Float64> cluster_vals;
     std::vector<Int64> exact_bucket_ids;
+    const auto key_view = makeClusterKeyView(*merged_columns[cluster_key_pos],
+                                             header.getByPosition(cluster_key_pos).type);
     if (cluster_distance > 0)
     {
-        readClusterValues(*merged_columns[cluster_key_pos],
-                          header.getByPosition(cluster_key_pos).type, total_rows, cluster_vals);
+        readClusterValues(*key_view.column, key_view.type, total_rows, cluster_vals);
         Float64 max_abs = 0;
         for (size_t i = 0; i < total_rows; ++i)
             max_abs = std::max(max_abs, std::fabs(cluster_vals[i]));
         checkBucketQuotientPrecision(max_abs, cluster_distance);
     }
     else
-        readExactBucketKeys(*merged_columns[cluster_key_pos],
-                            header.getByPosition(cluster_key_pos).type, total_rows, exact_bucket_ids);
+        readExactBucketKeys(*key_view.column, key_view.type, total_rows, exact_bucket_ids);
 
     for (size_t i = 0; i < total_rows; ++i)
     {
@@ -819,10 +845,12 @@ Chunk ClusterMergingTransform::generate2D()
     std::vector<Float64> y_vals;
     std::vector<Int64> x_exact;
     std::vector<Int64> y_exact;
+    const auto x_view = makeClusterKeyView(x_col, header.getByPosition(x_pos).type);
+    const auto y_view = makeClusterKeyView(y_col, header.getByPosition(y_pos).type);
     if (d > 0)
     {
-        readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals);
-        readClusterValues(y_col, header.getByPosition(y_pos).type, total_rows, y_vals);
+        readClusterValues(*x_view.column, x_view.type, total_rows, x_vals);
+        readClusterValues(*y_view.column, y_view.type, total_rows, y_vals);
 
         /// The cell index is `floor(coord / a)`, so guard the coordinate/cell-side ratio.
         Float64 max_abs_coord = 0;
@@ -835,8 +863,8 @@ Chunk ClusterMergingTransform::generate2D()
     }
     else
     {
-        readExactBucketKeys(x_col, header.getByPosition(x_pos).type, total_rows, x_exact);
-        readExactBucketKeys(y_col, header.getByPosition(y_pos).type, total_rows, y_exact);
+        readExactBucketKeys(*x_view.column, x_view.type, total_rows, x_exact);
+        readExactBucketKeys(*y_view.column, y_view.type, total_rows, y_exact);
     }
 
     for (size_t i = 0; i < total_rows; ++i)
@@ -1044,7 +1072,9 @@ Chunk ClusterMergingTransform::generateString()
     ensureAggregateStateOwnership(merged_columns, aggregates_mask);
 
     size_t cluster_key_pos = header.getPositionByName(cluster_key_names[0]);
-    const IColumn & key_col = *merged_columns[cluster_key_pos];
+    const auto key_view = makeClusterKeyView(*merged_columns[cluster_key_pos],
+                                             header.getByPosition(cluster_key_pos).type);
+    const IColumn & key_col = *key_view.column;
 
     std::vector<size_t> non_cluster_key_positions;
     for (size_t i = 0; i < num_columns; ++i)

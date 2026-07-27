@@ -51,6 +51,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/validateGroupByKeyType.h>
 
@@ -4100,9 +4101,12 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             /// `0.7 + 0.1 >= 0.8` as `0.7999999999999999 < 0.8` and split a pair
             /// whose exact decimal distance equals the threshold. Reject them all
             /// here so the user gets a clear error instead of silent misclustering.
-            auto is_supported_scalar = [](const DataTypePtr & t)
+            /// `LowCardinality(...)` is a storage-level wrapper over the very same logical
+            /// key type, and both the analyzer checks below and the execution-side readers
+            /// look through it, so unwrap it before classifying the key.
+            auto is_supported_scalar = [](const DataTypePtr & type)
             {
-                WhichDataType which(t);
+                WhichDataType which(removeLowCardinality(type));
                 return which.isNativeInteger()
                     || which.isFloat()
                     || which.isDateOrDate32()
@@ -4132,7 +4136,7 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
             else
             {
                 const auto & key_type = cluster_elem->getResultType();
-                WhichDataType which(key_type);
+                WhichDataType which(removeLowCardinality(key_type));
                 if (which.isTuple())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "GROUP BY ... WITH CLUSTER on a tuple-typed column is not supported. "
