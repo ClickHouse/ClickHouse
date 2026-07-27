@@ -8,11 +8,8 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
 
-/// The bugfix validation job overlays this file onto the merge-base tree, without the fix, and
-/// requires it to build there and fail at runtime. The cases that call the helper cannot be written
-/// without the header that declares it, so they are compiled only where it exists. The queue cases
-/// at the end go through the public ConcurrentBoundedQueue API, build against both trees, and are
-/// the ones that reproduce the lost timeout without the fix.
+/// Cases that name the helper are compiled only where its header exists, so this file also builds
+/// against a tree without it. The queue cases below use only the public queue API.
 #if __has_include(<Common/saturatedWaitDuration.h>)
 #include <Common/saturatedWaitDuration.h>
 #define SATURATED_WAIT_DURATION_AVAILABLE 1

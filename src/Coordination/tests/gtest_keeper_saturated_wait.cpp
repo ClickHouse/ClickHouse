@@ -14,12 +14,9 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Common/Stopwatch.h>
 
-/// The bugfix validation job overlays this file onto the merge-base tree, without the fix, and
-/// requires it to build there and fail at runtime. Cases that name the helper, or that reach
-/// KeeperDispatcher::interruptibleSleep (private until the fix declares these suites its friends),
-/// cannot be written against the merge-base and are compiled only where the header exists.
-/// WaitCommittedUptoKeepsHugeTimeout below goes through the public KeeperContext API, builds against
-/// both trees, and is the case that reproduces the lost timeout without the fix.
+/// Cases that name the helper, or that reach the private interruptibleSleep, are compiled only
+/// where its header exists, so this file also builds against a tree without it.
+/// WaitCommittedUptoKeepsHugeTimeout below uses only the public KeeperContext API.
 #if __has_include(<Common/saturatedWaitDuration.h>)
 #include <Common/saturatedWaitDuration.h>
 #define SATURATED_WAIT_DURATION_AVAILABLE 1
