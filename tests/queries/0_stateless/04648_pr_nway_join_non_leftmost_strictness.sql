@@ -32,7 +32,16 @@ SELECT 'inner/any non-leftmost under a left leftmost join: reads from remote rep
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM t1 LEFT JOIN t2 ON t1.c = t2.c ANY INNER JOIN t3 ON 1 ORDER BY ALL);
 
+-- An ARRAY JOIN also occupies the leftmost join-tree slot, so the join after it is non-leftmost too.
+SELECT 'array join then inner/any: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a ANY INNER JOIN t3 ON 1 ORDER BY ALL);
+
 -- Replica-safe join trees keep using parallel replicas.
+SELECT 'array join then all/inner: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a INNER JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
 SELECT 'all/inner only: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM t1 INNER JOIN t2 ON t1.c = t2.c INNER JOIN t3 ON t1.c = t3.c ORDER BY ALL);

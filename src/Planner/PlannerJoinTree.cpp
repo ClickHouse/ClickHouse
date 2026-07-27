@@ -2571,7 +2571,9 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     bool is_cross_join = false;
     /// Parallel-replicas eligibility is evaluated on the parent join node of the leftmost leaf only, i.e.
     /// on the FIRST join node of this post-order stack (`parent_join_tree_for_leftmost` below). Any other
-    /// join of an n-way tree is never examined there, so track it here.
+    /// join of an n-way tree is never examined there, so track it here. `CROSS_JOIN`/`ARRAY_JOIN` count
+    /// towards occupying that leftmost slot (mirroring the loop that picks `parent_join_tree_for_leftmost`)
+    /// but are never strictness-checked themselves: the flag below is only read in the `JOIN` branch.
     bool leftmost_join_tree_node_seen = false;
     bool has_unsafe_non_leftmost_join = false;
     /// For each table, table function, query, union table expressions prepare before query plan build
@@ -2652,8 +2654,11 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         if (joins_count > 1 && (is_full_join || is_global_join || is_cross_join))
             return true;
 
-        /// for n-way join whose non-leftmost join is not replica-safe (e.g. INNER ... ANY INNER)
-        if (joins_count > 1 && has_unsafe_non_leftmost_join)
+        /// A join other than the leftmost leaf's parent that is not replica-safe (e.g. INNER ... ANY INNER).
+        /// No `joins_count` gate: the flag can only be set when some join-tree node was already seen,
+        /// and that node is not necessarily a JOIN (an ARRAY JOIN also occupies the leftmost slot while
+        /// not incrementing `joins_count`).
+        if (has_unsafe_non_leftmost_join)
             return true;
 
         /// For RIGHT JOIN with distributed table on the right side
