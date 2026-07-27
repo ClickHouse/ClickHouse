@@ -59,7 +59,7 @@ Conecte-se à sua instância do Neon como usuário administrador e execute os se
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-A publication `clickpipes` conterá o conjunto de eventos de alteração gerados a partir das tabelas especificadas e, posteriormente, será usada para a ingestão do fluxo de replicação.
+A publication `clickpipes` define o conjunto de tabelas cujos eventos de alteração serão transmitidos ao ClickPipes. Recomendamos não usar `FOR ALL TABLES`, a menos que você pretenda replicar todas as tabelas, pois incluir tabelas desnecessárias aumenta o tráfego de WAL do Postgres para o ClickPipes e reduz a eficiência geral da replicação.
 
 <div id="enable-logical-replication">
   ## Ative a replicação lógica
@@ -77,9 +77,9 @@ Clique em **Enable** para concluir esta etapa. Depois de ativá-la, você dever�
 Vamos verificar as configurações abaixo na sua instância do Neon Postgres:
 
 ```sql
-SHOW wal_level; -- deve ser logical
-SHOW max_wal_senders; -- deve ser 10
-SHOW max_replication_slots; -- deve ser 10
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
 ```
 
 <div id="ip-whitelisting-for-neon-enterprise-plan">

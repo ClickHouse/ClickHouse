@@ -87,75 +87,77 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
 {
     std::lock_guard lock(previous_profile_events_mutex);
 
-    MetricLogElement elem;
-    elem.event_time = std::chrono::system_clock::to_time_t(current_time);
-    elem.event_time_microseconds = timeInMicroseconds(current_time);
-
-    elem.profile_events.resize(ProfileEvents::end());
-    for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
-    {
-        const ProfileEvents::Count new_value = ProfileEvents::global_counters[i];
-        auto & old_value = previous_profile_events[i];
-
-        /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
-        /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
-        /// It can be reproduced with the following integration tests:
-        /// - test_hedged_requests/test.py::test_receive_timeout2
-        /// - test_secure_socket::test
-        if (new_value < old_value)
-            continue;
-
-        elem.profile_events[i] = new_value - old_value;
-        old_value = new_value;
-    }
-
-    elem.current_metrics.resize(CurrentMetrics::end());
-    for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
-    {
-        elem.current_metrics[i] = CurrentMetrics::values[i];
-    }
-
     const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
 
-    HistogramMetrics::Factory::instance().forEachFamily([&](const HistogramMetrics::MetricFamily & family)
+    add([&](MetricLogElement & element)
     {
-        const auto & buckets = family.getBuckets();
-        const auto & label_names = family.getLabels();
-        const auto & metric_name = family.getName();
+        element.event_time = std::chrono::system_clock::to_time_t(current_time);
+        element.event_time_microseconds = timeInMicroseconds(current_time);
 
-        family.forEachMetric([&](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
+        element.profile_events.resize(ProfileEvents::end());
+        for (ProfileEvents::Event i = ProfileEvents::Event(0), end = ProfileEvents::end(); i < end; ++i)
         {
-            Map labels;
-            labels.reserve(label_values.size());
-            for (size_t i = 0; i < label_values.size(); ++i)
-                labels.push_back(Tuple{label_names[i], label_values[i]});
+            const ProfileEvents::Count new_value = ProfileEvents::global_counters[i];
+            /// previous_profile_events is guarded by the mutex held above; thread-safety analysis cannot
+            /// see the lock through this callback, so suppress the false positive on this access.
+            auto & old_value = TSA_SUPPRESS_WARNING_FOR_WRITE(previous_profile_events)[i];
 
-            Map histogram_map;
-            histogram_map.reserve(buckets.size() + 1);
-            UInt64 cumulative = 0;
-            for (size_t i = 0; i < buckets.size() + 1; ++i)
+            /// Profile event counters are supposed to be monotonic. However, at least the `NetworkReceiveBytes` can be inaccurate.
+            /// So, since in the future the counter should always have a bigger value than in the past, we skip this event.
+            /// It can be reproduced with the following integration tests:
+            /// - test_hedged_requests/test.py::test_receive_timeout2
+            /// - test_secure_socket::test
+            if (new_value < old_value)
+                continue;
+
+            element.profile_events[i] = new_value - old_value;
+            old_value = new_value;
+        }
+
+        element.current_metrics.resize(CurrentMetrics::end());
+        for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
+        {
+            element.current_metrics[i] = CurrentMetrics::values[i];
+        }
+
+        HistogramMetrics::Factory::instance().forEachFamily([&](const HistogramMetrics::MetricFamily & family)
+        {
+            const auto & buckets = family.getBuckets();
+            const auto & label_names = family.getLabels();
+            const auto & metric_name = family.getName();
+
+            family.forEachMetric([&](const HistogramMetrics::LabelValues & label_values, const HistogramMetrics::Metric & metric)
             {
-                const UInt64 counter = metric.getCounter(i);
-                const bool is_inf_bucket = (i == buckets.size());
-                if (counter == 0 && !is_inf_bucket && !show_zero_values)
-                    continue;
-                cumulative += counter;
-                Float64 bound = is_inf_bucket ? std::numeric_limits<Float64>::infinity() : buckets[i];
-                histogram_map.push_back(Tuple{bound, cumulative});
-            }
+                Map labels;
+                labels.reserve(label_values.size());
+                for (size_t i = 0; i < label_values.size(); ++i)
+                    labels.push_back(Tuple{label_names[i], label_values[i]});
 
-            if (cumulative == 0 && !show_zero_values)
-                return;
+                Map histogram_map;
+                histogram_map.reserve(buckets.size() + 1);
+                UInt64 cumulative = 0;
+                for (size_t i = 0; i < buckets.size() + 1; ++i)
+                {
+                    const UInt64 counter = metric.getCounter(i);
+                    const bool is_inf_bucket = (i == buckets.size());
+                    if (counter == 0 && !is_inf_bucket && !show_zero_values)
+                        continue;
+                    cumulative += counter;
+                    Float64 bound = is_inf_bucket ? std::numeric_limits<Float64>::infinity() : buckets[i];
+                    histogram_map.push_back(Tuple{bound, cumulative});
+                }
 
-            elem.histogram_metric.push_back(metric_name);
-            elem.histogram_labels.push_back(std::move(labels));
-            elem.histogram_histogram.push_back(std::move(histogram_map));
-            elem.histogram_count.push_back(cumulative);
-            elem.histogram_sum.push_back(metric.getSum());
+                if (cumulative == 0 && !show_zero_values)
+                    return;
+
+                element.histogram_metric.push_back(metric_name);
+                element.histogram_labels.push_back(std::move(labels));
+                element.histogram_histogram.push_back(std::move(histogram_map));
+                element.histogram_count.push_back(cumulative);
+                element.histogram_sum.push_back(metric.getSum());
+            });
         });
     });
-
-    add(std::move(elem));
 }
 
 }
