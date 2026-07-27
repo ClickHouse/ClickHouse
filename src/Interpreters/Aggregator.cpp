@@ -118,6 +118,52 @@ namespace
     constexpr UInt64 adaptive_thaw_sample_mask = 0xFF;
     constexpr size_t adaptive_thaw_min_staged_records = 524'288;
     constexpr size_t adaptive_thaw_repeat_factor = 16;
+
+    /// String-like keys stage their bytes: a packed reference copied as a plain value would
+    /// carry a pointer into the source block, which dies when the publish compacts the
+    /// arguments and releases it. The staged form of both string kinds is the raw characters,
+    /// and the drain rebuilds (and for packed keys arena-persists) the table's key from them.
+    template <typename Key>
+    constexpr bool adaptive_key_stages_bytes = std::is_same_v<Key, std::string_view> || std::is_same_v<Key, PackedStringRef>;
+
+    template <typename Key>
+    ALWAYS_INLINE std::string_view adaptiveStagedKeyBytes(const Key & key)
+    {
+        if constexpr (std::is_same_v<Key, PackedStringRef>)
+            return static_cast<std::string_view>(key);
+        else
+            return key;
+    }
+
+    /// Emplace one staged key into the table. String-like keys were staged as raw characters
+    /// and are rebuilt here, with the out-of-line payloads persisted into the arena; a packed
+    /// key is rebuilt with the consume path's content-hash functor, because the cached hash
+    /// bytes participate in the equality and in the routing hash. Fixed-size keys were staged
+    /// as values.
+    template <typename Method>
+    void ALWAYS_INLINE emplaceStagedKey(
+        Method & method,
+        const char * key_pos,
+        size_t key_size,
+        size_t routing_hash,
+        DB::Arena & arena,
+        typename Method::Data::LookupResult & it,
+        bool & inserted)
+    {
+        if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
+        {
+            method.data.emplace(DB::ArenaKeyHolder{std::string_view(key_pos, key_size), arena}, it, inserted, routing_hash);
+        }
+        else if constexpr (std::is_same_v<typename Method::Key, PackedStringRef>)
+        {
+            const auto key = PackedStringRef::build(key_pos, key_size, typename Method::State::Hash{});
+            method.data.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
+        }
+        else
+        {
+            method.data.emplace(unalignedLoad<typename Method::Key>(key_pos), it, inserted, routing_hash);
+        }
+    }
 }
 
 namespace
@@ -2035,8 +2081,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         {
             const UInt64 key_size = [&]() -> UInt64
             {
-                if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
-                    return key.size();
+                if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+                    return adaptiveStagedKeyBytes(key).size();
                 else
                     return sizeof(typename SharedMethod::Key);
             }();
@@ -2104,15 +2150,21 @@ void NO_INLINE Aggregator::executeFrozenImpl(
             {
                 adaptive.miss_hashes.push_back(hash);
                 adaptive.miss_run_lengths.push_back(1);
+                if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+                    adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(staged_key).size());
+                else
+                    adaptive.miss_key_sizes.push_back(sizeof(staged_key));
+
+                /// A serialized key view points into the reused scratch arena and can only seed
+                /// the run tracking when the views are block-stable; every other key type is a
+                /// self-contained value.
                 if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
                 {
-                    adaptive.miss_key_sizes.push_back(staged_key.size());
                     if (stable_key_views)
                         last_staged_key = staged_key;
                 }
                 else
                 {
-                    adaptive.miss_key_sizes.push_back(sizeof(staged_key));
                     last_staged_key = staged_key;
                 }
                 adaptive.miss_source_rows.push_back(static_cast<UInt32>(i));
@@ -2157,8 +2209,8 @@ void NO_INLINE Aggregator::executeFrozenImpl(
         adaptive.miss_hashes.push_back(hash);
         adaptive.miss_buckets.push_back(static_cast<UInt8>(SharedMethod::Data::getBucketFromHash(hash)));
 
-        if constexpr (std::is_same_v<typename SharedMethod::Key, std::string_view>)
-            adaptive.miss_key_sizes.push_back(key.size());
+        if constexpr (adaptive_key_stages_bytes<typename SharedMethod::Key>)
+            adaptive.miss_key_sizes.push_back(adaptiveStagedKeyBytes(key).size());
         else
             adaptive.miss_key_sizes.push_back(sizeof(typename SharedMethod::Key));
         keyHolderDiscardKey(key_holder);
@@ -2299,9 +2351,9 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         const size_t key_row = key_row_override ? *key_row_override : adaptive.miss_source_rows[i];
         auto && key_holder = local_find_state.getKeyHolder(key_row, scratch_pool);
         const auto & key = keyHolderGetKey(key_holder);
-        if constexpr (std::is_same_v<SharedKey, std::string_view>)
+        if constexpr (adaptive_key_stages_bytes<SharedKey>)
         {
-            memcpy(block->key_bytes.data() + byte_pos, key.data(), size);
+            memcpy(block->key_bytes.data() + byte_pos, adaptiveStagedKeyBytes(key).data(), size);
         }
         else
         {
@@ -2497,16 +2549,14 @@ void NO_INLINE Aggregator::drainAdaptiveBucketBacklog(
 
                 typename Method::Data::LookupResult it;
                 bool inserted = false;
-                const char * key_pos = block.key_bytes.data() + block.key_offsets[j];
-                if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
-                {
-                    std::string_view key(key_pos, block.key_offsets[j + 1] - block.key_offsets[j]);
-                    method.data.emplace(ArenaKeyHolder{key, *arena}, it, inserted, block.routing_hashes[j]);
-                }
-                else
-                {
-                    method.data.emplace(unalignedLoad<typename Method::Key>(key_pos), it, inserted, block.routing_hashes[j]);
-                }
+                emplaceStagedKey(
+                    method,
+                    block.key_bytes.data() + block.key_offsets[j],
+                    block.key_offsets[j + 1] - block.key_offsets[j],
+                    block.routing_hashes[j],
+                    *arena,
+                    it,
+                    inserted);
 
                 if (inserted)
                     getInlineCountState(it->getMapped()) = block.run_lengths[j];
@@ -2554,16 +2604,14 @@ void NO_INLINE Aggregator::drainAdaptiveBucketImpl(
         prefetch(j);
         typename Method::Data::LookupResult it;
         bool inserted = false;
-        const char * key_pos = block.key_bytes.data() + block.key_offsets[j];
-        if constexpr (std::is_same_v<typename Method::Key, std::string_view>)
-        {
-            std::string_view key(key_pos, block.key_offsets[j + 1] - block.key_offsets[j]);
-            method.data.emplace(ArenaKeyHolder{key, *bucket_arena}, it, inserted, block.routing_hashes[j]);
-        }
-        else
-        {
-            method.data.emplace(unalignedLoad<typename Method::Key>(key_pos), it, inserted, block.routing_hashes[j]);
-        }
+        emplaceStagedKey(
+            method,
+            block.key_bytes.data() + block.key_offsets[j],
+            block.key_offsets[j + 1] - block.key_offsets[j],
+            block.routing_hashes[j],
+            *bucket_arena,
+            it,
+            inserted);
 
         AggregateDataPtr aggregate_data = nullptr;
         if (inserted)
