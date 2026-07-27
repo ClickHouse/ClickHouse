@@ -13,6 +13,13 @@ from github_helper import GitHub
 from report import SUCCESS
 from s3_helper import S3Helper
 
+# `release_packages` is the praktika-free single source of truth for the release
+# artifact contract, shared with `create_release.py`'s `PackageDownloader`. It
+# lives under `ci/jobs/scripts`, so put the repo root on the path to import it
+# (it pulls in no praktika deps, unlike the rest of that package).
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+from ci.jobs.scripts import release_packages  # noqa: E402
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -92,18 +99,6 @@ class AutoReleaseInfo:
         return AutoReleaseInfo(releases=releases)
 
 
-# The six packages CreateRelease's PackageDownloader downloads per arch. Kept in
-# sync with `ci/jobs/scripts/create_release.py` `PackageDownloader.PACKAGES`.
-_RELEASE_PACKAGES = (
-    "clickhouse-client",
-    "clickhouse-common-static",
-    "clickhouse-common-static-dbg",
-    "clickhouse-keeper",
-    "clickhouse-keeper-dbg",
-    "clickhouse-server",
-)
-
-
 def _release_version_for_commit(commit_sha: str) -> str:
     """The `major.minor.patch.tweak` version CreateRelease computes for a
     release-branch commit, derived here without checking it out.
@@ -133,62 +128,19 @@ def _release_version_for_commit(commit_sha: str) -> str:
 
 
 def _release_build_artifacts_ready(release_branch: str, commit_sha: str) -> bool:
-    """Whether every package CreateRelease will download for this commit is
+    """Whether every object `CreateRelease` will download for this commit is
     present in S3.
 
-    A commit can pass the CI checks above (`check_wf_completed` + no
-    `get_failed_statuses`) while its release build was deduplicated by the CI
-    cache — reported as `skipped`, which is not a *failed* status — so nothing (or
-    only part) was uploaded under this commit's own SHA. CreateRelease downloads
-    each package strictly from `REFs/<branch>/<commit_sha>/<build_job>/<file>`
-    (`ci/jobs/scripts/create_release.py` `PackageDownloader`), so it would 404 on
-    such a commit.
-
-    Enumerate the *exact* object keys CreateRelease asks for — deb/rpm/tgz/
-    tgz.sha512 for the six packages on amd+arm, plus the per-arch macOS
-    `clickhouse` binary under `build_<arch>_darwin/` — and require every one to
-    exist. A directory-level check is too weak (a partial upload, or a build-vs-
-    release version mismatch, leaves the dir non-empty yet the exact file
-    absent). Fail closed: a missing object rejects the commit and the selector
-    falls back to the previous one.
+    Delegates the exact-key enumeration and the presence check to the shared
+    `release_packages` module (the same contract `CreateRelease`'s
+    `PackageDownloader` produces), so the gate cannot drift from what
+    `CreateRelease` actually downloads. See
+    `release_packages.release_build_artifacts_ready` for the rationale.
     """
     version = _release_version_for_commit(commit_sha)
-    major, minor = (int(x) for x in release_branch.split(".")[:2])
-    is_new_ci = (major >= 25 and minor >= 3) or major > 25
-    s3_release_prefix = f"REFs/{release_branch}" if is_new_ci else release_branch
-
-    expected_by_job = {}  # type: dict[str, set]
-    for arch in ("amd", "arm"):
-        if is_new_ci:
-            job = f"build_{arch}_release"
-            job_darwin = f"build_{arch}_darwin"
-        else:
-            job = "package_release" if arch == "amd" else "package_aarch64"
-            job_darwin = "binary_darwin" if arch == "amd" else "binary_darwin_aarch64"
-        deb_arch = "amd64" if arch == "amd" else "arm64"
-        rpm_arch = "x86_64" if arch == "amd" else "aarch64"
-        files = expected_by_job.setdefault(job, set())
-        for package in _RELEASE_PACKAGES:
-            files.add(f"{package}_{version}_{deb_arch}.deb")
-            files.add(f"{package}-{version}.{rpm_arch}.rpm")
-            files.add(f"{package}-{version}-{deb_arch}.tgz")
-            files.add(f"{package}-{version}-{deb_arch}.tgz.sha512")
-        expected_by_job.setdefault(job_darwin, set()).add("clickhouse")
-
-    s3 = S3Helper()
-    for job, expected_files in expected_by_job.items():
-        prefix = f"{s3_release_prefix}/{commit_sha}/{job}/"
-        present = {key.rsplit("/", 1)[-1] for key in s3.list_prefix(prefix)}
-        missing = expected_files - present
-        if missing:
-            print(
-                f"Missing release artifacts for [{version}] under "
-                f"[s3://.../{prefix}]: {sorted(missing)} — the release build for "
-                f"this commit was skipped/cached or uploaded partially; not "
-                f"releasable"
-            )
-            return False
-    return True
+    return release_packages.release_build_artifacts_ready(
+        S3Helper(), release_branch, commit_sha, version
+    )
 
 
 def _prepare(token):
