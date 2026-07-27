@@ -2,7 +2,8 @@
 -- an `ALTER` persists, not only into column declarations: leaving `ORDER BY`, `PARTITION BY`, TTL, indices,
 -- constraints, projections or mutation expressions out would let the same stored metadata resolve a bare
 -- `UUID` to the historical `UUID` later. Type names that a function declares through a string literal
--- (`reinterpret`, `defaultValueOfTypeName`, `JSONExtract`) are materialized as well.
+-- (`reinterpret`, `defaultValueOfTypeName`, the `JSONExtract` family including its case-insensitive
+-- variants) are materialized as well.
 
 DROP TABLE IF EXISTS t_uuid2_storage;
 DROP TABLE IF EXISTS t_uuid2_alter;
@@ -12,7 +13,10 @@ DROP TABLE IF EXISTS t_uuid2_mv;
 DROP TABLE IF EXISTS t_uuid2_reinterpret;
 DROP TABLE IF EXISTS t_uuid2_default_value_of_type_name;
 DROP TABLE IF EXISTS t_uuid2_json_extract;
+DROP TABLE IF EXISTS t_uuid2_json_extract_ci;
+DROP TABLE IF EXISTS t_uuid2_json_extract_keys_and_values_ci;
 DROP TABLE IF EXISTS t_uuid1_json_extract;
+DROP TABLE IF EXISTS t_uuid1_json_extract_ci;
 
 SET uuid_type_version = 2;
 
@@ -75,12 +79,18 @@ CREATE TABLE t_uuid2_default_value_of_type_name ENGINE = Memory AS SELECT defaul
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid2_default_value_of_type_name';
 CREATE TABLE t_uuid2_json_extract ENGINE = Memory AS SELECT JSONExtract('{"a":"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}', 'a', 'UUID') AS x;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid2_json_extract';
+CREATE TABLE t_uuid2_json_extract_ci ENGINE = Memory AS SELECT JSONExtractCaseInsensitive('{"A":"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}', 'a', 'UUID') AS x;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid2_json_extract_ci';
+CREATE TABLE t_uuid2_json_extract_keys_and_values_ci ENGINE = Memory AS SELECT JSONExtractKeysAndValuesCaseInsensitive('{"A":"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}', 'UUID') AS x;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid2_json_extract_keys_and_values_ci';
 
 SET uuid_type_version = 1;
 
 SELECT 'the historical type is unchanged under uuid_type_version = 1';
 CREATE TABLE t_uuid1_json_extract ENGINE = Memory AS SELECT JSONExtract('{"a":"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}', 'a', 'UUID') AS x;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid1_json_extract';
+CREATE TABLE t_uuid1_json_extract_ci ENGINE = Memory AS SELECT JSONExtractCaseInsensitive('{"A":"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}', 'a', 'UUID') AS x;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid1_json_extract_ci';
 
 DROP TABLE t_uuid2_storage;
 DROP TABLE t_uuid2_alter;
@@ -90,4 +100,7 @@ DROP TABLE t_uuid2_mv_source;
 DROP TABLE t_uuid2_reinterpret;
 DROP TABLE t_uuid2_default_value_of_type_name;
 DROP TABLE t_uuid2_json_extract;
+DROP TABLE t_uuid2_json_extract_ci;
+DROP TABLE t_uuid2_json_extract_keys_and_values_ci;
 DROP TABLE t_uuid1_json_extract;
+DROP TABLE t_uuid1_json_extract_ci;

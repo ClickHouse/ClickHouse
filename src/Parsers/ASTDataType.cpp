@@ -80,6 +80,8 @@ constexpr TypeNameArgument type_name_arguments[]
     {"defaultValueOfTypeName", 0},
     {"JSONExtract", last_type_name_argument},
     {"JSONExtractKeysAndValues", last_type_name_argument},
+    {"JSONExtractCaseInsensitive", last_type_name_argument},
+    {"JSONExtractKeysAndValuesCaseInsensitive", last_type_name_argument},
 };
 
 bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)

@@ -26,5 +26,8 @@ a type declared by a function through a string literal
 x	UUID2
 x	UUID2
 x	UUID2
+x	UUID2
+x	Array(Tuple(String, UUID2))
 the historical type is unchanged under uuid_type_version = 1
+x	UUID
 x	UUID

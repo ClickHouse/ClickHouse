@@ -41,7 +41,7 @@ CREATE TABLE tab (uuid UUID) ENGINE = MergeTree ORDER BY uuid; -- `uuid` is mate
 
 The resolved concrete type is materialized in the table definition, so reading an existing table does not depend on the value of the setting. Every expression that a `CREATE` or `ALTER` persists is covered: column declarations, `DEFAULT`/`MATERIALIZED`/`ALIAS` expressions, `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY` and TTL expressions, skipping indices, constraints, projections, dictionary attributes, the query of `CREATE TABLE ... AS SELECT` and of views, and mutation expressions.
 
-This also covers type names that appear inside a string literal rather than as a type: cast expressions (`CAST(x AS UUID)`, `x::UUID`, which the parser canonicalizes into `CAST(x, 'UUID')`), and the functions that declare their result type by name, such as `reinterpret(x, 'UUID')`, `defaultValueOfTypeName('UUID')` and `JSONExtract(json, 'UUID')`.
+This also covers type names that appear inside a string literal rather than as a type: cast expressions (`CAST(x AS UUID)`, `x::UUID`, which the parser canonicalizes into `CAST(x, 'UUID')`), and the functions that declare their result type by name, such as `reinterpret(x, 'UUID')`, `defaultValueOfTypeName('UUID')` and the `JSONExtract` family (`JSONExtract(json, 'UUID')`, `JSONExtractKeysAndValues`, and their case-insensitive variants).
 
 The explicit type names are not affected by the setting:
 
