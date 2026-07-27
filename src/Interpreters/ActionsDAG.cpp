@@ -3,6 +3,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/IDataTypeDummy.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1312,7 +1313,13 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
                 if (argument_types_drifted)
                 {
-                    if (input_rows_count == 0)
+                    /// A few result types cannot be instantiated at all: everything deriving from
+                    /// `IDataTypeDummy` (`DataTypeFunction`, the result type of a captured lambda,
+                    /// and `DataTypeSet`) throws `NOT_IMPLEMENTED` from `createColumn`. Leave the
+                    /// column null for those rather than turning a skipped fold into an error.
+                    /// `dynamic_cast` rather than `typeid_cast`: the latter compares `typeid` for
+                    /// exact equality and so never matches a base class.
+                    if (input_rows_count == 0 && !dynamic_cast<const IDataTypeDummy *>(res_column.type.get()))
                         res_column.column = res_column.type->createColumn();
                     break;
                 }

@@ -8,11 +8,14 @@
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 
 using namespace DB;
 
@@ -22,9 +25,11 @@ namespace
 /// `ActionsDAG::updateHeader` matches header columns to DAG input nodes BY NAME ONLY
 /// (see `matchInputPositionsToHeader`), so a header column whose type differs from the type
 /// the DAG's function nodes were resolved for is bound to those nodes without any type check.
-/// In production that mismatch is produced by a concurrent `EXCHANGE TABLES` swapping the
-/// underlying table between analysis and header computation; here it is injected directly,
-/// which makes the drifted-argument path deterministic and free of any race.
+/// Historically such a mismatch was produced by a concurrent `EXCHANGE TABLES` swapping the
+/// underlying table between analysis and header computation (that root cause was fixed
+/// separately by restoring the per-query storage-cache pinning). These tests do not depend on
+/// any particular source of the mismatch: they inject it directly, which makes the path
+/// deterministic and free of any race.
 ActionsDAG makeDagOverInput(const String & column_name, const DataTypePtr & resolved_type, const String & function_name)
 {
     ActionsDAG dag;
@@ -174,6 +179,47 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftFoldsNoValueForOneR
     ASSERT_EQ(result.size(), 1u);
     EXPECT_EQ(result.front().column, nullptr)
         << "a drifted argument must not fold to a definitive value for the one-row callers";
+}
+
+/// The zero-row fallback builds an empty column of the node's declared result type, but a few result
+/// types cannot be instantiated: everything deriving from `IDataTypeDummy` throws `NOT_IMPLEMENTED`
+/// from `createColumn`. A captured lambda is an ordinary `FUNCTION` node whose result type is
+/// `DataTypeFunction`, so if one of its captured arguments is bound to a differently-typed header
+/// column, skipping the fold must not turn into that error - the column is simply left null.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftOnNonInstantiableResultTypeIsSkippedCleanly)
+{
+    tryRegisterFunctions();
+
+    /// The lambda body is `c`, i.e. it just returns its captured argument.
+    ActionsDAG lambda_dag;
+    const auto & captured = lambda_dag.addInput("c", std::make_shared<DataTypeFloat64>());
+    lambda_dag.getOutputs().clear();
+    lambda_dag.getOutputs().push_back(&captured);
+
+    auto capture = std::make_shared<FunctionCaptureOverloadResolver>(
+        std::move(lambda_dag),
+        ExpressionActionsSettings(getContext().context),
+        Names{"c"},
+        NamesAndTypesList{},
+        std::make_shared<DataTypeFloat64>(),
+        "c",
+        /* allow_constant_folding= */ true);
+
+    ActionsDAG dag;
+    const auto & input = dag.addInput("c", std::make_shared<DataTypeFloat64>());
+    const auto & capture_node = dag.addFunction(capture, {&input}, "lambda_result");
+    dag.getOutputs().clear();
+    dag.getOutputs().push_back(&capture_node);
+
+    ASSERT_TRUE(typeid_cast<const DataTypeFunction *>(capture_node.result_type.get()))
+        << "this case is only meaningful while a captured lambda's result type is DataTypeFunction";
+
+    Block drifted_header = headerWith("c", std::make_shared<DataTypeInt256>());
+
+    Block result;
+    ASSERT_NO_THROW(result = dag.updateHeader(drifted_header));
+    ASSERT_TRUE(result.has("lambda_result"));
+    EXPECT_EQ(result.getByName("lambda_result").column, nullptr);
 }
 
 /// A header column whose type did NOT drift must still be constant-folded exactly as before, so the
