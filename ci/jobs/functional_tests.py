@@ -1185,11 +1185,9 @@ def main():
         elif failed_tests:
             memory_limit = stateless_memory_limit(Info().job_name)
             # The rerun must mirror the main run's environment or its verdict is
-            # meaningless: without `--replicated-database`/`--s3-storage`/... a
-            # config-specific failure cannot reproduce and is labelled `flaky`.
-            # Forwarding was lost in d59310d5ec741e (RETRIES did it: 1607bd45d66f79).
-            # shard/zookeeper default as in `run_tests` (both forms of a pair is an
-            # argparse error); options go BEFORE `--` (after it, `test` eats them).
+            # meaningless. shard/zookeeper default as in `run_tests` (passing both
+            # forms of a pair is an argparse error); options go BEFORE `--`
+            # (after it, `test` is `nargs="*"` and eats them).
             diag_options = runner_options
             if "--no-shard" not in diag_options:
                 diag_options += " --shard"

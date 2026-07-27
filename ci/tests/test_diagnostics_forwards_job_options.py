@@ -39,13 +39,16 @@ _COVERAGE_TAIL = (
 )
 RUNNER_OPTIONS_CASES = {
     # DBReplicated is the flavour that hid the access-control bypass in #111561.
+    # --encrypted-storage is appended by main() OUTSIDE the options map, so a
+    # map-driven case list would miss it (main() adds it only when s3/azure is on).
     "DBReplicated_s3_coverage": functional_tests.OPTIONS_TO_TEST_RUNNER_ARGUMENTS[
         "s3 storage"
     ]
     + functional_tests.OPTIONS_TO_TEST_RUNNER_ARGUMENTS["DBReplicated"]
     + " "
     + functional_tests.OPTIONS_TO_TEST_RUNNER_ARGUMENTS["parallel"]
-    + _COVERAGE_TAIL,
+    + _COVERAGE_TAIL
+    + " --encrypted-storage",
     # ParallelReplicas carries --no-zookeeper --no-shard: passing the positive
     # twins as well is an argparse error (exit 2).
     "ParallelReplicas_s3_coverage": functional_tests.OPTIONS_TO_TEST_RUNNER_ARGUMENTS[
@@ -172,6 +175,7 @@ def test_diagnostics_command_never_passes_conflicting_shard_or_zookeeper_flags(
     assert args.azure_blob_storage is ("--azure-blob-storage" in runner_options)
     assert args.no_parallel_replicas is ("--no-parallel-replicas" in runner_options)
     assert args.no_async_insert is ("--no-async-insert" in runner_options)
+    assert args.encrypted_storage is ("--encrypted-storage" in runner_options)
 
 
 def test_conflicting_shard_flags_really_are_rejected(parse_test_runner_args):
