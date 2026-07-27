@@ -5,7 +5,14 @@
 #include <span>
 #include <mutex>
 #include <ares.h>
+#if defined(OS_WINDOWS)
+/// Declares `struct pollfd` (with a `SOCKET fd`) and the `POLL*` flags, plus `WSAPoll`, the
+/// Windows equivalent of `poll(2)`. There is no <poll.h>.
+#include <Poco/UnWindows.h>
+#include <winsock2.h>
+#else
 #include <poll.h>
+#endif
 
 
 using ares_channel = struct ares_channeldata *;
