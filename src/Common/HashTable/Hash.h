@@ -4,8 +4,7 @@
 #include <base/StringViewHash.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <base/StringRef.h>
-#include <base/ABStringRef.h>
+#include <base/PackedStringRef.h>
 #include <base/types.h>
 #include <base/unaligned.h>
 
@@ -561,10 +560,10 @@ template <>
 struct DefaultHash<std::string_view> : public StringViewHash {};
 
 template <>
-struct DefaultHash<ABStringRef>
+struct DefaultHash<PackedStringRef>
 {
-    size_t operator() (ABStringRef key) const
+    size_t operator() (PackedStringRef key) const
     {
-        return key.low & 0xFFFFFFFF;
+        return key.getHash();
     }
 };

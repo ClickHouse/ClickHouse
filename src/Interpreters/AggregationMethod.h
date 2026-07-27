@@ -120,9 +120,9 @@ struct AggregationMethodStringNoCache
     static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
 
-/// Same as above but without cache
-template <typename TData, bool nullable = false>
-struct AggregationMethodABStringNoCache
+/// For the case where there is one string key, stored as `PackedStringRef`.
+template <typename TData>
+struct AggregationMethodPackedString
 {
     using Data = TData;
     using Key = typename Data::key_type;
@@ -130,29 +130,30 @@ struct AggregationMethodABStringNoCache
 
     Data data;
 
-    AggregationMethodABStringNoCache() = default;
-
-    explicit AggregationMethodABStringNoCache(size_t size_hint) : data(size_hint) { }
+    AggregationMethodPackedString() = default;
 
     template <typename Other>
-    explicit AggregationMethodABStringNoCache(const Other & other) : data(other.data)
+    explicit AggregationMethodPackedString(const Other & other) : data(other.data)
     {
     }
 
+    explicit AggregationMethodPackedString(size_t size_hint) : data(size_hint) { }
+
     template <bool use_cache>
-    using StateImpl = ColumnsHashing::HashMethodABString<typename Data::value_type, Mapped, true, false, false, nullable>;
+    using StateImpl = ColumnsHashing::HashMethodPackedString<typename Data::value_type, Mapped, use_cache>;
 
     using State = StateImpl<true>;
     using StateNoCache = StateImpl<false>;
 
     static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = nullable;
+    static const bool one_key_nullable_optimization = false;
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
+    static void
+    insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
     {
-        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data(), key.size());
     }
 };
 
@@ -350,41 +351,6 @@ using AggregationMethodPreallocSerialized = AggregationMethodSerialized<TData, f
 
 template <typename TData>
 using AggregationMethodNullablePreallocSerialized = AggregationMethodSerialized<TData, true, true>;
-
-template <typename TData>
-struct AggregationMethodABSerialized
-{
-    using Data = TData;
-    using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
-
-    Data data;
-
-    AggregationMethodABSerialized() = default;
-
-    explicit AggregationMethodABSerialized(size_t size_hint) : data(size_hint) { }
-
-    template <typename Other>
-    explicit AggregationMethodABSerialized(const Other & other) : data(other.data)
-    {
-    }
-
-    template <bool use_cache>
-    using StateImpl = ColumnsHashing::HashMethodABSerialized<typename Data::value_type, Mapped>;
-
-    using State = StateImpl<true>;
-    using StateNoCache = StateImpl<false>;
-
-    static const bool low_cardinality_optimization = false;
-    static const bool one_key_nullable_optimization = false;
-
-    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> & key_columns, const Sizes & key_sizes)
-    {
-        return State::shuffleKeyColumns(key_columns, key_sizes);
-    }
-
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings *);
-};
 
 
 }
