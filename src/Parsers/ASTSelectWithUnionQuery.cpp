@@ -3,10 +3,42 @@
 #include <Parsers/SelectUnionMode.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/QueryParameterVisitor.h>
 
 
 namespace DB
 {
+
+namespace
+{
+
+/// A child of `list_of_selects` is not always exactly an `ASTSelectQuery`: interpreter passes rewrite
+/// the list in place. `SelectIntersectExceptQueryVisitor` replaces children with an
+/// `ASTSelectIntersectExceptQuery`, which derives from `ASTSelectQuery` and therefore does NOT match
+/// `as<ASTSelectQuery>()` (that is an exact typeid check), and `NormalizeSelectWithUnionQueryVisitor`
+/// can nest a fresh `ASTSelectWithUnionQuery`. Query parameters must remain visible for every kind,
+/// otherwise a parameterized view is classified as an ordinary one and its metadata cannot be read
+/// back (`Invalid storage definition in metadata file`).
+
+bool childHasQueryParameters(const ASTPtr & child)
+{
+    if (const auto * select_node = child->as<ASTSelectQuery>())
+        return select_node->hasQueryParameters();
+    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
+        return union_node->hasQueryParameters();
+    return !analyzeReceiveQueryParams(child).empty();
+}
+
+NameToNameMap childQueryParameters(const ASTPtr & child)
+{
+    if (const auto * select_node = child->as<ASTSelectQuery>())
+        return select_node->getQueryParameters();
+    if (const auto * union_node = child->as<ASTSelectWithUnionQuery>())
+        return union_node->getQueryParameters();
+    return analyzeReceiveQueryParamsWithType(child);
+}
+
+}
 
 ASTPtr ASTSelectWithUnionQuery::clone() const
 {
@@ -142,13 +174,10 @@ bool ASTSelectWithUnionQuery::hasQueryParameters() const
     {
         for (const auto & child : list_of_selects->children)
         {
-            if (auto * select_node = child->as<ASTSelectQuery>())
+            if (childHasQueryParameters(child))
             {
-                if (select_node->hasQueryParameters())
-                {
-                    has_query_parameters = true;
-                    return has_query_parameters.value();
-                }
+                has_query_parameters = true;
+                return has_query_parameters.value();
             }
         }
         has_query_parameters = false;
@@ -166,14 +195,8 @@ NameToNameMap ASTSelectWithUnionQuery::getQueryParameters() const
 
     for (const auto & child : list_of_selects->children)
     {
-        if (auto * select_node = child->as<ASTSelectQuery>())
-        {
-            if (select_node->hasQueryParameters())
-            {
-                NameToNameMap select_node_param = select_node->getQueryParameters();
-                query_params.insert(select_node_param.begin(), select_node_param.end());
-            }
-        }
+        NameToNameMap child_params = childQueryParameters(child);
+        query_params.insert(child_params.begin(), child_params.end());
     }
 
     return query_params;
