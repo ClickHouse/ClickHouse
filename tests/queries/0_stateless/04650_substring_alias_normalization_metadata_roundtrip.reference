@@ -15,6 +15,8 @@ SELECT substring(a, 2)
 SELECT substr(a, 2, 3)
 SELECT mid(a, 2)
 SELECT byteSlice(a, 2)
+SELECT substring(a, 1, 2)
+SELECT substring(a, 1, 2)
 -- parser: shapes that must keep failing
 -- semantics: all four spellings agree, and a too-long call is a function error
 bcd	bcd	bcd	bcd
@@ -39,6 +41,6 @@ v_sqlstandard	substring
 v_window	substr
 -- view metadata: ATTACH re-reads the file from disk
 attach ok	16
--- SQL UDF body: the definition survives a reload
+-- SQL UDF body: the persisted definition re-parses
 1	CREATE FUNCTION f_default AS a -> substring(a, 1, 2, 3)
 1	CREATE FUNCTION f_default AS a -> substr(a)

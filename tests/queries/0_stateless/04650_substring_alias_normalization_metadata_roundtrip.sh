@@ -29,6 +29,8 @@ SELECT formatQuerySingleLine(formatQuerySingleLine('SELECT substring(a, 1, 2, 3)
 SELECT formatQuerySingleLine(formatQuerySingleLine('SELECT substr(a, 1, 2, 3)')) = formatQuerySingleLine('SELECT substr(a, 1, 2, 3)');
 "
 
+# The last two rows are three-argument mixed forms that the canonical name already accepted
+# before this change; they are pinned here so that tightening them cannot land silently.
 $CLICKHOUSE_CLIENT -q "SELECT '-- parser: the SQL standard form and the alias spelling are untouched'"
 $CLICKHOUSE_CLIENT -q "
 SELECT formatQuerySingleLine('SELECT substring(a FROM 2 FOR 3)');
@@ -36,11 +38,16 @@ SELECT formatQuerySingleLine('SELECT substring(a FROM 2)');
 SELECT formatQuerySingleLine('SELECT substr(a, 2, 3)');
 SELECT formatQuerySingleLine('SELECT mid(a, 2)');
 SELECT formatQuerySingleLine('SELECT byteSlice(a, 2)');
+SELECT formatQuerySingleLine('SELECT substring(a, 1 FOR 2)');
+SELECT formatQuerySingleLine('SELECT substring(a FROM 1, 2)');
 "
 
-# A trailing comma, a mixed FROM/FOR + comma form and fewer than two arguments must stay parse
-# errors for the canonical name; `02154_parser_backtracking` relies on the last one. Asserted
-# through a server-side parse because the runner aborts a batch on a top-level SYNTAX_ERROR.
+# A trailing comma, fewer than two arguments, and an extra argument after a form that used the
+# SQL-standard FROM or FOR keyword must stay parse errors for the canonical name;
+# `02154_parser_backtracking` relies on the too-few-arguments one. Both separator orderings of
+# the mixed-plus-extra-argument form are asserted, because the extra-argument branch is gated on
+# both separators having been commas. Asserted through a server-side parse because the runner
+# aborts a batch on a top-level SYNTAX_ERROR.
 $CLICKHOUSE_CLIENT -q "SELECT '-- parser: shapes that must keep failing'"
 $CLICKHOUSE_CLIENT -q "
 SELECT formatQuerySingleLine('SELECT substring(a)'); -- { serverError SYNTAX_ERROR }
@@ -53,6 +60,12 @@ SELECT formatQuerySingleLine('SELECT substring(a, 1,)'); -- { serverError SYNTAX
 "
 $CLICKHOUSE_CLIENT -q "
 SELECT formatQuerySingleLine('SELECT substring(a FROM 1 FOR 2, 3)'); -- { serverError SYNTAX_ERROR }
+"
+$CLICKHOUSE_CLIENT -q "
+SELECT formatQuerySingleLine('SELECT substring(a, 1 FOR 2, 3)'); -- { serverError SYNTAX_ERROR }
+"
+$CLICKHOUSE_CLIENT -q "
+SELECT formatQuerySingleLine('SELECT substring(a FROM 1, 2, 3)'); -- { serverError SYNTAX_ERROR }
 "
 
 $CLICKHOUSE_CLIENT -q "SELECT '-- semantics: all four spellings agree, and a too-long call is a function error'"
@@ -103,17 +116,21 @@ DETACH TABLE v_canonical4; ATTACH TABLE v_canonical4;
 SELECT 'attach ok', count() FROM system.tables WHERE database = currentDatabase() AND name LIKE 'v\_%';
 "
 
-$CLICKHOUSE_CLIENT -q "SELECT '-- SQL UDF body: the definition survives a reload'"
+# `create_query` in `system.functions` is a formatting of the same normalized AST that is written
+# to `user_defined/function_*.sql`, and `formatQuerySingleLine` throws on unparseable text, so a
+# row that does not error proves the persisted definition re-parses. Limitation: the
+# load-from-disk path, where an unparseable body is silently dropped, needs a fresh process and is
+# not asserted here. The reference records `f_default` because `tests/clickhouse-test` rewrites the
+# randomized database name to `default` in stdout — the function is created as `f_${CLICKHOUSE_DATABASE}`.
+$CLICKHOUSE_CLIENT -q "SELECT '-- SQL UDF body: the persisted definition re-parses'"
 $CLICKHOUSE_CLIENT -q "
 DROP FUNCTION IF EXISTS ${FUNC};
 CREATE FUNCTION ${FUNC} AS (a) -> substr(a, 1, 2, 3);
-SYSTEM RELOAD FUNCTIONS;
 SELECT count(), formatQuerySingleLine(create_query) FROM system.functions WHERE name = '${FUNC}' GROUP BY create_query;
 DROP FUNCTION ${FUNC};
 "
 $CLICKHOUSE_CLIENT -q "
 CREATE FUNCTION ${FUNC} AS (a) -> substr(a);
-SYSTEM RELOAD FUNCTIONS;
 SELECT count(), formatQuerySingleLine(create_query) FROM system.functions WHERE name = '${FUNC}' GROUP BY create_query;
 DROP FUNCTION ${FUNC};
 "
