@@ -34,6 +34,27 @@ BufferedShardByHashTransform::BufferedShardByHashTransform(
     , shard_columns(num_shards)
 {
     chassert(num_shards > 0);
+
+    std::lock_guard lock(budget->mutex);
+    budget->scatters.push_back(this);
+}
+
+BufferedShardByHashTransform::~BufferedShardByHashTransform()
+{
+    std::lock_guard lock(budget->mutex);
+
+    /// Nothing this scatter holds is resident any more, and once it is unregistered no sibling could reclaim it
+    /// either, so release every charge it still has: the chunks in its queues and parked in its ports, and the
+    /// provisional charge of a pending input chunk it never got to split. A shuffle stage normally tears down
+    /// together with its budget, but a scatter destroyed while siblings keep running (an exception during
+    /// pipeline construction, say) must not leave bytes charged that would make them throw.
+    Int64 released_bytes = 0;
+    for (const auto & [block_id, block_budget] : block_budgets)
+        released_bytes += releaseTouchedObjectsUnlocked(block_budget.touched_objects);
+    released_bytes += releaseTouchedObjectsUnlocked(pending_input_touched);
+    budget->total_buffered_bytes.fetch_sub(released_bytes, std::memory_order_relaxed);
+
+    std::erase(budget->scatters, this);
 }
 
 void BufferedShardByHashTransform::enqueue(size_t shard, Chunk chunk, size_t block_id)
@@ -68,7 +89,8 @@ void BufferedShardByHashTransform::releaseQueuedChunk(size_t block_id)
     /// the block keeps it alive.
     if (--it->second.outstanding_chunks == 0)
     {
-        releaseTouchedObjects(it->second.touched_objects);
+        budget->total_buffered_bytes.fetch_sub(
+            releaseTouchedObjectsUnlocked(it->second.touched_objects), std::memory_order_relaxed);
         block_budgets.erase(it);
     }
 }
@@ -160,6 +182,34 @@ void BufferedShardByHashTransform::reclaimPortResidentChunks()
     }
 }
 
+void BufferedShardByHashTransform::reclaimAllPortResidentChunks()
+{
+    /// A scatter only notices that its parked chunk was pulled when the executor schedules it again - the pull
+    /// itself just queues an edge update, it does not call back into the producer - while every scatter reads the
+    /// shared counter on every admission decision. So reclaiming only our own ports would leave a sibling's
+    /// already-pulled bytes charged for as long as the executor leaves that sibling alone, and this scatter would
+    /// raise TOO_MANY_ROWS_OR_BYTES against memory nobody holds. Reclaim across the whole stage instead: this is
+    /// safe from any scatter's thread because all of it runs under `budget->mutex` (held by the caller), which
+    /// every scatter also holds while it moves a chunk from a queue into a port, and the port flags a downstream
+    /// pull updates are atomic (a pull that lands right after the check simply gets reclaimed by the next one).
+    for (auto * scatter : budget->scatters)
+        scatter->reclaimPortResidentChunks();
+}
+
+bool BufferedShardByHashTransform::isOverBudget()
+{
+    if (budget->total_buffered_bytes.load(std::memory_order_relaxed) <= static_cast<Int64>(max_buffered_bytes))
+        return false;
+
+    /// Over the cap according to a reading that can include chunks the downstream merges have already pulled out
+    /// of this or a sibling scatter's output ports (those charges are released lazily, by the owning scatter's
+    /// next prepare()). Reclaim them across the stage and re-read, so the query is only failed for bytes that are
+    /// really resident.
+    std::lock_guard lock(budget->mutex);
+    reclaimAllPortResidentChunks();
+    return budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes);
+}
+
 void BufferedShardByHashTransform::chargePendingInput()
 {
     /// Charge the chunk's measured size the moment it is pulled, before it is split, so the shared counter
@@ -219,19 +269,24 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
 {
     auto & input = getInputs().front();
 
-    /// Release the charge for any chunk the downstream merge has already pulled out of an output port (or that
-    /// a finished output discarded), so port-resident bytes are counted for exactly as long as they are held.
-    reclaimPortResidentChunks();
-
-    /// Free queues for outputs closed by downstream
     bool all_finished = true;
-    auto output_it = outputs.begin();
-    for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
-        if (output_it->isFinished())
-            clearQueue(shard);
-        else
-            all_finished = false;
+        std::lock_guard lock(budget->mutex);
+
+        /// Release the charge for any chunk the downstream merge has already pulled out of an output port (or
+        /// that a finished output discarded), so port-resident bytes are counted for exactly as long as they are
+        /// held.
+        reclaimPortResidentChunks();
+
+        /// Free queues for outputs closed by downstream
+        auto output_it = outputs.begin();
+        for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
+        {
+            if (output_it->isFinished())
+                clearQueue(shard);
+            else
+                all_finished = false;
+        }
     }
 
     if (all_finished)
@@ -286,13 +341,16 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         /// the delay: the parked chunk is data on that lane, and pulling it re-runs this prepare(), which
         /// then finishes the emptied port.
         bool fully_drained = true;
-        auto drain_it = outputs.begin();
-        for (size_t shard = 0; shard < num_shards; ++shard, ++drain_it)
         {
-            if (output_queues[shard].empty() && !port_resident_block[shard].has_value())
-                drain_it->finish();
-            else
-                fully_drained = false;
+            std::lock_guard lock(budget->mutex);
+            auto drain_it = outputs.begin();
+            for (size_t shard = 0; shard < num_shards; ++shard, ++drain_it)
+            {
+                if (output_queues[shard].empty() && !port_resident_block[shard].has_value())
+                    drain_it->finish();
+                else
+                    fully_drained = false;
+            }
         }
         /// Likewise, do not return Finished while a chunk is still parked in a port: this processor would
         /// never run again, so the chunk's budget charge would stay in the shared counter forever and
@@ -330,7 +388,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
         /// throw, so fail here too instead of reading further ahead. This reads the shared counter, which holds
         /// only measured resident bytes (there are no provisional reservations), so it never rejects on an
         /// estimate: the counter can only exceed the cap once some scatter has actually buffered over it.
-        if (budget_enabled && budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+        if (budget_enabled && isOverBudget())
         {
             budget_exceeded = true;
             return Status::Ready;
@@ -353,7 +411,7 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
             /// chunk (input then reaches EOF, budget never re-checked) the stage could exceed `max_buffered_bytes`
             /// and finish without ever throwing. work() throws before splitting the chunk, so no over-budget
             /// data buffers.
-            if (budget_enabled && budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes))
+            if (budget_enabled && isOverBudget())
                 budget_exceeded = true;
 
             return Status::Ready;
@@ -420,13 +478,15 @@ void BufferedShardByHashTransform::work()
         /// unbounded read-ahead with an actionable error, not a byte-exact cap; the query memory tracker
         /// (`max_memory_usage`) accounts these allocations as they are made and remains the hard memory limit.
         const bool budget_enabled = max_queue_length == 0 && max_buffered_bytes != 0;
-        if (budget_enabled
-            && budget->total_buffered_bytes.load(std::memory_order_relaxed) > static_cast<Int64>(max_buffered_bytes)
-            && !allOutputsFinished())
+        if (budget_enabled && isOverBudget() && !allOutputsFinished())
             throwBufferBudgetExceeded();
     }
 
-    /// Push one queued chunk per shard (if the port can accept it).
+    /// Push one queued chunk per shard (if the port can accept it). Under `budget->mutex`, so that a sibling
+    /// scatter reclaiming this scatter's port-resident charges never observes a chunk half-way between the queue
+    /// and the port - it would see an empty port for a chunk already recorded as parked and release a charge that
+    /// is about to become resident.
+    std::lock_guard lock(budget->mutex);
     auto output_it = outputs.begin();
     for (size_t shard = 0; shard < num_shards; ++shard, ++output_it)
     {
@@ -537,13 +597,13 @@ void BufferedShardByHashTransform::generateOutputChunks()
         /// this just releases the pre-split charge.
         const Int64 released_bytes = releaseTouchedObjectsUnlocked(pending_input_touched);
         budget->total_buffered_bytes.fetch_add(block_bytes - released_bytes, std::memory_order_relaxed);
+
+        if (enqueued_chunks > 0)
+            block_budgets[block_id].touched_objects = std::move(block_touched);
+        /// Otherwise no shard chunk was buffered (every row went to an already-finished output): nothing above
+        /// was registered, so there is nothing to release for this block.
     }
     pending_input_touched.clear();
-
-    if (enqueued_chunks > 0)
-        block_budgets[block_id].touched_objects = std::move(block_touched);
-    /// Otherwise no shard chunk was buffered (every row went to an already-finished output): nothing above was
-    /// registered, so there is nothing to release for this block.
 }
 
 }

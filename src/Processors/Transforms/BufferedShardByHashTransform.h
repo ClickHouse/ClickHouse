@@ -18,6 +18,8 @@
 namespace DB
 {
 
+class BufferedShardByHashTransform;
+
 /// Bookkeeping for one physical buffer (by pointer) referenced by at least one currently-buffered charge
 /// somewhere in a shuffle stage. `refcount` counts every live *visit* that currently holds a reference to it
 /// via `BufferedShardByHashTransform::chargeColumnAndDescendants` (a block visits a buffer once per shard chunk
@@ -40,7 +42,10 @@ struct SharedObjectAccounting
 /// input stream then buffers - exactly once for the whole stage, rather than once per scatter.
 struct BufferedShardByHashBudget
 {
-    /// Guards `shared_object_refcounts` and the accounting updates to `total_buffered_bytes`.
+    /// Guards `shared_object_refcounts`, `scatters`, the accounting updates to `total_buffered_bytes`, and the
+    /// per-scatter bookkeeping of everything currently charged (each scatter's `block_budgets` and
+    /// `port_resident_block`) - a scatter reclaims the stale charges of its siblings through `scatters`, so that
+    /// bookkeeping is not private to one scatter any more.
     std::mutex mutex;
     /// Total resident buffered bytes across all scatters of the stage. Updated under `mutex` together with the
     /// table; the admission checks read it locklessly, so every update must land as ONE atomic operation on the
@@ -54,6 +59,14 @@ struct BufferedShardByHashBudget
     /// buffered, or across sibling scatters (e.g. the same `ColumnConst`/`LowCardinality` payload the query
     /// evaluates once and every stream references) be charged exactly once for as long as any reference holds it.
     std::unordered_map<const void *, SharedObjectAccounting> shared_object_refcounts;
+    /// Every scatter of the stage, so that any of them can reclaim the charges of chunks the downstream merges
+    /// have already pulled out of ANY scatter's output ports before consulting the counter. A scatter can only
+    /// notice a pull of its own by running `prepare()` again (nothing calls back into it at the pull event), so
+    /// without this a scatter that is not scheduled for a while would keep bytes charged that are no longer
+    /// resident, and a sibling would raise TOO_MANY_ROWS_OR_BYTES against them (see
+    /// `BufferedShardByHashTransform::isOverBudget`). Entries are added by the constructor and removed by the
+    /// destructor, which also releases whatever that scatter still had charged.
+    std::vector<BufferedShardByHashTransform *> scatters;
 };
 
 /// Shards input rows to N output ports by hash(key) % N.
@@ -107,6 +120,8 @@ public:
         size_t max_buffered_bytes_ = 0,
         std::shared_ptr<BufferedShardByHashBudget> budget_ = nullptr);
 
+    ~BufferedShardByHashTransform() override;
+
     String getName() const override { return "BufferedShardByHashTransform"; }
 
     Status prepare() override;
@@ -144,7 +159,9 @@ private:
         size_t outstanding_chunks = 0; /// Shard chunks from this block still buffered (in a queue or an output port).
     };
 
-    /// Queue bookkeeping that maintains the shared buffered-bytes counter.
+    /// Queue bookkeeping that maintains the shared buffered-bytes counter. All of it - like everything else that
+    /// touches `block_budgets` or `port_resident_block` - runs with `budget->mutex` held: a sibling scatter
+    /// reclaims this scatter's stale port-resident charges through `BufferedShardByHashBudget::scatters`.
     void enqueue(size_t shard, Chunk chunk, size_t block_id);
     QueuedChunk dequeue(size_t shard);
     void clearQueue(size_t shard);
@@ -157,6 +174,16 @@ private:
     /// bytes must remain counted until then; the transform never finishes a port that still holds a parked
     /// chunk and never returns Finished while one remains (see the EOF drain in prepare()).
     void reclaimPortResidentChunks();
+    /// The same, for every scatter of the stage (`BufferedShardByHashBudget::scatters`), so that the shared
+    /// counter holds no bytes that some sibling's downstream has already pulled. A scatter learns of a pull only
+    /// when it is scheduled again, so its own charges can be stale for as long as the executor leaves it alone,
+    /// while every scatter reads the shared counter on every admission decision.
+    void reclaimAllPortResidentChunks();
+    /// True when the bytes actually resident across the stage exceed `max_buffered_bytes`. Reads the shared
+    /// counter locklessly first, and only when that (possibly stale) reading is over the cap takes
+    /// `budget->mutex`, reclaims the already-pulled port-resident charges of every scatter, and re-reads: the
+    /// budget must fail a query on bytes that are really held, never on a charge whose chunk is already gone.
+    bool isOverBudget();
 
     /// True once every output port is finished. When the whole stage's outputs are closed the buffered data is
     /// needed by nobody, so exceeding the budget must not fail the query (e.g. an outer `LIMIT 1` completing).
