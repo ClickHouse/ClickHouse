@@ -285,7 +285,7 @@ String chooseFillValue(const IColumn & column, const UInt8 * null_map, const Str
             /// A `DateTime64` is a 64-bit integer with a scale, and it is written as one.
             const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData();
             return chooseFillValue<Int64>(
-                reinterpret_cast<const Int64 *>(data.data()), size, null_map, -9223372036854775806LL, name);
+                reinterpret_cast<const Int64 *>(data.data()), size, null_map, -9223372036854775806LL);
         }
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
