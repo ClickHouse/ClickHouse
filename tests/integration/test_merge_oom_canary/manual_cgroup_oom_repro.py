@@ -28,9 +28,10 @@ The script fails closed: it aborts before starting the memory-destructive worklo
 setup step is proven (the memory controller is enabled, the hard limits read back as written, and the
 server is actually charged to the cgroup). Otherwise the 12-worker churn could run outside the cgroup
 and OOM the whole host. The cgroup name is unique per run, so `cleanup` (which tears the cgroup down
-with `cgroup.kill`) can only ever kill this run's own processes; the port is one the kernel reports as
-free (and it is re-checked - as is an explicit PORT - before any setup runs, so a collision fails fast
-instead of burning the startup loop), so concurrent invocations do not interfere with each other. It also refuses to run when the scratch data directory
+with `cgroup.kill`) can only ever kill this run's own processes; the port is one the run binds and
+HOLDS from before any setup until the moment the server is started (an explicit PORT is bound the same
+way, so a collision fails fast instead of burning the startup loop), so concurrent invocations cannot
+claim the same port and do not interfere with each other. It also refuses to run when the scratch data directory
 is on a memory-backed filesystem (`tmpfs`/`ramfs`): there the part bytes written by the churn would be
 charged to the cgroup, so an OOM would prove the filesystem choice rather than the merge-memory
 mechanism. The scratch root defaults to the repo `tmp` directory (disk-backed) and can be overridden
@@ -66,23 +67,41 @@ CG_NAME = f"ch_merge_oom.{os.getpid()}"
 CG = f"/sys/fs/cgroup/{CG_NAME}"
 
 
-def reserve_free_port():
-    """Return a TCP port the kernel reports as free right now.
+def reserve_port(port):
+    """Bind `port` (0 = let the kernel choose) and KEEP the socket open; return `(socket, port)`.
 
-    Binding to port 0 makes the kernel pick a currently-unused ephemeral port, which is what "unique per
-    run" actually requires: any function of the PID (e.g. `19001 + pid % 10000`) aliases as soon as two
-    live PIDs are congruent modulo the range, and the second run would then burn its whole startup loop
-    on `Address already in use`. The socket is closed immediately, so the port is only reserved
-    advisorily - `assert_port_free` re-checks it just before the server is configured, and an explicit
-    PORT is checked the same way, so a collision fails fast with a clear message instead of silently
-    claiming uniqueness.
+    The socket is held for the whole setup, until `release_port_reservation` closes it immediately
+    before the server is started. Probing a port and closing the probe right away would not make the
+    port unique: two concurrent runs can each pick and release the same ephemeral port and only find
+    out when one of them burns its whole startup loop on `Address already in use`. Holding the binding
+    is what actually reserves it - while this socket is open no other process can bind the port.
+
+    Binding to port 0 makes the kernel pick a currently-unused ephemeral port, which is what "unique
+    per run" requires: any function of the PID (e.g. `19001 + pid % 10000`) aliases as soon as two live
+    PIDs are congruent modulo the range. An explicit PORT goes through the same bind, so a collision
+    fails fast with a clear message instead of silently claiming uniqueness.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind(("127.0.0.1", port))
+    except OSError as e:
+        probe.close()
+        die(
+            f"TCP port {port} is not free ({e}); another server (or a concurrent run of this "
+            "script) is using it - re-run without PORT to let the kernel pick a free port",
+            2,
+        )
+    return probe, probe.getsockname()[1]
 
 
-PORT = int(os.environ["PORT"]) if os.environ.get("PORT") else reserve_free_port()
+def release_port_reservation():
+    """Release the held port, so `clickhouse-server` itself can bind it."""
+    global PORT_RESERVATION
+    if PORT_RESERVATION is not None:
+        PORT_RESERVATION.close()
+        PORT_RESERVATION = None
+
+
 LIMIT_GB = int(os.environ.get("LIMIT_GB", "4"))
 LIMIT_BYTES = LIMIT_GB * 1024 * 1024 * 1024
 
@@ -104,17 +123,10 @@ def die(message, code=1):
     sys.exit(code)
 
 
-def assert_port_free(port):
-    """Fail fast if `port` is already taken, instead of looping 40 times on `Address already in use`."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        try:
-            probe.bind(("127.0.0.1", port))
-        except OSError as e:
-            die(
-                f"TCP port {port} is not free ({e}); another server (or a concurrent run of this "
-                "script) is using it - re-run without PORT to let the kernel pick a free port",
-                2,
-            )
+# The port is taken (and held) right away, before anything is set up: a port that is not free would
+# otherwise only surface as 40 failed startup probes, and the reservation is what keeps a concurrent
+# run from picking the same port. It is released just before the server binds it.
+PORT_RESERVATION, PORT = reserve_port(int(os.environ.get("PORT", "0")))
 
 
 def read_file(path):
@@ -240,10 +252,6 @@ def main():
         ["stat", "-fc", "%T", "/sys/fs/cgroup"], capture_output=True, text=True
     ).stdout.strip() != "cgroup2fs":
         die("requires cgroup v2", 2)
-    # The port must be free before anything is set up: a taken port would only surface as 40 failed
-    # startup probes, and with an explicit PORT it could also collide with a concurrent run.
-    assert_port_free(PORT)
-
     os.makedirs(BASE_DIR, exist_ok=True)
     base = tempfile.mkdtemp(prefix="ch_oom_repro.", dir=BASE_DIR)
     try:
@@ -298,6 +306,10 @@ def main():
             write_file(f"{CG}/cgroup.procs", os.getpid())
 
         config_file = os.path.join(base, "cfg", "config.xml")
+        # Hand the port over: the reservation socket is closed only here, one statement before the
+        # server is spawned, so the port stayed held for the whole setup and the window in which
+        # another process could steal it is as small as it can be made.
+        release_port_reservation()
         server = subprocess.Popen(
             ["runuser", "-u", RUN_USER, "--", BIN, "server", "--config-file", config_file],
             preexec_fn=enter_cgroup,
