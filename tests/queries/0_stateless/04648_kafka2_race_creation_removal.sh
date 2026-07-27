@@ -36,7 +36,11 @@ function cleanup()
 {
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT kafka2_remove_zk_before_get_children" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT kafka2_remove_zk_before_final_multi" 2>/dev/null ||:
-    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS k2_race SYNC" 2>/dev/null ||:
+    # Every DROP here must really execute: it is what reaches removeTableNodesFromZooKeeper.
+    # The stress runner injects `ignore_drop_queries_probability=0.2` and `clickhouse-client
+    # --fake-drop` (upgrade check) injects 1; for a storage that keeps nothing on disk the
+    # injection rewrites DROP into a TRUNCATE that Kafka does not implement. Hence the pin.
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS k2_race SYNC SETTINGS ignore_drop_queries_probability = 0" 2>/dev/null ||:
     ${CLICKHOUSE_KEEPER_CLIENT} -q "rmr '${ZK_PATH}'" 2>/dev/null ||:
 }
 trap cleanup EXIT
@@ -93,6 +97,34 @@ function wait_for_drop()
     fi
 }
 
+# "The DROP did not throw" is not enough: each of the two tolerate branches leads to a successful
+# DROP, so removing one of them alone would still leave the other one making the DROP succeed.
+# Assert the warning that only the branch under test can emit.
+# The predicate is scoped to this run's own ZK_PATH (which embeds the per-run random database), so
+# rows left in text_log by a previous `--test-runs` iteration or a concurrent test cannot satisfy
+# it, and to level = 'Warning', so the query text of this very SELECT (which the server also logs,
+# at Debug level, needle and all) cannot satisfy it either.
+function assert_warning_logged()
+{
+    local needle=$1
+    local scenario=$2
+
+    local found
+    found=$(${CLICKHOUSE_CLIENT} -m -q "
+        SYSTEM FLUSH LOGS text_log;
+
+        SELECT count() > 0 FROM system.text_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
+          AND level = 'Warning'
+          AND message LIKE '%${ZK_PATH}%${needle}%'
+        SETTINGS max_rows_to_read = 0
+    ")
+    if [[ "$found" != "1" ]]; then
+        echo "FAIL: scenario ${scenario} did not log the expected warning: ${needle}"
+        exit 1
+    fi
+}
+
 # ===== Scenario A: ZNONODE on tryGetChildren =====
 
 create_table
@@ -101,7 +133,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT kafka2_remove_zk_before_get_chi
 
 # DROP TABLE SYNC triggers dropReplica -> removeTableNodesFromZooKeeper, which pauses on the
 # failpoint before calling tryGetChildren.
-${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC" &
+${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC SETTINGS ignore_drop_queries_probability = 0" &
 DROP_PID=$!
 
 wait_for_pause kafka2_remove_zk_before_get_children
@@ -112,6 +144,7 @@ remove_keeper_subtree_and_verify
 ${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT kafka2_remove_zk_before_get_children"
 
 wait_for_drop $DROP_PID A
+assert_warning_logged "was already removed from Keeper, looks like a concurrent operation removed it" A
 
 echo "Scenario A passed"
 
@@ -121,7 +154,7 @@ create_table
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT kafka2_remove_zk_before_final_multi"
 
-${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC" &
+${CLICKHOUSE_CLIENT} -q "DROP TABLE k2_race SYNC SETTINGS ignore_drop_queries_probability = 0" &
 DROP_PID=$!
 
 wait_for_pause kafka2_remove_zk_before_final_multi
@@ -132,5 +165,6 @@ remove_keeper_subtree_and_verify
 ${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT kafka2_remove_zk_before_final_multi"
 
 wait_for_drop $DROP_PID B
+assert_warning_logged "some nodes were already removed by a concurrent operation" B
 
 echo "Scenario B passed"
