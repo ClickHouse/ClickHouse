@@ -55,26 +55,39 @@ the module cannot be attributed to any one source file.
 
 ## How this compares
 
+Sorted by brotli, which is what a browser negotiates:
+
 | | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
 | --- | ---: | ---: | ---: | ---: |
-| [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, bundled and minified | 1128583 | 196944 | 153347 | 161974 |
-| this, `--no-formatting --no-dcl` | 754152 | 242329 | 188219 | 201737 |
-| this, everything | 1168636 | 362827 | 273666 | 293095 |
-| [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2 | 21656938 | 4805067 | 2020675 | 2150089 |
+| [`node-sql-parser`](https://github.com/taozhi8833998/node-sql-parser) 5.4.0, one dialect, JS | 323347 | 71122 | 58777 | 62024 |
+| [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, JS | 1128583 | 196944 | 153347 | 161974 |
+| [`libpg-query`](https://github.com/launchql/libpg-query-node) 17.7.4, wasm | 1150984 | 229158 | 168575 | 176785 |
+| — its emscripten glue, on top of that | 58903 | 16679 | 14888 | 15718 |
+| **this, `--no-formatting --no-dcl`** | 754152 | 242329 | 188219 | 201737 |
+| **this, everything** | 1168636 | 362827 | 273666 | 293095 |
+| [`sql.js`](https://github.com/sql-js/sql.js) 1.14.1, wasm | 659730 | 322193 | 278641 | 289690 |
+| `node-sql-parser` 5.4.0, all 20+ dialects, JS | 2609025 | 504010 | 333174 | 360819 |
+| [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2, wasm | 21656938 | 4805067 | 2020675 | 2150089 |
 
-`@clickhouse/parser` is smaller, and it is the honest comparison: same dialect, and it parses and
-formats. It is a Peggy grammar with Zod schemas rather than WebAssembly - a reimplementation, so it
-can drift from the server, which this build cannot. Its published `index.mjs` is 3.6 MB unminified
-and imports `zod` externally; the row above is both, bundled and minified with esbuild, which is
-what a consumer ships.
+The row to measure against is **`libpg-query`**: the same idea, a production database's own parser
+compiled to WebAssembly rather than reimplemented. With its glue it is 183463 brotli against this
+build's 188219 — the same ballpark, for a grammar of comparable size.
 
-`polyglot` is a transpiler for more than thirty dialects, so it carries thirty grammars and thirty
-generators; it is here for scale, not as a like-for-like. Its module is stripped - 97.8% of it is
-the code section - but built at Rust's default release settings rather than for size.
+The two JS parsers are smaller, and both are reimplementations. `@clickhouse/parser` is a Peggy
+grammar with Zod schemas for the same dialect, so it can drift from the server, where this cannot;
+its published `index.mjs` is 3.6 MB unminified and imports `zod` externally, so the row above is
+both, bundled and minified with esbuild, as a consumer would ship them. `node-sql-parser` is the
+smallest thing here per dialect, and covers much less of any of them; loading all its dialects
+costs more than this whole module.
 
-`superjobru/clickhouse-sql-parser` is not in the table: it is an abandoned prototype (last
-commit February 2022, about 55 KB of Rust) that handles basic `CREATE TABLE`, with nothing
-published to measure.
+`sql.js` is a whole SQLite — engine, storage and all, not a parser — and is here only for scale.
+It is the one entry smaller than this uncompressed and larger after compression. `polyglot` is a
+transpiler carrying thirty grammars and thirty generators; stripped, but built at Rust's default
+release settings rather than for size.
+
+`superjobru/clickhouse-sql-parser` is not in the table: an abandoned prototype, last commit
+February 2022, about 55 KB of Rust handling basic `CREATE TABLE`, with nothing published to
+measure.
 
 ## What is left out, and why
 
