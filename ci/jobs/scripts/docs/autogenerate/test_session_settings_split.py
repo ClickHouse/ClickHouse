@@ -353,6 +353,32 @@ def main():
         )
         assert '"default":"\\"\\""' not in server_empty_default_explorer
 
+        server_page_with_empty_default = generated_page(
+            ["server_empty_default"]
+        ).replace('default_value="0"', 'default_value=""')
+        _, _, server_sections = mod.parse_settings_page(
+            server_page_with_empty_default
+        )
+        assert server_sections[0].default_value == '""'
+        server_pages = mod.group_session_settings(
+            server_sections,
+            base_route=server_family["base_route"],
+            max_characters=server_family["max_characters"],
+        )
+        server_explorer = mod._settings_explorer_component(
+            server_pages, server_family
+        )
+        assert (
+            '"name":"server_empty_default",'
+            '"href":"/reference/settings/server-settings/settings/other'
+            '#server_empty_default","default":"\\"\\""'
+        ) in server_explorer
+        server_sql = (
+            HERE / "sql" / "global-server-settings.sql"
+        ).read_text(encoding="utf-8")
+        assert "if(type != ''," in server_sql
+        assert "if(type != '' AND default != ''," not in server_sql
+
         regrouped = mod.group_session_settings([
             mod.SettingSection(
                 "timeout_before_checking_execution_speed",

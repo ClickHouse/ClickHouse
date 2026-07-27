@@ -1464,7 +1464,7 @@
       "path": "/reference/settings/server-settings/settings/distributed",
       "label": "distributed_*",
       "settings": 7,
-      "characters": 1490
+      "characters": 1574
     },
     {
       "path": "/reference/settings/server-settings/settings/distributed-cache",
@@ -1584,13 +1584,13 @@
       "path": "/reference/settings/server-settings/settings/interserver-http",
       "label": "interserver_http_*",
       "settings": 3,
-      "characters": 3142
+      "characters": 3227
     },
     {
       "path": "/reference/settings/server-settings/settings/interserver-https",
       "label": "interserver_https_*",
       "settings": 2,
-      "characters": 567
+      "characters": 652
     },
     {
       "path": "/reference/settings/server-settings/settings/jemalloc",
@@ -1614,7 +1614,7 @@
       "path": "/reference/settings/server-settings/settings/keeper",
       "label": "keeper_*",
       "settings": 2,
-      "characters": 488
+      "characters": 572
     },
     {
       "path": "/reference/settings/server-settings/settings/keeper-server-socket",
@@ -1626,7 +1626,7 @@
       "path": "/reference/settings/server-settings/settings/license",
       "label": "license_*",
       "settings": 2,
-      "characters": 194
+      "characters": 363
     },
     {
       "path": "/reference/settings/server-settings/settings/listen",
@@ -1992,7 +1992,7 @@
       "path": "/reference/settings/server-settings/settings/temporary-data",
       "label": "temporary_data_*",
       "settings": 2,
-      "characters": 1364
+      "characters": 1449
     },
     {
       "path": "/reference/settings/server-settings/settings/text-index",
@@ -2022,7 +2022,7 @@
       "path": "/reference/settings/server-settings/settings/tmp",
       "label": "tmp_*",
       "settings": 2,
-      "characters": 1616
+      "characters": 1701
     },
     {
       "path": "/reference/settings/server-settings/settings/top-level",
@@ -2070,7 +2070,7 @@
       "path": "/reference/settings/server-settings/settings/users",
       "label": "users_*",
       "settings": 2,
-      "characters": 466
+      "characters": 551
     },
     {
       "path": "/reference/settings/server-settings/settings/vector-similarity",
@@ -2094,7 +2094,7 @@
       "path": "/reference/settings/server-settings/settings/other",
       "label": "Other",
       "settings": 118,
-      "characters": 98035
+      "characters": 99380
     }
   ]
 }
