@@ -1103,8 +1103,22 @@ static void writeMetadataFiles(
 
             auto snapshot_id = plan.manifest_file_to_first_snapshot[manifest_entry->path];
             auto snapshot = snapshot_id_to_snapshot[snapshot_id];
+            /// Fail closed rather than skip: a live manifest can have no rewritten snapshot for
+            /// its first retained reference when that reference is a delete-only snapshot
+            /// (tryGetAppendUpdate skips those when generating new snapshots), e.g. after the
+            /// appending snapshot was expired and the manifest survives only through a later
+            /// delete-only overwrite. Skipping would silently drop the manifest from the
+            /// rewritten table -- and clearOldFiles would then delete its original files after
+            /// commit. Throwing here aborts OPTIMIZE before any metadata is committed and
+            /// before any original file is removed, leaving the table intact.
             if (!snapshot)
-                continue;
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Iceberg compaction does not support this table history: live manifest {} is first referenced "
+                    "by snapshot {} which produced no rewritten snapshot (e.g. a delete-only snapshot). "
+                    "The table is left unchanged.",
+                    manifest_entry->path.serialize(),
+                    snapshot_id);
 
             std::vector<Iceberg::IcebergPathFromMetadata> data_files_vec(data_filenames.begin(), data_filenames.end());
             std::vector<UInt64> file_row_counts;
