@@ -57,6 +57,13 @@ private:
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
 
+    /// The deepest directory at or above root_path's parent that already existed when this writer
+    /// was constructed. Every directory below it is created by this backup, so its entry is not
+    /// durable until the containing directory is fsynced; this one is the last that has to be
+    /// fsynced, and the parent walk in syncFileToDisk() stops at (and includes) it. Computed once
+    /// before anything is written, and it bounds the walk so it never runs up to "/".
+    const std::filesystem::path sync_dirs_up_to;
+
     /// Directories that received a file synced via syncFileToDisk(), collected so they can be
     /// fsynced (deepest-first) in syncDirectoriesToDisk(). Written from the concurrent backup
     /// write path, hence guarded.

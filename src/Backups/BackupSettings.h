@@ -46,8 +46,9 @@ struct BackupSettings
 
     /// Whether to fsync the backup's files, the `.backup` manifest and the containing
     /// directories to local storage before the backup is reported as created, so that an
-    /// acknowledged backup survives power loss. Only affects local `File`/`Disk` destinations;
-    /// object-storage destinations (`S3`/`Azure`) are already durable once uploaded.
+    /// acknowledged backup survives power loss. Applies to `File` destinations and to `Disk`
+    /// destinations whose disk stores plain local files; object-storage destinations are already
+    /// durable once uploaded.
     bool fsync_backup_files = true;
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)

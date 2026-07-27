@@ -51,6 +51,24 @@ check_backup "file_archive"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file.zip')"  
 check_backup "disk"          "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk')"     2 "fsync_backup_files = 1"
 check_backup "disk_archive"  "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk.zip')" 1 "fsync_backup_files = 1"
 
+# A nested destination such as File('a/b/c') also creates the intermediate directories a and b,
+# whose entries are durable only once their own parent directory is fsynced. Backing up the same
+# table into a destination two levels deeper must therefore fsync exactly two directories more
+# than the flat one: the tree below the backup root is identical, and the extra two are the
+# intermediate 'a' and the allowed_path directory holding it.
+dir_sync_of() {
+    $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
+        SYSTEM FLUSH LOGS query_log;
+        SELECT ProfileEvents['DirectorySync']
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$1';
+    "
+}
+qid_nested="${CLICKHOUSE_TEST_UNIQUE_NAME}_nested"
+$CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_nested" \
+    -q "BACKUP TABLE t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}_n/sub/deep') SETTINGS fsync_backup_files = 1"
+echo -e "nested dir_sync - flat dir_sync = 2:\t$(( $(dir_sync_of "$qid_nested") - $(dir_sync_of "${CLICKHOUSE_TEST_UNIQUE_NAME}_file") == 2 ))"
+
 # With fsync_backup_files=0 no fsync is issued (opt-out, matches the pre-fix behavior).
 qid_off="${CLICKHOUSE_TEST_UNIQUE_NAME}_off"
 $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_off" \

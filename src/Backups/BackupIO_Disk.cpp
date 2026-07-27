@@ -64,7 +64,25 @@ BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_pa
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
+    /// Ask for what the fsync path actually needs: the backup kept as plain files in the local
+    /// filesystem, where getBlobPath() maps a path to the file holding it. DiskLocal qualifies,
+    /// also behind DiskEncrypted, which inherits the delegate's type. This cannot be phrased as
+    /// !isRemote(): DiskObjectStorage reports isRemote() == true even over LocalObjectStorage,
+    /// while DiskBackup reports false yet throws from getBlobPath().
+    , destination_is_plain_local_files(data_source_description.type == DataSourceType::Local)
 {
+    if (data_source_description.object_storage_type == ObjectStorageType::Local)
+    {
+        /// Local object storage: the blobs are local files, but the backup is addressed through the
+        /// disk's own metadata, whose durability belongs to the metadata storage rather than to the
+        /// backup. Warn rather than silently ignoring fsync_backup_files. Note this is not reachable
+        /// via isRemote(), which DiskObjectStorage reports as true even over local object storage.
+        LOG_WARNING(
+            log,
+            "Disk {} ({}) stores data locally but not as plain files, so fsync_backup_files cannot make a backup on it durable",
+            disk->getName(),
+            data_source_description.name());
+    }
 }
 
 BackupWriterDisk::~BackupWriterDisk() = default;
@@ -164,9 +182,10 @@ void BackupWriterDisk::copyFile(const String & destination, const String & sourc
 
 void BackupWriterDisk::syncFileToDisk(const String & file_name)
 {
-    /// Only local disks need an explicit fsync; a completed upload to remote object storage is
-    /// already durable. For a local disk getBlobPath() resolves to the absolute filesystem path.
-    if (disk->isRemote())
+    /// A completed upload to object storage is already durable, and only a plain-local destination
+    /// can be made durable by fsyncing files: there getBlobPath() resolves a disk-relative path to
+    /// the absolute filesystem path of the file holding it.
+    if (!destination_is_plain_local_files)
         return;
 
     auto file_path = root_path / file_name;
@@ -188,7 +207,7 @@ void BackupWriterDisk::syncFileToDisk(const String & file_name)
 
 void BackupWriterDisk::syncDirectoriesToDisk()
 {
-    if (disk->isRemote())
+    if (!destination_is_plain_local_files)
         return;
 
     std::set<fs::path> dirs;

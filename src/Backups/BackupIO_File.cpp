@@ -75,10 +75,29 @@ void BackupReaderFile::copyFileToDisk(const String & path_in_backup, size_t file
 }
 
 
+namespace
+{
+    /// The deepest directory at or above `path`'s parent that already exists. Everything below it
+    /// is created by the backup, so those directory entries become durable only once their own
+    /// parent directory is fsynced, which makes the returned directory the last one to sync.
+    /// Must be called before the backup creates anything.
+    fs::path findDeepestExistingAncestor(const fs::path & path)
+    {
+        std::error_code ec;
+        for (auto dir = path.parent_path(); dir.has_relative_path(); dir = dir.parent_path())
+        {
+            if (fs::is_directory(dir, ec))
+                return dir;
+        }
+        return path.root_path();
+    }
+}
+
 BackupWriterFile::BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_)
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
+    , sync_dirs_up_to(findDeepestExistingAncestor(fs::path{root_path_}.lexically_normal()))
 {
 }
 
@@ -186,18 +205,16 @@ void BackupWriterFile::syncFileToDisk(const String & file_name)
     auto file_path = (root_path / file_name).lexically_normal();
     fsyncBackupFileContents(file_path);
 
-    /// Remember the ancestor directories of this file (up to and including the backup root)
-    /// so syncDirectoriesToDisk() can persist their entries. root_path is absolute here, so
-    /// the walk stops at the root and never leaves the backup. Normalize so a configured
-    /// trailing separator does not break the comparison with the root.
-    const auto root = root_path.lexically_normal();
-    const auto stop = root.parent_path();
+    /// Remember the ancestor directories of this file so syncDirectoriesToDisk() can persist their
+    /// entries. The walk goes up to and including sync_dirs_up_to, which covers not only the backup
+    /// root but also the intermediate directories created for a nested destination such as
+    /// File('a/b/c'), and stops there because that directory's own entry already existed.
     std::lock_guard lock{dirs_to_sync_mutex};
-    for (auto dir = file_path.parent_path(); dir.has_relative_path() && dir != stop; dir = dir.parent_path())
+    for (auto dir = file_path.parent_path(); dir.has_relative_path(); dir = dir.parent_path())
     {
         if (!dirs_to_sync.emplace(dir).second)
             break; /// this dir and all its ancestors are already recorded
-        if (dir == root)
+        if (dir == sync_dirs_up_to)
             break;
     }
 }
@@ -215,16 +232,6 @@ void BackupWriterFile::syncDirectoriesToDisk()
     /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
         fsyncBackupDirectory(*it);
-
-    /// Finally the backup root's parent, so the root directory's own entry is persisted
-    /// (create_directories may have created the root too).
-    const auto root_parent = root_path.lexically_normal().parent_path();
-    if (!root_parent.empty())
-    {
-        std::error_code ec;
-        if (fs::is_directory(root_parent, ec))
-            fsyncBackupDirectory(root_parent);
-    }
 }
 
 }

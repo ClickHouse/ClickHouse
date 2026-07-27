@@ -64,6 +64,10 @@ private:
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
 
+    /// Whether this disk keeps the backup as plain files in the local filesystem, so that fsyncing
+    /// those files and their directories makes the backup durable. See syncFileToDisk().
+    const bool destination_is_plain_local_files;
+
     /// Directories that received a file synced via syncFileToDisk(), collected so they can be
     /// fsynced (deepest-first) in syncDirectoriesToDisk(). Written from the concurrent backup
     /// write path, hence guarded. Only used for local disks.

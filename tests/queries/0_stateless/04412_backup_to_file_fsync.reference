@@ -3,5 +3,6 @@ file file_sync>=2=	1	, dir_sync>0=	1
 file_archive file_sync>=1=	1	, dir_sync>0=	1
 disk file_sync>=2=	1	, dir_sync>0=	1
 disk_archive file_sync>=1=	1	, dir_sync>0=	1
+nested dir_sync - flat dir_sync = 2:	1
 off file_sync=0=	1	, dir_sync=0=	1
 restored count: 	50000
