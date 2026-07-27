@@ -70,7 +70,8 @@ public:
         bool need_only_count) const override;
 
 private:
-    Lance::DatasetOptions getDatasetOptions() const;
+    /// When `local_context` is set, fills S3 HTTP timeouts from ClickHouse settings.
+    Lance::DatasetOptions getDatasetOptions(const ContextPtr & local_context = {}) const;
 
     StorageObjectStorageConfigurationWeakPtr configuration;
 };

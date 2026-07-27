@@ -48,8 +48,13 @@ struct DatasetOptions
     bool s3_no_sign_request = false;
     bool s3_allow_http = false;
     bool s3_virtual_hosted_style_request = false;
+    /// S3 HTTP request timeout (object_store). 0 = library default.
+    UInt64 s3_request_timeout_ms = 0;
+    /// S3 connect timeout (object_store). 0 = library default.
+    UInt64 s3_connect_timeout_ms = 0;
 
     /// Stable cache key for query-scoped dataset reuse (includes credentials fingerprint).
+    /// Timeouts are intentionally excluded: they do not change dataset identity.
     String identityKey() const;
 };
 

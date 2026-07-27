@@ -65,6 +65,10 @@ typedef struct ch_lance_dataset_options
     bool s3_no_sign_request;
     bool s3_allow_http;
     bool s3_virtual_hosted_style_request;
+    /// Per-request HTTP timeout for S3 (object_store `timeout`). 0 = library default (30s).
+    uint64_t s3_request_timeout_ms;
+    /// TCP/connect timeout for S3 (object_store `connect_timeout`). 0 = library default (5s).
+    uint64_t s3_connect_timeout_ms;
     /// Optional. When non-null, open can be interrupted by ch_lance_cancel_handle_cancel.
     ch_lance_cancel_handle * cancel;
 } ch_lance_dataset_options;

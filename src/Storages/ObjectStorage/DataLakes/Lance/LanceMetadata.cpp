@@ -13,9 +13,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ColumnsDescription.h>
+#include <algorithm>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Lance/LanceMetadata.h>
@@ -37,6 +40,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+extern const SettingsSeconds http_connection_timeout;
+extern const SettingsSeconds http_send_timeout;
+extern const SettingsSeconds http_receive_timeout;
+}
 
 #if USE_AWS_S3
 namespace S3AuthSetting
@@ -506,7 +515,7 @@ bool LanceMetadata::operator==(const IDataLakeMetadata & other) const
 
 NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
 {
-    const auto options = getDatasetOptions();
+    const auto options = getDatasetOptions(local_context);
     if (local_context && local_context->hasQueryContext())
     {
         auto session = Lance::QuerySession::get(local_context);
@@ -523,7 +532,7 @@ NamesAndTypesList LanceMetadata::getTableSchema(ContextPtr local_context) const
 
 std::optional<DataLakeTableStateSnapshot> LanceMetadata::getTableStateSnapshot(ContextPtr local_context) const
 {
-    const auto options = getDatasetOptions();
+    const auto options = getDatasetOptions(local_context);
     Lance::DatasetHandle dataset;
     if (local_context && local_context->hasQueryContext())
     {
@@ -552,7 +561,7 @@ std::unique_ptr<StorageInMemoryMetadata> LanceMetadata::buildStorageMetadataFrom
     if (lance_state->version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot build `Lance` metadata from zero dataset version");
 
-    const auto options = getDatasetOptions();
+    const auto options = getDatasetOptions(local_context);
     Lance::DatasetHandle dataset;
     if (local_context && local_context->hasQueryContext())
     {
@@ -619,7 +628,7 @@ ObjectIterator LanceMetadata::iterate(
     if (snapshot.version == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate `Lance` dataset at zero dataset version");
 
-    const auto options = getDatasetOptions();
+    const auto options = getDatasetOptions(local_context);
     Lance::DatasetHandle dataset;
     if (local_context && local_context->hasQueryContext())
         dataset = Lance::QuerySession::get(local_context)->getPinned(options, snapshot.version);
@@ -645,7 +654,7 @@ std::optional<Pipe> LanceMetadata::read(
     Lance::DatasetHandle dataset = lance_object.dataset;
     if (!dataset)
     {
-        const auto options = getDatasetOptions();
+        const auto options = getDatasetOptions(local_context);
         if (local_context && local_context->hasQueryContext())
             dataset = Lance::QuerySession::get(local_context)->getPinned(options, snapshot.version);
         else
@@ -654,7 +663,7 @@ std::optional<Pipe> LanceMetadata::read(
     else if (local_context && local_context->hasQueryContext())
     {
         /// Source of truth is the query session; ObjectInfo handle is a fast path that must match.
-        auto session_handle = Lance::QuerySession::get(local_context)->getPinned(getDatasetOptions(), snapshot.version);
+        auto session_handle = Lance::QuerySession::get(local_context)->getPinned(getDatasetOptions(local_context), snapshot.version);
         if (session_handle.identityKey() != dataset.identityKey())
         {
             throw Exception(
@@ -692,7 +701,7 @@ std::optional<Pipe> LanceMetadata::read(
     return Pipe(source);
 }
 
-Lance::DatasetOptions LanceMetadata::getDatasetOptions() const
+Lance::DatasetOptions LanceMetadata::getDatasetOptions(const ContextPtr & local_context) const
 {
     const auto configuration_ptr = configuration.lock();
     if (!configuration_ptr)
@@ -717,6 +726,20 @@ Lance::DatasetOptions LanceMetadata::getDatasetOptions() const
         options.s3_no_sign_request = auth_settings[S3AuthSetting::no_sign_request].value;
         options.s3_allow_http = s3_configuration->url.uri.getScheme() == "http";
         options.s3_virtual_hosted_style_request = s3_configuration->url.is_virtual_hosted_style;
+
+        /// Align Lance object_store deadlines with ClickHouse HTTP settings (Phase C safety net).
+        /// Defaults match Core/Defines.h when context is unavailable.
+        options.s3_connect_timeout_ms = DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT * 1000;
+        options.s3_request_timeout_ms = DEFAULT_HTTP_READ_BUFFER_TIMEOUT * 1000;
+        if (local_context)
+        {
+            const auto & settings = local_context->getSettingsRef();
+            options.s3_connect_timeout_ms = static_cast<UInt64>(
+                settings[Setting::http_connection_timeout].totalMilliseconds());
+            const auto send_ms = settings[Setting::http_send_timeout].totalMilliseconds();
+            const auto receive_ms = settings[Setting::http_receive_timeout].totalMilliseconds();
+            options.s3_request_timeout_ms = static_cast<UInt64>(std::max(send_ms, receive_ms));
+        }
         return options;
     }
 #endif

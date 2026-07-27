@@ -141,6 +141,8 @@ ch_lance_dataset_options toNativeOptions(const DatasetOptions & options, ch_lanc
         .s3_no_sign_request = options.s3_no_sign_request,
         .s3_allow_http = options.s3_allow_http,
         .s3_virtual_hosted_style_request = options.s3_virtual_hosted_style_request,
+        .s3_request_timeout_ms = options.s3_request_timeout_ms,
+        .s3_connect_timeout_ms = options.s3_connect_timeout_ms,
         .cancel = cancel,
     };
 }

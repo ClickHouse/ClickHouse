@@ -9,7 +9,8 @@ use lance::dataset::ReadParams;
 use lance::io::ObjectStoreParams;
 use lance::Dataset;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
-use object_store::DynObjectStore;
+use object_store::{ClientOptions, DynObjectStore, RetryConfig};
+use std::time::Duration;
 use std::collections::HashMap;
 use std::error::Error as StdError;
 use std::ffi::{CStr, CString};
@@ -141,6 +142,8 @@ pub struct ch_lance_dataset_options {
     s3_no_sign_request: bool,
     s3_allow_http: bool,
     s3_virtual_hosted_style_request: bool,
+    s3_request_timeout_ms: u64,
+    s3_connect_timeout_ms: u64,
     cancel: *mut ch_lance_cancel_handle,
 }
 
@@ -644,6 +647,19 @@ unsafe fn apply_dataset_options(
             }
             .to_string(),
         );
+        // HTTP deadlines (Phase C). Keys match object_store ClientConfigKey humantime strings.
+        if options.s3_request_timeout_ms != 0 {
+            values.insert(
+                "timeout".to_string(),
+                format!("{}ms", options.s3_request_timeout_ms),
+            );
+        }
+        if options.s3_connect_timeout_ms != 0 {
+            values.insert(
+                "connect_timeout".to_string(),
+                format!("{}ms", options.s3_connect_timeout_ms),
+            );
+        }
         Some(values)
     } else {
         None
@@ -726,7 +742,52 @@ fn build_s3_store(
         AmazonS3Builder::new()
     }
     .with_url(uri);
+
+    // Explicit ClientOptions so timeouts are applied even when only one is set.
+    let mut client_options = ClientOptions::new();
+    let mut has_client_options = false;
+    if let Some(timeout) = storage_options.get("timeout") {
+        client_options = client_options.with_timeout(
+            parse_timeout_duration(timeout)
+                .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?,
+        );
+        has_client_options = true;
+    }
+    if let Some(connect_timeout) = storage_options.get("connect_timeout") {
+        client_options = client_options.with_connect_timeout(
+            parse_timeout_duration(connect_timeout)
+                .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?,
+        );
+        has_client_options = true;
+    }
+    if has_client_options {
+        builder = builder.with_client_options(client_options);
+    }
+
+    // Cap overall retry budget so a flaky/hanging endpoint cannot retry for minutes.
+    // object_store defaults: max_retries=10, retry_timeout=180s.
+    if let Some(timeout) = storage_options.get("timeout") {
+        let request_timeout = parse_timeout_duration(timeout)
+            .map_err(|err| FfiError::invalid_argument(err).with_origin(ChLanceErrorOrigin::S3))?;
+        let retry_timeout = request_timeout
+            .checked_mul(3)
+            .unwrap_or(request_timeout)
+            .max(request_timeout);
+        builder = builder.with_retry(RetryConfig {
+            max_retries: 3,
+            retry_timeout,
+            ..Default::default()
+        });
+    }
+
     for (key, value) in storage_options {
+        // Already applied above; skip to avoid double-setting or unknown-key noise.
+        if key == "timeout"
+            || key == "connect_timeout"
+            || key == "aws_use_environment_credentials"
+        {
+            continue;
+        }
         if let Ok(config_key) = key.parse::<AmazonS3ConfigKey>() {
             builder = builder.with_config(config_key, value);
         }
@@ -735,6 +796,37 @@ fn build_s3_store(
         .build()
         .map(|store| Arc::new(store) as Arc<DynObjectStore>)
         .map_err(|err| FfiError::from_object_store(ChLanceErrorOrigin::S3, err))
+}
+
+fn parse_timeout_duration(value: &str) -> Result<Duration, String> {
+    // We emit `{n}ms` from FFI; also accept `{n}s` and bare milliseconds.
+    let trimmed = value.trim();
+    if let Some(ms_str) = trimmed.strip_suffix("ms") {
+        let ms: u64 = ms_str.trim().parse().map_err(|_| {
+            format!(
+                "Invalid S3 timeout `{}`: expected duration like `30000ms`",
+                value
+            )
+        })?;
+        return Ok(Duration::from_millis(ms));
+    }
+    if let Some(s_str) = trimmed.strip_suffix('s') {
+        // Avoid matching the trailing 's' of "ms" (handled above).
+        let secs: u64 = s_str.trim().parse().map_err(|_| {
+            format!(
+                "Invalid S3 timeout `{}`: expected duration like `30s`",
+                value
+            )
+        })?;
+        return Ok(Duration::from_secs(secs));
+    }
+    if let Ok(ms) = trimmed.parse::<u64>() {
+        return Ok(Duration::from_millis(ms));
+    }
+    Err(format!(
+        "Invalid S3 timeout `{}`: expected `30s`, `30000ms`, or integer milliseconds",
+        value
+    ))
 }
 
 fn projection_from_ffi(list: &ch_lance_string_list) -> FfiResult<Vec<String>> {
@@ -1498,6 +1590,8 @@ mod tests {
             s3_no_sign_request: false,
             s3_allow_http: false,
             s3_virtual_hosted_style_request: false,
+            s3_request_timeout_ms: 0,
+            s3_connect_timeout_ms: 0,
             cancel: ptr::null_mut(),
         }
     }
@@ -1982,6 +2076,51 @@ mod tests {
             ch_lance_cancel_handle_free(cancel);
             ch_lance_free_dataset(dataset);
         }
+    }
+
+    #[test]
+    fn parse_timeout_duration_accepts_ms_and_secs() {
+        assert_eq!(
+            parse_timeout_duration("1500ms").unwrap(),
+            Duration::from_millis(1500)
+        );
+        assert_eq!(parse_timeout_duration("30s").unwrap(), Duration::from_secs(30));
+        assert_eq!(
+            parse_timeout_duration("2500").unwrap(),
+            Duration::from_millis(2500)
+        );
+        assert!(parse_timeout_duration("not-a-duration").is_err());
+    }
+
+    #[test]
+    fn apply_dataset_options_records_timeouts() {
+        let uri = CString::new("s3://bucket/path").unwrap();
+        let region = CString::new("us-east-1").unwrap();
+        let options = ch_lance_dataset_options {
+            uri: uri.as_ptr(),
+            use_s3: true,
+            s3_region: region.as_ptr(),
+            s3_endpoint: ptr::null(),
+            s3_access_key_id: ptr::null(),
+            s3_secret_access_key: ptr::null(),
+            s3_session_token: ptr::null(),
+            s3_role_arn: ptr::null(),
+            s3_role_session_name: ptr::null(),
+            s3_use_environment_credentials: false,
+            s3_no_sign_request: true,
+            s3_allow_http: true,
+            s3_virtual_hosted_style_request: false,
+            s3_request_timeout_ms: 12_000,
+            s3_connect_timeout_ms: 2_000,
+            cancel: ptr::null_mut(),
+        };
+        let open = unsafe { apply_dataset_options(&options) }.unwrap();
+        let storage = open.storage_options.expect("s3 options");
+        assert_eq!(storage.get("timeout").map(String::as_str), Some("12000ms"));
+        assert_eq!(
+            storage.get("connect_timeout").map(String::as_str),
+            Some("2000ms")
+        );
     }
 
     #[test]
@@ -2781,6 +2920,8 @@ mod tests {
             s3_no_sign_request: false,
             s3_allow_http: true,
             s3_virtual_hosted_style_request: false,
+            s3_request_timeout_ms: 0,
+            s3_connect_timeout_ms: 0,
             cancel: ptr::null_mut(),
         };
         let mut error = empty_error();
