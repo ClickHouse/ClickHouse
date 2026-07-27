@@ -73,7 +73,7 @@ static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allow
 /// user who cannot read a certificate and key must not be able to authenticate with them. The
 /// contents can be passed in `ssl_ca_pem`, `ssl_cert_pem` and `ssl_key_pem` instead.
 /// Dictionaries defined in server configuration files are written by an operator and keep using paths.
-void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
 {
     static const std::initializer_list<std::pair<std::string_view, std::string_view>> keys
         = {{"ssl_ca", "ssl_ca_pem"}, {"ssl_cert", "ssl_cert_pem"}, {"ssl_key", "ssl_key_pem"}};

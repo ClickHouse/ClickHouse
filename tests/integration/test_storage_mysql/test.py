@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -9,6 +10,8 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import mysql_pass
+
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
 cluster = ClickHouseCluster(__file__)
 
@@ -1308,6 +1311,131 @@ def test_mysql_ssl_auth(started_cluster):
             FLUSH PRIVILEGES;
             """
         )
+
+
+def read_certificate(name):
+    with open(os.path.join(SCRIPT_DIR, "certs", name), "r") as file:
+        return file.read()
+
+
+def quote_certificate(name):
+    """The contents of a PEM file as a ClickHouse string literal."""
+    contents = read_certificate(name)
+    return "'" + contents.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
+
+
+def test_mysql_ssl_auth_with_credential_contents(started_cluster):
+    """The TLS credentials are passed as the contents of the PEM files rather than as paths.
+
+    The MySQL user requires a verified client certificate, so the connection can only be established
+    if the CA certificate, the client certificate and the client key all reach the client library.
+    """
+    conn = get_mysql_conn(started_cluster, started_cluster.mysql8_ip)
+    table_name = "test_table"
+    drop_mysql_table(conn, table_name)
+    create_mysql_table(conn, table_name)
+
+    with conn.cursor() as cursor:
+        cursor.execute(f"CREATE USER 'ssl_pem_user'@'{node1.ip_address}' REQUIRE X509")
+        cursor.execute(
+            f"GRANT ALL PRIVILEGES ON *.* TO 'ssl_pem_user'@'{node1.ip_address}' WITH GRANT OPTION"
+        )
+
+    credentials = f"""
+        ssl_ca_pem = {quote_certificate("ca.pem")},
+        ssl_cert_pem = {quote_certificate("client-cert.pem")},
+        ssl_key_pem = {quote_certificate("client-key.pem")}
+    """
+
+    try:
+        assert (
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_pem_user', '', {credentials})
+                """
+            )
+            == "0\n"
+        )
+
+        # Without the client certificate the same user is refused, which is what makes the check above
+        # evidence that the credentials were used rather than ignored.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"""
+                SELECT count() FROM mysql(
+                    'mysql80:3306', 'clickhouse', '{table_name}', 'ssl_pem_user', '',
+                    ssl_ca_pem = {quote_certificate("ca.pem")})
+                """
+            )
+        assert "ssl_pem_user" in str(exception.value)
+
+        # The private key does not reach query_log. The pattern is split in two so that this query
+        # does not match itself once it is logged in turn.
+        node1.query("SYSTEM FLUSH LOGS query_log")
+        secret = read_certificate("client-key.pem").splitlines()[1]
+        pattern = f"'%{secret[:16]}' || '{secret[16:]}%'"
+        assert (
+            node1.query(
+                f"SELECT count() FROM system.query_log WHERE query LIKE {pattern}"
+            )
+            == "0\n"
+        )
+    finally:
+        with conn.cursor() as cursor:
+            cursor.execute(f"DROP USER 'ssl_pem_user'@'{node1.ip_address}'")
+            cursor.execute("FLUSH PRIVILEGES")
+
+
+def test_mysql_ssl_paths_are_rejected_from_sql(started_cluster):
+    """A path to a certificate or a key is only accepted from the server configuration file.
+
+    The server opens the file with its own privileges, so a path coming from SQL would let any user
+    who can define a MySQL source probe the local filesystem and authenticate with credentials they
+    cannot read themselves. `mysql_with_ssl` in the configuration file keeps working (it is used by
+    `test_mysql_ssl_auth`), but neither a collection created with SQL nor a query may name a file.
+    """
+    ca_path = "/etc/clickhouse-server/config.d/ca.pem"
+
+    node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_from_sql")
+    node1.query(
+        f"""
+        CREATE NAMED COLLECTION mysql_ssl_from_sql AS
+            user = 'root', password = '{mysql_pass}', host = 'mysql80', port = 3306,
+            database = 'clickhouse', table = 'test_table', ssl_ca = '{ca_path}'
+        """
+    )
+    try:
+        # In a collection created with SQL.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query("SELECT count() FROM mysql(mysql_ssl_from_sql)")
+        assert "can only be specified in a named collection" in str(exception.value)
+
+        # As a query override, including of a collection defined in the configuration file.
+        for key in ["ssl_ca", "ssl_cert", "ssl_key"]:
+            with pytest.raises(QueryRuntimeException) as exception:
+                node1.query(
+                    f"SELECT count() FROM mysql(mysql_with_ssl, {key} = '{ca_path}')"
+                )
+            assert "cannot be overridden in a query" in str(exception.value)
+
+        # A dictionary created with a DDL query may not name a file either.
+        with pytest.raises(QueryRuntimeException) as exception:
+            node1.query(
+                f"""
+                CREATE DICTIONARY mysql_ssl_dictionary (id UInt32, name String)
+                PRIMARY KEY id
+                SOURCE(MYSQL(
+                    host 'mysql80' port 3306 user 'root' password '{mysql_pass}'
+                    db 'clickhouse' table 'test_table' ssl_ca '{ca_path}'))
+                LAYOUT(FLAT()) LIFETIME(0)
+                """
+            )
+        assert "cannot be specified in a dictionary created with a DDL query" in str(
+            exception.value
+        )
+    finally:
+        node1.query("DROP NAMED COLLECTION IF EXISTS mysql_ssl_from_sql")
 
 
 def test_mysql_reading_clone(started_cluster):
