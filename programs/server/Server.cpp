@@ -1641,6 +1641,11 @@ try
         /// Required for the startup exception case where the termination block that should set is_cancelled=true never runs.
         is_cancelled = true;
 
+        {
+            std::lock_guard lock(main_config_reloader_mutex);
+            main_config_reloader.reset();
+        }
+
         async_metrics->stop();
 
         /** Ask to cancel background jobs all table engines,
