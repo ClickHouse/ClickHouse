@@ -8,7 +8,6 @@ import time
 import traceback
 import urllib.parse
 from datetime import datetime
-from itertools import islice
 from pathlib import Path
 from threading import Thread
 
@@ -1099,37 +1098,56 @@ def read_ci_checks_results(path):
         file from a run that legitimately produced no query rows.
 
     Never raises. compare.sh writes this file last, so a failure there (most
-    often a full disk) leaves an arbitrary byte prefix. A row cut mid-write
-    yields `None` for its remaining fields (`csv.DictReader` `restval`), and a
-    truncated header line yields fewer field names than a data row has cells,
-    so every consumed field is read with `.get` and the duration conversion is
-    guarded. Raising here would kill the job before praktika uploads the
-    artifacts, which is the failure this parser exists to remove.
+    often a full disk) leaves an arbitrary byte prefix. Raising here would kill
+    the job before praktika uploads the artifacts, which is the failure this
+    parser exists to remove, so every shape of prefix is tolerated: a cut inside
+    a multi-byte character (hence the lenient decode, as in
+    `stress_job.read_test_results`), a cut header line (fewer field names than a
+    data row has cells), and a cut data row (`csv.DictReader` fills the missing
+    fields with `restval`, i.e. `None`).
     """
     results = []
     malformed = 0
-    with open(path, "r", encoding="utf-8") as f:
-        header_lines = list(islice(f, 2))  # column names, then column types
-        if len(header_lines) < 2:
-            return results, malformed, False
-        header = header_lines[0].strip().split("\t")
-        reader = csv.DictReader(f, delimiter="\t", fieldnames=header)
-        for row in reader:
-            name = row.get("test_name")
-            status = row.get("test_status")
-            duration_ms = row.get("test_duration_ms")
-            if name is None or status is None or duration_ms is None:
-                malformed += 1
-                continue
-            if not name:
-                # The summary row carries the report message, not a test case.
-                continue
-            try:
-                duration = float(duration_ms) / 1000
-            except (TypeError, ValueError):
-                malformed += 1
-                continue
-            results.append(Result(name=name, status=status, duration=duration))
+    # Decode leniently: a byte prefix of a UTF-8 file can end inside a
+    # multi-byte sequence, which a strict decode rejects.
+    with open(path, "rb") as descriptor:
+        content = descriptor.read().decode("utf-8", errors="replace")
+    lines = content.split("\n")
+    # A complete file is newline-terminated: compare.sh writes it through a
+    # ClickHouse `File(TSVWithNamesAndTypes)` table, which terminates every row.
+    # So a non-empty trailing fragment is a line cut mid-write, and nothing in
+    # it can be trusted - not even the fields that happen to be present, since a
+    # number cut after its first digits still parses.
+    cut_line = lines.pop()
+    if len(lines) < 2:  # column names, then column types
+        return results, malformed, False
+    if cut_line:
+        malformed += 1
+    header = lines[0].strip().split("\t")
+    reader = csv.DictReader(lines[2:], delimiter="\t", fieldnames=header)
+    for row in reader:
+        name = row.get("test_name")
+        if name == "":
+            # The summary row carries the report message, not a test case.
+            continue
+        if (
+            name is None
+            or row.get("test_status") is None
+            or row.get("test_duration_ms") is None
+            # Require every column, not only the three consumed ones: a row
+            # missing any field was cut short.
+            or any(row.get(field) is None for field in header)
+        ):
+            malformed += 1
+            continue
+        try:
+            duration = float(row["test_duration_ms"]) / 1000
+        except (TypeError, ValueError):
+            malformed += 1
+            continue
+        results.append(
+            Result(name=name, status=row["test_status"], duration=duration)
+        )
     return results, malformed, True
 
 

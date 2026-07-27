@@ -164,11 +164,12 @@ The perf job writes `right-trace-log.tsv` and `left-trace-log.tsv`, exports of `
 
 Two limits to know before reaching for these files. They are NOT shipped in `logs.tar.zst` (the archive excludes `*-trace-log.tsv`), and the dump holds only the four columns the report reads: `query_id`, `trace`, `trace_type`, `size`. There is no `symbols` column; addresses are symbolized separately through `*-addresses.tsv`.
 
-**Use the report's collapsed stacks instead.** `report/stacks.$version.tsv` already carries symbolized, collapsed stacks per query, and it is what the report's own flamegraphs are built from:
+**Use the report's collapsed stacks instead.** `report/stacks.$version.tsv` already carries symbolized, collapsed stacks per query, and it is what the report's own flamegraphs are built from. It has no header; its first three columns are `test`, `query_index` and `trace_type`, so select a query by those three fields (the `math.queryN` spelling is a query id and never appears in this file). Keep the trace types apart: `CPU` and `Real` count samples while `MemorySample` and `JemallocSample` sum bytes, so folding them together mixes units.
 
 ```bash
 tar -I zstd -xf tmp/perf_logs.tar.zst -C tmp/ ./report/stacks.right.tsv
-rg -F "math.query2	" tmp/report/stacks.right.tsv | cut -f 5- | sed 's/\t/ /g' > tmp/math2_right.collapsed
+awk -F'\t' '$1 == "math" && $2 == 2 && $3 == "CPU"' tmp/report/stacks.right.tsv \
+  | cut -f 5- | sed 's/\t/ /g' > tmp/math2_right.collapsed
 ```
 
 The resulting `.collapsed` file can be processed with `flamegraph.pl` or the `analyze-assembly.py --perf-map` tool. Compare left (master) vs right (PR) to see what changed.

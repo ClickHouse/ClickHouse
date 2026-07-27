@@ -16,14 +16,18 @@ names than a data row has cells.
 `read_ci_checks_results` must never raise on any of those shapes, because an
 exception escapes `main()` and kills the job before praktika uploads the
 artifacts - the very failure this parser exists to remove. It must still return
-the intact rows and report how many were skipped.
+the intact rows, report how many were skipped, and never report a truncated file
+as clean: a row cut inside a number still parses, so an unterminated trailing
+line has to be dropped rather than trusted.
 """
 
+import inspect
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 
+import ci.jobs.performance_tests as performance_tests
 from ci.jobs.performance_tests import read_ci_checks_results
 
 # Column names and types exactly as compare.sh's `create table ci_checks engine
@@ -180,10 +184,63 @@ def test_summary_row_is_not_imported_as_a_test_case(tmp_path):
     assert malformed == 0
 
 
+def test_unterminated_types_line_is_reported_as_incomplete(tmp_path):
+    # The types line was cut mid-write, so it is not a header at all. Counting
+    # it as one reports a truncated file as CLEAN, and the caller then imports
+    # an empty result set without printing any warning.
+    path = _write(tmp_path, NAMES + "\n" + "UInt32\tLowCardinality(Str")
+    results, malformed, complete = read_ci_checks_results(path)
+    assert complete is False
+    assert results == []
+
+
+def test_row_cut_inside_duration_digits_is_not_imported(tmp_path):
+    # The nastiest prefix: the file ends part-way through test_duration_ms, so
+    # every consumed field is present and the value still parses - as 0.001
+    # instead of 1.2345. An unterminated line must be dropped, not trusted.
+    cells = QUERY_ROWS[0].split("\t")
+    cut = "\t".join(cells[:8]) + "\t1"
+    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY, cut]))
+    results, malformed, complete = read_ci_checks_results(path)
+    assert results == []
+    assert malformed == 1
+
+
+def test_short_row_is_malformed_even_when_consumed_fields_are_present(tmp_path):
+    # A row carrying the first nine columns has a name, a status and a duration,
+    # but it was still cut: the trailing columns are missing. Checking only the
+    # consumed fields would import it as valid.
+    short = "\t".join(QUERY_ROWS[0].split("\t")[:9])
+    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY, short]) + "\n")
+    results, malformed, complete = read_ci_checks_results(path)
+    assert complete is True
+    assert results == []
+    assert malformed == 1
+
+
+def test_header_cut_after_test_status_does_not_raise(tmp_path):
+    # The names line was cut just past test_status, so DictReader has a
+    # "test_name" key but no "test_duration_ms" key at all. Reading the duration
+    # by subscript rather than .get would be a KeyError here, and the row is not
+    # rejected by the name check because test_name is a real string.
+    short_names = "\t".join(c for c, _ in COLUMNS[:8])
+    path = _write(tmp_path, "\n".join([short_names, TYPES, SUMMARY] + QUERY_ROWS) + "\n")
+    results, malformed, complete = read_ci_checks_results(path)
+    assert complete is True
+    assert results == []
+    assert malformed == 2
+
+
 def test_every_truncation_offset_is_survivable(tmp_path):
     # The ENOSPC prefix length is arbitrary, so sweep every offset of a
-    # realistic file rather than sampling a few shapes.
+    # realistic file rather than sampling a few shapes. Two invariants: nothing
+    # raises, and a prefix reported clean never carries a value that differs
+    # from the truth (returning FEWER rows is fine - that is an honest prefix).
     text = "\n".join([NAMES, TYPES, SUMMARY] + QUERY_ROWS) + "\n"
+    truth = [
+        ("arithmetic.xml #0::old", "slower", 1.2345),
+        ("arithmetic.xml #1::new", "unstable", 2.34575),
+    ]
     data = text.encode("utf-8")
     path = tmp_path / "ci-checks.tsv"
     for offset in range(len(data) + 1):
@@ -191,8 +248,53 @@ def test_every_truncation_offset_is_survivable(tmp_path):
         results, malformed, complete = read_ci_checks_results(path)
         assert isinstance(malformed, int)
         assert isinstance(complete, bool)
-        for result in results:
-            assert isinstance(result.duration, float)
+        got = [(r.name, r.status, r.duration) for r in results]
+        if complete and malformed == 0:
+            assert got == truth[: len(got)], offset
+
+
+def test_every_truncation_offset_of_a_non_ascii_file_is_survivable(tmp_path):
+    # A byte prefix of a UTF-8 file can end inside a multi-byte character, which
+    # a strict decode rejects with UnicodeDecodeError. test_name comes from an
+    # .xml basename and query_display_name from arbitrary query text, so the
+    # decode must be lenient rather than assume ASCII.
+    # U+00E9 is two bytes in UTF-8, so some prefix lengths cut it in half.
+    rows = [r.replace("arithmetic", "arithm\u00e9tic") for r in QUERY_ROWS]
+    data = ("\n".join([NAMES, TYPES, SUMMARY] + rows) + "\n").encode("utf-8")
+    path = tmp_path / "ci-checks.tsv"
+    for offset in range(len(data) + 1):
+        path.write_bytes(data[:offset])
+        results, malformed, complete = read_ci_checks_results(path)
+        assert isinstance(malformed, int)
+        assert isinstance(complete, bool)
+
+
+def test_ci_checks_import_is_wired_into_main():
+    # The helper is only half the guard: main() has to keep calling it and keep
+    # surfacing both of its signals. These couplings are invisible to the tests
+    # above, which call the helper directly.
+    source = inspect.getsource(performance_tests.main)
+    assert "read_ci_checks_results(" in source, (
+        "main() must parse ci-checks.tsv through the guarded helper. An inlined "
+        "raw parse lets an exception escape main() and kill the job before "
+        "praktika uploads any artifacts, which is the failure being fixed."
+    )
+    assert "next(f)" not in source, (
+        "A bare next() on the file object raises StopIteration on an empty or "
+        "header-only ci-checks.tsv, which is exactly the ENOSPC shape."
+    )
+    assert "is empty or truncated" in source, (
+        "A truncated ci-checks.tsv must be reported. Without the warning the "
+        "shard goes red with no query rows and nothing says why."
+    )
+    assert "malformed row(s)" in source, (
+        "Rows dropped as malformed must be reported, otherwise a partially "
+        "written file silently imports fewer queries than it ran."
+    )
+    assert "results[-2].results = test_results" in source, (
+        "The parsed rows must still be imported into the previous subtask; "
+        "dropping the assignment silently loses every per-query CIDB row."
+    )
 
 
 if __name__ == "__main__":
@@ -200,7 +302,11 @@ if __name__ == "__main__":
     from pathlib import Path
 
     for name, fn in sorted(globals().items()):
-        if name.startswith("test_") and callable(fn):
+        if not (name.startswith("test_") and callable(fn)):
+            continue
+        if "tmp_path" in inspect.signature(fn).parameters:
             with tempfile.TemporaryDirectory() as d:
                 fn(Path(d))
+        else:
+            fn()
     print("All perf ci-checks parse tests passed.")
