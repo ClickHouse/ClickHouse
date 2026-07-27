@@ -110,8 +110,9 @@ def parse_server_time(value):
 
 
 # Returns the number of seconds between two DateTime64(6) values produced by the server.
-# Both endpoints must be server-recorded so that no clickhouse-client launch (each costs
-# 0.5-1 s, and much more on a contended runner) is inside the measured interval.
+# Both endpoints must be server-recorded, so that the cost of the clickhouse-client launches
+# the test makes in between (0.5-1 s each, and much more on a contended runner) is not added
+# to the measured interval.
 def seconds_between(from_time, to_time):
     return (parse_server_time(to_time) - parse_server_time(from_time)).total_seconds()
 
@@ -273,8 +274,8 @@ def wait_num_system_processes(
 # Kills a BACKUP or RESTORE query.
 # Returns the `query_id` of the KILL QUERY it issued, so that the caller can look up its
 # server-recorded start time later (see get_query_start_time()), after the measured
-# operation has finished, so that no clickhouse-client launch is inside the measured
-# interval.
+# operation has finished. Looking it up afterwards keeps the lookup's own cost out of the
+# interval being measured.
 def kill_query(
     node, backup_id=None, restore_id=None, is_initial_query=None, timeout=None
 ):
@@ -526,16 +527,20 @@ def test_cancel_backup():
         # Measured between two server-recorded timestamps: the start of the KILL QUERY on the
         # node it was sent to, and the moment the initiator reached the terminal status (which
         # is stamped after the initiator finished waiting for the other hosts). So the whole
-        # cluster-wide cancellation is inside the interval, while the harness round trips are
-        # not. The system.query_log lookup above happens after the operation finished, so it
-        # cannot perturb the interval either.
+        # cluster-wide cancellation is inside the interval. wait_status still polls over the
+        # same period, but neither endpoint can be moved by a poll: the left one was written
+        # before the polling started, and the right one is stamped by the backup thread, not
+        # by the observing SELECT. So no client round trip is added to the measurement,
+        # including the system.query_log lookup above, which runs after end_time was stamped.
         time_to_cancel = seconds_between(kill_start_time, end_time)
         print(f"Cancellation took {time_to_cancel} seconds (server-side)")
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, backup_id=backup_id)
         assert get_num_system_processes(nodes, backup_id=backup_id) == 0
-        # Two independent wall-clock reads, so a backward clock step would otherwise make a
-        # too-slow cancellation look fast; the lower bound turns that into a failure.
+        # Unlike the previous time.monotonic() stopwatch, these are two independent
+        # CLOCK_REALTIME reads, so the interval can now come out negative if the wall clock
+        # steps backwards between them. The lower bound makes that a loud failure instead of a
+        # negative value silently satisfying the upper bound.
         assert 0 <= time_to_cancel <= 6  # A backup should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
@@ -598,8 +603,10 @@ def test_cancel_restore():
 
         assert "QUERY_WAS_CANCELLED" in get_error(initiator, restore_id=restore_id)
         assert get_num_system_processes(nodes, restore_id=restore_id) == 0
-        # Two independent wall-clock reads, so a backward clock step would otherwise make a
-        # too-slow cancellation look fast; the lower bound turns that into a failure.
+        # Unlike the previous time.monotonic() stopwatch, these are two independent
+        # CLOCK_REALTIME reads, so the interval can now come out negative if the wall clock
+        # steps backwards between them. The lower bound makes that a loud failure instead of a
+        # negative value silently satisfying the upper bound.
         assert 0 <= time_to_cancel <= 6  # A restore should be cancelled quite quickly.
         no_trash_checker.expect_errors = ["QUERY_WAS_CANCELLED"]
 
