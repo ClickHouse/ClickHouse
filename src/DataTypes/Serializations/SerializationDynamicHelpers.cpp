@@ -1,6 +1,7 @@
 #include <DataTypes/Serializations/SerializationDynamicHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -71,6 +72,14 @@ bool areDynamicSubcolumnTypesCompatibleImpl(const IDataType & lhs, const IDataTy
             return areDynamicSubcolumnTypesCompatibleImpl(*lhs_array->getNestedType(), *rhs_array->getNestedType(), for_read);
     }
 
+    /// `Map` is stored as `Array(Tuple(key, value))`, so recursing into the nested type also covers
+    /// a `JSON` value type, e.g. `Map(String, JSON)` vs `Map(String, JSON(a UInt64))`.
+    if (const auto * lhs_map = typeid_cast<const DataTypeMap *>(&lhs))
+    {
+        if (const auto * rhs_map = typeid_cast<const DataTypeMap *>(&rhs))
+            return areDynamicSubcolumnTypesCompatibleImpl(*lhs_map->getNestedType(), *rhs_map->getNestedType(), for_read);
+    }
+
     if (const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(&lhs))
     {
         if (const auto * rhs_nullable = typeid_cast<const DataTypeNullable *>(&rhs))
@@ -125,6 +134,13 @@ bool dynamicStorageTypesHaveCompatibleIdentity(const IDataType & existing_type, 
         const auto * inserted_array = typeid_cast<const DataTypeArray *>(&inserted_type);
         return inserted_array
             && dynamicStorageTypesHaveCompatibleIdentity(*existing_array->getNestedType(), *inserted_array->getNestedType());
+    }
+
+    if (const auto * existing_map = typeid_cast<const DataTypeMap *>(&existing_type))
+    {
+        const auto * inserted_map = typeid_cast<const DataTypeMap *>(&inserted_type);
+        return inserted_map
+            && dynamicStorageTypesHaveCompatibleIdentity(*existing_map->getNestedType(), *inserted_map->getNestedType());
     }
 
     if (const auto * existing_nullable = typeid_cast<const DataTypeNullable *>(&existing_type))
