@@ -21,8 +21,8 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 # Substrings identifying a sanitizer build in a build type ("amd_asan_ubsan"),
 # a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
-# job name. Sanitizer builds get the tighter server memory cap and reduced
-# concurrency (see the `set_memory_ratio` and `nproc` logic in `main`).
+# job name. Sanitizer builds get the tighter server memory cap (see the
+# `set_memory_ratio` logic in `main`).
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 
@@ -327,7 +327,6 @@ def main():
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
-    is_distributed_plan = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -383,8 +382,6 @@ def main():
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
-        if "distributed plan" in to:
-            is_distributed_plan = True
 
     # If this PR only touches test files (no production/config code changed),
     # this job only needs to run if one of the changed tests would even be
@@ -398,6 +395,8 @@ def main():
         not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
+        and not is_llvm_coverage
+        and not is_excluded_from_llvm
         and not is_per_test_coverage
         and not args.test
     ):
@@ -481,40 +480,6 @@ def main():
             # shared server memory cap, so the OvercommitTracker kills queries across
             # all co-scheduled tests. Lower concurrency to keep peak total RSS under it.
             nproc = int(Utils.cpu_count() * 0.4)
-        elif (
-            is_distributed_plan
-            and "parallel" in test_options
-            and any(san in args.options for san in SANITIZERS)
-        ):
-            # `--distributed-plan` fans each query across local parallel replicas,
-            # multiplying the server-side memory of every in-flight query. Under the
-            # parallel runner dozens of such queries share one server, so their
-            # aggregate RSS overruns the sanitizer memory cap
-            # (`max_server_memory_usage_to_ram_ratio` 0.7) and the OvercommitTracker
-            # rejects queries across all co-scheduled tests with
-            # `MEMORY_LIMIT_EXCEEDED`. This is the same failure mode as azure above,
-            # but the per-query multiplication makes it heavier, so cut concurrency
-            # below the azure level to keep peak total RSS under the cap. The job
-            # gets a larger `timeout` (see `job_configs.py`) to absorb the reduced
-            # throughput. Gated to sanitizer builds: only they carry the 0.7 cap,
-            # and the non-sanitizer distributed-plan parallel jobs (e.g. amd_debug)
-            # run comfortably at the default concurrency.
-            #
-            # Tuned down in steps against observed peak RSS on the 32-vCPU
-            # `c7i.8xlarge` runner (cap 41.84 GiB at ratio 0.7): 0.35 -> 11 workers
-            # hit Code 241 at 43.01 GiB (~3% over); 0.3 -> 9 workers still landed
-            # right on the cap (41.90 GiB); 0.25 -> 8 workers reached 41.76 GiB;
-            # 0.22 -> 7 workers reached 41.71 GiB - each run still grazing the cap
-            # with a single rejected query. That near-flat response shows the RSS
-            # baseline is dominated by ASan overhead that accumulates with the
-            # amount of work done, not with concurrency, so cutting workers
-            # further cannot open a gap under the cap; the residual headroom comes
-            # from this job's slightly higher memory ratio instead (0.75, see the
-            # install stage below). The concurrency cut stays: it is what shrank
-            # the aggregate client RSS enough to make the higher server cap safe
-            # for the host, and 7 workers finish in ~2h44m, inside the 3.5h
-            # `timeout` (see `job_configs.py`).
-            nproc = int(Utils.cpu_count() * 0.22)
         elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
             if not info.is_local_run:
@@ -810,8 +775,10 @@ def main():
         # test subset at reduced concurrency). 0.7 stays comfortably above the
         # largest legitimate single-query need (the ~25 GiB stateful-load INSERT).
         # The heaviest configs also cut test concurrency (see the `nproc` block
-        # above, e.g. azure and distributed-plan) so that the *aggregate* RSS of
-        # concurrent queries stays under this cap too.
+        # above, e.g. azure) so that the *aggregate* RSS of concurrent queries
+        # stays under this cap too; the memory-heavy distributed-plan parallel
+        # job instead runs on a larger 128 GiB runner (see `job_configs.py`),
+        # where the cap sits well above its aggregate RSS at full concurrency.
         #
         # The cap must follow the binary actually being launched, not the job
         # option string: bugfix validation passes only `BugfixValidation` in
@@ -819,30 +786,9 @@ def main():
         # (always `*_asan_ubsan`), and its validation loop later swaps to the
         # other build types, re-deriving the cap on every swap (sanitizer ->
         # 0.7, debug -> server default; see the TEST stage below).
-        #
-        # The distributed-plan parallel job gets a slightly higher cap (0.75).
-        # The global memory check compares the server's *OS RSS* against the
-        # cap, and on an ASan server RSS carries tens of GiB the tracker can
-        # neither see nor free by killing queries: ASan shadow memory,
-        # quarantine and redzones, plus file-backed pages from mmap reads. On
-        # the 32-vCPU runner that overhead accumulates over the run towards
-        # ~41.7 GiB regardless of concurrency - cutting workers 11 -> 9 -> 8
-        # -> 7 moved the peak RSS only 43.01 -> 41.90 -> 41.76 -> 41.71 GiB
-        # against the 41.84 GiB cap that 0.7 yields, and every run still
-        # grazed the cap (one query rejected on a 512 MiB chunk while RSS sat
-        # just under it). Concurrency is exhausted as a lever, so the cap
-        # itself must give the untrackable overhead room: 0.75 (~44.8 GiB)
-        # leaves ~3 GiB of headroom above the observed RSS equilibrium. The
-        # host-OOM invariant this cap protects (server cap + aggregate client
-        # RSS < RAM) still holds with >10 GiB to spare, because this job's
-        # concurrency is already cut to 0.22 * CPU (see `nproc` above), which
-        # shrinks the ASan client footprint from ~17 GiB to ~3 GiB.
         memory_cap_source = build_types[0] if is_bugfix_validation else args.options
         if any(san in memory_cap_source for san in SANITIZERS):
-            memory_ratio = (
-                0.75 if is_distributed_plan and "parallel" in test_options else 0.7
-            )
-            commands.append(lambda: CH.set_memory_ratio(memory_ratio))
+            commands.append(lambda: CH.set_memory_ratio(0.7))
 
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)

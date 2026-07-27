@@ -2977,7 +2977,7 @@ DataTypePtr QueryFuzzer::getRandomType()
 
     /// Geo types are custom-named Array aliases with no TypeIndex of their own,
     /// so they are appended after the TypeIndex vector in a unified selection.
-    static constexpr const char * geo_type_names[] = {"Point", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
+    static constexpr const char * geo_type_names[] = {"Point", "MultiPoint", "Ring", "LineString", "MultiLineString", "Polygon", "MultiPolygon"};
     static constexpr size_t n_geo = std::size(geo_type_names);
     const size_t pick = fuzz_rand() % (random_types.size() + n_geo);
     if (pick >= random_types.size())
