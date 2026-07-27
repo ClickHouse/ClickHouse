@@ -1302,9 +1302,13 @@ Enabling this setting gives the wrong impression that different values within a 
 Therefore, please do not enable this setting.
 )", 0) \
     DECLARE(Bool, use_legacy_to_time, false, R"(
-When enabled, allows to use legacy toTime function, which converts a date with time to a certain fixed date, while preserving the time.
-Otherwise, uses a new toTime function, that converts different type of data into the Time type.
-The old legacy function is also unconditionally accessible as toTimeWithFixedDate.
+When enabled, the name `toTime` refers to the legacy [`toTime`](/sql-reference/functions/date-time-functions#toTimeWithFixedDate) function,
+which converts a date with time to a certain fixed date, while preserving the time.
+Otherwise, the name refers to the new [`toTime`](/sql-reference/functions/type-conversion-functions#toTime) function,
+which converts values of different types into the [`Time`](/sql-reference/data-types/time) type.
+
+The legacy function is also unconditionally accessible as `toTimeWithFixedDate`, regardless of this setting.
+While this setting is enabled, use `CAST(x AS Time)` or `x::Time` to convert to the `Time` type.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_time_time64_type, true, R"(
 Allows creation of [Time](../../sql-reference/data-types/time.md) and [Time64](../../sql-reference/data-types/time64.md) data types.
