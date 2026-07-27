@@ -19,9 +19,11 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
+#include <base/arithmeticOverflow.h>
 
 #include <bit>
 #include <cmath>
+#include <optional>
 
 
 namespace DB
@@ -159,42 +161,48 @@ namespace
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 
-    /// Whether a numeric literal denotes an integral value, determined from the literal text itself.
-    /// The Float64 field produced by ParserNumber has already been rounded to the nearest double,
-    /// so for a value above 2^53 a fractional part can vanish before any check on the value:
-    /// e.g. the literal 9007199254740992.5 is rounded to 9007199254740992.0. Handles a decimal
-    /// literal with an optional exponent (1.5, 1.5e1) and a hexadecimal float (0x1.8p1). Text that
-    /// does not match these forms (e.g. inf, nan) is reported as integral, leaving the rejection
-    /// to the range check inside FieldVisitorConvertToNumber.
-    bool isIntegralNumericLiteral(std::string_view text)
+    /// A numeric literal as written in the query: the digits before and after the point, and the exponent.
+    struct NumericLiteralParts
+    {
+        bool is_hex = false;
+        std::string_view integer_part;
+        std::string_view fractional_part;
+        Int64 exponent = 0;
+    };
+
+    /// Splits a numeric literal into its parts. Handles a decimal literal with an optional exponent
+    /// (1.5, 1.5e1) and a hexadecimal float (0x1.8p1); returns nothing for any other text (e.g. inf, nan).
+    /// The literal text is needed because the Float64 field produced by ParserNumber has already been
+    /// rounded to the nearest double, which changes an integer above 2^53 (9007199254740993 becomes
+    /// 9007199254740992) and erases the fractional part of such a value (9007199254740992.5).
+    std::optional<NumericLiteralParts> splitNumericLiteral(std::string_view text)
     {
         if (!text.empty() && (text.front() == '+' || text.front() == '-'))
             text.remove_prefix(1);
 
-        bool is_hex = text.starts_with("0x") || text.starts_with("0X");
-        if (is_hex)
+        NumericLiteralParts parts;
+        parts.is_hex = text.starts_with("0x") || text.starts_with("0X");
+        if (parts.is_hex)
             text.remove_prefix(2);
 
-        auto is_digit = [is_hex](char c) { return is_hex ? isHexDigit(c) : isNumericASCII(c); };
+        auto is_digit = [&parts](char c) { return parts.is_hex ? isHexDigit(c) : isNumericASCII(c); };
 
         size_t i = 0;
         while (i < text.size() && is_digit(text[i]))
             ++i;
-        std::string_view integer_part = text.substr(0, i);
+        parts.integer_part = text.substr(0, i);
 
-        std::string_view fractional_part;
         if (i < text.size() && text[i] == '.')
         {
             size_t fraction_begin = ++i;
             while (i < text.size() && is_digit(text[i]))
                 ++i;
-            fractional_part = text.substr(fraction_begin, i - fraction_begin);
+            parts.fractional_part = text.substr(fraction_begin, i - fraction_begin);
         }
 
         /// The exponent shifts the point by decimal digits for a decimal literal ('e')
         /// and by bits for a hexadecimal one ('p'); its own digits are decimal in both cases.
-        Int64 exponent = 0;
-        char exponent_char = is_hex ? 'p' : 'e';
+        char exponent_char = parts.is_hex ? 'p' : 'e';
         if (i < text.size() && (text[i] | 0x20) == exponent_char)
         {
             ++i;
@@ -207,50 +215,96 @@ namespace
             while (i < text.size() && isNumericASCII(text[i]))
             {
                 /// Clamp: the point cannot usefully shift by more than the mantissa length anyway.
-                exponent = std::min<Int64>(exponent * 10 + (text[i] - '0'), 1000000000);
+                parts.exponent = std::min<Int64>(parts.exponent * 10 + (text[i] - '0'), 1000000000);
                 ++i;
             }
             if (exponent_negative)
-                exponent = -exponent;
+                parts.exponent = -parts.exponent;
         }
 
-        if (i != text.size() || (integer_part.empty() && fractional_part.empty()))
-            return true; /// Not a numeric literal form we understand: leave it to the value checks.
+        if (i != text.size() || (parts.integer_part.empty() && parts.fractional_part.empty()))
+            return {}; /// Not a numeric literal form we understand: leave it to the value checks.
 
+        return parts;
+    }
+
+    /// Whether a numeric literal denotes an integral value, determined from the literal text itself.
+    bool isIntegralNumericLiteral(const NumericLiteralParts & parts)
+    {
         /// Find the deepest nonzero digit relative to the point: fractional digits have depths
         /// 1, 2, ..., integer digits have depths 0, -1, ... counting leftwards from the lowest one.
         Int64 deepest_position = 0;
         char deepest_digit = 0;
-        for (size_t k = 0; k < fractional_part.size(); ++k)
+        for (size_t k = 0; k < parts.fractional_part.size(); ++k)
         {
-            if (fractional_part[k] != '0')
+            if (parts.fractional_part[k] != '0')
             {
                 deepest_position = static_cast<Int64>(k) + 1;
-                deepest_digit = fractional_part[k];
+                deepest_digit = parts.fractional_part[k];
             }
         }
         if (deepest_digit == 0)
         {
-            for (size_t k = 0; k < integer_part.size(); ++k)
+            for (size_t k = 0; k < parts.integer_part.size(); ++k)
             {
-                if (integer_part[k] != '0')
+                if (parts.integer_part[k] != '0')
                 {
-                    deepest_position = static_cast<Int64>(k) + 1 - static_cast<Int64>(integer_part.size());
-                    deepest_digit = integer_part[k];
+                    deepest_position = static_cast<Int64>(k) + 1 - static_cast<Int64>(parts.integer_part.size());
+                    deepest_digit = parts.integer_part[k];
                 }
             }
         }
         if (deepest_digit == 0)
             return true; /// All digits are zero: the value is 0.
 
-        if (is_hex)
+        if (parts.is_hex)
         {
             /// A hexadecimal digit at depth d occupies the bits at depths 4d-3 .. 4d after the
             /// binary point; the deepest set bit of the digit decides integrality.
             Int64 deepest_bit = 4 * deepest_position - std::countr_zero(static_cast<unsigned>(unhex(deepest_digit)));
-            return deepest_bit <= exponent;
+            return deepest_bit <= parts.exponent;
         }
-        return deepest_position <= exponent;
+        return deepest_position <= parts.exponent;
+    }
+
+    /// The exact value of an integral numeric literal, computed from its text, or nothing if it does
+    /// not fit into QuotaValue. Must be called only for a literal accepted by isIntegralNumericLiteral,
+    /// which guarantees that the digits below the point are shifted out exactly.
+    std::optional<QuotaValue> exactValueOfIntegralNumericLiteral(const NumericLiteralParts & parts)
+    {
+        const QuotaValue base = parts.is_hex ? 16 : 10;
+
+        /// Trailing zeros of the fractional part do not change the value, while multiplying them in
+        /// could overflow QuotaValue for a value that fits (e.g. 18446744073709551615.0).
+        std::string_view fractional_part = parts.fractional_part;
+        while (fractional_part.ends_with('0'))
+            fractional_part.remove_suffix(1);
+
+        QuotaValue value = 0;
+        for (std::string_view digits : {parts.integer_part, fractional_part})
+        {
+            for (char c : digits)
+            {
+                QuotaValue digit = parts.is_hex ? unhex(c) : static_cast<QuotaValue>(c - '0');
+                if (common::mulOverflow(value, base, value) || common::addOverflow(value, digit, value))
+                    return {};
+            }
+        }
+
+        if (value == 0)
+            return value;
+
+        /// The exponent of a hexadecimal literal counts bits, while its digits are four bits each.
+        Int64 shift = parts.exponent - static_cast<Int64>(fractional_part.size()) * (parts.is_hex ? 4 : 1);
+        const QuotaValue unit = parts.is_hex ? 2 : 10;
+        for (; shift < 0 && value != 0; ++shift)
+            value /= unit;
+        for (; shift > 0; --shift)
+        {
+            if (common::mulOverflow(value, unit, value))
+                return {};
+        }
+        return value;
     }
 
     bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
@@ -282,16 +336,26 @@ namespace
                 || (max_field.getType() == Field::Types::Float64 && std::signbit(max_field.safeGet<Float64>()));
             if (is_negative)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
-            /// Reject a fractional literal for an integer quota type: FieldVisitorConvertToNumber would
-            /// silently truncate it (e.g. MAX queries = 1.5 would become 1 and round-trip differently),
-            /// while the users.xml path rejects the same input. The check looks at the literal text
-            /// because the Float64 field has already been rounded to the nearest double, which loses
-            /// the fractional part of a value above 2^53 (e.g. 9007199254740992.5) before any check
-            /// on the value itself. A non-finite value is reported as integral and rejected by the
-            /// range check inside FieldVisitorConvertToNumber.
-            if (max_field.getType() == Field::Types::Float64 && !isIntegralNumericLiteral(literal_text))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value must be an integer");
-            max_value = fieldToNumber<QuotaValue>(max_field);
+            /// A literal in the floating-point form is analyzed as text rather than by its Float64 value,
+            /// which ParserNumber has already rounded to the nearest double. First, reject a fractional
+            /// literal: FieldVisitorConvertToNumber would silently truncate it (e.g. MAX queries = 1.5
+            /// would become 1 and round-trip differently), while the users.xml path rejects the same
+            /// input; the fractional part is invisible in the value above 2^53 (e.g. 9007199254740992.5
+            /// is rounded to 9007199254740992.0). Second, take the value of an integral literal from the
+            /// text, because rounding changes an integer above 2^53 (e.g. MAX queries = 9007199254740993.0
+            /// would be stored as 9007199254740992). A literal of an unknown form (e.g. inf, nan) or a
+            /// value not fitting into QuotaValue is left to the range check inside FieldVisitorConvertToNumber.
+            std::optional<QuotaValue> exact_value;
+            if (max_field.getType() == Field::Types::Float64)
+            {
+                if (auto parts = splitNumericLiteral(literal_text))
+                {
+                    if (!isIntegralNumericLiteral(*parts))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value must be an integer");
+                    exact_value = exactValueOfIntegralNumericLiteral(*parts);
+                }
+            }
+            max_value = exact_value ? *exact_value : fieldToNumber<QuotaValue>(max_field);
         }
         else
         {
