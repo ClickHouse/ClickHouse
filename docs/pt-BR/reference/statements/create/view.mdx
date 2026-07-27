@@ -146,11 +146,11 @@ Ao criar uma VIEW materializada com `TO [db].[table]`, você também não pode u
 Uma VIEW materializada é implementada da seguinte forma: ao inserir dados na tabela especificada em `SELECT`, parte dos dados inseridos é transformada por essa consulta `SELECT`, e o resultado é inserido na VIEW.
 
 <Note>
-  VIEWs materializadas no ClickHouse usam **nomes de colunas** em vez da ordem das colunas durante a inserção na tabela de destino. Se alguns nomes de colunas não estiverem presentes no resultado da consulta `SELECT`, o ClickHouse usará um valor padrão, mesmo que a coluna não seja [Nullable](/pt-BR/reference/data-types/nullable). Uma prática segura é adicionar aliases para todas as colunas ao usar VIEWs materializadas.
+  visões materializadas no ClickHouse usam **nomes de colunas** em vez da ordem das colunas durante a inserção na tabela de destino. Se alguns nomes de colunas não estiverem presentes no resultado da consulta `SELECT`, o ClickHouse usará um valor padrão, mesmo que a coluna não seja [Nullable](/pt-BR/reference/data-types/nullable). Uma prática segura é adicionar aliases para todas as colunas ao usar visões materializadas.
 
-  VIEWs materializadas no ClickHouse funcionam mais como gatilhos de inserção. Se houver alguma agregação na consulta da VIEW, ela será aplicada apenas ao lote de dados recém-inseridos. Quaisquer alterações nos dados existentes da tabela de origem (como update, delete, drop partition etc.) não alteram a VIEW materializada.
+  visões materializadas no ClickHouse funcionam mais como gatilhos de inserção. Se houver alguma agregação na consulta da VIEW, ela será aplicada apenas ao lote de dados recém-inseridos. Quaisquer alterações nos dados existentes da tabela de origem (como update, delete, drop partition etc.) não alteram a visão materializada.
 
-  VIEWs materializadas no ClickHouse não têm comportamento determinístico em caso de erro. Isso significa que os blocos que já tiverem sido gravados serão preservados na tabela de destino, mas todos os blocos após o erro não serão.
+  visões materializadas no ClickHouse não têm comportamento determinístico em caso de erro. Isso significa que os blocos que já tiverem sido gravados serão preservados na tabela de destino, mas todos os blocos após o erro não serão.
 
   Por padrão, se o envio para uma das VIEWs gerar uma exceção, a consulta `INSERT` falhará. Não há garantia de que o bloco já tenha chegado à tabela de origem nesse ponto — isso depende do momento em que o pipeline de inserção estava, não do erro da VIEW. Tente novamente o `INSERT` com falha com desduplicação de inserção (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) para obter entrega exactly-once para a tabela de origem e todas as VIEWs dependentes.
 
@@ -172,9 +172,7 @@ Se você especificar `POPULATE`, os dados existentes da tabela serão inseridos 
 
 Uma consulta `SELECT` pode conter `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Observe que as transformações correspondentes são realizadas de forma independente em cada bloco de dados inseridos. Por exemplo, se `GROUP BY` estiver definido, os dados serão agregados durante a inserção, mas apenas dentro de um único pacote de dados inseridos. Os dados não serão agregados posteriormente. A exceção é ao usar um `ENGINE` que realiza agregação de dados por conta própria, como `SummingMergeTree`.
 
-Se a VIEW materializada usar a construção `TO [db.]name`, você pode fazer `DETACH` da VIEW, executar `ALTER` na tabela de destino e, em seguida, fazer `ATTACH` da VIEW previamente desanexada (`DETACH`).
-
-Observe que a VIEW materializada é influenciada pela configuração [optimize&#95;on&#95;insert](/pt-BR/reference/settings/session-settings#optimize_on_insert). Os dados são mesclados antes de serem inseridos na VIEW.
+Se a visão materializada usar a construção `TO [db.]name`, você pode fazer `DETACH` da VIEW, executar `ALTER` na tabela de destino e, em seguida, fazer `ATTACH` da VIEW previamente desanexada (`DETACH`).
 
 As VIEWs têm a mesma aparência das tabelas normais. Por exemplo, elas são listadas no resultado da consulta `SHOW TABLES`.
 

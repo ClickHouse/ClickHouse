@@ -146,20 +146,20 @@ materialized view は、対応する [SELECT](/ja/reference/statements/select/in
 materialized view は次のように実装されています。`SELECT` で指定されたテーブルにデータが挿入されると、その挿入データの一部がこの `SELECT` クエリによって変換され、その結果がビューに挿入されます。
 
 <Note>
-  ClickHouse の materialized view は、宛先テーブルへの挿入時にカラム順ではなく **カラム名** を使用します。`SELECT` クエリの結果に一部のカラム名が含まれていない場合、ClickHouse はそのカラムが [Nullable](/ja/reference/data-types/nullable) でなくてもデフォルト値を使用します。安全策として、Materialized views を使用する際はすべてのカラムに別名を付けることを推奨します。
+  ClickHouse の materialized VIEW は、宛先テーブルへの挿入時にカラム順ではなく **カラム名** を使用します。`SELECT` クエリの結果に一部のカラム名が含まれていない場合、ClickHouse はそのカラムが [Nullable](/ja/reference/data-types/nullable) でなくてもデフォルト値を使用します。安全策として、Materialized VIEWs を使用する際はすべてのカラムに別名を付けることを推奨します。
 
-  ClickHouse の materialized view は、insert trigger に近い形で実装されています。view クエリに集約が含まれている場合、それは新たに挿入されたデータのバッチに対してのみ適用されます。source table の既存データに対する変更 (update、delete、drop partition など) は、materialized view には反映されません。
+  ClickHouse の materialized VIEW は、insert trigger に近い形で実装されています。VIEW クエリに集約が含まれている場合、それは新たに挿入されたデータのバッチに対してのみ適用されます。ソーステーブル の既存データに対する変更 (update、delete、drop partition など) は、materialized VIEW には反映されません。
 
-  ClickHouse の materialized view は、エラー発生時の動作が決定論的ではありません。つまり、すでに書き込まれた blocks は宛先テーブルに保持されますが、エラー発生後の blocks は保持されません。
+  ClickHouse の materialized VIEW は、エラー発生時の動作が決定論的ではありません。つまり、すでに書き込まれた blocks は宛先テーブルに保持されますが、エラー発生後の blocks は保持されません。
 
-  デフォルトでは、いずれかの view への書き込みで例外が発生すると、`INSERT` クエリは失敗します。その時点までに block がすでに source table に到達しているかどうかは保証されません。これは view 側のエラーではなく、insert pipeline のタイミングに依存します。失敗した `INSERT` は、挿入の重複排除 (`insert_deduplicate`、`deduplicate_blocks_in_dependent_materialized_views`) を有効にして再試行し、source table とそれに依存するすべての views への exactly-once 配信を実現してください。
+  デフォルトでは、いずれかの VIEW への書き込みで例外が発生すると、`INSERT` クエリは失敗します。その時点までに block がすでに ソーステーブル に到達しているかどうかは保証されません。これは VIEW 側のエラーではなく、insert pipeline のタイミングに依存します。失敗した `INSERT` は、挿入の重複排除 (`insert_deduplicate`、`deduplicate_blocks_in_dependent_materialized_views`) を有効にして再試行し、ソーステーブル とそれに依存するすべての VIEWs への exactly-once 配信を実現してください。
 
-  `INSERT` クエリに `materialized_views_ignore_errors=true` を設定しても、変わるのはエラー報告だけです。各 view のエラーは警告としてログに記録され、`INSERT` クエリ自体は成功します。失敗した view の宛先への配信は部分的になります。つまり、例外発生前に処理された blocks は保持され、失敗した block とそれ以降の blocks はその view から破棄されます。その宛先の下流にある views には到達した blocks だけが渡されるため、それらへの配信も部分的になります。例外を発生させなかった sibling view (およびその下流チェーン) には完全に書き込まれ、source table にも通常どおり書き込まれます。`INSERT` は成功として報告されるため、クライアントには失敗のシグナルが返らず、自動的な再試行もトリガーされません。この設定は、view 側の問題によって source table への書き込みを妨げてはならない場合にのみ使用してください (たとえば `system.*_log` tables) 。
+  `INSERT` クエリに `materialized_views_ignore_errors=true` を設定しても、変わるのはエラー報告だけです。各 VIEW のエラーは警告としてログに記録され、`INSERT` クエリ自体は成功します。失敗した VIEW の宛先への配信は部分的になります。つまり、例外発生前に処理された blocks は保持され、失敗した block とそれ以降の blocks はその VIEW から破棄されます。その宛先の下流にある VIEWs には到達した blocks だけが渡されるため、それらへの配信も部分的になります。例外を発生させなかった sibling VIEW (およびその下流チェーン) には完全に書き込まれ、ソーステーブル にも通常どおり書き込まれます。`INSERT` は成功として報告されるため、クライアントには失敗のシグナルが返らず、自動的な再試行もトリガーされません。この設定は、VIEW 側の問題によって ソーステーブル への書き込みを妨げてはならない場合にのみ使用してください (たとえば `system.*_log` tables) 。
 
   `materialized_views_ignore_errors` は、`system.*_log` tables ではデフォルトで `true` です。
 </Note>
 
-`POPULATE` を指定すると、既存の table データは、`CREATE TABLE ... AS SELECT ...` を行う場合のように、作成時に view に挿入されます。そうでない場合、クエリに含まれるのは view 作成後に table に挿入されたデータのみです。view の作成中に table に挿入されたデータはそこに挿入されないため、`POPULATE` の使用は **推奨しません**。
+`POPULATE` を指定すると、既存の table データは、`CREATE TABLE ... AS SELECT ...` を行う場合のように、作成時に VIEW に挿入されます。そうでない場合、クエリに含まれるのは VIEW 作成後に table に挿入されたデータのみです。VIEW の作成中に table に挿入されたデータはそこに挿入されないため、`POPULATE` の使用は **推奨しません**。
 
 <Note>
   `POPULATE` は `CREATE TABLE ... AS SELECT ...` のように動作するため、いくつかの制限があります。
@@ -172,13 +172,11 @@ materialized view は次のように実装されています。`SELECT` で指�
 
 `SELECT` クエリには `DISTINCT`、`GROUP BY`、`ORDER BY`、`LIMIT` を含めることができます。対応する変換は、挿入されるデータの各ブロックごとに独立して実行される点に注意してください。たとえば、`GROUP BY` が設定されている場合、データは挿入時に集約されますが、それは挿入データの単一のパケット内でのみ行われます。データがその後さらに集約されることはありません。例外は、`SummingMergeTree` のように、データ集約を独自に実行する `ENGINE` を使用する場合です。
 
-materialized view が `TO [db.]name` 構文を使用している場合は、その view を `DETACH` し、ターゲットテーブルに対して `ALTER` を実行したあとで、先ほどデタッチした (`DETACH`) view を `ATTACH` できます。
+materialized VIEW が `TO [db.]name` 構文を使用している場合は、その VIEW を `DETACH` し、ターゲットテーブルに対して `ALTER` を実行したあとで、先ほどデタッチした (`DETACH`) VIEW を `ATTACH` できます。
 
-materialized view は [optimize&#95;on&#95;insert](/ja/reference/settings/session-settings#optimize_on_insert) 設定の影響を受ける点に注意してください。データは view に挿入される前にマージされます。
+VIEW は通常の table と同じように見えます。たとえば、`SHOW TABLES` クエリの結果にも表示されます。
 
-view は通常の table と同じように見えます。たとえば、`SHOW TABLES` クエリの結果にも表示されます。
-
-view を削除するには、[DROP VIEW](/ja/reference/statements/drop#drop-view) を使用します。ただし、`DROP TABLE` も VIEW に対して機能します。
+VIEW を削除するには、[DROP VIEW](/ja/reference/statements/drop#drop-view) を使用します。ただし、`DROP TABLE` も VIEW に対して機能します。
 
 <div id="sql_security">
   ## SQL security

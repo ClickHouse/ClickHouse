@@ -174,8 +174,6 @@ Materialized view 的实现方式如下：当向 `SELECT` 中指定的表插入�
 
 如果 materialized view 使用 `TO [db.]name` 这种写法，你可以先 `DETACH` 该视图，对目标表执行 `ALTER`，然后再 `ATTACH` 之前已 `DETACH` 的视图。
 
-请注意，materialized view 会受到 [optimize&#95;on&#95;insert](/zh/reference/settings/session-settings#optimize_on_insert) 设置的影响。数据会先合并，再插入到视图中。
-
 视图看起来与普通表相同。例如，它们会显示在 `SHOW TABLES` 查询结果中。
 
 要删除视图，请使用 [DROP VIEW](/zh/reference/statements/drop#drop-view)。不过，`DROP TABLE` 对 VIEW 也同样适用。

@@ -174,8 +174,6 @@ Una consulta `SELECT` puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`
 
 Si la vista materializada usa la construcción `TO [db.]name`, puede aplicar `DETACH` a la vista, ejecutar `ALTER` en la tabla de destino y luego hacer `ATTACH` de la vista previamente separada con `DETACH`.
 
-Tenga en cuenta que la vista materializada se ve afectada por la configuración [optimize&#95;on&#95;insert](/es/reference/settings/session-settings#optimize_on_insert). Los datos se fusionan antes de insertarse en una vista.
-
 Las vistas tienen el mismo aspecto que las tablas normales. Por ejemplo, aparecen en el resultado de la consulta `SHOW TABLES`.
 
 Para eliminar una vista, use [DROP VIEW](/es/reference/statements/drop#drop-view). Aunque `DROP TABLE` también funciona para las VIEW.

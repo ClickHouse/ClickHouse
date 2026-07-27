@@ -164,7 +164,7 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 <Note>
   نظرًا إلى أن `POPULATE` يعمل مثل `CREATE TABLE ... AS SELECT ...`، فله القيود التالية:
 
-  * غير مدعوم مع Replicated database
+  * غير مدعوم مع قاعدة بيانات Replicated
   * غير مدعوم في ClickHouse Cloud
 
   وبدلًا من ذلك، يمكن استخدام `INSERT ... SELECT` منفصل.
@@ -173,8 +173,6 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 يمكن أن يحتوي استعلام `SELECT` على `DISTINCT` و`GROUP BY` و`ORDER BY` و`LIMIT`. لاحظ أن التحويلات المقابلة تُنفَّذ بشكل مستقل على كل كتلة من البيانات المُدرجة. فعلى سبيل المثال، إذا كان `GROUP BY` مضبوطًا، تُجمَّع البيانات أثناء الإدراج، ولكن فقط ضمن حزمة واحدة من البيانات المُدرجة. ولن تُجمَّع البيانات لاحقًا. والاستثناء هو عند استخدام `ENGINE` ينفذ تجميع البيانات بشكل مستقل، مثل `SummingMergeTree`.
 
 إذا كان العرض المادي يستخدم البنية `TO [db.]name`، فيمكنك `DETACH` العرض، ثم تشغيل `ALTER` على الجدول الهدف، ثم `ATTACH` العرض الذي فُصل (`DETACH`) سابقًا.
-
-لاحظ أن العرض المادي يتأثر بإعداد [optimize&#95;on&#95;insert](/ar/reference/settings/session-settings#optimize_on_insert). إذ تُدمَج البيانات قبل إدراجها في العرض.
 
 تبدو العروض مثل الجداول العادية. فعلى سبيل المثال، تُدرَج في نتيجة استعلام `SHOW TABLES`.
 

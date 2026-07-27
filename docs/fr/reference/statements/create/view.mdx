@@ -174,8 +174,6 @@ Une requête `SELECT` peut contenir `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`.
 
 Si la vue matérialisée utilise la construction `TO [db.]name`, vous pouvez `DETACH` la vue, exécuter `ALTER` sur la table cible, puis `ATTACH` la vue précédemment détachée (`DETACH`).
 
-Notez que la vue matérialisée est influencée par le paramètre [optimize&#95;on&#95;insert](/fr/reference/settings/session-settings#optimize_on_insert). Les données sont fusionnées avant l’insertion dans une vue.
-
 Les vues se présentent comme des tables normales. Par exemple, elles figurent dans le résultat de la requête `SHOW TABLES`.
 
 Pour supprimer une vue, utilisez [DROP VIEW](/fr/reference/statements/drop#drop-view). Bien que `DROP TABLE` fonctionne également pour les VIEWs.
