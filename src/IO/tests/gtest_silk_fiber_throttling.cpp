@@ -99,7 +99,8 @@ TEST(SilkFiberThrottling, ScopesSurviveMigration)
         }
         catch (...)
         {
-            /// A detach LOGICAL_ERROR from a scope destructor lands here.
+            /// Ok: a detach LOGICAL_ERROR from a scope destructor lands here,
+            /// surfaced as the fiber's non-zero exit code checked by the test.
             return 1;
         }
     };
@@ -145,6 +146,7 @@ TEST(SilkFiberThrottling, ThrottleSleepYieldsCarrier)
         }
         catch (...)
         {
+            /// Ok: surfaced as the fiber's non-zero exit code checked by the test.
             return 1;
         }
     };
