@@ -162,7 +162,12 @@ namespace
         }
         else if constexpr (std::is_same_v<typename Method::Key, PackedStringRef>)
         {
-            const auto key = PackedStringRef::build(key_pos, key_size, typename Method::State::Hash{});
+            /// The staged routing hash IS the packed key's cached content hash
+            /// (`DefaultHash<PackedStringRef>` returns it), so the rebuild reuses it instead of
+            /// re-hashing the key bytes; `build` consults the functor only for lengths that
+            /// store a hash, which is exactly the range the staged hash was derived from.
+            const auto key = PackedStringRef::build(
+                key_pos, key_size, [routing_hash](const char *, size_t) { return static_cast<UInt32>(routing_hash); });
             method.data.emplace(DB::ArenaPackedStringHolder{key, arena}, it, inserted, routing_hash);
         }
         else
