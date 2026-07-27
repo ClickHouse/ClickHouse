@@ -479,6 +479,14 @@ void optimizeTreeSecondPass(
             /// (`distinct_in_order`), `optimizeLimitByInOrder` (`limit_by_in_order`) and
             /// `tryReuseStorageOrderingForWindowFunctions` (`reuse_storage_ordering_for_window_functions`).
             /// If a new such optimization is added, its gate must be added here too.
+            ///
+            /// `push_limit_by_into_sort` is overridden for a different reason: it does not call
+            /// `requestReadingInOrder` itself, but `pushLimitByIntoSort` is what attaches the `LIMIT BY`
+            /// hint that `optimizeReadInOrder` reads to decide whether the per-part `PrefetchingConcat`
+            /// must be given up in favour of multiple streams. Keeping the outer value here would let a
+            /// subquery-scoped `query_plan_push_limit_by_into_sort` shape the initiator-local fragment
+            /// differently from the remote replicas, which re-optimize the shipped fragment under the
+            /// subquery's own settings.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -488,6 +496,7 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.limit_by_in_order = subquery_optimization_settings.limit_by_in_order;
+                local_optimization_settings.push_limit_by_into_sort = subquery_optimization_settings.push_limit_by_into_sort;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;
