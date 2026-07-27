@@ -1737,7 +1737,9 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
-static Field applyFunctionForField(
+/// Returns `std::nullopt` if the function threw: index analysis is only an optimisation, so a
+/// failure to apply the chain must degrade to "cannot prune" instead of failing the query.
+static std::optional<Field> applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
     const Field & arg_value)
@@ -1747,17 +1749,30 @@ static Field applyFunctionForField(
             { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
         };
 
-    auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
-    return (*col)[0];
+    try
+    {
+        auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
+        return (*col)[0];
+    }
+    catch (const Exception &)
+    {
+        return {};
+    }
 }
 
 /// applyFunction will execute the function with one `field` or the column which `field` refers to.
-static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+/// Returns `std::nullopt` if the function cannot be applied, see `applyFunctionForField`.
+static std::optional<FieldRef> applyFunction(const FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
 {
     chassert(func != nullptr);
     /// Fallback for fields without block reference.
     if (field.isExplicit())
-        return applyFunctionForField(func, current_type, field);
+    {
+        auto result = applyFunctionForField(func, current_type, field);
+        if (!result)
+            return {};
+        return FieldRef(std::move(*result));
+    }
 
     /// We will cache the function result inside `field.columns`, because this function will call many times
     /// from many fields from same column. When the column is huge, for example there are thousands of marks, we need a cache.
@@ -1773,7 +1788,14 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     for (size_t i = 0; i < result_idx; ++i)
     {
         if ((*columns)[i].name == result_name)
+        {
+            /// A cached entry without a column is a negative entry: this <function, param> pair already
+            /// threw, so do not run the whole-column transform again (and never build a `FieldRef` on it,
+            /// its constructor dereferences the column unconditionally).
+            if (!(*columns)[i].column)
+                return {};
             result_idx = i;
+        }
     }
 
     if (result_idx == columns->size())
@@ -1792,13 +1814,26 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
             args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
             args[0].type = removeLowCardinality(args[0].type);
         }
-        field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
-        (*columns)[result_idx].column
-            = func->execute(args, (*columns)[result_idx].type, args.front().column->size(), /* dry_run = */ false)
-                  ->convertToFullColumnIfLowCardinality();
+        auto result_type = removeLowCardinality(func->getResultType());
+        ColumnPtr result_column;
+        try
+        {
+            result_column = func->execute(args, result_type, args.front().column->size(), /* dry_run = */ false)
+                                ->convertToFullColumnIfLowCardinality();
+        }
+        catch (const Exception &)
+        {
+            /// The transform is speculative: it runs over the whole index column, so a value that no
+            /// analysed range contains can make it throw. Cache the failure and report it, same as the
+            /// constant-transform path in `applyDeterministicDagToColumn` does.
+            columns->emplace_back(ColumnWithTypeAndName{nullptr, result_type, result_name});
+            return {};
+        }
+        /// Publish the entry only once it is complete, so a later probe never sees a half-built one.
+        columns->emplace_back(ColumnWithTypeAndName{std::move(result_column), std::move(result_type), result_name});
     }
 
-    return {field.columns, field.row_idx, result_idx};
+    return FieldRef{field.columns, field.row_idx, result_idx};
 }
 
 DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
@@ -5044,7 +5079,8 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * right_keys,
     const DataTypes & data_types,
     BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
+    const Hyperrectangle * key_bounds,
+    bool * chain_application_failed) const
 {
     chassert(key_order.compareTuples(left_keys, right_keys, used_key_size) <= 0);
 
@@ -5056,7 +5092,7 @@ BoolMask KeyCondition::checkInRange(
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, key_order, 0, initial_mask, key_bounds,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
-        return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
+        return checkInHyperrectangle(key_ranges_hyperrectangle, data_types, {}, nullptr, chain_application_failed);
     });
 }
 
@@ -5068,7 +5104,8 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & sparse_data_types,
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
+    const Hyperrectangle * key_bounds,
+    bool * chain_application_failed) const
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
@@ -5128,7 +5165,7 @@ BoolMask KeyCondition::checkInRange(
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
-            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types, chain_application_failed);
         });
 }
 
@@ -5189,18 +5226,38 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
     const MonotonicFunctionsChain & functions,
     DataTypePtr current_type,
-    bool single_point)
+    bool single_point,
+    bool * chain_application_failed)
 {
+    auto report_application_failure = [&]
+    {
+        if (chain_application_failed)
+            *chain_application_failed = true;
+    };
+
     for (const auto & func : functions)
     {
         /// We check the monotonicity of each function on a specific range.
         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-        IFunction::Monotonicity monotonicity = single_point
-            ? IFunction::Monotonicity{true}
-            : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
+        IFunction::Monotonicity monotonicity;
+        try
+        {
+            monotonicity = single_point
+                ? IFunction::Monotonicity{true}
+                : func->getMonotonicityForRange(*current_type.get(), key_range.left, key_range.right);
+        }
+        catch (const Exception &)
+        {
+            /// Some implementations evaluate the function on the endpoints to decide monotonicity
+            /// (see `FunctionBinaryArithmeticWithConstants::getMonotonicityForRange`), so this can throw.
+            report_application_failure();
+            return {};
+        }
 
         if (!monotonicity.is_monotonic)
         {
+            /// Not a failure: the function is honestly not monotonic here, and `matchesExactContinuousRange`
+            /// already accounts for that.
             return {};
         }
 
@@ -5222,13 +5279,25 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             /// Thus we can safely use isNull() as an -Inf/+Inf indicator here.
             if (!key_range.left.isNull())
             {
-                key_range.left = applyFunction(func, current_type, key_range.left);
+                auto transformed = applyFunction(func, current_type, key_range.left);
+                if (!transformed)
+                {
+                    report_application_failure();
+                    return {};
+                }
+                key_range.left = std::move(*transformed);
                 key_range.left_included = true;
             }
 
             if (!key_range.right.isNull())
             {
-                key_range.right = applyFunction(func, current_type, key_range.right);
+                auto transformed = applyFunction(func, current_type, key_range.right);
+                if (!transformed)
+                {
+                    report_application_failure();
+                    return {};
+                }
+                key_range.right = std::move(*transformed);
                 key_range.right_included = true;
             }
         }
@@ -5618,7 +5687,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & hyperrectangle,
     const DataTypes & data_types,
     const ColumnIndexToBloomFilter & column_index_to_column_bf,
-    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const
+    const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn,
+    bool * chain_application_failed) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -5667,7 +5737,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     *key_range_storage,
                     element.monotonic_functions_chain,
                     recursiveRemoveLowCardinality(data_types[key_column]),
-                    single_point
+                    single_point,
+                    chain_application_failed
                 );
 
                 if (!new_range)
@@ -5980,7 +6051,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types, single_point, chain_application_failed));
 
             if (rpn_stack.back().can_be_true && element.bloom_filter_data)
             {
@@ -6047,7 +6118,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<int> & key_col_to_sparse_pos,
     const Hyperrectangle & sparse_hyperrectangle,
-    const DataTypes & sparse_data_types) const
+    const DataTypes & sparse_data_types,
+    bool * chain_application_failed) const
 {
     absl::InlinedVector<BoolMask, 16> rpn_stack;
 
@@ -6100,7 +6172,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         key_range,
                         element.monotonic_functions_chain,
                         sparse_data_types[sparse_pos],
-                        single_point);
+                        single_point,
+                        chain_application_failed);
 
                     if (!new_range)
                     {
@@ -6471,7 +6544,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// E.g. (20, 300, 1500) satisfies the second condition but not the first,
             /// but  (20, 150, 3000) satisfies the first condition but not the second.
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point));
+            rpn_stack.emplace_back(element.set_index->checkInRange(
+                key_col_to_sparse_pos, sparse_hyperrectangle, sparse_data_types, single_point, chain_application_failed));
 
             /// If the condition is relaxed, the `can_be_false` branch is no longer reliable; it may have false negatives.
             /// Additionally, when `KeyCondition::isRelaxed()` is true, the caller should ignore `can_be_false` anyway.
