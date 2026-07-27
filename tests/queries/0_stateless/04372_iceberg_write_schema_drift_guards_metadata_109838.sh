@@ -10,10 +10,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# Part 2/2 of the Iceberg write/mutation/compaction schema-drift guard regression
+# Part 4/4 of the Iceberg write/mutation/compaction schema-drift guard regression
 # (issues #109835 / #109838): first-load missing partition-spec, INSERT metadata-conflict
 # retry, and UPDATE across a partition-spec evolution.
-# Part 1 lives in 04365_iceberg_write_schema_drift_guards_109838.sh.
+# Part 1 (INSERT sink) lives in 04365_iceberg_write_schema_drift_guards_insert_109838.sh.
+# Part 2 (UPDATE/DELETE mutation) lives in 04369_iceberg_write_schema_drift_guards_mutation_109838.sh.
+# Part 3 (OPTIMIZE compaction) lives in 04371_iceberg_write_schema_drift_guards_compaction_109838.sh.
 # Each scenario gets a fresh table name+path (see reset), removing cross-scenario cache coupling.
 
 _scenario=0
