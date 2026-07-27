@@ -1,0 +1,15 @@
+-- miss (allowed, per-column grants):
+1
+2
+-- hits: 0
+-- hit with the same column grants must stay allowed:
+1
+2
+-- hits: 1
+-- revoking the selected column on the view denies the hit:
+ACCESS_DENIED
+-- the source table of the view's defining query is not a plan dependency, so a schema change
+-- there does not invalidate the entry (the view's own leaf is re-resolved on every hit):
+1
+2
+-- hits: 1

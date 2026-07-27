@@ -49,7 +49,8 @@ A view is expanded into the cached plan, and a table referenced only inside a sc
 plan node from which the exact columns it contributes can be recovered. A hit therefore requires table-level `SELECT` on such an object,
 which is at least as strict as the per-column access a non-cached query checks. As a consequence, a query that a column-level grant on a view
 alone makes runnable without the cache is not served from the cache (it is denied on a hit); grant table-level `SELECT` on the view to make
-it cacheable.
+it cacheable. A materialized view is not expanded - it is read like an ordinary table, from its target table - so its exact columns are known
+and a hit re-checks them at the column level, exactly as a non-cached query does.
 
 ## Configuration {#configuration}
 

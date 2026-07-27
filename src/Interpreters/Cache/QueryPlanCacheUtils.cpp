@@ -37,6 +37,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryDescription.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageView.h>
 
 #include <algorithm>
 #include <map>
@@ -176,6 +177,22 @@ bool isAllowedSystemTable(const String & database, const String & table)
     return database == DatabaseCatalog::SYSTEM_DATABASE && table == "one";
 }
 
+/// True if a cacheable logical plan inlines this storage's body instead of leaving a
+/// `ReadFromTable` leaf for it. Only `StorageView` qualifies - `PlannerJoinTree` expands exactly
+/// `typeid_cast<const StorageView *>(storage.get())` (see `expand_view_in_logical_plan`), while a
+/// `StorageMaterializedView` stays a leaf and is executed by `StorageMaterializedView::readImpl`
+/// against its target table, exactly as on the miss path. Keying the dependency walk off the
+/// broader `isView` would treat a materialized view as expanded and therefore
+/// (a) mark its dependency `columns_unknown`, discarding the exact leaf columns and upgrading the
+/// hit recheck to table-level `SELECT` - a user holding only `SELECT(a)` on the view could run the
+/// query on a miss and then get `ACCESS_DENIED` on the hit - and
+/// (b) add the tables of the view's defining `SELECT` as dependencies, although reading a
+/// materialized view does not read them.
+bool isViewExpandedInCacheablePlan(const StoragePtr & storage)
+{
+    return typeid_cast<const StorageView *>(storage.get()) != nullptr;
+}
+
 /// Returns false if the storage's engine or view security makes the plan uncacheable. This is
 /// checked both when a dependency is recorded (`fillDependency`) and when a cache entry is
 /// validated on a hit (`validateQueryPlanCacheEntry`): in UUID-less databases a `DROP`/`CREATE`
@@ -242,7 +259,9 @@ bool fillDependency(QueryPlanCacheDependency & dep, const StoragePtr & storage, 
         return false;
     }
     dep.row_policy_hash = row_policy_info.hash;
-    dep.is_view = storage->isView();
+    /// Only an expanded view has no plan leaf of its own and is therefore reported as a view in the
+    /// query-log access info; a materialized view is read like an ordinary table.
+    dep.is_view = isViewExpandedInCacheablePlan(storage);
     return true;
 }
 
@@ -405,25 +424,28 @@ private:
         /// that column. Two cases qualify:
         ///   - A table reached only through a scalar subquery is folded into a constant during
         ///     analysis, so it has no plan leaf.
-        ///   - A view is expanded at plan time, so the view storage itself has no plan leaf either
-        ///     (only its body tables do). The miss path checks the precise selected view columns in
+        ///   - A view expanded into the plan has no plan leaf either (only its body tables do). The
+        ///     miss path checks the precise selected view columns in
         ///     `prepareBuildQueryPlanForTableExpression` before expanding the view; recording
         ///     table-level here keeps a hit at least as strict (mirroring the scalar-subquery case,
         ///     and matching the conservative choice not to recover the exact view columns).
         /// The view's body tables are still visited below and recorded with their precise columns
         /// as ordinary plan leaves, so this only tightens the recheck of the view storage itself.
-        dep.columns_unknown = inside_scalar_subquery || storage->isView();
+        /// A materialized view is not expanded (see `isViewExpandedInCacheablePlan`): it keeps its
+        /// own plan leaf with the exact columns, so it must not be marked here.
+        dep.columns_unknown = inside_scalar_subquery || isViewExpandedInCacheablePlan(storage);
         dependencies.push_back(std::move(dep));
 
-        /// Recurse into view bodies: nested views and their tables are dependencies too.
-        /// Names inside a view body resolve against the view's own database.
-        /// Normal views store their body in `select.inner_query`; materialized views in
-        /// `select.select_query`. A view referenced from a scalar subquery is itself folded, so
-        /// propagate `inside_scalar_subquery` into its body.
-        if (storage->isView())
+        /// Recurse into the bodies of expanded views: nested views and their tables are inlined into
+        /// the plan and are dependencies too. Names inside a view body resolve against the view's
+        /// own database, and the body is stored in `select.inner_query`. A view referenced from a
+        /// scalar subquery is itself folded, so propagate `inside_scalar_subquery` into its body.
+        /// A materialized view's defining `SELECT` is deliberately not walked: reading the view
+        /// reads its target table, not the sources of that `SELECT`.
+        if (isViewExpandedInCacheablePlan(storage))
         {
             auto metadata = storage->getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/false);
-            const auto & view_query = metadata->select.inner_query ? metadata->select.inner_query : metadata->select.select_query;
+            const auto & view_query = metadata->select.inner_query;
             if (view_query)
                 if (!collectImpl(*view_query, resolved_id.getDatabaseName(), /*in_set_or_table_position=*/ false, inside_scalar_subquery))
                     return false;
