@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- A valid measure-tagged point (POINT M) must still parse: the dimension-tag strip added for
 -- rejecting POINT M EMPTY must not reject a non-empty M point, which returns its 2D coordinates.
 DROP TABLE IF EXISTS geo_point_m_valid;
