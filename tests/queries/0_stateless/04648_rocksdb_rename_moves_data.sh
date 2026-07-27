@@ -174,7 +174,7 @@ echo "12 reloaded $(reloaded_count "$ORD1" t12)"
 
 # 13. ATTACH TABLE ... FROM publishes the table and only then relocates its directory, so without
 # a table lock a concurrent reader could hold an iterator into the RocksDB the relocation is about
-# to close. The PAUSEABLE failpoint stops the attach exactly in that window.
+# to close. The PAUSEABLE_ONCE failpoint stops the attach exactly in that window.
 $CLIENT -q --multiline "
     DROP TABLE IF EXISTS $CLICKHOUSE_DATABASE.t13_seed SYNC;
     CREATE TABLE $CLICKHOUSE_DATABASE.t13_seed (k UInt64, v String)
