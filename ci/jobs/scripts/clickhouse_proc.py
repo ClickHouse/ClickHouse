@@ -1,5 +1,4 @@
 import glob
-import json as json_module
 import os
 import platform
 import signal
@@ -106,12 +105,8 @@ class ClickHouseProc:
         self.minio_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
-        # Concrete reason set by create_minio_log_tables() on failure, so the
-        # caller can persist the real detail (e.g. the clickminio restart status)
-        # into the step Result.info / CIDB instead of a generic note.
-        self.minio_setup_error = None
-        # Same idea for prepare_stateful_data(): the failing sub-command + its
-        # ClickHouse error tail, so the re-prepare ERROR row carries the real
+        # The failing sub-command + its ClickHouse error tail from
+        # prepare_stateful_data(), so the re-prepare ERROR row carries the real
         # reason instead of the generic "failed to re-prepare stateful data".
         self.stateful_setup_error = None
         self.debug_artifacts = []
@@ -265,17 +260,51 @@ class ClickHouseProc:
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
     @staticmethod
+    def memory_ratio_config_files():
+        """All installed server config trees the ratio override must cover.
+        `DBReplicated` mode installs copies of the main tree under
+        `/etc/clickhouse-server1` and `/etc/clickhouse-server2` and starts a
+        server from each (tests/config/install.sh), and that copy happens
+        before `set_memory_ratio` runs, so writing only the main tree would
+        leave the two extra servers at the default 0.9 ratio - keeping the
+        host-OOM / `Server died` failure mode reachable there. The replica
+        trees exist (with a populated `config.d`) only in `DBReplicated`
+        runs, so probing for them selects exactly the installed trees."""
+        config_dirs = [Path("/etc/clickhouse-server/config.d")]
+        config_dirs += [
+            p
+            for p in (
+                Path("/etc/clickhouse-server1/config.d"),
+                Path("/etc/clickhouse-server2/config.d"),
+            )
+            if p.is_dir()
+        ]
+        return [d / "max_server_memory_usage_to_ram_ratio.xml" for d in config_dirs]
+
+    @staticmethod
     def set_memory_ratio(ratio):
         config = f"""<clickhouse>
     <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        with open(file_path, "w") as f:
-            f.write(config)
-        print(
-            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
-        )
+        for file_path in ClickHouseProc.memory_ratio_config_files():
+            with open(file_path, "w") as f:
+                f.write(config)
+            print(
+                f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
+            )
+
+    @staticmethod
+    def reset_memory_ratio():
+        """Remove the override written by `set_memory_ratio` so the server
+        default applies again. Needed when the same installed config tree is
+        reused to launch a non-sanitizer binary (the bugfix-validation loop
+        swaps binaries without reinstalling configs). No-op if absent."""
+        for file_path in ClickHouseProc.memory_ratio_config_files():
+            Path(file_path).unlink(missing_ok=True)
+            print(
+                f"Removed {file_path}; server default max_server_memory_usage_to_ram_ratio applies"
+            )
 
     def create_log_export_config(self, config_dir=None):
         print("Create log export config")
@@ -335,6 +364,12 @@ class ClickHouseProc:
 
     @staticmethod
     def stop_log_exports():
+        # Flush any buffered system-log records so the final queries are
+        # exported before the replication views are detached.
+        Shell.check(
+            'clickhouse-client --query "SYSTEM FLUSH LOGS"',
+            verbose=True,
+        )
         return Shell.check(
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh --stop-log-replication",
             verbose=True,
@@ -446,202 +481,6 @@ class ClickHouseProc:
         self.save_system_metadata_files_from_remote_database_disk()
 
         return res
-
-    def create_minio_log_tables(self):
-        self.minio_setup_error = None
-        # Minio log setup is non-fatal (caller continues when this returns
-        # False). Every step MUST stay non-strict: a strict=True step would
-        # raise before we can record the reason and signal failure. Record the
-        # concrete failing sub-step so it reaches CIDB test_context_raw.
-        # storage_policy = 'default' pins these diagnostic tables to local disk.
-        # On s3 storage runs the default merge_tree policy is S3
-        # (s3_storage_policy_for_merge_tree_by_default.xml), which would put the
-        # audit log on S3, so (1) every audit-event insert writes parts to S3 and
-        # thereby generates more audit events (a feedback loop that inflates the
-        # table), and (2) the post-run `select * ... into outfile` dump reads all
-        # of it back from S3 - on amd_tsan this JSON-typed table grew to ~700k
-        # rows / ~1.5 GB and the dump blew past the DUMP_SYSTEM_TABLE_TIMEOUT cap,
-        # failing the "Scraping system tables" check. These are diagnostics ABOUT
-        # S3 activity; there is no reason to store them ON S3. 'default' is a
-        # local policy on every stateless config (no config remaps it), so this
-        # is a no-op on non-s3 runs.
-        setup_steps = [
-            (
-                "create system.minio_audit_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_audit_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
-            ),
-            (
-                "create system.minio_server_logs table",
-                'clickhouse-client --enable_json_type=1 --query "CREATE TABLE system.minio_server_logs (log JSON(time DateTime64(9))) ENGINE = MergeTree ORDER BY tuple() SETTINGS storage_policy = \'default\'"',
-            ),
-            (
-                "set clickminio logger_webhook config",
-                '/mc admin config set clickminio logger_webhook:ch_server_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_server_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            ),
-            (
-                "set clickminio audit_webhook config",
-                '/mc admin config set clickminio audit_webhook:ch_audit_webhook endpoint="http://localhost:8123/?async_insert=1&wait_for_async_insert=0&async_insert_busy_timeout_min_ms=5000&async_insert_busy_timeout_max_ms=5000&async_insert_max_query_number=1000&async_insert_max_data_size=10485760&date_time_input_format=best_effort&query=INSERT%20INTO%20system.minio_audit_logs%20FORMAT%20JSONAsObject" queue_size=1000000 batch_size=500',
-            ),
-        ]
-        for what, command in setup_steps:
-            if not Shell.check(command, verbose=True):
-                self.minio_setup_error = f"failed to {what}"
-                print(f"ERROR: Failed to {what}")
-                return False
-
-        return self._restart_minio_to_apply_config()
-
-    def _wait_minio_ready(self, timeout_s):
-        """Poll until the `test` bucket is listable, or `timeout_s` elapses.
-
-        `mc ls` against a down MinIO fails fast (connection refused), so this
-        polls at roughly one-second intervals.
-        """
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if Shell.check("/mc ls clickminio/test", verbose=False):
-                return True
-            time.sleep(1)
-        return False
-
-    @staticmethod
-    def _minio_binary():
-        """Locate the `minio` binary the same way `setup_minio.sh` does.
-
-        The stateless-test docker image ships it at `/minio`, and a local
-        download (`download_minio`) writes it to `$TEMP_DIR` (== `temp_dir`).
-        `setup_minio.sh` finds it via `PATH="/:.:$PATH"` after `cd "$TEMP_DIR"`,
-        which prefers `/minio`; mirror that precedence here. The Python harness
-        only adds `temp_dir` to `PATH`, not `/`, so a bare `minio` would not
-        resolve to the docker binary - use an explicit path instead.
-        """
-        for path in ("/minio", f"{temp_dir}/minio"):
-            if os.path.exists(path):
-                return path
-        return ""
-
-    def _force_restart_minio(self, attempts=3, ready_timeout_s=60):
-        """Kill any running MinIO and start a fresh instance from the same data
-        directory, so it re-reads the webhook config written by `mc admin config
-        set`.
-
-        Retried because (a) a just-killed MinIO can still hold port 11111 for a
-        moment, making the next `minio server` exit immediately, and (b) MinIO
-        startup can take a while on a loaded sanitizer host. Each attempt kills,
-        restarts, and waits for readiness; a dead or too-slow instance is simply
-        killed and started again on the next iteration.
-
-        Returns None on success, or a concrete failure reason so the caller can
-        carry it into minio_setup_error (CIDB test_context_raw).
-        """
-        minio_bin = self._minio_binary()
-        if not minio_bin:
-            reason = (
-                f"cannot find the minio binary (looked for /minio and {temp_dir}/minio)"
-            )
-            print(f"ERROR: {reason}; cannot restart MinIO")
-            return reason
-        # Start MinIO with the same root credentials `setup_minio.sh` used.
-        # Otherwise it comes up with different root credentials and the
-        # `clickminio` alias (clickhouse/clickhouse) can no longer authenticate,
-        # so every readiness check below would fail for all retry attempts.
-        # `setup_minio.sh` resolves these as `${MINIO_ROOT_USER:-clickhouse}`;
-        # do the same so a custom value in the environment is honored too.
-        minio_root_user = os.environ.get("MINIO_ROOT_USER", "clickhouse")
-        minio_root_password = os.environ.get("MINIO_ROOT_PASSWORD", "clickhouse")
-        for attempt in range(1, attempts + 1):
-            Shell.check("pkill -9 -f 'minio server'", verbose=True)
-            # Give the OS time to release port 11111 before rebinding.
-            time.sleep(3)
-            Shell.check(
-                f"MINIO_ROOT_USER={minio_root_user} "
-                f"MINIO_ROOT_PASSWORD={minio_root_password} "
-                f"nohup {minio_bin} server --address :11111 {temp_dir}/minio_data "
-                f">> {self.MINIO_LOG} 2>&1 &",
-                verbose=True,
-            )
-            if self._wait_minio_ready(ready_timeout_s):
-                return None
-            print(
-                f"WARNING: MinIO not ready within {ready_timeout_s}s after restart "
-                f"(attempt {attempt}/{attempts})"
-            )
-        reason = (
-            f"manual MinIO restart did not become ready within {ready_timeout_s}s "
-            f"after {attempts} attempts"
-        )
-        print(f"ERROR: {reason}")
-        return reason
-
-    def _restart_minio_to_apply_config(self):
-        # Restart minio so it picks up the webhook config set above. The clean
-        # `mc admin service restart --wait` can hang forever (see #97647), so it
-        # runs under a timeout and, on timeout, is killed by process group to
-        # avoid orphans blocking communicate() (see #98466). Whenever the clean
-        # restart does not cleanly report success with a servable bucket, fall
-        # back to a manual, retried restart, which is the reliable path on
-        # loaded CI hosts (the clean restart routinely exceeds the timeout there;
-        # see the bugfix-validation env-setup flake in PR #108821).
-        restart_timeout = 60
-        # The clean-restart outcome that pushed us onto the manual fallback, so
-        # the terminal reason names why the reliable path was even attempted.
-        clean_restart_reason = "clean clickminio restart did not report a ready service"
-        try:
-            print(f"Restarting clickminio (timeout {restart_timeout}s)")
-            proc = subprocess.Popen(
-                [
-                    "/mc",
-                    "admin",
-                    "service",
-                    "restart",
-                    "clickminio",
-                    "--wait",
-                    "--json",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                start_new_session=True,
-            )
-            try:
-                stdout, _ = proc.communicate(timeout=restart_timeout)
-            except subprocess.TimeoutExpired:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                proc.communicate()
-                raise
-            try:
-                status = json_module.loads(stdout).get("status", "")
-            except (json_module.JSONDecodeError, AttributeError):
-                status = stdout.strip()
-            # `--wait` only guarantees the admin API is back, not that the
-            # bucket is servable yet, so confirm readiness before trusting it.
-            if "success" in status and self._wait_minio_ready(30):
-                return True
-            clean_restart_reason = (
-                f"clean clickminio restart did not report a ready service, status: [{status}]"
-            )
-            print(f"WARNING: {clean_restart_reason}")
-        except (subprocess.TimeoutExpired, OSError):
-            clean_restart_reason = (
-                f"clean clickminio restart timed out after {restart_timeout}s"
-            )
-            print(f"WARNING: {clean_restart_reason}")
-
-        print("Falling back to a manual MinIO restart")
-        manual_restart_reason = self._force_restart_minio()
-        if manual_restart_reason is None:
-            return True
-        # Non-fatal, but record the reason so the caller can persist it into the
-        # setup Result (CIDB test_context_raw) instead of leaving minio failures
-        # in the opaque "Cannot start clickhouse-server" bucket. Carry both the
-        # clean-restart status and the manual-restart failure, otherwise the real
-        # reason stays print-only and collapses to a generic CIDB bucket.
-        self.minio_setup_error = (
-            f"failed to restart clickminio ({clean_restart_reason}; "
-            f"manual restart: {manual_restart_reason})"
-        )
-        print(f"ERROR: Failed to restart clickminio: {self.minio_setup_error}")
-        return False
 
     def wait_ready(self, replica_num=0):
         res, out, err = 0, "", ""
@@ -881,17 +720,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
-        if self.minio_proc:
-            # remove the webhook so it doesn't spam with errors once we stop ClickHouse
-            Shell.check(
-                "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
-                verbose=True,
-            )
-            Shell.check(
-                "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
-                verbose=True,
-            )
-
         if self.kafka_proc:
             print("Stopping Redpanda broker")
             Shell.check("pkill -f redpanda", verbose=True)
@@ -912,11 +740,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         """Gracefully stop only the ClickHouse server processes.
 
         Unlike `terminate`, this leaves the auxiliary services (Redpanda/Kafka,
-        MinIO and its webhooks) running. It is used between bugfix-validation
-        iterations so the server binary can be swapped and restarted without
-        tearing down the rest of the test environment: otherwise a changed test
-        relying on Kafka or MinIO webhooks would pass under the first build type
-        and spuriously "reproduce" a bug under the next one.
+        MinIO) running. It is used between bugfix-validation iterations so the
+        server binary can be swapped and restarted without tearing down the
+        rest of the test environment: otherwise a changed test relying on
+        Kafka or MinIO would pass under the first build type and spuriously
+        "reproduce" a bug under the next one.
         """
         print("Stop ClickHouse processes")
 
@@ -1122,6 +950,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 return None
             return max(candidates, key=lambda p: p.stat().st_mtime)
 
+        def pick_file_with(pattern: str, needle: str) -> Path | None:
+            # Select the specific log that contains the hit, not merely the most
+            # recently modified one. On multi-server runs (e.g. DatabaseReplicated)
+            # the crashed server stops logging first and so has the OLDEST mtime,
+            # while surviving replicas keep writing - picking by mtime would hand
+            # the parser a log without the crash and yield a bogus "Unknown error".
+            out = Shell.get_output(
+                f"cd {self.log_dir} && grep -la '{needle}' {pattern} 2>/dev/null | head -n 1 || true"
+            ).strip()
+            return Path(self.log_dir) / out if out else None
+
         sanitizer_hits = Shell.get_output(
             f"sed -n '/.*anitizer/,${{p}}' {self.log_dir}/stderr*.log 2>/dev/null | "
             f'grep -a -v "ASan doesn\'t fully support makecontext/swapcontext functions" | '
@@ -1134,9 +973,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             f"cd {self.log_dir} && grep -a '<Fatal>' clickhouse-server*.log 2>/dev/null | head -n 1 || true"
         )
         if sanitizer_hits or fatal_hits:
-            server_log = pick_latest_file(
-                "clickhouse-server*.err.log"
-            ) or pick_latest_file("clickhouse-server*.log")
+            server_log = (
+                pick_file_with("clickhouse-server*.err.log", "<Fatal>")
+                or pick_file_with("clickhouse-server*.log", "<Fatal>")
+                or pick_latest_file("clickhouse-server*.err.log")
+                or pick_latest_file("clickhouse-server*.log")
+            )
             stderr_log = pick_latest_file("stderr*.log")
             if not (server_log or stderr_log):
                 results.append(
@@ -1149,9 +991,14 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 )
             else:
                 try:
+                    # Either log may be absent (e.g. a sanitizer report goes
+                    # only to stderr when the server dies before opening its
+                    # log). `str(None)` would become the literal path "None",
+                    # which `FuzzerLogParser.get_stack_trace` then fails to
+                    # open; fall back to whichever log exists instead.
                     log_parser = FuzzerLogParser(
-                        server_log=str(server_log),
-                        stderr_log=str(stderr_log),
+                        server_log=str(server_log or stderr_log),
+                        stderr_log=str(stderr_log or server_log),
                         fuzzer_log="",
                     )
                     name, description, files = log_parser.parse_failure()
@@ -1221,16 +1068,23 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             result.set_label(Result.Label.LOG_CHECK)
         return results
 
-    # Exit codes coreutils `timeout` uses on expiry: 124 when the child dies on
-    # the initial SIGTERM, 128+9 = 137 when a SIGTERM-ignoring child is escalated
-    # with SIGKILL after --kill-after. Both mean the dump exceeded its cap.
-    _TIMEOUT_EXIT_CODES = (124, 137)
+    # `timeout --verbose` logs this to stderr when it escalates to SIGKILL
+    # after --kill-after; it proves a 137 came from the wrapper itself rather
+    # than from an external/OOM SIGKILL of `clickhouse local`.
+    _TIMEOUT_KILL_DIAG = "sending signal KILL to command"
+
+    def _timeout_wrapper_expired(self, res, stderr):
+        # 124: the child died on timeout's initial SIGTERM - always an expiry.
+        # 137 (128+9): any SIGKILL death; trust it as an expiry only when
+        # timeout's own KILL diagnostic is present in stderr.
+        return res == 124 or (res == 137 and self._TIMEOUT_KILL_DIAG in stderr)
 
     def _annotate_timeout(self, res, stderr):
-        # If `res` is one of timeout's expiry codes, prepend the "timed out"
-        # annotation so a stuck dump is reported as a timeout rather than an
-        # opaque non-zero failure. Returns the (possibly) annotated stderr.
-        if res in self._TIMEOUT_EXIT_CODES:
+        # Prepend the "timed out" annotation only to proven wrapper expiries,
+        # so a stuck dump is reported as a timeout rather than an opaque
+        # non-zero failure, while an OOM or externally killed dump (bare 137)
+        # keeps its raw stderr. Returns the (possibly) annotated stderr.
+        if self._timeout_wrapper_expired(res, stderr):
             return f"timed out after {self.DUMP_SYSTEM_TABLE_TIMEOUT}s\n{stderr}"
         return stderr
 
@@ -1255,8 +1109,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "error_log",
             "query_metric_log",
             "part_log",
-            "minio_audit_logs",
-            "minio_server_logs",
         ]
         ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
@@ -1283,12 +1135,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         command_args_post = "-- --zookeeper.implementation=testkeeper"
 
-        # Bound each dump: a single hanging table (e.g. a huge minio_audit_logs
-        # on s3 runs) must not consume the whole 9000s job budget. On expiry
-        # timeout sends SIGTERM and returns 124; a dump that ignores SIGTERM is
-        # escalated with SIGKILL after --kill-after and returns 128+9 = 137.
-        # Both are timeouts, annotated by _annotate_timeout below.
-        dump_prefix = f"timeout --signal=TERM --kill-after=60 {self.DUMP_SYSTEM_TABLE_TIMEOUT} "
+        # Bound each dump: a single hanging table must not consume the whole
+        # 9000s job budget. On expiry timeout sends SIGTERM and returns 124; a
+        # dump that ignores SIGTERM is escalated with SIGKILL after --kill-after
+        # and returns 128+9 = 137. --verbose makes timeout log its own KILL to
+        # stderr, so _annotate_timeout can tell a wrapper expiry from an
+        # external/OOM SIGKILL of the dump (also 137).
+        dump_prefix = f"timeout --verbose --signal=TERM --kill-after=60 {self.DUMP_SYSTEM_TABLE_TIMEOUT} "
 
         Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
@@ -1330,9 +1183,6 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                         f"System table {table} has too many rows {lines_count} > {ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT}"
                     )
 
-            if "minio" in table:
-                # minio tables are not replicated
-                continue
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
