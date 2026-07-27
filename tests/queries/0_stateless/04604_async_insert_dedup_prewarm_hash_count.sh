@@ -24,6 +24,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 N=30
 P=4
 
+# system.asynchronous_insert_log is append-only and keyed only by database/table below, which
+# do not change across reruns on the same server (e.g. a manual local re-invocation, as opposed
+# to CI's per-test-run randomized database) -- so a bare database/table filter would also match
+# every past run's flush_query_id, silently inflating the expected count on rerun. Capture a
+# precise lower time bound before any insert runs so the lookup is scoped to this execution only.
+start_time=$($CLICKHOUSE_CLIENT -q "SELECT now64(6)")
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_dedup_prewarm"
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE t_dedup_prewarm (p UInt8, v UInt64)
@@ -74,6 +81,7 @@ WHERE type = 'QueryFinish' AND query_id IN (
     SELECT DISTINCT flush_query_id
     FROM system.asynchronous_insert_log
     WHERE database = currentDatabase() AND table = 't_dedup_prewarm' AND status = 'Ok'
+      AND flush_time >= toDateTime64('$start_time', 6)
 )"
 
 # Sanity: all N*P distinct rows are present (none wrongly deduplicated).
