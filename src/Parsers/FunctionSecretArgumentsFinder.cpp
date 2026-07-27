@@ -21,7 +21,9 @@ namespace
     bool maskS3URICredentials(String & url)
     {
         bool changed = false;
-        static re2::RE2 userinfo_pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#@]+@";
+        /// Greedy up to the last at-sign before the path, so a userinfo whose password itself
+        /// contains an at-sign is masked whole, not just up to the first one.
+        static re2::RE2 userinfo_pattern = "^([a-zA-Z][a-zA-Z0-9+.-]*://)[^/?#]+@";
         if (RE2::Replace(&url, userinfo_pattern, "\\1[HIDDEN]@"))
             changed = true;
         static re2::RE2 presign_pattern

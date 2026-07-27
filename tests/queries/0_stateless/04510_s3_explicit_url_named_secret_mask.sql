@@ -155,6 +155,11 @@ SELECT * FROM s3('url_exprstruct', 'CSV', 'SEKRIT_EXPRSTRUCT', 'TSV',
 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG&partNumber=7',
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- A password may itself contain '@'; the userinfo must be masked up to the last '@' before the host,
+-- not just the first, so no fragment of it stays visible.
+SELECT * FROM s3('https://user:SEKRIT_PWA@SEKRIT_PWB@localhost:11111/x?X-Amz-Signature=SEKRIT_SIG',
+                 'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
+
 -- A retained URL part can legally contain an apostrophe; the partially-masked url must be re-emitted
 -- as a properly escaped SQL literal (not by naive quoting, which would produce a broken statement).
 SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/x/o''clock?X-Amz-Signature=SEKRIT_SIG',
