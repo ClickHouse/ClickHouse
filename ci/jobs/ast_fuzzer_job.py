@@ -2,6 +2,7 @@
 import logging
 import os
 import random
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -31,6 +32,142 @@ JOB_ARTIFACTS = (
     WORKSPACE_PATH / "dmesg.log",
     WORKSPACE_PATH / "fatal.log",
 )
+
+# Recoverable allocator pressure, not a bug: the runtimes emit
+# "WARNING: <tool>Sanitizer failed to allocate 0x... bytes" (no colon after the
+# tool name) and keep running under allocator_may_return_null=1, and the
+# ClickHouse watchdog logs "terminated by signal 9" for a kernel OOM kill.
+# Single definition shared by the OOM leniency below and _sanitizer_findings, so
+# the two can never disagree about what counts as benign.
+SANITIZER_OOM_PATTERN = r"Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9"
+
+# Per-run classification inputs that must not survive into a later run on a
+# reused praktika worktree: ci/tmp is gitignored, so praktika's `git clean -ffd`
+# keeps whatever the previous run left there. status.tsv matters most - the
+# runner writes it only at the very end under `set -e`, so a stale successful
+# tuple from run N reads as a clean run N+1 and short-circuits every check
+# below. server.log/stderr.log are opened in append mode; sanitizer.log.* and
+# core.* are globbed. NOT deleted: ci-targeted-queries.txt, fuzz.json and
+# ci-changed-files.txt are written BEFORE the container runs and are its input.
+_STALE_RUN_STATE = (
+    WORKSPACE_PATH / "status.tsv",
+    WORKSPACE_PATH / "server.log",
+    WORKSPACE_PATH / "stderr.log",
+    WORKSPACE_PATH / "fuzzer.log",
+    WORKSPACE_PATH / "fuzzerout.sql",
+    WORKSPACE_PATH / "fatal.log",
+    WORKSPACE_PATH / "dmesg.log",
+)
+
+
+def _preseeded_state_is_input() -> bool:
+    """True when this workspace was seeded on purpose and must not be cleaned.
+
+    Only ci/tests/test_e2e.py sets this: it writes status.tsv plus the job
+    artifacts and then invokes the real job, so for that fixture the files below
+    are INPUT rather than leftovers. Deliberately not keyed on the generic
+    local-run flag, which is the default for every `ci.praktika run` and would
+    stop ordinary local reruns from cleaning up after themselves.
+    """
+    return os.getenv("PRAKTIKA_FUZZER_KEEP_PRESEEDED_STATE") == "1"
+
+
+def _clean_stale_run_state() -> None:
+    """Delete stale per-run classification inputs before launching the container.
+
+    Fail closed: a surviving status.tsv or sanitizer report would misclassify the
+    next run (attributing a previous run's finding to it, or reading its success
+    tuple), so if any input cannot be removed we raise before the container
+    launches rather than running against corrupted state.
+    """
+    if _preseeded_state_is_input():
+        logging.info(
+            "PRAKTIKA_FUZZER_KEEP_PRESEEDED_STATE=1: treating existing state in %s "
+            "as job input, not cleaning it",
+            WORKSPACE_PATH,
+        )
+        return
+    # core.* too: zstd keeps its input, so a raw core outlives its own run and
+    # collect_cores globs core.* blindly - a later core-less run would otherwise
+    # attach the previous run's core as evidence for this failure.
+    stale = (
+        list(_STALE_RUN_STATE)
+        + sorted(WORKSPACE_PATH.glob("sanitizer.log.*"))
+        + sorted(WORKSPACE_PATH.glob("core.*"))
+    )
+    for path in stale:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            logging.warning("Failed to remove stale %s: %s", path, e)
+    survivors = [p for p in stale if p.exists()]
+    if survivors:
+        raise RuntimeError(
+            "stale classification inputs could not be removed: "
+            + ", ".join(str(p) for p in survivors)
+        )
+
+
+def _sanitizer_findings(workspace: Path) -> list:
+    """Named, non-benign sanitizer reports produced by this run.
+
+    run-fuzzer.sh points every runtime at *SAN_OPTIONS=log_path, so each process
+    that reports writes its own `sanitizer.log.<pid>`, and an EXIT trap merges
+    them all into stderr.log/server.log. Returns one (name, info, files) tuple
+    per file holding a real finding, so a report is NAMED (and therefore
+    countable in CIDB) no matter which verdict branch the run lands in.
+
+    Every file is parsed - never just the newest or the first: distinct processes
+    report independently, so a benign report must not shadow a real one.
+
+    The report path is passed as BOTH parser inputs so no pattern can reach the
+    real server.log: parse_failure() reads stderr_log only for the sanitizer
+    patterns and server_log for all the others, one of which matches the normal
+    shutdown's "Received signal 15".
+
+    Benign-ness is decided on the RAW DIAGNOSTIC the parser selected, not on the
+    file and not on the name:
+    - not the file, because a recoverable "failed to allocate" warning does not
+      abort the process, so the runtime keeps appending to the same
+      sanitizer.log.<pid> and one file can hold a benign record FOLLOWED BY a
+      real finding (the parser picks the real one - the benign warning has no
+      colon after the tool name, so it matches neither start pattern);
+    - not the name, because the parser normalizes it to e.g.
+      "MemorySanitizer (STID: ...)", dropping "failed to allocate", so a
+      name-based test would promote every benign report to a real finding.
+    """
+    findings = []
+    for report in sorted(workspace.glob("sanitizer.log.*")):
+        try:
+            name, info, files = FuzzerLogParser(
+                server_log=str(report), stderr_log=str(report)
+            ).parse_failure()
+        except Exception as e:  # a malformed report must not abort the job
+            logging.warning("Failed to parse sanitizer report %s: %s", report, e)
+            continue
+        if not name or name == FuzzerLogParser.UNKNOWN_ERROR:
+            # No recognizable diagnostic (empty/truncated/garbage report).
+            continue
+        if re.search(SANITIZER_OOM_PATTERN, _selected_diagnostic(info)):
+            logging.info("Sanitizer report %s is benign (OOM/allocation)", report)
+            continue
+        findings.append((name, info, [str(report)] + list(files)))
+    return findings
+
+
+def _selected_diagnostic(info: str) -> str:
+    """The raw diagnostic block parse_failure() matched, cut out of its info.
+
+    parse_failure() renders "Error:\\n<selected diagnostic>\\n" first and then
+    appends "---\\n\\n<section>" blocks (failed query, reproduce commands, stack
+    trace). Only the diagnostic is used to decide benign-ness; the stack trace
+    must be excluded because a real finding's frames can legitimately mention an
+    allocator.
+    """
+    body = info.split("\n---\n\n", 1)[0]
+    return body[len("Error:\n") :] if body.startswith("Error:\n") else body
 
 
 def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
@@ -257,6 +394,11 @@ def run_fuzz_job(check_name: str):
         else:
             logging.info("AST fuzzer compatibility setting is not set")
 
+    # Remove stale per-run classification inputs before the container writes new
+    # ones: praktika reuses worktrees and ci/tmp is gitignored, so a status.tsv
+    # or sanitizer.log.* left by run N would otherwise classify run N+1.
+    _clean_stale_run_state()
+
     run_command = get_run_command(
         docker_image,
         buzzhouse,
@@ -297,6 +439,16 @@ def run_fuzz_job(check_name: str):
     # originals too for debugging truncated reports.
     paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
 
+    # Name any sanitizer report this run produced BEFORE reading status.tsv: the
+    # early-return below ends in complete_job(), which sys.exit()s, so nothing
+    # after it runs - while the runner's EXIT trap has already collected reports
+    # even for an abort so early that status.tsv was never written.
+    sanitizer_findings = _sanitizer_findings(WORKSPACE_PATH)
+    sanitizer_results = [
+        Result(name=name, info=info, status=Result.Status.FAIL, files=files)
+        for name, info, files in sanitizer_findings
+    ]
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
@@ -311,7 +463,14 @@ def run_fuzz_job(check_name: str):
         # cause is visible instead of an opaque FileNotFoundError traceback.
         # Attach available artifacts (incl. sanitizer.log.*) so nothing is lost.
         error_info = _format_status_error(e, paths)
-        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        early_result = Result.create_from(
+            status=Result.Status.ERROR,
+            info=error_info,
+            # Keep ERROR explicitly: create_from derives the status from the
+            # sub-results when given none, and a FAIL sub-result would downgrade
+            # this ERROR.
+            results=sanitizer_results,
+        )
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 early_result.set_files(file)
@@ -321,6 +480,7 @@ def run_fuzz_job(check_name: str):
     status = Result.Status.FAIL
     info = []
     is_failed = True
+    is_client_failure = False
     if server_died:
         # Server died - status will be determined after OOM checks
         is_failed = True
@@ -348,6 +508,7 @@ def run_fuzz_job(check_name: str):
         info.append(f"ERROR: {error_info}")
     else:
         status = Result.Status.ERROR
+        is_client_failure = True
         # The server was alive, but the fuzzer returned some error. This might
         # be some client-side error detected by fuzzing, or a problem in the
         # fuzzer itself. Don't grep the server log in this case, because we will
@@ -359,10 +520,27 @@ def run_fuzz_job(check_name: str):
             Shell.get_output(f"tail -n200 {fuzzer_log}", verbose=False).splitlines()
         )
 
+    if sanitizer_findings:
+        # A sanitizer report is a finding whatever the exit code says. *SAN_OPTIONS
+        # is exported to every process the runner starts, so a runtime can kill a
+        # server-side thread or an ignored client probe while the fuzzer itself
+        # exits 0/143 and rides the benign branch above. Force the run failed and
+        # red, and say so - the report is named as a sub-result further down.
+        is_failed = True
+        if status == Result.Status.OK:
+            status = Result.Status.FAIL
+        if is_client_failure:
+            # Append only: this branch and the BuzzHouse 227 branch both end at
+            # ERROR, so info[0] cannot be rewritten without clobbering
+            # BuzzHouse's own "Found disallowed error code" diagnostic.
+            info.append(
+                "A sanitizer report was produced by this run, see the named sub-result(s)"
+            )
+
     if is_failed:
         if is_sanitized:
             sanitizer_oom = Shell.get_output(
-                f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
+                f"rg --text '{SANITIZER_OOM_PATTERN}' {server_log}"
             )
             # Sanitizer shadow memory is invisible to the server's memory tracker,
             # so the kernel OOM killer may SIGKILL the server before any limit
@@ -373,7 +551,12 @@ def run_fuzz_job(check_name: str):
             kernel_oom_kill = (
                 server_died and server_exit_code == 137 and not has_sanitizer_report
             )
-            if sanitizer_oom or kernel_oom_kill:
+            # The leniency is vetoed by a real finding: a recoverable allocation
+            # warning is merged into the same server.log a real report lands in,
+            # so sanitizer_oom alone would forgive a run that also reported a
+            # genuine bug. Order is load-bearing - the veto must be evaluated
+            # here, before the status is set to OK.
+            if (sanitizer_oom or kernel_oom_kill) and not sanitizer_findings:
                 print("Sanitizer OOM")
                 if sanitizer_oom:
                     info.append("WARNING: Sanitizer OOM - test considered passed")
@@ -418,9 +601,23 @@ def run_fuzz_job(check_name: str):
                 )
             )
 
+    # Add the per-report findings on every path. This also covers the branch
+    # above: that single parse_failure() reads the MERGED stderr.log, into which
+    # the runner concatenates every report in glob order, so a fatal OOM record
+    # ordered first would be the only thing named even when a real finding
+    # follows it. Dedupe by name so one finding is never reported twice.
+    seen_names = {r.name for r in results}
+    for sub in sanitizer_results:
+        if sub.name not in seen_names:
+            seen_names.add(sub.name)
+            results.append(sub)
+
     result = Result.create_from(
         results=extra_results + results,
-        status=status if not results else None,
+        # Keep an ERROR decided above explicitly: create_from derives the status
+        # from the sub-results when given none, and the FAIL sub-results added
+        # here would downgrade it.
+        status=status if (not results or status == Result.Status.ERROR) else None,
         info=info,
     )
 

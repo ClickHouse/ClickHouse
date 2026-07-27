@@ -111,6 +111,9 @@ def test_fuzzer():
 
         subprocess.run(
             [sys.executable, "-m", "ci.praktika", "run", FUZZER_JOB],
+            # The state seeded above is this fixture's input, so the job must keep
+            # it instead of cleaning it as leftovers of a previous run.
+            env=dict(os.environ, PRAKTIKA_FUZZER_KEEP_PRESEEDED_STATE="1"),
         )
 
         result_file = Path(f"ci/tmp/result_{Utils.normalize_string(FUZZER_JOB)}.json")
