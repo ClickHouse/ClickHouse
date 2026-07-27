@@ -42,6 +42,10 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     if (limit_step->withTies())
         return 0;
 
+    /// TopK filtering can skip source rows, so it is incompatible with exact rows_before_limit_at_least.
+    if (limit_step->alwaysReadTillEnd())
+        return 0;
+
     node = node->children.front();
     auto * sorting_step = typeid_cast<SortingStep *>(node->step.get());
     if (!sorting_step)

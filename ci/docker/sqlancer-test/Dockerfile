@@ -6,9 +6,16 @@
 #   * SQLancer++ (suyZhong/SQLancerPlusPlus) in /sqlancer-pp
 FROM ubuntu:22.04
 
-# ARG for quick switch to a given ubuntu mirror
+# Redirect apt to the mirror passed by CI (canonical default; see ci/praktika/docker.py).
+# Rewrite archive.ubuntu.com (amd64) and ports.ubuntu.com (arm64) across sources.list
+# and deb822 *.sources so arm64 builds avoid the flaky ports.ubuntu.com.
 ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i -e "s|http://archive.ubuntu.com|$apt_archive|g" -e "s|https://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ARG apt_ports_archive="http://ports.ubuntu.com"
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -print0 | xargs -0 -r sed -i \
+        -e "s|http://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|https://archive.ubuntu.com|$apt_archive|g" \
+        -e "s|http://ports.ubuntu.com|$apt_ports_archive|g" \
+        -e "s|https://ports.ubuntu.com|$apt_ports_archive|g"
 
 # We need ca-certificates first to be able to update all repos. This is why it's run twice
 RUN apt-get update \

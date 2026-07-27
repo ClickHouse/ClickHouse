@@ -15,7 +15,7 @@ CREATE TABLE test_stats_exceeds (
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMMDD(dt)
 ORDER BY tuple()
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'minmax';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
 
 SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
