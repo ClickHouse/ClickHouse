@@ -62,7 +62,7 @@ Block headerWith(const String & column_name, const DataTypePtr & type)
 /// `abortOnFailedAssertion`), so this aborted the whole server process during query planning.
 /// With the do-not-fold guard the drifted argument is simply not folded and header computation
 /// completes, yielding the node's declared result type.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, BaseTypeDriftDoesNotAbortHeaderComputation)
+TEST(ActionsDAGPartialResultTypeDrift, BaseTypeDriftDoesNotAbortHeaderComputation)
 {
     tryRegisterFunctions();
 
@@ -94,7 +94,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, BaseTypeDriftDoesNotAbortHeaderComp
 /// type, so on drift it produced a column whose type differed from the node's resolved result
 /// type and tripped the `columnMatchesType` check ("Unexpected return type from materialize"),
 /// which is again a `LOGICAL_ERROR` and therefore an abort in debug/sanitizer builds.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftDoesNotAbortHeaderComputation)
+TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftDoesNotAbortHeaderComputation)
 {
     tryRegisterFunctions();
 
@@ -115,7 +115,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftDoesNotAbortHeaderC
 /// partial evaluator copies a drifted column while keeping that stale declared type, the
 /// argument-type check sees matching declared types and the function is executed on a mismatched
 /// column anyway - the same `LOGICAL_ERROR` abort, just one node further away.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindAliasDoesNotAbortHeaderComputation)
+TEST(ActionsDAGPartialResultTypeDrift, DriftBehindAliasDoesNotAbortHeaderComputation)
 {
     tryRegisterFunctions();
 
@@ -141,7 +141,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindAliasDoesNotAbortHeaderC
 /// `ARRAY_JOIN` must not hide the drift either. It extracts the nested column of its argument, so
 /// keeping the declared nested type from analysis while extracting a drifted one would let a
 /// downstream function be executed on a mismatched column, exactly as an alias would.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinDoesNotAbortHeaderComputation)
+TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinDoesNotAbortHeaderComputation)
 {
     tryRegisterFunctions();
 
@@ -174,7 +174,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinDoesNotAbortHea
 /// by the optimizer callers (JOIN rewrites, shard skipping, virtual-column path extraction), which
 /// treat any non-null column as a definitive folded value, so on drift the column must stay null and
 /// route them through their "unknown value" path rather than hand them a fabricated 1.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftFoldsNoValueForOneRowCallers)
+TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftFoldsNoValueForOneRowCallers)
 {
     tryRegisterFunctions();
 
@@ -201,7 +201,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftFoldsNoValueForOneR
 /// node whose result type is `DataTypeFunction`, so if one of its captured arguments is bound to a
 /// differently-typed header column, skipping the fold must not turn into that error - the column is
 /// simply left null.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftOnNonInstantiableResultTypeIsSkippedCleanly)
+TEST(ActionsDAGPartialResultTypeDrift, DriftOnNonInstantiableResultTypeIsSkippedCleanly)
 {
     tryRegisterFunctions();
 
@@ -243,7 +243,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftOnNonInstantiableResultTypeIsS
 /// pinned here: executing the stale capture instead raises
 /// `Cannot capture column N because it has incompatible type`, a `LOGICAL_ERROR` that aborts the
 /// server in debug and sanitizer builds.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftInCapturedLambdaUnderArrayMapIsRecoverable)
+TEST(ActionsDAGPartialResultTypeDrift, DriftInCapturedLambdaUnderArrayMapIsRecoverable)
 {
     tryRegisterFunctions();
 
@@ -299,7 +299,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftInCapturedLambdaUnderArrayMapI
 /// handed to the parent. If that were the stale declared type, a wrapper-sensitive folder such as
 /// `isNullable` would see no difference and fold a definitive `0` for the optimizer callers instead of
 /// remaining unknown.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinFoldsNoValueForOneRowCallers)
+TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinFoldsNoValueForOneRowCallers)
 {
     tryRegisterFunctions();
 
@@ -334,7 +334,7 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinFoldsNoValueFor
 /// if folding were disabled unconditionally, because the guard's fallback produces an empty column
 /// of the same declared type. A constant argument makes the fold observable - it yields a
 /// `ColumnConst` carrying the computed value, which the do-not-fold path never produces.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, MatchingTypeStillFoldsConstant)
+TEST(ActionsDAGPartialResultTypeDrift, MatchingTypeStillFoldsConstant)
 {
     tryRegisterFunctions();
 
