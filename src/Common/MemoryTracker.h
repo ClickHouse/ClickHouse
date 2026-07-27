@@ -10,7 +10,9 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
-#if !defined(NDEBUG)
+/// Disabled on macOS: the malloc-zone hook observes system-library allocations (e.g. dyld mallocs
+/// on a thread's first `absl::Mutex` lock) that can occur inside deny scopes and cannot be prevented.
+#if !defined(NDEBUG) && !defined(OS_DARWIN)
 #define MEMORY_TRACKER_DEBUG_CHECKS
 #endif
 
