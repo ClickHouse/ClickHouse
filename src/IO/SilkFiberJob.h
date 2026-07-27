@@ -43,7 +43,7 @@ template <typename T>
 {
     static_assert(offsetof(T, header) == 0, "fiber params must begin with SilkFiberJobHeader");
     static_assert(std::is_same_v<decltype(T::header), SilkFiberJobHeader>);
-    return silk::FiberScheduler::run(fiber_main, std::move(parameters), category, future);
+    return silk::FiberScheduler::run(fiber_main, std::forward<T>(parameters), category, future);
 }
 
 }

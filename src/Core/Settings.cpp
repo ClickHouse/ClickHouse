@@ -778,8 +778,8 @@ Drain bound for the experimental `ReaderExecutor`: a long source connection drop
 Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_use_fibers, false, R"(
 Run the experimental `ReaderExecutor`'s read-ahead fetch steps as Silk fibers instead of prefetch pool threads. Requires the server setting `disk_connections_use_silk` (a running Silk scheduler).)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_plan_look_ahead_max_window, 8388608, R"(
-Fixed plan-window size (bytes) for the experimental `ReaderExecutor`: residency is planned once over this span and reused across mark-range advances, with cell-aligned segment folding extending it to the touched cell boundaries. Floored at `reader_executor_window_size` (the default equals it - one window); raise it to plan further ahead and pin more cache segments. The fetch-ahead distance is bounded separately by the fill-ahead lead.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_plan_look_ahead_max_window, 33554432, R"(
+Plan look-ahead target (bytes) for the experimental `ReaderExecutor`: residency is planned until this span is covered and reused across mark-range advances; the last probed cache segment or fill cell may extend the plan slightly past the target. Floored at `reader_executor_window_size`. The default (32 MiB) keeps the plan wider than the fill-ahead lead (16 MiB), so the plan never caps the prefetch distance.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_hold_consumed, 0, R"(
 Trailing retention window (bytes) for the experimental `ReaderExecutor`: how many already-consumed bytes the read buffer keeps in memory behind its position, so a backward seek within that distance re-serves from memory instead of refetching from the source. `0` (default) releases bytes as they are consumed.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(

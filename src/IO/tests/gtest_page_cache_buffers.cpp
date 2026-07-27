@@ -1,4 +1,5 @@
 #include <IO/PageCacheProvider.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/ChainedBuffers.h>
 #include <Common/PageCache.h>
 
@@ -22,7 +23,8 @@ CacheViewPtr openWriters(ICacheProvider & provider, const StoredObject & object,
     auto view = std::make_unique<CacheView>();
     for (auto c : cells)
         view->miss_entries.push_back(MissEntry{c, nullptr});
-    provider.openWriteBuffers(object, object_file_offset, *view);
+    for (auto & e : view->miss_entries)
+        e.writer = provider.openWriter(object, object_file_offset, e.range);
     return view;
 }
 
@@ -71,8 +73,8 @@ std::string flatten(const ChainedBuffers & chain, size_t offset, size_t size)
 
 }
 
-/// (a) openWriteBuffers over a miss range, write a whole block => complete() true,
-/// committed() spans the range, planResidencyView afterward reports a hit, and
+/// (a) openWriter over a miss range, write a whole block => complete() true,
+/// committed() spans the range, probeView afterward reports a hit, and
 /// read() round-trips the bytes.
 TEST(PageCacheBuffers, WriteWholeBlockThenHit)
 {
@@ -83,7 +85,7 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    /// One openWriteBuffers over the aligned miss block.
+    /// One openWriter over the aligned miss block.
     auto view_misses = openWriters(provider, StoredObject{}, 0, {ByteRange{0, block_size}}); const auto & misses = view_misses->misses();
     ASSERT_EQ(misses.size(), 1u);
     ASSERT_NE(misses[0].writer, nullptr);
@@ -98,8 +100,8 @@ TEST(PageCacheBuffers, WriteWholeBlockThenHit)
     /// committed() spans the whole range.
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, block_size}).empty());
 
-    /// planResidencyView now reports the block as a hit (cell registered).
-    auto view = provider.planResidencyView(StoredObject{}, 0, ByteRange{0, block_size});
+    /// probeView now reports the block as a hit (cell registered).
+    auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, block_size});
     ASSERT_EQ(view->hits().size(), 1u);
     ASSERT_EQ(view->misses().size(), 0u);
     EXPECT_EQ(view->hits()[0].range.offset, 0u);
@@ -137,7 +139,7 @@ TEST(PageCacheBuffers, WriteBufferDoublesAsReadBuffer)
 }
 
 /// (c) EOF tail block: a file whose size is not a block multiple => the tail block
-/// is short; write the tail, planResidencyView reports it as a hit of the short
+/// is short; write the tail, probeView reports it as a hit of the short
 /// size, read returns exactly the valid bytes (no past-EOF bytes).
 TEST(PageCacheBuffers, EofTailBlockShort)
 {
@@ -161,8 +163,8 @@ TEST(PageCacheBuffers, EofTailBlockShort)
     EXPECT_EQ(wrote, tail_size);
     EXPECT_TRUE(writer.complete());
 
-    /// planResidencyView reports the tail as a hit of the SHORT size.
-    auto view = provider.planResidencyView(StoredObject{}, 0, ByteRange{tail_off, block_size});
+    /// probeView reports the tail as a hit of the SHORT size.
+    auto view = probeView(provider, StoredObject{}, 0, ByteRange{tail_off, block_size});
     ASSERT_EQ(view->hits().size(), 1u);
     EXPECT_EQ(view->hits()[0].range.offset, tail_off);
     EXPECT_EQ(view->hits()[0].range.size, tail_size) << "tail hit sized to valid bytes, not full block";
@@ -174,8 +176,8 @@ TEST(PageCacheBuffers, EofTailBlockShort)
     EXPECT_EQ(flatten(chain, tail_off, tail_size), std::string(tail_size, 'T'));
 }
 
-/// (d) bypass: a provider with bypass_if_missing=true => openWriteBuffers returns
-/// empty; planResidencyView misses carry writer == nullptr; a direct write on a
+/// (d) bypass: a provider with bypass_if_missing=true => openWriter returns
+/// nullptr; `lookAt` misses carry writer == nullptr; a direct write on a
 /// bypass write buffer returns 0 and creates no registered cell.
 TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
 {
@@ -191,8 +193,8 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
     ASSERT_EQ(misses.size(), 1u);
     EXPECT_EQ(misses[0].writer, nullptr);
 
-    /// planResidencyView misses carry writer == nullptr (it never opens writers).
-    auto view = bypass_provider.planResidencyView(StoredObject{}, 0, ByteRange{0, block_size});
+    /// `lookAt` misses carry writer == nullptr (it never opens writers).
+    auto view = probeView(bypass_provider, StoredObject{}, 0, ByteRange{0, block_size});
     ASSERT_EQ(view->misses().size(), 1u);
     EXPECT_EQ(view->misses()[0].writer, nullptr);
 
@@ -210,14 +212,14 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
     PageCacheProvider observer(
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
-    auto observed = observer.planResidencyView(StoredObject{}, 0, ByteRange{0, block_size});
+    auto observed = probeView(observer, StoredObject{}, 0, ByteRange{0, block_size});
     ASSERT_EQ(observed->hits().size(), 0u);
     ASSERT_EQ(observed->misses().size(), 1u);
 }
 
-/// (e) planResidencyView is READ-ONLY: over an uncached range it creates no cells
-/// (a subsequent planResidencyView still reports misses).
-TEST(PageCacheBuffers, PlanResidencyViewIsReadOnly)
+/// (e) the residency probe (`lookAt`) is READ-ONLY: over an uncached range it creates no cells
+/// (a subsequent probe still reports misses).
+TEST(PageCacheBuffers, ProbeIsReadOnly)
 {
     auto cache = makeCache();
     auto file = makeFile("buffers-plan-readonly");
@@ -226,13 +228,13 @@ TEST(PageCacheBuffers, PlanResidencyViewIsReadOnly)
         cache, file, block_size, /*inject_eviction=*/false,
         /*bypass_if_missing=*/false, /*file_size_in_bytes=*/block_size);
 
-    auto view1 = provider.planResidencyView(StoredObject{}, 0, ByteRange{0, block_size});
+    auto view1 = probeView(provider, StoredObject{}, 0, ByteRange{0, block_size});
     ASSERT_EQ(view1->hits().size(), 0u);
     ASSERT_EQ(view1->misses().size(), 1u);
     view1.reset();
 
     /// A second probe still misses — the first probe created no cell.
-    auto view2 = provider.planResidencyView(StoredObject{}, 0, ByteRange{0, block_size});
+    auto view2 = probeView(provider, StoredObject{}, 0, ByteRange{0, block_size});
     EXPECT_EQ(view2->hits().size(), 0u);
     ASSERT_EQ(view2->misses().size(), 1u);
 }
@@ -273,7 +275,7 @@ TEST(PageCacheBuffers, FirstWriterWins)
 }
 
 /// (g) multi-block write + read-back per block: a range spanning >= 2 blocks, one
-/// openWriteBuffers, write all, complete() true, each block round-trips (mirrors
+/// openWriter, write all, complete() true, each block round-trips (mirrors
 /// DiskCache's WriteAcrossTwoSegments).
 TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
 {
@@ -309,8 +311,8 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
     EXPECT_EQ(wrote, span) << "both whole blocks newly landed";
     EXPECT_TRUE(writer.complete());
 
-    /// planResidencyView coalesces the two adjacent hit blocks into one HitEntry.
-    auto view = provider.planResidencyView(StoredObject{}, 0, ByteRange{0, span});
+    /// probeView coalesces the two adjacent hit blocks into one HitEntry.
+    auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, span});
     ASSERT_EQ(view->hits().size(), 1u) << "adjacent hit blocks coalesce into one HitEntry";
     EXPECT_EQ(view->hits()[0].range.offset, 0u);
     EXPECT_EQ(view->hits()[0].range.size, span);
@@ -349,13 +351,13 @@ TEST(PageCacheBuffers, PartialBlockWriteIsSkipped)
     EXPECT_EQ(uncommitted[0].size, block_size) << "the whole range is still uncommitted";
 
     /// No partial cell was registered: a subsequent probe still misses.
-    auto view = provider.planResidencyView(StoredObject{}, 0, ByteRange{0, block_size});
+    auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, block_size});
     EXPECT_TRUE(view->hits().empty());
     ASSERT_EQ(view->misses().size(), 1u);
 }
 
 /// (i) hit/miss interleaving: a 3-block file with ONLY the middle block resident
-/// drives `buildView`'s kind-flip coalescing (miss → hit → miss), which the all-hit
+/// drives the probe's kind-flip coalescing (miss → hit → miss), which the all-hit
 /// and all-miss tests never exercise.
 TEST(PageCacheBuffers, HitMissInterleavedTiling)
 {
@@ -376,7 +378,7 @@ TEST(PageCacheBuffers, HitMissInterleavedTiling)
     }
 
     /// Probe the whole file: miss[0] → hit[1] → miss[2].
-    auto view = provider.planResidencyView(StoredObject{}, 0, ByteRange{0, file_size});
+    auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, file_size});
     ASSERT_EQ(view->hits().size(), 1u);
     ASSERT_EQ(view->misses().size(), 2u);
 

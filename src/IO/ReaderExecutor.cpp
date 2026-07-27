@@ -1,4 +1,5 @@
 #include <IO/ReaderExecutor.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/PrefetchThreadPool.h>
 #include <IO/FetchMachineRunner.h>
 #include <IO/LocalFetchMachineRunner.h>
@@ -74,7 +75,7 @@ namespace DB
 /// CONSUMER (top of the model, inverted in file order):
 ///   `readNextWindow` -> `serveWindow` (the consumer loop) -> `pump` (in the
 ///   Schedule-driven interpreter region) -> `finishWindow`.
-/// PLAN BUILD, two spans: `preparePlan` (the epoch scheduler, in Read path)
+/// PLAN BUILD, two spans: `preparePlan` (the plan scheduler, in Read path)
 ///   and `observeAndSchedule` + its extract* helpers.
 /// COLLECT, three spans: `collectInFlightInto`; the put pair `collectFillTargets` /
 ///   `runPutStep`; and teardown's `cancelMachine` / `drainAbandonedMachines`.
@@ -146,6 +147,7 @@ ReaderExecutor::ReaderExecutor(
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "reader_executor_window_size and reader_executor_block_size must be > 0, "
             "got window_size={}, block_size={}", window_size, block_size);
+    fill_lane.bank_keep_behind = min_bytes_for_seek;
 
     offset_map.build(stored_objects);
     creator_query_id = String(CurrentThread::getQueryId());
@@ -215,43 +217,45 @@ ReaderExecutor::~ReaderExecutor()
 
     if (reader_executor_log)
     {
-        ReaderExecutorLogElement elem;
-        elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        elem.query_id = creator_query_id;
-        elem.source_file_path = log_file_path;
-        /// Logical (user-visible) bytes — `totalSize()` subtracts
-        /// `data_start_offset` for encrypted reads so the value lines up
-        /// with the per-tier byte counters. `nullopt` when the underlying
-        /// object had `StoredObject::UnknownSize`.
-        elem.total_size = offset_map.hasUnknownSize()
-            ? std::optional<UInt64>{}
-            : std::optional<UInt64>{totalSize()};
-        elem.bytes_from_page_cache = stats.get(Stats::BytesFromPageCache);
-        elem.bytes_from_filesystem_cache = stats.get(Stats::BytesFromFilesystemCache);
-        elem.bytes_from_source = stats.get(Stats::BytesFromSource);
-        elem.bytes_pushed_to_cache_sync = stats.get(Stats::BytesPushedToCacheSync);
-        elem.cache_get_requests = stats.get(Stats::CacheGetRequests);
-        elem.cache_populate_requests = stats.get(Stats::CachePopulateRequests);
-        elem.source_requests = stats.get(Stats::SourceRequests);
-        elem.incomplete_connections = stats.get(Stats::IncompleteConnections);
-        elem.cache_get_us = stats.get(Stats::CacheGetMicroseconds);
-        elem.cache_populate_us = stats.get(Stats::CachePopulateMicroseconds);
-        elem.source_read_us = stats.get(Stats::SourceReadMicroseconds);
-        elem.decrypt_us = stats.get(Stats::DecryptMicroseconds);
-        elem.prefetch_wait_us = stats.get(Stats::PrefetchWaitMicroseconds);
-        elem.prefetch_hits = stats.get(Stats::PrefetchHits);
-        elem.prefetch_cancelled = stats.get(Stats::PrefetchCancelled);
-        elem.prefetch_pool_full = stats.get(Stats::PrefetchPoolFull);
-        elem.prefetch_discarded_running = stats.get(Stats::PrefetchDiscardedRunning);
-        elem.prefetch_issued_source_bytes = stats.get(Stats::PrefetchIssuedSourceBytes);
-        elem.prefetch_wasted_source_bytes = stats.get(Stats::PrefetchWastedSourceBytes);
-
-        /// `SystemLogQueue::push_back` allocates and can throw; this is a `noexcept`
+        /// `SystemLogQueue` allocates and can throw; this is a `noexcept`
         /// destructor (often unwinding from another exception), so suppress and log
         /// rather than `std::terminate`. The log row is best-effort observability.
+        /// The fields are filled inside the callback so the string copies are charged
+        /// to the global memory tracker, per the `add` contract.
         try
         {
-            reader_executor_log->add(std::move(elem));
+            reader_executor_log->add([&](ReaderExecutorLogElement & elem)
+            {
+                elem.event_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                elem.query_id = creator_query_id;
+                elem.source_file_path = log_file_path;
+                /// Logical (user-visible) bytes — `totalSize()` subtracts
+                /// `data_start_offset` for encrypted reads so the value lines up
+                /// with the per-tier byte counters. `nullopt` when the underlying
+                /// object had `StoredObject::UnknownSize`.
+                elem.total_size = offset_map.hasUnknownSize()
+                    ? std::optional<UInt64>{}
+                    : std::optional<UInt64>{totalSize()};
+                elem.bytes_from_page_cache = stats.get(Stats::BytesFromPageCache);
+                elem.bytes_from_filesystem_cache = stats.get(Stats::BytesFromFilesystemCache);
+                elem.bytes_from_source = stats.get(Stats::BytesFromSource);
+                elem.bytes_pushed_to_cache_sync = stats.get(Stats::BytesPushedToCacheSync);
+                elem.cache_get_requests = stats.get(Stats::CacheGetRequests);
+                elem.cache_populate_requests = stats.get(Stats::CachePopulateRequests);
+                elem.source_requests = stats.get(Stats::SourceRequests);
+                elem.incomplete_connections = stats.get(Stats::IncompleteConnections);
+                elem.cache_get_us = stats.get(Stats::CacheGetMicroseconds);
+                elem.cache_populate_us = stats.get(Stats::CachePopulateMicroseconds);
+                elem.source_read_us = stats.get(Stats::SourceReadMicroseconds);
+                elem.decrypt_us = stats.get(Stats::DecryptMicroseconds);
+                elem.prefetch_wait_us = stats.get(Stats::PrefetchWaitMicroseconds);
+                elem.prefetch_hits = stats.get(Stats::PrefetchHits);
+                elem.prefetch_cancelled = stats.get(Stats::PrefetchCancelled);
+                elem.prefetch_pool_full = stats.get(Stats::PrefetchPoolFull);
+                elem.prefetch_discarded_running = stats.get(Stats::PrefetchDiscardedRunning);
+                elem.prefetch_issued_source_bytes = stats.get(Stats::PrefetchIssuedSourceBytes);
+                elem.prefetch_wasted_source_bytes = stats.get(Stats::PrefetchWastedSourceBytes);
+            });
         }
         catch (...)
         {
@@ -327,7 +331,20 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
             || (at_plan_end && !planReachesEnd()));
     if (!machine && want_replan)
     {
-        observeAndSchedule(position_phys);
+        /// EXTEND vs RESTART: a contiguous-forward need - the cursor still inside
+        /// (or at the end of) the live span, only more look-ahead wanted - grows
+        /// the plan in place, keeping the held buffers, the bank and the fill-lane
+        /// state; each extension also SLIDES the released territory out, so the
+        /// retained span stays bounded by the reuse reach plus the plan window.
+        /// Anything else (no plan, backward cursor) rebuilds from scratch.
+        const auto & g = read_plan.geometry();
+        const bool live_plan = g && g->plan_end > g->plan_start;
+        const bool contiguous_forward = live_plan
+            && position_phys >= g->plan_start && position_phys <= g->plan_end;
+        if (contiguous_forward)
+            extendPlan(position_phys);
+        else
+            observeAndSchedule(position_phys);
     }
 }
 
@@ -375,6 +392,38 @@ void ReaderExecutor::seek(size_t new_position)
         return;
     }
 
+    /// REUSE: a NEAR target inside the live plan span changes only the cursor - the
+    /// plan, the held buffers, the bank and the lane state all stay (a backward
+    /// target re-serves committed cells, which the serve reads ahead-cursor-blind).
+    /// NEAR inherits the connection-bridge policy: a jump the open connection would
+    /// bridge (`min_bytes_for_seek`) is a jump the plan absorbs - the interleaved
+    /// column-stream pattern of a compact merge. A FAR in-plan jump restarts
+    /// instead: the connection reopens at the target anyway, and a fresh plan
+    /// derives its fill cells from the new cursor rather than pumping the old
+    /// whole-gap job (and its fuller cells) across the distance. The machine is
+    /// left untouched wherever it is: a swing back into its window serves as a
+    /// prefetch hit, and the serve's pump interrupt-collects it lazily - and
+    /// partially - only when it actually blocks a needed job. An eager
+    /// collect-on-seek here costs a completed-then-relaunched fetch per swing.
+    /// The estimators are NOT fed: an absorbed jump is not a break in the fetch
+    /// trajectory - recording it collapses the consume reach, the allowance
+    /// falls back to the stepped extent, the producer never runs ahead and the
+    /// published residue stays empty, so every swing degrades to a one-shot.
+    const size_t cur_physical = toPhys(position);
+    const size_t seek_distance
+        = new_physical >= cur_physical ? new_physical - cur_physical : cur_physical - new_physical;
+    if (const auto & g = read_plan.geometry();
+        g && g->plan_end > g->plan_start && new_physical >= g->plan_start && new_physical < g->plan_end
+        && seek_distance <= min_bytes_for_seek)
+    {
+        LOG_TRACE(log, "seek: target within plan (physical [{}, {})), reusing plan",
+            g->plan_start, g->plan_end);
+        position = new_position;
+        reached_eof = false;
+        prefetch();
+        return;
+    }
+
     cancelMachine(/*cancelled=*/true);
     /// Feed the seek to both estimators; it resets their frontier, so the post-seek
     /// plan's predicted reads feed from here.
@@ -387,14 +436,14 @@ void ReaderExecutor::seek(size_t new_position)
 
     position = new_position;
     reached_eof = false;
-    /// A jumped position invalidates the plan epoch: bytes banked AHEAD of the old cursor
+    /// A far jump invalidates the plan: bytes banked AHEAD of the old cursor
     /// would, after the jump, sit disjoint from the new one. Drop the plan AND the lane's
-    /// epoch state here - by ownership, not by trusting the next replan to reset it (the
-    /// executor can go idle at EOF holding a stale bank otherwise). (The fast path above
-    /// keeps the plan, the cursor, and the bank for any target inside the in-flight window -
-    /// a backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
+    /// plan-scoped state here - by ownership, not by trusting the next restart to reset it (the
+    /// executor can go idle at EOF holding a stale bank otherwise). (The fast paths above
+    /// keep the plan, the cursor, and the bank for a target inside the in-flight window
+    /// or inside the live plan span - RESTART is only for a target outside both.)
     read_plan = {};
-    fill_lane.resetEpoch();
+    fill_lane.resetOnRestart();
 
     prefetch();
 }
@@ -549,7 +598,7 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & cache : caches)
         {
-            auto view = cache->planResidencyView(pieces.front().object, /*object_file_offset=*/0, header_range);
+            auto view = probeView(*cache, pieces.front().object, /*object_file_offset=*/0, header_range);
             if (view->allHit())
             {
                 ChainedBuffers chain;
@@ -613,7 +662,8 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
     {
         for (auto & [cache, view] : populate_views)
         {
-            cache->openWriteBuffers(pieces.front().object, /*object_file_offset=*/0, *view);
+            for (auto & m : view->miss_entries)
+                m.writer = cache->openWriter(pieces.front().object, /*object_file_offset=*/0, m.range);
             for (const auto & m : view->misses())
             {
                 if (!m.writer)
@@ -667,6 +717,18 @@ size_t ReaderExecutor::totalSize() const
 }
 
 // ─── Window serve path - collect ────────────────────────────────────────────
+
+bool ReaderExecutor::waitPublishedTile(FetchMachine & m, size_t phys)
+{
+    StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
+    std::unique_lock lock(m.published_mutex);
+    if (!m.publish_started)
+        return false;   /// may never run (queued cancel, stashed) - the interrupt path owns it
+    const auto covered = [&] { return m.published.covers(ByteRange{phys, 1}); };
+    while (!m.publish_done && !covered())
+        m.published_cv.wait(lock);
+    return covered();
+}
 
 void ReaderExecutor::collectInFlightInto()
 {
@@ -884,7 +946,7 @@ static size_t cellCeil(const PlanSchedule::Retrieve & r, size_t pos)
 
 // ─── The display (cont.): plan-view hit serve ──────────────────────────────
 
-/// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
+/// Serve a clamped resident sub-range from a held probe view's hit read
 /// buffers: find each `HitEntry` overlapping `clamped`, read the overlap from its
 /// re-readable buffer, and append the pieces. A hit is readable in full (the probe
 /// splits partial segments at their write offset), so the result is contiguous from
@@ -955,7 +1017,16 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// the claims' destructors - the downloader release - run FIRST on scope exit: the
     /// collect must never observe bytes whose segments this thread still holds DOWNLOADING.
     ChainedBuffers led_bytes;
+    {
+        std::lock_guard lock(m.published_mutex);
+        m.publish_started = true;
+    }
     SCOPE_EXIT_SAFE({ m.fetched = std::move(led_bytes); });
+    SCOPE_EXIT_SAFE({
+        std::lock_guard lock(m.published_mutex);
+        m.publish_done = true;
+        m.published_cv.notify_all();
+    });
 
     /// Claim the FileCache downloader roles over the window's fill-target writers (recorded
     /// at launch). Runs WE win (`to_fetch`) this worker fetches+writes inline below while the
@@ -1062,6 +1133,16 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
                 m.fetched_end = std::max(m.fetched_end, run.range().end());
             for (const auto & keep : uncommittedIn(m.writer_views, piece))
                 led_bytes.append(run.slice(keep));
+            if (!led_bytes.empty())
+            {
+                /// Refresh the published preview (a slice-copy of the whole
+                /// residue: nodes share the payload blocks, so this is pointer
+                /// work) - the display serves from it while the flight runs.
+                ChainedBuffers preview = led_bytes.slice(led_bytes.range());
+                std::lock_guard lock(m.published_mutex);
+                m.published = std::move(preview);
+                m.published_cv.notify_all();
+            }
             residue_full = led_bytes.totalBytes() >= residue_cap;
             if (residue_full || m.interrupt_requested.load(std::memory_order_relaxed))
                 break;  /// stop-short; the scope guard still finishes every elected segment
@@ -1123,7 +1204,7 @@ ChainedBuffers ReaderExecutor::fetchWindowFromSource(ByteRange physical_window, 
             openLongConnectionIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
-        /// `getOrSet` segment-aligned the miss at plan build, in `openWriteBuffers`).
+        /// `getOrSet` segment-aligned the miss at plan build, in `openWriter`).
         auto blocks = allocateBlocks(pr.size, window_block_size);
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
@@ -2052,14 +2133,22 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
 
     /// Join an in-flight machine first - EXCEPT our own machine still LEADING this window:
     /// its worker commits cells progressively, so the window-bounded WAIT below lets it
-    /// land the window instead of blocking on the whole remaining lead. A FOREIGN machine (or our own past the cursor) holds the single slot the cursor
-    /// outran - free the slot.
+    /// land the window instead of blocking on the whole remaining lead. A FOREIGN machine
+    /// holds the single slot the cursor outran - free the slot by aborting it at the next
+    /// interrupt point. Our OWN machine on this job is JOINED whole instead: aborting it
+    /// mid-window chops the producer at every consumer swing of an interleaved pattern
+    /// (a compact merge's column streams), while a clean join commits/banks its window -
+    /// the swung-to bytes are read from the display and the carried connection continues
+    /// the job in offset order.
     const bool own_leading = machineFor(ri)
         && machine->physical_window.offset <= window.offset
         && window.offset < machine->physical_window.end();
     if (machine && !own_leading)
     {
-        interruptAndCollectMachine();
+        if (machineFor(ri))
+            collectInFlightInto();
+        else
+            interruptAndCollectMachine();
         return true;
     }
 
@@ -2078,10 +2167,20 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     if (waitSiblingFills(window))
         return true;
 
-    /// The wait landed nothing servable at the cursor with our own machine still in flight:
-    /// the worker is done or stuck - join it (a done one's refused bytes overflow-bank here).
+    /// The wait landed nothing servable at the cursor with our own machine still in flight.
+    /// If it LEADS this window, wait for its next PUBLISHED tile first - the cacheless
+    /// analogue of waiting on a live cell; interrupting here would abort the producer at
+    /// every consumer ask and restart the connection per window. A machine that finishes
+    /// without covering the byte (or a stuck one) falls through to the join.
     if (machine)
     {
+        /// Only when the residue is the pipe (no cell writers): cell-backed
+        /// machines already deliver per tile through the cells and
+        /// `waitSiblingFills` above is their wait.
+        const bool residue_piped = std::none_of(machine->writer_views.begin(), machine->writer_views.end(),
+            [](const auto & v) { return v.writer != nullptr; });
+        if (machineFor(ri) && residue_piped && waitPublishedTile(*machine, window.offset))
+            return true;
         interruptAndCollectMachine();
         return true;
     }
@@ -2219,6 +2318,18 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
             }
         }
     lane.addBankCoverage(cov, window_phys);
+    /// The in-flight machine's published residue preview (see the payload doc).
+    if (machine)
+    {
+        std::lock_guard lock(machine->published_mutex);
+        for (const auto & iv : machine->published.getIntervals())
+        {
+            const size_t lo = std::max(iv.offset, window_phys.offset);
+            const size_t hi = std::min(iv.end(), window_phys.end());
+            if (lo < hi)
+                cov.add(ByteRange{lo, hi - lo});
+        }
+    }
     return cov;
 }
 
@@ -2305,18 +2416,50 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
                 covered.add(g);
             }
         }
+    /// 4) The in-flight machine's PUBLISHED residue preview - tiles the worker fetched
+    ///    that no cell accepted, visible before the collect delivers them to the bank.
+    ///    Slice-copies only: the preview is read-only and dies with the payload, so a
+    ///    byte can serve from here now and from the bank after the collect - the same
+    ///    bytes either way. No cache counters - counted at fetch, like the bank's.
+    if (machine)
+    {
+        std::lock_guard lock(machine->published_mutex);
+        if (!machine->published.empty())
+            for (const auto & iv : machine->published.getIntervals())
+            {
+                const size_t lo = std::max(iv.offset, window_phys.offset);
+                const size_t hi = std::min(iv.end(), window_phys.end());
+                if (lo >= hi)
+                    continue;
+                for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
+                {
+                    ChainedBuffers slice = machine->published.slice(g);
+                    if (!slice.covers(g))
+                        continue;
+                    out.append(std::move(slice));
+                    covered.add(g);
+                }
+            }
+    }
+
     /// Serving CONSUMES the contiguous covered prefix - the display's contract is that a read
     /// DELIVERS exactly that prefix, so the bank trims below it. Banked bytes beyond the first
     /// uncovered hole stay banked - they serve a later window once the hole is fetched - while
     /// bytes below the prefix are delivered or held by a faster holder, so the banked footprint
     /// still stays ~one window.
+    /// ...but never above the REUSE reach behind the cursor: a near seek may swing
+    /// back within `bank_keep_behind` (one policy with the reuse gate and the slide
+    /// line), and trimming those bytes would discard the producer's work at every
+    /// alternation of an interleaved pattern, refetching backward per cycle.
     const size_t prefix_end_phys = coveredPrefixEnd(covered, window_phys);
-    if (prefix_end_phys > window_phys.offset && !bank.empty())
+    const size_t trim_line = std::min(prefix_end_phys,
+        window_phys.offset > lane.bank_keep_behind ? window_phys.offset - lane.bank_keep_behind : 0);
+    if (trim_line > window_phys.offset && !bank.empty())
     {
         const ByteRange held = bank.range();
-        if (prefix_end_phys > held.offset)
-            bank = prefix_end_phys < held.end()
-                ? bank.slice(ByteRange{prefix_end_phys, held.end() - prefix_end_phys})
+        if (trim_line > held.offset)
+            bank = trim_line < held.end()
+                ? bank.slice(ByteRange{trim_line, held.end() - trim_line})
                 : ChainedBuffers{};
     }
 }
@@ -2409,13 +2552,96 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
 
 // ─── Plan build ────────────────────────────────────────────────────────────
 
+VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::observeSpan(
+    const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+    const OffsetMap & offset_map_,
+    ByteRange span)
+{
+    VectorWithMemoryTracking<ResolutionFold::TierTraits> traits;
+    for (const auto & cache : caches_)
+        traits.push_back(ResolutionFold::TierTraits{cache->tier(), cache->fillsWholeCell(), cache->populatesOnMiss()});
+
+    VectorWithMemoryTracking<PieceObservation> pieces;
+    size_t piece_file_start = span.offset;
+    for (const auto & pr : offset_map_.map(span))
+    {
+        PieceObservation piece;
+        piece.object = pr.object;
+        piece.object_file_offset = piece_file_start - pr.object_offset;
+        const ByteRange piece_span{piece_file_start, pr.size};
+        ResidencyIterator iterator(caches_, piece.object, piece.object_file_offset, piece_span);
+
+        ResolutionFold fold(traits, piece_span);
+        size_t pos = piece_span.offset;
+        while (pos < piece_span.end())
+        {
+            const auto res = iterator.lookAt(pos);
+            fold.add(res);
+            pos = res.range.end();
+        }
+        piece.covered_end = pos;
+        piece.folded = fold.finish();
+        for (size_t ci = 0; ci < caches_.size(); ++ci)
+            piece.views.push_back(iterator.takeView(ci));
+
+        pieces.push_back(std::move(piece));
+        piece_file_start += pr.size;
+    }
+    return pieces;
+}
+
+void ReaderExecutor::emitObservation(
+    const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+    VectorWithMemoryTracking<PieceObservation> & pieces,
+    CoverageMap & geom,
+    VectorWithMemoryTracking<PlanTier> & tiers)
+{
+    for (size_t ci = 0; ci < caches_.size(); ++ci)
+    {
+        for (auto & piece : pieces)
+        {
+            GeometryEntry & folded = piece.folded[ci];
+            if (folded.resident.empty() && folded.aligned_miss.empty())
+                continue;
+
+            CacheViewPtr view = std::move(piece.views[ci]);
+            if (caches_[ci]->populatesOnMiss())
+            {
+                const auto & kept = folded.aligned_miss;
+                size_t k = 0;
+                for (size_t i = 0; i < view->misses().size();)
+                {
+                    const ByteRange cell = view->misses()[i].range;
+                    const bool keep = k < kept.size() && kept[k].offset == cell.offset && kept[k].size == cell.size;
+                    if (keep)
+                    {
+                        ++i;
+                        ++k;
+                    }
+                    else
+                        view->dropMiss(i);
+                }
+                chassert(k == kept.size());
+                for (auto & m : view->miss_entries)
+                    m.writer = caches_[ci]->openWriter(piece.object, piece.object_file_offset, m.range);
+            }
+
+            PlanTier plan_tier;
+            plan_tier.provider = caches_[ci].get();
+            plan_tier.view = std::move(view);
+            geom.entries.push_back(std::move(folded));
+            tiers.push_back(std::move(plan_tier));
+        }
+    }
+}
+
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
     stats.add(Stats::Observations);
     /// Machine-check the threading invariant: the held read/write buffers are
     /// foreground-private and must never be torn down / rebuilt while a prefetch worker
     /// is in flight (the worker co-owns only the immutable geometry), so a segment is
-    /// never aliased by a machine-held writer and a fresh `openWriteBuffers` of the next
+    /// never aliased by a machine-held writer and a fresh writer upgrade of the next
     /// plan (`[CF-plan-rebuild]`). The cache fill is inline on the read thread, so there
     /// is nothing deferred to drain here.
     chassert(!machine);
@@ -2424,7 +2650,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// (`[CF-plan-rebuild]`): the pin aliases a held write buffer's own bare segment ref,
     /// so dropping it first makes `~DiskCacheWriter` the LAST owner and
     /// `FileSegment::complete` effective (otherwise a PARTIALLY_DOWNLOADED segment would
-    /// stay un-shrunk and the next `openWriteBuffers` would alias the same segment in two
+    /// stay un-shrunk and the next writer upgrade would alias the same segment in two
     /// buffers). The pin is re-established through the NEW buffer at the next collect.
     fill_lane.pin.reset();
 
@@ -2448,11 +2674,11 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
     /// span (the start already at/past a bound) publishes an empty plan.
-    /// New plan epoch: the ahead cursor re-derives from the fresh display truth and the
+    /// RESTART: the ahead cursor re-derives from the fresh display truth and the
     /// bank drops with the plan it served - BEFORE the empty-plan early return below, so an
-    /// at-bound replan cannot leave the previous epoch's state alive (the seek fast path
-    /// keeps the surviving plan, the cursor, AND the bank).
-    fill_lane.resetEpoch();
+    /// at-bound restart cannot leave the previous plan's state alive (REUSE and
+    /// EXTEND keep the surviving plan, the cursor, AND the bank).
+    fill_lane.resetOnRestart();
 
     const ByteRange plan_range = boundedPlanSpan(physical_start);
     if (plan_range.size == 0)
@@ -2462,73 +2688,21 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan = std::move(empty);
         return;
     }
-    /// ONE FLAT residency probe over the bounded target span, every tier x
-    /// object-piece, fastest tier first (the geometry pass consumes cache-major so
-    /// `upper_hits` prunes the slower tiers). A tier's miss CELLS may extend past
-    /// the span in both directions (the provider clamps them to the object end
-    /// only): the overhang is FILL-ONLY work carried by the schedule's cell
-    /// closure (`fillRegion`) - never served span - so the unprobed overhang needs
-    /// no residency knowledge and no second probe. Cell segmentation is
-    /// probe-range-independent (virgin holes tile on the absolute grid; existing
-    /// segments report their true extents), so one span-sized probe per tier is
-    /// the whole observation.
-    struct ProbeView
-    {
-        size_t cache_idx;
-        StoredObject object;
-        size_t object_file_offset;
-        CacheViewPtr view;
-    };
-    VectorWithMemoryTracking<ProbeView> work;
-    for (size_t ci = 0; ci < caches.size(); ++ci)
-    {
-        size_t piece_file_start = plan_range.offset;
-        for (const auto & pr : offset_map.map(plan_range))
-        {
-            work.push_back(ProbeView{
-                ci, pr.object, piece_file_start - pr.object_offset,
-                caches[ci]->planResidencyView(
-                    pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size})});
-            piece_file_start += pr.size;
-        }
-    }
+    /// A tier's miss CELLS may extend past the span in both directions (the
+    /// provider clamps them to the object end only): the overhang is FILL-ONLY
+    /// work carried by the schedule's cell closure (`fillRegion`) - never
+    /// served span - so the unprobed overhang needs no residency knowledge and
+    /// no second probe. Cell segmentation is probe-range-independent (virgin
+    /// holes tile on the absolute grid; existing segments report their true
+    /// extents), so one span-sized observation per piece is the whole story.
+    auto pieces = observeSpan(caches, offset_map, plan_range);
 
-    geom->plan_end = plan_range.end();
+    /// The covered end, not the requested end: the walk's last resolution may
+    /// overshoot the target, and that coverage is real plan knowledge.
+    chassert(!pieces.empty());
+    geom->plan_end = pieces.back().covered_end;
     ReadPlan plan;
-
-    /// Each (tier x piece) view is translated by the two extract helpers into a 1:1
-    /// `GeometryEntry`/`PlanTier` pair (pushed BOTH-or-NEITHER, so
-    /// `geometry()->entries` and `tiers` stay positionally aligned - `residentAt`'s
-    /// entry index maps into `tiers`). `caches` is fastest-first, so `upper_hits`
-    /// (the running union of already-processed, faster tiers' hits) lets a slower
-    /// tier PRUNE the miss cells a faster tier already holds. The streaming
-    /// `covered` guard in the serve path re-establishes the same priority when
-    /// serving.
-    IntervalSet upper_hits;
-    for (auto & pv : work)
-    {
-        auto & cache = caches[pv.cache_idx];
-        auto view = std::move(pv.view);
-
-        GeometryEntry geom_entry;
-        geom_entry.tier = cache->tier();
-        geom_entry.whole_cell = cache->fillsWholeCell();
-        PlanTier plan_tier;
-        plan_tier.provider = cache.get();
-
-        extractResidentRuns(*view, plan_range, geom_entry, upper_hits);
-        extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry);
-
-        /// Drop records that are neither resident nor a populatable gap — nothing to
-        /// read or write. Otherwise keep the view: its hit read buffers pin the
-        /// resident segments and its upgraded miss entries hold the write buffers.
-        if (!geom_entry.resident.empty() || !geom_entry.aligned_miss.empty())
-        {
-            plan_tier.view = std::move(view);
-            geom->entries.push_back(std::move(geom_entry));
-            plan.tiers.push_back(std::move(plan_tier));
-        }
-    }
+    emitObservation(caches, pieces, *geom, plan.tiers);
 
     chassert(geom->entries.size() == plan.tiers.size());
 
@@ -2564,6 +2738,123 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
 }
 
+void ReaderExecutor::extendPlan(size_t position_phys)
+{
+    chassert(!machine);
+    const auto old_geom = read_plan.geometry();
+    chassert(old_geom && old_geom->plan_end > old_geom->plan_start);
+
+    const size_t old_end = old_geom->plan_end;
+    const size_t target_end = boundedPlanSpan(position_phys).end();
+    if (target_end <= old_end)
+        return;
+
+    stats.add(Stats::PlanExtensions);
+
+    auto pieces = observeSpan(caches, offset_map, ByteRange{old_end, target_end - old_end});
+
+    /// A cell straddling the old `plan_end` is already owned by an old entry's
+    /// view (its writer was opened there); the extension derives the same
+    /// absolute-grid cell and must not own it twice - a second `openWriter`
+    /// would alias the segment in two buffers. Overlap implies identity: cells
+    /// tile on the absolute grid and an existing segment reports its true extent.
+    /// A HIT run straddling `old_end` needs no such dedup: the extension
+    /// re-collects it from `old_end` with a second reader, and aliasing readers
+    /// is benign - they are read-only and each view bumps the LRU once.
+    VectorWithMemoryTracking<std::pair<CacheTier, ByteRange>> straddlers;
+    for (const auto & e : old_geom->entries)
+        for (const auto & c : e.aligned_miss)
+            if (c.end() > old_end)
+                straddlers.push_back({e.tier, c});
+    if (!straddlers.empty())
+    {
+        for (auto & piece : pieces)
+        {
+            for (size_t ci = 0; ci < caches.size(); ++ci)
+            {
+                auto & cells = piece.folded[ci].aligned_miss;
+                for (size_t i = cells.size(); i > 0; --i)
+                {
+                    for (const auto & [tier, owned] : straddlers)
+                    {
+                        if (tier == caches[ci]->tier()
+                            && cells[i - 1].offset < owned.end() && owned.offset < cells[i - 1].end())
+                        {
+                            chassert(cells[i - 1].offset == owned.offset && cells[i - 1].size == owned.size);
+                            cells.erase(cells.begin() + (i - 1));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Copy-on-extend: the published snapshot is immutable (workers co-own it),
+    /// so the extension publishes a NEW geometry - the old entries copied, the
+    /// extension's appended - while `read_plan.tiers` grows in the same order,
+    /// keeping the 1:1 positional mapping. Pressure is resampled per extension.
+    ///
+    /// SLIDE: entries the cursor has fully passed are released with the copy -
+    /// their hit readers drop (the view dtor runs the deferred LRU bumps) and
+    /// their writers finalize (complete-or-abandoned cells) - so the retained
+    /// span, not the stream length, bounds the held buffers. The release line
+    /// is the REUSE reach (`min_bytes_for_seek`): anything a near seek could
+    /// swing back to stays held; anything below it would RESTART anyway. A
+    /// partially-passed entry is kept whole. `plan_start` advances to the
+    /// line, so the reuse gate and `covers` refuse the released territory.
+    const size_t release_line
+        = position_phys > min_bytes_for_seek ? position_phys - min_bytes_for_seek : 0;
+    auto geom = std::make_shared<CoverageMap>();
+    geom->plan_start = std::min(std::max(old_geom->plan_start, release_line), position_phys);
+    chassert(!pieces.empty());
+    geom->plan_end = pieces.back().covered_end;
+    geom->pressure_level = memoryPressureMonitor().currentLevel();
+    for (size_t i = 0; i < old_geom->entries.size(); ++i)
+    {
+        const auto & entry = old_geom->entries[i];
+        bool passed = true;
+        for (const auto & run : entry.resident)
+            passed = passed && run.end() <= release_line;
+        for (const auto & cell : entry.aligned_miss)
+            passed = passed && cell.end() <= release_line;
+        if (passed)
+            continue;
+        const size_t kept = geom->entries.size();
+        geom->entries.push_back(entry);
+        if (kept != i)
+            read_plan.tiers[kept] = std::move(read_plan.tiers[i]);
+    }
+    read_plan.tiers.resize(geom->entries.size());
+    emitObservation(caches, pieces, *geom, read_plan.tiers);
+    chassert(geom->entries.size() == read_plan.tiers.size());
+    read_plan.geometry_snapshot = std::move(geom);
+
+    /// The schedule is a pure function of the geometry - rebuild it over the
+    /// full extended span rather than splice at the boundary. Jobs wholly
+    /// behind the cursor are skipped by the launch frontier: the geometry
+    /// behind the cursor is stale for cells fetched since their observation,
+    /// and the display, not the schedule, is the execution truth there.
+    read_plan.schedule = buildSchedule(
+        *read_plan.geometry(),
+        effectiveWindowSize(read_plan.geometry()->pressure_level),
+        effectiveBlockSize(read_plan.geometry()->pressure_level));
+    feedScheduleToFetchTracker(read_plan.schedule);
+    read_plan.has_remote_retrieves = std::any_of(
+        read_plan.schedule.retrieves.begin(), read_plan.schedule.retrieves.end(),
+        [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
+    size_t frontier = 0;
+    while (frontier < read_plan.schedule.retrieves.size()
+        && read_plan.schedule.retrieves[frontier].range.end() <= position_phys)
+        ++frontier;
+    read_plan.launch_frontier = frontier;
+
+    LOG_TRACE(log, "extendPlan: extended [{}, {}) -> [{}, {}), {} entries, {} retrieves",
+        read_plan.geometry()->plan_start, old_end,
+        read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
+        read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
+}
+
 void ReaderExecutor::feedScheduleToFetchTracker(const PlanSchedule & schedule)
 {
     /// The predicted SOURCE reads are the `Source::Remote` retrieves; upper-tier
@@ -2590,9 +2881,10 @@ bool ReaderExecutor::planReachesEnd() const
 
 size_t ReaderExecutor::effectivePlanCeiling() const
 {
-    /// A fixed plan window: at least `window_size`, raised to `plan_look_ahead_max_window`
-    /// when configured larger. Not pressure-scaled - the window is small by default, and
-    /// segment folding only ever adds the touched cells within it.
+    /// The plan look-ahead target: at least `window_size`, raised to
+    /// `plan_look_ahead_max_window` when configured larger. Not pressure-scaled.
+    /// Kept wider than the fill-ahead lead by default, so the plan never caps
+    /// the prefetch distance.
     return std::max(window_size, plan_look_ahead_max_window);
 }
 
@@ -2622,8 +2914,9 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         /// to invalidate them.
         want = offset_map.hasUnknownSize() ? window_size : ceiling;
     }
-    /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
-    /// ceiling caps the result; the file end is the only natural bound below it.
+    /// `want` is a COVER TARGET, not a cap: the walk iterates `lookAt` until it
+    /// is covered, and the last resolution's true extent may overshoot it
+    /// (`plan_end` is the covered end). The file end is the only natural bound.
     if (!offset_map.hasUnknownSize())
     {
         const size_t physical_end = offset_map.totalSize();
@@ -2632,57 +2925,6 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         want = std::min(want, physical_end - physical_start);
     }
     return ByteRange{physical_start, want};
-}
-
-void ReaderExecutor::extractResidentRuns(
-    const CacheView & view, ByteRange plan_range,
-    GeometryEntry & geom_entry, IntervalSet & upper_hits)
-{
-    /// Each clamped run also folds into `upper_hits` - the prune input for the SLOWER
-    /// tiers that follow (the pass is cache-major, fastest first). Folding before this
-    /// tier's own miss extraction is a no-op on it: hits and misses tile the probed
-    /// range disjointly, so a non-empty miss cell is never fully covered by its own
-    /// tier's hits.
-    for (const auto & hit : view.hits())
-    {
-        /// Hits are cell-aligned and may overhang the plan span (the page tier's
-        /// block ceiling; the disk provider clamps to the probed range itself).
-        /// Clamp both edges to the span: the geometry never exceeds the probed
-        /// span - streaming never reads behind the cursor, and territory past
-        /// `plan_end` was never probed in the other tiers.
-        const size_t lo = std::max(hit.range.offset, plan_range.offset);
-        const size_t hi = std::min(hit.range.end(), plan_range.end());
-        if (lo < hi)
-        {
-            geom_entry.resident.push_back(ByteRange{lo, hi - lo});
-            upper_hits.add(ByteRange{lo, hi - lo});
-        }
-    }
-}
-
-void ReaderExecutor::extractMissesAndOpenWriters(
-    ICacheProvider & cache, CacheView & view,
-    const StoredObject & object, size_t object_file_offset,
-    const IntervalSet & upper_hits, GeometryEntry & geom_entry)
-{
-    /// A bypass tier is never written, so it has no fetch/write target.
-    if (!cache.populatesOnMiss())
-        return;
-
-    /// PRUNE any miss cell fully covered by a faster tier (`upper_hits`): the data
-    /// already lives upstream, so this tier needs no writer for it. Then UPGRADE the
-    /// survivors in place (`[CF-plan-rebuild]`): one `getOrSet` per cell, owned by
-    /// the view for the plan's life, so promotion/backfill only ever write into
-    /// already-open buffers. Cell ranges stay UNCLAMPED to the plan span (only
-    /// object-end-clamped inside the provider), so the cell extent drives both the
-    /// fetch and the over-read bound.
-    for (size_t i = view.misses().size(); i > 0; --i)
-        if (upper_hits.subtract(view.misses()[i - 1].range).empty())
-            view.dropMiss(i - 1);  /// fully covered by a faster tier
-    for (const auto & miss : view.misses())
-        geom_entry.aligned_miss.push_back(miss.range);
-    if (!view.misses().empty())
-        cache.openWriteBuffers(object, object_file_offset, view);
 }
 
 CacheWriter::CacheSegmentPin ReaderExecutor::writerPinAt(size_t frontier) const

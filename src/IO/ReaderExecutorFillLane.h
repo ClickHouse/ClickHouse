@@ -50,16 +50,22 @@ public:
     /// The AHEAD cursor `F` - ONE global launch high-water: everything below it has been
     /// attempted by this executor (launched over, served inline, or observed covered)
     /// whether the bytes committed, were refused, or belong to a sibling's download.
-    /// Launch POLICY only - the serve reads the display. Plan-epoch scoped; the seek fast
-    /// path keeps it with the surviving plan.
+    /// Launch POLICY only - the serve reads the display. Plan-scoped: REUSE and
+    /// EXTEND keep it with the surviving plan; a RESTART re-derives it.
     size_t attempted_end = 0;
     void advanceAttempted(size_t phys_end) { attempted_end = std::max(attempted_end, phys_end); }
 
     /// The BANK - the pipe's overflow cell: bytes no cache cell could hold (a bypass gap's
     /// fetch, refused writes, sibling-waited chunks, heal reads), consumed-and-trimmed as
     /// the display serves. ONE lane-level holder: the display reads it by offset, so job
-    /// identity carries nothing. Plan-epoch scoped, reset with the ahead cursor.
+    /// identity carries nothing. Plan-scoped: dropped on RESTART with the ahead
+    /// cursor, trimmed to `bank_keep_behind` behind the serve cursor as it serves.
     ChainedBuffers bank;
+
+    /// How far behind the serve cursor banked bytes are RETAINED instead of trimmed:
+    /// the REUSE reach (`min_bytes_for_seek`, set at executor construction) - a near
+    /// seek may swing back into it. 0 = trim to the served prefix (the pre-reuse rule).
+    size_t bank_keep_behind = 0;
 
     /// FULL-CACHE BACKPRESSURE: raised when a collect banked the still-refused residue
     /// of a POPULATING window (the cells took nothing - cache full or sibling-claimed);
@@ -67,9 +73,9 @@ public:
     /// the in-memory residue). Cleared when the serve consumes the bank; reset with it.
     bool bank_refused = false;
 
-    /// New plan epoch: the ahead cursor re-derives from the fresh display truth and
+    /// RESTART: the ahead cursor re-derives from the fresh display truth and
     /// the bank drops with the plan it served.
-    void resetEpoch()
+    void resetOnRestart()
     {
         attempted_end = 0;
         bank = {};

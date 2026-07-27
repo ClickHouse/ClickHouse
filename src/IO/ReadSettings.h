@@ -160,7 +160,7 @@ struct ReadSettings
         bool log_enabled = false;
         size_t window_size = 8 * 1_MiB;
         size_t block_size = 1_MiB;
-        size_t plan_look_ahead_max_window = 8 * 1_MiB;
+        size_t plan_look_ahead_max_window = 32 * 1_MiB;
         bool use_long_connections = true;
         size_t min_bytes_for_seek = 2 * 1_MiB;
         size_t max_tail_for_drain = 512 * 1_KiB;

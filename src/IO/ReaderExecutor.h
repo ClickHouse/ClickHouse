@@ -3,6 +3,7 @@
 #include <IO/ChainedBuffers.h>
 #include <IO/OffsetMap.h>
 #include <IO/ICacheProvider.h>
+#include <IO/ResidencyIterator.h>
 #include <IO/IntervalSet.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LongConnectionLimit.h>
@@ -53,9 +54,12 @@ class EncryptionHeaderCache;
 ///
 /// The buffer is POSITIONAL (offset-indexed, not FIFO) and SHARED (sibling
 /// executors read and write the same cells) - which is why seeks, contention,
-/// and warm reads are ordinary cases. Planning happens once per epoch: observe
-/// residency (`CoverageMap`), derive the complete job list (`PlanSchedule`);
-/// execution interprets it.
+/// and warm reads are ordinary cases. Planning is a ROLLING window: residency
+/// is observed step-wise (`ResidencyIterator::lookAt` over the providers), the
+/// job list derives from the geometry (`PlanSchedule`), and the plan then
+/// EXTENDS forward and SLIDES the passed territory out as the cursor advances;
+/// a near seek REUSES it, and only a far jump RESTARTS from scratch.
+/// Execution interprets the schedule; the display carries the truth.
 ///
 /// The PRODUCER is the `FillLane` + the fill flow, ONE body of code with two
 /// anchors: AHEAD (`prefetch` - the wake rule and the launch scan at the
@@ -99,7 +103,8 @@ class EncryptionHeaderCache;
 ///   piece  -> one `FetchMachine` window;
 ///   F      -> `FillLane::attempted_end`, the producer's ahead cursor;
 ///   bank   -> `FillLane::bank`, the one overflow display cell;
-///   epoch  -> one plan lifetime, opened by `observeAndSchedule` on replan.
+///   restart-> a from-scratch plan build (`observeAndSchedule`): the first
+///             read or a far seek; everything else extends/reuses the plan.
 ///
 /// One instance per column-stream; not thread-safe beyond the machine handoff:
 /// while a fetch machine is in flight the worker exclusively owns the machine
@@ -266,7 +271,7 @@ private:
     using StatTimer = ReaderExecutorStatTimer;
 
     /// One (object-piece, tier) entry of the FOREGROUND-PRIVATE half of a
-    /// plan: the provider/object identity, the read-only `planResidencyView`
+    /// plan: the provider/object identity, the read-only probe
     /// `view` (its hits own the held pinning read buffers; its misses carry
     /// NULL writers and are never dereferenced), and the AUTHORITATIVE
     /// `writers` opened over the aligned miss ranges. 1:1 POSITIONAL with
@@ -277,7 +282,7 @@ private:
         ICacheProvider * provider = nullptr;
         /// The tier's plan-state object: hit readers (pinning resident segments)
         /// and miss cells, upgraded in place with write buffers for the cells the
-        /// plan fills (`extractMissesAndOpenWriters`).
+        /// plan fills (the prune+upgrade step of `observeAndSchedule`).
         CacheViewPtr view;
     };
 
@@ -515,7 +520,7 @@ private:
     // ─── Plan build ──────────────────────────────────────────────────────
 
     /// Query cache residency ONCE over the look-ahead span via the read-only
-    /// `planResidencyView`, stash the geometry and the held buffers. While the
+    /// probe walk, stash the geometry and the held buffers. While the
     /// plan is held, resident bytes stream straight from the held read buffers
     /// - no per-window `getOrSet`. Rebuilt lazily whenever the cursor leaves
     /// the planned span. Resets the in-flight pin before discarding the old
@@ -527,7 +532,7 @@ private:
     /// the serve position and the lane's ahead cursor; there is no third to maintain.
     size_t serveRunAt(size_t pos_phys) const;
 
-    /// The epoch scheduler - the ONE entry to `observeAndSchedule`. Collects an in-flight
+    /// The plan scheduler - the ONE entry to `observeAndSchedule`/`extendPlan`. Collects an in-flight
     /// machine sitting at the consumed plan end, then (re)plans per the caller's role:
     ///   - `coverage_ahead == 0` (the serve front): only a fully consumed plan replans (the
     ///     position before `plan_start`, or at `plan_end` with the plan not running to EOF) -
@@ -569,7 +574,8 @@ private:
     class Display
     {
     public:
-        Display(const ReadPlan & plan_, FillLane & lane_) : plan(plan_), lane(lane_) {}
+        Display(const ReadPlan & plan_, FillLane & lane_, const std::shared_ptr<FetchMachine> & machine_)
+            : plan(plan_), lane(lane_), machine(machine_) {}
 
         /// What is servable of `window_phys` right now (union of the three holders).
         IntervalSet coverage(ByteRange window_phys) const;
@@ -602,6 +608,9 @@ private:
             IntervalSet & covered, Stats & out_stats);
         const ReadPlan & plan;
         FillLane & lane;
+        /// The in-flight machine (may be null): its published residue preview is
+        /// the display's fourth holder.
+        const std::shared_ptr<FetchMachine> & machine;
     };
 
 
@@ -635,6 +644,9 @@ private:
     bool waitSiblingFills(ByteRange window);
     /// Interrupt the in-flight machine (bounds the join to its next tile) and collect it.
     void interruptAndCollectMachine();
+    /// Block until the machine's published residue covers `phys` or the worker exits
+    /// (`publish_done`). TRUE = the display can serve the byte from the preview now.
+    bool waitPublishedTile(FetchMachine & m, size_t phys);
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
     /// handed fills from the served bytes. The serve tail shared by the hit step and the
     /// banked bypass step; physical like all serve verbs (`finishWindow` rebases to logical).
@@ -681,21 +693,49 @@ private:
     /// replanning.
     bool planReachesEnd() const;
 
-    /// Translate ONE tier's `planResidencyView` into its 1:1
-    /// `GeometryEntry`/`PlanTier`. `extractResidentRuns` records the tier's
-    /// hits (clamped to the plan span) and folds them into `upper_hits` - the
-    /// prune input for the slower tiers that follow. `extractMissesAndOpenWriters`
-    /// PRUNES miss cells fully covered by `upper_hits` (the union of faster tiers'
-    /// hits - that range already lives upstream) via `CacheView::dropMiss`,
-    /// records the survivors in the geometry, and has the provider UPGRADE
-    /// them with write buffers in place (populatable tiers only).
-    static void extractResidentRuns(
-        const CacheView & view, ByteRange plan_range,
-        GeometryEntry & geom_entry, IntervalSet & upper_hits);
-    static void extractMissesAndOpenWriters(
-        ICacheProvider & cache, CacheView & view,
-        const StoredObject & object, size_t object_file_offset,
-        const IntervalSet & upper_hits, GeometryEntry & geom_entry);
+    /// EXTEND: grow the live plan forward to the span a fresh plan at
+    /// `position_phys` would target, keeping the held buffers, the bank and the
+    /// fill-lane state. Observes only `[plan_end, target)`; publishes a NEW
+    /// geometry snapshot (copy-on-extend - the published snapshot stays
+    /// immutable) and rebuilds the schedule - a pure function of the geometry -
+    /// over the full extended span, with the launch frontier skipping jobs
+    /// wholly behind the cursor. Requires a live plan and no machine in flight
+    /// (the same barrier as a rebuild).
+    void extendPlan(size_t position_phys);
+
+    /// One object-piece of a residency observation: the per-tier probed views
+    /// (hit readers + miss entries, positional with `caches`) and the fold's
+    /// per-tier geometry. `covered_end` is where the walk actually stopped -
+    /// the last resolution's true extent may overshoot the requested span, and
+    /// the plan keeps that coverage (`plan_end` derives from it).
+    struct PieceObservation
+    {
+        StoredObject object;
+        size_t object_file_offset = 0;
+        size_t covered_end = 0;
+        VectorWithMemoryTracking<CacheViewPtr> views;
+        VectorWithMemoryTracking<GeometryEntry> folded;
+    };
+
+    /// ONE read-only residency observation of `span`: per object-piece, the
+    /// chain iterator probes every tier (fastest first) and a forward `lookAt`
+    /// walk folds the per-position resolutions into the per-tier geometry.
+    static VectorWithMemoryTracking<PieceObservation> observeSpan(
+        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+        const OffsetMap & offset_map_,
+        ByteRange span);
+
+    /// Translate an observation into 1:1 `GeometryEntry`/`PlanTier` pairs
+    /// (pushed BOTH-or-NEITHER, cache-major fastest-first): the fold's prune is
+    /// applied to the held view before the writer upgrade opens the
+    /// survivors in place (`[CF-plan-rebuild]`); a bypass tier keeps its probed
+    /// miss entries untouched; records that are neither resident nor a
+    /// populatable gap are dropped.
+    static void emitObservation(
+        const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & caches_,
+        VectorWithMemoryTracking<PieceObservation> & pieces,
+        CoverageMap & geom,
+        VectorWithMemoryTracking<PlanTier> & tiers);
 
     /// Pin the partial segment under `frontier` from the first held write
     /// buffer whose `range` contains it and whose `pin` is non-null. Empty
@@ -849,7 +889,7 @@ private:
     /// connection, the in-flight pin, the ahead cursor and the bank.
     FillLane fill_lane;
     /// The display (see the class doc): holds only back-references, safe to initialize here.
-    Display display{read_plan, fill_lane};
+    Display display{read_plan, fill_lane, machine};
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the

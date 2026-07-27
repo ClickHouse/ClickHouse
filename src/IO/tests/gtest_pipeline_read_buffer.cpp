@@ -417,6 +417,10 @@ TEST(PipelineReadBuffer, HoldConsumedClearedByFarSeek)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 8 * 1024;
     executor_options.block_size = 4 * 1024;
+    /// Below both hop distances, so the executor RESTARTs (dropping its bank)
+    /// rather than serving the back hop from plan-reuse retention - the store
+    /// clearing, not the executor's bank, is what this test observes.
+    executor_options.min_bytes_for_seek = 4 * 1024;
     auto executor = std::make_unique<ReaderExecutor>(
         counting, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
     PipelineReadBuffer buf(std::move(executor), /*hold_consumed_=*/16 * 1024);

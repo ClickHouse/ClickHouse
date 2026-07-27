@@ -2597,6 +2597,7 @@ TEST_F(FileCacheTest, LoadMetadataParallelism)
 #include <IO/ReaderExecutor.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/ChainedBuffers.h>
+#include <IO/tests/SpanProbeMockBase.h>
 
 TEST_F(FileCacheTest, DiskCacheProviderReadPopulatesCache)
 {
@@ -3215,7 +3216,7 @@ namespace
         }
     };
 
-    struct RecordingCacheProvider : public ICacheProvider
+    struct RecordingCacheProvider : public DB::tests::SpanProbeMockBase
     {
         ByteRange hit_range;
         std::vector<ByteRange> recorded_gets;
@@ -3224,7 +3225,8 @@ namespace
         RecordingCacheProvider(ByteRange hit_, std::string data_)
             : hit_range(hit_), data(std::move(data_)) {}
 
-        CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange) override
+    protected:
+        CacheViewPtr buildProbeView(const StoredObject &, size_t, ByteRange) override
         {
             auto view = std::make_unique<CacheView>();
             view->hit_entries.push_back(HitEntry{
@@ -3232,9 +3234,12 @@ namespace
                 std::make_unique<RecordingReadBuffer>(hit_range, recorded_gets, data)});
             return view;
         }
-        void openWriteBuffers(const StoredObject &, size_t, CacheView &) override
+
+    public:
+        CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange) override
         {
             /// The configured range is fully resident - nothing to upgrade.
+            return nullptr;
         }
         String name() const override { return "Recording"; }
         CacheTier tier() const override { return CacheTier::FilesystemCache; }

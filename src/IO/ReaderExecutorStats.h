@@ -62,6 +62,10 @@ struct ReaderExecutorStats
         /// want_replan (the cursor leaves `plan_start..plan_end`). This sizes how
         /// short-lived the held cache readers are.
         Observations,
+        /// Number of `extendPlan` calls: the plan grew forward in place - held
+        /// buffers kept, only the new span observed - where an epoch rebuild
+        /// (an Observation) would have re-probed everything.
+        PlanExtensions,
         NumCounters
     };
 

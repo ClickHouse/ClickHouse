@@ -590,10 +590,11 @@ TEST_F(ReaderExecutorMetric, PlanWindowSizeIsCostNeutral)
         << "a wide plan does not increase source GETs -- the long connection carries the scan";
     EXPECT_NEAR(wide_live.costPerMiB(), small_live.costPerMiB(), small_live.costPerMiB() * 0.05)
         << "cost-equivalent on the live path";
-    /// Without the carry (stateless), the plan window DOES matter: the small default re-plans
-    /// (and re-fetches) more often, so its one-shot GET count exceeds the wide plan's.
-    EXPECT_GT(small_stateless.requests, wide_stateless.requests)
-        << "no carry -> a smaller plan means more one-shot connections";
+    /// With rolling extensions the plan window no longer affects the one-shot GET
+    /// count either: a small plan EXTENDS instead of re-planning, so the stateless
+    /// arm fetches the same runs whatever the window. Kept as a ceiling.
+    EXPECT_GE(small_stateless.requests, wide_stateless.requests)
+        << "a smaller plan must never mean fewer one-shot connections";
 }
 
 /// Fully warm cache, full sequential scan -> no source requests; budget-invariant.

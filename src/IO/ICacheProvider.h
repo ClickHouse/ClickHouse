@@ -7,6 +7,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -20,10 +21,11 @@ enum class CacheTier
     FilesystemCache,
 };
 
-/// Per-range buffer API: `planResidencyView` + `openWriteBuffers` decompose a
-/// request into HIT ranges (each owning a held `CacheReader`) and MISS ranges
-/// (each owning a held `CacheWriter`). The buffers are held by the executor's
-/// plan across many read windows. Coordinates are FILE-LEVEL throughout.
+/// Per-range buffer API: `lookAt` steps decompose a read into HIT ranges (each
+/// owning a held `CacheReader`) and MISS cells; `openWriter` opens the held
+/// `CacheWriter` for a cell the plan decides to fill. The buffers are held by
+/// the executor's plan across many read windows. Coordinates are FILE-LEVEL
+/// throughout.
 
 /// Held, re-readable view of ONE resident (hit) file-level range. Owns the pin
 /// that keeps its bytes alive; holds NO cursor (the executor's ChainedBuffers owns it).
@@ -152,43 +154,6 @@ public:
 using CacheReaderPtr = std::unique_ptr<CacheReader>;
 using CacheWriterPtr = std::unique_ptr<CacheWriter>;
 
-/// One resident range + its held read buffer.
-struct HitEntry { ByteRange range; CacheReaderPtr reader; };
-/// One miss CELL. The writer carries the entry's lifecycle: null as probed
-/// (`planResidencyView` observes only), opened by `openWriteBuffers` for the
-/// misses that survive the plan's prune (null on a read-only/bypass tier).
-struct MissEntry { ByteRange range; CacheWriterPtr writer; };
-
-/// Decomposed lookup result, held by the plan across windows - the tier's
-/// plan-state object: hit readers, miss cells, and (after the prune/upgrade)
-/// the write handles. Its destructor is the SINGLE place the deferred LRU
-/// bump runs, after every owned write buffer is finalized.
-class CacheView
-{
-public:
-    /// Virtual so a subclass with teardown work (`DiskCacheView`'s deferred LRU
-    /// bump) runs through a `CacheViewPtr`; tiers without it use this class directly.
-    virtual ~CacheView() = default;
-
-    const VectorWithMemoryTracking<HitEntry> & hits() const { return hit_entries; }
-    const VectorWithMemoryTracking<MissEntry> & misses() const { return miss_entries; }
-
-    bool allHit() const { return miss_entries.empty(); }
-    bool allMiss() const { return hit_entries.empty(); }
-
-    /// PRUNE step: drop the miss at `index` (a cell the plan will not fill in
-    /// this tier - e.g. fully covered by a faster tier). Runs between the probe
-    /// and `openWriteBuffers`, so no write handle is ever opened for it.
-    void dropMiss(size_t index) { miss_entries.erase(miss_entries.begin() + index); }
-
-    /// Sorted, disjoint; hits + misses tile the lookup range (clamped to EOF /
-    /// object end). EACH MISS RANGE IS ONE CELL. The builders (`planResidencyView`)
-    /// write these directly.
-    VectorWithMemoryTracking<HitEntry> hit_entries;
-    VectorWithMemoryTracking<MissEntry> miss_entries;
-};
-using CacheViewPtr = std::unique_ptr<CacheView>;
-
 /// Cache provider interface. `ReadPipeline` configures the chain.
 class ICacheProvider
 {
@@ -210,22 +175,52 @@ public:
 
     virtual String name() const = 0;
 
-    /// Read-only residency probe over a (typically large) look-ahead range:
-    /// hit read buffers (pinning their resident segments) + writer-null misses.
-    /// EACH MISS RANGE IS ONE CELL of the tier - the provider owns the alignment
-    /// policy (exact gaps for a bypass tier; boundary-aligned optimal cells for
-    /// the filesystem cache; whole blocks for the page cache) - and the executor
-    /// derives all fetch shaping from these cell edges. MUST NOT mutate the
-    /// cache - a fully-resident range costs only the probe.
-    virtual CacheViewPtr planResidencyView(
-        const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) = 0;
+    /// UPGRADE step: open the held write buffer for ONE miss cell the plan
+    /// decided to fill (the prune already ran), without re-probing residency.
+    /// Null when `!populatesOnMiss()` - fill sites skip null writers.
+    virtual CacheWriterPtr openWriter(
+        const StoredObject & object, size_t object_file_offset, ByteRange cell) = 0;
 
-    /// UPGRADE step: open a write buffer into each of the view's surviving miss
-    /// entries (the plan's `dropMiss` prune already ran), without re-probing
-    /// residency. A no-op when `!populatesOnMiss()` - the writers stay null and
-    /// every fill site skips null-writer entries.
-    virtual void openWriteBuffers(
-        const StoredObject & object, size_t object_file_offset, CacheView & view) = 0;
+    /// One step of the residency walk (the executor's iterator consumes this).
+    struct Resolution
+    {
+        enum class Kind : uint8_t
+        {
+            Hit,
+            Miss,
+            End,
+        };
+
+        Kind kind = Kind::End;
+        /// Hit: one committed run (a probe hit entry - split at the writer
+        /// frontier). Miss: ONE cell of this tier containing the position
+        /// (object-end-clamped, so it may overhang the asked span). End: the
+        /// position is past the object's tiling.
+        ByteRange range{};
+        /// Hit only. A re-ask of the same run may return a fresh reader or a
+        /// null one - the walker collects exactly one per run either way.
+        CacheReaderPtr reader;
+    };
+
+    /// One residency walk: step-wise probe state OWNED BY THE WALKER, so a
+    /// shared provider stays concurrency-safe (the `readBigAt` fan-out probes
+    /// one provider from many threads - each walk gets its own cursor). The
+    /// cursor pins chunks lazily while stepping; dropping it drops its pins -
+    /// what the plan keeps pinned travels in the handed-out readers.
+    class IProbeCursor
+    {
+    public:
+        virtual ~IProbeCursor() = default;
+
+        /// Resolve one position of `object`'s residency - THE read-only probe.
+        /// EACH MISS IS ONE CELL of the tier: the provider owns the alignment
+        /// policy (boundary-aligned optimal cells for the filesystem cache;
+        /// whole blocks for the page cache) and the executor derives all fetch
+        /// shaping from the cell edges. MUST NOT mutate the cache.
+        virtual Resolution lookAt(const StoredObject & object, size_t object_file_offset, size_t pos_in_file) = 0;
+    };
+
+    virtual std::unique_ptr<IProbeCursor> probe() = 0;
 };
 
 }
