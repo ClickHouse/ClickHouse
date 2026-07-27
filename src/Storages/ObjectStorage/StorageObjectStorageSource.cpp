@@ -124,17 +124,20 @@ namespace
     /// different directories do not collide. For general (non-data-lake) remote objects the path
     /// alone is not a stable identity - an object can be overwritten in place under the same path -
     /// so the ETag is folded in as a content-version token; a query after an overwrite then misses
-    /// rather than reusing stale row-group information. If the ETag is unavailable we skip the cache
-    /// instead of risking a stale hit. Data-lake data files are immutable, so the path is a stable
-    /// identity on its own and no ETag is required (this also avoids disabling the cache for data
-    /// lakes whose object metadata does not carry an ETag).
+    /// rather than reusing stale row-group information. This only holds when the ETag is a strong
+    /// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
+    /// same across a same-second, same-size overwrite and would let the cache serve stale row-group
+    /// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
+    /// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
+    /// are immutable, so the path is a stable identity on its own and no ETag is required (this also
+    /// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
     std::optional<String> makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
     {
         String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
         if (is_data_lake)
             return identifier;
         const auto & metadata = object_info.getObjectMetadata();
-        if (!metadata || metadata->etag.empty())
+        if (!metadata || !metadata->isEtagUsableAsCacheKey())
             return std::nullopt;
         return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
     }
