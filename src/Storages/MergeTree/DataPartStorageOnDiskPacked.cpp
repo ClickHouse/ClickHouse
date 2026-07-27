@@ -64,7 +64,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) // NOLINT
 {
     /// Not owned: resolve where the dir would live (e.g. a broken-projection placeholder) without registering anything; directories come
-    /// into existence only through createProjection. Packed projections are always nested, so this resolves to <root>/<part_dir>/<dir_name>.
+    /// into existence only through createProjection.
     auto owned = tryGetProjection(dir_name);
     const auto projection = owned ? *owned : projectionPlacement(dir_name);
 

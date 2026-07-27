@@ -2739,3 +2739,99 @@ def test_packed_detach_attach_carries_projection():
         proj_query("t_pk_da", extra_settings="force_optimize_projection = 1") == baseline
     )
     assert check_table("t_pk_da") == "1"
+
+
+# This test checks that projection_storage_format = 'flat' applies to packed parts: the projection
+# is a sibling directory with its own data.packed, it survives a merge, serves queries, and its
+# sibling dirs are removed with the part.
+# Scenario:
+# - create a packed 'flat' table, insert two parts
+# - assert each part has a flat sibling with data.packed and no nested p.proj
+# - OPTIMIZE FINAL; assert the merged part keeps the flat packed layout, projection healthy
+# - TRUNCATE; assert no projection siblings remain at the table root
+def test_packed_flat_lifecycle():
+    setup_table("t_pk_flat", f"projection_storage_format = 'flat', {PACKED}")
+    node.query(
+        "INSERT INTO t_pk_flat SELECT number, number * 2, toString(number) FROM numbers(1000, 1000)"
+    )
+    baseline = proj_query("t_pk_flat")
+
+    # every part: packed archive, flat sibling with its own archive, no nested projection dir
+    parts = node.query(
+        "SELECT path FROM system.parts WHERE table = 't_pk_flat' AND active"
+    ).split()
+    assert len(parts) == 2
+    for p in (x.rstrip("/") for x in parts):
+        assert path_exists(f"{p}/data.packed")
+        assert path_exists(f"{p}.p.proj/data.packed")
+        assert not path_exists(f"{p}/p.proj")
+
+    # merge keeps the flat packed layout and the projection stays healthy
+    node.query("SYSTEM START MERGES t_pk_flat")
+    node.query("OPTIMIZE TABLE t_pk_flat FINAL")
+    wait_for(lambda: active_parts("t_pk_flat") == "1")
+    p = part_dir("t_pk_flat")
+    assert path_exists(f"{p}/data.packed")
+    assert path_exists(f"{p}.p.proj/data.packed")
+    assert not path_exists(f"{p}/p.proj")
+    assert broken_projection_parts("t_pk_flat") == "0"
+    assert (
+        proj_query("t_pk_flat", extra_settings="force_optimize_projection = 1")
+        == baseline
+    )
+    assert check_table("t_pk_flat") == "1"
+
+    # part removal takes the siblings with it
+    table_root = p.rsplit("/", 1)[0]
+    node.query("TRUNCATE TABLE t_pk_flat")
+    wait_for(
+        lambda: node.exec_in_container(
+            ["bash", "-c", f"find {table_root} -maxdepth 1 -name '*.p.proj' | wc -l"],
+            privileged=True,
+            user="root",
+        ).strip()
+        == "0",
+        timeout=120,
+    )
+
+
+# This test checks that a merge crossing the packed->full storage threshold under 'flat' keeps the
+# flat layout on both sides: small level-0 parts are packed with packed flat siblings, the merged
+# level-1 part is full storage with a plain flat sibling.
+# Scenario:
+# - create a 'flat' table with min_level_for_full_part_storage = 1, insert two parts
+# - assert the inserted parts are packed with flat packed siblings
+# - OPTIMIZE FINAL; assert the merged part is full storage, its flat sibling has no archive
+def test_packed_threshold_crossing_merge_keeps_flat():
+    setup_table(
+        "t_pk_cross",
+        "projection_storage_format = 'flat', min_level_for_full_part_storage = 1",
+    )
+    node.query(
+        "INSERT INTO t_pk_cross SELECT number, number * 2, toString(number) FROM numbers(1000, 1000)"
+    )
+    baseline = proj_query("t_pk_cross")
+
+    # level-0 inserts are packed, with packed flat siblings
+    parts = node.query(
+        "SELECT path FROM system.parts WHERE table = 't_pk_cross' AND active"
+    ).split()
+    assert len(parts) == 2
+    for p in (x.rstrip("/") for x in parts):
+        assert path_exists(f"{p}/data.packed")
+        assert path_exists(f"{p}.p.proj/data.packed")
+
+    # the level-1 merged part crosses the threshold to full storage, layout stays flat
+    node.query("SYSTEM START MERGES t_pk_cross")
+    node.query("OPTIMIZE TABLE t_pk_cross FINAL")
+    wait_for(lambda: active_parts("t_pk_cross") == "1")
+    p = part_dir("t_pk_cross")
+    assert not path_exists(f"{p}/data.packed")
+    assert path_exists(f"{p}.p.proj")
+    assert not path_exists(f"{p}.p.proj/data.packed")
+    assert broken_projection_parts("t_pk_cross") == "0"
+    assert (
+        proj_query("t_pk_cross", extra_settings="force_optimize_projection = 1")
+        == baseline
+    )
+    assert check_table("t_pk_cross") == "1"

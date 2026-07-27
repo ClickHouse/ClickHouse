@@ -36,14 +36,6 @@ public:
     MutableDataPartStoragePtr getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) override; // NOLINT
     DataPartStoragePtr getProjectionStorage(const std::string & dir_name) const override;
 
-    /// Packed parts always store projections as nested packed sub-parts inside the part directory (one
-    /// data.packed per projection dir); the FLAT sibling layout is a full-storage-only feature, so the
-    /// table-wide setting is coerced to LEGACY_NESTED for packed storage.
-    void setProjectionStorageFormat(ProjectionStorageFormat /*format*/) override
-    {
-        projection_storage_format = ProjectionStorageFormat::LEGACY_NESTED;
-    }
-
     bool exists() const override;
     bool existsDirectory(const std::string & file_name) const override;
 
