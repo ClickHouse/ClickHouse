@@ -99,32 +99,18 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 --dynamic_disk_allow_from_env=
 # config passes the check and proceeds to construct the native GCS backend. Table creation then still fails
 # for an unrelated reason (no live GCS endpoint here), but that failure must not be `ACCESS_DENIED`.
 #
-# The construction of the native backend parses JSON through the shared `contrib/nlohmann-json`, whose lexer
-# and serializer call `localeconv`, which is trapped by `base/harmful/harmful.c` in any `DEBUG_OR_SANITIZER_BUILD`.
-# Reaching that path there aborts the server (SIGILL) and takes unrelated tests in the same shard down with it,
-# so run this positive control only in release-type builds. The rejection logic it guards is build-independent
-# AST processing (`getDiskConfigurationFromAST.cpp`) fully covered by release/coverage/arm CI runs.
-#
-# The gate must fail closed: run the positive control only when the server definitively reported a
-# release-type build. Under the stress runner the detection query can fail transiently (server
-# overload), and an empty result must not send a sanitizer build into the trapping path.
-release_build=$($CLICKHOUSE_CLIENT -q "
-    SELECT (SELECT value FROM system.build_options WHERE name = 'BUILD_TYPE') != 'Debug'
-        AND (SELECT value FROM system.build_options WHERE name = 'CXX_FLAGS') NOT LIKE '%sanitize%'" 2>/dev/null)
-
-if [ "${release_build}" != "1" ]; then
-    echo "inline_key: pass"
+# This runs in every build type: the bundled `nlohmann/json.hpp` that google-cloud-cpp parses JSON with is
+# patched at configure time (`contrib/nlohmann-json-cmake/CMakeLists.txt`) to stop calling `localeconv`,
+# which `base/harmful/harmful.c` traps in a `DEBUG_OR_SANITIZER_BUILD`.
+out="$($CLICKHOUSE_CLIENT -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_c', type = gcs,
+        endpoint = 'https://storage.googleapis.com/${DB}_c/',
+        service_account_key = '{}', skip_access_check = 1)" 2>&1)"
+if echo "${out}" | grep -q "(ACCESS_DENIED)"; then
+    echo "inline_key: fail (${out//$'\n'/ })"
 else
-    out="$($CLICKHOUSE_CLIENT -q "
-        CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS disk = disk(name = '${DISK}_c', type = gcs,
-            endpoint = 'https://storage.googleapis.com/${DB}_c/',
-            service_account_key = '{}', skip_access_check = 1)" 2>&1)"
-    if echo "${out}" | grep -q "(ACCESS_DENIED)"; then
-        echo "inline_key: fail (${out//$'\n'/ })"
-    else
-        echo "inline_key: pass"
-    fi
+    echo "inline_key: pass"
 fi
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE}"
