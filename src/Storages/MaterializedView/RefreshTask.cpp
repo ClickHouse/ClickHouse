@@ -565,6 +565,16 @@ void RefreshTask::startReplicated()
     if (!zookeeper)
         return;
 
+    /// `coordination.unavailable` is only set once doScheduling has re-checked the flags, and that
+    /// pass is scheduled asynchronously - so on the restore path it can still be false here while
+    /// this connection already shows the flags missing. Removing '/paused' would unpause the view on
+    /// every replica moments before this one is disabled permanently, so check the connection too.
+    if (coordinationFeatureFlagsMissing(*zookeeper))
+    {
+        LOG_INFO(getLogger(), "Not unpausing the refreshable materialized view: this Keeper is missing feature flags required for coordination (MULTI_READ, CREATE_IF_NOT_EXISTS).");
+        return;
+    }
+
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryRemove(path);
     if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
