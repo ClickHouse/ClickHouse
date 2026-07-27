@@ -218,6 +218,15 @@ protected:
     void addProjection(Projection projection_);
     void dropProjection(const std::string & dir_name);
 
+    /// Shared tail of freeze/clonePart: the copy owns exactly what the source owned (temps are
+    /// transient and not copied), plus the zero-copy flag; entries are re-parented to dest_storage.
+    void seedFrozenCopy(IDataPartStorage & dest_storage) const;
+
+    /// A dir at a freeze destination sibling placement is residue of a failed operation on a
+    /// same-named part; remote blobs are kept only when zero-copy replication may share them.
+    void removeStaleProjectionSiblingAtDestination(
+        const DiskPtr & dst_disk, const std::string & proj_dst, const DiskTransactionPtr & external_transaction) const;
+
     /// Repoint at a moved location; unlike setRelativePath, content is guaranteed unchanged, so caches stay.
     void setPathKeepingCaches(std::string new_root_path, std::string new_part_dir);
 

@@ -931,18 +931,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         if (projection.format != ProjectionStorageFormat::FLAT || projection.is_temp)
             continue;
 
-        /// A leftover directory at the destination is residue of a failed operation on a same-named part.
         String proj_dst_dir = dir_path + "." + projection_dir;
-        String proj_dst = fs::path(to) / proj_dst_dir;
-        if (dst_disk->existsDirectory(proj_dst))
-        {
-            LOG_WARNING(getLogger("DataPartStorageOnDiskPacked"), "Removing stale projection directory {} at freeze destination", fullPath(dst_disk, proj_dst));
-            const bool keep_shared = zero_copy_replication_enabled && dst_disk->supportZeroCopyReplication();
-            if (params.external_transaction)
-                params.external_transaction->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
-            else
-                dst_disk->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
-        }
+        removeStaleProjectionSiblingAtDestination(dst_disk, fs::path(to) / proj_dst_dir, params.external_transaction);
 
         auto projection_storage = getProjectionStorage(projection_dir);
         auto child_params = params.forProjection(
@@ -1078,15 +1068,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     if (save_metadata_callback)
         save_metadata_callback(dst_disk);
 
-    /// The frozen copy owns exactly what the source owned (temps are transient state and not copied);
-    /// setProjections re-parents the entries to the new storage. Mirrors full storage and clonePart so
-    /// the copy's owned set is authoritative even before it is re-loaded from disk.
-    IDataPartStorage::Projections copied;
-    for (const auto & [projection_dir, projection] : getProjections())
-        if (!projection.is_temp)
-            copied.emplace(projection_dir, projection);
-    dest_storage->setProjections(std::move(copied));
-    dest_storage->setZeroCopyReplicationEnabled(zero_copy_replication_enabled);
+    seedFrozenCopy(*dest_storage);
 
     return dest_storage;
 }

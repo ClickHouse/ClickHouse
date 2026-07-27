@@ -2837,6 +2837,39 @@ def test_packed_threshold_crossing_merge_keeps_flat():
     assert check_table("t_pk_cross") == "1"
 
 
+# This test mirrors test_freeze_copies_sibling / test_freeze_unfreeze_removes_siblings for packed
+# storage: FREEZE of a packed 'flat' part copies the packed sibling into shadow/ (owned-set freeze
+# recursion + frozen-copy seeding shared with full storage), and UNFREEZE reaps it with the owner.
+# Scenario:
+# - create a packed 'flat' table, FREEZE WITH NAME
+# - assert the shadow sibling exists and contains its own data.packed
+# - UNFREEZE; assert no part dirs or projection siblings remain, table intact
+def test_packed_flat_freeze_unfreeze():
+    setup_table("t_pk_fz", f"projection_storage_format = 'flat', {PACKED}")
+    node.query("ALTER TABLE t_pk_fz FREEZE WITH NAME 'pkflat'")
+
+    sibling = node.exec_in_container(
+        ["bash", "-c", "find /var/lib/clickhouse/shadow/pkflat -name '*.p.proj' -type d | head -1"],
+        privileged=True,
+        user="root",
+    ).strip()
+    assert sibling != ""
+    assert path_exists(f"{sibling}/data.packed")
+
+    node.query("ALTER TABLE t_pk_fz UNFREEZE WITH NAME 'pkflat'")
+    leftovers = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "find /var/lib/clickhouse/shadow/pkflat \\( -name '*_*' -o -name '*.proj' -o -name '*.tmp_proj' \\) 2>/dev/null | wc -l",
+        ],
+        privileged=True,
+        user="root",
+    ).strip()
+    assert leftovers == "0"
+    assert check_table("t_pk_fz") == "1"
+
+
 # This test checks that a mutation on a packed part rebuilds the projection sub-part through the
 # createProjection -> writable-storage path (packed storage forbids hardlinks, so every projection is
 # recalculated) and the rebuilt projection reflects the mutated data.

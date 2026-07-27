@@ -95,6 +95,30 @@ std::shared_ptr<IDataPartStorage> IDataPartStorage::getProjectionStorageForWrite
     return getProjectionStorage(placement.dirName(), use_parent_transaction);
 }
 
+void DataPartStorageOnDiskBase::seedFrozenCopy(IDataPartStorage & dest_storage) const
+{
+    Projections copied;
+    for (const auto & [projection_dir, projection] : getProjections())
+        if (!projection.is_temp)
+            copied.emplace(projection_dir, projection);
+    dest_storage.setProjections(std::move(copied));
+    dest_storage.setZeroCopyReplicationEnabled(zero_copy_replication_enabled);
+}
+
+void DataPartStorageOnDiskBase::removeStaleProjectionSiblingAtDestination(
+    const DiskPtr & dst_disk, const std::string & proj_dst, const DiskTransactionPtr & external_transaction) const
+{
+    if (!dst_disk->existsDirectory(proj_dst))
+        return;
+
+    LOG_WARNING(getLogger("DataPartStorageOnDiskBase"), "Removing stale projection directory {} at freeze destination", fullPath(dst_disk, proj_dst));
+    const bool keep_shared = zero_copy_replication_enabled && dst_disk->supportZeroCopyReplication();
+    if (external_transaction)
+        external_transaction->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
+    else
+        dst_disk->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
+}
+
 namespace
 {
 
@@ -606,17 +630,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         if (projection.format != ProjectionStorageFormat::FLAT || projection.is_temp)
             continue;
 
-        /// A leftover directory at the destination is residue of a failed operation on a same-named part.
         String proj_dst = fs::path(to) / (dir_path + "." + projection_dir);
-        if (dst_disk->existsDirectory(proj_dst))
-        {
-            LOG_WARNING(getLogger("DataPartStorageOnDiskBase"), "Removing stale projection directory {} at freeze destination", fullPath(dst_disk, proj_dst));
-            const bool keep_shared = zero_copy_replication_enabled && dst_disk->supportZeroCopyReplication();
-            if (params.external_transaction)
-                params.external_transaction->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
-            else
-                dst_disk->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
-        }
+        removeStaleProjectionSiblingAtDestination(dst_disk, proj_dst, params.external_transaction);
 
         Backup(
             src_disk,
@@ -683,14 +698,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         single_disk_volume, to, dir_path,
         /*initialize=*/ !to_detached && !params.external_transaction);
 
-    /// The copy owns exactly what the source owned (temps are transient state and not copied); setProjections re-parents the entries to the
-    /// new storage.
-    Projections copied;
-    for (const auto & [projection_dir, projection] : getProjections())
-        if (!projection.is_temp)
-            copied.emplace(projection_dir, projection);
-    new_storage->setProjections(std::move(copied));
-    new_storage->setZeroCopyReplicationEnabled(zero_copy_replication_enabled);
+    seedFrozenCopy(*new_storage);
     return new_storage;
 }
 
@@ -776,14 +784,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
     auto new_storage = create(single_disk_volume, to, dir_path, /*initialize=*/ true);
 
-    /// The copy owns exactly what the source owned (temps are transient state and not copied); setProjections re-parents the entries to the
-    /// new storage.
-    Projections copied;
-    for (const auto & [projection_dir, projection] : getProjections())
-        if (!projection.is_temp)
-            copied.emplace(projection_dir, projection);
-    new_storage->setProjections(std::move(copied));
-    new_storage->setZeroCopyReplicationEnabled(zero_copy_replication_enabled);
+    seedFrozenCopy(*new_storage);
     return new_storage;
 }
 
