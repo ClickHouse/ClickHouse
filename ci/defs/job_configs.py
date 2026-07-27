@@ -12,6 +12,9 @@ from ci.defs.defs import (
     JobNames,
     RunnerLabels,
 )
+from ci.jobs.scripts.workflow_hooks.feature_docs import (
+    SOURCE_OWNED_DOC_DIGEST_PATHS,
+)
 
 LIMITED_MEM = Utils.physical_memory() - 2 * 1024**3
 # Keeper stress spins nested Docker inside the integration-tests-runner container.
@@ -1453,6 +1456,9 @@ class JobConfigs:
                 "./docs",
                 "./ci/jobs/docs_job_mintlify.py",
                 "./ci/jobs/scripts/docs",
+                "./utils/generate-async-metrics-docs",
+                "./utils/generate-system-tables-docs",
+                *SOURCE_OWNED_DOC_DIGEST_PATHS,
             ],
             # These files are internal inputs or contributor documentation, not
             # pages published by Mintlify.
