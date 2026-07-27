@@ -13,7 +13,7 @@
 -- on the granule's other rows. A later ordinary query with the same predicate then skipped the
 -- granule and silently returned fewer rows.
 
--- The vector-search optimization only exists in the new analyzer, so the assertions below are
+-- The vector-search optimization needs the analyzer, so the assertions below are
 -- vacuous under the `old analyzer` CI variant unless it is pinned here.
 SET enable_analyzer = 1;
 -- The plan assertions below read the legacy `EXPLAIN` format; the default `pretty` format rewrites
