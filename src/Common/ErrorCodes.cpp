@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <format>
 #include <iterator>
 #include <ranges>
 #include <span>
@@ -9,6 +8,8 @@
 #include <Common/CurrentThread.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+
+#include <fmt/format.h>
 
 /** Previously, these constants were located in one enum.
   * But in this case there is a problem: when you add a new constant, you need to recompile
@@ -748,7 +749,7 @@ public:
         {
             return dense[found->second];
         }
-        throw std::runtime_error{std::format("out of range {}", code)};
+        throw std::runtime_error{fmt::format("out of range {}", code)};
     }
 
     ErrorCode clamp(ErrorCode code) const { return index.contains(code) ? code : std::prev(index.end())->first; }
