@@ -1616,6 +1616,12 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         additional_column_qualification_parts = {table_node->getStorageID().getDatabaseName(), table_node->getStorageID().getTableName()};
         if (!table_node->getTemporaryTableName().empty())
             additional_column_qualification_parts = {table_node->getTemporaryTableName()};
+        /** A materialized CTE is stored under a randomly generated internal temporary table name.
+          * The user refers to it by its visible name, so qualify the columns with that name -
+          * otherwise the result header would leak an unstable implementation detail.
+          */
+        if (table_node->isMaterializedCTE())
+            additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
     }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};

@@ -65,3 +65,24 @@ SELECT cte.*
 FROM cte
 SETTINGS enable_materialized_cte = 1, enable_analyzer = 1;
 "
+
+# When a matcher-expanded column has to be qualified (another table expression in scope binds the same
+# column name), the qualification must use the visible CTE name. A materialized CTE lives under a
+# randomly generated internal temporary table name, which would otherwise leak into the result header
+# and make the schema unstable across runs.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS MATERIALIZED (SELECT 1 AS id)
+SELECT t.*, cte.*
+FROM (SELECT 2 AS id) AS t, cte
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+FORMAT TSVWithNames;
+"
+
+# An explicit alias still takes precedence over the CTE name.
+$CLICKHOUSE_CLIENT --query "
+WITH cte AS MATERIALIZED (SELECT 1 AS id)
+SELECT t.*, c2.*
+FROM (SELECT 2 AS id) AS t, cte AS c2
+SETTINGS enable_materialized_cte = 1, enable_analyzer = 1
+FORMAT TSVWithNames;
+"
