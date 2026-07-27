@@ -2,6 +2,9 @@
 
 #include <base/defines.h> /// MEMORY_SANITIZER, via base/sanitizer_defs.h
 
+/// Both macros below are consumed by `#if`, so they cannot be enums.
+/// NOLINTBEGIN(modernize-macro-to-enum)
+
 /// Whether fibers may be used in this build.
 ///
 /// On AArch64, MemorySanitizer reaches its shadow TLS through the thread pointer (TPIDR_EL0),
@@ -27,3 +30,5 @@
 #else
 #    define CH_REMOTE_ASYNC_IO 0
 #endif
+
+/// NOLINTEND(modernize-macro-to-enum)
