@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -158,6 +159,56 @@ void validateDataType(const DataTypePtr & type_to_check, const DataTypeValidatio
     validate_callback(*type_to_check);
     if (settings.validate_nested_types)
         type_to_check->forEachChild(validate_callback);
+
+    /// Reloading a table parses the stored type name, so a `Variant` whose elements render to the same name
+    /// after re-parsing would silently lose all but one of them (the canonical `DataTypeVariant` constructor
+    /// deduplicates by name), and reads of a column written with the original discriminators then fail.
+    /// Such a type cannot round-trip through its own name, so it must not be created. This check is an
+    /// integrity requirement rather than a suspicious-type policy, so unlike the callback above it is not
+    /// gated by any setting.
+    auto check_variant_name_collisions = [](const IDataType & data_type)
+    {
+        const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type);
+        if (!variant_type)
+            return;
+
+        const auto & variants = variant_type->getVariants();
+        if (variants.size() < 2)
+            return;
+
+        std::unordered_map<String, String> reparsed_to_original;
+        for (const auto & variant : variants)
+        {
+            const auto original_name = variant->getName();
+            String reparsed_name;
+            try
+            {
+                reparsed_name = DataTypeFactory::instance().get(original_name)->getName();
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("while checking that the name of variant '{}' of type '{}' can be parsed back",
+                             original_name, data_type.getName());
+                throw;
+            }
+
+            auto [it, inserted] = reparsed_to_original.emplace(reparsed_name, original_name);
+            if (!inserted)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Cannot create column with type '{}' because variants '{}' and '{}' have the same name '{}' "
+                    "when the type name is parsed back, so the column could not be read after a reload. "
+                    "Note that version 0 is omitted from the name of an AggregateFunction type and is then "
+                    "resolved to the default version. Consider using a single variant instead of these 2 variants",
+                    data_type.getName(),
+                    it->second,
+                    original_name,
+                    reparsed_name);
+        }
+    };
+
+    check_variant_name_collisions(*type_to_check);
+    type_to_check->forEachChild(check_variant_name_collisions);
 }
 
 ColumnsDescription parseColumnsListFromString(const std::string & structure, const ContextPtr & context)
