@@ -301,17 +301,34 @@ struct ToDateTransformFromSecondsOrDays
     static NO_SANITIZE_UNDEFINED UInt16 execute(const FromType & from, const DateLUTImpl & time_zone)
     {
         constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
+
+        /// `is_floating_point` also covers `BFloat16`, which this branch accepts but for which
+        /// `std::is_floating_point_v` is false.
+        bool is_nan = false;
+        if constexpr (is_floating_point<FromType>)
+            is_nan = isNaN(from);
+
+        /// Wide integers have no `fmt` formatter here, and casting a NaN to `Int64` is undefined behaviour,
+        /// so pick the printable representation according to the source type.
+        auto printable = [&]
+        {
+            if constexpr (is_floating_point<FromType>)
+                return static_cast<Float64>(from);
+            else
+                return static_cast<Int64>(from);
+        };
+
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATETIME_TIMESTAMP)
         {
-            if (from > static_cast<FromType>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+            if (is_nan || from > static_cast<FromType>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", printable());
         }
 
         if constexpr (is_signed_v<FromType>)
-            if (from < 0)
+            if (is_nan || from < 0)
             {
                 if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", static_cast<Int64>(from));
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", printable());
                 else
                     return 0;
             }
@@ -321,10 +338,16 @@ struct ToDateTransformFromSecondsOrDays
         if constexpr (std::numeric_limits<FromType>::max() > DATE_LUT_MAX_DAY_NUM)
             if (from > DATE_LUT_MAX_DAY_NUM) [[unlikely]]
             {
-                /// Clamp in the unsigned domain first: converting a huge unsigned `from` (e.g. above `Int64::max`)
-                /// straight to `time_t` is implementation-defined and typically wraps to a negative value, which
-                /// would then map to the wrong day instead of saturating to the maximum representable timestamp.
-                if constexpr (is_unsigned_v<FromType>)
+                /// Casting a huge floating-point value directly to `time_t` is undefined behaviour and yields
+                /// different results across architectures, which would then map far outside the Date range.
+                /// Cap it in the floating-point domain first, so that `saturate` deterministically returns the
+                /// maximum representable day.
+                if constexpr (is_floating_point<FromType>)
+                    return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATETIME_TIMESTAMP)))));
+                /// Likewise, converting a huge unsigned `from` (e.g. above `Int64::max`) straight to `time_t` is
+                /// implementation-defined and typically wraps to a negative value, which would then map to the
+                /// wrong day instead of saturating to the maximum representable timestamp.
+                else if constexpr (is_unsigned_v<FromType>)
                     return static_cast<UInt16>(time_zone.toDayNum(static_cast<time_t>(std::min<FromType>(from, static_cast<FromType>(MAX_DATETIME_TIMESTAMP)))));
                 else
                     return static_cast<UInt16>(time_zone.toDayNum(std::min(static_cast<time_t>(from), MAX_DATETIME_TIMESTAMP)));
@@ -347,6 +370,16 @@ struct ToDate32TransformFromSecondsOrDays
         constexpr bool overflow_throw = date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw;
         constexpr Int32 daynum_min_offset = -static_cast<Int32>(DateLUTImpl::getDayNumOffsetEpoch());
 
+        /// Wide integers have no `fmt` formatter here, and casting a NaN to `Int64` is undefined behaviour,
+        /// so pick the printable representation according to the source type.
+        auto printable = [&]
+        {
+            if constexpr (is_floating_point<FromType>)
+                return static_cast<Float64>(from);
+            else
+                return static_cast<Int64>(from);
+        };
+
         if constexpr (is_signed_v<FromType>)
         {
             bool is_nan = false;
@@ -355,7 +388,7 @@ struct ToDate32TransformFromSecondsOrDays
             if (is_nan || from < daynum_min_offset)
             {
                 if constexpr (overflow_throw)
-                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                    throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", printable());
                 return daynum_min_offset;
             }
         }
@@ -363,7 +396,7 @@ struct ToDate32TransformFromSecondsOrDays
         /// Date32 spans [1900, 2299] (unlike DateTime64, which now goes up to 9999), so it keeps its own upper bound.
         if constexpr (overflow_throw && std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
             if (from > static_cast<FromType>(MAX_DATE32_TIMESTAMP)) [[unlikely]]
-                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", static_cast<Int64>(from));
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", printable());
 
         if constexpr (std::numeric_limits<FromType>::max() >= DATE_LUT_MAX_EXTEND_DAY_NUM)
             if (from >= DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -442,15 +475,26 @@ struct ToDateTimeTransform64Signed
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
+        bool is_nan = false;
+        if constexpr (is_floating_point<FromType>)
+            is_nan = isNaN(from);
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < 0 || from > static_cast<FromType>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
+            if (is_nan || from < 0 || from > static_cast<FromType>(MAX_DATETIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", from);
         }
 
-        if (from < 0)
+        if (is_nan || from < 0)
             return 0;
-        return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
+
+        /// Clamp in the floating-point domain first: casting a huge floating-point value (e.g. `1e300`) to `time_t`
+        /// is undefined behaviour and its result is architecture-dependent, so `saturate` would not deterministically
+        /// return the upper bound.
+        if constexpr (is_floating_point<FromType>)
+            return static_cast<ToType>(std::min(static_cast<Float64>(from), static_cast<Float64>(MAX_DATETIME_TIMESTAMP)));
+        else
+            return static_cast<ToType>(std::min(time_t(from), time_t(MAX_DATETIME_TIMESTAMP)));
     }
 };
 
@@ -539,12 +583,25 @@ struct ToTimeTransform64Signed
 
     static NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl &)
     {
+        bool is_nan = false;
+        if constexpr (is_floating_point<FromType>)
+            is_nan = isNaN(from);
+
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < (-1 * MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
+            if (is_nan || from < static_cast<FromType>(-1 * MAX_TIME_TIMESTAMP) || from > static_cast<FromType>(MAX_TIME_TIMESTAMP)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", from);
         }
-        if (from > 0)
+
+        if (is_nan)
+            return 0;
+
+        /// Clamp in the floating-point domain first: casting a huge floating-point value (e.g. `1e300`) to `time_t`
+        /// is undefined behaviour and its result is architecture-dependent, so `saturate` would not deterministically
+        /// return the bound.
+        if constexpr (is_floating_point<FromType>)
+            return static_cast<ToType>(std::clamp(static_cast<Float64>(from), -static_cast<Float64>(MAX_TIME_TIMESTAMP), static_cast<Float64>(MAX_TIME_TIMESTAMP)));
+        else if (from > 0)
             return static_cast<ToType>(std::min(time_t(from), time_t(MAX_TIME_TIMESTAMP)));
         else
             return static_cast<ToType>(std::max(time_t(from), time_t(-1 * MAX_TIME_TIMESTAMP)));
