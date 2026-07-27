@@ -24,8 +24,8 @@ Part types determine how column data is organized within a data part.
 
 The part type is controlled by the following table settings:
 
-- [`min_bytes_for_wide_part`](/reference/settings/merge-tree-settings#min_bytes_for_wide_part): Minimum bytes for a part to use Wide format
-- [`min_rows_for_wide_part`](/reference/settings/merge-tree-settings#min_rows_for_wide_part): Minimum rows for a part to use Wide format
+- [`min_bytes_for_wide_part`](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): Minimum bytes for a part to use Wide format
+- [`min_rows_for_wide_part`](/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): Minimum rows for a part to use Wide format
 
 If either the number of bytes or rows in a data part is less than the corresponding setting value, the part is stored in `Compact` format; otherwise, it uses `Wide` format.
 
@@ -81,9 +81,9 @@ In Packed storage, all part files are bundled into a single archive. This signif
 
 A part uses Packed storage if **any** of these conditions are true:
 
-- Uncompressed bytes < [`min_bytes_for_full_part_storage`](/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-- Row count < [`min_rows_for_full_part_storage`](/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-- Merge level < [`min_level_for_full_part_storage`](/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+- Uncompressed bytes < [`min_bytes_for_full_part_storage`](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+- Row count < [`min_rows_for_full_part_storage`](/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+- Merge level < [`min_level_for_full_part_storage`](/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Packed storage is opt-in: all three settings default to `0`, so parts use Full storage unless you raise one of them.
 
