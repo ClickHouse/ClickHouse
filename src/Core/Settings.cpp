@@ -8080,7 +8080,7 @@ Either to throw error or not if we don't have rights to get table's metadata in 
 Allow memory-efficient aggregation (see `distributed_aggregation_memory_efficient`) to produce buckets out of order.
 It may improve performance when aggregation bucket sizes are skewed by letting a replica to send buckets with higher id-s to the initiator while it is still processing some heavy buckets with lower id-s.
 The downside is potentially higher memory usage.
-Disabled by default because the initiator may lose track of buckets received out of order and merge them incompletely, which produces incorrect results (see https://github.com/ClickHouse/ClickHouse/pull/108727).
+Disabled by default because the initiator may lose track of buckets received out of order and merge them incompletely, which produces incorrect results.
 )", 0) \
     DECLARE(Bool, enable_parallel_blocks_marshalling, true, "Affects only distributed queries. If enabled, blocks will be (de)serialized and (de)compressed on pipeline threads (i.e. with higher parallelism that what we have by default) before/after sending to the initiator.", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
