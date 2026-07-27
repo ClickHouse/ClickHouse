@@ -196,7 +196,7 @@ The YTsaurus table engine allows you to import data from a YTsaurus cluster.
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in future releases.
 Enable usage of the YTsaurus table engine
-using setting [`allow_experimental_ytsaurus_table_engine`](/operations/settings/settings#allow_experimental_ytsaurus_table_engine).
+using setting [`allow_experimental_ytsaurus_table_engine`](/reference/settings/session-settings/allow-experimental#allow_experimental_ytsaurus_table_engine).
 
 You can do so using:
 
@@ -288,7 +288,7 @@ SELECT * FROM yt_saurus;
 
 **See Also**
 
-- [ytsaurus](../../../sql-reference/table-functions/ytsaurus.md) table function
+- [ytsaurus](/reference/functions/table-functions/ytsaurus) table function
 - [ytsaurus data schema](https://ytsaurus.tech/docs/en/user-guide/storage/static-schema)
 - [ytsaurus data types](https://ytsaurus.tech/docs/en/user-guide/storage/data-types)
 )DOCS_MD",

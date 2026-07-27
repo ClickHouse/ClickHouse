@@ -105,7 +105,7 @@ When set to `false`, each thread handles s3 request backoff independently of the
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](/reference/settings/merge-tree-settings#cache_populated_by_fetch) is enabled. Zero to disable.
+Only has an effect in ClickHouse Cloud. Number of background threads for speculatively downloading new data parts into the filesystem cache, when [cache_populated_by_fetch](/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) is enabled. Zero to disable.
 
 ## calculate_text_stack_trace {#calculate_text_stack_trace}
 
@@ -381,7 +381,7 @@ Set default mode in EXCEPT query. Possible values: empty string, 'ALL', 'DISTINC
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "New setting."}]}]}/>
 
-Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) or by an explicit
+Excludes specified skip indexes from being built and stored during INSERTs. The excluded skip indexes will still be built and stored [during merges](/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) or by an explicit
 [MATERIALIZE INDEX](/reference/statements/alter/skipping-index#materialize-index) query.
 
 Has no effect if [materialize_skip_indexes_on_insert](/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) is false.
@@ -985,7 +985,7 @@ Enable pushing user roles from originator to other nodes while performing a quer
 
 The interval in milliseconds at which the [query_metric_log](/reference/system-tables/query_metric_log) for individual queries is collected.
 
-If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/reference/settings/server-settings/settings#query_metric_log) or default to 1000 if not present.
+If set to any negative value, it will take the value `collect_interval_milliseconds` from the [query_metric_log setting](/reference/settings/server-settings/settings/query#query_metric_log) or default to 1000 if not present.
 
 To disable the collection of a single query, set `query_metric_log_interval` to 0.
 
@@ -1184,7 +1184,7 @@ See also:
 Sets the implicit time zone of the current session or query.
 The implicit time zone is the time zone applied to values of type DateTime/DateTime64 which have no explicitly specified time zone.
 The setting takes precedence over the globally configured (server-level) implicit time zone.
-A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](/reference/settings/server-settings/settings#timezone).
+A value of '' (empty string) means that the implicit time zone of the current session or query is equal to the [server time zone](/reference/settings/server-settings/settings/other#timezone).
 
 You can use functions `timeZone()` and `serverTimeZone()` to get the session time zone and server time zone.
 
@@ -1238,7 +1238,7 @@ This happens due to different parsing pipelines:
 
 **See also**
 
-- [timezone](/reference/settings/server-settings/settings#timezone)
+- [timezone](/reference/settings/server-settings/settings/other#timezone)
 
 ## set_overflow_mode {#set_overflow_mode}
 
