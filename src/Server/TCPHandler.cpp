@@ -736,7 +736,11 @@ void TCPHandler::runImpl()
                     {
                         const auto * insert_ast = ast->as<ASTInsertQuery>();
                         const bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
-                        if (!insert_needs_client_data)
+                        /// `SELECT ... FROM input(...)` and `INSERT ... SELECT ... FROM input(...)`
+                        /// are also fed by data packets that follow the query, delivered through
+                        /// `setInputInitializer` / `setInputBlocksReaderCallback` — both bound to
+                        /// this connection's `query_state`. They must stay synchronous.
+                        if (!insert_needs_client_data && !IAST::usesInputTableFunction(ast.get()))
                         {
                             ContextMutablePtr async_context = Context::createCopy(query_state->query_context);
                             detach_attempted = true;

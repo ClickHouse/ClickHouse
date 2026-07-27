@@ -28,6 +28,14 @@ DetachedQueryHandle detachQuery(String query_text, ContextMutablePtr context)
     context->setProgressCallback(nullptr);
     context->setFileProgressCallback({});
 
+    /// Same for the callbacks that pull data pushed by the client after the query: they are bound to
+    /// the caller's connection state. Eligible queries never need them (`INSERT ... FORMAT ...` with
+    /// data on the same connection and queries reading from `input(...)` are excluded before we get
+    /// here), so dropping them turns any leftover case into a clean error instead of a background
+    /// thread reaching into a connection that has already moved on to the next query.
+    context->resetInputCallbacks();
+    context->resetExternalTablesInitializer();
+
     auto started_promise = std::make_shared<std::promise<void>>();
     auto started_future = started_promise->get_future();
     auto completion_promise = std::make_shared<std::promise<void>>();

@@ -143,7 +143,9 @@ clickhouse-client --allow_experimental_detach_queries 1 --async_insert 0 -q "SET
 - **Compressed body (`decompress=1`):** When the request uses the `decompress=1` parameter (ClickHouse native compression), the server does **not** treat the body as "query in POST body only". The body is consumed by the decompression pipeline. For detached execution with the query in the body, send an **uncompressed** body (omit `decompress=1`). For compressed INSERT data, put the query in the URL (`?query=...`) and send the compressed data in the body.
 - **Request type (HTTP):** Only HTTP POST is supported; GET requests are not detached.
 - **External data:** Requests with multipart/form-data (e.g. for external tables) are not detached.
-- **Body size:** The request body used as query or data is limited (e.g. 128 MiB); see server limits.
+- **Body size:** The request body used as query or data is limited to 128 MiB. A larger body is rejected with `TOO_LARGE_STRING_SIZE` rather than silently truncated; pass the query in the `query` URL parameter and run such a query without this setting.
+- **`input` table function:** Queries reading from [`input`](/sql-reference/table-functions/input) are never detached, on any protocol. Their data is pushed by the client after the query and is delivered through callbacks bound to the caller's connection, which is gone once the `query_id` has been returned. Such queries run synchronously.
+- **Query-only-in-body requests need `async_insert=0` out of band:** When the whole query lives in the POST body (no `query` URL parameter), the body is read only if `async_insert` is already disabled through the URL, the session or the profile — otherwise the body belongs to the async-insert pipeline. So `SETTINGS async_insert = 0` written *inside* a body-only query comes too late to enable detaching; pass `?async_insert=0` in the URL, as every example above does.
 
 ## See also {#see-also}
 

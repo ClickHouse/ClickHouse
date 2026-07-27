@@ -947,6 +947,9 @@ public:
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
     /// This method is called in executeQuery() and will call the external tables initializer.
     void initializeExternalTablesIfSet();
+    /// Drop the initializer without calling it, e.g. when the query is detached to a background
+    /// thread and must not reach back into the connection that provided the external tables.
+    void resetExternalTablesInitializer();
 
     /// This is a callback which returns deserialized QueryPlan if the packet with QueryPlan was received.
     void setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback);

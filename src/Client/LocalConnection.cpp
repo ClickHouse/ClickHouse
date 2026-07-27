@@ -315,7 +315,10 @@ void LocalConnection::sendQuery(
             {
                 const auto * insert_ast = ast->as<ASTInsertQuery>();
                 const bool insert_needs_client_data = insert_ast && !insert_ast->select && !insert_ast->hasInlinedData();
-                if (!insert_needs_client_data)
+                /// Queries reading from `input(...)` are fed by the interactive client through
+                /// callbacks bound to this `LocalConnection` (`Context::createCopy` happens before
+                /// `setInputInitializer` fires), so they must stay synchronous as well.
+                if (!insert_needs_client_data && !IAST::usesInputTableFunction(ast.get()))
                 {
                     ContextMutablePtr async_context = Context::createCopy(query_context);
                     /// The background thread inherits the session path and current database.

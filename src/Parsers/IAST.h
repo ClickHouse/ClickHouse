@@ -477,6 +477,12 @@ public:
     /// `ParallelWithQuery`, `None`).
     static bool isDetachableQuery(const IAST * ast);
 
+    /// Returns true if the query text references the `input` table function, i.e. the query is fed
+    /// with data that the client pushes after the query itself. Such a query cannot be detached: the
+    /// data is delivered through callbacks bound to the caller's connection, which is gone once the
+    /// `query_id` has been returned.
+    static bool usesInputTableFunction(const IAST * ast);
+
 protected:
     virtual void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const;
     virtual void formatImpl(FormattingBuffer /*out*/) const;

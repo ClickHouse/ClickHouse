@@ -1,0 +1,4 @@
+=== Native: INSERT SELECT FROM input() runs synchronously ===
+3	6
+=== Native: a plain INSERT SELECT next to it is still detached ===
+<query_id>

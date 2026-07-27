@@ -7572,6 +7572,12 @@ void Context::initializeExternalTablesIfSet()
     }
 }
 
+void Context::resetExternalTablesInitializer()
+{
+    external_tables_initializer_callback = {};
+}
+
+
 void Context::setQueryPlanDeserializationCallback(QueryPlanDeserializationCallback && callback)
 {
     query_plan_deserialization_callback = std::move(callback);

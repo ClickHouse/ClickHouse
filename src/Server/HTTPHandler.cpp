@@ -101,6 +101,7 @@ extern const int INVALID_SESSION_TIMEOUT;
 extern const int INVALID_CONFIG_PARAMETER;
 extern const int HTTP_LENGTH_REQUIRED;
 extern const int SESSION_ID_EMPTY;
+extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -506,9 +507,17 @@ void HTTPHandler::processQuery(
         && !params.getParsedLast<bool>("decompress", false) && !settings[Setting::async_insert])
     {
         WriteBufferFromOwnString body_query;
-        LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+        /// Read one byte past the cap so that an oversized body can be detected: `read_no_more`
+        /// alone would silently stop at the limit and hand over a truncated query (or, for
+        /// `INSERT ... FORMAT ...`, truncated data).
+        LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size + 1});
         copyData(limit, body_query);
         query = body_query.str();
+        if (query.size() > max_post_body_size)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "The POST body holding the query is larger than {} bytes. Pass the query in the `query` URL parameter instead.",
+                max_post_body_size);
         /// Treat a body that is only whitespace as "no query in body", but do NOT trim `query`
         /// itself: for `INSERT ... FORMAT ...` sent in the body, trailing bytes can be part of the
         /// data and `query` is handed to the executor verbatim. Trimming for parsing happens later
@@ -627,6 +636,9 @@ void HTTPHandler::processQuery(
         /// so that a failure raised by `detachQuery` itself never re-executes the query.
         bool detach_attempted = false;
         bool detach_started = false;
+        /// An oversized body must not fall back to sync execution: the body has already been
+        /// partially drained at that point, so the sync path would insert truncated data.
+        bool body_too_large = false;
         PODArray<char> body_data;
         const bool query_was_in_body = query_from_body;
 
@@ -646,9 +658,21 @@ void HTTPHandler::processQuery(
 
             if (!query_from_body)
             {
-                LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size});
+                LimitReadBuffer limit(*in_post_maybe_compressed, LimitReadBuffer::Settings{.read_no_more = max_post_body_size + 1});
                 WriteBufferFromVector<PODArray<char>> body_buf(body_data);
                 copyData(limit, body_buf);
+                body_buf.finalize();
+                /// Detaching an `INSERT ... FORMAT ...` whose data does not fit the cap has to fail:
+                /// silently dropping the tail would report success for a partial insert.
+                if (body_data.size() > max_post_body_size)
+                {
+                    body_too_large = true;
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_STRING_SIZE,
+                        "Cannot detach a query whose POST body is larger than {} bytes. Run it without "
+                        "`allow_experimental_detach_queries`.",
+                        max_post_body_size);
+                }
             }
 
             ParserQuery parser(
@@ -676,7 +700,10 @@ void HTTPHandler::processQuery(
                     settings[Setting::max_parser_depth],
                     settings[Setting::max_parser_backtracks]);
 
-            if (ast && IAST::isDetachableQuery(ast.get()))
+            /// The POST body is concatenated to the query text below, which works for
+            /// `INSERT ... FORMAT ...` but not for `input(...)`: there the body is a separate data
+            /// stream wired to the request's read buffer, which the background thread cannot use.
+            if (ast && IAST::isDetachableQuery(ast.get()) && !IAST::usesInputTableFunction(ast.get()))
             {
                 /// Populate query parameters from URL/header regex captures and `_request_body`
                 /// before forking, so `PredefinedQueryHandler` routes see the same context as
@@ -703,7 +730,7 @@ void HTTPHandler::processQuery(
             /// fall back to sync here: that would re-execute the query and is racy for
             /// non-idempotent statements (a duplicate query_id could succeed if the first query
             /// finishes before the fallback). `detach_attempted` is set for exactly those failures.
-            if (detach_attempted)
+            if (detach_attempted || body_too_large)
                 throw;
             /// Mechanism failure before the detach attempt (parse error, empty query): fall back to sync.
             tryLogCurrentException(log, "Cannot run HTTP query in detach mode, falling back to sync");

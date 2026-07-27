@@ -422,6 +422,28 @@ bool IAST::isDetachableQuery(const IAST * ast)
     UNREACHABLE();
 }
 
+bool IAST::usesInputTableFunction(const IAST * ast)
+{
+    if (!ast)
+        return false;
+
+    checkStackSize();
+
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        if (Poco::toLower(function->name) == "input")
+            return true;
+    }
+
+    for (const auto & child : ast->children)
+    {
+        if (usesInputTableFunction(child.get()))
+            return true;
+    }
+
+    return false;
+}
+
 /// Decide how to emit `parenthesized` parens. When the node has an alias and we are not in an
 /// operator-chain context (`frame.need_parens == false`), defer to `ASTWithAlias::formatImpl` so
 /// it can emit `(expr) AS alias` instead of `(expr AS alias)` — only the former re-formats to
