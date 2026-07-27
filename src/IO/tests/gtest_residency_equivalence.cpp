@@ -201,7 +201,7 @@ public:
             fs::remove_all(cache_root);
     }
 
-    std::shared_ptr<FileCache> makeFileCache(const String & name)
+    std::shared_ptr<FileCache> makeFileCache(const String & name) const
     {
         FileCacheSettings settings;
         settings[FileCacheSetting::path] = (cache_root / name).string();

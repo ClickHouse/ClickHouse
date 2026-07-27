@@ -807,7 +807,7 @@ void DiskCacheProvider::ProbeCursor::roll(const StoredObject & object, size_t ob
                 const size_t cwo = segment->getCurrentWriteOffset();
                 if (cwo > seg_left)
                     add_hit(seg_left, cwo);
-                const size_t miss_off = std::max<size_t>(cwo, std::max(seg_left, ask_start));
+                const size_t miss_off = std::max<size_t>({cwo, seg_left, ask_start});
                 if (miss_off < seg_end)
                     add_miss_obj(miss_off, seg_end);
             }
