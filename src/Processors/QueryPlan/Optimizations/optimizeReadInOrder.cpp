@@ -119,6 +119,7 @@ struct FindReadingStepContext
 {
     bool allow_existing_order;
     bool read_in_order_through_join;
+    bool read_in_order_through_spilling_join;
 
     std::list<JoinStep *> joins_to_keep_in_order = {};
 };
@@ -158,8 +159,17 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
             /// PartialMergeJoin re-sorts left blocks by the join key, so it does not keep the left
             /// stream's original order either (preservesLeftBlockOrder() == false).
             /// We must not propagate read-in-order through joins that reorder rows.
+            ///
+            /// `SpillingHashJoin` can keep the order, but only by giving up its ability to spill,
+            /// which makes the right side bounded by the memory tracker instead of by the spill
+            /// threshold. `read_in_order_through_spilling_join` is the escape hatch back to the
+            /// conservative behaviour of never using such a join for this optimisation; for every
+            /// other join `canKeepLeftPipelineInOrder` is exactly `!hasDelayedBlocks`, so the extra
+            /// condition changes nothing.
+            const bool keeps_left_order = join_ptr->canKeepLeftPipelineInOrder()
+                && (data.read_in_order_through_spilling_join || !join_ptr->hasDelayedBlocks());
             if ((strictness == JoinStrictness::Any || strictness == JoinStrictness::All) && isInnerOrLeft(kind)
-                && join_ptr->canKeepLeftPipelineInOrder() && join_ptr->preservesLeftBlockOrder())
+                && keeps_left_order && join_ptr->preservesLeftBlockOrder())
             {
                 auto * reading_step = findReadingStep(*node.children.front(), data);
                 if (auto * join_step = typeid_cast<JoinStep *>(step); reading_step && join_step)
@@ -1165,6 +1175,7 @@ InputOrderInfoPtr buildInputOrderInfo(
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1290,6 +1301,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1411,6 +1423,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1502,6 +1515,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
