@@ -5,9 +5,9 @@
 -- Regression test: a degenerate logical call such as `and()` used to abort the fuzzer in
 -- `QueryFuzzer::permutePredicateClause` (`chassert(!predicates.empty())`), because
 -- `extractPredicates` flattened its empty argument list into nothing.
--- Every statement below aborted the server before the fix, each reaching that function through
--- a different caller: `addOrReplacePredicate`, the recursive call inside `extractPredicates`
--- (seeds 7 and 35), and the JOIN `ON` path.
+-- All four statements below aborted the server before the fix, between them reaching that
+-- function through three callers: `addOrReplacePredicate`, the recursive call inside
+-- `extractPredicates` (seeds 7 and 35), and the JOIN `ON` path.
 -- `ast_fuzzer_runs = 0` keeps the server-side fuzzer from mutating the `fuzzQuery` arguments
 -- (the Stress test profile sets it to 5), which would change the seed and the length cap.
 
