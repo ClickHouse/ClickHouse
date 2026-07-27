@@ -8,17 +8,18 @@
 -- trivial count optimization must NOT be applied and count() must fall back to a real
 -- scan that applies the equality delete transformers.
 
--- Warm up the Iceberg metadata and delete-file state with a plain column read first:
--- the assertions below must not depend on cold-cache first-read behavior of the scan
--- layer under heavy parallel load, which is not what this test guards.
-SELECT count(name) FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') FORMAT Null;
-
 -- Must return the live row count, not 1010 (summary) and not 980 (data rows minus
--- position deletes only). The setting is pinned because the test runner randomizes it.
-SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') SETTINGS optimize_trivial_count_query = 1;
+-- position deletes only). `optimize_count_from_files` is pinned ON: the count-only fast
+-- path feeds synthetic default-valued chunks to the equality-delete FilterTransform (its
+-- predicate then matches the wrong rows), so it must be demoted to a real read for files
+-- with attached deletes -- with a regression there this query returns 1010, not 881.
+-- The settings are pinned because the test runner randomizes them.
+SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')
+    SETTINGS optimize_trivial_count_query = 1, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
 
 -- Sanity check: same result as a full scan.
-SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') SETTINGS optimize_trivial_count_query = 0;
+SELECT count() FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table')
+    SETTINGS optimize_trivial_count_query = 0, optimize_count_from_files = 1, use_cache_for_count_from_files = 1;
 
 -- The trivial count optimization must not be applied when equality deletes are present,
 -- even when explicitly enabled.

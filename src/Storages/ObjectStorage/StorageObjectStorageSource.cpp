@@ -939,6 +939,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         return schema_cache->tryGetNumRows(cache_key, get_last_mod_time);
     };
 
+    /// Row-level delete transformers need real row values: an equality-delete FilterTransform
+    /// evaluates its predicate against column values, but the count-only fast path
+    /// (`input_format->needOnlyCount()`) makes the format emit synthetic chunks filled with
+    /// default values, so the predicate would filter the wrong rows and count() would come
+    /// back wrong. Position deletes and deletion vectors filter by row index, which synthetic
+    /// chunks do preserve, but they would still build the huge synthetic chunks only to drop
+    /// rows from them, so the fast path is disabled for any attached deletes. This also
+    /// covers the count-from-cache shortcut below: a cached per-file row count is keyed only
+    /// by path + mtime, both untouched by delete files, so it must not be used either.
+    need_only_count = need_only_count && !hasAttachedDeletes(*object_info);
+
     /// The count-from-cache shortcut builds a `ConstChunkGenerator` without opening the read buffer, so a
     /// requested `_headers` virtual column (the HTTP response headers of the data `GET`) would have to fall
     /// back to the metadata-probe headers (usually a `HEAD`), which can differ from the actual `GET`
@@ -946,8 +957,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
     std::optional<size_t> num_rows_from_cache
-        = need_only_count && !headers_requested && !hasAttachedDeletes(*object_info)
-            && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        = need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)
