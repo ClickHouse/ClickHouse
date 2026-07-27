@@ -42,6 +42,13 @@ SELECT 'array join then all/inner: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a INNER JOIN t2 ON t1.c = t2.c ORDER BY ALL);
 
+-- An ALL-strictness join after an ARRAY JOIN stays eligible: the strictness is distributive, and a
+-- non-distributive KIND is the business of the FULL/GLOBAL/CROSS rule, which cannot fire here
+-- because the ARRAY JOIN does not increment `joins_count`.
+SELECT 'array join then full: reads from remote replicas';
+SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
+    EXPLAIN SELECT t1.c, a FROM t1 ARRAY JOIN [1, 2] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL);
+
 SELECT 'all/inner only: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM t1 INNER JOIN t2 ON t1.c = t2.c INNER JOIN t3 ON t1.c = t3.c ORDER BY ALL);

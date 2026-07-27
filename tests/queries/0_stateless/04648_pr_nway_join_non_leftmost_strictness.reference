@@ -6,6 +6,8 @@ array join then inner/any: reads from remote replicas
 0
 array join then all/inner: reads from remote replicas
 1
+array join then full: reads from remote replicas
+1
 all/inner only: reads from remote replicas
 1
 all/left only: reads from remote replicas

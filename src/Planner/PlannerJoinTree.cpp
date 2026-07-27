@@ -2627,14 +2627,22 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
-            /// Whitelist of the (kind, strictness) pairs `allowParallelReplicasForJoinTree` accepts. Anything
-            /// else must not be executed on several replicas: the whole join tree is shipped to every replica
-            /// while only the leftmost leaf's reads are coordinated, so a non-replica-safe join re-applies its
-            /// own strictness independently on each replica and the initiator concatenates the results,
-            /// duplicating rows. A whitelist keeps this fail-closed for future `JoinStrictness` enumerators.
+            /// A join other than the leftmost leaf's parent is executed on every replica, because the
+            /// whole join tree is shipped to all of them while only the leftmost leaf's reads are
+            /// coordinated. That is correct only for a strictness that is distributive over a partition
+            /// of the left side: `ALL` (every matching pair is emitted, so concatenating per-replica
+            /// results reproduces the full product), and any `LEFT` kind (`ConstantJoin` keeps
+            /// `left_rows_to_join = All` there, so each left row independently selects its own right
+            /// row). Every other strictness collapses across the whole left side -- `INNER ANY`,
+            /// `RIGHT ANY` and `RIGHT SEMI` use `FirstRowOnly`, implemented as a single
+            /// `has_seen_matching_rows` compare-exchange -- and re-applying it per replica duplicates
+            /// rows. The condition is a whitelist, so a future `JoinStrictness` enumerator is
+            /// fail-closed. Note this is a strictness rule only: a non-distributive KIND
+            /// (`FULL`/`GLOBAL`/`CROSS`, or a misplaced `RIGHT`) is the business of the disjuncts above,
+            /// which is why `ALL` is admitted for every kind here.
             if (is_non_leftmost_join_tree_node
-                && !((join_kind == JoinKind::Inner && join_node.getStrictness() == JoinStrictness::All)
-                     || join_kind == JoinKind::Left))
+                && join_node.getStrictness() != JoinStrictness::All
+                && join_kind != JoinKind::Left)
                 has_unsafe_non_leftmost_join = true;
 
             continue;
