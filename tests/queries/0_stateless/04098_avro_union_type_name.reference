@@ -111,6 +111,5 @@ payload.TypeB	Nullable(Tuple(b_value Int32))
 0
 
 == Nested union: inner $name alongside the outer $name is not supported ==
-THERE_IS_NO_COLUMN
-THERE_IS_NO_COLUMN
+rejected: THERE_IS_NO_COLUMN
 

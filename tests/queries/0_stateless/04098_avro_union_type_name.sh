@@ -169,5 +169,5 @@ $CH_CLIENT --input_format_avro_union_type_name=1 -q "
   SELECT id, \`payload.\$name\`, \`payload.TypeA.inner.\$name\`
   FROM file('$nested_file_name')
   ORDER BY id
-" 2>&1 | grep -o 'THERE_IS_NO_COLUMN' || echo "unexpected: no error"
+" 2>&1 | grep -q 'THERE_IS_NO_COLUMN' && echo "rejected: THERE_IS_NO_COLUMN" || echo "NOT rejected"
 echo
