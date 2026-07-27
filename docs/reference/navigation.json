@@ -699,6 +699,7 @@
             "reference/functions/table-functions/jdbc",
             "reference/functions/table-functions/loop",
             "reference/functions/table-functions/merge",
+            "reference/functions/table-functions/mergeTreeCodecBlockCounts",
             "reference/functions/table-functions/mergeTreeIndex",
             "reference/functions/table-functions/mergeTreeProjection",
             "reference/functions/table-functions/mergeTreeTextIndex",

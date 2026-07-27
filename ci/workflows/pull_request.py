@@ -60,7 +60,6 @@ workflow = Workflow.Config(
     jobs=[
         JobConfigs.style_check,
         JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
-        JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
         JobConfigs.ci_tests.set_run_after(CORE_BLOCKING_JOB_NAMES),
