@@ -25,7 +25,6 @@ using namespace DB;
 namespace
 {
 
-constexpr auto LZ4 = static_cast<uint8_t>(CompressionMethodByte::LZ4);
 constexpr auto T64 = static_cast<uint8_t>(CompressionMethodByte::T64);
 constexpr auto NONE = static_cast<uint8_t>(CompressionMethodByte::NONE);
 
@@ -180,7 +179,9 @@ TEST(AdaptiveCodecSelector, MonotonicNarrowIntegersPickT64)
 
 TEST(AdaptiveCodecSelector, RepeatingWideValuesPickDefault)
 {
-    /// A short pattern of full-range values, repeated: LZ4 crushes the repetition, but T64 sees a wide min/max cannot shrink it.
+    /// A short pattern of full-range values, repeated: a general-purpose codec crushes the repetition,
+    /// but T64 sees a wide min/max and cannot shrink it. The winner must be the default anchor, whatever
+    /// the built-in default codec is (`ZSTD(3)` today).
     const std::vector<UInt32> pattern = {0u, 0xFFFFFFFFu, 0x0F0F0F0Fu, 0xF0F0F0F0u, 0x12345678u, 0x9ABCDEF0u, 0xDEADBEEFu, 0xCAFEBABEu};
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
@@ -189,7 +190,7 @@ TEST(AdaptiveCodecSelector, RepeatingWideValuesPickDefault)
 
     auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
     auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), LZ4);
+    EXPECT_EQ(winner->getMethodByte(), defaultCodec()->getMethodByte());
 }
 
 TEST(AdaptiveCodecSelector, ConstantColumnPicksT64)
