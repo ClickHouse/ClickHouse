@@ -46,6 +46,20 @@ ClickPipes можно развёртывать и управлять ими вр
 
 В ClickPipes будут добавляться новые коннекторы; подробнее можно узнать, [связавшись с нами](https://clickhouse.com/company/contact?loc=clickpipes).
 
+<div id="aws-iam-database-authentication">
+  ## Аутентификация к базе данных через AWS IAM
+</div>
+
+ClickPipes поддерживает аутентификацию к базе данных через AWS IAM для Amazon RDS и Aurora. Конфигурация зависит от движка базы данных и сервиса AWS, поэтому выберите руководство по настройке источника, соответствующее вашей базе данных:
+
+| Движок базы данных | Сервис AWS    | Руководство по настройке                                                                                   |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL         | Amazon RDS    | [RDS для PostgreSQL](/ru/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL         | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/ru/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL              | Amazon RDS    | [RDS для MySQL](/ru/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL              | Amazon Aurora | [Aurora MySQL-Compatible Edition](/ru/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB            | Amazon RDS    | [RDS для MariaDB](/ru/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
 <div id="list-of-static-ips">
   ## Список статических IP-адресов
 </div>

@@ -46,6 +46,20 @@ ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管�
 
 今後、さらに多くのコネクタが ClickPipes に追加される予定です。詳細は、[お問い合わせ](https://clickhouse.com/company/contact?loc=clickpipes)ください。
 
+<div id="aws-iam-database-authentication">
+  ## AWS IAM データベース認証
+</div>
+
+ClickPipes は、Amazon RDS および Aurora の AWS IAM データベース認証に対応しています。設定方法はデータベースエンジンと AWS サービスによって異なるため、お使いのデータベースに対応するソースのセットアップガイドを選択してください。
+
+| データベースエンジン | AWS サービス      | セットアップガイド                                                                                                  |
+| ---------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL | Amazon RDS    | [RDS for PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL      | Amazon RDS    | [RDS for MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL      | Amazon Aurora | [Aurora MySQL-Compatible Edition](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB    | Amazon RDS    | [RDS for MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
 <div id="list-of-static-ips">
   ## 固定 IP の一覧
 </div>

@@ -48,7 +48,6 @@
         "ar/integrations/clickpipes/postgres/postgres-generated-columns",
         "ar/integrations/clickpipes/postgres/parallel-initial-load",
         "ar/integrations/clickpipes/postgres/lifecycle",
-        "ar/integrations/clickpipes/postgres/auth",
         {
           "group": "العمليات",
           "pages": [

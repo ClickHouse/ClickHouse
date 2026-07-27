@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.mdx";
 
 يوضح هذا الدليل خطوة بخطوة كيفية إعداد مثيل RDS MariaDB لديك لنسخ بياناته عبر MySQL ClickPipe.
 
@@ -110,6 +111,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
    GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
+
+<div id="iam-authentication">
+  ### استخدام IAM authentication (اختياري)
+</div>
+
+<Note>
+  [أطلقت AWS دعم IAM authentication لقاعدة البيانات في RDS for MariaDB في الإصدار 10.6.5](https://aws.amazon.com/blogs/database/iam-authentication-with-amazon-rds-for-mariadb/). يعتمد الدعم على إصدار المحرك المحدد وRegion في AWS. راجع [المناطق المدعومة حاليًا وإصدارات المحرك في AWS](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.RDS_Fea_Regions_DB-eng.Feature.IamDatabaseAuthentication.html) قبل استخدام هذا الخيار.
+</Note>
+
+<IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة

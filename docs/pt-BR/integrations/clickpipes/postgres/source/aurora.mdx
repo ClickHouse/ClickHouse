@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Versões compatíveis do Postgres
@@ -103,14 +104,11 @@ A publication `clickpipes` define o conjunto de tabelas cujos eventos de altera�
   ### Usando autenticação IAM (opcional)
 </div>
 
-Em vez de uma senha, você pode autenticar o usuário do ClickPipes usando controle de acesso baseado em função do AWS IAM. Isso exige que o parâmetro `rds.iam_auth_for_replication` esteja definido como `1`. Crie o usuário da seguinte forma e, em seguida, conceda a ele os mesmos privilégios de schema e de replicação mostrados acima:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-Consulte [AWS IAM DB authentication (RDS/Aurora)](/pt-BR/integrations/clickpipes/postgres/auth) para conferir o passo a passo completo de configuração da função e da política do IAM necessárias para que o ClickPipes se autentique dessa forma.
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    A autenticação IAM para replicação exige que o parâmetro `rds.iam_auth_for_replication` esteja definido como `1`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## Configurar acesso à rede

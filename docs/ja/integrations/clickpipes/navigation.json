@@ -48,7 +48,6 @@
         "ja/integrations/clickpipes/postgres/postgres-generated-columns",
         "ja/integrations/clickpipes/postgres/parallel-initial-load",
         "ja/integrations/clickpipes/postgres/lifecycle",
-        "ja/integrations/clickpipes/postgres/auth",
         {
           "group": "操作",
           "pages": [
@@ -62,7 +61,7 @@
           ]
         },
         {
-          "group": "ログソース",
+          "group": "ソース",
           "pages": [
             "ja/integrations/clickpipes/postgres/source/alloydb",
             "ja/integrations/clickpipes/postgres/source/rds",

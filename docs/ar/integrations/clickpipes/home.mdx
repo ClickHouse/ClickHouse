@@ -46,6 +46,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ستُضاف المزيد من الموصلات إلى ClickPipes، ويمكنك معرفة المزيد عبر [التواصل معنا](https://clickhouse.com/company/contact?loc=clickpipes).
 
+<div id="aws-iam-database-authentication">
+  ## مصادقة قاعدة البيانات عبر AWS IAM
+</div>
+
+يدعم ClickPipes مصادقة قاعدة البيانات عبر AWS IAM لكلٍّ من Amazon RDS وAurora. يختلف الإعداد حسب محرك قاعدة البيانات وخدمة AWS، لذا اختر دليل إعداد المصدر المطابق لقاعدة بياناتك:
+
+| محرك قاعدة البيانات | خدمة AWS      | دليل الإعداد                                                                                               |
+| ------------------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL          | Amazon RDS    | [RDS for PostgreSQL](/ar/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL          | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/ar/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL               | Amazon RDS    | [RDS for MySQL](/ar/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL               | Amazon Aurora | [Aurora MySQL-Compatible Edition](/ar/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB             | Amazon RDS    | [RDS for MariaDB](/ar/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
 <div id="list-of-static-ips">
   ## قائمة عناوين IP الثابتة
 </div>

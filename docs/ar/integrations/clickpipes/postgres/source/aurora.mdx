@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## إصدارات Postgres المدعومة
@@ -103,14 +104,11 @@ postgres=> SHOW rds.logical_replication ;
   ### استخدام مصادقة IAM (اختياري)
 </div>
 
-بدلًا من `password`، يمكنك مصادقة مستخدم ClickPipes باستخدام وصول AWS IAM المستند إلى الدور. ويتطلب ذلك ضبط المعلَمة `rds.iam_auth_for_replication` على `1`. أنشئ المستخدم كما يلي، ثم امنحه امتيازات `schema` و`replication` نفسها الموضحة أعلاه:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-راجع [AWS IAM DB authentication (RDS/Aurora)](/ar/integrations/clickpipes/postgres/auth) للاطلاع على الخطوات الكاملة لإعداد IAM role والسياسة المطلوبة لكي يتمكن ClickPipes من المصادقة بهذه الطريقة.
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    يتطلب النسخ المتماثل باستخدام مصادقة IAM ضبط المعلَمة `rds.iam_auth_for_replication` على `1`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة

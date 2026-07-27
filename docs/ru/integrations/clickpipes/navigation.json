@@ -48,7 +48,6 @@
         "ru/integrations/clickpipes/postgres/postgres-generated-columns",
         "ru/integrations/clickpipes/postgres/parallel-initial-load",
         "ru/integrations/clickpipes/postgres/lifecycle",
-        "ru/integrations/clickpipes/postgres/auth",
         {
           "group": "Operations",
           "pages": [

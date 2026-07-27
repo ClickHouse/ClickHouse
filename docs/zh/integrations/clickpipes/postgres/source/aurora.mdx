@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/zh/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## 支持的 Postgres 版本
@@ -103,14 +104,11 @@ postgres=> SHOW rds.logical_replication ;
   ### 使用 IAM 身份验证 (可选)
 </div>
 
-您可以不使用密码，改为通过 AWS IAM 基于角色的访问控制来验证 ClickPipes 用户的身份。这要求将 `rds.iam_auth_for_replication` 参数设置为 `1`。按如下方式创建用户，然后授予其与上文所示相同的 schema 和复制特权：
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-有关设置 ClickPipes 通过这种方式进行身份验证所需的 IAM role 和策略的完整步骤，请参阅 [AWS IAM DB 身份验证 (RDS/Aurora)](/zh/integrations/clickpipes/postgres/auth)。
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    用于复制的 IAM 身份验证要求将 `rds.iam_auth_for_replication` 参数设置为 `1`。
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## 配置网络访问

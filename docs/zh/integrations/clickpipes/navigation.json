@@ -48,7 +48,6 @@
         "zh/integrations/clickpipes/postgres/postgres-generated-columns",
         "zh/integrations/clickpipes/postgres/parallel-initial-load",
         "zh/integrations/clickpipes/postgres/lifecycle",
-        "zh/integrations/clickpipes/postgres/auth",
         {
           "group": "操作",
           "pages": [

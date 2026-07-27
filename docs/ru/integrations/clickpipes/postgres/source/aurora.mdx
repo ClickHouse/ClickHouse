@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Поддерживаемые версии Postgres
@@ -103,14 +104,11 @@ postgres=> SHOW rds.logical_replication ;
   ### Использование аутентификации IAM (необязательно)
 </div>
 
-Вместо пароля можно использовать для пользователя ClickPipes аутентификацию через ролевой доступ AWS IAM. Для этого параметр `rds.iam_auth_for_replication` должен быть установлен в `1`. Создайте пользователя, как показано ниже, а затем назначьте ему те же привилегии на схему и репликацию, что указаны выше:
-
-```sql
-CREATE USER clickpipes_iam_user;
-GRANT rds_iam TO clickpipes_iam_user;
-```
-
-См. [AWS IAM DB authentication (RDS/Aurora)](/ru/integrations/clickpipes/postgres/auth), где описаны все шаги по настройке роли IAM и policy, необходимых ClickPipes для аутентификации таким способом.
+<IAMAuthentication engine="postgres" service="aurora">
+  <Note>
+    Для аутентификации IAM при репликации параметр `rds.iam_auth_for_replication` должен быть установлен в `1`.
+  </Note>
+</IAMAuthentication>
 
 <div id="configure-network-access">
   ## Настройка сетевого доступа

@@ -48,7 +48,6 @@
         "es/integrations/clickpipes/postgres/postgres-generated-columns",
         "es/integrations/clickpipes/postgres/parallel-initial-load",
         "es/integrations/clickpipes/postgres/lifecycle",
-        "es/integrations/clickpipes/postgres/auth",
         {
           "group": "Operaciones",
           "pages": [
@@ -62,7 +61,7 @@
           ]
         },
         {
-          "group": "Source",
+          "group": "Fuente",
           "pages": [
             "es/integrations/clickpipes/postgres/source/alloydb",
             "es/integrations/clickpipes/postgres/source/rds",
