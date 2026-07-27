@@ -54,7 +54,8 @@ ${CLICKHOUSE_CLIENT} -q "
 SELECT countIf(query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_on' AND read_bytes < 100)
      + countIf(query_id = '${CLICKHOUSE_TEST_UNIQUE_NAME}_off' AND read_bytes > 1000) = 2
 FROM system.query_log
-WHERE query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_on', '${CLICKHOUSE_TEST_UNIQUE_NAME}_off')
+WHERE current_database = currentDatabase()
+  AND query_id IN ('${CLICKHOUSE_TEST_UNIQUE_NAME}_on', '${CLICKHOUSE_TEST_UNIQUE_NAME}_off')
   AND type = 'QueryFinish' AND event_date >= yesterday()"
 
 ${CLICKHOUSE_CLIENT} -q "DROP DATABASE ${DB}"
