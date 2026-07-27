@@ -356,6 +356,14 @@ private:
     /// increment `mutation_counters`. Caller must hold
     /// `currently_processing_in_background_mutex`.
     void addPreparedMutationEntry(PreparedMutationEntry prepared);
+
+    /// Put an entry that `killMutation` had already taken out of
+    /// `current_mutations_by_version` back, because the removal of its
+    /// `mutation_*.txt` was rejected by the leadership fence and the file
+    /// therefore still exists on shared storage. A no-op if the entry is
+    /// already there (a takeover reload can re-add it under the new epoch).
+    /// Takes `currently_processing_in_background_mutex` itself.
+    void restoreKilledMutationEntry(UInt64 mutation_version, MergeTreeMutationEntry entry);
     /// Wait until mutation with version will finish mutation for all parts
     void waitForMutation(Int64 version, bool wait_for_another_mutation);
     void waitForMutation(const String & mutation_id, bool wait_for_another_mutation) override;

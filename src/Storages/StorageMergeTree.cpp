@@ -1376,6 +1376,21 @@ void StorageMergeTree::addPreparedMutationEntry(PreparedMutationEntry prepared)
     background_operations_assignee.trigger();
 }
 
+void StorageMergeTree::restoreKilledMutationEntry(UInt64 mutation_version, MergeTreeMutationEntry entry)
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    auto [it, inserted] = current_mutations_by_version.try_emplace(mutation_version, std::move(entry));
+    if (!inserted)
+        return;
+
+    it->second.is_registered = true;
+    if (!it->second.is_done)
+        incrementMutationsCounters(mutation_counters, *it->second.commands);
+
+    LOG_INFO(log, "Restored mutation {} because its removal was rejected by the leadership fence", mutation_version);
+}
+
 Int64 StorageMergeTree::startMutation(const MutationCommands & commands, ContextPtr query_context)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startMutation");
@@ -1843,6 +1858,12 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 
     assertNotReadonly();
 
+    /// Capture the leadership epoch that admits this command. Everything below — the transaction
+    /// rollback, the cancellation of running part mutations and finally the removal of
+    /// `mutation_*.txt` from shared storage — belongs to this epoch; if leadership is lost (and
+    /// possibly reacquired) in between, the removal must not happen, see the fence before it.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
     UInt64 mutation_version = MergeTreeMutationEntry::tryParseFileName(mutation_id);
     if (!mutation_version)
@@ -1878,8 +1899,23 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     /// Re-fence leadership immediately before deleting the mutation file on shared storage. The
     /// entry-level `assertNotReadonly` above can pass and the lease then be lost while we roll
     /// back the transaction / cancel running part mutations; without this re-check a stale leader
-    /// would remove a `mutation_*.txt` that now belongs to another node's lease epoch.
+    /// would remove a `mutation_*.txt` that now belongs to another node's lease epoch. Freshness
+    /// alone is not enough: a lease lost and reacquired in between looks writable again, but by
+    /// then the entry belongs to the new epoch (the takeover reload may even have re-added it),
+    /// so the check is against the epoch that admitted this command.
     assertNotReadonly();
+    try
+    {
+        assertWritableLeaderAtEpoch(admission_epoch);
+    }
+    catch (...)
+    {
+        /// The shared `mutation_*.txt` stays where it is, so put the in-memory entry back to keep
+        /// this node consistent with shared storage: the command had already removed it from
+        /// `current_mutations_by_version` before the leadership check could reject it.
+        restoreKilledMutationEntry(mutation_version, std::move(*to_kill));
+        throw;
+    }
     to_kill->removeFile();
     LOG_TRACE(log, "Cancelled part mutations and removed mutation file {}", mutation_id);
     {

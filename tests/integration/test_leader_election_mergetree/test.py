@@ -1793,3 +1793,87 @@ def test_detached_ddl_rejected_on_stale_epoch(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_KILL_MUTATION = "12345678-abcd-abcd-abcd-12345678ab17"
+
+
+def test_kill_mutation_rejected_on_stale_epoch(started_cluster):
+    """
+    Regression for epoch fencing of `KILL MUTATION`. The command is admitted by
+    `assertNotReadonly` and only then rolls back the mutation transaction, cancels running part
+    mutations and finally deletes `mutation_*.txt` from shared storage. Freshness alone is not a
+    sufficient re-check before that delete: a node that lost leadership and reacquired it as a NEW
+    epoch looks writable again, so a command admitted under the old epoch could remove a mutation
+    record that now belongs to the new leader (which may even have re-added it by the takeover
+    reload).
+
+    The `merge_tree_leader_election_stale_epoch_before_commit` failpoint presents a stale admission
+    epoch while the lease stays fresh, so it exercises exactly this window: the kill must be
+    rejected with the epoch error, and the mutation must stay both on shared storage and in
+    `system.mutations` (the entry is taken out of the in-memory map before the fence runs, so the
+    rejected command has to put it back).
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    table = "test_kill_mutation_epoch_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_KILL_MUTATION}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+
+        # Keep the mutation pending so that `KILL MUTATION` finds an entry to remove.
+        node1.query(f"SYSTEM STOP MERGES {table}")
+        node1.query(
+            f"ALTER TABLE {table} DELETE WHERE x = 1", settings={"mutations_sync": 0}
+        )
+
+        def pending_mutations():
+            return sorted(
+                node1.query(
+                    f"SELECT mutation_id FROM system.mutations"
+                    f" WHERE database = currentDatabase() AND table = '{table}' AND NOT is_done"
+                )
+                .strip()
+                .splitlines()
+            )
+
+        mutations_before = pending_mutations()
+        assert len(mutations_before) == 1, "the mutation did not stay pending"
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(
+                    f"KILL MUTATION WHERE database = currentDatabase() AND table = '{table}'"
+                )
+            assert pending_mutations() == mutations_before, (
+                "KILL MUTATION admitted under an older leadership epoch dropped the mutation"
+                " entry instead of leaving it to the current leader"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # On the current epoch the same command succeeds and removes the shared mutation record.
+        node1.query(
+            f"KILL MUTATION WHERE database = currentDatabase() AND table = '{table}'"
+        )
+        assert pending_mutations() == []
+        node1.query(f"SYSTEM START MERGES {table}")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
