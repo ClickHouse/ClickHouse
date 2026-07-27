@@ -82,8 +82,9 @@ namespace ErrorCodes
 namespace
 {
     /// The probe bypass decides after this many post-freeze rows per thread. It must be reachable
-    /// by every stream: at 64 threads over a 100M-row table a thread only sees ~1.5M rows.
-    constexpr size_t adaptive_bypass_sample_rows = 262'144;
+    /// by every stream: at 64 threads a thread sees 1/64th of the input, so a filtered ~13M-row
+    /// aggregation still leaves ~200K rows per thread.
+    constexpr size_t adaptive_bypass_sample_rows = 65'536;
     /// Probing the frozen table pays off only while at least one row in this many hits it.
     constexpr size_t adaptive_bypass_hit_rate_inverse = 4;
     /// The drain reserves a bucket's table after sampling this fraction of its records.
