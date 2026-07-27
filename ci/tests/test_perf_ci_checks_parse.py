@@ -236,6 +236,21 @@ def test_row_cut_inside_duration_digits_is_not_imported(tmp_path):
     assert malformed == 1
 
 
+def test_unterminated_row_with_every_field_present_is_not_imported(tmp_path):
+    # The prefix stopped exactly at a row's last byte, so that row carries every
+    # declared column and each value parses correctly. Neither the all-columns
+    # guard nor the duration conversion can reject it, and the value it would
+    # import is the right one - so only the unterminated-line rule can catch it.
+    # That rule is what makes the file's own framing load-bearing: a completed
+    # `File(TSVWithNamesAndTypes)` write is newline-terminated, so a final line
+    # without its newline was cut mid-write no matter how much of it arrived.
+    path = _write(tmp_path, "\n".join([NAMES, TYPES, SUMMARY] + QUERY_ROWS))
+    results, malformed, complete = read_ci_checks_results(path)
+    assert complete is True
+    assert malformed == 1
+    assert [r.name for r in results] == ["arithmetic.xml #0::old"]
+
+
 def test_short_row_is_malformed_even_when_consumed_fields_are_present(tmp_path):
     # A row carrying the first nine columns has a name, a status and a duration,
     # but it was still cut: the trailing columns are missing. Checking only the

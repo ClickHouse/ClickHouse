@@ -1854,6 +1854,9 @@ function upload_results
     # The rename is chained with `&&` on purpose: `||:` on the call suppresses
     # errexit for this whole function, so a separate `mv` statement would run
     # after a failed write and publish the torn file.
+    # The anchors below delimit the region ci/tests/test_perf_upload_results_atomic.py
+    # extracts and runs under bash, so that contract is tested rather than assumed.
+    # --- publish ci-checks.tsv atomically ---
     rm -f ci-checks.tsv ci-checks.tsv.tmp
 
     clickhouse-local --query "
@@ -1907,6 +1910,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv.tmp')
 ;
     " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
         && mv ci-checks.tsv.tmp ci-checks.tsv
+    # --- end publish ci-checks.tsv ---
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
