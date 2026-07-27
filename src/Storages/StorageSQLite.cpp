@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Formats/Impl/SQLiteCommon.h>
@@ -88,6 +89,11 @@ bool markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool transform_null_in;
+}
 
 namespace ErrorCodes
 {
@@ -293,6 +299,21 @@ Pipe StorageSQLite::read(
                     metadata_connection.get(), remote_table_or_query.getTableName(), column.name, column.type))
                 pushdown_columns.push_back(column);
 
+        /// `LIKE` and `NOT LIKE` differ in case sensitivity and escaping between the two sides.
+        ///
+        /// `NOT IN` and, with `transform_null_in`, `IN` differ in how a `NULL` participates in the set
+        /// membership test. SQLite follows the SQL three-valued logic, ClickHouse does not:
+        ///  - `2 NOT IN (1, NULL)` is `1` in ClickHouse but `NULL` in SQLite, so the row is dropped
+        ///    remotely - and that happens for any `NULL` in the set, whatever the column type is;
+        ///  - with `transform_null_in = 1` a `NULL` is an ordinary value, so `NULL IN (1, NULL)` and
+        ///    `NULL NOT IN (1, 2)` are both `1` in ClickHouse while SQLite evaluates them to `NULL`.
+        /// A row dropped by the remote filter never reaches the local re-filtering, so these predicates
+        /// stay local. `IN` without `transform_null_in` matches the same non-`NULL` values on both sides
+        /// (a `NULL` on either side makes the predicate non-true for both) and remains pushed down.
+        NameSet unsupported_functions{"like", "notLike", "notIn"};
+        if (context_->getSettingsRef()[Setting::transform_null_in])
+            unsupported_functions.insert("in");
+
         query = transformQueryForExternalDatabase(
             query_info,
             column_names,
@@ -309,7 +330,7 @@ Pipe StorageSQLite::read(
             remote_table_or_query.getTableName(),
             context_,
             {},
-            NameSet{"like", "notLike"});
+            unsupported_functions);
     }
     LOG_TRACE(log, "Query: {}", query);
 
