@@ -20,7 +20,10 @@ leave the final path ABSENT, and a successful one must leave it complete.
 
 The `&&` chaining is what makes that hold: with errexit suppressed by the call
 site's `||:`, a separate `mv` statement on the next line would still run after a
-failed write and publish the torn file.
+failed write and publish the torn file. The tests also pin that the publish is a
+same-directory rename rather than a copy, by asserting the published file has the
+inode the writer produced: a copy satisfies every terminal-state assertion while
+re-opening the torn-file window on a full disk.
 
 The stub APPENDS rather than truncates, because the real writer is a ClickHouse
 `File(TSVWithNamesAndTypes)` table: `StorageFile.cpp` opens the file with
@@ -84,6 +87,7 @@ done
 target=$(printf '%s' "$query" | sed -n "s/.*File(TSVWithNamesAndTypes, '\\\\([^']*\\\\)').*/\\\\1/p")
 printf 'STUB_TARGET=%s\\n' "$target" >&2
 printf '%s' "$TORN_CONTENT" >> "$target"
+stat -c %i "$target" > "$(dirname "$target")/.stub_target_inode"
 exit $STUB_EXIT_CODE
 """
 
@@ -158,6 +162,15 @@ def test_a_successful_write_publishes_the_file(tmp_path):
     # temporary file is left behind.
     assert (tmp_path / "ci-checks.tsv").read_text() == _TORN
     assert not (tmp_path / "ci-checks.tsv.tmp").exists()
+    # The publish must be a same-directory RENAME, not a copy: a rename
+    # allocates no data blocks, so it still completes on the full disk that
+    # caused this failure, while a copy can leave a torn (or empty) file at the
+    # final path - exactly the failure being fixed. Inode identity is what
+    # separates the two: mv preserves the inode the writer produced, cp+rm
+    # allocates a new one. Asserting only the terminal file state cannot tell
+    # them apart.
+    written_inode = int((tmp_path / ".stub_target_inode").read_text().strip())
+    assert (tmp_path / "ci-checks.tsv").stat().st_ino == written_inode
 
 
 def test_a_failed_write_leaves_no_file_at_the_final_path(tmp_path):
@@ -202,3 +215,8 @@ def test_a_successful_write_does_not_inherit_a_stale_temporary_file(tmp_path):
     assert "REACHED_NEXT_STAGE" in proc.stdout
     assert (tmp_path / "ci-checks.tsv").read_text() == _TORN
     assert not (tmp_path / "ci-checks.tsv.tmp").exists()
+    # Same mechanism assertion as the other success direction, on the seeded
+    # path: a copy-based publish satisfies every terminal-state assertion above
+    # while re-opening the torn-file window this PR exists to close.
+    written_inode = int((tmp_path / ".stub_target_inode").read_text().strip())
+    assert (tmp_path / "ci-checks.tsv").stat().st_ino == written_inode
