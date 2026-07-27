@@ -34,9 +34,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
