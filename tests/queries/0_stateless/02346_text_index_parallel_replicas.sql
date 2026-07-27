@@ -11,14 +11,12 @@ SET enable_analyzer = 1;
 -- With small index granularity, the amount of rows left to read after the index analysis might be too small to utilize parallel replicas. So, we set it to 0.
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
--- The probe at the end reads TextIndexUsedEmbeddedPostings, which is incremented by text
--- index analysis (TextIndexSerialization::deserializeTokenInfo) on the server that performs
--- it. With parallel_replicas_local_plan = 0 the initiator builds no local plan and does no
--- index analysis, so only followers can increment the counter - and a follower increments it
--- only if it wins the shared tokens-cache race for a part, and reports it only if the
--- coordinator did not cancel it (a cancelled replica logs an exception row, not QueryFinish).
--- Keep the local plan so the initiator performs the analysis itself. This is the setting's
--- default; the test runner randomizes it, so the pin is not redundant.
+-- The probe below reads `TextIndexUsedEmbeddedPostings`, which is incremented by text index
+-- analysis on whichever server performs it. With `parallel_replicas_local_plan = 0` the
+-- initiator builds no local plan and does no index analysis, so the counter lands only on
+-- follower `query_log` rows, which is scheduling-dependent. Pin the setting to its default so
+-- the initiator does the analysis itself; the test runner randomizes it, so this is not
+-- redundant.
 SET parallel_replicas_local_plan = 1;
 
 DROP TABLE IF EXISTS tab;
