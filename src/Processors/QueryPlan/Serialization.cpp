@@ -85,28 +85,42 @@ Block deserializeQueryPlanHeader(ReadBuffer & in, size_t max_type_complexity)
 /// v4+ peers accept streams by the content's needed-to-read version, so they all get the writer's
 /// own version (one byte string serves a whole mixed v4+ fleet); only pre-outline peers need the
 /// stream clamped down to what they can parse.
-static UInt64 effectiveSerializationVersion(size_t max_supported_version)
+/// The version to write: what the query asked for, or the server default, never above what this
+/// binary can write. `requested_version` of 0 means the query did not ask.
+static UInt64 writerSerializationVersion(UInt64 requested_version)
 {
-    UInt64 writer_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+    UInt64 writer_version = requested_version != 0 ? requested_version : DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION;
 
-    /// An operator can hold writers at an older version while a fleet is mixed, so a plan the
-    /// not-yet-upgraded servers cannot read is never written. A missing global context means there
-    /// is no configuration to read, as in unit tests.
+    if (writer_version > DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Query plan serialization version {} was requested but this server writes up to {}",
+            writer_version, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    /// An operator can hold every writer at an older version while a fleet is mixed, so a plan the
+    /// not-yet-upgraded servers cannot read is never written, whatever a query asks for. A missing
+    /// global context means there is no configuration to read, as in unit tests.
     if (auto global_context = Context::getGlobalContextInstance())
     {
-        UInt64 clamp = global_context->getServerSettings()[ServerSetting::max_query_plan_serialization_version];
-        if (clamp != 0)
-            writer_version = std::min(writer_version, clamp);
+        UInt64 ceiling = global_context->getServerSettings()[ServerSetting::max_query_plan_serialization_version];
+        if (ceiling != 0)
+            writer_version = std::min(writer_version, ceiling);
     }
+
+    return writer_version;
+}
+
+static UInt64 effectiveSerializationVersion(size_t max_supported_version, UInt64 requested_version)
+{
+    const UInt64 writer_version = writerSerializationVersion(requested_version);
 
     if (max_supported_version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE)
         return writer_version;
     return std::min<UInt64>(max_supported_version, writer_version);
 }
 
-void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version) const
+void QueryPlan::serialize(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version) const
 {
-    UInt64 version = effectiveSerializationVersion(max_supported_version);
+    UInt64 version = effectiveSerializationVersion(max_supported_version, requested_version);
 
     SerializationFlags flags;
     flags.version = version;
@@ -506,9 +520,9 @@ QueryPlanAndSets QueryPlan::deserializeEnvelope(ReadBuffer & in, const ContextPt
     return res;
 }
 
-void QueryPlan::ensureSerialized(size_t max_supported_version) const
+void QueryPlan::ensureSerialized(size_t max_supported_version, UInt64 requested_version) const
 {
-    UInt64 version = effectiveSerializationVersion(max_supported_version);
+    UInt64 version = effectiveSerializationVersion(max_supported_version, requested_version);
 
     std::lock_guard lock(serialized_plans.mutex);
     if (serialized_plans.plans.contains(version))
@@ -537,9 +551,9 @@ void QueryPlan::ensureSerialized(size_t max_supported_version) const
     serialized_plans.plans.emplace(version, std::make_shared<const SerializedChunks>(std::move(chunks)));
 }
 
-void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_version) const
+void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version) const
 {
-    UInt64 version = effectiveSerializationVersion(max_supported_version);
+    UInt64 version = effectiveSerializationVersion(max_supported_version, requested_version);
 
     std::shared_ptr<const SerializedChunks> chunks;
     {
@@ -557,9 +571,9 @@ void QueryPlan::writeSerializedTo(WriteBuffer & out, size_t max_supported_versio
         out.write(chunk.data(), chunk.size());
 }
 
-bool QueryPlan::isSerialized(size_t max_supported_version) const
+bool QueryPlan::isSerialized(size_t max_supported_version, UInt64 requested_version) const
 {
-    UInt64 version = effectiveSerializationVersion(max_supported_version);
+    UInt64 version = effectiveSerializationVersion(max_supported_version, requested_version);
 
     std::lock_guard lock(serialized_plans.mutex);
     return serialized_plans.plans.contains(version);

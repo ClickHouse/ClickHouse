@@ -74,6 +74,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// the oldest version able to read this particular plan, computed by the writer from the content;
 /// a reader accepts any stream whose `min_reader_version` it meets, even from a newer writer.
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
+/// The version writers emit unless a query asks for another one. It lags
+/// `DBMS_QUERY_PLAN_SERIALIZATION_VERSION` for a release after a new version lands: the fleet then
+/// reads the new version everywhere before anyone writes it, and users can try it per query with
+/// `query_plan_serialization_version`. Move it up once the new version has proven itself.
+static constexpr auto DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// First version with the outline-first framed envelope.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_OUTLINE = 4;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a

@@ -396,6 +396,29 @@ TEST(QueryPlanSerialization, EnvelopeIsCopiedWhenTheStreamIsNotFullyBuffered)
     EXPECT_EQ(serializePlan(restored), bytes);
 }
 
+TEST(QueryPlanSerialization, QueryPicksTheWriterVersion)
+{
+    registerStepsOnce();
+    auto plan = makeSourcePlan();
+
+    /// Not asking writes the server default.
+    EXPECT_EQ(static_cast<UInt8>(serializePlan(plan)[0]), DBMS_DEFAULT_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    /// Asking for an older version writes that one, whatever the peer could read.
+    WriteBufferFromOwnString asked;
+    plan.serialize(asked, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, /*requested_version=*/3);
+    asked.finalize();
+    EXPECT_EQ(static_cast<UInt8>(asked.str()[0]), 3);
+    EXPECT_EQ(debugExplainPlan(deserializePlan(asked.str())), debugExplainPlan(plan));
+
+    /// Asking for one this server cannot write is an error, not a silently older plan.
+    WriteBufferFromOwnString too_new;
+    EXPECT_THROW(
+        plan.serialize(too_new, DBMS_QUERY_PLAN_SERIALIZATION_VERSION,
+            /*requested_version=*/DBMS_QUERY_PLAN_SERIALIZATION_VERSION + 1),
+        Exception);
+}
+
 TEST(QueryPlanSerialization, WriterVersionCanBeHeldBack)
 {
     registerStepsOnce();

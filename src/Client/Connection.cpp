@@ -70,6 +70,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsString network_compression_method;
+    extern const SettingsUInt64 query_plan_serialization_version;
     extern const SettingsInt64 network_zstd_compression_level;
 }
 
@@ -953,6 +954,10 @@ void Connection::sendQuery(
     socket->setReceiveTimeout(timeouts.receive_timeout);
     socket->setSendTimeout(timeouts.send_timeout);
 
+    /// Remembered here because `sendQueryPlan` runs later on this connection and the settings are
+    /// not passed to it.
+    query_plan_serialization_version = settings ? (*settings)[Setting::query_plan_serialization_version] : 0;
+
     if (settings)
     {
         std::optional<int> level;
@@ -1125,8 +1130,8 @@ void Connection::sendQueryPlan(const QueryPlan & query_plan)
     /// Serialize for the version this peer advertised in its Hello. The cache is per version:
     /// without this a plan pre-serialized for a newer version could be sent to a replica that
     /// only supports an older one, which would reject the stream (or worse, misread it).
-    query_plan.ensureSerialized(server_query_plan_serialization_version);
-    query_plan.writeSerializedTo(*out, server_query_plan_serialization_version);
+    query_plan.ensureSerialized(server_query_plan_serialization_version, query_plan_serialization_version);
+    query_plan.writeSerializedTo(*out, server_query_plan_serialization_version, query_plan_serialization_version);
 }
 
 void Connection::sendCancel()

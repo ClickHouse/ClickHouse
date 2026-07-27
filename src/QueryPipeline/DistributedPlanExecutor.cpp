@@ -78,6 +78,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+    extern const SettingsUInt64 query_plan_serialization_version;
 }
 
 namespace ErrorCodes
@@ -598,13 +599,13 @@ ExchangeLookupPtr createExchangeLookup(
 }
 
 
-static String serializeQueryPlan(const QueryPlan & query_plan)
+static String serializeQueryPlan(const QueryPlan & query_plan, UInt64 requested_version)
 {
     /// This path has no per-worker version negotiation. While `make_distributed_plan` stays
     /// experimental that is acceptable: a worker too old for the plan rejects it by the leading
     /// version (or by the plan's needed-to-read version) with a clear error, never misreads it.
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION, requested_version);
     return out.str();
 }
 
@@ -852,7 +853,7 @@ protected:
         started_tasks.reserve(stage.tasks.size());
         started_threads.reserve(stage.tasks.size());
         DistributedQueryTaskDescription task_description;
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context->getSettingsRef()[Setting::query_plan_serialization_version]);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
 
         for (const auto & task : stage.tasks)
@@ -1502,7 +1503,7 @@ protected:
     {
         DistributedQueryTaskDescription task_description;
         task_description.initial_query_id = context->getCurrentQueryId();
-        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment);
+        task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context->getSettingsRef()[Setting::query_plan_serialization_version]);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 

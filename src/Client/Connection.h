@@ -311,6 +311,10 @@ private:
 
     std::optional<FormatSettings> format_settings;
 
+    /// The plan serialization version the current query asked for, taken from the settings sent
+    /// with it. 0 means the query did not ask and the server default applies.
+    UInt64 query_plan_serialization_version = 0;
+
     void connect(const ConnectionTimeouts & timeouts);
     void sendHello();
 

@@ -109,7 +109,8 @@ public:
     bool isCompleted() const; /// Tree is not empty and root hasOutputStream()
     const SharedHeader & getCurrentHeader() const; /// Checks that (isInitialized() && !isCompleted())
 
-    void serialize(WriteBuffer & out, size_t max_supported_version) const;
+    /// `requested_version` is the version the query asked for, 0 to use the server default.
+    void serialize(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
     static QueryPlanAndSets deserialize(ReadBuffer & in, const ContextPtr & context, size_t max_type_complexity, bool skip_data = false);
     static QueryPlan makeSets(QueryPlanAndSets plan_and_sets, const ContextPtr & context);
 
@@ -122,13 +123,13 @@ public:
     /// (min of `max_supported_version` and the current one). The cache is per version: bytes
     /// produced for one negotiated version must not be sent to a peer that advertised an older
     /// one, and different replicas may advertise different versions within one query.
-    void ensureSerialized(size_t max_supported_version) const;
+    void ensureSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
     /// Writes the cached bytes for the effective version derived from `max_supported_version`.
-    void writeSerializedTo(WriteBuffer & out, size_t max_supported_version) const;
+    void writeSerializedTo(WriteBuffer & out, size_t max_supported_version, UInt64 requested_version = 0) const;
 
     /// Check if already serialized for the effective version derived from max_supported_version
-    bool isSerialized(size_t max_supported_version) const;
+    bool isSerialized(size_t max_supported_version, UInt64 requested_version = 0) const;
 
     void resolveStorages(const ContextPtr & context);
 
