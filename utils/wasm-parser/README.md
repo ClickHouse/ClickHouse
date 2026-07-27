@@ -37,12 +37,14 @@ the build passes `-fignore-exceptions` and a `throw` that does escape aborts.
 
 Stripped, 320 translation units, `-Oz` with full LTO and `-fvirtual-function-elimination`:
 
-| build | bytes | gzip -9 |
-| --- | ---: | ---: |
-| everything | 1168636 | 362827 |
-| `--no-dcl` | 966857 | 296331 |
-| `--no-formatting` | 926511 | 298006 |
-| `--no-formatting --no-dcl` | 754152 | 242329 |
+| build | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
+| --- | ---: | ---: | ---: | ---: |
+| everything | 1168636 | 362827 | 273666 | 293095 |
+| `--no-dcl` | 966857 | 296331 | 225230 | 241372 |
+| `--no-formatting` | 926511 | 298006 | 229139 | 246040 |
+| `--no-formatting --no-dcl` | 754152 | 242329 | 188219 | 201737 |
+
+Brotli is what a browser will actually get, and it is 24% better than gzip here.
 
 The first version of this build was 2.7 MB. Most of what went is listed under "What is left out";
 the rest came from compiling for size rather than speed, from dropping locale support, and from
@@ -50,6 +52,29 @@ letting LTO remove the virtual functions nothing calls.
 
 A per-component table is no longer meaningful: LTO inlines across translation units, so most of
 the module cannot be attributed to any one source file.
+
+## How this compares
+
+| | bytes | gzip -9 | brotli -q 11 | zstd --ultra -22 |
+| --- | ---: | ---: | ---: | ---: |
+| [`@clickhouse/parser`](https://github.com/ClickHouse/clickhouse-js-parser) 0.3.0 + `zod`, bundled and minified | 1128583 | 196944 | 153347 | 161974 |
+| this, `--no-formatting --no-dcl` | 754152 | 242329 | 188219 | 201737 |
+| this, everything | 1168636 | 362827 | 273666 | 293095 |
+| [`@polyglot-sql/sdk`](https://github.com/tobilg/polyglot) 0.6.2 | 21656938 | 4805067 | 2020675 | 2150089 |
+
+`@clickhouse/parser` is smaller, and it is the honest comparison: same dialect, and it parses and
+formats. It is a Peggy grammar with Zod schemas rather than WebAssembly - a reimplementation, so it
+can drift from the server, which this build cannot. Its published `index.mjs` is 3.6 MB unminified
+and imports `zod` externally; the row above is both, bundled and minified with esbuild, which is
+what a consumer ships.
+
+`polyglot` is a transpiler for more than thirty dialects, so it carries thirty grammars and thirty
+generators; it is here for scale, not as a like-for-like. Its module is stripped - 97.8% of it is
+the code section - but built at Rust's default release settings rather than for size.
+
+`superjobru/clickhouse-sql-parser` is not in the table: it is an abandoned prototype (last
+commit February 2022, about 55 KB of Rust) that handles basic `CREATE TABLE`, with nothing
+published to measure.
 
 ## What is left out, and why
 
