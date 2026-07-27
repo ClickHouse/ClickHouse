@@ -771,6 +771,11 @@ bool Connection::isStale()
     /// system call: unlike a `Ping`-`Pong` exchange it does not add a round trip, and it cannot
     /// mistake a slow answer for a closed connection. The `Ping` protocol command remains available
     /// as a convenience (see Connection::ping).
+    ///
+    /// It only sees a close that has already arrived: a connection closed by the server microseconds
+    /// ago still looks usable, and that failure is reported by the request that runs into it. There is
+    /// no way around it without a round trip - the answer to a ping is equally out of date the moment
+    /// it arrives.
     try
     {
         return hasReadPendingData() || in->poll(0);
