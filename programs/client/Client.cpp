@@ -19,6 +19,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/DNSResolver.h>
 #include <Common/QueryScope.h>
 #include <Common/Exception.h>
 #include <Common/TerminalSize.h>
@@ -589,13 +590,26 @@ void Client::connect()
                 /// so that servers listening on both ports keep being connected without TLS as before.
                 static const Poco::Timespan plain_preference_window(0, 100000);
 
-                auto probe = probePlainAndSecurePorts(
-                    connection_parameters.host,
-                    connection_parameters.bind_host,
-                    connection_parameters.port,
-                    secure_port,
-                    connection_parameters.timeouts.connection_timeout,
-                    plain_preference_window);
+                PortsProbeResult probe;
+                try
+                {
+                    probe = probePlainAndSecurePorts(
+                        connection_parameters.host,
+                        connection_parameters.bind_host,
+                        connection_parameters.port,
+                        secure_port,
+                        connection_parameters.timeouts.connection_timeout,
+                        plain_preference_window);
+                }
+                catch (...)
+                {
+                    /// The probe runs before any `Connection` is created, so it has to drop possibly stale
+                    /// DNS cache entries on its own: `Connection::connect` does it for every connect-level
+                    /// failure, and without it a later reconnect or failover would reuse the same dead
+                    /// addresses instead of resolving the host again.
+                    DNSResolver::instance().removeHostFromCache(connection_parameters.host);
+                    throw;
+                }
 
                 switch (probe.choice)
                 {
@@ -608,6 +622,8 @@ void Client::connect()
                         candidates.front() = {secure_port, Protocol::Secure::Enable};
                         break;
                     case PortsProbeResult::Choice::Neither:
+                        /// See above: no connection was made, so the resolved addresses may be stale.
+                        DNSResolver::instance().removeHostFromCache(connection_parameters.host);
                         throw NetException(
                             probe.timed_out ? ErrorCodes::SOCKET_TIMEOUT : ErrorCodes::NETWORK_ERROR,
                             "Cannot connect to {} on port {} or on the secure port {}: {}",
