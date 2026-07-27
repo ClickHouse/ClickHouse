@@ -1078,7 +1078,11 @@ static bool innerJoinKeyColumnsAreEquated(
 
         if (function_name == "and")
             conjuncts.insert(conjuncts.end(), arguments.begin(), arguments.end());
-        else if (function_name == "equals" && arguments.size() == 2 && is_equi_key(arguments[0], arguments[1]))
+        /// `isNotDistinctFrom` (`<=>`) is a join-key carrier for the planner just like `equals`
+        /// (see `PlannerJoins.cpp`), and it is even stronger here: a surviving row either has the
+        /// same non-NULL value on both sides, or `NULL` on both sides.
+        else if ((function_name == "equals" || function_name == "isNotDistinctFrom") && arguments.size() == 2
+            && is_equi_key(arguments[0], arguments[1]))
             return true;
     }
 

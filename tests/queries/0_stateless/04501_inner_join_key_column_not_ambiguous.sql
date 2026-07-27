@@ -36,6 +36,28 @@ SELECT id FROM t1 LEFT JOIN t2 ON t1.id = t2.id; -- { serverError AMBIGUOUS_IDEN
 -- Explicit qualification always works.
 SELECT t1.id FROM t1 INNER JOIN t2 ON t1.id = t2.id ORDER BY t1.id;
 
+-- Null-safe equality (`<=>`, that is `isNotDistinctFrom`) carries a join key just like `equals` - see
+-- the planner's key collection - and it is even stronger here: a surviving row has either the same
+-- non-NULL value or `NULL` on both sides. So a key equated this way is not ambiguous either.
+DROP TABLE IF EXISTS t_null_left;
+DROP TABLE IF EXISTS t_null_right;
+
+CREATE TABLE t_null_left (id Nullable(Int32), v Int32) ENGINE = Memory;
+CREATE TABLE t_null_right (id Nullable(Int32), v Int32) ENGINE = Memory;
+INSERT INTO t_null_left VALUES (1, 101), (2, 102), (NULL, 100);
+INSERT INTO t_null_right VALUES (2, 102), (3, 203), (NULL, 100);
+
+SELECT id FROM t_null_left INNER JOIN t_null_right ON t_null_left.id <=> t_null_right.id ORDER BY id NULLS LAST;
+
+-- The same in an `and` chain, mixed with a plain `equals` conjunct.
+SELECT id FROM t_null_left INNER JOIN t_null_right ON t_null_left.v = t_null_right.v AND t_null_left.id <=> t_null_right.id ORDER BY id NULLS LAST;
+
+-- A non-key column is still ambiguous under a null-safe join key.
+SELECT v FROM t_null_left INNER JOIN t_null_right ON t_null_left.id <=> t_null_right.id; -- { serverError AMBIGUOUS_IDENTIFIER }
+
+DROP TABLE t_null_left;
+DROP TABLE t_null_right;
+
 -- The relaxation is limited to unqualified (one-part) identifiers: a qualified or subcolumn path that
 -- is ambiguous must keep raising the error, even when the ON equates the two candidates. Here `p.q` is
 -- ambiguous between the left subcolumn `t_sub.p.q` and the right table `p` (aliased `pr`), and the ON
