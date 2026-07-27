@@ -2209,7 +2209,7 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
                 const size_t hash_value = it.getHash();
                 if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
                     continue;
-                merge_cell(it->getKey(), it->getMapped(), hash_value);
+                merge_cell(std::decay_t<decltype(*it)>::getKey(it->getValue()), it->getMapped(), hash_value);
             }
         }
         else if constexpr (requires { src.emptyStringSlot(); })
