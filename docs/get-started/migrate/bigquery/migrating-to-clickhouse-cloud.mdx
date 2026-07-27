@@ -135,7 +135,7 @@ We don't retain any nulls in our new schema. The above insert converts these imp
 
 ## How are ClickHouse Primary keys different? {#how-are-clickhouse-primary-keys-different}
 
-As described [here](/get-started/migrate/bigquery/index), like in BigQuery, ClickHouse doesn't enforce uniqueness for a table's primary key column values.
+As described [here](/get-started/migrate/bigquery/overview), like in BigQuery, ClickHouse doesn't enforce uniqueness for a table's primary key column values.
 
 Similar to clustering in BigQuery, a ClickHouse table's data is stored on disk ordered by the primary key columns. This sort order is utilized by the query optimizer to prevent resorting, minimize memory usage for joins, and enable short-circuiting for limit clauses.
 In contrast to BigQuery, ClickHouse automatically creates [a (sparse) primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) based on the primary key column values. This index is used to speed up all queries that contain filters on the primary key columns. Specifically:

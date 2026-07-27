@@ -6,216 +6,113 @@ title: '工作负载调度'
 doc_type: 'reference'
 ---
 
-当 ClickHouse 同时执行多个查询时，这些查询可能会使用共享资源 (例如磁盘和 CPU 核心) 。可以应用调度约束和策略，以规范不同工作负载之间资源的使用和共享。对于所有资源，都可以配置统一的调度层级结构。层级根节点表示共享资源，而叶子节点则是特定的工作负载，用于承载超出资源容量的请求。
+当 ClickHouse 同时执行多个查询时，这些查询可能会使用共享资源 (CPU、内存和 IO) 。可以应用调度约束和策略，以规范不同工作负载之间资源的使用和共享。对于所有资源，都可以配置统一的调度层级结构。层级根节点表示共享资源，而叶子节点则是特定的工作负载，用于承载特定查询和后台活动的资源请求与分配。
 
-<Note>
-  目前，[远程磁盘 IO](#disk_config) 和 [CPU](#cpu_scheduling) 可按上述方法进行调度。有关灵活的内存限制，请参见 [内存 overcommit](/zh/concepts/features/configuration/settings/memory-overcommit)
-</Note>
-
-<div id="disk_config">
-  ## 磁盘配置
+<div id="resources">
+  ## 资源
 </div>
 
-要为特定磁盘启用 IO 工作负载 调度，必须为 WRITE 和 READ 访问创建读写资源：
+默认情况下，工作负载调度是禁用的。要启用它，需要创建用于调度的资源，以及至少一个工作负载。所有资源彼此独立，可以任意组合使用。
+
+要启用 CPU 调度，需要为 MASTER 或 WORKER 线程创建 CPU 资源 (详见 [CPU scheduling](#cpu_scheduling)) ：
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+```
+
+要为工作负载启用内存预留功能，您必须先创建 MEMORY 资源 (详见[内存预留](#memory-reservations)) ：
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+```
+
+要启用查询槽位调度，必须先创建 QUERY 资源 (详情请参见[查询槽位调度](#query_scheduling)) ：
+
+```sql
+CREATE RESOURCE query (QUERY)
+```
+
+要为特定的 disk 启用 IO 调度，你必须为 WRITE 和 READ 访问创建读资源和写资源：
 
 ```sql
 CREATE RESOURCE resource_name (WRITE DISK disk_name, READ DISK disk_name)
--- 或
+-- or
 CREATE RESOURCE read_resource_name (WRITE DISK write_disk_name)
 CREATE RESOURCE write_resource_name (READ DISK read_disk_name)
 ```
 
-资源可用于任意数量的磁盘，可用于 READ、WRITE，或同时用于 READ 和 WRITE。还有一种语法，可将某个资源应用于所有磁盘：
+一个资源可用于任意数量的磁盘，可用于 READ、WRITE，或同时用于 READ 和 WRITE。还有一种语法可将一个资源用于所有磁盘：
 
 ```sql
 CREATE RESOURCE all_io (READ ANY DISK, WRITE ANY DISK);
 ```
 
-另一种指定资源使用哪些磁盘的方式，是通过 server 的 `storage_configuration`：
+资源按共享模式分类：
 
-<Warning>
-  使用 ClickHouse 配置进行 工作负载 调度的方式已弃用。请改用 SQL 语法。
-</Warning>
-
-要为特定磁盘启用 I/O 调度，必须在存储配置中指定 `read_resource` 和/或 `write_resource`。这样可以告诉 ClickHouse，对于给定磁盘的每个读写请求应使用哪个资源。读取资源和写入资源可以指向同一个资源名称，这对于本地 SSD 或 HDD 很有用。多个不同的磁盘也可以指向同一个资源，这对于远程磁盘很有用：例如，如果你希望在 &quot;production&quot; 和 &quot;development&quot; 工作负载 之间公平分配网络带宽。
-
-示例：
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-请注意，服务器配置选项的优先级高于通过 SQL 定义资源。
-
-<div id="workload_markup">
-  ## 工作负载标记
-</div>
-
-可以使用设置 `workload` 为查询打标，以区分不同的工作负载。如果未设置 `workload`，则使用值 &quot;default&quot;。请注意，也可以通过 profile 指定其他值。如果你希望某个用户的所有查询都使用固定的 `workload` 设置值进行标记，可以使用设置约束将 `workload` 固定为该值。
-
-也可以为后台活动分配 `workload` 设置。合并和变更分别使用 `merge_workload` 和 `mutation_workload` 服务器设置。这些值还可以通过 `merge_workload` 和 `mutation_workload` MergeTree 设置在特定表级别进行覆盖
-
-下面来看一个具有两种不同工作负载的系统示例：&quot;production&quot; 和 &quot;development&quot;。
-
-```sql
-SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
-SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
-```
-
-<div id="hierarchy">
-  ## 资源调度层级
-</div>
-
-从调度子系统的角度来看，资源可视为由调度节点构成的层级结构。
-
-```mermaid
-graph TD
-    subgraph 网络读取
-    nr_root(("/"))
-    -->|100 个并发请求| nr_fair("fair")
-    -->|75% 带宽| nr_prod["prod"]
-    nr_fair
-    -->|25% 带宽| nr_dev["dev"]
-    end
-
-    subgraph 网络写入
-    nw_root(("/"))
-    -->|100 个并发请求| nw_fair("fair")
-    -->|75% 带宽| nw_prod["prod"]
-    nw_fair
-    -->|25% 带宽| nw_dev["dev"]
-    end
-```
-
-<Warning>
-  使用 ClickHouse 配置进行工作负载调度已弃用，应改用 SQL 语法。SQL 语法会自动创建所有必需的调度节点，因此下面对调度节点的说明应视为更底层的实现细节，可通过 [system.scheduler](/zh/reference/system-tables/scheduler) 表访问。
-</Warning>
-
-**可能的节点类型：**
-
-* `inflight_limit` (约束) - 如果正在进行的并发请求数超过 `max_requests``，或其总成本超过 `max&#95;cost&#96;，则会阻塞；必须且只能有一个子节点。
-* `bandwidth_limit` (约束) - 如果当前带宽超过 `max_speed` (0 表示不限制) ，或突发流量超过 `max_burst` (默认等于 `max_speed`) ，则会阻塞；必须且只能有一个子节点。
-* `fair` (策略) - 按照 max-min 公平性从其某个子节点中选择下一个要处理的请求；子节点可指定 `weight` (默认为 1) 。
-* `priority` (策略) - 按照静态优先级从其某个子节点中选择下一个要处理的请求 (值越小，优先级越高) ；子节点可指定 `priority` (默认为 0) 。
-* `fifo` (队列) - 层级结构中的叶子节点，可保存超出资源容量的请求。
-
-为了充分利用底层资源的全部容量，应使用 `inflight_limit`。请注意，`max_requests` 或 `max_cost` 过低可能导致资源无法充分利用，而数值过高则可能导致调度器内部队列为空，进而使子树中的策略失效 (出现不公平或忽略优先级的情况) 。另一方面，如果你希望防止资源利用率过高，则应使用 `bandwidth_limit`。当 `duration` 秒内消耗的资源量超过 `max_burst + max_speed * duration` 字节时，它会进行限速。在同一资源上使用两个 `bandwidth_limit` 节点，可以分别限制短时间间隔内的峰值带宽和较长时间内的平均带宽。
-
-下面的示例展示了如何定义图中所示的 IO 调度层级：
-
-```xml
-<clickhouse>
-    <resources>
-        <network_read>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_read>
-        <network_write>
-            <node path="/">
-                <type>inflight_limit</type>
-                <max_requests>100</max_requests>
-            </node>
-            <node path="/fair">
-                <type>fair</type>
-            </node>
-            <node path="/fair/prod">
-                <type>fifo</type>
-                <weight>3</weight>
-            </node>
-            <node path="/fair/dev">
-                <type>fifo</type>
-            </node>
-        </network_write>
-    </resources>
-</clickhouse>
-```
-
-<div id="workload_classifiers">
-  ## 工作负载分类器
-</div>
-
-<Warning>
-  使用 ClickHouse 配置进行工作负载调度的方式已弃用。请改用 SQL 语法。使用 SQL 语法时，分类器会自动创建。
-</Warning>
-
-工作负载分类器用于定义映射关系：将查询中指定的 `workload` 映射到特定资源应使用的叶子队列。目前，工作负载分类较为简单，仅支持静态映射。
-
-示例：
-
-```xml
-<clickhouse>
-    <workload_classifiers>
-        <production>
-            <network_read>/fair/prod</network_read>
-            <network_write>/fair/prod</network_write>
-        </production>
-        <development>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </development>
-        <default>
-            <network_read>/fair/dev</network_read>
-            <network_write>/fair/dev</network_write>
-        </default>
-    </workload_classifiers>
-</clickhouse>
-```
+* **时间共享资源** (CPU、IO、查询槽位) - 管理在调度层级叶子节点排队的资源请求。请求会按照层级中定义的策略和约束进行调度。当查询访问相应资源时，就会创建资源请求。例如，当查询从磁盘读取数据，或使用 CPU 进行处理时，系统会在每完成一个工作量子，或通过套接字发送或接收一定字节数时创建资源请求。
+* **空间共享资源** (内存) - 管理调度层级叶子节点上的资源分配。分配可能处于运行中或待处理状态。待处理的分配会被阻塞，直到释放出足够空间，或其他分配被驱逐 (killed) 。相关决策基于层级中定义的限制和策略。分配与查询 (或后台活动) 之间是一一对应的关系。分配会在查询开始执行时创建，并在查询结束时释放。运行中的分配其大小可以动态增减。
 
 <div id="workloads">
   ## 工作负载层级结构
 </div>
 
-ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有通过 `CREATE RESOURCE` 创建的资源都具有相同的层级结构，但某些细节可能有所不同。每个通过 `CREATE WORKLOAD` 创建的工作负载，都会为每种资源保留几个自动创建的调度节点。子工作负载可以在另一个父工作负载下创建。下面的示例定义了一个与上述 XML 配置完全相同的层级结构：
+ClickHouse 提供了便捷的 SQL 语法来定义调度层级结构。所有资源都分布在统一的 WORKLOAD 层级结构中。对于特定资源，分配规则的某些细节可以调整，但层级结构本身保持一致。每个 WORKLOAD 都会为每种资源维护必要的调度节点。可以在任意工作负载内创建子工作负载，从而构建出整个层级结构。ClickHouse 不会对工作负载层级结构强制规定任何特定或预定义的结构。
+
+下面是一个层级结构示例，它将所有资源分别分配给 &quot;user&quot; 和 &quot;system&quot; 工作负载，并分别保证 90% 和 10% 的资源份额。请注意，为工作负载定义的权重用于实现 最大最小公平原则，因此只能尽力提供下限保障 (而不是上限限制或配额) 。所有调度都是在每台主机上独立进行的，因此由 `max_*` 设置定义的限制都是按主机生效的。工作负载 &quot;user&quot; 会将其资源进一步细分给 &quot;development&quot; 和 &quot;production&quot; 工作负载，其中 &quot;production&quot; 获得的资源是 &quot;development&quot; 的 3 倍：
 
 ```sql
-CREATE RESOURCE network_write (WRITE DISK s3)
-CREATE RESOURCE network_read (READ DISK s3)
-CREATE WORKLOAD all SETTINGS max_io_requests = 100
-CREATE WORKLOAD development IN all
-CREATE WORKLOAD production IN all SETTINGS weight = 3
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE RESOURCE s3_read (READ DISK s3)
+CREATE RESOURCE s3_write (WRITE DISK s3)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads_ratio_to_cores = 2, max_memory_ratio = 0.8, max_bytes_per_second = '2Gi'
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD system IN all
+CREATE WORKLOAD development IN user
+CREATE WORKLOAD production IN user SETTINGS weight = 3
 ```
 
-无子级的叶子工作负载名称可在查询设置 `SETTINGS workload = 'name'` 中使用。
+```mermaid
+graph LR
+  subgraph Resources
+    cpu["cpu"]
+    mem["memory"]
+    nr["s3_read"]
+    nw["s3_write"]
+    mem["memory"]
+    oth["..."]
+  end
+
+  subgraph Workloads
+    all["all"]
+    usr["user"]
+    sys["system"]
+    wl1["..."]
+    dev["development"]
+    prd["production"]
+    wl2["..."]
+    all --> |≥90%| usr
+    all --> |≥10%| sys
+    all --> wl1
+    usr --> |≥25%| dev
+    usr --> |≥75%| prd
+    usr --> wl2
+  end
+
+  cpu --> |2xCores| all
+  mem --> |0.8xRAM| all
+  nr --> |2GBps| all
+  nw --> |2GBps| all
+  oth --> all
+```
+
+无子级的叶子工作负载名称可在查询设置 `SETTINGS workload = 'name'` 中使用。详情请参阅 [Workload markup](#workload-markup)。
 
 如需自定义工作负载，可以使用以下设置：
 
-* `priority` - 同级工作负载按静态优先级值提供服务 (值越小，优先级越高) 。
-* `weight` - 具有相同静态优先级的同级工作负载按权重共享资源。
+* `priority` -  (仅限时间共享) 同级工作负载按静态值提供服务 (值越小，优先级越高) 。驱动抢占。
+* `precedence` -  (仅限空间共享) 同级工作负载按静态值准入 (值越小，优先次序越高) 。驱动驱逐和准入。
+* `weight` - 具有相同静态优先级或 优先次序 的同级工作负载按权重以公平方式共享资源。影响抢占、驱逐和准入。
 * `max_io_requests` - 此工作负载中并发 IO 请求数量的上限。
 * `max_bytes_inflight` - 此工作负载中并发请求的在途总字节数上限。
 * `max_bytes_per_second` - 此工作负载的字节读取或写入速率上限。
@@ -225,13 +122,14 @@ CREATE WORKLOAD production IN all SETTINGS weight = 3
 * `max_cpus` - 为此工作负载中的查询提供服务时可使用的 CPU 核心数量上限。
 * `max_cpu_share` - 与 `max_cpus` 相同，但会按可用 CPU 核心数进行归一化。
 * `max_burst_cpu_seconds` - 该工作负载在不因 `max_cpus` 而被限流的情况下可消耗的最大 CPU 秒数。
+* `max_memory` - 为此工作负载保留的总内存上限。
 
-通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，若某个工作负载设置了 `max_bytes_per_second = 10485760`，则对每个读取和写入资源都会分别施加 10 MB/s 的带宽限制。如果需要对读取和写入施加统一限制，请考虑让 READ 和 WRITE 访问使用同一资源。
+通过工作负载设置指定的所有限制，对每种资源都是相互独立的。例如，若某个工作负载设置了 `max_bytes_per_second = '10Mi'`，则对每个读取和写入资源都会分别施加 10 MB/s 的带宽限制。如果需要对读取和写入施加统一限制，请考虑让 READ 和 WRITE 访问使用同一资源。
 
 无法为不同资源指定不同的工作负载层级结构。但可以为特定资源指定不同的工作负载设置值：
 
 ```sql
-CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = 1000000 FOR network_read, max_bytes_per_second = 2000000 FOR network_write
+CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_second = '1Mi' FOR network_read, max_bytes_per_second = '2Mi' FOR network_write
 ```
 
 另请注意，如果某个工作负载或资源被其他工作负载引用，则无法删除。要更新工作负载的定义，请使用 `CREATE OR REPLACE WORKLOAD` 查询。
@@ -239,6 +137,23 @@ CREATE OR REPLACE WORKLOAD all SETTINGS max_io_requests = 100, max_bytes_per_sec
 <Note>
   工作负载设置会转换为一组合适的调度节点。有关底层细节，请参阅调度节点[类型和选项](#hierarchy)的说明。
 </Note>
+
+<div id="workload-markup">
+  ## 工作负载标记
+</div>
+
+可以使用设置 `workload` 为查询打标，以区分不同的工作负载。如果未设置 `workload`，则使用值 &quot;default&quot;。请注意，也可以通过 profile 指定其他值。如果你希望某个用户的所有查询都使用固定的 `workload` 设置值进行标记，可以使用设置约束将 `workload` 固定为该值。
+
+<Warning>
+  查询设置 `workload` 只能引用叶子工作负载 (即没有子节点的工作负载) 。
+</Warning>
+
+```sql
+SELECT count() FROM my_table WHERE value = 42 SETTINGS workload = 'production'
+SELECT count() FROM my_table WHERE value = 13 SETTINGS workload = 'development'
+```
+
+也可以为后台活动分配 `workload` 设置。合并和变更分别使用 `merge_workload` 和 `mutation_workload` 服务器设置。这些值还可以通过 `merge_workload` 和 `mutation_workload` MergeTree 设置在特定表级别进行覆盖。
 
 <div id="cpu_scheduling">
   ## CPU 调度
@@ -266,7 +181,7 @@ CREATE RESOURCE master_cpu (MASTER THREAD)
 CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
 ```
 
-这将对 master 线程和 worker 线程分别设置限制。即使 100 个 worker CPU 插槽全都处于忙碌状态，只要还有可用的 master CPU 插槽，新查询就不会被阻塞。它们将先以单线程开始执行。之后，如果 worker CPU 插槽变得可用，此类查询就可以扩展并派生出 worker 线程。另一方面，这种方法不会将插槽总数限制在 CPU 处理器数量以内，而运行过多并发线程会影响性能。
+这将对 master 线程和 worker 线程分别设置限制。即使 100 个 worker CPU 插槽全都处于忙碌状态，只要还有可用的 master CPU 插槽，新查询就不会被阻塞。它们将先以单线程开始执行。之后，如果 worker CPU 插槽可用，此类查询就可以扩展并派生出 worker 线程。另一方面，这种方法不会将插槽总数限制在 CPU 处理器数量以内，而运行过多并发线程会影响性能。
 
 限制 master 线程的并发度，并不会限制并发查询的数量。CPU 插槽可能会在查询执行过程中途被释放，然后被其他线程重新获取。例如，在 master 线程并发限制为 2 的情况下，4 个并发查询仍然可以全部并行执行。在这种情况下，每个查询将获得一个 CPU 处理器 50% 的处理能力。要限制并发查询的数量，应使用单独的逻辑，而工作负载目前尚不支持这一点。
 
@@ -306,13 +221,13 @@ CPU 调度目前尚不支持合并和变更。
 * 线程数限制：`max_concurrent_threads` 和 `max_concurrent_threads_ratio_to_cores`
 * CPU 限流：`max_cpus`、`max_cpu_share` 和 `max_burst_cpu_seconds`
 
-第一种方式允许根据当前服务器负载动态控制一个查询可以创建多少个线程。它实际上会降低查询设置 `max_threads` 所指定的上限。第二种方式则使用令牌桶算法对工作负载的 CPU 消耗进行限流。它不会直接影响线程数，而是限制该工作负载中所有线程的 CPU 总消耗。
-
-使用 `max_cpus` 和 `max_burst_cpu_seconds` 的令牌桶限流含义如下：在任意长度为 `delta` 秒的时间间隔内，工作负载中所有查询的 CPU 总消耗都不能超过 `max_cpus * delta + max_burst_cpu_seconds` 个 CPU 秒。从长期来看，它将平均消耗限制在 `max_cpus`，但短期内可以超过这一限制。例如，给定 `max_burst_cpu_seconds = 60` 和 `max_cpus=0.001`，则可以在不被限流的情况下运行 1 个线程 60 秒、2 个线程 30 秒，或 60 个线程 1 秒。`max_burst_cpu_seconds` 的默认值为 1 秒。在并发线程很多时，较小的值可能会导致允许的 `max_cpus` 核心无法得到充分利用。
-
 <Warning>
   只有在启用 `cpu_slot_preemption` 服务器设置时，CPU 限流设置才会生效，否则会被忽略。
 </Warning>
+
+第一种方式允许根据当前服务器负载动态控制一个查询可以创建多少个线程。它实际上会降低查询设置 `max_threads` 所指定的上限。第二种方式则使用令牌桶算法对工作负载的 CPU 消耗进行限流。它不会直接影响线程数，而是限制该工作负载中所有线程的 CPU 总消耗。
+
+使用 `max_cpus` 和 `max_burst_cpu_seconds` 的令牌桶限流含义如下：在任意长度为 `delta` 秒的时间间隔内，工作负载中所有查询的 CPU 总消耗都不能超过 `max_cpus * delta + max_burst_cpu_seconds` 个 CPU 秒。从长期来看，它将平均消耗限制在 `max_cpus`，但短期内可以超过这一限制。例如，给定 `max_burst_cpu_seconds = 60` 和 `max_cpus=0.001`，则可以在不被限流的情况下运行 1 个线程 60 秒、2 个线程 30 秒，或 60 个线程 1 秒。`max_burst_cpu_seconds` 的默认值为 1 秒。在并发线程很多时，较小的值可能会导致允许的 `max_cpus` 核心无法得到充分利用。
 
 线程在持有 CPU 插槽时，可能处于以下三种主要状态之一：
 
@@ -338,6 +253,87 @@ CREATE WORKLOAD development IN all SETTINGS max_cpu_share = 0.3
   如果你希望最大化 ClickHouse server 的 CPU 利用率，请避免对根工作负载 `all` 使用 `max_cpus` 和 `max_cpu_share`。相反，应将 `max_concurrent_threads` 设置得更高。例如，在一个具有 8 个 CPU 的系统上，可设置 `max_concurrent_threads = 16`。这样一来，8 个线程可以运行 CPU 任务，同时另外 8 个线程可以处理 I/O 操作。额外的线程会制造 CPU 压力，从而确保调度规则得以执行。相比之下，设置 `max_cpus = 8` 永远不会产生 CPU 压力，因为 server 无法超过可用的 8 个 CPU。
 </Note>
 
+<div id="memory-reservations">
+  ## 内存预留
+</div>
+
+<Note>
+  内存预留调度目前处于 Experimental 阶段。只有在存在 `MEMORY RESERVATION` 资源时才会生效，其 SQL 接口和行为可能会在未来的发行版中发生变化。当前尚不支持合并和变更，对正在运行的查询进行驱逐也只是尽力而为：它会在查询的下一个内存同步点生效，而不是立即生效。
+</Note>
+
+要为工作负载启用内存预留，请创建 `MEMORY RESERVATION` 资源，并通过工作负载设置至少为总预留内存配置一个限制：
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '2Gi'
+```
+
+ClickHouse 会跟踪所有查询和后台活动的内存分配。已分配的字节数会沿调度层级逐级汇总到根节点。每个查询在其所属的叶子工作负载中都有一个对应的分配。如果查询的 `reserve_memory` 设置大于零，则该分配会以 pending 状态创建。处于 pending 状态的分配会在工作负载层级中预留所请求的内存量。如果没有足够的可用内存，该分配会一直保持 pending，直到释放出足够的内存，或者其他分配被逐出 (killed) 。当分配获准后，它会变为 running。处于 running 状态的分配会根据查询的内存消耗动态增大或缩小。分配的生命周期可以用下图的状态图表示：
+
+```mermaid
+stateDiagram-v2
+    [*] --> Pending: init [reserve_memory > 0]
+    [*] --> Running: init [reserve_memory == 0]
+
+    Pending --> Running: admit
+
+    state Running {
+        %% Region 1: increase flow
+        NotIncreasing --> Increasing: request
+        Increasing --> NotIncreasing: approve
+
+        --
+
+        %% Region 2: decrease flow
+        NotDecreasing --> Decreasing: request
+        Decreasing --> NotDecreasing: approve
+    }
+
+    Running --> Killed: evict
+    Running --> Released: finish
+```
+
+叶子工作负载的待处理分配按 FIFO 顺序准入。当多个工作负载都有待处理分配时，会根据优先次序和权重设置决定准入顺序。优先次序更高的工作负载会先获得分配。具有相同优先次序的同级工作负载会按权重以最大最小公平原则共享内存，这意味着归一化内存使用量更低的工作负载 (即当前使用量加上请求增加量后，再除以权重) 会先获得分配。在驱逐时则采用相反的逻辑。当需要释放内存时，优先次序较低且归一化内存使用量较高的工作负载会先被驱逐。
+
+请注意，时间共享资源使用 priority，而空间共享资源使用 优先次序。它们是彼此独立的设置，可以设为不同的值。更高的 priority 表示非破坏性抢占 (延迟或节流) ，而更高的 优先次序 则可能意味着破坏性驱逐 (报错并停止) 。某个工作负载在 CPU 调度中可以具有较高的 priority，但在内存预留中采用相同的 优先次序，以避免驱逐其他工作负载并丢失它们已经完成的工作。
+
+每个设置了 `max_memory` 限制的工作负载都会确保其子树中已分配的总内存不超过该限制。如果待处理分配或增长中的分配会超出该限制，则会启动驱逐流程来释放内存。驱逐流程会选择一个要被终止的目标。killer 和 victim 的最近公共祖先工作负载会在以下情况下阻止驱逐：
+
+* 待处理分配不能驱逐同一工作负载中正在运行的分配。 (killer 和 victim 工作负载相同) 。
+* 优先次序较低的待处理分配绝不会终止优先次序较高的工作负载。
+* 待处理分配不能终止优先次序相同的分配。请注意，优先次序相同的运行中分配可能会根据归一化内存使用量相互驱逐。
+  如果驱逐被阻止，或者未能释放足够的内存，则新分配会被阻塞，直到有足够的内存被释放。这些规则允许查询在内存压力下排队等待，并提供了一种便捷方式来避免 MEMORY&#95;LIMIT&#95;EXCEEDED 错误。
+
+<Note>
+  工作负载限制独立于其他限制内存消耗的方法，例如查询设置 [max&#95;memory&#95;usage](/zh/reference/settings/session-settings#max_memory_usage)。它们可以结合使用，以更好地控制内存消耗。还可以基于用户 (而非工作负载) 设置独立的内存限制，但这种方式灵活性较差，也不提供内存预留和待处理查询排队等功能。参见 [Memory overcommit](/zh/concepts/features/configuration/settings/memory-overcommit)
+</Note>
+
+工作负载设置 `max_waiting_queries` 用于限制该工作负载的待处理分配数量。达到限制后，server 会返回错误 `SERVER_OVERLOADED`。请注意，`max_waiting_queries` 不会被子节点工作负载继承，并且仅对叶子工作负载有意义。
+
+内存预留调度目前尚不支持合并和变更。
+
+只有 `reserve_memory` 设置大于零的查询，才会在等待内存预留时被阻塞。不过，`reserve_memory` 为零的查询也会计入其工作负载的内存占用，必要时还可能被驱逐，以便为其他待处理或持续增长的内存分配释放内存。没有正确工作负载标记的查询不受内存预留调度的约束，也不能被调度器驱逐。
+
+要为查询提供非弹性的内存预留，请将 `reserve_memory` 和 `max_memory_usage` 这两个查询设置设为相同的值。在这种情况下，查询会预留固定数量的内存，且无法动态增加其分配。请注意，在没有内存压力的情况下，弹性内存预留可以在不被终止的前提下，从 `reserve_memory` 增加到 `max_memory_usage`。但即使实际内存消耗更低，也不能减少到 `reserve_memory` 以下。
+
+来看一个配置示例：
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi'
+CREATE WORKLOAD system IN all SETTINGS weight = 1
+CREATE WORKLOAD user IN all SETTINGS weight = 9
+CREATE WORKLOAD production IN user SETTINGS precedence = 1, weight = 3
+CREATE WORKLOAD staging IN user SETTINGS precedence = 1, weight = 1
+CREATE WORKLOAD testing IN user SETTINGS precedence = 2
+```
+
+在此示例中，所有查询和后台活动保留的总内存不能超过 10 GiB。system 工作负载至少保证 1 GiB (10 GiB 的 10%) ，而 user 工作负载至少保证 9 GiB (10 GiB 的 90%) 。在 user 工作负载内部，production 和 staging 工作负载按权重 (3:1) 共享内存，且优先次序同为 1。testing 工作负载的优先次序为 2，低于 production 和 staging。因此，testing 工作负载只能使用 production 和 staging 未使用的内存。
+
+如果出现内存压力，testing 工作负载的内存分配会最先被驱逐。随后，如果还需要释放更多内存，并且 staging 工作负载 和 production 工作负载 超过各自的保证值，则 staging 工作负载 的内存分配会先于 production 工作负载 的内存分配被驱逐。请注意，production 和 staging 中处于等待状态的查询可以驱逐 testing 工作负载 中正在运行的内存分配以释放内存，但它们彼此不能相互驱逐，因为它们具有相同的优先次序。在内存压力情况下，它们会在队列中等待，这使系统能够避免因并发执行的查询过多而导致的 MEMORY&#95;LIMIT&#95;EXCEEDED 错误。
+
+请注意，system 工作负载的优先次序为 0 (default) ，高于 production、staging 和 testing 工作负载，但它们并不是同级工作负载。它们最近的共同祖先是工作负载 all，其两个子节点具有相同的优先次序。因此，处于等待状态的 system 工作负载 不能驱逐其中任何一个，反之亦然。这确保了 system 活动不容易被驱逐。
+
 <div id="query_scheduling">
   ## 查询槽位调度
 </div>
@@ -353,7 +349,7 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 
 工作负载设置 `max_queries_per_second` 和 `max_burst_queries` 通过令牌桶限流器限制该工作负载的查询数量。它保证在任意时间间隔 `T` 内，新开始执行的查询数不会超过 `max_queries_per_second * T + max_burst_queries`。
 
-工作负载设置 `max_waiting_queries` 用于限制该工作负载的等待中查询数。达到该限制时，服务器会返回错误 `SERVER_OVERLOADED`。
+工作负载设置 `max_waiting_queries` 用于限制该工作负载的等待中查询数。达到该限制时，服务器会返回错误 `SERVER_OVERLOADED`。请注意，`max_waiting_queries` 不会被子工作负载继承，并且仅对叶子工作负载有意义。
 
 <Note>
   被阻塞的查询会无限期等待，并且在所有约束条件都满足之前，不会出现在 `SHOW PROCESSLIST` 中。
@@ -378,9 +374,10 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 ```xml
 <clickhouse>
     <resources_and_workloads>
+        CREATE RESOURCE memory (MEMORY RESERVATION);
         CREATE RESOURCE s3disk_read (READ DISK s3);
         CREATE RESOURCE s3disk_write (WRITE DISK s3);
-        CREATE WORKLOAD all SETTINGS max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = 1342177280 FOR s3disk_read, max_bytes_per_second = 3355443200 FOR s3disk_write;
+        CREATE WORKLOAD all SETTINGS max_memory = '2Gi', max_io_requests = 500 FOR s3disk_read, max_io_requests = 1000 FOR s3disk_write, max_bytes_per_second = '1280Mi' FOR s3disk_read, max_bytes_per_second = '3200Mi' FOR s3disk_write;
         CREATE WORKLOAD production IN all SETTINGS weight = 3;
     </resources_and_workloads>
 </clickhouse>
@@ -412,6 +409,97 @@ CREATE WORKLOAD all SETTINGS max_concurrent_queries = 100, max_queries_per_secon
 <Note>
   除非已执行 `CREATE WORKLOAD default`，否则不要将 `throw_on_unknown_workload` 设置为 `true`。如果在启动期间执行了未显式设置 `workload` 的查询，可能会导致服务器启动问题。
 </Note>
+
+<div id="hierarchy">
+  ### 调度节点层级
+</div>
+
+从调度子系统的角度看，每个资源都对应一个调度节点层级。ClickHouse 会根据 WORKLOAD 和 RESOURCE 的定义自动创建所有必需的调度节点。调度节点属于底层实现细节，可通过 [system.scheduler](/zh/reference/system-tables/scheduler) 表查看。
+
+```sql
+CREATE RESOURCE network_write (WRITE DISK s3)
+CREATE RESOURCE memory (MEMORY RESERVATION)
+CREATE WORKLOAD all SETTINGS max_io_requests = 100, max_memory = '2Gi'
+CREATE WORKLOAD development IN all
+CREATE WORKLOAD production IN all SETTINGS weight = 3
+```
+
+```mermaid
+graph TD
+    nw_root(["network_write"])
+    -->nw_all{{"all"}}
+    -->nw_semp[\"semaphore"/]
+    -->|100 concurrent requests| nw_fair("p0_fair")
+    -->|75% bandwidth| nw_prod{{"production"}}
+    -->nw_prod_q["fifo"]
+    nw_fair
+    -->|25% bandwidth| nw_dev{{"development"}}
+    -->nw_dev_q["fifo"]
+
+    mem_root(["memory"])
+    -->mem_all{{"all"}}
+    -->mem_semp[\"limit"/]
+    -->|2Gi RAM| mem_fair("p0_fair")
+    -->|75% RAM| mem_prod{{"production"}}
+    -->mem_prod_q["queue"]
+    mem_fair
+    -->|25% RAM| mem_dev{{"development"}}
+    -->mem_dev_q["queue"]
+```
+
+**时间共享节点类型：**
+
+* `inflight_limit` (constraint) - 如果并发进行中的请求数超过 `max_requests`，或其总成本超过 `max_cost`，则会阻塞；必须只有一个子节点。
+* `bandwidth_limit` (constraint) - 如果当前带宽超过 `max_speed` (0 表示不受限制) ，或突发量超过 `max_burst` (默认为 `max_speed`) ，则会阻塞；必须只有一个子节点。
+* `fair` (policy) - 按照最大最小公平原则，从其某个子节点中选择下一个要处理的请求；子节点可指定 `weight` (默认为 1) 。
+* `priority` (policy) - 按照静态优先级，从其某个子节点中选择下一个要处理的请求 (值越小，优先级越高) ；子节点应指定 `priority` (默认为 0) 。
+* `fifo` (queue) - 层级结构中的叶节点，可容纳超出资源容量的请求。
+
+**空间共享节点类型：**
+
+* `limit` - 确保子节点的总分配量不超过限制；必要时会在子树中触发驱逐流程；必须只有一个子节点。
+* `fair_allocation` - 按照最大最小公平原则执行驱逐；待处理分配绝不会驱逐正在运行的分配；子节点可指定 `weight` (默认为 1) 。
+* `precedence_allocation` - 按照静态优先次序执行驱逐 (值越小，优先次序越高) ；高优先次序的待处理分配会驱逐低优先次序的分配；子节点应指定 `precedence` (默认为 0) 。
+* `queue` - 层级结构中的叶节点，可容纳正在运行和待处理的分配。
+
+<div id="deprecated-configuration">
+  ## 已弃用的 XML 配置
+</div>
+
+另一种指定资源使用哪些磁盘的方式，是通过 server 的 `storage_configuration`：
+
+要为特定磁盘启用 IO 调度，必须在存储配置中指定 `read_resource` 和/或 `write_resource`。这样可以告诉 ClickHouse，对于给定磁盘的每个读写请求应使用哪个资源。读取资源和写入资源可以指向同一个资源名称，这对于本地 SSD 或 HDD 很有用。多个不同的磁盘也可以指向同一个资源，这对于远程磁盘很有用：例如，如果你希望在 &quot;production&quot; 和 &quot;development&quot; 工作负载 之间公平分配网络带宽。
+
+示例：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        ...
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <read_resource>network_read</read_resource>
+                <write_resource>network_write</write_resource>
+            </s3>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+请注意，服务器配置选项的优先级高于通过 SQL 定义资源。
 
 <div id="see-also">
   ## 另请参阅
