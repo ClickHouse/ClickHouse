@@ -1512,9 +1512,7 @@ static std::optional<BlockIO> tryExecuteQueryPlan(
         auto query_cached_builder = output.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
 
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
-        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
+        StreamLocalLimits limits = StreamLocalLimits::forQueryResult(settings);
         if (stage == QueryProcessingStage::Complete && res.pipeline.pulling())
         {
             auto quota = context->getQuota();
@@ -2437,39 +2435,9 @@ static BlockIO executeQueryImpl(
                     {
                         auto optimization_settings = QueryPlanOptimizationSettings(context);
                         auto build_pipeline_settings = BuildQueryPipelineSettings(context);
-                        /// EXPLAIN ANALYZE executes the inner SELECT only when it is an executable
-                        /// analyze (inner SELECT, non-distributed), in which case it must be charged
-                        /// against the select-query quota just like a normal SELECT. Rejected forms such
-                        /// as EXPLAIN ANALYZE INSERT, EXPLAIN ANALYZE SYSTEM, or distributed EXPLAIN
-                        /// ANALYZE never run an inner SELECT and stay counted as generic queries only, so
-                        /// reuse the same predicate that gates execution instead of the AST kind alone.
-                        const auto * explain_interpreter = dynamic_cast<const InterpreterExplainQuery *>(interpreter.get());
-                        const bool is_executable_analyze = explain_interpreter && explain_interpreter->isExecutableAnalyze();
-                        const bool charge_as_select = query_plan
-                            || out_ast->as<ASTSelectQuery>()
-                            || out_ast->as<ASTSelectWithUnionQuery>()
-                            || is_executable_analyze;
-
-                        /// `usedForQuery` dispatches per quota: for `NORMALIZED_QUERY_HASH` keyed
-                        /// quotas it charges the per-hash intervals, otherwise the shared session
-                        /// intervals. So a single set of calls covers all key types.
-                        if (charge_as_select)
-                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
-                        else if (out_ast->as<ASTInsertQuery>())
-                            quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
-                        quota->usedForQuery(normalized_query_hash, QuotaType::QUERIES, 1);
-                        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 0, /* check_exceeded = */ true);
-
-                        /// Track per-normalized-query-hash quota limits (works for all key types).
-                        quota->usedPerNormalizedHash(normalized_query_hash);
-                    }
-                }
-
                         auto query_cached_builder = cache_result.cached_plan->buildQueryPipeline(optimization_settings, build_pipeline_settings, true);
                         res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_cached_builder));
-
-                        limits.mode = LimitsMode::LIMITS_CURRENT;
-                        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
+                        limits = StreamLocalLimits::forQueryResult(settings);
                         if (stage == QueryProcessingStage::Complete && res.pipeline.pulling())
                         {
                             quota = context->getQuota();
@@ -2481,10 +2449,6 @@ static BlockIO executeQueryImpl(
                 {
                     if (out_ast)
                         interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
-                if (interpreter)
-                {
-                    if (!interpreter->ignoreLimits())
-                        limits = StreamLocalLimits::forQueryResult(settings);
 
                     const auto & query_settings = context->getSettingsRef();
                     if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
@@ -2506,10 +2470,23 @@ static BlockIO executeQueryImpl(
                         quota = context->getQuota();
                         if (quota)
                         {
-                            /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
-                            /// quotas track against per-hash intervals, the rest against shared session
-                            /// intervals. A user may be governed by several quotas of different key types.
-                            if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                            /// EXPLAIN ANALYZE executes the inner SELECT only when it is an executable
+                            /// analyze (inner SELECT, non-distributed), in which case it must be charged
+                            /// against the select-query quota just like a normal SELECT. Rejected forms such
+                            /// as EXPLAIN ANALYZE INSERT, EXPLAIN ANALYZE SYSTEM, or distributed EXPLAIN
+                            /// ANALYZE never run an inner SELECT and stay counted as generic queries only, so
+                            /// reuse the same predicate that gates execution instead of the AST kind alone.
+                            const auto * explain_interpreter = dynamic_cast<const InterpreterExplainQuery *>(interpreter.get());
+                            const bool is_executable_analyze = explain_interpreter && explain_interpreter->isExecutableAnalyze();
+                            const bool charge_as_select = query_plan
+                                || out_ast->as<ASTSelectQuery>()
+                                || out_ast->as<ASTSelectWithUnionQuery>()
+                                || is_executable_analyze;
+
+                            /// `usedForQuery` dispatches per quota: for `NORMALIZED_QUERY_HASH` keyed
+                            /// quotas it charges the per-hash intervals, otherwise the shared session
+                            /// intervals. So a single set of calls covers all key types.
+                            if (charge_as_select)
                                 quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
                             else if (out_ast->as<ASTInsertQuery>())
                                 quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
@@ -2535,10 +2512,7 @@ static BlockIO executeQueryImpl(
                             interpreter->setVectorQueryString(vector_query_for_plan_cache.empty() ? query : vector_query_for_plan_cache);
                         }
                         if (!interpreter->ignoreLimits())
-                        {
-                            limits.mode = LimitsMode::LIMITS_CURRENT;
-                            limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                        }
+                            limits = StreamLocalLimits::forQueryResult(settings);
 
                         if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                         {
