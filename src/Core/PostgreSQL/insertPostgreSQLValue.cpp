@@ -181,7 +181,9 @@ try
                 parsed = parser.get_next();
             }
 
-            if (max_dimension < expected_dimensions)
+            /// PostgreSQL prints an empty array as `{}` whatever its dimensionality, so an empty value
+            /// carries no nesting to count and is a valid empty array for every expected dimension.
+            if (max_dimension < expected_dimensions && !dimensions[1].empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Got less dimensions than expected. ({} instead of {})", max_dimension, expected_dimensions);
 

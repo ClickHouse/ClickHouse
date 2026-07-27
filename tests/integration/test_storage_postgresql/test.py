@@ -1073,6 +1073,29 @@ def test_postgres_timestamp_with_precision(started_cluster):
     cursor.execute("DROP TABLE test_timestamp_precision")
 
 
+def test_postgres_empty_multidimensional_array(started_cluster):
+    """An empty PostgreSQL array is printed as `{}` whatever its dimensionality.
+
+    Such a value carries no nesting to count, so it must be read as an empty array instead of being
+    rejected for having fewer dimensions than the column declares.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_empty_nested_array")
+    cursor.execute("CREATE TABLE test_empty_nested_array (id integer, a integer[][])")
+    cursor.execute(
+        "INSERT INTO test_empty_nested_array VALUES (1, '{}'), (2, '{{1,2},{3,4}}')"
+    )
+    started_cluster.postgres_conn.commit()
+
+    table = f"postgresql('postgres1:5432', 'postgres', 'test_empty_nested_array', 'postgres', '{pg_pass}')"
+    assert (
+        node1.query(f"SELECT id, a FROM {table} ORDER BY id")
+        == "1\t[]\n2\t[[1,2],[3,4]]\n"
+    )
+
+    cursor.execute("DROP TABLE test_empty_nested_array")
+
+
 def test_postgres_date32_array(started_cluster):
     """Test that PostgreSQL DATE[] arrays with large dates are correctly read as Array(Date32)."""
     cursor = started_cluster.postgres_conn.cursor()

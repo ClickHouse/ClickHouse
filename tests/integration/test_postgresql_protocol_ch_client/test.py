@@ -927,6 +927,27 @@ def test_copy_array_column_round_trips(started_cluster):
     node.query("DROP TABLE copy_bad_arrays SYNC")
 
 
+def test_empty_nested_array_round_trips(started_cluster):
+    # PostgreSQL prints an empty array as `{}` whatever its dimensionality, so an empty
+    # `Array(Array(Int32))` value has no nesting to count on the way back in. It must still read as an
+    # empty array instead of being rejected for having fewer dimensions than expected.
+    node.query("DROP TABLE IF EXISTS empty_nested SYNC")
+    node.query(
+        "CREATE TABLE empty_nested (id UInt32, nested Array(Array(Int32))) ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO empty_nested VALUES (1, []), (2, [[1, 2], []])",
+        settings={"async_insert": 0},
+    )
+
+    assert node.query(
+        f"SELECT id, nested FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'empty_nested', "
+        f"'pguser', 'pgpass') ORDER BY id"
+    ) == "1\t[]\n2\t[[1,2],[]]\n"
+
+    node.query("DROP TABLE empty_nested SYNC")
+
+
 class _FailingSource:
     # A file-like object whose read fails partway through, so psycopg2 aborts the COPY FROM by sending
     # a `CopyFail` frontend message instead of `CopyDone`.
