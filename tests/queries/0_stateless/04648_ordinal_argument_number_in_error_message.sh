@@ -7,9 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Extracts just the ordinal from the error message, so the test does not depend on the rest of the wording.
+# The server also logs the exception, so the message can appear more than once - only the first one is taken.
 ordinal_of_bad_argument()
 {
-    $CLICKHOUSE_CLIENT --query "$1" 2>&1 | grep -oP "provided as \K[0-9]+(st|nd|rd|th)" || echo "no match: $1"
+    local ordinal
+    ordinal=$($CLICKHOUSE_CLIENT --query "$1" 2>&1 | grep -oP "provided as \K[0-9]+(st|nd|rd|th)" | head -n 1)
+    echo "${ordinal:-no match: $1}"
 }
 
 # Fixed-arity validator: the bad argument is the 1st, 2nd and 3rd one respectively.
