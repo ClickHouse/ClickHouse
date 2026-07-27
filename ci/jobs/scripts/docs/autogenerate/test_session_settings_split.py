@@ -19,6 +19,15 @@ def load_module():
     return mod
 
 
+def load_migrate_module():
+    spec = importlib.util.spec_from_file_location(
+        "docs_migrate", HERE.parents[4] / "docs/_migration/migrate.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def generated_page(names, body_h1=None):
     sections = []
     for setting in names:
@@ -76,9 +85,24 @@ def setting_names(mod, content):
 
 def main():
     mod = load_module()
+    migrate = load_migrate_module()
     mod.SESSION_SETTINGS_MAX_PER_PAGE = 20
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
+
+    migrated, _ = migrate.transform_imports(
+        "import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';\n\n"
+        "<CloudNotSupportedBadge />\n\n"
+        "Content after the badge.\n",
+        migrate.Lookups(),
+        [],
+    )
+    assert migrated == (
+        'import { CloudNotSupportedBadge } from '
+        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
+        "<CloudNotSupportedBadge />\n\n"
+        "Content after the badge.\n"
+    )
 
     for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
         import_line = (
