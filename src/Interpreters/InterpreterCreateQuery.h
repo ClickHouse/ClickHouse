@@ -76,7 +76,10 @@ public:
 
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
-    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false);
+    /// check_defaults_over_virtual_columns rejects DEFAULT/MATERIALIZED expressions over virtual columns;
+    /// pass false for objects that never evaluate their own column defaults over an insert block
+    /// (ordinary views and external-target materialized views).
+    static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
     static ConstraintsDescription
     getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
 

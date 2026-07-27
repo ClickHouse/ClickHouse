@@ -1,8 +1,17 @@
+#include <Backups/BackupFactory.h>
 #include <Backups/BackupInfo.h>
 
+#include "config.h"
+
 #include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <base/scope_guard.h>
+
+#include <Poco/Util/MapConfiguration.h>
 
 #include <gtest/gtest.h>
 
@@ -11,6 +20,12 @@
 
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace
 {
@@ -86,6 +101,36 @@ namespace
         requireContains(str, "host/bucket/backup");
         requireNotContains(str, "URLPASSWORD");
         std::_Exit(0);
+    }
+
+    ContextMutablePtr makeContextWithBackupLocations()
+    {
+        auto context = Context::createCopy(getContext().context);
+
+        Poco::AutoPtr<Poco::Util::MapConfiguration> config(new Poco::Util::MapConfiguration);
+        config->setString("backups.allowed_path", "/allowed");
+        config->setString("backups.allowed_disk", "default");
+        context->setConfig(config);
+        return context;
+    }
+
+    String getDestinationIdentity(const String & backup_name, ContextPtr context)
+    {
+        return BackupFactory::instance().getDestinationIdentity(BackupInfo::fromString(backup_name), context);
+    }
+
+    template <typename F>
+    void expectExceptionCode(F && function, int expected_code)
+    {
+        try
+        {
+            function();
+            FAIL() << "Expected an exception";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), expected_code);
+        }
     }
 }
 
@@ -221,3 +266,213 @@ TEST(BackupInfo, CanCopyS3CredentialsToMatchesCopyS3CredentialsTo)
     checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup', 'KEYID', 'KEYSECRET')", "Disk('backups', 'path')");
     checkCanCopyS3CredentialsInvariant("S3('https://s3.example.com/backup')", "S3('https://s3.example.com/base')");
 }
+
+
+TEST(BackupInfo, DestinationIdentityRequiresContextAndFrozenCollection)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(collection)");
+
+    expectExceptionCode(
+        [&] { (void)BackupFactory::instance().getDestinationIdentity(info, {}); },
+        ErrorCodes::BAD_ARGUMENTS);
+    expectExceptionCode(
+        [&] { (void)BackupFactory::instance().getDestinationIdentity(info, context); },
+        ErrorCodes::BAD_ARGUMENTS);
+}
+
+
+TEST(BackupInfo, DestinationIdentityCanonicalizesLocalLocations)
+{
+    auto context = makeContextWithBackupLocations();
+
+    EXPECT_EQ(
+        getDestinationIdentity("File('dir/../backup/')", context),
+        getDestinationIdentity("File('/allowed/backup')", context));
+    EXPECT_NE(
+        getDestinationIdentity("File('/allowed/backup.zip')", context),
+        getDestinationIdentity("File('/allowed/backup.zip/')", context));
+    EXPECT_EQ(
+        getDestinationIdentity("Disk('default', '')", context),
+        getDestinationIdentity("Disk('default', '.')", context));
+    EXPECT_EQ(
+        getDestinationIdentity("File('/allowed/backup')", context),
+        "backup-destination-v1:4:File:20:path=/allowed/backup:8:archive=");
+}
+
+
+TEST(BackupInfo, DestinationIdentityRejectsNonPersistentEngines)
+{
+    auto context = getContext().context;
+
+    expectExceptionCode(
+        [&] { (void)getDestinationIdentity("Memory('backup')", context); },
+        ErrorCodes::SUPPORT_IS_DISABLED);
+    expectExceptionCode(
+        [&] { (void)getDestinationIdentity("Null()", context); },
+        ErrorCodes::SUPPORT_IS_DISABLED);
+}
+
+
+#if USE_AWS_S3
+TEST(BackupInfo, DestinationIdentityIgnoresS3Credentials)
+{
+    auto context = getContext().context;
+    const String first = getDestinationIdentity("S3('s3://bucket/backup/', 'key1', 'secret1')", context);
+    const String second = getDestinationIdentity("S3('https://bucket.s3.amazonaws.com/backup', 'key2', 'secret2')", context);
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first.find("key1"), String::npos);
+    EXPECT_EQ(first.find("secret1"), String::npos);
+    EXPECT_NE(first, getDestinationIdentity("S3('s3://bucket/other')", context));
+    EXPECT_NE(
+        getDestinationIdentity("S3('s3://bucket/backup.zip')", context),
+        getDestinationIdentity("S3('s3://bucket/backup.zip/')", context));
+    EXPECT_THROW((void)getDestinationIdentity("S3('s3://bucket/backup', 1, 2)", context), Exception);
+
+    const String with_url_credentials = getDestinationIdentity(
+        "S3('https://user:URLPASSWORD@bucket.s3.amazonaws.com/backup')",
+        context);
+    EXPECT_EQ(with_url_credentials, second);
+    EXPECT_EQ(with_url_credentials.find("URLPASSWORD"), String::npos);
+}
+
+
+TEST(BackupInfo, DestinationIdentityHidesS3CredentialsInParseErrors)
+{
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3('https://s3.region.amazonaws.com/bucket//?X-Amz-Signature=TOPSECRET')");
+
+    try
+    {
+        (void)BackupFactory::instance().getDestinationIdentity(info, context);
+        FAIL() << "Expected invalid S3 destination";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.message().find("TOPSECRET"), String::npos);
+    }
+}
+
+
+TEST(BackupInfo, FreezeNamedCollectionPreservesDestinationSnapshot)
+{
+    const String collection_name = "backup_destination_identity_frozen_snapshot";
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("url", Field("s3://bucket/base"));
+    create_query->overridability.emplace("url", true);
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    auto drop_collection = [&]
+    {
+        auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+        drop_query->collection_name = collection_name;
+        drop_query->if_exists = true;
+        NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+    };
+    SCOPE_EXIT({ drop_collection(); });
+
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(" + collection_name + ", url='https://user:URLPASSWORD@bucket.s3.amazonaws.com/overridden')");
+    auto frozen = info.freezeNamedCollection(context);
+    const String identity = BackupFactory::instance().getDestinationIdentity(frozen, context);
+    auto redacted = frozen.withoutS3Credentials(context);
+
+    EXPECT_TRUE(frozen.frozen_named_collection->isQueryOverridden("url"));
+    EXPECT_NE(frozen.getNamedCollection(context)->get<String>("url").find("URLPASSWORD"), String::npos);
+    EXPECT_FALSE(redacted.frozen_named_collection);
+    EXPECT_EQ(redacted.toString().find("URLPASSWORD"), String::npos);
+    drop_collection();
+    EXPECT_THROW((void)redacted.getNamedCollection(context), Exception);
+    EXPECT_EQ(BackupFactory::instance().getDestinationIdentity(frozen, context), identity);
+}
+#endif
+
+
+#if USE_AZURE_BLOB_STORAGE
+TEST(BackupInfo, DestinationIdentityIgnoresAzureCredentials)
+{
+    auto context = getContext().context;
+    const String first = getDestinationIdentity(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup/', 'account', 'key1')",
+        context);
+    const String second = getDestinationIdentity(
+        "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup', 'account', 'key2')",
+        context);
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first.find("key1"), String::npos);
+    EXPECT_EQ(first.find("key2"), String::npos);
+    EXPECT_NE(
+        first,
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup//', 'account', 'key2')",
+            context));
+    EXPECT_NE(
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', '', 'account', 'key2')",
+            context),
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', '/', 'account', 'key2')",
+            context));
+    EXPECT_NE(
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', '/', 'account', 'key2')",
+            context),
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', '//', 'account', 'key2')",
+            context));
+    EXPECT_NE(
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', 'backup.zip', 'account', 'key2')",
+            context),
+        getDestinationIdentity(
+            "AzureBlobStorage('https://account.blob.core.windows.net', 'container', '/backup.zip', 'account', 'key2')",
+            context));
+}
+
+
+TEST(BackupInfo, DestinationIdentityRejectsCredentialBearingAzureEndpoint)
+{
+    auto context = getContext().context;
+    auto check_rejected = [&](const String & backup_name, const String & secret)
+    {
+        try
+        {
+            (void)getDestinationIdentity(backup_name, context);
+            FAIL() << "Expected invalid Azure destination";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.message().find(secret), String::npos);
+        }
+    };
+
+    check_rejected(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=TOPSECRET', "
+        "'container', 'backup', 'account', 'key')",
+        "TOPSECRET");
+    check_rejected(
+        "AzureBlobStorage('https://user:URLPASSWORD@account.blob.core.windows.net', 'container', 'backup')",
+        "URLPASSWORD");
+}
+
+
+TEST(BackupInfo, DestinationIdentityRedactsAzureConnectionStringCredentials)
+{
+    auto context = getContext().context;
+    const String first = getDestinationIdentity(
+        "AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=account;AccountKey=key1;"
+        "EndpointSuffix=core.windows.net', 'container', 'backup')",
+        context);
+    const String second = getDestinationIdentity(
+        "AzureBlobStorage('EndpointSuffix=core.windows.net;AccountKey=key2;AccountName=account;"
+        "DefaultEndpointsProtocol=https', 'container', 'backup')",
+        context);
+
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(first.find("key1"), String::npos);
+    EXPECT_EQ(second.find("key2"), String::npos);
+}
+#endif
