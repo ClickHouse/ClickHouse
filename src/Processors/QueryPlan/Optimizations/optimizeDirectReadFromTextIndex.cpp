@@ -469,7 +469,7 @@ private:
                 continue;
 
             /// For None mode, the condition is still needed for preprocessing (tokenizer/preprocessor injection).
-            if (search_query->direct_read_mode == TextIndexDirectReadMode::None)
+            if (search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
             {
                 selected_conditions.emplace_back(search_query, index_name, String{}, &info);
                 used_index_columns.insert(index_header.begin()->name);
@@ -732,7 +732,7 @@ private:
         std::vector<SelectedCondition> selected_conditions;
         for (const auto & condition : all_conditions)
         {
-            if (condition.search_query->direct_read_mode != TextIndexDirectReadMode::None)
+            if (condition.search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
                 selected_conditions.push_back(condition);
         }
         if (selected_conditions.empty())
@@ -744,7 +744,7 @@ private:
         for (const auto & condition : selected_conditions)
         {
             has_materialized_index |= condition.info->is_materialized;
-            has_exact_search |= condition.search_query->direct_read_mode == TextIndexDirectReadMode::Exact;
+            has_exact_search |= condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
         }
 
         /// It doesn't make sense to optimize if index is not materialized in any data part.
@@ -761,10 +761,10 @@ private:
                 /// It will be executed by merge tree reader when index is not materialized in the data part.
                 ASTPtr default_expression;
 
-                if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Exact)
+                if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
                     default_expression = convertNodeToAST(function_node);
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
-                else if (condition.search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
+                else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
 
                 VirtualColumnDescription virtual_column(condition.virtual_column_name, std::make_shared<DataTypeUInt8>(), /*codec=*/ nullptr, condition.index_name, VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Reader);
@@ -888,9 +888,22 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (text_index_read_infos.empty())
         return;
 
+    /// This step can be visited by the pass more than once, because a Merge child plan is optimized
+    /// again after ReadFromMerge pushes a filter down into it (StorageMerge), and because the same
+    /// text-index predicate can reach the step from several filter stages. Direct read replaces a
+    /// text-search function with a synthetic __text_index_..._has_<hash> column that is registered
+    /// into the step's read set exactly once (ReadFromMergeTree::createReadTasksForTextIndex). If the
+    /// step already carries index read tasks, direct read has already been applied to it, so a later
+    /// visit must not register the column a second time -- doing so throws "already added for reading"
+    /// (e.g. an identical predicate in both PREWHERE and WHERE over Merge -> Distributed -> MergeTree).
+    /// The tokenizer/preprocessor rewrite below still runs regardless: it is needed for correctness
+    /// (row-level evaluation when direct read is off or a part is not fully materialized) and does not
+    /// register any read column.
+    bool already_has_direct_read = !read_from_merge_tree_step->getIndexReadTasks().empty();
+
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
-        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index);
+        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index && !already_has_direct_read);
 
     if (stack.size() < 2)
         return;
@@ -902,7 +915,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized && !already_has_direct_read);
 
     if (!result_filter_node)
         return;

@@ -40,15 +40,19 @@ Possible values:
 - 0 — Disabled.
 )", 0) \
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
-If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
+If it set to true, then bare `Tuple` columns in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost).
+
+This flattening applies only to bare `Tuple`. A `Nullable(Tuple)` is always serialized as a single CSV field (so that NULL and non-null rows occupy the same number of fields), regardless of this setting.
 )", 0) \
     DECLARE(Bool, output_format_csv_header_serialize_tuple_into_separate_columns, true, R"(
-When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each Tuple column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
+When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each bare `Tuple` column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. A `Nullable(Tuple)` column is never flattened (its data stays a single CSV field), so its header keeps the single top-level column name and type. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
 
 Note: a flattened header is not read back into a Tuple by name when `input_format_with_names_use_header = 1`. To read such data back into a Tuple, either set this setting to `0` on output, or read with `input_format_with_names_use_header = 0` (and, for the `*WithNamesAndTypes` formats `CSVWithNamesAndTypes` and `CustomSeparatedWithNamesAndTypes`, also `input_format_with_types_use_header = 0`, since the flattened types row is otherwise validated against the single top-level Tuple input field and rejected).
 )", 0) \
     DECLARE(Bool, input_format_csv_deserialize_separate_columns_into_tuple, true, R"(
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
+
+This applies only to bare `Tuple`. A `Nullable(Tuple)` is always written as a single CSV field (see [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns)) and is likewise read back from a single field, never from separate columns, regardless of this setting. Separate-columns parsing is not supported for `Nullable(Tuple)` because a leading `\N` field is ambiguous (it may be the outer NULL of the tuple or the NULL of its first element).
 )", 0) \
     DECLARE(Bool, output_format_csv_crlf_end_of_line, false, R"(
 If it is set true, end of line in CSV format will be \\r\\n instead of \\n.
@@ -348,6 +352,9 @@ Skip columns with unsupported types while schema inference for format ORC
 )", 0) \
     DECLARE(Bool, input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference, false, R"(
 Skip columns with unsupported types while schema inference for format Arrow
+)", 0) \
+    DECLARE(Bool, input_format_arrow_use_native_reader, true, R"(
+Use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     DECLARE(String, column_names_for_schema_inference, "", R"(
 The list of column names to use in schema inference for formats without column names. The format: 'column1,column2,column3,...'
@@ -1462,6 +1469,9 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
 )", 0) \
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+)", 0) \
+    DECLARE(Bool, output_format_arrow_use_native_writer, true, R"(
+Use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the one based on the Apache Arrow library.
 )", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(

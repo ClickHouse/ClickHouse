@@ -1,0 +1,15 @@
+-- division of the minimal signed number by minus one, wide and narrow dividends
+-- positiveModulo by the most negative divisor value
+-- positiveModuloOrNull does not suppress the most negative divisor error
+-- OrZero and OrNull variants of the same exceptional cases do not throw, vector/vector
+0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N
+-- the same in the left-const shape
+0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N
+-- the same in the right-const shape
+0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N
+-- the same in the both-const shape
+0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N	0	\N
+-- combinations of a floating point number and a wide integer
+1
+0
+-- isDistinctFrom does not support Decimal vs wide integer
