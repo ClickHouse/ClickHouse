@@ -73,4 +73,4 @@ FORMAT TSVRaw;
 DROP TABLE test_declared_path_compat_shared;
 
 -- The in-memory path (`DataTypeDynamic::getDynamicSubcolumnData`) is covered by
--- `04651_dynamic_subcolumn_declared_path_json_in_memory` (it needs the new analyzer).
+-- `04651_dynamic_subcolumn_declared_path_json_in_memory` (it needs the analyzer).

@@ -50,6 +50,6 @@ ORDER BY id
 FORMAT TSVRaw;
 
 -- The in-memory path (`DataTypeDynamic::getDynamicSubcolumnData`) is covered by
--- `04650_dynamic_subcolumn_exact_json_in_memory` (it needs the new analyzer).
+-- `04650_dynamic_subcolumn_exact_json_in_memory` (it needs the analyzer).
 
 DROP TABLE test_exact_compat;
