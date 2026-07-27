@@ -232,6 +232,9 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
                 const auto & cache_name = cache->getName();
                 for (const auto & [user_id, usage] : cache->getUsageStatPerClient())
                 {
+                    if (usage.size == 0 && usage.elements == 0)
+                        continue;
+
                     current_usage_labels.emplace(cache_name, user_id);
                     filesystem_cache_size_bytes.withLabels({cache_name, user_id})
                         .set(static_cast<DimensionalMetrics::Value>(usage.size));
