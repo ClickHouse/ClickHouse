@@ -1,5 +1,6 @@
--- Tags: no-parallel, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-parallel, no-fasttest, no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
 -- no-parallel: asserts the global `system.part_aggregation_cache` count and issues `SYSTEM DROP PART AGGREGATION CACHE`.
+-- no-fasttest: writing to a `UNIQUE KEY` table builds the SST index, which requires RocksDB (`USE_ROCKSDB=1`), disabled in the fast test build.
 -- The remaining tags are the standard `UNIQUE KEY` restrictions (unsupported on Ordinary/Replicated/SharedMergeTree/object storage).
 
 -- Fail-closed guard: the experimental per-part aggregation cache must not run on `UNIQUE KEY` tables.
