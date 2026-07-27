@@ -36,8 +36,6 @@ public:
 
     static bool canUseType(const DataTypePtr & type);
 
-    void updateQueryConditionHash(UInt64 top_n_hash);
-
 private:
     ExpressionActionsPtr expression;
     String filter_column_name;

@@ -2,7 +2,6 @@
 -- add_minmax_index_for_numeric_columns=0: Different indices and plans on b
 SET explain_query_plan_default = 'legacy';
 
-SET use_query_condition_cache = 0;
 SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS tab;

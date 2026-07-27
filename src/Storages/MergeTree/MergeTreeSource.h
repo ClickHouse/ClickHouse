@@ -7,9 +7,6 @@ namespace DB
 class MergeTreeSelectProcessor;
 using MergeTreeSelectProcessorPtr = std::unique_ptr<MergeTreeSelectProcessor>;
 
-struct PrewhereInfo;
-using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
-
 struct ChunkAndProgress;
 
 class MergeTreeSource final : public ISource
@@ -21,8 +18,6 @@ public:
     std::string getName() const override;
 
     Status prepare() override;
-
-    PrewhereInfoPtr getPrewhereInfo() const;
 
 #if defined(OS_LINUX)
     int schedule() override;

@@ -157,8 +157,6 @@ void MergeTreeSource::onCancel() noexcept
     processor->cancel();
 }
 
-PrewhereInfoPtr MergeTreeSource::getPrewhereInfo() const { return processor->getPrewhereInfo(); }
-
 ISource::Status MergeTreeSource::prepare()
 {
 #if defined(OS_LINUX)
