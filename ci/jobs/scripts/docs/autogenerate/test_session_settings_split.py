@@ -379,6 +379,52 @@ def main():
         assert "if(type != ''," in server_sql
         assert "if(type != '' AND default != ''," not in server_sql
 
+        manual_server_source = (
+            HERE.parents[4]
+            / "docs/reference/settings/server-settings"
+            / "_server_settings_outside_source.mdx"
+        ).read_text(encoding="utf-8")
+        _, _, manual_server_sections = mod.parse_settings_page(
+            manual_server_source
+        )
+        manual_server_sections_by_name = {
+            section.name: section for section in manual_server_sections
+        }
+        assert (
+            manual_server_sections_by_name[
+                "auth_use_forwarded_address"
+            ].default_value
+            == "false"
+        )
+        assert (
+            manual_server_sections_by_name["bcrypt_workfactor"].default_value
+            == "12"
+        )
+        manual_server_page = mod.SettingPage(
+            base_route=server_family["base_route"],
+            parts=("other",),
+            label="Other",
+            match_prefix="",
+            match_mode="token",
+            sections=[
+                manual_server_sections_by_name["auth_use_forwarded_address"],
+                manual_server_sections_by_name["bcrypt_workfactor"],
+            ],
+        )
+        manual_server_explorer = mod._settings_explorer_component(
+            [manual_server_page], server_family
+        )
+        assert (
+            '"name":"auth_use_forwarded_address",'
+            '"href":"/reference/settings/server-settings/settings/other'
+            '#auth_use_forwarded_address","default":"false"'
+        ) in manual_server_explorer
+        assert (
+            '"name":"bcrypt_workfactor",'
+            '"href":"/reference/settings/server-settings/settings/other'
+            '#bcrypt_workfactor","default":"12"'
+        ) in manual_server_explorer
+
         regrouped = mod.group_session_settings([
             mod.SettingSection(
                 "timeout_before_checking_execution_speed",

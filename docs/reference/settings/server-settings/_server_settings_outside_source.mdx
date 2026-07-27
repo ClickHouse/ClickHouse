@@ -35,6 +35,8 @@ To disable `asynchronous_metric_log` setting, you should create the following fi
 ## auth_use_forwarded_address {#auth_use_forwarded_address}
 Use originating address for authentication for clients connected through proxy.
 
+- **Default:** `false`
+
 <Note>
 This setting should be used with extra caution since forwarded addresses can be easily spoofed - servers accepting such authentication should not be accessed directly but rather exclusively through a trusted proxy.
 </Note>
@@ -114,6 +116,8 @@ Contains information about all background tasks that are executed via various ba
 ## bcrypt_workfactor {#bcrypt_workfactor}
 Work factor for the `bcrypt_password` authentication type which uses the [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
 The work factor defines the amount of computations and time needed to compute the hash and verify the password.
+
+- **Default:** `12`
 
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
