@@ -185,11 +185,9 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
         readIntBinary(string_total_bytes, buf);
     }
 
-    if (mask & BasicFeatureMask::DefaultCount)
-    {
+    has_default_count = (mask & BasicFeatureMask::DefaultCount) != 0;
+    if (has_default_count)
         readIntBinary(default_count, buf);
-        has_default_count = true;
-    }
 }
 
 std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const

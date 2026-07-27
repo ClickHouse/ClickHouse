@@ -72,7 +72,7 @@ private:
     bool tracks_numeric = false;
     bool tracks_string = false;
     bool is_nullable = false;    /// column's type default is NULL (Nullable, LowCardinality(Nullable), Variant, Dynamic, ...)
-    bool has_default_count = false; /// a default-value count has actually been populated
+    bool has_default_count = true; /// true unless deserialized from older code that did not write a default-value count
 };
 
 bool basicStatisticsValidator(const SingleStatisticsDescription & description, const DataTypePtr & data_type);
