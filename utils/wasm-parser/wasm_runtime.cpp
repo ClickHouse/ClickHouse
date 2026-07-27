@@ -98,15 +98,6 @@ bool Exception::isErrorCodeImportant() const
 
 template Exception::Exception(int, FormatStringHelperImpl<>);
 
-/// `Core/Settings.cpp` is not built: one call (`ParserSetQuery` asking whether a bare `SET x`
-/// names a Bool setting) would otherwise pull in the whole settings schema - every
-/// `SettingField*Traits` specialization - which dwarfs the parser itself. Answering
-/// "yes, it could be a Bool" keeps `SET x` parsing; the server still validates the name.
-Field Settings::castValueUtil(std::string_view, const Field & value)
-{
-    return value;
-}
-
 /// Logging is not wired up: nothing consumes it in a browser.
 bool currentThreadHasGroup()
 {
