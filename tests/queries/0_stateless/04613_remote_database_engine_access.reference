@@ -20,6 +20,11 @@ t
 1
 -- a Remote database over another Remote database lists the names without resolving the structure
 t
+-- ...and it needs no grants on the intermediate database, only on the tables it finally proxies
+t
+1
+-- ...but the tables invisible in the innermost database stay hidden (prints nothing, then 0)
+0
 -- system.tables keeps the row of a table whose structure cannot be fetched, with an empty engine
 t	
 -- a table of a multi-shard proxy resolves with the grants on the table alone (prints 4)

@@ -69,7 +69,29 @@ ${CLICKHOUSE_CLIENT} --query "
     GRANT SHOW TABLES ON ${REMOTE_DB}_outer.* TO ${TEST_USER};
 "
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}_outer"
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_outer"
+
+echo '-- ...and it needs no grants on the intermediate database, only on the tables it finally proxies'
+# The listing of the inner `Remote` database is already filtered by the caller's rights on the tables
+# it proxies, so the outer database must not additionally require `SHOW TABLES` on the name of the
+# intermediate proxy: a user with no grants on it at all still sees `t` (prints `t`, then 1).
+${CLICKHOUSE_CLIENT} --query "
+    DROP USER IF EXISTS ${TEST_USER}_nested;
+    CREATE USER ${TEST_USER}_nested IDENTIFIED WITH no_password;
+    GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.* TO ${TEST_USER}_nested;
+    GRANT SHOW TABLES ON ${REMOTE_DB}_outer.* TO ${TEST_USER}_nested;
+"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "SHOW TABLES FROM ${REMOTE_DB}_outer"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "EXISTS TABLE ${REMOTE_DB}_outer.t"
+
+echo '-- ...but the tables invisible in the innermost database stay hidden (prints nothing, then 0)'
+${CLICKHOUSE_CLIENT} --query "REVOKE SHOW TABLES ON ${CLICKHOUSE_DATABASE}.* FROM ${TEST_USER}_nested"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "SHOW TABLES FROM ${REMOTE_DB}_outer"
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}_nested" --query "EXISTS TABLE ${REMOTE_DB}_outer.t"
+
+${CLICKHOUSE_CLIENT} --query "
+    DROP USER ${TEST_USER}_nested;
+    DROP DATABASE ${REMOTE_DB}_outer;
+"
 
 echo '-- system.tables keeps the row of a table whose structure cannot be fetched, with an empty engine'
 # The name has already been established by the listing, so a missing `SHOW COLUMNS` (or a transient

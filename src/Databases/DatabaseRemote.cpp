@@ -26,6 +26,7 @@
 #include <Common/logger_useful.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <unordered_set>
 
@@ -177,6 +178,12 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
             /// `system.tables` does. Otherwise a user with `SHOW TABLES` on the proxy database but
             /// no grants on the underlying local database could enumerate all of its table names
             /// through `Remote('127.0.0.1', ...)`.
+            /// ... unless the underlying database is itself a `Remote` database: its own listing is
+            /// already filtered by the caller's rights, but on the objects that it proxies in turn,
+            /// which live under a different database name. Checking the name of the intermediate
+            /// proxy on top of that would hide the tables the caller is in fact allowed to see (a
+            /// chain `outer` -> `inner` -> `db` needs no grants on `inner`, only on `db`).
+            const bool underlying_listing_is_filtered_by_access = typeid_cast<const DatabaseRemote *>(local_database.get()) != nullptr;
             const auto access = local_context->getAccess();
 
             if (only_table)
@@ -186,7 +193,12 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                 /// the listing below. When the local replica does not have the table, fall through to
                 /// the remote-replica fallback, mirroring `fetchTableStructure`.
                 if (local_database->isTableExist(*only_table, query_context))
-                    return access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table) ? Strings{*only_table} : Strings{};
+                {
+                    if (underlying_listing_is_filtered_by_access
+                        || access->isGranted(AccessType::SHOW_TABLES, remote_database, *only_table))
+                        return Strings{*only_table};
+                    return {};
+                }
             }
             else
             {
@@ -194,7 +206,8 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context, const String *
                 /// underlying database may itself be an external one (e.g. another `Remote` database),
                 /// whose plain `getTablesIterator` resolves the structure of every table and drops
                 /// those that fail.
-                const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES, remote_database);
+                const bool check_access_for_tables = !underlying_listing_is_filtered_by_access
+                    && !access->isGranted(AccessType::SHOW_TABLES, remote_database);
                 Strings tables;
                 for (const auto & table : local_database->getLightweightTablesIterator(query_context))
                 {
