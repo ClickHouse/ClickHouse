@@ -125,7 +125,7 @@ TEST(ChainedBuffers, AppendPartiallyConsumedChainedBuffers)
     /// Appending a partially-consumed chain must not resurrect its consumed
     /// prefix: `append(ChainedBuffers&&)` normalizes `other` by its `front_offset`, so the
     /// combined chain's coverage and `peek` agree. Regression for splicing the raw
-    /// front node (which still started at the original, consumed `logical_offset`).
+    /// front node (which still started at the original, consumed `offset`).
     auto buf = std::make_shared<OwnedChainedBuffer>(10);
     for (size_t i = 0; i < 10; ++i)
         buf->data()[i] = static_cast<char>('0' + i);   // "0123456789"
@@ -147,7 +147,7 @@ TEST(ChainedBuffers, AppendPartiallyConsumedChainedBuffers)
 
     /// peek agrees with coverage: it serves the live bytes at offset 5, not 0.
     auto span = dst.peek();
-    EXPECT_EQ(span.logical_offset, 5u) << "peek must start at the live offset, not the consumed prefix";
+    EXPECT_EQ(span.offset, 5u) << "peek must start at the live offset, not the consumed prefix";
     EXPECT_EQ(span.size, 5u);
     EXPECT_EQ(String(span.data, span.size), "56789");
 }
@@ -184,12 +184,12 @@ TEST(ChainedBuffers, SliceMiddle)
     EXPECT_EQ(slice.totalBytes(), 200);
 
     const auto & nodes = slice.getNodes();
-    EXPECT_EQ(nodes[0].logical_offset, 50);
+    EXPECT_EQ(nodes[0].offset, 50);
     EXPECT_EQ(nodes[0].size, 50);
     EXPECT_EQ(nodes[0].buffer_offset, 50);
-    EXPECT_EQ(nodes[1].logical_offset, 100);
+    EXPECT_EQ(nodes[1].offset, 100);
     EXPECT_EQ(nodes[1].size, 100);
-    EXPECT_EQ(nodes[2].logical_offset, 200);
+    EXPECT_EQ(nodes[2].offset, 200);
     EXPECT_EQ(nodes[2].size, 50);
 }
 
@@ -204,7 +204,7 @@ TEST(ChainedBuffers, SliceSingleNodeMiddle)
     EXPECT_EQ(slice.getNodes().size(), 1);
     EXPECT_EQ(slice.getNodes()[0].buffer_offset, 100);
     EXPECT_EQ(slice.getNodes()[0].size, 200);
-    EXPECT_EQ(slice.getNodes()[0].logical_offset, 100);
+    EXPECT_EQ(slice.getNodes()[0].offset, 100);
 }
 
 TEST(ChainedBuffers, EmptyChainedBuffers)
@@ -271,20 +271,20 @@ TEST(ChainedBuffers, PeekAndAdvanceWalkNodes)
     chain.append(ChainedBufferNode{buf, 200, 100, 200});
 
     auto s1 = chain.peek();
-    EXPECT_EQ(s1.logical_offset, 0u);
+    EXPECT_EQ(s1.offset, 0u);
     EXPECT_EQ(s1.size, 100u);
     EXPECT_EQ(s1.data[0], 'A');
     chain.advance(100);
     EXPECT_EQ(chain.getNodes().size(), 2u);
 
     auto s2 = chain.peek();
-    EXPECT_EQ(s2.logical_offset, 100u);
+    EXPECT_EQ(s2.offset, 100u);
     EXPECT_EQ(s2.data[0], 'B');
     chain.advance(100);
     EXPECT_EQ(chain.getNodes().size(), 1u);
 
     auto s3 = chain.peek();
-    EXPECT_EQ(s3.logical_offset, 200u);
+    EXPECT_EQ(s3.offset, 200u);
     EXPECT_EQ(s3.data[0], 'C');
     chain.advance(100);
     EXPECT_TRUE(chain.atEnd());
@@ -309,7 +309,7 @@ TEST(ChainedBuffers, AdvanceReleasesBuffer)
 
 TEST(ChainedBuffers, AdvanceUpdatesCoverageAndRange)
 {
-    /// `range` / `covers` / `coveredBytes` must reflect what is still
+    /// `range` / `covers` must reflect what is still
     /// reachable after the cursor advances — NOT the appended coverage.
     /// Regression for the stale-intervals bug that caused
     /// `UNKNOWN_CODEC: codec family 0` in fast-test on
@@ -330,7 +330,6 @@ TEST(ChainedBuffers, AdvanceUpdatesCoverageAndRange)
     EXPECT_EQ(chain.range().size, 200u);
     EXPECT_FALSE(chain.covers({50, 50}));
     EXPECT_TRUE(chain.covers({150, 50}));
-    EXPECT_EQ(chain.coveredBytes({0, 300}), 200u);
 
     /// Advance past the second node — coverage shrinks to [200, 300).
     chain.advance(100);
@@ -362,7 +361,7 @@ TEST(ChainedBuffers, AdvancePartialKeepsBufferAndAdjustsCursor)
     EXPECT_EQ(chain.range().size, 70u);
 
     auto s = chain.peek();
-    EXPECT_EQ(s.logical_offset, 30u);
+    EXPECT_EQ(s.offset, 30u);
     EXPECT_EQ(s.size, 70u);
     EXPECT_EQ(s.data[0], static_cast<char>('a' + 30));
 }
@@ -385,7 +384,7 @@ TEST(ChainedBuffers, TryRewindBackwardInsideFrontNode)
     EXPECT_EQ(chain.range().size, 80u);
 
     auto s = chain.peek();
-    EXPECT_EQ(s.logical_offset, 20u);
+    EXPECT_EQ(s.offset, 20u);
     EXPECT_EQ(s.data[0], static_cast<char>('a' + 20));
 }
 
@@ -430,11 +429,11 @@ TEST(ChainedBuffers, TryRewindIntoGapFails)
     chain.append(ChainedBufferNode{buf, 20, 10, 20});  /// covers [20, 30)
 
     EXPECT_FALSE(chain.tryRewind(15));
-    EXPECT_EQ(chain.peek().logical_offset, 0u);
+    EXPECT_EQ(chain.peek().offset, 0u);
 
     ASSERT_TRUE(chain.tryRewind(25));
     auto s = chain.peek();
-    EXPECT_EQ(s.logical_offset, 25u);
+    EXPECT_EQ(s.offset, 25u);
     EXPECT_EQ(s.size, 5u);
     EXPECT_EQ(s.data[0], static_cast<char>('A' + 25));
 }
@@ -454,17 +453,6 @@ namespace
         }
         return chain;
     }
-}
-
-TEST(ChainedBuffers, CoveredBytesMatchesActualCoverage)
-{
-    /// Three 10-byte nodes covering [0, 30). Query coverage of various sub-ranges.
-    auto chain = makeAdjacentChainedBuffers(/*count=*/3, /*node_size=*/10);
-    EXPECT_EQ(chain.coveredBytes({0, 30}), 30u);
-    EXPECT_EQ(chain.coveredBytes({5, 20}), 20u);
-    EXPECT_EQ(chain.coveredBytes({0, 100}), 30u);  // over-asks; covered <= req
-    EXPECT_EQ(chain.coveredBytes({30, 10}), 0u);   // entirely outside
-    EXPECT_EQ(chain.coveredBytes({100, 50}), 0u);
 }
 
 TEST(ChainedBuffers, GapsReturnsMissingRanges)
@@ -520,21 +508,6 @@ TEST(ChainedBuffers, CoversIsCorrectInverseOfGaps)
     EXPECT_TRUE(chain.covers({0, 0}));    // empty range trivially covered
 }
 
-TEST(ChainedBuffers, ExtractMatchesSliceWhenCovered)
-{
-    auto chain = makeAdjacentChainedBuffers(3, 10);
-    ChainedBuffers ex = chain.extract({5, 20});
-    ChainedBuffers sl = chain.slice({5, 20});
-    ASSERT_EQ(ex.getNodes().size(), sl.getNodes().size());
-    EXPECT_EQ(ex.totalBytes(), 20u);
-    /// `extract` and `slice` produce equivalent node ranges on full coverage.
-    for (size_t i = 0; i < ex.getNodes().size(); ++i)
-    {
-        EXPECT_EQ(ex.getNodes()[i].logical_offset, sl.getNodes()[i].logical_offset);
-        EXPECT_EQ(ex.getNodes()[i].size, sl.getNodes()[i].size);
-    }
-}
-
 TEST(ChainedBuffers, ShiftAdjustsLogicalOffsets)
 {
     auto chain = makeAdjacentChainedBuffers(3, 10);
@@ -564,7 +537,7 @@ TEST(ChainedBuffers, CopyToFlattensCoveredRange)
 TEST(ChainedBuffers, CopyToWorksWithUnsortedNodes)
 {
     /// Nodes appended out of order should still flatten correctly via copyTo
-    /// (ChainedBuffers::append keeps `nodes` sorted by logical_offset on the way in).
+    /// (ChainedBuffers::append keeps `nodes` sorted by offset on the way in).
     ChainedBuffers chain;
     auto b1 = std::make_shared<OwnedChainedBuffer>(5);
     auto b2 = std::make_shared<OwnedChainedBuffer>(5);
@@ -581,7 +554,7 @@ TEST(ChainedBuffers, CopyToWorksWithUnsortedNodes)
 
 TEST(ChainedBuffers, AppendKeepsNodesSortedByLogicalOffset)
 {
-    /// `append` inserts into `nodes` sorted by `logical_offset`, so consumers
+    /// `append` inserts into `nodes` sorted by `offset`, so consumers
     /// (PipelineReadBuffer::popFront, copyTo) can rely on monotonic iteration
     /// regardless of insertion order.
     auto buf = std::make_shared<OwnedChainedBuffer>(100);
@@ -593,10 +566,10 @@ TEST(ChainedBuffers, AppendKeepsNodesSortedByLogicalOffset)
 
     const auto & ns = chain.getNodes();
     ASSERT_EQ(ns.size(), 4u);
-    EXPECT_EQ(ns[0].logical_offset, 0u);
-    EXPECT_EQ(ns[1].logical_offset, 30u);
-    EXPECT_EQ(ns[2].logical_offset, 50u);
-    EXPECT_EQ(ns[3].logical_offset, 70u);
+    EXPECT_EQ(ns[0].offset, 0u);
+    EXPECT_EQ(ns[1].offset, 30u);
+    EXPECT_EQ(ns[2].offset, 50u);
+    EXPECT_EQ(ns[3].offset, 70u);
 }
 
 TEST(ChainedBuffers, AppendEqualOffsetIsStable)
@@ -629,7 +602,6 @@ TEST(ChainedBuffers, AppendOverlappingNodeKeepsCoverageIntact)
     chain.append(ChainedBufferNode{buf, 50, 10, 50});
 
     EXPECT_TRUE(chain.covers({0, 100}));
-    EXPECT_EQ(chain.coveredBytes({0, 100}), 100u);
     EXPECT_EQ(chain.range().offset, 0u);
     EXPECT_EQ(chain.range().size, 100u);
 
@@ -710,10 +682,10 @@ TEST(ChainedBuffers, AppendChainedBuffersMergesNodesAndIntervals)
 
     const auto & ns = a.getNodes();
     ASSERT_EQ(ns.size(), 4u);
-    EXPECT_EQ(ns[0].logical_offset, 0u);
-    EXPECT_EQ(ns[1].logical_offset, 20u);
-    EXPECT_EQ(ns[2].logical_offset, 40u);
-    EXPECT_EQ(ns[3].logical_offset, 60u);
+    EXPECT_EQ(ns[0].offset, 0u);
+    EXPECT_EQ(ns[1].offset, 20u);
+    EXPECT_EQ(ns[2].offset, 40u);
+    EXPECT_EQ(ns[3].offset, 60u);
 
     const auto & ivs = a.getIntervals();
     ASSERT_EQ(ivs.size(), 4u);
@@ -731,8 +703,8 @@ TEST(ChainedBuffers, ShiftMovesNodesAndIntervals)
     chain.append(ChainedBufferNode{buf, 0, 10, 200});
 
     chain.shift(-50);
-    EXPECT_EQ(chain.getNodes()[0].logical_offset, 50u);
-    EXPECT_EQ(chain.getNodes()[1].logical_offset, 150u);
+    EXPECT_EQ(chain.getNodes()[0].offset, 50u);
+    EXPECT_EQ(chain.getNodes()[1].offset, 150u);
     EXPECT_EQ(chain.getIntervals()[0].offset, 50u);
     EXPECT_EQ(chain.getIntervals()[1].offset, 150u);
     EXPECT_EQ(chain.range().offset, 50u);
@@ -810,7 +782,7 @@ TEST(ChainedBuffers, AdvancePastEndClampsWithoutOverflow)
     ChainedBuffers chain;
     chain.append(ChainedBufferNode{buf, 0, 100, 0});
     chain.advance(50);
-    EXPECT_EQ(chain.peek().logical_offset, 50u);
+    EXPECT_EQ(chain.peek().offset, 50u);
 
     chain.advance(static_cast<size_t>(-1));  /// SIZE_MAX
     EXPECT_TRUE(chain.atEnd());
@@ -831,7 +803,7 @@ TEST(ChainedBuffers, TryRewindIntoFrontNodeUnderOverlap)
 
     ASSERT_TRUE(chain.tryRewind(500));
     auto s = chain.peek();
-    EXPECT_EQ(s.logical_offset, 500u);
+    EXPECT_EQ(s.offset, 500u);
     EXPECT_EQ(static_cast<unsigned char>(s.data[0]), static_cast<unsigned char>('A' + (500 % 26)));
 }
 
@@ -845,7 +817,7 @@ TEST(ChainedBuffers, AppendBehindCursorAfterAdvanceIsTrimmed)
     ChainedBuffers chain;
     chain.append(ChainedBufferNode{a, 0, 100, 100});  /// [100, 200)
     chain.advance(50);                        /// consume [100, 150); cursor at 150
-    ASSERT_EQ(chain.peek().logical_offset, 150u);
+    ASSERT_EQ(chain.peek().offset, 150u);
     ASSERT_EQ(chain.peek().size, 50u);
 
     /// Entirely behind the cursor -> dropped (no OOB peek, no coverage resurrection).
@@ -853,7 +825,7 @@ TEST(ChainedBuffers, AppendBehindCursorAfterAdvanceIsTrimmed)
     std::memset(b->data(), 'B', 60);
     chain.append(ChainedBufferNode{b, 0, 60, 50});  /// [50, 110), end <= 150
     EXPECT_EQ(chain.range().offset, 150u);
-    EXPECT_EQ(chain.peek().logical_offset, 150u);
+    EXPECT_EQ(chain.peek().offset, 150u);
     EXPECT_EQ(chain.peek().size, 50u);
 
     /// Straddles the cursor -> trimmed to [150, 210).
@@ -901,6 +873,56 @@ TEST(ChainedBuffers, SliceTrimsConsumedBytesAcrossOverlap)
     EXPECT_EQ(out.size(), 25u);  /// [100, 125) served once despite overlapping nodes
 }
 
+TEST(ChainedBuffers, SliceDeliversOverlappingNodesExactlyOnce)
+{
+    /// Overlapping nodes with NO advance (the lane bank shape: a later fetch re-covers
+    /// already-banked bytes). `slice` must deliver each byte exactly once - a duplicated
+    /// node would shift everything after it for a consumer assembling by concatenation.
+    const auto fill = [](size_t start, size_t len)
+    {
+        auto buf = std::make_shared<OwnedChainedBuffer>(len);
+        for (size_t i = 0; i < len; ++i)
+            buf->data()[i] = static_cast<char>(start + i);
+        return buf;
+    };
+
+    ChainedBuffers chain;
+    chain.append(ChainedBufferNode{fill(25, 4), 0, 4, 25});   /// [25, 29) banked first
+    chain.append(ChainedBufferNode{fill(0, 29), 0, 29, 0});   /// [0, 29) re-fetched over it
+
+    ChainedBuffers s = chain.slice({0, 29});
+    EXPECT_EQ(s.totalBytes(), 29u);  /// node-size sum: no duplicated bytes
+    size_t pos = 0;
+    while (!s.atEnd())
+    {
+        auto sp = s.peek();
+        ASSERT_EQ(sp.offset, pos);
+        for (size_t i = 0; i < sp.size; ++i)
+            EXPECT_EQ(static_cast<unsigned char>(sp.data[i]), pos + i);
+        pos += sp.size;
+        s.advance(sp.size);
+    }
+    EXPECT_EQ(pos, 29u);
+
+    /// Partial overlap: [10, 20) then [15, 35); each byte of the request served once.
+    ChainedBuffers partial;
+    partial.append(ChainedBufferNode{fill(10, 10), 0, 10, 10});
+    partial.append(ChainedBufferNode{fill(15, 20), 0, 20, 15});
+    ChainedBuffers p = partial.slice({10, 15});  /// [10, 25)
+    EXPECT_EQ(p.totalBytes(), 15u);
+    pos = 10;
+    while (!p.atEnd())
+    {
+        auto sp = p.peek();
+        ASSERT_EQ(sp.offset, pos);
+        for (size_t i = 0; i < sp.size; ++i)
+            EXPECT_EQ(static_cast<unsigned char>(sp.data[i]), pos + i);
+        pos += sp.size;
+        p.advance(sp.size);
+    }
+    EXPECT_EQ(pos, 25u);
+}
+
 TEST(ChainedBuffers, AppendChainedBuffersToConsumedDestinationTrims)
 {
     /// append(ChainedBuffers&&) into a partly-consumed destination must trim moved nodes against the
@@ -910,7 +932,7 @@ TEST(ChainedBuffers, AppendChainedBuffersToConsumedDestinationTrims)
     ChainedBuffers dst;
     dst.append(ChainedBufferNode{a, 0, 100, 100});  /// [100, 200)
     dst.advance(50);                        /// cursor at 150
-    ASSERT_EQ(dst.peek().logical_offset, 150u);
+    ASSERT_EQ(dst.peek().offset, 150u);
 
     auto b = std::make_shared<OwnedChainedBuffer>(60);
     std::memset(b->data(), 'B', 60);
@@ -919,7 +941,7 @@ TEST(ChainedBuffers, AppendChainedBuffersToConsumedDestinationTrims)
     dst.append(std::move(other));
 
     EXPECT_EQ(dst.range().offset, 150u);     /// consumed bytes not re-covered
-    EXPECT_EQ(dst.peek().logical_offset, 150u);
+    EXPECT_EQ(dst.peek().offset, 150u);
     EXPECT_EQ(dst.peek().size, 50u);         /// front node still [150, 200), no OOB peek
 }
 
@@ -934,13 +956,13 @@ TEST(ChainedBuffers, AppendBeforeFrontAfterBoundaryAdvanceIsDropped)
     chain.append(ChainedBufferNode{buf, 100, 100, 100});  /// [100, 200)
     chain.append(ChainedBufferNode{buf, 300, 100, 300});  /// [300, 400), gap [200, 300)
     chain.advance(100);                            /// consume [100, 200); front node dropped
-    ASSERT_EQ(chain.peek().logical_offset, 300u);  /// gap skipped; cursor lands at 300
+    ASSERT_EQ(chain.peek().offset, 300u);  /// gap skipped; cursor lands at 300
     ASSERT_EQ(chain.frontOffsetForTest(), 0u);     /// ...with front_offset back to 0
 
     auto b = std::make_shared<OwnedChainedBuffer>(10);
     std::memset(b->data(), 'B', 10);
     chain.append(ChainedBufferNode{b, 0, 10, 150});  /// [150, 160): behind the consumed frontier (200)
-    EXPECT_EQ(chain.peek().logical_offset, 300u);  /// not resurrected to 150
+    EXPECT_EQ(chain.peek().offset, 300u);  /// not resurrected to 150
     EXPECT_EQ(chain.range().offset, 300u);
 }
 
@@ -954,7 +976,7 @@ TEST(ChainedBuffers, ShiftMovesConsumedFrontier)
     chain.append(ChainedBufferNode{buf, 0, 100, 100});  /// [100, 200)
     chain.advance(25);                           /// consume [100, 125); consumed_pos 125
     chain.shift(100);                            /// -> [200, 300); cursor and consumed_pos -> 225
-    ASSERT_EQ(chain.peek().logical_offset, 225u);
+    ASSERT_EQ(chain.peek().offset, 225u);
     ASSERT_EQ(chain.range().offset, 225u);
 
     /// A slice dipping below the shifted cursor must not expose consumed bytes.
@@ -965,7 +987,7 @@ TEST(ChainedBuffers, ShiftMovesConsumedFrontier)
     auto b = std::make_shared<OwnedChainedBuffer>(10);
     std::memset(b->data(), 'B', 10);
     chain.append(ChainedBufferNode{b, 0, 10, 150});  /// [150, 160), below 225
-    EXPECT_EQ(chain.peek().logical_offset, 225u);
+    EXPECT_EQ(chain.peek().offset, 225u);
     EXPECT_EQ(chain.range().offset, 225u);
 }
 
@@ -981,7 +1003,7 @@ TEST(ChainedBuffers, AdvanceZeroIsNoOp)
     auto early = std::make_shared<OwnedChainedBuffer>(50);
     chain.append(ChainedBufferNode{early, 0, 50, 0});  /// [0, 50): must not be dropped
     EXPECT_EQ(chain.range().offset, 0u);
-    EXPECT_EQ(chain.peek().logical_offset, 0u);
+    EXPECT_EQ(chain.peek().offset, 0u);
     EXPECT_EQ(chain.totalBytes(), 150u);
 }
 
@@ -996,12 +1018,12 @@ TEST(ChainedBuffers, GapFillAppendBetweenFrontierAndFront)
     chain.append(ChainedBufferNode{buf, 100, 100, 100});  /// [100, 200)
     chain.append(ChainedBufferNode{buf, 300, 100, 300});  /// [300, 400), gap [200, 300)
     chain.advance(100);                            /// consume [100, 200)
-    ASSERT_EQ(chain.peek().logical_offset, 300u);
+    ASSERT_EQ(chain.peek().offset, 300u);
 
     auto fill = std::make_shared<OwnedChainedBuffer>(100);
     std::memset(fill->data(), 'B', 100);
     chain.append(ChainedBufferNode{fill, 0, 100, 150});     /// [150, 250): [150, 200) is consumed
-    EXPECT_EQ(chain.peek().logical_offset, 200u);  /// trimmed to [200, 250), new front
+    EXPECT_EQ(chain.peek().offset, 200u);  /// trimmed to [200, 250), new front
 
     std::string out;
     while (!chain.atEnd())
@@ -1028,7 +1050,7 @@ TEST(ChainedBuffers, AppendToDrainedChainedBuffersRespectsFrontier)
 
     auto b = std::make_shared<OwnedChainedBuffer>(40);
     chain.append(ChainedBufferNode{b, 0, 40, 80});  /// [80, 120) -> trimmed to [100, 120)
-    EXPECT_EQ(chain.peek().logical_offset, 100u);
+    EXPECT_EQ(chain.peek().offset, 100u);
     EXPECT_EQ(chain.peek().size, 20u);
     EXPECT_EQ(chain.range().offset, 100u);
 }
@@ -1110,7 +1132,7 @@ TEST(ChainedBuffers, TryRewindForwardAcrossOverlapBoundary)
 
     ASSERT_TRUE(chain.tryRewind(120));
     auto s = chain.peek();
-    EXPECT_EQ(s.logical_offset, 120u);
+    EXPECT_EQ(s.offset, 120u);
     EXPECT_EQ(s.size, 30u);
     EXPECT_EQ(s.data[0], 'B');
 }
@@ -1139,7 +1161,7 @@ TEST(ChainedBuffers, PeekOnEmptyChainedBuffers)
     auto s = chain.peek();
     EXPECT_EQ(s.data, nullptr);
     EXPECT_EQ(s.size, 0u);
-    EXPECT_EQ(s.logical_offset, 0u);
+    EXPECT_EQ(s.offset, 0u);
     EXPECT_TRUE(chain.atEnd());
 }
 
@@ -1155,7 +1177,6 @@ TEST(ChainedBuffers, AppendEmptyChainedBuffersIsNoOp)
 TEST(ChainedBuffers, ZeroSizeCoverageQueries)
 {
     auto chain = makeAdjacentChainedBuffers(/*count=*/2, /*node_size=*/10);  /// [0, 20)
-    EXPECT_EQ(chain.coveredBytes({5, 0}), 0u);
     EXPECT_TRUE(chain.gaps({5, 0}).empty());
     EXPECT_TRUE(chain.covers({5, 0}));
 }

@@ -10,6 +10,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <base/types.h>
 
 #include <array>
@@ -27,6 +28,10 @@ namespace DB
 
 class ReadBufferFromFileBase;
 class EncryptionHeaderCache;
+
+/// Ordered cache chain, front = fastest tier. The shared alias moved out of `ICacheProvider.h`
+/// when the big PR relocated the plan helpers; the simple driver keeps its own.
+using CacheChain = VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>;
 
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves
 /// bytes from an `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time.

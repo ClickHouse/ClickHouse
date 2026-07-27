@@ -233,109 +233,97 @@ PageCacheProvider::PageCacheProvider(
 {
 }
 
-CacheViewPtr PageCacheProvider::planResidencyView(
-    const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range_in_file)
-{
-    return buildView(range_in_file);
-}
-
-void PageCacheProvider::openWriteBuffers(
+CacheWriterPtr PageCacheProvider::openWriter(
     const StoredObject & /*object*/,
     size_t /*object_file_offset*/,
-    CacheView & view)
+    ByteRange cell)
 {
     if (!populatesOnMiss())
-        return;
+        return nullptr;
 
     /// PageCache is file-level - `object` / `object_file_offset` are ignored.
     /// Cells are created lazily on the first `write` of each block.
-    for (auto & entry : view.miss_entries)
-        entry.writer = std::make_unique<PageCacheWriter>(
-            cache,
-            file,
-            block_size,
-            file_size_in_bytes,
-            inject_eviction,
-            bypass_if_missing,
-            entry.range);
+    return std::make_unique<PageCacheWriter>(
+        cache,
+        file,
+        block_size,
+        file_size_in_bytes,
+        inject_eviction,
+        bypass_if_missing,
+        cell);
 }
 
-CacheViewPtr PageCacheProvider::buildView(ByteRange range_in_file)
+/// The page tier's residency walk: stateless per step (block probes are cheap
+/// map lookups), so the cursor only carries the provider reference.
+class PageCacheProvider::ProbeCursor : public ICacheProvider::IProbeCursor
 {
-    auto view = std::make_unique<CacheView>();
+public:
+    explicit ProbeCursor(PageCacheProvider & provider_) : provider(provider_) {}
 
-    /// Block-align the request; the tail block is clamped to the file's real
-    /// byte length so a hit cell carries only valid bytes.
-    size_t aligned_start = (range_in_file.offset / block_size) * block_size;
-    size_t aligned_end = ((range_in_file.end() + block_size - 1) / block_size) * block_size;
-    if (aligned_end > file_size_in_bytes)
-        aligned_end = ((file_size_in_bytes + block_size - 1) / block_size) * block_size;
+    ICacheProvider::Resolution lookAt(
+        const StoredObject & object, size_t object_file_offset, size_t pos_in_file) override
+    {
+        return provider.resolve(object, object_file_offset, pos_in_file);
+    }
+
+private:
+    PageCacheProvider & provider;
+};
+
+std::unique_ptr<ICacheProvider::IProbeCursor> PageCacheProvider::probe()
+{
+    return std::make_unique<ProbeCursor>(*this);
+}
+
+ICacheProvider::Resolution PageCacheProvider::resolve(
+    const StoredObject & /*object*/, size_t /*object_file_offset*/, size_t pos_in_file)
+{
+    /// PageCache is file-level - the object arguments are ignored. Blocks are
+    /// probed read-only (`cache->get` never creates a cell); a hit run walks
+    /// the contiguous mapped blocks from the asked one - capped so a fully
+    /// warm file does not pin unboundedly through a single reader - and one
+    /// reader holds the run's cells. A miss is ONE block cell.
+    if (pos_in_file >= file_size_in_bytes)
+        return {};
+
+    static constexpr size_t HIT_RUN_CAP = 8 * 1024 * 1024;
 
     SipHash base_hash = file.baseHash();
-
-    /// Coalesce runs of adjacent same-kind blocks: a hit run collects its
-    /// cells; a miss run only tracks the spanned range.
-    VectorWithMemoryTracking<PageCacheReader::HeldCell> run_cells;
-    ByteRange run_range{0, 0};
-    bool run_active = false;
-    bool run_is_hit = false;
-
-    auto flush_run = [&]()
+    auto probe = [&](size_t off) -> PageCache::MappedPtr
     {
-        if (!run_active)
-            return;
-        if (run_is_hit)
-        {
-            auto reader = std::make_unique<PageCacheReader>(run_range, std::move(run_cells));
-            view->hit_entries.push_back(HitEntry{run_range, std::move(reader)});
-        }
-        else
-        {
-            /// Writers are `openWriteBuffers`' job; views carry null. One entry
-            /// per BLOCK: each miss range is one cell - the executor derives
-            /// fetch shaping and whole-cell containment from these edges.
-            for (size_t off = run_range.offset; off < run_range.end(); off += block_size)
-                view->miss_entries.push_back(
-                    MissEntry{ByteRange{off, std::min(block_size, run_range.end() - off)}, /*writer=*/nullptr});
-        }
-        run_cells.clear();
-        run_active = false;
+        const size_t sz = std::min(block_size, file_size_in_bytes - off);
+        PageCacheByteRange byte_range{off, sz};
+        return cache->get(byte_range.hash(base_hash), inject_eviction);
     };
 
-    for (size_t offset = aligned_start; offset < aligned_end; offset += block_size)
+    const size_t block_start = pos_in_file / block_size * block_size;
+    Resolution res;
+    auto first = probe(block_start);
+    if (!first)
     {
-        size_t this_block_size = std::min(block_size, file_size_in_bytes - offset);
-        PageCacheByteRange byte_range{offset, this_block_size};
-        UInt128 key_hash = byte_range.hash(base_hash);
-        ByteRange block_file{offset, this_block_size};
-
-        /// Read-only probe - `cache->get` never creates a cell.
-        auto cell = cache->get(key_hash, inject_eviction);
-        const bool is_hit = (cell != nullptr);
-
-        if (run_active && run_is_hit != is_hit)
-            flush_run();
-
-        if (!run_active)
-        {
-            run_active = true;
-            run_is_hit = is_hit;
-            run_range = block_file;
-        }
-        else
-        {
-            run_range.size = block_file.end() - run_range.offset;
-        }
-
-        if (is_hit)
-            run_cells.push_back(PageCacheReader::HeldCell{byte_range, std::move(cell)});
+        res.kind = Resolution::Kind::Miss;
+        res.range = ByteRange{block_start, std::min(block_size, file_size_in_bytes - block_start)};
+        return res;
     }
-    flush_run();
 
-    LOG_TRACE(log, "PageCacheProvider::buildView: file [{}, {}) → {} hits, {} misses",
-        range_in_file.offset, range_in_file.end(), view->hit_entries.size(), view->miss_entries.size());
-
-    return view;
+    VectorWithMemoryTracking<PageCacheReader::HeldCell> cells;
+    size_t end = block_start;
+    PageCache::MappedPtr cell = std::move(first);
+    while (true)
+    {
+        const size_t sz = std::min(block_size, file_size_in_bytes - end);
+        cells.push_back(PageCacheReader::HeldCell{PageCacheByteRange{end, sz}, std::move(cell)});
+        end += sz;
+        if (end >= file_size_in_bytes || end - block_start >= HIT_RUN_CAP)
+            break;
+        cell = probe(end);
+        if (!cell)
+            break;
+    }
+    res.kind = Resolution::Kind::Hit;
+    res.range = ByteRange{block_start, end - block_start};
+    res.reader = std::make_unique<PageCacheReader>(res.range, std::move(cells));
+    return res;
 }
 
 }

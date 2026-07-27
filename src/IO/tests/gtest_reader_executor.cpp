@@ -121,25 +121,11 @@ public:
     bool fillsWholeCell() const override { return true; }
     String name() const override { return "MockFileCache"; }
 
-    CacheViewPtr planResidencyView(const StoredObject &, size_t, ByteRange range) override
-    {
-        auto view = std::make_unique<CacheView>();
-        const size_t file_size = state->store.size();
-        for (size_t off = (range.offset / block_size) * block_size; off < range.end(); off += block_size)
-        {
-            const ByteRange block{off, std::min(block_size, file_size - off)};
-            if (state->resident.subtract(block).empty())
-                view->hit_entries.push_back(HitEntry{block, std::make_unique<Reader>(block, state)});
-            else
-                view->miss_entries.push_back(MissEntry{block, nullptr});
-        }
-        return view;
-    }
+    std::unique_ptr<IProbeCursor> probe() override { return std::make_unique<Cursor>(block_size, state); }
 
-    void openWriteBuffers(const StoredObject &, size_t, CacheView & view) override
+    CacheWriterPtr openWriter(const StoredObject &, size_t, ByteRange cell) override
     {
-        for (auto & m : view.miss_entries)
-            m.writer = std::make_unique<Writer>(m.range, state);
+        return std::make_unique<Writer>(cell, state);
     }
 
 private:
@@ -228,6 +214,34 @@ private:
         }
     private:
         ByteRange r;
+        std::shared_ptr<MockCacheState> state;
+    };
+
+    /// Steps one file-level block per `lookAt`: resident block -> Hit (with a fresh reader),
+    /// else Miss; past EOF -> End (a default `Resolution`).
+    class Cursor : public IProbeCursor
+    {
+    public:
+        Cursor(size_t block_size_, std::shared_ptr<MockCacheState> s_) : block_size(block_size_), state(std::move(s_)) {}
+        Resolution lookAt(const StoredObject &, size_t, size_t pos_in_file) override
+        {
+            const size_t file_size = state->store.size();
+            if (pos_in_file >= file_size)
+                return Resolution{};
+            const size_t block_start = pos_in_file / block_size * block_size;
+            Resolution r;
+            r.range = ByteRange{block_start, std::min(block_size, file_size - block_start)};
+            if (state->resident.subtract(r.range).empty())
+            {
+                r.kind = Resolution::Kind::Hit;
+                r.reader = std::make_unique<Reader>(r.range, state);
+            }
+            else
+                r.kind = Resolution::Kind::Miss;
+            return r;
+        }
+    private:
+        size_t block_size;
         std::shared_ptr<MockCacheState> state;
     };
 
@@ -467,7 +481,7 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
         if (w.atEnd())
             break;
         EXPECT_LE(w.totalBytes(), 100u);
-        EXPECT_EQ(w.peek().logical_offset, total);
+        EXPECT_EQ(w.peek().offset, total);
         total += w.totalBytes();
         ++windows;
     }
@@ -486,7 +500,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ChainedBuffers w = ex.readNextWindow();
     ASSERT_FALSE(w.atEnd());
     auto span = w.peek();
-    EXPECT_EQ(span.logical_offset, 500u);
+    EXPECT_EQ(span.offset, 500u);
     EXPECT_EQ(static_cast<unsigned char>(span.data[0]), patternByte(500));
 
     /// Seek backward and re-read.
@@ -494,7 +508,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
     ChainedBuffers w2 = ex.readNextWindow();
     ASSERT_FALSE(w2.atEnd());
     auto span2 = w2.peek();
-    EXPECT_EQ(span2.logical_offset, 10u);
+    EXPECT_EQ(span2.offset, 10u);
     EXPECT_EQ(static_cast<unsigned char>(span2.data[0]), patternByte(10));
 }
 
@@ -1000,7 +1014,7 @@ TEST_F(ReaderExecutorTest, DrainFailureDoesNotAbortQuery)
     ASSERT_NO_THROW(w = ex.readNextWindow());
     ASSERT_FALSE(w.atEnd());
     const auto span = w.peek();
-    ASSERT_EQ(span.logical_offset, 0u);
+    ASSERT_EQ(span.offset, 0u);
     ASSERT_GE(span.size, block);
     for (size_t i = 0; i < block; ++i)
         ASSERT_EQ(static_cast<unsigned char>(span.data[i]), patternByte(i)) << "at " << i;
@@ -1041,7 +1055,7 @@ TEST_F(ReaderExecutorTest, BridgeDoesNotClobberServedWindow)
     }
     ASSERT_FALSE(held.atEnd()) << "expected a long connection to open";
     const auto span = held.peek();
-    const size_t off = span.logical_offset;
+    const size_t off = span.offset;
 
     /// A small forward gap on the open connection -> serveFromLongConnection bridges via skipForward.
     ex.seek(off + span.size + 4096);
@@ -1165,7 +1179,7 @@ TEST_F(ReaderExecutorTest, DecryptsAcrossBlobBoundary)
 {
     /// A single encrypted file (header + ciphertext) split across two objects. The header lives in
     /// the first object and the payload spans both, so this exercises the physical shift
-    /// `position + data_start_offset` and `findObjectAt` crossing an object boundary while decrypting.
+    /// `position + data_start_offset` and the object-piece mapping crossing a boundary while decrypting.
     String key(16, 'm');
     const FileEncryption::InitVector iv(UInt128{0x55});
     const size_t plaintext_size = 5000;

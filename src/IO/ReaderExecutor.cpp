@@ -388,38 +388,52 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
     const ByteRange window{window_offset, want};
     const auto pieces = offset_map.map(window);
 
-    /// Per (tier, object-piece): the filesystem cache keys per object, the page cache is file-level.
-    struct Planned { ICacheProvider * cache; StoredObject object; size_t object_file_offset; CacheViewPtr view; };
-    VectorWithMemoryTracking<Planned> planned;
+    /// Walk each (tier, object-piece) one resolution at a time (a fresh cursor per walk): collect the
+    /// hit runs with their readers and the miss cells overlapping the window. The filesystem cache
+    /// keys per object; the page cache is file-level.
+    struct HitRun { CacheReaderPtr reader; ByteRange range; };
+    struct MissCell { ICacheProvider * cache; StoredObject object; size_t object_file_offset; ByteRange range; };
+    VectorWithMemoryTracking<HitRun> hits;
+    VectorWithMemoryTracking<MissCell> misses;
     for (auto & cache : cache_chain)
     {
         size_t piece_start = window.offset;
         for (const auto & pr : pieces)
         {
             const size_t object_file_offset = piece_start - pr.object_offset;
+            const ByteRange piece{piece_start, pr.size};
             stats.add(Stats::CacheGetRequests);
-            planned.push_back(Planned{cache.get(), pr.object, object_file_offset,
-                cache->planResidencyView(pr.object, object_file_offset, ByteRange{piece_start, pr.size})});
+            auto cursor = cache->probe();
+            size_t pos = piece.offset;
+            while (pos < piece.end())
+            {
+                auto r = cursor->lookAt(pr.object, object_file_offset, pos);
+                if (r.kind == ICacheProvider::Resolution::Kind::End)
+                    break;
+                if (r.kind == ICacheProvider::Resolution::Kind::Hit)
+                    hits.push_back(HitRun{std::move(r.reader), r.range});
+                else
+                    misses.push_back(MissCell{cache.get(), pr.object, object_file_offset, r.range});
+                pos = std::max(pos + 1, r.range.end());
+            }
             piece_start += pr.size;
         }
     }
 
     /// Serve a hit at the window start (a short window is fine).
-    for (const auto & p : planned)
-        for (const auto & hit : p.view->hits())
-            if (hit.reader && hit.range.offset <= window.offset && window.offset < hit.range.end())
-                return hit.reader->read(ByteRange{window.offset, std::min(hit.range.end(), window.end()) - window.offset});
+    for (const auto & h : hits)
+        if (h.reader && h.range.offset <= window.offset && window.offset < h.range.end())
+            return h.reader->read(ByteRange{window.offset, std::min(h.range.end(), window.end()) - window.offset});
 
     /// Fetch the miss expanded to whole cells, across the objects it spans.
     size_t fetch_lo = window.offset;
     size_t fetch_hi = window.end();
-    for (const auto & p : planned)
-        for (const auto & m : p.view->misses())
-            if (m.range.offset < window.end() && window.offset < m.range.end())
-            {
-                fetch_lo = std::min(fetch_lo, m.range.offset);
-                fetch_hi = std::max(fetch_hi, m.range.end());
-            }
+    for (const auto & m : misses)
+        if (m.range.offset < window.end() && window.offset < m.range.end())
+        {
+            fetch_lo = std::min(fetch_lo, m.range.offset);
+            fetch_hi = std::max(fetch_hi, m.range.end());
+        }
     if (!offset_map.hasUnknownSize())
         fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
 
@@ -427,22 +441,20 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
     /// already downloads: a later window reads it from cache instead of fetching it twice.
     /// Greedy - never wait: a sibling range AT the window start is fetched through (its write
     /// lands 0). Roles won past a trim are released unfilled when `claimed` goes out of scope.
-    struct ClaimedCell { CacheWriter * writer; ByteRange range; CacheWriter::FillClaim claim; };
+    struct ClaimedCell { CacheWriterPtr writer; ByteRange range; CacheWriter::FillClaim claim; };
     VectorWithMemoryTracking<ClaimedCell> claimed;
-    for (auto & p : planned)
+    for (const auto & m : misses)
     {
-        p.cache->openWriteBuffers(p.object, p.object_file_offset, *p.view);
-        for (const auto & m : p.view->misses())
-        {
-            if (!m.writer)
-                continue;
-            const size_t lo = std::max(m.range.offset, fetch_lo);
-            const size_t hi = std::min(m.range.end(), fetch_hi);
-            if (lo >= hi)
-                continue;
-            const ByteRange cell{lo, hi - lo};
-            claimed.push_back(ClaimedCell{m.writer.get(), cell, m.writer->claim(cell)});
-        }
+        const size_t lo = std::max(m.range.offset, fetch_lo);
+        const size_t hi = std::min(m.range.end(), fetch_hi);
+        if (lo >= hi)
+            continue;
+        auto writer = m.cache->openWriter(m.object, m.object_file_offset, m.range);
+        if (!writer)
+            continue;
+        const ByteRange cell{lo, hi - lo};
+        auto claim = writer->claim(cell);
+        claimed.push_back(ClaimedCell{std::move(writer), cell, std::move(claim)});
     }
     /// A sibling already downloads the very range the window starts in: wait for its first byte at
     /// our position - holding NO claims, a bare waiter cannot be part of a hold-and-wait cycle -
@@ -456,7 +468,7 @@ ChainedBuffers ReaderExecutor::serveThroughCaches(size_t window_offset, size_t w
             {
                 if (s.offset <= window.offset && window.offset < s.end())
                 {
-                    CacheWriter * lead_writer = c.writer;
+                    CacheWriter * lead_writer = c.writer.get();
                     claimed.clear();
                     stats.add(Stats::SiblingWaits);
                     lead_writer->waitAndReadSiblingLed(ByteRange{window.offset, 1});
@@ -568,10 +580,10 @@ void ReaderExecutor::initDecryption()
 
     /// The headers sit at the front of the first object; identify it (its `remote_path` is the
     /// stable cache key for disk files).
-    const auto * segment = offset_map.findObjectAt(0);
-    if (!segment)
+    const auto head = offset_map.map(ByteRange{0, 1});
+    if (head.empty())
         return;
-    const StoredObject & object = segment->object;
+    const StoredObject & object = head.front().object;
 
     /// Cache hit: parse the cached header bytes and skip the source read. The size check guards
     /// against a stale entry from a differently-layered file at the same path.
