@@ -132,6 +132,11 @@ def create_table_with_one_part(table):
     (`getMaxSourcePartsBytesForMerge` returns 0, `StorageMergeTree` reports `CANNOT_SELECT` with
     "Current value of max_source_parts_bytes is zero"). A merge would rewrite the part set these
     tests assert on.
+
+    `DETACH` must be `SYNC`: an asynchronous detach leaves the storage instance tracked in
+    `DatabaseAtomic::detached_tables` while another subsystem still holds a `StoragePtr`
+    (`ServerAsynchronousMetrics` iterates a snapshot of them), and the later `ATTACH` then throws
+    `TABLE_ALREADY_EXISTS` rather than waiting.
     """
     node.query(f"DROP TABLE IF EXISTS {table} SYNC")
     node.query(
@@ -141,7 +146,7 @@ def create_table_with_one_part(table):
     stop_merges(table)
     node.query(f"INSERT INTO {table} VALUES (42)")
     data_path = table_data_path(table)
-    node.query(f"DETACH TABLE {table}")
+    node.query(f"DETACH TABLE {table} SYNC")
     return data_path
 
 
