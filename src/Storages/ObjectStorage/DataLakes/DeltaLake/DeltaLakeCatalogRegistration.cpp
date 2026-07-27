@@ -3,8 +3,8 @@
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
-#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Databases/DataLake/Common.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -17,6 +17,8 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+
+#include <optional>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -126,23 +128,30 @@ void registerDeltaTableInCatalog(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration_ptr,
-    const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context,
     const ColumnsDescription & columns,
     bool created_fresh,
     const StorageID & table_id)
 {
+    auto kernel_helper = getKernelHelper(configuration_ptr, object_storage);
     /// Register the full URI (`s3://…`, `file://…`) the kernel reads, not the scheme-less `getRawPath().path`.
-    const auto location = getKernelHelper(configuration_ptr, object_storage)->getTableLocation();
+    const auto location = kernel_helper->getTableLocation();
 
-    /// Register the schema on storage: the just-committed `columns` for a fresh table, else the existing snapshot schema.
-    const auto registration_schema = created_fresh
-        ? columns.getAllPhysical()
-        : DeltaLakeMetadataDeltaKernel::create(object_storage, configuration)->getTableSchema(local_context);
+    /// Schema to register: the just-committed `columns` for a fresh table; for an attach, the exact Delta
+    /// schema of the latest snapshot read straight from the `_delta_log` (ignoring read-time snapshot/CDF
+    /// settings), so types like `binary` / `timestamp_ntz` are not collapsed by the ClickHouse round-trip.
+    Poco::JSON::Array::Ptr fields;
+    if (created_fresh)
+        fields = buildDeltaSchemaFields(columns.getAllPhysical());
+    else
+    {
+        auto snapshot = std::make_shared<DeltaLake::TableSnapshot>(
+            /* version */ std::nullopt, kernel_helper, object_storage, getLogger("DeltaLakeCatalogRegistration"));
+        fields = snapshot->getRawDeltaSchemaFields();
+    }
 
     Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;
     metadata_content->set("location", location);
-    metadata_content->set("fields", buildDeltaSchemaFields(registration_schema));
+    metadata_content->set("fields", fields);
 
     const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
 

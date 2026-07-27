@@ -22,6 +22,12 @@
 
 #include <IO/WriteHelpers.h>
 
+#include <Poco/JSON/Array.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/Dynamic/Var.h>
+
+#include <fmt/format.h>
+
 #include "delta_kernel_ffi.hpp"
 
 namespace DB
@@ -609,6 +615,220 @@ DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi:
     SchemaVisitorData data(engine);
     SchemaVisitor::visitSchema(schema, data);
     return data.getSchemaResult().names_and_types;
+}
+
+namespace
+{
+
+/// Visitor that walks a kernel `SharedSchema` and builds the Delta `StructType.fields` JSON, preserving the
+/// exact Delta types. Unlike `SchemaVisitor`, it does not collapse `binary`->`String` or
+/// `timestamp_ntz`->`DateTime64`, so a schema round-tripped through it stays byte-identical to the `_delta_log`.
+struct DeltaJsonSchemaVisitor
+{
+    struct Node
+    {
+        enum class Kind { Primitive, Array, Map, Struct };
+        std::string name;
+        bool nullable = false;
+        Kind kind = Kind::Primitive;
+        /// Delta type string for a primitive (e.g. "binary", "timestamp_ntz", "decimal(10,2)").
+        std::string primitive;
+        /// Child field list id for array/map/struct.
+        size_t child_list_id = 0;
+    };
+
+    std::unordered_map<size_t, std::vector<Node>> lists;
+    size_t counter = 0;
+    std::exception_ptr exception;
+
+    std::vector<Node> & listAt(size_t id)
+    {
+        auto it = lists.find(id);
+        if (it == lists.end())
+            throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema list with id {} does not exist", id);
+        return it->second;
+    }
+
+    Poco::Dynamic::Var buildType(const Node & node) const
+    {
+        switch (node.kind)
+        {
+            case Node::Kind::Primitive:
+                return node.primitive;
+            case Node::Kind::Array:
+            {
+                const auto & children = lists.at(node.child_list_id);
+                Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+                obj->set("type", "array");
+                obj->set("elementType", buildType(children.at(0)));
+                obj->set("containsNull", children.at(0).nullable);
+                return obj;
+            }
+            case Node::Kind::Map:
+            {
+                const auto & children = lists.at(node.child_list_id);
+                Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+                obj->set("type", "map");
+                obj->set("keyType", buildType(children.at(0)));
+                obj->set("valueType", buildType(children.at(1)));
+                obj->set("valueContainsNull", children.at(1).nullable);
+                return obj;
+            }
+            case Node::Kind::Struct:
+            {
+                Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+                obj->set("type", "struct");
+                obj->set("fields", buildFields(node.child_list_id));
+                return obj;
+            }
+        }
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unhandled Delta schema node kind");
+    }
+
+    Poco::JSON::Array::Ptr buildFields(size_t list_id) const
+    {
+        Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+        for (const auto & node : lists.at(list_id))
+        {
+            Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+            field->set("name", node.name);
+            field->set("type", buildType(node));
+            field->set("nullable", node.nullable);
+            field->set("metadata", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+            fields->add(field);
+        }
+        return fields;
+    }
+};
+
+/// Run a visitor mutation, capturing any exception so it never unwinds through the Rust FFI frames.
+template <typename Func>
+void deltaVisitGuarded(void * data, Func && func)
+{
+    auto * v = static_cast<DeltaJsonSchemaVisitor *>(data);
+    if (v->exception)
+        return;
+    try
+    {
+        func(*v);
+    }
+    catch (...)
+    {
+        v->exception = std::current_exception();
+    }
+}
+
+uintptr_t deltaMakeFieldList(void * data, uintptr_t reserve)
+{
+    auto * v = static_cast<DeltaJsonSchemaVisitor *>(data);
+    if (v->exception)
+        return 0;
+    try
+    {
+        size_t id = v->counter++;
+        auto & list = v->lists[id];
+        if (reserve > 0)
+            list.reserve(reserve);
+        return id;
+    }
+    catch (...)
+    {
+        v->exception = std::current_exception();
+        return 0;
+    }
+}
+
+void deltaPushPrimitive(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, std::string type)
+{
+    deltaVisitGuarded(data, [&](DeltaJsonSchemaVisitor & v)
+    {
+        DeltaJsonSchemaVisitor::Node node;
+        node.name.assign(name.ptr, name.len);
+        node.nullable = nullable;
+        node.kind = DeltaJsonSchemaVisitor::Node::Kind::Primitive;
+        node.primitive = std::move(type);
+        v.listAt(sibling).push_back(std::move(node));
+    });
+}
+
+void deltaPushComplex(void * data, uintptr_t sibling, ffi::KernelStringSlice name, bool nullable, uintptr_t child_list_id, DeltaJsonSchemaVisitor::Node::Kind kind)
+{
+    deltaVisitGuarded(data, [&](DeltaJsonSchemaVisitor & v)
+    {
+        DeltaJsonSchemaVisitor::Node node;
+        node.name.assign(name.ptr, name.len);
+        node.nullable = nullable;
+        node.kind = kind;
+        node.child_list_id = child_list_id;
+        v.listAt(sibling).push_back(std::move(node));
+    });
+}
+
+void deltaVisitBoolean(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "boolean"); }
+void deltaVisitByte(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "byte"); }
+void deltaVisitShort(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "short"); }
+void deltaVisitInteger(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "integer"); }
+void deltaVisitLong(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "long"); }
+void deltaVisitFloat(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "float"); }
+void deltaVisitDouble(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "double"); }
+void deltaVisitString(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "string"); }
+void deltaVisitBinary(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "binary"); }
+void deltaVisitDate(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "date"); }
+void deltaVisitTimestamp(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp"); }
+void deltaVisitTimestampNtz(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *) { deltaPushPrimitive(d, s, n, nu, "timestamp_ntz"); }
+
+void deltaVisitDecimal(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uint8_t precision, uint8_t scale)
+{
+    deltaPushPrimitive(d, s, n, nu, fmt::format("decimal({},{})", precision, scale));
+}
+
+void deltaVisitVariant(void * d, uintptr_t, ffi::KernelStringSlice n, bool, const ffi::CStringMap *)
+{
+    deltaVisitGuarded(d, [&](DeltaJsonSchemaVisitor &)
+    {
+        throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Unsupported Variant data type: {}", std::string(n.ptr, n.len));
+    });
+}
+
+void deltaVisitStruct(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJsonSchemaVisitor::Node::Kind::Struct); }
+void deltaVisitArray(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJsonSchemaVisitor::Node::Kind::Array); }
+void deltaVisitMap(void * d, uintptr_t s, ffi::KernelStringSlice n, bool nu, const ffi::CStringMap *, uintptr_t c) { deltaPushComplex(d, s, n, nu, c, DeltaJsonSchemaVisitor::Node::Kind::Map); }
+
+}
+
+Poco::JSON::Array::Ptr getDeltaSchemaFieldsFromSnapshot(ffi::SharedSnapshot * snapshot)
+{
+    using KernelSharedSchema = KernelPointerWrapper<ffi::SharedSchema, ffi::free_schema>;
+    KernelSharedSchema schema(ffi::logical_schema(snapshot));
+
+    DeltaJsonSchemaVisitor visitor;
+    ffi::EngineSchemaVisitor ffi_visitor{
+        .data = &visitor,
+        .make_field_list = &deltaMakeFieldList,
+        .visit_struct = &deltaVisitStruct,
+        .visit_array = &deltaVisitArray,
+        .visit_map = &deltaVisitMap,
+        .visit_decimal = &deltaVisitDecimal,
+        .visit_string = &deltaVisitString,
+        .visit_long = &deltaVisitLong,
+        .visit_integer = &deltaVisitInteger,
+        .visit_short = &deltaVisitShort,
+        .visit_byte = &deltaVisitByte,
+        .visit_float = &deltaVisitFloat,
+        .visit_double = &deltaVisitDouble,
+        .visit_boolean = &deltaVisitBoolean,
+        .visit_binary = &deltaVisitBinary,
+        .visit_date = &deltaVisitDate,
+        .visit_timestamp = &deltaVisitTimestamp,
+        .visit_timestamp_ntz = &deltaVisitTimestampNtz,
+        .visit_variant = &deltaVisitVariant,
+    };
+
+    uintptr_t top_level_list_id = ffi::visit_schema(schema.get(), &ffi_visitor);
+    if (visitor.exception)
+        std::rethrow_exception(visitor.exception);
+
+    return visitor.buildFields(top_level_list_id);
 }
 
 /// CH -> kernel schema visitor for `ffi::get_create_table_builder`: registers each leaf via `ffi::visit_field_*`, then the top-level struct.

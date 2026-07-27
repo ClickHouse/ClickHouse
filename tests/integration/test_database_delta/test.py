@@ -1362,3 +1362,71 @@ def test_register_existing_delta_table_in_unity_catalog(started_cluster):
         )
         node1.query(f"DROP TABLE IF EXISTS default.{columnless_creator}")
         node1.query(f"DROP TABLE IF EXISTS default.{attach_creator}")
+
+
+def test_register_existing_delta_table_preserves_raw_schema(started_cluster):
+    """
+    Attaching an existing Spark-created Delta table into a Unity `DataLakeCatalog` database must register the
+    raw Delta schema read from the `_delta_log`, preserving types that the ClickHouse round-trip collapses
+    (`binary` -> `String`, `timestamp_ntz` -> `DateTime64`). Regression for review #2/#3 in PR #106011:
+    registration previously went through `getTableSchema` (ClickHouse types + read-time snapshot/CDF settings).
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_rawschema_{test_uuid}"
+    schema_name = f"rawschema_schema_{test_uuid}"
+    table_name = f"rawschema_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    # A path-based Spark Delta table (`delta.`<path>``) is written to storage but NOT registered in Unity,
+    # so ClickHouse onboards it. Its `binary` and `timestamp_ntz` columns both collapse under the ClickHouse
+    # schema round-trip, so they exercise the raw-schema registration path.
+    execute_multiple_spark_queries(
+        node1,
+        [
+            f"CREATE TABLE delta.`{location}` (b BINARY, t TIMESTAMP_NTZ, s STRING) USING delta"
+        ],
+        retry_on_timeout=True,
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+        # A historical snapshot version must be ignored by registration (it always reads the latest schema).
+        "delta_lake_snapshot_version": 0,
+    }
+    try:
+        # Columnless attach: schema inferred from the `_delta_log`, and registered raw into Unity.
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+
+        # The Unity entry must carry the exact Delta types, not the collapsed ClickHouse ones. Before the fix
+        # these would be registered as `string` / `timestamp`.
+        registered = ""
+        for _ in range(10):
+            registered = node1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"curl -s 'http://localhost:8080/api/2.1/unity-catalog/tables/unity.{schema_name}.{table_name}'",
+                ]
+            )
+            if "binary" in registered and "timestamp_ntz" in registered:
+                break
+            time.sleep(1)
+        assert "binary" in registered, registered
+        assert "timestamp_ntz" in registered, registered
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )

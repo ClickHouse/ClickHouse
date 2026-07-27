@@ -21,8 +21,6 @@ void registerDeltaTableInCatalog(
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationPtr & configuration_ptr,
-    const StorageObjectStorageConfigurationWeakPtr & configuration,
-    const ContextPtr & local_context,
     const ColumnsDescription & columns,
     bool created_fresh,
     const StorageID & table_id);

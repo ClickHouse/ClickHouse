@@ -722,7 +722,7 @@ void DeltaLakeMetadata::createInitial(
 
     if (register_with_catalog)
         registerDeltaTableInCatalog(
-            catalog, object_storage, configuration_ptr, configuration, local_context, *columns, created_fresh, table_id_);
+            catalog, object_storage, configuration_ptr, *columns, created_fresh, table_id_);
 #endif
 }
 
