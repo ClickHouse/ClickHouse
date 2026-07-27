@@ -14,7 +14,7 @@
  * greys and `currentColor` so that it reads correctly in both themes.
  *
  * Usage:
- *   import VersionHistory from "/snippets/components/VersionHistory/VersionHistory.jsx";
+ *   import { VersionHistory } from "/snippets/components/VersionHistory/VersionHistory.jsx";
  *
  *   <VersionHistory rows={[
  *     { id: "row-1", items: [
@@ -26,7 +26,7 @@
  *
  * Each row's `items` is expected to be `[Version, Default value, Comment]`.
  */
-const VersionHistory = ({ rows = [] }) => {
+export const VersionHistory = ({ rows = [] }) => {
   if (rows.length === 0) {
     return null;
   }

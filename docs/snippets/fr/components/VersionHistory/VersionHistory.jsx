@@ -1,4 +1,4 @@
-const VersionHistory = ({ rows = [] }) => {
+export const VersionHistory = ({ rows = [] }) => {
   if (rows.length === 0) {
     return null;
   }
