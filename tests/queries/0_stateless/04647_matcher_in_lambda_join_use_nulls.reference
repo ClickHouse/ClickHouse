@@ -176,3 +176,20 @@
 9	[(7,9)]
 1	5	1
 9	7	9
+--- 14: nullable side is a subquery containing ARRAY JOIN
+[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+[(NULL,NULL)]	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+\N	\N
+1	[(NULL,NULL)]	[(NULL,NULL)]
+2	[(2,7)]	[(2,7)]
+2	[(2,7)]	[(2,7)]
+Array(Tuple(Nullable(UInt64), Nullable(UInt64)))	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+--- 15: ARRAY JOIN below the join, matcher columns sourced through it
+k	arr
+Nullable(UInt64)	Array(UInt64)
+\N	[]
+Array(Tuple(Nullable(UInt64), Array(UInt64)))
+Array(Tuple(Nullable(UInt64), Nullable(UInt64)))	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+Array(Tuple(Nullable(UInt64), Nullable(UInt64)))	Array(Tuple(Nullable(UInt64), Nullable(UInt64)))
+[(NULL,NULL)]	[(NULL,NULL)]
+[(NULL,NULL)]	[(NULL,NULL)]

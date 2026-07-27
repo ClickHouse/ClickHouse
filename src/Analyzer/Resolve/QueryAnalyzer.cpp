@@ -342,6 +342,12 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
         {
             stack.push_range(child_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
         }
+
+        /// An ARRAY JOIN is transparent here: its columns still belong to the table expression below it.
+        if (const auto * child_array_join_node = current->as<ArrayJoinNode>())
+        {
+            stack.push(child_array_join_node->getTableExpression().get());
+        }
     }
     return false;
 }

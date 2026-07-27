@@ -179,6 +179,44 @@ SELECT a + 1 AS id, * EXCEPT a FROM (SELECT 1 AS a UNION ALL SELECT 9 AS a) AS q
 SELECT a AS x, arrayMap(z -> tuple(*), [1]) AS matcher FROM (SELECT 1 AS a, 5 AS id UNION ALL SELECT 9 AS a, 7 AS id) AS q1 FULL JOIN (SELECT 5 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 1;
 SELECT a AS x, * FROM (SELECT 1 AS a, 5 AS id UNION ALL SELECT 9 AS a, 7 AS id) AS q1 FULL JOIN (SELECT 5 AS id) AS q2 USING (id) ORDER BY a NULLS LAST SETTINGS join_use_nulls = 1;
 
+SELECT '--- 14: nullable side is a subquery containing ARRAY JOIN';
+DROP TABLE IF EXISTS aj1;
+DROP TABLE IF EXISTS aj2;
+CREATE TABLE aj1 (k UInt64, b UInt64) ENGINE = Memory;
+CREATE TABLE aj2 (k UInt64, a UInt64, arr Array(UInt64)) ENGINE = Memory;
+INSERT INTO aj1 VALUES (1, 100);
+INSERT INTO aj2 VALUES (2, 7, [1, 2]);
+-- The registered table expression is the subquery, so the ARRAY JOIN inside it is not on the join
+-- tree walked by `getColumnSideFromJoinTree`. The matcher must still be promoted, matching both the
+-- explicit-column form and the same matcher at the top level.
+SELECT arrayMap(z -> tuple(tx.k, tx.a), [1]) AS o, toTypeName(arrayMap(z -> tuple(tx.k, tx.a), [1])) AS ot FROM aj1 LEFT JOIN (SELECT k, a, arr FROM aj2 ARRAY JOIN arr) AS tx ON aj1.k = tx.k SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(tx.* EXCEPT arr), [1]) AS m, toTypeName(arrayMap(z -> tuple(tx.* EXCEPT arr), [1])) AS mt FROM aj1 LEFT JOIN (SELECT k, a, arr FROM aj2 ARRAY JOIN arr) AS tx ON aj1.k = tx.k SETTINGS join_use_nulls = 1;
+SELECT tx.* EXCEPT arr FROM aj1 LEFT JOIN (SELECT k, a, arr FROM aj2 ARRAY JOIN arr) AS tx ON aj1.k = tx.k SETTINGS join_use_nulls = 1;
+-- Same with the ARRAY JOIN directly on the join tree rather than wrapped in a subquery, so the
+-- ArrayJoinNode is the join's own parent. `LEFT ARRAY JOIN` keeps the unmatched row, whose matcher
+-- type must equal the explicit-column type.
+INSERT INTO aj1 VALUES (2, 200);
+SELECT aj1.k, arrayMap(z -> tuple(aj2.k, aj2.a), [1]) AS o, arrayMap(z -> tuple(aj2.* EXCEPT arr), [1]) AS m FROM aj1 LEFT JOIN aj2 ON aj1.k = aj2.k LEFT ARRAY JOIN aj2.arr ORDER BY aj1.k SETTINGS join_use_nulls = 1;
+SELECT DISTINCT toTypeName(arrayMap(z -> tuple(aj2.k, aj2.a), [1])) AS ot, toTypeName(arrayMap(z -> tuple(aj2.* EXCEPT arr), [1])) AS mt FROM aj1 LEFT JOIN aj2 ON aj1.k = aj2.k LEFT ARRAY JOIN aj2.arr SETTINGS join_use_nulls = 1;
+DROP TABLE aj1;
+DROP TABLE aj2;
+SELECT '--- 15: ARRAY JOIN below the join, matcher columns sourced through it';
+DROP TABLE IF EXISTS b1;
+DROP TABLE IF EXISTS b2;
+CREATE TABLE b1 (k UInt64, arr Array(UInt64)) ENGINE = Memory;
+CREATE TABLE b2 (k UInt64, a UInt64) ENGINE = Memory;
+INSERT INTO b1 VALUES (1, [1, 2]);
+INSERT INTO b2 VALUES (5, 7);
+-- `getColumnSideFromJoinTree` has to see through the ArrayJoinNode to classify a column below it.
+-- Ground truth is the top-level matcher: `k` is promoted, the ARRAY JOIN result `arr` is not.
+SELECT b1.* FROM b1 ARRAY JOIN b1.arr RIGHT JOIN b2 ON b1.k = b2.k SETTINGS join_use_nulls = 1 FORMAT TSVWithNamesAndTypes;
+SELECT toTypeName(arrayMap(z -> tuple(b1.*), [1])) AS mt FROM b1 ARRAY JOIN b1.arr RIGHT JOIN b2 ON b1.k = b2.k SETTINGS join_use_nulls = 1;
+-- The other direction: the plain table is the nullable side and the ARRAY JOIN is on the other one.
+SELECT toTypeName(arrayMap(z -> tuple(b2.k, b2.a), [1])) AS ot, toTypeName(arrayMap(z -> tuple(b2.*), [1])) AS mt FROM b1 ARRAY JOIN b1.arr LEFT JOIN b2 ON b1.k = b2.k SETTINGS join_use_nulls = 1;
+SELECT arrayMap(z -> tuple(b2.k, b2.a), [1]) AS o, arrayMap(z -> tuple(b2.*), [1]) AS m FROM b1 ARRAY JOIN b1.arr LEFT JOIN b2 ON b1.k = b2.k SETTINGS join_use_nulls = 1;
+DROP TABLE b1;
+DROP TABLE b2;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
