@@ -4514,6 +4514,10 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 
                 if (auto * identifier_node = nodes[0]->as<IdentifierNode>())
                 {
+                    bool previous_parameterized_view_arguments_in_resolve_process = parameterized_view_arguments_in_resolve_process;
+                    parameterized_view_arguments_in_resolve_process = true;
+                    SCOPE_EXIT({ parameterized_view_arguments_in_resolve_process = previous_parameterized_view_arguments_in_resolve_process; });
+
                     resolveExpressionNode(nodes[1], scope, /* allow_lambda_expression */false, /* allow_table_function */false);
                     if (auto * constant = nodes[1]->as<ConstantNode>())
                     {
