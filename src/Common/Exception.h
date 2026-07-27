@@ -88,8 +88,8 @@ public:
         message_format_string = o.message_format_string;
         message_format_string_args = std::move(o.message_format_string_args);
         capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
-        Poco::Exception::operator=(std::move(o));
         o.error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
+        Poco::Exception::operator=(std::move(o));
     }
 
     Exception & operator=(const Exception & o)
@@ -120,8 +120,8 @@ public:
             message_format_string = o.message_format_string;
             message_format_string_args = std::move(o.message_format_string_args);
             capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
-            Poco::Exception::operator=(std::move(o));
             o.error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
+            Poco::Exception::operator=(std::move(o));
         }
         return *this;
     }
