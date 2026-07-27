@@ -42,7 +42,11 @@ public:
     /// PipelineExecutor must be destroyed before the corresponding QueryPipeline, because
     /// QueryPlanResourceHolder may hold some resources referenced by processors and used in
     /// processor destructors.
-    explicit PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry = nullptr);
+    explicit PipelineExecutor(
+        std::shared_ptr<Processors> & processors,
+        QueryStatusPtr elem,
+        const StepWallClockRegistry * step_wall_clock_registry = nullptr,
+        bool suppress_error_codes_ = false);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -127,6 +131,8 @@ private:
     QueryStatusPtr process_list_element;
 
     ReadProgressCallbackPtr read_progress_callback;
+
+    bool suppress_error_codes = false;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

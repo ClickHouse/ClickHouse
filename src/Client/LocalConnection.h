@@ -57,6 +57,8 @@ struct LocalQueryState
     bool sent_profile_info = false;
     bool sent_profile_events = false;
 
+    bool suppress_error_codes = false;
+
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
     /// Time after the last check to stop the request and send the progress.

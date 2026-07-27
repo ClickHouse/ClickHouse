@@ -21,7 +21,7 @@ struct ProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool suppress_error_codes_ = false);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.
@@ -68,6 +68,7 @@ private:
 
     std::function<bool()> cancel_callback;
     uint64_t interactive_timeout_ms = 0;
+    bool suppress_error_codes;
 };
 
 }

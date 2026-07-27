@@ -109,9 +109,14 @@ struct WorkloadResources
 };
 
 
-PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem, const StepWallClockRegistry * step_wall_clock_registry_)
+PipelineExecutor::PipelineExecutor(
+    std::shared_ptr<Processors> & processors,
+    QueryStatusPtr elem,
+    const StepWallClockRegistry * step_wall_clock_registry_,
+    bool suppress_error_codes_)
     : step_wall_clock_registry(step_wall_clock_registry_)
     , process_list_element(std::move(elem))
+    , suppress_error_codes(suppress_error_codes_)
 {
 
     if (process_list_element)
@@ -198,6 +203,7 @@ bool PipelineExecutor::tryUpdateExecutionStatus(ExecutionStatus expected, Execut
 
 void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 {
+    Exception::SuppressErrorCodesScope suppress_error_codes_scope(suppress_error_codes);
     checkTimeLimit();
     num_threads = std::max<size_t>(num_threads, 1);
 
@@ -236,6 +242,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
+    Exception::SuppressErrorCodesScope suppress_error_codes_scope(suppress_error_codes);
     if (!is_execution_initialized)
     {
         initializeExecution(1, true);
@@ -349,6 +356,7 @@ void PipelineExecutor::finalizeExecution()
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, WorkloadResources && resources)
 {
+    Exception::SuppressErrorCodesScope suppress_error_codes_scope(suppress_error_codes);
     executeStepImpl(thread_num, std::move(resources));
 
 #ifndef NDEBUG

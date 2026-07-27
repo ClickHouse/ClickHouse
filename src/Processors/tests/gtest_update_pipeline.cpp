@@ -9,10 +9,17 @@
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/ErrorCodes.h>
+#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_PARSE_TEXT;
+}
 
 namespace
 {
@@ -47,6 +54,28 @@ protected:
 private:
     std::optional<Chunk> chunk;
 };
+
+class ThrowingSource final : public ISource
+{
+public:
+    explicit ThrowingSource(SharedHeader header_)
+        : ISource(std::move(header_), /*enable_auto_progress=*/false)
+    {
+    }
+
+    String getName() const override { return "ThrowingSource"; }
+
+protected:
+    std::optional<Chunk> tryGenerate() override
+    {
+        throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "worker failed");
+    }
+};
+
+size_t getLocalErrorCount(int code)
+{
+    return ErrorCodes::values[code].get().local.count;
+}
 
 /// On each cycle: remove finished upstream, add a fresh one. Never finishes.
 class DynamicSourceCoordinator final : public IProcessor
@@ -270,4 +299,35 @@ TEST(Processors, UpdatePipelineMultipleCoordinatorsMultithreaded)
     /// Print statistics
     for (size_t i = 0; i < coordinators.size(); ++i)
         std::cout << "Coordinator #" << i << " Created Sources: " << coordinators.at(i)->totalSourcesCreated() << std::endl;
+}
+
+TEST(Processors, AsyncExecutorPropagatesErrorCodeSuppression)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    auto run = [](bool suppress_error_codes)
+    {
+        Pipe pipe(std::make_shared<ThrowingSource>(makeHeader()));
+        QueryPipeline pipeline(std::move(pipe));
+        PullingAsyncPipelineExecutor executor(pipeline, suppress_error_codes);
+        Chunk chunk;
+        while (executor.pull(chunk))
+        {
+        }
+    };
+
+    EXPECT_THROW(run(/* suppress_error_codes */ true), Exception);
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count);
+
+    try
+    {
+        run(/* suppress_error_codes */ true);
+    }
+    catch (Exception & e)
+    {
+        e.recordToSystemErrors();
+    }
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+
+    EXPECT_THROW(run(/* suppress_error_codes */ false), Exception);
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 2);
 }
