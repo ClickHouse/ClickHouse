@@ -58,6 +58,11 @@ SYSTEM FLUSH LOGS query_log;
 -- value stayed at 23722663, i.e. a ratio of ~2.45 that left the check no margin below the 2.5 bound
 -- and made it fail as soon as a run landed slightly above the average. Nine runs of the query
 -- (the failure plus its eight reruns) spanned 57843408..59335657 bytes, so the median is used here.
+-- The ~58 MB is not the early-two-level-conversion value that the threshold pins above exclude: the
+-- first of those nine runs started with the single-level `key_string` method and converted only when
+-- it crossed the pinned default `group_by_two_level_threshold`, and it still produced 58092765. The
+-- eight later runs were initialized as `key_string_two_level` straight away because the hash-table
+-- size hint was already cached (`initDataVariantsWithSizeHint`), not because of the thresholds.
 WITH
     [3, 195461, 5962954, 1100491, 2, 16885, 42323, 9434, 58136394, 203701090, 82404720/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
