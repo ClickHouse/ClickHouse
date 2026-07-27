@@ -23,14 +23,12 @@ puede interactuar con el [Playground de SQL de ClickHouse](https://sql.clickhous
 
 * Necesitarás tener Python instalado en tu sistema.
 * Necesitarás tener `pip` instalado en tu sistema.
-* Necesitarás una clave API de Anthropic, o una clave API de otro proveedor de LLM.
+* Necesitarás una clave API de Anthropic, o una clave API de otro proveedor de LLM
 
 Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un script.
 
 <Steps>
-  <Step>
-    ## Instalar bibliotecas
-
+  <Step title="Instalar bibliotecas" id="install-libraries">
     Instala las bibliotecas necesarias ejecutando los siguientes comandos:
 
     ```python
@@ -40,9 +38,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Configurar las credenciales
-
+  <Step title="Configurar las credenciales" id="setup-credentials">
     A continuación, tendrás que proporcionar tu clave API de Anthropic:
 
     ```python
@@ -74,9 +70,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Inicializar el servidor MCP y el agente de PydanticAI
-
+  <Step title="Inicializar el servidor MCP y el agente de PydanticAI" id="initialize-mcp">
     Ahora configura el ClickHouse MCP server para que apunte al Playground de SQL de ClickHouse:
 
     ```python
@@ -98,9 +92,7 @@ Puedes ejecutar los siguientes pasos desde tu REPL de Python o mediante un scrip
     ```
   </Step>
 
-  <Step>
-    ## Hazle una pregunta al agente
-
+  <Step title="Hazle una pregunta al agente" id="ask-agent">
     Por último, puedes hacerle una pregunta al agente:
 
     ```python

@@ -156,6 +156,16 @@ public:
         RESET_DDL_WORKER,
         /// Same execution as `CLEAR_AGGREGATE_CACHE`; separate enum so parsing does not go through `system_aliases` (deprecated DROP/CLEAR spellings).
         CLEAR_PARTIAL_AGGREGATE_CACHE,
+        STOP_ALL_BACKGROUND,
+        START_ALL_BACKGROUND,
+        PAUSE_ALL_BACKGROUND,
+        CANCEL_ALL_BACKGROUND,
+        REFRESH_ALL_BACKGROUND,
+        STOP,
+        START,
+        PAUSE,
+        CANCEL,
+        REFRESH,
         END
     };
 

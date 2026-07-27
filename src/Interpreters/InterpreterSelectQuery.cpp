@@ -1208,12 +1208,34 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
 
+    /// The old analyzer computes result_header from the ExpressionAnalyzer sample block,
+    /// independently of the actual query plan. A plan step may legitimately materialize a
+    /// column the sample considered constant (e.g. a remote(...) UnionStep whose shards fold
+    /// randConstant() to different values). Forcing such a full column back to a Const in the
+    /// convert target would fail in makeConvertingActions. Reconcile a local convert target:
+    /// where a column is full in the plan but Const of the same type in the result header,
+    /// take the plan's full column so the conversion keeps it full. result_header itself is
+    /// left untouched so getSampleBlock() (seen by an enclosing subquery) is unchanged.
+    ColumnsWithTypeAndName convert_target = result_header->getColumnsWithTypeAndName();
+    {
+        const auto & plan_header = *query_plan.getCurrentHeader();
+        for (auto & res_col : convert_target)
+        {
+            if (!res_col.column || !isColumnConst(*res_col.column))
+                continue;
+            const auto * plan_col = plan_header.findByName(res_col.name);
+            if (plan_col && plan_col->column && !isColumnConst(*plan_col->column)
+                && res_col.type->equals(*plan_col->type))
+                res_col.column = plan_col->column;
+        }
+    }
+
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), Block(convert_target)))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-            result_header->getColumnsWithTypeAndName(),
+            convert_target,
             ActionsDAG::MatchColumnsMode::Name,
             context,
             true);
@@ -2975,8 +2997,10 @@ static Aggregator::Params getAggregatorParams(
         has_row_level_filter,
         has_additional_table_filters);
 
+    /// The cache key is computed later from the query plan in setAggregationHashTableCacheKeys
+    /// (key == 0 keeps preallocation disabled until the optimization pass stamps the real key).
     const auto stats_collecting_params = StatsCollectingParams(
-        calculateCacheKey(query_ptr),
+        /*key_=*/ 0,
         settings[Setting::collect_hash_table_stats_during_aggregation],
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
@@ -3795,11 +3819,9 @@ void InterpreterSelectQuery::initSettings()
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext(options.ignore_setting_constraints);
 
     const auto & client_info = context->getClientInfo();
-    auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
-    auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
 
     if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
-        std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
+        client_info.connection_tcp_protocol_version < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
     {
         /// Disable two-level aggregation due to version incompatibility.
         context->setSetting("group_by_two_level_threshold", Field(0));

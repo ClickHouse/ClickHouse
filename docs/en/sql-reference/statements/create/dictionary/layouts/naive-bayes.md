@@ -16,11 +16,11 @@ It is suited to fast, lightweight text classification such as sentiment analysis
 
 You query the dictionary with one of three functions:
 
-- [`naiveBayesClassifier`](/sql-reference/functions/machine-learning-functions#naivebayesclassifier) returns the predicted class id.
-- [`naiveBayesClassifierWithProb`](/sql-reference/functions/machine-learning-functions#naivebayesclassifierwithprob) returns the predicted class with its probability.
-- [`naiveBayesClassifierWithAllProbs`](/sql-reference/functions/machine-learning-functions#naivebayesclassifierwithallprobs) returns every class with its probability.
+- [`naiveBayesClassifier`](/sql-reference/functions/machine-learning-functions#naiveBayesClassifier) returns the predicted class id.
+- [`naiveBayesClassifierWithProb`](/sql-reference/functions/machine-learning-functions#naiveBayesClassifierWithProb) returns the predicted class with its probability.
+- [`naiveBayesClassifierWithAllProbs`](/sql-reference/functions/machine-learning-functions#naiveBayesClassifierWithAllProbs) returns every class with its probability.
 
-A plain [`dictGet`](/sql-reference/functions/ext-dict-functions#dictget) classifies too (see [Notes](#notes)). One more function, [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naivebayesngrams), does not classify — it splits text into n-grams the same way the dictionary does, so you can build the training data from raw text (see [Build training data from raw text](#build-training-data-from-raw-text)).
+A plain [`dictGet`](/sql-reference/functions/ext-dict-functions#dictGet) classifies too (see [Notes](#notes)). One more function, [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naiveBayesNgrams), does not classify — it splits text into n-grams the same way the dictionary does, so you can build the training data from raw text (see [Build training data from raw text](#build-training-data-from-raw-text)).
 
 ## Quickstart {#quickstart}
 
@@ -298,7 +298,7 @@ Padding is off by default. It only matters for `n > 1`, where it can improve acc
 
 1. **Decide per side.** `start_token` and `end_token` are independent — set one, both, or neither. An empty value means that side is not padded.
 2. **Choose rare values** that will not collide with real data, e.g. `0x01` / `0xFF` for `byte`, `U+10FFFE` / `U+10FFFF` for `codepoint`, or `<s>` / `</s>` for `token`.
-3. **Produce the training n-grams with the same padding.** The dictionary pads the query input but never your source, so the boundary tokens must already be baked into the n-grams you load. The easiest way to guarantee they match is to build the source with [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naivebayesngrams), passing it the same `start_token` and `end_token` (and `n` and `mode`) you give the layout — it emits exactly the padded n-grams the dictionary produces at query time.
+3. **Produce the training n-grams with the same padding.** The dictionary pads the query input but never your source, so the boundary tokens must already be baked into the n-grams you load. The easiest way to guarantee they match is to build the source with [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naiveBayesNgrams), passing it the same `start_token` and `end_token` (and `n` and `mode`) you give the layout — it emits exactly the padded n-grams the dictionary produces at query time.
 
 The padding-token format depends on the mode:
 
@@ -322,7 +322,7 @@ The padding-token format depends on the mode:
 
 ## Build training data from raw text {#build-training-data-from-raw-text}
 
-If you start from raw labelled text instead of pre-aggregated counts, use the [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naivebayesngrams) function to split it into n-grams. Give it the same `n`, `mode`, `start_token`, and `end_token` as your layout, and it produces exactly the n-grams the dictionary expects, so the training data matches what the model sees at query time.
+If you start from raw labelled text instead of pre-aggregated counts, use the [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naiveBayesNgrams) function to split it into n-grams. Give it the same `n`, `mode`, `start_token`, and `end_token` as your layout, and it produces exactly the n-grams the dictionary expects, so the training data matches what the model sees at query time.
 
 Given a table of `(class_id, text)` rows, build the `(ngram, class_id, count)` source with one `GROUP BY`:
 
@@ -461,7 +461,7 @@ SELECT ngram, class_id, count FROM stored ORDER BY ngram;
    └───────┴──────────┴───────┘
 ```
 
-**Language detection from raw text** — short words with boundary padding (`n = 2`, `mode 'codepoint'`; class `0` = English, `1` = Spanish). The training n-grams are built from raw words with [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naivebayesngrams), and the boundary tokens — passed to both the function and the layout — let the model use the first and last letters of each word:
+**Language detection from raw text** — short words with boundary padding (`n = 2`, `mode 'codepoint'`; class `0` = English, `1` = Spanish). The training n-grams are built from raw words with [`naiveBayesNgrams`](/sql-reference/functions/splitting-merging-functions#naiveBayesNgrams), and the boundary tokens — passed to both the function and the layout — let the model use the first and last letters of each word:
 
 ```sql
 CREATE TABLE words (class_id UInt32, text String) ENGINE = MergeTree ORDER BY tuple();
