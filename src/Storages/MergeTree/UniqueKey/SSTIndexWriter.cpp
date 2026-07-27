@@ -107,6 +107,58 @@ bool isBlockSortedByUniqueKey(
     return true;
 }
 
+class WriteBufferWritableFile : public rocksdb::FSWritableFile
+{
+public:
+    explicit WriteBufferWritableFile(WriteBuffer & write_buffer_)
+        : write_buffer(write_buffer_)
+        , file_size(0)
+    {
+    }
+
+    rocksdb::IOStatus Append(
+        const rocksdb::Slice & data,
+        const rocksdb::IOOptions &,
+        rocksdb::IODebugContext *) override
+    {
+        try
+        {
+            write_buffer.write(data.data(), data.size());
+            file_size += data.size();
+            return rocksdb::IOStatus::OK();
+        }
+        catch (...)
+        {
+            auto error_msg = getCurrentExceptionMessage(true);
+            return rocksdb::IOStatus::IOError("Failed to write data: " + error_msg);
+        }
+    }
+
+    rocksdb::IOStatus Close(const rocksdb::IOOptions &, rocksdb::IODebugContext *) override
+    {
+        return rocksdb::IOStatus::OK();
+    }
+
+    rocksdb::IOStatus Flush(const rocksdb::IOOptions &, rocksdb::IODebugContext *) override
+    {
+        return rocksdb::IOStatus::OK();
+    }
+
+    rocksdb::IOStatus Sync(const rocksdb::IOOptions &, rocksdb::IODebugContext *) override
+    {
+        return rocksdb::IOStatus::OK();
+    }
+
+    uint64_t GetFileSize(const rocksdb::IOOptions &, rocksdb::IODebugContext *) override
+    {
+        return file_size;
+    }
+
+private:
+    WriteBuffer & write_buffer;
+    uint64_t file_size;
+};
+
 /// A minimal RocksDB `FileSystem` that only knows how to hand out a
 /// single writable file backed by a ClickHouse `WriteBuffer`. Everything
 /// else is `NotSupported` — `SstFileWriter` needs nothing more.
