@@ -190,6 +190,31 @@ def packed_archive_files(part_path, n=node, disk="default"):
     return out.split()
 
 
+def packed_archive_member(part_path, member, n=node, disk="default"):
+    """Content of one member file of the data.packed archive at part_path."""
+    root = n.query(f"SELECT path FROM system.disks WHERE name = '{disk}'").strip()
+    rel = os.path.relpath(os.path.join(part_path, "data.packed"), root)
+    out_rel = "tmp_packed_extract"
+    out_abs = os.path.join(root, out_rel)
+    n.exec_in_container(["bash", "-c", f"rm -rf {out_abs}"], privileged=True, user="root")
+    n.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse disks --config /etc/clickhouse-server/config.xml --disk {disk}"
+            f' --query "packed-io extract --disk-from {disk} {rel} {out_rel}"',
+        ],
+        privileged=True,
+        user="root",
+    )
+    content = n.exec_in_container(
+        ["bash", "-c", f"cat {out_abs}/{member} && rm -rf {out_abs}"],
+        privileged=True,
+        user="root",
+    ).strip()
+    return content
+
+
 # Storage kinds a test runs for; 'packed' appends the packed-threshold clause to the table settings.
 @pytest.fixture(params=["full", "packed"])
 def storage_kind(request):
@@ -2642,15 +2667,15 @@ def test_fsync_flat_lifecycle():
 # ==============================================================================
 # M. Packed part storage
 # ==============================================================================
-# This test checks that REPLACE PARTITION FROM on packed parts does not manufacture parent-only
-# artifacts inside projection sub-parts: the freeze recursion must strip the ClonePartParams fields
-# that describe the parent part (metadata_version_to_write, invalidated_columns_to_write), instead
-# of writing metadata_version.txt and invalidated_system_columns.txt into every projection dir.
+# This test checks that REPLACE PARTITION FROM on packed parts does not apply parent-only
+# ClonePartParams to projection sub-parts: metadata_version_to_write must not overwrite the
+# projection's own metadata_version.txt (every part, projections included, carries one since
+# INSERT), and invalidated_system_columns.txt must not be manufactured inside the projection dir.
 # Scenario:
-# - create packed replicated src and dst tables with a projection
+# - create packed replicated src and dst tables with a projection; bump dst's metadata version
 # - REPLACE PARTITION on dst from src (this flow sets both parent-only params)
-# - assert the dst parent part carries both artifacts (the flow really exercised the override)
-# - assert the dst projection sub-part carries neither
+# - assert the dst parent part carries the dst version + the invalidated-columns file
+# - assert the dst projection sub-part keeps the source version and has no invalidated file
 def test_packed_replace_partition_no_parent_artifacts_in_projection():
     for t, zk in (("t_pk_rp_src", "src"), ("t_pk_rp_dst", "dst")):
         node.query(f"DROP TABLE IF EXISTS {t} SYNC")
@@ -2662,6 +2687,9 @@ def test_packed_replace_partition_no_parent_artifacts_in_projection():
                 ORDER BY key
                 SETTINGS min_bytes_for_wide_part = 0, {PACKED}"""
         )
+    # dst is at metadata version >= 1 while src parts are at 0, so an override reaching the
+    # projection sub-part is distinguishable from the version INSERT legitimately wrote there
+    node.query("ALTER TABLE t_pk_rp_dst COMMENT COLUMN value 'v2'")
     node.query(
         "INSERT INTO t_pk_rp_src SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
@@ -2672,12 +2700,12 @@ def test_packed_replace_partition_no_parent_artifacts_in_projection():
     assert path_exists(f"{p}/data.packed")
     assert path_exists(f"{p}/p.proj/data.packed")
 
-    # parent-only artifacts exist at the part level...
-    assert "metadata_version.txt" in packed_archive_files(p)
+    # parent-only artifacts land at the part level: the overridden version and the invalidated file...
+    assert packed_archive_member(p, "metadata_version.txt") != "0"
     assert path_exists(f"{p}/invalidated_system_columns.txt")
 
-    # ...and must not leak into the projection sub-part
-    assert "metadata_version.txt" not in packed_archive_files(f"{p}/p.proj")
+    # ...and must not be applied to the projection sub-part
+    assert packed_archive_member(f"{p}/p.proj", "metadata_version.txt") == "0"
     assert not path_exists(f"{p}/p.proj/invalidated_system_columns.txt")
 
     # the projection still serves queries and the part passes CHECK TABLE
@@ -2765,7 +2793,11 @@ def test_packed_detach_attach_carries_projection():
 # - OPTIMIZE FINAL; assert the merged part keeps the flat packed layout, projection healthy
 # - TRUNCATE; assert no projection siblings remain at the table root
 def test_packed_flat_lifecycle():
-    setup_table("t_pk_flat", f"projection_storage_format = 'flat', {PACKED}")
+    # old_parts_lifetime = 1: sibling removal happens at part removal, so dropped parts must not
+    # linger as Outdated for the default 8 minutes
+    setup_table(
+        "t_pk_flat", f"projection_storage_format = 'flat', old_parts_lifetime = 1, {PACKED}"
+    )
     node.query(
         "INSERT INTO t_pk_flat SELECT number, number * 2, toString(number) FROM numbers(1000, 1000)"
     )
@@ -2895,18 +2927,24 @@ def test_packed_flat_freeze_unfreeze():
 def test_packed_mutation_rebuilds_projection():
     setup_table("t_pk_mut", PACKED)
     assert path_exists(f"{part_dir('t_pk_mut')}/data.packed")
+    baseline = proj_query("t_pk_mut")
 
+    # mutate a non-key column the projection materializes
     node.query(
-        "ALTER TABLE t_pk_mut UPDATE key = key + 1000000 WHERE id < 200 SETTINGS mutations_sync = 2"
+        "ALTER TABLE t_pk_mut UPDATE value = concat(value, 'xx') WHERE id < 200 SETTINGS mutations_sync = 2"
     )
 
     p = part_dir("t_pk_mut")
     assert path_exists(f"{p}/p.proj/data.packed")
     assert broken_projection_parts("t_pk_mut") == "0"
-    # 100 rows have id < 200; each key was shifted by 1000000
-    expected = f"100\t{sum(range(100)) + 100 * 1000000}"
     assert (
         proj_query("t_pk_mut", extra_settings="force_optimize_projection = 1")
-        == expected
+        == baseline
     )
+    # 100 rows have id < 200 (values "0".."99": 10 + 2*90 = 190 chars), each grew by 2 chars
+    updated = node.query(
+        "SELECT count(), sum(length(value)) FROM t_pk_mut WHERE id < 200 "
+        "SETTINGS optimize_use_projections = 1, force_optimize_projection = 1"
+    ).strip()
+    assert updated == "100\t390"
     assert check_table("t_pk_mut") == "1"
