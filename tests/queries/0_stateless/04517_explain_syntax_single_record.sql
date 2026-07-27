@@ -35,6 +35,15 @@ SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 
 -- The EXPLAIN-local single_record option still wins over compatibility when explicitly set.
 SELECT count() FROM (EXPLAIN SYNTAX single_record = 1 SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
 
+-- Pin the version boundary itself: the change is recorded under 26.8 in `SettingsChangesHistory.cpp`,
+-- so the last version before it (26.7) must still get the one-record-per-line output, while 26.8
+-- itself must already get the single record. This fails if the entry is registered under a wrong version.
+SET compatibility = '26.7';
+SELECT count() > 1 FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+SET compatibility = '26.8';
+SELECT count() FROM (EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE 1 IN (0, 1, 2));
+SET compatibility = '';
+
 -- explain_syntax_single_record = 0 as a session setting also restores the one-record-per-line output,
 -- and an explicit value wins over the compatibility-derived default in both directions.
 SET explain_syntax_single_record = 0;
