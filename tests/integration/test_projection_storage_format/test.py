@@ -2672,10 +2672,11 @@ def test_fsync_flat_lifecycle():
 # projection's own metadata_version.txt (every part, projections included, carries one since
 # INSERT), and invalidated_system_columns.txt must not be manufactured inside the projection dir.
 # Scenario:
-# - create packed replicated src and dst tables with a projection; bump dst's metadata version
+# - create packed replicated src and dst tables with a projection; insert, then bump both tables'
+#   metadata version so the src part predates it
 # - REPLACE PARTITION on dst from src (this flow sets both parent-only params)
-# - assert the dst parent part carries the dst version + the invalidated-columns file
-# - assert the dst projection sub-part keeps the source version and has no invalidated file
+# - assert the dst parent part carries the bumped version + the invalidated-columns file
+# - assert the dst projection sub-part keeps the part's original version and has no invalidated file
 def test_packed_replace_partition_no_parent_artifacts_in_projection():
     for t, zk in (("t_pk_rp_src", "src"), ("t_pk_rp_dst", "dst")):
         node.query(f"DROP TABLE IF EXISTS {t} SYNC")
@@ -2687,12 +2688,14 @@ def test_packed_replace_partition_no_parent_artifacts_in_projection():
                 ORDER BY key
                 SETTINGS min_bytes_for_wide_part = 0, {PACKED}"""
         )
-    # dst is at metadata version >= 1 while src parts are at 0, so an override reaching the
-    # projection sub-part is distinguishable from the version INSERT legitimately wrote there
-    node.query("ALTER TABLE t_pk_rp_dst COMMENT COLUMN value 'v2'")
     node.query(
         "INSERT INTO t_pk_rp_src SELECT number, number * 2, toString(number) FROM numbers(1000)"
     )
+    # Bump both tables to metadata version >= 1 after the insert (identical structures keep REPLACE
+    # legal; a comment-only change would not bump the version). The src part stays at version 0, so
+    # an override reaching the projection sub-part is distinguishable from the version INSERT wrote.
+    for t in ("t_pk_rp_src", "t_pk_rp_dst"):
+        node.query(f"ALTER TABLE {t} ADD COLUMN extra UInt8 DEFAULT 0")
     node.query("ALTER TABLE t_pk_rp_dst REPLACE PARTITION ID 'all' FROM t_pk_rp_src")
 
     # the cloned part is packed and carries its nested packed projection
