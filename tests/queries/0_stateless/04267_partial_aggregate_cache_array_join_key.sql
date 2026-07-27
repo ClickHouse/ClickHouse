@@ -2,7 +2,7 @@
 -- no-parallel: Messes with internal cache.
 -- no-random-* / no-parallel-replicas: Flaky check must not randomize settings or inject parallel replicas.
 
--- Partial aggregate cache: `ARRAY JOIN` must be part of semantic key.
+-- Partial aggregate cache: `ARRAY JOIN` must be part of the semantic key, and plans with `ARRAY JOIN` do not use the cache.
 
 SYSTEM DROP AGGREGATE CACHE;
 
@@ -52,7 +52,7 @@ WHERE
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
-SELECT '--- ARRAY JOIN query must not reuse previous states';
+SELECT '--- ARRAY JOIN query must not reuse previous states and must not use the cache at all';
 
 SELECT sum(value)
 FROM test_partial_agg_cache_array_join_key
@@ -66,9 +66,12 @@ SETTINGS
 
 SYSTEM FLUSH LOGS query_log;
 
+-- Plan-time probing is disabled for plans with `ARRAY JOIN` (a hit chunk would be dropped by
+-- `ArrayJoinTransform`), and `ARRAY JOIN` also removes the per-part chunk info the execution-time
+-- path needs, so such a query neither hits nor populates the cache.
 SELECT
     ProfileEvents['PartialAggregateCacheHits'] = 0 AS no_hits,
-    ProfileEvents['PartialAggregateCacheMisses'] > 0 AS has_misses
+    ProfileEvents['PartialAggregateCacheMisses'] = 0 AS no_misses
 FROM system.query_log
 WHERE
     type = 'QueryFinish'

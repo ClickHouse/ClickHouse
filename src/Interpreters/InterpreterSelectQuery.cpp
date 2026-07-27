@@ -3098,6 +3098,10 @@ void InterpreterSelectQuery::executeAggregation(
     if (!grouping_sets_params.empty())
         partial_aggregate_cache_query_hash_for_pipeline.reset();
 
+    /// `ARRAY JOIN` before aggregation: a plan-time hit chunk would be dropped by `ArrayJoinTransform`, see `planHasArrayJoinStep`.
+    if (partial_aggregate_cache_query_hash_for_pipeline && planHasArrayJoinStep(query_plan))
+        partial_aggregate_cache_query_hash_for_pipeline.reset();
+
     auto merge_threads = max_streams;
     auto temporary_data_merge_threads = settings[Setting::aggregation_memory_efficient_merge_threads]
         ? static_cast<size_t>(settings[Setting::aggregation_memory_efficient_merge_threads])

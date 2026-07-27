@@ -5917,6 +5917,11 @@ SET use_partial_aggregate_cache = 1;
 SELECT toStartOfHour(ts) AS hour, sum(value) FROM metrics GROUP BY hour;
 ```
 
+The cache is not used when the per-part states cannot be attributed to the parts of a single table alone, in particular for
+queries with `JOIN`, table functions, subqueries (including scalar subqueries in the aggregated expressions), row policies,
+`additional_table_filters`, or non-deterministic functions. Planning-stage reuse is additionally disabled for queries with
+`ARRAY JOIN` before the aggregation.
+
 Possible values:
 
 - 0 - Disabled

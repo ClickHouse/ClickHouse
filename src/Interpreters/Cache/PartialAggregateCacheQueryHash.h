@@ -11,7 +11,15 @@ namespace DB
 
 class PartialAggregateCache;
 using PartialAggregateCachePtr = std::shared_ptr<PartialAggregateCache>;
+class QueryPlan;
 struct Settings;
+
+/// Plan-time probing in `ReadFromMergeTree` represents a cache hit as a zero-row chunk carrying
+/// `PartialAggregatePlanHitInfo`. Inflating transforms such as `ArrayJoinTransform` rebuild the chunk without
+/// preserving `ChunkInfos`, and drop a zero-row input entirely, so the hit would silently disappear and the
+/// cached part would contribute neither raw rows nor cached states. Fail-close: no plan-time probing for such
+/// plans. Execution-time caching is unaffected because it observes the chunks before `ARRAY JOIN`.
+bool planHasArrayJoinStep(const QueryPlan & query_plan);
 
 /// Single SipHash implementation for `PartialAggregateCache::Key::query_hash` (must stay in sync with
 /// `AggregatingTransform` and `ReadFromMergeTree` planning probes).

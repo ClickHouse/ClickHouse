@@ -1037,8 +1037,16 @@ void AggregatingTransform::consume(Chunk chunk)
             key.part_name = part_info->part_name;
             key.part_mutation_version = part_info->part_mutation_version;
 
+            /// The part is already represented by cached states, but its rows were still read from the source,
+            /// so they must be accounted for in the progress and `rows_before_aggregation` counters.
             if (partial_aggregate_cache_parts_served.contains(key))
+            {
+                if (rows_before_aggregation)
+                    rows_before_aggregation->add(num_rows);
+                src_rows += num_rows;
+                src_bytes += chunk.bytes();
                 return;
+            }
 
             /// One execution-time `get` per part per step unless plan-time already missed (`skip_execution_time_cache_lookup`).
             bool should_lookup_execution_cache = false;
@@ -1057,6 +1065,11 @@ void AggregatingTransform::consume(Chunk chunk)
                         LOG_TRACE(log, "Aggregating");
                         is_consume_started = true;
                     }
+
+                    if (rows_before_aggregation)
+                        rows_before_aggregation->add(num_rows);
+                    src_rows += num_rows;
+                    src_bytes += chunk.bytes();
 
                     Block block = materializeBlock(*cached);
                     if (!params->aggregator.mergeOnBlock(block.getColumns(), block.rows(), false, variants, no_more_keys, is_cancelled))

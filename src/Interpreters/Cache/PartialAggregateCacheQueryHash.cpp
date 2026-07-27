@@ -6,6 +6,8 @@
 #include <Core/SettingsEnums.h>
 #include <Common/FieldVisitorHash.h>
 #include <Common/SipHash.h>
+#include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #include <algorithm>
 
@@ -15,6 +17,33 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool use_partial_aggregate_cache;
+}
+
+namespace
+{
+
+bool nodeHasArrayJoinStep(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+
+    if (typeid_cast<const ArrayJoinStep *>(node->step.get()))
+        return true;
+
+    for (const QueryPlan::Node * child : node->children)
+    {
+        if (nodeHasArrayJoinStep(child))
+            return true;
+    }
+
+    return false;
+}
+
+}
+
+bool planHasArrayJoinStep(const QueryPlan & query_plan)
+{
+    return nodeHasArrayJoinStep(query_plan.getRootNode());
 }
 
 std::optional<IASTHash> computePartialAggregateCacheQueryHash(

@@ -242,6 +242,10 @@ std::optional<IASTHash> tryPartialAggregateCacheQueryHashFromAnalyzerPlan(const 
     if (has_grouping_sets_step || aggregating_steps.size() != 1)
         return std::nullopt;
 
+    /// `ARRAY JOIN` before aggregation: a plan-time hit chunk would be dropped by `ArrayJoinTransform`, see `planHasArrayJoinStep`.
+    if (planHasArrayJoinStep(query_plan))
+        return std::nullopt;
+
     auto cache = Context::getGlobalContextInstance()->getPartialAggregateCache();
     const auto & settings = query_context->getSettingsRef();
     const AggregatingStep & agg = *aggregating_steps.front();
