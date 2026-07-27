@@ -917,15 +917,22 @@ void DataPartStorageOnDiskBase::rename(
         }
 
         /// Only after moveDirectory() since before the directory does not exist.
-        SyncGuardPtr to_sync_guard;
-        SyncGuardPtr root_sync_guard;
         if (fsync_part_dir)
         {
-            to_sync_guard = volume->getDisk()->getDirectorySyncGuard(fs::path(new_root_path) / new_part_dir);
-            /// The sibling rename entries live in the root, not in the moved dir. Sibling-less renames keep
-            /// the historical single sync on the moved dir (02361_fsync_profile_events pins the event count).
-            if (!flat_projection_moves.empty())
-                root_sync_guard = volume->getDisk()->getDirectorySyncGuard(new_root_path);
+            /// Sync child before parent so a parent dentry never points at a not-yet-synced
+            /// child: the moved dir, then the parent(s) holding the renamed dentry. to_parent is the
+            /// parts root, which also holds the FLAT projection siblings' rename entries.
+            { SyncGuardPtr to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to); }
+
+            /// parent_path() twice: step past the trailing slash on `to`/`from`, then to the container.
+            const String to_parent = fs::path(to).parent_path().parent_path().string();
+            const String from_parent = fs::path(from).parent_path().parent_path().string();
+
+            if (!to_parent.empty())
+                { SyncGuardPtr to_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(to_parent); }
+
+            if (!from_parent.empty() && from_parent != to_parent)
+                { SyncGuardPtr from_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(from_parent); }
         }
     });
 
