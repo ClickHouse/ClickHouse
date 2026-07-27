@@ -75,7 +75,7 @@ Elasticsearch 使用带有处理器 (例如 `enrich`、`rename`、`grok`) 的摄
   ### 查询语言
 </div>
 
-Elasticsearch 支持[多种查询语言](https://www.elastic.co/docs/explore-analyze/query-filter/languages)，包括 [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl)、[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql)、[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql) 和 [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene 风格) 查询，但对 JOIN 的支持有限——只能通过 [`ES|QL`](https://www.elastic.co/guide/en/elasticsearch/reference/8.x/esql-commands.html#esql-lookup-join) 使用 **左外连接**。ClickHouse 支持**完整的 SQL 语法**，包括[所有 JOIN 类型](/zh/reference/statements/select/join#supported-types-of-join)、[窗口函数](/zh/reference/functions/window-functions/index)、子查询 (包括关联子查询) 以及 CTE。如果你需要将可观测性信号与业务或基础设施数据关联起来，这是一项重大优势。
+Elasticsearch 支持[多种查询语言](https://www.elastic.co/docs/explore-analyze/query-filter/languages)，包括 [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl)、[ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql)、[EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql) 和 [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (Lucene 风格) 查询，但对 JOIN 的支持有限——只能通过 [`ES|QL`](https://www.elastic.co/docs/reference/query-languages/esql/commands/lookup-join) 使用 **左外连接**。ClickHouse 支持**完整的 SQL 语法**，包括[所有 JOIN 类型](/zh/reference/statements/select/join#supported-types-of-join)、[窗口函数](/zh/reference/functions/window-functions/index)、子查询 (包括关联子查询) 以及 CTE。如果你需要将可观测性信号与业务或基础设施数据关联起来，这是一项重大优势。
 
 在 ClickStack 中，[UI 提供了兼容 Lucene 的搜索界面](/zh/clickstack/features/search)，便于迁移；同时还可通过 ClickHouse backend 获得完整的 SQL 支持。该语法与 [Elastic query string](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) 语法类似。要查看该语法的精确对比，请参阅[&quot;在 ClickStack 和 Elastic 中搜索&quot;](/zh/clickstack/migration/elastic/search)。
 
@@ -170,7 +170,7 @@ Elasticsearch 中的索引路由可确保特定文档始终被路由到特定分
 
 当查询的数据跨多个分片时，Elasticsearch 中的这种聚合会在 [“top-N” 查询中对结果进行估算](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (例如按计数排序的前 10 个主机) 。这种估算可以提升速度，但可能会影响准确性。你可以通过[查看 `doc_count_error_upper_bound`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error) 并增大 `shard_size` 参数来降低这种误差——代价是更高的内存占用和更慢的查询性能。
 
-对于所有桶聚合，Elasticsearch 还要求设置 [`size`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size)——无法在不显式设置上限的情况下返回所有唯一分组。高基数聚合可能会触及 [`max_buckets` 限制](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets)，或者需要通过 [composite aggregation](https://www.elastic.co/docs/reference/aggregations/bucket/composite-aggregation) 分页处理，而这通常既复杂又低效。
+对于所有桶聚合，Elasticsearch 还要求设置 [`size`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size)——无法在不显式设置上限的情况下返回所有唯一分组。高基数聚合可能会触及 [`max_buckets` 限制](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets)，或者需要通过 [composite aggregation](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-composite-aggregation) 分页处理，而这通常既复杂又低效。
 
 相比之下，ClickHouse 开箱即用就能执行精确聚合。像 `count(*)` 这样的函数无需额外调整配置即可返回准确结果，使查询行为更简单，也更可预测。
 
@@ -239,11 +239,11 @@ ClickHouse 通过 `MergeTree` 等原生表引擎支持 **分层存储**，可根
 
 在 Elasticsearch 中，**rollup** 或 **聚合** 是通过一种称为 [**transforms**](https://www.elastic.co/guide/en/elasticsearch/reference/current/transforms.html) 的机制实现的。它们用于基于**滑动窗口**模型，按固定时间间隔 (例如每小时或每天) 对时间序列数据进行汇总。这些 transform 被配置为周期性运行的后台作业，从一个索引聚合数据，并将结果写入单独的 **rollup 索引**。这样可以避免反复扫描高基数的原始数据，从而降低长时间范围查询的成本。
 
-下图从抽象层面展示了 transforms 的工作方式 (注意：我们用蓝色表示属于同一个 bucket、需要为其预先计算聚合值的所有文档) ：
+下图从抽象层面展示了 transforms 的工作方式 (注意：我们用蓝色表示属于同一个桶、需要为其预先计算聚合值的所有文档) ：
 
 <Image img="/images/use-cases/observability/es-transforms.webp" alt="Elasticsearch transforms" size="lg" />
 
-连续 transform 使用基于可配置检查间隔的 transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) (即 transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)，默认值为 1 分钟) 。在上图中，我们假设 ① 在检查间隔结束后创建了一个新的 checkpoint。此时，Elasticsearch 会检查 transform 源索引中的变更，并检测到自上一个 checkpoint 以来新增了 3 个 `blue` 文档 (11、12 和 13) 。因此，系统会过滤源索引中所有现有的 `blue` 文档，然后通过 [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (以利用结果的[分页](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html)能力) 重新计算聚合值 (并更新目标索引中的文档，用新的聚合结果替换包含先前聚合值的文档) 。同样，在 ② 和 ③ 处，也会通过检查变更并基于同一 `blue` bucket 中所有现有文档重新计算聚合值，来处理新的 checkpoint。
+连续 transform 使用基于可配置检查间隔的 transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) (即 transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)，默认值为 1 分钟) 。在上图中，我们假设 ① 在检查间隔结束后创建了一个新的 checkpoint。此时，Elasticsearch 会检查 transform 源索引中的变更，并检测到自上一个 checkpoint 以来新增了 3 个 `blue` 文档 (11、12 和 13) 。因此，系统会过滤源索引中所有现有的 `blue` 文档，然后通过 [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (以利用结果的[分页](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html)能力) 重新计算聚合值 (并更新目标索引中的文档，用新的聚合结果替换包含先前聚合值的文档) 。同样，在 ② 和 ③ 处，也会通过检查变更并基于同一 `blue` 桶中所有现有文档重新计算聚合值，来处理新的 checkpoint。
 
 ClickHouse 采用的是一种根本不同的方法。ClickHouse 不会周期性地重新聚合数据，而是支持 **增量materialized view**，可在**写入时**对数据进行转换和聚合。当新数据写入源表时，materialized view 只会对新**写入的块**执行预定义的 SQL 聚合查询，并将聚合结果写入目标表。
 

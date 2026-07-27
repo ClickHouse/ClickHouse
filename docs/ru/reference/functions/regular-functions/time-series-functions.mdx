@@ -25,7 +25,7 @@ doc_type: 'reference'
 
 Добавленный в: v24.1.0
 
-Выполняет STL-декомпозицию временного ряда [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) на сезонную, трендовую и остаточную компоненты.
+Выполняет STL-декомпозицию временного ряда [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) на сезонную, трендовую и остаточную компоненты.
 
 **Синтаксис**
 
@@ -51,26 +51,9 @@ SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 
 ```
 
 ```response title=Response
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="seriesOutliersDetectTukey">
@@ -184,6 +167,10 @@ SELECT seriesPeriodDetectFFT(arrayMap(x -> abs((x % 6) - 3), range(1000))) AS pr
 Функция повторяет логику копирования модификаторов Prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers).
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -192,7 +179,7 @@ timeSeriesCopyTag(dest_group, src_group, tag_to_copy)
 
 **Аргументы**
 
-* `dest_group` — Группа тегов назначения. [`UInt64`](/ru/reference/data-types/int-uint)
+* `dest_group` — Целевая группа тегов. [`UInt64`](/ru/reference/data-types/int-uint)
 * `src_group` — Исходная группа тегов. [`UInt64`](/ru/reference/data-types/int-uint)
 * `tag_to_copy` — Имя тега, который нужно скопировать. [`String`](/ru/reference/data-types/string)
 
@@ -228,6 +215,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 Если какие-либо из копируемых тегов отсутствуют в `src_group`, функция также удалит их из `dest_group`.
 Функция повторяет логику копирования модификаторов group left/group right в Prometheus:
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers).
+
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -270,6 +261,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 Извлекает значение указанного тега из группы. Если тег не найден, возвращает NULL.
 См. также функцию [timeSeriesGroupToTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -360,6 +355,10 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 Значение детерминировано: одинаковые входные теги всегда дают один и тот же ключ.
 Предназначен для использования в качестве ключа сортировки для операторов сэмплирования, таких как `limitk` и `limit_ratio`.
 
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -397,6 +396,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 
 Возвращает имена и значения тегов, связанных с указанной группой.
 См. также функцию [timeSeriesTagsToGroup()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -442,6 +445,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 Возвращает имена и значения тегов, связанных с указанным идентификатором временного ряда.
 См. также функцию [timeSeriesStoreTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -484,6 +491,10 @@ SELECT 8374283493092 AS id,
 
 Возвращает теги, связанные с указанным идентификатором временного ряда.
 См. также функцию [timeSeriesStoreTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -529,6 +540,10 @@ SELECT 8374283493092 AS id,
 в которой тегу `dest_tag` присваивается объединённое значение.
 Эта функция повторяет логику функции Prometheus
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join).
+
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -615,6 +630,10 @@ SELECT timeSeriesRange('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:01:0
 См. также функцию [timeSeriesRemoveTag()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -656,6 +675,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 Если такого тега в группе нет, группа возвращается без изменений.
 См. также функцию [timeSeriesRemoveTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -703,6 +726,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 См. также функцию [timeSeriesRemoveTag()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -747,6 +774,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 вместе с исходными тегами во входных данных.
 Эта функция повторяет логику функции Prometheus
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace).
+
+<Note>
+  Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -839,6 +870,10 @@ SELECT 8374283493092 AS id,
 Для пустого множества тегов функция всегда возвращает 0.
 См. также функцию [timeSeriesGroupToTags()](/ru/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -886,6 +921,10 @@ SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'ht
 Эта функция похожа на [throwIf()](/ru/reference/functions/regular-functions/other-functions#throwIf),
 но использует другой код ошибки и по-другому форматирует сообщение об ошибке.
 
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -913,17 +952,14 @@ INSERT INTO test VALUES ([('__name__', 'up')]);
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- ОК
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- OK
 
 INSERT INTO test VALUES ([('__name__', 'up')]);
 
 SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
-HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Генерирует исключение "Multiple series have the same tags {'__name__': 'up'}"
-```
-
-```response title=Response
+HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
 ```
 
 {/*AUTOGENERATED_END*/}
