@@ -993,6 +993,7 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
 
     settings[QueryPlanSerializationSetting::enable_producing_buckets_out_of_order_in_aggregation] = params.enable_producing_buckets_out_of_order_in_aggregation;
+    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const

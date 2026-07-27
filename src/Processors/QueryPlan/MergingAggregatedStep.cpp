@@ -200,6 +200,7 @@ void MergingAggregatedStep::serializeSettings(QueryPlanSerializationSettings & s
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
     settings[QueryPlanSerializationSetting::distributed_aggregation_memory_efficient] = memory_efficient_aggregation;
+    settings[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte] = params.serialize_string_with_zero_byte;
 }
 
 void MergingAggregatedStep::serialize(Serialization & ctx) const
