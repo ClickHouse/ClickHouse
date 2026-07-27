@@ -13,7 +13,19 @@
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperDispatcher.h>
 #include <Common/Stopwatch.h>
+
+/// The bugfix validation job overlays this file onto the merge-base tree, without the fix, and
+/// requires it to build there and fail at runtime. Cases that name the helper, or that reach
+/// KeeperDispatcher::interruptibleSleep (private until the fix declares these suites its friends),
+/// cannot be written against the merge-base and are compiled only where the header exists.
+/// WaitCommittedUptoKeepsHugeTimeout below goes through the public KeeperContext API, builds against
+/// both trees, and is the case that reproduces the lost timeout without the fix.
+#if __has_include(<Common/saturatedWaitDuration.h>)
 #include <Common/saturatedWaitDuration.h>
+#define SATURATED_WAIT_DURATION_AVAILABLE 1
+#else
+#define SATURATED_WAIT_DURATION_AVAILABLE 0
+#endif
 
 using namespace DB;
 
@@ -58,10 +70,12 @@ std::vector<UInt64> hugeUnsignedTimeoutsMs()
 /// duration returns true, while a wait whose duration was lost to overflow returns false at once.
 constexpr Int64 notify_after_ms = 300;
 
+#if SATURATED_WAIT_DURATION_AVAILABLE
 /// For the opposite direction, where the wait must not happen at all, the predicate is satisfied
 /// sooner: the ordering oracle can only see a spurious wait that lasts at least this long, so the
 /// delay has to stay below the shortest regression worth catching rather than above it.
 constexpr Int64 signal_after_ms = 100;
+#endif
 
 }
 
@@ -101,6 +115,8 @@ TEST_F(KeeperSaturatedWaitTest, WaitCommittedUptoKeepsHugeTimeout)
         EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
     }
 }
+
+#if SATURATED_WAIT_DURATION_AVAILABLE
 
 /// Sites 5 to 7. All three callers of interruptibleSleep build the period from a coordination
 /// setting, so one saturation in the callee covers every one of them.
@@ -203,5 +219,7 @@ TEST_F(KeeperSaturatedWaitTest, CoordinationDefaultsAreUnaffected)
         EXPECT_EQ(saturatedWaitMillisecondsCountNonZero(ms), static_cast<UInt64>(ms));
     }
 }
+
+#endif
 
 #endif

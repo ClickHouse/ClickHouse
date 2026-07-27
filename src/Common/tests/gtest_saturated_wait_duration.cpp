@@ -7,9 +7,22 @@
 
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/Stopwatch.h>
+
+/// The bugfix validation job overlays this file onto the merge-base tree, without the fix, and
+/// requires it to build there and fail at runtime. The cases that call the helper cannot be written
+/// without the header that declares it, so they are compiled only where it exists. The queue cases
+/// at the end go through the public ConcurrentBoundedQueue API, build against both trees, and are
+/// the ones that reproduce the lost timeout without the fix.
+#if __has_include(<Common/saturatedWaitDuration.h>)
 #include <Common/saturatedWaitDuration.h>
+#define SATURATED_WAIT_DURATION_AVAILABLE 1
+#else
+#define SATURATED_WAIT_DURATION_AVAILABLE 0
+#endif
 
 using namespace DB;
+
+#if SATURATED_WAIT_DURATION_AVAILABLE
 
 namespace
 {
@@ -125,6 +138,8 @@ TEST(SaturatedWaitDuration, MicrosecondsGuardKeepsPolicyMagnitude)
     EXPECT_EQ(saturatedMicrosecondsFromMilliseconds(one_year_ms), one_year_ms * 1000);
     EXPECT_GT(saturatedMicrosecondsFromMilliseconds(std::numeric_limits<Int64>::max()) / 1000, MAX_WAIT_MILLISECONDS);
 }
+
+#endif
 
 TEST(SaturatedWaitDuration, ConcurrentBoundedQueuePopKeepsHugeTimeout)
 {
