@@ -49,19 +49,7 @@ FROM test_exact_compat
 ORDER BY id
 FORMAT TSVRaw;
 
--- In-memory path (`DataTypeDynamic::getDynamicSubcolumnData`), no storage involved:
--- here the variant types are deterministic, so assert them too.
-SELECT
-    id,
-    dynamicType(d),
-    d.JSON.a.:Int64
-FROM
-(
-    SELECT 1 AS id, CAST(CAST('{"a":1}' AS JSON) AS Dynamic) AS d
-    UNION ALL
-    SELECT 2 AS id, CAST(CAST('{"a":2}' AS JSON(max_dynamic_paths=0)) AS Dynamic) AS d
-)
-ORDER BY id
-FORMAT TSVRaw;
+-- The in-memory path (`DataTypeDynamic::getDynamicSubcolumnData`) is covered by
+-- `04650_dynamic_subcolumn_exact_json_in_memory` (it needs the new analyzer).
 
 DROP TABLE test_exact_compat;

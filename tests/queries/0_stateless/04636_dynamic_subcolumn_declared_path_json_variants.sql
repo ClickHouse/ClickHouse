@@ -72,17 +72,5 @@ FORMAT TSVRaw;
 
 DROP TABLE test_declared_path_compat_shared;
 
-SELECT '-- in-memory';
-SELECT id, dynamicType(d), d.JSON.a, d.JSON.a.:Int64, d.JSON.b
-FROM
-(
-    SELECT 1 AS id, CAST(CAST('{"a":1}' AS JSON) AS Dynamic) AS d
-    UNION ALL
-    SELECT 2 AS id, CAST(CAST('{"a":2}' AS JSON(a UInt64)) AS Dynamic) AS d
-    UNION ALL
-    SELECT 3 AS id, CAST(CAST('{"a":3,"b":"x"}' AS JSON(a UInt64, b String)) AS Dynamic) AS d
-    UNION ALL
-    SELECT 4 AS id, CAST(42 AS Dynamic) AS d
-)
-ORDER BY id
-FORMAT TSVRaw;
+-- The in-memory path (`DataTypeDynamic::getDynamicSubcolumnData`) is covered by
+-- `04651_dynamic_subcolumn_declared_path_json_in_memory` (it needs the new analyzer).
