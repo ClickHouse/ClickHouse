@@ -4157,6 +4157,12 @@ UInt64 calculateCacheKey(const DB::ASTPtr & select_query)
 
     SipHash hash;
     hash.update(select.tables()->getTreeHash(/*ignore_aliases=*/true));
+    /// `WITH` aliases participate in the pre-aggregation expressions by name only: without the analyzer the
+    /// aggregate argument names are `greater(v, threshold)` regardless of what `threshold` is bound to, so
+    /// `WITH 15 AS threshold` and `WITH 5 AS threshold` would otherwise share one cache entry.
+    /// Alias names are part of the hash here because they are what the expressions refer to.
+    if (const auto with = select.with())
+        hash.update(with->getTreeHash(/*ignore_aliases=*/false));
     try
     {
         if (const auto [array_join_expression_list, is_array_join_left] = select.arrayJoinExpressionList(); array_join_expression_list)

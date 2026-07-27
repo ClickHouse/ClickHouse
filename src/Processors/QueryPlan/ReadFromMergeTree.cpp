@@ -3920,6 +3920,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Cleared each pipeline build; set to true only for miss pipes after plan-time `PartialAggregateCache::get`.
     reader_settings.skip_partial_aggregate_execution_cache_lookup = false;
 
+    /// `FINAL` does not participate in the partial aggregate cache at all, not even at execution time:
+    /// which rows of a part survive the merge depends on the other parts, and vertical `FINAL` can emit
+    /// a subset of a source chunk while keeping its `PartialAggregateInfo`, so per-part states keyed by
+    /// part identity alone would be stale as soon as an overlapping part changes. Fail-close: do not
+    /// attach the per-part identity to the chunks at all.
+    if (isQueryWithFinal())
+        reader_settings.use_partial_aggregate_cache = false;
+
     logPredicateStatistics(result);
 
     /// A distributed worker reads exactly the bucket described by its `read_bucket` task parameter: its
