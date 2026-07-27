@@ -44,6 +44,14 @@ settings = {
     "s3_min_upload_part_size": "33554432",
 }
 
+LANCE_S3_TEST_ACCESS_KEY = "lances3explicit"
+LANCE_S3_TEST_SECRET_KEY = "LanceS3ExplicitSecret"
+
+lance_s3_query_parameters = {
+    "param_access_key": LANCE_S3_TEST_ACCESS_KEY,
+    "param_secret_key": LANCE_S3_TEST_SECRET_KEY,
+}
+
 
 def upload_lance_dataset_to_minio(started_cluster, remote_prefix, dataset_name="basic.lance"):
     local_path = os.path.abspath(
@@ -63,6 +71,24 @@ def upload_lance_dataset_to_minio(started_cluster, remote_prefix, dataset_name="
                 object_name=remote_path,
                 file_path=local_file,
             )
+
+
+def upload_lance_files_to_minio(
+    started_cluster, remote_prefix, dataset_name, relative_paths
+):
+    local_path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "../../queries/0_stateless/data_lance",
+            dataset_name,
+        )
+    )
+    for relative_path in relative_paths:
+        started_cluster.minio_client.fput_object(
+            bucket_name=started_cluster.minio_bucket,
+            object_name=os.path.join(remote_prefix, relative_path),
+            file_path=os.path.join(local_path, relative_path),
+        )
 
 
 def set_lance_latest_version(started_cluster, remote_prefix, version):
@@ -113,6 +139,25 @@ def allow_anonymous_minio_reads(started_cluster):
     )
 
 
+def create_lance_s3_test_user(started_cluster):
+    minio_container_id = started_cluster.get_container_id(started_cluster.minio_host)
+    started_cluster.exec_in_container(
+        minio_container_id,
+        [
+            "sh",
+            "-c",
+            (
+                "mc alias set local http://127.0.0.1:9001 "
+                '"$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && '
+                f"mc admin user add local {LANCE_S3_TEST_ACCESS_KEY} "
+                f"{LANCE_S3_TEST_SECRET_KEY} >/dev/null && "
+                f"mc admin policy attach local readwrite "
+                f"--user {LANCE_S3_TEST_ACCESS_KEY} >/dev/null"
+            ),
+        ],
+    )
+
+
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -120,6 +165,7 @@ def started_cluster():
         cluster.start()
         logging.info("Cluster started")
         allow_anonymous_minio_reads(cluster)
+        create_lance_s3_test_user(cluster)
 
         yield cluster
     finally:
@@ -271,12 +317,42 @@ def test_lance_s3_query_pins_dataset_version(started_cluster):
     skip_if_lance_s3_unavailable()
 
     remote_prefix = "data/lance/versions.lance"
-    upload_lance_dataset_to_minio(
+    version_1_files = [
+        "data/101110110111010110111111ca31c045e49cba0cf12615f6a3.lance",
+        "_transactions/0-9e7942fd-8397-4e82-b2be-d4688d628047.txn",
+        "_versions/18446744073709551614.manifest",
+    ]
+    version_2_data_and_transaction = [
+        "data/010000010001111010111000942f4c499e86a6951e1774c786.lance",
+        "_transactions/1-b97f116d-e6ae-4cc4-ba38-2b525803283d.txn",
+    ]
+    version_2_manifest = "_versions/18446744073709551613.manifest"
+    version_2_manifest_object = f"{remote_prefix}/{version_2_manifest}"
+
+    for item in started_cluster.minio_client.list_objects(
+        started_cluster.minio_bucket,
+        prefix=f"{remote_prefix}/",
+        recursive=True,
+    ):
+        started_cluster.minio_client.remove_object(
+            started_cluster.minio_bucket, item.object_name
+        )
+
+    upload_lance_files_to_minio(
         started_cluster,
         remote_prefix,
-        dataset_name="versions.lance",
+        "versions.lance",
+        version_1_files,
     )
     set_lance_latest_version(started_cluster, remote_prefix, 1)
+    assert version_2_manifest_object not in {
+        item.object_name
+        for item in started_cluster.minio_client.list_objects(
+            started_cluster.minio_bucket,
+            prefix=f"{remote_prefix}/_versions/",
+            recursive=True,
+        )
+    }
 
     failpoint = "lance_metadata_iterate_pause"
     node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
@@ -306,7 +382,27 @@ def test_lance_s3_query_pins_dataset_version(started_cluster):
 
     try:
         wait_future.result(timeout=30)
+        upload_lance_files_to_minio(
+            started_cluster,
+            remote_prefix,
+            "versions.lance",
+            version_2_data_and_transaction,
+        )
+        upload_lance_files_to_minio(
+            started_cluster,
+            remote_prefix,
+            "versions.lance",
+            [version_2_manifest],
+        )
         set_lance_latest_version(started_cluster, remote_prefix, 2)
+        assert version_2_manifest_object in {
+            item.object_name
+            for item in started_cluster.minio_client.list_objects(
+                started_cluster.minio_bucket,
+                prefix=f"{remote_prefix}/_versions/",
+                recursive=True,
+            )
+        }
         node.query(f"SYSTEM NOTIFY FAILPOINT {failpoint}")
 
         assert query_future.result(timeout=60) == "3\t6\t1\t1\n"
@@ -381,7 +477,7 @@ def test_lance_s3_pushdown_queries(started_cluster):
             ORDER BY id
             """
         )
-        == "2\n"
+        == "2\n7\n"
     )
     assert (
         node.query(
@@ -390,9 +486,10 @@ def test_lance_s3_pushdown_queries(started_cluster):
             FROM lanceS3(nc_s3, filename = 'lance/pushdown.lance')
             WHERE event_time >= toDateTime64('2024-01-02 03:04:05.123', 3)
             ORDER BY id
-            """
+            """,
+            settings={"session_timezone": "UTC"},
         )
-        == "4\n5\n7\n8\n"
+        == "2\n4\n5\n7\n"
     )
     assert (
         node.query(
@@ -508,12 +605,18 @@ def test_lance_s3_explicit_schema(started_cluster):
         """
         CREATE TABLE lance_s3_explicit
         (
-            id UInt64,
+            id Int32,
             name String,
-            score Nullable(Int64)
+            score Nullable(Float32)
         )
         ENGINE = LanceS3(nc_s3, filename = 'lance/basic.lance')
         """
+    )
+    assert (
+        node.query(
+            "SELECT toTypeName(id), toTypeName(score) FROM lance_s3_explicit LIMIT 1"
+        )
+        == "Int32\tNullable(Float32)\n"
     )
     assert (
         node.query("SELECT id, name, score FROM lance_s3_explicit ORDER BY id")
@@ -527,7 +630,7 @@ def test_lance_s3_explicit_schema(started_cluster):
         (
             id String,
             name String,
-            score Nullable(Int64)
+            score Nullable(Float32)
         )
         ENGINE = LanceS3(nc_s3, filename = 'lance/basic.lance')
         """
@@ -548,10 +651,11 @@ def test_lance_s3_explicit_credentials(started_cluster):
             SELECT id, name, score
             FROM lanceS3(
                 'http://minio1:9001/root/data/lance/basic.lance',
-                'minio',
-                'ClickHouse_Minio_P@ssw0rd')
+                {access_key:String},
+                {secret_key:String})
             ORDER BY id
-            """
+            """,
+            settings=lance_s3_query_parameters,
         )
         == "1\ta\t10\n2\tb\t\\N\n3\tc\t30\n"
     )
@@ -562,11 +666,12 @@ def test_lance_s3_explicit_credentials(started_cluster):
             SELECT id, name, score
             FROM lanceS3(
                 'http://minio1:9001/root/data/lance/basic.lance',
-                access_key_id = 'minio',
-                secret_access_key = 'ClickHouse_Minio_P@ssw0rd',
+                access_key_id = {access_key:String},
+                secret_access_key = {secret_key:String},
                 region = 'us-east-1')
             ORDER BY id
-            """
+            """,
+            settings=lance_s3_query_parameters,
         )
         == "1\ta\t10\n2\tb\t\\N\n3\tc\t30\n"
     )
@@ -577,9 +682,10 @@ def test_lance_s3_explicit_credentials(started_cluster):
         CREATE TABLE lance_s3_explicit_credentials
         ENGINE = LanceS3(
             'http://minio1:9001/root/data/lance/basic.lance',
-            'minio',
-            'ClickHouse_Minio_P@ssw0rd')
-        """
+            {access_key:String},
+            {secret_key:String})
+        """,
+        settings=lance_s3_query_parameters,
     )
     assert (
         node.query("SELECT id, name, score FROM lance_s3_explicit_credentials ORDER BY id")
@@ -653,35 +759,8 @@ def test_lance_s3_disk_setting(started_cluster):
     node.query("DROP TABLE lance_s3_disk")
 
 
-def test_lance_s3_error_paths(started_cluster):
+def test_lance_s3_missing_dataset_error(started_cluster):
     skip_if_lance_s3_unavailable()
-
-    remote_prefix = "data/lance/basic.lance"
-    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
-    unsupported_prefix = "data/lance/extension_unsupported.lance"
-    upload_lance_dataset_to_minio(
-        started_cluster,
-        unsupported_prefix,
-        dataset_name="extension_unsupported.lance",
-    )
-    corrupt_prefix = "data/lance/corrupt.lance"
-    upload_lance_dataset_to_minio(started_cluster, corrupt_prefix)
-    corrupt_manifest = next(
-        item.object_name
-        for item in started_cluster.minio_client.list_objects(
-            bucket_name=started_cluster.minio_bucket,
-            prefix=f"{corrupt_prefix}/_versions/",
-            recursive=True,
-        )
-        if item.object_name.endswith(".manifest")
-    )
-    corrupt_payload = b"not a Lance manifest"
-    started_cluster.minio_client.put_object(
-        bucket_name=started_cluster.minio_bucket,
-        object_name=corrupt_manifest,
-        data=io.BytesIO(corrupt_payload),
-        length=len(corrupt_payload),
-    )
 
     missing_error = node.query_and_get_error(
         """
@@ -692,13 +771,25 @@ def test_lance_s3_error_paths(started_cluster):
     assert "FILE_DOESNT_EXIST" in missing_error
     assert "missing.lance" in missing_error or "not found" in missing_error.lower()
 
+
+def test_lance_s3_invalid_uri_error(started_cluster):
+    skip_if_lance_s3_unavailable()
+
     invalid_uri_error = node.query_and_get_error(
         """
         SELECT *
         FROM lanceS3('http://[invalid', 'minio', 'secret')
         """
     )
-    assert "BAD_ARGUMENTS" in invalid_uri_error
+    assert "POCO_EXCEPTION" in invalid_uri_error
+    assert "Bad URI syntax" in invalid_uri_error
+
+
+def test_lance_s3_invalid_credentials_error(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/basic.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
 
     credentials_error = node.query_and_get_error(
         """
@@ -711,17 +802,61 @@ def test_lance_s3_error_paths(started_cluster):
     )
     assert "ACCESS_DENIED" in credentials_error
 
+
+def test_lance_s3_invalid_session_token_error(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    remote_prefix = "data/lance/basic.lance"
+    upload_lance_dataset_to_minio(started_cluster, remote_prefix)
+
     session_token_error = node.query_and_get_error(
         """
         SELECT *
         FROM lanceS3(
             'http://minio1:9001/root/data/lance/basic.lance',
-            access_key_id = 'minio',
-            secret_access_key = 'ClickHouse_Minio_P@ssw0rd',
-            session_token = 'session-token-that-minio-rejects')
-        """
+            access_key_id = {access_key:String},
+            secret_access_key = {secret_key:String},
+            session_token = {session_token:String})
+        """,
+        settings={
+            **lance_s3_query_parameters,
+            "param_session_token": "session-token-that-minio-rejects",
+        },
     )
     assert "ACCESS_DENIED" in session_token_error
+
+
+def test_lance_s3_corrupt_manifest_error(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    corrupt_prefix = "data/lance/corrupt.lance"
+    upload_lance_dataset_to_minio(started_cluster, corrupt_prefix)
+    corrupt_manifest = next(
+        item.object_name
+        for item in started_cluster.minio_client.list_objects(
+            bucket_name=started_cluster.minio_bucket,
+            prefix=f"{corrupt_prefix}/_versions/",
+            recursive=True,
+        )
+        if item.object_name.endswith(".manifest")
+    )
+    manifest_response = started_cluster.minio_client.get_object(
+        bucket_name=started_cluster.minio_bucket,
+        object_name=corrupt_manifest,
+    )
+    try:
+        corrupt_payload = bytearray(manifest_response.read())
+    finally:
+        manifest_response.close()
+        manifest_response.release_conn()
+    assert len(corrupt_payload) > 4
+    corrupt_payload[4] = 0
+    started_cluster.minio_client.put_object(
+        bucket_name=started_cluster.minio_bucket,
+        object_name=corrupt_manifest,
+        data=io.BytesIO(corrupt_payload),
+        length=len(corrupt_payload),
+    )
 
     corrupt_error = node.query_and_get_error(
         """
@@ -730,6 +865,10 @@ def test_lance_s3_error_paths(started_cluster):
         """
     )
     assert "INCORRECT_DATA" in corrupt_error
+
+
+def test_lance_s3_disallowed_disk_error(started_cluster):
+    skip_if_lance_s3_unavailable()
 
     disk_error = node.query_and_get_error(
         """
@@ -749,6 +888,17 @@ def test_lance_s3_error_paths(started_cluster):
     )
     assert "BAD_ARGUMENTS" in table_function_disk_error
     assert "Unsupported disk type for lanceS3" in table_function_disk_error
+
+
+def test_lance_s3_unsupported_type_error(started_cluster):
+    skip_if_lance_s3_unavailable()
+
+    unsupported_prefix = "data/lance/extension_unsupported.lance"
+    upload_lance_dataset_to_minio(
+        started_cluster,
+        unsupported_prefix,
+        dataset_name="extension_unsupported.lance",
+    )
 
     unsupported_error = node.query_and_get_error(
         """

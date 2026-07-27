@@ -222,6 +222,9 @@ Chunk ReadSource::generate()
 
     ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*record_batch);
 
+    if (scan.discard_output_columns)
+        return Chunk(Columns{}, static_cast<size_t>(record_batch->num_rows()));
+
     auto table = arrow::Table::FromRecordBatches({record_batch});
     if (!table.ok())
         throw Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to create Lance Arrow table: {}", table.status().ToString());
