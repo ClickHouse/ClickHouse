@@ -8,6 +8,17 @@
 namespace DB
 {
 
+namespace
+{
+    /// Keys of a dictionary source whose value must not be shown. Besides the password, this covers
+    /// the TLS credentials that are given as the contents of a certificate or a key file (a path is
+    /// not accepted from a `CREATE DICTIONARY` query in the first place).
+    bool isSecretKey(const String & key)
+    {
+        return key == "password" || key == "ssl_ca_pem" || key == "ssl_cert_pem" || key == "ssl_key_pem";
+    }
+}
+
 String ASTPair::getID(char) const
 {
     return "pair";
@@ -30,9 +41,9 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
     if (second_with_brackets)
         ostr << "(";
 
-    if (!settings.show_secrets && (first == "password"))
+    if (!settings.show_secrets && isSecretKey(first))
     {
-        /// Hide password in the definition of a dictionary:
+        /// Hide the password and the TLS credentials in the definition of a dictionary:
         /// SOURCE(CLICKHOUSE(host 'example01-01-1' port 9000 user 'default' password '[HIDDEN]' db 'default' table 'ids'))
         ostr << "'[HIDDEN]'";
     }
@@ -59,7 +70,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
 
 bool ASTPair::hasSecretParts() const
 {
-    return (first == "password") || second->hasSecretParts();
+    return isSecretKey(first) || second->hasSecretParts();
 }
 
 
