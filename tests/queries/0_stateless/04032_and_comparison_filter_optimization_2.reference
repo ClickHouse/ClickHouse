@@ -545,7 +545,7 @@ FROM
         multiply(__table2.number, 2) AS y
     FROM numbers(10) AS __table2
 ) AS __table1
-WHERE and(less(__table1.x, __table1.y), less(__table1.y, 3), less(__table1.x, 3))
+WHERE and(less(__table1.x, __table1.y), less(__table1.y, 3), indexHint(less(__table1.x, 3)))
 SETTINGS optimize_redundant_comparisons = 1
 1
 derived_conflict
