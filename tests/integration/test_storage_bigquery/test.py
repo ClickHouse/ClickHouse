@@ -473,33 +473,56 @@ def test_write_schema_drift_rejected():
     # touched columns no longer match the analyzed snapshot. Without that check the rows would be sent
     # against a stale snapshot, and `tabledata.insertAll` would happily store them under the new type
     # whenever the two types share a JSON representation.
+    #
+    # A `BigQuery` engine table pins the snapshot: the schema is inferred once, when the table is created,
+    # and cached for the lifetime of the storage. The remote type is changed only afterwards, so the drift
+    # does not depend on how many `tables.get` requests a query happens to issue before execution.
+    # `writable` has a NULLABLE RECORD column, which is inferred as Nullable(Tuple(...)).
+    settings = {"enable_nullable_tuple_type": 1}
+
+    def create_engine_table(name):
+        node.query(f"DROP TABLE IF EXISTS {name}")
+        node.query(
+            f"CREATE TABLE {name} ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
+            f"base_url = '{BASE_URL}', access_token = '{ACCESS_TOKEN}')",
+            settings=settings,
+        )
+
     mock_reset()
+    create_engine_table("bq_drift")
     # STRING and BYTES both map to `String`, so the local column type still matches the live schema and
     # only the snapshot comparison can catch the drift - yet a BYTES column expects base64-encoded data,
     # so the rows would be stored corrupted.
-    mock_ctl("/__retype_schema_after_first_get__?table=writable&column=name&type=BYTES")
+    mock_ctl("/__retype_schema__?table=writable&column=name&type=BYTES")
     error = node.query_and_get_error(
-        f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'row1')"
+        "INSERT INTO bq_drift (id, name) VALUES (1, 'row1')", settings=settings
     )
     assert "changed since it was analyzed" in error
     # The write was rejected before any row was streamed.
     assert mock_stats()["insert_requests"] == []
 
     mock_reset()
+    create_engine_table("bq_drift")
     # A drift that also changes the ClickHouse type is rejected by the column type check: an analyzed
     # `INTEGER` column is serialized as decimal text, so a live `STRING` column would accept the very
     # same payload and silently store `Int64` values as strings.
-    mock_ctl("/__retype_schema_after_first_get__?table=writable&column=id&type=STRING")
+    mock_ctl("/__retype_schema__?table=writable&column=id&type=STRING")
     error = node.query_and_get_error(
-        f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'row1')"
+        "INSERT INTO bq_drift (id, name) VALUES (1, 'row1')", settings=settings
     )
     assert "is declared as Int64" in error
     assert mock_stats()["insert_requests"] == []
 
-    # Without drift the same INSERT succeeds.
+    # Without drift the same INSERT succeeds, both through the engine table and the table function.
     mock_reset()
-    node.query(f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (1, 'row1')")
-    assert node.query(f"SELECT id, name FROM {bq('writable')}") == "1\trow1\n"
+    create_engine_table("bq_drift")
+    node.query("INSERT INTO bq_drift (id, name) VALUES (1, 'row1')", settings=settings)
+    node.query(f"INSERT INTO FUNCTION {bq('writable')} (id, name) VALUES (2, 'row2')")
+    assert (
+        node.query(f"SELECT id, name FROM {bq('writable')} ORDER BY id")
+        == "1\trow1\n2\trow2\n"
+    )
+    node.query("DROP TABLE bq_drift")
 
 
 def test_insert_roundtrip():

@@ -383,11 +383,13 @@ LONG_PAGE_TOKEN = [None]
 # cells. SCHEMA_GET_COUNT tracks how many schema requests have been served per table.
 SWAP_SCHEMA_AFTER_FIRST_GET = {}
 SCHEMA_GET_COUNT = {}
-# Maps a table name to a pair (column name, new BigQuery type) applied starting from the SECOND
-# `tables.get` served for that table. This simulates a concurrent BigQuery-side type change of an existing
-# column that lands after the schema snapshot was taken but before an `INSERT`, so the writer must reject
-# the write instead of streaming rows whose JSON representation the new type happens to accept as well.
-RETYPE_SCHEMA_AFTER_FIRST_GET = {}
+# Maps a table name to a pair (column name, new BigQuery type) applied to EVERY subsequent `tables.get`.
+# This simulates a concurrent BigQuery-side type change of an existing column that lands after a schema
+# snapshot was taken but before an `INSERT`, so the writer must reject the write instead of streaming rows
+# whose JSON representation the new type happens to accept as well. The change is not tied to a get count,
+# because how many `tables.get` requests a query issues before execution is an implementation detail; the
+# test pins the snapshot by creating a `BigQuery` engine table before applying the change.
+RETYPE_SCHEMA = {}
 
 
 def google_error(code, status, message):
@@ -541,7 +543,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             REJECT_ROW_IDS.clear()
             LONG_PAGE_TOKEN[0] = None
             SWAP_SCHEMA_AFTER_FIRST_GET.clear()
-            RETYPE_SCHEMA_AFTER_FIRST_GET.clear()
+            RETYPE_SCHEMA.clear()
             SCHEMA_GET_COUNT.clear()
             self.send_json(200, {})
             return
@@ -554,13 +556,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 SCHEMA_GET_COUNT.pop(table_name, None)
             self.send_json(200, {})
             return
-        if parsed.path == "/__retype_schema_after_first_get__":
+        if parsed.path == "/__retype_schema__":
             table_name = params.get("table")
             column = params.get("column")
             new_type = params.get("type")
             if table_name and column and new_type:
-                RETYPE_SCHEMA_AFTER_FIRST_GET[table_name] = (column, new_type)
-                SCHEMA_GET_COUNT.pop(table_name, None)
+                RETYPE_SCHEMA[table_name] = (column, new_type)
             self.send_json(200, {})
             return
         if parsed.path == "/__long_page_token__":
@@ -595,23 +596,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             STATS["schema_requests"].append({"path": parsed.path})
             fields = table["schema"]
             swap = SWAP_SCHEMA_AFTER_FIRST_GET.get(table_name)
-            retype = RETYPE_SCHEMA_AFTER_FIRST_GET.get(table_name)
-            if swap is not None or retype is not None:
-                # Simulate a concurrent BigQuery-side schema change that happens after query analysis
-                # (which reads the schema once) but before the pre-read or pre-write schema re-check (a
-                # second tables.get): serve the original schema on the first get and the changed one
-                # afterwards. `swap` reorders two columns, `retype` changes one column's type.
+            if swap is not None:
+                # Simulate a concurrent BigQuery-side column reorder that happens after query analysis
+                # (which reads the schema once) but before the read's pre-read schema re-check (a second
+                # tables.get): serve the original order on the first get and the swapped one afterwards.
                 SCHEMA_GET_COUNT[table_name] = SCHEMA_GET_COUNT.get(table_name, 0) + 1
                 if SCHEMA_GET_COUNT[table_name] >= 2:
                     fields = [dict(field) for field in fields]
-                    if swap is not None:
-                        i, j = swap
-                        fields[i], fields[j] = fields[j], fields[i]
-                    if retype is not None:
-                        column, new_type = retype
-                        for field in fields:
-                            if field["name"] == column:
-                                field["type"] = new_type
+                    i, j = swap
+                    fields[i], fields[j] = fields[j], fields[i]
+            retype = RETYPE_SCHEMA.get(table_name)
+            if retype is not None:
+                # Simulate a concurrent BigQuery-side type change of one column, served from now on.
+                fields = [dict(field) for field in fields]
+                column, new_type = retype
+                for field in fields:
+                    if field["name"] == column:
+                        field["type"] = new_type
             self.send_json(
                 200,
                 {
