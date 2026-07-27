@@ -195,9 +195,7 @@ user_id message                                             timestamp           
 本示例将使用 [Hacker News dataset](/zh/get-started/sample-datasets/hacker-news)，其中包含 2800 万行 Hacker News 数据。
 
 <Steps>
-  <Step>
-    ### 下载 CSV
-
+  <Step title="下载 CSV" id="download-csv">
     运行以下命令，从我们的公开 S3 bucket 下载该数据集的 CSV 版本：
 
     ```bash
@@ -207,9 +205,7 @@ user_id message                                             timestamp           
     这个压缩文件大小为 4.6 GB，包含 2800 万行，下载大约需要 5 到 10 分钟。
   </Step>
 
-  <Step>
-    ### 创建表
-
+  <Step title="创建表" id="create-table">
     在 `clickhouse-server` 运行时，你可以使用处于批次模式的 `clickhouse-client`，通过命令行直接按以下 schema 创建一个空表：
 
     ```bash
@@ -239,9 +235,7 @@ user_id message                                             timestamp           
     如果没有报错，就表示该表已成功创建。在上面的命令中，heredoc 分隔符 (`_EOF`) 使用了单引号，以防止发生任何插值。如果不加单引号，就需要对列名两侧的反引号进行转义。
   </Step>
 
-  <Step>
-    ### 从命令行插入数据
-
+  <Step title="从命令行插入数据" id="insert-data-via-cmd">
     接下来，运行下面的命令，将你之前下载的文件中的数据插入表中：
 
     ```bash
@@ -268,9 +262,7 @@ user_id message                                             timestamp           
     ```
   </Step>
 
-  <Step>
-    ### 使用 curl 通过命令行插入数据
-
+  <Step title="使用 curl 通过命令行插入数据" id="insert-using-curl">
     在前面的步骤中，你先使用 `wget` 将 CSV 文件下载到本地机器。你也可以用一条命令直接从远程 URL 插入数据。
 
     运行以下命令，清空 `hackernews` 表中的数据，这样你就可以再次插入数据，而无需先下载到本地机器这一步中间操作：

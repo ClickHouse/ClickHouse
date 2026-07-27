@@ -15,7 +15,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 インクリメンタルmaterialized view (Materialized Views) を使用すると、計算コストをクエリ時から挿入時に移せるため、`SELECT` クエリを高速化できます。
 
-Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized view は、データがテーブルに挿入される際に、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目の「ターゲット」テーブルに挿入されます。さらに行が挿入されると、結果は再びターゲットテーブルに送られ、そこで中間結果が更新・マージされます。このマージ後の結果は、元のすべてのデータに対してクエリを実行した場合と同等です。
+Postgres のようなトランザクションデータベースとは異なり、ClickHouse の materialized view は、データがテーブルに挿入される際に、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目のターゲットテーブルに挿入されます。さらに行が挿入されると、結果は再びターゲットテーブルに送られ、そこで中間結果が更新・マージされます。このマージ後の結果は、元のすべてのデータに対してクエリを実行した場合と同等です。
 
 Materialized Views の主な目的は、ターゲットテーブルに挿入される結果が、行に対する集計、フィルタリング、または変換の結果を表すことにあります。こうした結果は、多くの場合、元データをより小さく表現したものになります (集計の場合は部分的なスケッチになります) 。これに加えて、ターゲットテーブルから結果を読み取るクエリもシンプルになるため、同じ計算を元データに対して実行する場合よりもクエリ時間が短くなります。つまり、計算 (ひいてはクエリレイテンシ) をクエリ時から挿入時へ移せます。
 
@@ -1319,6 +1319,6 @@ WITH recent_users AS (
 SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
 ```
 
-この場合、users CTE は posts への挿入のたびに再評価され、新しい users が挿入されても materialized view は更新されません。更新されるのは posts が挿入されたときだけです。
+この場合、users CTE は posts への挿入のたびに再評価され、新しい users が挿入されても materialized view は更新されません。更新されるのは、posts に挿入があったときだけです。
 
-一般に、CTE は、materialized view がアタッチされているものと同じソーステーブルに対して動作するロジックに使用するか、参照先のテーブルが小さく、パフォーマンスのボトルネックになりにくいことを確認してください。あるいは、[JOIN を使用する materialized view と同様の最適化](/ja/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)を検討してください。
+一般に、CTE は、materialized view が関連付けられている同じソーステーブルに対して動作するロジックに使用するか、参照する table が小さく、パフォーマンスのボトルネックになる可能性が低いことを確認してください。あるいは、[JOIN を使用した Materialized Views と同じ最適化](/ja/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)を検討してください。
