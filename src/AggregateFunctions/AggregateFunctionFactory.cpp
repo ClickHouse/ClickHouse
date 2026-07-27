@@ -30,7 +30,6 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_AGGREGATION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
@@ -39,15 +38,21 @@ namespace ErrorCodes
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
 }
 
-/// An aggregate-function creator signals "these argument types are not supported" with one of a few error codes:
-/// most use ILLEGAL_TYPE_OF_ARGUMENT, but some reject unsupported types with BAD_ARGUMENTS (e.g. analysisOfVariance,
-/// the *TTest family) or NOT_IMPLEMENTED (e.g. rankCorr). For the Variant adapter they all mean the same thing: the
-/// native call did not accept the argument types, so it is worth retrying after adapting the Variant arguments to
-/// their supertype. Any other error code is a genuine failure and must propagate unchanged.
+/// An aggregate-function creator signals "these argument types are not supported" with ILLEGAL_TYPE_OF_ARGUMENT or,
+/// in a few cases, with NOT_IMPLEMENTED (rankCorr, mannWhitneyUTest, kolmogorovSmirnovTest,
+/// largestTriangleThreeBuckets). For the Variant adapter both mean the same thing: the native call did not accept
+/// the argument types, so it is worth retrying after adapting the Variant arguments to their supertype. Any other
+/// error code is a genuine failure and must propagate unchanged.
+///
+/// BAD_ARGUMENTS is deliberately NOT in this set: creators use it for semantic failures that have nothing to do with
+/// the argument types, above all invalid *parameters* (`kolmogorovSmirnovTest('bogus')`, a confidence level outside
+/// (0, 1), a non-positive `groupArray` limit, ...). Treating those as "unsupported argument type" would silently
+/// downgrade a precise parameter error into the unrelated type error of the original, unadapted call. The handful of
+/// creators that used to reject argument *types* with BAD_ARGUMENTS (analysisOfVariance, the *TTest family,
+/// meanZTest) now reject them with ILLEGAL_TYPE_OF_ARGUMENT like everybody else.
 static bool isUnsupportedArgumentTypeError(int code)
 {
     return code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
-        || code == ErrorCodes::BAD_ARGUMENTS
         || code == ErrorCodes::NOT_IMPLEMENTED;
 }
 
@@ -109,7 +114,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionStateVariant state_variant,
+    bool from_declared_state_type) const
 {
     /// This to prevent costly string manipulation in parsing the aggregate function combinators.
     /// Example: avgArrayArrayArrayArray...(1000 times)...Array
@@ -154,7 +160,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
                     return native;
             }
 
-            if (auto adapter = tryGetVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant))
+            if (auto adapter = tryGetVariantAdapter(
+                    name, action, types_without_low_cardinality, parameters, out_properties, state_variant, from_declared_state_type))
                 return adapter;
 
             /// Neither native resolution nor the supertype adapter can handle the Variant argument. Resolve
@@ -252,7 +259,8 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     const DataTypes & argument_types,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionStateVariant state_variant,
+    bool from_declared_state_type) const
 {
     /// Whether the Float64 fallback below is safe for this aggregate is declared by
     /// AggregateFunctionProperties::is_float_promoting: it is true only when the function's result is a
@@ -268,13 +276,18 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     /// setting that lets if/multiIf/coalesce/ifNull/array/map resolve such numeric mixes to Float64 at type
     /// inference. With the setting off (the default) the adapter handles only lossless supertypes, and the
     /// original "illegal type" error (which points at the setting when it would help) is reported unchanged.
-    /// Resolution on a query thread reads the setting from the query context. Without a query context the
-    /// promotion is allowed: those are the background paths (table load / ATTACH, merges) that reconstruct
-    /// state types such as AggregateFunction(sum, Variant(Int64, Float64)) already validated when the DDL was
-    /// executed (with the setting enabled), and a stored table must never become unloadable because of the
-    /// current value of a query setting.
+    /// Resolution on a query thread reads the setting from the query context.
+    ///
+    /// The setting gates only the *inference* of the aggregation type from a Variant column. It must not gate the
+    /// reconstruction of an aggregate-function state type that already exists: an
+    /// AggregateFunction(sum, Variant(Int64, Float64)) column, a CAST to it, its binary encoding, and the nested
+    /// function of a -Merge over it all name the state layout explicitly and were validated when the type was
+    /// declared. Making them depend on the current value of a query setting would make already stored states
+    /// unreadable (SET allow_lossy_numeric_supertype = 0; SELECT sumMerge(s) FROM t) - so the promotion is always
+    /// allowed for them (from_declared_state_type), as it is on the background paths that have no query context at
+    /// all (table load / ATTACH, merges).
     bool allow_lossy_numeric_supertype = true;
-    if (CurrentThread::isInitialized())
+    if (!from_declared_state_type && CurrentThread::isInitialized())
     {
         if (auto query_context = CurrentThread::get().tryGetQueryContext())
             allow_lossy_numeric_supertype = query_context->getSettingsRef()[Setting::allow_lossy_numeric_supertype];
@@ -665,8 +678,11 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 [](const auto & type) { return typeid_cast<const DataTypeAggregateFunction *>(type.get()) != nullptr; });
             bool nested_has_variant = std::any_of(
                 nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
+            /// The Variant here provably comes from an already declared AggregateFunction(...) state type, so the
+            /// adapter must reconstruct it exactly as declared, independently of the current query settings.
             AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant && consumes_aggregate_state)
-                ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant)
+                ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant,
+                      /*from_declared_state_type=*/ true)
                 : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested);
             combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         }

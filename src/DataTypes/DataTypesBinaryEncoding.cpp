@@ -304,7 +304,11 @@ std::tuple<AggregateFunctionPtr, Array, DataTypes> decodeAggregateFunction(ReadB
         arguments_types.push_back(decodeDataTypeImpl(buf, complexity, max_complexity));
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    auto function = AggregateFunctionFactory::instance().get(function_name, action, arguments_types, parameters, properties);
+    /// A declared state type, decoded from its binary encoding: resolve it independently of the current query
+    /// settings (see `from_declared_state_type` in AggregateFunctionFactory).
+    auto function = AggregateFunctionFactory::instance().get(
+        function_name, action, arguments_types, parameters, properties,
+        AggregateFunctionStateVariant::Aggregation, /*from_declared_state_type=*/ true);
     return {function, parameters, arguments_types};
 }
 

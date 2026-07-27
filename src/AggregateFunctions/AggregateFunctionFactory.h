@@ -84,13 +84,21 @@ public:
     ///   - Aggregation: resolve the normal GROUP BY implementation.
     ///   - Window: prefer a window-specific implementation if registered (via `window_creator`),
     ///     falling back to the normal implementation if absent.
+    ///
+    /// `from_declared_state_type` tells the factory that the function is being reconstructed from an already
+    /// declared aggregate-function state type (`AggregateFunction(...)` / `SimpleAggregateFunction(...)`: a column
+    /// type, a `CAST` target, a binary-encoded type, or the nested function of a `-Merge`-like combinator over such
+    /// a state), rather than being resolved for a fresh aggregation over user data. Such a type has already been
+    /// validated when it was declared and its layout is fixed, so resolving it must not depend on the current value
+    /// of query settings - see `allow_lossy_numeric_supertype` in `tryGetVariantAdapter`.
     AggregateFunctionPtr
     get(const String & name,
         NullsAction action,
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation) const;
+        AggregateFunctionStateVariant state_variant = AggregateFunctionStateVariant::Aggregation,
+        bool from_declared_state_type = false) const;
 
     /// Get properties if the aggregate function exists.
     std::optional<AggregateFunctionProperties> tryGetProperties(String name, NullsAction action) const;
@@ -135,7 +143,8 @@ private:
         const DataTypes & argument_types,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool from_declared_state_type) const;
 
     /// Position of the `-ArgMin` / `-ArgMax` combinator comparison key in the top-level argument list, if the function
     /// has such a combinator (nullopt otherwise). That key is compared exactly, so it must never be adapted through the
