@@ -26,9 +26,7 @@ As funções básicas do console SQL podem ser atribuídas a usuários com as pe
 Para criar uma função personalizada para um usuário do console SQL e atribuir a ela uma função geral, execute os comandos a seguir. O endereço de e-mail deve corresponder ao endereço de e-mail do usuário no console.
 
 <Steps>
-  <Step>
-    #### Criar `database_developer` e conceder permissões
-
+  <Step title={<>Criar <code>database_developer</code> e conceder permissões</>} id="create-role-grant-permissions">
     Crie a função `database_developer` e conceda as permissões `SHOW`, `CREATE`, `ALTER` e `DELETE`.
 
     ```sql
@@ -40,9 +38,7 @@ Para criar uma função personalizada para um usuário do console SQL e atribuir
     ```
   </Step>
 
-  <Step>
-    #### Criar função de usuário do console SQL
-
+  <Step title="Criar função de usuário do console SQL" id="create-sql-console-user-role">
     Crie uma função para o usuário do console SQL my.user@domain.com e atribua a ela a função database&#95;developer.
 
     ```sql
@@ -51,9 +47,7 @@ Para criar uma função personalizada para um usuário do console SQL e atribuir
     ```
   </Step>
 
-  <Step>
-    #### O usuário recebe a nova função ao usar o console SQL
-
+  <Step title="O usuário recebe a nova função ao usar o console SQL" id="use-assigned-new-role">
     O usuário receberá a função associada ao endereço de e-mail dele sempre que usar o console SQL.
   </Step>
 </Steps>
@@ -98,9 +92,9 @@ Para um passo a passo detalhado com exemplos, confira [Como se conectar ao Click
 
 Configure o seguinte nos serviços e bancos de dados usando a instrução SQL [GRANT](/pt-BR/reference/statements/grant).
 
-| Função        | Descrição                                                               |
-| :------------ | :---------------------------------------------------------------------- |
-| Padrão        | Acesso administrativo total aos serviços                                |
+| Função        | Descrição                                                                     |
+| :------------ | :---------------------------------------------------------------------------- |
+| Padrão        | Acesso administrativo total aos serviços                                      |
 | Personalizada | Configure usando a instrução SQL [`GRANT`](/pt-BR/reference/statements/grant) |
 
 * As funções de banco de dados são aditivas. Isso significa que, se um usuário for membro de duas funções, ele terá o nível mais alto de acesso concedido entre elas. Ele não perde acesso ao adicionar funções.
@@ -137,9 +131,7 @@ Você pode usar um gerador de hash SHA256 ou uma função de código, como `hash
 O processo a seguir pode ser usado para gerar uma listagem completa de acesso no console SQL e nos bancos de dados da sua organização.
 
 <Steps>
-  <Step>
-    #### Obtenha uma lista de todos os grants do banco de dados
-
+  <Step title="Obtenha uma lista de todos os grants do banco de dados" id="get-a-list-of-all-database-grants">
     Execute as consultas a seguir para obter uma lista de todos os grants no banco de dados.
 
     ```sql
@@ -165,9 +157,7 @@ O processo a seguir pode ser usado para gerar uma listagem completa de acesso no
     ```
   </Step>
 
-  <Step>
-    #### Associe a lista de grants aos usuários do Console com acesso ao console SQL
-
+  <Step title="Associe a lista de grants aos usuários do Console com acesso ao console SQL" id="associate-grant-list-to-console-users-with-access-to-sql-console">
     Associe esta lista aos usuários do Console que têm acesso ao console SQL.
 
     a. Vá para o Console.
@@ -183,7 +173,7 @@ O processo a seguir pode ser usado para gerar uma listagem completa de acesso no
 </Steps>
 
 <div id="warehouse-users">
-  ## Usuários do warehouse
+  ## Usuários do Warehouse
 </div>
 
-Os usuários de um warehouse são compartilhados entre os serviços do mesmo warehouse. Para mais informações, consulte [os controles de acesso do warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses#access-controls).
+Os usuários do Warehouse são compartilhados entre os serviços dentro do mesmo warehouse. Para mais informações, consulte os [controles de acesso do warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses#access-controls).

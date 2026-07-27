@@ -13,7 +13,7 @@ integration:
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="what-mongodb-resync-do">
-  ### Resync 会执行什么操作？
+  ### 重新同步会执行什么操作？
 </div>
 
 重新同步会按顺序执行以下操作：
@@ -25,14 +25,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 原始 ClickPipe 的所有设置都会保留在 resync ClickPipe 中。原始 ClickPipe 的统计信息会在 UI 中清空。
 
-<div id="use-cases-mongodb-resync">
-  ### 重新同步 ClickPipe 的使用场景
-</div>
-
-以下是几个常见场景：
-
-1. 你可能需要对源表进行较大的 schema 变更，这会导致现有 ClickPipe 失效，因此需要重新开始。完成这些变更后，只需点击重新同步即可。
-2. 对于 ClickHouse，尤其是在你需要修改目标表的 ORDER BY keys 时，可以通过重新同步将数据重新填充到具有正确排序键的新表中。
+<Note>
+  你可以多次执行重新同步，但请在重新同步时考虑源数据库上的负载，
+  因为每次都会涉及使用并行线程进行初始加载。
+</Note>
 
 <div id="guide-mongodb-resync">
   ### 重新同步 ClickPipe 指南

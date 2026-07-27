@@ -7,7 +7,7 @@ title: 'スケジュールスケーリング'
 doc_type: 'guide'
 ---
 
-import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <PrivatePreviewBadge />
@@ -36,7 +36,7 @@ ClickHouse Cloud サービスは CPU とメモリの使用率に基づいて自�
 * **Recurrence:** ルールの繰り返し頻度 (例: 毎平日、毎週日曜日)
 * **Target size:** スケール先のレプリカ数またはメモリ割り当て量
 
-複数のルールを組み合わせることで、1 週間分の完全なスケジュールを作成できます。たとえば、毎平日の午前 6 時に 5 レプリカへスケールアウトし、午後 8 時に 2 レプリカへ戻すように設定できます。
+複数のルールを組み合わせることで、1週間分の完全なスケジュールを作成できます。たとえば、毎平日の午前 6 時に 5 レプリカへスケールアウトし、午後 8 時に 2 レプリカへ戻すように設定できます。
 
 <div id="use-cases">
   ## ユースケース

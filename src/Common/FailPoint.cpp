@@ -120,6 +120,7 @@ static struct InitFiu
     REGULAR(shared_set_sleep_during_update) \
     REGULAR(smt_outdated_parts_exception_response) \
     REGULAR(object_storage_queue_fail_in_the_middle_of_file) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_after_commit) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \
@@ -252,7 +253,13 @@ static struct InitFiu
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
-    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
+    PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause)
 
 namespace FailPoints
 {

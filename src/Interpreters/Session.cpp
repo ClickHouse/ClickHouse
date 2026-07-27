@@ -407,8 +407,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     chassert(!auth_result.user_name.empty());
     prepared_client_info->current_user = auth_result.user_name;
     prepared_client_info->authenticated_user = auth_result.user_name;
-    prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
-    prepared_client_info->connection_address = std::make_shared<Poco::Net::SocketAddress>(connection_address ? *connection_address : address);
+    prepared_client_info->current_address = Poco::Net::SocketAddress(address);
+    prepared_client_info->connection_address = Poco::Net::SocketAddress(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -429,7 +429,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
+        info_for_log.current_address = Poco::Net::SocketAddress(address_);
         session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
 }

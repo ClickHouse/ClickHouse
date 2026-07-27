@@ -396,7 +396,7 @@ struct MinHashImpl
             }
         }
 
-        MapWithMemoryTracking<UInt64, BytesRef, Comp> values;
+        MapWithMemoryTracking<UInt64, BytesRef, Comp> values{};
     };
 
     using MaxHeap = Heap<std::less<>>;

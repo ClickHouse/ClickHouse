@@ -1,0 +1,79 @@
+---
+date: 2025-11-19
+title: كيفية استعادة نسخة متماثلة بعد فشل في التخزين
+tags: ['عمليات النشر والتوسعة']
+keywords: ['استعادة', 'نسخة متماثلة', 'فشل التخزين', 'قاعدة بيانات atomic']
+description: 'تشرح هذه المقالة كيفية استعادة البيانات عند استخدام الجداول المكرّرة في قواعد بيانات atomic في ClickHouse، وعند فقدان أو تلف الأقراص/وحدة التخزين في إحدى النسخ المتماثلة.'
+---
+
+<Note>
+  يفترض هذا الدليل أن المَعلَمة `<path>` في ملف `config.xml` لديك مضبوطة على:
+
+  ```text
+  <path>/var/lib/clickhouse/</path>
+  ```
+
+  إذا كنت قد أعددت مسار بيانات مختلفًا، فاستبدل جميع مواضع `/var/lib/clickhouse` في الأوامر أدناه بالقيمة الفعلية لإعداد `<path>` لديك.
+</Note>
+
+<Steps>
+  <Step title="انسخ إعدادات الوصول من النسخة المتماثلة السليمة" id="copy-access-config">
+    انسخ محتويات مجلد `access` الذي يحتوي على المستخدمين المحليين من النسخة المتماثلة السليمة:
+
+    ```text
+    /var/lib/clickhouse/access
+    ```
+  </Step>
+
+  <Step title="أنشئ نسخة احتياطية من مجلد metadata من النسخة المتماثلة السليمة" id="back-up-the-metadata-folder-from-the-healthy-replica">
+    1. انتقل إلى دليل بيانات ClickHouse:
+
+    ```text
+    cd /var/lib/clickhouse
+    ```
+
+    2. أنشئ نسخة احتياطية من مجلد metadata (بما في ذلك الروابط الرمزية): يحتوي دليل metadata على أوامر DDLs الخاصة بقواعد البيانات والجداول.
+       ويحتوي دليل قاعدة البيانات على روابط رمزية إلى `/var/lib/clickhouse/store/..` الذي يضم جميع أوامر DDLs الخاصة بالجداول.
+
+    ```bash
+    { find metadata -type f; find metadata -type l; find metadata -type l | xargs readlink -f; } | tar -cPf backup.tar --files-from=-
+    ```
+
+    <Note>
+      يضمن هذا الأمر الحفاظ على كلٍّ من **ملفات البيانات الوصفية** وبنية الروابط الرمزية في النسخة الاحتياطية.
+    </Note>
+  </Step>
+
+  <Step title="استعد metadata على النسخة المتماثلة المتضررة" id="restore-the-metadata-on-the-faulty-replica">
+    1. انسخ ملف `backup.tar` الذي تم إنشاؤه إلى النسخة المتماثلة المتضررة.
+    2. استخرجه إلى دليل بيانات ClickHouse:
+
+    ```text
+    cd /var/lib/clickhouse/
+    tar -xvPf backup.tar
+    ```
+  </Step>
+
+  <Step title="أنشئ ملف علامة فرض الاستعادة" id="create-force-restore-flag">
+    لتشغيل مزامنة البيانات التلقائية من النسخ المتماثلة الأخرى، أنشئ ملف العلامة التالي:
+
+    ```text
+    sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
+    ```
+  </Step>
+
+  <Step title="أعد تشغيل النسخة المتماثلة المتضررة" id="restart-faulty-replica">
+    1. أعد تشغيل خادم ClickHouse على العقدة المتضررة.
+    2. تحقّق من سجلات الخادم، ويُفترض أن تلاحظ تنزيل الأجزاء من النسخ المتماثلة السليمة:
+
+    ```bash
+    2025.11.02 00:00:04.047097 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Downloading files 23
+    2025.11.02 00:00:04.055542 [ 682 ] {} <Debug> analytics.events_local (...) (Fetcher): Download of part 202511_0_0_0 onto disk disk2 finished.
+    2025.11.02 00:00:04.101888 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2025_0_0_1 onto disk default.
+    2025.11.02 00:00:04.102005 [ 687 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    2025.11.02 00:00:04.102210 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2022_0_0_1 onto disk disk1.
+    2025.11.02 00:00:04.102247 [ 688 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading part 2021_0_0_1 onto disk disk2.
+    2025.11.02 00:00:04.102331 [ 690 ] {} <Debug> warehouse.customers_local (...) (Fetcher): Downloading files 11
+    ```
+  </Step>
+</Steps>

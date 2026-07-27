@@ -32,11 +32,11 @@ quantiles(level1, level2, ...)(expr)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, результатом вычисления которого являются числовые типы данных, Date или DateTime. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, результатом вычисления которого являются числовые типы данных, `Date`, `DateTime` или `DateTime64`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Int128`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`Int256`](/ru/reference/data-types/int-uint) или [`UInt256`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Возвращаемое значение**
 
-Массив приближённых квантилей указанных уровней в том же порядке, в котором эти уровни были заданы. [`Array(Float64)`](/ru/reference/data-types/array) или [`Array(Date)`](/ru/reference/data-types/array) или [`Array(DateTime)`](/ru/reference/data-types/array)
+Массив приближённых квантилей указанных уровней в том же порядке, в котором эти уровни были заданы. Для числовых аргументов возвращается `Float64`, а для аргументов `Decimal`, `Date`, `DateTime` и `DateTime64` сохраняется их исходный формат. [`Array(Float64)`](/ru/reference/data-types/array) или [`Array(Decimal*)`](/ru/reference/data-types/array) или [`Array(Date)`](/ru/reference/data-types/array) или [`Array(DateTime)`](/ru/reference/data-types/array) или [`Array(DateTime64)`](/ru/reference/data-types/array)
 
 **Примеры**
 

@@ -28,9 +28,7 @@ doc_type: 'guide'
 다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
 
 <Steps>
-  <Step>
-    ## 라이브러리 설치
-
+  <Step title="라이브러리 설치" id="install-libraries">
     다음 명령을 실행해 Agno 라이브러리를 설치합니다:
 
     ```python
@@ -40,9 +38,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 자격 증명 설정
-
+  <Step title="자격 증명 설정" id="setup-credentials">
     다음으로 Anthropic API Key를 입력하십시오:
 
     ```python
@@ -58,7 +54,7 @@ doc_type: 'guide'
       **다른 LLM provider 사용**
 
       Anthropic API Key가 없고 다른 LLM provider를 사용하려는 경우,
-      [Agno 문서](https://docs.agno.com/concepts/models/introduction)에서 자격 증명을 설정하는 방법을 확인할 수 있습니다.
+      [Agno 문서](https://docs.agno.com/models/overview)에서 자격 증명을 설정하는 방법을 확인할 수 있습니다.
     </Info>
 
     다음으로, ClickHouse SQL playground에 연결하는 데 필요한 자격 증명을 정의합니다:
@@ -74,9 +70,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## MCP 서버 및 Agno 에이전트 초기화
-
+  <Step title="MCP 서버 및 Agno 에이전트 초기화" id="initialize-mcp-and-agent">
     이제 ClickHouse MCP 서버가 ClickHouse SQL playground를 가리키도록 구성하고,
     Agno 에이전트도 초기화한 다음 질문을 하나 해보겠습니다:
 

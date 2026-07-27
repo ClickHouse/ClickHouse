@@ -8,7 +8,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) は、概念的には従来の OLTP データベースにおける materialized view と似ており、指定したクエリの結果を保存することで高速な取得を可能にし、リソースを大量に消費するクエリを繰り返し実行する必要を減らします。ClickHouse の [インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) とは異なり、こちらはデータセット全体に対してクエリを定期的に実行する必要があり、その結果はクエリ用のターゲットテーブルに保存されます。理論上、この result set は元のデータセットよりも小さくなるため、後続のクエリをより高速に実行できます。
+[リフレッシャブルmaterialized view](/ja/reference/statements/create/view#refreshable-materialized-view) は、概念的には従来の OLTP データベースにおける materialized view と似ており、指定したクエリの結果を保存することで高速な取得を可能にし、リソースを大量に消費するクエリを繰り返し実行する必要を減らします。ClickHouse の [インクリメンタルmaterialized view](/ja/concepts/features/materialized-views/incremental-materialized-view) とは異なり、こちらはデータセット全体に対してクエリを定期的に実行する必要があり、その結果はクエリ用のターゲットテーブルに保存されます。理論上、この 結果セット は元のデータセットよりも小さくなるため、後続のクエリをより高速に実行できます。
 
 次の図は、リフレッシャブルmaterialized viewの動作を示しています。
 

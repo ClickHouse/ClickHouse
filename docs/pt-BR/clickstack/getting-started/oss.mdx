@@ -1,15 +1,15 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/oss
-title: 'Primeiros passos com o ClickStack Open Source'
+title: 'Primeiros passos com o ClickStack código aberto'
 sidebarTitle: 'Código aberto'
-description: 'Primeiros passos com o ClickStack Open Source'
+description: 'Primeiros passos com o ClickStack código aberto'
 doc_type: 'guide'
 keywords: ['ClickStack Open Source', 'primeiros passos', 'implantação com Docker', 'UI do HyperDX', 'implantação local']
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-Para implantar o **ClickStack Open Source**, em que você mesmo executa e gerencia o ClickHouse e a UI do ClickStack, fornecemos imagens Docker prontas que reúnem a UI, um OTel collector e o ClickHouse em um único contêiner, facilitando o início do desenvolvimento local, dos testes e das implantações autogerenciadas.
+Para implantar o **ClickStack código aberto**, em que você mesmo executa e gerencia o ClickHouse e a UI do ClickStack, fornecemos imagens Docker prontas que reúnem a UI, um OTel collector e o ClickHouse em um único contêiner, facilitando o início do desenvolvimento local, dos testes e das implantações autogerenciadas.
 
 <Tip>
   Uma versão gerenciada do ClickStack também está disponível — consulte [Managed ClickStack](/pt-BR/clickstack/getting-started/managed).
@@ -26,9 +26,7 @@ A opção mais simples é uma **distribuição de imagem única** que inclui tod
 Essa imagem tudo em um permite iniciar a stack completa com um único comando, o que a torna ideal para testes, experimentação ou implantações locais rápidas.
 
 <Steps>
-  <Step>
-    ## Implante a stack com Docker
-
+  <Step title="Implante a stack com Docker" id="deploy-stack-with-docker">
     O comando a seguir executará um OTel collector (nas portas 4317 e 4318), a UI do HyperDX (na porta 8080) e o ClickHouse (8123).
 
     ```shell
@@ -64,9 +62,7 @@ Essa imagem tudo em um permite iniciar a stack completa com um único comando, o
     </Tip>
   </Step>
 
-  <Step>
-    ## Acesse a UI do ClickStack
-
+  <Step title="Acesse a UI do ClickStack" id="navigate-to-hyperdx-ui">
     Acesse [http://localhost:8080](http://localhost:8080) para abrir a UI do ClickStack (HyperDX).
 
     Crie um usuário, fornecendo um nome de usuário e uma senha que atendam aos requisitos de complexidade.
@@ -76,9 +72,7 @@ Essa imagem tudo em um permite iniciar a stack completa com um único comando, o
     O HyperDX se conectará automaticamente ao cluster local e criará fontes de dados para logs, traces, métricas e sessões, permitindo que você explore o produto imediatamente.
   </Step>
 
-  <Step>
-    ## Explore o produto
-
+  <Step title="Explore o produto" id="explore-the-product">
     Com a stack implantada, experimente um dos nossos conjuntos de dados de exemplo.
 
     Para continuar usando o cluster local:
@@ -114,16 +108,14 @@ Para mais detalhes sobre esse modelo de implantação, consulte [&quot;Apenas mo
   ### Versão hospedada
 </div>
 
-Você pode usar uma versão hospedada do ClickStack em modo local, disponível em [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+Você pode usar uma versão hospedada do ClickStack em modo local, disponível em [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).
 
 <div id="self-hosted-version">
   ### Versão auto-hospedada
 </div>
 
 <Steps>
-  <Step>
-    ### Executar com Docker
-
+  <Step title="Executar com Docker" id="run-local-with-docker">
     A imagem do modo local auto-hospedado já vem com um OTel collector, a UI do ClickStack e um servidor ClickHouse pré-configurados. Isso facilita o consumo de dados de telemetria das suas aplicações e a visualização deles com configuração externa mínima. Para começar a usar a versão auto-hospedada, basta executar o contêiner Docker com as portas apropriadas mapeadas:
 
     ```shell
@@ -133,12 +125,10 @@ Você pode usar uma versão hospedada do ClickStack em modo local, disponível e
     Ao contrário da imagem &quot;All in one&quot;, não será solicitado que você crie um usuário, pois **o modo local não inclui autenticação**.
   </Step>
 
-  <Step>
-    ### Preencha as credenciais de conexão
-
+  <Step title="Preencha as credenciais de conexão" id="complete-connection-credentials">
     Para se conectar ao seu próprio **cluster externo do ClickHouse**, você pode inserir manualmente suas credenciais de conexão.
 
-    Como alternativa, para explorar o produto rapidamente, você também pode clicar em **Conectar ao servidor de demonstração** para acessar datasets pré-carregados e experimentar o ClickStack sem nenhuma configuração.
+    Como alternativa, para explorar o produto rapidamente, você também pode clicar em **Conectar ao servidor de demonstração** para acessar datasets pré-carregados e experimentar o ClickStack sem necessidade de configuração.
 
     <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Credenciais" size="md" />
 
