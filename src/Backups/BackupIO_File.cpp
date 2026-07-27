@@ -1,4 +1,5 @@
 #include <Backups/BackupIO_File.h>
+#include <Common/Exception.h>
 #include <Common/checkStackSize.h>
 #include <Disks/DiskLocal.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
@@ -84,28 +85,35 @@ BackupWriterFile::BackupWriterFile(
     /// `backups.allowed_path` comes from the configuration, so the backup may have to create it and
     /// some of its ancestors, whose entries are durable only once the directory holding them is
     /// fsynced. Record that chain: from the allowed path up to the deepest ancestor that already
-    /// exists. Sampled here, before anything is written, so it describes what this backup creates.
-    /// When the allowed path is already there the chain is just the allowed path itself.
+    /// exists, and one level beyond it. That last level is what persists the entry of the deepest
+    /// directory the chain creates, and it is also needed when the deepest existing directory was
+    /// itself created by a concurrent backup that has not yet fsynced its own parent - existence is
+    /// not proof of durability. Sampled here, before anything is written.
     ///
     /// This also bounds the parent walk in `syncFileToDisk`: every backup file is below the allowed
     /// path, so the walk always reaches an already recorded directory and never leaves the
-    /// configured backup area. That matters because fsyncing a directory has to open it with
+    /// configured backup area. Bounding it matters because fsyncing a directory has to open it with
     /// `O_DIRECTORY`, which needs read permission, while writing a backup only needs its ancestors
-    /// to be searchable, so walking further up could fail a backup that works today.
+    /// to be searchable, so an unbounded walk could fail a backup that works today. The one extra
+    /// level is for that reason best-effort: it is dropped if it cannot be opened, since a directory
+    /// nobody asked ClickHouse to write in must not turn a working backup into an error.
     auto allowed_path = fs::path{allowed_path_}.lexically_normal();
 
     std::error_code ec;
-    auto deepest_existing = allowed_path;
-    while (deepest_existing.has_relative_path() && !fs::is_directory(deepest_existing, ec))
-        deepest_existing = deepest_existing.parent_path();
+    auto boundary = allowed_path;
+    while (boundary.has_relative_path() && !fs::is_directory(boundary, ec))
+        boundary = boundary.parent_path();
 
     std::lock_guard lock{dirs_to_sync_mutex};
     for (auto dir = allowed_path;; dir = dir.parent_path())
     {
         dirs_to_sync.emplace(dir);
-        if (dir == deepest_existing || !dir.has_relative_path())
+        if (dir == boundary || !dir.has_relative_path())
             break;
     }
+
+    if (boundary.has_relative_path())
+        best_effort_dir_to_sync = boundary.parent_path();
 }
 
 bool BackupWriterFile::fileExists(const String & file_name)
@@ -236,6 +244,26 @@ void BackupWriterFile::syncDirectoriesToDisk()
     /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
         fsyncBackupDirectory(*it);
+
+    /// The directory holding the backup area, so that the area's own entry is persisted too. It is
+    /// outside what the configuration asked ClickHouse to write in, so a failure here (typically a
+    /// search-only directory that cannot be opened for fsync) is logged and ignored rather than
+    /// failing an otherwise complete backup.
+    if (!best_effort_dir_to_sync.empty())
+    {
+        try
+        {
+            fsyncBackupDirectory(best_effort_dir_to_sync);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log,
+                "Could not fsync {}, which contains the backup area: {}",
+                best_effort_dir_to_sync.string(),
+                getCurrentExceptionMessage(/* with_stacktrace = */ false));
+        }
+    }
 }
 
 }

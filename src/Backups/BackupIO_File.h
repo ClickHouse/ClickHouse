@@ -68,6 +68,11 @@ private:
     /// backup area. Written from the concurrent backup write path, hence guarded.
     std::mutex dirs_to_sync_mutex;
     std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
+
+    /// The directory holding the backup area, fsynced last so that the area's own entry is durable.
+    /// Outside the configured area, hence best-effort: a failure is logged, not thrown. Set by the
+    /// constructor and read only by `syncDirectoriesToDisk`, so it needs no locking.
+    std::filesystem::path best_effort_dir_to_sync;
 };
 
 }
