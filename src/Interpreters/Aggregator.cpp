@@ -21,7 +21,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/AggregationUtils.h>
 #include <Interpreters/Aggregator.h>
-#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/JIT/compileFunction.h>
