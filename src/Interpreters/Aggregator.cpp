@@ -2229,7 +2229,9 @@ void NO_INLINE Aggregator::executeFrozenImpl(
     update_bypass_sampling(hits, row_end - row_begin);
     publishDelayedRecords<typename SharedMethod::Key>(columns, row_end, adaptive, local_find_state, scratch_pool, /*value_staged=*/false);
 
-    if (params.aggregates_size)
+    /// With no local hits every place is null and the batch pass would only skip rows; the
+    /// staged records carry the block's whole contribution. Bypassed blocks are always all-miss.
+    if (params.aggregates_size && hits != 0)
         executeAggregateInstructions(
             aggregates_pool,
             row_begin,
