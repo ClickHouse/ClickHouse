@@ -242,7 +242,7 @@ The form pre-populates expressions for the default OpenTelemetry schema. For the
 | **Default SELECT** | `time_local, remote_addr, status, request` |
 | **Service Name Expression** | `'nginx'` |
 | **Log Level Expression** | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')` |
-| **Log Attributes Expression** | `map('http.remote_addr', remote_addr, 'http.status_code', toString(status), 'http.request', request)` |
+| **Log Attributes Expression** | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
 | **Resource Attributes Expression** | `map('service.name', 'nginx')` |
 | **Displayed Timestamp Column** | `time_local` |
 | **Trace ID Expression** | `''` |
@@ -255,7 +255,7 @@ The Nginx table doesn't contain a `Body` column. Set **Body Expression** to:
 concat(
   remote_addr, ' ',
   remote_user, ' ',
-  '[', formatDateTime(time_local, '%d/%b/%Y:%H:%M:%S %z'), '] ',
+  '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
   '"', request, '" ',
   toString(status), ' ',
   toString(body_bytes_sent), ' ',
