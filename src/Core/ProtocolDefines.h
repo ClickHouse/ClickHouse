@@ -19,7 +19,10 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_LOGS = 54406;
 /// Compare by protocol revision rather than major/minor version: the aggregation method can change
 /// within a single release (same major.minor) and only the revision distinguishes a pre-change
 /// server from a post-change one.
-static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54488;
+/// 54489: the method for a single `String` key follows `enable_packed_string_keys_in_aggregation`.
+/// A peer below this revision always uses the packed method and does not know the setting, so it
+/// cannot follow a query that disables it.
+static constexpr auto DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD = 54489;
 static constexpr auto DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA = 54410;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE = 54405;
@@ -183,5 +186,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES =
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54488;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54489;
 }

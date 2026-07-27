@@ -226,13 +226,23 @@ def test_packed_string_keys_setting(started_cluster):
     # IMPORTANT, so the old server skips it with a warning, uses its own (legacy)
     # method, and the result must still be correct. Initiate from the new server
     # only - the old one would reject the unknown setting coming from the client.
+    #
+    # An old server cannot follow the setting, so servers below revision 54489 are
+    # fenced off by DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD:
+    # the initiator zeroes the two-level thresholds for them and re-buckets their
+    # single-level blocks itself. The 25.6 node exercises that path for both setting
+    # values. A peer that has the packed method but not the setting (a 26.8 master
+    # snapshot between #110573 and this change, advertising revision 54488) takes the
+    # same fenced path, but no released image pins that state, so it cannot be tested
+    # directly here.
     create_tables("repro5", node1, other_node_name=node256.name)
     create_tables("repro5", node256, other_node_name=node1.name)
-    assert (
-        run_query(
-            "repro5",
-            node1,
-            extra_settings={"enable_packed_string_keys_in_aggregation": 0},
+    for packed in (0, 1):
+        assert (
+            run_query(
+                "repro5",
+                node1,
+                extra_settings={"enable_packed_string_keys_in_aggregation": packed},
+            )
+            == 1000
         )
-        == 1000
-    )
