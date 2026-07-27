@@ -18,6 +18,7 @@
 #include <Columns/MaskOperations.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -46,6 +47,29 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int TYPE_MISMATCH;
+}
+
+/// The range value passed to `dictGet`/`dictHas` for a `range_hashed` dictionary is cast to the
+/// dictionary's range type before the lookup (see `RangeHashedDictionary::getColumn`). The accepted
+/// classes mirror the range types that `range_hashed`/`complex_key_range_hashed` itself accepts (see
+/// `impl::callOnRangeType`): integer-represented types (integers, `Date`/`DateTime`, `Enum`),
+/// floating point, `DateTime64` and `Decimal`. `DateTime64` and `Decimal` are not "represented by
+/// integer", so they must be checked explicitly; otherwise such an argument would be rejected even
+/// though it is a valid range type.
+inline bool isValidRangeArgumentType(const DataTypePtr & range_col_type)
+{
+    /// The type class must be checked before the in-memory size: variable-size types such as
+    /// `String` have no fixed value size and would make `getSizeOfValueInMemory` throw a
+    /// `LOGICAL_ERROR` instead of producing the intended `ILLEGAL_COLUMN` message below.
+    if (!(range_col_type->isValueRepresentedByInteger()
+          || isFloat(range_col_type)
+          || isDateTime64(range_col_type)
+          || isDecimal(range_col_type)))
+        return false;
+
+    /// The range value is compared as a 64-bit quantity, so wider types (e.g. `Int128`,
+    /// `Decimal128`) are rejected with `ILLEGAL_COLUMN`.
+    return range_col_type->getSizeOfValueInMemory() <= sizeof(Int64);
 }
 
 
@@ -243,7 +267,7 @@ public:
             range_col = arguments[2].column;
             range_col_type = arguments[2].type;
 
-            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+            if (!isValidRangeArgumentType(range_col_type))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),
@@ -452,7 +476,7 @@ public:
             range_col = arguments[current_arguments_index].column;
             range_col_type = arguments[current_arguments_index].type;
 
-            if (!(range_col_type->isValueRepresentedByInteger() && range_col_type->getSizeOfValueInMemory() <= sizeof(Int64)))
+            if (!isValidRangeArgumentType(range_col_type))
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                     "Illegal type {} of fourth argument of function {} must be convertible to Int64.",
                     range_col_type->getName(),
@@ -1189,6 +1213,87 @@ private:
         auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
 
         ColumnPtr result = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
+
+        return result;
+    }
+
+    mutable FunctionDictHelper helper;
+};
+
+
+/// Returns the topmost ancestor (the root) of a key in a hierarchical dictionary.
+/// It is equivalent to taking the last element of dictGetHierarchy, i.e. dictGetHierarchy(dict_name, key)[-1],
+/// but returns the root directly as a scalar instead of the whole hierarchy array.
+class FunctionDictGetRoot final : public IFunction
+{
+public:
+    static constexpr auto name = "dictGetRoot";
+
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionDictGetRoot>(context);
+    }
+
+    explicit FunctionDictGetRoot(ContextPtr context_) : helper(context_) {}
+
+    String getName() const override { return name; }
+
+private:
+    size_t getNumberOfArguments() const override { return 2; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool useDefaultImplementationForConstants() const final { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
+    bool isDeterministic() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (!checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
+
+        return removeNullable(hierarchical_attribute.type);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
+        auto dictionary = helper.getDictionary(arguments[0].column);
+        const auto & hierarchical_attribute = FunctionDictHelper::getDictionaryHierarchicalAttribute(dictionary);
+
+        auto key_column = ColumnWithTypeAndName{arguments[1].column, arguments[1].type, arguments[1].name};
+        auto key_column_cast = castColumnAccurate(key_column, removeNullable(hierarchical_attribute.type));
+
+        ColumnPtr hierarchy = dictionary->getHierarchy(key_column_cast, hierarchical_attribute.type);
+        const auto & hierarchy_array = assert_cast<const ColumnArray &>(*hierarchy);
+        const auto & hierarchy_offsets = hierarchy_array.getOffsets();
+        const auto & hierarchy_elements = hierarchy_array.getData();
+
+        auto result = result_type->createColumn();
+        result->reserve(input_rows_count);
+
+        IColumn::Offset previous_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            IColumn::Offset current_offset = hierarchy_offsets[i];
+
+            /// The hierarchy of a key starts with the key itself and ends with its topmost ancestor.
+            /// Therefore the last element of the hierarchy is the root.
+            /// The hierarchy is empty only for keys that are absent from the dictionary; for them we return the default value.
+            if (current_offset > previous_offset)
+                result->insertFrom(hierarchy_elements, current_offset - 1);
+            else
+                result->insertDefault();
+
+            previous_offset = current_offset;
+        }
 
         return result;
     }

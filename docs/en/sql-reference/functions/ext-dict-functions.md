@@ -290,6 +290,35 @@ LIFETIME(MIN 300 MAX 600);
 ```
 </details>
 
+## Passing keys to dictionary functions {#passing-keys}
+
+The key argument (`id_expr`) of functions such as `dictGet`, `dictGetOrDefault`, `dictGetOrNull` and `dictHas` depends on the dictionary's key:
+
+- For a dictionary with a **simple key** (`UInt64`), pass the key value directly:
+
+```sql
+SELECT dictGet('simple_key_dictionary', 'attr_name', toUInt64(1));
+```
+
+- For a dictionary with a **composite (complex) key** of more than one attribute, pass the key values as a tuple:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', ('value_for_field1', 42));
+```
+
+- When the **composite key consists of a single attribute**, the key value can be passed directly, without wrapping it in `tuple`. Both of the following are valid and equivalent:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', 'key');
+SELECT dictGet('complex_key_dictionary', 'attr_name', tuple('key'));
+```
+
+This also applies to `ip_trie` dictionaries, whose key is a single attribute. The IP address to look up can be passed directly:
+
+```sql
+SELECT dictGet('ip_trie_dictionary', 'attr_name', toIPv4('202.79.32.10'));
+```
+
 <!-- 
 The inner content of the tags below are replaced at doc framework build time with 
 docs generated from system.functions. Please do not modify or remove the tags.

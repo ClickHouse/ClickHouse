@@ -1,0 +1,31 @@
+---
+title: ALTER DELETE
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+```
+
+指定したフィルタ式に一致するデータを削除します。[mutation](/ja/reference/statements/alter/index#mutations) として実装されています。
+
+<Note>
+  `ALTER TABLE` プレフィックスが付くため、この構文は SQL をサポートする他の多くのシステムとは異なります。これは、OLTP データベースの類似のクエリとは異なり、頻繁な使用を想定していない高コストな操作であることを示すためのものです。`ALTER TABLE` は、削除前に基盤となるデータのマージを必要とする重量級の操作と見なされます。MergeTree テーブルでは、論理削除を実行でき、大幅に高速な場合がある [`DELETE FROM` クエリ](/ja/reference/statements/delete) の使用を検討してください。
+</Note>
+
+`filter_expr` は `UInt8` 型である必要があります。この式が 0 以外の値を取るテーブル内の行が削除されます。
+
+1 つのクエリに、カンマで区切った複数のコマンドを含めることができます。
+
+クエリ処理の同期性は、[mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定で定義されます。デフォルトでは非同期です。
+
+**関連項目**
+
+* [Mutations](/ja/reference/statements/alter/index#mutations)
+* [ALTER クエリの同期性](/ja/reference/statements/alter/index#synchronicity-of-alter-queries)
+* [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseでの更新と削除の処理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

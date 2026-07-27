@@ -61,10 +61,10 @@ LIMIT 2
 ### Inserting data {#inserting-data}
 
 Consider a table in S3 storage at `s3://ch-docs-s3-bucket/people_10k/`.
-To insert data into the table, first enable the experimental feature:
+Delta Lake writes are a Beta feature disabled by default. Enable them with the following (`allow_delta_lake_writes` is available from version 26.7; on earlier versions use `allow_experimental_delta_lake_writes`):
 
 ```sql title="Query"
-SET allow_experimental_delta_lake_writes=1
+SET allow_delta_lake_writes=1
 ```
 
 Then write:

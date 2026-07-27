@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/sdks
+description: 'SDKs par langage pour ClickStack - La stack d’observabilité ClickHouse'
+title: 'SDKs par langage'
+doc_type: 'guide'
+keywords: ['SDKs ClickStack', 'SDKs par langage ClickStack', 'SDKs OpenTelemetry ClickStack', 'SDKs d’instrumentation des applications
+', 'SDKs de collecte de télémétrie']
+---
+
+Les données sont généralement envoyées à ClickStack via le **collector OpenTelemetry (OTel)**, soit directement depuis les SDKs par langage, soit via un collector OpenTelemetry intermédiaire agissant comme agent, par exemple pour collecter les métriques et les logs de l’infrastructure.
+
+Les SDKs par langage sont chargés de collecter la télémétrie au sein de votre application, en particulier les **traces** et les **logs**, puis d’exporter ces données vers le collector OpenTelemetry via l’endpoint OTLP, qui gère l’ingestion dans ClickHouse.
+
+Dans les environnements basés sur le navigateur, les SDKs peuvent également collecter les **données de session**, notamment les événements de l’UI, les clics et la navigation, ce qui permet de rejouer les sessions utilisateur.
+
+<div id="how-it-works">
+  ## Comment ça fonctionne
+</div>
+
+1. Votre application utilise un SDK ClickStack (par ex., Node.js, Python, Go). Ces SDKs s’appuient sur les OpenTelemetry SDKs, avec des fonctionnalités supplémentaires et des améliorations en matière de convivialité.
+2. Le SDK collecte et exporte les traces et les logs via OTLP (HTTP ou gRPC).
+3. Le collector OpenTelemetry reçoit la télémétrie et l’écrit dans ClickHouse via les exporters configurés.
+
+<div id="supported-languages">
+  ## Langues prises en charge
+</div>
+
+<Info>
+  **Compatibilité OpenTelemetry**
+
+  Bien que ClickStack propose ses propres SDKs par langage avec une télémétrie et des fonctionnalités améliorées, vous pouvez également utiliser sans difficulté vos SDKs OpenTelemetry existants.
+</Info>
+
+<br />
+
+| Langage      | Description                                                             | Lien                                                          |
+| ------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------- |
+| AWS Lambda   | Instrumentez vos fonctions AWS Lambda                                   | [Documentation](/fr/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | SDK JavaScript pour les applications exécutées dans le navigateur       | [Documentation](/fr/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Applications Elixir                                                     | [Documentation](/fr/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Applications et microservices Go                                        | [Documentation](/fr/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Applications Java                                                       | [Documentation](/fr/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | Applications NestJS                                                     | [Documentation](/fr/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Applications Next.js                                                    | [Documentation](/fr/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | Environnement d’exécution JavaScript pour les applications côté serveur | [Documentation](/fr/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Applications Deno                                                       | [Documentation](/fr/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Applications Python et services web                                     | [Documentation](/fr/clickstack/ingesting-data/sdks/python)       |
+| React Native | Applications mobiles React Native                                       | [Documentation](/fr/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Applications Ruby on Rails et services web                              | [Documentation](/fr/clickstack/ingesting-data/sdks/ruby)         |
+
+<div id="securing-api-key">
+  ## Sécurisation avec une API key
+</div>
+
+<Info>
+  **Non requis pour Managed ClickStack**
+
+  L’API key n’est pas requise pour Managed ClickStack.
+</Info>
+
+Pour envoyer des données à ClickStack via l’OTel collector, les SDKs doivent spécifier une API key d’ingestion. Celle-ci peut être définie soit à l’aide d’une fonction `init` dans le SDK, soit à l’aide de la variable d’environnement `OTEL_EXPORTER_OTLP_HEADERS` :
+
+```shell
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+Cette clé API est générée par l’application ClickStack UI (HyperDX) et est accessible dans l’application, sous `Team Settings → API Keys`.
+
+Pour la plupart des [SDKs par langage](/fr/clickstack/ingesting-data/sdks/index) et des bibliothèques de télémétrie compatibles avec OpenTelemetry, vous pouvez simplement définir la variable d’environnement `OTEL_EXPORTER_OTLP_ENDPOINT` dans votre application ou la spécifier lors de l’initialisation du SDK :
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+<div id="kubernetes-integration">
+  ## Intégration Kubernetes
+</div>
+
+Tous les SDKs prennent en charge la corrélation automatique avec les métadonnées Kubernetes (nom du pod, espace de noms, etc.) lorsqu&#39;ils s&#39;exécutent dans un environnement Kubernetes. Cela vous permet de :
+
+* Afficher les métriques Kubernetes des pods et des nœuds associés à vos services
+* Corréler les logs et les traces de l&#39;application avec les métriques de l&#39;infrastructure
+* Suivre l&#39;utilisation des ressources et les performances à l&#39;échelle de votre cluster Kubernetes
+
+Pour activer cette fonctionnalité, configurez le collector OpenTelemetry pour transmettre les tags de ressource aux pods. Consultez le [guide d&#39;intégration Kubernetes](/fr/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) pour obtenir des instructions de configuration détaillées.

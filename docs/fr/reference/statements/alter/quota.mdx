@@ -1,0 +1,45 @@
+---
+description: 'Documentation sur QUOTA'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/alter/quota
+title: 'ALTER QUOTA'
+doc_type: 'reference'
+---
+
+Modifie les quotas.
+
+Syntaxe :
+
+```sql
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
+    [RENAME TO new_name]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | execution_time | queries_per_normalized_hash} = number } [,...] |
+        NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+Les clés `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address` et `normalized_query_hash` correspondent aux champs de la table [system.quotas](/fr/reference/system-tables/quotas).
+
+Les options `IPV4_PREFIX_BITS` et `IPV6_PREFIX_BITS` ne peuvent être utilisées que lorsque `KEYED BY` est défini sur `ip_address` ou `forwarded_ip_address`. Elles correspondent au champ de la table [system.quotas](/fr/reference/system-tables/quotas).
+
+Les paramètres `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `execution_time`, `queries_per_normalized_hash` correspondent aux champs de la table [system.quotas&#95;usage](/fr/reference/system-tables/quotas_usage).
+
+La clause `ON CLUSTER` permet de créer des quotas sur un cluster, voir [DDL distribué](/fr/reference/statements/distributed-ddl).
+
+**Exemples**
+
+Limiter à 123 le nombre maximal de requêtes pour l&#39;utilisateur actuel avec une contrainte de 15 mois :
+
+```sql
+ALTER QUOTA IF EXISTS qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+Pour l’utilisateur `default`, limitez le temps d’exécution maximal à une demi-seconde sur 30 minutes, le nombre maximal de requêtes à 321 et le nombre maximal d’erreurs à 10 sur 5 quarts d’heure :
+
+```sql
+ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```

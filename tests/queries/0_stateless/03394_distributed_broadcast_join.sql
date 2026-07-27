@@ -7,6 +7,7 @@ CREATE TABLE big(bid UInt64, b Array(Int64)) ENGINE = MergeTree ORDER BY bid;
 insert into small select number, [number] from numbers(0, 1000);
 insert into big select number, [number] from numbers(0, 100000);
 
+SET explain_query_plan_default = 'legacy';
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.
 SET max_rows_to_group_by = 0;

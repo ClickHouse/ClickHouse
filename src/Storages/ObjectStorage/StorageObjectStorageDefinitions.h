@@ -74,7 +74,7 @@ struct IcebergLocalDefinition
 {
     static constexpr auto name = "icebergLocal";
     static constexpr auto storage_engine_name = "IcebergLocal";
-    static constexpr auto object_storage_type = "azure";
+    static constexpr auto object_storage_type = "local";
 };
 
 struct IcebergHDFSDefinition
@@ -148,6 +148,7 @@ struct PaimonHDFSDefinition
     static constexpr auto storage_engine_name = "PaimonHDFS";
     static constexpr auto object_storage_type = "hdfs";
 };
+
 struct PaimonLocalDefinition
 {
     static constexpr auto name = "paimonLocal";

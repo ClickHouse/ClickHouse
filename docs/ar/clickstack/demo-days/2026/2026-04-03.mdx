@@ -1,0 +1,120 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-03
+title: 'أيام العروض التوضيحية - 2026-04-03'
+sidebarTitle: '2026-04-03'
+description: 'أيام العروض التوضيحية في ClickStack بتاريخ 2026-04-03'
+doc_type: 'guide'
+keywords: ['ClickStack', 'أيام العروض التوضيحية']
+---
+
+<div id="new-dashboard-and-saved-search-listing-pages">
+  ## صفحات سرد جديدة للوحات المعلومات وعمليات البحث المحفوظة
+</div>
+
+*عرض توضيحي بواسطة [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dQCkNZElwcg" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+انتقلت لوحات المعلومات وعمليات البحث المحفوظة من الشريط الجانبي إلى صفحات سرد مخصصة. إذا كان فريقك قد راكم عددًا كبيرًا من لوحات المعلومات، فقد أصبح النهج القديم المعتمد على الشريط الجانبي غير عملي بسرعة. تعرض الصفحات الجديدة كل شيء في عرض بطاقات منظَّم حسب الوسوم، مع البحث بالاسم وتصفية الوسوم بشكل مدمج. كما يتوفر عرض قائمة أكثر كثافة إذا كنت تفضّله.
+
+وأصبحت إضافة العناصر إلى المفضلة جزءًا من التجربة أيضًا. ضع نجمة على لوحة معلومات أو عملية بحث محفوظة، فتُثبَّت في أعلى صفحة السرد وتظهر مجددًا في الشريط الجانبي للوصول السريع، على نحو مشابه لما كان عليه الأمر سابقًا ولكن من دون ازدحام شريط التنقل لدى الجميع. كما تعرض صفحة السرد أيقونات حالة التنبيه وبيانات «أنشأه / حدّثه» الوصفية على كل بطاقة، بحيث يمكنك أن تعرف بنظرة سريعة من يملك ماذا وما إذا كان أي تنبيه نشطًا.
+
+ويكتمل ذلك بمعرض قوالب جديد. يمكن استيراد أربع لوحات معلومات جاهزة مسبقًا تغطي مقاييس وقت تشغيل OTel لكل من Node.js وبايثون وGo وJava ببضع نقرات. ويمكن تعديل الوسوم ومصدر المقاييس المستهدف أثناء الاستيراد، بحيث يمكنك دمجها مباشرةً ضمن بنية الوسوم الحالية لديك.
+
+**طلبات السحب ذات الصلة:** [#1971](https://github.com/hyperdxio/hyperdx/pull/1971) إضافة صفحة سرد لوحات المعلومات، [#2012](https://github.com/hyperdxio/hyperdx/pull/2012) إضافة صفحة سرد عمليات البحث المحفوظة، [#2021](https://github.com/hyperdxio/hyperdx/pull/2021) إضافة المفضلة للوحات المعلومات وعمليات البحث المحفوظة، [#2033](https://github.com/hyperdxio/hyperdx/pull/2033) تجميع لوحات المعلومات وعمليات البحث حسب الوسم، [#2031](https://github.com/hyperdxio/hyperdx/pull/2031) إظهار البيانات الوصفية للإنشاء/التحديث، [#2053](https://github.com/hyperdxio/hyperdx/pull/2053) إضافة أيقونات التنبيه إلى صفحة قائمة لوحات المعلومات، [#2010](https://github.com/hyperdxio/hyperdx/pull/2010) إضافة معرض قوالب لوحات المعلومات
+
+<div id="filters-for-filters">
+  ## عوامل تصفية لعوامل التصفية
+</div>
+
+*عرض توضيحي بواسطة [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Tfe9kJygoEg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+باتت عوامل تصفية متغيرات لوحة المعلومات تدعم الآن شروط التصفية الخاصة بها. والحالة التي دفعت إلى ذلك واضحة: إذا كانت لديك قائمة منسدلة لـ &quot;اسم الخدمة&quot; في لوحة معلومات Node.js، فغالبًا ما تريد أن تعرض هذه القائمة خدمات Node.js فقط، لا كل الخدمات في بيئتك. يمكنك الآن ضبط شرط تصفية مباشرةً على متغير لوحة المعلومات لحصر ما يتم عرضه.
+
+كما جرى تحديث مُحدِّد التصفية ليدعم التحديد المتعدد. وبالنسبة إلى لوحات المعلومات التي تُجري التجميع حسب الخدمة، فإن إمكانية اختيار عدة قيم دفعة واحدة من قائمة منسدلة تجعل المقارنات أكثر عملية بكثير.
+
+**طلبات السحب ذات الصلة:** [#1969](https://github.com/hyperdxio/hyperdx/pull/1969) إضافة شروط إلى عوامل تصفية لوحة المعلومات؛ دعم التحديد المتعدد في عوامل التصفية
+
+<div id="rbac-for-predefined-dashboards">
+  ## RBAC للوحات المعلومات الجاهزة
+</div>
+
+*عرض توضيحي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/AZ94-quHEuw" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ينطبق الآن التحكم في الوصول المستند إلى الأدوار على لوحات المعلومات الجاهزة في ClickStack. في السابق، كانت هذه اللوحات المدمجة تتجاهل RBAC تمامًا، لذلك كان بإمكان أي مستخدم الوصول إليها بغض النظر عن الدور المعيّن له. وقد أُغلقت هذه الثغرة الآن.
+
+تعمل أذونات القراءة الدقيقة كما هو متوقع. فالدور المُعدّ بصلاحية وصول للقراءة فقط إلى خدمات محددة يقيّد المستخدمين بحيث لا يرون إلا لوحات المعلومات الجاهزة الخاصة بتلك الخدمات. ويمكن للمستخدمين ضمن هذا الدور عرض لوحات المعلومات وعوامل التصفية الخاصة بها، لكن عناصر التحكم في عوامل التصفية تكون مقفلة لمنع تحريرها. ويعرض المثال دورًا مخصصًا يتضمن إذن قراءة لـ &quot;services&quot; ضمن نطاق خدمة معيّنة، ومستخدمًا سجّل الدخول بهذا الدور ويرى بالضبط لوحات المعلومات وحالة عوامل التصفية التي يُفترض أن تكون متاحة له.
+
+<div id="optimizations-for-searching">
+  ## تحسينات لعمليات البحث
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/uVD2FKzoHjM" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يجعل تحسين &quot;Read in Order&quot; في ClickHouse استعلامات البحث سريعة، إذ يقرأ البيانات بشكل تسلسلي عندما يطابق ORDER BY المفتاح الأساسي للجدول، ثم يتوقف بمجرد الوصول إلى LIMIT. وكشفت اختبارات الأداء أنه رغم ذلك، كانت عمليات البحث لا تزال تجلب بيانات أكثر من اللازم في مجموعات البيانات الكبيرة. ويعود السبب إلى عدد الأجزاء التي يجري التكرار عليها: فحتى مع تفعيل هذا التحسين، قد يحتوي الجدول الكبير على عدد كافٍ من الأجزاء يجعل ClickHouse يقرأ بيانات أكثر مما يلزم.
+
+ويتمثل الإصلاح في إضافة نافذة زمنية مدتها دقيقة واحدة في بداية مصفوفة الاستعلامات ذات النوافذ الخاصة باستعلامات البحث. فمعظم عمليات البحث تجد البيانات التي تحتاج إليها ضمن الدقيقة الأخيرة أصلًا، لذا فإن البدء بهذه النافذة يعيد النتائج بشكل شبه فوري. وإذا لم يُعثر فيها على شيء، يعود الاستعلام كالمعتاد إلى نوافذ أوسع تدريجيًا. ومن ناحية أخرى، لم يكن تحسين ORDER BY يُطبَّق بشكل صحيح على مخطط `otel_traces` لأن عمود الطابع الزمني كان يستخدم التعبير `toDateTime(Timestamp)`، ولم يكن يجري التعرّف عليه. وقد أُصلح ذلك أيضًا.
+
+**طلبات السحب ذات الصلة:** [#2019](https://github.com/hyperdxio/hyperdx/pull/2019) استخدام نافذة مدتها دقيقة واحدة لعمليات البحث، [#2014](https://github.com/hyperdxio/hyperdx/pull/2014) إصلاح أوجه القصور في تحسين ORDER BY لـ otel&#95;traces
+
+<div id="copy-row-and-configurable-filter-sizes">
+  ## نسخ الصف وأحجام عوامل التصفية القابلة للضبط
+</div>
+
+*عرض توضيحي من [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/e_IIKG3f6SE" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أصبح زر النسخ بصيغة JSON متاحًا الآن في عارض الصفوف، ما يتيح لك نسخ صف السجل بالكامل بنقرة واحدة. ويظهر الزر أيضًا في العرض الكامل للشريط الجانبي. وهو مفيد للصق صف داخل prompt لنموذج لغوي كبير لسؤاله أين قد يظهر هذا السجل في الشيفرة، أو ببساطة لالتقاط حدث كامل لتقرير حادثة من دون تحديد النص كله يدويًا.
+
+أصبح عدد مفاتيح التصفية التي تُجلب في الشريط الجانبي إعدادًا قابلًا للضبط على مستوى الفريق ضمن إعدادات الاستعلام. وكان الحد الثابت السابق يعني أنه في مجموعات البيانات الأكبر، لم يكن يظهر سوى جزء من سمات التصفية المتاحة. ويمكن للفرق الآن رفع هذا الحد لإظهار المزيد من سمات المورد والسجل. ويتضمن هذا التغيير أيضًا تحسينات على العرض الافتراضي للحفاظ على سرعة عرض لوحة عوامل التصفية حتى عند إظهار عدد كبير من مجموعات التصفية.
+
+**طلبات السحب ذات الصلة:** [#2035](https://github.com/hyperdxio/hyperdx/pull/2035) إضافة زر نسخ الصف بصيغة JSON، [#2020](https://github.com/hyperdxio/hyperdx/pull/2020) إعداد جديد على مستوى الفريق لعدد عوامل التصفية المطلوب جلبها، [#1979](https://github.com/hyperdxio/hyperdx/pull/1979) دعم العرض الافتراضي لمجموعات التصفية المتداخلة
+
+<div id="tabs-and-groups-in-dashboards">
+  ## علامات التبويب والمجموعات في لوحات المعلومات
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/tyumDlJuDTg" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يمكن الآن تنظيم بلاطات لوحة المعلومات ضمن مجموعات. ويحل هذا محل النموذج السابق الذي كان يتضمن نوعين منفصلين من الحاويات (&quot;sections&quot; و&quot;groups&quot;)، ما كان يفرض على المستخدمين تحديد نوع الحاوية التي يريدونها مسبقًا. ويجعل مفهوم Group الواحد الجديد الأمور أبسط: تكون المجموعة قابلة للطي افتراضيًا، ويمكن أن يكون لها حد مرئي اختياريًا، كما يمكن إضافة علامات تبويب إليها. ويحتوي كل تبويب على مجموعته الخاصة من البلاطات، ويمكن نقل البلاطات بين المجموعات باستخدام مقابض السحب.
+
+يوضح العرض مجموعة مع تفعيل بعض خيارات التخصيص: قابلية الطي تشغيلًا وإيقافًا، وإظهار الحد أو إخفاؤه، وتمكين علامات التبويب أو تعطيلها. وقت العرض التوضيحي، كان طلب السحب لا يزال قيد المراجعة مع جمع ملاحظات التصميم. وبعد دمجه، من المفترض أن يمنح مؤلفي لوحات المعلومات مجموعة عناصر بناء أكثر مرونة وأقل إرباكًا مقارنة بالنموذج القديم ذي نوعَي الحاويات.
+
+**طلبات السحب ذات الصلة:** [#1972](https://github.com/hyperdxio/hyperdx/pull/1972) مجموعات لوحات المعلومات مع علامات تبويب وخيارات الطي/الحدود، [#2015](https://github.com/hyperdxio/hyperdx/pull/2015) توحيد section/group في Group واحد
+
+<div id="clickstack-cli">
+  ## ClickStack CLI
+</div>
+
+*عرض توضيحي من [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/9XqJNhstabw" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+يُعد ClickStack CLI (`hdx`) واجهة TUI طرفية جديدة للبحث في السجلات، ومتابعتها لحظيًا، وفحصها، وكذلك التتبعات، من دون مغادرة الطرفية. ويتصل بمثيل HyperDX لديك باستخدام آلية جلسة الويب نفسها التي يستخدمها المتصفح، لذلك لا توجد أي API key منفصلة لإدارتها. وبعد تنفيذ `hdx auth login` مرة واحدة باستخدام URL المثيل وبريدك الإلكتروني، يظل موثَّقًا.
+
+واجهة TUI هنا هي نفسها واجهة البحث التي تحصل عليها في تطبيق الويب: صياغة الاستعلامات نفسها، واختيار المصدر نفسه، والقدرة نفسها على التعمق في إدخالات السجل الفردية. ومن أبرز الميزات عرض trace waterfall، حيث يؤدي النقر على إدخال سجل إلى إظهار التتبع الموزع الكامل مباشرة داخل الطرفية. ويستعرض العرض التوضيحي أيضًا تجربة مبكرة لاستخدامات قائمة على AI Agent: فمن خلال منح AI Agent إمكانية الوصول إلى مخرجات استبطان المخطط في CLI، إلى جانب القدرة على تشغيل الاستعلامات عبر وكيل ClickHouse، يمكنه التحقيق في المشكلات بشكل مستقل. ويمضي العرض التوضيحي أبعد من ذلك، إذ يُظهر الوكيل وهو يستخدم جلسات الويب للتنقل داخل HyperDX UI عبر Playwright، مع استخراج المقاييس من المخططات المعروضة لمقارنتها بما وجده في السجلات.
+
+**طلبات السحب ذات الصلة:** [#2043](https://github.com/hyperdxio/hyperdx/pull/2043) إضافة حزمة @hyperdx/cli — واجهة TUI طرفية للبحث في الأحداث ومتابعتها لحظيًا

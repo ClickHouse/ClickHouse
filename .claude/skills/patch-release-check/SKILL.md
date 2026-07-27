@@ -1,0 +1,271 @@
+---
+name: patch-release-check
+description: Check whether ClickHouse's supported versions (last 3 majors + latest LTS) have recent stable patch releases, diagnose why the scheduled AutoReleases pipeline failed, and identify which releases must be created manually. Use when asked "are the patch releases up to date", "why did autorelease fail", "which releases are missing", "did a release get skipped", during the bi-weekly release-health check, or when investigating create_release.yml / auto_releases.yml failures. Reproduces the full investigation: supported versions from SECURITY.md, per-version staleness, classification of the last N days of AutoReleases/CreateRelease failures (version-bump-PR guard vs missing release-maker runner vs other), the Slack cross-check that reveals the blocking PR, and gated remediation (close a stale robot bump PR, dispatch CreateRelease for a missing version).
+argument-hint: "[lookback-days, default 14]"
+disable-model-invocation: false
+allowed-tools: Bash, Read, Grep, Glob, Agent, WebFetch, AskUserQuestion
+---
+
+# patch-release-check
+
+ClickHouse publishes stable **patch releases** for its supported versions (the last
+three major releases plus the latest LTS) on a roughly bi-weekly cadence. They are
+created automatically by the scheduled `AutoReleases` workflow, but the pipeline can
+wedge silently and stop releasing. This skill is the every-two-weeks health check:
+it tells you which targeted versions are missing a recent patch, *why* the automation
+failed (classified), and walks gated remediation. There are two distinct failure
+modes, and they need different fixes:
+
+- **Guard failure** — `AutoReleaseInfo` aborts before releasing anything because an
+  open "version bump" PR trips a guard in `tests/ci/auto_release.py`. Repo/PR side.
+- **Runner failure** — runs can't start at all because no `[self-hosted, release-maker]`
+  runner is available. Infra side, not a repo change.
+
+## Arguments
+
+- `$0` (optional): lookback window in days for the workflow failure scan. Default `14`.
+
+## Hard rules
+
+- **Investigation is read-only.** Steps 1–4 never change anything.
+- **Reach the CLI as `env -u GH_CONFIG_DIR gh`** (this is what the script's `GH()`
+  wrapper does). Dropping `GH_CONFIG_DIR` avoids a poisoned config dir — one whose
+  token passes `gh auth status` but 403s on the API — by falling back to the default
+  config / `GH_TOKEN`. Do **not** use `command gh`: `command` only bypasses an
+  interactive alias (irrelevant in a non-interactive script) and does **not** strip
+  `GH_CONFIG_DIR`, so it inherits the poisoned config; and `env -u GH_CONFIG_DIR
+  command gh` is wrong too — it tries to exec a nonexistent `command` binary on Linux.
+- **Working files go in `tmp/`**, never `/tmp`. (The script also points
+  `XDG_CACHE_HOME` at a repo-local `tmp/gh-cache` when the default `~/.cache` is not
+  writable — some sandboxes mount a read-only HOME, which would otherwise make
+  `gh run view --log-failed` fail before reaching GitHub.)
+- **Never close a PR or dispatch a release without explicit per-action confirmation**
+  (use AskUserQuestion). Steps 5–6 are gated.
+- **Only ever close a `robot-clickhouse` PR whose head branch is `auto/v*` AND whose
+  release tag is already superseded.** Never a human PR. Fail-close: if you are not
+  certain a guard match is the orphaned robot bump PR, stop and report — do not close.
+
+## Steps
+
+### 1. Run the health check
+
+```bash
+bash .claude/skills/patch-release-check/scripts/release_health.sh 14
+```
+
+It prints four blocks (each ending in a one-line verdict):
+
+1. **Targeted versions** — the ✔️ rows of `SECURITY.md` (`supported`), what was
+   excluded by config (`excluded`), and what is actually `analyzed`.
+2. **Per-version staleness** — latest patch tag (resolved from the complete
+   `git/matching-refs` tag list, so a quiet/older LTS is never missed), age in days
+   (from the annotated tag's `tagger.date`, matching `auto_release.py`), release-worthy
+   / first-parent-total commits (`rel/tot`, reconstructed from the first-parent chain
+   like `AutoReleaseInfo`), and a `⚠️ MISSING` flag when a version is older than
+   `STALE_DAYS` (default 18) *and* has release-worthy commits. A supported version with
+   **no release tag** is a hard failure: the block prints `NO TAG` and the final
+   verdict is `FAILED` (exit 3), never green. (A valid git tag with no published GitHub
+   Release is still healthy — the date comes from the tag object.)
+3. **Failure scan** — `AutoReleases` and `CreateRelease` runs in the window, each
+   `AutoReleases` failure classified `GUARD` / `RUNNER` / `OTHER`, plus a tally.
+4. **Guard re-check** — the live result of the exact guard query, i.e. the PR(s)
+   currently wedging the pipeline.
+
+Knobs (env vars): `EXCLUDE_VERSIONS` (space-separated versions to drop from the
+analysis; defaults to a hardcoded skip — see Notes), `STALE_DAYS` (missing threshold).
+
+### 2. Determine the targeted versions
+
+These are the ✔️ rows in `SECURITY.md`, generated by
+`utils/security-generator/generate_security.py` (the 3 most recent regular versions +
+up to 2 LTS, months 3 and 8). **Read them live — never hardcode**; the set rolls
+forward every release. The script already does this in block 1.
+
+### 3. Decide which releases are missing
+
+A targeted version is **missing** (act now) when its latest patch is older than the
+cadence (~2–2.5 weeks) **and** its branch has **release-worthy** commits. That is not
+raw `ahead_by`: `AutoReleaseInfo` drops the post-release version-bump commit (`Update
+autogenerated version ...`) before deciding whether a branch has a patch candidate, so
+the script counts only commits whose message is *not* a version bump. The `rel/tot`
+column shows release-worthy / total — a branch at `0/1` is stale but has only the bump
+commit and **nothing to release** (verdict says so), and must not be flagged MISSING.
+Distinguish "missing" from **due** — a version that just hit its cadence boundary; once
+the pipeline is unblocked, automation will release it, so it is not "missing" yet.
+
+### 4. Diagnose the failures
+
+**`GUARD`** — `AutoReleaseInfo` died in the version-bump-PR guard inside
+`_prepare` (`raise RuntimeError`), immediately after printing `Posting slack message`.
+This is the guard "check all previous version bump PRs were merged": it runs
+`gh pr list --state open --search "Update version_date.tsv"` and aborts if the result
+is non-empty. Because the matrix `Releases` job `needs` this job, a guard failure
+**skips every branch** — nothing releases.
+
+> The script classifies `GUARD` only when the failed-step log shows **both** the
+> `in _prepare` traceback frame **and** the `raise RuntimeError` source line — not a
+> line number (which drifts) and not bare `RuntimeError`. Other `_prepare` failures
+> (e.g. the `assert refs` release-candidate check, which raises `AssertionError`)
+> classify as `OTHER`, not `GUARD`, so the operator is not sent to hunt version-bump
+> PRs when the guard is actually clear.
+
+> The GitHub Actions log does **not** name the offending PR — the list is sent to a
+> Slack alert, not stdout. Find it two ways:
+> - **Block 4 of the script** re-runs the exact query and prints the live match set.
+> - **Slack**: the CIBuddy bot posts `Found not merged version bump PRs` to
+>   `#core-ci-info` (channel `C07FHK0FV5H`); the message body is the literal PR JSON
+>   and it links the failing run. Search: `"Found not merged version bump PRs"`.
+>
+> The guard's search is **loose full-text**, so it also catches unrelated PRs that
+> merely mention `version_date.tsv` (false positives). The real blocker is the one
+> that recurs in the alert **every day** — typically an orphaned `robot-clickhouse`
+> `auto/v*` bump PR whose release is already superseded.
+
+**`RUNNER`** — a **completed**, `cancelled` run whose first job never got a runner
+(no `runner_name`, zero `steps`); it sat queued ~24h and was cancelled the instant the
+next day's cron fired. Means no `[self-hosted, release-maker]` runner picked it up.
+This is **infra, not a repo change** — escalate in `#core-ci-info` and check the
+org/repo Actions runner settings. Note: clearing a `GUARD` blocker does nothing if
+`RUNNER` is also failing, and vice versa — both must be healthy for a release to
+happen. A run that is still `queued`/`in_progress` (empty conclusion) is **not**
+`RUNNER` — the script prints its live status instead, since a queued daily run has no
+runner/steps yet but is not an outage.
+
+**`OTHER`** — the run failed for some reason other than the guard or a missing runner.
+Any unexpected conclusion (`startup_failure`, `timed_out`, `action_required`, …) also
+counts here, so the tally never reads all-zeros while a run actually failed;
+`startup_failure`/`timed_out` usually point at the `release-maker` runner or a timeout.
+Read the failed step directly:
+
+```bash
+env -u GH_CONFIG_DIR gh run view <run-id> --repo ClickHouse/ClickHouse --log-failed
+```
+
+**`UNKNOWN`** — the script could not fetch the required GitHub data to classify the
+run: either a complete failed-step log (transient API/rate-limit truncation) or, for a
+cancelled run, its job metadata. It refuses to guess. This is fail-closed: do **not**
+assume it was healthy or not a guard failure — re-run the check, or read the run
+manually with the command above.
+
+### 5. (gated) Remediate a guard blocker
+
+Only if block 4 shows an orphaned, superseded `robot-clickhouse` `auto/v*` bump PR.
+Confirm the supersession first (a newer tag exists on that branch):
+
+```bash
+env -u GH_CONFIG_DIR gh pr view <n> --repo ClickHouse/ClickHouse --json headRefName,author,title,state
+env -u GH_CONFIG_DIR gh api 'repos/ClickHouse/ClickHouse/git/matching-refs/tags/v<major>.' --jq '.[].ref'
+```
+
+Ask the user for confirmation, then:
+
+```bash
+env -u GH_CONFIG_DIR gh pr close <n> --repo ClickHouse/ClickHouse
+```
+
+⚠️ **Re-run block 4 afterward.** Closing one match does not clear the guard if other
+PRs still match (this happened: closing the robot PR left a human Docker PR matching).
+If the remaining match is a **human PR**, do **not** close it — recommend merging it,
+or scoping the guard query (see Known issue).
+
+### 6. (gated) Make the missing release(s) manually
+
+For each version flagged `MISSING` in step 3, dispatch `CreateRelease` with
+`Use workflow from branch: master`, `type: patch`.
+
+⚠️ **Use a CI-green commit SHA, not the bare branch name.** `AutoReleaseInfo` does not
+release branch head — it derives candidates as `git rev-list --first-parent <latest-tag>..origin/<branch>`,
+drops the oldest (version-bump) commit, and among the newest
+`MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` picks the most recent whose CI
+**completed with no failed statuses**, then passes that SHA to `create_release.yml`.
+Reproduce that exactly — and use **first-parent** `git rev-list`, *not* the GitHub
+`commits?sha=` API: that API returns every reachable commit (side commits off the
+first-parent chain), so it can pick a SHA `AutoReleaseInfo` would never consider and
+release from a tree missing other already-merged backports. Run this from a checkout
+whose `origin` is `ClickHouse/ClickHouse`:
+
+```bash
+BR=<release-branch>   # e.g. 25.8
+git fetch -q origin "$BR" --tags                         # need branch + tags locally
+TAG=$(git tag --list "v$BR.*" --sort=-v:refname | head -1)
+# Candidate SHAs: first-parent since the tag, drop the oldest (version-bump) commit,
+# newest 8 — exactly AutoReleaseInfo's set.
+CANDS=$(git rev-list --first-parent "$TAG..FETCH_HEAD" | sed '$d' | head -8)
+# Pick the newest CI-green SHA, mirroring ci_utils.GH exactly:
+#   check_wf_completed   — /check-runs must be NON-EMPTY and every run "completed"
+#   get_failed_statuses  — paginate /statuses, keep the newest state PER CONTEXT,
+#                          require none non-success
+# (Re-reading the combined /status rollup is insufficient — it is blind to check-runs
+# and to status history, so it both over- and under-reports.) Chosen SHA -> stdout.
+CANDIDATE=$(SHAS="$CANDS" python3 - <<'PY'
+import os, sys, json, subprocess
+REPO = "ClickHouse/ClickHouse"
+def gh(args):
+    env = dict(os.environ); env.pop("GH_CONFIG_DIR", None)   # avoid a poisoned config dir
+    r = subprocess.run(["gh", "api"] + args, capture_output=True, text=True, env=env)
+    if r.returncode != 0:
+        raise SystemExit(f"gh api failed ({' '.join(args)}): {r.stderr.strip()}")
+    return r.stdout
+def wf_completed(sha):                       # ci_utils.GH.check_wf_completed
+    runs = (json.loads(gh([f"repos/{REPO}/commits/{sha}/check-runs?per_page=100"]))
+            .get("check_runs") or [])
+    return bool(runs) and all(c["status"] == "completed" for c in runs)
+def failed_statuses(sha):                    # ci_utils.GH.get_failed_statuses
+    out = gh(["--paginate", "--jq", ".[]",
+              f"repos/{REPO}/commits/{sha}/statuses?per_page=100"])
+    latest = {}
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        st = json.loads(line); c = st["context"]
+        if c not in latest or latest[c]["updated_at"] < st["updated_at"]:
+            latest[c] = st
+    return sorted(c for c, d in latest.items() if d["state"] != "success")
+for sha in os.environ["SHAS"].split():
+    done = wf_completed(sha)
+    fails = failed_statuses(sha) if done else None
+    print(f"  {sha[:12]} completed={done} "
+          f"failed_statuses={fails if fails is not None else 'n/a (CI not completed)'}",
+          file=sys.stderr)
+    if done and not fails:
+        print(sha); break
+PY
+)
+echo "release candidate: ${CANDIDATE:?no CI-green commit in the first 8 first-parent commits — investigate; do not release branch head}"
+```
+
+After explicit confirmation, dispatch with that SHA (the official runbook also accepts
+a commit SHA in the `Git reference` field, e.g. when a prior run failed with a missing
+artifacts error):
+
+```bash
+env -u GH_CONFIG_DIR gh workflow run create_release.yml --repo ClickHouse/ClickHouse \
+  --ref master -f ref="$CANDIDATE" -f type=patch
+```
+
+Then watch the run to completion (**do not cancel it**) and review + merge the
+generated `auto/v<tag>` changelog PR. Track status in `#core-ci-info`.
+
+## Known issue / hardening
+
+The guard query in `tests/ci/auto_release.py` (~line 100,
+`gh pr list --search "Update version_date.tsv"`) is a **loose full-text search**, so a
+single forgotten or unrelated PR can halt all releases. Worth a separate PR: scope it
+to genuine robot bump PRs, e.g. `--search "Update version_date.tsv in:title author:robot-clickhouse"`
+or match the `auto/v*` head branch. This skill documents the behavior; it does not
+change the code.
+
+## Notes
+
+- **Cadence** is ~2 weeks; there is no explicit day-threshold in `auto_release.py` —
+  it releases a branch whenever a green commit exists among its last
+  `MAX_NUMBER_OF_COMMITS_TO_CONSIDER_FOR_RELEASE = 8` commits.
+- The `Releases` matrix has `fail-fast: false`, so one bad release branch does not
+  cancel the others — but `AutoReleaseInfo` failing (a `GUARD` failure) skips them all.
+- `AutoReleases` runs daily on cron `45 11 * * *`; `CreateRelease` is both a
+  `workflow_dispatch` (manual) and a `workflow_call` (the matrix calls it with
+  `type: patch`).
+- **`EXCLUDE_VERSIONS`** currently defaults to a hardcoded skip (`25.8`) so it is left
+  out of the analysis. This is intentional but goes stale — revisit it each cycle, or
+  run `EXCLUDE_VERSIONS="" bash .../release_health.sh` to analyze every supported
+  version.

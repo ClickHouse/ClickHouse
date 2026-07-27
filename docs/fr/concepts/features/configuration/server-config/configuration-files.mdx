@@ -1,0 +1,480 @@
+---
+description: 'Cette page explique comment le serveur ClickHouse peut être configuré à l’aide de fichiers
+  de configuration au format XML ou YAML.'
+sidebarTitle: 'Fichiers de configuration'
+slug: /operations/configuration-files
+title: 'Fichiers de configuration'
+doc_type: 'guide'
+---
+
+<Note>
+  Les settings profiles et les fichiers de configuration basés sur XML ne sont pas pris en charge dans ClickHouse Cloud. Par conséquent, dans ClickHouse Cloud, vous ne trouverez pas de fichier `config.xml`. À la place, vous devez utiliser des commandes SQL pour gérer les paramètres via les settings profiles.
+
+  Pour plus de détails, consultez [&quot;Configuration des paramètres&quot;](/fr/products/cloud/reference/settings)
+</Note>
+
+Le serveur ClickHouse peut être configuré à l’aide de fichiers de configuration au format XML ou YAML.
+Dans la plupart des types d’installation, le serveur ClickHouse utilise `/etc/clickhouse-server/config.xml` comme fichier de configuration par défaut, mais il est également possible d’indiquer manuellement l’emplacement du fichier de configuration au démarrage du serveur à l’aide de l’option de ligne de commande `--config-file` ou `-C`.
+Des fichiers de configuration supplémentaires peuvent être placés dans le répertoire `config.d/`, relatif au fichier de configuration principal, par exemple dans le répertoire `/etc/clickhouse-server/config.d/`.
+Les fichiers de ce répertoire et la configuration principale sont fusionnés lors d’une étape de prétraitement avant que la configuration ne soit appliquée au serveur ClickHouse.
+Les fichiers de configuration sont fusionnés par ordre alphabétique.
+Pour simplifier les mises à jour et améliorer la modularité, il est recommandé de ne pas modifier le fichier `config.xml` par défaut et de placer toute personnalisation supplémentaire dans `config.d/`.
+La configuration de ClickHouse Keeper se trouve dans `/etc/clickhouse-keeper/keeper_config.xml`.
+De même, les fichiers de configuration supplémentaires pour Keeper doivent être placés dans `/etc/clickhouse-keeper/keeper_config.d/`.
+
+Il est possible de mélanger des fichiers de configuration XML et YAML ; par exemple, vous pouvez avoir un fichier de configuration principal `config.xml` et des fichiers de configuration supplémentaires `config.d/network.xml`, `config.d/timezone.yaml` et `config.d/keeper.yaml`.
+Il n’est pas possible de mélanger XML et YAML au sein d’un même fichier de configuration.
+Les fichiers de configuration XML doivent utiliser `<clickhouse>...</clickhouse>` comme balise racine.
+Dans les fichiers de configuration YAML, `clickhouse:` est facultatif ; s’il est absent, le parseur l’insère automatiquement.
+
+<div id="merging">
+  ## Fusion des fichiers de configuration
+</div>
+
+Deux fichiers de configuration (généralement le fichier de configuration principal et un autre fichier de configuration provenant de `config.d/`) sont fusionnés comme suit :
+
+* Si un nœud (c’est-à-dire un chemin menant à un élément) apparaît dans les deux fichiers et ne possède pas les attributs `replace` ou `remove`, il est inclus dans le fichier de configuration fusionné, et les éléments enfants des deux nœuds sont inclus puis fusionnés récursivement.
+* Si l’un des deux nœuds contient l’attribut `replace`, il est inclus dans le fichier de configuration fusionné, mais seuls les éléments enfants du nœud portant l’attribut `replace` sont inclus.
+* Si l’un des deux nœuds contient l’attribut `remove`, le nœud n’est pas inclus dans le fichier de configuration fusionné (s’il existe déjà, il est supprimé).
+
+Par exemple, étant donné deux fichiers de configuration :
+
+```xml title="config.xml"
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+    </config_a>
+    <config_b>
+        <setting_2>2</setting_2>
+    </config_b>
+    <config_c>
+        <setting_3>3</setting_3>
+    </config_c>
+</clickhouse>
+```
+
+et
+
+```xml title="config.d/other_config.xml"
+<clickhouse>
+    <config_a>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+    <config_c remove="remove">
+        <setting_6>6</setting_6>
+    </config_c>
+</clickhouse>
+```
+
+Le fichier de configuration résultant de la fusion sera :
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b>
+        <setting_5>5</setting_5>
+    </config_b>
+</clickhouse>
+```
+
+<div id="from_env_zk">
+  ### Substitution à l’aide de variables d’environnement et de nœuds ZooKeeper
+</div>
+
+Pour indiquer que la valeur d’un élément doit être remplacée par celle d’une variable d’environnement, vous pouvez utiliser l’attribut `from_env`.
+
+Par exemple, avec la variable d’environnement `$MAX_QUERY_SIZE = 150000` :
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size from_env="MAX_QUERY_SIZE"/>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+La configuration obtenue sera la suivante :
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+Il est également possible d’utiliser `from_zk` (nœud ZooKeeper) :
+
+```xml
+<clickhouse>
+    <postgresql_port from_zk="/zk_configs/postgresql_port"/>
+</clickhouse>
+```
+
+```shell
+# clickhouse-keeper-client
+/ :) touch /zk_configs
+/ :) create /zk_configs/postgresql_port "9005"
+/ :) get /zk_configs/postgresql_port
+9005
+```
+
+Ce qui donne la configuration suivante :
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+<div id="default-values">
+  #### Valeurs par défaut
+</div>
+
+Un élément doté des attributs `from_env` ou `from_zk` peut également avoir l’attribut `replace="1"` (ce dernier doit apparaître avant `from_env`/`from_zk`).
+Dans ce cas, l’élément peut définir une valeur par défaut.
+L’élément prend la valeur de la variable d’environnement ou du nœud ZooKeeper si celle-ci est définie ; sinon, il prend la valeur par défaut.
+
+L’exemple précédent est repris, en supposant que `MAX_QUERY_SIZE` n’est pas défini :
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size replace="1" from_env="MAX_QUERY_SIZE">150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+Ce qui donne la configuration suivante :
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+<div id="substitution-with-file-content">
+  ## Substitution avec le contenu d’un fichier
+</div>
+
+Il est également possible de remplacer des parties de la configuration par le contenu de fichiers. Cela peut se faire de deux façons :
+
+* *Substitution de valeurs* : si un élément possède l’attribut `incl`, sa valeur sera remplacée par le contenu du fichier référencé. Par défaut, le chemin vers le fichier contenant les substitutions est `/etc/metrika.xml`. Cela peut être modifié dans l’élément [`include_from`](/fr/reference/settings/server-settings/settings#include_from) de la configuration du serveur. Les valeurs de substitution sont spécifiées dans les éléments `/clickhouse/substitution_name` de ce fichier. Si une substitution spécifiée dans `incl` n’existe pas, cela est consigné dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes dans le journal, spécifiez l’attribut `optional="true"` (par exemple, pour les paramètres de [macros](/fr/reference/settings/server-settings/settings#macros)).
+* *Substitution d’éléments* : si vous souhaitez remplacer l’élément entier par une substitution, utilisez `include` comme nom d’élément. Le nom d’élément `include` peut être combiné avec l’attribut `from_zk = "/path/to/node"`. Dans ce cas, la valeur de l’élément est remplacée par le contenu du nœud ZooKeeper situé à `/path/to/node`. Cela fonctionne également si vous stockez un sous-arbre XML entier dans un nœud ZooKeeper : il sera alors entièrement inséré dans l’élément source.
+
+Un exemple est présenté ci-dessous :
+
+```xml
+<clickhouse>
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <profiles from_zk="/profiles-in-zookeeper" />
+
+    <users>
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
+        <include from_zk="/users-in-zookeeper" />
+        <include from_zk="/other-users-in-zookeeper" />
+    </users>
+</clickhouse>
+```
+
+Si vous souhaitez fusionner le contenu de substitution avec la configuration existante au lieu de l’ajouter, vous pouvez utiliser l’attribut `merge="true"`. Par exemple : `<include from_zk="/some_path" merge="true">`. Dans ce cas, la configuration existante sera fusionnée avec le contenu de la substitution, et les paramètres de la configuration existante seront remplacés par les valeurs issues de la substitution.
+
+<div id="encryption">
+  ## Chiffrement et masquage de la configuration
+</div>
+
+Vous pouvez utiliser le chiffrement symétrique pour chiffrer un élément de configuration, par exemple un mot de passe en clair ou une clé privée.
+Pour ce faire, configurez d’abord le [codec de chiffrement](/fr/reference/statements/create/table#encryption-codecs), puis ajoutez à l’élément à chiffrer l’attribut `encrypted_by`, avec pour valeur le nom du codec de chiffrement.
+
+Contrairement aux attributs `from_zk`, `from_env` et `incl`, ou à l’élément `include`, aucune substitution (c.-à-d. aucun déchiffrement de la valeur chiffrée) n’est effectuée dans le fichier prétraité.
+Le déchiffrement n’a lieu qu’à l’exécution, dans le processus serveur.
+
+Par exemple :
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+Les attributs [`from_env`](#from_env_zk) et [`from_zk`](#from_env_zk) peuvent aussi s’appliquer à `encryption_codecs` :
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+Les clés de chiffrement et les valeurs chiffrées peuvent être définies dans l’un ou l’autre des fichiers de configuration.
+
+Voici un exemple de `config.xml` :
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+</clickhouse>
+```
+
+Voici un exemple de `users.xml` :
+
+```xml
+<clickhouse>
+
+    <users>
+        <test_user>
+            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
+            <profile>default</profile>
+        </test_user>
+    </users>
+
+</clickhouse>
+```
+
+Pour chiffrer une valeur, vous pouvez utiliser le programme (exemple) `encrypt_decrypt` :
+
+```bash
+./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
+```
+
+```text
+961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+Même avec des éléments de configuration chiffrés, ceux-ci apparaissent toujours dans le fichier de configuration prétraité.
+Si cela pose problème pour votre déploiement de ClickHouse, deux solutions s’offrent à vous : soit définir les permissions du fichier prétraité sur 600, soit utiliser l’attribut `hide_in_preprocessed`.
+
+Par exemple :
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hide_in_preprocessed="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+<div id="user-settings">
+  ## Paramètres utilisateur
+</div>
+
+Le fichier `config.xml` peut spécifier une configuration distincte avec des paramètres utilisateur, des profils et des quotas. Le chemin relatif vers cette configuration est défini dans l’élément `users_config`. Par défaut, il s’agit de `users.xml`. Si `users_config` est omis, les paramètres utilisateur, les profils et les quotas sont spécifiés directement dans `config.xml`.
+
+La configuration utilisateur peut être répartie dans des fichiers distincts, comme `config.xml` et `config.d/`.
+Le nom du répertoire est défini comme le paramètre `users_config` sans le suffixe `.xml`, auquel est concaténé `.d`.
+Le répertoire `users.d` est utilisé par défaut, car `users_config` vaut par défaut `users.xml`.
+
+Notez que les fichiers de configuration sont d’abord [fusionnés](#merging) en tenant compte des paramètres, puis les inclusions sont traitées.
+
+<div id="example">
+  ## Exemple XML
+</div>
+
+Par exemple, vous pouvez avoir un fichier de configuration distinct pour chaque utilisateur :
+
+```bash
+$ cat /etc/clickhouse-server/users.d/alice.xml
+```
+
+```xml
+<clickhouse>
+    <users>
+      <alice>
+          <profile>analytics</profile>
+            <networks>
+                  <ip>::/0</ip>
+            </networks>
+          <password_sha256_hex>...</password_sha256_hex>
+          <quota>analytics</quota>
+      </alice>
+    </users>
+</clickhouse>
+```
+
+<div id="example-1">
+  ## Exemples YAML
+</div>
+
+Vous trouverez ici la configuration par défaut écrite en YAML : [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
+
+Il existe quelques différences entre les formats YAML et XML pour les configurations ClickHouse.
+Des conseils pour écrire une configuration au format YAML sont présentés ci-dessous.
+
+Une balise XML contenant une valeur textuelle est représentée par une paire clé-valeur en YAML
+
+```yaml
+key: value
+```
+
+XML correspondant :
+
+```xml
+<key>value</key>
+```
+
+Un nœud XML imbriqué est représenté par une structure de mappage YAML :
+
+```yaml
+map_key:
+  key1: val1
+  key2: val2
+  key3: val3
+```
+
+XML correspondant :
+
+```xml
+<map_key>
+    <key1>val1</key1>
+    <key2>val2</key2>
+    <key3>val3</key3>
+</map_key>
+```
+
+Pour créer plusieurs occurrences de la même balise XML, utilisez une séquence YAML :
+
+```yaml
+seq_key:
+  - val1
+  - val2
+  - key1: val3
+  - map:
+      key2: val4
+      key3: val5
+```
+
+XML correspondant :
+
+```xml
+<seq_key>val1</seq_key>
+<seq_key>val2</seq_key>
+<seq_key>
+    <key1>val3</key1>
+</seq_key>
+<seq_key>
+    <map>
+        <key2>val4</key2>
+        <key3>val5</key3>
+    </map>
+</seq_key>
+```
+
+Pour spécifier un attribut XML, vous pouvez utiliser une clé d’attribut avec le préfixe `@`. Notez que `@` est réservé par la norme YAML et doit donc être placé entre guillemets doubles :
+
+```yaml
+map:
+  "@attr1": value1
+  "@attr2": value2
+  key: 123
+```
+
+XML correspondant :
+
+```xml
+<map attr1="value1" attr2="value2">
+    <key>123</key>
+</map>
+```
+
+Il est également possible d’utiliser des attributs dans une séquence YAML :
+
+```yaml
+seq:
+  - "@attr1": value1
+  - "@attr2": value2
+  - 123
+  - abc
+```
+
+XML correspondant :
+
+```xml
+<seq attr1="value1" attr2="value2">123</seq>
+<seq attr1="value1" attr2="value2">abc</seq>
+```
+
+La syntaxe mentionnée ci-dessus ne permet pas de représenter en YAML des nœuds de texte XML avec des attributs XML. Ce cas particulier peut être représenté à l’aide d’une
+clé d’attribut `#text` :
+
+```yaml
+map_key:
+  "@attr1": value1
+  "#text": value2
+```
+
+XML correspondant :
+
+```xml
+<map_key attr1="value1">value2</map>
+```
+
+<div id="implementation-details">
+  ## Détails d’implémentation
+</div>
+
+Pour chaque fichier de configuration, le serveur génère également au démarrage des fichiers `file-preprocessed.xml`. Ces fichiers contiennent toutes les substitutions et surcharges effectuées, et sont fournis à titre informatif. Si des substitutions ZooKeeper ont été utilisées dans les fichiers de configuration mais que ZooKeeper n’est pas disponible au démarrage du serveur, le serveur charge la configuration à partir du fichier prétraité.
+
+Le serveur surveille les modifications des fichiers de configuration, ainsi que celles des fichiers et des nœuds ZooKeeper utilisés pour effectuer les substitutions et les surcharges, et recharge à la volée les paramètres des utilisateurs et des clusters. Cela signifie que vous pouvez modifier le cluster, les utilisateurs et leurs paramètres sans redémarrer le serveur.

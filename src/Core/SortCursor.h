@@ -11,6 +11,7 @@
 #include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 #include <Common/assert_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -44,7 +45,7 @@ struct SortCursorImpl
       */
     size_t order = 0;
 
-    using NeedCollationFlags = std::vector<UInt8>;
+    using NeedCollationFlags = VectorWithMemoryTracking<UInt8>;
 
     /** Should we use Collator to sort a column? */
     NeedCollationFlags need_collation;
@@ -58,7 +59,7 @@ struct SortCursorImpl
     IColumnPermutation * permutation = nullptr;
 
 #if USE_EMBEDDED_COMPILER
-    std::vector<ColumnData> raw_sort_columns_data;
+    VectorWithMemoryTracking<ColumnData> raw_sort_columns_data;
 #endif
 
     SortCursorImpl() = default;
@@ -116,7 +117,7 @@ private:
     size_t pos = 0;
 };
 
-using SortCursorImpls = std::vector<SortCursorImpl>;
+using SortCursorImpls = VectorWithMemoryTracking<SortCursorImpl>;
 
 
 /// For easy copying.
@@ -490,7 +491,7 @@ public:
     }
 
 private:
-    using Container = std::vector<Cursor>;
+    using Container = VectorWithMemoryTracking<Cursor>;
     Container queue;
 
     /// Cache comparison between first and second child if the order in queue has not been changed.
@@ -762,4 +763,54 @@ bool less(const TLeftColumns & lhs, const TRightColumns & rhs, size_t i, size_t 
     return false;
 }
 
+namespace detail
+{
+/// column(i)` is the i-th key column and `hint(i)` its nan_direction_hint. Stops
+/// early once the run is a single row.
+template <typename GetColumn, typename GetHint>
+size_t equalRangeEndAcrossColumns(size_t count, size_t begin, size_t end, GetColumn && column, GetHint && hint)
+{
+    size_t run_end = end;
+    for (size_t i = 0; i < count; ++i)
+    {
+        run_end = column(i)->getEqualRangeEndAssumeSorted(begin, run_end, hint(i));
+        if (run_end <= begin + 1)
+            break; /// single-row run: cannot shrink further
+    }
+    return run_end;
+}
+}
+
+/** Multi-column overloads of IColumn::getEqualRangeEndAssumeSorted: find the end (exclusive) of the run
+  * of rows that share an equal key across ALL the given key columns, starting at `begin`, within the
+  * SORTED range [begin, end). Narrows sequentially - each key column shrinks the candidate end via the
+  * per-column method (within column k-1's equal range, column k is itself sorted).
+  */
+template <typename TColumns>
+size_t getEqualRangeEndAssumeSorted(const TColumns & columns, size_t begin, size_t end, int nan_direction_hint)
+{
+    return detail::equalRangeEndAcrossColumns(
+        columns.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t) { return nan_direction_hint; });
+}
+
+/** Same as above, but the key columns are selected from `columns` by `positions` (`columns[positions[k]]` is
+  * the k-th key column).
+  */
+template <typename TColumns>
+size_t getEqualRangeEndAssumeSorted(
+    const TColumns & columns, const std::vector<size_t> & positions, size_t begin, size_t end, int nan_direction_hint)
+{
+    return detail::equalRangeEndAcrossColumns(
+        positions.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[positions[i]]; }, [&](size_t) { return nan_direction_hint; });
+}
+
+/** Same as above, but sort description aware.
+  */
+template <typename TColumns, typename TSortDescription>
+requires requires (const TSortDescription & d) { d.size(); d[0].nulls_direction; }
+size_t getEqualRangeEndAssumeSorted(const TColumns & columns, const TSortDescription & descr, size_t begin, size_t end)
+{
+    return detail::equalRangeEndAcrossColumns(
+        descr.size(), begin, end, [&](size_t i) -> decltype(auto) { return columns[i]; }, [&](size_t i) { return descr[i].nulls_direction; });
+}
 }

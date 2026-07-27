@@ -306,7 +306,6 @@ Use the PR template at `.github/PULL_REQUEST_TEMPLATE.md` — do not inline a cu
 - a short description of what was updated and why
 - the Changelog category (pick one from the template); typical choices for contrib bumps are `Not for changelog`, `Bug Fix` (for CVE fixes), `Build/Testing/Packaging Improvement`, or `Improvement`
 - the Changelog entry
-- the Documentation checkbox
 
 Create the PR with:
 

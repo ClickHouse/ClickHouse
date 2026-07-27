@@ -1,0 +1,271 @@
+---
+description: 'Documentación del controlador ODBC de ClickHouse'
+sidebarTitle: 'controlador ODBC'
+slug: /interfaces/odbc
+title: 'controlador ODBC'
+doc_type: 'reference'
+---
+
+El controlador ODBC de ClickHouse proporciona una interfaz compatible con los estándares para conectar aplicaciones compatibles con ODBC a
+ClickHouse. Implementa la API de ODBC y permite que aplicaciones, herramientas de BI y entornos de scripting ejecuten consultas SQL,
+recuperen resultados e interactúen con ClickHouse mediante mecanismos conocidos.
+
+El controlador se comunica con el servidor de ClickHouse mediante el [protocolo HTTP](/es/concepts/features/interfaces/http), que es el protocolo principal
+admitido en todas las implementaciones de ClickHouse. Esto permite que el controlador funcione de forma uniforme en distintos
+entornos, incluidas instalaciones locales, servicios gestionados en la nube y entornos en los que solo está disponible el acceso
+basado en HTTP.
+
+El código fuente del controlador está disponible en el
+[repositorio de GitHub de ClickHouse-ODBC](https://github.com/ClickHouse/clickhouse-odbc).
+
+<Tip>
+  Para una mejor compatibilidad, recomendamos encarecidamente actualizar su servidor de ClickHouse a la versión 24.11 o posterior.
+</Tip>
+
+<Note>
+  Este controlador está en desarrollo activo. Es posible que algunas funcionalidades de ODBC todavía no estén implementadas por completo. La versión actual
+  se centra en proporcionar conectividad esencial y la funcionalidad principal de ODBC, con funciones adicionales previstas para futuras
+  versiones.
+
+  Sus comentarios son muy valiosos y ayudan a orientar la priorización de nuevas funciones y mejoras. Si encuentra
+  limitaciones, funcionalidades que faltan o comportamientos inesperados, comparta sus observaciones o solicitudes de nuevas funciones a través
+  del rastreador de incidencias en
+  [https://github.com/ClickHouse/clickhouse-odbc/issues](https://github.com/ClickHouse/clickhouse-odbc/issues)
+</Note>
+
+<div id="installation-on-windows">
+  ## Instalación en Windows
+</div>
+
+Puede encontrar la última versión del controlador en
+[https://github.com/ClickHouse/clickhouse-odbc/releases/latest](https://github.com/ClickHouse/clickhouse-odbc/releases/latest).
+Desde allí, puede descargar y ejecutar el instalador MSI y seguir unos sencillos pasos de instalación.
+
+<div id="testing">
+  ## Pruebas
+</div>
+
+Puede probar el controlador ejecutando este sencillo script de PowerShell. Copie el texto siguiente, configure la URL, el usuario y la contraseña, y
+péguelo en la consola de PowerShell; después de ejecutar `$reader.GetValue(0)`, debería mostrarse la versión de su servidor de ClickHouse.
+
+```powershell
+$url = "http://127.0.0.1:8123/"
+$username = "default"
+$password = ""
+$conn = New-Object System.Data.Odbc.OdbcConnection("`
+    Driver={ClickHouse ODBC Driver (Unicode)};`
+    Url=$url;`
+    Username=$username;`
+    Password=$password")
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "select version()"
+$reader = $cmd.ExecuteReader()
+$reader.Read()
+$reader.GetValue(0)
+$reader.Close()
+$conn.Close()
+```
+
+<div id="configuration-parameters">
+  ## Parámetros de configuración
+</div>
+
+Los parámetros siguientes representan las opciones de configuración más utilizadas para establecer una conexión con el
+controlador ODBC de ClickHouse. Cubren opciones esenciales de autenticación, comportamiento de la conexión y gestión de datos. La lista completa de los
+parámetros compatibles está disponible en la página de GitHub del proyecto
+[https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc).
+
+* `Url`: Especifica el endpoint HTTP(S) completo del servidor de ClickHouse. Esto incluye el protocolo, el host, el puerto y la
+  ruta opcional.
+* `Username`: El nombre de usuario utilizado para la autenticación con el servidor de ClickHouse.
+* `Password`: La contraseña asociada al nombre de usuario especificado. Si no se proporciona, el controlador se conecta sin
+  autenticación mediante contraseña.
+* `Database`: La base de datos predeterminada que se usará para la conexión.
+* `Timeout`: El tiempo máximo (en segundos) que el controlador espera una respuesta del servidor antes de cancelar la solicitud.
+* `ClientName`: Un identificador personalizado que se envía al servidor de ClickHouse como parte de los metadatos del cliente. Es útil para la trazabilidad o para
+  distinguir el tráfico de distintas aplicaciones. Este parámetro formará parte del encabezado User-Agent en las solicitudes HTTP
+  generadas por el controlador.
+* `Compression`: Habilita o deshabilita la compresión HTTP para las cargas útiles de solicitud y respuesta. Cuando está habilitada, puede reducir
+  el uso de ancho de banda y mejorar el rendimiento en conjuntos de resultados grandes.
+* `SqlCompatibilitySettings`: Habilita ajustes de consulta que hacen que ClickHouse se comporte más como una base de datos relacional
+  tradicional. Esto resulta útil cuando las consultas las generan automáticamente herramientas de terceros, por ejemplo, Power BI. Estas
+  herramientas normalmente no tienen en cuenta ciertos comportamientos específicos de ClickHouse y pueden generar consultas que den lugar a errores o
+  resultados inesperados. Consulte [ajustes de ClickHouse usados por el parámetro de configuración SqlCompatibilitySettings
+  ](#sql-compatibility-settings) para obtener más detalles.
+
+A continuación se muestran algunos ejemplos de la cadena de conexión completa que se pasa al controlador para configurar una conexión.
+
+* Un servidor de ClickHouse instalado localmente en una instancia de WSL
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=http://localhost:8123/;Username=default
+```
+
+* Una instancia de ClickHouse Cloud.
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=https://you-instance-url.gcp.clickhouse.cloud:8443/;Username=default;Password=your-password
+```
+
+<div id="powerbi-integration">
+  ## Integración con Microsoft Power BI
+</div>
+
+Puede usar el controlador ODBC para conectar Microsoft Power BI a un servidor de ClickHouse. Power BI ofrece dos opciones de conexión:
+el conector ODBC genérico y el ClickHouse Connector, ambos incluidos en las instalaciones estándar de Power BI.
+
+Ambos conectores usan ODBC internamente, pero difieren en sus capacidades:
+
+* ClickHouse Connector (recomendado)
+  Usa ODBC internamente, pero admite el modo DirectQuery. En este modo, Power BI genera automáticamente consultas SQL y
+  recupera solo los datos necesarios para cada visualización u operación de filtrado.
+
+* ODBC Connector
+  Admite solo el modo Import. Power BI ejecuta la consulta proporcionada por el usuario (o selecciona la tabla completa) e importa el
+  conjunto de resultados completo en Power BI. Las actualizaciones posteriores vuelven a importar el conjunto de datos completo.
+
+Elija el conector según su caso de uso. DirectQuery funciona mejor para dashboards interactivos con conjuntos de datos grandes.
+Elija el modo Import cuando necesite copias locales completas de los datos.
+
+Para obtener más información sobre la integración de Microsoft Power BI con ClickHouse, consulte la [página de documentación de ClickHouse sobre la
+integración con Power BI](/es/integrations/connectors/data-visualization/powerbi-and-clickhouse).
+
+<div id="sql-compatibility-settings">
+  ## Configuración de compatibilidad con SQL
+</div>
+
+ClickHouse tiene su propio dialecto SQL y, en algunos casos, se comporta de forma distinta a otras bases de datos, como MS SQL
+Server, MySQL o PostgreSQL. A menudo, estas diferencias suponen una ventaja, ya que introducen una sintaxis mejorada que facilita el
+uso de las funcionalidades de ClickHouse.
+
+Sin embargo, el controlador ODBC suele usarse en entornos en los que las consultas las generan herramientas de terceros, como Power
+BI, en lugar de escribirlas los usuarios. Estas consultas suelen basarse en un subconjunto mínimo del estándar SQL. En esos casos,
+las desviaciones de ClickHouse respecto del estándar SQL pueden no comportarse como se espera y producir resultados o errores inesperados.
+El controlador ODBC proporciona un parámetro de configuración adicional, `SqlCompatibilitySettings`, que habilita opciones específicas de consulta
+para que el comportamiento de ClickHouse se ajuste más al SQL estándar.
+
+<div id="sql-compatibility-settings-list">
+  ### Ajustes de ClickHouse habilitadas por el parámetro de configuración SqlCompatibilitySettings
+</div>
+
+Esta sección describe qué configuraciones modifica el controlador ODBC y por qué.
+
+**[cast&#95;keep&#95;nullable](/es/reference/settings/session-settings#cast_keep_nullable)**
+
+De forma predeterminada, ClickHouse no permite convertir tipos Nullable en tipos no anulables. Sin embargo, muchas herramientas de BI no distinguen entre tipos anulables y no anulables al realizar conversiones de tipo. Como resultado, es habitual ver consultas como la siguiente generadas por herramientas de BI:
+
+```sql
+SELECT sum(CAST(value, 'Int32'))
+FROM values
+```
+
+Por defecto, cuando la columna `value` es Nullable, esta consulta fallará con el mensaje:
+
+```plaintext
+DB::Exception: Cannot convert NULL value to non-Nullable type: while executing 'FUNCTION CAST(__table1.value :: 2,
+'Int32'_String :: 1) -> CAST(__table1.value, 'Int32'_String) Int32 : 0'. (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+```
+
+Habilitar `cast_keep_nullable` cambia el comportamiento de `CAST` para que preserve la nulabilidad de sus argumentos. Esto
+hace que el comportamiento de ClickHouse se acerque más al de otras bases de datos y al estándar SQL para este tipo de conversión.
+
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/es/reference/settings/session-settings#prefer_column_name_to_alias)**
+
+ClickHouse permite hacer referencia a expresiones de la misma lista `SELECT` mediante sus alias. Por ejemplo, esta consulta evita
+la repetición y es más fácil de escribir:
+
+```sql
+SELECT
+    sum(value) AS S,
+    count() AS C,
+    S / C
+FROM test
+```
+
+Esta funcionalidad se usa ampliamente, pero otras bases de datos normalmente no resuelven los alias de esta forma en la misma lista `SELECT`,
+y esas consultas darían un error. Los problemas se hacen más evidentes cuando un alias tiene el mismo nombre que una columna. Por ejemplo:
+
+```sql
+SELECT
+    sum(value) AS value,
+    avg(value)
+FROM test
+```
+
+¿Qué `value` debe agregar `avg(value)`? De forma predeterminada, ClickHouse prefiere el alias, lo que efectivamente convierte esto en una
+agregación anidada, que no es lo que esperan la mayoría de las herramientas.
+
+Por sí solo, esto rara vez supone un problema, pero algunas herramientas de BI generan consultas con subconsultas que reutilizan alias de columnas. Por
+ejemplo, Power BI suele generar consultas similares a la siguiente:
+
+```sql
+SELECT
+    sum(C1) AS C1,
+    count(C1) AS C2
+FROM
+(
+    SELECT sum(value) AS C1
+    FROM test
+    GROUP BY group_index
+) AS TBL
+```
+
+Las referencias a `C1` pueden generar el siguiente error:
+
+```plaintext
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function sum(C1) AS C1 is found
+inside another aggregate function in query. (ILLEGAL_AGGREGATION)
+```
+
+Por lo general, otras bases de datos no resuelven los alias de esta forma en el mismo nivel y, en su lugar, tratan `C1` como una columna de la
+subconsulta. Para preservar un comportamiento similar en ClickHouse y permitir que esas consultas se ejecuten sin errores, el controlador ODBC
+habilita `prefer_column_name_to_alias`.
+
+En la mayoría de los casos, habilitar estas opciones no debería ser un problema. Sin embargo, los usuarios con la configuración `readonly` establecida en `1`
+no pueden cambiar ninguna opción, ni siquiera para las consultas `SELECT`. Para esos usuarios, habilitar `SqlCompatibilitySettings` provocará
+un error. En la siguiente sección se explica cómo hacer que este parámetro de configuración funcione para usuarios de solo lectura.
+
+<div id="readonly-users">
+  ## Hacer que la configuración de compatibilidad con SQL funcione para usuarios de solo lectura
+</div>
+
+Al conectarse a ClickHouse mediante el controlador ODBC con el parámetro `SqlCompatibilitySettings` habilitado, un usuario con
+la configuración `readonly` establecida en `1` verá un error porque el controlador intenta modificar la configuración de la consulta:
+
+```plaintext
+Code: 164. DB::Exception: Cannot modify 'cast_keep_nullable' setting in readonly mode. (READONLY)
+Code: 164. DB::Exception: Cannot modify 'prefer_column_name_to_alias' setting in readonly mode. (READONLY)
+```
+
+Esto ocurre porque los usuarios en modo de solo lectura no pueden cambiar la configuración, ni siquiera en consultas `SELECT` individuales.
+Hay varias formas de solucionarlo.
+
+**Opción 1. Establecer `readonly` en `2`**
+
+Esta es la opción más sencilla. Establecer `readonly` en `2` permite cambiar la configuración sin sacar al usuario del modo de solo lectura.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    readonly = 2
+```
+
+En la mayoría de los casos, establecer `readonly` en 2 es la forma más fácil y recomendada de resolver este problema. Si
+esto no te funciona, usa la segunda opción.
+
+**Opción 2. Cambiar la configuración del usuario para que coincida con la que establece el controlador ODBC.**
+
+Esto también es sencillo: actualiza la configuración del usuario para que coincida de antemano con la que el controlador ODBC intenta establecer.
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    cast_keep_nullable = 1,
+    prefer_column_name_to_alias = 1
+```
+
+Con este cambio, el controlador ODBC aún puede intentar aplicar la configuración, pero como los valores ya coinciden, no
+se realiza ningún cambio efectivo y se evita el error.
+
+Esta opción también es sencilla, pero requiere mantenimiento: las versiones más recientes del controlador pueden cambiar la lista de opciones de configuración o agregar
+otras nuevas por compatibilidad. Si fijas manualmente estas opciones de configuración en el usuario de ODBC, es posible que debas actualizarlas cada vez que el
+controlador ODBC empiece a aplicar opciones de configuración adicionales.

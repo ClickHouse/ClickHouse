@@ -122,6 +122,11 @@ public:
 
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override;
 
+    /// Forward the size guard onto every inner table that `dropInnerTableIfAny` would
+    /// drop, so a `CREATE OR REPLACE` codepath that reaches this storage cannot delete
+    /// over-limit inner data that plain `DROP TABLE` would refuse.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
+
     void dropInnerTableIfAny(bool sync, ContextPtr context) override;
 
     void drop() override;

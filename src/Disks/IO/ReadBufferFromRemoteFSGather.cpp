@@ -64,6 +64,17 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
         current_object = blobs_to_read.front();
 }
 
+std::optional<size_t> ReadBufferFromRemoteFSGather::tryGetFileSize()
+{
+    for (const auto & object : blobs_to_read)
+    {
+        if (object.bytes_size == StoredObject::UnknownSize)
+            return std::nullopt;
+    }
+
+    return getTotalSize(blobs_to_read);
+}
+
 SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(const StoredObject & object, size_t start_offset)
 {
     current_object = object;

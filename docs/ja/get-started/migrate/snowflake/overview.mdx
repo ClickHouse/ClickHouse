@@ -1,0 +1,198 @@
+---
+sidebarTitle: '概要'
+slug: /migrations/snowflake-overview
+description: 'Snowflake から ClickHouse への移行'
+keywords: ['Snowflake']
+title: 'Snowflake から ClickHouse への移行'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> このドキュメントでは、Snowflake から ClickHouse へのデータ移行の概要を紹介します。
+
+Snowflake は、主に従来のオンプレミスのデータウェアハウジングワークロードを
+クラウドへ移行することを主眼に置いたクラウドデータウェアハウスです。大規模な
+長時間実行されるレポートの処理に適した構成になっています。データセットが
+クラウドへ移行されるにつれて、データ所有者は、このデータからさらにどのような
+価値を引き出せるかを考え始めます。これには、こうしたデータセットを活用して
+社内外のユースケース向けのリアルタイムアプリケーションを支えることも含まれます。
+その段階になると、多くの場合、ClickHouse のような、リアルタイム分析を実現するために
+最適化されたデータベースが必要だと気づきます。
+
+<div id="comparison">
+  ## 比較
+</div>
+
+このセクションでは、ClickHouse と Snowflake の主な特長を比較します。
+
+<div id="similarities">
+  ### 類似点
+</div>
+
+Snowflake はクラウドベースのデータウェアハウジングプラットフォームであり、大量の
+データを保存、処理、分析するための、スケーラブルで効率的なソリューションを
+提供します。
+ClickHouse と同様に、Snowflake は既存技術の上に構築されたものではなく、
+独自の SQL クエリエンジンとカスタムアーキテクチャを採用しています。
+
+Snowflake のアーキテクチャは、shared-storage (shared-disk)
+アーキテクチャと shared-nothing アーキテクチャのハイブリッドとして説明されています。shared-storage アーキテクチャとは、
+S3 のようなオブジェクト
+ストアを利用して、すべてのコンピュートノードからデータにアクセスできる構成を指します。shared-nothing アーキテクチャとは、各コンピュートノードが
+クエリに応答するために、データセット全体の一部をローカルに保存する構成を指します。これは
+理論上、両方のモデルの利点を兼ね備えています。つまり、shared-disk
+アーキテクチャのシンプルさと、shared-nothing アーキテクチャのスケーラビリティです。
+
+この設計は、主たるストレージ媒体としてオブジェクトストレージを前提としており、
+これは同時実行アクセス下でもほぼ無限にスケールしつつ、高い
+耐障害性とスケーラブルなスループットを実現します。
+
+以下の [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
+の図は、このアーキテクチャを示しています。
+
+<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake アーキテクチャ" />
+
+これに対して、オープンソースかつクラウドホスト型の製品である ClickHouse は、
+shared-disk と shared-nothing の両方のアーキテクチャでデプロイできます。後者は
+セルフマネージド環境で一般的です。CPU とメモリは容易にスケールできる一方で、
+shared-nothing 構成では、特にメンバーシップの変更時に、
+従来からあるデータ管理上の課題や、データレプリケーションのオーバーヘッドが生じます。
+
+このため、ClickHouse Cloud は、
+概念的に Snowflake に近い shared-storage アーキテクチャを採用しています。データは
+S3 や GCS のようなオブジェクトストアに 1 回だけ保存され (単一コピー) 、
+実質的に無制限のストレージと
+強力な冗長性保証を実現します。各ノードはこの単一コピーの
+データにアクセスでき、さらに cache 用として独自のローカルSSD を備えています。各ノードはそのうえで、
+必要に応じて追加の CPU とメモリリソースを提供できるよう
+スケールできます。Snowflake と同様に、
+S3 のスケーラビリティ特性は、shared-disk
+アーキテクチャの典型的な制約 (ディスク I/O とネットワークのボトルネック) を解消し、
+クラスターにノードを追加しても、既存ノードが利用できる I/O スループットが
+影響を受けないようにします。
+
+<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud アーキテクチャ" />
+
+<div id="differences">
+  ### 違い
+</div>
+
+基盤となるストレージフォーマットやクエリエンジン以外にも、これらのアーキテクチャには
+いくつか細かな違いがあります。
+
+* Snowflake のコンピュートリソースは、[warehouses](https://docs.snowflake.com/en/user-guide/warehouses) という概念を通じて提供されます。
+  これは、一定サイズのノードを複数組み合わせたものです。Snowflake は
+  warehouses の具体的なアーキテクチャを公開していませんが、
+  [一般的には](https://select.dev/posts/snowflake-warehouse-sizing)
+  各ノードは 8 vCPU、16 GiB、200 GB のローカルストレージ (cache 用) で構成されると考えられています。
+  ノード数は T シャツサイズに応じて決まり、たとえば x-small は 1 ノード、
+  small は 2、medium は 4、large は 8、という具合です。これらの warehouses はデータとは
+  独立しており、オブジェクトストレージ上にある任意のデータベースに対してクエリを実行できます。アイドル状態で
+  クエリ負荷がない場合、warehouses は一時停止し、クエリを受信すると
+  再開します。ストレージコストは常に billing に反映されますが、warehouses
+  に対する課金はアクティブな間だけ発生します。
+
+* ClickHouse Cloud も、ローカル cache ストレージを備えたノードという
+  同様の考え方を採用しています。ただし T シャツサイズではなく、ユーザーは合計の
+  コンピュート量と利用可能な RAM を持つサービスをデプロイします。これがその後、
+  クエリ負荷に応じて (定義された範囲内で) 透過的に
+  自動スケールし、
+  各ノードのリソースを増減する垂直スケーリング、または
+  ノード総数を増減する水平スケーリングのいずれかで対応します。ClickHouse
+  Cloud ノードは、Snowflake とは異なり、CPU とメモリの比率が 1:1 です。
+  より疎結合な構成にすることも可能ですが、サービスは
+  Snowflake の warehouses とは異なり、データと結び付いています。ノードもアイドル時には一時停止し、
+  クエリを受けると再開します。必要に応じて
+  サービスを手動でリサイズすることもできます。
+
+* ClickHouse Cloud のクエリキャッシュはノード固有であり、
+  Snowflake のものとは異なります。Snowflake では、クエリキャッシュは
+  warehouse とは独立したサービスレイヤーで提供されます。
+  ベンチマークに基づくと、ClickHouse Cloud のノード cache は
+  Snowflake のものより高い性能を示します。
+
+* Snowflake と ClickHouse Cloud は、クエリの同時実行性を高めるための
+  スケーリングに対して異なるアプローチを取っています。Snowflake はこれに対し、
+  [multi-cluster warehouses](https://docs.snowflake.com/en/user-guide/warehouses-multicluster#benefits-of-multi-cluster-warehouses) と呼ばれる
+  機能で対応しています。
+  この機能により、warehouse にクラスターを追加できます。これによって
+  クエリレイテンシが改善されることはありませんが、並列性が高まり、
+  より高いクエリ同時実行性を実現できます。ClickHouse はこれに対し、より多くのメモリ
+  と CPU を垂直または水平スケーリングによってサービスに追加することで対応します。このブログでは、
+  これらのサービスがより高い同時実行性へスケールする能力については扱わず、
+  代わりにレイテンシに焦点を当てていますが、完全な比較のためには
+  この検証が必要であることは認識しています。ただし、Snowflake では
+  [warehouse あたりの同時実行クエリ数がデフォルトで 8 に明示的に制限されている](https://docs.snowflake.com/en/sql-reference/parameters#max-concurrency-level)
+  ことを踏まえると、ClickHouse は
+  どのような同時実行性テストでも良好な性能を示すと考えられます。
+  これに対して、ClickHouse Cloud ではノードあたり最大 1000 件のクエリを
+  実行できます。
+
+* Snowflake は、データセットごとにコンピュートサイズを切り替えられることに加え、
+  warehouses の再開時間が短いため、アドホッククエリに非常に適しています。
+  データウェアハウスやデータレイクのユースケースでは、これは
+  他のシステムに対する優位性となります。
+
+<div id="real-time-analytics">
+  ### リアルタイム分析
+</div>
+
+公開されている[ベンチマーク](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)データに基づくと、
+リアルタイム分析アプリケーションにおいて、ClickHouse は次の点で Snowflake を上回ります。
+
+* **クエリレイテンシ**: Snowflake のクエリは、パフォーマンス最適化のために
+  テーブルにクラスタリングを適用した場合でも、クエリレイテンシが高くなります。私たちの
+  テストでは、Snowflake のクラスタリングキーまたは ClickHouse の主キーに含まれる
+  フィルターを適用するクエリで ClickHouse と同等の性能を実現するには、Snowflake では
+  2 倍以上のコンピュートが必要でした。一方、
+  Snowflake の [persistent クエリキャッシュ](https://docs.snowflake.com/en/user-guide/querying-persisted-results)
+  は、こうしたレイテンシの課題をある程度緩和しますが、フィルター条件が
+  より多様なケースでは効果的ではありません。また、この クエリキャッシュ の有効性は
+  基盤データの変更によってさらに左右され、テーブルが変更されると cache
+  エントリは無効化されます。私たちのアプリケーション向けのベンチマークでは
+  これには当てはまりませんが、実運用のデプロイメントでは、新しい、
+  より直近のデータを挿入する必要があります。なお、ClickHouse の クエリキャッシュ は
+  ノード固有であり、[トランザクション整合性](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
+  がないため、
+  リアルタイム分析に[より適しています](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)。
+  またユーザーは、その利用方法をきめ細かく制御でき、
+  [クエリごと](/ja/reference/settings/session-settings#use_query_cache)の利用制御、
+  [正確なサイズ](/ja/reference/settings/session-settings#query_cache_max_size_in_bytes)、
+  [クエリを cache するかどうか](/ja/reference/settings/session-settings#enable_writes_to_query_cache)
+  (有効期間や必要実行回数の制限) 、
+  さらに[受動的にのみ使用する](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings)
+  かどうかも指定できます。
+
+* **低コスト**: Snowflake の warehouses は、クエリが一定時間実行されないと
+  サスペンドするよう設定できます。サスペンドされると、課金は発生しません。
+  実際には、この非アクティブ時間のしきい値は[60 秒までしか短縮できません](https://docs.snowflake.com/en/sql-reference/sql/alter-warehouse)。
+  warehouses は、クエリを受信すると数秒以内に自動的に再開します。
+  Snowflake は warehouse の使用中にのみリソース課金を行うため、
+  この挙動は、アドホッククエリのようにアイドル状態でいることが多い workload に適しています。
+
+  しかし、多くのリアルタイム分析 workload では、継続的なリアルタイムデータの
+  インジェストと、アイドリングの恩恵を受けない高頻度のクエリ
+  (顧客向けダッシュボードなど) が必要です。つまり、warehouses はしばしば
+  完全にアクティブな状態を維持し、継続的に課金が発生することになります。
+  その結果、アイドリングによるコスト面のメリットだけでなく、Snowflake が
+  代替手段より速く応答可能な状態に復帰できることによる性能上の優位性も
+  打ち消されます。この常時アクティブであることが求められる点に、ClickHouse Cloud の
+  アクティブ時の秒単位コストの低さが組み合わさることで、
+  この種の workload では ClickHouse Cloud の総コストは
+  大幅に低くなります。
+
+* **機能の予測しやすい価格設定:** materialized view
+  やクラスタリング (ClickHouse の `ORDER BY` に相当) などの機能は、
+  リアルタイム分析のユースケースで最高レベルの性能を実現するために必要です。これらの
+  機能は Snowflake では追加料金が発生し、クレジット単価が 1.5 倍になる上位
+  tier が必要になるだけでなく、
+  予測しにくいバックグラウンドコストも伴います。たとえば、materialized view には
+  バックグラウンドのメンテナンスコストが発生し、クラスタリングも同様で、どちらも
+  利用前に予測するのは困難です。対照的に、ClickHouse Cloud ではこれらの機能に
+  追加料金はかからず、例外は insert time の CPU とメモリ使用量の増加のみで、
+  これは通常、高い insert workload のユースケースを除けば無視できる程度です。私たちの
+  ベンチマークでは、こうした違いに加え、より低いクエリ
+  レイテンシとより高い圧縮によって、
+  ClickHouse のコストが大幅に低くなることを確認しています。

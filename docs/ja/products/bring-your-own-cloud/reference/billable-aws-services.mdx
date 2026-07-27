@@ -1,0 +1,65 @@
+---
+title: '請求対象の AWS サービス'
+slug: /cloud/reference/byoc/billable-aws-services
+sidebarTitle: '請求対象の AWS サービス'
+keywords: ['BYOC', 'Bring Your Own Cloud', 'AWS', '請求', 'コスト', 'EKS', 'EC2', 'S3', 'NAT ゲートウェイ', 'PrivateLink']
+description: 'ClickHouse BYOC によってプロビジョニングされる AWS サービスを必須または任意に分類し、どのサービスが AWS 利用料金の対象になるかを示します'
+doc_type: 'reference'
+---
+
+ClickHouse BYOC は、お客様の AWS アカウント内に自己完結型のデータプレーンをプロビジョニングします。このページでは、デプロイメントで使用されるすべての AWS サービスを一覧表示し、それぞれが必須か任意かを分類するとともに、どのサービスが AWS 利用料金の対象になるかを示します。
+
+<Note>
+  AWS のインフラストラクチャ費用は AWS からお客様のアカウントに直接請求され、ClickHouse Cloud のサブスクリプションとは別です。
+</Note>
+
+<div id="mandatory-services">
+  ## 必須サービス
+</div>
+
+これらのサービスは、すべての BYOC デプロイメントでプロビジョニングされます。
+
+| サービス                                                                 | 目的                                                                                                                                                                | 課金対象?                        |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| **Amazon EKS**                                                       | ClickHouse データプレーンを実行するマネージド Kubernetes コントロールプレーン。                                                                                                               | はい — クラスター時間ごと               |
+| **Amazon EC2** (EKS マネージドノードグループ経由のワーカーインスタンス)                       | ClickHouse server のポッド、ClickHouse Keeper、およびプラットフォームアドオン向けのコンピュート。デフォルトではメモリー最適化インスタンスファミリーを使用します。                                                                | はい — インスタンス時間ごと              |
+| **Amazon EBS** (gp3 ボリューム)                                           | ノード OS、コンテナーイメージ、ClickHouse server ログ用のローカルストレージ。                                                                                                                 | はい — GB 月ごと + IOPS/スループット    |
+| **Amazon S3**                                                        | プライマリ ClickHouse テーブルのストレージ、バックアップ、およびプラットフォームのテレメトリー。バケットポリシーで `BucketOwnerEnforced`、パブリックアクセスのブロック、および SSE を強制します。                                              | はい — ストレージ + リクエスト + データ転送   |
+| **Amazon VPC** (VPC、サブネット、ルートテーブル、セキュリティグループ、インターネットゲートウェイ)          | データプレーンのネットワーク分離。AZ をまたいで 3 つのプライベートサブネットと 3 つのパブリックサブネットを配置します。                                                                                                  | いいえ — VPC リソース自体は無料です        |
+| **NAT ゲートウェイ + Elastic IP** (AZ ごとに 1 つ)                            | プライベートサブネットからのアウトバウンドインターネット egress (コントロールプレーン接続、イメージの取得、テレメトリー) 。                                                                                               | はい — 時間ごと + データ処理量           |
+| **VPC Endpoint for S3** (gateway endpoint)                           | NAT を経由しないプライベートな S3 アクセス。                                                                                                                                        | いいえ — gateway endpoint は無料です |
+| **Elastic Load Balancing (NLB)**                                     | ClickHouse サービスへのクライアントトラフィックのイングレス。クラスター内の AWS Load Balancer Controller によって作成されます。デフォルトでは内部向けです。                                                                | はい — LCU 時間ごと + 処理データ量       |
+| **AWS IAM** (roles、policies、OIDC provider、Pod Identity associations) | ClickHouse Cloud 向けのクロスアカウントアクセス、およびクラスター内コントローラー (cert-manager、external-dns、load-balancer-controller、cluster-autoscaler、EBS CSI driver、state-exporter) 向けの IRSA。 | いいえ                          |
+| **Amazon CloudWatch Logs**                                           | EKS コントロールプレーンログ (api、audit、authenticator、controllerManager、scheduler) 。                                                                                          | はい — インジェスト + ストレージ          |
+
+<div id="optional-services">
+  ## オプションのサービス
+</div>
+
+これらのサービスは、対応する機能が有効な場合にのみプロビジョニングされます。
+
+| サービス                                  | 有効になる条件                                                       | 課金対象?                                            |
+| ------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------ |
+| **AWS PrivateLink** (VPC エンドポイントサービス) | NLB の代わりに、または NLB に加えて、クライアントトラフィック用の PrivateLink 接続を有効にした場合。 | はい — VPC エンドポイント時間ごと + 処理データ量ごと                  |
+| **VPC ピアリング接続**                       | BYOC VPC と、お客様のアカウント内にある別の VPC との間のピアリングをリクエストした場合。           | 接続自体は課金対象ではありません。Cross-AZ およびリージョン間データ転送は課金対象です。 |
+
+<div id="data-transfer-charges">
+  ## データ転送料金
+</div>
+
+個々のリソース自体は無料でも、AWS のデータ転送料金は発生します。
+
+* マルチ AZ デプロイメントにおける、EKS ノード間およびレプリカ間の **AZ 間トラフィック**。
+* コントロールプレーンのハートビート、テレメトリー、イメージのプルのために、NAT ゲートウェイ経由でインターネットに送信される **エグレストラフィック**。
+* 暗号化オーバーレイ (Tailscale) 経由で **ClickHouse Cloud コントロールプレーンに送信されるエグレストラフィック**。
+* NLB または PrivateLink エンドポイント経由で **クライアントネットワークに送信されるエグレストラフィック**。
+
+最新の料金については、[AWS data transfer pricing](https://aws.amazon.com/ec2/pricing/on-demand/#Data_Transfer) を参照してください。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [BYOC アーキテクチャ](/ja/products/bring-your-own-cloud/overview/architecture) — ClickHouse Cloud がお客様のアカウントにデプロイするコンポーネント
+* [BYOC ネットワークセキュリティ](/ja/products/bring-your-own-cloud/reference/network-security) — データプレーンが ClickHouse Cloud に接続する仕組み
+* [BYOC 権限](/ja/products/bring-your-own-cloud/reference/privilege) — BYOC のセットアップ時に作成される IAM ロール

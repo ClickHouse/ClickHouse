@@ -1,0 +1,179 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: 'Matérialisation paresseuse'
+description: 'Article décrivant ce qu’est la matérialisation paresseuse dans ClickHouse'
+title: 'Matérialisation paresseuse'
+doc_type: 'guide'
+keywords: ['optimisation', 'matérialisation paresseuse']
+---
+
+Cet article explique le fonctionnement de la matérialisation paresseuse et sa place dans l’ensemble des optimisations d’E/S de ClickHouse.
+Il présente un exemple concret montrant comment la matérialisation paresseuse améliore les performances des requêtes.
+
+<Tip>
+  **Disponible à partir de la version 25.4**
+
+  La matérialisation paresseuse a été introduite dans la version 25.4 de ClickHouse et est activée par défaut.
+</Tip>
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Au fil des ans, ClickHouse a introduit une série d’optimisations superposées pour réduire drastiquement les E/S.
+Ces techniques constituent la base de sa rapidité et de son efficacité :
+
+| Optimisation                                                                                                                                                                                                                                                          | Description                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**Stockage colonnaire**](/fr/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                                                           | Permet d’ignorer des colonnes entières qui ne sont pas nécessaires à une requête et favorise aussi une forte compression en regroupant des valeurs similaires, ce qui minimise les E/S lors du chargement des données.                                                                                                                                                                         |
+| [**Index primaires clairsemés**](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**index secondaires de saut de données**](/fr/concepts/features/performance/skip-indexes/skipping-indexes) | [**projections**](/fr/concepts/features/projections/projections) | Écartent les données non pertinentes en identifiant quelles [granules](/fr/concepts/core-concepts/glossary#granule) (blocs de lignes) sont susceptibles de correspondre aux filtres sur les *colonnes indexées*. Ces techniques opèrent au niveau de la granule et peuvent être utilisées seules ou combinées.                                                                                    |
+| [**PREWHERE**](/fr/reference/statements/select/prewhere)                                                                                                                                                                                                                 | Vérifie aussi les correspondances pour les filtres sur des colonnes *non indexées* afin d’écarter dès le départ des données qui seraient sinon chargées puis rejetées. Il peut fonctionner indépendamment ou affiner les granules sélectionnées par les index, en complétant l’élagage des granules par l’exclusion des lignes qui ne correspondent pas à *tous* les filtres sur les colonnes. |
+| [**Cache des conditions de requête**](/fr/concepts/features/performance/caches/query-condition-cache)                                                                                                                                                                    | Accélère les requêtes répétées en mémorisant quelles granules correspondaient à tous les filtres lors de la précédente exécution. ClickHouse peut alors éviter de lire et de filtrer les granules qui ne correspondaient pas, même si la forme de la requête change.                                                                                                                           |
+
+Bien que les optimisations d’E/S mentionnées ci-dessus puissent réduire considérablement le volume de données lu, elles partent toujours du principe que toutes les colonnes des lignes satisfaisant la clause `WHERE` doivent être chargées avant d’exécuter des opérations comme le tri, l’agrégation ou `LIMIT`. Mais que se passe-t-il si certaines colonnes ne sont nécessaires que plus tard, ou si certaines données, bien qu’elles satisfassent la clause `WHERE`, ne sont en fait jamais nécessaires ?
+C’est là qu’intervient la matérialisation paresseuse. Il s’agit d’une amélioration orthogonale qui complète la pile d’optimisations d’E/S :
+
+* L’indexation, associée à `PREWHERE`, garantit que seules les lignes correspondant aux filtres de colonnes de la clause `WHERE` sont traitées.
+* La matérialisation paresseuse s’appuie sur cela en différant la lecture des colonnes jusqu’au moment où le plan d’exécution de la requête en a réellement besoin.
+  Même après le filtrage, seules les colonnes nécessaires à l’opération suivante — comme le tri — sont chargées immédiatement.
+  Les autres sont différées et, grâce à `LIMIT`, ne sont souvent lues que partiellement, juste assez pour produire le résultat final.
+  Cela rend la matérialisation paresseuse particulièrement puissante pour les requêtes Top N, où le résultat final peut ne nécessiter qu’une poignée de lignes de certaines colonnes, souvent volumineuses.
+
+<div id="worked-example">
+  ## Un exemple concret
+</div>
+
+Nous recommandons vivement l’article de blog [&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation)
+pour approfondir la matérialisation paresseuse. L’exemple ci-dessous est tiré de l’article de blog mentionné ci-dessus et reproduit ici pour montrer comment une requête ClickHouse peut passer de 219 secondes à seulement 139 millisecondes (soit une accélération de 1576×) grâce à la matérialisation paresseuse.
+
+Pour tirer parti de l’indexation et de `PREWHERE`, une requête doit comporter des filtres : sur les colonnes de clé primaire pour l’indexation, et sur n’importe quelles colonnes pour `PREWHERE`.
+La matérialisation paresseuse s’y superpose naturellement, mais contrairement aux autres optimisations mentionnées précédemment, elle peut aussi accélérer des requêtes sans aucun filtre sur les colonnes.
+
+Prenons l’exemple de la requête suivante, qui recherche les avis Amazon ayant reçu le plus grand nombre de votes utiles, quelle que soit la date, le produit, la note ou le statut de vérification, et renvoie les 3 premiers avec leur titre, leur en-tête et leur texte intégral.
+
+Commençons par exécuter la requête (avec des caches du système de fichiers à froid) avec la matérialisation paresseuse désactivée (à l’aide de [`query_plan_optimize_lazy_materialization`](/fr/reference/settings/session-settings#query_plan_optimize_lazy_materialization)) :
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+Ensuite, la requête est réexécutée (à nouveau avec un cache du système de fichiers à froid), mais cette fois avec la matérialisation paresseuse activée :
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  En règle générale, vous n’avez pas besoin de définir explicitement `query_plan_optimize_lazy_materialization = true` pour bénéficier de la matérialisation paresseuse.
+  Ce paramètre est activé par défaut.
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+Comparez les performances avec la matérialisation paresseuse désactivée, puis activée :
+
+| Métrique         | Matérialisation paresseuse désactivée | Matérialisation paresseuse activée | Amélioration       |
+| ---------------- | ----------------------------------- | -------------------------------- | ------------------ |
+| Temps écoulé     | 219.071 sec                         | 0.139 sec                        | ~1576× plus rapide |
+| Données lues     | 71.38 GB                            | 1.81 GB                          | ~40× moins         |
+| Mémoire maximale | 1.11 GiB                            | 3.80 MiB                         | ~300× moins        |
+
+<div id="confirm-lazy-materialization">
+  ## Comment confirmer la matérialisation paresseuse dans le plan d&#39;exécution de la requête
+</div>
+
+Vous pouvez constater l&#39;utilisation de la matérialisation paresseuse pour la requête précédente en examinant le plan d&#39;exécution logique de la requête à l&#39;aide de la clause [`EXPLAIN`](/fr/reference/statements/explain) :
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+Vous pouvez lire le plan d’opérateurs de bas en haut et constater que ClickHouse reporte la lecture des trois grandes colonnes String après le tri et l’application de la limite.

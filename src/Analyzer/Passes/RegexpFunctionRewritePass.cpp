@@ -112,6 +112,16 @@ private:
             return;
 
         String regexp = constant_node->getValue().safeGet<String>();
+
+        /// A NUL (`\0`) byte is an ordinary literal byte in the pattern (re2 is binary-safe), and the
+        /// analyzer no longer stops at it, so captures placed after a NUL are now visible here. The
+        /// `^.*` prefix removal below changes which occurrence is captured when the part after the
+        /// prefix can match at more than one offset (greedy `^.*` selects the last occurrence, while
+        /// the stripped pattern selects the first). Be conservative and skip the rewrite for patterns
+        /// containing a NUL, so this fix does not change `extract` results for such patterns.
+        if (regexp.find('\0') != String::npos)
+            return;
+
         RegexpAnalysisResult result = OptimizedRegularExpression::analyze(regexp);
         if (!result.has_capture)
             return;

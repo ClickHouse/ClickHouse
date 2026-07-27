@@ -1,0 +1,56 @@
+---
+title: 'Gestion des quotas et des limites de service AWS'
+slug: /cloud/reference/byoc/aws-service-limits
+sidebarTitle: 'Quotas et limites de service AWS'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'quotas de service', 'limites de service', 'EC2', 'EKS', 'VPC', 'EBS']
+description: 'Quotas de service AWS à vérifier avant l’onboarding BYOC, comment demander des augmentations et ce qu’il faut surveiller à mesure que les services montent en charge'
+doc_type: 'reference'
+---
+
+La réussite d’un déploiement BYOC dépend de quotas de service AWS suffisants (anciennement appelés *limites de service*) dans votre compte AWS. AWS applique à la plupart des services des quotas par région définis par défaut. Bon nombre de ces valeurs par défaut sont inférieures à ce qu’exige un déploiement BYOC en production, en particulier dans les comptes AWS récemment créés ou peu utilisés.
+
+Cette page fournit une liste de contrôle des quotas avant le déploiement. Veuillez surveiller votre utilisation et travailler directement avec le fournisseur de services cloud pour demander des augmentations de quota.
+
+<div id="pre-deployment-quota-checklist">
+  ## Liste de contrôle des quotas avant déploiement
+</div>
+
+Avant de commencer l’onboarding BYOC, vérifiez les quotas suivants dans la région AWS où vous prévoyez de déployer. Les quotas s’appliquent par région et par compte.
+
+<div id="required-quotas">
+  ### Quotas requises
+</div>
+
+| Service                    | Nom du quota                                                     | Exigence BYOC                                                                                                                                                                               | Valeur par défaut                                  | Action                                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **EC2**                    | Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances | ≥ nombre maximal de vCPU de votre palier de service × 1,5 (marge de capacité pour l’autoscaling et les mises à niveau MBB) + 100 cœurs de CPU pour les charges de travail système et Keeper | Souvent 32–256 vCPU sur les nouveaux comptes       | **Demandez une augmentation** afin de satisfaire à l’exigence BYOC                                                     |
+| **EC2 (VPC)**              | VPCs per région                                                  | ≥ 1 (BYOC crée 1 VPC dédié)                                                                                                                                                                 | 5                                                  | Vérifiez la disponibilité                                                                                              |
+| **EC2 (VPC)**              | Elastic IPs per région                                           | ≥ 3 (une par AZ pour la NAT gateway)                                                                                                                                                        | 5                                                  | Vérifiez la disponibilité. Demandez une augmentation si vous exécutez plusieurs déploiements BYOC dans la même région. |
+| **EC2 (VPC)**              | NAT Gateways per AZ                                              | ≥ 1                                                                                                                                                                                         | 5                                                  | Vérifiez la disponibilité                                                                                              |
+| **EC2 (VPC)**              | Internet Gateways per région                                     | ≥ 1                                                                                                                                                                                         | 5                                                  | Vérifiez la disponibilité                                                                                              |
+| **EC2 (VPC)**              | Subnets per VPC                                                  | ≥ 6 (3 publics + 3 privés)                                                                                                                                                                  | 200                                                | Aucune action                                                                                                          |
+| **EC2 (VPC)**              | Security groups per VPC                                          | ≥ 10                                                                                                                                                                                        | 2 500                                              | Aucune action                                                                                                          |
+| **EKS**                    | Clusters per région                                              | ≥ 1                                                                                                                                                                                         | 100                                                | Aucune action                                                                                                          |
+| **EKS**                    | Managed node groups per cluster                                  | ≥ 4                                                                                                                                                                                         | 30                                                 | Aucune action                                                                                                          |
+| **EKS**                    | Nodes per managed node group                                     | ≥ nombre maximal de nœuds pour votre palier de service                                                                                                                                      | 450                                                | Aucune action                                                                                                          |
+| **S3**                     | Buckets per account                                              | ≥ 4 (données, sauvegarde, facturation, monitoring)                                                                                                                                          | 100 (augmentations prises en charge jusqu’à 1 000) | Vérifiez la marge disponible pour les autres charges de travail                                                        |
+| **EBS**                    | Storage for General Purpose SSD (gp3)                            | ≥ volume maximal des logs ClickHouse + volume OS × nombre de nœuds                                                                                                                          | 50 TiB                                             | Vérifiez la disponibilité                                                                                              |
+| **Elastic Load Balancing** | Network Load Balancers per région                                | ≥ 1 par service ClickHouse                                                                                                                                                                  | 50                                                 | Vérifiez la disponibilité                                                                                              |
+| **CloudWatch Logs**        | Log groups per région                                            | ≥ 5                                                                                                                                                                                         | 1 000 000                                          | Aucune action                                                                                                          |
+
+<div id="optional-feature-quotas">
+  ### Quotas à vérifier pour déterminer si des fonctionnalités optionnelles sont activées
+</div>
+
+| Fonctionnalité activée | Service   | Quota                                                                                                                                      |
+| ---------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| AWS PrivateLink        | EC2 (VPC) | Services de VPC endpoint par région (20 par défaut) — demandez une augmentation pour chaque service activé avec PrivateLink simultanément. |
+| VPC Peering            | EC2 (VPC) | Connexions de peering VPC actives par VPC (50 par défaut).                                                                                 |
+
+<div id="related">
+  ## Articles connexes
+</div>
+
+* [Services AWS facturables](/fr/products/bring-your-own-cloud/reference/billable-aws-services) — inventaire complet des services AWS provisionnés par BYOC
+* [Modèle de coûts BYOC (AWS)](/fr/products/bring-your-own-cloud/reference/cost-model-aws) — comment se combinent les frais de ClickHouse Cloud et d’AWS
+* [Architecture BYOC](/fr/products/bring-your-own-cloud/overview/architecture) — composants déployés par ClickHouse Cloud dans votre compte

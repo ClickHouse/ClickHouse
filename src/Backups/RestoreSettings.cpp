@@ -82,6 +82,17 @@ namespace
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
         }
+
+        String toString() const
+        {
+            switch (value)
+            {
+                case RestoreTableCreationMode::kCreate: return "true";
+                case RestoreTableCreationMode::kMustExist: return "false";
+                case RestoreTableCreationMode::kCreateIfNotExists: return "if-not-exists";
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreTableCreationMode: {}", static_cast<int>(value));
+        }
     };
 
     using SettingFieldRestoreDatabaseCreationMode = SettingFieldRestoreTableCreationMode;
@@ -137,6 +148,17 @@ namespace
                 case RestoreAccessCreationMode::kCreate: return Field{true};
                 case RestoreAccessCreationMode::kCreateIfNotExists: return Field{"if-not-exists"};
                 case RestoreAccessCreationMode::kReplace: return Field{"replace"};
+            }
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreAccessCreationMode: {}", static_cast<int>(value));
+        }
+
+        String toString() const
+        {
+            switch (value)
+            {
+                case RestoreAccessCreationMode::kCreate: return "true";
+                case RestoreAccessCreationMode::kCreateIfNotExists: return "if-not-exists";
+                case RestoreAccessCreationMode::kReplace: return "replace";
             }
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value of enum RestoreAccessCreationMode: {}", static_cast<int>(value));
         }
@@ -275,6 +297,26 @@ void RestoreSettings::copySettingsToQuery(ASTBackupQuery & query) const
         query.reset(query.base_backup_name);
 
     query.cluster_host_ids = !cluster_host_ids.empty() ? BackupSettings::Util::clusterHostIDsToAST(cluster_host_ids) : nullptr;
+}
+
+std::map<String, String> RestoreSettings::getSerializedSettings() const
+{
+    std::map<String, String> res;
+
+    /// Serialize via the setting field's own `toString` (the canonical representation, consistent with
+    /// `system.query_log.Settings` and `engine_settings`) rather than going through `FieldVisitorToString`.
+#define SERIALIZE_RESTORE_SETTING(TYPE, NAME) \
+    res[#NAME] = SettingField##TYPE{NAME}.toString();
+
+    LIST_OF_RESTORE_SETTINGS(SERIALIZE_RESTORE_SETTING)
+#undef SERIALIZE_RESTORE_SETTING
+
+    /// Never expose the password; drop purely internal fields that are not user-facing settings
+    /// (`id` has its own column, the rest are internal plumbing for RESTORE ON CLUSTER).
+    for (const auto * key : {"password", "id", "internal", "host_id", "restore_uuid"})
+        res.erase(key);
+
+    return res;
 }
 
 }

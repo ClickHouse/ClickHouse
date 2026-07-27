@@ -1,0 +1,39 @@
+---
+description: 'Документация по предложению QUALIFY'
+sidebarTitle: 'QUALIFY'
+slug: /sql-reference/statements/select/qualify
+title: 'Предложение QUALIFY'
+doc_type: 'reference'
+---
+
+Позволяет фильтровать результаты оконных функций. Оно похоже на предложение [WHERE](/ru/reference/statements/select/where), но отличается тем, что `WHERE` выполняется до вычисления оконных функций, а `QUALIFY` — после.
+
+В предложении `QUALIFY` можно ссылаться на результаты оконных функций из предложения `SELECT` по их псевдонимам. Кроме того, предложение `QUALIFY` может фильтровать результаты дополнительных оконных функций, которые не возвращаются в результате запроса.
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+`QUALIFY` нельзя использовать, если отсутствуют оконные функции. Вместо него используйте `WHERE`.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Пример:
+
+```sql
+SELECT number, COUNT() OVER (PARTITION BY number % 3) AS partition_count
+FROM numbers(10)
+QUALIFY partition_count = 4
+ORDER BY number;
+```
+
+```text
+┌─number─┬─partition_count─┐
+│      0 │               4 │
+│      3 │               4 │
+│      6 │               4 │
+│      9 │               4 │
+└────────┴─────────────────┘
+```

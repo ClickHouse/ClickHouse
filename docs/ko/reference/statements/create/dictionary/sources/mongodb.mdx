@@ -1,0 +1,78 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mongodb
+title: 'MongoDB 딕셔너리 소스'
+sidebarTitle: 'MongoDB'
+description: 'ClickHouse에서 MongoDB를 딕셔너리 소스로 구성합니다.'
+doc_type: 'reference'
+---
+
+설정 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MONGODB(
+        host 'localhost'
+        port 27017
+        user ''
+        password ''
+        db 'test'
+        collection 'dictionary_source'
+        options 'ssl=true'
+    ))
+    ```
+
+    또는 URI를 사용:
+
+    ```sql
+    SOURCE(MONGODB(
+        uri 'mongodb://localhost:27017/clickhouse'
+        collection 'dictionary_source'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <source>
+        <mongodb>
+            <host>localhost</host>
+            <port>27017</port>
+            <user></user>
+            <password></password>
+            <db>test</db>
+            <collection>dictionary_source</collection>
+            <options>ssl=true</options>
+        </mongodb>
+    </source>
+    ```
+
+    또는 URI를 사용:
+
+    ```xml
+    <source>
+        <mongodb>
+            <uri>mongodb://localhost:27017/test?ssl=true</uri>
+            <collection>dictionary_source</collection>
+        </mongodb>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+설정 필드:
+
+| 설정           | 설명                                                  |
+| ------------ | --------------------------------------------------- |
+| `host`       | MongoDB 호스트입니다.                                     |
+| `port`       | MongoDB 서버의 포트입니다.                                  |
+| `user`       | MongoDB 사용자 이름입니다.                                  |
+| `password`   | MongoDB 사용자 비밀번호입니다.                                |
+| `db`         | DB 이름입니다.                                           |
+| `collection` | 컬렉션 이름입니다.                                          |
+| `options`    | MongoDB 연결 문자열 옵션입니다. 선택 사항입니다.                     |
+| `uri`        | 연결을 설정하기 위한 URI입니다(개별 `host`/`port`/`db` 필드 대신 사용). |
+
+[엔진에 대한 자세한 내용](/ko/reference/engines/table-engines/integrations/mongodb)

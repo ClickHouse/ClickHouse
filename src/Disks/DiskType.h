@@ -33,6 +33,7 @@ enum class MetadataStorageType : uint8_t
     Plain,
     PlainRewritable,
     StaticWeb,
+    WebIndex,
     Memory,
 };
 

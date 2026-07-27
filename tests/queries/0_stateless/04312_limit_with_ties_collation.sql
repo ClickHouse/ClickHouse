@@ -28,11 +28,13 @@ SELECT x FROM (SELECT x FROM (SELECT arrayJoin(['1', '01', '2', '02', '3', '03']
 -- fractional limit, constant collated sort key
 SELECT x FROM (SELECT x FROM test ORDER BY 'k' COLLATE 'en-u-kn-true', x COLLATE 'en-u-kn-true' LIMIT 0.2 WITH TIES) ORDER BY x;
 
--- Negative LIMIT WITH TIES is not supported yet.
-SELECT x FROM (SELECT x FROM (SELECT arrayJoin(['3', '03', '003', '2', '02', '1']) AS x) ORDER BY x COLLATE 'en-u-kn-true' LIMIT -1 WITH TIES) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+-- negative limit, numeric collation
+SELECT x FROM (SELECT x FROM (SELECT arrayJoin(['3', '03', '003', '2', '02', '1']) AS x) ORDER BY x COLLATE 'en-u-kn-true' LIMIT -1 WITH TIES) ORDER BY x;
 
-SELECT k, x FROM (SELECT k, x FROM (SELECT arrayJoin([(0, '1'), (1, '3'), (1, '03'), (1, '003')]) AS t, t.1 AS k, t.2 AS x) ORDER BY k, x COLLATE 'en-u-kn-true' LIMIT -1 WITH TIES) ORDER BY k, x; -- { serverError NOT_IMPLEMENTED }
+-- negative limit, collation as a secondary sort key
+SELECT k, x FROM (SELECT k, x FROM (SELECT arrayJoin([(0, '1'), (1, '3'), (1, '03'), (1, '003')]) AS t, t.1 AS k, t.2 AS x) ORDER BY k, x COLLATE 'en-u-kn-true' LIMIT -1 WITH TIES) ORDER BY k, x;
 
-SELECT x FROM (SELECT x FROM test ORDER BY 'k' COLLATE 'en-u-kn-true', x COLLATE 'en-u-kn-true' LIMIT -1 WITH TIES) ORDER BY x; -- { serverError NOT_IMPLEMENTED }
+-- negative limit, constant collated sort key
+SELECT x FROM (SELECT x FROM test ORDER BY 'k' COLLATE 'en-u-kn-true', x COLLATE 'en-u-kn-true' LIMIT -1 WITH TIES) ORDER BY x;
 
 DROP TABLE test;

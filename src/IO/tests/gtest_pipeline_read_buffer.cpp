@@ -57,7 +57,7 @@ protected:
     std::unique_ptr<PipelineReadBuffer> makeBuffer(const StoredObjects & objects, size_t block_size = 256)
     {
         auto executor = std::make_unique<ReaderExecutor>(
-            std::make_shared<LocalSourceReader>(), objects, block_size);
+            std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.block_size = block_size});
         return std::make_unique<PipelineReadBuffer>(std::move(executor));
     }
 };

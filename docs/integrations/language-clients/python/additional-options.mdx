@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Additional options'
+keywords: ['clickhouse', 'python', 'options', 'settings']
+description: 'Additional options for ClickHouse Connect'
+slug: /integrations/language-clients/python/additional-options
+title: 'Additional options'
+doc_type: 'reference'
+---
+
+ClickHouse Connect provides a number of additional options for advanced use cases.
+
+## Global settings {#global-settings}
+
+There are a handful of settings that control ClickHouse Connect behavior globally. They're accessed from the top level `common` package:
+
+```python
+from clickhouse_connect import common
+
+common.set_setting("autogenerate_session_id", False)
+print(common.get_setting("invalid_setting_action"))
+# Output: error
+```
+
+<Note>
+Configure common settings before creating clients. Client creation copies settings such as generated session/query IDs and product identification into client-specific state, so later global changes don't update existing clients.
+</Note>
+
+The following global settings are currently defined:
+
+| Setting name | Default | Options | Description |
+|--------------|---------|---------|-------------|
+| `autogenerate_session_id` | `True` | `True`, `False` | Generate a UUID session ID for each synchronous client unless a session ID is supplied. The async factory overrides this to `False` by default. |
+| `autogenerate_query_id` | `True` | `True`, `False` | Generate a UUID query ID for each request unless one is supplied. |
+| `dict_parameter_format` | `"json"` | `"json"`, `"map"` | Format Python dictionaries used in client-side parameter binding as JSON or ClickHouse map literals. |
+| `invalid_setting_action` | `"error"` | `"drop"`, `"send"`, `"error"` | Drop, send, or reject a setting that is unrecognized by the server or is readonly. `"error"` raises `ProgrammingError`. |
+| `max_connection_age` | `600` | Any number of seconds | Maximum age for a reused HTTP keep-alive connection. Rotation helps distribute connections across nodes behind a load balancer. |
+| `product_name` | `""` | Any string | Product identifier added to client information. Use a value such as `"my-product/1.0"`. |
+| `readonly` | `0` | `0`, `1` | Compatibility hint for the `readonly` setting on very old ClickHouse servers. |
+| `send_os_user` | `True` | `True`, `False` | Include the detected operating system user in client information. |
+| `send_integration_tags` | `True` | `True`, `False` | Include integrations used by the client, such as Pandas or SQLAlchemy, in the HTTP User-Agent. |
+| `use_protocol_version` | `True` | `True`, `False` | Negotiate the client protocol version used by Native-format features such as `DateTime` column timezone metadata. Disable this for proxies that reject `client_protocol_version`. |
+| `max_error_size` | `1024` | Any non-negative integer | Maximum number of characters included in a client error. Use `0` for the complete message. |
+| `http_buffer_size` | `10485760` | Bytes | In-memory buffer size for streaming HTTP queries, 10 MiB by default. |
+
+## Compression {#compression}
+
+ClickHouse Connect supports lz4, zstd, brotli, gzip, and deflate response compression. Native inserts support lz4, zstd, brotli, and gzip. Compression trades CPU time for reduced network transfer.
+
+To receive compressed data, the ClickHouse server `enable_http_compression` must be set to 1, or the user must have permission to change the setting on a "per query" basis.
+
+Compression is controlled by the `compress` argument to `get_client` and `get_async_client`. The default, `True`, advertises every available response encoding and compresses Native insert blocks with lz4. Set `compress=False` to disable compression or pass one of `"lz4"`, `"zstd"`, `"br"`, or `"gzip"` to request a specific method.
+
+The raw client methods don't use the client-level `compress` setting. `raw_query` and `raw_stream` return uncompressed data, and `raw_insert` takes its own `compression` argument describing compression already applied to the payload.
+
+lz4 and zstd support are installed with ClickHouse Connect. On Python 3.14, zstd uses the standard library `compression.zstd` module. Python 3.10 through 3.13 use `backports.zstd`. A custom CPython 3.14+ interpreter built without zstd support still imports; zstd is dropped from the available methods and an error is raised only when zstd is explicitly requested. Brotli is optional and must be installed separately before using `compress="br"`.
+
+gzip is generally slower than lz4 or zstd for ClickHouse workloads.
+
+## HTTP proxy support {#http-proxy-support}
+
+ClickHouse Connect recognizes the standard `HTTP_PROXY` and `HTTPS_PROXY` environment variables. These variables apply to every client in the process. To configure a proxy per client, pass `http_proxy` or `https_proxy` to `get_client` or `get_async_client`.
+
+The synchronous client uses `urllib3`. To use a SOCKS proxy, install PySocks and pass a `urllib3.contrib.socks.SOCKSProxyManager` as the `pool_mgr` argument to `get_client`. `pool_mgr` is not supported by the async client.
+
+## Variant, Dynamic, and JSON data types {#variant-dynamic-json-data-types}
+
+ClickHouse Connect supports the current ClickHouse `Variant`, `Dynamic`, and `JSON` types. The legacy `Object('json')` type was removed in clickhouse-connect 0.14 and is not supported.
+
+### Usage notes {#usage-notes}
+
+- `Variant` values are read as the matching Python type. Native inserts select a member based on the Python value type.
+- When multiple `Variant` members map to the same Python type, wrap the value with `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` to select the member explicitly.
+- The `typed` Variant read format returns `TypedVariant(value, type_name)` objects and preserves the originating member type. Enable it with `query_formats={"Variant": "typed"}`.
+- `Dynamic` values are read as the matching Python type. Inserts are currently sent through the String representation.
+- `JSON` values can be inserted as Python dictionaries or JSON object strings. The default read format returns dictionaries; use the `"string"` read format to return JSON strings.
+- Queries that select a `Variant`, `Dynamic`, or `JSON` subcolumn return the subcolumn's concrete type.
+
+Some values stored in the shared-data area of `JSON` or `Dynamic` columns use types that the client cannot yet decode. Those values are returned as raw bytes. These complex types also use the pure Python conversion path, so they can be slower than established scalar types.

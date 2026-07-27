@@ -1,0 +1,176 @@
+---
+description: 'Mais de 20 bilhões de registros de dados da Sensor.Community, uma rede
+  global colaborativa de sensores que cria Dados Ambientais Abertos.'
+sidebarTitle: 'Dados de sensores ambientais'
+slug: /getting-started/example-datasets/environmental-sensors
+title: 'Dados de sensores ambientais'
+doc_type: 'guide'
+keywords: ['sensores ambientais', 'Sensor.Community', 'dados de qualidade do ar', 'dados ambientais', 'primeiros passos']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+[Sensor.Community](https://sensor.community/en/) é uma rede global de sensores movida por colaboradores que cria Dados Ambientais Abertos. Os dados são coletados por sensores em todo o mundo. Qualquer pessoa pode comprar um sensor e instalá-lo onde quiser. As APIs para baixar os dados estão no [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs), e os dados estão disponíveis gratuitamente sob a [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
+
+<Warning>
+  O conjunto de dados tem mais de 20 bilhões de registros, portanto tenha cuidado ao simplesmente copiar e colar os comandos abaixo, a menos que seus recursos consigam lidar com esse volume. Os comandos abaixo foram executados em uma instância de **Production** do [ClickHouse Cloud](https://clickhouse.cloud).
+</Warning>
+
+1. Os dados estão no S3, então podemos usar a table function `s3` para criar uma tabela a partir dos arquivos. Também podemos consultar os dados no local. Vamos ver algumas linhas antes de tentar inseri-los no ClickHouse:
+
+```sql
+SELECT *
+FROM s3(
+    'https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/sensors/monthly/2019-06_bmp180.csv.zst',
+    'CSVWithNames'
+   )
+LIMIT 10
+SETTINGS format_csv_delimiter = ';';
+```
+
+Os dados estão em arquivos CSV, mas o delimitador é ponto e vírgula. As linhas têm esta aparência:
+
+```response
+┌─sensor_id─┬─sensor_type─┬─location─┬────lat─┬────lon─┬─timestamp───────────┬──pressure─┬─altitude─┬─pressure_sealevel─┬─temperature─┐
+│      9119 │ BMP180      │     4594 │ 50.994 │  7.126 │ 2019-06-01T00:00:00 │    101471 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        19.9 │
+│     21210 │ BMP180      │    10762 │ 42.206 │ 25.326 │ 2019-06-01T00:00:00 │     99525 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        19.3 │
+│     19660 │ BMP180      │     9978 │ 52.434 │ 17.056 │ 2019-06-01T00:00:04 │    101570 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        15.3 │
+│     12126 │ BMP180      │     6126 │ 57.908 │  16.49 │ 2019-06-01T00:00:05 │ 101802.56 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        8.07 │
+│     15845 │ BMP180      │     8022 │ 52.498 │ 13.466 │ 2019-06-01T00:00:05 │    101878 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │          23 │
+│     16415 │ BMP180      │     8316 │ 49.312 │  6.744 │ 2019-06-01T00:00:06 │    100176 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        14.7 │
+│      7389 │ BMP180      │     3735 │ 50.136 │ 11.062 │ 2019-06-01T00:00:06 │     98905 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        12.1 │
+│     13199 │ BMP180      │     6664 │ 52.514 │  13.44 │ 2019-06-01T00:00:07 │ 101855.54 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │       19.74 │
+│     12753 │ BMP180      │     6440 │ 44.616 │  2.032 │ 2019-06-01T00:00:07 │     99475 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │          17 │
+│     16956 │ BMP180      │     8594 │ 52.052 │  8.354 │ 2019-06-01T00:00:08 │    101322 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ              │        17.2 │
+└───────────┴─────────────┴──────────┴────────┴────────┴─────────────────────┴───────────┴──────────┴───────────────────┴─────────────┘
+```
+
+2. Usaremos a tabela `MergeTree` a seguir para armazenar os dados no ClickHouse:
+
+```sql
+CREATE TABLE sensors
+(
+    sensor_id UInt16,
+    sensor_type Enum('BME280', 'BMP180', 'BMP280', 'DHT22', 'DS18B20', 'HPM', 'HTU21D', 'PMS1003', 'PMS3003', 'PMS5003', 'PMS6003', 'PMS7003', 'PPD42NS', 'SDS011'),
+    location UInt32,
+    lat Float32,
+    lon Float32,
+    timestamp DateTime,
+    P1 Float32,
+    P2 Float32,
+    P0 Float32,
+    durP1 Float32,
+    ratioP1 Float32,
+    durP2 Float32,
+    ratioP2 Float32,
+    pressure Float32,
+    altitude Float32,
+    pressure_sealevel Float32,
+    temperature Float32,
+    humidity Float32,
+    date Date MATERIALIZED toDate(timestamp)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp, sensor_id);
+```
+
+3. Os serviços do ClickHouse Cloud têm um cluster chamado `default`. Usaremos a table function `s3Cluster`, que lê arquivos do S3 em paralelo a partir dos nós do seu cluster. (Se você não tiver um cluster, basta usar a função `s3` e remover o nome do cluster.)
+
+Esta consulta vai demorar um pouco — são cerca de 1,67 T de dados não comprimidos:
+
+```sql
+INSERT INTO sensors
+    SELECT *
+    FROM s3Cluster(
+        'default',
+        'https://clickhouse-public-datasets.s3.amazonaws.com/sensors/monthly/*.csv.zst',
+        'CSVWithNames',
+        $$ sensor_id UInt16,
+        sensor_type String,
+        location UInt32,
+        lat Float32,
+        lon Float32,
+        timestamp DateTime,
+        P1 Float32,
+        P2 Float32,
+        P0 Float32,
+        durP1 Float32,
+        ratioP1 Float32,
+        durP2 Float32,
+        ratioP2 Float32,
+        pressure Float32,
+        altitude Float32,
+        pressure_sealevel Float32,
+        temperature Float32,
+        humidity Float32 $$
+    )
+SETTINGS
+    format_csv_delimiter = ';',
+    input_format_allow_errors_ratio = '0.5',
+    input_format_allow_errors_num = 10000,
+    input_format_parallel_parsing = 0,
+    date_time_input_format = 'best_effort',
+    max_insert_threads = 32,
+    parallel_distributed_insert_select = 1;
+```
+
+Aqui está a resposta — mostrando o número de linhas e a velocidade de processamento. Os dados são inseridos a uma taxa de mais de 6 milhões de linhas por segundo!
+
+```response
+0 rows in set. Elapsed: 3419.330 sec. Processed 20.69 billion rows, 1.67 TB (6.05 million rows/s., 488.52 MB/s.)
+```
+
+4. Vamos ver quanto espaço de armazenamento em disco é necessário para a tabela `sensors`:
+
+```sql
+SELECT
+    disk_name,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    round(usize / size, 2) AS compr_rate,
+    sum(rows) AS rows,
+    count() AS part_count
+FROM system.parts
+WHERE (active = 1) AND (table = 'sensors')
+GROUP BY
+    disk_name
+ORDER BY size DESC;
+```
+
+O 1,67 T é compactado para 310 GiB, e há 20,69 bilhões de linhas:
+
+```response
+┌─disk_name─┬─compressed─┬─uncompressed─┬─compr_rate─┬────────rows─┬─part_count─┐
+│ s3disk    │ 310.21 GiB │ 1.30 TiB     │       4.29 │ 20693971809 │        472 │
+└───────────┴────────────┴──────────────┴────────────┴─────────────┴────────────┘
+```
+
+5. Vamos analisar os dados agora que eles estão no ClickHouse. Observe que o volume de dados aumenta ao longo do tempo, à medida que mais sensores são implantados:
+
+```sql
+SELECT
+    date,
+    count()
+FROM sensors
+GROUP BY date
+ORDER BY date ASC;
+```
+
+Podemos criar um gráfico no SQL Console para visualizar os resultados:
+
+<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Número de eventos por dia" />
+
+6. Esta consulta conta o número de dias quentes e úmidos em excesso:
+
+```sql
+WITH
+    toYYYYMMDD(timestamp) AS day
+SELECT day, count() FROM sensors
+WHERE temperature >= 40 AND temperature <= 50 AND humidity >= 90
+GROUP BY day
+ORDER BY day ASC;
+```
+
+Veja a visualização do resultado:
+
+<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Dias quentes e úmidos" />

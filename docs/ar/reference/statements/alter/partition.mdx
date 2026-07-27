@@ -1,0 +1,433 @@
+---
+description: 'توثيق PARTITION'
+sidebarTitle: 'PARTITION'
+slug: /sql-reference/statements/alter/partition
+title: 'إدارة الأقسام والأجزاء'
+doc_type: 'reference'
+---
+
+العمليات التالية متاحة على [الأقسام](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key):
+
+* [DETACH PARTITION|PART](#detach-partitionpart) — ينقل قسمًا أو جزءًا إلى الدليل `detached` ويفصله.
+* [DROP PARTITION|PART](#drop-partitionpart) — يحذف قسمًا أو جزءًا.
+* [DROP DETACHED PARTITION|PART](#drop-detached-partitionpart) - يحذف جزءًا أو جميع أجزاء قسم من `detached`.
+* [FORGET PARTITION](#forget-partition) — يحذف البيانات الوصفية لقسم من ZooKeeper إذا كان فارغًا.
+* [ATTACH PARTITION|PART](#attach-partitionpart) — يضيف قسمًا أو جزءًا من الدليل `detached` إلى الجدول.
+* [ATTACH PARTITION FROM](#attach-partition-from) — ينسخ قسم البيانات من جدول إلى آخر ثم يضيفه.
+* [REPLACE PARTITION](#replace-partition) — ينسخ قسم البيانات من جدول إلى آخر ثم يستبدله.
+* [MOVE PARTITION TO TABLE](#move-partition-to-table) — ينقل قسم البيانات من جدول إلى آخر.
+* [CLEAR COLUMN IN PARTITION](#clear-column-in-partition) — يعيد تعيين قيمة عمود محدد في قسم.
+* [CLEAR INDEX IN PARTITION](#clear-index-in-partition) — يعيد تعيين الفهرس الثانوي المحدد في قسم.
+* [FREEZE PARTITION](#freeze-partition) — ينشئ نسخة احتياطية لقسم.
+* [UNFREEZE PARTITION](#unfreeze-partition) — يزيل نسخة احتياطية لقسم.
+* [FETCH PARTITION|PART](#fetch-partitionpart) — ينزّل جزءًا أو قسمًا من خادم آخر.
+* [MOVE PARTITION|PART](#move-partitionpart) — ينقل القسم/جزء البيانات إلى قرص أو وحدة تخزين أخرى.
+* [UPDATE IN PARTITION](#update-in-partition) — يحدّث البيانات داخل القسم وفقًا لشرط.
+* [DELETE IN PARTITION](#delete-in-partition) — يحذف البيانات داخل القسم وفقًا لشرط.
+* [REWRITE PARTS](#rewrite-parts) — يعيد كتابة الأجزاء في الجدول بالكامل (أو في قسم محدد).
+
+{/* */}
+
+<div id="detach-partitionpart">
+  ## DETACH PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
+```
+
+ينقل جميع البيانات الخاصة بالقسم المحدد إلى الدليل `detached`. ويتعامل الخادم مع قسم البيانات المفصول كما لو أنه غير موجود. ولن يكون الخادم على علم بهذه البيانات حتى تُجري استعلام [ATTACH](#attach-partitionpart).
+
+مثال:
+
+```sql
+ALTER TABLE mt DETACH PARTITION '2020-11-21';
+ALTER TABLE mt DETACH PART 'all_2_2_0';
+```
+
+اطّلع على كيفية تعيين تعبير التقسيم في قسم [How to set the partition expression](#how-to-set-partition-expression).
+
+بعد تنفيذ الاستعلام، يمكنك فعل ما تشاء بالبيانات الموجودة في الدليل `detached` — حذفها من نظام الملفات أو تركها كما هي.
+
+هذا الاستعلام مُكرَّر — إذ ينقل البيانات إلى الدليل `detached` على جميع النسخ المتماثلة. لاحظ أنه لا يمكنك تنفيذ هذا الاستعلام إلا على نسخة متماثلة قائدة. لمعرفة ما إذا كانت النسخة المتماثلة قائدة، نفِّذ استعلام `SELECT` على جدول [system.replicas](/ar/reference/system-tables/replicas). وبدلًا من ذلك، من الأسهل تنفيذ استعلام `DETACH` على جميع النسخ المتماثلة — فجميع النسخ المتماثلة ستُطلق استثناءً، باستثناء النسخ المتماثلة القائدة (إذ يُسمح بوجود عدة قادة).
+
+<div id="drop-partitionpart">
+  ## DROP PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+```
+
+يحذف القسم المحدد من الجدول. يضع هذا الاستعلام علامة على القسم باعتباره غير نشط، ثم يحذف البيانات نهائيًا خلال نحو 10 دقائق.
+
+اقرأ عن تعيين تعبير التقسيم في قسم [كيفية تعيين تعبير التقسيم](#how-to-set-partition-expression).
+
+هذا الاستعلام مُكرَّر — إذ يحذف البيانات من جميع النُسخ المتماثلة.
+
+مثال:
+
+```sql
+ALTER TABLE mt DROP PARTITION '2020-11-21';
+ALTER TABLE mt DROP PART 'all_4_4_0';
+```
+
+<div id="drop-detached-partitionpart">
+  ## DROP DETACHED PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
+```
+
+يزيل الجزء المحدد أو جميع أجزاء القسم المحدد من `detached`.
+اقرأ المزيد عن كيفية تعيين تعبير القسم في قسم [كيفية تعيين تعبير القسم](#how-to-set-partition-expression).
+
+<div id="forget-partition">
+  ## FORGET PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name FORGET PARTITION partition_expr
+```
+
+يزيل جميع البيانات الوصفية المتعلقة بقسم فارغ من ZooKeeper. يفشل الاستعلام إذا كان القسم غير فارغ أو غير معروف. تأكد من تنفيذ ذلك فقط على الأقسام التي لن تُستخدم مجددًا أبدًا.
+
+اقرأ عن تعيين تعبير القسم في قسم [كيفية تعيين تعبير القسم](#how-to-set-partition-expression).
+
+مثال:
+
+```sql
+ALTER TABLE mt FORGET PARTITION '20201121';
+```
+
+<div id="attach-partitionpart">
+  ## ATTACH PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
+```
+
+يضيف بيانات إلى الجدول من الدليل `detached`. ويمكن إضافة بيانات لقسم كامل أو لجزء منفصل. أمثلة:
+
+```sql
+ALTER TABLE visits ATTACH PARTITION 201901;
+ALTER TABLE visits ATTACH PART 201901_2_2_0;
+```
+
+اقرأ المزيد عن تعيين تعبير القسم في قسم [كيفية تعيين تعبير القسم](#how-to-set-partition-expression).
+
+هذا الاستعلام مكرَّر. تتحقق النسخة المتماثلة المُبادِرة مما إذا كانت هناك بيانات في دليل `detached`.
+إذا وُجدت البيانات، يتحقق الاستعلام من سلامتها. وإذا كان كل شيء صحيحًا، يضيف الاستعلام البيانات إلى الجدول.
+
+إذا عثرت النسخة المتماثلة غير المُبادِرة، التي تستقبل أمر الإرفاق، على الجزء ذي قيم التحقق الصحيحة في مجلد `detached` الخاص بها، فإنها تُرفق البيانات من دون جلبها من النسخ المتماثلة الأخرى.
+إذا لم يوجد جزء ذو قيم تحقق صحيحة، تُنزَّل البيانات من أي نسخة متماثلة تحتوي على هذا الجزء.
+
+يمكنك وضع البيانات في دليل `detached` على إحدى النسخ المتماثلة واستخدام استعلام `ALTER ... ATTACH` لإضافتها إلى الجدول على جميع النسخ المتماثلة.
+
+<div id="attach-partition-from">
+  ## ATTACH PARTITION FROM
+</div>
+
+```sql
+ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
+```
+
+ينسخ هذا الاستعلام قسم البيانات من `table1` إلى `table2`.
+
+لاحظ ما يلي:
+
+* لن تُحذف البيانات من `table1` ولا من `table2`.
+* قد يكون `table1` جدولًا مؤقتًا.
+
+لكي يُنفَّذ الاستعلام بنجاح، يجب استيفاء الشروط التالية:
+
+* يجب أن يكون للجدولين البنية نفسها.
+* يجب أن يكون للجدولين مفتاح التقسيم نفسه، ومفتاح ORDER BY نفسه، والمفتاح الأساسي نفسه.
+* يجب أن تكون للجدولين سياسة التخزين نفسها.
+* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في الجدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في جدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة. وإلا، فيمكن أن يشتمل جدول الوجهة على جميع فهارس الجدول المصدر وإسقاطاته، بالإضافة إلى فهارس وإسقاطات أخرى.
+
+<div id="replace-partition">
+  ## REPLACE PARTITION
+</div>
+
+```sql
+ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
+```
+
+ينسخ هذا الاستعلام قسم البيانات من `table1` إلى `table2` ويستبدل القسم الموجود في `table2`. هذه العملية ذرية.
+
+لاحظ ما يلي:
+
+* لن تُحذف البيانات من `table1`.
+* يمكن أن يكون `table1` جدولًا مؤقتًا.
+
+لكي يُنفَّذ الاستعلام بنجاح، يجب استيفاء الشروط التالية:
+
+* يجب أن تكون للجدولين البنية نفسها.
+* يجب أن يكون للجدولين مفتاح التقسيم نفسه، ومفتاح ORDER BY نفسه، والمفتاح الأساسي نفسه.
+* يجب أن تكون للجدولين سياسة التخزين نفسها.
+* يجب أن يتضمن الجدول الوجهة جميع الفهارس والإسقاطات الموجودة في الجدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في الجدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة. وإلا، يمكن أن يشتمل الجدول الوجهة على مجموعة فائقة من فهارس الجدول المصدر وإسقاطاته.
+
+<div id="move-partition-to-table">
+  ## MOVE PARTITION TO TABLE
+</div>
+
+```sql
+ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
+```
+
+ينقل هذا الاستعلام قسم البيانات من `table_source` إلى `table_dest` مع حذف البيانات من `table_source`.
+
+لكي يعمل الاستعلام بنجاح، يجب استيفاء الشروط التالية:
+
+* يجب أن يكون للجدولين البنية نفسها.
+* يجب أن يكون للجدولين مفتاح التقسيم نفسه، ومفتاح ORDER BY نفسه، والمفتاح الأساسي نفسه.
+* يجب أن تكون للجدولين سياسة التخزين نفسها.
+* يجب أن ينتمي الجدولان إلى الفئة نفسها من المحرك (replicated أو non-replicated).
+* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في جدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في جدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة تمامًا. وإلا، يمكن أن يضم جدول الوجهة مجموعةً أشمل من فهارس جدول المصدر وإسقاطاته.
+
+<div id="clear-column-in-partition">
+  ## CLEAR COLUMN IN PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
+```
+
+يعيد ضبط جميع القيم في العمود المحدد داخل قسم. إذا كان البند `DEFAULT` محددًا عند إنشاء جدول، فإن هذا الاستعلام يعيّن قيمة العمود إلى القيمة الافتراضية المحددة.
+
+مثال:
+
+```sql
+ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
+```
+
+<div id="freeze-partition">
+  ## FREEZE PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+```
+
+ينشئ هذا الاستعلام نسخة احتياطية محلية لقسم محدد. وإذا حُذف بند `PARTITION`، ينشئ الاستعلام نسخة احتياطية لجميع الأقسام دفعة واحدة.
+
+<Note>
+  تُنفَّذ عملية النسخ الاحتياطي بالكامل من دون إيقاف الخادم.
+</Note>
+
+لاحظ أنه بالنسبة إلى الجداول ذات النمط القديم، يمكنك تحديد بادئة اسم القسم (على سبيل المثال، `2019`) — وعندئذٍ ينشئ الاستعلام نسخة احتياطية لجميع الأقسام المطابقة. اقرأ عن تعيين تعبير القسم في قسم [كيفية تعيين تعبير القسم](#how-to-set-partition-expression).
+
+عند التنفيذ، ولإنشاء لقطة بيانات، ينشئ الاستعلام روابط صلبة لبيانات الجدول. وتوضع هذه الروابط الصلبة في الدليل `/var/lib/clickhouse/shadow/N/...`، حيث:
+
+* يمثّل `/var/lib/clickhouse/` دليل العمل الخاص بـ ClickHouse والمحدَّد في ملف config.
+* يمثّل `N` الرقم التزايدي للنسخة الاحتياطية.
+* إذا جرى تحديد المعلَمة `WITH NAME`، فتُستخدم قيمة المعلَمة `'backup_name'` بدلًا من الرقم التزايدي.
+
+<Note>
+  إذا كنت تستخدم [مجموعة من الأقراص لتخزين البيانات في جدول](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)، فسيظهر الدليل `shadow/N` على كل قرص، مع تخزين أجزاء البيانات التي طابقتها عبارة `PARTITION`.
+</Note>
+
+يُنشأ داخل النسخة الاحتياطية نفس هيكل الأدلة الموجود داخل `/var/lib/clickhouse/`. وينفّذ الاستعلام `chmod` على جميع الملفات، بما يمنع الكتابة إليها.
+
+بعد إنشاء النسخة الاحتياطية، يمكنك نسخ البيانات من `/var/lib/clickhouse/shadow/` إلى الخادم البعيد ثم حذفها من الخادم المحلي. لاحظ أن الاستعلام `ALTER t FREEZE PARTITION` لا يُكرَّر. فهو ينشئ نسخة احتياطية محلية على الخادم المحلي فقط.
+
+ينشئ الاستعلام النسخة الاحتياطية على الفور تقريبًا (لكنه ينتظر أولًا حتى تنتهي الاستعلامات الحالية على الجدول المعني من التنفيذ).
+
+ينسخ `ALTER TABLE t FREEZE PARTITION` البيانات فقط، وليس بيانات وصفي الجدول. ولإنشاء نسخة احتياطية من بيانات وصفي الجدول، انسخ الملف `/var/lib/clickhouse/metadata/database/table.sql`
+
+لاستعادة البيانات من نسخة احتياطية، اتبع ما يلي:
+
+1. أنشئ الجدول إذا لم يكن موجودًا. لعرض الاستعلام، استخدم ملف ‎.sql‎ (واستبدل `ATTACH` فيه بـ `CREATE`).
+2. انسخ البيانات من الدليل `data/database/table/` داخل النسخة الاحتياطية إلى الدليل `/var/lib/clickhouse/data/database/table/detached/`.
+3. شغّل استعلامات `ALTER TABLE t ATTACH PARTITION` لإضافة البيانات إلى جدول.
+
+لا تتطلب الاستعادة من نسخة احتياطية إيقاف الخادم.
+
+يعالج الاستعلام الأجزاء بالتوازي، ويُنظَّم عدد خيوط التنفيذ بواسطة الإعداد `max_threads`.
+
+لمزيد من المعلومات حول النسخ الاحتياطي واستعادة البيانات، راجع قسم [&quot;النسخ الاحتياطي والاستعادة في ClickHouse&quot;](/ar/concepts/features/backup-restore/overview).
+
+<div id="unfreeze-partition">
+  ## UNFREEZE PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
+```
+
+يزيل أقسام `frozen` ذات الاسم المحدد من القرص. وإذا حُذفت عبارة `PARTITION`، يزيل الاستعلام النسخة الاحتياطية لجميع الأقسام دفعةً واحدة.
+
+<div id="clear-index-in-partition">
+  ## CLEAR INDEX IN PARTITION
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
+```
+
+يعمل الاستعلام بشكل مشابه لـ `CLEAR COLUMN`، لكنه يعيد تعيين فهرس بدلًا من بيانات عمود.
+
+<div id="fetch-partitionpart">
+  ## FETCH PARTITION|PART
+</div>
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
+```
+
+ينزّل قسمًا من خادم آخر. لا يعمل هذا الاستعلام إلا مع الجداول المُنسَّخة.
+
+ينفّذ هذا الاستعلام ما يلي:
+
+1. ينزّل القسم|الجزء من الشظية المحددة. في &#39;path-in-zookeeper&#39; يجب تحديد مسار إلى الشظية في ZooKeeper.
+2. ثم يضع الاستعلام البيانات التي تم تنزيلها في الدليل `detached` للجدول `table_name`. استخدم الاستعلام [ATTACH PARTITION|PART](#attach-partitionpart) لإضافة البيانات إلى الجدول.
+
+على سبيل المثال:
+
+1. FETCH PARTITION
+
+```sql
+ALTER TABLE users FETCH PARTITION 201902 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PARTITION 201902;
+```
+
+2. FETCH PART
+
+```sql
+ALTER TABLE users FETCH PART 201901_2_2_0 FROM '/clickhouse/tables/01-01/visits';
+ALTER TABLE users ATTACH PART 201901_2_2_0;
+```
+
+لاحظ ما يلي:
+
+* إن الاستعلام `ALTER ... FETCH PARTITION|PART` لا يُكرَّر عبر النسخ المتماثلة. فهو يضع الجزء أو القسم في الدليل `detached` على الخادم المحلي فقط.
+* إن الاستعلام `ALTER TABLE ... ATTACH` يُكرَّر عبر النسخ المتماثلة. فهو يضيف البيانات إلى جميع النسخ المتماثلة. وتُضاف البيانات إلى إحدى النسخ المتماثلة من الدليل `detached`، وإلى النسخ الأخرى من النسخ المتماثلة المجاورة.
+
+قبل التنزيل، يتحقق النظام مما إذا كان القسم موجودًا وما إذا كانت بنية الجدول متطابقة. ويُختار تلقائيًا أنسب نسخة متماثلة من بين النسخ المتماثلة السليمة.
+
+على الرغم من أن الاستعلام يُسمى `ALTER TABLE`، فإنه لا يغيّر بنية الجدول ولا يغيّر فورًا البيانات المتاحة في الجدول.
+
+<div id="move-partitionpart">
+  ## MOVE PARTITION|PART
+</div>
+
+ينقل الأقسام أو أجزاء البيانات إلى وحدة تخزين أو قرص آخر في الجداول التي تستخدم المحرك `MergeTree`. راجع [استخدام عدة أجهزة تخزين كتلية لتخزين البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes).
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
+```
+
+استعلام `ALTER TABLE t MOVE`:
+
+* غير مكرّر، لأن النسخ المتماثلة المختلفة قد تكون لها سياسات تخزين مختلفة.
+* يُرجع خطأً إذا لم يكن القرص أو وحدة التخزين المحددة مُهيّأة. ويُرجع الاستعلام أيضًا خطأً إذا تعذّر تطبيق شروط نقل البيانات المحددة في سياسة التخزين.
+* قد يُرجع خطأً إذا كانت البيانات المطلوب نقلها قد نُقلت بالفعل بواسطة عملية في الخلفية، أو بواسطة استعلام `ALTER TABLE t MOVE` آخر متزامن، أو نتيجة دمج البيانات في الخلفية. ولا ينبغي للمستخدم اتخاذ أي إجراءات إضافية في هذه الحالة.
+
+مثال:
+
+```sql
+ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
+ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
+```
+
+<div id="update-in-partition">
+  ## UPDATE IN PARTITION
+</div>
+
+يُعدِّل البيانات في القسم المحدد التي تطابق تعبير التصفية المحدد. ويُنفَّذ كـ [mutation](/ar/reference/statements/alter/index#mutations).
+
+البنية:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
+```
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+-- using partition name
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
+```
+
+<div id="see-also">
+  ### انظر أيضًا
+</div>
+
+* [UPDATE](/ar/reference/statements/alter/partition#update-in-partition)
+
+<div id="delete-in-partition">
+  ## DELETE IN PARTITION
+</div>
+
+يحذف البيانات من القسم المحدد التي تطابق تعبير التصفية المحدد. ويُنفَّذ على هيئة [mutation](/ar/reference/statements/alter/index#mutations).
+
+البنية:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
+```
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+-- using partition name
+ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
+
+-- using partition id
+ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
+```
+
+<div id="rewrite-parts">
+  ## REWRITE PARTS
+</div>
+
+سيُعيد هذا كتابة الأجزاء من الصفر باستخدام جميع الإعدادات الجديدة. وهذا منطقي، لأن الإعدادات على مستوى الجدول مثل `use_const_adaptive_granularity` لا تُطبَّق افتراضيًا إلا على الأجزاء التي أُعيدت كتابتها حديثًا.
+
+<div id="example">
+  ### مثال
+</div>
+
+```sql
+ALTER TABLE mt REWRITE PARTS;
+ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
+```
+
+<div id="see-also-1">
+  ### راجع أيضًا
+</div>
+
+* [DELETE](/ar/reference/statements/alter/delete)
+
+<div id="how-to-set-partition-expression">
+  ## كيفية تحديد تعبير التقسيم
+</div>
+
+يمكنك تحديد تعبير التقسيم في استعلامات `ALTER ... PARTITION` بطرق مختلفة:
+
+* كقيمة من العمود `partition` في جدول `system.parts`. على سبيل المثال: `ALTER TABLE visits DETACH PARTITION 201901`.
+* باستخدام keyword ‏`ALL`. ولا يمكن استخدامه إلا مع DROP/DETACH/ATTACH/ATTACH FROM. على سبيل المثال: `ALTER TABLE visits ATTACH PARTITION ALL`.
+* كـ Tuple من expressions أو الثوابت يطابق (من حيث الأنواع) Tuple الخاص بـ partitioning key للجدول. وفي حالة partitioning key المكوَّن من عنصر واحد، يجب تضمين تعبير التقسيم داخل الدالة `tuple (...)`. على سبيل المثال: `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
+* باستخدام partition ID. وهو معرّف String للقسم (human-readable إن أمكن) يُستخدم كاسم للأقسام في نظام الملفات وفي ZooKeeper. ويجب تحديد partition ID في clause ‏`PARTITION ID` بين single quotes. على سبيل المثال: `ALTER TABLE visits DETACH PARTITION ID '201901'`.
+* في استعلامَي [ALTER ATTACH PART](#attach-partitionpart) و[DROP DETACHED PART](#drop-detached-partitionpart)، لتحديد اسم part، استخدم string literal بقيمة من العمود `name` في جدول [system.detached&#95;parts](/ar/reference/system-tables/detached_parts). على سبيل المثال: `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+
+يعتمد استخدام علامات الاقتباس عند تحديد القسم على type الخاص بـ تعبير التقسيم. فعلى سبيل المثال، بالنسبة إلى النوع `String`، يجب تحديده بين علامتَي اقتباس (`'`). أما النوعان `Date` و`Int*` فلا يحتاجان إلى علامات اقتباس.
+
+تنطبق جميع القواعد المذكورة أعلاه أيضًا على استعلام [OPTIMIZE](/ar/reference/statements/optimize). وإذا كنت بحاجة إلى تحديد القسم الوحيد عند تحسين جدول غير مُقسَّم، فاضبط expression ‏`PARTITION tuple()`. على سبيل المثال:
+
+```sql
+OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
+```
+
+يحدِّد `IN PARTITION` القسم الذي تُطبَّق عليه تعبيرات [UPDATE](/ar/reference/statements/alter/update) أو [DELETE](/ar/reference/statements/alter/delete) نتيجةً لاستعلام `ALTER TABLE`. ولا تُنشأ أجزاء جديدة إلا من القسم المحدَّد. وبهذه الطريقة، يساعد `IN PARTITION` على تقليل الحمل عندما يكون الجدول مُقسَّمًا إلى عدد كبير من الأقسام، ولا تحتاج إلا إلى تحديث البيانات بشكل موضعي.
+
+تُعرَض أمثلة على استعلامات `ALTER ... PARTITION` في الاختبارين [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) و[`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).

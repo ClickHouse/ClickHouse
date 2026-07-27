@@ -16,6 +16,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
@@ -123,6 +124,20 @@ template <is_decimal T>
         }
         return res;
     }
+}
+
+template <is_decimal T>
+size_t ColumnDecimal<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int) const
+{
+    if (begin >= end)
+        return begin;
+
+    const T * d = data.data();
+    const auto ref = d[begin].value;
+
+    /// A native integer comparison is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, [&](size_t i) { return d[i].value == ref; });
 }
 
 template <is_decimal T>

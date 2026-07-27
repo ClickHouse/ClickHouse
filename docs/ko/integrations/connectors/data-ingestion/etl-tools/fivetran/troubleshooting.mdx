@@ -1,0 +1,338 @@
+---
+sidebarTitle: '문제 해결 및 모범 사례'
+slug: /integrations/fivetran/troubleshooting
+description: 'Fivetran ClickHouse destination에 대한 일반적인 오류, 디버깅 팁, 모범 사례를 설명합니다.'
+title: '문제 해결 및 모범 사례'
+doc_type: 'guide'
+keywords: ['fivetran', 'ClickHouse destination', '문제 해결', '모범 사례', '디버깅']
+---
+
+<div id="common-errors">
+  ## 자주 발생하는 오류
+</div>
+
+<div id="grants-test-failed">
+  ### 권한 부여 테스트에 실패했거나 권한 관련 작업이 실패하는 경우
+</div>
+
+**오류 메시지:**
+
+```sh
+Test grants failed, cause: user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**원인:** Fivetran 사용자에게 필요한 권한이 없습니다. 커넥터에는 `*.*`(모든 데이터베이스 및 테이블)에 대해 `ALTER`, `CREATE DATABASE`, `CREATE TABLE`, `INSERT`, `SELECT` 권한 부여가 필요합니다.
+
+<Note>
+  권한 부여 확인은 `system.grants`를 쿼리하며, 사용자에게 직접 부여된 권한 부여만 확인합니다. ClickHouse 역할을 통해 부여된 권한은 감지되지 않습니다. 자세한 내용은 [역할 기반 권한 부여](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants) 섹션을 참조하십시오.
+</Note>
+
+**해결 방법:**
+
+필요한 권한을 Fivetran 사용자에게 직접 부여하십시오:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+<div id="mutations-not-completed">
+  ### 모든 뮤테이션이 완료될 때까지 기다리는 동안 발생하는 오류
+</div>
+
+**오류 메시지:**
+
+```sh
+error while waiting for all mutations to be completed: ... initial cause: ...
+```
+
+**원인:** `ALTER TABLE ... UPDATE` 또는 `ALTER TABLE ... DELETE` 뮤테이션이 제출되었지만, 커넥터가 모든 레플리카에서 완료되기를 기다리다가 시간 초과되었습니다. 오류의 &quot;initial cause&quot; 부분에는 원래 ClickHouse 오류(보통 코드 341, &quot;Unfinished&quot;)가 포함되는 경우가 많습니다.
+
+다음과 같은 경우 발생할 수 있습니다.
+
+* ClickHouse Cloud 클러스터에 부하가 많이 걸린 경우
+* 뮤테이션 실행 중 하나 이상의 노드가 다운된 경우
+
+**해결 방법:**
+
+1. **뮤테이션 진행 상황 확인**: 대기 중인 뮤테이션을 확인하려면 다음 쿼리를 실행하세요.
+   ```sql
+   SELECT database, table, mutation_id, command, create_time, is_done
+   FROM system.mutations
+   WHERE NOT is_done
+   ORDER BY create_time DESC;
+   ```
+2. **클러스터 상태 확인**: 모든 노드가 정상 상태인지 확인하세요.
+3. **대기 후 재시도**: 클러스터가 정상 상태로 돌아오면 뮤테이션은 결국 완료됩니다. Fivetran이 동기화를 자동으로 다시 시도합니다.
+
+<div id="column-mismatch-error">
+  ### 컬럼 불일치 오류
+</div>
+
+**오류 메시지:**
+
+소스의 스키마 변경으로 컬럼 불일치가 발생한 경우 다양한 오류가 발생할 수 있습니다. 예시는 다음과 같습니다:
+
+```sh
+columns count in ClickHouse table (8) does not match the input file (6). Expected columns: id, name, ..., got: id, name, ...
+```
+
+또는:
+
+```sh
+column user_email was not found in the table definition. Table columns: ...; input file columns: ...
+```
+
+**원인:** ClickHouse 대상 테이블의 컬럼이 동기화되는 데이터의 컬럼과 일치하지 않습니다. 이는 다음과 같은 경우에 발생할 수 있습니다.
+
+* ClickHouse 테이블에 컬럼이 수동으로 추가되거나 삭제되었습니다.
+* 소스의 스키마 변경 사항이 제대로 반영되지 않았습니다.
+
+**해결 방법:**
+
+1. **Fivetran이 관리하는 테이블은 수동으로 수정하지 마십시오.** [모범 사례](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#dont-modify-tables)를 참조하십시오.
+2. **컬럼을 원래대로 되돌립니다**: 해당 컬럼이 어떤 유형이어야 하는지 알고 있다면, [유형 변환 매핑](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#type-mapping)을 참고하여 컬럼을 예상되는 유형으로 다시 변경하십시오.
+3. **테이블을 다시 동기화합니다**: Fivetran dashboard에서 영향을 받은 테이블에 대해 과거 데이터 재동기화를 실행하십시오.
+4. **삭제 후 다시 생성합니다**: 최후의 수단으로 대상 테이블을 삭제하고, 다음 동기화 시 Fivetran이 다시 생성하도록 하십시오.
+
+<div id="ast-too-big">
+  ### AST가 너무 큽니다 (코드 168)
+</div>
+
+**오류 메시지:**
+
+```sh
+code: 168, message: AST is too big. Maximum: 50000
+```
+
+또는
+
+```sh
+code: 62, message: Max query size exceeded
+```
+
+**원인:** 대규모 UPDATE 또는 DELETE 배치로 인해 매우 복잡한 추상 구문 트리를 가진 SQL 문이 생성됩니다. 열이 많은 테이블이거나 히스토리 모드가 활성화된 경우에 흔히 발생합니다.
+
+**해결 방법:**
+
+[고급 구성](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/reference#advanced-configuration) 파일에서 `mutation_batch_size`와 `hard_delete_batch_size` 값을 낮추세요. 두 설정의 기본값은 모두 `1500`이며, `200`부터 `1500` 사이의 값을 사용할 수 있습니다.
+
+***
+
+<div id="memory-limit-exceeded">
+  ### 메모리 한도 초과 / OOM (코드 241)
+</div>
+
+**오류 메시지:**
+
+```sh
+code: 241, message: (total) memory limit exceeded: would use 14.01 GiB
+```
+
+**원인:** `INSERT` 작업에 사용 가능한 메모리보다 더 많은 메모리가 필요합니다. 일반적으로 대규모 초기 동기화, 열이 많은 테이블(wide tables), 또는 동시 batch 작업 중에 발생합니다.
+
+**해결 방법:**
+
+1. **`write_batch_size` 줄이기**: 큰 테이블의 경우 50,000으로 낮춰 보십시오.
+2. **데이터베이스 부하 줄이기**: ClickHouse Cloud 서비스의 부하를 확인하여 과부하 상태인지 살펴보십시오.
+3. **ClickHouse Cloud 서비스 확장하기**: 더 많은 메모리를 제공할 수 있도록 확장하십시오.
+
+***
+
+<div id="unexpected-eof">
+  ### Unexpected EOF / 연결 오류
+</div>
+
+**오류 메시지:**
+
+```sh
+ClickHouse connection error: unexpected EOF
+```
+
+또는 Fivetran logs에 스택 트레이스 없이 `FAILURE_WITH_TASK`가 표시됩니다.
+
+**원인:**
+
+* Fivetran 트래픽을 허용하도록 IP 액세스 목록이 구성되지 않았습니다.
+* Fivetran과 ClickHouse Cloud 간에 일시적인 네트워크 문제가 발생했습니다.
+* 손상되었거나 유효하지 않은 원본 데이터로 인해 대상 커넥터가 충돌합니다.
+
+**해결 방법:**
+
+1. **IP 액세스 목록 확인**: ClickHouse Cloud에서 **설정 &gt; 보안**으로 이동한 다음 [Fivetran IP 주소](https://fivetran.com/docs/using-fivetran/ips)를 추가하거나 모든 위치의 액세스를 허용하십시오.
+2. **재시도**: 최신 커넥터 버전은 EOF 오류를 자동으로 재시도합니다. 간헐적으로 발생하는 오류(하루 1~2회)는 일시적인 문제일 가능성이 높습니다.
+3. **문제가 지속되면**: 오류가 발생한 시간 범위를 포함해 ClickHouse 지원팀에 지원 티켓을 여십시오. 또한 Fivetran 지원팀에 원본 데이터 품질 조사를 요청하십시오.
+
+***
+
+<div id="uint64-type-error">
+  ### UInt64 유형을 매핑할 수 없음
+</div>
+
+**오류 메시지:**
+
+```sh
+cause: can't map type UInt64 to Fivetran types
+```
+
+**원인:** 커넥터는 `LONG`을 `Int64`로 매핑하며, `UInt64`로는 매핑하지 않습니다. 이 오류는 Fivetran이 관리하는 테이블에서 컬럼 타입을 수동으로 변경했을 때 발생합니다.
+
+**해결 방법:**
+
+1. Fivetran이 관리하는 테이블에서는 **컬럼 타입을 수동으로 변경하지 마십시오**.
+2. **복구 방법**: 컬럼을 예상 타입(예: `Int64`)으로 다시 변경하거나 테이블을 삭제한 후 다시 동기화하십시오.
+3. **사용자 지정 타입의 경우**: Fivetran이 관리하는 테이블 위에 [materialized view](/ko/reference/statements/create/view#materialized-view)를 생성하십시오.
+
+***
+
+<div id="no-primary-keys">
+  ### 테이블에 프라이머리 키(primary key)가 없음
+</div>
+
+**오류 메시지:**
+
+```sh
+Failed to alter table ... cause: no primary keys for table
+```
+
+**원인:** 모든 ClickHouse 테이블에는 `ORDER BY`가 필요합니다. 소스에 프라이머리 키(primary key)가 없으면 Fivetran이 `_fivetran_id`를 자동으로 추가합니다. 이 오류는 소스에 PK가 정의되어 있지만 데이터에 해당 키가 없는 드문 경우에 발생합니다.
+
+**해결 방법:**
+
+1. **Fivetran 지원팀에 문의하세요**. 소스 파이프라인을 조사할 수 있습니다.
+2. **소스 스키마를 확인하세요**: 데이터에 프라이머리 키 컬럼이 포함되어 있는지 확인합니다.
+
+***
+
+<div id="role-based-grants">
+  ### 역할 기반 권한 부여 실패
+</div>
+
+**오류 메시지:**
+
+```sh
+user is missing the required grants on *.*: ALTER, CREATE DATABASE, CREATE TABLE, INSERT, SELECT
+```
+
+**원인:** 커넥터는 다음 구문으로 권한 부여를 확인합니다:
+
+```sql
+SELECT access_type, database, table, column FROM system.grants WHERE user_name = 'my_user'
+```
+
+이는 직접 권한 부여된 항목만 반환합니다. ClickHouse 역할을 통해 부여된 privileges는 `user_name = NULL`이고 `role_name = 'my_role'`이므로, 이 검사에서는 확인되지 않습니다.
+
+**해결 방법:**
+
+Fivetran 사용자에게 **privileges를 직접 부여**하십시오:
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+***
+
+<div id="best-practices">
+  ## 권장 사항
+</div>
+
+<div id="dedicated-service">
+  ### Fivetran용 전용 ClickHouse 서비스
+</div>
+
+수집 부하가 높은 경우, Fivetran 쓰기 워크로드를 위한 전용 서비스를 만들기 위해 ClickHouse Cloud의 [컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses)를 사용하는 방안을 고려하십시오. 이렇게 하면 수집 워크로드를 분석 쿼리와 분리하여 리소스 경합을 방지할 수 있습니다.
+
+예를 들어, 다음과 같은 아키텍처를 사용할 수 있습니다.
+
+* **Service A (writer)**: Fivetran 대상 + 기타 수집 도구(ClickPipes, Kafka 커넥터)
+* **Service B (reader)**: BI 도구, 대시보드, 애드혹 쿼리
+
+<div id="optimizing-reading-queries">
+  ### 읽기 쿼리 최적화
+</div>
+
+ClickHouse는 Fivetran 대상 테이블에 `SharedReplacingMergeTree`를 사용합니다. 이는 ClickHouse Cloud에서 제공되는 [`ReplacingMergeTree` 테이블 엔진](/ko/concepts/features/operations/update/replacing-merge-tree)의 버전입니다. 동일한 프라이머리 키를 가진 중복 행이 존재하는 것은 정상입니다 — 중복 제거는 백그라운드 머지 중 비동기적으로 수행됩니다. 읽기 시점에는 중복 행이 반환되지 않도록 주의해야 합니다. 일부 행은 아직 중복 제거되지 않았을 수 있기 때문입니다.
+
+중복 행을 피하는 가장 간단한 방법은 `FINAL` 키워드를 사용하는 것입니다. 이 키워드는 읽기 시점에 아직 중복 제거되지 않은 행을 머지하도록 강제합니다:
+
+```sql
+SELECT * FROM schema.table FINAL WHERE ...
+```
+
+이 `FINAL` 작업은 최적화할 수 있습니다. 예를 들어 `WHERE` 조건으로 키 컬럼을 필터링할 수 있습니다. 자세한 내용은 ReplacingMergeTree 가이드의 [FINAL 성능](/ko/concepts/features/operations/update/replacing-merge-tree#final-performance) 섹션을 참조하십시오.
+
+이러한 최적화로도 충분하지 않다면, `FINAL`을 사용하지 않으면서도 중복을 올바르게 처리할 수 있는 추가 옵션이 있습니다.
+
+* 항상 증가하는 숫자 컬럼을 쿼리하려는 경우, [`max(the_column)`을 사용할 수 있습니다](/ko/concepts/features/operations/insert/deduplication#avoiding-final).
+* 특정 키에 대해 일부 컬럼의 최신 값을 조회해야 한다면, [`argMax(the_column, _fivetran_id)`](https://clickhouse.com/blog/10-best-practice-tips#perfecting_replacingmergetree)를 사용할 수 있습니다.
+
+<div id="primary-key-optimization">
+  ### 프라이머리 키 및 ORDER BY 최적화
+</div>
+
+Fivetran은 원본 테이블의 프라이머리 키를 ClickHouse의 `ORDER BY` 절에 그대로 사용합니다. 원본에 PK가 없으면 `_fivetran_id`(UUID)가 정렬 키가 되는데, ClickHouse는 `ORDER BY` 컬럼을 기반으로 [희소 프라이머리 인덱스(sparse primary index)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 생성하므로 쿼리 성능이 저하될 수 있습니다.
+
+**다른 최적화만으로 충분하지 않을 경우 다음을 권장합니다.**
+
+1. **Fivetran 테이블을 원시 스테이징 테이블로 간주하십시오.** 분석용으로 직접 쿼리하지 마십시오.
+2. **여전히 쿼리 성능이 충분하지 않다면**, [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)를 사용해 쿼리 패턴에 맞게 `ORDER BY`를 최적화한 테이블 복사본을 만드십시오. 증분형 materialized view와 달리, 갱신 가능 구체화 뷰는 일정에 따라 전체 쿼리를 다시 실행하므로 Fivetran이 동기화 중 수행하는 `UPDATE` 및 `DELETE` 작업을 올바르게 처리합니다:
+   ```sql
+   CREATE MATERIALIZED VIEW schema.table_optimized
+   REFRESH EVERY 1 HOUR
+   ENGINE = ReplacingMergeTree()
+   ORDER BY (user_id, event_date)
+   AS SELECT * FROM schema.table_raw FINAL;
+   ```
+
+<Note>
+  Fivetran이 관리하는 테이블에는 증분형(비갱신형) materialized view를 사용하지 마십시오. Fivetran은 데이터를 동기화 상태로 유지하기 위해 `UPDATE` 및 `DELETE` 작업을 수행하므로, 증분형 materialized view는 이러한 변경 사항을 반영하지 못해 오래되었거나 잘못된 데이터를 포함하게 됩니다.
+</Note>
+
+<div id="dont-modify-tables">
+  ### Fivetran이 관리하는 테이블을 수동으로 수정하지 마십시오
+</div>
+
+Fivetran이 관리하는 테이블에는 수동으로 DDL 변경(예: `ALTER TABLE ... MODIFY COLUMN`)을 적용하지 마십시오. connector는 자신이 생성한 스키마를 전제로 동작합니다. 수동 변경은 [유형 매핑 오류](#uint64-type-error)와 스키마 불일치로 인한 실패를 초래할 수 있습니다.
+
+사용자 지정 변환에는 materialized view를 사용하십시오.
+
+<div id="debugging">
+  ## 디버깅 작업
+</div>
+
+장애를 진단할 때는 다음을 확인하십시오.
+
+* 서버 측 문제는 ClickHouse `system.query_log`에서 확인하세요.
+* 클라이언트 측 문제는 Fivetran에 도움을 요청하세요.
+
+커넥터 버그의 경우, [GitHub issue를 생성하거나](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues) [ClickHouse 지원팀](/ko/resources/about/support)에 문의하세요.
+
+<div id="debugging-fivetran-syncs">
+  ### Fivetran 동기화 디버깅
+</div>
+
+ClickHouse 측에서 동기화 실패 원인을 진단하려면 다음 쿼리를 사용하십시오.
+
+<div id="check-errors">
+  #### Fivetran 관련 최근 ClickHouse 오류 확인
+</div>
+
+```sql
+SELECT event_time, query, exception_code, exception
+FROM system.query_log
+WHERE client_name LIKE 'fivetran-destination%'
+  AND exception_code > 0
+ORDER BY event_time DESC
+LIMIT 50;
+```
+
+<div id="check-activity">
+  #### 최근 Fivetran 사용자 활동 확인
+</div>
+
+```sql
+SELECT event_time, query_kind, query, exception_code, exception
+FROM system.query_log
+WHERE user = '{fivetran_user}'
+ORDER BY event_time DESC
+LIMIT 100;
+```

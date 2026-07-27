@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: 'Mutaciones de borrado'
+title: 'Mutaciones de borrado'
+hide_title: false
+description: 'Página que describe las mutaciones de borrado: consultas ALTER que manipulan datos de tablas mediante borrados'
+keywords: ['mutaciones de borrado', 'ALTER TABLE DELETE', 'mutaciones de datos', 'reescritura de partes de datos', 'ReplacingMergeTree']
+doc_type: 'reference'
+---
+
+Las mutaciones de borrado se refieren a consultas `ALTER` que manipulan los datos de una tabla mediante borrados. En particular, incluyen consultas como `ALTER TABLE DELETE`, etc. Ejecutar este tipo de consultas genera nuevas versiones mutadas de las partes de datos. Esto significa que dichas sentencias desencadenan la reescritura de partes de datos completas para todos los datos insertados antes de la mutación, lo que se traduce en una gran cantidad de operaciones de escritura.
+
+<Info>
+  Para los borrados, puede evitar esta gran cantidad de operaciones de escritura usando motores de tabla especializados como [ReplacingMergeTree](/es/concepts/features/operations/update/replacing-merge-tree) o [CollapsingMergeTree](/es/reference/engines/table-engines/mergetree-family/collapsingmergetree) en lugar del motor de tabla MergeTree predeterminado.
+</Info>
+
+import DeleteMutations from '/snippets/es/delete.mdx';
+
+<DeleteMutations />

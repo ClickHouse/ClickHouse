@@ -2,6 +2,7 @@
 
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
+#include <Columns/IColumn_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
@@ -33,10 +34,9 @@ public:
         AsciiCJK,
     };
 
-    ITokenizer() = default;
+    ITokenizer() = delete;
     explicit ITokenizer(Type type_) : type(type_) {}
     ITokenizer(const ITokenizer &) = default;
-    ITokenizer & operator=(const ITokenizer &) = default;
 
     Type getType() const { return type; }
 
@@ -95,7 +95,7 @@ public:
     virtual bool supportsStringLike() const = 0;
 
 private:
-    Type type{};
+    const Type type;
 };
 
 using TokenizerPtr = const ITokenizer *;
@@ -506,5 +506,8 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
 }
 
 void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, size_t length, BloomFilter & bloom_filter);
+
+/// Tokenizes `rows`-many rows of `input`, starting at offset `from`. Returns a ColumnArray(String) with one array per row, containing the tokens.
+ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows);
 
 }

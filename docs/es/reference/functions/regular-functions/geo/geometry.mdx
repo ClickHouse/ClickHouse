@@ -1,0 +1,149 @@
+---
+description: 'Documentación de las funciones de Geometry'
+sidebarTitle: 'Geometry'
+slug: /sql-reference/functions/geo/geometry
+title: 'Funciones para trabajar con Geometry'
+doc_type: 'reference'
+---
+
+<div id="geometry">
+  ## Geometry
+</div>
+
+Las funciones de Geometry permiten calcular el perímetro y el área de tipos geométricos como POLYGON, LINESTRING, MULTIPOLYGON, MULTILINESTRING, RING y POINT. Utilice geometrías del tipo Geometry. Si el valor de entrada es `NULL`, todas las funciones siguientes devolverán 0.
+
+<div id="perimetercartesian">
+  ## perimeterCartesian
+</div>
+
+Calcula el perímetro del objeto de tipo Geometry especificado en el sistema de coordenadas cartesianas (plano).
+
+**Sintaxis**
+
+```sql
+perimeterCartesian(geom)
+```
+
+**Argumentos**
+
+* `geom` — Objeto de tipo Geometry. [Geometry](/es/reference/data-types/geo).
+
+**Valores devueltos**
+
+* Número — Perímetro del objeto en las unidades del sistema de coordenadas. [Float64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT perimeterCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterCartesian(geom)─┐
+│ 4.0                      │
+└──────────────────────────┘
+```
+
+<div id="areacartesian">
+  ## areaCartesian
+</div>
+
+Calcula el área del objeto Geometry especificado en el sistema de coordenadas cartesianas.
+
+**Sintaxis**
+
+```sql
+areaCartesian(geom)
+```
+
+**Argumentos**
+
+* `geom` — Objeto de tipo Geometry. [Geometry](/es/reference/data-types/geo).
+
+**Valores devueltos**
+
+* Número — Área del objeto en unidades del sistema de coordenadas. [Float64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaCartesian(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaCartesian(geom)─┐
+│ -1                  │
+└─────────────────────┘
+```
+
+<div id="perimeterspherical">
+  ## perimeterSpherical
+</div>
+
+Calcula el perímetro de un objeto de tipo Geometry sobre la superficie de una esfera.
+
+**Sintaxis**
+
+```sql
+perimeterSpherical(geom)
+```
+
+**Argumentos**
+
+* `geom` — Objeto de tipo Geometry. [Geometry](/es/reference/data-types/geo).
+
+**Valores devueltos**
+
+* Número — Perímetro. [Float64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('LINESTRING(0 0,1 0,1 1,0 1,0 0)');
+SELECT perimeterSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─perimeterSpherical(geom)─┐
+│ 0                        │
+└──────────────────────────┘
+```
+
+<div id="areaspherical">
+  ## areaSpherical
+</div>
+
+Calcula el área de un objeto de tipo Geometry sobre la superficie de una esfera.
+
+**Sintaxis**
+
+```sql
+areaSpherical(geom)
+```
+
+**Argumentos**
+
+* `geom` — Geometry. [Geometry](/es/reference/data-types/geo).
+
+**Valores devueltos**
+
+* Número — Área. [Float64](/es/reference/data-types/float).
+
+**Ejemplo**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+INSERT INTO geo_dst SELECT readWKT('POLYGON((0 0,1 0,1 1,0 1,0 0))');
+SELECT areaSpherical(geom) FROM geo_dst;
+```
+
+```response title="Response"
+┌─areaSpherical(geom)────┐
+│ -0.0003046096848622019 │
+└────────────────────────┘
+```

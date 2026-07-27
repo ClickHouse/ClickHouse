@@ -1,0 +1,204 @@
+---
+title: Синхронное чтение данных
+description: "Новая настройка `allow_asynchronous_read_from_io_pool_for_merge_tree` позволяет увеличить число потоков чтения (потоков) по сравнению с числом потоков в остальной части конвейера выполнения запроса."
+date: 2023-03-01
+tags: ['Настройки', 'Производительность и оптимизация']
+keywords: ['Синхронное', 'Асинхронное', 'Чтение данных']
+---
+
+Новая настройка allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree позволяет увеличить число потоков чтения (потоков) по сравнению с числом потоков в остальной части конвейера выполнения запроса.
+
+Обычно настройка [max&#95;threads](/ru/reference/settings/session-settings#max_threads) [определяет](https://clickhouse.com/company/events/query-performance-introspection) количество потоков для параллельного чтения и параллельной обработки запросов:
+
+<Image img={sync_read} size="md" alt="Диаграмма синхронного чтения данных" />
+
+Данные читаются «по порядку», столбец за столбцом, с диска.
+
+<div id="asynchronous-data-reading">
+  ### Асинхронное чтение данных
+</div>
+
+Новая настройка [allow&#95;asynchronous&#95;read&#95;from&#95;io&#95;pool&#95;for&#95;merge&#95;tree](https://github.com/ClickHouse/ClickHouse/pull/43260) позволяет увеличить число потоков чтения (потоков) по сравнению с числом потоков в остальной части конвейера выполнения запроса, чтобы **ускорить холодные запросы в сервисах ClickHouse Cloud с небольшим числом CPU** и **повысить производительность запросов, ограниченных I/O**.
+Когда настройка включена, количество потоков чтения управляется настройкой [max&#95;streams&#95;for&#95;merge&#95;tree&#95;reading](https://github.com/ClickHouse/ClickHouse/pull/43260):
+
+<Image img={async_read} size="md" alt="Диаграмма асинхронного чтения данных" />
+
+Данные читаются асинхронно, параллельно из разных столбцов.
+
+Обратите внимание, что для настройки соотношения между числом потоков чтения (потоков) и числом потоков в остальной части конвейера выполнения запроса также существует настройка [max&#95;streams&#95;to&#95;max&#95;threads&#95;ratio](https://github.com/ClickHouse/ClickHouse/pull/43260). Однако в бенчмарках она оказалась не такой полезной, как настройка `max_streams_for_merge_tree_reading`
+
+<div id="what-about-optimize_read_in_order">
+  ### Что насчёт optimize_read_in_order?
+</div>
+
+Благодаря [оптимизации optimize&#95;read&#95;in&#95;order](/ru/reference/statements/select/order-by#optimization-of-data-reading) ClickHouse может [избежать](https://clickhouse.com/blog/clickhouse-faster-queries-with-projections-and-primary-indexes) повторной сортировки данных в памяти, если порядок сортировки в запросах соответствует физическому порядку данных на диске, **но для этого данные нужно читать по порядку (в отличие от асинхронного чтения)**:
+
+<Image img={optimize_read} size="md" alt="Диаграмма оптимизации чтения по порядку" />
+
+<div id="optimize_read_in_order-has-precedence-over-asynchronous-reading">
+  ### optimize_read_in_order имеет приоритет перед асинхронным чтением
+</div>
+
+Если ClickHouse определяет, что можно применить оптимизацию `optimize_read_in_order`, то настройка `allow_asynchronous_read_from_io_pool_for_merge_tree` будет проигнорирована / отключена.
+
+<div id="example-demonstrating-all-of-the-above">
+  ### Пример, демонстрирующий всё вышеперечисленное
+</div>
+
+* Создайте и загрузите [таблицу цен на недвижимость в Великобритании UK Property Price Paid](/ru/get-started/sample-datasets/uk-price-paid)
+
+* Проверьте установленное значение max&#95;threads (по умолчанию — число ядер CPU, которое ClickHouse видит на узле, выполняющем запрос
+
+```
+SELECT getSetting('max_threads');
+
+┌─getSetting('max_threads')─┐
+│                        10 │
+└───────────────────────────┘
+```
+
+* Проверьте конвейер выполнения запроса со стандартным числом потоков и для чтения, и для обработки данных
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid;
+
+┌─explain──────────────────────┐
+│ (Expression)                 │
+│ ExpressionTransform × 10     │
+│   (ReadFromMergeTree)        │
+│   MergeTreeThread × 10 0 → 1 │
+└──────────────────────────────┘
+```
+
+* Проверьте конвейер запроса с 60 потоками асинхронного чтения и числом потоков по умолчанию для остальной части конвейера выполнения запроса
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60;
+
+┌─explain────────────────────────┐
+│ (Expression)                   │
+│ ExpressionTransform × 10       │
+│   (ReadFromMergeTree)          │
+│   Resize 60 → 10               │
+│     MergeTreeThread × 60 0 → 1 │
+└────────────────────────────────┘
+```
+
+* Проверьте конвейер выполнения запроса с 20 потоками для чтения и обработки данных
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    max_threads = 20;
+
+┌─explain──────────────────────┐
+│ (Expression)                 │
+│ ExpressionTransform × 20     │
+│   (ReadFromMergeTree)        │
+│   MergeTreeThread × 20 0 → 1 │
+└──────────────────────────────┘
+```
+
+* Проверьте конвейер запроса: 60 потоков для асинхронного чтения и 20 — для остальной части конвейера выполнения запроса
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60;
+
+┌─explain────────────────────────┐
+│ (Expression)                   │
+│ ExpressionTransform × 20       │
+│   (ReadFromMergeTree)          │
+│   Resize 60 → 20               │
+│     MergeTreeThread × 60 0 → 1 │
+└────────────────────────────────┘
+```
+
+* Проверьте конвейер запроса с 60 асинхронными потоками чтения и 20 потоками для остальной части выполнения запроса,
+  когда можно применить оптимизацию `optimize_read_in_order optimization`
+
+```
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY postcode1, postcode2
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree= 1,
+    max_streams_for_merge_tree_reading= 60;
+
+┌─explain───────────────────────────┐
+│ (Expression)                      │
+│ ExpressionTransform               │
+│   (Sorting)                       │
+│   MergingSortedTransform 20 → 1   │
+│     (Expression)                  │
+│     ExpressionTransform × 20      │
+│       (ReadFromMergeTree)         │
+│       MergeTreeInOrder × 20 0 → 1 │
+└───────────────────────────────────┘
+
+-- обратите внимание, что это эквивалентно отключению allow_asynchronous_read_from_io_pool_for_merge_tree
+
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY postcode1, postcode2
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 0,
+    max_streams_for_merge_tree_reading = 0;
+
+┌─explain───────────────────────────┐
+│ (Expression)                      │
+│ ExpressionTransform               │
+│   (Sorting)                       │
+│   MergingSortedTransform 20 → 1   │
+│     (Expression)                  │
+│     ExpressionTransform × 20      │
+│       (ReadFromMergeTree)         │
+│       MergeTreeInOrder × 20 0 → 1 │
+└───────────────────────────────────┘
+
+-- обратите внимание, что можно принудительно включить allow_asynchronous_read_from_io_pool_for_merge_tree, отключив optimize_read_in_order
+
+EXPLAIN PIPELINE
+SELECT *
+FROM uk_price_paid
+ORDER BY
+    postcode1 ASC,
+    postcode2 ASC
+SETTINGS
+    max_threads = 20,
+    allow_asynchronous_read_from_io_pool_for_merge_tree = 1,
+    max_streams_for_merge_tree_reading = 60,
+    optimize_read_in_order = 0;
+
+┌─explain──────────────────────────────┐
+│ (Expression)                         │
+│ ExpressionTransform                  │
+│   (Sorting)                          │
+│   MergingSortedTransform 20 → 1      │
+│     MergeSortingTransform × 20       │
+│       (Expression)                   │
+│       ExpressionTransform × 20       │
+│         (ReadFromMergeTree)          │
+│         Resize 60 → 20               │
+│           MergeTreeThread × 60 0 → 1 │
+└──────────────────────────────────────┘
+
+```

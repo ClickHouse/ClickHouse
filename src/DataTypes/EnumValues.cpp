@@ -222,9 +222,9 @@ size_t EnumValues<T>::allocatedBytes() const
 }
 
 template <typename T>
-Names EnumValues<T>::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> EnumValues<T>::getAllRegisteredNames() const
 {
-    Names result;
+    VectorWithMemoryTracking<String> result;
     result.reserve(values.size());
     for (const auto & value : values)
         result.emplace_back(value.first);

@@ -6,6 +6,7 @@ import time
 import pymysql
 from helpers.config_cluster import mysql_pass
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 cluster = ClickHouseCluster(__file__)
@@ -193,6 +194,7 @@ SETTINGS max_block_size = 10000""",
 
 def test_cancel_infinite_query(setup_infinite_query):
     _, cluster = setup_infinite_query
+    query_id = str(uuid.uuid4())
 
     def execute_query():
         query = f"""SELECT * FROM mysql(
@@ -205,17 +207,27 @@ def test_cancel_infinite_query(setup_infinite_query):
             [
                 "bash",
                 "-c",
-                f"""/usr/bin/clickhouse client --query "{query}" """,
+                f"""/usr/bin/clickhouse client --query_id "{query_id}" --query "{query}" """,
             ]
         )
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    node1.wait_for_log_line("Get data from database")
+    # Wait for the query to start by polling system.processes for its unique query_id.
+    # Robust against log timing: a one-shot log line can be written before a
+    # look_behind_lines=0 tail is installed, turning the stale-log flake into a
+    # missed-line timeout.
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
+        "1",
+        retry_count=60,
+        sleep_time=0.5,
+    )
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
@@ -246,12 +258,15 @@ SETTINGS max_block_size = 10000"""
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
 
-    node1.wait_for_log_line("Get data from database")
-    node1.wait_for_log_line("Generate a chunk")
+    # Wait only for "Generate a chunk": it is logged per block (so a single tail is
+    # robust even if the first emission lands before the tail starts) and strictly
+    # after "Get data from database", so one look_behind_lines=0 tail avoids both the
+    # stale-log match and the ordering gap between two independent tails.
+    node1.wait_for_log_line("Generate a chunk", look_behind_lines=0)
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()

@@ -1,0 +1,124 @@
+---
+sidebarTitle: 'PostgreSQL CDC（变更数据捕获）'
+slug: /cloud/reference/billing/clickpipes/postgres-cdc
+title: 'PostgreSQL CDC（变更数据捕获） 的 ClickPipes'
+description: 'PostgreSQL CDC（变更数据捕获） ClickPipes 的计费概览'
+doc_type: 'reference'
+keywords: ['计费', 'clickpipes', 'cdc 定价', '成本', '定价']
+---
+
+本节介绍 ClickPipes 中 Postgres CDC（变更数据捕获） 连接器的定价模式。设计这一模式时，我们的目标是在保持价格极具竞争力的同时，坚持我们的核心愿景：
+
+> 让客户能够以无缝且经济实惠的方式将数据从 Postgres 迁移到 ClickHouse，用于
+> 实时分析。
+
+与外部 ETL 工具以及其他数据库平台中的类似功能相比，该连接器的**成本效益高出 5 倍以上**。
+
+<Note>
+  自 **2025 年 9 月 1 日**起，所有使用 Postgres CDC（变更数据捕获） ClickPipes 的客户 (包括现有客户和新客户) 均已开始在月度账单中按量计费。
+</Note>
+
+
+
+## Pricing dimensions {#pricing-dimensions}
+
+There are two main dimensions to pricing:
+
+1. **摄取数据**：从 Postgres 传入并摄取到 ClickHouse 的原始未压缩字节数。
+2. **计算**：每个服务所配置的计算单元用于管理多个 Postgres CDC ClickPipes，与 ClickHouse Cloud 服务使用的计算单元相互独立。这部分额外的计算资源专门用于 Postgres CDC ClickPipes。计算费用按服务级别计费，而非按单个管道计费。每个计算单元包含 2 个 vCPU 和 8 GB RAM。
+
+### Ingested data {#ingested-data}
+
+The Postgres CDC connector operates in two main phases:
+
+- **Initial load / 重新同步**: This captures a full snapshot of Postgres tables
+  and occurs when a pipe is first created or re-synced.
+- **Continuous Replication (CDC)**: Ongoing replication of changes—such as inserts,
+  updates, deletes, and schema changes—from Postgres to ClickHouse.
+
+In most use cases, continuous replication accounts for over 90% of a ClickPipe
+life cycle. Because initial loads involve transferring a large volume of data all
+at once, we offer a lower rate for that phase.
+
+| Phase                            | Cost         |
+|----------------------------------|--------------|
+| **Initial load / 重新同步**        | $0.10 per GB |
+| **Continuous Replication (CDC)** | $0.20 per GB |
+
+### Compute {#compute}
+
+This dimension covers the compute units provisioned per service just for Postgres
+ClickPipes. Compute is shared across all Postgres pipes within a service. **It
+is provisioned when the first Postgres pipe is created and deallocated when no
+Postgres CDC pipes remain**. The amount of compute provisioned depends on your
+organization's tier:
+
+| Tier                         | Cost                                          |
+|------------------------------|-----------------------------------------------|
+| **Basic Tier**               | 0.5 compute unit per service — $0.10 per hour |
+| **Scale or Enterprise Tier** | 1 compute unit per service — $0.20 per hour   |
+
+### Example {#example}
+
+Let's say your service is in Scale tier and has the following setup:
+
+- 2 Postgres ClickPipes running continuous replication
+- Each pipe ingests 500 GB of data changes (CDC) per month
+- When the first pipe is kicked off, the service provisions **1 compute unit under the Scale Tier** for Postgres CDC
+
+#### Monthly cost breakdown {#cost-breakdown}
+
+**Ingested Data (CDC)**:
+
+$$ 2 \text{ pipes} \times 500 \text{ GB} = 1,000 \text{ GB per month} $$
+
+$$ 1,000 \text{ GB} \times \$0.20/\text{GB} = \$200 $$
+
+**Compute**:
+
+$$1 \text{ compute unit} \times \$0.20/\text{hr} \times 730 \text{ hours (approximate month)} = \$146$$
+
+<Note>
+Compute is shared across both pipes
+</Note>
+
+**Total Monthly Cost**:
+
+$$\$200 \text{ (ingest)} + \$146 \text{ (compute)} = \$346$$
+
+<div id="faq-postgres-cdc-clickpipe">
+  ## Postgres CDC（变更数据捕获） ClickPipes 常见问题
+</div>
+
+<Accordion title="计费中的摄取数据是按压缩后大小还是未压缩大小计算的？">
+  摄取数据按来自 Postgres 的&#95;未压缩数据&#95;计算——无论是初始加载期间，还是 CDC（变更数据捕获） (通过 replication slot) 期间都是如此。Postgres 默认不会在传输过程中压缩数据，而 ClickPipe 处理的是原始、未压缩的字节数据。
+</Accordion>
+
+<Accordion title="Postgres CDC（变更数据捕获） 的费用何时会开始出现在我的账单中？">
+  自 **2025 年 9 月 1 日**起，Postgres CDC（变更数据捕获） ClickPipes 的费用已开始出现在所有客户 (包括现有客户和新客户) 的月度账单中。
+</Accordion>
+
+<Accordion title="如果我暂停我的管道，是否还会被收费？">
+  当管道处于暂停状态时，不会产生数据摄取费用，因为此时不会传输任何数据。不过，计算资源费用仍然适用——根据您组织的层级，为 0.5 或 1 个计算单元。这是固定的服务级成本，适用于该服务中的所有管道。
+</Accordion>
+
+<Accordion title="我该如何估算费用？">
+  ClickPipes 的概览页面会提供初始加载/重新同步以及 CDC（变更数据捕获） 数据量的指标。您可以结合这些指标和 ClickPipes 定价来估算 Postgres CDC（变更数据捕获） 的成本。
+</Accordion>
+
+<Accordion title="我可以对服务中为 Postgres CDC（变更数据捕获） 分配的计算资源进行扩缩容吗？">
+  默认情况下，用户无法自行配置计算资源扩缩容。已预配的资源经过优化，可满足大多数客户工作负载的需求。如果您的使用场景需要更多或更少的计算资源，请提交支持工单，以便我们评估您的请求。
+</Accordion>
+
+<Accordion title="定价粒度是什么？">
+  * **计算资源**：按小时计费。不足 1 小时按整小时向上取整计费。
+  * **摄取数据**：按未压缩数据的每千兆字节 (GB) 计量并计费。
+</Accordion>
+
+<Accordion title="我可以将我的 ClickHouse Cloud credits 用于通过 ClickPipes 使用的 Postgres CDC（变更数据捕获） 吗？">
+  可以。ClickPipes 定价是统一 ClickHouse Cloud 定价的一部分。您拥有的任何平台 credits 也都会自动适用于 ClickPipes 用量。
+</Accordion>
+
+<Accordion title="对于现有的每月 ClickHouse Cloud 支出，我应预期 Postgres CDC（变更数据捕获） ClickPipes 会增加多少额外成本？">
+  成本会因您的使用场景、数据量和组织层级而异。也就是说，大多数现有客户在试用结束后，相对于其现有的每月 ClickHouse Cloud 支出，增幅通常在 **0–15%** 之间。实际成本可能因工作负载而异——某些工作负载数据量大但处理需求较低，而另一些则数据量较小但需要更多处理。
+</Accordion>

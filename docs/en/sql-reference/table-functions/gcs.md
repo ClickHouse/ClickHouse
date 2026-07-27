@@ -18,7 +18,7 @@ If you have multiple replicas in your cluster, you can use the [s3Cluster functi
 ## Syntax {#syntax}
 
 ```sql
-gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method])
+gcs(url [, NOSIGN | hmac_key, hmac_secret] [,format] [,structure] [,compression_method] [,partition_strategy])
 gcs(named_collection[, option=value [,..]])
 ```
 
@@ -37,6 +37,7 @@ See the [Google interoperability docs]( https://cloud.google.com/storage/docs/in
 | `format`                     | The [format](/sql-reference/formats) of the file.                                                                                                                                        |
 | `structure`                  | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                            |
 | `compression_method`         | Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension. |
+| `partition_strategy`         | Parameter is optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as file names and the file format as the extension. |
 
 :::note GCS
 The GCS path is in this format as the endpoint for the Google XML API is different than the JSON API:
@@ -65,7 +66,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 ## Examples {#examples}
 
-Selecting the first two rows from the table from GCS file `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
+Selecting the first two rows from the GCS file `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. The compression method is detected automatically from the `.gz` file extension:
 
 ```sql
 SELECT *
@@ -80,7 +81,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-The similar but from file with `gzip` compression method:
+The same query as above, but with the `gzip` compression method specified explicitly instead of relying on autodetection:
 
 ```sql
 SELECT *
@@ -197,7 +198,7 @@ If you specify `PARTITION BY` expression when inserting data into `GCS` table, a
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    gcs('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32')
+    gcs('http://bucket.amazonaws.com/my_bucket/file_{_partition_id}.csv', 'CSV', 'a String, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES ('x', 2, 3), ('x', 4, 5), ('y', 11, 12), ('y', 13, 14), ('z', 21, 22), ('z', 23, 24);
 ```
 As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, and `file_z.csv`.
@@ -206,7 +207,7 @@ As a result, the data is written into three files: `file_x.csv`, `file_y.csv`, a
 
 ```sql
 INSERT INTO TABLE FUNCTION
-    gcs('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32')
+    gcs('http://bucket.amazonaws.com/my_bucket_{_partition_id}/file.csv', 'CSV', 'a UInt32, b UInt32, c UInt32', partition_strategy='wildcard')
     PARTITION BY a VALUES (1, 2, 3), (1, 4, 5), (10, 11, 12), (10, 13, 14), (20, 21, 22), (20, 23, 24);
 ```
 As a result, the data is written into three files in different buckets: `my_bucket_1/file.csv`, `my_bucket_10/file.csv`, and `my_bucket_20/file.csv`.

@@ -15,12 +15,13 @@ namespace DB
 class StreamingExchangeSource final : public ISource
 {
 public:
-    explicit StreamingExchangeSource(SharedHeader header_, String query_id_, String stream_name_, String host_, UInt16 port_)
+    explicit StreamingExchangeSource(SharedHeader header_, String query_id_, String stream_name_, String host_, UInt16 port_, String jwt_token_ = {})
         : ISource(std::move(header_))
         , host(std::move(host_))
         , port(port_)
         , query_id(std::move(query_id_))
         , stream_name(std::move(stream_name_))
+        , jwt_token(std::move(jwt_token_))
     {
     }
 
@@ -55,6 +56,8 @@ private:
     const UInt16 port;
     const String query_id;
     const String stream_name;
+    /// Bearer JWT presented to the sink in SourceHello (empty when unauthenticated).
+    const String jwt_token;
 
     bool finished_reading = false;  /// All data has been read from socket.
     bool output_finished = false;   /// Output port is finished, do not need to receive more data.

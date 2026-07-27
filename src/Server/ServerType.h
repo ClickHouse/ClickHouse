@@ -1,7 +1,7 @@
 #pragma once
 
 #include <base/types.h>
-#include <unordered_set>
+#include <set>
 
 namespace DB
 {
@@ -32,8 +32,11 @@ public:
         END
     };
 
-    using Types = std::unordered_set<Type>;
-    using CustomNames = std::unordered_set<String>;
+    /// Use ordered sets so iteration is deterministic across runs and across
+    /// `format → parse → format` roundtrips (the debug-build sanity check in
+    /// `executeQueryImpl` compares the second formatting against the first).
+    using Types = std::set<Type>;
+    using CustomNames = std::set<String>;
 
     ServerType() = default;
 

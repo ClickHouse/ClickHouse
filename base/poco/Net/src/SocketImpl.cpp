@@ -496,6 +496,29 @@ bool SocketImpl::secure() const
 }
 
 
+bool SocketImpl::supportsExternalPolling() const
+{
+	return true;
+}
+
+
+bool SocketImpl::connectionOpen()
+{
+	if (_sockfd == POCO_INVALID_SOCKET)
+		return false;
+
+	char b = 0;
+	int rc = ::recv(_sockfd, &b, 1, MSG_DONTWAIT | MSG_PEEK);
+	if (rc > 0)
+		return true;
+	if (rc == 0)
+		return false;
+
+	int err = lastError();
+	return err == POCO_EAGAIN || err == POCO_EWOULDBLOCK;
+}
+
+
 bool SocketImpl::pollImpl(Poco::Timespan& remainingTime, int mode)
 {
 	poco_socket_t sockfd = _sockfd;

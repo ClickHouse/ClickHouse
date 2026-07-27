@@ -1,0 +1,23 @@
+---
+title: 避免变更
+---
+
+在 ClickHouse 中，**变更**是指修改或删除表中现有数据的操作——通常通过 `ALTER TABLE ... DELETE` 或 `ALTER TABLE ... UPDATE` 实现。虽然这些语句看起来与标准 SQL 操作类似，但其底层实现机制却有本质区别。
+
+ClickHouse 中的变更不会就地修改行，而是以异步后台进程的方式，重写受影响的整个[数据分区片段](/zh/concepts/core-concepts/parts)。由于 ClickHouse 采用面向列的不可变存储模型，这是必要的实现方式，但也可能带来显著的 I/O 和资源消耗。
+
+当发起变更时，ClickHouse 会调度创建新的**变更后分片**，在新分片准备就绪之前，原始分片会保持不变。待新分片就绪后，变更后分片会以原子方式替换原始分片。不过，由于这一操作会重写整个分片，即使只是很小的改动 (例如更新单独一行) ，也可能导致大规模重写和严重的写放大。
+
+对于大型数据集，这可能会造成磁盘 I/O 显著飙升，并拖慢整个集群的性能。与合并操作不同，变更一旦提交便无法回滚，除非显式取消，否则即使服务器重启后也会继续执行——请参见 [`KILL MUTATION`](/zh/reference/statements/kill#kill-mutation)。
+
+<Tip>
+  **监控 ClickHouse 中活动或排队中的变更数量**
+
+  如需了解如何监控活动或排队中的变更数量，请参阅以下[知识库文章](/zh/resources/support-center/knowledge-base/monitoring-debugging/view-number-of-active-mutations)。
+</Tip>
+
+变更是**完全有序的**：它们只会作用于发起变更之前插入的数据，而之后写入的新数据不受影响。变更不会阻塞插入操作，但仍可能与其他正在执行的查询重叠。在变更执行期间运行的 SELECT，可能会同时读到已变更和未变更的分片，从而在执行过程中看到不一致的数据视图。ClickHouse 会按分片并行执行变更，这可能进一步加剧内存和 CPU 的消耗，尤其是在涉及复杂子查询 (如 x IN (SELECT ...)) 时。
+
+一般来说，应**避免频繁或大规模执行变更**，尤其是在高数据量表上。相反，建议使用其他表引擎，例如 [ReplacingMergeTree](/zh/concepts/features/operations/update/replacing-merge-tree) 或 [CollapsingMergeTree](/zh/reference/engines/table-engines/mergetree-family/collapsingmergetree)，这些引擎专为更高效地在查询时或合并期间处理数据修正而设计。如果确实必须使用变更，请通过 system.mutations 表仔细监控，并在进程卡住或行为异常时使用 `KILL MUTATION`。不当使用变更可能导致性能下降、存储频繁抖动，甚至引发服务不稳定——因此务必谨慎使用，并尽量控制使用频率。
+
+对于删除数据，你也可以考虑使用[轻量级删除](/zh/concepts/features/operations/delete/lightweight-delete)，或通过[分区](/zh/concepts/best-practices/partitioning-keys)管理数据，从而能够[高效删除整个分片](/zh/reference/statements/alter/partition#drop-partitionpart)。

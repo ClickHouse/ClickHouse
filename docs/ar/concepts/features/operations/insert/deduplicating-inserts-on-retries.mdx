@@ -1,0 +1,557 @@
+---
+slug: /guides/developer/deduplicating-inserts-on-retries
+title: 'إزالة تكرار عمليات الإدراج عند إعادة المحاولة'
+description: 'منع تكرار البيانات عند إعادة محاولة عمليات الإدراج'
+keywords: ['إزالة التكرار', 'إزالة التكرار', 'إعادة محاولات الإدراج', 'عمليات الإدراج']
+doc_type: 'guide'
+---
+
+قد تفشل عمليات الإدراج أحيانًا بسبب أخطاء مثل انتهاء المهلة. وعند فشلها، قد تكون البيانات قد أُدرجت بنجاح أو لا. يوضح هذا الدليل كيفية تمكين إزالة التكرار عند إعادة محاولة الإدراج، بحيث لا تُدرج البيانات نفسها أكثر من مرة.
+
+عند إعادة محاولة الإدراج، يحاول ClickHouse التحقق مما إذا كانت البيانات قد أُدرجت بنجاح بالفعل. وإذا وُسِمت البيانات المُدرجة على أنها مكررة، فلن يُدرجها ClickHouse في الجدول الهدف. ومع ذلك، سيظل المستخدم يتلقى حالة نجاح للعملية كما لو كانت البيانات قد أُدرجت بشكل طبيعي.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+<div id="uncertain-insert-status">
+  ### حالة الإدراج غير المؤكدة
+</div>
+
+يجب على المستخدم إعادة محاولة عملية الإدراج حتى تنجح. وإذا فشلت جميع المحاولات، يصبح من المستحيل تحديد ما إذا كانت البيانات قد أُدرجت أم لا. وعندما تكون العروض المادية معنية، لا يكون واضحًا أيضًا في أي الجداول ربما ظهرت البيانات. وقد تكون العروض المادية غير متزامنة مع الجدول المصدر.
+
+<div id="deduplication-window-limit">
+  ### حد نافذة إزالة التكرار
+</div>
+
+إذا جرت أكثر من `*_deduplication_window` عملية إدراج أخرى أثناء تسلسل إعادة المحاولة، فقد لا تعمل إزالة التكرار كما هو مقصود. في هذه الحالة، قد تُدرَج البيانات نفسها عدة مرات.
+
+<div id="enabling-insert-deduplication-on-retries">
+  ## تمكين إزالة التكرار عند الإدراج عند إعادة المحاولات
+</div>
+
+<div id="insert-deduplication-for-tables">
+  ### إزالة التكرار عند الإدراج في الجداول
+</div>
+
+**لا تدعم إزالة التكرار عند الإدراج سوى محرّكات `*MergeTree`.**
+
+بالنسبة إلى محرّكات `*ReplicatedMergeTree`، تكون إزالة التكرار عند الإدراج مفعّلة افتراضيًا، ويتحكم فيها الإعدادان [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window) و[`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). أما في محرّكات `*MergeTree` غير المكرّرة، فيتحكم في إزالة التكرار الإعداد [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+
+تحدّد الإعدادات أعلاه معلمات سجل إزالة التكرار للجدول. ويخزّن سجل إزالة التكرار عددًا محدودًا من `block_id`s&#96;، وهي التي تحدد آلية عمل إزالة التكرار (انظر أدناه).
+
+<div id="query-level-insert-deduplication">
+  ### إزالة التكرار عند الإدراج على مستوى الاستعلام
+</div>
+
+يُفعِّل الإعداد `insert_deduplicate=1` إزالة التكرار على مستوى الاستعلام. لاحظ أنه إذا أدرجت بيانات باستخدام `insert_deduplicate=0`، فلن يكون بالإمكان إزالة تكرار هذه البيانات حتى إذا أعدت محاولة إدراجها باستخدام `insert_deduplicate=1`. ويرجع ذلك إلى أن معرّفات `block_id`s لا تُكتب للكتل أثناء عمليات الإدراج التي تستخدم `insert_deduplicate=0`.
+
+<div id="how-insert-deduplication-works">
+  ## كيف تعمل إزالة التكرار عند الإدراج
+</div>
+
+عند إدراج البيانات في ClickHouse، تُقسَّم البيانات إلى كتل استنادًا إلى عدد الصفوف والبايتات.
+
+بالنسبة إلى الجداول التي تستخدم محركات `*MergeTree`، يُخصَّص لكل كتلة `block_id` فريد، وهو `hash` لبيانات تلك الكتلة. ويُستخدم `block_id` هذا كمفتاح فريد لعملية الإدراج. وإذا عُثر على `block_id` نفسه في سجل إزالة التكرار، تُعتبر الكتلة مكررة ولا تُدرج في الجدول.
+
+يعمل هذا النهج جيدًا عندما تحتوي عمليات الإدراج على بيانات مختلفة. ولكن إذا أُدرجت البيانات نفسها عدة مرات عن قصد، فستحتاج إلى استخدام الإعداد `insert_deduplication_token` للتحكم في عملية إزالة التكرار. يتيح لك هذا الإعداد تحديد رمز مميز فريد لكل عملية إدراج، ويستخدم ClickHouse هذا الرمز لتحديد ما إذا كانت البيانات مكررة.
+
+بالنسبة إلى استعلامات `INSERT ... VALUES`، يكون تقسيم البيانات المُدرجة إلى كتل حتميًا ويتحدد بواسطة الإعدادات. لذلك، ينبغي إعادة محاولة الإدراج باستخدام قيم الإعدادات نفسها التي استُخدمت في العملية الأولى.
+
+بالنسبة إلى استعلامات `INSERT ... SELECT`، من المهم أن يعيد جزء `SELECT` من الاستعلام البيانات نفسها وبالترتيب نفسه في كل عملية. لاحظ أن تحقيق ذلك عمليًا صعب. ولضمان ترتيب ثابت للبيانات عند إعادة المحاولة، حدِّد عبارة `ORDER BY ALL` في جزء `SELECT` من الاستعلام. في الوقت الحالي، يجب استخدام `ORDER BY ALL` حرفيًا في الاستعلام. ولم يُنفَّذ دعم `ORDER BY` بعد، لذلك لن يُعتبر جزء `SELECT` من الاستعلام ثابتًا. وضع في اعتبارك أنه قد يجري تحديث الجدول المحدد بين محاولات إعادة التنفيذ، ما يعني أن بيانات النتيجة قد تتغير ولن تحدث إزالة التكرار. بالإضافة إلى ذلك، عند إدراج كميات كبيرة من البيانات، قد يتجاوز عدد الكتل بعد عمليات الإدراج نطاق نافذة سجل إزالة التكرار، وعندها لن يتمكن ClickHouse من معرفة ضرورة إزالة تكرار الكتل.
+في الوقت الحالي، يتحكم الإعداد `insert_select_deduplicate` في سلوك `INSERT ... SELECT`. ويحدد هذا الإعداد ما إذا كانت إزالة التكرار ستُطبَّق على البيانات المُدرجة باستخدام استعلامات `INSERT ... SELECT`. راجع الوثائق المرتبطة للحصول على التفاصيل وأمثلة الاستخدام.
+
+<div id="insert-deduplication-with-materialized-views">
+  ## إزالة تكرار الإدراج مع العروض المادية
+</div>
+
+عندما يحتوي جدول على عرض مادي واحد أو أكثر، تُدرَج البيانات أيضًا في وجهة تلك العروض مع التحويلات المحددة. كما يُزال تكرار البيانات المُحوَّلة عند إعادة المحاولة أيضًا. ويُجري ClickHouse إزالة التكرار للعروض المادية بالطريقة نفسها التي يُجري بها إزالة التكرار للبيانات المُدرجة في الجدول الهدف.
+
+يمكنك التحكم في هذه العملية باستخدام الإعدادات التالية للجدول المصدر:
+
+* [`replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ar/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ar/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+
+يجب أيضًا تمكين إعداد ملف تعريف المستخدم [`deduplicate_blocks_in_dependent_materialized_views`](/ar/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+عند تمكين الإعداد `insert_deduplicate=1`، يُزال تكرار البيانات المُدرجة في الجدول المصدر. ويؤدي الإعداد `deduplicate_blocks_in_dependent_materialized_views=1` أيضًا إلى تمكين إزالة التكرار في الجداول التابعة. يجب تمكين الإعدادين معًا إذا كان المطلوب هو إزالة التكرار الكامل.
+
+عند إدراج كتل في الجداول التابعة للعروض المادية، يحسب ClickHouse قيمة `block_id` عبر إجراء تجزئة لسلسلة تجمع بين قيم `block_id` من الجدول المصدر ومعرّفات إضافية. ويضمن ذلك إزالة تكرار دقيقة داخل العروض المادية، بحيث يمكن تمييز البيانات استنادًا إلى عملية إدراجها الأصلية، بغض النظر عن أي تحويلات طُبّقت عليها قبل وصولها إلى جدول الوجهة التابع للعرض المادي.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### الكتل المتطابقة بعد التحويلات في العرض المادي
+</div>
+
+الكتل المتطابقة التي جرى إنشاؤها أثناء التحويل داخل العرض المادي لا تُزال تكراراتها، لأنها تستند إلى بيانات مُدرجة مختلفة.
+
+إليك مثالًا:
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+```
+
+```sql
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+تتيح لنا الإعدادات أعلاه إجراء استعلام على جدول يحتوي على سلسلة من الكتل، لا يحتوي كلٌّ منها إلا على صف واحد. هذه الكتل الصغيرة لا تُدمَج، وتبقى كما هي حتى تُدرَج في جدول.
+
+```sql
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+```
+
+نحتاج إلى تمكين إزالة التكرار في العرض المادي:
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+نرى هنا أنه تم إدراج جزأين في الجدول `dst`. كتلتان من select -- وجزآن عند الإدراج. تحتوي الأجزاء على بيانات مختلفة.
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+هنا نرى أنه تم إدراج جزأين في جدول `mv_dst`. يحتوي هذان الجزآن على البيانات نفسها، لكن لم تُزل التكرارات بينهما.
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+نرى هنا أنه عند إعادة محاولة عمليات الإدراج، تُزال جميع البيانات المكررة. وتعمل آلية إزالة التكرار مع الجدولين `dst` و`mv_dst`.
+
+<div id="identical-blocks-on-insertion">
+  ### الكتل المتطابقة عند الإدراج
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+الإدراج:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2);
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+باستخدام الإعدادات أعلاه، تنتج كتلتان من select– ونتيجةً لذلك، ينبغي أن تكون هناك كتلتان لإدخالهما في الجدول `dst`. ومع ذلك، نرى أنه لم تُدرج سوى كتلة واحدة في الجدول `dst`. حدث ذلك لأن الكتلة الثانية أُزيل تكرارها. فهي تحتوي على البيانات نفسها وعلى مفتاح إزالة التكرار `block_id`، الذي يُحتسب على شكل hash من البيانات المُدرجة. هذا السلوك ليس ما كان متوقعًا. مثل هذه الحالات نادرة الحدوث، لكنها ممكنة نظريًا. وللتعامل مع مثل هذه الحالات على نحو صحيح، يجب على المستخدم توفير `insert_deduplication_token`. لنُصلِح ذلك بالأمثلة التالية:
+
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### الكتل المتطابقة عند الإدراج باستخدام `insert_deduplication_token`
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+الإدراج:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+أُدرجت كتلتان متطابقتان كما هو متوقع.
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+تُزال التكرارات من عملية الإدراج المُعادَة كما هو متوقّع.
+
+```sql
+SELECT 'third attempt';
+
+INSERT INTO dst SELECT
+    1 AS key,
+    'b' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+تُعامَل عملية الإدراج تلك أيضًا على أنها مكررة، رغم أنها تحتوي على بيانات مُدرجة مختلفة. لاحظ أن `insert_deduplication_token` له أولوية أعلى: لا يستخدم ClickHouse قيمة hash للبيانات عند توفير `insert_deduplication_token`.
+
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### تُنتِج عمليات إدراج مختلفة البيانات نفسها بعد التحويل في الجدول الأساسي للعرض المادي
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+select 'second attempt';
+
+INSERT INTO dst VALUES (2, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+│ from dst   │   2 │ A     │ all_1_1_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+نُدرِج بيانات مختلفة في كل مرة. ومع ذلك، تُدرَج البيانات نفسها في جدول `mv_dst`. لا تُزال التكرارات لأن بيانات المصدر كانت مختلفة.
+
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### عمليات إدراج مختلفة من عروض مادية إلى جدول أساسي واحد ببيانات متكافئة
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE TABLE mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_first
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+CREATE MATERIALIZED VIEW mv_second
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+تم إدراج كتلتين متساويتين إلى الجدول `mv_dst` (كما هو متوقع).
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+تُزال تكرارات عملية إعادة المحاولة تلك في كلا الجدولين `dst` و`mv_dst`.

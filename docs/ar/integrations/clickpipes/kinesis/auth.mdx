@@ -1,0 +1,133 @@
+---
+slug: /integrations/clickpipes/kinesis/auth
+sidebarTitle: 'التحكم في الوصول المستند إلى الأدوار في Kinesis'
+title: 'التحكم في الوصول المستند إلى الأدوار في Kinesis'
+description: 'تشرح هذه المقالة كيف يمكن لعملاء ClickPipes الاستفادة من التحكم في الوصول المستند إلى الأدوار للمصادقة مع Amazon Kinesis والوصول الآمن إلى تدفقات بياناتهم.'
+doc_type: 'guide'
+keywords: ['Amazon Kinesis']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+توضح هذه المقالة كيف يمكن لعملاء ClickPipes الاستفادة من التحكم في الوصول المستند إلى الأدوار للمصادقة باستخدام Amazon Kinesis والوصول الآمن إلى تدفقات بياناتهم.
+
+<div id="prerequisite">
+  ## المتطلبات الأساسية
+</div>
+
+لمتابعة هذا الدليل، ستحتاج إلى:
+
+* خدمة ClickHouse Cloud مفعّلة
+* حساب AWS
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+قبل التعمق في إعداد الوصول الآمن إلى Kinesis، من المهم فهم الآلية. في ما يلي نظرة عامة على كيفية وصول ClickPipes إلى تدفقات Amazon Kinesis عبر تولّي دور ضمن حسابات AWS الخاصة بالعملاء.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="Kinesis الآمن" size="lg" border />
+
+باستخدام هذا النهج، يمكن للعملاء إدارة جميع أذونات الوصول إلى تدفقات بيانات Kinesis الخاصة بهم من مكان واحد (سياسة IAM للدور المُتولّى)، من دون الحاجة إلى تعديل سياسة الوصول لكل تدفق على حدة.
+
+<div id="setup">
+  ## الإعداد
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### الحصول على IAM role Arn لخدمة ClickHouse
+</div>
+
+* 1. سجّل الدخول إلى حسابك في ClickHouse Cloud.
+* 2. حدّد خدمة ClickHouse التي تريد إنشاء التكامل لها
+* 3. حدّد علامة التبويب **الإعدادات**
+* 4. مرّر لأسفل إلى قسم **معلومات أمان الشبكة** في أسفل الصفحة
+* 5. انسخ قيمة **معرّف دور الخدمة (IAM)** الخاصة بالخدمة، كما هو موضّح أدناه.
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN الآمن لـ S3" size="lg" border />
+
+<div id="setting-up-iam-assume-role">
+  ### إعداد افتراض الدور في IAM
+</div>
+
+<div id="manually-create-iam-role">
+  #### أنشئ IAM role يدويًا.
+</div>
+
+* 1. سجّل الدخول إلى AWS account الخاص بك عبر متصفح الويب باستخدام IAM user لديه إذن بإنشاء IAM role وإدارته.
+
+* 2. انتقل إلى IAM Service Console
+
+* 3. أنشئ IAM role جديدًا مع تعيين Trusted Entity Type إلى `AWS account`. لاحظ أن اسم IAM role **يجب أن يبدأ بـ** `ClickHouseAccessRole-` لكي ينجح ذلك.
+
+  **i. تكوين سياسة الثقة**
+
+  تتيح سياسة الثقة لـ IAM role الخاص بـ ClickHouse إمكانية assume هذا الدور. استبدل `{ClickHouse_IAM_ARN}` بـ IAM Role ARN من خدمة ClickHouse الخاصة بك (الذي حصلت عليه في الخطوة السابقة).
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "{ClickHouse_IAM_ARN}"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }
+  ```
+
+  **ii. تكوين سياسة الأذونات**
+
+  تمنح سياسة الأذونات إمكانية الوصول إلى Kinesis stream الخاص بك. استبدل placeholders التالية:
+
+  * `{REGION}`: AWS Region الخاصة بك (على سبيل المثال: `us-east-1`)
+  * `{ACCOUNT_ID}`: معرّف AWS account الخاص بك
+  * `{STREAM_NAME}`: اسم Kinesis stream الخاص بك
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:DescribeStream",
+          "kinesis:GetShardIterator",
+          "kinesis:GetRecords",
+          "kinesis:ListShards",
+          "kinesis:RegisterStreamConsumer",
+          "kinesis:DeregisterStreamConsumer",
+          "kinesis:ListStreamConsumers"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:SubscribeToShard",
+          "kinesis:DescribeStreamConsumer"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}/*"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:ListStreams"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  ```
+
+* 4. انسخ **IAM Role Arn** الجديد بعد إنشائه. ستحتاج إليه للوصول إلى Kinesis stream الخاص بك.

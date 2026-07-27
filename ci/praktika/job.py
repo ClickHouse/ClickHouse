@@ -1,9 +1,8 @@
 import copy
-import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 from typing import Any, List, Optional
 
 from . import Artifact
@@ -182,6 +181,12 @@ class Job:
             return res
 
         def set_run_after(self, job, reset=False):
+            """
+            Return a copy of this `Job.Config` that must start after the named jobs.
+
+            `set_run_after` controls execution order only. Use `set_requires` when
+            the job consumes artifacts produced by another job.
+            """
             res = copy.deepcopy(self)
             if not (isinstance(job, list) or isinstance(job, tuple)):
                 job = [job]
@@ -306,15 +311,3 @@ class Job:
                     print(f"Warning: failed to check git submodules: {e}")
 
             return False
-
-        def __post_init__(self):
-            if self.timeout_shell_cleanup:
-                return
-            if self.run_in_docker:
-                container_name = (
-                    "praktika_"
-                    + hashlib.sha1(
-                        (Path(os.getcwd()).resolve().as_posix() + ":" + self.name).encode()
-                    ).hexdigest()[:12]
-                )
-                self.timeout_shell_cleanup = f"docker rm -f {container_name}"

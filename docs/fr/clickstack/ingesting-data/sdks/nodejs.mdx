@@ -1,0 +1,414 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nodejs
+description: 'SDK Node.js pour ClickStack - la stack d’observabilité de ClickHouse'
+title: 'Node.js'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'journalisation', 'intégration', 'supervision des applications']
+---
+
+ClickStack utilise la norme OpenTelemetry pour collecter les données de télémétrie (logs, metrics,
+traces et exceptions). Les traces sont générées automatiquement grâce à l’instrumentation automatique, donc une
+instrumentation manuelle n’est pas nécessaire pour bénéficier du tracing.
+
+Ce guide intègre :
+
+* **Logs**
+* **Metrics**
+* **Traces**
+* **Exceptions**
+
+<div id="getting-started">
+  ## Premiers pas
+</div>
+
+<div id="install-hyperdx-opentelemetry-instrumentation-package">
+  ### Installez le paquet d&#39;instrumentation OpenTelemetry d&#39;HyperDX
+</div>
+
+Utilisez la commande suivante pour installer le [paquet OpenTelemetry de ClickStack](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/node-opentelemetry 
+    ```
+  </Tab>
+</Tabs>
+
+<div id="initializin-the-sdk">
+  ### Initialisation du SDK
+</div>
+
+Pour initialiser le SDK, vous devez appeler la fonction `init` au début du fichier d’entrée de votre application.
+
+<Tabs>
+  <Tab title="require">
+    ```javascript
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Omettre pour Managed ClickStack
+        service: 'my-service'
+    });
+    ```
+  </Tab>
+
+  <Tab title="import">
+    ```javascript
+    import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Omettre pour Managed ClickStack
+        service: 'my-service'
+    });
+    ```
+  </Tab>
+</Tabs>
+
+Cela capturera automatiquement les traces, les métriques et les logs de votre application Node.js.
+
+<div id="setup-log-collection">
+  ### Configurer la collecte des logs
+</div>
+
+Par défaut, les logs `console.*` sont collectés. Si vous utilisez un logger
+comme `winston` ou `pino`, vous devrez ajouter un transport à votre logger pour
+envoyer les logs à ClickStack. Si vous utilisez un autre type de logger,
+[n&#39;hésitez pas à nous contacter](mailto:support@clickhouse.com) ou à consulter l&#39;une de nos
+intégrations de plateforme, le cas échéant (par exemple [Kubernetes](/fr/clickstack/integration-examples/kubernetes)).
+
+<Tabs>
+  <Tab title="Winston">
+    Si vous utilisez `winston` comme logger, vous devrez ajouter le transport suivant à votre logger.
+
+    ```typescript
+        import winston from 'winston';
+        import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+        const logger = winston.createLogger({
+          level: 'info',
+          format: winston.format.json(),
+          transports: [
+            new winston.transports.Console(),
+            HyperDX.getWinstonTransport('info', { // Envoie les logs de niveau info et supérieurs
+              detectResources: true,
+            }),
+          ],
+        });
+
+        export default logger;
+    ```
+  </Tab>
+
+  <Tab title="Pino">
+    Si vous utilisez `pino` comme logger, vous devrez ajouter le transport suivant à votre logger et spécifier un `mixin` pour corréler les logs avec les traces.
+
+    ```typescript
+    import pino from 'pino';
+    import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+    const logger = pino(
+        pino.transport({
+        mixin: HyperDX.getPinoMixinFunction,
+        targets: [
+            HyperDX.getPinoTransport('info', { // Envoie les logs de niveau info et supérieurs
+            detectResources: true,
+            }),
+        ],
+        }),
+    );
+
+    export default logger;
+    ```
+  </Tab>
+
+  <Tab title="console.log">
+    Par défaut, les méthodes `console.*` sont prises en charge nativement. Aucune configuration supplémentaire n&#39;est requise.
+
+    Vous pouvez désactiver ce comportement en définissant la variable d&#39;environnement `HDX_NODE_CONSOLE_CAPTURE` sur 0 ou en passant `consoleCapture: false` à la fonction `init`.
+  </Tab>
+</Tabs>
+
+<div id="setup-error-collection">
+  ### Configurer la collecte des erreurs
+</div>
+
+Le SDK ClickStack peut capturer automatiquement les exceptions non gérées et les erreurs de votre application, avec la stack trace complète et le contexte du code.
+
+Pour l’activer, vous devez ajouter le code suivant à la fin du middleware de gestion des erreurs de votre application, ou capturer manuellement les exceptions à l’aide de la fonction `recordException`.
+
+<Tabs>
+  <Tab title="Express">
+    ```javascript
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // À omettre pour Managed ClickStack
+        service: 'my-service'
+    });
+    const app = express();
+
+    // Ajoutez vos routes, etc.
+
+    // Ajoutez ceci après toutes les routes,
+    // mais avant de définir tout autre middleware de gestion des erreurs
+    HyperDX.setupExpressErrorHandler(app);
+
+    app.listen(3000);
+    ```
+  </Tab>
+
+  <Tab title="Koa">
+    ```javascript
+    const Koa = require("koa");
+    const Router = require("@koa/router");
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+    HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // À omettre pour Managed ClickStack
+        service: 'my-service'
+    });
+
+    const router = new Router();
+    const app = new Koa();
+
+    HyperDX.setupKoaErrorHandler(app);
+
+    // Ajoutez vos routes, etc.
+
+    app.listen(3030);
+    ```
+  </Tab>
+
+  <Tab title="Manuel">
+    ```javascript
+    const HyperDX = require('@hyperdx/node-opentelemetry');
+
+    function myErrorHandler(error, req, res, next) {
+        // Peut être utilisé n'importe où dans votre application
+        HyperDX.recordException(error);
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+Si vous rencontrez des difficultés avec le SDK, vous pouvez activer la journalisation détaillée en définissant
+la variable d’environnement `OTEL_LOG_LEVEL` sur `debug`.
+
+```shell
+export OTEL_LOG_LEVEL=debug
+```
+
+<div id="advanced-instrumentation-configuration">
+  ## Configuration avancée de l’instrumentation
+</div>
+
+<div id="capture-console-logs">
+  ### Capturer les logs de la console
+</div>
+
+Par défaut, le SDK ClickStack capture les logs de la console. Vous pouvez désactiver cette fonctionnalité en
+définissant la variable d&#39;environnement `HDX_NODE_CONSOLE_CAPTURE` sur 0.
+
+```sh copy
+export HDX_NODE_CONSOLE_CAPTURE=0
+```
+
+<div id="attach-user-information-or-metadata">
+  ### Ajouter des informations utilisateur ou des métadonnées
+</div>
+
+Pour marquer facilement tous les événements liés à un attribut ou à un identifiant donné (par ex. l&#39;ID utilisateur
+ou l&#39;e-mail), vous pouvez appeler la fonction `setTraceAttributes`, qui appliquera les
+attributs déclarés à chaque log/span associé à la trace en cours après l&#39;appel. Il est recommandé d&#39;appeler cette fonction le plus tôt possible dans une
+requête/trace donnée (par ex. le plus tôt possible dans une pile de middlewares Express).
+
+C&#39;est un moyen pratique de garantir que tous les logs/spans sont automatiquement marqués avec
+les bons identifiants pour pouvoir les rechercher plus tard, au lieu de devoir
+marquer et propager manuellement les identifiants vous-même.
+
+`userId`, `userEmail`, `userName` et `teamName` renseigneront l&#39;UI des sessions
+avec les valeurs correspondantes, mais peuvent être omis. Toute valeur supplémentaire
+peut être spécifiée et utilisée pour rechercher des événements.
+
+```typescript
+import * as HyperDX from '@hyperdx/node-opentelemetry';
+
+app.use((req, res, next) => {
+  // Get user information from the request...
+
+  // Attach user information to the current trace
+  HyperDX.setTraceAttributes({
+    userId,
+    userEmail,
+  });
+
+  next();
+});
+```
+
+Veillez à activer le mode bêta en définissant la variable
+d’environnement `HDX_NODE_BETA_MODE` sur 1, ou en passant `betaMode: true` à la fonction `init` afin
+d’activer les attributs de trace.
+
+```shell
+export HDX_NODE_BETA_MODE=1
+```
+
+<div id="google-cloud-run">
+  ### Google Cloud Run
+</div>
+
+Si votre application s’exécute sur Google Cloud Run, Cloud Trace
+injecte automatiquement des headers d’échantillonnage dans les requêtes entrantes, ce qui
+limite actuellement l’échantillonnage des traces à 0,1 requête par seconde pour chaque instance.
+
+Le paquet `@hyperdx/node-opentelemetry` définit toutefois par défaut le taux d’échantillonnage sur 1,0.
+
+Pour modifier ce comportement ou configurer d’autres installations OpenTelemetry, vous
+pouvez définir manuellement les variables d’environnement
+`OTEL_TRACES_SAMPLER=parentbased_always_on` et `OTEL_TRACES_SAMPLER_ARG=1` afin
+d’obtenir le même résultat.
+
+Pour en savoir plus et forcer le traçage de requêtes spécifiques, consultez la
+[documentation Google Cloud Run](https://cloud.google.com/run/docs/trace).
+
+<div id="auto-instrumented-libraries">
+  ### Bibliothèques auto-instrumentées
+</div>
+
+Les bibliothèques suivantes seront automatiquement instrumentées (avec traçage) par le SDK :
+
+* [`dns`](https://nodejs.org/dist/latest/docs/api/dns.html)
+* [`express`](https://www.npmjs.com/package/express)
+* [`graphql`](https://www.npmjs.com/package/graphql)
+* [`hapi`](https://www.npmjs.com/package/@hapi/hapi)
+* [`http`](https://nodejs.org/dist/latest/docs/api/http.html)
+* [`ioredis`](https://www.npmjs.com/package/ioredis)
+* [`knex`](https://www.npmjs.com/package/knex)
+* [`koa`](https://www.npmjs.com/package/koa)
+* [`mongodb`](https://www.npmjs.com/package/mongodb)
+* [`mongoose`](https://www.npmjs.com/package/mongoose)
+* [`mysql`](https://www.npmjs.com/package/mysql)
+* [`mysql2`](https://www.npmjs.com/package/mysql2)
+* [`net`](https://nodejs.org/dist/latest/docs/api/net.html)
+* [`pg`](https://www.npmjs.com/package/pg)
+* [`pino`](https://www.npmjs.com/package/pino)
+* [`redis`](https://www.npmjs.com/package/redis)
+* [`winston`](https://www.npmjs.com/package/winston)
+
+<div id="alternative-installation">
+  ## Autre méthode d’installation
+</div>
+
+<div id="run-the-application-with-cli">
+  ### Exécuter l’application avec la CLI OpenTelemetry de ClickStack
+</div>
+
+Vous pouvez également auto-instrumenter votre application sans modifier le code en utilisant la CLI `opentelemetry-instrument` ou l’option
+Node.js `--require`. L’installation de la CLI offre un plus large éventail de bibliothèques et de frameworks auto-instrumentés.
+
+<Tabs>
+  <Tab title="Avec NPX">
+    <Info>
+      **Managed ClickStack**
+
+      La variable `HYPERDX_API_KEY` peut être omise avec Managed ClickStack.
+    </Info>
+
+    ```shell
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+    ```
+  </Tab>
+
+  <Tab title="Point d’entrée personnalisé (ex. Nodemon, ts-node, etc.)">
+    <Info>
+      **Managed ClickStack**
+
+      La variable `HYPERDX_API_KEY` peut être omise avec Managed ClickStack.
+    </Info>
+
+    ```shell
+    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    ```
+  </Tab>
+
+  <Tab title="Importation du code">
+    ```javascript
+    // Importez ceci tout en haut du premier fichier chargé par votre application
+    // Vous indiquerez toujours votre clé API via la variable d’environnement `HYPERDX_API_KEY`
+    import { initSDK } from '@hyperdx/node-opentelemetry';
+
+    initSDK({
+        consoleCapture: true, // facultatif, par défaut : true
+        additionalInstrumentations: [], // facultatif, par défaut : []
+    });
+    ```
+  </Tab>
+</Tabs>
+
+*La variable d’environnement `OTEL_SERVICE_NAME` est utilisée pour identifier votre service dans l’application HyperDX. Elle peut avoir le nom de votre choix.*
+
+<div id="enabling-exception-capturing">
+  ### Activer la capture des exceptions
+</div>
+
+Pour activer la capture des exceptions non gérées, vous devrez définir la variable d’environnement `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` sur 1.
+
+```shell
+HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
+```
+
+Ensuite, pour collecter automatiquement les exceptions d’Express ou de Koa, ou pour les intercepter manuellement, suivez les instructions de la section [Configurer la collecte des erreurs](#setup-error-collection) ci-dessus.
+
+<div id="auto-instrumented-libraries">
+  ### Bibliothèques auto-instrumentées
+</div>
+
+Les bibliothèques suivantes seront instrumentées automatiquement (pour le traçage) via les méthodes d’installation ci-dessus :
+
+* [`amqplib`](https://www.npmjs.com/package/amqplib)
+* [`AWS Lambda Functions`](https://docs.aws.amazon.com/lambda/latest/dg/nodejs-handler.html)
+* [`aws-sdk`](https://www.npmjs.com/package/aws-sdk)
+* [`bunyan`](https://www.npmjs.com/package/bunyan)
+* [`cassandra-driver`](https://www.npmjs.com/package/cassandra-driver)
+* [`connect`](https://www.npmjs.com/package/connect)
+* [`cucumber`](https://www.npmjs.com/package/@cucumber/cucumber)
+* [`dataloader`](https://www.npmjs.com/package/dataloader)
+* [`dns`](https://nodejs.org/dist/latest/docs/api/dns.html)
+* [`express`](https://www.npmjs.com/package/express)
+* [`fastify`](https://www.npmjs.com/package/fastify)
+* [`generic-pool`](https://www.npmjs.com/package/generic-pool)
+* [`graphql`](https://www.npmjs.com/package/graphql)
+* [`grpc`](https://www.npmjs.com/package/@grpc/grpc-js)
+* [`hapi`](https://www.npmjs.com/package/@hapi/hapi)
+* [`http`](https://nodejs.org/dist/latest/docs/api/http.html)
+* [`ioredis`](https://www.npmjs.com/package/ioredis)
+* [`knex`](https://www.npmjs.com/package/knex)
+* [`koa`](https://www.npmjs.com/package/koa)
+* [`lru-memoizer`](https://www.npmjs.com/package/lru-memoizer)
+* [`memcached`](https://www.npmjs.com/package/memcached)
+* [`mongodb`](https://www.npmjs.com/package/mongodb)
+* [`mongoose`](https://www.npmjs.com/package/mongoose)
+* [`mysql`](https://www.npmjs.com/package/mysql)
+* [`mysql2`](https://www.npmjs.com/package/mysql2)
+* [`nestjs-core`](https://www.npmjs.com/package/@nestjs/core)
+* [`net`](https://nodejs.org/dist/latest/docs/api/net.html)
+* [`pg`](https://www.npmjs.com/package/pg)
+* [`pino`](https://www.npmjs.com/package/pino)
+* [`redis`](https://www.npmjs.com/package/redis)
+* [`restify`](https://www.npmjs.com/package/restify)
+* [`socket.io`](https://www.npmjs.com/package/socket.io)
+* [`winston`](https://www.npmjs.com/package/winston)

@@ -656,7 +656,7 @@ void registerStorageMongoDB(StorageFactory & factory)
         .description = R"DOCS_MD(
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
-Only MongoDB v3.6+ servers are supported.
+Only MongoDB >=7 is supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
 ## Creating a table {#creating-a-table}
@@ -775,7 +775,7 @@ SELECT count() FROM sample_oid WHERE another_oid_column = '67bf6cc40000000000ea4
 
 Only queries with simple expressions are supported (for example, `WHERE field = <constant> ORDER BY field2 LIMIT <constant>`).
 Such expressions are translated to MongoDB query language and executed on the server side.
-You can disable all these restriction, using [mongodb_throw_on_unsupported_query](../../../operations/settings/settings.md#mongodb_throw_on_unsupported_query).
+You can disable all these restriction, using [mongodb_throw_on_unsupported_query](/reference/settings/session-settings/other#mongodb_throw_on_unsupported_query).
 In that case ClickHouse tries to convert query on best effort basis, but it can lead to full table scan and processing on ClickHouse side.
 
 :::note

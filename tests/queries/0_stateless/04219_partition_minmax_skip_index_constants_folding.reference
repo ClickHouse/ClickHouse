@@ -1,0 +1,29 @@
+== result ==
+== explain ==
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.partition_skip_minmax_folding)
+    Indexes:
+      Min-Max
+        Keys:
+          a
+        Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
+        Parts: 3/3
+        Granules: 9/9
+      Partition
+        Keys:
+          a
+        Condition: or((a in [3, 3]), or((a in [2, 2]), (a in [1, 1])))
+        Parts: 3/3
+        Granules: 9/9
+      PrimaryKey
+        Condition: true
+        Parts: 3/3
+        Granules: 9/9
+      Skip
+        Name: c_idx
+        Description: minmax GRANULARITY 1
+        Condition: or((c in [50001, +Inf)), or((c in (-Inf, 499]), (c in [501, +Inf))))
+        Parts: 0/3
+        Granules: 0/9
+      Ranges: 0

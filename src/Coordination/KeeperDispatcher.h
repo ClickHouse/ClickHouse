@@ -8,7 +8,10 @@
 #include <Common/ThreadPool.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <chrono>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <unordered_set>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -44,6 +47,10 @@ private:
 
     /// Cleaning old dead sessions
     ThreadFromGlobalPool session_cleaner_thread;
+    /// TTL expiry: leader enqueues TryRemove for expired empty nodes
+    ThreadFromGlobalPool ttl_garbage_collector_thread;
+    /// Container cleanup: leader enqueues TryRemove for childless container nodes
+    ThreadFromGlobalPool container_garbage_collector_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
     /// Apply or wait for configuration changes
@@ -71,8 +78,20 @@ private:
     KeeperContextPtr keeper_context;
 
     /// Flag to signal TCP handlers that they should close connections.
-    /// Set before the full shutdown() to allow handlers to exit promptly.
+    /// Not to be confused with keeper_context->isShutdownCalled(), which happens later.
+    /// This flag means we should avoid taking new requests, while existing requests and RAFT etc
+    /// may keep running normally. Then after client sessions are closed shutdown() is called to
+    /// stop all activity and join threads.
     std::atomic<bool> shutting_down{false};
+
+    /// Notified when shutting_down (not to be confused with keeper_context->isShutdownCalled())
+    /// becomes true. Wakes up interruptibleSleep().
+    std::mutex early_shutdown_wait_mutex;
+    std::condition_variable early_shutdown_wait_cv;
+
+    /// Sleep for `period`, returning early if `shutting_down` becomes true.
+    /// Useful for containerGarbageCollectorThread that sleeps for a minute by default.
+    void interruptibleSleep(std::chrono::milliseconds period);
 
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
@@ -89,6 +108,9 @@ private:
     /// Verify some logical issues in command, like duplicate ids, wrong leadership transfer and etc
     void checkReconfigCommandPreconditions(Poco::JSON::Object::Ptr reconfig_command);
     void checkReconfigCommandActions(Poco::JSON::Object::Ptr reconfig_command);
+
+    void ttlGarbageCollectorThread(size_t batch_size);
+    void containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
 
@@ -119,8 +141,9 @@ public:
     /// Process reconfiguration 4LW command: rcfg, it's another option to update cluster configuration
     Poco::JSON::Object::Ptr reconfigureClusterFromReconfigureCommand(Poco::JSON::Object::Ptr reconfig_command);
 
-    /// Signal TCP handlers to close connections before the full shutdown.
-    void signalShutdown() { shutting_down.store(true, std::memory_order_relaxed); }
+    /// Signal TCP handlers to close connections before the full shutdown, and wake the
+    /// GC threads from their inter-tick wait so they exit promptly.
+    void signalShutdown();
 
     /// Returns true if signalShutdown() was called.
     bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
@@ -196,7 +219,7 @@ public:
 
     Keeper4LWInfo getKeeper4LWInfo() const;
 
-    const IKeeperStateMachine & getStateMachine() const
+    const KeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }

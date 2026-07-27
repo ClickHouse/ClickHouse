@@ -1,0 +1,438 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-upgrade
+title: "Guide de mise à niveau de Helm"
+description: "Migration du chart Helm ClickStack inline-template v1.x vers l’architecture à sous-charts v2.x"
+doc_type: 'guide'
+keywords: ['mise à niveau de ClickStack', 'migration Helm', 'v1.x vers v2.x', 'architecture à sous-charts', 'migration ClickStack']
+---
+
+Ce guide explique comment migrer du chart Helm ClickStack inline-template (v1.x) vers l’architecture basée sur des sous-charts (v2.x). Il s’agit d’un **changement incompatible** qui remplace des ressources Kubernetes créées manuellement par des ressources personnalisées gérées par un opérateur pour MongoDB et ClickHouse, et s’appuie sur le chart Helm officiel de l’OpenTelemetry Collector.
+
+<Warning>
+  **Changement incompatible**
+
+  Le chart v2.x **n’est pas** rétrocompatible avec la v1.x. Une mise à niveau sur place avec `helm upgrade` n’est pas prise en charge. Nous recommandons d’effectuer une nouvelle installation en parallèle du déploiement existant et de migrer les données, plutôt que de tenter une mise à niveau sur place.
+</Warning>
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Sauvegardez vos données avant la mise à niveau (MongoDB, PVC ClickHouse)
+* Vérifiez les surcharges actuelles de votre fichier `values.yaml` — la plupart des clés ont été déplacées ou renommées
+
+<div id="two-phase-installation">
+  ## Installation en deux phases
+</div>
+
+Le chart v2.x s’installe en deux phases. Les opérateurs (qui enregistrent les CRD) doivent être installés avant le chart principal (qui crée les CR) :
+
+```bash
+# Phase 1: Install operators and CRDs
+helm install clickstack-operators clickstack/clickstack-operators
+
+# Phase 2: Install ClickStack
+helm install my-clickstack clickstack/clickstack
+```
+
+Désinstallez dans l’ordre inverse :
+
+```bash
+helm uninstall my-clickstack
+helm uninstall clickstack-operators
+```
+
+<div id="data-persistence">
+  ### Persistance des données
+</div>
+
+Les PersistentVolumeClaims créés par les opérateurs MongoDB et ClickHouse ne sont **pas** supprimés par `helm uninstall`. C’est intentionnel, afin d’éviter toute perte accidentelle de données. Pour supprimer les PVC après la désinstallation, consultez :
+
+* [documentation de l’opérateur Kubernetes MongoDB](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
+
+<div id="storage-class">
+  ### Classe de stockage
+</div>
+
+`global.storageClassName` et `global.keepPVC` ont été supprimés. La classe de stockage est désormais configurée directement dans la spécification CR de chaque opérateur :
+
+```yaml
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - spec:
+              storageClassName: "fast-ssd"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+```
+
+<div id="what-changed">
+  ## Ce qui a changé
+</div>
+
+| Composant       | Avant (v1.x)                                                                | Après (v2.x)                                                                                                                                |
+| --------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| MongoDB         | Deployment inline + Service + PVC                                           | [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) gérant une CR `MongoDBCommunity`                         |
+| ClickHouse      | Deployment inline + Service + ConfigMaps + PVC                              | [ClickHouse Operator](/fr/products/kubernetes-operator/overview) gérant les CR `ClickHouseCluster` et `KeeperCluster`                          |
+| OTel collector  | Deployment inline + Service (bloc `otel.*`)                                 | [Chart Helm officiel d’OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts) (sous-chart `otel-collector:`) |
+| Valeurs HyperDX | Clés à plat sous `hyperdx.*`, avec `tasks:` et `appUrl` au niveau supérieur | Réorganisées par type de ressource K8s sous `hyperdx.*` (voir ci-dessous)                                                                   |
+| hdx-oss-v2      | Ancien chart obsolète                                                       | Entièrement supprimé                                                                                                                        |
+
+<div id="hyperdx-values-reorganization">
+  ## Réorganisation des values HyperDX
+</div>
+
+Le bloc `hyperdx:` est désormais structuré par type de ressource Kubernetes :
+
+```yaml
+hyperdx:
+  ports:          # Shared port numbers (Deployment, Service, ConfigMap, Ingress)
+    api: 8000
+    app: 3000
+    opamp: 4320
+
+  frontendUrl: "http://localhost:3000"   # Replaces the removed appUrl
+
+  config:         # → clickstack-config ConfigMap (non-sensitive env vars)
+    APP_PORT: "3000"
+    HYPERDX_LOG_LEVEL: "info"
+
+  secrets:        # → clickstack-secret Secret (sensitive env vars)
+    HYPERDX_API_KEY: "..."
+    CLICKHOUSE_PASSWORD: "otelcollectorpass"
+    CLICKHOUSE_APP_PASSWORD: "hyperdx"
+    MONGODB_PASSWORD: "hyperdx"
+
+  deployment:     # K8s Deployment spec (image, replicas, probes, etc.)
+  service:        # K8s Service spec (type, annotations)
+  ingress:        # K8s Ingress spec (host, tls, annotations)
+  podDisruptionBudget:  # K8s PDB spec
+  tasks:          # K8s CronJob specs (previously top-level tasks:)
+```
+
+<div id="key-moves">
+  ### Changements clés
+</div>
+
+| Avant (v1.x)                               | Après (v2.x)                                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `appUrl`                                   | Supprimé. Utilisez `hyperdx.frontendUrl` (valeur par défaut : `http://localhost:3000`) |
+| `tasks.*` (niveau racine)                  | `hyperdx.tasks.*`                                                                      |
+| `mongodb.password`                         | `hyperdx.secrets.MONGODB_PASSWORD`                                                     |
+| `clickhouse.config.users.appUserPassword`  | `hyperdx.secrets.CLICKHOUSE_APP_PASSWORD`                                              |
+| `clickhouse.config.users.otelUserPassword` | `hyperdx.secrets.CLICKHOUSE_PASSWORD`                                                  |
+| substitutions d&#39;environnement `otel.*` | `hyperdx.config.*` (non sensibles) et `hyperdx.secrets.*` (sensibles)                  |
+
+<div id="unified-configmap-and-secret">
+  ### ConfigMap et Secret unifiés
+</div>
+
+Toutes les variables d’environnement sont désormais transmises via deux ressources aux noms fixes, partagées par le déploiement HyperDX **et** l’OTel collector via `envFrom` :
+
+* **`clickstack-config`** ConfigMap — renseignée à partir de `hyperdx.config`
+* **`clickstack-secret`** Secret — renseigné à partir de `hyperdx.secrets`
+
+Il n’existe plus de ConfigMap distincte spécifique à OTel. Les deux charges de travail utilisent les mêmes sources.
+
+<div id="mongodb-migration">
+  ## Migration de MongoDB
+</div>
+
+<div id="mongodb-removed-values">
+  ### Valeurs supprimées
+</div>
+
+Les valeurs `mongodb.*` suivantes n&#39;existent plus :
+
+```yaml
+# REMOVED — do not use
+mongodb:
+  image: "..."
+  port: 27017
+  strategy: ...
+  nodeSelector: {}
+  tolerations: []
+  livenessProbe: ...
+  readinessProbe: ...
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+```
+
+<div id="mongodb-new-values">
+  ### Nouvelles valeurs
+</div>
+
+MongoDB est désormais géré par l’opérateur MCK via une ressource personnalisée `MongoDBCommunity`. La spécification de la ressource personnalisée est générée telle quelle à partir de `mongodb.spec` :
+
+```yaml
+mongodb:
+  enabled: true
+  spec:
+    members: 1
+    type: ReplicaSet
+    version: "5.0.32"
+    security:
+      authentication:
+        modes: ["SCRAM"]
+    users:
+      - name: hyperdx
+        db: hyperdx
+        passwordSecretRef:
+          name: '{{ include "clickstack.mongodb.fullname" . }}-password'
+        roles:
+          - name: dbOwner
+            db: hyperdx
+          - name: clusterMonitor
+            db: admin
+        scramCredentialsSecretName: '{{ include "clickstack.mongodb.fullname" . }}-scram'
+    additionalMongodConfig:
+      storage.wiredTiger.engineConfig.journalCompressor: zlib
+```
+
+Le mot de passe MongoDB est défini dans `hyperdx.secrets.MONGODB_PASSWORD` (et non dans `mongodb.password`). Il est automatiquement référencé par le Secret du mot de passe et le modèle `mongoUri`.
+
+Pour ajouter de la persistance, ajoutez un bloc `statefulSet` dans `mongodb.spec` :
+
+```yaml
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: "your-storage-class"
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+Le sous-chart de l’opérateur MCK se configure sous `mongodb-operator:` (et non `mongodb-kubernetes:`). Consultez la [documentation MCK](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity) pour obtenir la liste complète des champs de CRD disponibles.
+
+<div id="clickhouse-migration">
+  ## Migration vers ClickHouse
+</div>
+
+<div id="mongodb-removed-values">
+  ### Valeurs supprimées
+</div>
+
+Les valeurs `clickhouse.*` suivantes n’existent plus :
+
+```yaml
+# REMOVED — do not use
+clickhouse:
+  image: "..."
+  terminationGracePeriodSeconds: 90
+  resources: {}
+  livenessProbe: ...
+  readinessProbe: ...
+  startupProbe: ...
+  nodeSelector: {}
+  tolerations: []
+  service:
+    type: ClusterIP
+    annotations: {}
+  persistence:
+    enabled: true
+    dataSize: 10Gi
+    logSize: 5Gi
+  config:
+    clusterCidrs: [...]
+    users:
+      appUserPassword: "..."
+      otelUserPassword: "..."
+      otelUserName: "..."
+```
+
+<div id="mongodb-new-values">
+  ### Nouvelles valeurs
+</div>
+
+ClickHouse est désormais géré par le ClickHouse Operator via les ressources personnalisées `ClickHouseCluster` et `KeeperCluster`. Les sections `spec` de ces deux ressources sont générées telles quelles à partir des `values` :
+
+```yaml
+clickhouse:
+  enabled: true
+  port: 8123
+  nativePort: 9000
+  prometheus:
+    enabled: true
+    port: 9363
+  keeper:
+    spec:
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      replicas: 1
+      shards: 1
+      keeperClusterRef:
+        name: '{{ include "clickstack.clickhouse.keeper" . }}'
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+      settings:
+        extraUsersConfig:
+          users:
+            app:
+              password: '{{ .Values.hyperdx.secrets.CLICKHOUSE_APP_PASSWORD }}'
+            otelcollector:
+              password: '{{ .Values.hyperdx.secrets.CLICKHOUSE_PASSWORD }}'
+        extraConfig:
+          max_connections: 4096
+          keep_alive_timeout: 64
+          max_concurrent_queries: 100
+```
+
+Les identifiants utilisateur de ClickHouse proviennent désormais de `hyperdx.secrets` (et non de `clickhouse.config.users`). La spécification du cluster y fait référence à l’aide d’expressions de template.
+
+Le sous-chart ClickHouse Operator se configure sous `clickhouse-operator:`. Les webhooks et cert-manager sont désactivés par défaut. Consultez le [guide de configuration de l’opérateur](/fr/products/kubernetes-operator/guides/configuration) pour voir tous les champs de CRD disponibles.
+
+<div id="otel-collector-migration">
+  ## Migration de l’OTEL Collector
+</div>
+
+<div id="mongodb-removed-values">
+  ### Valeurs supprimées
+</div>
+
+Le bloc `otel:` a été entièrement supprimé :
+
+```yaml
+# REMOVED — do not use
+otel:
+  enabled: true
+  image: ...
+  replicas: 1
+  resources: {}
+  clickhouseEndpoint: ...
+  clickhouseUser: ...
+  clickhousePassword: ...
+  clickhouseDatabase: "default"
+  opampServerUrl: ...
+  port: 13133
+  nativePort: 24225
+  grpcPort: 4317
+  httpPort: 4318
+  healthPort: 8888
+  env: []
+  customConfig: ...
+```
+
+<div id="mongodb-new-values">
+  ### Nouvelles valeurs
+</div>
+
+L’OTel collector est désormais déployé via le chart Helm officiel OpenTelemetry Collector en tant que sous-chart `otel-collector:`. Il n’existe pas de chart parent `otel:` faisant office de wrapper — configurez directement le sous-chart.
+
+Les variables d’environnement (endpoint ClickHouse, URL OpAMP, etc.) sont partagées via la ConfigMap unifiée `clickstack-config` et le Secret `clickstack-secret`. Le `extraEnvsFrom` du sous-chart est préconfiguré :
+
+```yaml
+otel-collector:
+  enabled: true
+  mode: deployment
+  image:
+    repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+    tag: ""
+  extraEnvsFrom:
+    - configMapRef:
+        name: clickstack-config
+    - secretRef:
+        name: clickstack-secret
+  ports:
+    otlp:
+      enabled: true
+      containerPort: 4317
+      servicePort: 4317
+    otlp-http:
+      enabled: true
+      containerPort: 4318
+      servicePort: 4318
+```
+
+Pour définir les ressources (anciennement `otel.resources`) :
+
+```yaml
+otel-collector:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+```
+
+Pour définir les répliques (précédemment `otel.replicas`) :
+
+```yaml
+otel-collector:
+  replicaCount: 3
+```
+
+Pour définir `nodeSelector`/`tolerations` (anciennement `otel.nodeSelector`/`otel.tolerations`) :
+
+```yaml
+otel-collector:
+  nodeSelector:
+    node-role: monitoring
+  tolerations:
+    - key: monitoring
+      operator: Equal
+      value: otel
+      effect: NoSchedule
+```
+
+Consultez le [chart Helm de l’OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) pour connaître l’ensemble des valeurs disponibles du sous-chart.
+
+<div id="unchanged-values">
+  ## Valeurs inchangées
+</div>
+
+Les sections suivantes **ne sont pas concernées** par cette migration :
+
+* `global.*` (imageRegistry, imagePullSecrets)
+
+<div id="fresh-install-vs-in-place-upgrade">
+  ## Nouvelle installation ou mise à niveau sur place
+</div>
+
+Pour une **nouvelle installation**, aucune étape particulière n&#39;est nécessaire. Les valeurs par défaut fonctionnent immédiatement.
+
+Pour une **mise à niveau sur place** d&#39;une release existante, gardez à l&#39;esprit que :
+
+1. Les opérateurs (MCK, ClickHouse Operator) seront installés sous forme de nouveaux déploiements dans votre espace de noms
+2. Le Deployment MongoDB existant et le Deployment ClickHouse existant seront supprimés par Helm (ils ne figurent plus dans les templates du chart)
+3. Les opérateurs créeront de nouveaux StatefulSets pour gérer MongoDB et ClickHouse
+4. **Les PVC de l&#39;ancien chart ne sont pas réutilisés automatiquement** par les StatefulSets gérés par les opérateurs
+
+Nous recommandons d&#39;effectuer une nouvelle installation en parallèle du déploiement existant et de migrer les données, plutôt que de procéder à une mise à niveau sur place.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* [Guide principal de Helm](/fr/clickstack/deployment/helm) - Installation de base avec v2.x
+* [Guide de configuration](/fr/clickstack/deployment/helm-configuration) - API keys, secrets et ingress
+* [Manifests supplémentaires](/fr/clickstack/deployment/helm-additional-manifests) - Objets Kubernetes personnalisés
+* [Dépôt des charts Helm ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) - Code source du chart et référence des values

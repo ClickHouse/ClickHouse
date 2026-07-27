@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -59,7 +60,7 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
     for (const auto & name_and_cluster : context->getClusters())
         writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {});
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & name_and_database : databases)
     {
         if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(name_and_database.second.get()))
@@ -220,3 +221,6 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     }
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemClusters) }

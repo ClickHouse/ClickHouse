@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'よくある質問'
+description: 'Kafka 向け ClickPipes に関するよくある質問です。'
+slug: /integrations/clickpipes/kafka/faq
+title: 'Kafka ClickPipes に関するよくある質問'
+doc_type: 'guide'
+keywords: ['Kafka よくある質問', 'ClickPipes', 'upstash', 'Azure Event Hubs', 'プライベートリンク']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="faq">
+  ## Kafka ClickPipes に関するよくある質問
+</div>
+
+<div id="general">
+  ### 一般
+</div>
+
+<Accordion title="Kafka 向け ClickPipes はどのように動作しますか？">
+  ClickPipes は、Kafka Consumer API を使用する専用アーキテクチャによって指定したトピックからデータを読み取り、そのデータを特定の ClickHouse Cloud サービス上の ClickHouse テーブルに挿入します。
+</Accordion>
+
+<Accordion title="ClickPipes と ClickHouse Kafka Table Engine の違いは何ですか？">
+  Kafka Table engine は ClickHouse のコア機能であり、ClickHouse server 自身が Kafka に接続してイベントを取得し、ローカルに書き込む「プルモデル」を実装します。
+
+  一方、ClickPipes は ClickHouse サービスとは独立して動作する別個の Cloud サービスです。Kafka (または他のデータソース) に接続し、関連付けられた ClickHouse Cloud サービスにイベントをプッシュします。この疎結合アーキテクチャにより、高い運用柔軟性、関心の明確な分離、スケーラブルなインジェスト、障害の適切な管理、拡張性などが実現されます。
+</Accordion>
+
+<Accordion title="Kafka 向け ClickPipes を使用するための要件は何ですか？">
+  Kafka 向け ClickPipes を使用するには、稼働中の Kafka ブローカーと、ClickPipes が有効になっている ClickHouse Cloud サービスが必要です。また、ClickHouse Cloud から Kafka ブローカーにアクセスできるようにする必要があります。これは、Kafka 側でリモート接続を許可し、Kafka の設定で [ClickHouse Cloud Egress IP addresses](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) を許可リストに追加することで実現できます。あるいは、[AWS PrivateLink](/ja/integrations/clickpipes/aws-privatelink) を使用して Kafka 向け ClickPipes を Kafka ブローカーに接続することもできます。
+</Accordion>
+
+<Accordion title="Kafka 向け ClickPipes は AWS PrivateLink をサポートしていますか？">
+  AWS PrivateLink はサポートされています。設定方法の詳細については、[ドキュメント](/ja/integrations/clickpipes/aws-privatelink) を参照してください。
+</Accordion>
+
+<Accordion title="Kafka 向け ClickPipes を使用して Kafka トピックにデータを書き込めますか？">
+  いいえ。Kafka 向け ClickPipes は Kafka トピックからデータを読み取るために設計されており、トピックへの書き込みには対応していません。Kafka トピックにデータを書き込むには、専用の Kafka producer を使用する必要があります。
+</Accordion>
+
+<Accordion title="ClickPipes は複数のブローカーをサポートしていますか？">
+  はい。ブローカーが同じクォーラムに属している場合は、`,` 区切りでまとめて設定できます。
+</Accordion>
+
+<Accordion title="ClickPipes のレプリカはスケーリングできますか？">
+  はい。streaming 向けの ClickPipes は、水平方向と垂直方向の両方にスケーリングできます。
+  水平スケーリングではスループットを高めるためにレプリカを追加し、垂直スケーリングでは、より高負荷の workload に対応するために各レプリカに割り当てるリソース (CPU と RAM) を増やします。
+  これは ClickPipe の作成時、または **Settings** -&gt; **Advanced Settings** -&gt; **Scaling** からいつでも設定できます。
+</Accordion>
+
+<Accordion title="ClickPipes のセットアップ UI に Kafka トピックの一部が表示されません。なぜですか？">
+  ClickPipes のトピック検出 UI には、デフォルトで最大 1,500 件のトピックが表示されます。Kafka クラスターに 1,500 件を超えるトピックがある場合、一部のトピックはドロップダウンに表示されないことがあります。対象のトピックが存在することを確認するには、同じ認証情報を使用して Kafka クライアントから直接確認してください。存在が確認でき、一覧表示の上限を 1,500 件より大きくする必要がある場合は、ClickHouse Support にお問い合わせください。
+</Accordion>
+
+<div id="azure-eventhubs">
+  ### Azure Event Hubs
+</div>
+
+<Accordion title="Kafka surface なしでも Azure Event Hubs ClickPipe は動作しますか？">
+  いいえ。ClickPipes では、Event Hubs のネームスペースで Kafka surface が有効になっている必要があります。これは **Basic** より上位のティアでのみ利用できます。詳細については、[Azure Event Hubs のドキュメント](https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-quickstart-kafka-enabled-event-hubs?tabs=passwordless#create-an-azure-event-hubs-namespace)を参照してください。
+</Accordion>
+
+<Accordion title="Azure Schema Registry は ClickPipes で利用できますか？">
+  いいえ。ClickPipes がサポートしているのは、Confluent スキーマレジストリと API 互換性のあるスキーマレジストリのみであり、Azure Schema Registry はこれに該当しません。このスキーマレジストリのサポートが必要な場合は、[弊社チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+</Accordion>
+
+<Accordion title="Azure Event Hubs から取り込むには、ポリシーにどのような権限が必要ですか？">
+  トピックの一覧表示とイベントの受信を行うには、ClickPipes に付与する共有アクセス ポリシーに、少なくとも &#39;Listen&#39; クレームが必要です。
+</Accordion>
+
+<Accordion title="Event Hubs からデータが返ってこないのはなぜですか？">
+  ClickHouse インスタンスが Event Hubs のデプロイ先と異なるリージョンまたは大陸にある場合、ClickPipes のオンボーディング時にタイムアウトが発生したり、Event Hub からデータを取り込む際のレイテンシが高くなったりすることがあります。パフォーマンス オーバーヘッドを避けるため、ClickHouse Cloud と Azure Event Hubs は同じクラウドリージョン、または近接したリージョンにデプロイすることを推奨します。
+</Accordion>
+
+<Accordion title="Azure Event Hubs ではポート番号を含めるべきですか？">
+  はい。ClickPipes では Kafka surface のポート番号を含める必要があり、そのポートは `:9093` です。
+</Accordion>
+
+<Accordion title="Azure Event Hubs でも ClickPipes IPs は引き続き関係ありますか？">
+  はい。Event Hubs インスタンスへのトラフィックを制限するには、[ドキュメント化されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を に追加してください。
+</Accordion>
+
+<Accordion title="接続文字列は Event Hub 用ですか、それとも Event Hub ネームスペース用ですか？">
+  どちらでも使用できます。複数の Event Hubs からサンプルを取得するには、**ネームスペース レベル** の共有アクセス ポリシーを使用することを強く推奨します。
+</Accordion>

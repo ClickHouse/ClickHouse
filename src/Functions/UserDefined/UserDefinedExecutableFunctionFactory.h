@@ -9,6 +9,7 @@
 #include <Core/Types.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -27,7 +28,7 @@ public:
 
     static bool has(const String & function_name, ContextPtr context);
 
-    static Strings getRegisteredNames(ContextPtr context);
+    static VectorWithMemoryTracking<String> getRegisteredNames(ContextPtr context);
 
 };
 

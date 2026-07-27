@@ -1,0 +1,66 @@
+---
+title: 'MongoDB ClickPipe 동기화 제어'
+description: 'MongoDB ClickPipe 동기화 제어 문서'
+slug: /integrations/clickpipes/mongodb/sync_control
+sidebarTitle: '동기화 제어'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 문서에서는 MongoDB ClickPipe가 **CDC (Running) 모드**로 실행 중일 때 동기화를 제어하는 방법을 설명합니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+데이터베이스 ClickPipes는 원본 데이터베이스에서 데이터를 가져오는 과정과 대상 데이터베이스로 데이터를 푸시하는 과정, 이렇게 두 개의 병렬 프로세스로 이루어진 아키텍처를 가집니다. 가져오기 프로세스는 데이터를 얼마나 자주 가져올지, 그리고 한 번에 얼마나 많은 데이터를 가져올지를 정의하는 동기화 구성에 의해 제어됩니다. 여기서 &quot;한 번에&quot;는 하나의 배치(batch)를 의미합니다. ClickPipe는 데이터를 배치 단위로 가져오고 푸시하기 때문입니다.
+
+MongoDB ClickPipe의 동기화를 제어하는 주요 방법은 두 가지입니다. 아래 설정 중 하나가 적용되면 ClickPipe가 푸시를 시작합니다.
+
+<div id="interval">
+  ### 동기화 간격
+</div>
+
+파이프의 동기화 간격은 ClickPipe가 원본 데이터베이스에서 레코드를 가져오는 데 사용하는 시간(초 단위)을 의미합니다. 가져온 데이터를 ClickHouse로 전송하는 데 걸리는 시간은 이 간격에 포함되지 않습니다.
+
+기본값은 **1분**입니다.
+동기화 간격은 양의 정수 값으로 설정할 수 있지만, 10초를 초과하도록 유지하는 것이 좋습니다.
+
+<div id="batch-size">
+  ### Pull batch 크기
+</div>
+
+Pull batch 크기는 ClickPipe가 원본 데이터베이스에서 한 번에 가져오는 레코드 수입니다. 여기서 레코드는 파이프에 포함된 컬렉션에서 수행된 삽입, 업데이트, 삭제를 의미합니다.
+
+기본값은 **100,000**개 레코드입니다.
+안전한 최대값은 1,000만입니다.
+
+<div id="configuring">
+  ### 동기화 설정 구성
+</div>
+
+ClickPipe를 생성하거나 기존 ClickPipe를 편집할 때 동기화 간격과 pull batch 크기를 설정할 수 있습니다.
+ClickPipe를 생성할 때는 아래와 같이 생성 마법사의 두 번째 단계에서 이 설정을 확인할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="동기화 설정 생성" size="md" />
+
+기존 ClickPipe를 편집할 때는 파이프의 **설정** 탭으로 이동한 다음 파이프를 일시 중지하고 여기에서 **구성**을 클릭하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="동기화 버튼 편집" size="md" />
+
+그러면 동기화 설정이 포함된 플라이아웃이 열리며, 여기서 동기화 간격과 pull batch 크기를 변경할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="동기화 설정 편집" size="md" />
+
+<div id="monitoring">
+  ### 동기화 제어 동작 모니터링
+</div>
+
+ClickPipe의 **메트릭** 탭에 있는 **CDC Syncs** 테이블에서 각 배치의 소요 시간을 확인할 수 있습니다. 여기서 표시되는 시간에는 push에 걸리는 시간도 포함됩니다. 또한 유입되는 행이 없으면 ClickPipe가 대기하며, 그 대기 시간 역시 소요 시간에 포함됩니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs 테이블" size="md" />

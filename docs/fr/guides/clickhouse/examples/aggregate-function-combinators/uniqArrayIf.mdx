@@ -1,0 +1,92 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArrayIf'
+title: 'uniqArrayIf'
+description: "Exemple d’utilisation du combinateur uniqArrayIf"
+keywords: ['uniq', 'array', 'if', 'combinator', 'exemples', 'uniqArrayIf']
+sidebarTitle: 'uniqArrayIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Les combinateurs [`Array`](/fr/reference/functions/aggregate-functions/combinators#-array) et [`If`](/fr/reference/functions/aggregate-functions/combinators#-if) peuvent être appliqués à la fonction [`uniq`](/fr/reference/functions/aggregate-functions/uniq)
+pour compter le nombre de valeurs uniques dans des tableaux pour les lignes où la
+condition est true, à l’aide de la fonction de combinateur d’agrégation `uniqArrayIf`.
+
+<Note>
+  -`If` et -`Array` peuvent être combinés. Cependant, `Array` doit venir en premier, puis `If`.
+</Note>
+
+Cela est utile lorsque vous souhaitez compter les éléments uniques d’un tableau selon
+des conditions spécifiques sans avoir à utiliser `arrayJoin`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="count-unique-products">
+  ### Compter les produits uniques consultés par type de segment et niveau d’engagement
+</div>
+
+Dans cet exemple, nous utiliserons une table contenant des données de session
+d’achat utilisateur pour compter le nombre de produits uniques consultés
+par les utilisateurs appartenant à un segment spécifique, avec comme
+métrique d’engagement le temps passé dans la session.
+
+```sql title="Query"
+CREATE TABLE user_shopping_sessions
+(
+    session_date Date,
+    user_segment String,
+    viewed_products Array(String),
+    session_duration_minutes Int32
+) ENGINE = Memory;
+
+INSERT INTO user_shopping_sessions VALUES
+    ('2024-01-01', 'new_customer', ['smartphone_x', 'headphones_y', 'smartphone_x'], 12),
+    ('2024-01-01', 'returning', ['laptop_z', 'smartphone_x', 'tablet_a'], 25),
+    ('2024-01-01', 'new_customer', ['smartwatch_b', 'headphones_y', 'fitness_tracker'], 8),
+    ('2024-01-02', 'returning', ['laptop_z', 'external_drive', 'laptop_z'], 30),
+    ('2024-01-02', 'new_customer', ['tablet_a', 'keyboard_c', 'tablet_a'], 15),
+    ('2024-01-02', 'premium', ['smartphone_x', 'smartwatch_b', 'headphones_y'], 22);
+
+-- Count unique products viewed by segment type and engagement level
+SELECT 
+    session_date,
+    -- Count unique products viewed in long sessions by new customers
+    uniqArrayIf(viewed_products, user_segment = 'new_customer' AND session_duration_minutes > 10) AS new_customer_engaged_products,
+    -- Count unique products viewed by returning customers
+    uniqArrayIf(viewed_products, user_segment = 'returning') AS returning_customer_products,
+    -- Count unique products viewed across all sessions
+    uniqArray(viewed_products) AS total_unique_products
+FROM user_shopping_sessions
+GROUP BY session_date
+ORDER BY session_date
+FORMAT Vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+session_date:                2024-01-01
+new_customer⋯ed_products:    2
+returning_customer_products: 3
+total_unique_products:       6
+
+Row 2:
+──────
+session_date:                2024-01-02
+new_customer⋯ed_products:    2
+returning_customer_products: 2
+total_unique_products:       7
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`uniq`](/fr/reference/functions/aggregate-functions/uniq)
+* [`combinateur Array`](/fr/reference/functions/aggregate-functions/combinators#-array)
+* [`combinateur If`](/fr/reference/functions/aggregate-functions/combinators#-if)

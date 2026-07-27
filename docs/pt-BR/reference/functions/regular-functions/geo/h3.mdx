@@ -1,0 +1,1519 @@
+---
+description: 'Documentação sobre H3'
+sidebarTitle: 'Índices H3'
+slug: /sql-reference/functions/geo/h3
+title: 'Funções para trabalhar com índices H3'
+doc_type: 'reference'
+---
+
+<div id="h3-index">
+  ## H3 Index
+</div>
+
+[H3](https://h3geo.org/) é um sistema de indexação geográfica em que a superfície da Terra é dividida em uma grade de células hexagonais uniformes. Esse sistema é hierárquico, ou seja, cada hexágono no nível superior (&quot;pai&quot;) pode ser dividido em sete outros hexágonos uniformes, porém menores (&quot;filhos&quot;), e assim por diante.
+
+O nível da hierarquia é chamado de `resolution` e pode assumir um valor de `0` a `15`, em que `0` é o nível `base`, com as células maiores e menos detalhadas.
+
+Um par de latitude e longitude pode ser transformado em um índice H3 de 64 bits, que identifica uma célula da grade.
+
+O índice H3 é usado principalmente para agrupar localizações e realizar outras manipulações geoespaciais.
+
+A descrição completa do sistema H3 está disponível no [site de Engenharia da Uber](https://www.uber.com/blog/h3/).
+
+<div id="h3isvalid">
+  ## h3IsValid
+</div>
+
+Verifica se o número é um índice [H3](#h3-index) válido.
+
+**Sintaxe**
+
+```sql
+h3IsValid(h3index)
+```
+
+**Parâmetro**
+
+* `h3index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* 1 — O número é um índice H3 válido. [UInt8](/pt-BR/reference/data-types/int-uint).
+* 0 — O número não é um índice H3 válido. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3IsValid(630814730351855103) AS h3IsValid;
+```
+
+```text title="Response"
+┌─h3IsValid─┐
+│         1 │
+└───────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+Define a resolução do índice [H3](#h3-index) informado.
+
+**Sintaxe**
+
+```sql
+h3GetResolution(h3index)
+```
+
+**Parâmetro**
+
+* `h3index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+* Se o índice não for válido, a função retornará um valor aleatório. Use [h3IsValid](#h3isvalid) para verificar o índice. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3GetResolution(639821929606596015) AS resolution;
+```
+
+```text title="Response"
+┌─resolution─┐
+│         14 │
+└────────────┘
+```
+
+<div id="h3edgeangle">
+  ## h3EdgeAngle
+</div>
+
+Calcula o comprimento médio de uma aresta de um hexágono [H3](#h3-index), em graus.
+
+**Sintaxe**
+
+```sql
+h3EdgeAngle(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. [UInt8](/pt-BR/reference/data-types/int-uint). Intervalo: `[0, 15]`.
+
+**Valores retornados**
+
+* O comprimento médio da aresta de um hexágono [H3](#h3-index), em graus. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3EdgeAngle(10) AS edgeAngle;
+```
+
+```text title="Response"
+┌───────h3EdgeAngle(10)─┐
+│ 0.0005927224846720883 │
+└───────────────────────┘
+```
+
+<div id="h3edgelengthm">
+  ## h3EdgeLengthM
+</div>
+
+Calcula o comprimento médio da aresta de um hexágono [H3](#h3-index), em metros.
+
+**Sintaxe**
+
+```sql
+h3EdgeLengthM(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. [UInt8](/pt-BR/reference/data-types/int-uint). Intervalo: `[0, 15]`.
+
+**Valores retornados**
+
+* O comprimento médio da aresta de um hexágono [H3](#h3-index), em metros. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3EdgeLengthM(15) AS edgeLengthM;
+```
+
+```text title="Response"
+┌─edgeLengthM─┐
+│ 0.509713273 │
+└─────────────┘
+```
+
+<div id="h3edgelengthkm">
+  ## h3EdgeLengthKm
+</div>
+
+Calcula o comprimento médio da aresta de um hexágono [H3](#h3-index), em quilômetros.
+
+**Sintaxe**
+
+```sql
+h3EdgeLengthKm(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. [UInt8](/pt-BR/reference/data-types/int-uint). Intervalo: `[0, 15]`.
+
+**Valores retornados**
+
+* O comprimento médio da aresta de um hexágono [H3](#h3-index), em quilômetros. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3EdgeLengthKm(15) AS edgeLengthKm;
+```
+
+```text title="Response"
+┌─edgeLengthKm─┐
+│  0.000509713 │
+└──────────────┘
+```
+
+<div id="geotoh3">
+  ## geoToH3
+</div>
+
+Retorna [H3](#h3-index) o índice do ponto `(lat, lon)` com a resolução especificada.
+
+**Sintaxe**
+
+```sql
+geoToH3(lat, lon, resolution)
+```
+
+**Argumentos**
+
+* `lat` — Latitude. [Float64](/pt-BR/reference/data-types/float).
+* `lon` — Longitude. [Float64](/pt-BR/reference/data-types/float).
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+* 0 em caso de erro. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+Observação: no ClickHouse v25.4 ou anterior, `geoToH3()` recebe os valores na ordem `(lon, lat)`. A partir do ClickHouse v25.5, os valores de entrada seguem a ordem `(lat, lon)`. O comportamento anterior pode ser restaurado usando a configuração `geotoh3_argument_order = 'lon_lat'`.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT geoToH3(55.71290588, 37.79506683, 15) AS h3Index;
+```
+
+```text title="Response"
+┌────────────h3Index─┐
+│ 644325524701193974 │
+└────────────────────┘
+```
+
+<div id="h3togeo">
+  ## h3ToGeo
+</div>
+
+Retorna a latitude e a longitude do centróide correspondentes ao índice [H3](#h3-index) informado.
+
+**Sintaxe**
+
+```sql
+h3ToGeo(h3Index)
+```
+
+**Argumentos**
+
+* `h3Index` — índice H3. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Uma tupla composta por dois valores: `tuple(lat,lon)`. `lat` — Latitude. [Float64](/pt-BR/reference/data-types/float). `lon` — Longitude. [Float64](/pt-BR/reference/data-types/float).
+
+Observação: no ClickHouse v24.12 ou anterior, `h3ToGeo()` retorna os valores na ordem `(lon, lat)`. A partir do ClickHouse v25.1, os valores retornados ficam na ordem `(lat, lon)`. O comportamento anterior pode ser restaurado usando a configuração `h3togeo_lon_lat_result_order = true`.
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ToGeo(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─coordinates───────────────────────────┐
+│ (55.71290243145668,37.79506616830252) │
+└───────────────────────────────────────┘
+```
+
+<div id="h3togeoboundary">
+  ## h3ToGeoBoundary
+</div>
+
+Retorna um array de pares `(lat, lon)`, que correspondem ao contorno do índice H3 fornecido.
+
+**Sintaxe**
+
+```sql
+h3ToGeoBoundary(h3Index)
+```
+
+**Argumentos**
+
+* `h3Index` — índice H3. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Array de pares &#39;(lat, lon)&#39;. [Array](/pt-BR/reference/data-types/array)([Float64](/pt-BR/reference/data-types/float), [Float64](/pt-BR/reference/data-types/float)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ToGeoBoundary(644325524701193974) AS coordinates;
+```
+
+```text title="Response"
+┌─h3ToGeoBoundary(599686042433355775)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [(37.2713558667319,-121.91508032705622),(37.353926450852256,-121.8622232890249),(37.42834118609435,-121.92354999630156),(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044),(37.26319797461824,-122.02910130919001)] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3kring">
+  ## h3kRing
+</div>
+
+Lista todos os hexágonos [H3](#h3-index) em um raio de `k` do hexágono fornecido, em ordem aleatória.
+
+**Sintaxe**
+
+```sql
+h3kRing(h3index, k)
+```
+
+**Argumentos**
+
+* `h3index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `k` — Raio. [inteiro](/pt-BR/reference/data-types/int-uint)
+
+**Valores retornados**
+
+* Array de índices H3. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 644325529233966508 │
+│ 644325529233966497 │
+│ 644325529233966510 │
+│ 644325529233966504 │
+│ 644325529233966509 │
+│ 644325529233966355 │
+│ 644325529233966354 │
+└────────────────────┘
+```
+
+<div id="h3polygontocells">
+  ## h3PolygonToCells
+</div>
+
+Retorna os hexágonos (na resolução especificada) contidos na geometria fornecida, seja um ring ou um (multi-)polygon.
+
+**Sintaxe**
+
+```sql
+h3PolygonToCells(geometry, resolution)
+```
+
+**Argumentos**
+
+* `geometry` pode ser um dos seguintes [Tipos de dados Geo](/pt-BR/reference/data-types/geo) ou seus tipos primitivos subjacentes:
+  * [Ring](/pt-BR/reference/data-types/geo#ring)
+  * [Polygon](/pt-BR/reference/data-types/geo#polygon)
+  * [MultiPolygon](/pt-BR/reference/data-types/geo#multipolygon)
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Array com os índices H3 contidos. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.3544736999993603,37.7198061999978478),(-122.4798767000009008,37.8151571999998453)], 7) AS h3index;
+```
+
+```text title="Response"
+┌────────────h3index─┐
+│ 608692970769612799 │
+│ 608692971927240703 │
+│ 608692970585063423 │
+│ 608692970819944447 │
+│ 608692970719281151 │
+│ 608692970752835583 │
+│ 608692972027903999 │
+└────────────────────┘
+```
+
+<div id="h3polygontocellswithcontainment">
+  ## h3PolygonToCellsWithContainment
+</div>
+
+Retorna os hexágonos (na resolução especificada) que cobrem a geometria fornecida, seja um anel ou um (multi)polígono, usando os modos experimentais de contenção do H3.
+
+Esta função associa as `flags` aos modos de contenção do H3:
+
+* `0` — `CONTAINMENT_CENTER`
+* `1` — `CONTAINMENT_FULL`
+* `2` — `CONTAINMENT_OVERLAPPING`
+* `3` — `CONTAINMENT_OVERLAPPING_BBOX`
+
+**Sintaxe**
+
+```sql
+h3PolygonToCellsWithContainment(geometry, resolution, flags)
+```
+
+**Argumentos**
+
+* `geometry` pode ser um dos seguintes [Tipos de Dados Geo](/pt-BR/reference/data-types/geo) ou seus respectivos tipos primitivos:
+  * [ring](/pt-BR/reference/data-types/geo#ring)
+  * [Polygon](/pt-BR/reference/data-types/geo#polygon)
+  * [multipolígono](/pt-BR/reference/data-types/geo#multipolygon)
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+* `flags` — Modo de contenção. Intervalo: `[0, 3]`. Use literais inteiros como `0`, `1`, `2` e `3`, ou valores [UInt32](/pt-BR/reference/data-types/int-uint) (por exemplo, `toUInt32(2)`). Os valores são passados para a API H3 como `UInt32`. Outros tipos inteiros nativos são convertidos com exatidão.
+
+**Valores retornados**
+
+* Array de índices H3 de acordo com o modo de contenção selecionado. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 0) AS center_cells,
+    h3PolygonToCellsWithContainment([(-122.4089866999972145, 37.813318999983238), (-122.3544736999993603, 37.7198061999978478), (-122.4798767000009008, 37.8151571999998453)], 7, 2) AS overlap_cells;
+```
+
+```text title="Response"
+   ┌─center_cells───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─overlap_cells──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [608692970585063423,608692970719281151,608692970752835583,608692970769612799,608692970819944447,608692971927240703,608692972027903999] │ [608692970249519103,608692970266296319,608692970585063423,608692970601840639,608692970635395071,608692970685726719,608692970719281151,608692970736058367,608692970752835583,608692970769612799,608692970786390015,608692970819944447,608692971927240703,608692971994349567,608692972027903999] │
+   └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getbasecell">
+  ## h3GetBaseCell
+</div>
+
+Retorna o número da célula-base do índice [H3](#h3-index).
+
+**Sintaxe**
+
+```sql
+h3GetBaseCell(index)
+```
+
+**Parâmetro**
+
+* `index` — número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Número da célula-base do hexágono. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3GetBaseCell(612916788725809151) AS basecell;
+```
+
+```text title="Response"
+┌─basecell─┐
+│       12 │
+└──────────┘
+```
+
+<div id="h3hexaream2">
+  ## h3HexAreaM2
+</div>
+
+Retorna a área média do hexágono em metros quadrados na resolução informada.
+
+**Sintaxe**
+
+```sql
+h3HexAreaM2(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Área em metros quadrados. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3HexAreaM2(13) AS area;
+```
+
+```text title="Response"
+┌─area─┐
+│ 43.9 │
+└──────┘
+```
+
+<div id="h3hexareakm2">
+  ## h3HexAreaKm2
+</div>
+
+Retorna a área média de um hexágono em quilômetros quadrados na resolução especificada.
+
+**Sintaxe**
+
+```sql
+h3HexAreaKm2(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. Faixa: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Área em quilômetros quadrados. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3HexAreaKm2(13) AS area;
+```
+
+```text title="Response"
+┌──────area─┐
+│ 0.0000439 │
+└───────────┘
+```
+
+<div id="h3indexesareneighbors">
+  ## h3IndexesAreNeighbors
+</div>
+
+Retorna se os [H3](#h3-index) índices fornecidos são vizinhos.
+
+**Sintaxe**
+
+```sql
+h3IndexesAreNeighbors(index1, index2)
+```
+
+**Argumentos**
+
+* `index1` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `index2` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* `1` — Os índices são vizinhos. [UInt8](/pt-BR/reference/data-types/int-uint).
+* `0` — Os índices não são vizinhos. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3IndexesAreNeighbors(617420388351344639, 617420388352655359) AS n;
+```
+
+```text title="Response"
+┌─n─┐
+│ 1 │
+└───┘
+```
+
+<div id="h3tochildren">
+  ## h3ToChildren
+</div>
+
+Retorna um array com os índices filhos do índice [H3](#h3-index) informado.
+
+**Sintaxe**
+
+```sql
+h3ToChildren(index, resolution)
+```
+
+**Argumentos**
+
+* `index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Array dos índices H3 filhos. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ToChildren(599405990164561919, 6) AS children;
+```
+
+```text title="Response"
+┌─children───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [603909588852408319,603909588986626047,603909589120843775,603909589255061503,603909589389279231,603909589523496959,603909589657714687] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3toparent">
+  ## h3ToParent
+</div>
+
+Retorna o índice pai (de resolução mais baixa) que contém o índice [H3](#h3-index) informado.
+
+**Sintaxe**
+
+```sql
+h3ToParent(index, resolution)
+```
+
+**Argumentos**
+
+* `index` — número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Índice H3 pai. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ToParent(599405990164561919, 3) AS parent;
+```
+
+```text title="Response"
+┌─────────────parent─┐
+│ 590398848891879423 │
+└────────────────────┘
+```
+
+<div id="h3tostring">
+  ## h3ToString
+</div>
+
+Converte a representação `H3Index` do índice em sua representação textual.
+
+```sql
+h3ToString(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Representação textual do índice H3. [String](/pt-BR/reference/data-types/string).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ToString(617420388352917503) AS h3_string;
+```
+
+```text title="Response"
+┌─h3_string───────┐
+│ 89184926cdbffff │
+└─────────────────┘
+```
+
+<div id="stringtoh3">
+  ## stringToH3
+</div>
+
+Converte a representação textual em `H3Index` (UInt64).
+
+**Sintaxe**
+
+```sql
+stringToH3(index_str)
+```
+
+**Parâmetro**
+
+* `index_str` — Representação textual do índice H3. [String](/pt-BR/reference/data-types/string).
+
+**Valor retornado**
+
+* Número do índice hexagonal. Retorna 0 em caso de erro. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT stringToH3('89184926cc3ffff') AS index;
+```
+
+```text title="Response"
+┌──────────────index─┐
+│ 617420388351344639 │
+└────────────────────┘
+```
+
+<div id="h3getresolution">
+  ## h3GetResolution
+</div>
+
+Retorna a resolução do índice [H3](#h3-index).
+
+**Sintaxe**
+
+```sql
+h3GetResolution(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3GetResolution(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   9 │
+└─────┘
+```
+
+<div id="h3isresclassiii">
+  ## h3IsResClassIII
+</div>
+
+Retorna se o índice [H3](#h3-index) tem uma resolução de orientação Classe III.
+
+**Sintaxe**
+
+```sql
+h3IsResClassIII(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* `1` — O índice tem resolução com orientação de Classe III. [UInt8](/pt-BR/reference/data-types/int-uint).
+* `0` — O índice não tem resolução com orientação de Classe III. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3IsResClassIII(617420388352917503) AS res;
+```
+
+```text title="Response"
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+<div id="h3ispentagon">
+  ## h3IsPentagon
+</div>
+
+Retorna se este índice [H3](#h3-index) corresponde a uma célula pentagonal.
+
+**Sintaxe**
+
+```sql
+h3IsPentagon(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice hexagonal. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* `1` — O índice representa uma célula pentagonal. [UInt8](/pt-BR/reference/data-types/int-uint).
+* `0` — O índice não representa uma célula pentagonal. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3IsPentagon(644721767722457330) AS pentagon;
+```
+
+```text title="Response"
+┌─pentagon─┐
+│        0 │
+└──────────┘
+```
+
+<div id="h3getfaces">
+  ## h3GetFaces
+</div>
+
+Retorna as faces do icosaedro que são intersectadas por um determinado índice [H3](#h3-index).
+
+**Sintaxe**
+
+```sql
+h3GetFaces(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Array contendo as faces do icosaedro que têm interseção com um determinado índice H3. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3GetFaces(599686042433355775) AS faces;
+```
+
+```text title="Response"
+┌─faces─┐
+│ [7]   │
+└───────┘
+```
+
+<div id="h3cellaream2">
+  ## h3CellAreaM2
+</div>
+
+Retorna a área exata, em metros quadrados, de uma célula específica correspondente ao índice H3 informado.
+
+**Sintaxe**
+
+```sql
+h3CellAreaM2(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Área da célula em metros quadrados. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3CellAreaM2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌───────────────area─┐
+│ 4106166334463.9233 │
+└────────────────────┘
+```
+
+<div id="h3cellarearads2">
+  ## h3CellAreaRads2
+</div>
+
+Retorna a área exata de uma célula específica em radianos quadrados correspondente ao índice H3 informado.
+
+**Sintaxe**
+
+```sql
+h3CellAreaRads2(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Área da célula em radianos ao quadrado. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3CellAreaRads2(579205133326352383) AS area;
+```
+
+```text title="Response"
+┌────────────────area─┐
+│ 0.10116268528089567 │
+└─────────────────────┘
+```
+
+<div id="h3tocenterchild">
+  ## h3ToCenterChild
+</div>
+
+Retorna o índice [H3](#h3-index) filho central (mais refinado) contido no [H3](#h3-index) especificado, na resolução informada.
+
+**Sintaxe**
+
+```sql
+h3ToCenterChild(index, resolution)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* índice [H3](#h3-index) do filho central contido no [H3](#h3-index) fornecido, na resolução especificada. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ToCenterChild(577023702256844799,1) AS centerToChild;
+```
+
+```text title="Response"
+┌──────centerToChild─┐
+│ 581496515558637567 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthm">
+  ## h3ExactEdgeLengthM
+</div>
+
+Retorna o comprimento exato da aresta unidirecional representada pelo índice H3 de entrada, em metros.
+
+**Sintaxe**
+
+```sql
+h3ExactEdgeLengthM(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Comprimento exato da aresta em metros. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
+```
+
+```text title="Response"
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthkm">
+  ## h3ExactEdgeLengthKm
+</div>
+
+Retorna o comprimento exato da aresta unidirecional representada pelo índice H3 informado, em quilômetros.
+
+**Sintaxe**
+
+```sql
+h3ExactEdgeLengthKm(index)
+```
+
+**Parâmetro**
+
+* `index` — Número de índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Comprimento exato da aresta em quilômetros. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
+```
+
+<div id="h3exactedgelengthrads">
+  ## h3ExactEdgeLengthRads
+</div>
+
+Retorna o comprimento exato da aresta unidirecional representada pelo índice H3 informado, em radianos.
+
+**Sintaxe**
+
+```sql
+h3ExactEdgeLengthRads(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor de retorno**
+
+* Comprimento exato da aresta, em radianos. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
+```
+
+```text title="Response"
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
+```
+
+<div id="h3numhexagons">
+  ## h3NumHexagons
+</div>
+
+Retorna o número de índices H3 únicos na resolução especificada.
+
+**Sintaxe**
+
+```sql
+h3NumHexagons(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Número de índices H3. [Int64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3NumHexagons(3) AS numHexagons;
+```
+
+```text title="Response"
+┌─numHexagons─┐
+│       41162 │
+└─────────────┘
+```
+
+<div id="h3pointdistm">
+  ## h3PointDistM
+</div>
+
+Retorna a distância de &quot;grande círculo&quot; ou &quot;haversine&quot; entre pares de pontos GeoCoord (latitude/longitude), em metros.
+
+**Sintaxe**
+
+```sql
+h3PointDistM(lat1, lon1, lat2, lon2)
+```
+
+**Argumentos**
+
+* `lat1`, `lon1` — Latitude e longitude do ponto 1 em graus. [Float64](/pt-BR/reference/data-types/float).
+* `lat2`, `lon2` — Latitude e longitude do ponto 2 em graus. [Float64](/pt-BR/reference/data-types/float).
+
+**Valores retornados**
+
+* Distância haversine, ou de grande círculo, em metros.[Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
+```
+
+```text title="Response"
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistkm">
+  ## h3PointDistKm
+</div>
+
+Retorna a distância de &quot;grande círculo&quot; ou &quot;haversine&quot; entre pares de pontos GeoCoord (latitude/longitude), em quilômetros.
+
+**Sintaxe**
+
+```sql
+h3PointDistKm(lat1, lon1, lat2, lon2)
+```
+
+**Argumentos**
+
+* `lat1`, `lon1` — Latitude e longitude do ponto 1, em graus. [Float64](/pt-BR/reference/data-types/float).
+* `lat2`, `lon2` — Latitude e longitude do ponto 2, em graus. [Float64](/pt-BR/reference/data-types/float).
+
+**Valores retornados**
+
+* Distância de Haversine ou de círculo máximo, em quilômetros. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
+```
+
+```text title="Response"
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
+```
+
+<div id="h3pointdistrads">
+  ## h3PointDistRads
+</div>
+
+Retorna a distância de &quot;grande círculo&quot; ou &quot;haversine&quot; entre pares de pontos GeoCoord (latitude/longitude), em radianos.
+
+**Sintaxe**
+
+```sql
+h3PointDistRads(lat1, lon1, lat2, lon2)
+```
+
+**Argumentos**
+
+* `lat1`, `lon1` — Latitude e longitude do ponto 1 em graus. [Float64](/pt-BR/reference/data-types/float).
+* `lat2`, `lon2` — Latitude e longitude do ponto 2 em graus. [Float64](/pt-BR/reference/data-types/float).
+
+**Valores retornados**
+
+* Distância haversine ou de grande círculo em radianos. [Float64](/pt-BR/reference/data-types/float).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3PointDistRads(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistRads;
+```
+
+```text title="Response"
+┌────h3PointDistRads─┐
+│ 0.3490658503988659 │
+└────────────────────┘
+```
+
+<div id="h3getres0indexes">
+  ## h3GetRes0Indexes
+</div>
+
+Retorna um array com todos os índices H3 de resolução 0.
+
+**Sintaxe**
+
+```sql
+h3GetRes0Indexes()
+```
+
+**Valores retornados**
+
+* Array com todos os índices H3 de resolução 0. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3GetRes0Indexes AS indexes ;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────────┐
+│ [576495936675512319,576531121047601151,....]│
+└─────────────────────────────────────────────┘
+```
+
+<div id="h3getpentagonindexes">
+  ## h3GetPentagonIndexes
+</div>
+
+Retorna todos os índices H3 pentagonais na resolução especificada.
+
+**Sintaxe**
+
+```sql
+h3GetPentagonIndexes(resolution)
+```
+
+**Parâmetro**
+
+* `resolution` — Resolução do índice. Intervalo: `[0, 15]`. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Array com todos os índices H3 de pentágono. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+SELECT h3GetPentagonIndexes(3) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────┐
+│ [590112357393367039,590464201114255359,590816044835143679,...] │
+└────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3line">
+  ## h3Line
+</div>
+
+Retorna a linha de índices entre os dois índices informados.
+
+**Sintaxe**
+
+```sql
+h3Line(start,end)
+```
+
+**Parâmetro**
+
+* `start` — Número do índice H3 que representa um ponto inicial. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `end` — Número do índice H3 que representa um ponto final. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+Array de índices H3 que representa a linha de índices entre os dois índices fornecidos. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3Line(590080540275638271,590103561300344831) AS indexes;
+```
+
+```text title="Response"
+┌─indexes────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080540275638271,590080471556161535,590080883873021951,590106516237844479,590104385934065663,590103630019821567,590103561300344831] │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3distance">
+  ## h3Distance
+</div>
+
+Retorna a distância em células de grade entre os dois índices fornecidos.
+
+**Sintaxe**
+
+```sql
+h3Distance(start,end)
+```
+
+**Parâmetro**
+
+* `start` — Número do índice do hexágono que representa o ponto inicial. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `end` — Número do índice do hexágono que representa o ponto final. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Número de células da grade. [Int64](/pt-BR/reference/data-types/int-uint).
+
+Retorna um número negativo se o cálculo da distância falhar.
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3Distance(590080540275638271,590103561300344831) AS distance;
+```
+
+```text title="Response"
+┌─distance─┐
+│        7 │
+└──────────┘
+```
+
+<div id="h3hexring">
+  ## h3HexRing
+</div>
+
+Retorna os índices do anel hexagonal centrado no h3Index de origem fornecido, com comprimento k.
+
+Retorna 0 se não houver distorção pentagonal.
+
+**Sintaxe**
+
+```sql
+h3HexRing(index, k)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono que representa a origem. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `k` — Distância. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valores retornados**
+
+* Array de índices H3. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3HexRing(590080540275638271, toUInt16(1)) AS hexRing;
+```
+
+```text title="Response"
+┌─hexRing─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [590080815153545215,590080471556161535,590080677714591743,590077585338138623,590077447899185151,590079509483487231] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledge">
+  ## h3GetUnidirectionalEdge
+</div>
+
+Retorna um índice H3 de aresta unidirecional com base na origem e no destino informados; em caso de erro, retorna 0.
+
+**Sintaxe**
+
+```sql
+h3GetUnidirectionalEdge(originIndex, destinationIndex)
+```
+
+**Parâmetro**
+
+* `originIndex` — Número do índice do hexágono de origem. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `destinationIndex` — Número do índice do hexágono de destino. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Número do índice do hexágono da aresta unidirecional. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdge(599686042433355775, 599686043507097599) AS edge;
+```
+
+```text title="Response"
+┌────────────────edge─┐
+│ 1248204388774707199 │
+└─────────────────────┘
+```
+
+<div id="h3unidirectionaledgeisvalid">
+  ## h3UnidirectionalEdgeIsValid
+</div>
+
+Determina se o H3Index fornecido é um índice de aresta unidirecional válido. Retorna 1 se for uma aresta unidirecional e 0 caso contrário.
+
+**Sintaxe**
+
+```sql
+h3UnidirectionalEdgeisValid(index)
+```
+
+**Parâmetro**
+
+* `index` — Número de índice do hexágono. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* 1 — O índice H3 é uma aresta unidirecional válida. [UInt8](/pt-BR/reference/data-types/int-uint).
+* 0 — O índice H3 não é uma aresta unidirecional válida. [UInt8](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3UnidirectionalEdgeIsValid(1248204388774707199) AS validOrNot;
+```
+
+```text title="Response"
+┌─validOrNot─┐
+│          1 │
+└────────────┘
+```
+
+<div id="h3getoriginindexfromunidirectionaledge">
+  ## h3GetOriginIndexFromUnidirectionalEdge
+</div>
+
+Retorna o índice do hexágono de origem da aresta unidirecional H3Index.
+
+**Sintaxe**
+
+```sql
+h3GetOriginIndexFromUnidirectionalEdge(edge)
+```
+
+**Parâmetro**
+
+* `edge` — Número do índice do hexágono que representa uma aresta unidirecional. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Número do índice do hexágono de origem. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
+```
+
+```text title="Response"
+┌─────────────origin─┐
+│ 599686042433355773 │
+└────────────────────┘
+```
+
+<div id="h3getdestinationindexfromunidirectionaledge">
+  ## h3GetDestinationIndexFromUnidirectionalEdge
+</div>
+
+Retorna o índice do hexágono de destino da aresta unidirecional H3Index.
+
+**Sintaxe**
+
+```sql
+h3GetDestinationIndexFromUnidirectionalEdge(edge)
+```
+
+**Parâmetro**
+
+* `edge` — Número do índice do hexágono que representa uma aresta unidirecional. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Número do índice do hexágono de destino. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
+```
+
+```text title="Response"
+┌────────destination─┐
+│ 599686043507097597 │
+└────────────────────┘
+```
+
+<div id="h3getindexesfromunidirectionaledge">
+  ## h3GetIndexesFromUnidirectionalEdge
+</div>
+
+Retorna os índices dos hexágonos de origem e de destino a partir da aresta unidirecional H3Index fornecida.
+
+**Sintaxe**
+
+```sql
+h3GetIndexesFromUnidirectionalEdge(edge)
+```
+
+**Parâmetro**
+
+* `edge` — Número do índice do hexágono que representa uma aresta unidirecional. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+Uma tupla composta por dois valores `tuple(origin,destination)`:
+
+* `origin` — Número do índice do hexágono de origem. [UInt64](/pt-BR/reference/data-types/int-uint).
+* `destination` — Número do índice do hexágono de destino. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+Retorna `(0,0)` se a entrada fornecida não for válida.
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3GetIndexesFromUnidirectionalEdge(1248204388774707199) AS indexes;
+```
+
+```text title="Response"
+┌─indexes─────────────────────────────────┐
+│ (599686042433355775,599686043507097599) │
+└─────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgesfromhexagon">
+  ## h3GetUnidirectionalEdgesFromHexagon
+</div>
+
+Retorna todas as arestas unidirecionais do H3Index fornecido.
+
+**Sintaxe**
+
+```sql
+h3GetUnidirectionalEdgesFromHexagon(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono que representa uma aresta unidirecional. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+Array de índices H3 que representam cada aresta unidirecional. [Array](/pt-BR/reference/data-types/array)([UInt64](/pt-BR/reference/data-types/int-uint)).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
+```
+
+```text title="Response"
+┌─edges─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [1248204388774707199,1320261982812635135,1392319576850563071,1464377170888491007,1536434764926418943,1608492358964346879] │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="h3getunidirectionaledgeboundary">
+  ## h3GetUnidirectionalEdgeBoundary
+</div>
+
+Retorna as coordenadas que definem a aresta unidirecional.
+
+**Sintaxe**
+
+```sql
+h3GetUnidirectionalEdgeBoundary(index)
+```
+
+**Parâmetro**
+
+* `index` — Número do índice do hexágono que representa uma aresta unidirecional. [UInt64](/pt-BR/reference/data-types/int-uint).
+
+**Valor retornado**
+
+* Array de pares &#39;(lon, lat)&#39;. [Array](/pt-BR/reference/data-types/array)([Float64](/pt-BR/reference/data-types/float), [Float64](/pt-BR/reference/data-types/float)).
+
+**Exemplo**
+
+```sql title="Query"
+ SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary;
+```
+
+```text title="Response"
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```

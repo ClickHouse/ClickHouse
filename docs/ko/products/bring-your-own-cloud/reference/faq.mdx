@@ -1,0 +1,72 @@
+---
+title: 'BYOC FAQ'
+slug: /cloud/reference/byoc/reference/faq
+sidebarTitle: 'FAQ'
+keywords: ['BYOC', '클라우드', 'Bring Your Own Cloud', 'FAQ']
+description: '사용자 클라우드 인프라에 ClickHouse 배포'
+doc_type: 'reference'
+---
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="compute">
+  ### 컴퓨트
+</div>
+
+<Accordion title="이 단일 EKS 클러스터에서 여러 서비스를 생성할 수 있습니까?">
+  예, 가능합니다. 인프라는 AWS 계정과 리전의 각 조합마다 한 번만 프로비저닝하면 됩니다.
+</Accordion>
+
+<Accordion title="BYOC에서는 어떤 리전을 지원합니까?">
+  당사의 [지원되는 리전](/ko/products/cloud/reference/supported-regions) 문서에 나열된 모든 **퍼블릭 리전**에서 BYOC 배포를 사용할 수 있습니다.
+</Accordion>
+
+<Accordion title="리소스 오버헤드가 발생합니까? ClickHouse 인스턴스 외에 서비스를 실행하는 데 어떤 리소스가 필요합니까?">
+  ClickHouse 인스턴스 자체(ClickHouse 서버 및 ClickHouse Keeper) 외에도 `clickhouse-operator`, `aws-cluster-autoscaler`, Istio, 모니터링 스택과 같은 지원 서비스를 함께 실행합니다.
+
+  이러한 공유 구성 요소의 리소스 사용량은 비교적 안정적이며, ClickHouse 서비스의 수나 크기에 비례해 선형적으로 증가하지 않습니다. 대략적인 기준으로 AWS에서는 일반적으로 이러한 워크로드를 실행하기 위해 약 4개의 `4xlarge` EC2 인스턴스로 구성된 전용 노드 그룹을 사용합니다.
+</Accordion>
+
+<div id="network-and-security">
+  ### 네트워크 및 보안
+</div>
+
+<Accordion title="설치 중 설정한 권한을 설정 완료 후에 취소할 수 있습니까?">
+  현재로서는 불가능합니다.
+</Accordion>
+
+<Accordion title="문제 해결을 위해 ClickHouse 엔지니어가 고객 인프라에 접근할 수 있도록 하는 향후 보안 제어를 검토하고 있습니까?">
+  예. 고객이 엔지니어의 클러스터 접근을 승인할 수 있는 고객 제어 메커니즘을 구현하는 방안이 로드맵에 포함되어 있습니다. 현재 엔지니어는 클러스터에 적시 접근 권한을 얻기 위해 내부 에스컬레이션 절차를 거쳐야 합니다. 이 과정은 보안 팀에서 기록하고 감사합니다.
+</Accordion>
+
+<Accordion title="생성되는 VPC IP 범위의 크기는 얼마입니까?">
+  기본적으로 BYOC VPC에는 `10.0.0.0/16`을 사용합니다. 향후 스케일링 가능성을 고려해 최소 /22를 예약하는 것이 좋습니다.
+  다만 크기를 제한하려는 경우, 서버 파드 수가 30개로 제한될 가능성이 높다면
+  /23을 사용할 수도 있습니다.
+</Accordion>
+
+<Accordion title="유지 관리 빈도를 결정할 수 있습니까?">
+  유지 관리 기간을 예약하려면 지원팀에 문의하십시오. 업데이트는 최소 주 1회 일정으로 진행된다고 예상하십시오.
+</Accordion>
+
+<Accordion title="BYOC VPC와 S3 간 네트워크 통신은 어떻게 작동합니까?">
+  고객 BYOC VPC와 S3 간의 트래픽은 테이블 데이터, 백업, 로그 전송을 위해 AWS S3 API를 통한 HTTPS(포트 443)를 사용합니다. S3 VPC 엔드포인트를 사용하는 경우 이 트래픽은 AWS 네트워크 내부에만 머물며 퍼블릭 인터넷을 통과하지 않습니다.
+</Accordion>
+
+<Accordion title="내부 ClickHouse 클러스터 통신에는 어떤 포트가 사용됩니까?">
+  고객 BYOC VPC 내의 내부 ClickHouse 클러스터 통신에는 다음 포트를 사용합니다:
+
+  * 포트 9000의 네이티브 ClickHouse 프로토콜
+  * 포트 8123/8443의 HTTP/HTTPS
+  * 복제 및 분산 쿼리를 위한 포트 9009의 서버 간 통신
+</Accordion>
+
+<div id="uptime-sla">
+  ### 업타임 SLA
+</div>
+
+<Accordion title="ClickHouse는 BYOC에 대해 업타임 SLA를 제공합니까?">
+  아니요. 데이터 플레인은 고객의 클라우드 환경에서 호스팅되므로 서비스 가용성은 ClickHouse가 통제할 수 없는 리소스에 따라 달라집니다. 따라서 ClickHouse는 BYOC 배포에 대해 공식적인 업타임 SLA를 제공하지 않습니다. 추가로 궁금한 사항이 있으면 support@clickhouse.com으로 문의하십시오.
+</Accordion>

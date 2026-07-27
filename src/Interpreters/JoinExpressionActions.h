@@ -35,6 +35,15 @@ private:
 public:
     BitSet() = default;
 
+    BitSet(size_t num_bits, UInt64 value) : bitset(num_bits, value) {}
+
+    static BitSet fromUInt(std::unsigned_integral auto value)
+    {
+        using T = decltype(value);
+        constexpr size_t num_bits = sizeof(T) * 8;
+        return BitSet(num_bits, static_cast<UInt64>(value));
+    }
+
     static BitSet allSet(size_t size)
     {
         Base bs(size);
@@ -165,6 +174,7 @@ inline bool areIntersecting(const BitSet & lhs, const BitSet & rhs)
 
     return false;
 }
+
 
 class JoinActionRef;
 

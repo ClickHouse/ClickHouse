@@ -1,0 +1,380 @@
+---
+noindex: true
+title: "ClickHouse Private API 참조"
+sidebarTitle: "API 참조"
+description: "ClickHouse Private API는 ClickHouse Private 클러스터를 관리하기 위한 독립 실행형 선택적 구성 요소입니다."
+---
+
+ClickHouse Private API는 ClickHouse Private 클러스터를 관리하기 위한 독립 실행형 선택적 구성 요소입니다. 백업, 수직 스케일링, 비밀번호 재설정, 클러스터 상태 모니터링을 위한 REST 엔드포인트를 제공합니다.
+
+***
+
+<div id="configuration-options">
+  ## 구성 옵션
+</div>
+
+API는 Helm 차트(`helm/airgap-management`)를 통해 설치됩니다.
+
+| Helm Value                   | 유형  | 기본값          | 설명                               |
+| ---------------------------- | --- | ------------ | -------------------------------- |
+| `image.repository`           | 문자열 | --           | Private API image용 ECR/GAR 리포지토리 |
+| `image.tag`                  | 문자열 | --           | 배포할 image 태그                     |
+| `api.port`                   | 정수  | `8080`       | API가 수신 대기하는 포트                  |
+| `api.basicAuth.enabled`      | 불리언 | `false`      | HTTP 기본 인증을 활성화합니다               |
+| `api.basicAuth.username`     | 문자열 | `"admin"`    | 기본 인증용 username                  |
+| `api.basicAuth.password`     | 문자열 | `"password"` | 기본 인증용 password                  |
+| `serviceAccount.enabled`     | 불리언 | `true`       | API용 서비스 계정을 생성합니다               |
+| `serviceAccount.annotations` | 맵   | `{}`         | 서비스 계정의 어노테이션(예: IRSA용)          |
+
+***
+
+<div id="authentication">
+  ## 인증
+</div>
+
+기본적으로 기본 인증은 비활성화되어 있습니다. 프로덕션 환경에서는 Helm을 통해 이를 활성화하십시오:
+
+```text
+--set-json='api.basicAuth.enabled=true'
+--set-json='api.basicAuth.username="admin"'
+--set-json='api.basicAuth.password="YOUR_SECURE_PASSWORD"'
+```
+
+활성화하면 요청에 자격 증명을 포함합니다:
+
+```bash
+curl -u admin:YOUR_SECURE_PASSWORD http://localhost:8080/api/v1/...
+```
+
+***
+
+<div id="resource-quantity-format">
+  ## 리소스 수량 형식
+</div>
+
+API는 CPU 및 메모리 필드에 Kubernetes 리소스 수량 형식을 지원합니다.
+
+<div id="cpu-quantities">
+  ### CPU 수량
+</div>
+
+| 포맷      | 예시       | 의미           |
+| ------- | -------- | ------------ |
+| 정수      | `"4"`    | 4개의 CPU 코어   |
+| Decimal | `"2.5"`  | 2.5개의 CPU 코어 |
+| 밀리코어    | `"500m"` | 0.5개의 CPU 코어 |
+
+<div id="memory-quantities">
+  ### 메모리 용량
+</div>
+
+| 포맷       | 예시         | 의미          |
+| -------- | ---------- | ----------- |
+| 바이너리(권장) | `"16Gi"`   | 16 기비바이트    |
+| 바이너리     | `"4096Mi"` | 4096 메비바이트  |
+| 십진수      | `"16G"`    | 16 기가바이트    |
+| 십진수      | `"16000M"` | 16000 메가바이트 |
+
+메모리에는 Kubernetes 관례에 맞도록 바이너리 단위(Ki, Mi, Gi)를 사용하는 것이 좋습니다.
+
+***
+
+<div id="endpoints">
+  ## 엔드포인트
+</div>
+
+<div id="health-check">
+  ### 헬스 체크
+</div>
+
+<div id="get-readiness">
+  #### `GET /readiness`
+</div>
+
+API의 상태 및 readiness 상태를 반환합니다.
+
+**응답:** `200 OK`
+
+***
+
+<div id="backups">
+  ### 백업
+</div>
+
+<div id="create-backup">
+  #### 백업 생성
+</div>
+
+`POST /api/v1/backups?instance_id={instance_id}`
+
+지정한 ClickHouse 클러스터의 새 백업을 생성합니다.
+
+**쿼리 매개변수:**
+
+| 매개변수          | 유형     | 필수 | 설명                                     |
+| ------------- | ------ | -- | -------------------------------------- |
+| `instance_id` | string | 예  | ClickHouse 클러스터 이름(예: `default-xx-01`) |
+
+**요청 본문:**
+
+```json
+{
+    "incremental": false,
+    "baseBackupUuid": "uuid-of-previous-backup",
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+| 필드               | 유형               | 필수  | 설명                                                                  |
+| ---------------- | ---------------- | --- | ------------------------------------------------------------------- |
+| `incremental`    | boolean          | 아니요 | 전체 백업에는 `false`, 증분 백업에는 `true`를 사용합니다. 기본값은 `false`입니다.            |
+| `baseBackupUuid` | string           | 아니요 | 이전 백업의 UUID입니다(`incremental`이 `true`인 경우 필수).                       |
+| `databases`      | array of strings | 아니요 | 백업할 특정 데이터베이스입니다. 모든 데이터베이스를 백업하려면 생략합니다.                           |
+| `tables`         | array of strings | 아니요 | 백업할 특정 테이블입니다. 완전 수식 이름(`db.table`)을 사용해야 합니다. 모든 테이블을 백업하려면 생략합니다. |
+
+**응답:** `201 Created` -- UUID가 포함된 생성된 백업 객체를 반환합니다.
+
+**동작:** ClickHouse 클러스터 네임스페이스에 `Backup` 사용자 지정 리소스를 생성합니다. 연산자는 새 `Backup` 객체를 감시하여 관련 백업 SQL 구문을 실행하고, 시스템 테이블을 통해 상태를 모니터링합니다.
+
+***
+
+<div id="get-backup">
+  #### Backup 조회
+</div>
+
+`GET /api/v1/backups/{backup_id}?instance_id={instance_id}`
+
+특정 Backup의 상태와 세부 정보를 반환합니다.
+
+**경로 매개변수:**
+
+| 매개변수        | 유형     | 필수 | 설명           |
+| ----------- | ------ | -- | ------------ |
+| `backup_id` | string | 예  | Backup의 UUID |
+
+**쿼리 매개변수:**
+
+| 매개변수          | 유형     | 필수 | 설명                 |
+| ------------- | ------ | -- | ------------------ |
+| `instance_id` | string | 예  | ClickHouse 클러스터 이름 |
+
+**응답:** `200 OK` -- Backup 객체를 반환합니다. `status.state` 필드는 완료 상태를 나타냅니다(예: 완료되면 `Ready`).
+
+***
+
+<div id="list-backups">
+  #### 백업 목록 조회
+</div>
+
+`GET /api/v1/backups?instance_id={instance_id}`
+
+지정한 클러스터의 모든 백업을 조회합니다.
+
+**쿼리 매개변수:**
+
+| 매개변수                | 유형      | 필수  | 설명                                |
+| ------------------- | ------- | --- | --------------------------------- |
+| `instance_id`       | string  | 예   | ClickHouse 클러스터 이름                |
+| `status__state__eq` | string  | 아니요 | 백업 상태를 기준으로 필터링합니다(예: `Ready`)    |
+| `sort`              | string  | 아니요 | 정렬 필드입니다(예: `status__finishTime`) |
+| `limit`             | integer | 아니요 | 반환할 최대 결과 수입니다                    |
+
+**응답:** `200 OK` -- 백업 객체의 배열을 반환합니다.
+
+**예시:** 마지막으로 성공한 백업의 UUID 찾기:
+
+```text
+GET /api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1
+```
+
+***
+
+<div id="restore-backup">
+  #### 백업 복원
+</div>
+
+`POST /api/v1/backups/{backup_id}/restore?instance_id={instance_id}&target_instance_id={target_instance_id}`
+
+백업을 대상 ClickHouse 클러스터로 복원합니다. 백업에 대해 `RESTORE ALL`을 수행합니다.
+
+**경로 매개변수:**
+
+| Parameter   | Type   | Required | Description  |
+| ----------- | ------ | -------- | ------------ |
+| `backup_id` | string | Yes      | 복원할 백업의 UUID |
+
+**쿼리 매개변수:**
+
+| Parameter            | Type   | Required | Description                       |
+| -------------------- | ------ | -------- | --------------------------------- |
+| `instance_id`        | string | Yes      | 원본 ClickHouse 클러스터 이름(백업이 생성된 위치) |
+| `target_instance_id` | string | Yes      | 대상 ClickHouse 클러스터 이름(복원할 위치)     |
+
+**제약 사항:** - 안전을 위해 동일한 인스턴스로의 복원(`instance_id == target_instance_id`)은 **허용되지 않습니다**. - 원본 클러스터의 과부하를 방지하려면 새 클러스터로 복원하는 것이 좋습니다.
+
+**응답:** `202 Accepted` -- 복원 작업 ID를 반환합니다.
+
+***
+
+<div id="vertical-scaling">
+  ### 수직 스케일링
+</div>
+
+<div id="scale-cluster">
+  #### 클러스터 확장
+</div>
+
+`POST /api/v1/instances/{instance_id}/scale`
+
+CPU 및 메모리 리소스를 조정해 ClickHouse 클러스터를 수직으로 확장합니다.
+
+**경로 매개변수:**
+
+| 매개변수          | 유형     | 필수 | 설명                 |
+| ------------- | ------ | -- | ------------------ |
+| `instance_id` | string | 예  | ClickHouse 클러스터 이름 |
+
+**요청 본문:**
+
+```json
+{
+  "vertical": {
+    "resources": {
+      "cpu": "4",
+      "memory": "16Gi"
+    }
+  }
+}
+```
+
+| 필드                          | 유형     | 필수   | 설명                            |
+| --------------------------- | ------ | ---- | ----------------------------- |
+| `vertical.resources.cpu`    | string | 아니요* | Kubernetes 리소스 수량 포맷의 CPU 할당량 |
+| `vertical.resources.memory` | string | 아니요* | Kubernetes 리소스 수량 포맷의 메모리 할당량 |
+
+*`cpu` 또는 `memory` 중 하나 이상은 반드시 제공해야 합니다.
+
+**CPU-메모리 비율:** API는 5% 오차 범위 내에서 **1:4 비율**(메모리 4 GiB당 CPU 코어 1개)을 적용합니다. 리소스 하나만 제공되면 이 비율을 유지하도록 다른 리소스가 자동으로 산정됩니다.
+
+**동작:** `ClickhouseCluster` 사용자 지정 리소스의 `ServerPodPolicy`를 업데이트합니다. 오퍼레이터는 새 리소스 할당량을 적용하기 위해 StatefulSet을 **롤링 재시작**합니다.
+
+**중요:** ClickHouse Cloud와 달리 ClickHouse Private는 **Make Before Break (MBB) 스케일링**을 사용하지 않습니다. 수직 스케일링을 수행하면 롤링 재시작이 발생하므로 서비스가 일시적으로 중단될 수 있습니다.
+
+**응답:** `201 Created`
+
+***
+
+<div id="password-reset">
+  ### 비밀번호 재설정
+</div>
+
+<div id="reset-user-password">
+  #### 사용자 비밀번호 재설정
+</div>
+
+`POST /api/v1/instances/{instance_id}/reset-user-password`
+
+ClickHouse 클러스터 사용자의 비밀번호를 재설정합니다.
+
+**경로 매개변수:**
+
+| 매개변수          | 유형     | 필수 | 설명                 |
+| ------------- | ------ | -- | ------------------ |
+| `instance_id` | string | 예  | ClickHouse 클러스터 이름 |
+
+**요청 본문:**
+
+```json
+{
+  "user_hashed_password": "<base64-encoded-sha256-hash>",
+  "hashing_function": "sha256",
+  "username": "default"
+}
+```
+
+| 필드                     | 유형     | 필수  | 기본값         | 설명                       |
+| ---------------------- | ------ | --- | ----------- | ------------------------ |
+| `user_hashed_password` | string | 예   | --          | 새 비밀번호를 Base64로 인코딩한 해시값 |
+| `hashing_function`     | string | 아니요 | `"sha256"`  | 사용할 해싱 알고리즘              |
+| `username`             | string | 아니요 | `"default"` | 비밀번호를 재설정할 사용자 이름        |
+
+**비밀번호 해시 생성:**
+
+```ini
+PASSWORD='My super secret p@$$w0rd'
+HASHED_PASSWORD=$(echo -n "$PASSWORD" | shasum -a 256 | awk '{printf $1}' | base64)
+```
+
+**제약 사항:** - Hydra 하위 인스턴스에서는 비밀번호를 재설정할 **수 없습니다**. 대신 상위 인스턴스에서 재설정하십시오.
+
+**응답:**
+
+```json
+{
+  "message": "User password reset successfully"
+}
+```
+
+**동작:** `ClickhouseCluster` 사용자 지정 리소스의 `CustomerAccount` 필드를 업데이트합니다. 연산자가 자격 증명 변경 사항을 클러스터에 적용합니다. 비밀번호는 연산자가 변경 사항을 처리한 후 적용됩니다.
+
+***
+
+<div id="cluster-status">
+  ### 클러스터 상태
+</div>
+
+<div id="get-cluster-status">
+  #### 클러스터 상태 조회
+</div>
+
+`GET /api/v1/instances/{instance_id}/status`
+
+지정된 ClickHouse 클러스터의 현재 상태를 반환합니다.
+
+**경로 매개변수:**
+
+| 매개변수          | 유형     | 필수 | 설명                 |
+| ------------- | ------ | -- | ------------------ |
+| `instance_id` | string | 예  | ClickHouse 클러스터 이름 |
+
+**응답:**
+
+```json
+{
+  "state": "Running",
+  "previousState": "Provisioning",
+  "message": "Cluster is healthy",
+  "stateProvidedBy": "operator"
+}
+```
+
+| 필드                | 유형     | 설명                        |
+| ----------------- | ------ | ------------------------- |
+| `state`           | string | ClickHouse 클러스터의 현재 상태    |
+| `previousState`   | string | 클러스터가 전환되기 이전의 상태         |
+| `message`         | string | 클러스터 상태가 전환된 이유에 대한 상세 정보 |
+| `stateProvidedBy` | string | 상태 전환을 발생시킨 프로세스          |
+
+**사용 사례:** - 수직 스케일링(vertical scaling) 작업이 완료되었는지 확인합니다. - 비밀번호 재설정이 클러스터 전체에 적용되었는지 확인합니다. - 클러스터 Provisioning 진행 상황을 모니터링합니다.
+
+***
+
+<div id="endpoint-summary">
+  ## 엔드포인트 요약
+</div>
+
+| 메서드    | 경로                                                                             | 설명                |
+| ------ | ------------------------------------------------------------------------------ | ----------------- |
+| `GET`  | `/readiness`                                                                   | 상태 및 readiness 점검 |
+| `GET`  | `/liveness`                                                                    | liveness 점검       |
+| `POST` | `/api/v1/backups?instance_id={id}`                                             | 백업 생성             |
+| `GET`  | `/api/v1/backups/{backup_id}?instance_id={id}`                                 | 백업 상태 조회          |
+| `GET`  | `/api/v1/backups?instance_id={id}`                                             | 백업 목록 조회          |
+| `POST` | `/api/v1/backups/{backup_id}/restore?instance_id={id}&target_instance_id={id}` | 백업 복원             |
+| `POST` | `/api/v1/instances/{id}/scale`                                                 | 클러스터 수직 확장        |
+| `POST` | `/api/v1/instances/{id}/reset-user-password`                                   | 사용자 비밀번호 재설정      |
+| `GET`  | `/api/v1/instances/{id}/status`                                                | 클러스터 상태 조회        |
+| `GET`  | `/api/v1/license`                                                              | 라이선스 정보 조회        |
+| `PUT`  | `/api/v1/license`                                                              | 라이선스 생성 또는 업데이트   |
+| `POST` | `/api/v1/license/fingerprint`                                                  | 라이선스 지문 조회        |

@@ -1,0 +1,31 @@
+---
+title: Alter Delete
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+```
+
+Exclui os dados que correspondem à expressão de filtro especificada. Implementada como uma [mutação](/pt-BR/reference/statements/alter/index#mutations).
+
+<Note>
+  O prefixo `ALTER TABLE` faz com que essa sintaxe seja diferente da maioria dos outros sistemas compatíveis com SQL. Ele serve para indicar que, diferentemente de consultas semelhantes em bancos de dados OLTP, esta é uma operação pesada, não projetada para uso frequente. O `ALTER TABLE` é considerado uma operação pesada, que exige a mesclagem dos dados subjacentes antes da exclusão. Para tabelas MergeTree, considere usar a [consulta `DELETE FROM`](/pt-BR/reference/statements/delete), que realiza uma exclusão leve e pode ser consideravelmente mais rápida.
+</Note>
+
+A `filter_expr` deve ser do tipo `UInt8`. A consulta exclui as linhas da tabela para as quais essa expressão assume um valor diferente de zero.
+
+Uma consulta pode conter vários comandos separados por vírgulas.
+
+A sincronicidade do processamento da consulta é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync). Por padrão, ela é assíncrona.
+
+**Veja também**
+
+* [Mutações](/pt-BR/reference/statements/alter/index#mutations)
+* [Sincronicidade das consultas ALTER](/pt-BR/reference/statements/alter/index#synchronicity-of-alter-queries)
+* configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync)
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como lidar com atualizações e exclusões no ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

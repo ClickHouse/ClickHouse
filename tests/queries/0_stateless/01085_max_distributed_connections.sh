@@ -16,6 +16,15 @@ while [[ $i -lt $retries ]]; do
     opts=(
         --max_distributed_connections 20
         --max_threads 1
+        # This test must actually open remote connections: it checks that max_distributed_connections
+        # lets the 20 shards be read in parallel (so it finishes in ~1s instead of ~20s) even with
+        # max_threads=1. With prefer_localhost_replica=1 (the default), a shard whose address is local
+        # is served by the local replica and executed in-process - no remote connection - which then
+        # runs serially under max_threads=1 and defeats the test.
+        # On the macOS test runner 127.0.0.2+ are aliased on lo0, so they are local addresses and the
+        # shards would be collapsed to local execution. Force remote connections so the test exercises
+        # what it is meant to (remote connections behave differently from local ones).
+        --prefer_localhost_replica 0
         --query "SELECT sum(sleepEachRow(1)) FROM remote('127.{2..21}', system.one)"
         --format Null
     )

@@ -1,0 +1,78 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mongodb
+title: 'Источник словаря MongoDB'
+sidebarTitle: 'MongoDB'
+description: 'Настройка MongoDB в качестве источника словаря в ClickHouse.'
+doc_type: 'reference'
+---
+
+Пример настроек:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MONGODB(
+        host 'localhost'
+        port 27017
+        user ''
+        password ''
+        db 'test'
+        collection 'dictionary_source'
+        options 'ssl=true'
+    ))
+    ```
+
+    Или с использованием URI:
+
+    ```sql
+    SOURCE(MONGODB(
+        uri 'mongodb://localhost:27017/clickhouse'
+        collection 'dictionary_source'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <source>
+        <mongodb>
+            <host>localhost</host>
+            <port>27017</port>
+            <user></user>
+            <password></password>
+            <db>test</db>
+            <collection>dictionary_source</collection>
+            <options>ssl=true</options>
+        </mongodb>
+    </source>
+    ```
+
+    Или с использованием URI:
+
+    ```xml
+    <source>
+        <mongodb>
+            <uri>mongodb://localhost:27017/test?ssl=true</uri>
+            <collection>dictionary_source</collection>
+        </mongodb>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Поля настроек:
+
+| Настройка    | Описание                                                                     |
+| ------------ | ---------------------------------------------------------------------------- |
+| `host`       | Хост MongoDB.                                                                |
+| `port`       | Порт сервера MongoDB.                                                        |
+| `user`       | Имя пользователя MongoDB.                                                    |
+| `password`   | Пароль пользователя MongoDB.                                                 |
+| `db`         | Имя базы данных.                                                             |
+| `collection` | Имя коллекции.                                                               |
+| `options`    | Параметры строки подключения MongoDB. Необязательный параметр.               |
+| `uri`        | URI для установления соединения (альтернатива отдельным полям host/port/db). |
+
+[Подробнее о движке](/ru/reference/engines/table-engines/integrations/mongodb)

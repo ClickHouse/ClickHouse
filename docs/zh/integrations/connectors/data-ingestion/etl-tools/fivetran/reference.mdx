@@ -1,0 +1,362 @@
+---
+sidebarTitle: '技术参考'
+slug: /integrations/fivetran/reference
+description: 'Fivetran ClickHouse 目标端的类型映射、表引擎详情、元数据列和调试查询。'
+title: '技术参考'
+doc_type: 'guide'
+keywords: ['fivetran', 'clickhouse destination', '技术参考']
+---
+
+<div id="setup-details">
+  ## 设置详情
+</div>
+
+<div id="user-and-role-management">
+  ### 用户和角色管理
+</div>
+
+建议不要使用 `default` 用户；而应创建一个专用用户，仅供此 Fivetran
+目标端使用。以下命令需使用 `default` 用户执行，将创建一个具有所需权限的
+新 `fivetran_user`。
+
+```sql
+CREATE USER fivetran_user IDENTIFIED BY '<password>'; -- 使用安全的密码生成器
+
+GRANT CURRENT GRANTS ON *.* TO fivetran_user;
+```
+
+此外，您还可以撤销 `fivetran_user` 对某些数据库的访问权限。
+例如，执行以下语句后，我们将把访问权限限制为仅可访问 `default` 数据库：
+
+```sql
+REVOKE ALL ON default.* FROM fivetran_user;
+```
+
+你可以在 ClickHouse SQL 控制台中执行这些语句。
+
+<div id="advanced-configuration">
+  ### 高级配置
+</div>
+
+ClickHouse Cloud 目标端支持可选的 JSON 配置文件，以满足高级使用场景的需要。你可以通过此文件覆盖控制批次大小、并行度、连接池和请求超时的默认设置，从而微调目标端的行为。
+
+<Note>
+  此配置完全可选。如果未上传文件，目标端将使用适合大多数使用场景的默认设置。
+</Note>
+
+该文件必须是有效的 JSON，并符合下文所述的 schema。
+
+如果你需要在初始设置后修改配置，可以在 Fivetran dashboard 中编辑目标端配置并上传更新后的文件。
+
+该配置文件包含一个顶层部分：
+
+```json
+{
+  "destination_configurations": { ... }
+}
+```
+
+你可以在其中指定以下配置项，用于控制 ClickHouse 目标端连接器本身的内部行为。
+这些配置会影响连接器在将数据发送到 ClickHouse 之前处理数据的方式。
+
+| Setting                  | Type    | Default  | Allowed Range   | Description                                                |
+| ------------------------ | ------- | -------- | --------------- | ---------------------------------------------------------- |
+| `write_batch_size`       | integer | `100000` | 5,000 – 100,000 | 每个批次中用于 insert、update 和 replace 操作的行数。                     |
+| `select_batch_size`      | integer | `1500`   | 200 – 1,500     | 更新期间用于 SELECT 查询的每批行数。                                     |
+| `mutation_batch_size`    | integer | `1500`   | 200 – 1,500     | 历史模式下用于 ALTER TABLE UPDATE 变更的每批行数。如果遇到 SQL 语句过大的情况，请调低该值。 |
+| `hard_delete_batch_size` | integer | `1500`   | 200 – 1,500     | 常规同步和历史模式下用于硬删除操作的每批行数。如果遇到 SQL 语句过大的情况，请调低该值。             |
+
+所有字段均为可选项。若未指定某个字段，则使用默认值。
+如果某个值超出允许范围，目标端会在同步期间报告错误。
+未知字段会被静默忽略 (会记录一条警告日志) ，且不会导致错误，这样在新增设置时可保持前向兼容性。
+
+示例：
+
+```json
+{
+  "destination_configurations": {
+    "write_batch_size": 50000,
+    "select_batch_size": 200
+  }
+}
+```
+
+<div id="type-mapping">
+  ## 类型转换映射
+</div>
+
+Fivetran ClickHouse 目标端会按如下方式将 [Fivetran 数据类型](https://fivetran.com/docs/destinations#datatypes) 映射为 ClickHouse 类型：
+
+| Fivetran 类型   | ClickHouse 类型                                                    |
+| ------------- | ---------------------------------------------------------------- |
+| BOOLEAN       | [Bool](/zh/reference/data-types/boolean)                            |
+| SHORT         | [Int16](/zh/reference/data-types/int-uint)                          |
+| INT           | [Int32](/zh/reference/data-types/int-uint)                          |
+| LONG          | [Int64](/zh/reference/data-types/int-uint)                          |
+| BIGDECIMAL    | [Decimal(P, S)](/zh/reference/data-types/decimal)                   |
+| FLOAT         | [Float32](/zh/reference/data-types/float)                           |
+| DOUBLE        | [Float64](/zh/reference/data-types/float)                           |
+| LOCALDATE     | [Date32](/zh/reference/data-types/date32)                           |
+| LOCALDATETIME | [DateTime64(0, &#39;UTC&#39;)](/zh/reference/data-types/datetime64) |
+| INSTANT       | [DateTime64(9, &#39;UTC&#39;)](/zh/reference/data-types/datetime64) |
+| STRING        | [String](/zh/reference/data-types/string)                           |
+| LOCALTIME     | [String](/zh/reference/data-types/string) * **                      |
+| BINARY        | [String](/zh/reference/data-types/string) *                         |
+| XML           | [String](/zh/reference/data-types/string) *                         |
+| JSON          | [String](/zh/reference/data-types/string) *                         |
+
+<Note>
+  * BINARY、XML、LOCALTIME 和 JSON 会存储为 [String](/zh/reference/data-types/string)，因为 ClickHouse 的 `String` 类型可以表示任意字节序列。目标端会添加列注释，以标明原始数据类型。ClickHouse 的 [JSON](/zh/reference/data-types/newjson) 数据类型未在此处使用，因为它已被标记为已废弃，且从未推荐用于生产环境。
+    ** 注意：用于跟踪 LOCALTIME 类型支持情况的问题请参见：[clickhouse-fivetran-destination #15](https://github.com/ClickHouse/clickhouse-fivetran-destination/issues/15)。
+</Note>
+
+<div id="date-and-time-value-ranges">
+  ### 日期和时间值范围
+</div>
+
+Fivetran 来源可以发送范围在 [0001-01-01, 9999-12-31](https://fivetran.com/docs/destinations#dateandtimevaluerange) 内的日期和时间值。
+ClickHouse Cloud 的日期类型支持范围更窄，因此超出支持范围的值会被静默限制到最近的边界值：
+
+| Fivetran type | ClickHouse Cloud type        | Min value           | Max value           |
+| ------------- | ---------------------------- | ------------------- | ------------------- |
+| LOCALDATE     | Date32                       | 1900-01-01          | 2299-12-31          |
+| LOCALDATETIME | DateTime64(0, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+| INSTANT       | DateTime64(9, &#39;UTC&#39;) | 1900-01-01 00:00:00 | 2262-04-11 23:47:16 |
+
+* INSTANT 的上限是 2262-04-11 23:47:16，因为 DateTime64(9) 将自纪元以来的纳秒存储为 int64，而 2^63 - 1 纳秒对应的正是这个日期。
+  ClickHouse 本身支持精度 &lt;= 9 的 DateTime64，最高可达 2299-12-31 23:59:59。
+* LOCALDATETIME 的上限同样受限于 2262-04-11 23:47:16，这是由于 Go ClickHouse 驱动中的一个[已知 bug](https://github.com/ClickHouse/clickhouse-go/issues/1311)：在进行缩放之前，会对所有 DateTime64 精度调用 `time.Time.UnixNano()`，因此即使精度为 0，超过 2262 年的日期也会导致 int64 溢出。
+
+<div id="table-structure">
+  ## 目标表
+</div>
+
+ClickHouse Cloud 目标端采用
+[SharedMergeTree](/zh/products/cloud/features/infrastructure/shared-merge-tree) 家族的
+[Replacing](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 引擎类型
+(具体来说是 `SharedReplacingMergeTree`) ，并以 `_fivetran_synced` 列作为版本列。
+
+除主 (排序) 键和 Fivetran 元数据列外，每一列都会创建为
+[Nullable(T)](/zh/reference/data-types/nullable)，其中 `T` 是根据
+[数据类型映射](#type-mapping)确定的 ClickHouse Cloud 类型。
+
+表结构会因连接器中配置的 Fivetran
+[同步模式](https://fivetran.com/docs/using-fivetran/features#deletedrowhandling)
+而异：**软删除** (默认) 或 **历史模式** (SCD Type 2) 。
+
+<div id="soft-delete-mode">
+  ### 软删除模式
+</div>
+
+在软删除模式下，每个目标表都包含以下元数据列：
+
+| 列                   | 类型                     | 描述                                                       |
+| ------------------- | ---------------------- | -------------------------------------------------------- |
+| `_fivetran_synced`  | `DateTime64(9, 'UTC')` | 记录被 Fivetran 同步时的时间戳。用作 `SharedReplacingMergeTree` 的版本列。 |
+| `_fivetran_deleted` | `Bool`                 | 软删除标记。当源记录被删除时设为 `true`。                                 |
+| `_fivetran_id`      | `String`               | 自动生成的唯一标识符。仅在源表没有主键时存在。                                  |
+
+<div id="single-pk">
+  #### 源表中只有一个主键
+</div>
+
+例如，源表 `users` 有一个主键列 `id` (`INT`) 和一个普通列 `name` (`STRING`) 。
+目标表定义如下：
+
+```sql
+CREATE TABLE `users`
+(
+    `id`                Int32,
+    `name`              Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY id
+SETTINGS index_granularity = 8192
+```
+
+在这种情况下，会选择 `id` 列作为表的排序键。
+
+<div id="multiple-pks">
+  #### 源表中存在多个主键
+</div>
+
+如果源表有多个主键，则会按照它们在 Fivetran 源表定义中出现的顺序依次使用。
+
+例如，源表 `items` 的主键列为 `id` (`INT`) 和 `name` (`STRING`) ，另外还有一个普通列 `description` (`STRING`) 。目标表将按如下方式定义：
+
+```sql
+CREATE TABLE `items`
+(
+    `id`                Int32,
+    `name`              String,
+    `description`       Nullable(String),
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name)
+SETTINGS index_granularity = 8192
+```
+
+在这种情况下，`id` 和 `name` 列被选作表的排序键。
+
+<div id="no-pks">
+  #### 源表中没有主键
+</div>
+
+如果源表没有主键，Fivetran 会添加一个名为 `_fivetran_id` 的唯一标识符列。
+假设源中有一张 `events` 表，且只有 `event` (`STRING`) 和 `timestamp` (`LOCALDATETIME`) 两列。
+这种情况下，目标表如下：
+
+```sql
+CREATE TABLE events
+(
+    `event`             Nullable(String),
+    `timestamp`         Nullable(DateTime),
+    `_fivetran_id`      String,
+    `_fivetran_synced`  DateTime64(9, 'UTC'),
+    `_fivetran_deleted` Bool
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY _fivetran_id
+SETTINGS index_granularity = 8192
+```
+
+由于 `_fivetran_id` 具有唯一性，且没有其他主键可选，因此将其用作表的排序键。
+
+<div id="history-mode">
+  ### 历史模式 (SCD Type 2)
+</div>
+
+启用[历史模式](https://fivetran.com/docs/using-fivetran/features#historymode)后，
+目标端会保留每条记录的所有版本，而不是覆盖之前的值。
+这实现了[缓慢变化维度 2 型](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row) (SCD Type 2) ，
+从而保留所有变更的完整审计轨迹。
+
+在历史模式下，每个目标表都包含以下元数据列：
+
+| Column             | Type                             | Description                                               |
+| ------------------ | -------------------------------- | --------------------------------------------------------- |
+| `_fivetran_synced` | `DateTime64(9, 'UTC')`           | 记录由 Fivetran 同步时的时间戳。用作 `SharedReplacingMergeTree` 的版本列。  |
+| `_fivetran_start`  | `DateTime64(9, 'UTC')`           | 该版本记录开始生效时的时间戳。它是表排序键的一部分。                                |
+| `_fivetran_end`    | `Nullable(DateTime64(9, 'UTC'))` | 该版本被后续版本取代时的时间戳。对于当前处于生效状态的记录，该值设为 `2262-04-11 23:47:16`。 |
+| `_fivetran_active` | `Nullable(Bool)`                 | 该记录当前是否为生效版本。                                             |
+| `_fivetran_id`     | `String`                         | 自动生成的唯一标识符。仅当源表没有主键时才存在。                                  |
+
+`_fivetran_start` 列始终作为复合排序键的最后一个元素包含在 `ORDER BY` 子句中。
+这使同一条记录的多个版本 (开始时间不同) 能够在表中共存。
+
+当记录更新时：
+
+* 先前版本的 `_fivetran_end` 会被设置为新版本 `_fivetran_start` 减去一纳秒，同时 `_fivetran_active` 会被设置为 `false`。
+* 新版本会被插入，其中 `_fivetran_active` 设为 `true`，`_fivetran_end` 设为 `2262-04-11 23:47:16.000000000` (即 `DateTime64(9)` 的最大值) 。
+
+<div id="single-pk">
+  #### 源表中只有一个主键
+</div>
+
+例如，源表 `users` 有一个主键列 `id` (`INT`) ，以及普通列 `name` (`STRING`) 和 `status` (`STRING`) 。
+历史模式下的目标表定义如下：
+
+```sql
+CREATE TABLE `users`
+(
+    `id`               Int32,
+    `name`             Nullable(String),
+    `status`           Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+在这种情况下，`id` 和 `_fivetran_start` 共同组成复合排序键。
+
+经过几次同步后，该表中的数据可能如下所示：
+
+| id | name    | status | &#95;fivetran&#95;start       | &#95;fivetran&#95;end         | &#95;fivetran&#95;active |
+| -- | ------- | ------ | ----------------------------- | ----------------------------- | ------------------------ |
+| 1  | name 1  | TODO   | 2025-11-10 20:57:00.000000000 | 2025-11-11 20:56:59.999000000 | false                    |
+| 1  | name 11 | TODO   | 2025-11-11 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+| 2  | name 2  | TODO   | 2025-11-10 20:57:00.000000000 | 2262-04-11 23:47:16.000000000 | true                     |
+
+记录 `id=1` 有两个版本：原始版本 (`name 1`，非活跃) 和更新后的版本 (`name 11`，活跃) 。
+记录 `id=2` 只有一个版本，且当前为活跃状态。
+
+<div id="history-multiple-pks">
+  #### 源表中有多个主键
+</div>
+
+如果源表有多个主键，这些主键都会与 `_fivetran_start` 一同包含在 `ORDER BY` 中，其中 `_fivetran_start` 位于最后。
+
+例如，源表 `items` 的主键列为 `id` (`INT`) 和 `name` (`STRING`) ，此外还有一个
+普通列 `description` (`STRING`) 。历史模式下的目标表定义如下：
+
+```sql
+CREATE TABLE `items`
+(
+    `id`               Int32,
+    `name`             String,
+    `description`      Nullable(String),
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (id, name, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+在这种情况下，`id`、`name` 和 `_fivetran_start` 共同组成复合排序键。
+
+<div id="no-pks">
+  #### 源表中没有主键
+</div>
+
+如果源表没有主键，Fivetran 会添加一个名为 `_fivetran_id` 的唯一标识列，
+并将 `_fivetran_start` 追加到排序键中。
+假设源中的 `events` 表只有 `event` (`STRING`) 和 `timestamp` (`LOCALDATETIME`) 两列。
+历史模式下的目标表如下：
+
+```sql
+CREATE TABLE events
+(
+    `event`            Nullable(String),
+    `timestamp`        Nullable(DateTime),
+    `_fivetran_id`     String,
+    `_fivetran_synced` DateTime64(9, 'UTC'),
+    `_fivetran_start`  DateTime64(9, 'UTC'),
+    `_fivetran_end`    Nullable(DateTime64(9, 'UTC')),
+    `_fivetran_active` Nullable(Bool)
+) ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}', _fivetran_synced)
+ORDER BY (_fivetran_id, _fivetran_start)
+SETTINGS index_granularity = 8192
+```
+
+由于 `_fivetran_id` 和 `_fivetran_start` 构成了复合排序键。
+
+<div id="selecting-latest-version">
+  ### 选择去重后的最新数据版本
+</div>
+
+`SharedReplacingMergeTree` 会在后台执行数据去重，
+[但仅会在不确定时间发生的合并过程中进行](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)。
+不过，也可以使用 `FINAL` 关键字临时查询去重后的最新数据版本：
+
+```sql
+SELECT *
+FROM example FINAL
+LIMIT 1000 
+```
+
+查看故障排除指南中的[优化读取查询](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#optimizing-reading-queries)&quot;一节，了解查询优化技巧。
+
+<div id="retries-on-network-failures">
+  ## 网络故障时的重试
+</div>
+
+ClickHouse Cloud 目标端会使用指数退避算法来重试临时性网络错误。
+即使目标端已插入数据，这样做也是安全的，因为任何可能出现的重复数据都会由
+`SharedReplacingMergeTree` 表引擎处理。

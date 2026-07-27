@@ -67,7 +67,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     , port(port_.value_or(getPortFromConfig(config, host_)))
     , default_database(database)
 {
-    security = enableSecureConnection(config, host_) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    security = enableSecureConnection(config, host_, port) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     tls_sni_override = config.getString("tls-sni-override", "");
 
     bind_host = config.getString("bind_host", "");

@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Common/logger_useful.h>
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -74,6 +75,24 @@ static bool isCastFunctionNode(const ActionsDAG::Node & node)
     return name == "_CAST" || name == "CAST";
 }
 
+/// Whether an `if` condition selects the THEN branch for every row at runtime, i.e. it is a
+/// constant that is neither NULL nor false. Then `FunctionIf` returns the THEN branch and never
+/// reads the keep-old fallback, so that fallback's on-disk value need not be converted. Prefers
+/// the node's own propagated constant and descends the `_CAST(..., UInt8)` the mutation builder
+/// may wrap the condition in (the cast preserves the 0/non-0 truthiness).
+static bool ifConditionIsConstantTrue(const ActionsDAG::Node * node)
+{
+    while (true)
+    {
+        if (node->column)
+            return !node->column->isNullAt(0) && node->column->getBool(0);
+        if (isCastFunctionNode(*node) && !node->children.empty())
+            node = node->children.front();
+        else
+            return false;
+    }
+}
+
 /// Storage names of overwritten columns whose on-disk value must STILL be converted to the
 /// post-`MODIFY` metadata type, because an on-fly mutation step genuinely consumes it as a
 /// function input before any step overwrites it.
@@ -89,10 +108,15 @@ static bool isCastFunctionNode(const ActionsDAG::Node & node)
 ///
 /// `MutationsInterpreter` lowers `UPDATE col = expr WHERE cond` to
 /// `_CAST(if(cond, _CAST(expr, type), col), type)`. The bare `col` argument of that `if` is a
-/// SYNTHETIC keep-old-value fallback: it is the value for unmatched rows, never a genuine read
-/// of the pre-`MODIFY` value, so it must NOT force conversion. Any OTHER reference to the
-/// column (inside `cond`, or inside `expr`, e.g. `UPDATE col = materialize(col)`) is a genuine
-/// read and must. So the per-step scan ignores exactly that one synthetic edge.
+/// keep-old-value fallback: it is the value for unmatched rows. The `if` node is declared at the
+/// post-`MODIFY` `type`, so whenever `FunctionIf` actually reads that fallback at runtime the
+/// on-disk `col` must already be in `type`, or the executor aborts with
+/// `Unexpected return type from if`. `FunctionIf` skips the fallback only when `cond` is a
+/// constant that selects the THEN branch for every row; only then is the fallback edge safe to
+/// ignore (its on-disk value, possibly unconvertible like `'x'` before `UPDATE v = '100'`, is
+/// never materialized). For a non-constant or constant-false `cond` the fallback IS read, so it
+/// counts as a genuine consume and forces conversion. Any OTHER reference to the column (inside
+/// `cond`, or inside `expr`, e.g. `UPDATE col = materialize(col)`) is always a genuine read.
 ///
 /// The decision is per column and order-sensitive. Walk the on-fly mutation steps in chain
 /// (== mutation version) order; the FIRST step that references a column decides it:
@@ -146,9 +170,10 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
         const auto & dag = prewhere_info->actions->getActionsDAG();
 
         /// Columns this step overwrites: an assignment target the step produces (a DAG output
-        /// that is not a plain passthrough INPUT node). For each, locate the `(INPUT col)` edge
-        /// of the synthetic `if(cond, _CAST(expr, type), col)` fallback so the consume scan can
-        /// ignore exactly that one edge while still counting genuine reads of the column.
+        /// that is not a plain passthrough INPUT node). For each, locate the keep-old fallback
+        /// `(INPUT col)` edge of an `if(cond, _CAST(expr, type), col)` WHOSE CONDITION IS
+        /// CONSTANT-TRUE, so the consume scan can ignore exactly that one (never-read) edge while
+        /// still counting genuine reads of the column.
         NameSet overwritten_here;
         std::unordered_set<const ActionsDAG::Node *> synthetic_fallback_if_nodes;
         for (const auto * output : dag.getOutputs())
@@ -169,11 +194,16 @@ static NameSet collectColumnsConsumedByChainActions(const RangeReaders & range_r
                 node = node->children.front();
 
             /// Recognize the keep-old fallback shape: `if(cond, then, INPUT col)` whose third
-            /// argument is the bare on-disk input of this very column. Only that exact edge is
-            /// synthetic; a user `if` nested elsewhere in the expression is reached differently
-            /// (through the then-branch) and is left to count as a genuine consume.
+            /// argument is the bare on-disk input of this very column. Ignore the fallback edge
+            /// ONLY when `cond` is constant-true: then `FunctionIf` returns the then-branch and
+            /// never reads the on-disk `col`, so its (possibly unconvertible) value is safely
+            /// left unconverted. For a non-constant or constant-false `cond` the fallback is read
+            /// with the post-`MODIFY`-declared type, so it must count as a genuine consume.
+            /// A user `if` nested elsewhere in the expression is reached through the then-branch
+            /// and is always counted as a genuine consume.
             if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base
-                && node->function_base->getName() == "if" && node->children.size() == 3)
+                && node->function_base->getName() == "if" && node->children.size() == 3
+                && ifConditionIsConstantTrue(node->children[0]))
             {
                 const auto * fallback = node->children[2];
                 if (fallback->type == ActionsDAG::ActionType::INPUT && to_storage_key(fallback->result_name) == key)

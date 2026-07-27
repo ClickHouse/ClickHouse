@@ -1,3 +1,4 @@
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_join_swap_table = false;
 SET allow_experimental_analyzer = 1;
 SET enable_parallel_replicas=0;

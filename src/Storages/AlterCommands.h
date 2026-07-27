@@ -35,6 +35,7 @@ struct AlterCommand
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
+        MODIFY_CONSTRAINT,
         ADD_PROJECTION,
         DROP_PROJECTION,
         ADD_STATISTICS,
@@ -111,10 +112,10 @@ struct AlterCommand
     /// For ADD/DROP INDEX
     String index_name;
 
-    // For ADD CONSTRAINT
+    // For ADD/MODIFY CONSTRAINT
     ASTPtr constraint_decl = nullptr;
 
-    // For ADD/DROP CONSTRAINT
+    // For ADD/DROP/MODIFY CONSTRAINT
     String constraint_name;
 
     /// For ADD PROJECTION

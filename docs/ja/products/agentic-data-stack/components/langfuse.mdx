@@ -1,0 +1,33 @@
+---
+sidebarTitle: 'Langfuse'
+title: 'Langfuse'
+description: 'Langfuse がエージェント型データスタックにオブザーバビリティとトレーシングを提供する方法'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'Langfuse', 'observability', 'tracing', 'LLM']
+---
+
+Langfuse は、[Agentic Data Stack](/ja/products/agentic-data-stack/overview) の**オブザーバビリティレイヤー**です。LibreChat でのエージェントの動作を記録するため、デバッグや品質の測定、コストの追跡が可能になります。Langfuse は OpenTelemetry を基盤としており、ClickHouse 上で動作します。
+
+<div id="trace">
+  ## すべての実行をトレースして調査する
+</div>
+
+すべての会話は [Langfuse トレース](https://langfuse.com/docs/observability/overview) として記録されます。これには、プロンプト、各ツール呼び出し (エージェントが実行した SQL を含む) 、レスポンスが含まれます。各 トレース には、トークン使用量、コスト、レイテンシも記録されます。実行を開くと、エージェントが何をしたのか、どこで失敗したのかを確認できます。ユーザーとセッションでソートすると、誰が最も多く消費しているかを把握できます。
+
+<div id="evals">
+  ## 出力品質を評価する
+</div>
+
+モデルの出力は非決定論的であるため、Langfuse を使えば勘に頼るのではなく、その品質を測定できます。[人手によるアノテーション](https://langfuse.com/docs/evaluation/evaluation-methods/annotation) や自動化された [LLM-as-a-judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge) 評価器で実行結果をスコア化できます。たとえば、回答が誤っている場合や分析が役に立たない場合にフラグを立てられます。
+
+<div id="in-the-stack">
+  ## スタック内
+</div>
+
+このスタックは LibreChat を Langfuse に接続しているため、すべての実行が自動的にトレースされ、追加のインストルメンテーションは不要です。トレースはスタック専用の ClickHouse インスタンスに保存されるため、オブザーバビリティデータを、クエリするデータとあわせて保持できます。これをスタックの一部として実行するには、[Docker セットアップガイド](/ja/products/agentic-data-stack/docker-setup)を参照してください。
+
+スタンドアロンの LibreChat インスタンスからトレースを送信する場合や、地域別または HIPAA 対応の Langfuse エンドポイントを使用する場合は、[Langfuse companion guide](https://langfuse.com/integrations/agentic-data-stack)を参照してください。ClickHouse 上の Langfuse 全般については、[Langfuse 概要](/ja/products/cloud/features/ai-ml/langfuse)を参照してください。
+
+<Info>
+  **マネージド環境をご希望ですか？** [Langfuse Cloud](https://cloud.langfuse.com) は、マネージドな ClickHouse クラスターを基盤とする完全マネージド型デプロイメントで、運用するインフラストラクチャは不要です。
+</Info>

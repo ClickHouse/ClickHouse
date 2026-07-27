@@ -5,6 +5,7 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/logger_useful.h>
 #include <Common/Macros.h>
 #include <Common/Throttler.h>
@@ -44,6 +45,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsUInt64 s3_max_redirects;
     extern const ServerSettingsUInt64 s3_retry_attempts;
+    extern const ServerSettingsBool s3_load_table_anonymously_if_credentials_restricted;
 }
 
 namespace S3AuthSetting
@@ -100,17 +102,19 @@ std::unique_ptr<S3::Client> getClient(
     ContextPtr context,
     bool for_disk_s3,
     std::optional<std::string> opt_disk_name,
-    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
+    std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback,
+    bool is_loading_from_existing_metadata,
+    bool force_anonymous_load_fallback)
 
 {
     auto url = S3::URI(endpoint, false, true, settings.auth_settings[S3AuthSetting::uri_style]);
     if (!url.key.ends_with('/'))
         url.key.push_back('/');
-    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback);
+    return getClient(url, settings, context, for_disk_s3, opt_disk_name, refresh_credentials_callback, is_loading_from_existing_metadata, force_anonymous_load_fallback);
 }
 
 std::unique_ptr<S3::Client>
-getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name, std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback)
+getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, bool for_disk_s3, std::optional<std::string> opt_disk_name, std::optional<std::function<std::shared_ptr<DataLake::IStorageCredentials>()>> refresh_credentials_callback, bool is_loading_from_existing_metadata, bool force_anonymous_load_fallback)
 {
     const auto & auth_settings = settings.auth_settings;
     const auto & server_settings = context->getGlobalContext()->getServerSettings();
@@ -207,10 +211,55 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         /*sts_endpoint_override=*/""
     };
 
+    /// Non-disk S3 access (table functions, S3/S3Queue engines, DataLake reads) is user SQL and must not use
+    /// server credentials. Server disks may; user dynamic S3 disks are handled earlier in getDiskConfigurationFromAST.
+    credentials_configuration.forbid_implicit_credentials = !for_disk_s3 && context->shouldRestrictUserQueryS3Credentials();
+
+    /// On metadata load, downgrade a now-restricted definition to anonymous (if allowed by the server setting)
+    /// so the server starts with the table inaccessible instead of aborting. Also drop a `gcp_oauth` http client
+    /// without an explicit ADC triple, else the downgrade would still mint a token with the server's GCP identity.
+    /// `force_anonymous_load_fallback` takes the anonymous fallback even when the operator disabled the server
+    /// setting (hard-fail mode). It is set only for server-internal tables (e.g. the system log-pipeline
+    /// S3Queue tables), which must not abort startup: they load anonymously and are re-credentialed afterwards
+    /// by their bootstrap. It is not user-controllable, so it does not weaken the operator's hard-fail choice
+    /// for user tables.
+    if (credentials_configuration.forbid_implicit_credentials && is_loading_from_existing_metadata
+        && (server_settings[ServerSetting::s3_load_table_anonymously_if_credentials_restricted]
+            || force_anonymous_load_fallback))
+    {
+        credentials_configuration.anonymous_fallback_for_server_credentials = true;
+
+        const bool has_explicit_gcp_adc = !client_configuration.google_adc_client_id.empty()
+            && !client_configuration.google_adc_client_secret.empty()
+            && !client_configuration.google_adc_refresh_token.empty();
+        if (boost::iequals(client_configuration.http_client, "gcp_oauth") && !has_explicit_gcp_adc)
+            client_configuration.http_client.clear();
+    }
+
     String access_key_id = auth_settings[S3AuthSetting::access_key_id];
     String secret_access_key = auth_settings[S3AuthSetting::secret_access_key];
     String session_token = auth_settings[S3AuthSetting::session_token];
     auto headers = auth_settings.getHeaders();
+    String server_side_encryption_customer_key_base64 = auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
+    auto server_side_encryption_kms_config = auth_settings.server_side_encryption_kms_config;
+
+    /// When a persistent S3-engine table is downgraded to anonymous on metadata load, drop the request-auth
+    /// material merged from the server `<s3>`/endpoint config (generic headers and per-request access headers --
+    /// either can carry an `Authorization` -- and the SSE-C/SSE-KMS keys) so they cannot keep authorizing with
+    /// the server identity. `auth_settings.headers` is the merged result of the stored definition and the server
+    /// config and they cannot be told apart here, so all of them are cleared (the storage is anonymous and
+    /// inaccessible anyway). A forced-anonymous dynamic S3 disk already had this material removed from its
+    /// resolved config by `forceAnonymousS3DiskConfig`, so this is keyed on the metadata-load fallback only and
+    /// must not fire for an ordinary server disk (`for_disk_s3`) that the operator configured `no_sign_request`
+    /// with its own headers/encryption keys.
+    if (context->shouldRestrictUserQueryS3Credentials()
+        && (credentials_configuration.no_sign_request || credentials_configuration.anonymous_fallback_for_server_credentials)
+        && is_loading_from_existing_metadata)
+    {
+        headers.clear();
+        server_side_encryption_customer_key_base64.clear();
+        server_side_encryption_kms_config = {};
+    }
 
     if (refresh_credentials_callback)
     {
@@ -251,8 +300,8 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         client_settings,
         access_key_id,
         secret_access_key,
-        auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64],
-        auth_settings.server_side_encryption_kms_config,
+        server_side_encryption_customer_key_base64,
+        server_side_encryption_kms_config,
         headers,
         credentials_configuration,
         session_token,

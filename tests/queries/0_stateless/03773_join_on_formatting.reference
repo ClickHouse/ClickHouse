@@ -1,4 +1,5 @@
-WITH foo(1 AS a0) AS a
+WITH
+    foo(1 AS a0) AS a
 SELECT 1
 FROM numbers()
 ALL INNER JOIN numbers() ON (1 AS a0)

@@ -1,0 +1,179 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: 'Materialização tardia'
+description: 'Artigo que descreve o que é materialização tardia no ClickHouse'
+title: 'Materialização tardia'
+doc_type: 'guide'
+keywords: ['optimization', 'lazy materialization']
+---
+
+Este artigo descreve como a materialização tardia funciona e como ela se encaixa no conjunto mais amplo de otimizações de E/S do ClickHouse.
+Ele apresenta um exemplo real que demonstra como a materialização tardia melhora o desempenho das consultas.
+
+<Tip>
+  **Disponível a partir da versão 25.4**
+
+  A materialização tardia foi introduzida na versão 25.4 do ClickHouse e é ativada por padrão.
+</Tip>
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+Ao longo dos anos, o ClickHouse introduziu uma série de otimizações em camadas para reduzir agressivamente o I/O.
+Essas técnicas formam a base da sua velocidade e eficiência:
+
+| Otimização                                                                                                                                                                                                                                                          | Descrição                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**Armazenamento colunar**](/pt-BR/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                                                       | Permite ignorar colunas inteiras que não são necessárias para uma consulta e também viabiliza alta compressão ao agrupar valores semelhantes, minimizando o I/O durante a carga dos dados.                                                                                                                                                                                      |
+| [**Índices primários esparsos**](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**índices secundários de data skipping**](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes) | [**projeções**](/pt-BR/concepts/features/projections/projections) | Eliminam dados irrelevantes ao identificar quais [grânulos](/pt-BR/concepts/core-concepts/glossary#granule) (blocos de linhas) podem corresponder a filtros em *colunas indexadas*. Essas técnicas operam no nível do grânulo e podem ser usadas individualmente ou em conjunto.                                                                                                      |
+| [**PREWHERE**](/pt-BR/reference/statements/select/prewhere)                                                                                                                                                                                                               | Também verifica correspondências para filtros em *colunas não indexadas*, permitindo ignorar antecipadamente dados que, de outra forma, seriam carregados e descartados. Pode funcionar de forma independente ou refinar os grânulos selecionados pelos índices, complementando a eliminação de grânulos ao ignorar linhas que não correspondem a *todos* os filtros de coluna. |
+| [**Cache de condições de consulta**](/pt-BR/concepts/features/performance/caches/query-condition-cache)                                                                                                                                                                   | Acelera consultas repetidas ao lembrar quais grânulos corresponderam a todos os filtros na última vez. O ClickHouse pode então ignorar a leitura e a filtragem de grânulos que não corresponderam, mesmo que o formato da consulta mude.                                                                                                                                        |
+
+Embora as otimizações de I/O mencionadas acima possam reduzir significativamente o volume de dados lidos, elas ainda pressupõem que todas as colunas das linhas que passam pela cláusula `WHERE` precisam ser carregadas antes da execução de operações como ordenação, aggregation ou `LIMIT`. Mas e se algumas colunas só forem necessárias mais adiante, ou se alguns dados, apesar de passarem pela cláusula `WHERE`, nunca chegarem a ser necessários?
+É aí que entra a materialização tardia. Trata-se de um aprimoramento ortogonal que completa a pilha de otimizações de I/O:
+
+* A indexação, em conjunto com `PREWHERE`, garante que apenas as linhas que correspondem aos filtros de coluna na cláusula `WHERE` sejam processadas.
+* A materialização tardia se baseia nisso ao adiar as leituras de colunas até que elas sejam realmente necessárias no plano de execução da consulta.
+  Mesmo após a filtragem, apenas as colunas necessárias para a próxima operação - como ordenação - são carregadas imediatamente.
+  As demais são adiadas e, devido ao `LIMIT`, muitas vezes são lidas apenas parcialmente, apenas o suficiente para produzir o resultado final.
+  Isso torna a materialização tardia especialmente poderosa para consultas Top N, em que o resultado final pode exigir apenas algumas linhas de determinadas colunas, muitas vezes grandes.
+
+<div id="worked-example">
+  ## Um exemplo prático
+</div>
+
+Recomendamos fortemente o post do blog [&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation)
+para um aprofundamento em materialização tardia. O exemplo abaixo foi extraído do post mencionado anteriormente e reproduzido aqui para demonstrar como uma consulta do ClickHouse pode passar de 219 segundos para apenas 139 milissegundos (uma aceleração de 1576×) com materialização tardia.
+
+Para se beneficiar de indexação e de `PREWHERE`, uma consulta precisa de filtros: em colunas de chave primária para indexação e em quaisquer colunas para `PREWHERE`.
+materialização tardia se aplica de forma natural sobre essas otimizações, mas, diferentemente das outras otimizações mencionadas anteriormente, também pode acelerar consultas sem nenhum filtro de coluna.
+
+Considere a consulta de exemplo a seguir, que encontra avaliações da Amazon com o maior número de votos úteis, independentemente de data, produto, nota ou status de verificação, e retorna as 3 principais com seu título, subtítulo e texto completo.
+
+Primeiro, execute a consulta (com caches frios do filesystem) com materialização tardia desativada (usando [`query_plan_optimize_lazy_materialization`](/pt-BR/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+Em seguida, a consulta é executada novamente (mais uma vez com o cache frio do sistema de arquivos), mas desta vez com a materialização tardia ativada:
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  Em geral, você não precisa definir explicitamente `query_plan_optimize_lazy_materialization = true` para aproveitar os benefícios de materialização tardia.
+  Ela vem habilitada por padrão.
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+Considere a diferença de desempenho com a materialização tardia desativada e ativada:
+
+| Métrica         | materialização tardia desativada | materialização tardia ativada | Melhoria           |
+| --------------- | ------------------------------- | ---------------------------- | ------------------ |
+| Tempo decorrido | 219.071 sec                     | 0.139 sec                    | ~1576× mais rápido |
+| Dados lidos     | 71.38 GB                        | 1.81 GB                      | ~40× menos         |
+| Memória de pico | 1.11 GiB                        | 3.80 MiB                     | ~300× menos        |
+
+<div id="confirm-lazy-materialization">
+  ## Como confirmar a materialização tardia no plano de execução da consulta
+</div>
+
+Você pode verificar o uso da materialização tardia na consulta anterior inspecionando o plano lógico de execução da consulta com a cláusula [`EXPLAIN`](/pt-BR/reference/statements/explain):
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+Você pode ler o plano do operador de baixo para cima e observar que o ClickHouse adia a leitura das três colunas grandes do tipo String até depois da ordenação e da aplicação do limite.

@@ -1,0 +1,280 @@
+---
+title: '런북: JSON 스키마'
+description: 'ClickHouse에서 JSON 데이터에 적합한 스키마 접근 방식을 선택합니다 — 타입이 지정된 컬럼, 하이브리드, 네이티브 JSON 또는 String 저장'
+date: 2026-03-20
+tags: ['런북', '데이터 모델링']
+keywords: ['JSON', 'JSON 타입', '스키마 설계', '타입 힌트', 'max_dynamic_paths', '반정형 데이터', '동적 스키마', 'JSONAsObject']
+---
+
+<Note>
+  JSON 컬럼 타입은 ClickHouse 25.3+부터 프로덕션 환경에서 사용할 수 있습니다. 이전 버전은 프로덕션 용도로 권장되지 않습니다.
+</Note>
+
+데이터가 JSON으로 들어오는 경우, ClickHouse에서는 완전히 타입이 지정된 컬럼부터 원시 String까지 여러 방식으로 저장할 수 있습니다. 적절한 선택은 스키마를 얼마나 예측할 수 있는지, 그리고 필드 수준 쿼리가 필요한지에 따라 달라집니다.
+
+**Scope:** 이 페이지에서는 JSON 데이터 저장을 위한 스키마 설계 결정을 다룹니다. [JSON input/output formats](/ko/reference/formats/JSON/JSON), [JSON 함수](/ko/reference/functions/regular-functions/json-functions), 또는 쿼리 구문은 다루지 않습니다. JSON 컬럼 타입 자체에 대한 배경 설명은 [JSON을 적절히 사용하기](/ko/concepts/best-practices/json-type)를 참조하십시오.
+
+**Assumes:** [ClickHouse table creation](/ko/reference/statements/create/table), [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)의 기본 사항, 그리고 컬럼 타입 구문에 익숙하다고 가정합니다.
+
+<div id="quick-decision">
+  ## 빠른 결정
+</div>
+
+* **모든 필드에** 알려져 있고 안정적인 타입이 있으며 스키마가 거의 변경되지 않는다면
+  **→** [타입이 지정된 컬럼](#typed-columns)
+* **대부분의 필드는** 안정적이지만 일부 섹션은 동적이거나 예측하기 어렵다면
+  **→** [Hybrid (typed + JSON)](#hybrid)
+* **전체 구조가** 동적이고, 레코드마다 나타났다 사라지는 키가 있다면
+  **→** [네이티브 JSON 컬럼](#native-json)
+* **동적 필드가** 일관된 값 타입(예: 문자열 태그, 숫자 메트릭)을 가진 key-value 쌍이라면
+  **→** JSON 대신 [`Map`](#when-map-fits-better)
+* **필드 수준 쿼리 없이** JSON blob만 저장하고 조회한다면
+  **→** [불투명 String 저장](#opaque-storage)
+
+<Note>
+  JSON *포맷*과 JSON *컬럼 타입*을 혼동하지 마십시오. `JSON` 컬럼 타입을 전혀 사용하지 않고도 JSON 형식의 데이터를 (`JSONEachRow` 등을 통해) 타입이 지정된 컬럼에 삽입할 수 있습니다. 여기서의 결정은 입력 형식이 아니라 컬럼 타입에 관한 것입니다.
+</Note>
+
+<div id="approach-details">
+  ## 접근 방식 상세 정보
+</div>
+
+<div id="typed-columns">
+  ### 타입이 지정된 컬럼
+</div>
+
+**사용 시기:** 설계 시점에 JSON 구조를 완전히 알고 있는 경우에 적합합니다. 필드와 타입이 레코드마다 바뀌지 않습니다. 객체 배열이나 중첩 맵 같은 복잡한 중첩 구조도 [`Array`](/ko/reference/data-types/array), [`Tuple`](/ko/reference/data-types/tuple), [`Nested`](/ko/reference/data-types/nested-data-structures/index) 타입으로 표현할 수 있습니다.
+
+**트레이드오프:** 스키마 변경 시 `ALTER TABLE`이 필요합니다. 또한 스키마를 업데이트하지 않으면 예상하지 못한 필드는 삽입 시 조용히 삭제됩니다.
+
+<Accordion title="설정, 검증 및 주의사항">
+  **설정**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp` DateTime,
+      `service`   LowCardinality(String),
+      `level`     Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`   String,
+      `host`      LowCardinality(String),
+      `duration_ms` UInt32
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **검증**
+
+  ```sql
+  -- 컬럼 타입이 예상과 일치하는지 확인합니다
+  DESCRIBE TABLE events FORMAT Vertical
+
+  -- 데이터를 삽입하고 쿼리해 스키마가 데이터를 올바르게 처리하는지 검증합니다
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42}
+
+  SELECT service, level, duration_ms FROM events WHERE service = 'api'
+  ```
+
+  **주의할 점**
+
+  * `JSONEachRow`로 JSON 데이터를 삽입할 때 JSON에 스키마에 없는 필드가 포함되어 있으면, ClickHouse는 기본적으로 해당 필드를 조용히 삭제합니다. 대신 오류가 발생하게 하려면 [`input_format_skip_unknown_fields`](/ko/reference/settings/formats#input_format_skip_unknown_fields)를 `0`으로 설정하십시오.
+</Accordion>
+
+***
+
+<div id="hybrid">
+  ### Hybrid (타입이 지정된 컬럼 + JSON)
+</div>
+
+**사용 시점:** 핵심 필드 집합은 안정적이지만(타임스탬프, ID, 상태 코드) payload의 일부는 동적일 때 사용합니다. 예를 들어 사용자 정의 속성, 태그, 메타데이터, 또는 행마다 달라지는 확장 필드가 이에 해당합니다.
+
+**절충점:** 타입이 지정된 컬럼에서는 최대 성능을 얻고, JSON 컬럼에서는 유연성을 확보할 수 있습니다. 다만 JSON 컬럼은 동적 부분에 대해 여전히 삽입 오버헤드와 저장 비용이 발생합니다.
+
+<Accordion title="설정, 검증 및 주의사항">
+  **설정**
+
+  ```sql
+  CREATE TABLE events
+  (
+      `timestamp`  DateTime,
+      `service`    LowCardinality(String),
+      `level`      Enum8('DEBUG' = 1, 'INFO' = 2, 'WARN' = 3, 'ERROR' = 4),
+      `message`    String,
+      `host`       LowCardinality(String),
+      `duration_ms` UInt32,
+      `attributes` JSON(
+          max_dynamic_paths = 256,
+          `http.status_code` UInt16,
+          `http.method` LowCardinality(String),
+          SKIP REGEXP 'debug\..*'
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (service, timestamp)
+  ```
+
+  **검증**
+
+  ```sql
+  -- 샘플 데이터를 삽입하고 추론된 경로를 확인합니다
+  INSERT INTO events FORMAT JSONEachRow
+  {"timestamp":"2025-03-19 10:00:00","service":"api","level":"INFO","message":"request handled","host":"node-1","duration_ms":42,"attributes":{"http.status_code":200,"http.method":"GET","user.region":"eu-west","custom_tag":"abc"}}
+
+  SELECT JSONAllPathsWithTypes(attributes)
+  FROM events
+  FORMAT PrettyJSONEachRow
+  ```
+
+  **주의할 점**
+
+  * 미리 파악하고 있는 JSON 경로에는 [타입 힌트](/ko/reference/data-types/newjson)를 사용하십시오. 힌트는 판별자 컬럼을 우회하고 해당 경로를 일반적인 타입이 지정된 컬럼처럼 저장하므로, 동일한 성능을 제공하면서 오버헤드가 없습니다.
+  * 쿼리하지 않는 경로(디버그 메타데이터, 내부 tracing ID)에는 `SKIP` 또는 `SKIP REGEXP`를 사용해 저장 공간을 절약하고 서브컬럼 수를 줄이십시오.
+  * `max_dynamic_paths`는 실제로 쿼리하는 distinct paths 수에 비례하도록 설정하십시오. 기본값(1024)은 대부분의 경우에 적합합니다. 동적 영역이 작다면 이 값을 낮추십시오.
+  * `max_dynamic_paths`를 10,000보다 크게 설정하지 마십시오. 값이 너무 크면 리소스 활용이 늘고 효율이 떨어집니다.
+
+  <Info>
+    **점이 포함된 키**
+
+    점이 포함된 키(예: `http.status_code`)는 기본적으로 중첩 경로로 처리되므로, `{"http.status_code": 200}`는 `{"http": {"status_code": 200}}`와 동일하게 저장됩니다. 이는 OTel 속성에서 흔히 볼 수 있습니다. 점이 포함된 경로를 어떻게 저장할지 제어하려면 타입 힌트를 사용하거나 `json_type_escape_dots_in_keys` (25.8+)를 활성화하십시오.
+  </Info>
+</Accordion>
+
+***
+
+<div id="native-json">
+  ### 네이티브 JSON 컬럼
+</div>
+
+**사용 시기:** 레코드마다 키가 나타났다 사라질 정도로 구조를 예측하기 어려운 경우에 적합합니다. 사용자 생성 스키마, plugin 시스템, 또는 업스트림 스키마를 제어할 수 없는 데이터 레이크 수집 환경이 여기에 해당합니다.
+
+**트레이드오프:** 타입이 지정된 컬럼보다 삽입이 느립니다. 전체 객체 읽기는 String보다 느립니다. 서브컬럼 관리로 인한 저장소 오버헤드가 있습니다. 특정 경로에 대한 필드 수준 쿼리에는 효과적입니다.
+
+<Accordion title="설정, 검증 및 주의사항">
+  **설정**
+
+  ```sql
+  CREATE TABLE dynamic_events
+  (
+      `id`   UInt64,
+      `ts`   DateTime DEFAULT now(),
+      `data` JSON(
+          max_dynamic_paths = 512,
+          `event_type` LowCardinality(String),
+          `version` UInt8
+      )
+  )
+  ENGINE = MergeTree
+  ORDER BY (data.event_type, ts)
+  ```
+
+  JSON 컬럼에 JSON 문서 전체를 삽입할 때는 [`JSONAsObject`](/ko/reference/formats/JSON/JSONAsObject) 포맷을 사용합니다. 이 포맷은 각 입력 줄을 컬럼에 매핑되는 완전한 JSON 객체로 처리합니다.
+
+  **검증**
+
+  ```sql
+  INSERT INTO dynamic_events (id, data) FORMAT JSONEachRow
+  {"id": 1, "data": {"event_type": "click", "version": 2, "page": "/home", "button_id": "cta-1"}}
+  {"id": 2, "data": {"event_type": "purchase", "version": 1, "item_id": "SKU-99", "amount": 49.99, "currency": "USD"}}
+
+  -- ClickHouse가 감지한 경로와 해당 타입 확인
+  SELECT JSONAllPathsWithTypes(data) FROM dynamic_events FORMAT PrettyJSONEachRow
+
+  -- 특정 경로 쿼리
+  SELECT data.page FROM dynamic_events WHERE data.event_type = 'click'
+  ```
+
+  **주의할 점**
+
+  * 타입 힌트가 없으면 ClickHouse는 먼저 확인한 값을 기준으로 경로별 타입을 추론합니다. 한 레코드에서 `score`가 `"10"`(문자열)으로 들어오고 다른 레코드에서는 `10`(정수)으로 들어오면 해당 경로에 판별자 컬럼이 생성되어 쿼리가 더 느려집니다. 타입이 알려진 경로에는 힌트를 추가하십시오.
+  * 경로 수가 `max_dynamic_paths`를 초과하면 오버플로우 값이 쿼리 성능이 낮은 [공유 데이터 구조](/ko/reference/data-types/newjson#shared-data-structure)로 이동합니다. [`JSONDynamicPaths()`](/ko/reference/data-types/newjson#introspection-functions)로 모니터링하고 제한값은 10,000 미만으로 유지하십시오.
+  * 각 동적 경로는 최대 `max_dynamic_types`(기본값 32)개의 고유 데이터 타입을 지원합니다. 단일 경로가 이를 초과하면 추가 타입은 공유 Variant 저장소로 폴백됩니다. 동일한 필드에서 타입이 매우 일관되지 않은 데이터가 아닌 한, 이는 거의 문제가 되지 않습니다.
+</Accordion>
+
+***
+
+<div id="opaque-storage">
+  ### 불투명 String 저장 방식
+</div>
+
+**사용 시점:** JSON 문서를 통째로 저장하고 그대로 조회한 뒤, 애플리케이션으로 넘기거나 아카이브하거나 다운스트림으로 전달하는 경우에 사용합니다. ClickHouse 내부에서는 필드 수준의 필터링이나 집계를 수행하지 않습니다.
+
+**장단점:** 삽입이 가장 빠르고 스키마가 가장 단순합니다. 필드 수준 쿼리는 런타임 파싱(`JSONExtract` 계열) 없이는 불가능하며, 이 방식은 규모가 커질수록 느려집니다.
+
+<Accordion title="설정, 검증 및 주의사항">
+  **설정**
+
+  ```sql
+  CREATE TABLE raw_events
+  (
+      `id`        UInt64,
+      `received`  DateTime DEFAULT now(),
+      `payload`   String
+  )
+  ENGINE = MergeTree
+  ORDER BY (received)
+  ```
+
+  **검증**
+
+  ```sql
+  INSERT INTO raw_events (id, payload) VALUES
+  (1, '{"type":"click","page":"/home"}'),
+  (2, '{"type":"purchase","item":"SKU-99","amount":49.99}')
+
+  -- 데이터가 손상 없이 그대로 저장·조회되는지 확인
+  SELECT payload FROM raw_events WHERE id = 1
+
+  -- 필요할 때는 여전히 즉석에서 필드를 파싱할 수 있는지 확인
+  SELECT JSONExtractString(payload, 'type') AS event_type FROM raw_events
+  ```
+
+  **주의할 점**
+
+  * 요구 사항이 바뀌어 나중에 필드 수준 쿼리가 필요해지면, 타입이 지정된 컬럼 또는 JSON 컬럼이 있는 새 테이블을 만들고 데이터를 backfill해야 합니다. 개별 필드를 쿼리할 가능성이 조금이라도 있다면, 처음부터 [하이브리드 접근 방식](#hybrid)을 사용하는 것이 좋습니다.
+  * `JSONExtract` 함수는 쿼리할 때마다 문자열을 파싱합니다. 즉석 탐색에는 괜찮지만, 운영 대시보드나 높은 QPS 워크로드에는 적합하지 않습니다.
+  * JSON payload가 크다면 String 컬럼에 압축 코덱(`ZSTD`) 적용을 고려하십시오. 압축 효율이 좋습니다.
+</Accordion>
+
+<div id="comparison">
+  ## 비교
+</div>
+
+| 비교 항목        | 타입이 지정된 컬럼        | Hybrid                     | 네이티브 JSON          | String        |
+| ------------ | ----------------- | -------------------------- | ------------------ | ------------- |
+| **삽입 처리량**   | 가장 빠름             | 빠름                         | 보통                 | 가장 빠름         |
+| **필드 수준 쿼리** | 가장 빠름             | 빠름(타입 지정); 양호함(힌트 적용 JSON) | 양호함(힌트 적용); 느림(동적) | 느림(런타임 파싱)    |
+| **전체 객체 읽기** | 빠름                | 보통                         | 느림                 | 가장 빠름         |
+| **스토리지 효율성** | 가장 우수함            | 좋음                         | 보통                 | 좋음(압축 효율이 높음) |
+| **스키마 유연성**  | 없음(`ALTER TABLE`) | 부분적(고정된 핵심, 유연한 확장 부분)     | 완전함                | 완전함           |
+| **복잡도**      | 낮음                | 중간                         | 중간~높음              | 낮음            |
+
+<div id="when-map-fits-better">
+  ## Map이 더 적합한 경우
+</div>
+
+동적 필드가 균일한 key-value 쌍으로 구성되어 있고 모든 값의 타입이 같다면, [`Map(String, T)`](/ko/reference/data-types/map)이 JSON 컬럼보다 더 단순하고 효율적입니다. 대표적인 예로는 문자열 태그(`Map(String, String)`), 숫자 메트릭(`Map(String, Float64)`), 기능 플래그(`Map(String, Bool)`)가 있습니다.
+
+```sql
+CREATE TABLE tagged_events
+(
+    `timestamp` DateTime,
+    `service`   LowCardinality(String),
+    `tags`      Map(String, String)  -- e.g., {"env": "prod", "region": "us-east-1", "team": "platform"}
+)
+ENGINE = MergeTree
+ORDER BY (service, timestamp)
+```
+
+`Map`은 키 수준 필터링(`tags['env'] = 'prod'`)을 지원하며, JSON보다 저장 비용이 적고 JSON 타입의 서브컬럼 오버헤드를 피할 수 있습니다. 키 조회는 기본적으로 맵을 선형 스캔한다는 점에 유의하십시오. 태그 수가 적으면 괜찮지만, 키가 100개 이상인 맵에는 [`with_buckets` 직렬화](/ko/reference/data-types/map#bucketed-map-serialization)를 고려하십시오. 값 타입이 혼합되어 있거나 구조가 중첩되어 있으면 JSON을 사용하고, 구조가 단순한 key-value 쌍이며 모든 값의 타입이 동일하면 `Map`을 사용하십시오.
+
+<div id="related-resources">
+  ## 관련 자료
+</div>
+
+* [JSON을 적절히 사용하기](/ko/concepts/best-practices/json-type) — JSON 컬럼 타입과 대안 중 언제 무엇을 사용해야 하는지 설명합니다
+* [JSON 데이터 타입 참고](/ko/reference/data-types/newjson) — 타입 힌트, SKIP, max&#95;dynamic&#95;paths, 인트로스펙션 함수에 대한 전체 구문
+* [데이터 타입 선택하기](/ko/concepts/best-practices/select-data-type) — 일반적인 타입 선택 지침
+* [A New Powerful JSON Data Type for ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse) — JSON 타입의 저장 아키텍처를 다루는 심층 분석
+* [JSON 포맷 참고](/ko/reference/formats/JSON/JSON) — JSON 데이터용 입력/출력 포맷(JSONEachRow, JSONAsObject 등)

@@ -1,0 +1,504 @@
+---
+slug: /cloud/guides/data-masking
+sidebarTitle: 'إخفاء البيانات'
+title: 'إخفاء البيانات في ClickHouse'
+description: 'دليل حول إخفاء البيانات في ClickHouse'
+keywords: ['إخفاء البيانات']
+doc_type: 'guide'
+---
+
+إخفاء البيانات هو تقنية تُستخدم لحماية البيانات، حيث تُستبدل البيانات الأصلية بنسخة منها تحافظ على تنسيقها وبنيتها مع إزالة أي معلومات تعريف شخصية (PII) أو معلومات حساسة.
+
+يوضح هذا الدليل كيفية إخفاء البيانات في ClickHouse باستخدام عدة أساليب:
+
+* **سياسات الإخفاء** (ClickHouse Cloud، 25.12+): إخفاء ديناميكي مدمج يُطبَّق وقت الاستعلام لمستخدمين/أدوار محددة
+* **String replacement functions**: إخفاء أساسي باستخدام الدوال المضمنة
+* **Masked views**: إنشاء طرق عرض بمنطق تحويل
+* **Materialized columns**: تخزين نُسخ مخفية إلى جانب البيانات الأصلية
+* **قواعد إخفاء الاستعلامات**: إخفاء البيانات الحساسة في السجلات (ClickHouse OSS)
+
+<div id="masking-policies">
+  ## استخدام سياسات الإخفاء (ClickHouse Cloud)
+</div>
+
+<Note>
+  تتوفر سياسات الإخفاء في ClickHouse Cloud بدءًا من الإصدار 25.12.
+</Note>
+
+يوفّر الأمر [`CREATE MASKING POLICY`](/ar/reference/statements/create/masking-policy) طريقة مدمجة لإخفاء قيم الأعمدة ديناميكيًا لمستخدمين أو أدوار محددة عند وقت الاستعلام. وعلى عكس الأساليب الأخرى، لا تتطلب سياسات الإخفاء إنشاء واجهات عرض منفصلة أو تخزين بيانات مخفية، إذ يحدث هذا التحويل بشفافية عندما يستعلم المستخدمون من الجدول.
+
+<div id="basic-maasking-policy">
+  ### سياسة إخفاء بسيطة
+</div>
+
+لتوضيح سياسات الإخفاء، لننشئ جدول `orders` يحتوي على معلومات العملاء:
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+الآن، أنشئ دورًا للمستخدمين الذين ينبغي لهم رؤية البيانات المخفية:
+
+```sql
+CREATE ROLE masked_data_viewer;
+```
+
+أنشئ سياسة إخفاء تُطبَّق على دور `masked_data_viewer`:
+
+```sql
+CREATE MASKING POLICY mask_pii_data ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+        phone = replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+        shipping_address = replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+    TO masked_data_viewer;
+```
+
+عندما يُجري مستخدم لديه الدور `masked_data_viewer` استعلامًا على الجدول `orders`، فإنه يرى البيانات المخفية تلقائيًا:
+
+```sql title="Query"
+SELECT * FROM orders ORDER BY user_id;
+```
+
+```response title="Response (for masked_data_viewer role)"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+يرى المستخدمون الذين لا يملكون الدور `masked_data_viewer` البيانات الأصلية غير المُخفاة.
+
+<div id="conditional-masking">
+  ### الإخفاء المشروط
+</div>
+
+يمكنك استخدام العبارة `WHERE` لتطبيق الإخفاء على صفوف معيّنة فقط. على سبيل المثال، لإخفاء الطلبات ذات القيمة العالية فقط:
+
+```sql
+CREATE MASKING POLICY mask_high_value_orders ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+        email = replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2')
+    WHERE total_amount > 200
+    TO masked_data_viewer;
+```
+
+<div id="multiple-policies-with-priority">
+  ### سياسات متعددة مع تحديد الأولوية
+</div>
+
+عندما تسري عدة سياسات إخفاء على العمود نفسه، استخدم البند `PRIORITY` للتحكم في التحويل الذي سيُطبَّق. وتُطبَّق قيم الأولوية الأعلى أخيرًا:
+
+```sql
+-- Lower priority: Basic masking for all sensitive data
+CREATE MASKING POLICY basic_masking ON orders
+    UPDATE
+        name = '****',
+        email = '****@****.com'
+    TO masked_data_viewer
+    PRIORITY 0;
+
+-- Higher priority: More refined masking (overrides basic_masking)
+CREATE MASKING POLICY refined_masking ON orders
+    UPDATE
+        name = replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****')
+    WHERE total_amount > 100
+    TO masked_data_viewer
+    PRIORITY 10;
+```
+
+في هذا المثال، بالنسبة إلى الطلبات التي يكون فيها `total_amount > 100`، تحلّ سياسة `refined_masking` (الأولوية 10) محلّ سياسة `basic_masking` (الأولوية 0) بالنسبة إلى العمود `name`، بينما يواصل `email` استخدام الإخفاء الأساسي.
+
+<div id="hash-based-masking">
+  ### الإخفاء المستند إلى التجزئة
+</div>
+
+في الحالات التي تحتاج فيها إلى إخفاء متسق (أي إن الإدخال نفسه يُنتِج دائمًا المخرَج المُخفى نفسه)، استخدم دوال التجزئة:
+
+```sql
+CREATE MASKING POLICY hash_sensitive_data ON orders
+    UPDATE
+        email = concat(toString(cityHash64(email)), '@masked.com'),
+        phone = concat('555-', toString(cityHash64(phone) % 10000000))
+    TO masked_data_viewer;
+```
+
+<div id="managing-masking-policies">
+  ### إدارة سياسات الإخفاء
+</div>
+
+اعرض جميع سياسات الإخفاء:
+
+```sql
+SHOW MASKING POLICIES;
+```
+
+احذف سياسة إخفاء البيانات:
+
+```sql
+DROP MASKING POLICY mask_pii_data ON orders;
+```
+
+استبدال سياسة موجودة:
+
+```sql
+CREATE OR REPLACE MASKING POLICY mask_pii_data ON orders
+    UPDATE name = '[REDACTED]'
+    TO masked_data_viewer;
+```
+
+لمزيد من التفاصيل، راجع توثيق [CREATE MASKING POLICY](/ar/reference/statements/create/masking-policy).
+
+<div id="using-string-functions">
+  ## استخدم دوال استبدال السلاسل النصية
+</div>
+
+في حالات استخدام إخفاء البيانات الأساسية، توفّر عائلة الدوال `replace` طريقة ملائمة لإخفاء البيانات:
+
+| الدالة                                                                                                 | الوصف                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| [`replaceOne`](/ar/reference/functions/regular-functions/string-replace-functions#replaceOne)             | تستبدل أول ظهور لنمط في سلسلة النص المراد البحث فيه بالنص البديل المُقدَّم.                                           |
+| [`replaceAll`](/ar/reference/functions/regular-functions/string-replace-functions#replaceAll)             | تستبدل جميع مواضع ظهور النمط في سلسلة النص المراد البحث فيه بالنص البديل المُقدَّم.                                   |
+| [`replaceRegexpOne`](/ar/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) | تستبدل أول ظهور لسلسلة فرعية تطابق نمط تعبير نمطي (بصياغة re2) في النص المراد البحث فيه بالنص البديل المُقدَّم.       |
+| [`replaceRegexpAll`](/ar/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll) | تستبدل جميع مواضع ظهور سلسلة فرعية تطابق نمط تعبير نمطي (بصياغة re2) في النص المراد البحث فيه بالنص البديل المُقدَّم. |
+
+على سبيل المثال، يمكنك استبدال الاسم &quot;John Smith&quot; بعنصر نائب `[CUSTOMER_NAME]` باستخدام الدالة `replaceOne`:
+
+```sql title="Query"
+SELECT replaceOne(
+    'Customer John Smith called about his account',
+    'John Smith',
+    '[CUSTOMER_NAME]'
+) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────┐
+│ Customer [CUSTOMER_NAME] called about his account │
+└───────────────────────────────────────────────────┘
+```
+
+وبشكلٍ أعم، يمكنك استخدام `replaceRegexpOne` لاستبدال اسم أي عميل:
+
+```sql title="Query"
+SELECT 
+    replaceRegexpAll(
+        'Customer John Smith called. Later, Mary Johnson and Bob Wilson also called.',
+        '\\b[A-Z][a-z]+ [A-Z][a-z]+\\b',
+        '[CUSTOMER_NAME]'
+    ) AS anonymized_text;
+```
+
+```response title="Response"
+┌─anonymized_text───────────────────────────────────────────────────────────────────────┐
+│ [CUSTOMER_NAME] Smith called. Later, [CUSTOMER_NAME] and [CUSTOMER_NAME] also called. │
+└───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+أو يمكنك إخفاء رقم الضمان الاجتماعي مع الإبقاء على آخر 4 أرقام فقط باستخدام الدالة `replaceRegexpAll`.
+
+```sql title="Query"
+SELECT replaceRegexpAll(
+    'SSN: 123-45-6789',
+    '(\d{3})-(\d{2})-(\d{4})',
+    'XXX-XX-\3'
+) AS masked_ssn;
+```
+
+في الاستعلام أعلاه، يُستخدم `\3` لإدراج مجموعة الالتقاط الثالثة في السلسلة الناتجة، لينتج ما يلي:
+
+```response title="Response"
+┌─masked_ssn───────┐
+│ SSN: XXX-XX-6789 │
+└──────────────────┘
+```
+
+<div id="masked-views">
+  ## إنشاء `VIEW`s لإخفاء البيانات
+</div>
+
+يمكن استخدام [`VIEW`](/ar/reference/statements/create/view) بالاقتران مع دوال السلاسل النصية المذكورة أعلاه لتطبيق تحويلات على الأعمدة التي تحتوي على بيانات حساسة قبل عرضها على المستخدم.
+وبهذه الطريقة، تبقى البيانات الأصلية من دون تغيير، ولا يرى المستخدمون الذين يستعلمون عبر هذا الـ `VIEW` سوى البيانات المُخفاة.
+
+للتوضيح، لنتخيّل أن لدينا جدولًا يخزّن سجلات طلبات العملاء.
+نريد التأكد من أن مجموعة من الموظفين يمكنها عرض هذه المعلومات، لكننا لا نريدهم أن يروا البيانات الكاملة الخاصة بالعملاء.
+
+شغّل الاستعلام أدناه لإنشاء جدول تجريبي باسم `orders` وإدراج بعض سجلات طلبات العملاء الافتراضية فيه:
+
+```sql
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    email String,
+    phone String,
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+أنشئ طريقة عرض باسم `masked_orders`:
+
+```sql
+CREATE VIEW masked_orders AS
+SELECT
+    user_id,
+    replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****') AS name,
+    replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2') AS email,
+    replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3') AS phone,
+    total_amount,
+    order_date,
+    replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1') AS shipping_address
+FROM orders;
+```
+
+في عبارة `SELECT` ضمن استعلام إنشاء طريقة العرض أعلاه، نحدّد التحويلات باستخدام `replaceRegexpOne` على الحقول `name` و`email` و`phone` و`shipping_address`، وهي الحقول التي تحتوي على معلومات حساسة ونرغب في إخفائها جزئيًا.
+
+اعرض البيانات من طريقة العرض:
+
+```sql title="Query"
+SELECT * FROM masked_orders
+```
+
+```response title="Response"
+┌─user_id─┬─name─────────┬─email──────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address──────────┐
+│    1001 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │       299.99 │ 2024-01-15 │ *** New York, NY 10001    │
+│    1002 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │        149.5 │ 2024-01-16 │ *** Los Angeles, CA 90210 │
+│    1003 │ Michael **** │ mb****@company.com │ 555-***-7890 │          599 │ 2024-01-17 │ *** Chicago, IL 60601     │
+│    1004 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │        89.99 │ 2024-01-18 │ *** Houston, TX 77001     │
+│    1005 │ David ****   │ dw****@email.net   │ 555-***-3210 │       449.75 │ 2024-01-19 │ *** Phoenix, AZ 85001     │
+└─────────┴──────────────┴────────────────────┴──────────────┴──────────────┴────────────┴───────────────────────────┘
+```
+
+لاحظ أن البيانات المُعادة من طريقة العرض تكون مخفية جزئيًا، مما يحجب المعلومات الحساسة.
+يمكنك أيضًا إنشاء عدة طرق عرض بمستويات مختلفة من التعتيم، بحسب مستوى الوصول الممنوح إلى المعلومات لدى الـ Viewer.
+
+لضمان تمكّن المستخدمين من الوصول فقط إلى طريقة العرض التي تُرجع البيانات المخفية، وليس إلى الـ table التي تحتوي على البيانات الأصلية غير المقنَّعة، ينبغي استخدام [Role Based Access Control](/ar/products/cloud/reference/security/console-roles) لضمان أن تكون لدى أدوار محددة فقط grants لإجراء select من طريقة العرض.
+
+أنشئ الدور أولًا:
+
+```sql
+CREATE ROLE masked_orders_viewer;
+```
+
+بعد ذلك، امنح الدور امتيازات `SELECT` على طريقة العرض:
+
+```sql
+GRANT SELECT ON masked_orders TO masked_orders_viewer;
+```
+
+نظرًا إلى أن أدوار ClickHouse تراكمية، يجب عليك التأكد من أن المستخدمين الذين ينبغي لهم رؤية العرض المُخفّى فقط لا يملكون أي امتياز `SELECT` على الجدول الأساسي من خلال أي دور.
+
+لذلك، ينبغي لك إلغاء امتياز الوصول إلى الجدول الأساسي صراحةً احتياطًا:
+
+```sql
+REVOKE SELECT ON orders FROM masked_orders_viewer;
+```
+
+أخيرًا، أسنِد الدور إلى المستخدمين المناسبين:
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+يضمن ذلك أن المستخدمين الذين لديهم الدور `masked_orders_viewer` لا يمكنهم سوى الاطلاع على
+البيانات المخفية من العرض، وليس البيانات الأصلية غير المُقنَّعة من الجدول.
+
+<div id="materialized-ephemeral-column-restrictions">
+  ## استخدم أعمدة `MATERIALIZED` وقيود الوصول على مستوى العمود
+</div>
+
+في الحالات التي لا تريد فيها إنشاء طريقة عرض منفصلة، يمكنك تخزين نُسخ مخفية من بياناتك إلى جانب البيانات الأصلية.
+وللقيام بذلك، يمكنك استخدام [أعمدة `MATERIALIZED`](/ar/reference/statements/create/table#materialized).
+تُحتسب قيم هذه الأعمدة تلقائيًا وفقًا للتعبير المحدد لها عند إدراج الصفوف،
+ويمكن استخدامُها لإنشاء أعمدة جديدة تحتوي على نُسخ مخفية من البيانات.
+
+استنادًا إلى المثال السابق، وبدلًا من إنشاء `VIEW` منفصل للبيانات المخفية، سنُنشئ الآن أعمدة مخفية باستخدام `MATERIALIZED`:
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{0})[^@]*(@.*)$', '\\1****\\2'),
+    phone String,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^[^,]+,\\s*(.*)$', '*** \\1')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+إذا نفّذت الآن استعلام SELECT التالي، فسترى أن البيانات المُقنَّعة تصبح &#39;مُخزَّنة ماديًا&#39; وقت الإدراج وتُخزَّن إلى جانب البيانات الأصلية غير المُقنَّعة.
+ومن الضروري تحديد الأعمدة المُقنَّعة صراحةً، لأن ClickHouse لا يضمّن الأعمدة المُخزَّنة ماديًا تلقائيًا في استعلامات `SELECT *` افتراضيًا.
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─name──────────┬─email─────────────────────┬─phone────────┬─total_amount─┬─order_date─┬─shipping_address───────────────────┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked────┐
+1. │    1001 │ John Smith    │ john.smith@gmail.com      │ 555-123-4567 │       299.99 │ 2024-01-15 │ 123 Main St, New York, NY 10001    │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ **** New York, NY 10001    │
+2. │    1002 │ Sarah Johnson │ sarah.johnson@outlook.com │ 555-987-6543 │        149.5 │ 2024-01-16 │ 456 Oak Ave, Los Angeles, CA 90210 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ **** Los Angeles, CA 90210 │
+3. │    1003 │ Michael Brown │ mbrown@company.com        │ 555-456-7890 │          599 │ 2024-01-17 │ 789 Pine Rd, Chicago, IL 60601     │ Michael **** │ mb****@company.com │ 555-***-7890 │ **** Chicago, IL 60601     │
+4. │    1004 │ Emily Rogers  │ emily.rogers@yahoo.com    │ 555-321-0987 │        89.99 │ 2024-01-18 │ 321 Elm St, Houston, TX 77001      │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ **** Houston, TX 77001     │
+5. │    1005 │ David Wilson  │ dwilson@email.net         │ 555-654-3210 │       449.75 │ 2024-01-19 │ 654 Cedar Blvd, Phoenix, AZ 85001  │ David ****   │ dw****@email.net   │ 555-***-3210 │ **** Phoenix, AZ 85001     │
+   └─────────┴───────────────┴───────────────────────────┴──────────────┴──────────────┴────────────┴────────────────────────────────────┴──────────────┴────────────────────┴──────────────┴────────────────────────────┘
+```
+
+لضمان ألا يتمكن المستخدمون من الوصول إلا إلى الأعمدة التي تحتوي على البيانات المخفية، يمكنك استخدام [Role Based Access Control](/ar/products/cloud/reference/security/console-roles) مرة أخرى لضمان ألّا تُمنَح أدوار محددة سوى صلاحية `select` على الأعمدة المقنّعة في `orders`.
+
+أعِد إنشاء الدور الذي أنشأناه سابقًا:
+
+```sql
+DROP ROLE IF EXISTS masked_order_viewer;
+CREATE ROLE masked_order_viewer;
+```
+
+بعد ذلك، امنح صلاحية `SELECT` على الجدول `orders`:
+
+```sql
+GRANT SELECT ON orders TO masked_data_reader;
+```
+
+ألغِ الوصول إلى أي أعمدة حساسة:
+
+```sql
+REVOKE SELECT(name) ON orders FROM masked_data_reader;
+REVOKE SELECT(email) ON orders FROM masked_data_reader;
+REVOKE SELECT(phone) ON orders FROM masked_data_reader;
+REVOKE SELECT(shipping_address) ON orders FROM masked_data_reader;
+```
+
+أخيرًا، أسنِد الدور إلى المستخدمين المناسبين:
+
+```sql
+GRANT masked_orders_viewer TO your_user;
+```
+
+إذا كنت تريد تخزين البيانات المخفية فقط في جدول `orders`،
+فيمكنك تمييز الأعمدة الحساسة غير المقنّعة بأنها [`EPHEMERAL`](/ar/reference/statements/create/table#ephemeral)،
+وهذا يضمن عدم تخزين أعمدة من هذا النوع في الجدول.
+
+```sql
+DROP TABLE IF EXISTS orders;
+CREATE TABLE orders (
+    user_id UInt32,
+    name String EPHEMERAL,
+    name_masked String MATERIALIZED replaceRegexpOne(name, '^([A-Za-z]+)\\s+(.*)$', '\\1 ****'),
+    email String EPHEMERAL,
+    email_masked String MATERIALIZED replaceRegexpOne(email, '^(.{2})[^@]*(@.*)$', '\\1****\\2'),
+    phone String EPHEMERAL,
+    phone_masked String MATERIALIZED replaceRegexpOne(phone, '^(\\d{3})-(\\d{3})-(\\d{4})$', '\\1-***-\\3'),
+    total_amount Decimal(10,2),
+    order_date Date,
+    shipping_address String EPHEMERAL,
+    shipping_address_masked String MATERIALIZED replaceRegexpOne(shipping_address, '^([^,]+),\\s*(.*)$', '*** \\2')
+)
+ENGINE = MergeTree()
+ORDER BY user_id;
+
+INSERT INTO orders (user_id, name, email, phone, total_amount, order_date, shipping_address) VALUES
+    (1001, 'John Smith', 'john.smith@gmail.com', '555-123-4567', 299.99, '2024-01-15', '123 Main St, New York, NY 10001'),
+    (1002, 'Sarah Johnson', 'sarah.johnson@outlook.com', '555-987-6543', 149.50, '2024-01-16', '456 Oak Ave, Los Angeles, CA 90210'),
+    (1003, 'Michael Brown', 'mbrown@company.com', '555-456-7890', 599.00, '2024-01-17', '789 Pine Rd, Chicago, IL 60601'),
+    (1004, 'Emily Rogers', 'emily.rogers@yahoo.com', '555-321-0987', 89.99, '2024-01-18', '321 Elm St, Houston, TX 77001'),
+    (1005, 'David Wilson', 'dwilson@email.net', '555-654-3210', 449.75, '2024-01-19', '654 Cedar Blvd, Phoenix, AZ 85001');
+```
+
+إذا شغّلنا الاستعلام نفسه كما في السابق، فسترى الآن أن البيانات المخفية المُخزَّنة فعليًا فقط هي التي أُدرِجت في الجدول:
+
+```sql title="Query"
+SELECT
+    *,
+    name_masked,
+    email_masked,
+    phone_masked,
+    shipping_address_masked
+FROM orders
+ORDER BY user_id ASC
+```
+
+```response title="Response"
+   ┌─user_id─┬─total_amount─┬─order_date─┬─name_masked──┬─email_masked───────┬─phone_masked─┬─shipping_address_masked───┐
+1. │    1001 │       299.99 │ 2024-01-15 │ John ****    │ jo****@gmail.com   │ 555-***-4567 │ *** New York, NY 10001    │
+2. │    1002 │        149.5 │ 2024-01-16 │ Sarah ****   │ sa****@outlook.com │ 555-***-6543 │ *** Los Angeles, CA 90210 │
+3. │    1003 │          599 │ 2024-01-17 │ Michael **** │ mb****@company.com │ 555-***-7890 │ *** Chicago, IL 60601     │
+4. │    1004 │        89.99 │ 2024-01-18 │ Emily ****   │ em****@yahoo.com   │ 555-***-0987 │ *** Houston, TX 77001     │
+5. │    1005 │       449.75 │ 2024-01-19 │ David ****   │ dw****@email.net   │ 555-***-3210 │ *** Phoenix, AZ 85001     │
+   └─────────┴──────────────┴────────────┴──────────────┴────────────────────┴──────────────┴───────────────────────────┘
+```
+
+<div id="use-query-masking-rules">
+  ## استخدم قواعد إخفاء الاستعلامات لبيانات السجلات
+</div>
+
+بالنسبة إلى مستخدمي ClickHouse OSS الذين يرغبون تحديدًا في إخفاء بيانات السجلات، يمكنهم استخدام [قواعد إخفاء الاستعلامات](/ar/reference/settings/server-settings/settings#query_masking_rules) (إخفاء السجلات) لإخفاء البيانات.
+
+للقيام بذلك، يمكنك تحديد قواعد إخفاء تستند إلى تعبيرات نمطية في تهيئة الخادم.
+تُطبَّق هذه القواعد على الاستعلامات وجميع رسائل السجل قبل تخزينها في سجلات الخادم أو جداول النظام (مثل `system.query_log` و`system.text_log` و`system.processes`).
+
+يساعد هذا على منع تسرّب البيانات الحساسة إلى **السجلات** فقط.
+لاحظ أن هذا لا يُخفي البيانات في نتائج الاستعلام.
+
+على سبيل المثال، لإخفاء رقم الضمان الاجتماعي، يمكنك إضافة القاعدة التالية إلى [تهيئة الخادم](/ar/concepts/features/configuration/server-config/configuration-files):
+
+```yaml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```

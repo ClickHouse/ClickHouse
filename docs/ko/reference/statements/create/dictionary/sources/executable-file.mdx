@@ -1,0 +1,50 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/executable-file
+title: '실행형 파일 딕셔너리 소스'
+sidebarTitle: '실행형 파일'
+description: 'ClickHouse에서 실행형 파일을 딕셔너리 소스로 구성합니다.'
+doc_type: 'reference'
+---
+
+실행형 파일을 사용하는 방식은 [딕셔너리가 메모리에 저장되는 방식](/ko/reference/statements/create/dictionary/layouts/overview)에 따라 달라집니다. 딕셔너리가 `cache` 및 `complex_key_cache`를 사용해 저장된 경우, ClickHouse는 실행형 파일의 STDIN으로 요청을 보내 필요한 키를 전달합니다. 그 외의 경우에는 ClickHouse가 실행형 파일을 시작하고 해당 출력값을 딕셔너리 데이터로 처리합니다.
+
+설정 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(EXECUTABLE(
+        command 'cat /opt/dictionaries/os.tsv'
+        format 'TabSeparated'
+        implicit_key false
+    ))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <source>
+        <executable>
+            <command>cat /opt/dictionaries/os.tsv</command>
+            <format>TabSeparated</format>
+            <implicit_key>false</implicit_key>
+        </executable>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+설정 필드:
+
+| 설정                            | 설명                                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `command`                     | 실행형 파일의 절대 경로 또는 파일 이름입니다(명령이 위치한 디렉터리가 `PATH`에 포함된 경우).                                                                                                                                                                                                                                                          |
+| `format`                      | 파일 포맷입니다. [포맷](/ko/reference/formats/index)에 설명된 모든 포맷을 지원합니다.                                                                                                                                                                                                                                                       |
+| `command_termination_timeout` | 실행형 스크립트에는 메인 읽기-쓰기 루프가 포함되어야 합니다. 딕셔너리가 제거되면 파이프가 닫히고, ClickHouse가 자식 프로세스에 SIGTERM 신호를 보내기 전까지 실행형 파일은 `command_termination_timeout`초 내에 종료되어야 합니다. 초 단위로 지정합니다. 기본값은 `10`입니다. 선택 사항입니다.                                                                                                                        |
+| `command_read_timeout`        | 명령의 stdout에서 데이터를 읽을 때의 시간 제한입니다(밀리초 단위). 기본값은 `10000`입니다. 선택 사항입니다.                                                                                                                                                                                                                                              |
+| `command_write_timeout`       | 명령의 stdin에 데이터를 쓸 때의 시간 제한입니다(밀리초 단위). 기본값은 `10000`입니다. 선택 사항입니다.                                                                                                                                                                                                                                                 |
+| `implicit_key`                | 실행형 소스 파일은 값만 반환할 수 있으며, 요청된 키와의 대응 관계는 결과의 행 순서에 따라 암묵적으로 결정됩니다. 기본값은 `false`입니다.                                                                                                                                                                                                                                |
+| `execute_direct`              | `execute_direct` = `1`이면 `command`는 [user&#95;scripts&#95;path](/ko/reference/settings/server-settings/settings#user_scripts_path)에 지정된 user&#95;scripts 폴더에서 검색됩니다. 추가 스크립트 인수는 공백으로 구분해 지정할 수 있습니다. 예: `script_name arg1 arg2`. `execute_direct` = `0`이면 `command`는 `bin/sh -c`의 인수로 전달됩니다. 기본값은 `0`입니다. 선택 사항입니다. |
+| `send_chunk_header`           | 데이터 청크를 프로세스에 보내기 전에 행 수를 함께 보낼지 제어합니다. 기본값은 `false`입니다. 선택 사항입니다.                                                                                                                                                                                                                                                |
+
+이 딕셔너리 소스는 XML 설정으로만 구성할 수 있습니다. 실행형 소스를 사용하는 딕셔너리를 DDL로 생성하는 기능은 비활성화되어 있습니다. 그렇지 않으면 DB 사용자가 ClickHouse 노드에서 임의의 바이너리를 실행할 수 있기 때문입니다.

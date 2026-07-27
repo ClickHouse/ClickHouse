@@ -118,8 +118,9 @@ def test_max_request_size_hot_reload(started_cluster):
                 f"current value: {settings.get('max_request_size')}"
             )
 
-        # 3. A large write should now be rejected.
-        with pytest.raises(Exception, match=r"Connection loss"):
+        # 3. A large write should now be rejected. Connection loss and Operation
+        # timeout are both valid client surfaces of the connection-level rejection.
+        with pytest.raises(Exception, match=r"Connection loss|Operation timeout"):
             node.query(
                 "INSERT INTO system.zookeeper (name, path, value) "
                 "SELECT number::String, '/test_max_req', repeat('x', 3000) "

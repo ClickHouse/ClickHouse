@@ -34,19 +34,24 @@ void SettingsProfilesCache::ensureAllProfilesRead()
     /// `mutex` is already locked.
     if (all_profiles_read)
         return;
-    all_profiles_read = true;
 
     subscription = access_control.subscribeForChanges<SettingsProfile>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                profileAddedOrChanged(id, typeid_cast<SettingsProfilePtr>(entity));
-            else
-                profileRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    profileAddedOrChanged(change.id, typeid_cast<SettingsProfilePtr>(change.entity));
+                else
+                    profileRemoved(change.id);
+            }
+            mergeSettingsAndConstraintsIfNeeded();
         });
 
-    batch_subscription = access_control.subscribeForBatchFinished([this] { mergeSettingsAndConstraintsIfNeeded(); });
-
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_profiles.clear();
+    profiles_by_name.clear();
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
         auto profile = access_control.tryRead<SettingsProfile>(id);
@@ -56,12 +61,15 @@ void SettingsProfilesCache::ensureAllProfilesRead()
             profiles_by_name[profile->getName()] = id;
         }
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_profiles_read = true;
 }
 
 
 void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_profiles.find(profile_id);
     if (it == all_profiles.end())
     {
@@ -83,7 +91,7 @@ void SettingsProfilesCache::profileAddedOrChanged(const UUID & profile_id, const
 
 void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_profiles.find(profile_id);
     if (it == all_profiles.end())
         return;
@@ -91,17 +99,6 @@ void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
     all_profiles.erase(it);
     profile_infos_cache.clear();
     need_merge_settings_and_constraints = true;
-}
-
-
-void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
-{
-    std::lock_guard lock{mutex};
-    if (!need_merge_settings_and_constraints)
-        return;
-    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
-    mergeSettingsAndConstraints();
-    need_merge_settings_and_constraints = false;
 }
 
 
@@ -121,6 +118,17 @@ void SettingsProfilesCache::setDefaultProfileName(const String & default_profile
         throw Exception(ErrorCodes::THERE_IS_NO_PROFILE, "Settings profile {} not found", backQuote(default_profile_name));
 
     default_profile_id = it->second;
+}
+
+
+void SettingsProfilesCache::mergeSettingsAndConstraintsIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_merge_settings_and_constraints)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
+    mergeSettingsAndConstraints();
+    need_merge_settings_and_constraints = false;
 }
 
 
@@ -145,9 +153,9 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
     ProfileEvents::increment(ProfileEvents::SettingsProfileCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
     /// O(enabled sets * profiles), under `mutex` that the ContextAccess build path also takes.
     if (elapsed_ms >= 1000)
-        LOG_WARNING(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
-    else
         LOG_DEBUG(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
+    else
+        LOG_TRACE(getLogger("SettingsProfilesCache"), "Re-merged settings and constraints for {} enabled set(s) over {} profiles in {} ms", enabled_settings.size(), all_profiles.size(), elapsed_ms);
 }
 
 

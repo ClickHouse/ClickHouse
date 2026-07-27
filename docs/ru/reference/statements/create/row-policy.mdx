@@ -1,0 +1,103 @@
+---
+description: 'Документация по ROW POLICY'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
+---
+
+Создаёт [политику строк](/ru/concepts/features/security/access-rights#row-policy-management), то есть фильтр, который определяет, какие строки пользователь может читать из таблицы.
+
+<Tip>
+  Политики строк имеют смысл только для пользователей с доступом только на чтение. Если пользователь может изменять таблицу или копировать партиции между таблицами, это сводит на нет ограничения, задаваемые политиками строк.
+</Tip>
+
+Синтаксис:
+
+```sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+<div id="using-clause">
+  ## USING предложение
+</div>
+
+Позволяет задать условие для фильтрации строк. Пользователь увидит строку, если значение условия для этой строки не равно нулю.
+
+<div id="to-clause">
+  ## Предложение TO
+</div>
+
+В секции `TO` можно указать список пользователей и ролей, для которых должна действовать эта политика. Например, `CREATE ROW POLICY ... TO accountant, john@localhost`.
+
+Ключевое слово `ALL` означает всех пользователей ClickHouse, включая текущего пользователя. Ключевое слово `ALL EXCEPT` позволяет исключить отдельных пользователей из списка всех пользователей, например: `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
+
+<div id="as-clause">
+  ## Предложение AS
+</div>
+
+Допускается, чтобы для одной и той же таблицы и одного и того же пользователя одновременно было включено несколько политик. Поэтому нужен способ объединять условия из нескольких политик.
+
+По умолчанию политики объединяются с помощью булева оператора `OR`. Например, следующие политики:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+разрешить пользователю `peter` видеть строки, где либо `b=1`, либо `c=2`.
+
+Предложение `AS` указывает, как политики должны сочетаться с другими политиками. Политики могут быть либо разрешающими, либо ограничивающими. По умолчанию политики являются разрешающими, то есть они объединяются с помощью булева оператора `OR`.
+
+В качестве альтернативы политику можно задать как ограничивающую. Ограничивающие политики объединяются с помощью булева оператора `AND`.
+
+Вот общая формула:
+
+```text
+row_is_visible = (одно или несколько состояний разрешающих политик не равны нулю) AND
+                 (все состояния ограничивающих политик не равны нулю)
+```
+
+Например, следующие политики:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+разрешить пользователю `peter` видеть строки только при одновременном выполнении условий `b=1` AND `c=2`.
+
+Политики на уровне базы данных объединяются с политиками на уровне таблицы.
+
+Например, следующие политики:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+разрешить пользователю `peter` видеть строки таблицы table1 только при одновременном выполнении условий `b=1` И `c=2`, хотя
+для любой другой таблицы в mydb к пользователю применялась бы только политика `b=1`.
+
+<div id="on-cluster-clause">
+  ## Предложение ON CLUSTER
+</div>
+
+Позволяет создавать политики строк в кластере, см. [Distributed DDL](/ru/reference/statements/distributed-ddl).
+
+<div id="examples">
+  ## Примеры
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

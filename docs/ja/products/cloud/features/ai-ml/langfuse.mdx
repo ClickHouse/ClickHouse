@@ -1,0 +1,252 @@
+---
+sidebarTitle: 'Langfuse'
+slug: /cloud/features/ai-ml/langfuse
+title: 'Langfuse'
+description: 'Langfuse はオープンソースの LLM エンジニアリングプラットフォームであり、チームで協力しながら LLM アプリケーションのデバッグ、分析、改善の反復を行うのに役立ちます。'
+doc_type: 'reference'
+---
+
+<div id="what-is-langfuse">
+  ## Langfuse とは？
+</div>
+
+[Langfuse](https://langfuse.com) は、チームが LLM アプリケーションを共同でデバッグ、分析し、継続的に改善していくことを支援する、オープンソースの LLM エンジニアリングプラットフォームです。ClickHouse エコシステムの一部であり、中核に **ClickHouse** を採用することで、スケーラブルで高性能なオブザーバビリティバックエンドを実現しています。
+
+ClickHouse の列指向ストレージと高速な分析機能を活用することで、Langfuse は低レイテンシで数十億件のトレースやイベントを処理でき、高スループットの本番ワークロードにも適しています。
+
+<div id="why-langfuse">
+  ## なぜ Langfuse なのか？
+</div>
+
+* **オープンソース:** カスタムインテグレーション向けの公開 API を備えた、完全なオープンソース
+* **本番環境向けに最適化:** パフォーマンスへの影響を最小限に抑えるよう設計
+* **最高クラスの SDKs:** Python と JavaScript 向けのネイティブ SDKs
+* **フレームワーク対応:** OpenAI SDK、LangChain、LlamaIndex などの主要なフレームワークと統合
+* **マルチモーダル:** テキスト、画像、その他のモダリティのトレーシングに対応
+* **包括的なプラットフォーム:** LLM アプリケーション開発ライフサイクル全体を支えるツール群
+
+<div id="deployment-options">
+  ## デプロイメントオプション
+</div>
+
+Langfuse は、さまざまなセキュリティ要件やインフラストラクチャの要件に対応できるよう、柔軟なデプロイメントオプションを提供しています。
+
+**[Langfuse Cloud](https://cloud.langfuse.com)** は、最適なパフォーマンスを実現するため、マネージド ClickHouse クラスターを基盤とする完全マネージド型サービスです。SOC 2 Type II および ISO 27001 の認証を取得し、GDPR に準拠しており、米国 (AWS us-west-2) および EU (AWS eu-west-1) のデータリージョンで利用できます。
+
+**[セルフホスト](https://langfuse.com/self-hosting)** の Langfuse は、完全なオープンソース (MIT ライセンス) で、Docker または Kubernetes を使用して自社のインフラストラクチャに無料でデプロイできます。オブザーバビリティデータの保存には、自身で ClickHouse インスタンスを運用することも、ClickHouse Cloud を使用することもでき、データを完全に管理できます。 
+
+<div id="architecture">
+  ## アーキテクチャ
+</div>
+
+Langfuse はオープンソースコンポーネントのみで構成されており、ローカル環境、クラウドインフラストラクチャ、またはオンプレミス環境にデプロイできます。
+
+* **ClickHouse**: 大量のオブザーバビリティデータ (トレース、スパン、generations、scores) を保存します。ダッシュボード向けの高速な集約と分析を実現します。
+* **Postgres**: ユーザーアカウント、プロジェクト設定、プロンプト定義などのトランザクションデータを保存します。
+* **Redis**: イベントキューイングとキャッシュを処理します。
+* **S3/Blob Storage**: 大容量のペイロードと生のイベントデータを保存します。
+
+```mermaid
+flowchart TB
+    User["UI、API、SDKs"]
+    subgraph vpc ["VPC"]
+        Web["Webサーバー<br/>(langfuse/langfuse)"]
+        Worker["非同期ワーカー<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(トランザクションデータ)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(cache、キュー)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(オブザーバビリティデータ)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(生イベント、マルチモーダルな添付ファイル)", pos: "b", w: 60, h: 60, constraint: "on" }
+    end
+    LLM["LLM API/ゲートウェイ<br/>(任意; BYO; 同一VPC内またはVPCピアリング時も可)"]
+
+    User --> Web
+    Web --> S3
+    Web --> Postgres
+    Web --> Cache
+    Web --> Clickhouse
+    Web -..->|"playground の場合は任意"| LLM
+
+    Cache --> Worker
+    Worker --> Clickhouse
+    Worker --> Postgres
+    Worker --> S3
+    Worker -..->|"evals の場合は任意"| LLM
+```
+
+<div id="features">
+  ## 機能
+</div>
+
+<div id="observability">
+  ### オブザーバビリティ
+</div>
+
+[オブザーバビリティ](https://langfuse.com/docs/observability/overview)は、LLMアプリケーションを理解し、デバッグするうえで不可欠です。従来のソフトウェアとは異なり、LLMアプリケーションでは複雑で非決定論的なやり取りが発生するため、監視やデバッグが難しくなります。Langfuseは包括的なトレーシング機能を提供しており、アプリケーション内で実際に何が起きているのかを正確に把握できます。
+
+*📹 さらに詳しく知りたい方は、Langfuseのオブザーバビリティとアプリケーションへの統合方法を紹介する[**エンドツーエンドのウォークスルーを見る**](https://langfuse.com/watch-demo?tab=observability)。*
+
+<Tabs>
+  <Tab title="トレース詳細">
+    トレースを使うと、アプリ内のすべてのLLM呼び出しや関連するロジックを追跡できます。
+
+    <video src="https://static.langfuse.com/docs-videos/trace-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="セッション">
+    セッションを使うと、複数ステップにまたがる会話やエージェント型ワークフローを追跡できます。
+
+    <video src="https://static.langfuse.com/docs-videos/sessions-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="タイムライン">
+    タイムラインビューを確認して、レイテンシの問題をデバッグできます。
+
+    <video src="https://static.langfuse.com/docs-videos/timeline-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="ユーザー">
+    独自の`userId`を追加すると、ユーザーごとのコストと使用状況を監視できます。必要に応じて、このビューへのディープリンクを自社システム内に作成することもできます。
+
+    <video src="https://static.langfuse.com/docs-videos/users-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="エージェントグラフ">
+    LLMエージェントはグラフとして可視化でき、複雑なエージェント型ワークフローの流れを表現できます。
+
+    <video src="https://static.langfuse.com/docs-videos/langgraph-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="ダッシュボード">
+    ダッシュボードでは、品質、コスト、レイテンシのメトリクスを確認して、LLMアプリケーションを監視できます。
+
+    <video src="https://static.langfuse.com/docs-videos/dashboard.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+</Tabs>
+
+<div id="prompt-management">
+  ### プロンプト管理
+</div>
+
+[プロンプト管理](https://langfuse.com/docs/prompt-management/overview)は、効果的なLLMアプリケーションを構築するうえで不可欠です。Langfuseは、開発ライフサイクル全体を通じて、プロンプトの管理、バージョン管理、最適化を行うためのツールを提供します。
+
+*📹 さらに詳しく知りたいですか？ Langfuseのプロンプト管理と、アプリケーションへの統合方法を紹介する[**エンドツーエンドのウォークスルーを見る**](https://langfuse.com/watch-demo?tab=prompt)。*
+
+<Tabs>
+  <Tab title="作成">
+    UI、SDKs、またはAPIから新しいプロンプトを作成します。
+
+    <video src="https://static.langfuse.com/docs-videos/create-update-prompts.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="バージョン管理">
+    UI、API、またはSDKsを使って、プロンプトを共同で編集し、バージョン管理できます。
+
+    <video src="https://static.langfuse.com/docs-videos/create-prompt-version.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="デプロイ">
+    コードを一切変更せずに、ラベルを使ってプロンプトを本番環境や任意の環境にデプロイできます。
+
+    <video src="https://static.langfuse.com/docs-videos/deploy-prompt.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="メトリクス">
+    プロンプトの異なるバージョン間で、レイテンシ、コスト、評価メトリクスを比較します。
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-metrics.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="プレイグラウンドでテスト">
+    プレイグラウンドでプロンプトをすぐにテストできます。
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-to-playground.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="トレースと関連付け">
+    プロンプトをトレースと関連付けることで、LLMアプリケーション内での動作を把握できます。
+
+    <video src="https://static.langfuse.com/docs-videos/linked-generations.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="変更を追跡">
+    プロンプトへの変更を追跡し、時間とともにどのように変化していくかを把握できます。
+
+    <video src="https://static.langfuse.com/docs-videos/track-changes.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+</Tabs>
+
+<div id="evaluation">
+  ### 評価とデータセット
+</div>
+
+[評価](https://langfuse.com/docs/evaluation/overview)は、LLM アプリケーションの品質と信頼性を確保するうえで不可欠です。Langfuse は、開発時のテストから本番環境のパフォーマンス監視まで、用途に応じて使い分けられる柔軟な評価ツールを提供しています。
+
+*📹 さらに詳しく知りたい方は、Langfuse Evaluation の[**エンドツーエンドのウォークスルーを見る**](https://langfuse.com/watch-demo?tab=evaluation)ことで、LLM アプリケーションの改善にどう活用できるかを学べます。*
+
+<Tabs>
+  <Tab title="分析">
+    Langfuse ダッシュボードで評価結果を可視化できます。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-dashboard.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="ユーザーフィードバック">
+    ユーザーからフィードバックを収集します。Browser SDK を使ってフロントエンドで、SDK や API を使ってサーバーサイドで取得できます。動画にはサンプルアプリケーションも含まれています。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-user-feedback.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="LLM-as-a-Judge">
+    本番または開発環境のトレースに対して、完全マネージド型の LLM-as-a-judge 評価を実行できます。アプリケーション内の任意のステップに適用して、ステップごとの評価を行えます。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-llm-as-a-judge.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="実験">
+    ユーザーインターフェイス上で、データセットに対するプロンプトやモデルの評価を直接行えます。カスタムコードは不要です。
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-experiments.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="Annotation Queue">
+    Annotation Queue を使って人手でアノテーションを付け、評価ワークフローのベースラインを整えます。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-annotation-queue.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="カスタム評価">
+    カスタム評価結果を追加できます。数値、ブール値、カテゴリ値に対応しています。
+
+    ```bash
+    POST /api/public/scores
+    ```
+
+    Python または JS SDK でスコアを追加します。
+
+    ```python title="例 (Python)"
+    langfuse.score(
+      trace_id="123",
+      name="my_custom_evaluator",
+      value=0.5,
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="quickstarts">
+  ## クイックスタート
+</div>
+
+数分でLangfuseを使い始められます。現在のニーズに最も合った方法を選んでください。
+
+* [LLMアプリケーション/エージェントのトレーシングを統合する](https://langfuse.com/docs/observability/get-started)
+* [プロンプト管理を統合する](https://langfuse.com/docs/prompt-management/get-started)
+* [評価を設定する](https://langfuse.com/docs/evaluation/overview)
+
+<div id="learn-more">
+  ## 詳細はこちら
+</div>
+
+* [Langfuse ドキュメント](https://langfuse.com/docs)
+* [Langfuse GitHub リポジトリ](https://github.com/langfuse/langfuse)
+* [デモビデオを視聴する](https://langfuse.com/watch-demo)

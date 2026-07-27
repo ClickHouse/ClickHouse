@@ -1,0 +1,45 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/local-file
+title: 'Origen de diccionario de archivo local'
+sidebarTitle: 'Archivo local'
+description: 'Configure un archivo local como origen de diccionario en ClickHouse.'
+doc_type: 'reference'
+---
+
+El origen de archivo local carga datos del diccionario desde un archivo en el sistema de archivos local. Esto resulta útil para tablas de búsqueda pequeñas y estáticas que pueden almacenarse como archivos planos en formatos como TSV, CSV o cualquier otro [formato compatible](/es/reference/formats/index).
+
+Ejemplo de configuración:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Campos de configuración:
+
+| Configuración | Descripción                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------- |
+| `path`        | La ruta absoluta al archivo.                                                                            |
+| `format`      | El formato del archivo. Se admiten todos los formatos descritos en [Formats](/es/reference/formats/index). |
+
+Cuando se crea mediante un comando DDL (`CREATE DICTIONARY ...`) un diccionario con origen `FILE`, el archivo de origen debe estar ubicado en el directorio `user_files` para evitar que los usuarios de la DB accedan a archivos arbitrarios en el nodo de ClickHouse.
+
+**Vea también**
+
+* [Función de diccionario](/es/reference/functions/table-functions/dictionary)

@@ -1,0 +1,35 @@
+---
+description: "Documentation sur la modification de l’expression SAMPLE BY"
+sidebarTitle: 'SAMPLE BY'
+slug: /sql-reference/statements/alter/sample-by
+title: "Modification des expressions de clé d’échantillonnage"
+doc_type: 'reference'
+---
+
+Les opérations suivantes sont disponibles :
+
+<div id="modify">
+  ## MODIFIER
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
+```
+
+La commande remplace la [clé d’échantillonnage](/fr/reference/engines/table-engines/mergetree-family/mergetree) de la table par `new_expression` (une expression ou un uplet d’expressions). La clé primaire doit contenir la nouvelle clé d’échantillonnage.
+
+<div id="remove">
+  ## SUPPRIMER
+</div>
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
+```
+
+La commande supprime la [clé d’échantillonnage](/fr/reference/engines/table-engines/mergetree-family/mergetree) de la table.
+
+Les commandes `MODIFY` et `REMOVE` sont légères, au sens où elles se contentent de modifier les métadonnées ou de supprimer des fichiers.
+
+<Note>
+  Cela fonctionne uniquement pour les tables de la famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

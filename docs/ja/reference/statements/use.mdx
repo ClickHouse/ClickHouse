@@ -1,0 +1,17 @@
+---
+description: 'USEステートメントのドキュメント'
+sidebarTitle: 'USE'
+slug: /sql-reference/statements/use
+title: 'USEステートメント'
+doc_type: 'reference'
+---
+
+```sql
+USE [DATABASE] db
+```
+
+セッションの現在のデータベースを設定します。
+
+クエリでテーブル名の前にドット付きでデータベース名を明示的に指定していない場合、テーブルの検索には現在のデータベースが使用されます。
+
+HTTP protocol の使用時はセッションの概念がないため、このクエリは実行できません。

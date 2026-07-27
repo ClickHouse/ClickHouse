@@ -39,7 +39,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           UNION ALL
        SELECT i+1 FROM foo WHERE i < 5)
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 1
 2
 2
@@ -158,7 +158,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           UNION ALL
        SELECT i+1 FROM foo WHERE i < 5) AS t
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 1
 2
 2
@@ -276,7 +276,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           EXCEPT
        SELECT i+1 FROM foo WHERE i < 5)
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 1
 WITH RECURSIVE foo AS
     (SELECT 1 AS i
@@ -284,7 +284,7 @@ WITH RECURSIVE foo AS
        (SELECT i+1 FROM foo WHERE i < 10
           INTERSECT
        SELECT i+1 FROM foo WHERE i < 5)
-) SELECT * FROM foo;
+) SELECT * FROM foo ORDER BY ALL;
 1
 2
 3
@@ -303,60 +303,60 @@ WITH RECURSIVE t AS (
     UNION ALL
     SELECT j+1 FROM t WHERE j < 10
 )
-SELECT * FROM t;
+SELECT * FROM t ORDER BY ALL;
 1
 2
-3
-4
-5
-6
-7
-8
-9
-10
 2
 3
-4
-5
-6
-7
-8
-9
-10
+3
 3
 4
-5
-6
-7
-8
-9
-10
+4
+4
 4
 5
-6
-7
-8
-9
-10
+5
+5
+5
 5
 6
-7
-8
-9
-10
+6
+6
+6
+6
 6
 7
-8
-9
-10
+7
+7
+7
+7
+7
 7
 8
-9
-10
+8
+8
+8
+8
+8
+8
 8
 9
-10
 9
+9
+9
+9
+9
+9
+9
+9
+10
+10
+10
+10
+10
+10
+10
+10
 10
 10
 --
@@ -387,7 +387,7 @@ WITH RECURSIVE
       UNION ALL SELECT * FROM effect
     )
   )
-SELECT * FROM iter;
+SELECT * FROM iter ORDER BY ALL;
 0	base	17
 1	true	17
 2	true	17

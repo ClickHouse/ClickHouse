@@ -1,0 +1,95 @@
+---
+description: 'Documentation sur la modification du TTL de la table'
+sidebarTitle: 'TTL'
+slug: /sql-reference/statements/alter/ttl
+title: 'Modification du TTL de la table'
+doc_type: 'reference'
+---
+
+<Note>
+  Si vous cherchez des détails sur l’utilisation de TTL pour gérer les données anciennes, consultez le guide utilisateur [Gérer les données avec TTL](/fr/concepts/features/operations/delete/ttl). La documentation ci-dessous explique comment modifier ou supprimer une règle de TTL existante.
+</Note>
+
+<div id="modify-ttl">
+  ## MODIFIER LE TTL
+</div>
+
+Vous pouvez modifier le [TTL de la table](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl) à l’aide d’une requête de la forme suivante :
+
+```sql
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression;
+```
+
+<div id="remove-ttl">
+  ## SUPPRIMER LE TTL
+</div>
+
+Vous pouvez supprimer la propriété TTL de la table à l’aide de la requête suivante :
+
+```sql
+ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
+```
+
+**Exemple**
+
+Considérez la table avec le `TTL` défini au niveau de la table :
+
+```sql
+CREATE TABLE table_with_ttl
+(
+    event_time DateTime,
+    UserID UInt64,
+    Comment String
+)
+ENGINE MergeTree()
+ORDER BY tuple()
+TTL event_time + INTERVAL 3 MONTH
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO table_with_ttl VALUES (now(), 1, 'username1');
+
+INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
+```
+
+Exécutez `OPTIMIZE` pour forcer le nettoyage du `TTL` :
+
+```sql
+OPTIMIZE TABLE table_with_ttl FINAL;
+SELECT * FROM table_with_ttl FORMAT PrettyCompact;
+```
+
+La deuxième ligne a été supprimée de la table.
+
+```text
+┌─────────event_time────┬──UserID─┬─────Comment──┐
+│   2020-12-11 12:44:57 │       1 │    username1 │
+└───────────────────────┴─────────┴──────────────┘
+```
+
+Supprimez maintenant le `TTL` de la table avec la requête suivante :
+
+```sql
+ALTER TABLE table_with_ttl REMOVE TTL;
+```
+
+Réinsérez la ligne supprimée et relancez de force le nettoyage `TTL` avec `OPTIMIZE` :
+
+```sql
+INSERT INTO table_with_ttl VALUES (now() - INTERVAL 4 MONTH, 2, 'username2');
+OPTIMIZE TABLE table_with_ttl FINAL;
+SELECT * FROM table_with_ttl FORMAT PrettyCompact;
+```
+
+Le `TTL` n’est plus défini, donc la deuxième ligne n’est pas supprimée :
+
+```text
+┌─────────event_time────┬──UserID─┬─────Comment──┐
+│   2020-12-11 12:44:57 │       1 │    username1 │
+│   2020-08-11 12:44:57 │       2 │    username2 │
+└───────────────────────┴─────────┴──────────────┘
+```
+
+**Voir aussi**
+
+* En savoir plus sur l’[expression TTL](/fr/reference/statements/create/table#ttl-expression).
+* Modifier une colonne [avec TTL](/fr/reference/statements/alter/ttl).

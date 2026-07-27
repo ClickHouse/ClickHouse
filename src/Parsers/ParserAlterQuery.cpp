@@ -65,6 +65,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
     ParserKeyword s_add_constraint(Keyword::ADD_CONSTRAINT);
     ParserKeyword s_drop_constraint(Keyword::DROP_CONSTRAINT);
+    ParserKeyword s_modify_constraint(Keyword::MODIFY_CONSTRAINT);
 
     ParserKeyword s_add_projection(Keyword::ADD_PROJECTION);
     ParserKeyword s_drop_projection(Keyword::DROP_PROJECTION);
@@ -585,6 +586,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::ADD_CONSTRAINT;
+            }
+            else if (s_modify_constraint.ignore(pos, expected))
+            {
+                if (s_if_exists.ignore(pos, expected))
+                    command->if_exists = true;
+
+                if (!parser_constraint_decl.parse(pos, command_constraint_decl, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::MODIFY_CONSTRAINT;
             }
             else if (s_drop_constraint.ignore(pos, expected))
             {

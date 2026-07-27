@@ -1,0 +1,22 @@
+---
+title: 'Suporte à propagação de alterações de schema'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: 'Página que descreve os tipos de alteração de schema detectáveis pelo ClickPipes nas tabelas de origem'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres pode detectar alterações de schema nas tabelas de origem e, em alguns casos, propagar automaticamente essas alterações para as tabelas de destino. A forma como cada operação DDL é tratada está documentada abaixo:
+
+[//]: # "TODO Estender esta página com o comportamento para renomeação, alterações de tipo de dados e truncate + orientações sobre como lidar com alterações de schema incompatíveis."
+
+| Tipo de alteração de schema                                                              | Comportamento                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adição de uma nova coluna (`ALTER TABLE ADD COLUMN ...`)                                 | Propagada automaticamente assim que a tabela receber uma operação de insert/update/delete. As novas colunas serão preenchidas para todas as linhas replicadas após a alteração de schema                                                                                              |
+| Adição de uma nova coluna com um valor padrão (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | Propagada automaticamente assim que a tabela receber uma operação de insert/update/delete. As novas colunas serão preenchidas para todas as linhas replicadas após a alteração de schema, mas as linhas existentes não exibirão o valor padrão sem uma atualização completa da tabela |
+| Remoção de uma coluna existente (`ALTER TABLE DROP COLUMN ...`)                          | Detectada, mas **não** propagada. As colunas removidas serão preenchidas com `NULL` para todas as linhas replicadas após a alteração de schema                                                                                                                                        |
+
+Observe que a adição de colunas será propagada ao fim da sincronização de um lote, o que pode ocorrer depois que o intervalo de sincronização ou o tamanho do lote de pull for atingido. Mais informações sobre como controlar sincronizações [aqui](/pt-BR/integrations/clickpipes/postgres/controlling-sync)

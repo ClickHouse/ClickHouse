@@ -1,0 +1,580 @@
+---
+slug: /operations/access-rights
+sidebarTitle: 'Users and roles'
+title: '액세스 제어 및 계정 관리'
+keywords: ['ClickHouse Cloud', '액세스 제어', '사용자 관리', 'RBAC', '보안']
+description: 'ClickHouse Cloud의 액세스 제어 및 계정 관리를 설명합니다'
+doc_type: 'guide'
+---
+
+ClickHouse는 [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) 방식의 액세스 제어 관리를 지원합니다.
+
+ClickHouse 액세스 엔터티:
+
+* [사용자 계정(User account)](#user-account-management)
+* [역할(Role)](#role-management)
+* [행 정책(Row Policy)](#row-policy-management)
+* [설정 프로필(Settings Profile)](#settings-profiles-management)
+* [쿼터(Quota)](#quotas-management)
+
+다음 방법으로 액세스 엔터티를 구성할 수 있습니다:
+
+* SQL 기반 워크플로
+
+  이 기능을 [활성화](#enabling-access-control)해야 합니다.
+
+* 서버 [설정 파일](/ko/concepts/features/configuration/server-config/configuration-files) `users.xml` 및 `config.xml`
+
+SQL 기반 워크플로 사용을 권장합니다. 두 구성 방식은 동시에 사용할 수 있으므로, 서버 설정 파일로 계정과 접근 권한을 관리하는 경우에도 SQL 기반 워크플로로 원활하게 전환할 수 있습니다.
+
+<Note>
+  동일한 액세스 엔터티를 두 구성 방식으로 동시에 관리할 수는 없습니다.
+</Note>
+
+<Note>
+  ClickHouse Cloud 콘솔 사용자를 관리하려는 경우 이 [페이지](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)를 참조하십시오.
+</Note>
+
+모든 사용자, 역할, 프로필 등과 각각에 부여된 권한을 확인하려면 [`SHOW ACCESS`](/ko/reference/statements/show#show-access) SQL 문을 사용하십시오.
+
+<div id="access-control-usage">
+  ## 개요
+</div>
+
+기본적으로 ClickHouse 서버는 `default` 사용자 계정을 제공합니다. 이 계정은 SQL 기반 액세스 제어 및 계정 관리를 사용할 수 없지만, 모든 권한을 가지고 있습니다. `default` 사용자 계정은 사용자 이름이 지정되지 않은 모든 경우에 사용됩니다. 예를 들어 클라이언트 로그인 시나 분산 쿼리에서 사용됩니다. 분산 쿼리 처리에서는 서버 또는 클러스터 구성에 [사용자 및 비밀번호](/ko/reference/engines/table-engines/special/distributed) 속성이 지정되어 있지 않으면 `default` 사용자 계정이 사용됩니다.
+
+ClickHouse를 이제 막 사용하기 시작했다면 다음 시나리오를 고려해 보십시오:
+
+1. `default` 사용자에 대해 [활성화](#enabling-access-control)하여 SQL 기반 액세스 제어 및 계정 관리를 사용하도록 설정합니다.
+2. `default` 사용자 계정으로 로그인한 뒤 필요한 사용자를 모두 생성합니다. 관리자 계정(`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`)도 반드시 생성하십시오.
+3. `default` 사용자의 [접근 권한을 제한](/ko/concepts/features/configuration/settings/permissions-for-queries)하고, 해당 사용자에 대해서는 SQL 기반 액세스 제어 및 계정 관리를 비활성화합니다.
+
+<div id="access-control-properties">
+  ### 현재 솔루션의 특징
+</div>
+
+* 데이터베이스와 테이블이 아직 존재하지 않더라도 접근 권한을 부여할 수 있습니다.
+* 테이블이 삭제되더라도 해당 테이블에 대한 모든 접근 권한이 취소되지는 않습니다. 즉, 나중에 같은 이름의 새 테이블을 생성하더라도 모든 접근 권한은 계속 유효합니다. 삭제된 테이블에 대한 접근 권한을 취소하려면, 예를 들어 `REVOKE ALL PRIVILEGES ON db.table FROM ALL` 쿼리를 실행해야 합니다.
+* 접근 권한에는 유효 기간 설정이 없습니다.
+
+<div id="user-account-management">
+  ### 사용자 계정
+</div>
+
+사용자 계정은 ClickHouse에서 사용자를 인증할 수 있게 해주는 액세스 엔터티입니다. 사용자 계정에는 다음이 포함됩니다.
+
+* 식별 정보
+* 사용자가 실행할 수 있는 쿼리 범위를 정의하는 [접근 권한](/ko/reference/statements/grant#privileges)
+* ClickHouse 서버에 연결할 수 있도록 허용된 호스트
+* 할당된 역할과 기본 역할
+* 사용자가 로그인할 때 기본적으로 적용되는 제약 조건이 포함된 설정
+* 할당된 설정 프로필
+
+접근 권한은 [GRANT](/ko/reference/statements/grant) 쿼리를 사용해 사용자 계정에 부여하거나 [역할](#role-management)을 할당하여 부여할 수 있습니다. 사용자에게 부여된 접근 권한을 회수하려면 ClickHouse에서 [REVOKE](/ko/reference/statements/revoke) 쿼리를 제공합니다. 사용자의 접근 권한 목록을 확인하려면 [SHOW GRANTS](/ko/reference/statements/show#show-grants) SQL 문을 사용합니다.
+
+관리 쿼리:
+
+* [CREATE USER](/ko/reference/statements/create/user)
+* [ALTER USER](/ko/reference/statements/alter/user)
+* [DROP USER](/ko/reference/statements/drop)
+* [SHOW CREATE USER](/ko/reference/statements/show#show-create-user)
+* [SHOW USERS](/ko/reference/statements/show#show-users)
+
+<div id="access-control-settings-applying">
+  ### 적용되는 설정
+</div>
+
+설정은 사용자 계정, 부여된 역할, 설정 프로필별로 서로 다르게 구성할 수 있습니다. 사용자가 로그인할 때 하나의 설정이 여러 액세스 엔터티에 구성되어 있으면, 해당 설정의 값과 제약 조건은 다음과 같이 적용됩니다(우선순위가 높은 순서부터 낮은 순서까지).
+
+1. 사용자 계정 설정.
+2. 사용자 계정의 기본 역할에 대한 설정. 하나의 설정이 일부 역할에 구성되어 있으면, 해당 설정의 적용 순서는 정의되어 있지 않습니다.
+3. 사용자 또는 해당 사용자의 기본 역할에 할당된 설정 프로필의 설정. 하나의 설정이 일부 프로필에 구성되어 있으면, 설정 적용 순서는 정의되어 있지 않습니다.
+4. 전체 서버에 기본적으로 적용되는 설정 또는 [default profile](/ko/reference/settings/server-settings/settings#default_profile)의 설정.
+
+<div id="role-management">
+  ### 역할
+</div>
+
+역할은 사용자 계정에 부여할 수 있는 액세스 엔터티를 담는 컨테이너입니다.
+
+역할에는 다음이 포함됩니다:
+
+* [접근 권한](/ko/reference/statements/grant#privileges)
+* 설정 및 제약 조건
+* 할당된 역할 목록
+
+관리용 쿼리:
+
+* [CREATE ROLE](/ko/reference/statements/create/role)
+* [ALTER ROLE](/ko/reference/statements/alter/role)
+* [DROP ROLE](/ko/reference/statements/drop#drop-role)
+* [SET ROLE](/ko/reference/statements/set-role)
+* [SET DEFAULT ROLE](/ko/reference/statements/set-role)
+* [SHOW CREATE ROLE](/ko/reference/statements/show#show-create-role)
+* [SHOW ROLES](/ko/reference/statements/show#show-roles)
+
+접근 권한은 [GRANT](/ko/reference/statements/grant) 쿼리로 역할에 부여할 수 있습니다. 역할에서 접근 권한을 취소하려면 ClickHouse에서 [REVOKE](/ko/reference/statements/revoke) 쿼리를 제공합니다.
+
+<div id="row-policy-management">
+  #### 행 정책
+</div>
+
+행 정책(Row policy)은 사용자 또는 역할이 접근할 수 있는 행을 정의하는 필터입니다. 행 정책에는 특정 테이블에 대한 필터와 함께, 이 행 정책을 적용해야 하는 역할 및/또는 사용자 목록이 포함됩니다.
+
+<Note>
+  행 정책은 readonly 권한이 있는 경우에만 의미가 있습니다. 테이블을 수정하거나 테이블 간에 파티션을 복사할 수 있으면 행 정책의 제한은 무력화됩니다.
+</Note>
+
+관리 쿼리:
+
+* [CREATE ROW POLICY](/ko/reference/statements/create/row-policy)
+* [ALTER ROW POLICY](/ko/reference/statements/alter/row-policy)
+* [DROP ROW POLICY](/ko/reference/statements/drop#drop-row-policy)
+* [SHOW CREATE ROW POLICY](/ko/reference/statements/show#show-create-row-policy)
+* [SHOW POLICIES](/ko/reference/statements/show#show-policies)
+
+<div id="settings-profiles-management">
+  ### 설정 프로필
+</div>
+
+설정 프로필은 [설정](/ko/reference/settings/index)의 집합입니다. 설정 프로필에는 설정과 제약 조건, 그리고 이 프로필이 적용되는 역할 및/또는 사용자 목록이 포함됩니다.
+
+관리 쿼리:
+
+* [CREATE SETTINGS PROFILE](/ko/reference/statements/create/settings-profile)
+* [ALTER SETTINGS PROFILE](/ko/reference/statements/alter/settings-profile)
+* [DROP SETTINGS PROFILE](/ko/reference/statements/drop#drop-settings-profile)
+* [SHOW CREATE SETTINGS PROFILE](/ko/reference/statements/show#show-create-settings-profile)
+* [SHOW PROFILES](/ko/reference/statements/show#show-profiles)
+
+<div id="quotas-management">
+  ### 쿼터
+</div>
+
+쿼터는 리소스 사용량을 제한합니다. 자세한 내용은 [쿼터](/ko/concepts/features/configuration/server-config/quotas)를 참조하십시오.
+
+쿼터에는 특정 기간에 대한 제한 집합과, 이 쿼터를 사용해야 하는 역할 및/또는 사용자 목록이 포함됩니다.
+
+관리 쿼리:
+
+* [CREATE QUOTA](/ko/reference/statements/create/quota)
+* [ALTER QUOTA](/ko/reference/statements/alter/quota)
+* [DROP QUOTA](/ko/reference/statements/drop#drop-quota)
+* [SHOW CREATE QUOTA](/ko/reference/statements/show#show-create-quota)
+* [SHOW QUOTA](/ko/reference/statements/show#show-quota)
+* [SHOW QUOTAS](/ko/reference/statements/show#show-quotas)
+
+<div id="enabling-access-control">
+  ### SQL 기반 액세스 제어 및 계정 관리 활성화
+</div>
+
+* 구성을 저장할 디렉터리를 설정합니다.
+
+  ClickHouse는 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings#access_control_path) 서버 구성 매개변수에 지정된 폴더에 액세스 엔터티 구성을 저장합니다.
+
+* 최소 1개의 사용자 계정에 대해 SQL 기반 액세스 제어 및 계정 관리를 활성화합니다.
+
+  기본적으로 모든 사용자에 대해 SQL 기반 액세스 제어 및 계정 관리가 비활성화되어 있습니다. `users.xml` 설정 파일에서 최소 1명의 사용자를 구성하고, [`access_management`](/ko/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections`, `show_named_collections_secrets` 설정의 값을 1로 지정해야 합니다.
+
+<div id="defining-sql-users-and-roles">
+  ## SQL 사용자 및 역할 정의하기
+</div>
+
+<Tip>
+  ClickHouse Cloud에서 작업하는 경우 [Cloud 접근 관리](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
+</Tip>
+
+이 문서에서는 SQL 사용자와 역할을 정의하고, 해당 권한과 접근 권한을 데이터베이스, 테이블, 행, 컬럼에 적용하는 기본 방법을 설명합니다.
+
+<div id="enabling-sql-user-mode">
+  ### SQL 사용자 모드 활성화
+</div>
+
+1. `users.xml` 파일의 `<default>` 사용자 아래에서 SQL 사용자 모드를 활성화합니다:
+   ```xml
+   <access_management>1</access_management>
+   <named_collection_control>1</named_collection_control>
+   <show_named_collections>1</show_named_collections>
+   <show_named_collections_secrets>1</show_named_collections_secrets>
+   ```
+
+<Note>
+  `default` 사용자는 새로 설치한 환경에서 생성되는 유일한 사용자이며, 기본적으로 노드 간 통신에도 사용되는 계정입니다.
+
+  프로덕션 환경에서는 `default` 계정이 노드 간 통신에 사용되므로, SQL 관리자 사용자로 노드 간 통신을 구성하고 `<secret>`, cluster 자격 증명, 그리고/또는 노드 간 HTTP 및 전송 프로토콜 자격 증명을 설정한 후에는 이 사용자를 비활성화하는 것이 좋습니다.
+</Note>
+
+2. 변경 사항을 적용하려면 노드를 다시 시작합니다.
+
+3. clickhouse client를 실행합니다:
+   ```sql
+   clickhouse-client --user default --password <password>
+   ```
+
+<div id="defining-users">
+  ### 사용자 정의하기
+</div>
+
+1. SQL 관리자 계정을 생성합니다:
+   ```sql
+   CREATE USER clickhouse_admin IDENTIFIED BY 'password';
+   ```
+2. 새 사용자에게 모든 관리자 권한을 부여합니다.
+   ```sql
+   GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
+   ```
+
+<div id="alter-permissions">
+  ## ALTER 접근 권한
+</div>
+
+이 문서는 접근 권한을 정의하는 방법과, 권한이 있는 사용자가 `ALTER` SQL 문을 사용할 때 접근 권한이 어떻게 적용되는지 더 잘 이해할 수 있도록 돕기 위해 작성되었습니다.
+
+`ALTER` SQL 문은 여러 범주로 나뉘며, 이 중 일부는 계층 구조를 가지지만 일부는 그렇지 않아 명시적으로 정의해야 합니다.
+
+**예시 DB, 테이블 및 사용자 구성**
+
+1. 관리자 사용자로 예시 사용자를 생성합니다
+
+```sql
+CREATE USER my_user IDENTIFIED BY 'password';
+```
+
+2. 예제 데이터베이스 생성
+
+```sql
+CREATE DATABASE my_db;
+```
+
+3. 샘플 테이블 생성
+
+```sql
+CREATE TABLE my_db.my_table (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+4. 권한 부여/회수에 사용할 예시 관리자 사용자를 생성합니다
+
+```sql
+CREATE USER my_alter_admin IDENTIFIED BY 'password';
+```
+
+<Note>
+  접근 권한을 부여하거나 철회하려면 관리자 사용자에게 `WITH GRANT OPTION` 권한이 있어야 합니다.
+  예시:
+
+  ```sql
+  GRANT ALTER ON my_db.* WITH GRANT OPTION
+  ```
+
+  접근 권한을 `GRANT`하거나 `REVOKE`하려면 먼저 해당 접근 권한을 가지고 있어야 합니다.
+</Note>
+
+**접근 권한 부여 또는 철회**
+
+`ALTER` 계층:
+
+```response
+├── ALTER (테이블 및 뷰에만 해당)/
+│   ├── ALTER TABLE/
+│   │   ├── ALTER UPDATE
+│   │   ├── ALTER DELETE
+│   │   ├── ALTER COLUMN/
+│   │   │   ├── ALTER ADD COLUMN
+│   │   │   ├── ALTER DROP COLUMN
+│   │   │   ├── ALTER MODIFY COLUMN
+│   │   │   ├── ALTER COMMENT COLUMN
+│   │   │   ├── ALTER CLEAR COLUMN
+│   │   │   └── ALTER RENAME COLUMN
+│   │   ├── ALTER INDEX/
+│   │   │   ├── ALTER ORDER BY
+│   │   │   ├── ALTER SAMPLE BY
+│   │   │   ├── ALTER ADD INDEX
+│   │   │   ├── ALTER DROP INDEX
+│   │   │   ├── ALTER MATERIALIZE INDEX
+│   │   │   └── ALTER CLEAR INDEX
+│   │   ├── ALTER CONSTRAINT/
+│   │   │   ├── ALTER ADD CONSTRAINT
+│   │   │   └── ALTER DROP CONSTRAINT
+│   │   ├── ALTER TTL/
+│   │   │   └── ALTER MATERIALIZE TTL
+│   │   ├── ALTER SETTINGS
+│   │   ├── ALTER MOVE PARTITION
+│   │   ├── ALTER FETCH PARTITION
+│   │   └── ALTER FREEZE PARTITION
+│   └── ALTER LIVE VIEW/
+│       ├── ALTER LIVE VIEW REFRESH
+│       └── ALTER LIVE VIEW MODIFY QUERY
+├── ALTER DATABASE
+├── ALTER USER
+├── ALTER ROLE
+├── ALTER QUOTA
+├── ALTER [ROW] POLICY
+└── ALTER [SETTINGS] PROFILE
+```
+
+1. 사용자 또는 역할(Role)에 `ALTER` 접근 권한 부여
+
+`GRANT ALTER on *.* TO my_user`를 사용하면 최상위 수준의 `ALTER TABLE` 및 `ALTER VIEW`에만 적용되며, 다른 `ALTER` SQL 문은 각각 개별적으로 부여하거나 취소해야 합니다.
+
+예를 들어, 기본 `ALTER` 접근 권한을 부여하려면 다음과 같습니다:
+
+```sql
+GRANT ALTER ON my_db.my_table TO my_user;
+```
+
+결과적으로 부여되는 접근 권한:
+
+```sql
+SHOW GRANTS FOR  my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 706befbc-525e-4ec1-a1a2-ba2508cc09e3
+
+┌─GRANTS FOR my_user───────────────────────────────────────────┐
+│ GRANT ALTER TABLE, ALTER VIEW ON my_db.my_table TO my_user   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+이렇게 하면 위 예시의 `ALTER TABLE` 및 `ALTER VIEW` 아래에 있는 모든 접근 권한이 부여되지만, `ALTER ROW POLICY`와 같은 일부 다른 `ALTER` 접근 권한은 부여되지 않습니다(`ALTER ROW POLICY`는 `ALTER TABLE` 또는 `ALTER VIEW`의 하위 항목이 아니므로, 계층 구조를 다시 보면 확인할 수 있습니다). 이러한 접근 권한은 명시적으로 부여하거나 취소해야 합니다.
+
+`ALTER` 접근 권한의 일부만 필요한 경우에는 각 접근 권한을 개별적으로 부여할 수 있으며, 해당 접근 권한에 하위 권한이 있으면 그 권한도 함께 자동으로 부여됩니다.
+
+예시:
+
+```sql
+GRANT ALTER COLUMN ON my_db.my_table TO my_user;
+```
+
+접근 권한 부여는 다음과 같이 설정합니다:
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 47b3d03f-46ac-4385-91ec-41119010e4e2
+
+┌─GRANTS FOR my_user────────────────────────────────┐
+│ GRANT ALTER COLUMN ON default.my_table TO my_user │
+└───────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+이 권한은 다음과 같은 하위 권한도 함께 부여합니다:
+
+```sql
+ALTER ADD COLUMN
+ALTER DROP COLUMN
+ALTER MODIFY COLUMN
+ALTER COMMENT COLUMN
+ALTER CLEAR COLUMN
+ALTER RENAME COLUMN
+```
+
+2. Users and roles에서 `ALTER` 권한 회수
+
+`REVOKE` 구문은 `GRANT` 구문과 유사한 방식으로 동작합니다.
+
+사용자/역할(Role)에 하위 권한이 부여된 경우, 해당 하위 권한을 직접 취소하거나 이를 상속하는 상위 권한을 취소할 수 있습니다.
+
+예를 들어, 사용자에게 `ALTER ADD COLUMN` 권한이 부여된 경우
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 61fe0fdc-1442-4cd6-b2f3-e8f2a853c739
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 27791226-a18f-46c8-b2b4-a9e64baeb683
+
+┌─GRANTS FOR my_user──────────────────────────────────┐
+│ GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user │
+└─────────────────────────────────────────────────────┘
+```
+
+권한은 개별적으로 취소(revoke)할 수 있습니다:
+
+```sql
+REVOKE ALTER ADD COLUMN ON my_db.my_table FROM my_user;
+```
+
+또는 상위 레벨에서 취소할 수도 있습니다(COLUMN 하위 권한을 모두 취소):
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user;
+```
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user
+
+Query id: b882ba1b-90fb-45b9-b10f-3cda251e2ccc
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: e7d341de-de65-490b-852c-fa8bb8991174
+
+Ok.
+
+0 rows in set. Elapsed: 0.003 sec.
+```
+
+**추가**
+
+권한은 `WITH GRANT OPTION`을 보유하고 있을 뿐만 아니라 해당 권한 자체도 보유한 사용자만이 부여할 수 있습니다.
+
+1. 관리자 사용자에게 권한을 부여하고, 권한 집합도 관리할 수 있게 하려면
+   아래는 예시입니다:
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+이제 사용자는 `ALTER COLUMN` 및 모든 하위 권한을 부여하거나 취소할 수 있습니다.
+
+**테스트**
+
+1. `SELECT` 권한 추가
+
+```sql
+GRANT SELECT ON my_db.my_table TO my_user;
+```
+
+2. 사용자에게 컬럼 추가 권한을 부여합니다
+
+```sql
+GRANT ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+3. 제한된 권한의 사용자로 로그인합니다
+
+```bash
+clickhouse-client --user my_user --password password --port 9000 --host <your_clickhouse_host>
+```
+
+4. 컬럼 추가 테스트
+
+```sql
+ALTER TABLE my_db.my_table ADD COLUMN column2 String;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    ADD COLUMN `column2` String
+
+Query id: d5d6bfa1-b80c-4d9f-8dcd-d13e7bd401a5
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+```sql
+DESCRIBE my_db.my_table;
+```
+
+```response
+DESCRIBE TABLE my_db.my_table
+
+Query id: ab9cb2d0-5b1a-42e1-bc9c-c7ff351cb272
+
+┌─name────┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ UInt64 │              │                    │         │                  │                │
+│ column1 │ String │              │                    │         │                  │                │
+│ column2 │ String │              │                    │         │                  │                │
+└─────────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+4. 컬럼 삭제 테스트
+
+```sql
+ALTER TABLE my_db.my_table DROP COLUMN column2;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    DROP COLUMN column2
+
+Query id: 50ad5f6b-f64b-4c96-8f5f-ace87cea6c47
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_user: Not enough privileges. To execute this query it's necessary to have grant ALTER DROP COLUMN(column2) ON my_db.my_table. (ACCESS_DENIED)
+```
+
+5. 권한을 부여해 alter admin 테스트하기
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+6. alter 관리자 계정으로 로그인합니다
+
+```bash
+clickhouse-client --user my_alter_admin --password password --port 9000 --host <my_clickhouse_host>
+```
+
+7. 하위 권한 부여하기
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 1c7622fa-9df1-4c54-9fc3-f984c716aeba
+
+Ok.
+```
+
+8. alter admin 사용자에게 없고 관리자 사용자에게 권한 부여된 권한의 하위 권한도 아닌 권한을 부여하는 테스트를 수행합니다.
+
+```sql
+GRANT ALTER UPDATE ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER UPDATE ON my_db.my_table TO my_user
+
+Query id: 191690dc-55a6-4625-8fee-abc3d14a5545
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_alter_admin: Not enough privileges. To execute this query it's necessary to have grant ALTER UPDATE ON my_db.my_table WITH GRANT OPTION. (ACCESS_DENIED)
+```
+
+**요약**
+테이블 및 뷰에 대한 `ALTER` 권한에는 계층 구조가 적용되지만, 다른 `ALTER` SQL 문에는 적용되지 않습니다. 권한은 세부 단위로 설정할 수도 있고 권한 그룹 단위로 설정할 수도 있으며, 취소도 같은 방식으로 할 수 있습니다. 권한을 부여하거나 취소하는 사용자는 작업을 수행하는 사용자 자신을 포함한 사용자에게 권한을 설정하려면 `WITH GRANT OPTION`을 보유해야 하며, 해당 권한 자체도 이미 가지고 있어야 합니다. 작업을 수행하는 사용자에게 `WITH GRANT OPTION` 권한이 없으면 자신의 권한을 취소할 수 없습니다.

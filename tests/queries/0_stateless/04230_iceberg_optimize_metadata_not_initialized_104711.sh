@@ -10,8 +10,10 @@
 # user-facing exception describing the underlying load failure.
 #
 # We reproduce the "could not load metadata" state by:
-#   1. creating an Iceberg table,
-#   2. overwriting its metadata file on disk with a non-JSON payload,
+#   1. creating an Iceberg table with `iceberg_metadata_compression_method='deflate'`,
+#   2. issuing an `INSERT` with an out-of-range `output_format_compression_level=13`
+#      (above the max supported deflate level - 9 for zlib, 12 for libdeflate)
+#      so the second metadata file lands on disk corrupted,
 #   3. `DETACH ... SYNC` + `ATTACH` (equivalent to a server restart from the
 #      perspective of `DataLakeConfiguration::current_metadata`),
 #   4. then issuing `OPTIMIZE TABLE` / `ALTER TABLE` / `SELECT` which previously

@@ -1,0 +1,41 @@
+---
+sidebarTitle: 'LibreChat'
+title: 'LibreChat'
+description: 'LibreChat 如何作为智能体数据技术栈的聊天和智能体前端'
+doc_type: 'guide'
+keywords: ['智能体数据技术栈', 'LibreChat', '聊天', '前端', 'MCP']
+---
+
+LibreChat 是 [Agentic Data Stack](/zh/products/agentic-data-stack/overview) 的**聊天和智能体前端**。用户无需编写 SQL，只需用自然语言提问，智能体就会作答。
+
+智能体通过 ClickHouse MCP 服务器来查看您的数据库和表、运行只读查询，并基于结果生成答案。这套技术栈已为您完成相关连接，因此 LibreChat 从首次登录起即可查询您的数据。要部署完整技术栈，请参阅 [Docker 设置指南](/zh/products/agentic-data-stack/docker-setup)。
+
+<div id="capabilities">
+  ## LibreChat 功能
+</div>
+
+| 功能                                                                          | 说明                                                                                                                                               |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [基于您的数据构建智能体](https://www.librechat.ai/docs/features/agents)                | 为反复出现的问题构建可复用的智能体。要让它具备 ClickHouse 感知能力，有两个关键设置：为其提供描述您的 schema 和首选表的 **Instructions**，并添加 **ClickHouse-Local** MCP 服务器，这样它就能列出数据库和表，并运行只读查询。 |
+| [连接更多 MCP 服务器](https://www.librechat.ai/docs/features/mcp)               | 智能体并不局限于 ClickHouse。您可以通过 LibreChat 的 MCP 设置添加任意 MCP 服务器，这样一次聊天就能访问其他数据库、内部 API 或 SaaS 工具。                                                    |
+| [生成图表和可视化内容](https://www.librechat.ai/docs/features/artifacts)              | 您可以让智能体将结果可视化，例如“将按收入排名前 10 的产品绘制成图表”，它会返回一个可交互的图表，供您探索和共享。可视化功能基于 LibreChat Artifacts，并按智能体启用。                                                  |
+| [使用代码解释器运行代码](https://www.librechat.ai/docs/features/code_interpreter)      | 除了 SQL 之外，智能体还可以在安全的 sandbox 中运行代码，以转换或分析结果，例如将查询结果转成文件或计算指标。                                                                                    |
+| [在后台运行长时间查询](https://www.librechat.ai/docs/features/resumable_streams)      | 查询可能需要一些时间，但您无需一直等待。借助可恢复流，您可以启动一次生成，切换到另一个会话，然后回来查看已完成的响应。                                                                                      |
+| [将分析共享为只读链接](https://www.librechat.ai/docs/features/shareable_links)        | 将会话共享为只读链接，这样其他人无需重新运行分析即可查看结果。共享视图包含工具调用以及每个答案背后的 SQL，可清晰追溯结果的生成过程。                                                                             |
+| [控制对 MCP 服务器 的访问](https://www.librechat.ai/docs/features/access_control) | 在团队部署中，基于角色的访问控制用于管理谁可以使用、创建和共享 MCP 服务器 与智能体，以及可授予的权限级别 (Viewer、Editor 或 Owner) 。                                                             |
+
+<div id="in-the-stack">
+  ## 在技术栈中
+</div>
+
+LibreChat 通过 `librechat.yaml` 预先完成配置，因此开箱即用：
+
+* [ClickHouse MCP 服务器](/zh/products/agentic-data-stack/components/mcp-server)已注册为工具源，因此智能体无需额外设置即可浏览并查询 ClickHouse。
+* 每个对话都会被追踪到 [Langfuse](/zh/products/agentic-data-stack/components/langfuse) 以实现可观测性，记录提示词、工具调用、响应、成本和延迟。
+* [Admin Panel](https://github.com/ClickHouse/librechat-admin-panel) (端口 3081) 是一个基于浏览器的 UI，可在无需手动编辑 `librechat.yaml` 的情况下更改这些配置 (端点、MCP 服务器和智能体设置) 。
+
+如需将 ClickHouse MCP 服务器连接到独立的 LibreChat 实例，请参阅官方指南：[Using ClickHouse MCP server with LibreChat](/zh/guides/use-cases/ai-ml/MCP/librechat)。有关 LibreChat 完整功能的文档，请参阅 [LibreChat documentation](https://www.librechat.ai/docs)。
+
+<Info>
+  **更喜欢托管式体验？** ClickHouse Cloud 提供 [ClickHouse 智能体](/zh/products/cloud/features/ai-ml/agents) (Beta) —— 基于相同基础构建的托管式、免配置智能体体验，并可通过 Cloud 控制台使用智能体构建功能。
+</Info>

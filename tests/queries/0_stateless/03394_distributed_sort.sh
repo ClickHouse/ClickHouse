@@ -24,7 +24,7 @@ EXPLAIN SELECT dst_ip, src_ip, bytes
 FROM test
 WHERE bytes > 5 AND src_ip > 2
 ORDER BY dst_ip, src_ip, bytes
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_optimize_exchanges=0" | sed 's/Filter ((WHERE/Expression ((WHERE/'
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_optimize_exchanges=0, explain_query_plan_default = 'legacy'" | sed 's/Filter ((WHERE/Expression ((WHERE/'
 
 echo '------------------'
 
@@ -33,4 +33,4 @@ EXPLAIN SELECT dst_ip, src_ip, bytes
 FROM test
 WHERE bytes > 5 AND src_ip > 2
 ORDER BY dst_ip, src_ip, bytes
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_optimize_exchanges=1" | sed 's/Filter ((WHERE/Expression ((WHERE/'
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_optimize_exchanges=1, explain_query_plan_default = 'legacy'" | sed 's/Filter ((WHERE/Expression ((WHERE/'

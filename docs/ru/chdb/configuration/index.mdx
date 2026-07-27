@@ -1,0 +1,306 @@
+---
+title: 'Конфигурация DataStore'
+sidebarTitle: 'Обзор'
+slug: /chdb/configuration
+description: 'Настройка движка выполнения DataStore, режима совместимости, журналирования, кэширования и данных профилирования'
+keywords: ['chDB', 'DataStore', 'конфигурация', 'config', 'настройки']
+doc_type: 'reference'
+---
+
+DataStore предоставляет широкие возможности настройки: выбор движка выполнения, режим совместимости, журналирование, кэширование, данные профилирования и коррекцию dtype.
+
+<div id="quick-reference">
+  ## Краткая справка
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Quick setup presets
+config.enable_debug()           # Enable verbose logging
+config.use_chdb()               # Force ClickHouse engine
+config.use_pandas()             # Force pandas engine
+config.use_auto()               # Auto-select engine (default)
+config.use_performance_mode()   # SQL-first, max throughput
+config.use_pandas_compat()      # Full pandas compatibility (default)
+config.enable_profiling()       # Enable performance profiling
+```
+
+<div id="all-options">
+  ## Все параметры конфигурации
+</div>
+
+| Категория          | Параметр                 | Значения                                               | По умолчанию       | Описание                                                        |
+| ------------------ | ------------------------ | ------------------------------------------------------ | ------------------ | --------------------------------------------------------------- |
+| **Логирование**    | `log_level`              | DEBUG/INFO/WARNING/ERROR                               | WARNING            | Уровень детализации логов                                       |
+|                    | `log_format`             | &quot;simple&quot;, &quot;verbose&quot;                | &quot;simple&quot; | Формат сообщений логов                                          |
+| **Кэш**            | `cache_enabled`          | True/False                                             | True               | Включить кэширование результатов                                |
+|                    | `cache_ttl`              | float (seconds)                                        | 0.0                | Время жизни кэша                                                |
+| **Движок**         | `execution_engine`       | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | Движок выполнения                                               |
+|                    | `cross_datastore_engine` | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | Операции между DataStore                                        |
+| **Совместимость**  | `compat_mode`            | &quot;pandas&quot;, &quot;performance&quot;            | &quot;pandas&quot; | Совместимость с pandas или производительность с приоритетом SQL |
+| **Профилирование** | `profiling_enabled`      | True/False                                             | False              | Включить профилирование                                         |
+| **Dtype**          | `correction_level`       | NONE/CRITICAL/HIGH/MEDIUM/ALL                          | HIGH               | Уровень коррекции Dtype                                         |
+
+***
+
+<div id="methods">
+  ## Способы настройки
+</div>
+
+<div id="logging">
+  ### Конфигурация логирования
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+# Set log level
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Default
+config.set_log_level(logging.ERROR)
+
+# Set log format
+config.set_log_format("simple")   # Default
+config.set_log_format("verbose")  # More details
+
+# Quick enable debug mode
+config.enable_debug()  # Sets DEBUG level + verbose format
+```
+
+Подробности см. в разделе [Логирование](/ru/chdb/debugging/logging).
+
+<div id="cache">
+  ### Конфигурация кэша
+</div>
+
+```python
+# Enable/disable caching
+config.set_cache_enabled(True)   # Default
+config.set_cache_enabled(False)  # Disable caching
+
+# Set cache TTL (time-to-live)
+config.set_cache_ttl(60.0)  # Cache expires after 60 seconds
+config.set_cache_ttl(0.0)   # No expiration (default)
+
+# Check current settings
+print(config.cache_enabled)
+print(config.cache_ttl)
+```
+
+<div id="engine">
+  ### Конфигурация движка
+</div>
+
+```python
+# Set execution engine
+config.set_execution_engine('auto')    # Auto-select (default)
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Quick presets
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+
+# Cross-DataStore engine (for operations between different DataStores)
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+
+# Check current engine
+print(config.execution_engine)
+```
+
+См. раздел [движок выполнения](/ru/chdb/configuration/execution-engine) для подробностей.
+
+<div id="compat-mode">
+  ### Режим совместимости
+</div>
+
+```python
+# Performance mode: SQL-first, no pandas compatibility overhead
+config.use_performance_mode()
+# or: config.set_compat_mode('performance')
+
+# Pandas compatibility mode (default)
+config.use_pandas_compat()
+# or: config.set_compat_mode('pandas')
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+Подробнее см. в разделе [Режим производительности](/ru/chdb/configuration/performance-mode).
+
+<div id="profiling">
+  ### Конфигурация профилирования
+</div>
+
+```python
+# Enable profiling
+config.enable_profiling()
+config.set_profiling_enabled(True)
+
+# Disable profiling
+config.set_profiling_enabled(False)
+
+# Check if profiling is enabled
+print(config.profiling_enabled)
+```
+
+Подробности см. в разделе [данные профилирования](/ru/chdb/debugging/profiling).
+
+<div id="dtype">
+  ### Коррекция типов данных
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+
+# Set correction level
+config.set_correction_level(CorrectionLevel.NONE)      # No correction
+config.set_correction_level(CorrectionLevel.CRITICAL)  # Critical types only
+config.set_correction_level(CorrectionLevel.HIGH)      # Default
+config.set_correction_level(CorrectionLevel.MEDIUM)    # More corrections
+config.set_correction_level(CorrectionLevel.ALL)       # All corrections
+```
+
+***
+
+<div id="config-object">
+  ## Использование объекта config
+</div>
+
+Объект `config` — singleton, управляющий всеми настройками:
+
+```python
+from chdb.datastore.config import config
+
+# Read settings
+print(config.log_level)
+print(config.execution_engine)
+print(config.cache_enabled)
+print(config.profiling_enabled)
+
+# Modify settings
+config.set_log_level(logging.DEBUG)
+config.set_execution_engine('chdb')
+config.set_cache_enabled(False)
+config.enable_profiling()
+```
+
+***
+
+<div id="in-code">
+  ## Конфигурация в коде
+</div>
+
+<div id="per-script">
+  ### Конфигурация отдельных скриптов
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Configure at script start
+config.enable_debug()
+config.use_chdb()
+config.enable_profiling()
+
+# Your DataStore code
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+```
+
+<div id="context-manager">
+  ### Менеджер контекста (планируется)
+</div>
+
+```python
+# Planned feature: temporary configuration
+with config.override(execution_engine='pandas'):
+    result = ds.process()
+# Original settings restored
+```
+
+***
+
+<div id="scenarios">
+  ## Типовые сценарии конфигурации
+</div>
+
+<div id="dev-config">
+  ### Разработка/отладка
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+config.set_cache_enabled(False)  # Disable caching for fresh results
+```
+
+<div id="prod-config">
+  ### Продакшн
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+config.set_log_level(logging.WARNING)  # Minimal logging
+config.set_execution_engine('auto')    # Optimal engine selection
+config.set_cache_enabled(True)         # Enable caching
+config.set_profiling_enabled(False)    # Disable profiling overhead
+```
+
+<div id="max-throughput-config">
+  ### Максимальная пропускная способность
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()    # SQL-first, no pandas overhead
+config.set_cache_enabled(False)  # Disable cache for streaming
+```
+
+<div id="perf-config">
+  ### Тестирование производительности
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_chdb()            # Force ClickHouse for benchmarks
+config.enable_profiling()    # Track performance
+config.set_cache_enabled(False)  # Disable cache for accurate timing
+```
+
+<div id="compat-config">
+  ### Тестирование совместимости с Pandas
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_pandas()          # Force pandas engine
+config.enable_debug()        # See what operations are used
+```
+
+***
+
+<div id="related">
+  ## Связанная документация
+</div>
+
+* [Движок выполнения](/ru/chdb/configuration/execution-engine) - Подробно о выборе движка
+* [Режим производительности](/ru/chdb/configuration/performance-mode) - SQL-ориентированный режим для максимальной пропускной способности
+* [Конфигурация функций](/ru/chdb/configuration/function-config) - Настройка движка для отдельных функций
+* [Логирование](/ru/chdb/debugging/logging) - Конфигурация логирования
+* [Данные профилирования](/ru/chdb/debugging/profiling) - Профилирование производительности
