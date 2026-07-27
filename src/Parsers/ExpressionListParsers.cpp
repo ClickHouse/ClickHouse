@@ -2012,8 +2012,10 @@ public:
         /// In the purely functional form, accept further arguments so that a too-long call is
         /// reported by the function as `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` rather than as a
         /// syntax error. `substr`/`mid`/`byteSlice` go through the generic `FunctionLayer` and
-        /// already accept any argument count; DDL normalization rewrites them to `substring`,
-        /// so without this the persisted definition would not re-parse (issue #69141).
+        /// already accept any argument count, so a definition that was persisted after DDL
+        /// normalization rewrote one of them to `substring` (see `canonicalNameCanReparseShape`
+        /// in `FunctionNameNormalizer.cpp`, which now prevents that rewrite) would otherwise
+        /// not re-parse.
         /// Both flags are required: a further comma is accepted only when EVERY separator so
         /// far was a comma, so a form that used the SQL-standard FROM or FOR keyword anywhere
         /// keeps its fixed shape and stays a syntax error, exactly as before this change.

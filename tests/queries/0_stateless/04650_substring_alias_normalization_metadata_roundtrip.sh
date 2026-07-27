@@ -149,7 +149,7 @@ SELECT 'attach ok', count() FROM system.tables WHERE database = currentDatabase(
 # row that does not error proves the persisted definition re-parses. Limitation: the
 # load-from-disk path, where an unparseable body is silently dropped, needs a fresh process and is
 # not asserted here. The reference records `f_default` because `tests/clickhouse-test` rewrites the
-# randomized database name to `default` in stdout — the function is created as `f_${CLICKHOUSE_DATABASE}`.
+# randomized database name to `default` in stdout - the function is created as `f_${CLICKHOUSE_DATABASE}`.
 $CLICKHOUSE_CLIENT -q "SELECT '-- SQL UDF body: the persisted definition re-parses'"
 $CLICKHOUSE_CLIENT -q "
 DROP FUNCTION IF EXISTS ${FUNC};
