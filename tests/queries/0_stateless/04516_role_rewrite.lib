@@ -205,21 +205,21 @@ test_introspection()
     grep -Fxq "CREATE ROLE ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES ${role1}, ${role2}")"
     grep -Fxq "CREATE ROLE ${role1}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES")"
     grep -Fxq "CREATE ROLE ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW CREATE ROLES")"
-    grep -Fq "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${user_a}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_a}")"
-    grep -Fq "GRANT ${role1} TO ${user_a}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_a}")"
-    grep -Fq "GRANT CREATE ON *.* TO ${user_b} WITH GRANT OPTION" <<<"$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")"
-    grep -Fq "GRANT ${role2} TO ${user_b} WITH ADMIN OPTION" <<<"$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")"
+    user_a_grants="$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_a}")"
+    [ "$user_a_grants" = "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${user_a}"$'\n'"GRANT ${role1} TO ${user_a}" ]
+    user_b_grants="$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${user_b}")"
+    [ "$user_b_grants" = "GRANT CREATE ON *.* TO ${user_b} WITH GRANT OPTION"$'\n'"GRANT ${role2} TO ${user_b} WITH ADMIN OPTION" ]
     [ "$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${role1}")" = "" ]
-    grep -Fq "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${role2}")"
-    grep -Fq "REVOKE SELECT(x) ON ${CLICKHOUSE_DATABASE}.${table_name} FROM ${role2}" <<<"$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${role2}")"
-    grep -Fq "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${user_a}" <<<"$(query_as_user "${user_a}" "SHOW GRANTS")"
+    role2_grants="$($CLICKHOUSE_CLIENT --query "SHOW GRANTS FOR ${role2}")"
+    [ "$role2_grants" = "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.${table_name} TO ${role2}"$'\n'"REVOKE SELECT(x) ON ${CLICKHOUSE_DATABASE}.${table_name} FROM ${role2}" ]
+    [ "$(query_as_user "${user_a}" "SHOW GRANTS")" = "$user_a_grants" ]
     [ "$(query_as_user "${user_a}" "SHOW GRANTS FOR ${role1}")" = "" ]
     grep -q "Not enough privileges" <<<"$(error_as_user "${user_a}" "SHOW GRANTS FOR ${role2}")"
-    grep -Fq "GRANT CREATE ON *.* TO ${user_b} WITH GRANT OPTION" <<<"$(query_as_user "${user_b}" "SHOW GRANTS")"
-    grep -Fxq "${role1}"$'\t0\t1' <<<"$(query_as_user "${user_a}" "SHOW CURRENT ROLES")"
-    grep -Fxq "${role2}"$'\t1\t1' <<<"$(query_as_user "${user_b}" "SHOW CURRENT ROLES")"
-    grep -Fxq "${role1}"$'\t0\t1\t1' <<<"$(query_as_user "${user_a}" "SHOW ENABLED ROLES")"
-    grep -Fxq "${role2}"$'\t1\t1\t1' <<<"$(query_as_user "${user_b}" "SHOW ENABLED ROLES")"
+    [ "$(query_as_user "${user_b}" "SHOW GRANTS")" = "$user_b_grants" ]
+    [ "$(query_as_user "${user_a}" "SHOW CURRENT ROLES")" = "${role1}"$'\t0\t1' ]
+    [ "$(query_as_user "${user_b}" "SHOW CURRENT ROLES")" = "${role2}"$'\t1\t1' ]
+    [ "$(query_as_user "${user_a}" "SHOW ENABLED ROLES")" = "${role1}"$'\t0\t1\t1' ]
+    [ "$(query_as_user "${user_b}" "SHOW ENABLED ROLES")" = "${role2}"$'\t1\t1\t1' ]
     access_out="$($CLICKHOUSE_CLIENT --query "SHOW ACCESS")"
     grep -Fq "CREATE ROLE ${role1}" <<<"$access_out"
     grep -Fq "CREATE ROLE ${role2}" <<<"$access_out"
