@@ -12,4 +12,6 @@ std::vector<String> listFiles(
     const StorageObjectStorageConfiguration & configuration,
     const String & prefix, const String & suffix);
 
+String resolvePathInsideTable(const String & table_path, const String & relative_path);
+
 }
