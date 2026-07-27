@@ -226,6 +226,16 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
 }
 
 
+/// Look through LowCardinality/Nullable on a source type hint: a non-NULL value of a wrapped type arrives as a plain Field.
+const IDataType * unwrapSourceTypeHint(const IDataType * hint)
+{
+    if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(hint))
+        hint = low_cardinality->getDictionaryType().get();
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(hint))
+        hint = nullable->getNestedType().get();
+    return hint;
+}
+
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     if (from_type_hint && from_type_hint->equals(type))
@@ -457,13 +467,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         /// Constant Time64 -> Time: gated on the source hint, Decimal64 is also the Field storage for Decimal64/DateTime64.
         if (which_type.isTime() && src.getType() == Field::Types::Decimal64)
         {
-            /// A non-NULL Nullable(Time64) value arrives as a plain Decimal64 Field.
-            const IDataType * time64_hint = from_type_hint;
-            if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(time64_hint))
-                time64_hint = low_cardinality_hint->getDictionaryType().get();
-            if (const auto * nullable_hint = typeid_cast<const DataTypeNullable *>(time64_hint))
-                time64_hint = nullable_hint->getNestedType().get();
-
+            const IDataType * time64_hint = unwrapSourceTypeHint(from_type_hint);
             if (time64_hint && WhichDataType(*time64_hint).isTime64())
             {
                 static constexpr Int64 max_time_seconds = 3599999; /// 999:59:59, == MAX_TIME_TIMESTAMP
@@ -614,7 +618,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                     dst_tuple_size,
                     src_tuple_size);
 
-            const auto * from_tuple_hint = typeid_cast<const DataTypeTuple *>(from_type_hint);
+            const auto * from_tuple_hint = typeid_cast<const DataTypeTuple *>(unwrapSourceTypeHint(from_type_hint));
             if (from_tuple_hint && from_tuple_hint->getElements().size() != dst_tuple_size)
                 from_tuple_hint = nullptr;
 

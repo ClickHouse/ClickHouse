@@ -50,3 +50,10 @@ CREATE TABLE t_04499_time4 (c1 Time, a Array(Time)) ENGINE = Memory;
 INSERT INTO t_04499_time4 VALUES (CAST(toDecimal64(-0.5, 1) AS Time64(1)), [CAST('02:00:00.5' AS Nullable(Time64(1)))]) (CAST('01:02:03.5' AS Nullable(Time64(1))), []);
 SELECT c1 = CAST(-1 AS Time), c1 = CAST('01:02:03' AS Time), a = [CAST('02:00:00' AS Time)] FROM t_04499_time4 ORDER BY c1;
 DROP TABLE t_04499_time4;
+
+-- Nullable(Tuple(...)) source hints are unwrapped before propagating element types.
+DROP TABLE IF EXISTS t_04499_time5;
+CREATE TABLE t_04499_time5 (t Tuple(Time, UInt8)) ENGINE = Memory;
+INSERT INTO t_04499_time5 VALUES (CAST((CAST('01:02:03.5' AS Time64(1)), 1) AS Nullable(Tuple(Time64(1), UInt8))));
+SELECT t.1 = CAST('01:02:03' AS Time), t.2 FROM t_04499_time5;
+DROP TABLE t_04499_time5;
