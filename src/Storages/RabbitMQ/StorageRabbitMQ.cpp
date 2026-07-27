@@ -1184,8 +1184,9 @@ void StorageRabbitMQ::threadFunc()
             const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
             const bool deps_ready = num_views == 0 || hasDependencies(table_id);
             /// True only when this cycle is the one out-of-order cycle a `SYSTEM REFRESH` grants to a
-            /// stopped table. Sampled inside `claimCycle` together with the claim itself, so a `STOP`
-            /// racing in right after an ordinary cycle was admitted does not turn it into a refresh cycle.
+            /// stopped table. Sampled inside `claimCycle` from the same blocked-state read the claim itself
+            /// is decided from, so neither a `STOP` racing in right after an ordinary cycle was admitted nor
+            /// a `START` racing in right after the permit was consumed can misreport it.
             bool claimed_blocked_refresh = false;
             const bool run_cycle
                 = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch, &claimed_blocked_refresh);
