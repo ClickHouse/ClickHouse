@@ -133,7 +133,7 @@ This setting does not require a restart of the ClickHouse server to apply. Anoth
 <Note>
 The value `0` means that you can drop partitions without any restrictions.
 
-This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/reference/settings/session-settings#max_table_size_to_drop)
+This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/reference/settings/session-settings/max#max_table_size_to_drop)
 </Note>
 
 **Example**
@@ -172,8 +172,8 @@ A value of `0` means unlimited.
 </Note>
 
 See also:
-- [`max_temporary_data_on_disk_size_for_user`](/reference/settings/session-settings#max_temporary_data_on_disk_size_for_user)
-- [`max_temporary_data_on_disk_size_for_query`](/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query)
+- [`max_temporary_data_on_disk_size_for_user`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
+- [`max_temporary_data_on_disk_size_for_query`](/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
 ## max_unexpected_parts_loading_thread_pool_size {#max_unexpected_parts_loading_thread_pool_size}
 
@@ -191,8 +191,8 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries)
 - [`max_concurrent_insert_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](/reference/settings/session-settings#max_concurrent_queries_for_user)
-- [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_user`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user)
+- [`max_concurrent_queries_for_all_users`](/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
 </Note>
