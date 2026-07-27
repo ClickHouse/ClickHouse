@@ -94,7 +94,7 @@ def active_parts(table):
 
 
 def all_parts(table):
-    """Every loaded part with its active flag, including Outdated ones."""
+    """Every loaded part with its active flag, including `Outdated` ones."""
     node.query(f"SYSTEM WAIT LOADING PARTS {table}")
     rows = node.query(
         "SELECT name, active FROM system.parts"
@@ -116,8 +116,8 @@ def stop_merges(table):
 
     A global `SYSTEM STOP MERGES` would be worse still: it only locks the tables that exist when it
     runs (`InterpreterSystemQuery::startStopAction`, lock keyed per `IStorage`), so it would not
-    cover a table created afterwards, and the lock does not survive the DETACH/ATTACH cycle that
-    destroys the storage instance.
+    cover a table created afterwards, and the lock does not survive the `DETACH`/`ATTACH` cycle
+    that destroys the storage instance.
     """
     node.query(f"SYSTEM STOP MERGES {table}")
 
@@ -130,7 +130,7 @@ def create_table_with_one_part(table):
     with merging already off on every startup, including the one `ATTACH TABLE` performs before it
     returns. `max_bytes_to_merge_at_max_space_in_pool = 0` is checked before any merge selector runs
     (`getMaxSourcePartsBytesForMerge` returns 0, `StorageMergeTree` reports `CANNOT_SELECT` with
-    "Current value of max_source_parts_bytes is zero"). A merge would rewrite the part set these
+    `Current value of max_source_parts_bytes is zero`). A merge would rewrite the part set these
     tests assert on.
 
     `DETACH` must be `SYNC`: an asynchronous detach leaves the storage instance tracked in
@@ -280,7 +280,7 @@ def test_tmp_metadata(started_cluster):
     interrupted before it could rename its metadata into place, so it never committed.
     `read_txn_status` has to mirror `VersionMetadataOnDisk::loadMetadata` here - probing only the
     final `txn_version.txt` reports `NoMetadata`, and the intersecting committed peer then falls
-    through to the generic intersecting-parts LOGICAL_ERROR during ATTACH.
+    through to the generic intersecting-parts `LOGICAL_ERROR` during `ATTACH`.
 
     Reaches the intersection arm.
 
@@ -315,5 +315,5 @@ def test_tmp_metadata(started_cluster):
 
 # The symmetric `next`/`isDisjoint` branch of `PartLoadingTree::add` is a near-duplicate of the
 # `prev` branch exercised above, and no test targets it directly - the scenarios happen to reach
-# the `prev` side because of the insertion order. Same for the `Unreadable`/CORRUPTED_DATA and
+# the `prev` side because of the insertion order. Same for the `Unreadable`/`CORRUPTED_DATA` and
 # `UnknownCSN` outcomes of `read_txn_status`. Both gaps predate this module.
