@@ -849,6 +849,17 @@ IcebergStorageSink::IcebergStorageSink(
         compression_method,
         persistent_table_components.table_uuid);
     metadata_compression_method = compression_method;
+
+    /// Fail up front if the table's current snapshot is missing from `snapshots`: the commit
+    /// (generateNextMetadata) rejects it too, but only after consume() has uploaded data files,
+    /// which would then be orphaned.
+    {
+        Int64 current_snapshot_id = -1;
+        if (metadata->has(Iceberg::f_current_snapshot_id) && !metadata->isNull(Iceberg::f_current_snapshot_id))
+            current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+        MetadataGenerator::validateParentSnapshotResolvable(metadata, current_snapshot_id);
+    }
+
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
         (catalog != nullptr && catalog->isTransactional()), metadata_compression_method, write_format);

@@ -164,6 +164,28 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
     return nullptr;
 }
 
+void MetadataGenerator::validateParentSnapshotResolvable(const Poco::JSON::Object::Ptr & metadata_object, Int64 parent_snapshot_id)
+{
+    if (parent_snapshot_id < 0)
+        return;
+
+    if (metadata_object->has(Iceberg::f_snapshots))
+    {
+        auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+        for (size_t i = 0; i < snapshots->size(); ++i)
+        {
+            const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+            if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) == parent_snapshot_id)
+                return;
+        }
+    }
+
+    throw Exception(
+        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        "Metadata has a current snapshot with id {} but the `snapshots` list does not contain it",
+        parent_snapshot_id);
+}
+
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
     const Iceberg::IcebergPathFromMetadata & metadata_file_path,
@@ -213,11 +235,8 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     /// an unresolvable live parent would silently unlink all previously committed data, so
     /// fail-close on such self-contradictory metadata (missing or pruned `snapshots` entry).
     /// Compaction replays a filtered history and opts out (see the header comment).
-    if (parent_snapshot_id >= 0 && !parent_snapshot && !tolerate_missing_parent_snapshot)
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Metadata has a current snapshot with id {} but the `snapshots` list does not contain it",
-            parent_snapshot_id);
+    if (!tolerate_missing_parent_snapshot)
+        validateParentSnapshotResolvable(metadata_object, parent_snapshot_id);
 
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);

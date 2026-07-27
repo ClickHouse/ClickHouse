@@ -43,6 +43,12 @@ public:
         std::optional<Int64> user_defined_timestamp = std::nullopt,
         bool tolerate_missing_parent_snapshot = false);
 
+    /// Throws if `parent_snapshot_id` is a live snapshot (>= 0) absent from the metadata's
+    /// `snapshots` list. `generateNextMetadata` enforces the same invariant, but only at commit
+    /// time, after a write has already uploaded its data files; call this up front (before any
+    /// data is written) so a self-contradictory table fails without leaving orphaned objects.
+    static void validateParentSnapshotResolvable(const Poco::JSON::Object::Ptr & metadata_object, Int64 parent_snapshot_id);
+
     /// Create a manifest-only rewrite snapshot (`replace` operation) carrying `total-*` counters forward so `OPTIMIZE ... MANIFEST` is idempotent.
     NextMetadataResult generateManifestOnlySnapshot(
         FileNamesGenerator & generator,
