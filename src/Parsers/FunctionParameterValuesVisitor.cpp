@@ -18,10 +18,18 @@ namespace DB
 /// Collects the `parameter = value` assignments of a parameterized-view call.
 ///
 /// Only the top-level arguments of the call are inspected, and only those that are genuine
-/// `identifier = <constant expression>` assignments. This mirrors the query-tree collector in
-/// `QueryAnalyzer::resolveTableFunction`, so the legacy-AST and analyzer paths bind exactly the
-/// same set of parameters. An argument of any other shape binds nothing, which leaves the
-/// parameter unset and makes `ReplaceQueryParameterVisitor` report `UNKNOWN_QUERY_PARAMETER`.
+/// `identifier = <constant expression>` assignments. The accepted argument SHAPES mirror the
+/// query-tree collector in `QueryAnalyzer::resolveTableFunction`, so a positional argument, a
+/// non-`equals` function or an assignment nested inside another expression binds nothing on
+/// either path. An argument of any other shape is ignored, which leaves the parameter unset;
+/// `ReplaceQueryParameterVisitor` then reports `UNKNOWN_QUERY_PARAMETER`, except for a
+/// `Nullable` parameter, which it substitutes as `NULL`.
+///
+/// Value ACCEPTANCE is not identical to the analyzer's: here the value must already be a
+/// literal, function call or subquery, while the analyzer resolves the value node and accepts
+/// anything that folds to a constant (e.g. a `WITH` alias). That difference is pre-existing
+/// and out of scope; both of its current verdicts are pinned in
+/// `04648_parameterized_view_non_equals_argument.sql`.
 NameToNameMap analyzeFunctionParamValues(const ASTPtr & ast, ContextPtr context)
 {
     NameToNameMap parameter_values;
