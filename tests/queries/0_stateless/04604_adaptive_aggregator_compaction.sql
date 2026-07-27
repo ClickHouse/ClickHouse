@@ -1,9 +1,9 @@
 -- Exercises the compaction of the adaptive aggregator's row-reference staging: a block gathers
 -- the staged records' argument values into dense columns at publish and releases the source
--- block, unless an argument is sparse, in which case the argument columns are retained for the
--- merge-time drain. The skewed table stages only the rare tail (one key covers 90% of the rows),
--- the uniform queries stage nearly every row. Every cell compares the same query with the
--- feature off and on.
+-- block. Sparse arguments are materialized by the gather, so the staged columns are always
+-- dense. The skewed table stages only the rare tail (one key covers 90% of the rows), the
+-- uniform queries stage nearly every row. Every cell compares the same query with the feature
+-- off and on.
 
 SET enable_adaptive_aggregator = 1;
 SET adaptive_aggregator_freeze_threshold = 128;
@@ -81,7 +81,7 @@ SELECT
     =
     (SELECT count(), sum(c), sum(sm) FROM (SELECT v AS k, count() AS c, sum(v) AS sm FROM test_skew GROUP BY k SETTINGS enable_adaptive_aggregator = 1));
 
-SELECT 'Sparse argument retains the block; dense and zero-argument aggregates beside it gather from it';
+SELECT 'Sparse argument is materialized at publish; dense and zero-argument aggregates share the gather';
 DROP TABLE IF EXISTS test_skew_sparse;
 CREATE TABLE test_skew_sparse (k UInt64, v UInt64, w UInt64)
 ENGINE = MergeTree ORDER BY tuple()
