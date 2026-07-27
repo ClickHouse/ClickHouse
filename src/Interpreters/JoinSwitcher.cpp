@@ -45,15 +45,19 @@ bool JoinSwitcher::addBlockToJoin(const Block & block, bool)
     /// would be silently ineffective under `join_algorithm = 'auto'`. One pass over the already
     /// stored blocks is enough: if they compress, HashJoin keeps them compressed (and ignores
     /// further shrink calls); if they do not compress below the limit, re-running the pass on every
-    /// subsequent insert would only burn CPU on the same data. The blocks added after a successful
-    /// pass are compressed on insertion instead, because the forced pass does not arm that itself.
+    /// subsequent insert would only burn CPU on the same data. The blocks added after the pass are
+    /// compacted on insertion instead, because the forced pass does not arm that itself: arming it is
+    /// unconditional, exactly as the plain `hash` path latches insert-time compaction once its own
+    /// threshold fired. The pass can also win purely by reclaiming over-allocation (`cloneResized`,
+    /// nothing worth compressing, so `haveCompressed` stays false), and in that shape the later blocks
+    /// must stay on the compaction path too - otherwise the next limit crossing switches to the
+    /// disk-based join with the tail of the build side stored uncompacted.
     if (!limits.softCheck(rows, bytes) && !compression_attempted && table_join->enableJoinInMemoryCompression())
     {
         compression_attempted = true;
         auto & hash_join = assert_cast<HashJoin &>(*join);
         hash_join.shrinkStoredBlocksToFit(bytes, /*force_optimize=*/true);
-        if (hash_join.haveCompressed())
-            hash_join.armCompactionForFurtherBlocks();
+        hash_join.armCompactionForFurtherBlocks();
         rows = join->getTotalRowCount();
         bytes = join->getTotalByteCount();
     }
