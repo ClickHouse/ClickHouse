@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"iceberg_insert_max_rows_in_data_file", 1000000, 5000000, "Raised so it no longer sits just below the insert block size (which caused an extra tiny data file per block); it now also serves as a memory safety bound for narrow, well-compressible rows."},
+            {"iceberg_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New description for the setting."},
             {"unique_key_probe_implementation", "auto", "auto", "New setting: selects the UNIQUE KEY probe implementation (currently only the simple baseline exists)"},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
             {"analyzer_compatibility_apply_final_to_all_joined_tables", false, false, "New setting on master (default false = the fixed behavior). The behavior flip itself is recorded under 26.6, and the introduction for backports to older release branches (with default true) under 26.4."},
@@ -153,8 +155,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_query_deduplication", false, false, "The setting is obsolete, the feature has been removed."},
             {"query_plan_min_columns_for_join_lazy_indexing", 0, 3, "Control the minimum number of payload columns from the left side required for enabling lazy indexing optimization in JOIN"},
             {"query_plan_max_limit_for_join_lazy_indexing", 1000, 1000, "Added new setting to control maximum limit value that allows to use query plan for lazy join indexing optimization. If zero, there is no limit"},
-            {"iceberg_insert_max_rows_in_data_file", 1000000, 5000000, "Raised so it no longer sits just below the insert block size (which caused an extra tiny data file per block); it now also serves as a memory safety bound for narrow, well-compressible rows."},
-            {"iceberg_insert_max_bytes_in_data_file", 1_GiB, 1_GiB, "New description for the setting."},
         });
 
         addSettingsChanges(settings_changes_history, "26.5",
