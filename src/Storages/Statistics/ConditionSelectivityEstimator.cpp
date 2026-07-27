@@ -106,6 +106,58 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     return column->type->equals(*stats->getDataType());
 }
 
+namespace
+{
+
+struct ColumnNullShares
+{
+    Float64 null = 0.0;
+    Float64 non_null = 1.0;
+};
+
+bool isSupportedColumnComparisonType(const DataTypePtr & type)
+{
+    return isNativeNumber(type) || isDate(type) || isDate32(type) || isDateTime(type) || isDateTime64(type);
+}
+
+Float64 clampProbability(Float64 value)
+{
+    if (!std::isfinite(value))
+        return 0.0;
+    return std::max(0.0, std::min(1.0, value));
+}
+
+bool tryConvertFieldLosslesslyToCommonType(
+    const Field & value,
+    const DataTypePtr & from_type,
+    const DataTypePtr & common_type,
+    Field & out)
+{
+    if (value.isNull() || value.isNaN())
+        return false;
+
+    if (from_type->equals(*common_type))
+    {
+        out = value;
+        return true;
+    }
+
+    Field converted = tryConvertFieldToType(value, *common_type, from_type.get(), {}, /*strict=*/true);
+    if (converted.isNull() || converted.isNaN())
+        return false;
+
+    /// Min/max proofs must be conservative: if converting a boundary to the common
+    /// comparison type loses information, the disjoint proof may become wrong.
+    Field round_trip = tryConvertFieldToType(converted, *from_type, common_type.get(), {}, /*strict=*/true);
+    if (round_trip.isNull() || round_trip != value)
+        return false;
+
+    out = converted;
+    return true;
+}
+
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
@@ -137,16 +189,88 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                     rpn_stack.push(&element);
                 else
                 {
-                    left_element->finalize(column_estimators, metadata);
-                    right_element->finalize(column_estimators, metadata);
-                    /// P(c1 and c2) = P(c1) * P(c2)
-                    if (element.function == RPNElement::FUNCTION_AND)
-                        element.selectivity = left_element->selectivity.applyAnd(right_element->selectivity);
-                    /// P(c1 or c2) = 1 - (1 - P(c1)) * (1 - P(c2))
+                    auto try_combine_null_sensitive_predicate_with_null_check = [&](const RPNElement & predicate, const RPNElement & null_check) -> bool
+                    {
+                        if (!predicate.finalized || null_check.finalized
+                            || !null_check.column_ranges.empty() || !null_check.column_not_ranges.empty()
+                            || null_check.null_check_columns.size() + null_check.not_null_check_columns.size() != 1)
+                            return false;
+
+                        bool is_null_check = !null_check.null_check_columns.empty();
+                        const String & column_name = is_null_check ? *null_check.null_check_columns.begin() : *null_check.not_null_check_columns.begin();
+                        if (element.function == RPNElement::FUNCTION_AND)
+                        {
+                            if ((is_null_check && predicate.not_null_check_columns.contains(column_name))
+                                || (!is_null_check && predicate.null_check_columns.contains(column_name)))
+                            {
+                                element.selectivity = Selectivity();
+                                element.finalized = true;
+                                return true;
+                            }
+                        }
+
+                        auto null_share_it = predicate.null_sensitive_column_null_shares.find(column_name);
+                        if (null_share_it == predicate.null_sensitive_column_null_shares.end())
+                            return false;
+
+                        Float64 null_share = clampProbability(null_share_it->second);
+                        Float64 non_null_share = 1.0 - null_share;
+                        if (element.function == RPNElement::FUNCTION_AND)
+                        {
+                            if (is_null_check)
+                                element.selectivity = Selectivity(0.0, null_share);
+                            else
+                                element.selectivity = Selectivity(predicate.selectivity.true_sel, std::max(0.0, predicate.selectivity.null_sel - null_share));
+                        }
+                        else
+                        {
+                            if (is_null_check)
+                                element.selectivity = Selectivity(
+                                    std::min(1.0, predicate.selectivity.true_sel + null_share),
+                                    std::max(0.0, predicate.selectivity.null_sel - null_share));
+                            else
+                                element.selectivity = Selectivity(std::max(predicate.selectivity.true_sel, non_null_share), null_share);
+                        }
+                        element.selectivity.true_sel = clampProbability(element.selectivity.true_sel);
+                        element.selectivity.null_sel = std::max(0.0, std::min(1.0 - element.selectivity.true_sel, element.selectivity.null_sel));
+                        element.null_sensitive_column_null_shares = predicate.null_sensitive_column_null_shares;
+                        element.null_check_columns = predicate.null_check_columns;
+                        element.not_null_check_columns = predicate.not_null_check_columns;
+                        if (element.function == RPNElement::FUNCTION_AND)
+                        {
+                            if (is_null_check)
+                                element.null_check_columns.insert(column_name);
+                            else
+                                element.not_null_check_columns.insert(column_name);
+                        }
+                        /// `predicate AND col IS NOT NULL` and `predicate OR col IS NULL`
+                        /// resolve the predicate's NULL result for `col`; future NULL-sensitive
+                        /// combination on the same column must not see the old dependency.
+                        if ((element.function == RPNElement::FUNCTION_AND && !is_null_check)
+                            || (element.function == RPNElement::FUNCTION_OR && is_null_check))
+                            element.null_sensitive_column_null_shares.erase(column_name);
+                        element.finalized = true;
+                        return true;
+                    };
+
+                    if (try_combine_null_sensitive_predicate_with_null_check(*left_element, *right_element)
+                        || try_combine_null_sensitive_predicate_with_null_check(*right_element, *left_element))
+                    {
+                        rpn_stack.push(&element);
+                    }
                     else
-                        element.selectivity = left_element->selectivity.applyOr(right_element->selectivity);
-                    element.finalized = true;
-                    rpn_stack.push(&element);
+                    {
+                        left_element->finalize(column_estimators, metadata);
+                        right_element->finalize(column_estimators, metadata);
+                        /// P(c1 and c2) = P(c1) * P(c2)
+                        if (element.function == RPNElement::FUNCTION_AND)
+                            element.selectivity = left_element->selectivity.applyAnd(right_element->selectivity);
+                        /// P(c1 or c2) = 1 - (1 - P(c1)) * (1 - P(c2))
+                        else
+                            element.selectivity = left_element->selectivity.applyOr(right_element->selectivity);
+                        element.finalized = true;
+                        rpn_stack.push(&element);
+                    }
                 }
                 break;
             }
@@ -226,6 +350,214 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
             return true;
     }
     return false;
+}
+
+bool ConditionSelectivityEstimator::tryExtractColumnComparison(
+    const StorageMetadataPtr & metadata,
+    const String & function_name,
+    const RPNBuilderTreeNode & lhs,
+    const RPNBuilderTreeNode & rhs,
+    RPNElement & out) const
+{
+    if (!metadata)
+        return false;
+
+    if (function_name != "equals" && function_name != "notEquals"
+        && function_name != "less" && function_name != "lessOrEquals"
+        && function_name != "greater" && function_name != "greaterOrEquals")
+        return false;
+
+    if (lhs.isConstant() || rhs.isConstant())
+        return false;
+
+    const String lhs_column_name = lhs.getColumnName();
+    const String rhs_column_name = rhs.getColumnName();
+    const ColumnDescription * lhs_column = metadata->getColumns().tryGet(lhs_column_name);
+    const ColumnDescription * rhs_column = metadata->getColumns().tryGet(rhs_column_name);
+    if (!lhs_column || !rhs_column)
+        return false;
+
+    auto get_estimator = [&](const String & column_name) -> const ColumnEstimator *
+    {
+        auto it = column_estimators.find(column_name);
+        if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+            return nullptr;
+        return &it->second;
+    };
+
+    auto get_null_shares = [&](const ColumnDescription & column, const ColumnEstimator * estimator) -> ColumnNullShares
+    {
+        ColumnNullShares result;
+        if (estimator && estimator->stats->getNumRows() != 0 && estimator->stats->hasNullCount())
+        {
+            Float64 rows = static_cast<Float64>(estimator->stats->getNumRows());
+            result.null = static_cast<Float64>(estimator->stats->getNullCount()) / rows;
+        }
+        else if (!isNullableOrLowCardinalityNullable(column.type))
+        {
+            result.null = 0.0;
+        }
+        else
+        {
+            /// Nullable column but no Basic/null-count statistic. Mirror the existing IS NULL
+            /// fallback instead of treating getNullCount()==0 as proof of no NULLs.
+            result.null = default_cond_equal_factor;
+        }
+
+        result.null = clampProbability(result.null);
+        result.non_null = 1.0 - result.null;
+        return result;
+    };
+
+    const ColumnEstimator * lhs_estimator = get_estimator(lhs_column_name);
+    const ColumnEstimator * rhs_estimator = get_estimator(rhs_column_name);
+    const ColumnNullShares lhs_nulls = get_null_shares(*lhs_column, lhs_estimator);
+    const ColumnNullShares rhs_nulls = get_null_shares(*rhs_column, rhs_estimator);
+
+    auto set_finalized_selectivity = [&](Float64 true_sel, Float64 null_sel)
+    {
+        out.selectivity = Selectivity(clampProbability(true_sel), clampProbability(null_sel));
+        out.null_sensitive_column_null_shares[lhs_column_name] = lhs_nulls.null;
+        if (rhs_column_name != lhs_column_name)
+            out.null_sensitive_column_null_shares[rhs_column_name] = rhs_nulls.null;
+        out.finalized = true;
+    };
+
+    const DataTypePtr lhs_type = removeLowCardinalityAndNullable(lhs_column->type);
+    const DataTypePtr rhs_type = removeLowCardinalityAndNullable(rhs_column->type);
+
+    if (lhs_column_name == rhs_column_name)
+    {
+        /// Same-column comparisons are deterministic on non-NULL rows, and evaluate to
+        /// NULL on NULL rows under regular SQL comparison semantics. Floating-point
+        /// comparisons involving NaN are the exception (`NaN = NaN` and `NaN <= NaN`
+        /// are false), and statistics do not track NaN counts. Do not claim exact
+        /// selectivity for those predicates.
+        if (isFloat(lhs_type) && function_name != "less" && function_name != "greater")
+            set_finalized_selectivity(default_unknown_cond_factor * lhs_nulls.non_null, lhs_nulls.null);
+        else if (function_name == "equals" || function_name == "lessOrEquals" || function_name == "greaterOrEquals")
+            set_finalized_selectivity(lhs_nulls.non_null, lhs_nulls.null);
+        else
+            set_finalized_selectivity(0.0, lhs_nulls.null);
+        return true;
+    }
+    if (!isSupportedColumnComparisonType(lhs_type) || !isSupportedColumnComparisonType(rhs_type))
+        return false;
+
+    DataTypePtr common_type = tryGetLeastSupertype(DataTypes{lhs_type, rhs_type});
+    if (!common_type || !isSupportedColumnComparisonType(common_type))
+        return false;
+
+    const Float64 non_null_both = clampProbability(lhs_nulls.non_null * rhs_nulls.non_null);
+    const Float64 null_sel = clampProbability(1.0 - non_null_both);
+
+    auto get_real_ndv = [](const ColumnEstimator * estimator) -> std::optional<UInt64>
+    {
+        if (!estimator)
+            return std::nullopt;
+        return estimator->stats->getEstimate().estimated_cardinality;
+    };
+
+    auto estimate_equality = [&]() -> Float64
+    {
+        const auto lhs_ndv = get_real_ndv(lhs_estimator);
+        const auto rhs_ndv = get_real_ndv(rhs_estimator);
+        if (lhs_ndv && rhs_ndv)
+        {
+            UInt64 max_ndv = std::max(*lhs_ndv, *rhs_ndv);
+            if (max_ndv == 0)
+                return 0.0;
+            return clampProbability(std::min(non_null_both, non_null_both / static_cast<Float64>(max_ndv)));
+        }
+
+        return clampProbability(std::min(non_null_both, default_cond_equal_factor));
+    };
+
+    if (function_name == "equals" || function_name == "notEquals")
+    {
+        const Float64 equality_sel = estimate_equality();
+        if (function_name == "equals")
+            set_finalized_selectivity(equality_sel, null_sel);
+        else
+            set_finalized_selectivity(std::max(0.0, non_null_both - equality_sel), null_sel);
+        return true;
+    }
+
+    auto get_min_max = [](const ColumnEstimator * estimator) -> std::optional<std::pair<Field, Field>>
+    {
+        if (!estimator)
+            return std::nullopt;
+        Estimate estimate = estimator->stats->getEstimate();
+        if (!estimate.estimated_min || !estimate.estimated_max)
+            return std::nullopt;
+        return std::make_pair(*estimate.estimated_min, *estimate.estimated_max);
+    };
+
+    const auto lhs_min_max = get_min_max(lhs_estimator);
+    const auto rhs_min_max = get_min_max(rhs_estimator);
+    if (lhs_min_max && rhs_min_max)
+    {
+        Field lhs_min;
+        Field lhs_max;
+        Field rhs_min;
+        Field rhs_max;
+        if (tryConvertFieldLosslesslyToCommonType(lhs_min_max->first, lhs_type, common_type, lhs_min)
+            && tryConvertFieldLosslesslyToCommonType(lhs_min_max->second, lhs_type, common_type, lhs_max)
+            && tryConvertFieldLosslesslyToCommonType(rhs_min_max->first, rhs_type, common_type, rhs_min)
+            && tryConvertFieldLosslesslyToCommonType(rhs_min_max->second, rhs_type, common_type, rhs_max))
+        {
+            const bool lhs_max_lt_rhs_min = Range::less(lhs_max, rhs_min);
+            const bool rhs_max_lt_lhs_min = Range::less(rhs_max, lhs_min);
+            const bool lhs_max_le_rhs_min = !Range::less(rhs_min, lhs_max);
+            const bool rhs_max_le_lhs_min = !Range::less(lhs_min, rhs_max);
+
+            if (function_name == "less")
+            {
+                if (lhs_max_lt_rhs_min)
+                    set_finalized_selectivity(non_null_both, null_sel);
+                else if (!Range::less(lhs_min, rhs_max))
+                    set_finalized_selectivity(0.0, null_sel);
+                else
+                    set_finalized_selectivity(0.5 * non_null_both, null_sel);
+                return true;
+            }
+            if (function_name == "lessOrEquals")
+            {
+                if (lhs_max_le_rhs_min)
+                    set_finalized_selectivity(non_null_both, null_sel);
+                else if (rhs_max_lt_lhs_min)
+                    set_finalized_selectivity(0.0, null_sel);
+                else
+                    set_finalized_selectivity(0.5 * non_null_both, null_sel);
+                return true;
+            }
+            if (function_name == "greater")
+            {
+                if (rhs_max_lt_lhs_min)
+                    set_finalized_selectivity(non_null_both, null_sel);
+                else if (lhs_max_le_rhs_min)
+                    set_finalized_selectivity(0.0, null_sel);
+                else
+                    set_finalized_selectivity(0.5 * non_null_both, null_sel);
+                return true;
+            }
+            if (function_name == "greaterOrEquals")
+            {
+                if (rhs_max_le_lhs_min)
+                    set_finalized_selectivity(non_null_both, null_sel);
+                else if (lhs_max_lt_rhs_min)
+                    set_finalized_selectivity(0.0, null_sel);
+                else
+                    set_finalized_selectivity(0.5 * non_null_both, null_sel);
+                return true;
+            }
+        }
+    }
+
+    /// No min/max proof available: use the standard overlapping-range heuristic on
+    /// rows where both operands are non-NULL.
+    set_finalized_selectivity(0.5 * non_null_both, null_sel);
+    return true;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -340,6 +672,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                 else if (func_name == "lessOrEquals")
                     func_name = "greaterOrEquals";
             }
+            else if (tryExtractColumnComparison(metadata, func_name, func.getArgumentAt(0), func.getArgumentAt(1), out))
+                return true;
             else
                 return false;
 

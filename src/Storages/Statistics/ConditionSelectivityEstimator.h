@@ -93,6 +93,10 @@ public:
         std::unordered_set<String> null_check_columns;
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
+        /// For finalized predicates that evaluate to NULL whenever one of these
+        /// columns is NULL, keep the column null shares so later NULL checks on
+        /// the same columns are not combined by an independence assumption.
+        std::unordered_map<String, Float64> null_sensitive_column_null_shares;
         bool finalized = false;
         Selectivity selectivity;
 
@@ -114,6 +118,12 @@ private:
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
+    bool tryExtractColumnComparison(
+        const StorageMetadataPtr & metadata,
+        const String & function_name,
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        RPNElement & out) const;
     UInt64 estimateSelectivity(const RPNBuilderTreeNode & node) const;
 
     /// Magic constants for estimating the selectivity of a condition no statistics exists.
