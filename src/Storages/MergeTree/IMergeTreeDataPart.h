@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <filesystem>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
@@ -65,6 +66,8 @@ class DeleteBitmapCache;
 using DeleteBitmapCachePtr = std::shared_ptr<DeleteBitmapCache>;
 
 class VersionMetadata;
+class WriteBuffer;
+class ReadBuffer;
 enum class DataPartRemovalState : uint8_t
 {
     NOT_ATTEMPTED,
@@ -419,6 +422,14 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
+    NameSet invalidated_system_columns;
+    bool isSystemColumnInvalidated(const String & column_name) const;
+    static void writeInvalidatedSystemColumns(WriteBuffer & out, const NameSet & columns);
+    static NameSet readInvalidatedSystemColumns(ReadBuffer & in);
+    static void writeInvalidatedSystemColumnsFile(IDataPartStorage & storage, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    static void writeInvalidatedSystemColumnsFile(IDisk & disk, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+    static void writeInvalidatedSystemColumnsFile(IDiskTransaction & transaction, const std::filesystem::path & part_dir, const NameSet & columns, const WriteSettings & settings);
+
     CompressionCodecPtr default_codec;
 
     mutable std::unique_ptr<VersionMetadata> version;
@@ -560,6 +571,12 @@ public:
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
+    /// UNIQUE KEY — real filesystem path of the part's dense-index backing
+    /// file, or `std::nullopt` if absent (legacy part, not-yet-written, or
+    /// non-UK table). Treat as an opaque "is there an on-disk dense index
+    /// for this part?" probe; the backend code owns the format.
+    std::optional<String> getDenseIndexBackingPath() const;
+
     /// UNIQUE KEY — cache-key identity for this part. Prefers the part's
     /// UUID when set (stable across ATTACH / rename); falls back to
     /// disk:path otherwise (unique within the process, sufficient for an
@@ -584,6 +601,9 @@ public:
     static constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     static constexpr auto METADATA_VERSION_FILE_NAME = "metadata_version.txt";
+
+    /// File that lists persisted system columns whose stored values became stale.
+    static constexpr auto INVALIDATED_SYSTEM_COLUMNS_FILE_NAME = "invalidated_system_columns.txt";
 
     /// One of part files which is used to check how many references (I'd like
     /// to say hardlinks, but it will confuse even more) we have for the part
@@ -832,6 +852,9 @@ private:
 
     /// Reads columns substreams from columns_substreams.txt.
     void loadColumnsSubstreams();
+
+    /// Reads invalidated_system_columns.txt if present.
+    void loadInvalidatedSystemColumns();
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
