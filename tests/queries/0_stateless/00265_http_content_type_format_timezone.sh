@@ -10,9 +10,11 @@ tmpdir="$(mktemp -d "${CLICKHOUSE_TMP}/00265_http_content_type_format_timezone.X
 trap 'rm -rf "$tmpdir"' EXIT
 
 # Every request below must answer with `X-ClickHouse-Timezone`, including the deliberately failing
-# query, which still reports it. Its absence means the request never reached query execution, e.g.
-# the server refused it before parsing or the connection was reset. Report that on stderr: piping
-# curl's merged output into `grep` drops the diagnostic and leaves only missing header lines.
+# query, which still reports it. A missing header means the request never reached query execution,
+# e.g. the server refused it before parsing; a non-zero `curl` exit means the request itself
+# failed, e.g. the connection was reset, which counts even when the headers had already arrived.
+# Report either on stderr: piping `curl`'s merged output into `grep` drops the diagnostic and
+# leaves only missing header lines.
 # Keep the response body in a file, it is binary for `Native` and `RowBinary`.
 curl_headers() {
     # Truncate first: on an early transport failure curl never opens -o, so the previous request's
@@ -23,7 +25,7 @@ curl_headers() {
     local rc=$?
     # Anchored: `Access-Control-Expose-Headers` lists this name on every response.
     if [ $rc -ne 0 ] || ! grep -qE '^< X-ClickHouse-Timezone:' "$tmpdir/diag"; then
-        echo "HTTP request did not reach query execution (curl exit $rc):" >&2
+        echo "HTTP request failed or did not reach query execution (curl exit $rc):" >&2
         cat "$tmpdir/diag" "$tmpdir/body" >&2
         return 1
     fi
