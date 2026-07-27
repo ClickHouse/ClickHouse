@@ -1282,29 +1282,18 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             try
             {
-                /// Do not constant-fold when any argument type drifted from the type the function was
-                /// resolved for during analysis (a concurrent EXCHANGE TABLES swapping the underlying
-                /// table between analysis and header computation, or JOIN use_nulls / group_by_use_nulls
-                /// widening a header column). Folding on a drifted argument is unsafe in three distinct
-                /// ways, so an exact type comparison (not a wrapper-stripped one) is required:
-                ///   - a strict function (arithmetic) on a different base type trips a LOGICAL_ERROR
-                ///     inside the function body, aborting the server in debug/sanitizer builds;
-                ///   - a wrapper-preserving function (materialize, toNullable) returns a column whose
-                ///     type mismatches the resolved result type, tripping the columnMatchesType check;
-                ///   - a wrapper-sensitive value folder (isNullable folds straight from the argument
-                ///     type) returns a definitive but WRONG value whose result type is unchanged, so no
-                ///     type check catches it at all.
-                /// Folding is only an optimization and the node's declared result type is already known,
-                /// so skip it. For header-only evaluation (input_rows_count == 0) create an empty column
-                /// of the declared result type so header computation can proceed. For the shared
-                /// partial-evaluation callers with input_rows_count == 1 (getFilterResult /
-                /// createSelector / extractPathValuesFromFilter, reached via JOIN rewrites, shard
-                /// skipping and virtual-column path extraction) leave the column null: they treat any
-                /// non-null output as a definitive folded result (getBool(0), hashing), so a fabricated
-                /// or wrong value would silently change JOIN rewrites or skip the wrong shards. A null
-                /// column routes them through their existing "unknown value" path. The real execution
-                /// path re-resolves the function and reports a clean, recoverable error if the drift is
-                /// genuinely illegal.
+                /// A function node is resolved for a fixed set of argument types during analysis, but
+                /// partial evaluation can be handed an argument of a different type. Folding is then
+                /// not safe, so skip it: the fold is only an optimization and the node's declared
+                /// result type is already known.
+                /// The comparison must be exact rather than wrapper-stripped, because a
+                /// wrapper-sensitive folder (`isNullable`) derives its value from the argument type
+                /// alone, so a wrapper-only difference would yield a definitive but wrong value whose
+                /// result type is unchanged.
+                /// With `input_rows_count == 0` produce an empty column of the declared result type so
+                /// header computation can proceed. With `input_rows_count == 1` leave the column null:
+                /// the callers of `evaluatePartialResult` treat any non-null output as a definitive
+                /// folded value, so a null routes them through their existing "unknown value" path.
                 bool argument_types_drifted = false;
                 const auto & expected_argument_types = node->function_base->getArgumentTypes();
                 if (expected_argument_types.size() == arguments.size())
@@ -1383,6 +1372,16 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                 data = array->getDataPtr();
 
             res_column.column = data;
+
+            /// Carry the ACTUAL nested type, for the same reason as in the `ALIAS` case below: the
+            /// declared `result_type` was derived during analysis from the type the argument had
+            /// then, so keeping it while extracting a drifted nested column would hide the drift
+            /// from the argument-type check in the `FUNCTION` branch above.
+            /// `ExpressionActions` derives both the column and the type here as well (see the
+            /// `ARRAY_JOIN` case in `ExpressionActions::executeAction`).
+            if (const auto & array_type = getArrayJoinDataType(key.type))
+                res_column.type = array_type->getNestedType();
+
             break;
         }
 

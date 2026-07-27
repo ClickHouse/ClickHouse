@@ -7,6 +7,7 @@
 #include <Columns/ColumnVector.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -117,6 +118,62 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindAliasDoesNotAbortHeaderC
 
     ASSERT_TRUE(result.has("negate_result"));
     EXPECT_EQ(result.getByName("negate_result").type->getName(), expected_result_type);
+}
+
+/// `ARRAY_JOIN` must not hide the drift either. It extracts the nested column of its argument, so
+/// keeping the declared nested type from analysis while extracting a drifted one would let a
+/// downstream function be executed on a mismatched column, exactly as an alias would.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindArrayJoinDoesNotAbortHeaderComputation)
+{
+    tryRegisterFunctions();
+
+    ActionsDAG dag;
+    const auto & input = dag.addInput("a", std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>()));
+    const auto & array_join = dag.addArrayJoin(input, "a_array_join");
+    auto function = FunctionFactory::instance().get("negate", getContext().context);
+    const auto & function_node = dag.addFunction(function, {&array_join}, "negate_result");
+    dag.getOutputs().clear();
+    dag.getOutputs().push_back(&function_node);
+
+    const auto expected_result_type = function_node.result_type->getName();
+
+    auto drifted_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt256>());
+    Block drifted_header = headerWith("a", drifted_type);
+
+    Block result;
+    ASSERT_NO_THROW(result = dag.updateHeader(drifted_header));
+
+    ASSERT_TRUE(result.has("negate_result"));
+    EXPECT_EQ(result.getByName("negate_result").type->getName(), expected_result_type);
+}
+
+/// Drift must not produce a WRONG folded value either, which no type check can catch on its own:
+/// `isNullable` derives its result from the argument type alone, so its result type stays `UInt8`
+/// whether or not the argument drifted. Resolved for `String` it folds to 0; handed a
+/// `Nullable(String)` column it would fold to 1 - a definitive but wrong value.
+///
+/// This is also the `input_rows_count == 1` contract. `evaluatePartialResult` with one row is used
+/// by the optimizer callers (JOIN rewrites, shard skipping, virtual-column path extraction), which
+/// treat any non-null column as a definitive folded value, so on drift the column must stay null and
+/// route them through their "unknown value" path rather than hand them a fabricated 1.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftFoldsNoValueForOneRowCallers)
+{
+    tryRegisterFunctions();
+
+    auto dag = makeDagOverInput("s", std::make_shared<DataTypeString>(), "isNullable");
+
+    auto drifted_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
+    ActionsDAG::IntermediateExecutionResult node_to_column;
+    node_to_column[dag.getInputs().front()]
+        = ColumnWithTypeAndName{drifted_type->createColumnConstWithDefaultValue(1), drifted_type, "s"};
+
+    ColumnsWithTypeAndName result;
+    ASSERT_NO_THROW(
+        result = ActionsDAG::evaluatePartialResult(node_to_column, dag.getOutputs(), /* input_rows_count= */ 1, {}));
+
+    ASSERT_EQ(result.size(), 1u);
+    EXPECT_EQ(result.front().column, nullptr)
+        << "a drifted argument must not fold to a definitive value for the one-row callers";
 }
 
 /// A header column whose type did NOT drift must still be constant-folded exactly as before, so the
