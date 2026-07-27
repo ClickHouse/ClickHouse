@@ -259,9 +259,9 @@ public:
         , context(std::move(context_))
         , logger(getLogger("DistributedIndexAnalysis"))
         , settings(context->getSettingsRef())
-/// Both flags stay false without fibers, so establishConnections() and executeRemoteAnalysis()
-/// select their synchronous counterparts. Gating here rather than in establishConnectionsAsync()
-/// or executeRemoteAnalysisAsync(): those have throwing #else branches, not sync fallbacks.
+/// Both flags stay false without fibers, so `establishConnections` and `executeRemoteAnalysis`
+/// select their synchronous counterparts. Gating here rather than in `establishConnectionsAsync`
+/// or `executeRemoteAnalysisAsync`: those have throwing `#else` branches, not sync fallbacks.
 #if defined(OS_LINUX) && CH_FIBERS_SUPPORTED
         , use_hedged_requests(settings[Setting::use_hedged_requests])
         , use_async_reading(settings[Setting::async_socket_for_remote])
@@ -420,7 +420,7 @@ private:
 
         return connections;
     }
-/// Where fibers are unsupported establishConnections() drops the call, so no stub is needed.
+/// Where fibers are unsupported `establishConnections` drops the call, so no stub is needed.
 #elif CH_FIBERS_SUPPORTED
     std::vector<Connection *> establishConnectionsAsync(const ConnectionTimeouts &)
     {
@@ -745,7 +745,7 @@ private:
         if (cancellation_exception)
             std::rethrow_exception(cancellation_exception);
     }
-/// Where fibers are unsupported executeRemoteAnalysis() drops the call, so no stub is needed.
+/// Where fibers are unsupported `executeRemoteAnalysis` drops the call, so no stub is needed.
 #elif CH_FIBERS_SUPPORTED
     void executeRemoteAnalysisAsync(
         const std::vector<size_t> &,

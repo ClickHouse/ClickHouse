@@ -19,10 +19,10 @@
 #endif
 
 /// Whether the asynchronous (fiber-backed) remote read/send path is compiled in. This is the
-/// single definition of that condition: RemoteQueryExecutor's guards are written in terms of it,
+/// single definition of that condition: `RemoteQueryExecutor`'s guards are written in terms of it,
 /// so no copy of the condition can drift from it.
 ///
-/// Note that RemoteSource and the epoll/eventfd/timerfd helpers keep their own
+/// Note that `RemoteSource` and the epoll/eventfd/timerfd helpers keep their own
 /// `OS_LINUX || OS_DARWIN` guards - those select platform primitives that exist regardless of
 /// fibers, and are a different condition from this one.
 #if (defined(OS_LINUX) || defined(OS_DARWIN)) && CH_FIBERS_SUPPORTED

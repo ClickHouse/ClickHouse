@@ -328,8 +328,8 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
-    /// Used only by the fiber-backed paths (readAsync, processParallelReplicaPacketIfAny), which
-    /// are compiled out where CH_REMOTE_ASYNC_IO is 0 (see Common/RemoteAsyncCapability.h).
+    /// Used only by the fiber-backed paths (`readAsync`, `processParallelReplicaPacketIfAny`),
+    /// which are compiled out where `CH_REMOTE_ASYNC_IO` is 0 (see `Common/RemoteAsyncCapability.h`).
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     [[maybe_unused]] bool packet_in_progress = false;
 #endif
