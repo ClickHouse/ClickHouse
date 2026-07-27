@@ -1,5 +1,6 @@
--- Tags: no-sanitizers
+-- Tags: no-sanitizers, no-flaky-check
 -- no-sanitizers: too slow
+-- no-flaky-check: the test normally takes ~2 minutes in the debug build, so repeated runs under random settings exceed the 180 s per-test limit; this PR only changed the table SETTINGS line
 
 -- Regression test: automatic parallel replicas must not hit
 -- 'local_replica_plan_reading_step->getAnalyzedResult() == nullptr' when
