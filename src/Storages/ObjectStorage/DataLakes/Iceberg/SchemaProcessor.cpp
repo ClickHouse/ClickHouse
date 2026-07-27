@@ -355,6 +355,14 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name, bool
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown Iceberg type: {}", type_name);
 }
 
+DataTypePtr IcebergSchemaProcessor::getFieldTypeFromIcebergField(const Poco::JSON::Object::Ptr & field, bool allow_geo_parser)
+{
+    /// A throwaway processor: with is_subfield_of_root left false nothing is written to the
+    /// per-schema caches, so this cannot disturb the state of a live processor.
+    IcebergSchemaProcessor processor(allow_geo_parser);
+    return processor.getFieldType(field, f_type, field->getValue<bool>(f_required));
+}
+
 DataTypePtr
 IcebergSchemaProcessor::getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root)
 {

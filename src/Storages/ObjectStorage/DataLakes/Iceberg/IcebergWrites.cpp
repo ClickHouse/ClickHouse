@@ -313,6 +313,35 @@ Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadat
         "Not found schema with current-schema-id {} in the schemas list",
         current_schema_id);
 }
+
+/// True if `input` and `expected` denote the same Iceberg field type. getIcebergType() maps
+/// several ClickHouse types onto one Iceberg primitive, so compare after that round-trip
+/// instead of with IDataType::equals.
+bool typesMatchThroughIcebergMapping(const DataTypePtr & input, const DataTypePtr & expected)
+{
+    if (input->equals(*expected))
+        return true;
+
+    try
+    {
+        Int32 iter = 0;
+        const auto [iceberg_type, required] = Iceberg::getIcebergType(input, iter);
+
+        Poco::JSON::Object field;
+        field.set(Iceberg::f_type, iceberg_type);
+        field.set(Iceberg::f_required, required);
+        /// Reparse so the reconstruction sees what a metadata file stores, not an in-memory Var.
+        Poco::JSON::Parser parser;
+        auto reparsed = parser.parse(stringifyJSON(field)).extract<Poco::JSON::Object::Ptr>();
+        auto normalized = Iceberg::IcebergSchemaProcessor::getFieldTypeFromIcebergField(reparsed, /*allow_geo_parser=*/true);
+        return normalized->equals(*expected);
+    }
+    catch (const Exception &)
+    {
+        /// Not writable as Iceberg: CREATE already rejected it, so do not shadow that error here.
+        return false;
+    }
+}
 }
 
 void validateInputSchemaMatchesCurrentIcebergSchema(
@@ -352,7 +381,7 @@ void validateInputSchemaMatchesCurrentIcebergSchema(
     auto expected_it = expected_columns->begin();
     for (; input_it != input_columns.end(); ++input_it, ++expected_it)
     {
-        if (input_it->name != expected_it->name || !input_it->type->equals(*expected_it->type))
+        if (input_it->name != expected_it->name || !typesMatchThroughIcebergMapping(input_it->type, expected_it->type))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Cannot write into Iceberg table: input column '{}' of type {} does not match field '{}' of type {} "

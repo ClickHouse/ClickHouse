@@ -1,2 +1,6 @@
 BAD_ARGUMENTS
 BAD_ARGUMENTS
+ok_u32	1
+ok_u64	1
+ok_date	1
+ok_dt	1

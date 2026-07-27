@@ -96,6 +96,10 @@ public:
 
     static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
 
+    /// Reconstructs one schema field's ClickHouse type exactly as the read path does, so the
+    /// write-side schema check can compare Iceberg-equivalent types instead of raw ones.
+    static DataTypePtr getFieldTypeFromIcebergField(const Poco::JSON::Object::Ptr & field, bool allow_geo_parser);
+
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
