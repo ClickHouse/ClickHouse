@@ -14,10 +14,13 @@ SET allow_experimental_json_type = 1;
 SET use_variant_as_common_type = 1;
 
 -- Case 1: Variant -> Dynamic. Source column has no dynamic subcolumns, target does.
+-- Full part storage is pinned: a Packed part takes the full-rewrite path, which never reaches
+-- the stale-file accounting this test covers.
 DROP TABLE IF EXISTS t_modify_to_dyn;
 CREATE TABLE t_modify_to_dyn (x UInt64, y UInt64)
 ENGINE = MergeTree ORDER BY x
-SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+         min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
 
 INSERT INTO t_modify_to_dyn SELECT number, number FROM numbers(3);
 ALTER TABLE t_modify_to_dyn MODIFY COLUMN y Variant(UInt64, String) SETTINGS mutations_sync = 1;
@@ -41,24 +44,29 @@ SELECT count() FROM t_modify_to_dyn;
 
 DROP TABLE t_modify_to_dyn;
 
--- Case 2: plain String -> JSON. Source column has no dynamic subcolumns, target does.
-DROP TABLE IF EXISTS t_modify_to_json;
-CREATE TABLE t_modify_to_json (x UInt64, y String)
+-- Case 2: a column declared Variant up front, then modified into Dynamic. This is the shape the
+-- AST fuzzer produced in Stress test (arm_tsan) on PR #104510: the source column already has a
+-- variant_discr stream, so the freshly written one collides by name with the stale-file accounting.
+DROP TABLE IF EXISTS t_modify_variant_to_dyn;
+CREATE TABLE t_modify_variant_to_dyn (x UInt64, y Variant(UInt64, String))
 ENGINE = MergeTree ORDER BY x
-SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
+         min_bytes_for_full_part_storage = 0, min_rows_for_full_part_storage = 0;
 
-INSERT INTO t_modify_to_json SELECT number, '{"a": ' || toString(number) || '}' FROM numbers(3);
-ALTER TABLE t_modify_to_json MODIFY COLUMN y JSON SETTINGS mutations_sync = 1;
-INSERT INTO t_modify_to_json SELECT number, '{"a": ' || toString(number) || ', "b": "x"}' FROM numbers(3, 3);
+INSERT INTO t_modify_variant_to_dyn SELECT number, number FROM numbers(3);
+INSERT INTO t_modify_variant_to_dyn SELECT number, 'str_' || toString(number) FROM numbers(3, 3);
 
-OPTIMIZE TABLE t_modify_to_json FINAL;
+ALTER TABLE t_modify_variant_to_dyn MODIFY COLUMN y Dynamic(max_types = 4) SETTINGS mutations_sync = 1;
+INSERT INTO t_modify_variant_to_dyn SELECT number, number FROM numbers(6, 3);
 
-SELECT count() FROM t_modify_to_json;
-SELECT x, y.a FROM t_modify_to_json ORDER BY x;
-CHECK TABLE t_modify_to_json SETTINGS check_query_single_value_result = 1;
+OPTIMIZE TABLE t_modify_variant_to_dyn FINAL;
 
-DETACH TABLE t_modify_to_json;
-ATTACH TABLE t_modify_to_json;
-SELECT count() FROM t_modify_to_json;
+SELECT count() FROM t_modify_variant_to_dyn;
+SELECT dynamicType(y) AS t, count() FROM t_modify_variant_to_dyn GROUP BY t ORDER BY t;
+CHECK TABLE t_modify_variant_to_dyn SETTINGS check_query_single_value_result = 1;
 
-DROP TABLE t_modify_to_json;
+DETACH TABLE t_modify_variant_to_dyn;
+ATTACH TABLE t_modify_variant_to_dyn;
+SELECT count() FROM t_modify_variant_to_dyn;
+
+DROP TABLE t_modify_variant_to_dyn;
