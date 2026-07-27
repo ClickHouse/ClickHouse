@@ -1288,7 +1288,7 @@ curl 127.0.0.1:9363/metrics
 ```
 
 ## query_log {#query_log}
-Setting for logging queries received with the [log_queries=1](/reference/settings/session-settings) setting.
+Setting for logging queries received with the [log_queries=1](/reference/settings/session-settings/log-queries#log_queries) setting.
 
 Queries are logged in the [system.query_log](/reference/system-tables/query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1374,7 +1374,7 @@ The following settings are available:
 ```
 
 ## query_thread_log {#query_thread_log}
-Setting for logging threads of queries received with the [log_query_threads=1](/reference/settings/session-settings#log_query_threads) setting.
+Setting for logging threads of queries received with the [log_query_threads=1](/reference/settings/session-settings/log-query#log_query_threads) setting.
 
 Queries are logged in the [system.query_thread_log](/reference/system-tables/query_thread_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1398,7 +1398,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 ```
 
 ## query_views_log {#query_views_log}
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/reference/settings/session-settings#log_query_views) setting.
+Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](/reference/settings/session-settings/log-query#log_query_views) setting.
 
 Queries are logged in the [system.query_views_log](/reference/system-tables/query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
@@ -1634,7 +1634,7 @@ For the value of the `incl` attribute, see the section "[Configuration files](/c
 
 **See Also**
 
-- [skip_unavailable_shards](/reference/settings/session-settings#skip_unavailable_shards)
+- [skip_unavailable_shards](/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 - [Cluster Discovery](/guides/oss/deployment-and-scaling/cluster-discovery)
 - [Replicated database engine](/reference/engines/database-engines/replicated)
 
@@ -1671,7 +1671,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 **See also**
 
-- [session_timezone](/reference/settings/session-settings#session_timezone)
+- [session_timezone](/reference/settings/session-settings/other#session_timezone)
 
 ## tcp_port {#tcp_port}
 Port for communicating with clients over the TCP protocol.
@@ -1910,7 +1910,7 @@ Data part headers already stored with this setting can't be restored to their pr
 
 ## distributed_ddl {#distributed_ddl}
 Manage executing [distributed ddl queries](/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
-Works only if [ZooKeeper](/reference/settings/server-settings/settings#zookeeper) is enabled.
+Works only if [ZooKeeper](/reference/settings/server-settings/settings/zookeeper#zookeeper) is enabled.
 
 The configurable settings within `<distributed_ddl>` include:
 
@@ -2005,7 +2005,7 @@ Section of the configuration file that contains settings:
 - Path to folder where users created by SQL commands are stored.
 - ZooKeeper node path where users created by SQL commands are stored and replicated.
 
-If this section is specified, the path from [users_config](/reference/settings/server-settings/settings#users_config) and [access_control_path](/reference/settings/server-settings/settings#access_control_path) won't be used.
+If this section is specified, the path from [users_config](/reference/settings/server-settings/settings/users#users_config) and [access_control_path](/reference/settings/server-settings/settings/access-control#access_control_path) won't be used.
 
 The `user_directories` section can contain any number of items, the order of the items means their precedence (the higher the item the higher the precedence).
 
