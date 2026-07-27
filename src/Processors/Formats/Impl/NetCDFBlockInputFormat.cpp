@@ -171,11 +171,11 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     for (size_t position = 0; position < layout.row_dimensions.size(); ++position)
         position_of_dimension[layout.row_dimensions[position]] = position;
 
-    std::unordered_set<std::string_view> variable_names;
-    for (const auto & variable : header.variables)
-        if (!variable_names.insert(variable.name).second)
+    std::unordered_map<std::string_view, size_t> variable_ids;
+    for (size_t i = 0; i < header.variables.size(); ++i)
+        if (!variable_ids.emplace(header.variables[i].name, i).second)
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "The NetCDF file has more than one variable named {}", variable.name);
+                "The NetCDF file has more than one variable named {}", header.variables[i].name);
 
     /// The columns with the indexes along the dimensions come first, so that the columns with the
     /// data of the variables keep the order they have in the file.
@@ -183,14 +183,27 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
     {
         for (size_t position = 0; position < layout.row_dimensions.size(); ++position)
         {
-            const auto & dimension = header.dimensions[layout.row_dimensions[position]];
+            size_t dimension_id = layout.row_dimensions[position];
+            const auto & dimension = header.dimensions[dimension_id];
 
-            /// A coordinate variable already provides the values along its dimension.
-            if (variable_names.contains(dimension.name))
+            /// A coordinate variable already provides the values along its dimension. It is a
+            /// variable that has the name of the dimension and is one-dimensional over it - a
+            /// variable that merely shares the name says nothing about the axis, and then the index
+            /// along the dimension is only available as a column of its own.
+            auto it = variable_ids.find(dimension.name);
+            bool has_coordinate_variable = it != variable_ids.end()
+                && effective_dimensions[it->second] == std::vector<size_t>{dimension_id};
+
+            if (has_coordinate_variable)
                 continue;
 
+            /// The name of the dimension is taken by a variable that is not a coordinate variable.
+            String column_name = dimension.name;
+            for (size_t attempt = 1; variable_ids.contains(column_name); ++attempt)
+                column_name = dimension.name + "_index" + (attempt == 1 ? "" : "_" + std::to_string(attempt));
+
             NetCDFTableLayout::Column column;
-            column.name = dimension.name;
+            column.name = std::move(column_name);
             column.type = std::make_shared<DataTypeUInt64>();
             column.dimension_position = position;
             layout.columns.push_back(std::move(column));

@@ -271,9 +271,24 @@ void NetCDFHeader::resolveNumberOfRecords(UInt64 file_size)
     /// A file written in the streaming mode does not store the number of records, so the reader is
     /// expected to derive it from the size of the file.
     if (record_size == 0 || file_size <= records_begin)
+    {
         num_records = 0;
+    }
     else
-        num_records = (file_size - records_begin) / record_size;
+    {
+        UInt64 records_size = file_size - records_begin;
+
+        /// The record section is the last thing in the file and has nothing after it, so the size
+        /// of the file has to be an exact number of records. A remainder means that the file was
+        /// truncated in the middle of a record, and reading the whole records before it would
+        /// silently return fewer rows than the file was meant to have.
+        if (records_size % record_size != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "The NetCDF file does not store the number of records and its record section of {} bytes is not "
+                "a whole number of records of {} bytes: the file is truncated", records_size, record_size);
+
+        num_records = records_size / record_size;
+    }
 
     if (unlimited_dimension_id)
         dimensions[*unlimited_dimension_id].length = num_records;

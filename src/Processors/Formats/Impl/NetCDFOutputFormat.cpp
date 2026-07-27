@@ -12,11 +12,14 @@
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/transformEndianness.h>
 
 #include <base/arithmeticOverflow.h>
 
+#include <algorithm>
+#include <bit>
 #include <unordered_set>
 
 namespace DB
@@ -84,11 +87,21 @@ void writeAttribute(WriteBuffer & out, std::string_view name, NetCDFType type, U
     writePadding(out, data.size());
 }
 
-/// A name that the format cannot store would produce a file that no reader can open.
+/// A name that the format cannot store would produce a file that no reader can open. The rules are
+/// the ones of the classic format: the first character is a letter, a digit, an underscore or the
+/// beginning of a UTF-8 sequence; the rest are printable characters other than a slash; and there
+/// are no trailing spaces.
+/// See https://docs.unidata.ucar.edu/nug/current/file_format_specifications.html
 void checkName(const String & name)
 {
     if (name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The NetCDF format cannot store a column with an empty name");
+
+    auto first = static_cast<unsigned char>(name.front());
+    if (!isAlphaNumericASCII(name.front()) && first != '_' && first < 0x80)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The NetCDF format cannot store the name {} because a name has to begin with a letter, a digit or "
+            "an underscore", name);
 
     for (char c : name)
     {
@@ -100,6 +113,10 @@ void checkName(const String & name)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "The NetCDF format cannot store the name {} because it contains a control character", name);
     }
+
+    if (name.back() == ' ')
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The NetCDF format cannot store the name {} because it ends with a space", name);
 }
 
 /// The value that the NetCDF library writes for the data that is not there. It is used here to
@@ -111,22 +128,30 @@ String makeFillValue(T value)
     return String(reinterpret_cast<const char *>(&value), sizeof(T));
 }
 
-String getDefaultFillValue(NetCDFType type)
+/// The value that marks a NULL has to be a value that the data itself does not contain, or reading
+/// the file back would turn that value into a NULL. The default of the netCDF library is only the
+/// first choice, and the search goes over the bit patterns of the type, because the comparison of a
+/// reader is on the bytes of a value as they are stored in the file.
+template <typename T>
+String chooseFillValue(const T * data, size_t size, const UInt8 * null_map, T preferred)
 {
-    switch (type)
-    {
-        case NetCDFType::Byte: return makeFillValue<Int8>(-127);
-        case NetCDFType::Char: return makeFillValue<Int8>(0);
-        case NetCDFType::Short: return makeFillValue<Int16>(-32767);
-        case NetCDFType::Int: return makeFillValue<Int32>(-2147483647);
-        case NetCDFType::Float: return makeFillValue<Float32>(9.9692099683868690e+36f);
-        case NetCDFType::Double: return makeFillValue<Float64>(9.9692099683868690e+36);
-        case NetCDFType::UByte: return makeFillValue<UInt8>(255);
-        case NetCDFType::UShort: return makeFillValue<UInt16>(65535);
-        case NetCDFType::UInt: return makeFillValue<UInt32>(4294967295U);
-        case NetCDFType::Int64: return makeFillValue<Int64>(-9223372036854775806LL);
-        case NetCDFType::UInt64: return makeFillValue<UInt64>(18446744073709551614ULL);
-    }
+    using Bits = std::conditional_t<sizeof(T) == 1, UInt8,
+        std::conditional_t<sizeof(T) == 2, UInt16, std::conditional_t<sizeof(T) == 4, UInt32, UInt64>>>;
+
+    std::unordered_set<Bits> used;
+    used.reserve(size);
+    for (size_t i = 0; i < size; ++i)
+        if (!null_map || !null_map[i])
+            used.insert(std::bit_cast<Bits>(data[i]));
+
+    /// Every bit pattern of the same size is a value of the type, so `used.size() + 1` distinct
+    /// candidates cannot all be taken unless the data uses the whole domain of the type.
+    auto candidate = std::bit_cast<Bits>(preferred);
+    for (size_t attempt = 0; attempt <= used.size(); ++attempt, --candidate)
+        if (!used.contains(candidate))
+            return makeFillValue<T>(std::bit_cast<T>(candidate));
+
+    /// The data takes every value of the type, which is only possible for the small types.
     return {};
 }
 
@@ -224,6 +249,50 @@ void writeDateTime64Column(WriteBuffer & out, const IColumn & column, const UInt
     }
 }
 
+/// Picks the value to write the NULLs of a column as, looking at the data that the column holds.
+String chooseFillValue(const IColumn & column, const UInt8 * null_map, const String & name)
+{
+    size_t size = column.size();
+
+    switch (column.getDataType())
+    {
+        case TypeIndex::Int8:
+            return chooseFillValue<Int8>(assert_cast<const ColumnInt8 &>(column).getData().data(), size, null_map, -127);
+        case TypeIndex::UInt8:
+            return chooseFillValue<UInt8>(assert_cast<const ColumnUInt8 &>(column).getData().data(), size, null_map, 255);
+        case TypeIndex::Int16:
+            return chooseFillValue<Int16>(assert_cast<const ColumnInt16 &>(column).getData().data(), size, null_map, -32767);
+        case TypeIndex::UInt16:
+            return chooseFillValue<UInt16>(assert_cast<const ColumnUInt16 &>(column).getData().data(), size, null_map, 65535);
+        case TypeIndex::Int32:
+            return chooseFillValue<Int32>(assert_cast<const ColumnInt32 &>(column).getData().data(), size, null_map, -2147483647);
+        case TypeIndex::UInt32:
+            return chooseFillValue<UInt32>(assert_cast<const ColumnUInt32 &>(column).getData().data(), size, null_map, 4294967295U);
+        case TypeIndex::Int64:
+            return chooseFillValue<Int64>(
+                assert_cast<const ColumnInt64 &>(column).getData().data(), size, null_map, -9223372036854775806LL);
+        case TypeIndex::UInt64:
+            return chooseFillValue<UInt64>(
+                assert_cast<const ColumnUInt64 &>(column).getData().data(), size, null_map, 18446744073709551614ULL);
+        case TypeIndex::Float32:
+            return chooseFillValue<Float32>(
+                assert_cast<const ColumnFloat32 &>(column).getData().data(), size, null_map, 9.9692099683868690e+36f);
+        case TypeIndex::Float64:
+            return chooseFillValue<Float64>(
+                assert_cast<const ColumnFloat64 &>(column).getData().data(), size, null_map, 9.9692099683868690e+36);
+        case TypeIndex::DateTime64:
+        {
+            /// A `DateTime64` is a 64-bit integer with a scale, and it is written as one.
+            const auto & data = assert_cast<const ColumnDecimal<DateTime64> &>(column).getData();
+            return chooseFillValue<Int64>(
+                reinterpret_cast<const Int64 *>(data.data()), size, null_map, -9223372036854775806LL, name);
+        }
+        default:
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Unexpected column for the variable {} of the NetCDF format", name);
+    }
+}
+
 void writeStringColumn(WriteBuffer & out, const IColumn & column, UInt64 string_length)
 {
     static constexpr char zeros[64] = {};
@@ -268,14 +337,11 @@ NetCDFOutputFormat::NetCDFOutputFormat(WriteBuffer & out_, SharedHeader header_)
         variable.units = getUnits(type);
         variable.data = type->createColumn();
 
+        /// There is nothing in the format to mark a string as missing: an empty string is the
+        /// closest thing, and it is what a NULL is written as. For the other types the value that
+        /// the NULLs are written as is chosen in `finalizeImpl`, when the data is all there.
         if (is_nullable)
-        {
             variable.null_map = ColumnUInt8::create();
-            /// There is nothing in the format to mark a string as missing: an empty string is the
-            /// closest thing, and it is what a NULL is written as.
-            if (!variable.is_string)
-                variable.fill_value = getDefaultFillValue(variable.type);
-        }
 
         if (variable.is_string)
         {
@@ -346,6 +412,22 @@ void NetCDFOutputFormat::finalizeImpl()
         else
         {
             variable.element_size = netCDFTypeSize(variable.type);
+
+            /// The value that the NULLs are written as has to be absent from the data of the
+            /// column, so it can only be chosen once the whole column is there.
+            if (variable.null_map)
+            {
+                const auto & null_map = assert_cast<const ColumnUInt8 &>(*variable.null_map).getData();
+                variable.fill_value = chooseFillValue(*variable.data, null_map.data(), variable.name);
+
+                /// The data can only take every value of the type when the type is small, and then
+                /// there is nothing to write a NULL as. A column that has no NULLs is written
+                /// without the attribute instead, and is read back as not Nullable.
+                if (variable.fill_value.empty() && std::find(null_map.begin(), null_map.end(), 1) != null_map.end())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "The column {} is Nullable and its values take every value of its type, so the NetCDF "
+                        "format has no value left to write the NULLs as", variable.name);
+            }
         }
 
         if (common::mulOverflow(num_rows, variable.element_size, variable.size))

@@ -45,7 +45,7 @@ string per station. The trailing zero bytes that pad a shorter string are remove
 
 Attributes of the file and of the variables are not part of the table, with the exception of
 `_FillValue` and `missing_value`, which are used by
-[`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null).
+[`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats.md/#input_format_netcdf_fill_value_as_null).
 In particular, the `scale_factor` and `add_offset` attributes of the CF conventions are not applied:
 a packed variable is read as the integers that are stored in the file.
 
@@ -111,10 +111,13 @@ beginning of the file, so the whole result is kept in memory until the query fin
 The version of the format is chosen automatically: CDF-5 when a column needs one of the types that
 only CDF-5 has, or when a column takes more than 4 GiB, and CDF-2 otherwise.
 
-A [Nullable](/sql-reference/data-types/nullable.md) column is written as the default fill value of
-its type together with the `_FillValue` attribute, which is the way the format marks missing data.
+A [Nullable](/sql-reference/data-types/nullable.md) column is written with the `_FillValue`
+attribute, which is the way the format marks missing data. The value of the attribute is the
+default fill value of the type of the netCDF library, or, when the data of the column contains that
+value, another value that the data does not contain, so that a value of the column is never read
+back as a `NULL`.
 Read the file back with
-[`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)
+[`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats.md/#input_format_netcdf_fill_value_as_null)
 to get the `NULL`s again. A `NULL` in a `String` column is written as an empty string, because the
 format has no way to mark a missing string.
 
@@ -122,5 +125,5 @@ format has no way to mark a missing string.
 
 | Setting                                                                                                                        | Description                                                                                     | Default |
 |--------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------|
-| [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)         | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
-| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns)   | Add a column with the index along every dimension that has no variable of the same name.        | `false` |
+| [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats.md/#input_format_netcdf_fill_value_as_null)         | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
+| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats.md/#input_format_netcdf_add_dimension_columns)   | Add a column with the index along every dimension that has no coordinate variable.               | `false` |
