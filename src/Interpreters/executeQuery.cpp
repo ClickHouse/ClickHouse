@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -83,8 +85,10 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
+#if USE_RAPIDJSON
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
+#endif
 
 #include <IO/CompressionMethod.h>
 
@@ -1273,8 +1277,12 @@ static BlockIO executeQueryImpl(
         }
         else if (settings[Setting::dialect] == Dialect::mongo && !internal)
         {
+#if USE_RAPIDJSON
             Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+#endif
         }
         else
         {

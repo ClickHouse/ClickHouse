@@ -1,11 +1,11 @@
-#include "MongoHandlerFactory.h"
+#include <Server/MongoHandlerFactory.h>
 
-#if USE_MONGODB
+/// The Mongo wire protocol needs BSON (mongo-cxx-driver) and the Mongo dialect (rapidjson).
+#if USE_MONGODB && USE_RAPIDJSON
 
-#include <memory>
 #include <Server/MongoHandler.h>
 
-#include <iostream>
+#include <Common/logger_useful.h>
 
 namespace DB
 {

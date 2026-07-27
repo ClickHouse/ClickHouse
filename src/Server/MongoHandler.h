@@ -1,12 +1,15 @@
 #pragma once
 
-#include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
+#include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <base/types.h>
 #include <Common/CurrentMetrics.h>
-#include "IServer.h"
+#include <Server/IServer.h>
 #include "config.h"
 
-#if USE_MONGODB
+/// The Mongo wire protocol needs BSON (mongo-cxx-driver) and the Mongo dialect (rapidjson).
+#if USE_MONGODB && USE_RAPIDJSON
 
 #include <Core/Mongo/MongoProtocol.h>
 

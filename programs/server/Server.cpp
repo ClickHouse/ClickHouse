@@ -145,7 +145,7 @@
 #include <Common/JemallocCacheArena.h>
 #include <Common/JemallocMergeTreeArena.h>
 
-#include "Server/MongoHandlerFactory.h"
+#include <Server/MongoHandlerFactory.h>
 #include "config.h"
 #include <Common/config_version.h>
 
@@ -3795,7 +3795,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "InterserverIOHTTPHandler-factory"), ProfileEvents::InterfaceInterserverReceiveBytes, ProfileEvents::InterfaceInterserverSendBytes)
             );
-#if USE_MONGODB
+#if USE_MONGODB && USE_RAPIDJSON
         if (type == "mongo")
             return TCPServerConnectionFactory::Ptr(new MongoHandlerFactory(*this, ProfileEvents::InterfaceMongoReceiveBytes, ProfileEvents::InterfaceMongoSendBytes));
 #endif
@@ -4151,7 +4151,7 @@ void Server::createServers(
             });
         }
 
-#if USE_MONGODB
+#if USE_MONGODB && USE_RAPIDJSON
         if (server_type.shouldStart(ServerType::Type::MONGO))
         {
             port_name = "mongo_port";

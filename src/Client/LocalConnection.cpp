@@ -1,4 +1,6 @@
 #include <Client/LocalConnection.h>
+
+#include "config.h"
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
@@ -26,8 +28,10 @@
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
+#if USE_RAPIDJSON
 #include <Parsers/Mongo/parseMongoQuery.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
+#endif
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace ProfileEvents
@@ -246,8 +250,10 @@ void LocalConnection::sendQuery(
             parser = std::make_unique<ParserKQLStatement>(end, settings[Setting::allow_settings_after_format_in_insert]);
         else if (dialect == Dialect::prql)
             parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#if USE_RAPIDJSON
         else if (dialect == Dialect::mongo)
             parser = std::make_unique<Mongo::ParserMongoQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#endif
         else if (dialect == Dialect::promql)
             parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
         else
@@ -264,8 +270,10 @@ void LocalConnection::sendQuery(
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
+#if USE_RAPIDJSON
         else if (dialect == Dialect::mongo)
             parsed_query = Mongo::parseMongoQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+#endif
         else
             parsed_query = parseQueryAndMovePosition(
                 *parser,
