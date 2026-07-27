@@ -103,6 +103,16 @@ def test_paimon_rest_catalog(started_cluster):
         node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
         == "test_dlf.test_table\n"
     )
+    assert (
+        node.query("EXISTS TABLE paimon_rest_db_dlf.`test_dlf.missing`;")
+        == "0\n"
+    )
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query("DESCRIBE TABLE paimon_rest_db_dlf.`test_dlf.missing`;")
+    message = str(exc_info.value)
+    assert "Code: 60" in message, message
+    assert "UNKNOWN_TABLE" in message, message
+
     assert node.query(
         "DESC `test_dlf.test_table`;", database="paimon_rest_db_dlf"
     ) == (
