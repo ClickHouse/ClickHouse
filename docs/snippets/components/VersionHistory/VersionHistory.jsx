@@ -1,11 +1,11 @@
 /**
- * VersionHistory — accordion containing a 3-column table of when a setting
+ * `VersionHistory` — accordion containing a 3-column table of when a setting
  * changed across ClickHouse versions.
  *
  * Mintlify equivalent of clickhouse-docs's `src/theme/VersionHistory`.
  *
  * Usage:
- *   import VersionHistory from "/snippets/components/VersionHistory/VersionHistory.jsx";
+ *   import { VersionHistory } from "/snippets/components/VersionHistory/VersionHistory.jsx";
  *
  *   <VersionHistory rows={[
  *     { id: "row-1", items: [
@@ -17,10 +17,11 @@
  *
  * Each row's `items` is expected to be `[Version, Default value, Comment]`.
  */
-const VersionHistory = ({ rows = [] }) => {
+export const VersionHistory = ({ rows = [] }) => {
   const headers = ["Version", "Default value", "Comment"];
   return (
-    <Accordion title="Version history">
+    <details>
+      <summary>Version history</summary>
       <table>
         <thead>
           <tr>
@@ -39,7 +40,7 @@ const VersionHistory = ({ rows = [] }) => {
           ))}
         </tbody>
       </table>
-    </Accordion>
+    </details>
   );
 };
 

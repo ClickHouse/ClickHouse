@@ -72,6 +72,10 @@ MARKDOWN_FENCE_RE = re.compile(r"^(?P<fence>`{3,}|~{3,})")
 MINTLIFY_HEADING_PUNCTUATION_RE = re.compile(r"[?,;:!'\"()\[\]{}]")
 IMPORT_RE = re.compile(
     r'^import\s+(?P<symbol>[A-Za-z_$][\w$]*)\s+from\s+[^\n]+;\s*$', re.MULTILINE)
+NAMED_IMPORT_RE = re.compile(
+    r'^import\s+\{\s*(?P<symbol>[A-Za-z_$][\w$]*)\s*\}\s+from\s+[^\n]+;\s*$',
+    re.MULTILINE,
+)
 
 SETTINGS_SPLIT_FAMILIES = {
     "session-settings": {
@@ -114,6 +118,15 @@ SETTINGS_SPLIT_FAMILIES = {
         "explorer_root": "/merge-tree-settings",
         "component_name": "MergeTreeSettingsExplorer",
         "component_path": "snippets/components/MergeTreeSettingsExplorer/MergeTreeSettingsExplorer.jsx",
+        # The marker-based MergeTree source keeps these imports outside the
+        # generated region in the legacy page. They are therefore unavailable
+        # in the Mintlify overview shell when it is split into detail pages.
+        "detail_component_imports": (
+            'import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";',
+            'import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";',
+            'import SettingsInfoBlock from "/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";',
+            'import { VersionHistory } from "/snippets/components/VersionHistory/VersionHistory.jsx";',
+        ),
         "max_characters": SESSION_SETTINGS_MAX_CHARS_PER_PAGE,
         "detail_intro": (
             "These settings are available in "
@@ -974,11 +987,38 @@ def _rewrite_session_setting_links(markdown, routes):
     return _rewrite_setting_links(markdown, routes, SESSION_SETTINGS_BASE_ROUTE)
 
 
-def _component_imports_for_page(preamble, markdown):
+def _component_imports_for_page(preamble, markdown, fallback_imports=()):
     imports = []
-    for match in IMPORT_RE.finditer(preamble):
-        if re.search(rf"<{re.escape(match.group('symbol'))}\b", markdown):
-            imports.append(match.group(0).strip())
+    seen_symbols = set()
+    candidates = [
+        (match.group("symbol"), match.group(0).strip())
+        for match in IMPORT_RE.finditer(preamble)
+    ]
+    for import_line in fallback_imports:
+        match = IMPORT_RE.fullmatch(import_line.strip())
+        if not match:
+            match = NAMED_IMPORT_RE.fullmatch(import_line.strip())
+        if not match:
+            raise ValueError(f"invalid fallback component import: {import_line!r}")
+        candidates.append((match.group("symbol"), import_line.strip()))
+
+    for symbol, import_line in candidates:
+        if symbol in seen_symbols:
+            continue
+        if re.search(rf"<{re.escape(symbol)}\b", markdown):
+            # Mintlify badge modules and `VersionHistory` must use their named
+            # exports. Default imports omit the component or its MDX siblings.
+            if (
+                (symbol.endswith("Badge") or symbol == "VersionHistory")
+                and import_line.startswith(f"import {symbol} from ")
+            ):
+                import_line = import_line.replace(
+                    f"import {symbol} from ",
+                    f"import {{ {symbol} }} from ",
+                    1,
+                )
+            imports.append(import_line)
+            seen_symbols.add(symbol)
     return imports
 
 
@@ -1014,6 +1054,17 @@ def _settings_explorer(family):
         f"## {family['browse_title']}\n\n"
         f"<{family['component_name']} />\n"
     )
+
+
+def _strip_settings_explorer(preamble, family):
+    """Remove previously generated explorer blocks before emitting one copy."""
+    pattern = re.compile(
+        rf"^[ \t]*##[ \t]+{re.escape(family['browse_title'])}"
+        rf"(?:[ \t]+\{{#[^}}\n]+\}})?[ \t]*\n+"
+        rf"[ \t]*<{re.escape(family['component_name'])}[ \t]*/>[ \t]*(?:\n+|$)",
+        re.MULTILINE,
+    )
+    return pattern.sub("", preamble).strip()
 
 
 def _settings_legacy_routes_script(anchor_routes, family):
@@ -1339,6 +1390,8 @@ def split_settings_page(dest, content, docs_dir, family_name):
     # its historical fragment as an explicit anchor.
     preamble_without_imports = _replace_redundant_h1_with_anchor(
         preamble_without_imports)
+    preamble_without_imports = _strip_settings_explorer(
+        preamble_without_imports, family)
     explorer_import = (
         f'import {family["component_name"]} from '
         f'"/{family["component_path"]}";'
@@ -1365,7 +1418,11 @@ def split_settings_page(dest, content, docs_dir, family_name):
         page_markdown = "\n\n".join(section.markdown.rstrip("\n") for section in page.sections)
         page_markdown = _rewrite_setting_links(
             page_markdown, routes, family["base_route"], anchor_routes)
-        imports = _component_imports_for_page(preamble, page_markdown)
+        imports = _component_imports_for_page(
+            preamble,
+            page_markdown,
+            family.get("detail_component_imports", ()),
+        )
         title = f"{page.label} {family['detail_title_suffix']}"
         description = (
             f"ClickHouse {family['description_noun']} in the "

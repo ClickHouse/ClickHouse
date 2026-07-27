@@ -80,6 +80,18 @@ def main():
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
+    for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
+        import_line = (
+            f'import {badge} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";'
+        )
+        assert mod._component_imports_for_page(
+            import_line, f"<{badge}/>"
+        ) == [
+            f'import {{ {badge} }} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";'
+        ]
+
     names = [
         "filesystem_cache_alpha", "filesystem_cache_beta",
         "filesystem_prefetch_alpha", "filesystem_prefetch_beta",
@@ -438,6 +450,25 @@ def main():
                     else None,
                 )
             )
+            if family_name == "mergetree-settings":
+                content = content.replace(
+                    'import SettingsInfoBlock from '
+                    '"/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";\n\n',
+                    "",
+                    1,
+                )
+                content = content.replace(
+                    '<SettingsInfoBlock type="Bool" default_value="0" />',
+                    '<ExperimentalBadge/>\n'
+                    '<SettingsInfoBlock type="Bool" default_value="0" />\n'
+                    '<VersionHistory rows={[]}/>',
+                    1,
+                )
+                explorer = (
+                    f"\n## {family['browse_title']}\n\n"
+                    f"<{family['component_name']} />\n"
+                )
+                content += explorer + explorer
             artifacts = mod.split_settings_page(
                 dest, content, docs, family_name)
             by_path = {artifact.path: artifact.content for artifact in artifacts}
@@ -445,6 +476,8 @@ def main():
             root = by_path[dest]
             assert f"<{family['component_name']} />" in root
             assert f"## {family['browse_title']}" in root
+            assert root.count(f"<{family['component_name']} />") == 1
+            assert root.count(f"## {family['browse_title']}") == 1
             assert "## filesystem_cache_alpha" not in root
             routes_script_path = (
                 docs / "_site/customizations/settings-legacy-routes"
@@ -521,10 +554,34 @@ def main():
 
             cache_path = docs / (
                 family["base_route"].lstrip("/") + "/filesystem-cache.mdx")
+            cache_page = by_path[cache_path]
             assert (
                 f"title: 'filesystem_cache_* {family['detail_title_suffix']}'"
-                in by_path[cache_path]
+                in cache_page
             )
+            if family_name == "mergetree-settings":
+                assert (
+                    'import { ExperimentalBadge } from '
+                    '"/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";'
+                    in cache_page
+                )
+                assert (
+                    'import SettingsInfoBlock from '
+                    '"/snippets/components/SettingsInfoBlock/SettingsInfoBlock.jsx";'
+                    in cache_page
+                )
+                assert (
+                    'import { VersionHistory } from '
+                    '"/snippets/components/VersionHistory/VersionHistory.jsx";'
+                    in cache_page
+                )
+                prefetch_page = by_path[
+                    docs
+                    / "reference/settings/merge-tree-settings/filesystem-prefetch.mdx"
+                ]
+                assert "import SettingsInfoBlock from " in prefetch_page
+                assert "import ExperimentalBadge from " not in prefetch_page
+                assert "import VersionHistory from " not in prefetch_page
 
     print("OK: flat settings prefixes preserve coverage and top-level fragment routing")
     return 0
