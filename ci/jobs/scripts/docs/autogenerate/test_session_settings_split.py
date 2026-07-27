@@ -109,6 +109,18 @@ def main():
             "Content after the badge.\n"
         )
 
+    migrated_namespace, _ = migrate.transform_imports(
+        "import * as BadgeNS from '@theme/badges/CloudNotSupportedBadge';\n\n"
+        "<BadgeNS.CloudNotSupportedBadge />\n",
+        migrate.Lookups(),
+        [],
+    )
+    assert migrated_namespace == (
+        "import * as BadgeNS from "
+        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
+        "<BadgeNS.CloudNotSupportedBadge />\n"
+    )
+
     for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
         import_line = (
             f'import {badge} from '
