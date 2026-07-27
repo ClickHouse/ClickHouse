@@ -1,6 +1,8 @@
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/IAST.h>
 
+#include <Core/Defines.h>
+
 #include <algorithm>
 #include <limits>
 
@@ -246,6 +248,25 @@ namespace
 /// over the ~4x worst case.
 constexpr size_t JSON_NESTING_BUDGET_PER_AST_LEVEL = 8;
 
+}
+
+/// Stack-safety ceiling on JSON AST deserialization nesting, applied when `max_ast_depth = 0`
+/// disables the semantic AST depth check. Deserialization recurses over the JSON document
+/// (`Poco::JSON::Parser`, `createFromJSON`, structured `Field` values, `Field::restoreFromDump`),
+/// so an unbounded payload would exhaust the stack rather than fail with an exception. `0` therefore
+/// means "no semantic AST depth limit", not "no recursion bound at all".
+static constexpr size_t JSON_DESERIALIZATION_SAFETY_MAX_DEPTH = DBMS_DEFAULT_MAX_PARSER_DEPTH;
+
+/// The depth bound actually enforced during JSON AST deserialization: the configured
+/// `max_ast_depth`, or the safety ceiling above when it is disabled. Never 0.
+static size_t effectiveJSONDeserializationMaxDepth()
+{
+    return json_deser_max_depth ? json_deser_max_depth : JSON_DESERIALIZATION_SAFETY_MAX_DEPTH;
+}
+
+namespace
+{
+
 /// JSON bracket-nesting budget for the raw pre-scan, derived from the AST depth limit.
 /// Saturates instead of overflowing when `max_ast_depth` is set close to `SIZE_MAX`.
 size_t jsonNestingBudget(size_t max_ast_depth)
@@ -296,19 +317,20 @@ ASTPtr IAST::createFromJSON(const String & json)
     /// (`ParserImpl` stores `_depth` but `handle`/`handleObject`/`handleArray` never read it),
     /// so a hostile deeply-nested payload would recurse through the parser and overflow the
     /// stack before any AST-level depth check runs. Enforce a raw-text bracket budget first.
-    /// The budget is a safe multiple of `max_ast_depth` (the JSON encoding adds bracket levels
-    /// per AST/`Field` level), not `max_ast_depth` itself, so a valid serialized AST is never
+    /// The budget is a safe multiple of the effective depth limit (the JSON encoding adds bracket
+    /// levels per AST/`Field` level), not the limit itself, so a valid serialized AST is never
     /// rejected here — the constructed AST depth is still bounded by the counter check below.
-    const size_t json_nesting_budget = jsonNestingBudget(json_deser_max_depth);
-    if (json_deser_max_depth > 0 && computeJSONNestingDepth(json) > json_nesting_budget)
+    /// The effective limit falls back to the stack-safety ceiling when `max_ast_depth = 0`, so the
+    /// guard cannot be turned off by a setting.
+    const size_t json_nesting_budget = jsonNestingBudget(effectiveJSONDeserializationMaxDepth());
+    if (computeJSONNestingDepth(json) > json_nesting_budget)
         throw Exception(ErrorCodes::TOO_DEEP_AST,
             "JSON nesting depth exceeds the limit derived from max_ast_depth ({}) during JSON AST deserialization", json_nesting_budget);
 
     Poco::JSON::Parser parser;
     /// Also request the parser-level bound (kept for forward compatibility if the fork starts
     /// honouring it); the pre-scan above is the actual enforcement.
-    if (json_deser_max_depth > 0)
-        parser.setDepth(json_nesting_budget);
+    parser.setDepth(json_nesting_budget);
     Poco::Dynamic::Var result;
     try
     {
@@ -337,10 +359,11 @@ ASTPtr IAST::createFromJSON(const String & json)
 
 ASTPtr IAST::createFromJSON(const Poco::JSON::Object & json)
 {
-    /// Check depth limit during recursive construction.
-    if (json_deser_max_depth && json_deser_current_depth >= json_deser_max_depth)
+    /// Check depth limit during recursive construction. When `max_ast_depth = 0` the semantic limit
+    /// is disabled, but the stack-safety ceiling still applies.
+    if (const size_t max_depth = effectiveJSONDeserializationMaxDepth(); json_deser_current_depth >= max_depth)
         throw Exception(ErrorCodes::TOO_DEEP_AST,
-            "JSON AST deserialization exceeded maximum depth limit ({})", json_deser_max_depth);
+            "JSON AST deserialization exceeded maximum depth limit ({})", max_depth);
 
     /// Check element count limit.
     if (json_deser_max_elements && json_deser_current_elements >= json_deser_max_elements)
@@ -403,7 +426,7 @@ ASTPtr IAST::createFromJSON(const String & json, size_t max_depth, size_t max_el
 
 size_t getJSONDeserializationMaxDepth()
 {
-    return json_deser_max_depth;
+    return effectiveJSONDeserializationMaxDepth();
 }
 
 void countJSONDeserializationElement()

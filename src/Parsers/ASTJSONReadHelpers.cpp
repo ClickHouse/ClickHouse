@@ -123,7 +123,7 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
     /// Bound the recursion over structured `Field` values (Array/Tuple/Map). These nested
     /// JSON levels live inside a single `Literal` AST node and add no AST nodes, so the
     /// AST depth/element limits do not stop them.
-    if (size_t max_depth = getJSONDeserializationMaxDepth(); max_depth > 0 && depth > max_depth)
+    if (size_t max_depth = getJSONDeserializationMaxDepth(); depth > max_depth)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
@@ -301,7 +301,7 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
     /// recursion even when the JSON object itself is shallow. Reject overly deep payloads
     /// against the same depth bound used for AST node construction.
     if (size_t max_depth = getJSONDeserializationMaxDepth();
-        max_depth > 0 && computeFieldDumpNestingDepth(dump_str) > max_depth)
+        computeFieldDumpNestingDepth(dump_str) > max_depth)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Field dump payload exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);

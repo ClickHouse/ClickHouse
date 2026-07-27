@@ -8,10 +8,12 @@ namespace Poco::JSON { class Object; }
 namespace DB
 {
 
-/// Current thread-local depth limit configured by createFromJSON(json, max_depth, max_elements).
-/// Returns 0 when no limit is active. Helpers that perform their own recursive parsing
-/// (e.g. `Field::restoreFromDump` over `Array_/Tuple_/Map_` payloads) consult this value
-/// to enforce the same depth bound on hostile input.
+/// Depth limit enforced during JSON AST deserialization: the thread-local limit configured by
+/// createFromJSON(json, max_depth, max_elements), or a stack-safety ceiling when that limit is 0
+/// (`max_ast_depth = 0` disables the semantic AST depth check, not the recursion bound).
+/// Never returns 0. Helpers that perform their own recursive parsing (e.g. `Field::restoreFromDump`
+/// over `Array_/Tuple_/Map_` payloads) consult this value to enforce the same depth bound on
+/// hostile input.
 size_t getJSONDeserializationMaxDepth();
 
 /// Count one structured `Field` element (an `Array`/`Tuple`/`Map` entry deserialized by
