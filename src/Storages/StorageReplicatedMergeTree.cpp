@@ -250,6 +250,7 @@ namespace MergeTreeSetting
 
 namespace FailPoints
 {
+    extern const char rmt_pause_after_apply_metadata_alter[];
     extern const char replicated_queue_fail_next_entry[];
     extern const char replicated_queue_unfail_entries[];
     extern const char finish_set_quorum_failed_parts[];
@@ -6740,6 +6741,11 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
         auto applied_metadata_snapshot = getInMemoryMetadataUncached(getContext());
         LOG_INFO(log, "Applied changes to the metadata of the table. Current metadata version: {}", applied_metadata_snapshot->getMetadataVersion());
+
+        /// Test-only (issue #110036): keep lockForAlter held with the ALTER_METADATA applied, so a test can
+        /// resume a foreground comment/settings ALTER whose metadata pin predates this commit and verify
+        /// the commit is not clobbered.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_pause_after_apply_metadata_alter);
     }
 
     {
