@@ -76,3 +76,41 @@ nullable_payload.$name	Nullable(String)
 == Non-nullable branch sub-column is rejected (value + branch selected) ==
 rejected: must be Nullable
 
+== Nested union: DESCRIBE exposes the inner $name one level deep ==
+payload	Variant(Tuple(\n    b_value Int32), Tuple(\n    inner Variant(Tuple(\n        x_value String), Tuple(\n        y_value Int64))))					
+payload.$name	Nullable(String)					
+payload.TypeA	Nullable(Tuple(inner Variant(Tuple(x_value String), Tuple(y_value Int64))))					
+payload.TypeA.inner.$name	Nullable(String)					
+payload.TypeB	Nullable(Tuple(b_value Int32))					
+
+== Nested union: inner $name alone ==
+1	InnerX
+2	InnerY
+3	\N
+4	\N
+5	\N
+
+== Nested union: inner $name together with the union value ==
+1	(('hello'))	InnerX
+2	((42))	InnerY
+3	(NULL)	\N
+4	(99)	\N
+5	\N	\N
+
+== Nested union: filter by the inner branch name ==
+1
+
+== Nested union: outer branch value still carries the whole inner union ==
+1	(('hello'))	\N
+2	((42))	\N
+3	(NULL)	\N
+4	\N	(99)
+5	\N	\N
+
+== Nested union with a single non-null inner branch has no inner $name ==
+0
+
+== Nested union: inner $name alongside the outer $name is not supported ==
+THERE_IS_NO_COLUMN
+THERE_IS_NO_COLUMN
+
