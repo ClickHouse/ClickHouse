@@ -1283,18 +1283,10 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             try
             {
-                /// A function node is resolved for a fixed set of argument types during analysis, but
-                /// partial evaluation can be handed an argument of a different type. Folding is then
-                /// not safe, so skip it: the fold is only an optimization and the node's declared
-                /// result type is already known.
-                /// The comparison must be exact rather than wrapper-stripped, because a
-                /// wrapper-sensitive folder (`isNullable`) derives its value from the argument type
-                /// alone, so a wrapper-only difference would yield a definitive but wrong value whose
-                /// result type is unchanged.
-                /// With `input_rows_count == 0` produce an empty column of the declared result type so
-                /// header computation can proceed. With `input_rows_count == 1` leave the column null:
-                /// the callers of `evaluatePartialResult` treat any non-null output as a definitive
-                /// folded value, so a null routes them through their existing "unknown value" path.
+                /// Do not fold when an argument's type differs from the type this node was resolved
+                /// for. The comparison is exact, not wrapper-stripped: `isNullable` derives its value
+                /// from the argument type alone, so a wrapper-only difference would give a wrong value
+                /// with an unchanged result type.
                 bool argument_types_drifted = false;
                 const auto & expected_argument_types = node->function_base->getArgumentTypes();
                 if (expected_argument_types.size() == arguments.size())
@@ -1313,14 +1305,12 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
                 if (argument_types_drifted)
                 {
-                    /// `DataTypeFunction` - the result type of a captured lambda - is the one result
-                    /// type here that cannot be instantiated: it inherits `IDataTypeDummy::createColumn`,
-                    /// which throws `NOT_IMPLEMENTED`. (`DataTypeNothing` and `DataTypeSet` derive from
-                    /// the same base but do override `createColumn`, so they are instantiated normally.)
-                    /// Leave the column null in that one case rather than turning a skipped fold into
-                    /// that error. A parent that consumes the lambda then reports a recoverable
-                    /// `NOT_FOUND_COLUMN_IN_BLOCK` instead of aborting the server, which is what
-                    /// executing the stale capture used to do.
+                    /// An empty column of the declared type keeps header computation going; with one row
+                    /// the column stays null, because callers read any non-null output as definitive.
+                    /// `DataTypeFunction` (a captured lambda) is the one type here that cannot be
+                    /// instantiated - it inherits `IDataTypeDummy::createColumn`, which throws
+                    /// `NOT_IMPLEMENTED` - so it is left null too. (`DataTypeNothing` and `DataTypeSet`
+                    /// share that base but do override `createColumn`.)
                     if (input_rows_count == 0 && !typeid_cast<const DataTypeFunction *>(res_column.type.get()))
                         res_column.column = res_column.type->createColumn();
                     break;
@@ -1360,14 +1350,10 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             auto key = arguments.at(0);
 
-            /// Carry the ACTUAL nested type, for the same reason as in the `ALIAS` case below: the
-            /// declared `result_type` was derived during analysis from the type the argument had
-            /// then, so keeping it would hide a difference from the argument-type check in the
-            /// `FUNCTION` branch above and let a parent fold against a stale type.
-            /// This runs before the early exits below, because those leave the column null while the
-            /// TYPE is still handed to the parent.
-            /// `ExpressionActions` derives both the column and the type here as well (see the
-            /// `ARRAY_JOIN` case in `ExpressionActions::executeAction`).
+            /// Carry the ACTUAL nested type, as the `ALIAS` case below does and as
+            /// `ExpressionActions::executeAction` does here: the declared `result_type` is stale, and
+            /// keeping it would hide the difference from the `FUNCTION` check above. Runs before the
+            /// early exits, which leave the column null but still hand the TYPE to the parent.
             if (const auto & key_array_type = getArrayJoinDataType(key.type))
                 res_column.type = key_array_type->getNestedType();
 
@@ -1408,13 +1394,10 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
         case ActionsDAG::ActionType::ALIAS:
         {
-            /// Carry the argument's ACTUAL type, not just its column. An alias never changes a
-            /// value, so its declared `result_type` is a copy of the type its argument was resolved
-            /// for during analysis. Keeping that declared type while copying a drifted column would
-            /// hide the drift from the argument-type check in the `FUNCTION` branch above, which
-            /// compares declared types, so a function behind an alias would still be executed on a
-            /// mismatched column. `ExpressionActions` propagates both for the same reason (see the
-            /// `ALIAS` case in `ExpressionActions::executeAction`).
+            /// Carry the argument's ACTUAL type, not just its column, as
+            /// `ExpressionActions::executeAction` does: an alias never changes a value, so copying a
+            /// drifted column under the stale declared type would hide the difference from the
+            /// `FUNCTION` check above and a function behind the alias would still be executed on it.
             res_column.column = arguments.at(0).column;
             if (arguments.at(0).type)
                 res_column.type = arguments.at(0).type;
