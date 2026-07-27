@@ -1,0 +1,94 @@
+-- case
+1	Point	(1,2)
+2	LineString	[(1,1),(2,2)]
+3	Polygon	[[(0,0),(1,0),(1,1),(0,0)]]
+4	MultiPoint	[(1,1),(2,2)]
+5	MultiLineString	[[(1,1),(2,2)]]
+6	MultiPolygon	[[[(0,0),(1,0),(1,1),(0,0)]]]
+7	Point	(1,2)
+-- tagged_empty
+1	LineString	[]
+2	Polygon	[[]]
+3	MultiPoint	[]
+4	MultiLineString	[]
+5	MultiPolygon	[]
+6	LineString	[]
+7	LineString	[]
+8	LineString	[]
+9	LineString	[]
+10	LineString	[]
+11	LineString	[]
+-- empty_list
+1	LineString	[]
+2	Polygon	[[]]
+3	MultiPoint	[]
+4	MultiLineString	[]
+5	MultiPolygon	[]
+6	LineString	[]
+7	Polygon	[[]]
+8	Polygon	[[]]
+9	Polygon	[[],[]]
+10	MultiLineString	[[]]
+11	MultiPolygon	[[[]]]
+12	MultiPolygon	[[[]]]
+13	MultiLineString	[[(1,1),(2,2)],[]]
+14	Polygon	[[(0,0),(1,0),(1,1),(0,0)],[]]
+-- control
+1	Point	(1,2)
+2	LineString	[(1,1),(2,2)]
+3	Polygon	[[(0,0),(1,0),(1,1),(0,0)]]
+4	MultiPoint	[(1,1),(2,2)]
+-- typed_ls
+1	LineString	[]
+2	LineString	[]
+-- typed_poly
+1	Polygon	[[]]
+2	Polygon	[[]]
+-- typed_mpoly
+1	MultiPolygon	[]
+2	MultiPolygon	[[[]]]
+-- typed_point
+1	Point	(1,2)
+-- arrow native=1
+1	Point	(1,2)
+2	LineString	[]
+3	Polygon	[[]]
+4	MultiPolygon	[[[]]]
+-- arrow native=0
+1	Point	(1,2)
+2	LineString	[]
+3	Polygon	[[]]
+4	MultiPolygon	[[[]]]
+-- round trip
+LINESTRING()	POLYGON()
+1	LineString	[]
+2	Polygon	[[]]
+-- rejected
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
