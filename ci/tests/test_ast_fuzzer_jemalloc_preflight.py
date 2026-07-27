@@ -44,6 +44,18 @@ from ci.praktika.settings import Settings
 # from `BuildTypes.AMD_JEMALLOC_SAFETY`.
 JEMALLOC_SAFETY_JOB_NAME = JobConfigs.jemalloc_safety_ast_fuzzer_job[0].name
 
+# Every fuzzer paramset that existed before this lane, again from the configs, so the
+# skip-list parametrization below cannot drift onto a name no job actually produces.
+PRE_EXISTING_FUZZER_JOB_NAMES = frozenset(
+    job.name
+    for group in (
+        JobConfigs.ast_fuzzer_jobs,
+        JobConfigs.ast_fuzzer_targeted_pr_jobs,
+        JobConfigs.buzz_fuzzer_jobs,
+    )
+    for job in group
+)
+
 
 # --- parse_jemalloc_safety_checks_flag ------------------------------------------------
 
@@ -221,9 +233,16 @@ def test_marker_does_not_match_the_pre_existing_build_types():
     [
         "AST fuzzer (amd_debug)",
         "AST fuzzer (amd_debug, targeted)",
-        "AST fuzzer (amd_debug, old_compatibility)",
+        "AST fuzzer (amd_debug, targeted, old_compatibility)",
         "BuzzHouse (amd_debug)",
     ],
 )
 def test_guard_skips_preflight_for_the_pre_existing_paramsets(guard, check_name):
+    # Each literal must be a name the real job configs still produce, otherwise this
+    # test would keep passing against a paramset that no longer exists while the one
+    # that does goes uncovered.
+    assert check_name in PRE_EXISTING_FUZZER_JOB_NAMES, (
+        f"{check_name!r} is not a real fuzzer paramset; the pre-existing names are "
+        f"{sorted(PRE_EXISTING_FUZZER_JOB_NAMES)}"
+    )
     assert guard(check_name) == 0

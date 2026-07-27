@@ -4,9 +4,9 @@
 load-bearing for the `WeeklyJemallocSafety` lane:
 
 * `JEMALLOC_OPT_SAFETY_CHECKS` arms `config_opt_safety_checks`
-  (`contrib/jemalloc/include/jemalloc/internal/jemalloc_preamble.h.in:197`), which
+  (`contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h:188`), which
   gates `arena_ptr_array_flush_impl`'s sized-deallocation detector.
-* `JEMALLOC_OPT_SIZE_CHECKS` arms `config_opt_size_checks` (same file, `:216`),
+* `JEMALLOC_OPT_SIZE_CHECKS` arms `config_opt_size_checks` (same file, `:207`),
   which is the **sole** gate on `maybe_check_alloc_ctx`
   (`jemalloc_internal_inlines_c.h:420-421`) - the check whose failure text is
   literally `"Internal heap corruption detected: mismatch in slab bit"`, i.e.
@@ -35,6 +35,8 @@ import os
 import re
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
 # `ci/defs/defs.py` does `from praktika import ...` rather than
@@ -76,12 +78,21 @@ def _reachable_defs_headers() -> list[Path]:
     return headers
 
 
-def _strip_cmake_comments(text: str) -> str:
-    """Drop CMake comments (unquoted `#` to end of line).
+_CMAKE_BRACKET_COMMENT_RE = re.compile(r"#\[(=*)\[.*?\]\1\]", re.S)
 
-    Deliberately naive: the definitions block contains no `#` inside a quoted string,
-    so a per-line split is enough and keeps the guard readable.
+
+def _strip_cmake_comments(text: str) -> str:
+    """Drop CMake comments: bracket comments first, then `#` to end of line.
+
+    Bracket comments (`#[[ ... ]]`, `#[==[ ... ]==]`) must be removed first: their
+    body can span lines and sit inside a command's parentheses, where a per-line `#`
+    split consumes only the opener and leaves the body looking like a real argument.
+    The `(=*)` backreference makes the equals form match its own closer.
+
+    Line comments are then a per-line split, which is enough here: the definitions
+    block contains no `#` inside a quoted string.
     """
+    text = _CMAKE_BRACKET_COMMENT_RE.sub("", text)
     return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
 
 
@@ -132,13 +143,22 @@ def _private_definitions_arguments(text: str) -> str:
     return match.group(1)
 
 
+def _missing_macros(arguments: str) -> list[str]:
+    """Which `REQUIRED_MACROS` are absent from a definitions-argument text.
+
+    Whitespace-split rather than substring-searched: `-DJEMALLOC_OPT_SIZE_CHECKS` is a
+    substring of `-DJEMALLOC_OPT_SIZE_CHECKS_DISABLED`, but jemalloc tests the exact
+    identifier (`#ifdef`), so a suffixed spelling defines nothing.
+    """
+    defined = set(arguments.split())
+    return [macro for macro in REQUIRED_MACROS if f"-D{macro}" not in defined]
+
+
 def test_option_defines_both_jemalloc_safety_macros():
     arguments = _private_definitions_arguments(
         JEMALLOC_CMAKE.read_text(encoding="utf-8")
     )
-    missing = [
-        macro for macro in REQUIRED_MACROS if f"-D{macro}" not in arguments
-    ]
+    missing = _missing_macros(arguments)
     assert not missing, (
         f"{JEMALLOC_CMAKE_REL}: {OPTION_NAME} must define both "
         f"{' and '.join(REQUIRED_MACROS)}; missing {missing}. "
@@ -146,10 +166,101 @@ def test_option_defines_both_jemalloc_safety_macros():
         "'mismatch in slab bit' check) and, unlike the safety gate, has no mallctl, "
         "so the AST fuzzer job's runtime preflight cannot notice its absence. "
         "Commented-out macro names do not count: the invocation is read with CMake "
-        "comments stripped. Each macro is expected in this file's uniform "
-        "`-D<MACRO>` spelling.\n"
+        "comments stripped (line and bracket comments alike). Each macro is expected "
+        "in this file's uniform `-D<MACRO>` spelling and is matched as a complete "
+        "whitespace-delimited argument, so a suffixed or renamed spelling such as "
+        "`-DJEMALLOC_OPT_SIZE_CHECKS_DISABLED` does not count either.\n"
         f"arguments were:\n{arguments}"
     )
+
+
+# --- the assertion's own negative cases -----------------------------------------------
+#
+# Driven against inline CMake text through the same helpers the real assertion uses, so
+# the two ways a macro can appear present while defining nothing - a suffixed spelling,
+# and a name that survives comment stripping - stay pinned without mutating the real file.
+
+_INLINE_GOOD = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+# The same invocation reflowed across lines: legitimate CMake style, must keep passing.
+_INLINE_GOOD_REFLOWED = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE\n"
+    "        -DJEMALLOC_OPT_SAFETY_CHECKS\n"
+    "        -DJEMALLOC_OPT_SIZE_CHECKS)\n"
+    "endif ()\n"
+)
+
+# Renamed/suffixed: contains the required name as a substring but defines nothing.
+_INLINE_SUFFIXED = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE"
+    " -DJEMALLOC_OPT_SAFETY_CHECKS -DJEMALLOC_OPT_SIZE_CHECKS_DISABLED)\n"
+    "endif ()\n"
+)
+
+# Present only inside a trailing line comment.
+_INLINE_LINE_COMMENT = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE\n"
+    "        -DJEMALLOC_OPT_SAFETY_CHECKS\n"
+    "        # -DJEMALLOC_OPT_SIZE_CHECKS\n"
+    "    )\n"
+    "endif ()\n"
+)
+
+# Present only inside a bracket comment *inside* the parentheses, both spellings.
+_INLINE_BRACKET_COMMENT = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE\n"
+    "        -DJEMALLOC_OPT_SAFETY_CHECKS\n"
+    "        #[[\n"
+    "        -DJEMALLOC_OPT_SIZE_CHECKS\n"
+    "        ]]\n"
+    "    )\n"
+    "endif ()\n"
+)
+
+_INLINE_BRACKET_EQUALS_COMMENT = (
+    "if (ENABLE_JEMALLOC_SAFETY_CHECKS)\n"
+    "    target_compile_definitions(_jemalloc PRIVATE\n"
+    "        -DJEMALLOC_OPT_SAFETY_CHECKS\n"
+    "        #[==[\n"
+    "        -DJEMALLOC_OPT_SIZE_CHECKS\n"
+    "        ]==]\n"
+    "    )\n"
+    "endif ()\n"
+)
+
+
+@pytest.mark.parametrize(
+    "label, text, size_macro_expected",
+    [
+        ("single-line invocation", _INLINE_GOOD, True),
+        ("reflowed invocation", _INLINE_GOOD_REFLOWED, True),
+        ("suffixed macro name", _INLINE_SUFFIXED, False),
+        ("line comment", _INLINE_LINE_COMMENT, False),
+        ("bracket comment", _INLINE_BRACKET_COMMENT, False),
+        ("equals-form bracket comment", _INLINE_BRACKET_EQUALS_COMMENT, False),
+    ],
+)
+def test_size_macro_detection(label, text, size_macro_expected):
+    arguments = _private_definitions_arguments(text)
+    tokens = set(arguments.split())
+    assert ("-DJEMALLOC_OPT_SIZE_CHECKS" in tokens) is size_macro_expected, (
+        f"{label}: expected -DJEMALLOC_OPT_SIZE_CHECKS "
+        f"{'present' if size_macro_expected else 'absent'} in the parsed argument "
+        f"tokens {sorted(tokens)}"
+    )
+    # The real assertion's verdict must agree with the token view.
+    assert ("JEMALLOC_OPT_SIZE_CHECKS" in _missing_macros(arguments)) is (
+        not size_macro_expected
+    ), f"{label}: _missing_macros disagrees with the parsed argument tokens"
 
 
 def test_definitions_are_scoped_to_the_jemalloc_target():
@@ -167,7 +278,7 @@ def test_reachable_platform_headers_keep_the_macro_undefs_inert():
     """A bare `#undef` in the configured platform header cancels the `-D`.
 
     `jemalloc_internal_defs.h` is included before the `config_opt_*` definitions are
-    read (`jemalloc_preamble.h.in:197` / `:216` test `defined(...)`), so an active
+    read (`jemalloc_preamble.h:188` / `:207` test `defined(...)`), so an active
     `#undef JEMALLOC_OPT_SIZE_CHECKS` there would disarm the gate while the cmake
     option, the build and the runtime preflight all stay green. Every header the
     option can reach must therefore keep both `#undef`s commented out.
@@ -182,8 +293,8 @@ def test_reachable_platform_headers_keep_the_macro_undefs_inert():
                 f"bare `#undef` silently cancels the `-D{macro}` that "
                 f"{OPTION_NAME} passes, because jemalloc tests `defined({macro})` "
                 "after including this header "
-                "(contrib/jemalloc/include/jemalloc/internal/jemalloc_preamble.h.in"
-                ":197 and :216)."
+                "(contrib/jemalloc-cmake/include/jemalloc/internal/jemalloc_preamble.h"
+                ":188 and :207)."
             )
 
 
