@@ -198,8 +198,8 @@ SETTINGS_GENERATORS = [
         "fixups": True,        # backtick-wrap angle-bracket text so it is valid MDX
     },
     {
-        # Run after the split settings families so `--write` can use their
-        # freshly generated manifests when resolving links into detail pages.
+        # Run after the split settings families so both `--write` and `--check`
+        # resolve links from their freshly generated manifests.
         "name": "beta-and-experimental",
         "sql": ["beta-settings.sql", "experimental-settings.sql"],
         "outfile": "experimental-beta-settings.md",
@@ -986,15 +986,48 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
         r"\]\(#(?P<anchor>[A-Za-z0-9_.:-]+)\)", fragment_repl, markdown)
 
 
-def _rewrite_setting_links_from_manifests(markdown, docs_dir):
-    """Resolve settings links against the current generated shard manifests."""
-    for family in SETTINGS_SPLIT_FAMILIES.values():
-        manifest_path = (
-            Path(docs_dir)
-            / family["base_route"].lstrip("/")
-            / "manifest.json"
+def _settings_manifest_path(docs_dir, family):
+    return (
+        Path(docs_dir)
+        / family["base_route"].lstrip("/")
+        / "manifest.json"
+    )
+
+
+def _settings_manifest_from_artifacts(family_name, artifacts, docs_dir):
+    family = SETTINGS_SPLIT_FAMILIES[family_name]
+    manifest_path = _settings_manifest_path(docs_dir, family).resolve()
+    matches = [
+        artifact for artifact in artifacts
+        if artifact.path.resolve() == manifest_path
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"expected one generated {family_name} manifest, found {len(matches)}"
         )
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return json.loads(matches[0].content)
+
+
+def _rewrite_setting_links_from_manifests(
+        markdown, docs_dir, generated_manifests=None):
+    """Resolve settings links against the current generated shard manifests."""
+    if generated_manifests is not None:
+        missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_manifests)
+        if missing:
+            raise ValueError(
+                "missing generated settings manifests: "
+                + ", ".join(sorted(missing))
+            )
+
+    for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
+        if generated_manifests is None:
+            manifest = json.loads(
+                _settings_manifest_path(docs_dir, family).read_text(
+                    encoding="utf-8"
+                )
+            )
+        else:
+            manifest = generated_manifests[family_name]
         markdown = _rewrite_setting_links(
             markdown,
             manifest["routes"],
@@ -1502,7 +1535,9 @@ def split_session_settings_page(dest, content, docs_dir):
     return split_settings_page(dest, content, docs_dir, "session-settings")
 
 
-def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
+def generate(
+        gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
+        generated_settings_manifests=None):
     scratch = tempfile.mkdtemp(prefix="autogen-")
     # Stage the files the SQL reads via file() (C++ sources, etc.) into scratch.
     for staged, src in gen.get("deps", {}).items():
@@ -1529,7 +1564,8 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
         else:
             content = transform_body(migrate, content, gen["dest"], dest, lk)
         if gen["name"] == "beta-and-experimental":
-            content = _rewrite_setting_links_from_manifests(content, docs_dir)
+            content = _rewrite_setting_links_from_manifests(
+                content, docs_dir, generated_settings_manifests)
 
     if gen["method"] == "markers":
         with open(dest, encoding="utf-8") as f:
@@ -1546,8 +1582,20 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
     return dest, new
 
 
-def generate_artifacts(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
-    dest, content = generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap)
+def generate_artifacts(
+        gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
+        generated_settings_manifests=None):
+    dest, content = generate(
+        gen,
+        binary,
+        docs_dir,
+        repo_root,
+        migrate,
+        lk,
+        file_map,
+        remap,
+        generated_settings_manifests,
+    )
     if content is None:
         return []
     if gen["name"] in SETTINGS_SPLIT_FAMILIES and remap:
@@ -1714,11 +1762,25 @@ def main(argv=None):
         raise SystemExit(f"error: --only '{args.only}' matched no generator; nothing to do.")
 
     drift = 0
+    generated_settings_manifests = {}
     for gen in generators:
         artifacts = generate_artifacts(
-            gen, binary, docs_dir, repo_root, migrate, lk, file_map, args.remap)
+            gen,
+            binary,
+            docs_dir,
+            repo_root,
+            migrate,
+            lk,
+            file_map,
+            args.remap,
+            generated_settings_manifests or None,
+        )
         stale_paths = []
         if gen["name"] in SETTINGS_SPLIT_FAMILIES and args.remap:
+            generated_settings_manifests[gen["name"]] = (
+                _settings_manifest_from_artifacts(
+                    gen["name"], artifacts, docs_dir)
+            )
             stale_paths = stale_settings_page_paths(
                 gen["name"], artifacts, docs_dir)
         drift += reconcile_generated_artifacts(

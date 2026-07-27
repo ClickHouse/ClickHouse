@@ -671,6 +671,112 @@ def main():
                 assert "import ExperimentalBadge from " not in prefetch_page
                 assert "import VersionHistory from " not in prefetch_page
 
+    with tempfile.TemporaryDirectory() as temp:
+        docs = Path(temp)
+        current_manifests = {}
+        for family_name, family in mod.SETTINGS_SPLIT_FAMILIES.items():
+            anchor = (
+                "unique_key_max_encoded_size"
+                if family_name == "session-settings"
+                else "unrelated_setting"
+            )
+            target = family["base_route"] + (
+                "/unique-key"
+                if family_name == "session-settings"
+                else "/other"
+            )
+            current_manifests[family_name] = {
+                "routes": [{
+                    "prefix": anchor.rsplit("_", 1)[0],
+                    "mode": "raw",
+                    "target": target,
+                }],
+                "anchorRoutes": {anchor: target},
+            }
+
+        stale_session_manifest = {
+            "routes": [{
+                "prefix": "unique_key_max_encoded",
+                "mode": "raw",
+                "target": "/reference/settings/session-settings/other",
+            }],
+            "anchorRoutes": {
+                "unique_key_max_encoded_size":
+                    "/reference/settings/session-settings/other",
+            },
+        }
+        session_manifest_path = mod._settings_manifest_path(
+            docs, mod.SETTINGS_SPLIT_FAMILIES["session-settings"])
+        session_manifest_path.parent.mkdir(parents=True)
+        session_manifest_path.write_text(
+            json.dumps(stale_session_manifest), encoding="utf-8")
+        current_session_artifact = mod.GeneratedArtifact(
+            session_manifest_path,
+            json.dumps(current_manifests["session-settings"]),
+        )
+        assert mod.reconcile_generated_artifacts(
+            [current_session_artifact], [], docs, check=True) == 1
+        assert json.loads(session_manifest_path.read_text(
+            encoding="utf-8")) == stale_session_manifest
+
+        stale_link = (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/other"
+            "#unique_key_max_encoded_size)"
+        )
+        assert mod._rewrite_setting_links_from_manifests(
+            stale_link, docs, current_manifests
+        ) == (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/unique-key"
+            "#unique_key_max_encoded_size)"
+        )
+
+        observed_beta_rewrite = []
+
+        def fake_generate_artifacts(
+                gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
+                generated_manifests=None):
+            del binary, repo_root, migrate, lk, file_map, remap
+            if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
+                family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
+                return [mod.GeneratedArtifact(
+                    mod._settings_manifest_path(docs_dir, family),
+                    json.dumps(current_manifests[gen["name"]]),
+                )]
+            if gen["name"] == "beta-and-experimental":
+                observed_beta_rewrite.append(
+                    mod._rewrite_setting_links_from_manifests(
+                        stale_link, docs_dir, generated_manifests)
+                )
+            return []
+
+        mod.ALL_GENERATORS = mod.SETTINGS_GENERATORS
+        mod.aggregate_generators = lambda docs_dir: []
+        mod.table_engine_generators = lambda docs_dir, file_map: []
+        mod.database_engine_generators = lambda docs_dir, file_map: []
+        mod.data_type_generators = lambda docs_dir, file_map: []
+        mod.format_generators = lambda docs_dir, file_map: []
+        mod.table_function_generators = lambda docs_dir, file_map: []
+        mod.window_function_generators = lambda docs_dir, file_map: []
+        mod.import_migrate = lambda docs_dir: object()
+        mod.build_file_map = lambda migrate, slug_map: (object(), {})
+        mod.generate_artifacts = fake_generate_artifacts
+        mod.stale_settings_page_paths = (
+            lambda family_name, artifacts, docs_dir: []
+        )
+        mod.reconcile_generated_artifacts = (
+            lambda artifacts, stale_paths, docs_dir, **kwargs: 0
+        )
+        assert mod.main(["--docs-dir", str(docs), "--check"]) == 0
+        assert observed_beta_rewrite == [
+            (
+                "[unique_key_max_encoded_size]"
+                "(/reference/settings/session-settings/unique-key"
+                "#unique_key_max_encoded_size)"
+            )
+        ]
+
     print("OK: flat settings prefixes preserve coverage and top-level fragment routing")
     return 0
 
