@@ -1,4 +1,6 @@
--- Tags: shard, no-parallel-replicas
+-- Tags: no-old-analyzer, shard, no-parallel-replicas
+-- The fix lives in the analyzer; the old analyzer never resolves an IN argument as a table
+-- expression at all, so it rejects these shapes outright and the bug cannot manifest there.
 
 -- A table expression that is also a join-tree table expression of the enclosing query must not be
 -- shared with the right argument of an IN-family function: later stages rewrite each argument
@@ -55,10 +57,24 @@ WHERE t1.number IN t2 ORDER BY t1.number;
 -- GLOBAL IN rewrites the argument into an external table. Before the fix, sharing the node with the
 -- join tree made the rewrite collide on the generated FROM alias:
 --   Code: 179 Duplicate aliases __table2 for table expressions in FROM section are not allowed
-SELECT 'GLOBAL IN, bare table name';
+-- An identifier naming a join-tree table expression resolves through two distinct paths -- the alias
+-- map (tryResolveIdentifierFromAliases) and the table-expression lookup
+-- (tryResolveIdentifierFromTableExpression) -- so all three spellings are exercised. Each of the
+-- three aborted with Code 179 before the fix.
+SELECT 'GLOBAL IN, subquery alias';
 SELECT t1.dummy FROM remote('127.0.0.1', system.one) AS t1
 INNER JOIN system.one AS t2 ON t1.dummy = t2.dummy
 WHERE t1.dummy GLOBAL IN t2;
+
+SELECT 'GLOBAL IN, bare one-part table name';
+SELECT t1.x FROM remote('127.0.0.1', currentDatabase(), t_04650_r) AS t1
+INNER JOIN t_04650_l ON t1.x = t_04650_l.x
+WHERE t1.x GLOBAL IN t_04650_l ORDER BY t1.x;
+
+SELECT 'GLOBAL IN, two-part db.table name';
+SELECT t1.dummy FROM remote('127.0.0.1', system.one) AS t1
+INNER JOIN system.one AS t2 ON t1.dummy = t2.dummy
+WHERE t1.dummy GLOBAL IN system.one;
 
 -- The rewrite_in_to_join rewrite resolves the argument on its own path. Before the fix that path
 -- produced Code: 10 Columns [__table2.dummy] are not found in blocks [__table1.dummy], [].
@@ -127,6 +143,31 @@ SELECT y FROM (SELECT y FROM t_04650_mt QUALIFY 1) AS src WHERE y GLOBAL IN src 
 SELECT 'QUALIFY source, globalNotIn in QUALIFY';
 SELECT count() FROM (SELECT y FROM t_04650_mt QUALIFY 1) AS t_04650_mt
 QUALIFY globalNotIn((SELECT 1), t_04650_mt);
+
+-- SortNode::cloneImpl must carry column_name: it is derived from the original AST identifier rather
+-- than from a child node, so the base clone machinery drops it. The planner puts it into
+-- SortColumnDescription::alias, which is the name FillingTransform matches against the INTERPOLATE
+-- outputs -- so without it a clone silently loses the ORDER BY / INTERPOLATE conflict check. The
+-- uncloned spellings of the query below already raise the error, so the clone must too.
+SELECT 'clone fidelity of SortNode::column_name, uncloned spelling';
+SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 5 STEP 1 INTERPOLATE (a AS a); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT 'clone fidelity of SortNode::column_name, CTE clone';
+WITH c AS (SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 5 STEP 1 INTERPOLATE (a AS a))
+SELECT * FROM c; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT 'clone fidelity of SortNode::column_name, IN-argument clone';
+SELECT l.x FROM t_04650_l AS l
+INNER JOIN (SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 5 STEP 1 INTERPOLATE (a AS a)) AS r
+  ON l.x = r.a
+WHERE l.x IN r ORDER BY l.x; -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT 'control: INTERPOLATE a column other than the fill key';
+WITH c AS (SELECT x AS a, x * 10 AS y FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 5 STEP 1 INTERPOLATE (y AS y))
+SELECT * FROM c ORDER BY a;
+-- column_name also reaches EXPLAIN through SortNode::dumpTreeImpl, so the clone is pinned a second,
+-- error-independent way: without the clone fix the CTE copy prints a bare EXPRESSION.
+SELECT 'clone fidelity of SortNode::column_name, visible in EXPLAIN';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE run_passes = 1
+  WITH c AS (SELECT x AS a FROM t_04650_l ORDER BY a WITH FILL FROM 1 TO 9 STEP 1) SELECT * FROM c
+) WHERE explain ILIKE '%EXPRESSION a%';
 
 DROP TABLE t_04650_mt;
 DROP TABLE t_04650_set;

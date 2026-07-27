@@ -18,7 +18,12 @@ table function source
 0
 1
 2
-GLOBAL IN, bare table name
+GLOBAL IN, subquery alias
+0
+GLOBAL IN, bare one-part table name
+2
+3
+GLOBAL IN, two-part db.table name
 0
 rewrite_in_to_join
 0
@@ -66,3 +71,13 @@ QUALIFY source, GLOBAL IN the same source
 3
 4
 QUALIFY source, globalNotIn in QUALIFY
+clone fidelity of SortNode::column_name, uncloned spelling
+clone fidelity of SortNode::column_name, CTE clone
+clone fidelity of SortNode::column_name, IN-argument clone
+control: INTERPOLATE a column other than the fill key
+1	10
+2	20
+3	30
+4	40
+clone fidelity of SortNode::column_name, visible in EXPLAIN
+1
