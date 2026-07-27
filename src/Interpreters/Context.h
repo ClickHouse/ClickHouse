@@ -762,6 +762,11 @@ public:
 
     DatabaseAndTable getOrCacheStorage(const StorageID & id, std::function<DatabaseAndTable()> storage_getter) const;
 
+    /// Remove a qualified name from the per-query storage cache. Called after this query renames or
+    /// exchanges a table so its own later lookups of the affected names re-resolve to the current
+    /// tables instead of the version pinned before the swap.
+    void dropStorageCacheEntry(const StorageID & id) const;
+
     // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
@@ -782,6 +787,7 @@ public:
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
+        LINUX_RSEQ_UNAVAILABLE,
         LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
         MAX_ACTIVE_PARTS,
         MAX_ATTACHED_DATABASES,
@@ -794,6 +800,7 @@ public:
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
+        MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -1039,6 +1046,11 @@ public:
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names);
+
+    /// Remove a table (and any columns recorded under it) from the query access info. Used to drop an
+    /// internal temporary table that was accessed while executing the query but should not be exposed to
+    /// the user (e.g. the temporary table used to publish a `CREATE ... AS SELECT` atomically).
+    void removeQueryAccessInfoTable(const String & full_quoted_table_name);
 
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
