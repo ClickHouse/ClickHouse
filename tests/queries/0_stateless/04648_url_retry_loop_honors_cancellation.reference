@@ -1,6 +1,12 @@
---- max_execution_time ---
+--- cancelled during a read ---
 TIMEOUT_EXCEEDED
+requests sent: 1
+stopped early
+--- cancelled during a backoff ---
+TIMEOUT_EXCEEDED
+requests sent: 1
 stopped early
 --- KILL QUERY ---
 QUERY_WAS_CANCELLED
+requests sent: 1
 stopped early

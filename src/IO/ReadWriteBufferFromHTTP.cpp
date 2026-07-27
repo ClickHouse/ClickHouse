@@ -389,7 +389,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                          milliseconds_to_wait, read_settings.http_settings.retry_max_backoff_ms);
 
             /// Checked only on the retry path: an error from the first attempt must keep propagating
-            /// as itself, and a cancelled query must not start another attempt.
+            /// as itself, and a cancelled query must not start another attempt. This observes
+            /// cancellation only once the query is marked as killed, so `max_execution_time` with
+            /// `timeout_overflow_mode = 'break'` (which does not mark it) does not stop the loop.
             CurrentThread::checkIfNotCancelled();
 
             sleepForMilliseconds(milliseconds_to_wait);
