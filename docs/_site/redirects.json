@@ -32,6 +32,14 @@
     "destination": "/get-started/migrate/postgres/overview"
   },
   {
+    "source": "/get-started/migrate/bigquery",
+    "destination": "/get-started/migrate/bigquery/overview"
+  },
+  {
+    "source": "/get-started/migrate/bigquery/index",
+    "destination": "/get-started/migrate/bigquery/overview"
+  },
+  {
     "source": "/products/cloud/features/admin-features/api",
     "destination": "/products/cloud/features/admin-features/api/api-overview"
   },
@@ -4732,16 +4740,8 @@
     "source": "/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/integrations/language-clients/java/index",
-    "source": "/integrations/language-clients/java/r2dbc"
-  },
-  {
     "destination": "/integrations/language-clients/js/index",
     "source": "/integrations/language-clients/javascript"
-  },
-  {
-    "destination": "/integrations/language-clients/python/index",
-    "source": "/integrations/language-clients/python/driver-api"
   },
   {
     "destination": "/integrations/language-clients/python/index",
@@ -9576,16 +9576,12 @@
     "source": "/jp/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/ja/integrations/language-clients/java",
+    "destination": "/ja/integrations/language-clients/java/r2dbc",
     "source": "/jp/integrations/language-clients/java/r2dbc"
   },
   {
     "destination": "/ja/integrations/language-clients/js",
     "source": "/jp/integrations/language-clients/javascript"
-  },
-  {
-    "destination": "/ja/integrations/language-clients/python",
-    "source": "/jp/integrations/language-clients/python/driver-api"
   },
   {
     "destination": "/ja/integrations/language-clients/python",
@@ -20340,16 +20336,8 @@
     "source": "/ko/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/ko/integrations/language-clients/java",
-    "source": "/ko/integrations/language-clients/java/r2dbc"
-  },
-  {
     "destination": "/ko/integrations/language-clients/js",
     "source": "/ko/integrations/language-clients/javascript"
-  },
-  {
-    "destination": "/ko/integrations/language-clients/python",
-    "source": "/ko/integrations/language-clients/python/driver-api"
   },
   {
     "destination": "/ko/integrations/language-clients/python",
@@ -26884,7 +26872,7 @@
     "source": "/merges"
   },
   {
-    "destination": "/get-started/migrate/bigquery",
+    "destination": "/get-started/migrate/bigquery/overview",
     "source": "/migrations/bigquery"
   },
   {
@@ -32460,16 +32448,8 @@
     "source": "/ru/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/ru/integrations/language-clients/java",
-    "source": "/ru/integrations/language-clients/java/r2dbc"
-  },
-  {
     "destination": "/ru/integrations/language-clients/js",
     "source": "/ru/integrations/language-clients/javascript"
-  },
-  {
-    "destination": "/ru/integrations/language-clients/python",
-    "source": "/ru/integrations/language-clients/python/driver-api"
   },
   {
     "destination": "/ru/integrations/language-clients/python",
@@ -46028,16 +46008,8 @@
     "source": "/zh/integrations/language-clients/java/jdbc_date_time_guide"
   },
   {
-    "destination": "/zh/integrations/language-clients/java",
-    "source": "/zh/integrations/language-clients/java/r2dbc"
-  },
-  {
     "destination": "/zh/integrations/language-clients/js",
     "source": "/zh/integrations/language-clients/javascript"
-  },
-  {
-    "destination": "/zh/integrations/language-clients/python",
-    "source": "/zh/integrations/language-clients/python/driver-api"
   },
   {
     "destination": "/zh/integrations/language-clients/python",
