@@ -520,6 +520,11 @@ protected:
     {
         String host;
         std::optional<UInt16> port;
+        /// Whether TLS has to be used for this address. It is unset unless it was specified explicitly
+        /// for this address or it was determined by the automatic choice between the plain and the
+        /// secure port, which remembers its outcome here (and not in the global configuration,
+        /// so that the other addresses keep choosing their transport on their own).
+        std::optional<bool> secure;
     };
 
     std::vector<HostAndPort> hosts_and_ports{};

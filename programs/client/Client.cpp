@@ -545,7 +545,7 @@ void Client::connect()
         std::optional<UInt16> port;
         if (config().has("port"))
             port = static_cast<UInt16>(config().getInt("port"));
-        hosts_and_ports.emplace_back(HostAndPort{host, port});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}});
     }
 
     for (size_t attempted_address_index = 0; attempted_address_index < hosts_and_ports.size(); ++attempted_address_index)
@@ -557,6 +557,12 @@ void Client::connect()
 
             connection_parameters = ConnectionParameters(
                 config(), host, database, hosts_and_ports[attempted_address_index].port);
+
+            /// Reuse the transport that already worked for this address (see below), so that a reconnect
+            /// does not have to probe the ports again.
+            if (hosts_and_ports[attempted_address_index].secure.has_value())
+                connection_parameters.security
+                    = *hosts_and_ports[attempted_address_index].secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
 
 #if USE_JWT_CPP && USE_SSL
             connection_parameters.jwt_provider = jwt_provider;
@@ -572,8 +578,8 @@ void Client::connect()
             candidates.emplace_back(connection_parameters.port, connection_parameters.security);
 
             const bool port_unspecified = !hosts_and_ports[attempted_address_index].port.has_value() && !config().has("port");
-            const bool secure_unspecified
-                = !config().has("secure") && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
+            const bool secure_unspecified = !hosts_and_ports[attempted_address_index].secure.has_value() && !config().has("secure")
+                && !config().has("no-secure") && !isCloudEndpoint(host.toUnderType());
 
             if (port_unspecified && secure_unspecified)
             {
@@ -702,9 +708,15 @@ void Client::connect()
             }
 
             config().setString("host", connection_parameters.host);
-            config().setInt("port", connection_parameters.port);
-            if (connection_parameters.security == Protocol::Secure::Enable)
-                config().setBool("secure", true);
+
+            /// Remember the endpoint that has worked, so that a reconnect to the same address does not
+            /// probe the ports again. It is remembered for this address only, and not in the global
+            /// configuration: otherwise a failover to another address would be forced to the same port
+            /// and the same TLS mode, e.g. a session with `--host secure-only --host plain-only` would
+            /// keep connecting to the plain-only address on the secure port after the first address
+            /// answered on it.
+            hosts_and_ports[attempted_address_index].port = connection_parameters.port;
+            hosts_and_ports[attempted_address_index].secure = connection_parameters.security == Protocol::Secure::Enable;
 
             settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
@@ -1050,7 +1062,7 @@ void Client::processOptions(
         std::string host = host_and_port_options["host"].as<std::string>();
         std::optional<UInt16> port
             = !host_and_port_options["port"].empty() ? std::make_optional(host_and_port_options["port"].as<UInt16>()) : std::nullopt;
-        hosts_and_ports.emplace_back(HostAndPort{host, port});
+        hosts_and_ports.emplace_back(HostAndPort{host, port, {}});
     }
 
     send_external_tables = true;

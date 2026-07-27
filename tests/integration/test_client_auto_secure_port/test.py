@@ -3,6 +3,7 @@ plain (9000) and the secure (9440) native ports concurrently. The plain port is 
 answers (backward compatibility), and TLS is enabled automatically when only the secure port is
 reachable, e.g. for servers whose plain port is firewalled, like play.clickhouse.com."""
 
+import threading
 import time
 import uuid
 
@@ -21,6 +22,7 @@ node_both_ports = cluster.add_instance(
         "certs/self-key.pem",
         "certs/ca-cert.pem",
     ],
+    stay_alive=True,
 )
 
 # Serves only the plain port; also used to run the client from, so that the firewall rules
@@ -183,6 +185,41 @@ def test_secure_port_chosen_when_plain_serves_tls():
         assert query_is_secure(node_both_ports) == 1
     finally:
         redirect_plain_port_to_secure(add=False)
+
+
+def test_automatic_choice_is_not_applied_to_the_other_addresses():
+    # The port and the TLS mode chosen automatically for one address must be remembered for that
+    # address only. Here the client first connects to `node_both_ports`, whose plain port is
+    # firewalled, so TLS on the secure port is chosen automatically. Then that server is killed, and
+    # the client fails over to `node_plain_only`, which listens on the plain port only: the choice has
+    # to be made for it from scratch. If the detected port and TLS mode were kept in the global
+    # configuration instead, the client would try the plain-only address on the secure port with TLS
+    # and give up, even though its plain port is healthy.
+    firewall_plain_port("REJECT")
+
+    def kill_the_first_server():
+        time.sleep(5)
+        node_both_ports.stop_clickhouse(kill=True)
+
+    killer = threading.Thread(target=kill_the_first_server)
+    killer.start()
+    try:
+        # The first query runs long enough to be interrupted by the kill; `--ignore-error` makes the
+        # client proceed to the second query, which reconnects, failing over to the second address.
+        output = node_plain_only.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"clickhouse client --host {node_both_ports.name} --host {node_plain_only.name}"
+                " --accept-invalid-certificate --ignore-error --max_block_size 1 --max_threads 1"
+                " --query \"SELECT sleepEachRow(1) FROM numbers(60) FORMAT Null; SELECT 'reconnected'\" 2>&1 || true",
+            ]
+        )
+        assert "reconnected" in output
+    finally:
+        killer.join()
+        unfirewall_plain_port("REJECT")
+        node_both_ports.start_clickhouse()
 
 
 def test_explicit_port_is_not_upgraded():
