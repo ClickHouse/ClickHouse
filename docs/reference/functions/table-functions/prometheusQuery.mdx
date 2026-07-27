@@ -45,7 +45,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 | Category | Functions |
 |----------|-----------|
-| Range    | `rate`, `irate`, `delta`, `idelta`, `increase`, `deriv`, `predict_linear`, `last_over_time` |
+| Range    | `rate`, `irate`, `delta`, `idelta`, `last_over_time` |
 | Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
@@ -54,8 +54,6 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other    | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
-
-**Note**: Prometheus stale markers are recognized only when the sample value column of the `TimeSeries` table is `Float64`. The stale marker is a specific `NaN` payload, and a `Float32` value column cannot preserve it: the marker is downcast to an ordinary `NaN` on insert, so on such a table stale samples are treated as regular `NaN` values by selectors and range functions.
 
 ### Operators {#operators}
 
