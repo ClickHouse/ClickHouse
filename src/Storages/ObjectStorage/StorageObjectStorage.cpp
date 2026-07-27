@@ -446,56 +446,62 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     if (!hive_partitioning_sample_path_deferred)
         return;
 
-    /// A normal return marks the resolution as done. A throwing resolution stays
-    /// pending, so the error is reported by every query until it goes away.
-    std::call_once(hive_partitioning_resolution_flag, [&]
+    std::lock_guard lock(hive_partitioning_resolution_mutex);
+    if (hive_partitioning_sample_path_resolved)
+        return;
+
+    /// The resolution was deferred because the construction context had `use_hive_partitioning`
+    /// enabled. Apply that decision regardless of the settings of the triggering query.
+    auto resolution_context = Context::createCopy(query_context);
+    resolution_context->setSetting("use_hive_partitioning", true);
+
+    std::string sample_path;
+    try
     {
-        /// The resolution was deferred because the construction context had `use_hive_partitioning`
-        /// enabled. Apply that decision regardless of the settings of the triggering query.
-        auto resolution_context = Context::createCopy(query_context);
-        resolution_context->setSetting("use_hive_partitioning", true);
+        configuration->update(object_storage, resolution_context);
+        sample_path = getPathSample(resolution_context);
+    }
+    catch (...)
+    {
+        /// Do not let a restricted session degrade the table state, fail closed like the constructor.
+        if (getCurrentExceptionCode() == ErrorCodes::ACCESS_DENIED)
+            throw;
 
-        std::string sample_path;
-        try
-        {
-            configuration->update(object_storage, resolution_context);
-            sample_path = getPathSample(resolution_context);
-        }
-        catch (...)
-        {
-            /// Match the eager resolution behavior: only warn and proceed without hive partitioning.
-            LOG_WARNING(
-                log,
-                "Failed to list object storage, cannot use hive partitioning. "
-                "Error: {}",
-                getCurrentExceptionMessage(true));
-            return;
-        }
+        /// An endpoint failure degrades only the triggering query and is retried by the next one.
+        LOG_WARNING(
+            log,
+            "Failed to list object storage, cannot use hive partitioning. "
+            "Error: {}",
+            getCurrentExceptionMessage(true));
+        return;
+    }
 
-        auto current_metadata = getInMemoryMetadataPtr(resolution_context, false);
-        auto new_metadata = *current_metadata;
+    auto current_metadata = getInMemoryMetadataPtr(resolution_context, false);
+    auto new_metadata = *current_metadata;
 
-        auto [new_hive_partition_columns, new_file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
-            new_metadata.columns,
-            configuration,
-            sample_path,
-            /* inferred_schema */ false,
-            format_settings,
-            resolution_context);
+    /// Errors thrown below stay unresolved on purpose, so they are reported until they go away.
+    auto [new_hive_partition_columns, new_file_columns] = HivePartitioningUtils::setupHivePartitioningForObjectStorage(
+        new_metadata.columns,
+        configuration,
+        sample_path,
+        /* inferred_schema */ false,
+        format_settings,
+        resolution_context);
 
-        if (!new_metadata.columns.empty() && new_file_columns.empty())
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
-                sample_path);
-        }
+    if (!new_metadata.columns.empty() && new_file_columns.empty())
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "File without physical columns is not supported. Please try it with `use_hive_partitioning=0` and or `partition_strategy=wildcard`. File {}",
+            sample_path);
+    }
 
-        hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
-        file_columns = std::move(new_file_columns);
+    hive_partition_columns_to_read_from_file_path = std::move(new_hive_partition_columns);
+    file_columns = std::move(new_file_columns);
 
-        new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, resolution_context));
-        setInMemoryMetadata(new_metadata);
-    });
+    new_metadata.setVirtuals(createVirtualColumns(new_metadata.columns, sample_path, resolution_context));
+    setInMemoryMetadata(new_metadata);
+
+    hive_partitioning_sample_path_resolved = true;
 }
 
 void StorageObjectStorage::updateExternalDynamicMetadataIfExists(ContextPtr query_context)
