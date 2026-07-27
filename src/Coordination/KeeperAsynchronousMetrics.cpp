@@ -26,8 +26,10 @@ void updateKeeperInformation(KeeperDispatcher & keeper_dispatcher, AsynchronousM
     /// Signed on purpose: `getCurrentProcessFDCount` reports an undetermined count as `-1`,
     /// and it must not wrap around to 2^64 - 1, which is indistinguishable from an unlimited
     /// `RLIMIT_NOFILE`. This matches the contract of the `mntr` four-letter command.
-    Int64 open_file_descriptor_count = 0;
-    std::optional<size_t> max_file_descriptor_count = 0;
+    /// The values are assigned only on Linux and macOS, so start from "undetermined",
+    /// not from 0, for the same reason.
+    Int64 open_file_descriptor_count = -1;
+    std::optional<size_t> max_file_descriptor_count;
     size_t followers = 0;
     size_t synced_followers = 0;
     size_t zxid = 0;
