@@ -229,14 +229,17 @@ For more examples of ingesting data with Vector, see [Ingesting with Vector](/cl
 
 Create a data source for the table populated by your Vector pipeline. ClickStack prompts you to create one on your first login.
 
-<Image img="/images/clickstack/create-vector-datasource.webp" alt="Create a Vector data source" size="lg"/>
-
-For the Nginx example in this guide, select `time_local` as the timestamp column and `logs.nginx_logs` as the source table.
-
-The form pre-populates expressions for the default OpenTelemetry schema. Replace them with expressions that match the Nginx table:
+The form pre-populates expressions for the default OpenTelemetry schema. For the Nginx table created in this guide, configure the source with these values:
 
 | Setting | Value |
 |---|---|
+| **Name** | `Nginx logs` |
+| **Source Data Type** | Log |
+| **Server Connection** | `Default` |
+| **Database** | `logs` |
+| **Table** | `nginx_logs` |
+| **Timestamp Column** | `time_local` |
+| **Default SELECT** | `time_local, remote_addr, status, request` |
 | **Service Name Expression** | `'nginx'` |
 | **Log Level Expression** | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')` |
 | **Log Attributes Expression** | `map('http.remote_addr', remote_addr, 'http.status_code', toString(status), 'http.request', request)` |
@@ -246,13 +249,7 @@ The form pre-populates expressions for the default OpenTelemetry schema. Replace
 | **Span ID Expression** | `''` |
 | **Implicit Column Expression** | `request` |
 
-Set **Default SELECT** to:
-
-```sql
-time_local, remote_addr, status, request
-```
-
-The example table doesn't contain a `Body` column. Set **Body Expression** to:
+The Nginx table doesn't contain a `Body` column. Set **Body Expression** to:
 
 ```sql
 concat(
