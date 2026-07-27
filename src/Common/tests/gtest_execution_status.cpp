@@ -67,7 +67,7 @@ TEST(ExecutionStatus, TryDeserializeTextDoesNotRecordHandledError)
         status.deserializeText(malformed);
         FAIL() << "Expected malformed status to throw";
     }
-    catch (const Exception &)
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
     {
     }
     EXPECT_EQ(getLocalErrorCount(error_code), count + 1);

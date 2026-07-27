@@ -397,7 +397,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            bool is_self_host;
+            bool is_self_host = false;
             {
                 Exception::SuppressErrorCodesScope suppress_error_codes;
                 is_self_host = isSelfHostID(log, host, maybe_secure_port, port);

@@ -94,7 +94,7 @@ void recordUnexpectedOSMetricException(std::exception_ptr exception)
         if (!isExpectedOSMetricError(e.code()))
             e.recordToSystemErrors(/* force */ true);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Ok: Non-DB exceptions never affect system error counters.
     }

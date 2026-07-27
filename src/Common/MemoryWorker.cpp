@@ -71,7 +71,7 @@ void recordUnexpectedMemoryMetricException(std::exception_ptr exception)
         if (!isExpectedMemoryMetricError(e.code()))
             e.recordToSystemErrors(/* force */ true);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Ok: Non-DB exceptions never affect system error counters.
     }
@@ -887,7 +887,7 @@ void MemoryWorker::updateResidentMemoryThread()
 
             Stopwatch total_watch;
 
-            Int64 resident;
+            Int64 resident = 0;
             try
             {
                 Exception::SuppressErrorCodesScope suppress_error_codes;

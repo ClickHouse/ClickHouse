@@ -658,7 +658,7 @@ public:
         {
             while (true)
             {
-                bool eof;
+                bool eof = false;
                 if (allow_torn_tail)
                 {
                     Exception::SuppressErrorCodesScope suppress_error_codes;

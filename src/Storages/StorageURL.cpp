@@ -145,7 +145,7 @@ namespace
             if (e.code() == ErrorCodes::ACCESS_DENIED || e.code() == ErrorCodes::UNACCEPTABLE_URL)
                 e.recordToSystemErrors(/* force */ true);
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
             /// Ok: Non-DB exceptions never affect system error counters.
         }

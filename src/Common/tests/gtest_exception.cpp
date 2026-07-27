@@ -91,14 +91,14 @@ TEST(Exception, RecordingWaitsForOutermostSuppressionScope)
 
 TEST(Exception, OutermostCallerControlsRecording)
 {
-    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT); // NOLINT(clang-analyzer-deadcode.DeadStores)
 
     try
     {
         Exception::SuppressErrorCodesScope outer_scope;
         throwFromSuppressedHelper();
     }
-    catch (const Exception &)
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
     {
         /// The outer caller handled the helper failure with a successful fallback.
     }
@@ -109,7 +109,7 @@ TEST(Exception, OutermostCallerControlsRecording)
     {
         throwFromSuppressedHelper();
     }
-    catch (const Exception &)
+    catch (const Exception &) // NOLINT(bugprone-empty-catch)
     {
         /// Without an outer suppression scope, the helper records before propagation.
     }
