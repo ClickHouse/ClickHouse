@@ -1134,7 +1134,28 @@ def pgrep(ppid: int = None, pgid: int = None, command: str = None) -> List[List[
         ps = [p for p in ps if command in p[3]]
     return ps
 
-def get_all_server_pids():
+def _is_server_cmdline(cmdline: str, binary: str = "clickhouse") -> bool:
+    """True when argv IS the server, not a process that merely mentions it.
+
+    A substring match on the whole command line also matches a
+    `/bin/sh -c "clickhouse-server ..."` wrapper (CI starts the server with
+    shell=True, see ci/jobs/scripts/clickhouse_proc.py), and that wrapper sorts
+    before the server by pid.  The multicall selector is accepted bare or
+    `--`-prefixed (programs/main.cpp isClickhouseApp), for either the
+    `clickhouse` name or the binary under test (`--binary` may be any path).
+    """
+    parts = cmdline.split()
+    if not parts:
+        return False
+    argv0 = os.path.basename(parts[0])
+    if argv0 == "clickhouse-server":
+        return True
+    if argv0 not in ("clickhouse", os.path.basename(binary)):
+        return False
+    return len(parts) > 1 and parts[1] in ("server", "--server")
+
+
+def get_all_server_pids(args):
     """Get PIDs of all clickhouse-server processes visible to the current user.
 
     No pgid scoping: in every real scenario where this helper is useful the
@@ -1142,8 +1163,18 @@ def get_all_server_pids():
     Docker, systemd, and the `ClickHouseService` test fixture all spawn the
     server with `start_new_session=True` or equivalent).  A pgid filter
     silently filters out everything we are meant to find.
+
+    A match that is the parent of another match is the watchdog, not the
+    serving process (src/Daemon/BaseDaemon.cpp): its rename to
+    "clickhouse-watchdog" is truncated to the original argv0 length, so for a
+    bare `clickhouse` argv0 it keeps presenting a server argv.  Sibling
+    replicas share a ppid, so this must not be expressed as "drop the lowest
+    pid".
     """
-    return [p[0] for p in pgrep(command="clickhouse-server")]
+    binary = getattr(args, "binary", "clickhouse")
+    matches = [p for p in pgrep() if _is_server_cmdline(p[3], binary)]
+    parents = {p[1] for p in matches}
+    return [p[0] for p in matches if p[0] not in parents]
 
 
 def is_asan_build(args):
@@ -1216,8 +1247,8 @@ def print_c_stacktraces(args) -> None:
         )
         return
 
-    server_pid = get_server_pid()
-    all_pids = get_all_server_pids()
+    server_pid = get_server_pid(args)
+    all_pids = get_all_server_pids(args)
     if not all_pids:
         print(
             colored(
@@ -1266,16 +1297,14 @@ def print_sql_stacktraces(args) -> None:
         print(f"(full system.stack_trace dump saved to {SQL_STACKTRACES_LOG})")
 
 
-def get_server_pid():
-    # Use the portable pgrep helper (built on `ps -eo pid,ppid,pgid,command`)
-    # so this works on both Linux and macOS — `pidof` does not exist on
-    # macOS, and `lsof -i tcp:PORT` would require knowing the port (only
-    # available on `args`, which is undefined in multiprocessing children
-    # spawned with the `spawn` start method).
-    procs = pgrep(command="clickhouse-server")
-    if not procs:
+def get_server_pid(args):
+    # Delegate to get_all_server_pids so the two helpers cannot disagree about
+    # which process is the server — they did, which is how a shell wrapper got
+    # labelled "main server" while the real server was labelled "replica".
+    pids = get_all_server_pids(args)
+    if not pids:
         return None  # most likely server is dead
-    return procs[0][0]
+    return pids[0]
 
 
 def colored(text, args, color=None, on_color=None, attrs=None):
@@ -4807,7 +4836,7 @@ def get_server_memory_fraction(args) -> Optional[float]:
 
     # Cache the server PID — it does not change during a test run.
     if not hasattr(get_server_memory_fraction, "_server_pid"):
-        get_server_memory_fraction._server_pid = get_server_pid()
+        get_server_memory_fraction._server_pid = get_server_pid(args)
     pid = get_server_memory_fraction._server_pid
     if pid is None:
         return None
