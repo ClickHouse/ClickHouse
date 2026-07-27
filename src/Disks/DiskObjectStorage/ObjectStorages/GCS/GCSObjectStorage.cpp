@@ -54,6 +54,15 @@ namespace
         return result;
     }
 
+    /// The number of objects to request per listing page. A configured `list_object_keys_size` of 0
+    /// means "unset"; fall back to the GCS JSON API's own default page size.
+    constexpr size_t DEFAULT_LIST_PAGE_SIZE = 1000;
+
+    size_t listPageSize(size_t list_object_keys_size)
+    {
+        return list_object_keys_size ? list_object_keys_size : DEFAULT_LIST_PAGE_SIZE;
+    }
+
     /// Streams a listing batch by batch (like the S3 and Azure backends) instead of materializing all
     /// matching objects up front, so memory usage and time to the first result scale with the batch
     /// size rather than with the total number of objects under the prefix. `ListObjectsReader` pages
@@ -79,7 +88,7 @@ namespace
             , path_prefix(std::move(path_prefix_))
             , disk_name(std::move(disk_name_))
             , start_after(start_after_.has_value() ? *start_after_ : "")
-            , batch_size(max_list_size_ ? max_list_size_ : 1000)
+            , batch_size(listPageSize(max_list_size_))
         {
         }
 
@@ -229,10 +238,16 @@ std::unique_ptr<WriteBufferFromFileBase> GCSObjectStorage::writeObject( /// NOLI
 
 void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const
 {
-    auto client_ptr = getClient();
+    auto snapshot = getClientWithSettings();
+
+    /// `max_keys` bounds the whole listing, `list_object_keys_size` is the page size (like the S3
+    /// backend's `MaxKeys`). Never ask for more per page than the caller wants in total.
+    size_t page_size = listPageSize(snapshot->settings.list_object_keys_size);
+    if (max_keys)
+        page_size = std::min(page_size, max_keys);
 
     size_t count = 0;
-    for (auto && item : client_ptr->ListObjects(bucket, gcs::Prefix(path)))
+    for (auto && item : snapshot->client->ListObjects(bucket, gcs::Prefix(path), gcs::MaxResults(static_cast<Int64>(page_size))))
     {
         if (!item)
             throwFromGCSStatus(item.status(),
@@ -252,8 +267,12 @@ ObjectStorageIteratorPtr GCSObjectStorage::iterate(
     const std::optional<std::string> & start_after) const
 {
     /// Callers (e.g. the glob source in StorageObjectStorageSource) expect the iterator to enumerate
-    /// *all* matching objects, using max_keys only as a batch-size hint.
-    return std::make_shared<GCSIteratorAsync>(getClient(), bucket, path_prefix, disk_name, start_after, max_keys);
+    /// *all* matching objects, using max_keys only as a batch-size hint. When they give no hint, use
+    /// the configured `list_object_keys_size` (the S3 and Azure backends do the same).
+    auto snapshot = getClientWithSettings();
+    if (!max_keys)
+        max_keys = snapshot->settings.list_object_keys_size;
+    return std::make_shared<GCSIteratorAsync>(snapshot->client, bucket, path_prefix, disk_name, start_after, max_keys);
 }
 
 void GCSObjectStorage::removeObjectImpl(
