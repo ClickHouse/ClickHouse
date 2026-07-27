@@ -1,4 +1,4 @@
-#include "ParserMongoUpdateQuery.h"
+#include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 
 #include <rapidjson/document.h>
 
@@ -19,13 +19,13 @@
 #include <Parsers/Mongo/ParserMongoOrderBy.h>
 #include <Parsers/Mongo/ParserMongoProjection.h>
 #include <Parsers/Mongo/Utils.h>
-#include "Parsers/ASTAlterQuery.h"
-#include "Parsers/ASTDeleteQuery.h"
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTDeleteQuery.h>
 
 
-#include "Parsers/Mongo/ParserMongoQuery.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 namespace DB
 {
@@ -40,29 +40,14 @@ bool ParserMongoUpdateQuery::parseImpl(ASTPtr & node)
 
     update_query->type = ASTAlterCommand::UPDATE;
 
-    auto * iter = data.GetArray().Begin();
-    rapidjson::Value filter_json(iter->GetObject());
-    ++iter;
-    rapidjson::Value update_json(iter->GetObject());
+    /// `updateMany` is parsed from a two element array: the filter and the update statement.
+    if (!data.IsArray() || data.Size() != 2)
+        return false;
 
+    auto filter_json = copyValue(data[0], metadata->getAllocator());
+    auto update_json = copyValue(data[1], metadata->getAllocator());
 
     ASTPtr where_condition;
-
-    {
-        rapidjson::StringBuffer writer_buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer_filter(writer_buffer);
-
-        filter_json.Accept(writer_filter);
-    }
-
-    {
-        rapidjson::StringBuffer writer_buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer_filter(writer_buffer);
-
-        update_json.Accept(writer_filter);
-    }
-
-
     if (ParserMongoFilter(std::move(filter_json), metadata, "").parseImpl(where_condition))
     {
         update_query->children.push_back(where_condition);

@@ -1,4 +1,4 @@
-#include "ParserMongoDeleteQuery.h"
+#include <Parsers/Mongo/ParserMongoDeleteQuery.h>
 
 #include <rapidjson/document.h>
 
@@ -19,11 +19,11 @@
 #include <Parsers/Mongo/ParserMongoOrderBy.h>
 #include <Parsers/Mongo/ParserMongoProjection.h>
 #include <Parsers/Mongo/Utils.h>
-#include "Parsers/ASTDeleteQuery.h"
+#include <Parsers/ASTDeleteQuery.h>
 
 
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 namespace DB
 {
@@ -36,15 +36,12 @@ bool ParserMongoDeleteQuery::parseImpl(ASTPtr & node)
     auto delete_query = make_intrusive<ASTDeleteQuery>();
     node = delete_query;
 
-    auto table_expression_ast = make_intrusive<ASTIdentifier>(metadata->getCollectionName());
-    delete_query->table = table_expression_ast;
+    delete_query->table = make_intrusive<ASTIdentifier>(metadata->getCollectionName());
+    if (!metadata->getDatabaseName().empty())
+        delete_query->database = make_intrusive<ASTIdentifier>(metadata->getDatabaseName());
 
     /// Traverse data tree for WHERE operator
     ASTPtr where_condition;
-
-    rapidjson::StringBuffer buffer;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-    data.Accept(writer);
 
     if (ParserMongoFilter(std::move(data), metadata, "").parseImpl(where_condition))
     {

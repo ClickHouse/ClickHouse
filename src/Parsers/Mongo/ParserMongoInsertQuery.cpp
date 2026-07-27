@@ -1,4 +1,4 @@
-#include "ParserMongoInsertQuery.h"
+#include <Parsers/Mongo/ParserMongoInsertQuery.h>
 
 #include <memory>
 

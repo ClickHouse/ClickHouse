@@ -1,4 +1,4 @@
-#include "ParserMongoSelectQuery.h"
+#include <Parsers/Mongo/ParserMongoSelectQuery.h>
 
 #include <rapidjson/document.h>
 
@@ -30,7 +30,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
 {
     auto select_query = make_intrusive<ASTSelectQuery>();
 
-    auto projection = findField(data, "$projection");
+    auto projection = findField(data, "$projection", metadata->getAllocator());
     /// Equals to SELECT * ...
     if (!projection)
     {
@@ -56,7 +56,11 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     ASTPtr tables = make_intrusive<ASTTablesInSelectQuery>();
 
     auto table_expression_ast = make_intrusive<ASTTableExpression>();
-    table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(metadata->getCollectionName()));
+    if (metadata->getDatabaseName().empty())
+        table_expression_ast->children.push_back(make_intrusive<ASTTableIdentifier>(metadata->getCollectionName()));
+    else
+        table_expression_ast->children.push_back(
+            make_intrusive<ASTTableIdentifier>(metadata->getDatabaseName(), metadata->getCollectionName()));
     table_expression_ast->database_and_table_name = table_expression_ast->children.back();
 
     auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
@@ -78,7 +82,7 @@ bool ParserMongoSelectQuery::parseImpl(ASTPtr & node)
     {
         ASTPtr order_by_node;
         auto order_by = *metadata->getOrderBy();
-        auto order_by_tree = parseData(order_by.data(), order_by.data() + order_by.size(), false);
+        auto order_by_tree = parseData(order_by.data(), order_by.data() + order_by.size(), metadata->getAllocator(), false);
         if (!ParserMongoOrderBy(std::move(order_by_tree), metadata, "").parseImpl(order_by_node))
         {
             return false;

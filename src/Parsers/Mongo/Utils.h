@@ -43,21 +43,23 @@ std::pair<const char *, const char *> getMetadataSubstring(const char * begin, c
 
 std::pair<const char *, const char *> getSettingsSubstring(const char * begin, const char * end);
 
-void validateFirstMetadataArgument(const char * begin, const char * end);
-
+/** Copies a value into `allocator`, which must outlive the returned value. The allocator is
+  * always the one owned by the `QueryMetadata` of the query being parsed - a process wide
+  * allocator would both race between concurrent queries and never release its memory.
+  */
 template <typename T>
-rapidjson::Value copyValue(const T & value)
+rapidjson::Value copyValue(const T & value, rapidjson::Document::AllocatorType & allocator)
 {
-    static rapidjson::Document::AllocatorType allocator;
-
     rapidjson::Value result;
     result.CopyFrom(value, allocator);
     return result;
 }
 
-std::optional<rapidjson::Value> findField(const rapidjson::Value & value, const std::string & key);
+std::optional<rapidjson::Value>
+findField(const rapidjson::Value & value, const std::string & key, rapidjson::Document::AllocatorType & allocator);
 
-rapidjson::Value parseData(const char * begin, const char * end, bool wrap_into_array = true);
+rapidjson::Value
+parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array = true);
 
 
 class MongoQueryKeyNameExtractor

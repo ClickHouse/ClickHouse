@@ -1,4 +1,4 @@
-#include "parseMongoQuery.h"
+#include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/IParser.h>
@@ -38,7 +38,7 @@ ASTPtr tryParseMongoQuery(
 
     auto [data_begin, data_end] = getSettingsSubstring(_out_query_end, end);
     metadata = extractMetadataFromRequest(_out_query_end, end);
-    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end), metadata);
+    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end, metadata->getAllocator()), metadata);
 
     _out_query_end = findKth<';'>(_out_query_end, end, 1) + 1;
     const bool parse_res = parser.parse(token_iterator, res, expected);
@@ -101,7 +101,7 @@ ASTPtr parseMongoQuery(
     metadata->add_data_to_query = false;
     auto [data_begin, data_end] = getSettingsSubstring(begin, end);
 
-    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end), metadata);
+    dynamic_cast<ParserMongoQuery &>(parser).setParsingData(parseData(data_begin, data_end, metadata->getAllocator()), metadata);
     IParser::Pos token_iterator(token_subquery, static_cast<uint32_t>(max_parser_depth), static_cast<uint32_t>(max_parser_backtracks));
     const bool parse_res = parser.parse(token_iterator, res, expected);
     if (!parse_res)

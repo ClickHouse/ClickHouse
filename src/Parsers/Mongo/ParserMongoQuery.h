@@ -89,8 +89,8 @@ public:
 
     void setParsingData(rapidjson::Value data_, std::shared_ptr<QueryMetadata> metadata_)
     {
-        data = data_;
-        metadata = metadata_;
+        data = std::move(data_);
+        metadata = std::move(metadata_);
     }
 
 protected:

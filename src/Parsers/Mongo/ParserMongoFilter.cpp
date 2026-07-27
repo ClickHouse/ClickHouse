@@ -1,4 +1,4 @@
-#include "ParserMongoFilter.h"
+#include <Parsers/Mongo/ParserMongoFilter.h>
 
 #include <memory>
 
@@ -20,7 +20,7 @@ bool ParserMongoFilter::parseImpl(ASTPtr & node)
     std::vector<ASTPtr> child_trees;
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
-        auto parser = createParser(copyValue(it->value), metadata, it->name.GetString());
+        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, it->name.GetString());
         ASTPtr child_node;
         if (!parser->parseImpl(child_node))
         {

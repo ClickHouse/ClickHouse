@@ -1,4 +1,4 @@
-#include "Utils.h"
+#include <Parsers/Mongo/Utils.h>
 
 #include <algorithm>
 #include <optional>
@@ -41,28 +41,20 @@ std::pair<const char *, const char *> getSettingsSubstring(const char * begin, c
     return {position_start + 1, position_end};
 }
 
-void validateFirstMetadataArgument(const char * begin, const char * end)
-{
-    size_t size = end - begin;
-    if (size < 2 || *(end - 1) != 'b' || *(end - 2) != 'd')
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: first argument of query should be 'db'");
-    }
-}
-
-std::optional<rapidjson::Value> findField(const rapidjson::Value & value, const std::string & key)
+std::optional<rapidjson::Value>
+findField(const rapidjson::Value & value, const std::string & key, rapidjson::Document::AllocatorType & allocator)
 {
     for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
     {
         if (it->name.GetString() == key)
         {
-            return copyValue(it->value);
+            return copyValue(it->value, allocator);
         }
     }
     return std::nullopt;
 }
 
-rapidjson::Value parseData(const char * begin, const char * end, bool wrap_into_array)
+rapidjson::Value parseData(const char * begin, const char * end, rapidjson::Document::AllocatorType & allocator, bool wrap_into_array)
 {
     std::string input(begin, end);
     if (wrap_into_array)
@@ -75,7 +67,7 @@ rapidjson::Value parseData(const char * begin, const char * end, bool wrap_into_
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while parsing json in parseData {}", input);
     }
-    return copyValue(document);
+    return copyValue(document, allocator);
 }
 
 std::optional<size_t> MongoQueryKeyNameExtractor::findPosition(const char * begin, const char * end)

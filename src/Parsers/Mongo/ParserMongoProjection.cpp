@@ -1,4 +1,4 @@
-#include "Parsers/Mongo/ParserMongoProjection.h"
+#include <Parsers/Mongo/ParserMongoProjection.h>
 
 #include <memory>
 
@@ -36,7 +36,7 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
             continue;
         }
         ASTPtr child_node;
-        auto parser = createParser(copyValue(it->value), metadata, it->name.GetString(), true);
+        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, it->name.GetString(), true);
         if (!parser->parseImpl(child_node))
         {
             return false;

@@ -3,7 +3,7 @@
 #include <string>
 
 #include <Parsers/Mongo/ParserMongoSelectQuery.h>
-#include "Parsers/Mongo/ParserMongoQuery.h"
+#include <Parsers/Mongo/ParserMongoQuery.h>
 
 namespace DB
 {

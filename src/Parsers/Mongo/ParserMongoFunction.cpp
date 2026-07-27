@@ -1,4 +1,4 @@
-#include "ParserMongoFunction.h"
+#include <Parsers/Mongo/ParserMongoFunction.h>
 #include <memory>
 
 #include <Core/Field.h>
@@ -11,7 +11,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/Utils.h>
-#include "Parsers/ASTExpressionList.h"
+#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -67,7 +67,7 @@ bool MongoLiteralFunction::parseImpl(ASTPtr & node)
         auto it = data.MemberBegin();
 
         const char * name = it->name.GetString();
-        auto parser = createParser(copyValue(it->value), metadata, name);
+        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, name);
         ASTPtr child_node;
         if (!parser->parseImpl(child_node))
         {
@@ -90,7 +90,7 @@ bool MongoOrFunction::parseImpl(ASTPtr & node)
     std::vector<ASTPtr> child_trees;
     for (unsigned int i = 0; i < data.Size(); ++i)
     {
-        auto parser = createParser(copyValue(data[i]), metadata, "");
+        auto parser = createParser(copyValue(data[i], metadata->getAllocator()), metadata, "");
         ASTPtr child_node;
         if (!parser->parseImpl(child_node))
         {
@@ -130,7 +130,7 @@ bool IMongoArithmeticFunction::parseImpl(ASTPtr & node)
     std::vector<ASTPtr> children;
     for (unsigned int i = 0; i < data.Size(); ++i)
     {
-        auto parser = createParser(copyValue(data[i]), metadata, "$arithmetic_function_element");
+        auto parser = createParser(copyValue(data[i], metadata->getAllocator()), metadata, "$arithmetic_function_element");
         ASTPtr child_node;
         if (!parser->parseImpl(child_node))
         {
@@ -165,6 +165,12 @@ bool MongoArithmeticFunctionElement::parseImpl(ASTPtr & node)
         node = literal;
         return true;
     }
+    if (data.IsNumber())
+    {
+        auto literal = make_intrusive<ASTLiteral>(Field(data.GetDouble()));
+        node = literal;
+        return true;
+    }
     if (data.IsString())
     {
         auto identifier = make_intrusive<ASTIdentifier>(data.GetString());
@@ -196,7 +202,7 @@ bool MongoSetFunction::parseImpl(ASTPtr & node)
         auto assignment_ast = make_intrusive<ASTAssignment>();
         assignment_ast->column_name = it->name.GetString();
         ASTPtr assigment_expr;
-        auto parser = createParser(copyValue(it->value), metadata, "$arithmetic_function_element");
+        auto parser = createParser(copyValue(it->value, metadata->getAllocator()), metadata, "$arithmetic_function_element");
         if (!parser->parseImpl(assigment_expr))
             return false;
         assignment_ast->children.push_back(assigment_expr);
@@ -214,19 +220,19 @@ bool MongoIncrementFunction::parseImpl(ASTPtr & node)
     auto expression_list = make_intrusive<ASTExpressionList>();
     node = expression_list;
 
+    /// `{"$inc": {"age": 1}}` increments the column `age` by the literal `1`: the member name
+    /// is the column and the member value is the amount to add.
     for (auto it = data.MemberBegin(); it != data.MemberEnd(); ++it)
     {
         auto assignment_ast = make_intrusive<ASTAssignment>();
         assignment_ast->column_name = it->name.GetString();
 
-        ASTPtr column_identifier;
-        if (!MongoArithmeticFunctionElement(rapidjson::Value(it->name.GetObject()), metadata, "").parseImpl(column_identifier))
+        ASTPtr value_expression;
+        if (!MongoArithmeticFunctionElement(copyValue(it->value, metadata->getAllocator()), metadata, "").parseImpl(value_expression))
             return false;
 
-        ASTPtr value_literal;
-        if (!MongoArithmeticFunctionElement(rapidjson::Value(it->value.GetObject()), metadata, "").parseImpl(value_literal))
-            return false;
-        auto increment = makeASTFunction("plus", column_identifier, value_literal);
+        auto column_identifier = make_intrusive<ASTIdentifier>(assignment_ast->column_name);
+        auto increment = makeASTFunction("plus", column_identifier, value_expression);
 
         assignment_ast->children.push_back(increment);
         expression_list->children.push_back(assignment_ast);

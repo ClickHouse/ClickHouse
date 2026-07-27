@@ -1,4 +1,4 @@
-#include "ParserMongoCompareFunctions.h"
+#include <Parsers/Mongo/ParserMongoCompareFunctions.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

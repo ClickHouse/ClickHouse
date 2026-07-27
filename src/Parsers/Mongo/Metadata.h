@@ -3,6 +3,8 @@
 #include <memory>
 #include <optional>
 
+#include <rapidjson/document.h>
+
 #include <Parsers/IParserBase.h>
 
 namespace DB
@@ -11,7 +13,9 @@ namespace DB
 namespace Mongo
 {
 
-/// Metadata for MongoDB queries. Contains collection, query type, limi and order by data.
+/// Metadata for MongoDB queries. Contains the database and collection, the query type, the
+/// limit and the order by data. It also owns the allocator of every `rapidjson::Value`
+/// produced while parsing the query, so that no state is shared between concurrent parses.
 class QueryMetadata
 {
 public:
@@ -36,8 +40,15 @@ public:
 
     static constexpr size_t queryTypeKeyWordsLength = sizeof(queryTypeKeyWords) / sizeof(queryTypeKeyWords[0]);
 
-    explicit QueryMetadata(
-        const char * begin, const char * end, QueryType query_type_, std::optional<int> limit_, std::optional<std::string> order_by_);
+    QueryMetadata(
+        std::string database_name_,
+        std::string collection_name_,
+        QueryType query_type_,
+        std::optional<int> limit_,
+        std::optional<std::string> order_by_);
+
+    /// Empty when the query does not name a database, which means the current one.
+    const std::string & getDatabaseName() const { return database_name; }
 
     const std::string & getCollectionName() const { return collection_name; }
 
@@ -47,11 +58,17 @@ public:
 
     std::optional<std::string> getOrderBy() const { return order_by; }
 
+    /// The allocator of every value of the parsed query. It is owned by this object, which
+    /// lives at least as long as the parsers referencing those values.
+    rapidjson::Document::AllocatorType & getAllocator() { return allocator; }
+
 private:
+    std::string database_name;
     std::string collection_name;
     QueryType query_type;
     std::optional<size_t> limit;
     std::optional<std::string> order_by;
+    rapidjson::Document::AllocatorType allocator;
 };
 
 std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end);
