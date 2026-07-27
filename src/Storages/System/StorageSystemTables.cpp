@@ -610,8 +610,9 @@ protected:
                                     Exception::SuppressErrorCodesScope suppress_error_codes;
                                     total_rows = table.second->totalRows(context);
                                 }
-                                catch (const Exception &)
+                                catch (Exception & e)
                                 {
+                                    e.recordToSystemErrors(/* force */ true);
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
                                 }
@@ -630,8 +631,9 @@ protected:
                                     Exception::SuppressErrorCodesScope suppress_error_codes;
                                     total_bytes = table.second->totalBytes(context);
                                 }
-                                catch (const Exception &)
+                                catch (Exception & e)
                                 {
+                                    e.recordToSystemErrors(/* force */ true);
                                     /// Even if the method throws, it should not prevent querying system.tables.
                                     tryLogCurrentException("StorageSystemTables");
                                 }
@@ -912,8 +914,9 @@ protected:
                         Exception::SuppressErrorCodesScope suppress_error_codes;
                         total_rows = table ? table->totalRows(context) : std::nullopt;
                     }
-                    catch (const Exception &)
+                    catch (Exception & e)
                     {
+                        e.recordToSystemErrors(/* force */ true);
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
                     }
@@ -932,8 +935,9 @@ protected:
                         Exception::SuppressErrorCodesScope suppress_error_codes;
                         total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
                     }
-                    catch (const Exception &)
+                    catch (Exception & e)
                     {
+                        e.recordToSystemErrors(/* force */ true);
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
                     }
@@ -952,8 +956,9 @@ protected:
                         Exception::SuppressErrorCodesScope suppress_error_codes;
                         total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                     }
-                    catch (const Exception &)
+                    catch (Exception & e)
                     {
+                        e.recordToSystemErrors(/* force */ true);
                         /// Even if the method throws, it should not prevent querying system.tables.
                         tryLogCurrentException("StorageSystemTables");
                     }

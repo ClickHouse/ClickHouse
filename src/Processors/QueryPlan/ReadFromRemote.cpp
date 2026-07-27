@@ -38,6 +38,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/scope_guard_safe.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
@@ -85,6 +86,8 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char use_delayed_remote_source[];
+    extern const char read_from_remote_fail_connection[];
+    extern const char read_from_remote_force_local_replica_stale[];
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
@@ -625,6 +628,10 @@ void ReadFromRemote::addLazyPipe(
         try
         {
             Exception::SuppressErrorCodesScope suppress_error_codes;
+            fiu_do_on(FailPoints::read_from_remote_fail_connection,
+            {
+                throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Injected connection failure for testing");
+            });
             if (my_table_func_ptr)
                 try_results = my_shard.shard_info.pool->getManyForTableFunction(timeouts, current_settings, PoolMode::GET_ONE);
             else
@@ -645,6 +652,22 @@ void ReadFromRemote::addLazyPipe(
             }
         }
 
+        /// Keep a successful local fallback quiet, but restore the saved connection failure if anything below throws.
+        const auto uncaught_exceptions_after_acquisition = std::uncaught_exceptions();
+        SCOPE_EXIT_SAFE({
+            if (exception_ptr && std::uncaught_exceptions() > uncaught_exceptions_after_acquisition)
+            {
+                try
+                {
+                    std::rethrow_exception(exception_ptr);
+                }
+                catch (Exception & ex)
+                {
+                    ex.recordToSystemErrors();
+                }
+            }
+        });
+
         UInt32 max_remote_delay = 0;
         for (const auto & try_result : try_results)
         {
@@ -660,39 +683,47 @@ void ReadFromRemote::addLazyPipe(
 
         // The stale-local-replica logic below applies only to real replicated tables. A table function
         // has no local storage and reaches a lazy shard only via the failpoint, so it always reads remotely.
-        if (!use_delayed_remote_source && !my_table_func_ptr)
+        if (!my_table_func_ptr)
         {
             const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
-            if (!replicated_storage)
+            if (!replicated_storage && !use_delayed_remote_source)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
             }
-            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
-            const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
 
-            if (try_results.empty() && local_delay >= max_allowed_delay)
+            if (replicated_storage)
             {
-                throw Exception(
-                    ErrorCodes::ALL_REPLICAS_ARE_STALE,
-                    "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
-                    local_delay
-                );
-            }
+                const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
+                UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+                fiu_do_on(FailPoints::read_from_remote_force_local_replica_stale,
+                {
+                    local_delay = max_allowed_delay;
+                });
 
-            if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
-            {
-                /// We are falling back from a remote replica to the local one. A shard limit drops
-                /// rows before they reach DelayedSource, but `rows_before_limit_at_least` must include
-                /// those rows. DelayedSource cannot place the counter before a plan that does not exist
-                /// yet, so build this fallback without a shard limit.
-                auto local_stage = my_stage;
-                if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
-                    local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
+                if (try_results.empty() && local_delay >= max_allowed_delay)
+                {
+                    throw Exception(
+                        ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                        "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
+                        local_delay
+                    );
+                }
 
-                auto plan = createLocalPlan(
-                    query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
+                if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
+                {
+                    /// We are falling back from a remote replica to the local one. A shard limit drops
+                    /// rows before they reach DelayedSource, but `rows_before_limit_at_least` must include
+                    /// those rows. DelayedSource cannot place the counter before a plan that does not exist
+                    /// yet, so build this fallback without a shard limit.
+                    auto local_stage = my_stage;
+                    if (local_stage == QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit)
+                        local_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
 
-                return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+                    auto plan = createLocalPlan(
+                        query, *header, my_context, local_stage, my_shard.shard_info.shard_num, my_shard_count);
+
+                    return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+                }
             }
         }
 
@@ -700,17 +731,7 @@ void ReadFromRemote::addLazyPipe(
         /// but it turns out to be false (likely due to manual triggering of use_delayed_remote_source failpoint),
         /// so we need to rethrow exception here, to avoid creating connections with zero replicas
         if (exception_ptr)
-        {
-            try
-            {
-                std::rethrow_exception(exception_ptr);
-            }
-            catch (Exception & ex)
-            {
-                ex.recordToSystemErrors();
-                throw;
-            }
-        }
+            std::rethrow_exception(exception_ptr);
 
         std::vector<IConnectionPool::Entry> connections;
         connections.reserve(try_results.size());

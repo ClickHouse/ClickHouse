@@ -199,3 +199,50 @@ SELECT sum(x) FROM distributed SETTINGS
             ).strip()
             == "7"
         )
+
+
+def test_failed_remote_with_stale_local_records_connection_error(started_cluster):
+    query_id = f"failed_remote_with_stale_local_{seqno}"
+    node_1_1.query("SYSTEM ENABLE FAILPOINT use_delayed_remote_source")
+    node_1_1.query("SYSTEM ENABLE FAILPOINT read_from_remote_fail_connection")
+    node_1_1.query("SYSTEM ENABLE FAILPOINT read_from_remote_force_local_replica_stale")
+    try:
+        error_count_before = int(
+            node_1_1.query(
+                "SELECT coalesce(any(value), 0) FROM system.errors "
+                "WHERE name = 'ALL_CONNECTION_TRIES_FAILED' AND NOT remote"
+            )
+        )
+
+        error = node_1_1.query_and_get_error(
+            "SELECT count() FROM distributed SETTINGS "
+            "prefer_localhost_replica = 1, "
+            "max_replica_delay_for_distributed_queries = 1, "
+            "fallback_to_stale_replicas_for_distributed_queries = 1",
+            query_id=query_id,
+        )
+
+        assert "ALL_REPLICAS_ARE_STALE" in error
+        assert (
+            node_1_1.query(
+                f"SELECT value > {error_count_before} FROM system.errors "
+                "WHERE name = 'ALL_CONNECTION_TRIES_FAILED' AND NOT remote "
+                f"AND query_id = '{query_id}'",
+            ).strip()
+            == "1"
+        )
+        node_1_1.query("SYSTEM FLUSH LOGS error_log")
+        assert (
+            node_1_1.query(
+                "SELECT count() > 0 FROM system.error_log "
+                "WHERE error = 'ALL_CONNECTION_TRIES_FAILED' AND NOT remote "
+                f"AND last_error_query_id = '{query_id}'",
+            ).strip()
+            == "1"
+        )
+    finally:
+        node_1_1.query(
+            "SYSTEM DISABLE FAILPOINT read_from_remote_force_local_replica_stale"
+        )
+        node_1_1.query("SYSTEM DISABLE FAILPOINT read_from_remote_fail_connection")
+        node_1_1.query("SYSTEM DISABLE FAILPOINT use_delayed_remote_source")

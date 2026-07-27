@@ -261,7 +261,7 @@ StorageObjectStorage::StorageObjectStorage(
         catch (Exception & e)
         {
             if (e.code() == ErrorCodes::ACCESS_DENIED)
-                e.recordToSystemErrors();
+                e.recordToSystemErrors(/* force */ true);
             LOG_WARNING(
                 log,
                 "Failed to list object storage, cannot use hive partitioning. "
