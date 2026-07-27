@@ -36,9 +36,7 @@ Cette version intégrée n’est **pas conçue pour un usage en production**. Le
 <Tabs>
   <Tab title="Docker">
     <Steps>
-      <Step>
-        ### Démarrer ClickHouse
-
+      <Step title="Démarrer ClickHouse" id="start-clickhouse-docker">
         Téléchargez puis lancez l’image du serveur ClickHouse avec un mot de passe défini :
 
         ```shell
@@ -56,9 +54,7 @@ Cette version intégrée n’est **pas conçue pour un usage en production**. Le
         </Tip>
       </Step>
 
-      <Step>
-        ### Ouvrir l’interface ClickStack
-
+      <Step title="Ouvrir l’interface ClickStack" id="open-clickstack-ui-docker">
         Ouvrez [http://localhost:8123](http://localhost:8123) dans votre navigateur et cliquez sur **ClickStack**.
 
         Saisissez le nom d’utilisateur `default` et le mot de passe `password` pour vous connecter à l’instance locale.
@@ -66,9 +62,7 @@ Cette version intégrée n’est **pas conçue pour un usage en production**. Le
         <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="S’authentifier" size="lg" />
       </Step>
 
-      <Step>
-        ### Créer une source
-
+      <Step title="Créer une source" id="create-a-source-docker">
         Si vous avez déjà des tables OpenTelemetry, ClickStack les détectera et créera automatiquement les sources.
 
         Sur une fresh install, vous serez invité à créer une source. Renseignez le champ **Table** avec le nom de table approprié (par ex. `otel_logs`), puis cliquez sur **Save New Source**.
@@ -82,9 +76,7 @@ Cette version intégrée n’est **pas conçue pour un usage en production**. Le
 
   <Tab title="Binary">
     <Steps>
-      <Step>
-        ### Démarrer ClickHouse
-
+      <Step title="Démarrer ClickHouse" id="start-clickhouse-binary">
         Téléchargez et démarrez ClickHouse :
 
         ```shell
@@ -139,15 +131,11 @@ Cette version intégrée n’est **pas conçue pour un usage en production**. Le
         ```
       </Step>
 
-      <Step>
-        ### Ouvrir l’interface ClickStack
-
+      <Step title="Ouvrir l’interface ClickStack" id="open-clickstack-ui-binary">
         Ouvrez [http://localhost:8123](http://localhost:8123) dans votre navigateur et cliquez sur **ClickStack**. Une connexion à l’instance locale est créée automatiquement.
       </Step>
 
-      <Step>
-        ### Créer une source
-
+      <Step title="Créer une source" id="create-a-source-binary">
         Si vous avez déjà des tables OpenTelemetry, ClickStack les détectera et créera automatiquement les sources.
 
         Si vous n’avez pas encore de données, consultez [Ingesting data](/fr/clickstack/ingesting-data/index) pour connaître les options disponibles.
@@ -162,9 +150,9 @@ Cette version intégrée n’est **pas conçue pour un usage en production**. Le
   ## Étapes suivantes
 </div>
 
-Si vous êtes prêt à aller au-delà de l’évaluation, envisagez un déploiement prêt pour la mise en production :
+Si vous êtes prêt à passer au-delà de l’évaluation, envisagez un déploiement adapté à la production :
 
 * [All-in-One](/fr/clickstack/deployment/all-in-one) — conteneur unique avec tous les composants, y compris la persistance et l’authentification
-* [Docker Compose](/fr/clickstack/deployment/docker-compose) — composants individuels pour un contrôle accru
+* [Docker Compose](/fr/clickstack/deployment/docker-compose) — composants distincts pour un contrôle plus fin
 * [Helm](/fr/clickstack/deployment/helm) — recommandé pour les déploiements Kubernetes en production
 * [Managed ClickStack](/fr/clickstack/getting-started/managed) — entièrement géré sur ClickHouse Cloud
