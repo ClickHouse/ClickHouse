@@ -71,7 +71,12 @@ private:
     rapidjson::Document::AllocatorType allocator;
 };
 
-std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end);
+/** Extracts the metadata of a query. `database` overrides the database named by the query
+  * itself: the wire protocol takes it from `$db`, so it must not depend on the text at all,
+  * while a query written by a user names the database itself.
+  */
+std::shared_ptr<QueryMetadata>
+extractMetadataFromRequest(const char * begin, const char * end, const std::string & database = "");
 
 }
 

@@ -27,13 +27,14 @@ QueryMetadata::QueryMetadata(
 {
 }
 
-std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end)
+std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end, const std::string & database)
 {
     auto [token_begin, token_end] = getMetadataSubstring(begin, end);
 
     /// A query addresses a collection as `<database>.<collection>.<operation>(...)`. The
     /// literal `db` in place of the database name means the current database, which is what
-    /// the `mongosh` shell writes.
+    /// the `mongosh` shell writes. A database may itself be named `db`, so the wire protocol
+    /// never relies on this and passes the database from `$db` explicitly instead.
     const char * token_end_database_name = findKth<'.'>(token_begin, token_end, 1);
     const char * token_begin_collection_name = token_end_database_name + 1;
     const char * token_end_collection_name = findKth<'.'>(token_begin, token_end, 2);
@@ -41,9 +42,13 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
     const char * token_begin_query_type = token_end_collection_name + 1;
     const char * token_end_query_type = token_end;
 
-    std::string database_name(token_begin, token_end_database_name);
-    if (database_name == "db")
-        database_name.clear();
+    std::string database_name = database;
+    if (database_name.empty())
+    {
+        database_name.assign(token_begin, token_end_database_name);
+        if (database_name == "db")
+            database_name.clear();
+    }
 
     std::string collection_name(token_begin_collection_name, token_end_collection_name);
     if (collection_name.empty())

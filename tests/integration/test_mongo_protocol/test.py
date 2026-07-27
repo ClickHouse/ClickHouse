@@ -184,7 +184,7 @@ def test_authentication_user_differs_from_database(started_cluster):
     node.query(
         "CREATE USER mongo_user IDENTIFIED WITH plaintext_password BY 'mongo_pass'", password="123"
     )
-    node.query("GRANT ALL ON *.* TO mongo_user", password="123")
+    node.query("GRANT CURRENT GRANTS ON *.* TO mongo_user", password="123")
 
     # The authentication database `admin` is neither the user name nor an existing database.
     client = make_client(user="mongo_user", password="mongo_pass", database="admin")

@@ -37,6 +37,9 @@ ASTPtr parseMongoQueryAndMovePosition(
     size_t max_parser_backtracks);
 
 
+/** Parses a query in the Mongo dialect. `database` overrides the database named by the query
+  * itself and is what the wire protocol handlers pass, since they take it from `$db`.
+  */
 ASTPtr parseMongoQuery(
     IParser & parser,
     const char * begin,
@@ -44,7 +47,8 @@ ASTPtr parseMongoQuery(
     const std::string & description,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks);
+    size_t max_parser_backtracks,
+    const std::string & database = "");
 
 }
 

@@ -88,7 +88,8 @@ ASTPtr parseMongoQuery(
     const std::string & /*description*/,
     size_t max_query_size,
     size_t max_parser_depth,
-    size_t max_parser_backtracks)
+    size_t max_parser_backtracks,
+    const std::string & database)
 {
     if (begin == end)
     {
@@ -97,7 +98,7 @@ ASTPtr parseMongoQuery(
     Expected expected;
     ASTPtr res;
     Tokens token_subquery(begin, end, max_query_size, true);
-    auto metadata = extractMetadataFromRequest(begin, end);
+    auto metadata = extractMetadataFromRequest(begin, end, database);
     metadata->add_data_to_query = false;
     auto [data_begin, data_end] = getSettingsSubstring(begin, end);
 

@@ -43,12 +43,18 @@ std::vector<Document> DeleteHandler::handle(const std::vector<OpMessageSection> 
     }
     serialized_filter = modifyFilter(serialized_filter);
 
-    auto mongo_dialect_query
-        = fmt::format("{}.{}.deleteMany({})", collection.database, collection.collection, serialized_filter);
+    auto mongo_dialect_query = fmt::format("db.{}.deleteMany({})", collection.collection, serialized_filter);
 
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(
-        parser, mongo_dialect_query.data(), mongo_dialect_query.data() + mongo_dialect_query.size(), "", 10000, 10000, 10000);
+        parser,
+        mongo_dialect_query.data(),
+        mongo_dialect_query.data() + mongo_dialect_query.size(),
+        "",
+        10000,
+        10000,
+        10000,
+        collection.database);
 
     String sql_query;
     {

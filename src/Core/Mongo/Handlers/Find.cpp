@@ -80,7 +80,10 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
     if (!sorting.empty())
         sorting = modifyFilter(sorting);
 
-    auto mongo_dialect_query = fmt::format("{}.{}.find({})", collection.database, collection.collection, serialized_filter);
+    /// The database is passed to the parser separately: a collection named in the query text
+    /// as `db.<collection>` keeps the text independent of the database name, which may itself
+    /// be `db`.
+    auto mongo_dialect_query = fmt::format("db.{}.find({})", collection.collection, serialized_filter);
     if (!serialized_limit.empty())
         mongo_dialect_query += fmt::format(".limit({})", std::stoi(serialized_limit));
     if (!sorting.empty())
@@ -88,7 +91,14 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
 
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(
-        parser, mongo_dialect_query.data(), mongo_dialect_query.data() + mongo_dialect_query.size(), "", 10000, 10000, 10000);
+        parser,
+        mongo_dialect_query.data(),
+        mongo_dialect_query.data() + mongo_dialect_query.size(),
+        "",
+        10000,
+        10000,
+        10000,
+        collection.database);
 
     String sql_query;
     {

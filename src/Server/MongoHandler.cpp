@@ -66,6 +66,10 @@ void MongoHandler::run()
                 if (!tcp_server.isOpen())
                     return;
 
+            /// A client that closed the connection is not an error.
+            if (in->eof())
+                return;
+
             /// A Mongo message is length-delimited by its header. Read the header, then read
             /// exactly the rest of the message and parse it from its own bounded buffer, so
             /// that the parser can neither run into the next message nor stop in the middle

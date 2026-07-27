@@ -55,8 +55,8 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         serialized_update = serializeRequiredMember(json_representation, "u");
     }
 
-    auto mongo_dialect_query = fmt::format(
-        "{}.{}.updateMany({}, {})", collection.database, collection.collection, serialized_filter, serialized_update);
+    auto mongo_dialect_query
+        = fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update);
 
     auto parser = Mongo::ParserMongoQuery(10000, 10000, 10000);
     auto ast = Mongo::parseMongoQuery(
