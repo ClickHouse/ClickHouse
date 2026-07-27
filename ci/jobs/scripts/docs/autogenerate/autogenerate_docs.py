@@ -163,13 +163,6 @@ SETTINGS_SPLIT_FAMILIES = {
 #              scratch as {staged_name: repo-root-relative source path}
 SETTINGS_GENERATORS = [
     {
-        "name": "beta-and-experimental",
-        "sql": ["beta-settings.sql", "experimental-settings.sql"],
-        "outfile": "experimental-beta-settings.md",
-        "dest": "docs/about-us/beta-and-experimental-features.md",
-        "method": "markers",
-    },
-    {
         "name": "session-settings",
         "sql": ["session-settings.sql"],
         "outfile": "settings.md",
@@ -203,6 +196,15 @@ SETTINGS_GENERATORS = [
         "dest": "docs/operations/settings/merge-tree-settings.md",
         "method": "markers",  # preserves frontmatter + hand-written intro
         "fixups": True,        # backtick-wrap angle-bracket text so it is valid MDX
+    },
+    {
+        # Run after the split settings families so `--write` can use their
+        # freshly generated manifests when resolving links into detail pages.
+        "name": "beta-and-experimental",
+        "sql": ["beta-settings.sql", "experimental-settings.sql"],
+        "outfile": "experimental-beta-settings.md",
+        "dest": "docs/about-us/beta-and-experimental-features.md",
+        "method": "markers",
     },
 ]
 
@@ -966,7 +968,8 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
         return target + "#" + anchor
 
     markdown = re.sub(
-        re.escape(base_route) + r"#(?P<anchor>[A-Za-z0-9_.:-]+)",
+        re.escape(base_route)
+        + r"(?:/[A-Za-z0-9_.-]+)?#(?P<anchor>[A-Za-z0-9_.:-]+)",
         absolute_repl,
         markdown,
     )
@@ -981,6 +984,24 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
 
     return re.sub(
         r"\]\(#(?P<anchor>[A-Za-z0-9_.:-]+)\)", fragment_repl, markdown)
+
+
+def _rewrite_setting_links_from_manifests(markdown, docs_dir):
+    """Resolve settings links against the current generated shard manifests."""
+    for family in SETTINGS_SPLIT_FAMILIES.values():
+        manifest_path = (
+            Path(docs_dir)
+            / family["base_route"].lstrip("/")
+            / "manifest.json"
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        markdown = _rewrite_setting_links(
+            markdown,
+            manifest["routes"],
+            family["base_route"],
+            manifest["anchorRoutes"],
+        )
+    return markdown
 
 
 def _rewrite_session_setting_links(markdown, routes):
@@ -1507,6 +1528,8 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
             content = transform_full_body(migrate, content, gen["dest"], dest, lk, title)
         else:
             content = transform_body(migrate, content, gen["dest"], dest, lk)
+        if gen["name"] == "beta-and-experimental":
+            content = _rewrite_setting_links_from_manifests(content, docs_dir)
 
     if gen["method"] == "markers":
         with open(dest, encoding="utf-8") as f:

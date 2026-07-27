@@ -90,6 +90,14 @@ def main():
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
+    generator_order = [
+        generator["name"] for generator in mod.SETTINGS_GENERATORS
+    ]
+    assert generator_order.index("beta-and-experimental") > max(
+        generator_order.index(family_name)
+        for family_name in mod.SETTINGS_SPLIT_FAMILIES
+    )
+
     for badge in (
         "CloudNotSupportedBadge",
         "CloudSupportedBadge",
@@ -183,6 +191,45 @@ def main():
     ) in complex_explorer
     assert complex_anchor_routes["openssl.client.caconfig"] == \
         "/reference/settings/server-settings/settings/other"
+
+    with tempfile.TemporaryDirectory() as temp:
+        docs = Path(temp)
+        for family in mod.SETTINGS_SPLIT_FAMILIES.values():
+            manifest_path = (
+                docs / family["base_route"].lstrip("/") / "manifest.json"
+            )
+            manifest_path.parent.mkdir(parents=True)
+            anchor = (
+                "unique_key_max_encoded_size"
+                if family["base_route"] == mod.SESSION_SETTINGS_BASE_ROUTE
+                else "unrelated_setting"
+            )
+            target = family["base_route"] + (
+                "/unique-key"
+                if anchor == "unique_key_max_encoded_size"
+                else "/other"
+            )
+            manifest_path.write_text(json.dumps({
+                "routes": [{
+                    "prefix": anchor.rsplit("_", 1)[0],
+                    "mode": "raw",
+                    "target": target,
+                }],
+                "anchorRoutes": {anchor: target},
+            }), encoding="utf-8")
+
+        stale_link = (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/other"
+            "#unique_key_max_encoded_size)"
+        )
+        assert mod._rewrite_setting_links_from_manifests(
+            stale_link, docs
+        ) == (
+            "[unique_key_max_encoded_size]"
+            "(/reference/settings/session-settings/unique-key"
+            "#unique_key_max_encoded_size)"
+        )
 
     with tempfile.TemporaryDirectory() as temp:
         docs = Path(temp)
