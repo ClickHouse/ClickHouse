@@ -47,14 +47,14 @@ private:
     ResourceCost max_allocated = default_max_allocated;
     ResourceCost soft_limit = default_max_allocated; /// Spill threshold; `>= max_allocated` means disabled.
 
-    /// Rate-limits spill signals to progress events: set true when a signal is issued, and cleared once
-    /// `allocated` drops back to/below `soft_limit`, on any decrease under this node, on a decrease in the
-    /// subtree's reported reclaimable, or when the subtree is detached. Deliberately NOT tied to the
-    /// signaled allocation (no victim pointer is stored, avoiding the dangling-pointer hazards that
-    /// `allocation_to_kill` guards, and a stalled victim must never freeze the episode), so a re-signal
-    /// after an unrelated decrease may target a different allocation while an earlier victim has not
-    /// reacted yet: several allocations can hold outstanding spill requests at once. Each signal carries
-    /// the then-current excess and the query side coalesces repeated signals, which bounds the overshoot.
+    /// At most one spill request is outstanding under this node at a time: set true when a signal is
+    /// issued, and cleared by the victim's reply (`Update::spilled`, sent via `finishSpill` or implicitly
+    /// when an allocation with reported reclaimable memory leaves its queue), when the subtree is
+    /// detached, or once `allocated` drops back to/below `soft_limit`. No victim pointer is stored: the
+    /// reply is unambiguous because there is never more than one request outstanding in the subtree.
+    /// (Nested limits can each signal a victim inside the same subtree; a reply then reopens both gates
+    /// and the still-unserved limit simply re-signals on its next check, with signals coalescing on the
+    /// query side.)
     bool spill_requested = false;
 
     /// Allocation that is being killed (if any)

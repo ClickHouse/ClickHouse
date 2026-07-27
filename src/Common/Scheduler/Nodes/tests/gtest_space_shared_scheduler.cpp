@@ -205,6 +205,26 @@ struct SpillableAllocation : public ResourceAllocation
         queue.setReclaimable(*this, total);
     }
 
+    /// Replies to a spill request: reports the remaining reclaimable total and reopens the spill gates.
+    void finishSpill(ResourceCost total)
+    {
+        queue.finishSpill(*this, total);
+    }
+
+    /// Simulates a spill reaction without waiting for the decrease approval: issues the decrease for the
+    /// freed memory and immediately finishes the spill, so both reach the scheduler in one activation.
+    /// Exercises the deferred re-evaluation path (the reply arrives while the decrease is still pending).
+    void spillAndFinish(ResourceCost spilled_bytes, ResourceCost reclaimable_total)
+    {
+        {
+            std::unique_lock lock(mutex);
+            real_size -= spilled_bytes;
+            decrease_enqueued = true;
+        }
+        queue.decreaseAllocation(*this, spilled_bytes);
+        queue.finishSpill(*this, reclaimable_total);
+    }
+
     void waitSpills(size_t n)
     {
         std::unique_lock lock(mutex);
@@ -833,20 +853,21 @@ TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
     a.waitSpills(1);
     EXPECT_EQ(a.lastSpillAtLeast(), 3000); // need = allocated(8000) - soft(5000)
 
-    // Partial reaction: shrink but stay above the soft limit. The gate reopens and the next signal carries
-    // the updated need for the smaller allocation.
-    size_t before = a.spillCount();
+    // Partial reaction: shrink and reply, still above the soft limit. The reply reopens the gate and the
+    // next signal carries the updated need for the smaller allocation.
     a.setSize(6000); // decrease by 2000 -> allocated 6000 > soft 5000, still reclaimable
-    r.sync();
-    EXPECT_GT(a.spillCount(), before);
+    a.finishSpill(6000);
+    a.waitSpills(2);
     EXPECT_EQ(a.lastSpillAtLeast(), 1000); // need = allocated(6000) - soft(5000)
 
-    // Drop below the soft limit: the episode ends. After the scheduler fully settles, no new spill appears.
+    // Drop below the soft limit and reply: the episode ends. After the scheduler settles, no new signal.
     a.setSize(4000); // allocated 4000 <= soft 5000
+    a.finishSpill(4000);
     r.sync();
     size_t settled = a.spillCount();
     r.sync();
     EXPECT_EQ(a.spillCount(), settled); // no further spill once under the soft limit
+    EXPECT_EQ(settled, 2u);
 }
 
 
@@ -887,11 +908,10 @@ TEST(SchedulerSpaceShared, ReclaimableClampedOnShrink)
 }
 
 
-/// If the spill-signaled victim reports its reclaimable down to 0 WITHOUT decreasing (it declines or cannot
-/// spill), the episode must not stall: the scheduler reopens the one-at-a-time gate and re-targets the next
-/// reclaimable allocation while still over the soft limit. Without the fix `b` is never signaled and this
-/// test hangs on `waitSpills`.
-TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
+/// If the spill-signaled victim declines (replies with zero reclaimable, WITHOUT decreasing), the episode
+/// must not stall: the reply reopens the gate and the scheduler re-targets the next reclaimable allocation
+/// while still over the soft limit. Without this `b` is never signaled and the test hangs on `waitSpills`.
+TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimDeclines)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -910,9 +930,9 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
     EXPECT_EQ(a.spillCount(), 1);
     EXPECT_EQ(b.spillCount(), 0); // only one spill is in flight at a time
 
-    // `a` declines: it reports nothing reclaimable and does NOT decrease. Still over the soft limit, with
-    // `b` reclaimable, the scheduler must now ask `b` to spill instead of stalling on `a`.
-    a.reportReclaimable(0);
+    // `a` declines: it replies with nothing reclaimable and does NOT decrease. Still over the soft limit,
+    // with `b` reclaimable, the scheduler must now ask `b` to spill instead of stalling on `a`.
+    a.finishSpill(0);
     b.waitSpills(1);
     EXPECT_EQ(b.spillCount(), 1);
     EXPECT_EQ(b.lastSpillAtLeast(), 4000); // need = allocated(14000) - soft(10000)
@@ -920,15 +940,11 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
 }
 
 
-/// Pins the spill-gate semantics: `spill_requested` rate-limits signals to PROGRESS EVENTS, it does not
-/// track the victim. Any decrease under the limit (even by an unrelated, unreclaimable allocation) reopens
-/// the gate, and the next `checkSoftLimit` re-signals the CURRENT extremum with the CURRENT excess — which
-/// may be a different allocation than the one still working on an earlier request. Two allocations can
-/// therefore hold outstanding spill requests at once. This is deliberate: tracking the victim's identity
-/// would reintroduce the dangling-pointer hazards documented around `allocation_to_kill`, a stalled victim
-/// must never block the episode, and the query side coalesces repeated signals; the cost is bounded
-/// overshoot (each signal carries the then-current excess, not an accumulating amount).
-TEST(SchedulerSpaceShared, SpillGateReopensOnUnrelatedDecrease)
+/// Pins the spill-gate semantics: at most one spill request is outstanding under the limit at a time, and
+/// the gate is held until the victim REPLIES via `finishSpill` — unrelated activity (decreases by other
+/// allocations, new reclaimable reports, growth) does not reopen it. Once the reply arrives, the next
+/// check signals the then-current extremum with the then-current excess.
+TEST(SchedulerSpaceShared, SpillGateHeldUntilVictimReply)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -950,20 +966,87 @@ TEST(SchedulerSpaceShared, SpillGateReopensOnUnrelatedDecrease)
     a.waitSpills(1);
     EXPECT_EQ(a.lastSpillAtLeast(), 11000); // need = allocated(21000) - soft(10000)
 
-    // While `a`'s request is outstanding, more reclaimable appears and `c` grows past `a`.
-    // Neither a report nor an increase reopens the gate: no new signals.
+    // While `a`'s request is outstanding, more reclaimable appears, `c` grows past `a`, and an UNRELATED
+    // allocation (`b`) shrinks. None of that is the victim's reply: the gate stays closed, no new signals.
     c.reportReclaimable(7000);
     c.setSize(9000);
+    b.setSize(3000);
     r.sync();
     EXPECT_EQ(c.spillCount(), 0u);
+    EXPECT_EQ(a.spillCount(), 1u);
 
-    // An UNRELATED decrease (unreclaimable `b` shrinks) reopens the gate; the trailing soft-limit check
-    // re-evaluates and signals the new extremum `c` (fair_key 9000 > 8000) with the updated excess, while
-    // `a` has not reacted to its own request: two allocations now hold outstanding spill requests.
-    b.setSize(3000);
+    // The victim replies after spilling: `a` shrinks by 5000 and finishes. Only now does the scheduler
+    // re-evaluate — and signals the new extremum `c` (fair_key 9000 > 3000) with the fresh excess.
+    a.setSize(3000);
+    a.finishSpill(3000);
     c.waitSpills(1);
-    EXPECT_EQ(c.lastSpillAtLeast(), 10000); // need = allocated(8000+3000+9000) - soft(10000)
-    EXPECT_EQ(a.spillCount(), 1u); // `a`'s earlier request is still outstanding (not re-signaled, not revoked)
+    EXPECT_EQ(c.lastSpillAtLeast(), 5000); // need = allocated(3000+3000+9000) - soft(10000)
+    EXPECT_EQ(a.spillCount(), 1u); // the reply closed `a`'s episode; `a` is not re-signaled
+}
+
+
+/// Pins the deferred re-evaluation: the victim issues its decrease and the reply in one go (the reply
+/// reaches the scheduler while the decrease is still pending), so the re-evaluation must wait for the
+/// decrease approval and use the updated `allocated` — not re-signal immediately with the stale excess.
+TEST(SchedulerSpaceShared, SpillReplyDeferredToPendingDecrease)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation a(queue, "a", 15000);
+    a.reportReclaimable(15000);
+    a.waitSpills(1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 5000); // need = allocated(15000) - soft(10000)
+
+    // The victim spills 3000 and replies without waiting for the decrease approval: both arrive in one
+    // activation. With the stale `allocated` (15000) the need would be 5000; the correct need after the
+    // decrease is applied (12000) is 2000.
+    a.spillAndFinish(/*spilled_bytes=*/ 3000, /*reclaimable_total=*/ 12000);
+    a.waitSpills(2);
+    EXPECT_EQ(a.lastSpillAtLeast(), 2000); // re-evaluated AFTER the decrease, never with the stale excess
+
+    // Finish the episode: spill the rest of the excess; once under the soft limit no further signal comes.
+    a.spillAndFinish(/*spilled_bytes=*/ 2000, /*reclaimable_total=*/ 10000);
+    r.sync();
+    size_t settled = a.spillCount();
+    r.sync();
+    EXPECT_EQ(a.spillCount(), settled);
+    EXPECT_EQ(settled, 2u); // allocated(10000) <= soft(10000): episode over
+}
+
+
+/// A victim that is removed mid-spill (query killed or cancelled) must not leave the gate closed forever:
+/// its removal is treated as the reply, and the next reclaimable allocation is signaled if the subtree is
+/// still over the soft limit.
+TEST(SchedulerSpaceShared, SpillGateReopensWhenVictimRemoved)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 5000);
+
+    SpillableAllocation b(queue, "b", 7000); // will be signaled after the victim disappears
+
+    {
+        SpillableAllocation a(queue, "a", 8000);
+        a.reportReclaimable(8000);
+        a.waitSpills(1);
+        EXPECT_EQ(a.lastSpillAtLeast(), 10000); // need = allocated(15000) - soft(5000)
+
+        b.reportReclaimable(7000); // gate is held by `a`: no signal for `b`
+        r.sync();
+        EXPECT_EQ(b.spillCount(), 0u);
+        // `a` is destroyed here without ever replying — the removal is the implicit reply.
+    }
+
+    b.waitSpills(1);
+    EXPECT_EQ(b.lastSpillAtLeast(), 2000); // need = allocated(7000) - soft(5000)
 }
 
 
@@ -1004,9 +1087,11 @@ TEST(SchedulerSpaceShared, ConcurrentSpillChurn)
                 a.reportReclaimable(3000);
                 a.setSize(8000 + i);
                 a.reportReclaimable(6000);
-                a.setSize(2000);      // shrink below the last report: exercises the clamp path
+                // Reply together with a pending decrease (the deferred re-evaluation path), shrinking
+                // below the last report to exercise the clamp as well.
+                a.spillAndFinish(/*spilled_bytes=*/ 6000 + i, /*reclaimable_total=*/ 1500);
                 a.reportReclaimable(0);
-                a.reportReclaimable(1500);
+                a.finishSpill(1500); // a reply that changes nothing but reopens the gates
                 total_spills += a.spillCount();
                 // Allocation destroyed here: exercises removal while possibly spill-signaled
             }

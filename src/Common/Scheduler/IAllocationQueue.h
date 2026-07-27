@@ -42,6 +42,15 @@ public:
     /// scheduler thread and propagated to the root; the scheduler uses it to choose spill victims.
     virtual void setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
 
+    /// The reply to `ResourceAllocation::spillAllocation`: the query finished handling the spill request.
+    /// Reports the remaining reclaimable total like `setReclaimable` (0 means nothing was or can be
+    /// reclaimed, i.e. a decline) and additionally reopens the spill gate of every `AllocationLimit` above,
+    /// allowing the scheduler to signal the next victim if the subtree is still over its soft limit.
+    /// Call it AFTER issuing the decreases for the freed memory, so that the scheduler re-evaluates the
+    /// soft limit only once the released memory is reflected in `allocated`.
+    /// Never blocks and never fails.
+    virtual void finishSpill(ResourceAllocation & allocation, ResourceCost reclaimable_total) = 0;
+
     /// Requests to remove an allocation from the queue.
     /// The removal is processed asynchronously by the scheduler thread.
     /// For pending allocations, `ResourceAllocation::allocationFailed` will be called.

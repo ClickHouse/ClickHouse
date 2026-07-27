@@ -21,7 +21,10 @@ namespace DB
 ///  - All `reclaimable` state (the aggregate and the reclaimable-filtered sets) is read and written
 ///      only on the scheduler thread; queries touch it exclusively through `IAllocationQueue::setReclaimable`.
 ///  - `reclaimable` is a bottom-up aggregate: each `setReclaimable` change travels one leaf-to-root path
-///      as `Update::reclaimable_delta`, adding to every ancestor (cost O(depth)). It never descends.
+///      as `Update::reclaimable_delta`, adding to every ancestor (cost O(depth)).
+///  - The reply to a spill request travels the same path as `Update::spilled`, set by `finishSpill` or by
+///      the removal of an allocation that reported reclaimable memory (an allocation that left the queue
+///      can no longer spill). It reopens the spill gate of every `AllocationLimit` it passes.
 ///  - Per allocation `0 <= reclaimable <= allocated`; per node `reclaimable == sum of children reclaimable`
 ///      and therefore `0 <= reclaimable <= allocated`.
 ///  - Spilling never blocks the increase chain. Only the hard limit (`AllocationLimit::max_allocated`)
@@ -71,13 +74,16 @@ public:
         std::optional<IncreaseRequest *> increase; /// New increase request or nullptr if no more increase requests, null_opt means no change
         std::optional<DecreaseRequest *> decrease; /// New decrease request or nullptr if no more decrease requests, null_opt means no change
         ResourceCost reclaimable_delta = 0; /// Change to `reclaimable` to add on every node on the path to the root.
+        bool spilled = false; /// The subtree's spill-signaled allocation finished handling its spill request (or left the queue). Travels with `reclaimable_delta`; reopens the spill gate of every `AllocationLimit` on the path to the root.
 
-        explicit operator bool() const { return attached || detached || increase || decrease || reclaimable_delta != 0; }
+        explicit operator bool() const { return attached || detached || increase || decrease || reclaimable_delta != 0 || spilled; }
 
         Update & setAttached(ISpaceSharedNode * new_attached) & noexcept { attached = new_attached; return *this; }
         Update & setDetached(ISpaceSharedNode * new_detached) & noexcept { detached = new_detached; return *this; }
         Update & setIncrease(IncreaseRequest * new_increase) & noexcept { increase = new_increase; return *this; }
         Update & setDecrease(DecreaseRequest * new_decrease) & noexcept { decrease = new_decrease; return *this; }
+        Update & setReclaimableDelta(ResourceCost value) & noexcept { reclaimable_delta = value; return *this; }
+        Update & setSpilled() & noexcept { spilled = true; return *this; }
         Update & resetAttached() & noexcept { attached = nullptr; return *this; }
         Update & resetDetached() & noexcept { detached = nullptr; return *this; }
         Update & resetIncrease() & noexcept { increase = std::nullopt; return *this; }
@@ -88,8 +94,8 @@ public:
         Update && setDetached(ISpaceSharedNode * new_detached) && noexcept { detached = new_detached; return std::move(*this); }
         Update && setIncrease(IncreaseRequest * new_increase) && noexcept { increase = new_increase; return std::move(*this); }
         Update && setDecrease(DecreaseRequest * new_decrease) && noexcept { decrease = new_decrease; return std::move(*this); }
-        Update & setReclaimableDelta(ResourceCost value) & noexcept { reclaimable_delta = value; return *this; }
         Update && setReclaimableDelta(ResourceCost value) && noexcept { reclaimable_delta = value; return std::move(*this); }
+        Update && setSpilled() && noexcept { spilled = true; return std::move(*this); }
         Update && resetAttached() && noexcept { attached = nullptr; return std::move(*this); }
         Update && resetDetached() && noexcept { detached = nullptr; return std::move(*this); }
         Update && resetIncrease() && noexcept { increase = std::nullopt; return std::move(*this); }
@@ -98,12 +104,13 @@ public:
         // For debugging purposes only
         String toString() const
         {
-            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, reclaimable_delta={} }}",
+            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, reclaimable_delta={}, spilled={} }}",
                 attached ? attached->getPath() : "nullptr",
                 detached ? detached->getPath() : "nullptr",
                 increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change",
                 decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change",
-                reclaimable_delta);
+                reclaimable_delta,
+                spilled);
         }
     };
 

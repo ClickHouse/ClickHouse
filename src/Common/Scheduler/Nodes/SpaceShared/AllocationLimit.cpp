@@ -154,10 +154,6 @@ void AllocationLimit::approveDecrease()
     if (&decrease->allocation == allocation_to_kill && decrease->removing_allocation)
         allocation_to_kill = nullptr;
 
-    // A decrease under this node is progress on any outstanding spill: let the next `checkSoftLimit` signal
-    // again (the same or the next victim) if this node is still over the soft limit.
-    spill_requested = false;
-
     decrease = nullptr;
 
     IncreaseRequest * old_increase = increase;
@@ -178,21 +174,20 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     chassert(&from_child == child.get());
     apply(update);
-    // Reported `reclaimable` changes and subtree attach/detach are the updates that can change the
-    // soft-limit picture without an approve, so they trigger `checkSoftLimit` at the end of this function.
-    // They are also exactly the updates for which that is deadlock-safe: `checkSoftLimit` descends into
-    // `selectAllocationToSpill`, which locks the `AllocationQueue` mutex, so it must never run on a
-    // propagation made while that mutex is held. A non-zero `reclaimable_delta` originates exclusively in
-    // `AllocationQueue::processActivation`, which propagates OUTSIDE the queue lock; `attached`/`detached`
-    // originate exclusively in `attachChild`/`removeChild` tree-restructure code on the scheduler thread
-    // (the queue is a leaf and never attaches/detaches under its own lock). The mutex-held propagations
-    // are the pure `increase` relays from `updateMinMaxAllocated`, `updateQueueLimit` and the in-lock part
-    // of `AllocationQueue::approveDecrease` — those carry none of these fields and are covered by
-    // `checkSoftLimit` in `approveIncrease`/`approveDecrease` instead.
+    // Reported `reclaimable` changes, spill replies, and subtree attach/detach are the updates that can
+    // change the soft-limit picture without an approve, so they trigger `checkSoftLimit` at the end of
+    // this function. They are also exactly the updates for which that is deadlock-safe: `checkSoftLimit`
+    // descends into `selectAllocationToSpill`, which locks the `AllocationQueue` mutex, so it must never
+    // run on a propagation made while that mutex is held. A non-zero `reclaimable_delta` or `spilled`
+    // originates exclusively in `AllocationQueue::processActivation`, which propagates OUTSIDE the queue
+    // lock; `attached`/`detached` originate exclusively in `attachChild`/`removeChild` tree-restructure
+    // code on the scheduler thread (the queue is a leaf and never attaches/detaches under its own lock).
+    // The mutex-held propagations are the pure `increase` relays from `updateMinMaxAllocated`,
+    // `updateQueueLimit` and the in-lock part of `AllocationQueue::approveDecrease` — those carry none of
+    // these fields and are covered by `checkSoftLimit` in `approveIncrease`/`approveDecrease` instead.
     // Capture the fields now, before `update` may be consumed by `propagate` below.
     const bool reclaimable_changed = update.reclaimable_delta != 0;
-    // A negative delta (a reported decrease in reclaimable) is handled specially at the end of this function.
-    const bool reclaimable_dropped = update.reclaimable_delta < 0;
+    const bool spilled = update.spilled;
     const bool structure_changed = update.attached || update.detached;
     bool reapply_constraint = false;
     if (update.attached)
@@ -235,22 +230,28 @@ void AllocationLimit::propagateUpdate(ISpaceSharedNode & from_child, Update && u
     if (parent && update)
         propagate(std::move(update));
 
-    // Only reclaimable reports and attach/detach can reach this point without a queue mutex held (see
-    // the note above); both can change the soft-limit picture without an approve.
-    if (reclaimable_changed || structure_changed)
+    // Only reclaimable reports, spill replies and attach/detach can reach this point without a queue
+    // mutex held (see the note above); all of them can change the soft-limit picture without an approve.
+    //
+    // A spill reply means the victim finished handling the outstanding spill request (spilled what it
+    // could, declined, or left the queue): reopen the gate so the next victim can be signaled. The victim
+    // issues its decreases for the freed memory BEFORE finishing the spill (the `finishSpill` contract),
+    // so a pending decrease here means the released memory is not yet reflected in `allocated`: defer the
+    // re-evaluation to the trailing `checkSoftLimit` of the coming `approveDecrease`, which sees the
+    // updated `allocated`; re-evaluating now would re-signal with a stale, too-large excess. Without a
+    // pending decrease (a decline, or the decrease was already approved) re-evaluate immediately.
+    if (spilled)
+        spill_requested = false;
+    const bool defer_to_decrease = spilled && decrease != nullptr;
+    if ((spilled || reclaimable_changed || structure_changed) && !defer_to_decrease)
     {
-        // A decrease in reported reclaimable means the outstanding victim reclaimed or gave up, so allow
-        // `checkSoftLimit` to signal the next reclaimable allocation. Without this the node could stay above
-        // the soft limit indefinitely: no victim is remembered between calls, so a victim that lowers its
-        // reclaimable to zero without decreasing would never be superseded.
-        if (reclaimable_dropped)
-            spill_requested = false;
-        // A structure change can newly put this node over the soft limit with reclaimable memory below:
-        // attaching the branch under a freshly inserted `AllocationLimit` (`CREATE OR REPLACE WORKLOAD`
-        // that first sets `max_memory_before_spill`), or attaching a reclaimable subtree under an existing
-        // limit. Without this check such a subtree would not spill until an unrelated resize or
-        // `setReclaimable`. On detach, `spill_requested` was cleared above; if the remaining subtree is
-        // still over the soft limit, this re-signals the next victim.
+        // Beyond the spill reply, a re-evaluation is needed here because: a structure change can newly
+        // put this node over the soft limit with reclaimable memory below (attaching the branch under a
+        // freshly inserted `AllocationLimit` when `CREATE OR REPLACE WORKLOAD` first sets a soft limit,
+        // or attaching a reclaimable subtree under an existing one — without this check such a subtree
+        // would not spill until an unrelated resize or report), and a reported reclaimable change can
+        // start an episode (new reclaimable memory appearing while over the soft limit). While a spill
+        // request is outstanding, `checkSoftLimit` returns without signaling.
         checkSoftLimit();
     }
 }

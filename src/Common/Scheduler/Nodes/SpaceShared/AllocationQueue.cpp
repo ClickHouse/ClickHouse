@@ -123,18 +123,14 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
         scheduleActivation();
 }
 
-void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total)
+void AllocationQueue::applyReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) // TSA_REQUIRES(mutex)
 {
-    std::lock_guard lock(mutex);
-    if (is_not_usable)
-        return; // Queue has been purged — `allocationFailed` has already notified the owner.
-
     // Reclaimable memory is a portion of what is currently allocated, so clamp to `[0, allocated]`.
     // A pending (not yet admitted) allocation has `allocated == 0` and thus reports nothing reclaimable.
     ResourceCost new_reclaimable = std::clamp<ResourceCost>(reclaimable_total, 0, allocation.allocated);
     ResourceCost delta = new_reclaimable - allocation.reclaimable;
     if (delta == 0)
-        return; // Nothing changed — avoid a needless activation (advisory value tolerates staleness).
+        return;
     bool was_member = allocation.reclaimable > 0;
     bool now_member = new_reclaimable > 0;
     allocation.reclaimable = new_reclaimable;
@@ -145,6 +141,32 @@ void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCo
         reclaimable_allocations.insert(allocation);
     else if (!now_member && was_member)
         reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
+}
+
+void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+
+    ResourceCost old_delta = pending_reclaimable_delta;
+    applyReclaimable(allocation, reclaimable_total);
+    if (pending_reclaimable_delta == old_delta)
+        return; // Nothing changed — avoid a needless activation (advisory value tolerates staleness).
+    scheduleActivation();
+}
+
+void AllocationQueue::finishSpill(ResourceAllocation & allocation, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+
+    applyReclaimable(allocation, reclaimable_total);
+    // Unlike `setReclaimable`, always deliver the reply: `Update::spilled` must reach the ancestor
+    // `AllocationLimit`s to reopen their spill gates even when the reported total did not change
+    // (e.g. a decline, or a spill that freed exactly what new data consumed).
+    pending_spilled = true;
     scheduleActivation();
 }
 
@@ -218,6 +240,7 @@ void AllocationQueue::purgeQueue()
     allocations = 0;
     reclaimable = 0;
     pending_reclaimable_delta = 0;
+    pending_spilled = false;
     is_not_usable = true;
 }
 
@@ -421,6 +444,10 @@ void AllocationQueue::processActivation()
                 allocation.reclaimable = 0;
                 if (allocation.reclaimable_hook.is_linked()) // Unlink from the reclaimable set: it only holds allocations with reclaimable > 0
                     reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
+                // An allocation that leaves the queue can no longer spill, so treat its removal as the
+                // reply to any spill request it may hold: without this, a victim removed mid-spill (killed
+                // or cancelled) would leave the ancestor spill gates closed forever.
+                pending_spilled = true;
             }
 
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
@@ -478,6 +505,15 @@ void AllocationQueue::processActivation()
             reclaimable += pending_reclaimable_delta;
             update.setReclaimableDelta(pending_reclaimable_delta);
             pending_reclaimable_delta = 0;
+        }
+
+        // Deliver spill replies even when the net delta is zero: `Update::spilled` reopens the ancestor
+        // spill gates. It travels in the same update as any decrease prepared above, which lets the
+        // `AllocationLimit` defer its re-evaluation until that decrease is approved.
+        if (pending_spilled)
+        {
+            update.setSpilled();
+            pending_spilled = false;
         }
     }
 

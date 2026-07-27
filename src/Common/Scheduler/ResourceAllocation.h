@@ -47,10 +47,13 @@ public:
     /// Scheduler asks this allocation to reclaim at least `at_least_bytes` of its size soon
     /// (by spilling reclaimable data to disk or discarding it). Mirrors `killAllocation`:
     /// IMPORTANT: it is called from the scheduler thread and must be fast — just record the request;
-    /// the query reacts on its own threads and eventually issues a decrease to release the memory.
-    /// May be called repeatedly, with the same or a different `at_least_bytes` (each carries the
-    /// scheduler's then-current need), including while an earlier request is still being serviced.
-    /// Implementations must coalesce: keep the maximum outstanding amount, never accumulate.
+    /// the query reacts on its own threads: it spills, issues decreases for the freed memory, and then
+    /// replies with `IAllocationQueue::finishSpill` (also used to decline when nothing can be reclaimed).
+    /// The scheduler signals no further victim in this subtree until the reply arrives, so a request
+    /// that is never finished leaves the soft limit inert (the hard limit still applies). May be called
+    /// repeatedly with the same or a different `at_least_bytes` (each carries the scheduler's then-current
+    /// need, and nested workload limits may ask independently); implementations must coalesce: keep the
+    /// maximum outstanding amount, never accumulate, and reply once when done.
     virtual void spillAllocation(ResourceCost at_least_bytes) = 0;
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
