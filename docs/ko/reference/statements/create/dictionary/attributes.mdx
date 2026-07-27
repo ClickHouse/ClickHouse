@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 `dictGet*` 함수에 대한 쿼리에서는 키로 튜플을 전달합니다. 예시: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+복합 키가 단일 속성 하나로 이루어진 경우에는 `tuple`로 감싸지 않고 키 값을 직접 전달할 수 있습니다. 예를 들어 `dictGetString('dict_name', 'attr_name', 'key')`와 `dictGetString('dict_name', 'attr_name', tuple('key'))`는 모두 유효합니다.
+
 <div id="attributes">
   ## 속성
 </div>
