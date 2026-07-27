@@ -30,8 +30,8 @@ Possible values:
 - 1 — Enabled.
 
 By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see [Data Replication](/reference/engines/table-engines/mergetree-family/replication)).
-For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+For the replicated tables by default the only 100 of the most recent blocks for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 ## insert_deduplication_token {#insert_deduplication_token}
 
@@ -45,8 +45,8 @@ Possible values:
 
 `insert_deduplication_token` is used for deduplication _only_ when not empty.
 
-For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
-For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+For the replicated tables by default the only 100 of the most recent inserts for each partition are deduplicated (see [replicated_deduplication_window](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window), [replicated_deduplication_window_seconds](/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)).
+For not replicated tables see [non_replicated_deduplication_window](/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 <Note>
 `insert_deduplication_token` is tracked per partition, so multiple partitions written by one insert can carry the same token. Without a token, the default content checksum is computed over the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not when a single partition's rows happen to coincide with a different insert.
