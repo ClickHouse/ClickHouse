@@ -171,6 +171,12 @@ public:
     bool storesDataOnDisk() const override { return getNested()->storesDataOnDisk(); }
     Strings getDataPaths() const override { return getNested()->getDataPaths(); }
     StoragePolicyPtr getStoragePolicy() const override { return getNested()->getStoragePolicy(); }
+    /// Must be forwarded explicitly: the default `IStorage` implementation derives the disks from
+    /// `getStoragePolicy`, which some proxies (e.g. `StorageTableProxy`) deliberately do not report.
+    /// Without forwarding, callers that check disk properties (see `IDisk::isPathOnLocalFilesystem`
+    /// and `DatabaseAtomic::tryCreateSymlink`) would see an empty disk list for a proxied table while
+    /// `getDataPaths` still returns the nested storage's paths.
+    Disks getDataDisks() const override { return getNested()->getDataDisks(); }
     std::optional<UInt64> totalRows(ContextPtr query_context) const override { return getNested()->totalRows(query_context); }
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override { return getNested()->totalBytes(query_context); }
     std::optional<UInt64> lifetimeRows() const override { return getNested()->lifetimeRows(); }

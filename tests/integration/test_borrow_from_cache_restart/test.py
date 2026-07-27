@@ -51,7 +51,7 @@ def test_borrow_from_cache_atomic_db_creates_no_host_root_symlink(started_cluste
         [
             "bash",
             "-c",
-            "find /var/lib/clickhouse/data -maxdepth 3 -type l -lname '/store/*' -print || true",
+            "find /var/lib/clickhouse/data -maxdepth 3 -xtype l -printf '%p -> %l\\n' || true",
         ]
     ).strip()
     assert (
@@ -97,7 +97,7 @@ def test_borrow_from_cache_atomic_db_no_symlink_for_direct_disk_engine(started_c
         [
             "bash",
             "-c",
-            "find /var/lib/clickhouse/data -maxdepth 3 -type l -lname '/store/*' -print || true",
+            "find /var/lib/clickhouse/data -maxdepth 3 -xtype l -printf '%p -> %l\\n' || true",
         ]
     ).strip()
     assert (
@@ -146,6 +146,57 @@ def test_borrow_from_cache_freeze_and_detach_part(started_cluster):
     # Releasing the frozen snapshot and dropping the table both clean up without error.
     node.query("SYSTEM UNFREEZE WITH NAME 'borrow_backup'")
     node.query("DROP TABLE borrowed_freeze SYNC")
+
+
+def test_borrow_from_cache_no_symlink_for_lazy_loaded_table(started_cluster):
+    # Regression: in a database with `lazy_load_tables = 1` every table is attached as a
+    # `StorageTableProxy`, which reports `storesDataOnDisk() == true` but deliberately does not
+    # expose the nested storage policy. `IStorage::getDataDisks` derives the disks from that policy,
+    # so the proxy used to report an empty disk list while `getDataPaths` still materialized the
+    # nested `/store/...` path -- the `tryCreateSymlink` guard saw nothing to skip and recreated the
+    # dangling `data/<db>/<table>` -> `/store/...` symlink for a `borrow_from_cache` table.
+    # `StorageProxy` now forwards `getDataDisks` to the nested storage.
+    node.query("DROP DATABASE IF EXISTS lazy_borrow SYNC")
+    node.query("CREATE DATABASE lazy_borrow ENGINE = Atomic SETTINGS lazy_load_tables = 1")
+    node.query(
+        """
+        CREATE TABLE lazy_borrow.borrowed_lazy (key UInt64)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS disk = disk(
+            type = object_storage,
+            object_storage_type = 'borrow_from_cache',
+            cache_name = 'borrowed_cache',
+            name = 'borrowed_lazy_disk')
+        """
+    )
+    node.query("INSERT INTO lazy_borrow.borrowed_lazy VALUES (1), (2), (3)")
+
+    # After a restart the table is attached as a lazy proxy (data itself is node-local cache, so it
+    # is legitimately empty again). Renaming it goes through `DatabaseAtomic`'s attach path, which
+    # creates the table symlink -- on the proxy, not on the materialized `MergeTree`.
+    node.restart_clickhouse()
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables WHERE database = 'lazy_borrow' AND name = 'borrowed_lazy'"
+        ).strip()
+        == "TableProxy"
+    )
+    node.query(
+        "RENAME TABLE lazy_borrow.borrowed_lazy TO lazy_borrow.borrowed_lazy_renamed"
+    )
+
+    dangling = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "find /var/lib/clickhouse/data -maxdepth 3 -xtype l -printf '%p -> %l\\n' || true",
+        ]
+    ).strip()
+    assert (
+        dangling == ""
+    ), f"lazy-loaded borrow_from_cache table created a dangling symlink: {dangling}"
+
+    node.query("DROP DATABASE lazy_borrow SYNC")
 
 
 def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
