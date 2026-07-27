@@ -6667,6 +6667,8 @@ bool StorageReplicatedMergeTree::optimize(
 
 bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMergeTree::LogEntry & entry)
 {
+    /// Pre-lock read, used only for the cheap stale-entry version check below and to parse the
+    /// entry's metadata. The structural diff base is re-read under the alter lock (see below).
     auto current_metadata = getInMemoryMetadataUncached(getContext());
     if (entry.alter_version < current_metadata->getMetadataVersion())
     {
@@ -6727,8 +6729,13 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
-        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        /// Re-read the committed metadata under the alter lock: the pre-lock read can be stale relative
+        /// to a concurrent inline settings/comment ALTER (or another metadata apply) that committed while
+        /// we waited for the lock. The structural diff base must reflect the state as of holding the lock,
+        /// consistent with setTableStructure's own under-lock read that the diff is applied against.
+        auto locked_metadata = getInMemoryMetadataUncached(getContext());
+        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, locked_metadata);
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, locked_metadata->columns, locked_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
         auto applied_metadata_snapshot = getInMemoryMetadataUncached(getContext());
