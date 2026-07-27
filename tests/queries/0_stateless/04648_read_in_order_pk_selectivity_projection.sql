@@ -47,13 +47,21 @@ SELECT count() > 0 FROM (
 -- A leading-wildcard `LIKE` gives the projection's own primary key no pruning at all, so the
 -- selectivity ratio is 1.0 and the guard would fire on a plain (non-projection) read. Reading from
 -- a projection is exempt, so read-in-order is kept and no global sort is inserted: the pipeline has
--- no `PartialSortingTransform`. Both a strict threshold and `1.0` (guard fully off) must agree.
+-- no `PartialSortingTransform`. The strictest threshold (`0.0`, guard always on), the default-like
+-- `0.5` and `1.0` (guard fully off) must all agree.
 SELECT 'projection_exempt_from_guard';
 SELECT count() FROM (
     EXPLAIN PIPELINE SELECT ts, path FROM t_read_in_order_projection
     WHERE path LIKE '%file.log'
     ORDER BY path
     SETTINGS read_in_order_max_primary_key_ratio = 0.5, optimize_use_projections = 1
+) WHERE explain LIKE '%PartialSortingTransform%';
+
+SELECT count() FROM (
+    EXPLAIN PIPELINE SELECT ts, path FROM t_read_in_order_projection
+    WHERE path LIKE '%file.log'
+    ORDER BY path
+    SETTINGS read_in_order_max_primary_key_ratio = 0., optimize_use_projections = 1
 ) WHERE explain LIKE '%PartialSortingTransform%';
 
 SELECT count() FROM (
