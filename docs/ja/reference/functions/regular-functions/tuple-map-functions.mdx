@@ -20,11 +20,11 @@ doc_type: 'reference'
 
 導入バージョン: v23.4.0
 
-任意の文字列からキー・バリューペアを抽出します。文字列はキー・バリューペア形式に完全に準拠している必要はありません。
+任意の文字列からキー・バリューのペアを抽出します。文字列はキー・バリューのペア形式に完全に準拠している必要はありません。
 
-ノイズ (例：ログファイル) を含む場合があります。解釈するキー・バリューペアのフォーマットは、関数の引数を使用して指定する必要があります。
+ノイズ (例：ログファイル) を含む場合があります。解釈するキー・バリューのペアのフォーマットは、関数の引数を使用して指定する必要があります。
 
-キー・バリューペアは、キーの後に `key_value_delimiter` と値が続く形式で構成されます。クォートされたキーと値もサポートされています。キー・バリューペアは、ペアの区切り文字で区切る必要があります。
+キー・バリューのペアは、キーの後に `key_value_delimiter` と値が続く形式で構成されます。クォートされたキーと値もサポートされています。キー・バリューのペアは、ペアの区切り文字で区切る必要があります。
 
 **構文**
 
@@ -35,10 +35,10 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 **引数**
 
 * `data` - キー・バリューのペアの抽出元となる文字列。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
-  * `key_value_delimiter` - キーと値の間の区切り文字として使用する文字。デフォルトは `:` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
-  * `pair_delimiters` - ペア間の区切り文字として使用する文字の集合。デフォルトは `\space`、`,`、`;` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
-  * `quoting_character` - クォート文字として使用する文字。デフォルトは `"` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
-  * `unexpected_quoting_character_strategy` - `read_key` フェーズおよび `read_value` フェーズ中に、想定外の位置に現れたクォート文字を処理するための戦略。設定可能な値: `invalid`、`accept`、`promote`。`invalid` はキー/値を破棄し、`WAITING_KEY` 状態に戻ります。`accept` はそれを通常の文字として扱います。`promote` は `READ_QUOTED_{KEY/VALUE}` 状態に遷移し、次の文字から開始します。デフォルト値は `INVALID` です
+* `key_value_delimiter` - キーと値の間の区切り文字として使用する文字。デフォルトは `:` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
+* `pair_delimiters` - ペア間の区切り文字として使用する文字の集合。デフォルトは `\space`、`,`、`;` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
+* `quoting_character` - クォート文字として使用する文字。デフォルトは `"` です。[String](/ja/reference/data-types/string) または [FixedString](/ja/reference/data-types/fixedstring)。
+* `unexpected_quoting_character_strategy` - `read_key` フェーズおよび `read_value` フェーズ中に、想定外の位置に現れたクォート文字を処理するための戦略。設定可能な値: `invalid`、`accept`、`promote`。`invalid` はキー/値を破棄し、`WAITING_KEY` 状態に戻ります。`accept` はそれを通常の文字として扱います。`promote` は `READ_QUOTED_{KEY/VALUE}` 状態に遷移し、次の文字から開始します。デフォルト値は `INVALID` です
 
 **戻り値**
 
@@ -53,13 +53,13 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 ```sql
 arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-            SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
+SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
 
-            Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 
-            ┌─kv──────────────────────────────────────────────────────────────────────┐
-            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
-            └─────────────────────────────────────────────────────────────────────────┘
+┌─kv──────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **クォート文字としてのシングルクォート**
@@ -67,13 +67,13 @@ arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:
 ```sql
 arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
 
-            Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
 
-            ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-            │ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
-            └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy の例:
@@ -86,8 +86,8 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv────────────────┐
-            │ {'abc':'5'}  │
-            └───────────────────┘
+│ {'abc':'5'}       │
+└───────────────────┘
 ```
 
 ```sql
@@ -96,8 +96,8 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 
 ```text
 ┌─kv──┐
-            │ {}  │
-            └─────┘
+│ {}  │
+└─────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=accept
@@ -108,54 +108,54 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 
 ```text
 ┌─kv────────────────┐
-            │ {'name"abc':'5'}  │
-            └───────────────────┘
+│ {'name"abc':'5'}  │
+└───────────────────┘
 ```
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```text
-            ┌─kv─────────────────┐
-            │ {'name"abc"':'5'}  │
-            └────────────────────┘
+┌─kv─────────────────┐
+│ {'name"abc"':'5'}  │
+└────────────────────┘
 ```
 
 unexpected&#95;quoting&#95;character&#95;strategy=promote
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-            ┌─kv──┐
-            │ {}  │
-            └─────┘
+┌─kv──┐
+│ {}  │
+└─────┘
 ```
 
 ```sql
-            SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```text
-            ┌─kv───────────┐
-            │ {'abc':'5'}  │
-            └──────────────┘
+┌─kv───────────┐
+│ {'abc':'5'}  │
+└──────────────┘
 ```
 
 **エスケープシーケンス非対応の場合**
 
 ```sql
-            arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
+arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
 
-            Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 
-            ┌─kv────────────────────┐
-            │ {'age':'a\\x0A\\n\\0'} │
-            └───────────────────────┘
+┌─kv─────────────────────┐
+│ {'age':'a\\x0A\\n\\0'} │
+└────────────────────────┘
 ```
 
 **構文**
@@ -190,22 +190,22 @@ extractKeyValuePairs(input)
 入力文字列を考えます: `a: "aaaa\"bbb"`。期待される出力は `a: aaaa\"bbbb` です。
 
 * 事前エスケープ: 事前にエスケープすると、出力は `a: "aaaa"bbb"` になり、その後 `extractKeyValuePairs` は `a: aaaa` を出力します
-  * 事後エスケープ: `extractKeyValuePairs` は `a: aaaa\` を出力し、事後エスケープしてもそのまま保持されます。
+* 事後エスケープ: `extractKeyValuePairs` は `a: aaaa\` を出力し、事後エスケープしてもそのまま保持されます。
 
 先頭のエスケープシーケンスは、キーではスキップされ、値では無効と見なされます。
 
 **エスケープシーケンスのサポートを有効にした場合のエスケープシーケンス**
 
 ```sql
-            arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
+arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
 
-            SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
 
-            Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
+Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 
-            ┌─kv───────────────┐
-            │ {'age':'a\n\n\0'} │
-            └──────────────────┘
+┌─kv────────────────┐
+│ {'age':'a\n\n\0'} │
+└───────────────────┘
 ```
 
 **構文**

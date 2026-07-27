@@ -18,9 +18,9 @@ ClickHouse는 데이터 삽입 속도를 우선하도록 설계되었습니다. 
 * 쿼리는 중복이 있을 가능성을 고려할 수 있어야 합니다
 
 <div class="transparent-table">
-  |                                                                                      |                                                                                                                                                                                                                       |
-  | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="중복 제거 로고" size="sm" /> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다. [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)은 시작하기에 좋은 자료입니다. |
+  |                                                                                       |                                                                                                                                                                                                                        |
+  | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | <Image img="/images/guides/developer/de_duplication.webp" alt="중복 제거 로고" size="sm" /> | ClickHouse는 중복 제거를 비롯한 여러 주제에 대한 무료 교육을 제공합니다.  [Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs)은 시작하기에 좋은 자료입니다. |
 </div>
 
 <div id="options-for-deduplication">
@@ -348,6 +348,6 @@ FROM hackernews_views_vcmt
   ## 내 행이 중복 제거되지 않는 이유는 무엇인가요?
 </div>
 
-삽입된 행이 중복 제거되지 않는 한 가지 이유는 `INSERT` 문에서 비멱등 함수나 표현식을 사용하기 때문일 수 있습니다. 예를 들어 `createdAt DateTime64(3) DEFAULT now()` 컬럼으로 행을 삽입하는 경우, 각 행은 `createdAt` 컬럼에 대해 고유한 기본값을 가지므로 고유해질 수밖에 없습니다. 삽입된 각 행이 고유한 체크섬을 생성하므로 MergeTree / ReplicatedMergeTree 테이블 엔진은 이러한 행을 중복 제거해야 할 대상으로 인식하지 못합니다.
+삽입된 행이 중복 제거되지 않을 수 있는 한 가지 이유는 `INSERT` 문에서 비멱등 함수나 표현식을 사용하기 때문입니다. 예를 들어 `createdAt DateTime64(3) DEFAULT now()` 컬럼이 있는 행을 삽입하는 경우, 각 행의 `createdAt` 컬럼에는 고유한 기본값이 들어가므로 행은 반드시 고유해집니다. 따라서 MergeTree / ReplicatedMergeTree 테이블 엔진은 삽입된 각 행이 고유한 체크섬을 생성하므로 이를 중복 제거할 수 없습니다.
 
-이 경우 동일한 배치를 여러 번 삽입하더라도 같은 행이 다시 삽입되지 않도록 각 행 배치에 대해 자체 `insert_deduplication_token`을 지정할 수 있습니다. 이 설정을 사용하는 방법에 대한 자세한 내용은 [`insert_deduplication_token` 문서](/ko/reference/settings/session-settings#insert_deduplication_token)를 참조하십시오.
+이 경우 동일한 행 배치를 여러 번 삽입해도 같은 행이 다시 삽입되지 않도록 각 배치에 대해 `insert_deduplication_token`을 직접 지정할 수 있습니다. 이 설정의 사용 방법에 대한 자세한 내용은 [`insert_deduplication_token` 문서](/ko/reference/settings/session-settings#insert_deduplication_token)를 참조하십시오.
