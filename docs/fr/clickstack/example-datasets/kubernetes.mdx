@@ -41,9 +41,7 @@ Vous pouvez suivre ce guide en utilisant l&#39;une des options de déploiement s
 Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer le fork ClickStack de l&#39;[**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo). Cela génère des données de télémétrie, notamment des logs, des métriques et des traces. Si vous avez déjà des charges de travail en cours d&#39;exécution dans votre cluster, vous pouvez ignorer cette étape et surveiller les pods, nœuds et conteneurs existants.
 
 <Steps>
-  <Step>
-    ### Installer cert-manager (facultatif)
-
+  <Step title="Installer cert-manager (facultatif)" id="install-cert-manager">
     Si votre installation nécessite des certificats TLS, installez [cert-manager](https://cert-manager.io/) à l’aide de Helm :
 
     ```shell
@@ -55,9 +53,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     ```
   </Step>
 
-  <Step>
-    ### Déployer l’OpenTelemetry Demo (facultatif)
-
+  <Step title="Déployer l’OpenTelemetry Demo (facultatif)" id="deploy-otel-demo">
     Cette **étape est facultative et s’adresse aux cas où vous n’avez aucun pod existant à surveiller**. Les utilisateurs qui ont déjà des services déployés dans leur environnement Kubernetes peuvent l’ignorer, mais cette démo inclut des microservices instrumentés qui génèrent des données de traces et de session replay, ce qui permet d’explorer toutes les fonctionnalités de ClickStack.
 
     La suite déploie le fork ClickStack de la stack applicative OpenTelemetry Demo dans un cluster Kubernetes, conçu pour les tests d’observabilité et la démonstration de l’instrumentation. Il inclut des microservices backend, des générateurs de charge, des pipelines de télémétrie, l’infrastructure de support (par ex. Kafka, Redis) ainsi que des intégrations SDK avec ClickStack.
@@ -107,9 +103,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     <DemoArchitecture />
   </Step>
 
-  <Step>
-    ### Ajouter le dépôt du chart Helm ClickStack
-
+  <Step title="Ajouter le dépôt du chart Helm ClickStack" id="add-helm-clickstack">
     Pour déployer ClickStack, nous utilisons le [chart Helm officiel](/fr/clickstack/deployment/helm).
 
     Pour cela, il faut ajouter le dépôt Helm HyperDX :
@@ -120,9 +114,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     ```
   </Step>
 
-  <Step>
-    ### Déployer ClickStack
-
+  <Step title="Déployer ClickStack" id="deploy-clickstack">
     Une fois le chart Helm installé, vous pouvez déployer ClickStack sur votre cluster. Vous pouvez soit exécuter tous les composants, y compris ClickHouse et HyperDX, dans votre environnement Kubernetes, soit déployer uniquement le collector et vous appuyer sur Managed ClickStack pour ClickHouse et l’interface HyperDX.
 
     <br />
@@ -188,9 +180,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     ```
   </Step>
 
-  <Step>
-    ### Accéder à l’interface HyperDX
-
+  <Step title="Accéder à l’interface HyperDX" id="access-the-hyperdx-ui">
     <Note>
       Même lorsque vous utilisez Managed ClickStack, l’instance locale d’HyperDX déployée dans le cluster Kubernetes reste nécessaire. Elle fournit une clé d’ingestion gérée par le serveur OpAMP inclus avec HyperDX et permet une ingestion sécurisée via l’OTel collector déployé — une fonctionnalité qui n’est pas encore disponible dans Managed ClickStack.
     </Note>
@@ -213,9 +203,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
   </Step>
 
-  <Step>
-    ### Récupérer la clé API d’ingestion
-
+  <Step title="Récupérer la clé API d’ingestion" id="retrieve-ingestion-api-key">
     L’ingestion vers l’OTel collector déployé par le ClickStack collector est sécurisée par une clé d’ingestion.
 
     Accédez à [`Team Settings`](http://localhost:8080/team) et copiez l’`Ingestion API Key` depuis la section `API Keys`. Cette clé API garantit la sécurité de l’ingestion des données via l’OpenTelemetry collector.
@@ -223,9 +211,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Copier la clé API" size="lg" />
   </Step>
 
-  <Step>
-    ### Créer un secret Kubernetes pour l’API key
-
+  <Step title="Créer un secret Kubernetes pour l’API key" id="create-api-key-kubernetes-secret">
     Créez un nouveau secret Kubernetes avec l’API key d’ingestion, ainsi qu’une ConfigMap contenant l’adresse de l’OTel collector déployé avec le chart Helm ClickStack. Les composants suivants l’utiliseront pour autoriser l’ingestion vers le collector déployé avec le chart Helm ClickStack :
 
     ```shell
@@ -249,9 +235,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="Données Kubernetes HyperDX" size="lg" />
   </Step>
 
-  <Step>
-    ### Ajouter le dépôt Helm OpenTelemetry
-
+  <Step title="Ajouter le dépôt Helm OpenTelemetry" id="add-otel-helm-repo">
     Pour collecter les métriques Kubernetes, nous allons déployer un OTel collector standard et le configurer pour envoyer les données de manière sécurisée à notre ClickStack collector à l’aide de la clé API d’ingestion ci-dessus.
 
     Cela nécessite d’installer le dépôt Helm OpenTelemetry :
@@ -262,16 +246,14 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     ```
   </Step>
 
-  <Step>
-    ### Déployer les composants du collector Kubernetes
-
+  <Step title="Déployer les composants du collector Kubernetes" id="deploy-kubernetes-collector-components">
     Pour collecter les logs et les métriques du cluster lui-même et de chaque nœud, nous devrons déployer deux collecteurs OpenTelemetry distincts, chacun avec son propre manifeste. Les deux manifestes fournis — `k8s_deployment.yaml` et `k8s_daemonset.yaml` — fonctionnent conjointement pour collecter des données de télémétrie complètes depuis votre cluster Kubernetes.
 
     * `k8s_deployment.yaml` déploie une **instance unique d’OpenTelemetry Collector** chargée de collecter les **événements et les métadonnées à l’échelle du cluster**. Elle recueille les événements Kubernetes, les métriques du cluster et enrichit les données de télémétrie avec les labels et annotations des pods. Ce collecteur s’exécute comme un déploiement autonome avec une seule réplique pour éviter les doublons de données.
 
     * `k8s_daemonset.yaml` déploie un **collecteur basé sur un DaemonSet** qui s’exécute sur chaque nœud de votre cluster. Il collecte les **métriques des nœuds et des pods**, ainsi que les logs des conteneurs, à l’aide de composants comme `kubeletstats`, `hostmetrics` et les Kubernetes attribute processors. Ces collecteurs enrichissent les logs avec des métadonnées et les envoient à HyperDX via l’exporteur OTLP.
 
-    Ensemble, ces manifests permettent une observabilité full-stack à l&#39;échelle du cluster, de l&#39;infrastructure jusqu&#39;à la télémétrie applicative, et transmettent les données enrichies à ClickStack pour une analyse centralisée.
+    Ensemble, ces manifestes permettent une observabilité full-stack à l&#39;échelle du cluster, de l&#39;infrastructure jusqu&#39;à la télémétrie applicative, et transmettent les données enrichies à ClickStack pour une analyse centralisée.
 
     Commencez par installer le collecteur en tant que déploiement :
 
@@ -345,7 +327,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
       ```
     </Accordion>
 
-    Ensuite, déployez le collecteur en tant que DaemonSet pour les métriques et les journaux au niveau des nœuds et des pods :
+    Ensuite, déployez le collecteur en tant que DaemonSet pour les métriques et les logs au niveau des nœuds et des pods :
 
     ```shell
     # download manifest file
@@ -460,9 +442,7 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
     </Accordion>
   </Step>
 
-  <Step>
-    ### Explorer les données Kubernetes dans HyperDX
-
+  <Step title="Explorer les données Kubernetes dans HyperDX" id="explore-kubernetes-data-hyperdx">
     Accédez à votre interface HyperDX, soit en utilisant votre instance déployée dans Kubernetes, soit via Managed ClickStack.
 
     <p />

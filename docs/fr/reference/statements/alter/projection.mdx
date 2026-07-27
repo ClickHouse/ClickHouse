@@ -234,6 +234,57 @@ WHERE _part_starting_offset + _part_offset IN (
 SETTINGS enable_shared_storage_snapshot_in_query = 1
 ```
 
+<div id="example-projection-with-where">
+  ### Exemple de projection avec clause `WHERE`
+</div>
+
+Les projections peuvent inclure une clause `WHERE` pour ne stocker qu’un sous-ensemble de lignes. Cela est utile lorsque les requêtes filtrent fréquemment selon un prédicat connu : la projection ne matérialise que les lignes correspondantes, ce qui réduit le stockage et améliore les performances des requêtes.
+
+Création d&#39;une table et ajout d&#39;une projection filtrée :
+
+```sql
+CREATE TABLE events
+(
+    `event_type` String,
+    `time` DateTime,
+    `message` String
+)
+ENGINE = MergeTree()
+ORDER BY time;
+
+ALTER TABLE events ADD PROJECTION proj_pageview (
+    SELECT event_type, time, message
+    WHERE event_type = 'pageview'
+    ORDER BY time
+);
+
+ALTER TABLE events MATERIALIZE PROJECTION proj_pageview;
+```
+
+Insertion de données :
+
+```sql
+INSERT INTO events VALUES
+    ('pageview', '2024-01-01', 'homepage'),
+    ('click', '2024-01-02', 'button'),
+    ('pageview', '2024-01-03', 'about');
+```
+
+Lorsque la clause `WHERE` d’une requête **implique** la clause `WHERE` de la projection (c’est-à-dire que chaque condition du filtre de la projection est également présente dans le filtre de la requête), l’optimiseur peut utiliser automatiquement la projection s’il détermine que cela est bénéfique :
+
+```sql
+-- This query implies the projection's WHERE, so the projection may be used:
+SELECT time, message FROM events WHERE event_type = 'pageview';
+
+-- A stricter query also implies the projection's WHERE:
+SELECT time, message FROM events WHERE event_type = 'pageview' AND time > '2024-01-01';
+
+-- This query does NOT imply the projection, so the base table is scanned:
+SELECT time, message FROM events WHERE event_type = 'click';
+```
+
+La vérification d’implication est conservatrice — elle s’appuie sur une correspondance exacte des conjonctions dans la forme canonique de l’expression. Elle peut passer à côté de certaines optimisations valides (par ex., les implications sur des plages de valeurs), mais elle ne produira jamais de résultats incorrects.
+
 <div id="manipulating-projections">
   ## Gestion des projections
 </div>
@@ -247,8 +298,16 @@ Les opérations suivantes sur les [projections](/fr/reference/engines/table-engi
 Utilisez l’instruction ci-dessous pour ajouter une description de projection aux métadonnées d’une table :
 
 ```sql
-ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+-- Normal projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
+
+-- Aggregate projection (supports WHERE)
+ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name ( SELECT <COLUMN LIST EXPR> [WHERE <expr>] [GROUP BY] ) [WITH SETTINGS ( setting_name1 = setting_value1, setting_name2 = setting_value2, ...)]
 ```
+
+<Note>
+  Lorsqu’une projection définit une clause `WHERE`, seules les lignes qui correspondent au prédicat sont matérialisées. L’optimiseur peut utiliser une telle projection lorsque la clause `WHERE` de la requête implique logiquement celle de la projection et que cette projection est avantageuse pour le plan de requête. Cela s’applique aussi bien aux projections normales qu’aux projections d’agrégation.
+</Note>
 
 <div id="with-settings">
   #### Clause `WITH SETTINGS`

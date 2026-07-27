@@ -22,11 +22,14 @@ picture-in-picture"
 
 <br />
 
-将数据迁移到 ClickHouse Cloud 有多种方案，具体取决于您的数据当前位于何处：
+将数据迁移到 ClickHouse Cloud 有多种路径，具体取决于您的数据目前位于何处：
 
-* [从自管理到 Cloud](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)：使用 `remoteSecure` 函数传输数据
-* [从其他 DBMS](/zh/get-started/migrate/other-methods/clickhouse-local-etl)：使用 [clickhouse-local] ETL 工具，并结合适用于当前 DBMS 的 ClickHouse 表函数
-* [从任何地方！](/zh/get-started/migrate/other-methods/etl-tool-to-clickhouse)：使用众多流行的 ETL/ELT 工具之一，它们可以连接各种不同的数据源
-* [对象存储](/zh/get-started/migrate/other-methods/object-storage-to-clickhouse)：轻松将 S3 中的数据插入 ClickHouse
-
-在示例 [从 Redshift 迁移](/zh/get-started/migrate/redshift/migration-guide) 中，我们介绍了三种将数据迁移到 ClickHouse 的不同方法。
+| 迁移路径                                                                  | 描述                                            |
+| --------------------------------------------------------------------- | --------------------------------------------- |
+| [PostgreSQL](/zh/get-started/migrate/postgres/index)                     | 将 PostgreSQL 数据和查询迁移到 ClickHouse。             |
+| [BigQuery](/zh/get-started/migrate/bigquery/index)                       | 将数据集和工作负载从 BigQuery 迁移到 ClickHouse Cloud。     |
+| [Snowflake](/zh/get-started/migrate/snowflake/overview)                  | 将 Snowflake 数据和 SQL 工作负载迁移到 ClickHouse Cloud。 |
+| [Elasticsearch](/zh/get-started/migrate/elastic/overview)                | 将 Elasticsearch 数据和查询迁移到 ClickHouse。          |
+| [Redshift](/zh/get-started/migrate/redshift/overview)                    | 将 Redshift 数据和工作负载迁移到 ClickHouse Cloud。       |
+| [OSS to Cloud](/zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) | 将数据从自管理 ClickHouse 部署迁移到 ClickHouse Cloud。    |
+| [其他方法](/zh/get-started/migrate/other-methods/clickhouse-local-etl)       | 对于其他迁移场景，可使用 clickhouse-local、ETL 工具或对象存储。    |

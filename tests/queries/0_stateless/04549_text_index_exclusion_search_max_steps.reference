@@ -1,0 +1,51 @@
+-- The first SELECT is the ground truth without skip indexes. Comments are not placed between the
+-- echoed queries because a leading comment becomes part of the query text in the query log and
+-- would break the query matching below.
+
+-- { echoOn }
+
+SET merge_tree_coarse_index_granularity = 8;
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS use_skip_indexes = 0;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 1;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 15;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 100000;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 15, merge_tree_coarse_index_granularity = 2;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'needle')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 15, merge_tree_coarse_index_granularity = 64;
+3	14096
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'absent')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 1;
+0	0
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'absent')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0;
+0	0
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'common')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 1;
+10000	49995000
+SELECT count(), sum(id) FROM t_text_index_exclusion_steps WHERE hasToken(s, 'common')
+SETTINGS merge_tree_generic_exclusion_search_max_steps = 0;
+10000	49995000
+0	0
+1	1
+1	1
+1	0
+1	0
+1	1
+1	1
+1	0
+1	0
+1	1
+1	0

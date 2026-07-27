@@ -55,17 +55,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### أنشئ قاعدة بيانات للاختبار
-
+  <Step title="إنشاء قاعدة بيانات اختبار" id="create-a-test-database">
     ```sql
     CREATE DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### أنشئ جدولًا
-
+  <Step title="إنشاء جدول" id="create-a-table">
     ```sql
     CREATE TABLE db1.table1 (
        id UInt64,
@@ -77,9 +73,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### املأ الجدول بصفوف تجريبية
-
+  <Step title="إدراج صفوف تجريبية في الجدول" id="populate">
     ```sql
     INSERT INTO db1.table1
        (id, column1, column2)
@@ -91,9 +85,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### تحقّق من الجدول
-
+  <Step title="التحقق من الجدول" id="verify">
     ```sql title="استعلام"
     SELECT *
     FROM db1.table1
@@ -111,9 +103,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### أنشئ `column_user`
-
+  <Step title={<>إنشاء <code>column_user</code></>} id="create-a-user-with-restricted-access-to-columns">
     أنشئ مستخدمًا عاديًا سيُستخدم لتوضيح تقييد الوصول إلى أعمدة معيّنة:
 
     ```sql
@@ -121,9 +111,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### أنشئ `row_user`
-
+  <Step title={<>إنشاء <code>row_user</code></>} id="create-a-user-with-restricted-access-to-rows-with-certain-values">
     أنشئ مستخدمًا عاديًا سيُستخدم لتوضيح تقييد الوصول إلى الصفوف ذات القيم المعيّنة:
 
     ```sql
@@ -145,65 +133,49 @@ DROP DATABASE db1;
 تُستخدم الأدوار لتحديد مجموعات من المستخدمين ذوي امتيازات معيّنة، بدلًا من إدارة كل مستخدم على حدة.
 
 <Steps>
-  <Step>
-    ##### أنشئ دورًا لتقييد مستخدمي هذا الدور بحيث لا يمكنهم رؤية سوى `column1` في قاعدة البيانات `db1` والجدول `table1`:
-
+  <Step title={<>أنشئ دورًا لتقييد مستخدمي هذا الدور بحيث لا يمكنهم رؤية سوى <code>column1</code> في قاعدة البيانات <code>db1</code> والجدول <code>table1</code>:</>} id="create-column-role">
     ```sql
     CREATE ROLE column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### اضبط الامتيازات للسماح بعرض `column1`
-
+  <Step title={<>اضبط الامتيازات للسماح بعرض <code>column1</code></>} id="set-column-privileges">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
     ```
   </Step>
 
-  <Step>
-    ##### أضف المستخدم `column_user` إلى الدور `column1_users`
-
+  <Step title={<>أضف المستخدم <code>column_user</code> إلى الدور <code>column1_users</code></>} id="add-column-user-to-role">
     ```sql
     GRANT column1_users TO column_user;
     ```
   </Step>
 
-  <Step>
-    ##### أنشئ دورًا لتقييد مستخدمي هذا الدور بحيث لا يمكنهم رؤية إلا الصفوف المحددة، وفي هذه الحالة الصفوف التي تحتوي على `A` في `column1` فقط
-
+  <Step title={<>أنشئ دورًا لتقييد مستخدمي هذا الدور بحيث لا يمكنهم رؤية إلا الصفوف المحددة، وفي هذه الحالة الصفوف التي تحتوي على <code>A</code> في <code>column1</code> فقط</>} id="create-row-role">
     ```sql
     CREATE ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### أضف `row_user` إلى الدور `A_rows_users`
-
+  <Step title={<>أضف <code>row_user</code> إلى الدور <code>A_rows_users</code></>} id="add-row-user-to-role">
     ```sql
     GRANT A_rows_users TO row_user;
     ```
   </Step>
 
-  <Step>
-    ##### أنشئ سياسة للسماح بعرض الصفوف التي تكون فيها قيمة `column1` هي `A` فقط
-
+  <Step title={<>أنشئ سياسة للسماح بعرض الصفوف التي تكون فيها قيمة <code>column1</code> هي <code>A</code> فقط</>} id="create-row-policy">
     ```sql
     CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### اضبط امتيازات قاعدة البيانات والجدول
-
+  <Step title="اضبط امتيازات قاعدة البيانات والجدول" id="set-db-table-privileges">
     ```sql
     GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### امنح أذونات صريحة للأدوار الأخرى حتى تظل قادرة على الوصول إلى جميع الصفوف
-
+  <Step title="امنح أذونات صريحة للأدوار الأخرى حتى تظل قادرة على الوصول إلى جميع الصفوف" id="grant-other-roles-access">
     ```sql
     CREATE ROW POLICY allow_other_users_filter 
     ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
@@ -224,17 +196,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### سجّل الدخول إلى عميل ClickHouse باستخدام المستخدم `clickhouse_admin`
-
+  <Step title={<>سجّل الدخول إلى عميل ClickHouse باستخدام المستخدم <code>clickhouse_admin</code></>} id="login-admin-user">
     ```bash
     clickhouse-client --user clickhouse_admin --password password
     ```
   </Step>
 
-  <Step>
-    ##### تحقّق من إمكانية الوصول إلى قاعدة البيانات والجدول وجميع الصفوف باستخدام المستخدم المسؤول.
-
+  <Step title="تحقّق من إمكانية الوصول إلى قاعدة البيانات والجدول وجميع الصفوف باستخدام المستخدم المسؤول." id="verify-admin-access">
     ```sql
     SELECT *
     FROM db1.table1
@@ -252,17 +220,13 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### سجّل الدخول إلى عميل ClickHouse باستخدام المستخدم `column_user`
-
+  <Step title={<>سجّل الدخول إلى عميل ClickHouse باستخدام المستخدم <code>column_user</code></>} id="login-column-user">
     ```bash
     clickhouse-client --user column_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### اختبر `SELECT` باستخدام جميع الأعمدة
-
+  <Step title={<>اختبر <code>SELECT</code> باستخدام جميع الأعمدة</>} id="test-select-all-columns">
     ```sql
     SELECT *
     FROM db1.table1
@@ -285,9 +249,7 @@ DROP DATABASE db1;
     </Note>
   </Step>
 
-  <Step>
-    ##### تحقّق من استعلام `SELECT` باستخدام الأعمدة المحددة والمسموح بها فقط:
-
+  <Step title={<>تحقّق من استعلام <code>SELECT</code> باستخدام الأعمدة المحددة والمسموح بها فقط:</>} id="verify-allowed-columns">
     ```sql
     SELECT
         id,
@@ -313,17 +275,13 @@ DROP DATABASE db1;
 </div>
 
 <Steps>
-  <Step>
-    ##### سجّل الدخول إلى عميل ClickHouse باستخدام `row_user`
-
+  <Step title={<>سجّل الدخول إلى عميل ClickHouse باستخدام <code>row_user</code></>} id="login-row-user">
     ```bash
     clickhouse-client --user row_user --password password
     ```
   </Step>
 
-  <Step>
-    ##### اعرض الصفوف المتاحة
-
+  <Step title="اعرض الصفوف المتاحة" id="view-available-rows">
     ```sql
     SELECT *
     FROM db1.table1
@@ -353,41 +311,31 @@ DROP DATABASE db1;
 على سبيل المثال، إذا كان `role1` يتيح فقط تنفيذ SELECT على `column1` وكان `role2` يتيح تنفيذ SELECT على `column1` و`column2`، فسيكون لدى المستخدم حق الوصول إلى كلا العمودين.
 
 <Steps>
-  <Step>
-    ##### باستخدام حساب مسؤول، أنشئ مستخدمًا جديدًا لتقييد الوصول حسب الصف والعمود مع أدوار افتراضية
-
+  <Step title="باستخدام حساب مسؤول، أنشئ مستخدمًا جديدًا لتقييد الوصول حسب الصف والعمود مع أدوار افتراضية" id="create-restricted-user">
     ```sql
     CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### أزل الامتيازات السابقة من الدور `A_rows_users`
-
+  <Step title={<>أزل الامتيازات السابقة من الدور <code>A_rows_users</code></>} id="remove-prior-privileges">
     ```sql
     REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### اسمح للدور `A_row_users` بتنفيذ SELECT على `column1` فقط
-
+  <Step title={<>اسمح للدور <code>A_row_users</code> بتنفيذ SELECT على <code>column1</code> فقط</>} id="allow-column1-select">
     ```sql
     GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
     ```
   </Step>
 
-  <Step>
-    ##### سجّل الدخول إلى عميل ClickHouse باستخدام `row_and_column_user`
-
+  <Step title={<>سجّل الدخول إلى عميل ClickHouse باستخدام <code>row_and_column_user</code></>} id="login-restricted-user">
     ```bash
     clickhouse-client --user row_and_column_user --password password;
     ```
   </Step>
 
-  <Step>
-    ##### اختبر باستخدام جميع الأعمدة:
-
+  <Step title="اختبر باستخدام جميع الأعمدة:" id="test-all-columns-restricted">
     ```sql
     SELECT *
     FROM db1.table1
@@ -406,9 +354,7 @@ DROP DATABASE db1;
     ```
   </Step>
 
-  <Step>
-    ##### اختبر باستخدام الأعمدة المسموح بها فقط:
-
+  <Step title="اختبر باستخدام الأعمدة المسموح بها فقط:" id="test-limited-columns">
     ```sql
     SELECT
         id,

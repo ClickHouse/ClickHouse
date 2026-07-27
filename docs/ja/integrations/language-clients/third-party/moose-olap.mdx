@@ -7,7 +7,7 @@ keywords: ['Moose']
 doc_type: 'guide'
 ---
 
-import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -43,9 +43,7 @@ Moose OLAP は、ClickHouse 向けにネイティブに設計されており、�
 * **macOS/Linux** - Windows は WSL2 経由で利用できます
 
 <Steps>
-  <Step>
-    ### Moose をインストールする
-
+  <Step title="Moose をインストールする" id="step-1-install-moose">
     Moose CLI をシステム全体で使えるようにグローバルインストールします。
 
     ```bash
@@ -53,9 +51,7 @@ Moose OLAP は、ClickHouse 向けにネイティブに設計されており、�
     ```
   </Step>
 
-  <Step>
-    ### プロジェクトをセットアップする
-
+  <Step title="プロジェクトをセットアップする" id="step-2-set-up-project">
     #### オプション A: 既存の ClickHouse デプロイメントを使う
 
     **重要**: 本番の ClickHouse には変更は加えられません。既存の ClickHouse テーブルから導出したデータモデルを使って、新しい Moose OLAP プロジェクトを初期化するだけです。
@@ -87,9 +83,7 @@ Moose OLAP は、ClickHouse 向けにネイティブに設計されており、�
     ```
   </Step>
 
-  <Step>
-    ### 依存関係をインストールする
-
+  <Step title="依存関係をインストールする" id="step-3-install-dependencies">
     ```bash
     # TypeScript
     cd my-project
@@ -105,17 +99,13 @@ Moose OLAP は、ClickHouse 向けにネイティブに設計されており、�
     次のメッセージが表示されるはずです: `Successfully generated X models from ClickHouse tables`
   </Step>
 
-  <Step>
-    ### 生成されたモデルを確認する
-
+  <Step title="生成されたモデルを確認する" id="step-4-explore-models">
     Moose CLI は、既存の ClickHouse テーブルから TypeScript のインターフェイスまたは Python の Pydantic モデルを自動生成します。
 
     新しいデータモデルは `app/index.ts` ファイルで確認できます。
   </Step>
 
-  <Step>
-    ### 開発を始める
-
+  <Step title="開発を始める" id="step-5-start-development">
     dev サーバーを起動すると、コード定義に基づいて本番テーブルを自動的に再現したローカルの ClickHouse インスタンスが立ち上がります。
 
     ```bash
@@ -125,9 +115,7 @@ Moose OLAP は、ClickHouse 向けにネイティブに設計されており、�
     **重要**: 本番の ClickHouse には変更は加えられません。作成されるのはローカルの開発環境です。
   </Step>
 
-  <Step>
-    ### ローカルデータベースをシードする
-
+  <Step title="ローカルデータベースをシードする" id="step-6-seed-database">
     ローカルの ClickHouse インスタンスにデータをシードします。
 
     #### 独自の ClickHouse から
@@ -143,9 +131,7 @@ Moose OLAP は、ClickHouse 向けにネイティブに設計されており、�
     ```
   </Step>
 
-  <Step>
-    ### Moose OLAP で構築する
-
+  <Step title="Moose OLAP で構築する" id="step-7-building-with-moose-olap">
     これで Tables をコードで定義できたので、Web アプリの ORM データモデルと同じ利点、つまり分析データ上に API や Materialized Views を構築する際の型安全性や自動補完を活用できます。次のステップとして、以下を試してみてください。
 
     * [Moose API](https://docs.fiveonefour.com/moosestack/apis) で REST API を構築する

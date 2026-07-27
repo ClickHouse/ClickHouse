@@ -35,6 +35,10 @@ Los motores de tabla de la familia [`MergeTree`](/es/reference/engines/table-eng
 pueden almacenar datos en `S3`, `AzureBlobStorage` y `HDFS` (no compatible) usando un disco de tipo `s3`,
 `azure_blob_storage` o `hdfs` (no compatible), respectivamente.
 
+<Note>
+  El tipo de disco `s3` también puede usarse con proveedores de almacenamiento de objetos compatibles con S3, como Alibaba Cloud Object Storage Service. Configure `endpoint` con el endpoint compatible con S3 del proveedor y tenga en cuenta cualquier requisito de compatibilidad específico del proveedor.
+</Note>
+
 La configuración del disco requiere:
 
 1. Una sección `type`, igual a uno de `s3`, `azure_blob_storage`, `hdfs` (no compatible), `local_blob_storage`, `web`.
@@ -49,7 +53,7 @@ Requiere especificar:
 <br />
 
 Opcionalmente, se puede especificar `metadata_type` (su valor predeterminado es `local`), pero también puede establecerse en `plain`, `web` y, a partir de `24.4`, `plain_rewritable`.
-El uso del tipo de metadatos `plain` se describe en la [sección sobre almacenamiento plain](/es/concepts/features/configuration/server-config/storing-data#plain-storage); el tipo de metadatos `web` solo puede usarse con el tipo de almacenamiento de objetos `web`; el tipo de metadatos `local` almacena los archivos de metadatos localmente (cada archivo de metadatos contiene la asignación a archivos en el almacenamiento de objetos y cierta metainformación adicional sobre ellos).
+El uso del tipo de metadatos `plain` se describe en la [sección sobre Plain Storage](/es/concepts/features/configuration/server-config/storing-data#plain-storage); el tipo de metadatos `web` solo puede usarse con el tipo de almacenamiento de objetos `web`; el tipo de metadatos `local` almacena los archivos de metadatos localmente (cada archivo de metadatos contiene la asignación a archivos en el almacenamiento de objetos y cierta metainformación adicional sobre ellos).
 
 Por ejemplo:
 

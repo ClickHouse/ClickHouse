@@ -58,9 +58,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
 자가 관리형 배포에서 쿼리 프로파일러를 사용하려면 아래 단계를 따르십시오.
 
 <Steps>
-  <Step>
-    ### 디버그 정보와 함께 ClickHouse 설치
-
+  <Step title="디버그 정보와 함께 ClickHouse 설치" id="debug-info">
     `clickhouse-common-static-dbg` 패키지를 설치하십시오:
 
     1. [&quot;Debian 리포지토리 설정&quot;](/ko/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 단계의 지침을 따르십시오
@@ -69,9 +67,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     4. `clickhouse-client`를 실행하십시오. `clickhouse-common-static-dbg`의 디버그 심볼은 서버에서 자동으로 인식되므로 이를 활성화하기 위해 별도로 수행할 작업은 없습니다
   </Step>
 
-  <Step>
-    ### 서버 구성 확인
-
+  <Step title="서버 구성 확인" id="server-config">
     [서버 설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)의 [`trace_log`](/ko/reference/settings/server-settings/settings#trace_log) 섹션이 구성되어 있는지 확인하십시오. 기본적으로 활성화되어 있습니다:
 
     ```xml
@@ -97,9 +93,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     서버를 재시작한 후에도 ClickHouse는 이 테이블을 정리하지 않으므로 저장된 모든 가상 메모리 주소가 유효하지 않게 될 수 있습니다.
   </Step>
 
-  <Step>
-    ### 프로파일 타이머 구성
-
+  <Step title="프로파일 타이머 구성" id="configure-profile-timers">
     [`query_profiler_cpu_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 또는 [`query_profiler_real_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_real_time_period_ns) 설정을 구성하십시오.
     두 설정은 동시에 사용할 수 있습니다.
 
@@ -111,9 +105,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
     개별 쿼리마다 프로파일링해야 한다면 더 높은 샘플링 주기를 사용하십시오.
   </Step>
 
-  <Step>
-    ### `trace_log` 시스템 테이블 분석
-
+  <Step title={<>Analyze the <code>trace_log</code> system table</>} id="analyze-trace-log-system-table">
     `trace_log` 시스템 테이블을 분석하려면 [`allow_introspection_functions`](/ko/reference/settings/session-settings#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
 
     ```sql

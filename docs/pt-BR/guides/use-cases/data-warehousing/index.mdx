@@ -16,7 +16,7 @@ O ClickHouse se integra a formatos abertos de tabela, incluindo [Apache Iceberg]
   ### Consultar dados existentes no próprio local
 </div>
 
-O ClickHouse pode consultar formatos abertos de tabela diretamente no armazenamento de objetos sem duplicar os dados. Organizações que padronizaram Iceberg, Delta Lake, Hudi ou Paimon podem apontar o ClickHouse para tabelas existentes e usar imediatamente seu dialeto SQL, funções analíticas e o eficiente leitor nativo de Parquet. Ao mesmo tempo, ferramentas como [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) e [chDB](/pt-BR/products/chdb/index) permitem análises exploratórias e ad hoc em mais de 70 formatos de arquivo no armazenamento remoto, possibilitando que os usuários explorem interativamente conjuntos de dados em lagos de dados sem precisar configurar infraestrutura.
+O ClickHouse pode consultar formatos abertos de tabela diretamente no armazenamento de objetos sem duplicar os dados. Organizações que padronizaram Iceberg, Delta Lake, Hudi ou Paimon podem apontar o ClickHouse para tabelas existentes e usar imediatamente seu dialeto SQL, funções analíticas e o eficiente leitor nativo de Parquet. Ao mesmo tempo, ferramentas como [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) e [chDB](/pt-BR/chdb/index) permitem análises exploratórias e ad hoc em mais de 70 formatos de arquivo no armazenamento remoto, possibilitando que os usuários explorem interativamente conjuntos de dados em lagos de dados sem precisar configurar infraestrutura.
 
 Os usuários podem fazer isso com leitura direta, usando [funções de tabela e motores de tabela](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly), ou [conectando-se a um catálogo de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
 
@@ -70,6 +70,12 @@ O ClickHouse oferece suporte à gravação de dados de volta em formatos abertos
 * **ETL reverso** - Os usuários realizam transformações no ClickHouse usando visões materializadas ou consultas agendadas e desejam persistir os resultados em formatos abertos de tabela para uso por outras ferramentas no ecossistema de dados.
 
 Consulte o guia de Primeiros passos para [gravar em lagos de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+<div id="best-practices">
+  ### Melhores práticas
+</div>
+
+Para workloads de produção, consulte [Melhores práticas para lago de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/best-practices) para obter orientações sobre como escolher funções de tabela, motores de tabela ou conexões de catálogo, ajustar as configurações de desempenho e depurar consultas no lago de dados.
 
 <div id="next-steps">
   ## Próximas etapas

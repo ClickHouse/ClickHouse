@@ -6,7 +6,7 @@ title: 'JWT 認証'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge />
 
@@ -110,8 +110,10 @@ JWTユーザーは、通常のClickHouseユーザーとはいくつかの重要�
 一方、ユーザー名は **変動** します。次のように構成されます。
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+`<claims_hash>` は、`iss`、`sub`、`aud` のクレームと、`clickhouse:roles` および `clickhouse:grants` のクレームから導出されるハッシュです。`iss` と `aud` のクレームは **このハッシュを通じてのみ** 反映され、表示されるユーザー名のプレフィックスには直接埋め込まれなくなりました。これにより、`iss`/`aud` が長く不透明な IdP の URL (たとえば Microsoft Entra や Okta) であっても、名前を簡潔で読みやすく保ちつつ、異なる `(iss, sub, aud)` の組み合わせと、異なる `clickhouse:roles` / `clickhouse:grants` のセットが、それぞれ異なる安定した名前に対応することが保証されます。ハッシュに反映されないクレーム (たとえば `iat`、`exp`、`nbf`、または無関係なカスタムクレーム) は、ユーザー名を変更しません。
 
 `<claims_hash>` の部分は、`clickhouse:roles` または `clickhouse:grants` のクレームが変更されるたびに変化します。つまり、同じアイデンティティであっても、ロールまたは権限セットが異なるトークンでは、生成されるユーザー名も異なります。
 
@@ -150,7 +152,7 @@ UUID は変わらないため、SQLステートメントを使用して、設定
 ユーザーは現在のユーザー名で参照してください:
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>
