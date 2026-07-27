@@ -3887,9 +3887,9 @@ void QueryFuzzer::extractPredicates(const ASTPtr & node, ASTs & predicates, cons
     {
         if (func->name == "and" || func->name == "or" || func->name == "xor")
         {
-            /// A degenerate call such as `and()` carries no operands to flatten, so treat it as an
-            /// opaque leaf: extracting from it yields nothing, and with a null argument list the
-            /// branch below would recurse on this very same node.
+            /// A degenerate call such as `and()` has no operands to flatten, so it contributes
+            /// exactly one opaque leaf, which is why the extraction can no longer come back empty.
+            /// With a null `arguments` the branch below would recurse on this very same node.
             if (!func->arguments || func->arguments->children.empty())
             {
                 predicates.emplace_back(node);

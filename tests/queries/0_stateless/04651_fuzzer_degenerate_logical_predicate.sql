@@ -1,8 +1,6 @@
--- Tags: no-fasttest, no-llvm-coverage
--- no-llvm-coverage: `fuzzQuery` drives the process-global `QueryFuzzer`, whose accumulated
--- state depends on what else ran in the same server, so its coverage of `QueryFuzzer.cpp`
--- varies run-to-run (same reason as `03834_fuzz_query_function` and
--- `04202_storage_fuzzquery_engine`).
+-- Tags: no-fasttest
+-- no-fasttest: fast builds are `NDEBUG` without sanitizers, so `chassert` expands to
+-- `(void)sizeof(...)` and every statement below would pass without exercising the abort.
 
 -- Regression test: a degenerate logical call such as `and()` used to abort the fuzzer in
 -- `QueryFuzzer::permutePredicateClause` (`chassert(!predicates.empty())`), because
