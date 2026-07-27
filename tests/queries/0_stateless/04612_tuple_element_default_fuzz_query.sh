@@ -12,6 +12,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # For some seeds the fuzzer produces a nonsensical type on its own (e.g. a doubly nested
 # `Nullable`) and fails with an unrelated error - that happens with or without a tuple element
 # `DEFAULT` and is out of scope here, so only the tuple-default error is treated as a failure.
+#
+# The regression did not depend on the seed at all - the type was reified before any fuzzing
+# happened - so a handful of seeds per statement is enough; a larger sweep only made the test
+# exceed the 180 second limit under sanitizers.
 
 queries=(
     "CREATE TABLE t (c Tuple(a UInt8 DEFAULT 1, s String DEFAULT 'Hello')) ENGINE = Memory"
@@ -21,7 +25,7 @@ queries=(
 )
 
 for query in "${queries[@]}"; do
-    for seed in {1..20}; do
+    for seed in {1..5}; do
         $CLICKHOUSE_CLIENT --param_query "$query" --query \
             "SELECT * FROM fuzzQuery({query:String}, 500, ${seed}) LIMIT 10 FORMAT Null" 2>&1 \
             | grep -F 'DEFAULT expression for element' | sed "s/^/FAIL (seed ${seed}): /"
