@@ -114,7 +114,9 @@ struct AdaptiveAggregationSharedState
     ///    are staged as well, so the drain emplaces without constructing a hashing state per
     ///    (block, bucket) slice.
     ///
-    /// One record batch per block, rather than one per (block, bucket).
+    /// One record batch per consumed block, rather than one per (block, bucket); a thread's
+    /// small batches are further coalesced into one larger chunk of the same shape before they
+    /// reach the backlogs.
     struct DelayedBlock
     {
         /// The row-reference mode's argument columns, compacted at publish (see above): only
@@ -361,6 +363,13 @@ public:
         /// repeat-dominated and hands itself back to the baseline path (see `executeOnBlock`).
         size_t rows_seen_unfrozen = 0;
         bool gave_up_freezing = false;
+
+        /// Small per-block staging batches buffered for coalescing: they are merged into one
+        /// bucket-grouped chunk before they reach the backlogs (see `stageDelayedBlock`), so the
+        /// merge-time drain gets a few large contiguous slices per bucket instead of one tiny
+        /// slice per consumed block. Flushed by `flushAdaptiveStagedBlocks` when the input ends.
+        std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> pending_staged_blocks;
+        size_t pending_staged_bytes = 0;
     };
 
     /// Process one block. Return false if the processing should be aborted (with group_by_overflow_mode = 'break').
@@ -382,6 +391,11 @@ public:
         size_t bucket,
         AdaptiveAggregationSharedState & shared,
         std::atomic<bool> & is_cancelled) const;
+
+    /// Seals and enqueues this thread's buffered staged blocks. Every producing transform calls
+    /// it when its input ends, before the finish barrier, so the backlogs are complete by the
+    /// time the last finisher assembles the merge.
+    void flushAdaptiveStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const;
 
 
     /** This array serves two purposes.
@@ -657,7 +671,7 @@ private:
         bool all_keys_are_const) const;
 
     /// Groups the current block's staged misses by bucket (counting sort) into one delayed block
-    /// and pushes it to every bucket it touches. Key bytes are copied exactly once, straight from
+    /// and hands it to `stageDelayedBlock`. Key bytes are copied exactly once, straight from
     /// the hashing state's key holder into their bucket position; row-reference mode additionally
     /// gathers the records' aggregate-argument values into dense compacted columns.
     template <typename SharedKey, typename State>
@@ -669,6 +683,21 @@ private:
         Arena & scratch_pool,
         bool value_staged,
         std::optional<UInt32> key_row_override = std::nullopt) const;
+
+    /// Enqueues one batch for the merge-time drain: a batch of at least half the seal target
+    /// goes straight to the backlogs, a small one is buffered, and the buffer is sealed into
+    /// one chunk once enough bytes accumulate.
+    void stageDelayedBlock(
+        AdaptiveAggregationThreadContext & adaptive,
+        AdaptiveAggregationSharedState::DelayedBlockPtr block,
+        size_t staged_bytes) const;
+
+    /// Merges the buffered batches into one bucket-grouped chunk of the same shape (bucket b's
+    /// records are the concatenation of the batches' b-slices) and enqueues it.
+    void sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const;
+
+    static void enqueueDelayedBlock(
+        AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::DelayedBlockPtr & block);
 
     /// Builds the delayed block's shared preparation on its first drained bucket.
     void prepareDelayedBlock(AdaptiveAggregationSharedState::DelayedBlock & block) const;

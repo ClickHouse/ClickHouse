@@ -1066,8 +1066,15 @@ void AggregatingTransform::initGenerate()
     }
 
     bool adaptive_engaged = adaptive_context && adaptive_context->shared_state->initialized.load(std::memory_order_acquire);
-    if (adaptive_engaged && variants.isConvertibleToTwoLevel())
-        variants.convertToTwoLevel();
+    if (adaptive_engaged)
+    {
+        /// Complete this thread's backlog contribution before the finish barrier below: the last
+        /// finisher assembles the merge assuming every producer's staged records are enqueued.
+        params->aggregator.flushAdaptiveStagedBlocks(*adaptive_context);
+
+        if (variants.isConvertibleToTwoLevel())
+            variants.convertToTwoLevel();
+    }
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->variants.size())
     {

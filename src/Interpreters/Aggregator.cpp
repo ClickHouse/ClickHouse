@@ -119,6 +119,12 @@ namespace
     constexpr size_t adaptive_thaw_min_staged_records = 524'288;
     constexpr size_t adaptive_thaw_repeat_factor = 16;
 
+    /// Staged batches smaller than this are coalesced into one bucket-grouped chunk before they
+    /// reach the backlogs, so the merge-time drain processes a few large contiguous slices per
+    /// bucket instead of one tiny slice per consumed block; a batch of at least half the target
+    /// is enqueued as-is. Also bounds the coalescing buffer per thread.
+    constexpr size_t adaptive_seal_target_bytes = 4 << 20;
+
     /// String-like keys stage their bytes: a packed reference copied as a plain value would
     /// carry a pointer into the source block, which dies when the publish compacts the
     /// arguments and releases it. The staged form of both string kinds is the raw characters,
@@ -2395,6 +2401,21 @@ void NO_INLINE Aggregator::publishDelayedRecords(
     adaptive.miss_key_sizes.clear();
     adaptive.miss_run_lengths.clear();
 
+    shared.pending_records.fetch_add(total, std::memory_order_relaxed);
+
+    size_t staged_bytes = block->key_bytes.size() + block->key_offsets.size() * sizeof(UInt64)
+        + block->routing_hashes.size() * sizeof(UInt64) + block->run_lengths.size() * sizeof(UInt32);
+    for (const auto & column : block->source_columns)
+        if (column)
+            staged_bytes += column->byteSize();
+
+    stageDelayedBlock(adaptive, std::move(block), staged_bytes);
+}
+
+void Aggregator::enqueueDelayedBlock(
+    AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::DelayedBlockPtr & block)
+{
+    constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
     for (size_t b = 0; b < num_buckets; ++b)
     {
         if (block->bucket_offsets[b] == block->bucket_offsets[b + 1])
@@ -2404,8 +2425,176 @@ void NO_INLINE Aggregator::publishDelayedRecords(
         std::lock_guard lock(bucket.backlog_mutex);
         bucket.backlog.push_back(block);
     }
+}
 
-    shared.pending_records.fetch_add(total, std::memory_order_relaxed);
+void Aggregator::stageDelayedBlock(
+    AdaptiveAggregationThreadContext & adaptive, AdaptiveAggregationSharedState::DelayedBlockPtr block, size_t staged_bytes) const
+{
+    /// Coalescing pays in proportion to how many batches merge into one chunk. A batch of at
+    /// least half the seal target could only ever merge with one neighbor, gaining almost
+    /// nothing for a full extra copy of its data, so it is enqueued as-is.
+    if (staged_bytes * 2 >= adaptive_seal_target_bytes)
+    {
+        enqueueDelayedBlock(*adaptive.shared_state, block);
+        return;
+    }
+
+    adaptive.pending_staged_blocks.push_back(std::move(block));
+    adaptive.pending_staged_bytes += staged_bytes;
+
+    if (adaptive.pending_staged_bytes >= adaptive_seal_target_bytes)
+        sealPendingStagedBlocks(adaptive);
+}
+
+void Aggregator::flushAdaptiveStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const
+{
+    if (!adaptive.pending_staged_blocks.empty())
+        sealPendingStagedBlocks(adaptive);
+}
+
+void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const
+{
+    constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
+
+    auto & minis = adaptive.pending_staged_blocks;
+    const size_t num_minis = minis.size();
+
+    if (num_minis == 1)
+    {
+        enqueueDelayedBlock(*adaptive.shared_state, minis.front());
+        minis.clear();
+        adaptive.pending_staged_bytes = 0;
+        return;
+    }
+
+    auto chunk = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
+    chunk->value_staged = minis.front()->value_staged;
+
+    /// Bucket b's records are the concatenation of the batches' b-slices in buffer order. Every
+    /// per-array pass below walks the same (bucket, batch) order, so a record keeps one position
+    /// across the key, hash, and argument arrays.
+    size_t total = 0;
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        chunk->bucket_offsets[b] = static_cast<UInt32>(total);
+        for (const auto & mini : minis)
+        {
+            chassert(mini->value_staged == chunk->value_staged);
+            total += mini->bucket_offsets[b + 1] - mini->bucket_offsets[b];
+        }
+    }
+    chunk->bucket_offsets[num_buckets] = static_cast<UInt32>(total);
+
+    UInt64 total_key_bytes = 0;
+    for (const auto & mini : minis)
+        total_key_bytes += mini->key_offsets[mini->bucket_offsets[num_buckets]];
+
+    chunk->routing_hashes.resize(total);
+    {
+        size_t pos = 0;
+        for (size_t b = 0; b < num_buckets; ++b)
+            for (const auto & mini : minis)
+            {
+                const size_t begin = mini->bucket_offsets[b];
+                const size_t length = mini->bucket_offsets[b + 1] - begin;
+                if (!length)
+                    continue;
+                memcpy(&chunk->routing_hashes[pos], &mini->routing_hashes[begin], length * sizeof(UInt64));
+                pos += length;
+            }
+    }
+
+    chunk->key_offsets.resize(total + 1);
+    chunk->key_bytes.resize(total_key_bytes);
+    {
+        size_t pos = 0;
+        UInt64 byte_pos = 0;
+        for (size_t b = 0; b < num_buckets; ++b)
+            for (const auto & mini : minis)
+            {
+                const size_t begin = mini->bucket_offsets[b];
+                const size_t length = mini->bucket_offsets[b + 1] - begin;
+                if (!length)
+                    continue;
+                const UInt64 src_begin = mini->key_offsets[begin];
+                const UInt64 slice_bytes = mini->key_offsets[begin + length] - src_begin;
+                memcpy(chunk->key_bytes.data() + byte_pos, mini->key_bytes.data() + src_begin, slice_bytes);
+                for (size_t j = 0; j < length; ++j)
+                    chunk->key_offsets[pos + j] = byte_pos + (mini->key_offsets[begin + j] - src_begin);
+                pos += length;
+                byte_pos += slice_bytes;
+            }
+        chunk->key_offsets[total] = byte_pos;
+    }
+
+    if (chunk->value_staged)
+    {
+        chunk->run_lengths.resize(total);
+        size_t pos = 0;
+        for (size_t b = 0; b < num_buckets; ++b)
+            for (const auto & mini : minis)
+            {
+                const size_t begin = mini->bucket_offsets[b];
+                const size_t length = mini->bucket_offsets[b + 1] - begin;
+                if (!length)
+                    continue;
+                memcpy(&chunk->run_lengths[pos], &mini->run_lengths[begin], length * sizeof(UInt32));
+                pos += length;
+            }
+    }
+    else
+    {
+        chunk->source_columns.assign(minis.front()->source_columns.size(), nullptr);
+        for (const auto & argument_positions : aggregates_positions)
+            for (const auto position : argument_positions)
+            {
+                if (chunk->source_columns[position])
+                    continue;
+
+                /// A constant argument stays constant only when every batch agrees on the value.
+                /// The values can genuinely differ across the blocks of one stream, and
+                /// ColumnConst::insertRangeFrom ignores the source, so a mismatch materializes
+                /// every batch's column instead (the same treatment as Squashing).
+                bool all_const_equal = isColumnConst(*minis.front()->source_columns[position]);
+                for (size_t m = 1; all_const_equal && m < num_minis; ++m)
+                {
+                    const auto & column = *minis[m]->source_columns[position];
+                    all_const_equal = isColumnConst(column)
+                        && assert_cast<const ColumnConst &>(*minis.front()->source_columns[position])
+                                   .getDataColumn()
+                                   .compareAt(0, 0, assert_cast<const ColumnConst &>(column).getDataColumn(), -1)
+                            == 0;
+                }
+                if (all_const_equal)
+                {
+                    chunk->source_columns[position] = minis.front()->source_columns[position]->cloneResized(total);
+                    continue;
+                }
+
+                VectorWithMemoryTracking<ColumnPtr> sources;
+                sources.reserve(num_minis);
+                for (const auto & mini : minis)
+                    sources.push_back(mini->source_columns[position]->convertToFullColumnIfConst());
+
+                auto destination = sources.front()->cloneEmpty();
+                destination->prepareForSquashing(sources, /* factor */ 1);
+                for (size_t b = 0; b < num_buckets; ++b)
+                    for (size_t m = 0; m < num_minis; ++m)
+                    {
+                        const size_t begin = minis[m]->bucket_offsets[b];
+                        const size_t length = minis[m]->bucket_offsets[b + 1] - begin;
+                        if (length)
+                            destination->insertRangeFrom(*sources[m], begin, length);
+                    }
+                chunk->source_columns[position] = std::move(destination);
+            }
+    }
+
+    LOG_TRACE(log, "Adaptive aggregation: sealed {} staged batches into one chunk of {} records", num_minis, total);
+
+    enqueueDelayedBlock(*adaptive.shared_state, chunk);
+    minis.clear();
+    adaptive.pending_staged_bytes = 0;
 }
 
 void Aggregator::drainAdaptiveBucketForMerge(
