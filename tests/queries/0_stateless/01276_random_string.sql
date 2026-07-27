@@ -1,1 +1,1 @@
-SELECT DISTINCT c > 30000 FROM (SELECT arrayJoin(reinterpret(randomString(100), 'Array(UInt8)')) AS byte, count() AS c FROM numbers(100000) GROUP BY byte ORDER BY byte);
+SELECT DISTINCT c > 30000 FROM (SELECT arrayJoin(reinterpret(randomString(100), 'Array(UInt8)')) AS byte, count() AS c FROM numbers(100000) GROUP BY byte ORDER BY byte) SETTINGS max_memory_usage = '600Mi', memory_tracker_fault_probability = 0, max_block_size = 65409;
