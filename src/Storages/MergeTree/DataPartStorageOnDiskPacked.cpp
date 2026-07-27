@@ -924,6 +924,33 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         dst_disk->createDirectories(dest_storage->getRelativePath());
     }
 
+    /// FLAT siblings copy separately, before the main archive (commit-last); the owned set excludes
+    /// residue of an unrelated same-named part.
+    for (const auto & [projection_dir, projection] : getProjections())
+    {
+        if (projection.format != ProjectionStorageFormat::FLAT || projection.is_temp)
+            continue;
+
+        /// A leftover directory at the destination is residue of a failed operation on a same-named part.
+        String proj_dst_dir = dir_path + "." + projection_dir;
+        String proj_dst = fs::path(to) / proj_dst_dir;
+        if (dst_disk->existsDirectory(proj_dst))
+        {
+            LOG_WARNING(getLogger("DataPartStorageOnDiskPacked"), "Removing stale projection directory {} at freeze destination", fullPath(dst_disk, proj_dst));
+            const bool keep_shared = zero_copy_replication_enabled && dst_disk->supportZeroCopyReplication();
+            if (params.external_transaction)
+                params.external_transaction->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
+            else
+                dst_disk->removeSharedRecursive(fs::path(proj_dst) / "", keep_shared, {});
+        }
+
+        auto projection_storage = getProjectionStorage(projection_dir);
+        auto child_params = params.forProjection(
+            params.external_transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        projection_storage->freeze(
+            to, proj_dst_dir, dst_disk_, read_settings, write_settings,
+            /*save_metadata_callback=*/ {}, child_params);
+    }
 
     bool need_commit = false;
     if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
@@ -1024,23 +1051,20 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     /// Record which system columns the frozen copy no longer carries (invalidated-system-columns feature).
     IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*dest_storage, "", params.invalidated_columns_to_write, write_settings);
 
-    std::vector<std::string> all_files;
-    src_disk->listFiles(getRelativePath(), all_files);
-    for (const auto & file : all_files)
+    /// Nested projections recurse from the owned set, not from a disk walk of the part dir: residue
+    /// and temp dirs of an unrelated same-named part must not be carried into the copy.
+    for (const auto & [projection_dir, projection] : getProjections())
     {
-         if (src_disk->existsDirectory(fs::path(getRelativePath()) / file))
-         {
-             /// Packed projections are nested sub-parts (one packed archive per projection dir), so they
-             /// are the real subdirectories of the part dir; freeze each one recursively into the same
-             /// destination transaction.
-             auto projection_storage = getProjectionStorage(file);
-             /// The child keeps the parent's archive copy-vs-hardlink decision: blob tracking in cloneAndLoadDataPart keys on it.
-             auto child_params = params.forProjection(
-                 dest_storage->transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
-             projection_storage->freeze(
-                 dest_storage->getRelativePath(), file, dst_disk_, read_settings, write_settings,
-                 /*save_metadata_callback=*/ {}, child_params);
-         }
+        if (projection.format == ProjectionStorageFormat::FLAT || projection.is_temp)
+            continue;
+
+        auto projection_storage = getProjectionStorage(projection_dir);
+        /// The child keeps the parent's archive copy-vs-hardlink decision: blob tracking in cloneAndLoadDataPart keys on it.
+        auto child_params = params.forProjection(
+            dest_storage->transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+        projection_storage->freeze(
+            dest_storage->getRelativePath(), projection_dir, dst_disk_, read_settings, write_settings,
+            /*save_metadata_callback=*/ {}, child_params);
     }
 
     if (need_commit)

@@ -2668,3 +2668,74 @@ def test_packed_replace_partition_no_parent_artifacts_in_projection():
     # the projection still serves queries and the part passes CHECK TABLE
     assert proj_query("t_pk_rp_dst") == proj_query("t_pk_rp_src")
     assert check_table("t_pk_rp_dst") == "1"
+
+
+# This test checks that freeze of a packed part copies projections from the part's owned set instead
+# of walking the part dir on disk: residue directories of a failed operation (a live-named dir the
+# checksums manifest never adopted, or a *.tmp_proj leftover) must not be carried into the copy.
+# Scenario:
+# - create a packed table with a projection
+# - plant residue dirs inside the live part dir: residue.proj and p_1.tmp_proj
+# - FREEZE WITH NAME
+# - assert the shadow copy carries p.proj (with its archive) and neither residue dir
+def test_packed_freeze_excludes_residue():
+    setup_table("t_pk_frz", PACKED)
+    p = part_dir("t_pk_frz")
+    assert path_exists(f"{p}/data.packed")
+
+    # plant residue: an unadopted live-named dir and a temp leftover, both with a marker file
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"mkdir -p {p}/residue.proj {p}/p_1.tmp_proj"
+            f" && touch {p}/residue.proj/stale_marker.txt {p}/p_1.tmp_proj/stale_marker.txt"
+            f" && chmod -R 777 {p}/residue.proj {p}/p_1.tmp_proj",
+        ],
+        privileged=True,
+        user="root",
+    )
+
+    node.query("ALTER TABLE t_pk_frz FREEZE WITH NAME 'pkfrz'")
+
+    # the shadow copy carries the owned projection but no residue
+    name = part_name("t_pk_frz")
+    shadow = node.exec_in_container(
+        ["bash", "-c", f"find /var/lib/clickhouse/shadow/pkfrz -maxdepth 4 -name '{name}' -type d | head -1"],
+        privileged=True,
+        user="root",
+    ).strip()
+    assert shadow != ""
+    assert path_exists(f"{shadow}/data.packed")
+    assert path_exists(f"{shadow}/p.proj/data.packed")
+    assert not path_exists(f"{shadow}/residue.proj")
+    assert not path_exists(f"{shadow}/p_1.tmp_proj")
+
+
+# This test mirrors test_carry_detach_attach_part for packed storage: DETACH/ATTACH PART must carry
+# the nested packed projection sub-part (freeze-based detach clone, then attach) and leave it healthy.
+# Scenario:
+# - create a packed table with a projection, capture SELECT baseline
+# - DETACH PART; assert the detached copy carries p.proj/data.packed
+# - ATTACH PART; assert the projection is healthy and SELECT matches baseline
+def test_packed_detach_attach_carries_projection():
+    setup_table("t_pk_da", PACKED)
+    baseline = proj_query("t_pk_da")
+    live = part_dir("t_pk_da")
+    name = part_name("t_pk_da")
+    table_root = live.rsplit("/", 1)[0]
+    assert path_exists(f"{live}/data.packed")
+
+    node.query(f"ALTER TABLE t_pk_da DETACH PART '{name}'")
+    assert not path_exists(live)
+    assert path_exists(f"{table_root}/detached/{name}/data.packed")
+    assert path_exists(f"{table_root}/detached/{name}/p.proj/data.packed")
+
+    node.query(f"ALTER TABLE t_pk_da ATTACH PART '{name}'")
+    p = part_dir("t_pk_da")
+    assert path_exists(f"{p}/p.proj/data.packed")
+    assert broken_projection_parts("t_pk_da") == "0"
+    assert (
+        proj_query("t_pk_da", extra_settings="force_optimize_projection = 1") == baseline
+    )
+    assert check_table("t_pk_da") == "1"
