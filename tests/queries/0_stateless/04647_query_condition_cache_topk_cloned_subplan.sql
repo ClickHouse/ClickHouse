@@ -34,6 +34,13 @@ SET automatic_parallel_replicas_mode = 0;
 SET parallel_replicas_local_plan = 1;
 SET max_threads = 1;
 SET allow_experimental_correlated_subqueries = 1;
+-- The last assertion below is a positive control that depends on the decorrelated join keeping the
+-- `tab` read on the side where the `v2 IN (...)` predicate becomes a `FilterStep` above
+-- `ReadFromMergeTree`, which is what primes and then reuses a query condition cache entry. Join
+-- order randomization replaces the real statistics with random cardinalities and can swap the join
+-- sides, so the entry is never written and the control reads 0. Pin it off - the shapes this test
+-- covers are about cloning, not about join ordering.
+SET query_plan_optimize_join_order_randomize = 0;
 -- Decorrelation without the in-memory buffer is what emits a `CommonSubplanReferenceStep`, which
 -- `materializeQueryPlanReferences` later materializes by cloning the referenced subplan.
 SET correlated_subqueries_use_in_memory_buffer = 0;
