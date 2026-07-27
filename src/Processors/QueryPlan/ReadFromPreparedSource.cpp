@@ -10,6 +10,8 @@
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Columns/ColumnConst.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -24,8 +26,23 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+
+/// `system.one` always reads as a single UInt8 column named `dummy`, and both writers of its
+/// pipeline (`ReadFromSystemOneStep::initializePipeline` and `ReadFromStorageStep::deserialize` below)
+/// build a chunk of exactly that shape.
+bool isCanonicalSystemOneHeader(const Block & header)
+{
+    return header.columns() == 1
+        && header.getByPosition(0).name == "dummy"
+        && WhichDataType(header.getByPosition(0).type).isUInt8();
+}
+
 }
 
 ReadFromPreparedSource::ReadFromPreparedSource(Pipe pipe_)
@@ -76,10 +93,23 @@ bool ReadFromStorageStep::isSerializable() const
 
 std::unique_ptr<IQueryPlanStep> ReadFromStorageStep::deserialize(Deserialization & ctx)
 {
+    /// PAIRED ENCODERS: this step's own `serialize` above, and
+    /// `ReadFromSystemOneStep::serialize` in `src/Storages/System/StorageSystemOne.cpp`, which
+    /// serializes under this step's registered name ("ReadFromStorage"). Both write exactly one
+    /// string, "SystemOne" - keep all three in sync.
     String storage_name;
     readStringBinary(storage_name, ctx.in);
+    /// Query plans can be sent by a client (`TCPHandler::receiveQueryPlan`), so a malformed payload is
+    /// bad input, not a logical error: a logical error would abort debug/sanitizer builds.
     if (storage_name != "SystemOne")
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromStorageStep deserialization is implemented only for StorageSystemOne, got: {}", storage_name);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "ReadFromStorageStep deserialization is implemented only for StorageSystemOne, got: {}", storage_name);
+
+    /// The chunk below is hardcoded to the canonical shape, so a header of any other shape could not
+    /// be executed: it would fail much deeper, inside `OutputPort`, with a logical error.
+    if (!ctx.output_header || !isCanonicalSystemOneHeader(*ctx.output_header))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ReadFromStorageStep deserialization for StorageSystemOne expects a single UInt8 column 'dummy', got: {}",
+            ctx.output_header ? ctx.output_header->dumpStructure() : "(none)");
 
     /// "Fake" system.one represented by a chunk with single row
     auto column = DataTypeUInt8().createColumnConst(1, 0u)->convertToFullColumnIfConst();
