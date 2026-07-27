@@ -670,14 +670,14 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             const size_t consumed = in.count() - body_start;
             if (consumed < body_size)
             {
-                /// A drain that fails means the stream really did end there, and the error that
-                /// says why the plan was refused is the useful one to report.
                 try
                 {
                     skipPlanBody(in, body_size - consumed);
                 }
                 catch (...) // NOLINT(bugprone-empty-catch)
                 {
+                    /// Ok to drop: a drain that fails means the stream really did end there, and
+                    /// the error saying why the plan was refused is the useful one to report.
                 }
             }
             throw;
