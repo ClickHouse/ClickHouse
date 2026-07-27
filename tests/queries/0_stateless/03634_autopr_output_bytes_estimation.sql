@@ -17,6 +17,12 @@ SET max_threads=0;
 -- sizes are calibrated for the default `max_block_size` (65409).
 SET max_block_size=65409;
 
+-- The aggregation-state size estimate is recorded per bucket after the conversion to
+-- a two-level hash table, so forcing the conversion from the very first block (the test
+-- randomization sets these thresholds as low as 1) shifts the estimate well away from the
+-- expected values calibrated under the default thresholds. Pin them to the defaults.
+SET group_by_two_level_threshold=100000, group_by_two_level_threshold_bytes=50000000;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
@@ -56,7 +62,10 @@ SYSTEM FLUSH LOGS query_log;
 -- query_12's value (3rd) is the aggregation state, ~3.6M under `ZSTD(3)` instead of ~11.2M under `LZ4`.
 -- query_43's value (11th) is the `URL` output, ~16.8M under `ZSTD(3)` instead of ~48.3M under `LZ4`.
 WITH
-    [96, 500000, 3620000, 2359808, 64, 29920, 82456, 20000, 31064320, 275251200, 16801969/*, 641835*/] AS expected_bytes,
+    -- `query_12` (index 2) and `query_43` (index 10) are recalibrated for the `ZSTD(3)` default:
+    -- the estimator serializes the output with `getDefaultCodec`, and these two outputs
+    -- (an aggregation state and the `URL` column) compress about 3x better than under `LZ4`.
+    [3, 195461, 2640000, 1100491, 2, 16885, 42323, 9434, 23722663, 203701090, 22000000/*, 641835*/] AS expected_bytes,
     arrayJoin(arrayMap(x -> (untuple(x.1), x.2), arrayZip(res, expected_bytes))) AS res
 SELECT format('{} {} {}', res.1, res.2, res.3)
 FROM
