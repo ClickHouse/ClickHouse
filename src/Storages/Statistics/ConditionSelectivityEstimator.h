@@ -93,6 +93,9 @@ public:
         std::unordered_set<String> null_check_columns;
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
+        /// Opaque per-column predicates (for example LIKE patterns that cannot be represented as ranges).
+        /// Keeping the column name lets finalization account for same-column IS [NOT] NULL correlation.
+        std::unordered_map<String, Selectivity> column_selectivities;
         bool finalized = false;
         Selectivity selectivity;
 

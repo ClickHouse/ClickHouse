@@ -6,23 +6,26 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -236,9 +239,44 @@ ColumnStatisticsPtr buildNullableInt32Stats(
     return stats;
 }
 
+ColumnStatisticsPtr buildStringStats(const DataTypePtr & data_type, size_t total, size_t null_every = 0)
+{
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+    {
+        if (null_every != 0 && i % null_every == 0)
+            col->insertDefault();
+        else
+            col->insert(String("value_" + std::to_string(i)));
+    }
+
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(col->getPtr());
+    return stats;
+}
+
+ColumnStatisticsPtr
+buildRepeatedStringStats(const DataTypePtr & data_type, const String & value, size_t total, const std::vector<StatisticsType> & types)
+{
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < total; ++i)
+        col->insert(value);
+
+    auto stats = createTestStats(types, data_type);
+    stats->build(col->getPtr());
+    return stats;
+}
+
+StorageMetadataPtr makeSingleColumnMetadata(const String & column_name, const DataTypePtr & data_type)
+{
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(ColumnsDescription{ColumnDescription(column_name, data_type)});
+    return metadata;
+}
+
 /// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
 template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+Float64 estimateRowsFor(Estimator & estimator, const String & expression, const StorageMetadataPtr & metadata = nullptr)
 {
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
@@ -248,7 +286,7 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
         {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, node).rows);
 }
 
 }
@@ -409,6 +447,96 @@ TEST(Statistics, LikeSelectivity)
     /// notILike function directly: 0.9 * 10000 = 9000 rows.
     UInt64 notilike_direct_rows = estimate("a not ilike '%pattern%'");
     EXPECT_EQ(notilike_direct_rows, 9000u);
+}
+
+TEST(Statistics, LikePatternSelectivityWithMetadata)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypePtr string_type = std::make_shared<DataTypeString>();
+    DataTypePtr nullable_string_type = std::make_shared<DataTypeNullable>(string_type);
+    DataTypePtr fixed_string_type = std::make_shared<DataTypeFixedString>(5);
+
+    auto metadata = makeSingleColumnMetadata("a", string_type);
+    auto nullable_metadata = makeSingleColumnMetadata("a", nullable_string_type);
+    auto fixed_metadata = makeSingleColumnMetadata("a", fixed_string_type);
+
+    auto stats = buildStringStats(string_type, /*total=*/1000);
+    auto nullable_stats = buildStringStats(nullable_string_type, /*total=*/1000, /*null_every=*/5);
+    auto fixed_stats = buildRepeatedStringStats(fixed_string_type, "abcde", /*total=*/1000, {StatisticsType::Basic, StatisticsType::Uniq});
+    ASSERT_EQ(nullable_stats->getNonNullRowCount(), 800u);
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("a", stats);
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    ConditionSelectivityEstimatorBuilder nullable_builder(getContext().context);
+    nullable_builder.addStatistics("a", nullable_stats);
+    nullable_builder.incrementRowCount(1000);
+    auto nullable_estimator = nullable_builder.getEstimator();
+
+    ConditionSelectivityEstimatorBuilder fixed_builder(getContext().context);
+    fixed_builder.addStatistics("a", fixed_stats);
+    fixed_builder.incrementRowCount(1000);
+    auto fixed_estimator = fixed_builder.getEstimator();
+
+    auto estimate
+        = [&](const String & expression) -> UInt64 { return static_cast<UInt64>(estimateRowsFor(estimator, expression, metadata)); };
+    auto estimate_nullable = [&](const String & expression) -> UInt64
+    { return static_cast<UInt64>(estimateRowsFor(nullable_estimator, expression, nullable_metadata)); };
+    auto estimate_fixed = [&](const String & expression) -> UInt64
+    { return static_cast<UInt64>(estimateRowsFor(fixed_estimator, expression, fixed_metadata)); };
+
+    /// Exact case-sensitive LIKE is estimated as equality, not as the legacy 0.1 fallback.
+    EXPECT_EQ(estimate("a LIKE 'abc'"), 10u);
+    EXPECT_EQ(estimate("a NOT LIKE 'abc'"), 990u);
+    EXPECT_EQ(estimate("not(a LIKE 'abc')"), estimate("a NOT LIKE 'abc'"));
+
+    /// ILIKE exact patterns are not equality ranges, but use the same equality-like heuristic.
+    EXPECT_EQ(estimate("a ILIKE 'abc'"), 10u);
+    EXPECT_EQ(estimate("a NOT ILIKE 'abc'"), 990u);
+
+    /// Match-everything patterns are TRUE only on non-NULL strings and stay NULL on NULL inputs.
+    EXPECT_EQ(estimate("a LIKE '%'"), 1000u);
+    EXPECT_EQ(estimate("a LIKE '%%'"), 1000u);
+    EXPECT_EQ(estimate("a NOT LIKE '%'"), 0u);
+    EXPECT_EQ(estimate("not(a LIKE '%')"), 0u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%'"), 800u);
+    EXPECT_EQ(estimate_nullable("a NOT LIKE '%'"), 0u);
+    EXPECT_EQ(estimate_nullable("not(a LIKE '%')"), 0u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%' AND a IS NOT NULL"), 800u);
+    EXPECT_EQ(estimate_nullable("a LIKE '%' OR a IS NULL"), 1000u);
+    EXPECT_NEAR(static_cast<Float64>(estimate_nullable("a NOT LIKE '%' OR a IS NULL")), 200.0, 1.0);
+
+    /// NULL patterns produce SQL NULL for every row; WHERE therefore has zero TRUE rows.
+    EXPECT_EQ(estimate("a LIKE NULL"), 0u);
+    EXPECT_EQ(estimate("a NOT LIKE NULL"), 0u);
+    EXPECT_EQ(estimate("not(a LIKE NULL)"), 0u);
+
+    UInt64 prefix_rows = estimate("a LIKE 'abc%'");
+    UInt64 suffix_rows = estimate("a LIKE '%abc'");
+    UInt64 contains_rows = estimate("a LIKE '%abc%'");
+    EXPECT_EQ(prefix_rows, 15u);
+    EXPECT_EQ(suffix_rows, 42u);
+    EXPECT_EQ(contains_rows, 91u);
+    EXPECT_NE(prefix_rows, 100u);
+    EXPECT_NE(suffix_rows, prefix_rows);
+
+    /// Complex patterns keep the old fixed fallback.
+    EXPECT_EQ(estimate("a LIKE '%a%b%'"), 100u);
+
+    /// Escaped wildcards and supported custom ESCAPE syntax normalize to exact LIKE.
+    EXPECT_EQ(estimate(R"(a LIKE 'a\\%b')"), 10u);
+    EXPECT_EQ(estimate("like(a, 'a#%b', '#')"), 10u);
+
+    /// FixedString exact LIKE only uses equality when pattern byte length matches FixedString(N).
+    EXPECT_EQ(estimate_fixed("a LIKE 'abcde'"), 1000u);
+    EXPECT_EQ(estimate_fixed("a NOT LIKE 'abcde'"), 0u);
+    EXPECT_EQ(estimate_fixed("a LIKE 'abc'"), 0u);
+    EXPECT_EQ(estimate_fixed("a NOT LIKE 'abc'"), 1000u);
+    EXPECT_EQ(estimate_fixed("a ILIKE 'abc'"), 0u);
+    EXPECT_EQ(estimate_fixed("a NOT ILIKE 'abc'"), 1000u);
 }
 
 /// STID 3524-3a4b (nullability) and STID 2404-35eb (value type): a statistics collector is declared
