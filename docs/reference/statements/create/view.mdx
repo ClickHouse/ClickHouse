@@ -164,8 +164,6 @@ A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note t
 
 If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
-Note that materialized view is influenced by [optimize_on_insert](/reference/settings/session-settings#optimize_on_insert) setting. The data is merged before the insertion into a view.
-
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 To delete a view, use [DROP VIEW](/reference/statements/drop#drop-view). Although `DROP TABLE` works for VIEWs as well.
@@ -190,8 +188,8 @@ Thus, it is required to have `GRANT ALLOW SQL SECURITY NONE TO <user>` in order 
 </Note>
 
 If `DEFINER`/`SQL SECURITY` aren't specified, the default values are used:
-- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](/reference/settings/session-settings#default_normal_view_sql_security))
-- `DEFINER`: `CURRENT_USER` ([configurable by settings](/reference/settings/session-settings#default_view_definer))
+- `SQL SECURITY`: `INVOKER` for normal views and `DEFINER` for materialized views ([configurable by settings](/reference/settings/session-settings/default#default_normal_view_sql_security))
+- `DEFINER`: `CURRENT_USER` ([configurable by settings](/reference/settings/session-settings/default#default_view_definer))
 
 If a view is attached without `DEFINER`/`SQL SECURITY` specified, the default value is `SQL SECURITY NONE` for the materialized view and `SQL SECURITY INVOKER` for the normal view.
 
@@ -289,7 +287,7 @@ In `APPEND` mode, coordination can be disabled using `SETTINGS all_replicas = 1`
 
 In non-`APPEND` mode, only coordinated refreshing is supported. For uncoordinated, use `Atomic` database and `CREATE ... ON CLUSTER` query to create refreshable materialized views on all replicas.
 
-The coordination is done through Keeper. The znode path is determined by [default_replica_path](/reference/settings/server-settings/settings#default_replica_path) server setting.
+The coordination is done through Keeper. The znode path is determined by [default_replica_path](/reference/settings/server-settings/settings/default-replica#default_replica_path) server setting.
 
 ### Refresh Dependencies {#refresh-dependencies}
 
@@ -449,7 +447,7 @@ Fun fact: the refresh query is allowed to read from the view that's being refres
 <CloudNotSupportedBadge/>
 
 <Info>
-This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/reference/settings/session-settings#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
+This is an experimental feature that may change in backwards-incompatible ways in the future releases. Enable usage of window views and `WATCH` query using [allow_experimental_window_view](/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) setting. Input the command `set allow_experimental_window_view = 1`.
 </Info>
 
 ```sql
