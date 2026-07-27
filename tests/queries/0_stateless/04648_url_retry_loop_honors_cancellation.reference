@@ -2,11 +2,8 @@
 TIMEOUT_EXCEEDED
 requests sent: 1
 stopped early
---- cancelled during a backoff ---
-TIMEOUT_EXCEEDED
-requests sent: 1
-stopped early
---- KILL QUERY ---
+--- KILL QUERY during a backoff ---
+backoff phase observed
 QUERY_WAS_CANCELLED
 requests sent: 1
 stopped early
