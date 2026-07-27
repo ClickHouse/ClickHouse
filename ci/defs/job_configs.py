@@ -205,10 +205,13 @@ class JobConfigs:
             include_paths=[
                 "./ci",
                 # ci/tests asserts that this file still defines BOTH jemalloc safety
-                # macros (see test_jemalloc_safety_checks_cmake.py); without the path
-                # here the assertion would be cache-skipped exactly on the commits
-                # that change what it guards.
+                # macros, and that no platform header the option can reach turns
+                # either macro's `#undef` back on (see
+                # test_jemalloc_safety_checks_cmake.py); without these paths here the
+                # assertions would be cache-skipped exactly on the commits that
+                # change what they guard.
                 "./contrib/jemalloc-cmake/CMakeLists.txt",
+                "./contrib/jemalloc-cmake/include_*/jemalloc/internal/jemalloc_internal_defs.h.in",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
