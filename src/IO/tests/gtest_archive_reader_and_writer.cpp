@@ -1038,7 +1038,10 @@ TEST(ZipArchiveReaderTest, SeekCurOutsideWorkingBufferUsesLogicalPosition)
         writer->setCompression("store", 0);
 
         auto out = writer->writeFile("file.bin");
-        writeString(String(3 * DBMS_DEFAULT_BUFFER_SIZE, 'x'), *out);
+        String data(3 * DBMS_DEFAULT_BUFFER_SIZE, 0);
+        for (size_t i = 0; i < data.size(); ++i)
+            data[i] = 'a' + i % 26;
+        writeString(data, *out);
         out->finalize();
         writer->finalize();
     }
@@ -1054,6 +1057,12 @@ TEST(ZipArchiveReaderTest, SeekCurOutsideWorkingBufferUsesLogicalPosition)
     const off_t relative_offset = DBMS_DEFAULT_BUFFER_SIZE + 100;
     const off_t expected_position = 100 + relative_offset;
     EXPECT_EQ(in->seek(relative_offset, SEEK_CUR), expected_position);
+
+    /// Without `resetWorkingBuffer`, the next read returns stale bytes from the old position.
+    char c;
+    readChar(c, *in);
+    EXPECT_EQ(c, static_cast<char>('a' + expected_position % 26));
+    EXPECT_EQ(in->getPosition(), expected_position + 1);
 }
 
 
