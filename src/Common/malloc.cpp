@@ -273,6 +273,7 @@ void * __libc_pvalloc(size_t size) __attribute__((alias("pvalloc"))); // NOLINT(
 
 #include <base/getPageSize.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryTracker.h>
 #include <Common/memory.h>
 
 /// macOS counterpart of the symbol interposition above.
@@ -316,18 +317,34 @@ pthread_key_t reentrancy_key;
 struct ReentrancyGuard
 {
     bool engaged;
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+    bool saved_deny_flag;
+#endif
 
     ReentrancyGuard()
         : engaged(pthread_getspecific(reentrancy_key) == nullptr)
     {
         if (engaged)
+        {
             pthread_setspecific(reentrancy_key, reinterpret_cast<void *>(1));
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+            /// The zone also observes system-library allocations we cannot prevent (e.g. dyld mallocs on
+            /// the first absl::Mutex lock of a thread), so suspend the ClickHouse-only deny-allocations check.
+            saved_deny_flag = memory_tracker_always_throw_logical_error_on_allocation;
+            memory_tracker_always_throw_logical_error_on_allocation = false;
+#endif
+        }
     }
 
     ~ReentrancyGuard()
     {
         if (engaged)
+        {
+#ifdef MEMORY_TRACKER_DEBUG_CHECKS
+            memory_tracker_always_throw_logical_error_on_allocation = saved_deny_flag;
+#endif
             pthread_setspecific(reentrancy_key, nullptr);
+        }
     }
 };
 
