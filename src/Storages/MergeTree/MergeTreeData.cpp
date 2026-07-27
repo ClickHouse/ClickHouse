@@ -359,6 +359,7 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char create_empty_part_inject_stale_dir[];
+    extern const char merge_tree_pause_before_clone_to_detached[];
 }
 
 namespace ErrorCodes
@@ -6430,6 +6431,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             String part_dir = part->getDataPartStorage().getPartDirectory();
             LOG_INFO(log, "Detaching {}", part_dir);
             auto holder = getTemporaryPartDirectoryHolder(fs::path(DETACHED_DIR_NAME) / part_dir);
+            FailPointInjection::pauseFailPoint(FailPoints::merge_tree_pause_before_clone_to_detached);
             part->makeCloneInDetached("", metadata_snapshot, /*disk_transaction*/ {});
         }
     }
