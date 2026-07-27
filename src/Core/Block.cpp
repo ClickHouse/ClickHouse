@@ -75,6 +75,15 @@ static const IColumn * getActualColumn(const IColumn * column)
 /// columns the comparison is as strict as comparing full column names.
 static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn & expected)
 {
+    /// A `Sparse` column is structurally interchangeable with the full column of the same type it
+    /// wraps, and this holds at any depth, not only at the top level: one branch can materialize a
+    /// nested subcolumn (`recursiveRemoveSparse`) while another keeps it sparse. Unwrap `Sparse` on
+    /// either side independently, mirroring the top-level unwrap in `checkColumnStructure`.
+    if (const auto * actual_sparse = typeid_cast<const ColumnSparse *>(&actual))
+        return haveCompatibleColumnStructure(actual_sparse->getValuesColumn(), expected);
+    if (const auto * expected_sparse = typeid_cast<const ColumnSparse *>(&expected))
+        return haveCompatibleColumnStructure(actual, expected_sparse->getValuesColumn());
+
     const auto * actual_agg = typeid_cast<const ColumnAggregateFunction *>(&actual);
     const auto * expected_agg = typeid_cast<const ColumnAggregateFunction *>(&expected);
     if (actual_agg && expected_agg)
@@ -124,7 +133,7 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
     /// their nested structure is not fixed by the type.
     const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
         || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
-        || typeid_cast<const ColumnConst *>(&actual) || typeid_cast<const ColumnSparse *>(&actual);
+        || typeid_cast<const ColumnConst *>(&actual);
 
     if (!is_compositional)
         return actual.getName() == expected.getName();
