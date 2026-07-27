@@ -511,8 +511,8 @@ def test_config_reload(cluster):
 def test_storage_type_does_not_change_on_config_reload(cluster):
     node = cluster.instances["node"]
 
-    def get_storage_type_state():
-        return node.query(
+    def get_storage_type_state(instance):
+        return instance.query(
             """
             SELECT name, value, default, changed, type, changeable_without_restart,
                 getServerSetting('named_collections_storage_type')
@@ -523,7 +523,11 @@ def test_storage_type_does_not_change_on_config_reload(cluster):
 
     assert (
         "named_collections_storage.type\tlocal\tlocal\t0\tString\tNo\tlocal"
-        == get_storage_type_state()
+        == get_storage_type_state(node)
+    )
+    assert (
+        "named_collections_storage.type\tzookeeper\tlocal\t1\tString\tNo\tzookeeper"
+        == get_storage_type_state(cluster.instances["node_with_keeper"])
     )
 
     config = """
@@ -543,7 +547,7 @@ def test_storage_type_does_not_change_on_config_reload(cluster):
     ):
         assert (
             "named_collections_storage.type\tlocal\tlocal\t1\tString\tNo\tlocal"
-            == get_storage_type_state()
+            == get_storage_type_state(node)
         )
 
         node.query("CREATE NAMED COLLECTION storage_type_reload_test AS value = 1")
