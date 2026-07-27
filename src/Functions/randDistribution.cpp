@@ -90,6 +90,16 @@ UInt64 effectiveMaxNumberOfTrials(const DistributionLimits & limits)
     return max_number_of_trials;
 }
 
+/// `std::binomial_distribution` returns 0 for `p = 0` and `t` for `p = 1` without entering the walk, so
+/// these two degenerate cases are computed in constant time for any number of trials and only the tunable
+/// limit applies to them.
+UInt64 effectiveMaxNumberOfTrialsForProbability(const DistributionLimits & limits, Float64 p)
+{
+    if (p == 0.0 || p == 1.0)
+        return limits.max_trials > 0 ? limits.max_trials : std::numeric_limits<UInt64>::max();
+    return effectiveMaxNumberOfTrials(limits);
+}
+
 struct UniformDistribution
 {
     using ReturnType = DataTypeFloat64;
@@ -242,7 +252,7 @@ struct BinomialDistribution
     {
         if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
-        if (t > effectiveMaxNumberOfTrials(limits))
+        if (t > effectiveMaxNumberOfTrialsForProbability(limits, p))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
 
         auto distribution = std::binomial_distribution<UInt64>(t, p);
