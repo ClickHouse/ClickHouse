@@ -1536,6 +1536,21 @@ void IMergeTreeDataPart::loadProjections(
         }
 
         auto part = getProjectionPartBuilder(projection.name, &projection).withPartFormatFromDisk().build();
+
+        /// Owned per the manifest but not present on disk in either layout: broken under a consistency load, ignored otherwise.
+        if (!getDataPartStorage().hasProjection(projection_path))
+        {
+            if (check_consistency)
+            {
+                part->setBrokenReason(
+                    "Projection directory " + projection_path + " does not exist while loading projections",
+                    ErrorCodes::NO_FILE_IN_DATA_PART);
+                has_broken_projection = true;
+                addProjectionPart(projection.name, std::move(part));
+            }
+            continue;
+        }
+
         try
         {
             if (only_metadata)

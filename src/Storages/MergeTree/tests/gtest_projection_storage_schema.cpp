@@ -33,7 +33,8 @@ struct SyncGuardRecordingDisk : DiskLocal
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override
     {
-        sync_guard_paths.push_back(path);
+        /// Normalize the path-join trailing slash so assertions pin the directory, not its string form.
+        sync_guard_paths.push_back(path.ends_with('/') ? path.substr(0, path.size() - 1) : path);
         return DiskLocal::getDirectorySyncGuard(path);
     }
 };
@@ -192,11 +193,12 @@ TEST(ProjectionStorageSchema, RenameFsyncsSiblingNamespace)
     fixture.storage->setProjections({});
     fixture.storage->createProjection("p.proj");
 
-    /// Publish (parent moves last): siblings-before-commit sync on the root, the moved dir, the root again.
+    /// Publish (parent moves last): a sync on the root makes the sibling moves durable, then the moved
+    /// part dir; the trailing parent sync collapses to the disk root here (empty path -> not re-synced).
     fixture.disk->sync_guard_paths.clear();
     fixture.storage->rename(/*new_root_path=*/ "", /*new_part_dir=*/ "all_1_1_1", /*log=*/ nullptr,
                             /*remove_new_dir_if_exists=*/ false, /*fsync_part_dir=*/ true);
-    EXPECT_EQ(fixture.disk->sync_guard_paths, (Strings{"", "all_1_1_1", ""}));
+    EXPECT_EQ(fixture.disk->sync_guard_paths, (Strings{"", "all_1_1_1"}));
 
     /// Without the setting nothing is synced.
     fixture.disk->sync_guard_paths.clear();

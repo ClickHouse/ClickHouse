@@ -368,12 +368,16 @@ static CheckDataPartResult checkDataPart(
                 return {};
 
             const auto projection_file = IDataPartStorage::Projection::dirName(projection_desc.name, false);
-            if (!remaining_projections_on_disk.erase(projection_file))
-                continue;
+            const bool projection_on_disk = remaining_projections_on_disk.erase(projection_file);
 
             const String & name = projection_desc.name;
             auto proj_it = data_part->getProjectionParts().find(name);
             const bool loaded = proj_it != data_part->getProjectionParts().end();
+
+            /// A projection the part owns (loaded from its manifest or listed in checksums.txt) but whose
+            /// directory is gone is broken, not absent; skip only projections this part never materialized.
+            if (!projection_on_disk && !loaded && !checksums_txt.files.contains(projection_file))
+                continue;
 
             IMergeTreeDataPart::Checksums projection_checksums;
             bool recomputed = false;
