@@ -93,6 +93,13 @@ public:
         std::unordered_set<String> null_check_columns;
         /// columns checked with IS NOT NULL predicate
         std::unordered_set<String> not_null_check_columns;
+        /// columns with regular range predicates, which evaluate to NULL on NULL rows.
+        std::unordered_set<String> range_unknown_columns;
+        /// NULL-row behavior that belongs to a null-safe predicate itself, not to a standalone
+        /// IS [NOT] NULL condition. This keeps parser-lowered `IS TRUE` / `IS NOT TRUE`
+        /// compositional with explicit null checks on the same column.
+        std::unordered_set<String> null_true_columns;
+        std::unordered_set<String> null_false_columns;
         bool finalized = false;
         Selectivity selectivity;
 

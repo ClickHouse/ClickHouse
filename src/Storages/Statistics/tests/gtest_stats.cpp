@@ -6,7 +6,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -14,15 +13,17 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
-#include <Storages/StatisticsDescription.h>
-#include <Storages/ColumnsDescription.h>
 #include <Storages/Statistics/StatisticsTDigest.h>
-#include <Storages/Statistics/ConditionSelectivityEstimator.h>
-#include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionListParsers.h>
+#include <Storages/StatisticsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Common/Exception.h>
 
 using namespace DB;
 
@@ -238,7 +239,7 @@ ColumnStatisticsPtr buildNullableInt32Stats(
 
 /// Estimate the row count for a SQL boolean expression evaluated against `estimator`.
 template <class Estimator>
-Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+Float64 estimateRowsFor(Estimator & estimator, const StorageMetadataPtr & metadata, const String & expression)
 {
     ParserExpressionWithOptionalAlias exp_parser(false);
     ContextPtr context = getContext().context;
@@ -248,7 +249,51 @@ Float64 estimateRowsFor(Estimator & estimator, const String & expression)
         {});
     ASTPtr ast = parseQuery(exp_parser, expression, 10000, 10000, 10000);
     RPNBuilderTreeNode node(ast.get(), tree_context);
-    return static_cast<Float64>(estimator->estimateRelationProfile(nullptr, node).rows);
+    return static_cast<Float64>(estimator->estimateRelationProfile(metadata, node).rows);
+}
+
+template <class Estimator>
+Float64 estimateRowsFor(Estimator & estimator, const String & expression)
+{
+    return estimateRowsFor(estimator, nullptr, expression);
+}
+
+ColumnStatisticsPtr buildBoolStats(
+    const std::vector<StatisticsType> & types, const DataTypePtr & data_type, size_t true_count, size_t false_count, size_t null_count = 0)
+{
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < true_count; ++i)
+        col->insert(true);
+    for (size_t i = 0; i < false_count; ++i)
+        col->insert(false);
+    for (size_t i = 0; i < null_count; ++i)
+        col->insertDefault();
+
+    auto stats = createTestStats(types, data_type);
+    ColumnPtr built_col = std::move(col);
+    stats->build(built_col);
+    return stats;
+}
+
+ColumnStatisticsPtr buildBoolStats(const DataTypePtr & data_type, size_t true_count, size_t false_count, size_t null_count = 0)
+{
+    return buildBoolStats({StatisticsType::Basic, StatisticsType::CountMinSketch}, data_type, true_count, false_count, null_count);
+}
+
+ColumnStatisticsPtr buildUInt8Stats(const DataTypePtr & data_type, size_t one_count, size_t zero_count, size_t null_count = 0)
+{
+    MutableColumnPtr col = data_type->createColumn();
+    for (size_t i = 0; i < one_count; ++i)
+        col->insert(UInt64(1));
+    for (size_t i = 0; i < zero_count; ++i)
+        col->insert(UInt64(0));
+    for (size_t i = 0; i < null_count; ++i)
+        col->insertDefault();
+
+    auto stats = createTestStats({StatisticsType::Basic, StatisticsType::CountMinSketch}, data_type);
+    ColumnPtr built_col = std::move(col);
+    stats->build(built_col);
+    return stats;
 }
 
 }
@@ -343,6 +388,90 @@ TEST(Statistics, NullableEstimatorWithBasic)
     /// Contradictions spanning two columns.
     check("a > 500 AND b > 500 AND b IS NULL", 0.0, 1e-6);  /// b > 500 contradicts b IS NULL
     check("a IS NULL AND a > 500 AND b IS NULL", 0.0, 1e-6); /// a IS NULL contradicts a > 500
+}
+
+TEST(Statistics, BooleanPredicateEstimator)
+{
+    tryRegisterFunctions();
+
+    auto bool_type = DataTypeFactory::instance().get("Bool");
+    auto nullable_bool_type = std::make_shared<DataTypeNullable>(bool_type);
+    auto low_cardinality_nullable_bool_type = DataTypeFactory::instance().get("LowCardinality(Nullable(Bool))");
+    auto uint8_type = std::make_shared<DataTypeUInt8>();
+    auto nullable_uint8_type = std::make_shared<DataTypeNullable>(uint8_type);
+
+    auto metadata = std::make_shared<StorageInMemoryMetadata>();
+    metadata->setColumns(
+        ColumnsDescription{
+            ColumnDescription{"flag", bool_type},
+            ColumnDescription{"nullable_flag", nullable_bool_type},
+            ColumnDescription{"basic_nullable_flag", nullable_bool_type},
+            ColumnDescription{"lc_nullable_flag", low_cardinality_nullable_bool_type},
+            ColumnDescription{"u8", uint8_type},
+            ColumnDescription{"nullable_u8", nullable_uint8_type},
+        });
+
+    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    builder.addStatistics("flag", buildBoolStats(bool_type, /*true_count=*/300, /*false_count=*/700));
+    builder.addStatistics("nullable_flag", buildBoolStats(nullable_bool_type, /*true_count=*/250, /*false_count=*/650, /*null_count=*/100));
+    builder.addStatistics(
+        "basic_nullable_flag",
+        buildBoolStats({StatisticsType::Basic}, nullable_bool_type, /*true_count=*/250, /*false_count=*/650, /*null_count=*/100));
+    builder.addStatistics(
+        "lc_nullable_flag",
+        buildBoolStats(low_cardinality_nullable_bool_type, /*true_count=*/400, /*false_count=*/500, /*null_count=*/100));
+    builder.addStatistics("u8", buildUInt8Stats(uint8_type, /*one_count=*/300, /*zero_count=*/700));
+    builder.addStatistics("nullable_u8", buildUInt8Stats(nullable_uint8_type, /*one_count=*/250, /*zero_count=*/650, /*null_count=*/100));
+    builder.incrementRowCount(1000);
+    auto estimator = builder.getEstimator();
+
+    auto check = [&](const String & expression, Float64 expected, Float64 eps = 1e-6)
+    {
+        Float64 actual = estimateRowsFor(estimator, metadata, expression);
+        EXPECT_NEAR(actual, expected, eps) << "Expression: " << expression;
+    };
+
+    /// Bare Bool column predicates are estimated like equality with TRUE/FALSE.
+    check("flag", 300.0);
+    check("not flag", 700.0);
+    check("flag = true", 300.0);
+    check("flag = false", 700.0);
+    check("flag AND NOT flag", 0.0);
+    check("flag OR NOT flag", 1000.0);
+
+    /// Nullable Bool preserves SQL three-valued logic for bare predicates and NOT.
+    check("nullable_flag", 250.0);
+    check("not nullable_flag", 650.0);
+
+    /// Truth-value predicates are parsed as null-safe equality/distinctness.
+    check("nullable_flag IS TRUE", 250.0);
+    check("nullable_flag IS FALSE", 650.0);
+    check("nullable_flag IS NOT TRUE", 750.0);
+    check("nullable_flag IS NOT FALSE", 350.0);
+    check("isNotDistinctFrom(nullable_flag, 1)", 250.0);
+    check("isDistinctFrom(nullable_flag, 1)", 750.0);
+    check("not(nullable_flag IS TRUE)", 750.0);
+    check("nullable_flag IS TRUE OR nullable_flag IS NULL", 350.0);
+    check("nullable_flag IS TRUE AND nullable_flag IS NULL", 0.0);
+    check("nullable_flag IS TRUE AND nullable_flag IS NOT TRUE", 0.0);
+    check("nullable_flag IS TRUE OR nullable_flag IS NOT TRUE", 1000.0);
+    check("nullable_flag IS NOT TRUE AND nullable_flag IS NOT NULL", 650.0);
+    check("nullable_flag IS NOT TRUE OR nullable_flag IS NOT NULL", 1000.0);
+    check("nullable_flag IS NOT TRUE AND nullable_flag = false", 650.0);
+    check("nullable_flag IS NOT TRUE AND nullable_flag IS NOT FALSE", 100.0, 1.0);
+    check("not(nullable_flag IS TRUE OR nullable_flag = false)", 0.0);
+    check("not(nullable_flag IS TRUE OR nullable_flag IS FALSE)", 100.0, 1.0);
+    check("basic_nullable_flag IS NOT TRUE AND basic_nullable_flag IS NOT FALSE", 100.0, 1.0);
+    check("not(basic_nullable_flag IS TRUE OR basic_nullable_flag IS FALSE)", 100.0, 1.0);
+
+    /// LowCardinality wrappers should still be recognized as Bool.
+    check("lc_nullable_flag", 400.0);
+    check("lc_nullable_flag IS NOT TRUE", 600.0);
+
+    /// UInt8 is not Bool sugar: bare numeric columns keep the unknown-condition fallback.
+    check("u8", 330.0);
+    check("nullable_u8", 330.0);
+    check("u8 = 1", 300.0);
 }
 
 TEST(Statistics, LikeSelectivity)
