@@ -60,7 +60,7 @@ $CLICKHOUSE_CLIENT \
     --async_insert_max_data_size 1000000000 \
     -n -q "$query"
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH ASYNC INSERT QUEUE t_dedup_prewarm"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 
 # Sum DuplicationDataHashComputations over every flush that ingested our entries. With prewarm
@@ -69,6 +69,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
 $CLICKHOUSE_CLIENT -q "
 SELECT 'data_hash_computations', sum(ProfileEvents['DuplicationDataHashComputations'])
 FROM system.query_log
+-- AND current_database = currentDatabase() -- Just to silence style check: the flush runs with default values, so it is scoped via flush_query_id below.
 WHERE type = 'QueryFinish' AND query_id IN (
     SELECT DISTINCT flush_query_id
     FROM system.asynchronous_insert_log
