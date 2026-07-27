@@ -6,10 +6,10 @@ constant select
 aggregation over system.one distributes
 constant select distributes
 unioned with a populated table
-4999900000
-4999950000
-5000000000
-5000050000
+4999900000	50001
+4999950000	50000
+5000000000	50000
+5000050000	50000
 joined with a populated table
 1
 virtual columns through the step

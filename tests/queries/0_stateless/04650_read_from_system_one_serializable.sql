@@ -35,7 +35,7 @@ WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 -- The step beside a real reader, i.e. the shape join-order estimation feeds on.
 SELECT 'unioned with a populated table';
-SELECT sum(x) FROM (SELECT dummy AS x FROM system.one UNION ALL SELECT x FROM t_system_one_full)
+SELECT sum(x), count() FROM (SELECT dummy AS x FROM system.one UNION ALL SELECT x FROM t_system_one_full)
 GROUP BY x % 4 ORDER BY 1;
 SELECT 'joined with a populated table';
 SELECT count() FROM t_system_one_full a INNER JOIN system.one b ON a.x = b.dummy;
