@@ -18,6 +18,9 @@ INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
 
 SET query_plan_join_swap_table = 0;
+-- Pin off: the test asserts on the `BuildRuntimeFilter` steps of the plan, and a nonzero value skips
+-- the runtime filter whenever a probe-side row estimate is available and does not exceed it.
+SET join_runtime_filter_min_probe_rows = 0;
 
 SET
     optimize_move_to_prewhere = 1,
