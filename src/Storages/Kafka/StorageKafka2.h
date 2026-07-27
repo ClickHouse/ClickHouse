@@ -153,8 +153,8 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    String keeper_path;
-    std::filesystem::path fs_keeper_path;
+    const String keeper_path;
+    const std::filesystem::path fs_keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -169,10 +169,7 @@ private:
     LoggerPtr log;
     const SettingsChanges settings_adjustments;
 
-    /// Partition affinity: when both are > 0, only a deterministic subset of
-    /// partitions is consumed by this shard. partition_shard_num is 1-based
-    /// (aligned with system.clusters); Kafka partition IDs are 0-based, so the
-    /// formula uses `partition_shard_num - 1` to bridge the gap.
+    /// Partition affinity settings, enabled when both are > 0.
     UInt64 partition_shard_num = 0;
     UInt64 shard_count = 0;
     /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
