@@ -494,7 +494,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 ostr << ' ';
                 print_keyword("SET FAKE TIME");
-                ostr << " '" << LocalDateTime(*fake_time_for_view) << "'";
+                ostr << " " << quoteString(*fake_time_for_view);
             }
             break;
         }

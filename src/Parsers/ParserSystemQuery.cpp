@@ -661,11 +661,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
-            String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
-            ReadBufferFromString buf(time_str);
-            time_t time = 0;
-            readDateTimeText(time, buf);
-            res->fake_time_for_view = Int64(time);
+            res->fake_time_for_view = ast->as<ASTLiteral &>().value.safeGet<String>();
 
             break;
         }
