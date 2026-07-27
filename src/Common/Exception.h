@@ -8,6 +8,8 @@
 
 #include <atomic>
 #include <exception>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 #include <fmt/format.h>
@@ -71,6 +73,7 @@ public:
         remote = o.remote;
         logged.store(o.logged.load());
         error_index = o.error_index;
+        delayed_error_index = o.delayed_error_index;
         message_format_string = o.message_format_string;
         message_format_string_args = o.message_format_string_args;
         capture_thread_frame_pointers = o.capture_thread_frame_pointers;
@@ -81,10 +84,12 @@ public:
         remote = o.remote;
         logged.store(o.logged.load());
         error_index = o.error_index;
+        delayed_error_index = std::move(o.delayed_error_index);
         message_format_string = o.message_format_string;
         message_format_string_args = std::move(o.message_format_string_args);
         capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
         Poco::Exception::operator=(std::move(o));
+        o.error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
     }
 
     Exception & operator=(const Exception & o)
@@ -94,6 +99,7 @@ public:
             remote = o.remote;
             logged.store(o.logged.load());
             error_index = o.error_index;
+            delayed_error_index = o.delayed_error_index;
             message_format_string = o.message_format_string;
             message_format_string_args = o.message_format_string_args;
             capture_thread_frame_pointers = o.capture_thread_frame_pointers;
@@ -110,10 +116,12 @@ public:
             remote = o.remote;
             logged.store(o.logged.load());
             error_index = o.error_index;
+            delayed_error_index = std::move(o.delayed_error_index);
             message_format_string = o.message_format_string;
             message_format_string_args = std::move(o.message_format_string_args);
             capture_thread_frame_pointers = std::move(o.capture_thread_frame_pointers);
             Poco::Exception::operator=(std::move(o));
+            o.error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
         }
         return *this;
     }
@@ -154,13 +162,17 @@ public:
     class SuppressErrorCodesScope
     {
     public:
-        SuppressErrorCodesScope();
+        explicit SuppressErrorCodesScope(bool enabled_ = true);
         ~SuppressErrorCodesScope();
 
         SuppressErrorCodesScope(const SuppressErrorCodesScope &) = delete;
         SuppressErrorCodesScope & operator=(const SuppressErrorCodesScope &) = delete;
 
+    private:
+        bool enabled;
     };
+
+    static bool isErrorCodeSuppressionActive();
 
 protected:
     static thread_local bool can_use_thread_frame_pointers;
@@ -259,7 +271,7 @@ public:
 
     /// Record an exception that was constructed under `SuppressErrorCodesScope` but will be propagated.
     /// Set `force` only when an unexpected exception is consumed while an outer scope remains active.
-    /// This method is idempotent for this object.
+    /// This method is idempotent across copies of the same suppressed exception.
     void recordToSystemErrors(bool force = false);
 
     void markAsLogged() { logged.store(true, std::memory_order_relaxed); }
@@ -274,6 +286,12 @@ private:
         Suppressed = static_cast<size_t>(-2),
     };
 
+    struct DelayedErrorIndex
+    {
+        std::mutex mutex;
+        size_t value = static_cast<size_t>(ErrorIndexState::Suppressed);
+    };
+
     static size_t handleErrorCode(
         const std::string & msg, std::string_view format_string, int code, bool remote, const Trace & trace);
 
@@ -282,6 +300,8 @@ private:
 
     /// Number of this error among errors with the same code and `remote` flag, or why it has no index.
     size_t error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
+    /// Shared by copies so one suppressed exception occurrence can be recorded only once.
+    std::shared_ptr<DelayedErrorIndex> delayed_error_index;
 
     const char * className() const noexcept override { return "DB::Exception"; }
 

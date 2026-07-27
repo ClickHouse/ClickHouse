@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 
+#include <barrier>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 
@@ -134,6 +136,92 @@ TEST(Exception, ForcedRecordingBypassesNestedSuppression)
     }
 
     nested.recordToSystemErrors(/* force */ true);
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+}
+
+TEST(Exception, SuppressedCopiesRecordOnce)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    Exception original;
+    {
+        Exception::SuppressErrorCodesScope scope;
+        original = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "copied suppressed exception");
+    }
+
+    Exception copy(original);
+    Exception assigned;
+    assigned = original;
+    std::unique_ptr<Exception> cloned(original.clone());
+
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count);
+    try
+    {
+        original.rethrow();
+    }
+    catch (Exception & rethrown)
+    {
+        rethrown.recordToSystemErrors();
+    }
+
+    original.recordToSystemErrors();
+    copy.recordToSystemErrors();
+    assigned.recordToSystemErrors();
+    cloned->recordToSystemErrors();
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+}
+
+TEST(Exception, MovingSuppressedExceptionTransfersRecording)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    Exception source;
+    {
+        Exception::SuppressErrorCodesScope scope;
+        source = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "moved suppressed exception");
+    }
+
+    Exception moved(std::move(source));
+    source.recordToSystemErrors();
+    moved.recordToSystemErrors();
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
+
+    Exception assigned_source;
+    {
+        Exception::SuppressErrorCodesScope scope;
+        assigned_source = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "move-assigned suppressed exception");
+    }
+
+    Exception assigned;
+    assigned = std::move(assigned_source);
+    assigned_source.recordToSystemErrors();
+    assigned.recordToSystemErrors();
+    EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 2);
+}
+
+TEST(Exception, ConcurrentRecordingIsIdempotent)
+{
+    const auto count = getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT);
+    Exception suppressed;
+    {
+        Exception::SuppressErrorCodesScope scope;
+        suppressed = Exception(ErrorCodes::CANNOT_PARSE_TEXT, "concurrently recorded exception");
+    }
+
+    constexpr size_t num_threads = 16;
+    std::barrier<> start(num_threads);
+    std::vector<std::thread> threads;
+    threads.reserve(num_threads);
+    for (size_t i = 0; i < num_threads; ++i)
+    {
+        threads.emplace_back([&]
+        {
+            start.arrive_and_wait();
+            suppressed.recordToSystemErrors();
+        });
+    }
+
+    for (auto & thread : threads)
+        thread.join();
+
     EXPECT_EQ(getLocalErrorCount(ErrorCodes::CANNOT_PARSE_TEXT), count + 1);
 }
 

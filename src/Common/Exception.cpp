@@ -76,14 +76,22 @@ namespace
 thread_local size_t suppress_error_codes_depth = 0;
 }
 
-Exception::SuppressErrorCodesScope::SuppressErrorCodesScope()
+Exception::SuppressErrorCodesScope::SuppressErrorCodesScope(bool enabled_)
+    : enabled(enabled_)
 {
-    ++suppress_error_codes_depth;
+    if (enabled)
+        ++suppress_error_codes_depth;
 }
 
 Exception::SuppressErrorCodesScope::~SuppressErrorCodesScope()
 {
-    --suppress_error_codes_depth;
+    if (enabled)
+        --suppress_error_codes_depth;
+}
+
+bool Exception::isErrorCodeSuppressionActive()
+{
+    return suppress_error_codes_depth > 0;
 }
 
 constexpr bool debug_or_sanitizer_build =
@@ -151,6 +159,8 @@ Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     capture_thread_frame_pointers = getThreadFramePointers();
     message_format_string = msg_masked.format_string;
     error_index = handleErrorCode(msg_masked.msg, message_format_string, code, remote, getStackFramePointers());
+    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
+        delayed_error_index = std::make_shared<DelayedErrorIndex>();
 }
 
 Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
@@ -162,13 +172,21 @@ Exception::Exception(MessageMasked && msg_masked, int code, bool remote_)
     capture_thread_frame_pointers = getThreadFramePointers();
     message_format_string = msg_masked.format_string;
     error_index = handleErrorCode(message(), message_format_string, code, remote, getStackFramePointers());
+    if (error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
+        delayed_error_index = std::make_shared<DelayedErrorIndex>();
 }
 
 void Exception::recordToSystemErrors(bool force)
 {
-    if ((force || suppress_error_codes_depth == 0)
-        && error_index == static_cast<size_t>(ErrorIndexState::Suppressed))
-        error_index = ErrorCodes::increment(code(), remote, message(), std::string(message_format_string), getStackFramePointers());
+    if ((!force && suppress_error_codes_depth > 0)
+        || error_index != static_cast<size_t>(ErrorIndexState::Suppressed)
+        || !delayed_error_index)
+        return;
+
+    std::lock_guard lock(delayed_error_index->mutex);
+    if (delayed_error_index->value == static_cast<size_t>(ErrorIndexState::Suppressed))
+        delayed_error_index->value = ErrorCodes::increment(
+            code(), remote, message(), std::string(message_format_string), getStackFramePointers());
 }
 
 Exception::Exception(CreateFromPocoTag, const Poco::Exception & exc)
@@ -207,9 +225,16 @@ Exception::Exception(CreateFromSTDTag, const std::exception & exc)
 void Exception::addMessage(const MessageMasked & msg_masked)
 {
     extendedMessage(msg_masked.msg);
-    if (error_index != static_cast<size_t>(ErrorIndexState::NotRecorded)
-        && error_index != static_cast<size_t>(ErrorIndexState::Suppressed))
-        ErrorCodes::extendedMessage(code(), remote, error_index, message());
+    size_t current_error_index = error_index;
+    if (current_error_index == static_cast<size_t>(ErrorIndexState::Suppressed) && delayed_error_index)
+    {
+        std::lock_guard lock(delayed_error_index->mutex);
+        current_error_index = delayed_error_index->value;
+    }
+
+    if (current_error_index != static_cast<size_t>(ErrorIndexState::NotRecorded)
+        && current_error_index != static_cast<size_t>(ErrorIndexState::Suppressed))
+        ErrorCodes::extendedMessage(code(), remote, current_error_index, message());
 }
 
 
