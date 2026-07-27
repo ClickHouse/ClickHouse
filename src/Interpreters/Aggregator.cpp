@@ -2204,12 +2204,34 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
 
         if constexpr (requires { src.begin() != src.end(); })
         {
-            for (auto it = src.begin(); it != src.end(); ++it)
+            static constexpr size_t prefetch_batch_size = 16;
+            using CellPtr = decltype(&*src.begin());
+            std::array<std::pair<CellPtr, size_t>, prefetch_batch_size> batch;
+
+            auto it = src.begin();
+            const auto end = src.end();
+            while (it != end)
             {
-                const size_t hash_value = it.getHash();
-                if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
-                    continue;
-                merge_cell(std::decay_t<decltype(*it)>::getKey(it->getValue()), it->getMapped(), hash_value);
+                size_t batch_size = 0;
+                for (; it != end && batch_size < prefetch_batch_size; ++it)
+                {
+                    const size_t hash_value = it.getHash();
+                    if ((TwoLevelMethod::Data::getBucketFromHash(hash_value) & partition_mask) != partition_index)
+                        continue;
+                    batch[batch_size++] = {&*it, hash_value};
+                }
+
+                if (params.enable_prefetch)
+                {
+                    for (size_t i = 0; i < batch_size; ++i)
+                        dst_method.data.prefetchByHash(batch[i].second);
+                }
+
+                for (size_t i = 0; i < batch_size; ++i)
+                    merge_cell(
+                        std::decay_t<decltype(*batch[i].first)>::getKey(batch[i].first->getValue()),
+                        batch[i].first->getMapped(),
+                        batch[i].second);
             }
         }
         else if constexpr (requires { src.emptyStringSlot(); })
