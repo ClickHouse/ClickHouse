@@ -190,12 +190,6 @@ public:
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
 
-    /// Detach all source-side view-dependency edges of a source table (the table is the source of one
-    /// or more materialized views) and return the list of dependent views. Used by `RENAME TABLE`
-    /// to re-key these edges under the new storage id via `addSourceViewDependencies`.
-    std::vector<StorageID> takeSourceViewDependencies(const StorageID & source_table_id);
-    void addSourceViewDependencies(const StorageID & source_table_id, const std::vector<StorageID> & view_ids);
-
     /// Check that all dependent views of a streaming source table are ready.
     /// Returns the list of ready views, or empty if not all are ready yet.
     /// During server startup, returns empty to prevent streaming engines from
@@ -232,8 +226,6 @@ public:
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
-
-    bool isShuttingDown() const { return is_shutting_down.load(); }
 
     /// Referential dependencies between tables: table "A" depends on table "B"
     /// if "B" is referenced in the definition of "A".
@@ -315,8 +307,8 @@ private:
 
     time_t getMinDropTime() TSA_REQUIRES(tables_marked_dropped_mutex);
     std::tuple<size_t, size_t> getDroppedTablesCountAndInuseCount();
-    TablesMarkedAsDropped getTablesToDrop();
-    void dropTablesParallel(TablesMarkedAsDropped tables);
+    std::vector<TablesMarkedAsDropped::iterator> getTablesToDrop();
+    void dropTablesParallel(std::vector<TablesMarkedAsDropped::iterator> tables);
     void rescheduleDropTableTask();
 
     void cleanupStoreDirectoryTask();
@@ -369,9 +361,7 @@ private:
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
     TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    /// A multiset: the same UUID may appear more than once when a fixed explicit UUID is reused across
-    /// CREATE OR REPLACE TABLE, which enqueues several intermediate tables sharing that UUID for drop.
-    std::unordered_multiset<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;

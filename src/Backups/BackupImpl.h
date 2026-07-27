@@ -6,7 +6,6 @@
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
 #include <Common/Logger_fwd.h>
-#include <atomic>
 #include <map>
 #include <mutex>
 
@@ -62,7 +61,6 @@ public:
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
-    std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
     BackupPtr getBaseBackup() const override;
@@ -167,7 +165,7 @@ private:
     UInt64 compressed_size = 0;
     mutable size_t num_read_files = 0;
     mutable UInt64 num_read_bytes = 0;
-    int version{};
+    int version;
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;

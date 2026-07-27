@@ -11,7 +11,7 @@ namespace
 
 /** columnsSize() - get the columns size in number of rows.
   */
-class FunctionBlockSize final : public IFunction
+class FunctionBlockSize : public IFunction
 {
 public:
     static constexpr auto name = "blockSize";

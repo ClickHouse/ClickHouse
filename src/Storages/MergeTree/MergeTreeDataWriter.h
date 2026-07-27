@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
+#include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
 
@@ -70,8 +71,16 @@ public:
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
+      * When out_selector is set, it receives the row -> partition-index mapping (empty when the block
+      * is not split, i.e. a single resulting partition). Deduplication needs it to attribute each
+      * source row to the partition it landed in.
       */
-    static BlocksWithPartition splitBlockIntoParts(Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(
+        Block && block,
+        size_t max_parts,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        IColumn::Selector * out_selector = nullptr);
 
     /// This structure contains not completely written temporary part.
     /// Some writes may happen asynchronously, e.g. for blob storages.
@@ -101,8 +110,7 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        bool merge_is_needed,
-        ContextPtr context);
+        bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
@@ -111,8 +119,7 @@ public:
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        size_t block_num,
-        ContextPtr context);
+        size_t block_num);
 
     static Block mergeBlock(
         Block && block,
@@ -138,7 +145,6 @@ private:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        MergeTreeIndices indices,
         bool merge_is_needed);
 
     MergeTreeData & data;

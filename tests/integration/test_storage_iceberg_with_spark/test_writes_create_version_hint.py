@@ -24,8 +24,9 @@ def test_writes_create_version_hint(started_cluster_iceberg_with_spark, format_v
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    target_suffix = b'v1.metadata.json'
     with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
-        assert f.read().strip() == b'1'
+        assert f.read()[-len(target_suffix):] == target_suffix
 
     instance.query(f"INSERT INTO {TABLE_NAME} VALUES ('123', 1);", settings={"allow_insert_into_iceberg": 1})
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY ALL", ) == '123\t1\n'
@@ -37,8 +38,9 @@ def test_writes_create_version_hint(started_cluster_iceberg_with_spark, format_v
         f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/",
     )
 
+    target_suffix = b'v2.metadata.json'
     with open(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata/version-hint.text", "rb") as f:
-        assert f.read().strip() == b'2'
+        assert f.read()[-len(target_suffix):] == target_suffix
 
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 1

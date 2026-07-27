@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/FillingStep.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -62,7 +61,7 @@ void FillingStep::describeActions(FormatSettings & settings) const
 {
     const String & prefix = settings.detail_prefix;
     settings.out << prefix;
-    dumpSortDescription(sort_description, settings);
+    dumpSortDescription(sort_description, settings.out);
     settings.out << '\n';
     if (interpolate_description)
     {

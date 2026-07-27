@@ -5,7 +5,7 @@ FROM
 (
     SELECT
         \'hello\' AS msg,
-        multiply(toUInt64(t), 1000) AS ms
+        toUInt64(t) * 1000 AS ms
     FROM generateRandom(\'t DateTime\')
     LIMIT 10
 )

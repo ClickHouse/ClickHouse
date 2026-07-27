@@ -31,7 +31,7 @@ namespace
   * several columns to generate a string per row, such as CSV, TSV, JSONEachRow, etc.
   * formatRowNoNewline(...) trims the newline character of each row.
   */
-class FunctionFormatRow final : public IFunction
+class FunctionFormatRow : public IFunction
 {
 public:
     FunctionFormatRow(const char * name_, bool no_newline_, String format_name_, Names arguments_column_names_, ContextPtr context_)
@@ -113,15 +113,15 @@ private:
     FormatSettings format_settings;
 };
 
-class FormatRowOverloadResolver final : public IFunctionOverloadResolver, private WithContext
+class FormatRowOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     FormatRowOverloadResolver(const char * name_, bool no_newline_, ContextPtr context_)
-        : WithContext(context_), function_name(name_), no_newline(no_newline_) {}
+        : function_name(name_), no_newline(no_newline_), context(context_) {}
 
-    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context_)
+    static FunctionOverloadResolverPtr create(const char * name, bool no_newline, ContextPtr context)
     {
-        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context_));
+        return std::make_unique<FormatRowOverloadResolver>(name, no_newline, std::move(context));
     }
 
     String getName() const override { return function_name; }
@@ -143,7 +143,7 @@ public:
 
         if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments.at(0).column.get()))
             return std::make_unique<FunctionToFunctionBaseAdaptor>(
-                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), getContext()),
+                std::make_shared<FunctionFormatRow>(function_name, no_newline, name_col->getValue<String>(), std::move(arguments_column_names), context),
                 DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })},
                 return_type);
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument to {} must be a format name", getName());
@@ -154,6 +154,7 @@ public:
 private:
     const char * function_name;
     bool no_newline;
+    ContextPtr context;
 };
 
 }

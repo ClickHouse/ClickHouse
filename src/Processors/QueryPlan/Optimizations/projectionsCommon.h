@@ -36,7 +36,7 @@ private:
 
 struct ProjectionCandidate
 {
-    const ProjectionDescription * projection{};
+    const ProjectionDescription * projection;
 
     /// Estimated total marks to read (including parent and projection)
     size_t sum_marks = 0;

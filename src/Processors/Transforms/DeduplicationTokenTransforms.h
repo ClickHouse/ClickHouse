@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class RestoreChunkInfosTransform final : public ISimpleTransform
+class RestoreChunkInfosTransform : public ISimpleTransform
 {
 public:
     RestoreChunkInfosTransform(Chunk::ChunkInfoCollection chunk_infos_, SharedHeader header_);
@@ -26,12 +26,13 @@ private:
 class InsertDependenciesBuilder;
 using InsertDependenciesBuilderConstPtr = std::shared_ptr<const InsertDependenciesBuilder>;
 
-class AddDeduplicationInfoTransform final : public ISimpleTransform
+class AddDeduplicationInfoTransform : public ISimpleTransform
 {
     InsertDependenciesBuilderConstPtr insert_dependencies;
     StorageIDMaybeEmpty root_view_id;
     std::string user_token;
     size_t block_number = 0;
+    InsertDeduplicationVersions unification_stage = InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
 public:
     explicit AddDeduplicationInfoTransform(SharedHeader header_);
 
@@ -39,6 +40,7 @@ public:
         InsertDependenciesBuilderConstPtr insert_dependencies_,
         StorageIDMaybeEmpty root_view_id_,
         std::string user_token_,
+        InsertDeduplicationVersions unification_stage_,
         SharedHeader header_);
 
     String getName() const override { return "AddDeduplicationInfoTransform"; }
@@ -47,10 +49,21 @@ public:
 };
 
 
+class RedefineDeduplicationInfoWithDataHashTransform : public ISimpleTransform
+{
+public:
+    explicit RedefineDeduplicationInfoWithDataHashTransform(SharedHeader header_);
+
+    String getName() const override { return "RedefineDeduplicationInfoWithDataHashTransform"; }
+
+    void transform(Chunk & chunk) override;
+};
+
+
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
-class SelectPartitionTransform final : public ISimpleTransform
+class SelectPartitionTransform : public ISimpleTransform
 {
     std::string partition_id;
     StorageMetadataPtr metadata_snapshot;
@@ -65,7 +78,7 @@ public:
 };
 
 
-class UpdateDeduplicationInfoWithViewIDTransform final : public ISimpleTransform
+class UpdateDeduplicationInfoWithViewIDTransform : public ISimpleTransform
 {
 public:
     UpdateDeduplicationInfoWithViewIDTransform(StorageIDMaybeEmpty view_id_, SharedHeader header_);

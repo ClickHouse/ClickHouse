@@ -7,7 +7,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Arena.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
@@ -430,40 +430,15 @@ void ColumnTuple::updateHashWithValueRange(size_t begin, size_t end, SipHash & h
         column->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnTuple::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnTuple::getWeakHash32() const
 {
-    const size_t n = row_end - row_begin;
+    auto s = size();
+    WeakHash32 hash(s);
 
-    if (columns.empty())
-    {
-        /// Empty tuple: a single fixed per-row hash (all bits set).
-        if (initial)
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        else
-            for (size_t i = 0; i < n; ++i)
-                hash_out[i] = combineWeakHash32(WEAK_HASH32_INITIAL_VALUE, hash_out[i]);
-        return;
-    }
-
-    if (initial)
-    {
-        /// Seed with `WEAK_HASH32_INITIAL_VALUE` and chain every child.
-        for (size_t i = 0; i < n; ++i)
-            hash_out[i] = WEAK_HASH32_INITIAL_VALUE;
-        for (const auto & column : columns)
-            column->computeHashInto(row_begin, row_end, hash_out, false);
-        return;
-    }
-
-    /// Non-initial: build the finalized composite row hash in a scratch buffer, then combine that
-    /// single value into the prior key columns' hash (rather than streaming elements straight into
-    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
-    PaddedPODArray<UInt32> tuple_hash(n, WEAK_HASH32_INITIAL_VALUE);
     for (const auto & column : columns)
-        column->computeHashInto(row_begin, row_end, tuple_hash.data(), false);
-    for (size_t i = 0; i < n; ++i)
-        hash_out[i] = combineWeakHash32(tuple_hash[i], hash_out[i]);
+        hash.update(column->getWeakHash32());
+
+    return hash;
 }
 
 void ColumnTuple::updateHashFast(SipHash & hash) const
@@ -592,16 +567,16 @@ ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
     return ColumnTuple::create(new_columns);
 }
 
-VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
+MutableColumns ColumnTuple::scatter(size_t num_columns, const Selector & selector) const
 {
     if (columns.empty())
     {
         if (column_length != selector.size())
             throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of selector doesn't match size of column");
 
-        auto counts = countColumnsSizeInSelector(num_columns, selector);
+        std::vector<size_t> counts = countColumnsSizeInSelector(num_columns, selector);
 
-        VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+        MutableColumns res(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             res[i] = cloneResized(counts[i]);
 
@@ -609,12 +584,12 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnTuple::scatter(size_t num_colum
     }
 
     const size_t tuple_size = columns.size();
-    VectorWithMemoryTracking<VectorWithMemoryTracking<MutableColumnPtr>> scattered_tuple_elements(tuple_size);
+    std::vector<MutableColumns> scattered_tuple_elements(tuple_size);
 
     for (size_t tuple_element_idx = 0; tuple_element_idx < tuple_size; ++tuple_element_idx)
         scattered_tuple_elements[tuple_element_idx] = columns[tuple_element_idx]->scatter(num_columns, selector);
 
-    VectorWithMemoryTracking<MutableColumnPtr> res(num_columns);
+    MutableColumns res(num_columns);
 
     for (size_t scattered_idx = 0; scattered_idx < num_columns; ++scattered_idx)
     {
@@ -632,7 +607,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res = 0;
+        int res;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -673,7 +648,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res = 0;
+            int res;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else
@@ -763,12 +738,12 @@ size_t ColumnTuple::capacity() const
     return getColumn(0).capacity();
 }
 
-void ColumnTuple::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnTuple::prepareForSquashing(const Columns & source_columns, size_t factor)
 {
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> nested_columns;
+        Columns nested_columns;
         nested_columns.reserve(source_columns.size() * factor);
         for (const auto & source_column : source_columns)
             nested_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).getColumnPtr(i));
@@ -922,9 +897,9 @@ bool ColumnTuple::dynamicStructureEquals(const IColumn & rhs) const
     }
 }
 
-void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnTuple::chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<VectorWithMemoryTracking<ColumnPtr>> nested_source_columns;
+    std::vector<Columns> nested_source_columns;
     nested_source_columns.resize(columns.size());
     for (size_t i = 0; i != columns.size(); ++i)
         nested_source_columns[i].reserve(source_columns.size());
@@ -958,27 +933,14 @@ bool ColumnTuple::hasStatistics() const
     return false;
 }
 
-void ColumnTuple::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnTuple::takeOrCalculateStatisticsFrom(const Columns & source_columns)
 {
     for (size_t i = 0; i != columns.size(); ++i)
     {
-        VectorWithMemoryTracking<ColumnPtr> elem_source_columns;
+        Columns elem_source_columns;
         elem_source_columns.reserve(source_columns.size());
         for (const auto & source_column : source_columns)
-        {
-            if (!source_column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is invalid");
-
-            const auto * source_tuple = typeid_cast<const ColumnTuple *>(source_column.get());
-            if (!source_tuple)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Source column is not Tuple, but {}", source_column->getName());
-
-            elem_source_columns.push_back(source_tuple->columns[i]);
-        }
-
-        if (!columns[i])
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} of tuple is invalid", i);
-
+            elem_source_columns.push_back(assert_cast<const ColumnTuple &>(*source_column).columns[i]);
         columns[i]->takeOrCalculateStatisticsFrom(elem_source_columns);
     }
 }

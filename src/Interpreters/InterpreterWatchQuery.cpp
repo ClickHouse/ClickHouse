@@ -58,7 +58,6 @@ BlockIO InterpreterWatchQuery::execute()
         limits.size_limits.max_bytes = settings[Setting::max_result_bytes];
         limits.size_limits.overflow_mode = settings[Setting::result_overflow_mode];
 
-        res.pipeline.setNormalizedQueryHash(getContext()->getNormalizedQueryHash());
         res.pipeline.setLimitsAndQuota(limits, getContext()->getQuota());
     }
 
@@ -82,8 +81,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
                         "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
     /// List of columns to read to execute the query.
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
-    Names required_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
     getContext()->checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query
@@ -116,7 +114,6 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     return pipeline;
 }
 
-void registerInterpreterWatchQuery(InterpreterFactory & factory);
 void registerInterpreterWatchQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

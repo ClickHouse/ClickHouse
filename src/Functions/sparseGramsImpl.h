@@ -3,8 +3,6 @@
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/UTF8Helpers.h>
-#include <Common/VectorWithMemoryTracking.h>
-#include <Core/ColumnNumbers.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/types.h>
 #include <optional>
@@ -49,7 +47,7 @@ private:
 
     /// Current batch of answers. The size of result can not be greater than `convex_hull`.
     /// The size of `convex_hull` should not be large, see comment to `convex_hull` for more details.
-    VectorWithMemoryTracking<SubString> result;
+    std::vector<SubString> result;
     size_t iter_result = 0;
 
     struct PositionAndHash
@@ -101,7 +99,7 @@ private:
         size_t getNextPosition(size_t iterator) const
         {
             if constexpr (is_utf8)
-                return std::min(size_t(end - data), iterator + UTF8::seqLength(data[iterator]));
+                return iterator + UTF8::seqLength(data[iterator]);
             else
                 return iterator + 1;
         }
@@ -122,7 +120,7 @@ private:
     /// Assuming that hashes are uniformly distributed, the expected size of convex_hull is N^{1/3},
     /// where N is the length of the string.
     /// Proof: https://math.stackexchange.com/questions/3469295/expected-number-of-vertices-in-a-convex-hull
-    VectorWithMemoryTracking<PositionAndHash> convex_hull;
+    std::vector<PositionAndHash> convex_hull;
     NGramSymbolIterator symbol_iterator;
 
     /// Get the next batch of answers. Returns false if there can be no more answers.
@@ -140,7 +138,7 @@ private:
         {
             size_t possible_left_position = convex_hull.back().left_ngram_position;
             size_t possible_left_symbol_index = convex_hull.back().symbol_index;
-            size_t length = right_symbol_index - possible_left_symbol_index + min_ngram_length - 1;
+            size_t length = right_symbol_index - possible_left_symbol_index + 2;
             if (length > max_ngram_length)
             {
                 /// If the current length is greater than the current right position, it will be greater at future right positions, so we can just delete them all.
@@ -159,7 +157,7 @@ private:
         {
             size_t possible_left_position = convex_hull.back().left_ngram_position;
             size_t possible_left_symbol_index = convex_hull.back().symbol_index;
-            size_t length = right_symbol_index - possible_left_symbol_index + min_ngram_length - 1;
+            size_t length = right_symbol_index - possible_left_symbol_index + 2;
             if (length <= max_ngram_length)
                 result.push_back({
                     .left_index = possible_left_position,
