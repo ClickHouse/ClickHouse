@@ -1170,7 +1170,7 @@
       "path": "/reference/settings/merge-tree-settings/min-bytes",
       "label": "min_bytes_*",
       "settings": 5,
-      "characters": 1653
+      "characters": 1617
     },
     {
       "path": "/reference/settings/merge-tree-settings/min-compressed",
@@ -1194,7 +1194,7 @@
       "path": "/reference/settings/merge-tree-settings/min-level",
       "label": "min_level_*",
       "settings": 2,
-      "characters": 655
+      "characters": 619
     },
     {
       "path": "/reference/settings/merge-tree-settings/min-relative",
@@ -1206,7 +1206,7 @@
       "path": "/reference/settings/merge-tree-settings/min-rows",
       "label": "min_rows_*",
       "settings": 4,
-      "characters": 769
+      "characters": 733
     },
     {
       "path": "/reference/settings/merge-tree-settings/number-of",
@@ -1302,7 +1302,7 @@
       "path": "/reference/settings/merge-tree-settings/table",
       "label": "table_*",
       "settings": 2,
-      "characters": 1556
+      "characters": 1793
     },
     {
       "path": "/reference/settings/merge-tree-settings/text-index",
