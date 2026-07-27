@@ -64,9 +64,8 @@ String resolvePathRelativelyToBase(const String & path, const String & base_path
             && pathStartsWith(candidate, configured_base.string());
     };
 
-    auto norm_path = fs::path(path).lexically_normal().string();
-    if (is_inside(norm_path))
-        return norm_path;
+    if (is_inside(path))
+        return path;
 
     auto combined = (configured_base / path).lexically_normal().string();
     if (is_inside(combined))
