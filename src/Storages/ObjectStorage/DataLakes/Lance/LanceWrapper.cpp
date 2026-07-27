@@ -28,6 +28,8 @@ extern const Event LancePlanScanMicroseconds;
 extern const Event LanceNextBatch;
 extern const Event LanceNextBatchMicroseconds;
 extern const Event LanceRuntimeInit;
+extern const Event LanceCountRows;
+extern const Event LanceCountRowsMicroseconds;
 }
 
 namespace DB
@@ -321,9 +323,12 @@ std::optional<size_t> DatasetHandle::totalRows(const TableStateSnapshot & snapsh
 {
     uint64_t rows = 0;
     bool has_value = false;
+    Stopwatch watch;
     ch_lance_error error{};
     if (!ch_lance_total_rows(raw(), snapshot.version, &rows, &has_value, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot count rows in `Lance` dataset version {}", snapshot.version));
+    ProfileEvents::increment(ProfileEvents::LanceCountRows);
+    ProfileEvents::increment(ProfileEvents::LanceCountRowsMicroseconds, watch.elapsedMicroseconds());
     if (!has_value)
         return std::nullopt;
     return rows;
@@ -334,6 +339,7 @@ std::optional<size_t> DatasetHandle::countRows(
 {
     uint64_t rows = 0;
     bool has_value = false;
+    Stopwatch watch;
     ch_lance_error error{};
     if (!ch_lance_count_rows(
             raw(),
@@ -344,6 +350,8 @@ std::optional<size_t> DatasetHandle::countRows(
             cancel ? cancel->raw() : nullptr,
             &error))
         throwLanceError(error, fmt::format("Cannot count filtered rows in `Lance` dataset version {}", snapshot.version));
+    ProfileEvents::increment(ProfileEvents::LanceCountRows);
+    ProfileEvents::increment(ProfileEvents::LanceCountRowsMicroseconds, watch.elapsedMicroseconds());
     if (!has_value)
         return std::nullopt;
     return rows;

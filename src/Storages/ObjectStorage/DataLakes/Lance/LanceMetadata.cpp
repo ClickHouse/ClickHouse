@@ -29,6 +29,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ProfileEvents.h>
 #if USE_AWS_S3
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
@@ -37,6 +38,14 @@
 #include <fmt/ranges.h>
 
 #include <unordered_map>
+
+namespace ProfileEvents
+{
+extern const Event LancePredicatePushdownComplete;
+extern const Event LancePredicatePushdownPartial;
+extern const Event LanceLimitPushdown;
+extern const Event LanceProjectedColumns;
+}
 
 namespace DB
 {
@@ -123,8 +132,10 @@ public:
 
         is_finished = true;
         auto object_info = std::make_shared<LanceDatasetObjectInfo>(dataset_path, snapshot, dataset);
+        /// Dataset-level byte totals are often unavailable; per-batch progress is reported from
+        /// `Lance::ReadSource` via `ISource::progress` (auto_progress).
         if (callback)
-            callback(FileProgress{0});
+            callback(FileProgress{/*read_bytes=*/0, /*total_bytes_to_read=*/0});
         return object_info;
     }
 
@@ -738,6 +749,14 @@ std::optional<Pipe> LanceMetadata::read(
     std::optional<UInt64> scan_limit;
     if (limit && *limit > 0 && !effective_need_only_count && predicate_pushdown.is_complete)
         scan_limit = static_cast<UInt64>(*limit);
+
+    if (predicate_pushdown.is_complete)
+        ProfileEvents::increment(ProfileEvents::LancePredicatePushdownComplete);
+    else
+        ProfileEvents::increment(ProfileEvents::LancePredicatePushdownPartial);
+    if (scan_limit)
+        ProfileEvents::increment(ProfileEvents::LanceLimitPushdown);
+    ProfileEvents::increment(ProfileEvents::LanceProjectedColumns, scan_projection.size());
 
     Lance::ScanDescription scan
     {

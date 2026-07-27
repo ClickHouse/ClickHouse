@@ -83,6 +83,19 @@ Container-level `NULL` values in `Array` and `Map` are rejected because ClickHou
 
 The virtual column `_data_lake_snapshot_version` exposes the Lance dataset version used by the query.
 
+## Observability {#observability}
+
+Lance reads emit dedicated `ProfileEvents` on `system.query_log` / `system.query_thread_log`, including:
+
+- Open / plan / next-batch counts and microseconds (`LanceDatasetOpen*`, `LancePlanScan*`, `LanceNextBatch*`)
+- Query-scoped dataset cache hits (`LanceDatasetCacheHit`)
+- Batches, rows, and approximate Arrow buffer bytes (`LanceBatchesRead`, `LanceRowsRead`, `LanceReadBytes`, `LanceLocalReadBytes`, `LanceS3ReadBytes`)
+- Arrow to ClickHouse conversion time (`LanceArrowConvertMicroseconds`)
+- Count fast path (`LanceCountRows`, `LanceCountRowsMicroseconds`)
+- Predicate and limit pushdown (`LancePredicatePushdownComplete`, `LancePredicatePushdownPartial`, `LanceLimitPushdown`, `LanceProjectedColumns`)
+
+`LanceReadBytes` / `LanceS3ReadBytes` measure Arrow array buffer footprint observed after the Lance scanner returns a batch. They are not S3 wire GET byte counters. Fragment-level scanned/skipped counters are not exposed yet.
+
 ## Limitations {#limitations}
 
 - `LanceS3` is read-only.
