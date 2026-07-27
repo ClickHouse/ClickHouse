@@ -10,7 +10,6 @@
 #include <unordered_map>
 
 #include <Databases/IDatabase.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/StorageID.h>
@@ -47,6 +46,10 @@ namespace FailPoints
 {
 extern const char system_replicas_schedule_requests_pause[];
 }
+
+/// Defined in StatusRequestsPool.cpp so that this header does not need Interpreters/Context.h.
+StoragePtr resolveStatusRequestTable(const StorageID & storage_id);
+DatabasePtr resolveStatusRequestDatabase(const String & database_name);
 
 template <typename T>
 concept IsHolder = std::derived_from<T, IDatabase> || std::derived_from<T, IStorage>;
@@ -311,17 +314,9 @@ private:
     static TBaseHolderPtr resolve_holder(const THolderId & holder_id)
     {
         if constexpr (std::is_same_v<TBaseHolder, IDatabase>)
-        {
-            return DatabaseCatalog::instance().tryGetDatabase(holder_id);
-        }
+            return resolveStatusRequestDatabase(holder_id);
         else
-        {
-            /// Resolution by UUID does not depend on the current table name, so it survives renames.
-            if (holder_id.hasUUID())
-                return DatabaseCatalog::instance().tryGetByUUID(holder_id.uuid).second;
-
-            return DatabaseCatalog::instance().tryGetTable(holder_id, Context::getGlobalContextInstance());
-        }
+            return resolveStatusRequestTable(holder_id);
     }
 
     static constexpr auto get_thread_name()
