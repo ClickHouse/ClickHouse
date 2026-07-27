@@ -174,8 +174,6 @@ Una consulta `SELECT` puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`
 
 Si la vista materializada usa la construcción `TO [db.]name`, puede aplicar `DETACH` a la vista, ejecutar `ALTER` en la tabla de destino y luego hacer `ATTACH` de la vista previamente separada con `DETACH`.
 
-Tenga en cuenta que la vista materializada se ve afectada por la configuración [optimize&#95;on&#95;insert](/es/reference/settings/session-settings#optimize_on_insert). Los datos se fusionan antes de insertarse en una vista.
-
 Las vistas tienen el mismo aspecto que las tablas normales. Por ejemplo, aparecen en el resultado de la consulta `SHOW TABLES`.
 
 Para eliminar una vista, use [DROP VIEW](/es/reference/statements/drop#drop-view). Aunque `DROP TABLE` también funciona para las VIEW.
@@ -203,8 +201,8 @@ Tenga en cuenta que, independientemente de la opción de SQL security, en todos 
 
 Si no se especifican `DEFINER`/`SQL SECURITY`, se usan los valores predeterminados:
 
-* `SQL SECURITY`: `INVOKER` para las vistas normales y `DEFINER` para las vistas materializadas ([configurable en Settings](/es/reference/settings/session-settings#default_normal_view_sql_security))
-* `DEFINER`: `CURRENT_USER` ([configurable en Settings](/es/reference/settings/session-settings#default_view_definer))
+* `SQL SECURITY`: `INVOKER` para las vistas normales y `DEFINER` para las vistas materializadas ([configurable en Settings](/es/reference/settings/session-settings/default#default_normal_view_sql_security))
+* `DEFINER`: `CURRENT_USER` ([configurable en Settings](/es/reference/settings/session-settings/default#default_view_definer))
 
 Si una vista se adjunta sin especificar `DEFINER`/`SQL SECURITY`, el valor predeterminado es `SQL SECURITY NONE` para la vista materializada y `SQL SECURITY INVOKER` para la vista normal.
 
@@ -320,7 +318,7 @@ En modo `APPEND`, la coordinación puede deshabilitarse con `SETTINGS all_replic
 
 En el modo no `APPEND`, solo se admite la actualización coordinada. Para una actualización no coordinada, use la base de datos `Atomic` y la consulta `CREATE ... ON CLUSTER` para crear vistas materializadas actualizables en todas las réplicas.
 
-La coordinación se realiza mediante Keeper. La ruta del znode se determina mediante la configuración de servidor [default&#95;replica&#95;path](/es/reference/settings/server-settings/settings#default_replica_path).
+La coordinación se realiza mediante Keeper. La ruta del znode se determina mediante la configuración de servidor [default&#95;replica&#95;path](/es/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
 <div id="refresh-dependencies">
   ### Dependencias de actualización
@@ -503,7 +501,7 @@ Para esperar a que se complete una actualización, use [`SYSTEM WAIT VIEW`](/es/
 <CloudNotSupportedBadge />
 
 <Info>
-  Esta es una función experimental que puede cambiar de forma incompatible con versiones anteriores en futuras versiones. Habilite el uso de las Window View y de la consulta `WATCH` mediante la opción de configuración [allow&#95;experimental&#95;window&#95;view](/es/reference/settings/session-settings#allow_experimental_window_view). Introduzca el comando `set allow_experimental_window_view = 1`.
+  Esta es una función experimental que puede cambiar de forma incompatible con versiones anteriores en futuras versiones. Habilite el uso de las Window View y de la consulta `WATCH` mediante la opción de configuración [allow&#95;experimental&#95;window&#95;view](/es/reference/settings/session-settings/allow-experimental#allow_experimental_window_view). Introduzca el comando `set allow_experimental_window_view = 1`.
 </Info>
 
 ```sql

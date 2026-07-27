@@ -22,8 +22,8 @@ doc_type: 'reference'
 Renderiza o resultado de uma consulta como uma imagem PNG. Isso é útil como uma ferramenta de visualização integrada.
 
 O tamanho da imagem de saída é definido pelas configurações
-[`output_format_image_width`](/pt-BR/reference/settings/formats#output_format_image_width) e
-[`output_format_image_height`](/pt-BR/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/pt-BR/reference/settings/formats/output-format#output_format_image_width) e
+[`output_format_image_height`](/pt-BR/reference/settings/formats/output-format#output_format_image_height)
 (ambas com valor padrão de 1024). Os pixels não cobertos pelo resultado são preenchidos com preto
 (nos modos `RGB` e em escala de cinza) ou com preto transparente (no modo `RGBA`).
 
@@ -95,8 +95,8 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 </div>
 
 Por padrão, o formato `PNG` grava os bytes brutos da imagem. A configuração
-[`output_format_image_terminal_mode`](/pt-BR/reference/settings/formats#output_format_image_terminal_mode)
-faz com que a imagem seja renderizada diretamente no terminal usando um protocolo de imagem embutida:
+[`output_format_image_terminal_mode`](/pt-BR/reference/settings/formats/output-format#output_format_image_terminal_mode)
+faz com que a imagem seja renderizada diretamente no terminal usando um protocolo de imagem no terminal em linha:
 
 | Valor              | Comportamento                                                                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |

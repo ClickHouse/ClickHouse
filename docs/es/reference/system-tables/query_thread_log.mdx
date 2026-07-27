@@ -19,14 +19,14 @@ Contiene información sobre los hilos que ejecutan consultas, por ejemplo, el no
 
 Para habilitar el registro:
 
-1. Configure los parámetros en la sección [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings#query_thread_log).
-2. Establezca [log&#95;query&#95;threads](/es/reference/settings/session-settings#log_query_threads) en 1.
+1. Configure los parámetros en la sección [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings/query#query_thread_log).
+2. Establezca [log&#95;query&#95;threads](/es/reference/settings/session-settings/log-query#log_query_threads) en 1.
 
-El intervalo de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuración del servidor [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings#query_thread_log). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
+El intervalo de vaciado de los datos se establece en el parámetro `flush_interval_milliseconds` de la sección de configuración del servidor [query&#95;thread&#95;log](/es/reference/settings/server-settings/settings/query#query_thread_log). Para forzar el vaciado, use la consulta [SYSTEM FLUSH LOGS](/es/reference/statements/system#flush-logs).
 
 ClickHouse no elimina automáticamente los datos de la tabla. Consulte [Introducción](/es/reference/system-tables/overview#system-tables-introduction) para obtener más información.
 
-Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/settings/session-settings#log_queries_probability)) para reducir la cantidad de consultas registradas en la tabla `query_thread_log`.
+Puede usar la configuración [log&#95;queries&#95;probability](/es/reference/settings/session-settings/log-queries#log_queries_probability)) para reducir la cantidad de consultas registradas en la tabla `query_thread_log`.
 
 <div id="columns">
   ## Columnas

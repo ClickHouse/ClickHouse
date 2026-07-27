@@ -180,18 +180,18 @@ GCS ClickPipes используют два разных сетевых марш�
 
 ClickPipes предоставляет разумные значения по умолчанию, которые подходят для большинства сценариев использования. Если вашему сценарию требуется более тонкая настройка, вы можете изменить следующие параметры:
 
-| Настройка                            | Значение по умолчанию | Описание                                                                                                                                                         |
-| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10GB                  | Количество байт, обрабатываемых в одном батче вставки.                                                                                                           |
-| `Max file count`                     | 100                   | Максимальное количество файлов, обрабатываемых в одном батче вставки.                                                                                            |
-| `Max threads`                        | auto(3)               | [Максимальное количество параллельных потоков](/ru/reference/settings/session-settings#max_threads) для обработки файлов.                                        |
-| `Max insert threads`                 | 1                     | [Максимальное количество параллельных потоков вставки](/ru/reference/settings/session-settings#max_insert_threads) для обработки файлов.                         |
-| `Min insert block size bytes`        | 1GB                   | [Минимальный размер блока в байтах](/ru/reference/settings/session-settings#min_insert_block_size_bytes), который может быть вставлен в таблицу.                 |
-| `Max download threads`               | 4                     | [Максимальное количество параллельных потоков загрузки](/ru/reference/settings/session-settings#max_download_threads).                                           |
-| `Object storage polling interval`    | 30s                   | Настраивает максимальный период ожидания перед вставкой данных в кластер ClickHouse.                                                                             |
-| `Parallel distributed insert select` | 2                     | [Параметр parallel distributed insert select](/ru/reference/settings/session-settings#parallel_distributed_insert_select).                                       |
-| `Parallel view processing`           | false                 | Нужно ли включать отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true                  | Нужно ли обрабатывать файлы параллельно на нескольких узлах.                                                                                                     |
+| Настройка                            | Значение по умолчанию | Описание                                                                                                                                                                  |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB                  | Количество байт, обрабатываемых в одном батче вставки.                                                                                                                    |
+| `Max file count`                     | 100                   | Максимальное количество файлов, обрабатываемых в одном батче вставки.                                                                                                     |
+| `Max threads`                        | auto(3)               | [Максимальное количество параллельных потоков](/ru/reference/settings/session-settings/max-threads#max_threads) для обработки файлов.                                     |
+| `Max insert threads`                 | 1                     | [Максимальное количество параллельных потоков вставки](/ru/reference/settings/session-settings/max-insert#max_insert_threads) для обработки файлов.                       |
+| `Min insert block size bytes`        | 1GB                   | [Минимальный размер блока в байтах](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes), который может быть вставлен в таблицу.               |
+| `Max download threads`               | 4                     | [Максимальное количество параллельных потоков загрузки](/ru/reference/settings/session-settings/max-download#max_download_threads).                                       |
+| `Object storage polling interval`    | 30s                   | Настраивает максимальный период ожидания перед вставкой данных в кластер ClickHouse.                                                                                      |
+| `Parallel distributed insert select` | 2                     | [Параметр parallel distributed insert select](/ru/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                                       |
+| `Parallel view processing`           | false                 | Нужно ли включать отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true                  | Нужно ли обрабатывать файлы параллельно на нескольких узлах.                                                                                                              |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
 

@@ -347,7 +347,7 @@ SELECT reverseBySeparator('abcde', '')
 区切り文字が文字列の先頭または末尾にある場合や、区切り文字が連続して複数出現する場合は、空の部分文字列が生成されることがあります。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 次の場合、空の部分文字列が生成されることがあります。
@@ -395,7 +395,7 @@ SELECT splitByChar(',', '1,2,3,abcde');
 空白文字および句読点で区切って、文字列を部分文字列の配列に分割します。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -442,7 +442,7 @@ SELECT splitByNonAlpha('user@domain.com');
 * 正規表現が空でなく、元の文字列 string が空の場合。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -503,7 +503,7 @@ SELECT splitByRegexp('', 'abcde');
 * 区切り文字が空でなく、元の文字列 `s` が空の場合
 
 <Note>
-  [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) 設定 (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) 設定 (デフォルト: `0`) は、引数 `max_substrings > 0` の場合に、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**
@@ -557,7 +557,7 @@ SELECT splitByString('', 'abcde');
 空白文字で区切られた文字列を、部分文字列の配列に分割します。
 
 <Note>
-  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` のときに、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
+  設定 [`splitby_max_substrings_includes_remaining_string`](/ja/reference/settings/session-settings/other#splitby_max_substrings_includes_remaining_string) (デフォルト: `0`) は、引数 `max_substrings > 0` のときに、残りの文字列を結果配列の最後の要素に含めるかどうかを制御します。
 </Note>
 
 **構文**

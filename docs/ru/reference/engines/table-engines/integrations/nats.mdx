@@ -66,8 +66,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_reconnect_wait` – Время ожидания в миллисекундах между попытками переподключения. По умолчанию: `2000`.
 * `nats_server_list` - Список серверов для подключения. Можно указать для подключения к кластеру NATS.
 * `nats_skip_broken_messages` - Допустимое число несовместимых со схемой сообщений для parser сообщений NATS на блок. По умолчанию: `0`. Если `nats_skip_broken_messages = N`, то движок пропускает *N* сообщений NATS, которые не удаётся разобрать (одно сообщение соответствует одной строке данных).
-* `nats_max_block_size` - Число строк, собираемых с помощью poll(s) для сброса данных из NATS. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - Тайм-аут для сброса данных, прочитанных из NATS. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings#stream_flush_interval_ms).
+* `nats_max_block_size` - Число строк, собираемых с помощью poll(s) для сброса данных из NATS. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - Тайм-аут для сброса данных, прочитанных из NATS. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_username` - Имя пользователя NATS.
 * `nats_password` - Пароль NATS.
 * `nats_token` - Токен аутентификации NATS.
@@ -194,7 +194,7 @@ ATTACH TABLE consumer;
 Количество строк в одном сообщении NATS зависит от того, является ли формат построчным или блочным:
 
 * Для построчных форматов количеством строк в одном сообщении NATS можно управлять с помощью настройки `nats_max_rows_per_message`.
-* Для блочных форматов блок нельзя разделить на более мелкие части, однако количество строк в одном блоке можно регулировать с помощью общей настройки [max&#95;block&#95;size](/ru/reference/settings/session-settings#max_block_size).
+* Для блочных форматов блок нельзя разделить на более мелкие части, однако количество строк в одном блоке можно регулировать с помощью общей настройки [max&#95;block&#95;size](/ru/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## Использование JetStream

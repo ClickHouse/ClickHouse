@@ -22,7 +22,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 フェッチにおける、ネットワーク経由のデータ転送速度の上限を、
 1 秒あたりのバイト数で制限します。この設定はサーバーではなく、
 特定のテーブルに適用されます。サーバーに適用される
-[`max_replicated_fetches_network_bandwidth_for_server`](/ja/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+[`max_replicated_fetches_network_bandwidth_for_server`](/ja/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 設定とは異なります。
 
 サーバー全体のネットワークと特定テーブルのネットワークの両方に制限を設定できますが、
@@ -89,7 +89,7 @@ ReplicatedMergeTree queue 内で同時に許可される、ミューテーショ
 [replicated](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)
 送信における、ネットワーク経由のデータ転送速度の上限を 1 秒あたりの
 バイト数で制限します。この設定は、サーバーに適用される
-[`max_replicated_sends_network_bandwidth_for_server`](/ja/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+[`max_replicated_sends_network_bandwidth_for_server`](/ja/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 設定とは異なり、特定のテーブルに適用されます。
 
 サーバー全体のネットワークと特定のテーブルのネットワークの両方を制限できますが、

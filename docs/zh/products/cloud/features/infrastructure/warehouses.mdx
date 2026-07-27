@@ -191,7 +191,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **ClickHouse 版本**：[升级计划](/zh/products/cloud/features/admin-features/upgrades)由主节点的设置决定。次级服务不能拥有独立于主节点的发布计划。
 
-* **默认情况下，处于休眠/已停止状态的服务可能会阻塞 `CREATE`/`RENAME`/`DROP DATABASE` 查询。** 如果在服务处于休眠或已停止状态时执行这些查询，查询可能会挂起。要绕过此限制，你可以在会话级别或单个查询级别使用 [`settings distributed_ddl_task_timeout=0`](/zh/reference/settings/session-settings#distributed_ddl_task_timeout) 运行数据库管理查询。
+* **默认情况下，处于休眠/已停止状态的服务可能会阻塞 `CREATE`/`RENAME`/`DROP DATABASE` 查询。** 如果在服务处于休眠或已停止状态时执行这些查询，查询可能会挂起。要绕过此限制，你可以在会话级别或单个查询级别使用 [`settings distributed_ddl_task_timeout=0`](/zh/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) 运行数据库管理查询。
 
 例如：
 

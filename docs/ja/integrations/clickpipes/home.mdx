@@ -46,6 +46,20 @@ ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管�
 
 今後、さらに多くのコネクタが ClickPipes に追加される予定です。詳細は、[お問い合わせ](https://clickhouse.com/company/contact?loc=clickpipes)ください。
 
+<div id="aws-iam-database-authentication">
+  ## AWS IAM データベース認証
+</div>
+
+ClickPipes は、Amazon RDS および Aurora の AWS IAM データベース認証に対応しています。設定方法はデータベースエンジンと AWS サービスによって異なるため、お使いのデータベースに対応するソースのセットアップガイドを選択してください。
+
+| データベースエンジン | AWS サービス      | セットアップガイド                                                                                                  |
+| ---------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL | Amazon RDS    | [RDS for PostgreSQL](/ja/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/ja/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL      | Amazon RDS    | [RDS for MySQL](/ja/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL      | Amazon Aurora | [Aurora MySQL-Compatible Edition](/ja/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB    | Amazon RDS    | [RDS for MariaDB](/ja/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
 <div id="list-of-static-ips">
   ## 固定 IP の一覧
 </div>
@@ -143,18 +157,18 @@ ClickPipes には、ほとんどのユースケースに対応できる適切な
   ### オブジェクトストレージ 用 ClickPipes
 </div>
 
-| 設定                                   | デフォルト値  | 説明                                                                                                                |
-| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10 GB   | 1 回の挿入バッチで処理するバイト数。                                                                                               |
-| `Max file count`                     | 100     | 1 回の挿入バッチで処理するファイルの最大数。                                                                                           |
-| `Max threads`                        | auto(3) | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                      |
-| `Max insert threads`                 | 1       | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                            |
-| `Min insert block size bytes`        | 1 GB    | テーブルに挿入可能な[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                      |
-| `Max download threads`               | 4       | [同時実行されるダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                               |
-| `オブジェクトストレージ polling interval`       | 30 s    | データを ClickHouse クラスターに挿入するまでの最大待機時間を設定します。                                                                        |
-| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false   | アタッチされたビューへのプッシュを、[順次ではなく同時実行](/ja/reference/settings/session-settings#parallel_view_processing)にするかどうか。             |
-| `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                     |
+| 設定                                   | デフォルト値  | 説明                                                                                                                         |
+| ------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB   | 1 回の挿入バッチで処理するバイト数。                                                                                                        |
+| `Max file count`                     | 100     | 1 回の挿入バッチで処理するファイルの最大数。                                                                                                    |
+| `Max threads`                        | auto(3) | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings/max-threads#max_threads)。                                   |
+| `Max insert threads`                 | 1       | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings/max-insert#max_insert_threads)。                          |
+| `Min insert block size bytes`        | 1 GB    | テーブルに挿入可能な[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                    |
+| `Max download threads`               | 4       | [同時実行されるダウンロードスレッドの最大数](/ja/reference/settings/session-settings/max-download#max_download_threads)。                           |
+| `Object storage polling interval`    | 30 s    | データを ClickHouse クラスターに挿入するまでの最大待機時間を設定します。                                                                                 |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | アタッチされたビューへのプッシュを、[順次ではなく同時実行](/ja/reference/settings/session-settings/parallel#parallel_view_processing)にするかどうか。             |
+| `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                              |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
 

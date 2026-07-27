@@ -56,13 +56,13 @@ ORDER BY table ASC
 ```
 
 与需要先获得完整结果后才能读取的 [`Arrow`](/zh/reference/formats/Arrow/Arrow)“文件模式”格式不同，`ArrowStream` 是以
-record batch 序列的形式传输的，消费者可以在这些批次到达时
+记录批次序列的形式传输的，消费者可以在这些批次到达时
 逐步读取。这使它非常适合将查询结果直接流式传输到
 可视化或分析工具中，而无需先将整个数据集物化。
 
 要流式传输结果，请通过 ClickHouse 的 HTTP interface 使用
 `POST` 请求发送查询，并将响应作为 Arrow stream 读取。我们通过
-[`output_format_arrow_compression_method`](/zh/reference/settings/formats#output_format_arrow_compression_method)
+[`output_format_arrow_compression_method`](/zh/reference/settings/formats/output-format#output_format_arrow_compression_method)
 设置禁用 Arrow 输出的压缩，
 以便消费者在收到批次时可以直接对其进行解码。
 

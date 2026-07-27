@@ -9,7 +9,7 @@ doc_type: 'reference'
 AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め込みの生成に使用でき、データの処理、情報の抽出、データの分類などを行えます。
 
 <Note>
-  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings#allow_experimental_ai_functions) を設定してください。
+  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) を設定してください。
 </Note>
 
 <Note>
@@ -18,8 +18,8 @@ AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め�
 
 すべての関数は、以下を提供する共通のインフラストラクチャを利用しています。
 
-* **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
-* **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings#ai_function_max_retries)) されます。
+* **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
+* **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings/ai-function#ai_function_max_retries)) されます。
 
 <div id="configuration">
   ## Configuration
@@ -69,8 +69,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 存在する場合は、パラメータマップの `credentials` キー。
 2. それ以外の場合は、該当するデフォルト認証情報の設定。
-   * テキスト関数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) では [`ai_function_text_default_credentials`](/ja/reference/settings/session-settings#ai_function_text_default_credentials)。
-   * `aiEmbed` では [`ai_function_embedding_default_credentials`](/ja/reference/settings/session-settings#ai_function_embedding_default_credentials)。
+   * テキスト関数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) では [`ai_function_text_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)。
+   * `aiEmbed` では [`ai_function_embedding_default_credentials`](/ja/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)。
 
 どちらも設定されていない場合、呼び出しは失敗します。テキスト関数と埋め込み関数でデフォルト設定が分かれているのは、chat-completions のエンドポイントが embeddings 用のものとは異なるためです。
 
@@ -113,7 +113,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
   ### エンドポイントホストの制限
 </div>
 
-AI named collection の `endpoint` URL は、サーバーが自身の identity で接続する送信先であり、リクエストヘッダーに named collection の `api_key` を (指定されている場合に) 含めて送信する可能性があります。デフォルトでは、ClickHouse はすべてのホストへの接続を許可します。関数を特定の provider 群のみに制限するには、サーバー設定で [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings#remote_url_allow_hosts) を設定します。例:
+AI 名前付きコレクション の `endpoint` URL は、サーバーが自身の identity で接続する送信先であり、リクエストヘッダーに 名前付きコレクション の `api_key` を (指定されている場合に) 含めて送信する可能性があります。デフォルトでは、ClickHouse はすべてのホストへの接続を許可します。関数を特定の provider 群のみに制限するには、サーバー設定で [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) を設定します。例:
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +133,7 @@ AI named collection の `endpoint` URL は、サーバーが自身の identity �
 * `https://` — 接続に TLS が使用されます。リクエストボディ (入力テキスト、プロンプト) と、リクエストヘッダー内の `api_key` は転送中に暗号化され、プロバイダー の certificate も検証されます。リモートの プロバイダー には必ずこちらを使用してください。
 * `http://` — 接続は**暗号化されません**。リクエストボディと `api_key` は平文で送信されます。これは、private network 上の信頼できる プロバイダー (例: ローカルの `vLLM` または `Ollama` インスタンス) に対してのみ使用してください。
 
-AI 関数は HTTPS を強制しません。`http://` エンドポイント も受け入れられ、データは暗号化されないまま送信されます。現時点では、平文の AI エンドポイント を拒否する server-side の設定はありません。[`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings#remote_url_allow_hosts) は宛先 host のみを制限し、URL スキームは検査しないため、許可された host への `http://` エンドポイント は引き続き許可されます。転送を暗号化したい場合は、`https://` エンドポイント を使うように 名前付きコレクション を設定してください。
+AI 関数は HTTPS を強制しません。`http://` エンドポイント も受け入れられ、データは暗号化されないまま送信されます。現時点では、平文の AI エンドポイント を拒否する server-side の設定はありません。[`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) は宛先 host のみを制限し、URL スキームは検査しないため、許可された host への `http://` エンドポイント は引き続き許可されます。転送を暗号化したい場合は、`https://` エンドポイント を使うように 名前付きコレクション を設定してください。
 
 いずれの場合も、プロバイダー は TLS 終端後の入力データを平文で受け取る点に注意してください。TLS が保護するのは、server と プロバイダー の間のネットワーク経路上のデータのみです。
 
@@ -240,7 +240,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 この関数はテキストを設定済みの埋め込み エンドポイント に送信し、生成されたベクトルを `Array(Float32)` として返します。
 1つの block 内の行については、呼び出しごとのオーバーヘッドを減らすため、入力は
 1回の HTTP request あたり最大
-[`ai_function_embedding_max_batch_size`](/ja/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/ja/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 エントリの batches にグループ化されます。
 
 認証情報 (provider、エンドポイント、必要に応じて API key を指定する 名前付きコレクション)

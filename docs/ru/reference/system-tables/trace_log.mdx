@@ -17,8 +17,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 Содержит трассировки стека, собранные [выборочным профилировщиком запросов](/ru/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
-ClickHouse создает эту таблицу, когда настроен раздел конфигурации сервера [trace&#95;log](/ru/reference/settings/server-settings/settings#trace_log). См. также настройки: [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/ru/reference/settings/session-settings#query_profiler_real_time_period_ns), [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/ru/reference/settings/session-settings#query_profiler_cpu_time_period_ns), [memory&#95;profiler&#95;step](/ru/reference/settings/session-settings#memory_profiler_step),
-[memory&#95;profiler&#95;sample&#95;probability](/ru/reference/settings/session-settings#memory_profiler_sample_probability), [trace&#95;profile&#95;events](/ru/reference/settings/session-settings#trace_profile_events).
+ClickHouse создает эту таблицу, когда настроен раздел конфигурации сервера [trace&#95;log](/ru/reference/settings/server-settings/settings/other#trace_log). См. также настройки: [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/ru/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/ru/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory&#95;profiler&#95;step](/ru/reference/settings/session-settings/memory-profiler#memory_profiler_step),
+[memory&#95;profiler&#95;sample&#95;probability](/ru/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace&#95;profile&#95;events](/ru/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
 Для анализа журналов используйте функции интроспекции `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` и `demangle`.
 

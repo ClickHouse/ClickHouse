@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 導入バージョン: v21.2.0
 
 指定された map のキーを返します。
-この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
+この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
 この設定を有効にすると、関数は map 全体ではなく `keys` サブカラムのみを読み取ります。
 クエリ `SELECT mapKeys(m) FROM table` は `SELECT m.keys FROM table` に変換されます。
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 導入バージョン: v21.2.0
 
 指定したマップの値を返します。
-この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
+この関数は、設定 [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) を有効にすることで最適化できます。
 この設定を有効にすると、関数はマップ全体ではなく、`values` サブカラムのみを読み取ります。
 クエリ `SELECT mapValues(m) FROM table` は `SELECT m.values FROM table` に変換されます。
 

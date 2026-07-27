@@ -26,12 +26,12 @@ ClickHouse 使用两个彼此独立的概念来组织 part 内的数据：
   ### 各类型的使用时机
 </div>
 
-数据分区片段类型由以下表设置控制：
+part 类型由以下表设置控制：
 
-* [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part)：数据分区片段使用 `Wide` 格式所需的最小字节数
-* [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_rows_for_wide_part)：数据分区片段使用 `Wide` 格式所需的最小行数
+* [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)：分片使用 `Wide` 格式所需的最小字节数
+* [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part)：分片使用 `Wide` 格式所需的最小行数
 
-如果某个数据分区片段的字节数或行数中任一项小于对应的设置值，则该分区片段会以 `Compact` 格式存储；否则将使用 `Wide` 格式。
+如果某个分片的字节数或行数中任一项小于对应的设置值，则该分片会以 `Compact` 格式存储；否则将使用 `Wide` 格式。
 
 <div id="performance-considerations">
   ### 性能注意事项
@@ -101,9 +101,9 @@ Compact 到 Wide 的 merge 比 Wide 到 Wide 的 merge 更慢，因为 ClickHous
 
 如果满足以下**任一**条件，分片就会使用 Packed 存储：
 
-* 未压缩字节数 &lt; [`min_bytes_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* 行数 &lt; [`min_rows_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* 合并级别 &lt; [`min_level_for_full_part_storage`](/zh/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* 未压缩字节数 &lt; [`min_bytes_for_full_part_storage`](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* 行数 &lt; [`min_rows_for_full_part_storage`](/zh/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* 合并级别 &lt; [`min_level_for_full_part_storage`](/zh/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Packed 存储需要显式启用：这三个设置的默认值均为 `0`，因此除非你调高其中某一个值，否则分片会使用 Full 存储。
 

@@ -2,14 +2,14 @@
 title: 'ウェアハウス'
 slug: /cloud/reference/warehouses
 keywords: ['コンピュート分離', 'クラウド', 'アーキテクチャ', 'コンピュート-コンピュート', 'ウェアハウス', 'ウェアハウス', 'hydra']
-description: 'ClickHouse Cloud のコンピュート-コンピュート分離'
+description: 'ClickHouse Cloud のコンピュート分離'
 doc_type: 'reference'
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<ScalePlanFeatureBadge feature="Compute-compute separation" />
+<ScalePlanFeatureBadge feature="コンピュート分離" />
 
 <div id="what-is-compute-compute-separation">
   ## コンピュート分離とは？
@@ -190,7 +190,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **ClickHouse のバージョン**: [アップグレードスケジュール](/ja/products/cloud/features/admin-features/upgrades)は、プライマリサービスの設定によって決まります。セカンダリサービスに、プライマリサービスとは独立したリリーススケジュールを設定することはできません。
 
-* **`CREATE`/`RENAME`/`DROP DATABASE` クエリは、デフォルトでアイドル化または停止中のサービスによってブロックされることがあります。** サービスがアイドル化または停止中のときにこれらのクエリを実行すると、処理がハングする場合があります。これを回避するには、セッション単位またはクエリ単位で [`settings distributed_ddl_task_timeout=0`](/ja/reference/settings/session-settings#distributed_ddl_task_timeout) を指定して、データベース管理クエリを実行できます。
+* **`CREATE`/`RENAME`/`DROP DATABASE` クエリは、デフォルトでアイドル化または停止中のサービスによってブロックされることがあります。** サービスがアイドル化または停止中のときにこれらのクエリを実行すると、処理がハングする場合があります。これを回避するには、セッション単位またはクエリ単位で [`settings distributed_ddl_task_timeout=0`](/ja/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) を指定して、データベース管理クエリを実行できます。
 
 たとえば:
 

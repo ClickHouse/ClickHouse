@@ -278,7 +278,7 @@ Cloud 默认值：`0`。
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 是否使用未压缩块缓存。可选值为 0 或 1。默认值为 0 (禁用) 。
-使用未压缩缓存 (仅适用于 MergeTree 家族中的表) 可以在处理大量短查询时显著降低延迟并提高吞吐量。对于频繁发送短请求的用户，建议启用此设置。同时还要注意 [uncompressed&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#uncompressed_cache_size) 配置参数 (只能在配置文件中设置) ——它指定未压缩缓存块的大小。默认值为 8 GiB。未压缩缓存会按需填充，并自动删除使用频率最低的数据。
+使用未压缩缓存 (仅适用于 MergeTree 家族中的表) 可以在处理大量短查询时显著降低延迟并提高吞吐量。对于频繁发送短请求的用户，建议启用此设置。同时还要注意 [uncompressed&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) 配置参数 (只能在配置文件中设置) ——它指定未压缩缓存块的大小。默认值为 8 GiB。未压缩缓存会按需填充，并自动删除使用频率最低的数据。
 
 对于读取的数据量较大的查询 (100 万行或更多) ，系统会自动禁用未压缩缓存，以便为真正的小查询节省空间。这意味着你可以始终将 `use_uncompressed_cache` 设为 1。
 

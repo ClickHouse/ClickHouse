@@ -36,7 +36,7 @@ Si plus de `*_deduplication_window` autres opérations d&#39;insertion ont lieu 
 
 **Seuls les moteurs `*MergeTree` prennent en charge la déduplication à l&#39;insertion.**
 
-Pour les moteurs `*ReplicatedMergeTree`, la déduplication des insertions est activée par défaut et contrôlée par les paramètres [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window) et [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). Pour les moteurs `*MergeTree` non répliqués, la déduplication est contrôlée par le paramètre [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+Pour les moteurs `*ReplicatedMergeTree`, la déduplication des insertions est activée par défaut et contrôlée par les paramètres [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) et [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds). Pour les moteurs `*MergeTree` non répliqués, la déduplication est contrôlée par le paramètre [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window).
 
 Les paramètres ci-dessus définissent la configuration du journal de déduplication d&#39;une table. Le journal de déduplication stocke un nombre fini de `block_id`, qui déterminent le fonctionnement de la déduplication (voir ci-dessous).
 
@@ -69,11 +69,11 @@ Lorsqu&#39;une table possède une ou plusieurs vues matérialisées, les donnée
 
 Vous pouvez contrôler ce processus à l&#39;aide des paramètres suivants pour la table source :
 
-* [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window)
-* [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
-* [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+* [`replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/fr/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/fr/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-Vous devez également activer le paramètre de profil utilisateur [`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+Vous devez également activer le paramètre de profil utilisateur [`deduplicate_blocks_in_dependent_materialized_views`](/fr/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views).
 Lorsque le paramètre `insert_deduplicate=1` est activé, les données insérées sont dédupliquées dans la table source. Le paramètre `deduplicate_blocks_in_dependent_materialized_views=1` active en plus la déduplication dans les tables dépendantes. Vous devez activer les deux si vous souhaitez une déduplication complète.
 
 Lors de l&#39;insertion de blocs dans des tables sous des vues matérialisées, ClickHouse calcule le `block_id` en hachant une chaîne qui combine les `block_id` de la table source et des identifiants supplémentaires. Cela garantit une déduplication précise au sein des vues matérialisées, en permettant de distinguer les données selon leur insertion d&#39;origine, indépendamment des transformations appliquées avant qu&#39;elles n&#39;atteignent la table de destination sous la vue matérialisée.

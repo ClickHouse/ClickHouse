@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse は通常、[C++ プログラムと同じ動作](https://en.cppreference.com/w/cpp/language/implicit_conversion)をします。
 
-`to<type>` 関数と [cast](#CAST) は、場合によっては異なる動作をします。たとえば [LowCardinality](/ja/reference/data-types/lowcardinality) の場合、[cast](#CAST) は [LowCardinality](/ja/reference/data-types/lowcardinality) 特性を取り除きますが、`to<type>` 関数は取り除きません。[Nullable](/ja/reference/data-types/nullable) についても同様です。この動作は SQL 標準とは互換性がなく、[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings#cast_keep_nullable) 設定で変更できます。
+`to<type>` 関数と [cast](#CAST) は、場合によっては異なる動作をします。たとえば [LowCardinality](/ja/reference/data-types/lowcardinality) の場合、[cast](#CAST) は [LowCardinality](/ja/reference/data-types/lowcardinality) 特性を取り除きますが、`to<type>` 関数は取り除きません。[Nullable](/ja/reference/data-types/nullable) についても同様です。この動作は SQL 標準とは互換性がなく、[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings/cast#cast_keep_nullable) 設定で変更できます。
 
 <Note>
   データ型の値をより小さいデータ型 (たとえば `Int64` から `Int32`) に変換する場合や、

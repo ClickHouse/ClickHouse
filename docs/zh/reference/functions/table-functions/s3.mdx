@@ -13,11 +13,11 @@ doc_type: 'reference'
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-提供类表接口，可在 [Amazon S3](https://aws.amazon.com/s3/) 和 [Google Cloud Storage](https://cloud.google.com/storage/) 中选择/插入文件。该表函数与 [hdfs function](/zh/reference/functions/table-functions/hdfs) 类似，但提供了 S3 特有的功能。
+提供类表接口，可在 [Amazon S3](https://aws.amazon.com/s3/) 和 [Google Cloud Storage](https://cloud.google.com/storage/) 中选择/插入文件。该表函数与 [hdfs 表函数](/zh/reference/functions/table-functions/hdfs) 类似，但提供了 S3 特有的功能。
 
-如果集群中有多个副本，可以改用 [s3Cluster function](/zh/reference/functions/table-functions/s3Cluster) 来并行执行插入。
+如果集群中有多个副本，可以改用 [s3Cluster 表函数](/zh/reference/functions/table-functions/s3Cluster) 来并行执行插入。
 
-使用 `s3 table function` 配合 [`INSERT INTO...SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select) 时，数据会以流式方式读取并插入。内存中只会保留少量数据块，同时这些块会持续从 S3 读取并写入目标表。
+使用 `s3 表函数` 配合 [`INSERT INTO...SELECT`](/zh/reference/statements/insert-into#inserting-the-results-of-select) 时，数据会以流式方式读取并插入。内存中只会保留少量数据块，同时这些块会持续从 S3 读取并写入目标表。
 
 <div id="syntax">
   ## 语法
@@ -432,9 +432,9 @@ Peak memory usage: 192.27 KiB.
   ## 存储设置
 </div>
 
-* [s3&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings#s3_truncate_on_insert) - 允许在插入前先截断文件。默认禁用。
-* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings#s3_create_new_file_on_insert) - 如果 format 带有后缀，则允许在每次插入时创建新文件。默认禁用。
-* [s3&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings#s3_skip_empty_files) - 允许在读取时跳过空文件。默认启用。
+* [s3&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_truncate_on_insert) - 允许在插入前先截断文件。默认禁用。
+* [s3&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - 如果 format 带有后缀，则允许在每次插入时创建新文件。默认禁用。
+* [s3&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings/s3#s3_skip_empty_files) - 允许在读取时跳过空文件。默认启用。
 
 <div id="nested-avro-schemas">
   ## 嵌套 Avro schema

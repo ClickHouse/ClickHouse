@@ -89,7 +89,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 1. ユーザーアカウントの設定。
 2. ユーザーアカウントのデフォルトロールの設定。ある設定が複数のロールで構成されている場合、その設定の適用順序は未定義です。
 3. ユーザーまたはそのデフォルトロールに割り当てられた設定プロファイルの設定。ある設定が複数のプロファイルで構成されている場合、その設定の適用順序は未定義です。
-4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings#default_profile) で適用される設定。
+4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings/default#default_profile) で適用される設定。
 
 <div id="role-management">
   ### ロール
@@ -170,7 +170,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 
 * 設定の保存先となるディレクトリを用意します。
 
-  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
+  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings/access-control#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
 
 * 少なくとも 1 つのユーザーアカウントで、SQL ベースのアクセス制御とアカウント管理を有効にします。
 

@@ -138,8 +138,8 @@ seeds:
 
 dbt использует модель согласованности чтения после вставки. Она несовместима с кластерами ClickHouse, в которых больше одной реплики, если нельзя гарантировать, что все операции будут направляться в одну и ту же реплику. В повседневной работе с dbt вы можете и не столкнуться с проблемами, но в зависимости от конфигурации кластера есть несколько способов обеспечить такую гарантию:
 
-* Если вы используете кластер ClickHouse Cloud, достаточно задать `select_sequential_consistency: 1` в свойстве `custom_settings` вашего профиля. Подробнее об этой настройке можно узнать [здесь](/ru/reference/settings/session-settings#select_sequential_consistency).
-* Если вы используете самоуправляемый кластер, убедитесь, что все запросы dbt отправляются в одну и ту же реплику ClickHouse. Если перед ним установлен балансировщик нагрузки, попробуйте использовать механизм `replica aware routing`/`sticky sessions`, чтобы всегда попадать в одну и ту же реплику. Добавлять настройку `select_sequential_consistency = 1` в кластерах вне ClickHouse Cloud [не рекомендуется](/ru/reference/settings/session-settings#select_sequential_consistency).
+* Если вы используете кластер ClickHouse Cloud, достаточно задать `select_sequential_consistency: 1` в свойстве `custom_settings` вашего профиля. Подробнее об этой настройке можно узнать [здесь](/ru/reference/settings/session-settings/other#select_sequential_consistency).
+* Если вы используете самоуправляемый кластер, убедитесь, что все запросы dbt отправляются в одну и ту же реплику ClickHouse. Если перед ним установлен балансировщик нагрузки, попробуйте использовать механизм `replica aware routing`/`sticky sessions`, чтобы всегда попадать в одну и ту же реплику. Добавлять настройку `select_sequential_consistency = 1` в кластерах вне ClickHouse Cloud [не рекомендуется](/ru/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## Дополнительные макросы ClickHouse

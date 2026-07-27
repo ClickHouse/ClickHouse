@@ -46,6 +46,20 @@ ClickPipes можно развёртывать и управлять ими вр
 
 В ClickPipes будут добавляться новые коннекторы; подробнее можно узнать, [связавшись с нами](https://clickhouse.com/company/contact?loc=clickpipes).
 
+<div id="aws-iam-database-authentication">
+  ## Аутентификация к базе данных через AWS IAM
+</div>
+
+ClickPipes поддерживает аутентификацию к базе данных через AWS IAM для Amazon RDS и Aurora. Конфигурация зависит от движка базы данных и сервиса AWS, поэтому выберите руководство по настройке источника, соответствующее вашей базе данных:
+
+| Движок базы данных | Сервис AWS    | Руководство по настройке                                                                                   |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL         | Amazon RDS    | [RDS для PostgreSQL](/ru/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL         | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/ru/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL              | Amazon RDS    | [RDS для MySQL](/ru/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL              | Amazon Aurora | [Aurora MySQL-Compatible Edition](/ru/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB            | Amazon RDS    | [RDS для MariaDB](/ru/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
 <div id="list-of-static-ips">
   ## Список статических IP-адресов
 </div>
@@ -143,18 +157,18 @@ ClickPipes предлагает разумные настройки по умо�
   ### ClickPipes для объектного хранилища
 </div>
 
-| Настройка                            | Значение по умолчанию | Описание                                                                                                                                             |
-| ------------------------------------ | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10 GB                 | Количество байт, обрабатываемых в одном батче вставки.                                                                                               |
-| `Max file count`                     | 100                   | Максимальное количество файлов, обрабатываемых в одном батче вставки.                                                                                |
-| `Max threads`                        | auto(3)               | [Максимальное количество параллельных потоков](/ru/reference/settings/session-settings#max_threads) для обработки файлов.                               |
-| `Max insert threads`                 | 1                     | [Максимальное количество параллельных потоков вставки](/ru/reference/settings/session-settings#max_insert_threads) для обработки файлов.                |
-| `Min insert block size bytes`        | 1 GB                  | [Минимальный размер блока в байтах](/ru/reference/settings/session-settings#min_insert_block_size_bytes), который можно вставить в таблицу.             |
-| `Max download threads`               | 4                     | [Максимальное количество параллельных потоков скачивания](/ru/reference/settings/session-settings#max_download_threads).                                |
-| `Object storage polling interval`    | 30 s                  | Задаёт максимальный интервал ожидания перед вставкой данных в кластер ClickHouse.                                                                    |
-| `Parallel distributed insert select` | 2                     | [Параметр Parallel distributed insert select](/ru/reference/settings/session-settings#parallel_distributed_insert_select).                              |
-| `Parallel view processing`           | false                 | Включает отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true                  | Определяет, следует ли обрабатывать файлы параллельно на нескольких узлах.                                                                           |
+| Настройка                            | Значение по умолчанию | Описание                                                                                                                                                      |
+| ------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB                 | Количество байт, обрабатываемых в одном батче вставки.                                                                                                        |
+| `Max file count`                     | 100                   | Максимальное количество файлов, обрабатываемых в одном батче вставки.                                                                                         |
+| `Max threads`                        | auto(3)               | [Максимальное количество параллельных потоков](/ru/reference/settings/session-settings/max-threads#max_threads) для обработки файлов.                            |
+| `Max insert threads`                 | 1                     | [Максимальное количество параллельных потоков вставки](/ru/reference/settings/session-settings/max-insert#max_insert_threads) для обработки файлов.              |
+| `Min insert block size bytes`        | 1 GB                  | [Минимальный размер блока в байтах](/ru/reference/settings/session-settings/min-insert#min_insert_block_size_bytes), который можно вставить в таблицу.           |
+| `Max download threads`               | 4                     | [Максимальное количество параллельных потоков скачивания](/ru/reference/settings/session-settings/max-download#max_download_threads).                            |
+| `Object storage polling interval`    | 30 s                  | Задаёт максимальный интервал ожидания перед вставкой данных в кластер ClickHouse.                                                                             |
+| `Parallel distributed insert select` | 2                     | [Параметр Parallel distributed insert select](/ru/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                              |
+| `Parallel view processing`           | false                 | Включает отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true                  | Определяет, следует ли обрабатывать файлы параллельно на нескольких узлах.                                                                                    |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Расширенные настройки ClickPipes" size="lg" border />
 

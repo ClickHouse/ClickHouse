@@ -21,7 +21,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </div>
 
 يعيد الاستعلام `SYSTEM RELOAD DICTIONARIES` تحميل القواميس التي تكون حالتها `LOADED` (راجع العمود `status` في [`system.dictionaries`](/ar/reference/system-tables/dictionaries))، أي القواميس التي سبق تحميلها بنجاح.
-تُحمَّل القواميس افتراضيًا بأسلوب التحميل عند الطلب (راجع [dictionaries&#95;lazy&#95;load](/ar/reference/settings/server-settings/settings#dictionaries_lazy_load))، لذلك بدلًا من تحميلها تلقائيًا عند بدء التشغيل، تُهيَّأ عند أول وصول إليها باستخدام الدالة [`dictGet`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet) أو بتنفيذ `SELECT` على الجداول التي تستخدم `ENGINE = Dictionary`.
+تُحمَّل القواميس افتراضيًا بأسلوب التحميل عند الطلب (راجع [dictionaries&#95;lazy&#95;load](/ar/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load))، لذلك بدلًا من تحميلها تلقائيًا عند بدء التشغيل، تُهيَّأ عند أول وصول إليها باستخدام الدالة [`dictGet`](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet) أو بتنفيذ `SELECT` على الجداول التي تستخدم `ENGINE = Dictionary`.
 
 **الصياغة**
 
@@ -119,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-يعيد حساب جميع [المقاييس غير المتزامنة](/ar/reference/system-tables/asynchronous_metrics). ونظرًا إلى أن المقاييس غير المتزامنة تُحدَّث دوريًا استنادًا إلى الإعداد [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ar/reference/settings/server-settings/settings)، فلا تكون هناك حاجة عادةً إلى تحديثها يدويًا باستخدام هذه العبارة.
+يعيد حساب جميع [المقاييس غير المتزامنة](/ar/reference/system-tables/asynchronous_metrics). ونظرًا إلى أن المقاييس غير المتزامنة تُحدَّث دوريًا استنادًا إلى الإعداد [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ar/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s)، فلا تكون هناك حاجة عادةً إلى تحديثها يدويًا باستخدام هذه العبارة.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -144,7 +144,7 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 </div>
 
 يمسح ذاكرة التخزين المؤقت للفهرس الأساسي، التي تحتفظ بالمفاتيح الأساسية لجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) في الذاكرة.
-يُضبط حجمها باستخدام الإعداد [`primary_index_cache_size`](/ar/reference/settings/server-settings/settings#primary_index_cache_size`) على مستوى الخادم.
+يُضبط حجمها باستخدام الإعداد [`primary_index_cache_size`](/ar/reference/settings/server-settings/settings/primary-index#primary_index_cache_size) على مستوى الخادم.
 
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
@@ -323,15 +323,15 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 يمسح الذاكرة المؤقتة للبيانات غير المضغوطة.
-يُفعَّل أو يُعطَّل التخزين المؤقت للبيانات غير المضغوطة باستخدام الإعداد [`use_uncompressed_cache`](/ar/reference/settings/session-settings#use_uncompressed_cache) على مستوى الاستعلام/المستخدم/ملف التعريف.
-يمكن تهيئة حجمه باستخدام الإعداد [`uncompressed_cache_size`](/ar/reference/settings/server-settings/settings#uncompressed_cache_size) على مستوى الخادم.
+يُفعَّل أو يُعطَّل التخزين المؤقت للبيانات غير المضغوطة باستخدام الإعداد [`use_uncompressed_cache`](/ar/reference/settings/session-settings/use#use_uncompressed_cache) على مستوى الاستعلام/المستخدم/ملف التعريف.
+يمكن تهيئة حجمه باستخدام الإعداد [`uncompressed_cache_size`](/ar/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) على مستوى الخادم.
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
 </div>
 
 يمسح ذاكرة التخزين المؤقت للتعبيرات المترجمة.
-يمكن تمكين ذاكرة التخزين المؤقت للتعبيرات المترجمة أو تعطيلها عبر الإعداد [`compile_expressions`](/ar/reference/settings/session-settings#compile_expressions) على مستوى الاستعلام/المستخدم/الملف الشخصي.
+يمكن تمكين ذاكرة التخزين المؤقت للتعبيرات المترجمة أو تعطيلها عبر الإعداد [`compile_expressions`](/ar/reference/settings/session-settings/compile#compile_expressions) على مستوى الاستعلام/المستخدم/ملف التعريف.
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
@@ -361,12 +361,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-يمسح ذاكرة التخزين المؤقت للمخططات المحمّلة من [`format_schema_path`](/ar/reference/settings/server-settings/settings#format_schema_path).
+يمسح ذاكرة التخزين المؤقت للمخططات المحمّلة من [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path).
 
 الأهداف المدعومة:
 
 * Protobuf: يزيل تعريفات رسائل Protobuf المستوردة من الذاكرة.
-* Files: يحذف ملفات المخططات المخزّنة مؤقتًا والمحفوظة محليًا في [`format_schema_path`](/ar/reference/settings/server-settings/settings#format_schema_path)، والتي تُنشأ عند تعيين `format_schema_source` إلى `query`.
+* Files: يحذف ملفات المخططات المخزّنة مؤقتًا والمحفوظة محليًا في [`format_schema_path`](/ar/reference/settings/server-settings/settings/format#format_schema_path)، والتي تُنشأ عند تعيين `format_schema_source` إلى `query`.
   ملاحظة: إذا لم يتم تحديد أي هدف، فستُمسح كلتا الذاكرتين المؤقتتين.
 
 ```sql
@@ -523,7 +523,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## إدارة الجداول الموزعة
 </div>
 
-يمكن لـ ClickHouse إدارة جداول [Distributed](/ar/reference/engines/table-engines/special/distributed). عند إدراج مستخدمٍ بياناتٍ في هذه الجداول، ينشئ ClickHouse أولًا قائمة انتظار للبيانات المطلوب إرسالها إلى عُقد cluster، ثم يرسلها بشكل غير متزامن. يمكنك إدارة معالجة قائمة الانتظار باستخدام الاستعلامات [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends) و[FLUSH DISTRIBUTED](#flush-distributed) و[`START DISTRIBUTED SENDS`](#start-distributed-sends). ويمكنك أيضًا إدراج البيانات الموزعة بشكل متزامن باستخدام الإعداد [`distributed_foreground_insert`](/ar/reference/settings/session-settings#distributed_foreground_insert).
+يمكن لـ ClickHouse إدارة جداول [Distributed](/ar/reference/engines/table-engines/special/distributed). عند إدراج مستخدمٍ بياناتٍ في هذه الجداول، ينشئ ClickHouse أولًا قائمة انتظار للبيانات المطلوب إرسالها إلى عُقد عنقود، ثم يرسلها بشكل غير متزامن. يمكنك إدارة معالجة قائمة الانتظار باستخدام الاستعلامات [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends) و[FLUSH DISTRIBUTED](#flush-distributed) و[`START DISTRIBUTED SENDS`](#start-distributed-sends). ويمكنك أيضًا إدراج البيانات الموزعة بشكل متزامن باستخدام الإعداد [`distributed_foreground_insert`](/ar/reference/settings/session-settings/distributed#distributed_foreground_insert).
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -536,7 +536,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  إذا كان [`prefer_localhost_replica`](/ar/reference/settings/session-settings#prefer_localhost_replica) مُمكّنًا (وهو الإعداد الافتراضي)، فستُدرَج البيانات في الشظية المحلية على أي حال.
+  إذا كان [`prefer_localhost_replica`](/ar/reference/settings/session-settings/prefer#prefer_localhost_replica) مُمكّنًا (وهو الإعداد الافتراضي)، فستُدرَج البيانات في الشظية المحلية على أي حال.
 </Note>
 
 <div id="flush-distributed">

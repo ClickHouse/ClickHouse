@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="Uma observação sobre partes `compact` versus `wide`">
   Se você estiver vendo valores de `compressed_size` ou `uncompressed_size` iguais a `0`, isso pode acontecer porque o tipo das
   partes é `compact`, e não `wide` (veja a descrição de `part_type` em [`system.parts`](/pt-BR/reference/system-tables/parts)).
-  O formato da parte é controlado pelas configurações [`min_bytes_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
-  e [`min_rows_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings#min_rows_for_wide_part), o que significa que, se os dados inseridos
+  O formato da parte é controlado pelas configurações [`min_bytes_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
+  e [`min_rows_for_wide_part`](/pt-BR/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part), o que significa que, se os dados inseridos
   resultarem em uma parte que não ultrapasse os valores das configurações mencionadas acima, a parte será `compact` em vez de
   `wide`, e você não verá os valores de `compressed_size` ou `uncompressed_size`.
 

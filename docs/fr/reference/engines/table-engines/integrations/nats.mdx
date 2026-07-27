@@ -65,8 +65,8 @@ Paramètres facultatifs :
 * `nats_reconnect_wait` – Durée d’attente, en millisecondes, entre chaque tentative de reconnexion. Par défaut : `2000`.
 * `nats_server_list` - Liste de serveurs pour la connexion. Peut être spécifiée pour se connecter à un cluster NATS.
 * `nats_skip_broken_messages` - Tolérance de l’analyseur de messages NATS aux messages incompatibles avec le schéma par bloc. Par défaut : `0`. Si `nats_skip_broken_messages = N`, alors le moteur ignore *N* messages NATS qui ne peuvent pas être analysés (un message équivaut à une ligne de données).
-* `nats_max_block_size` - Nombre de lignes collectées par poll(s) pour vider les données depuis NATS. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - Délai d’expiration pour le vidage des données lues depuis NATS. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings#stream_flush_interval_ms).
+* `nats_max_block_size` - Nombre de lignes collectées par poll(s) pour vider les données depuis NATS. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - Délai d’expiration pour le vidage des données lues depuis NATS. Par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_username` - Nom d’utilisateur NATS.
 * `nats_password` - Mot de passe NATS.
 * `nats_token` - Jeton d’authentification NATS.
@@ -193,7 +193,7 @@ Le moteur NATS prend en charge tous les [formats](/fr/reference/formats/index) p
 Le nombre de lignes dans un message NATS dépend du fait que le format soit basé sur des lignes ou sur des blocs :
 
 * Pour les formats basés sur des lignes, le nombre de lignes dans un message NATS peut être contrôlé en définissant `nats_max_rows_per_message`.
-* Pour les formats basés sur des blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
+* Pour les formats basés sur des blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## Utilisation de JetStream

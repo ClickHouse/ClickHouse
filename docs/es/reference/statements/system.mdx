@@ -21,7 +21,7 @@ Siempre devuelve `Ok.` independientemente del resultado de la actualización de 
 </div>
 
 La consulta `SYSTEM RELOAD DICTIONARIES` recarga los diccionarios con estado `LOADED` (consulte la columna `status` de [`system.dictionaries`](/es/reference/system-tables/dictionaries)); es decir, los diccionarios que ya se habían cargado correctamente.
-De forma predeterminada, los diccionarios se cargan de forma diferida (consulte [dictionaries&#95;lazy&#95;load](/es/reference/settings/server-settings/settings#dictionaries_lazy_load)), por lo que, en lugar de cargarse automáticamente al inicio, se inicializan en el primer acceso, ya sea al usar la función [`dictGet`](/es/reference/functions/regular-functions/ext-dict-functions#dictGet) o al ejecutar `SELECT` sobre tablas con `ENGINE = Dictionary`.
+De forma predeterminada, los diccionarios se cargan de forma diferida (consulte [dictionaries&#95;lazy&#95;load](/es/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), por lo que, en lugar de cargarse automáticamente al inicio, se inicializan en el primer acceso, ya sea al usar la función [`dictGet`](/es/reference/functions/regular-functions/ext-dict-functions#dictGet) o al ejecutar `SELECT` sobre tablas con `ENGINE = Dictionary`.
 
 **Sintaxis**
 
@@ -119,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-Vuelve a calcular todas las [métricas asíncronas](/es/reference/system-tables/asynchronous_metrics). Dado que las métricas asíncronas se actualizan periódicamente según la configuración [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/es/reference/settings/server-settings/settings), por lo general no es necesario actualizarlas manualmente mediante esta sentencia.
+Vuelve a calcular todas las [métricas asíncronas](/es/reference/system-tables/asynchronous_metrics). Dado que las métricas asíncronas se actualizan periódicamente según la configuración [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/es/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s), por lo general no es necesario actualizarlas manualmente mediante esta sentencia.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -144,7 +144,7 @@ Limpia la caché de marcas.
 </div>
 
 Borra la caché del índice primario, que almacena en memoria las claves primarias de las tablas [`MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree).
-Su tamaño se configura con la opción de configuración a nivel de servidor [`primary_index_cache_size`](/es/reference/settings/server-settings/settings#primary_index_cache_size).
+Su tamaño se configura con la opción de configuración a nivel de servidor [`primary_index_cache_size`](/es/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
 
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
@@ -323,15 +323,15 @@ Similar a `SYSTEM DROP REPLICA`, pero elimina de ZooKeeper la ruta de la réplic
 </div>
 
 Borra la caché de datos sin comprimir.
-La caché de datos sin comprimir se habilita o deshabilita mediante la configuración [`use_uncompressed_cache`](/es/reference/settings/session-settings#use_uncompressed_cache) a nivel de consulta/USER/perfil.
-Su tamaño puede configurarse mediante la configuración [`uncompressed_cache_size`](/es/reference/settings/server-settings/settings#uncompressed_cache_size) a nivel de servidor.
+La caché de datos sin comprimir se habilita o deshabilita mediante la configuración [`use_uncompressed_cache`](/es/reference/settings/session-settings/use#use_uncompressed_cache) a nivel de consulta/USER/perfil.
+Su tamaño puede configurarse mediante la configuración [`uncompressed_cache_size`](/es/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) a nivel de servidor.
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP CACHÉ DE EXPRESIONES COMPILADAS
 </div>
 
 Borra la caché de expresiones compiladas.
-La caché de expresiones compiladas se activa o desactiva con la configuración [`compile_expressions`](/es/reference/settings/session-settings#compile_expressions`) de nivel de consulta/usuario/perfil.
+La caché de expresiones compiladas se activa o desactiva con la configuración [`compile_expressions`](/es/reference/settings/session-settings/compile#compile_expressions) de nivel de consulta/usuario/perfil.
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
@@ -361,12 +361,12 @@ Si se especifica una etiqueta, solo se eliminan las entradas de la caché de con
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-Limpia la caché de los esquemas cargados desde [`format_schema_path`](/es/reference/settings/server-settings/settings#format_schema_path).
+Limpia la caché de los esquemas cargados desde [`format_schema_path`](/es/reference/settings/server-settings/settings/format#format_schema_path).
 
 Destinos admitidos:
 
 * Protobuf: Elimina de la memoria las definiciones importadas de mensajes Protobuf.
-* Files: Elimina los archivos de esquema en caché almacenados localmente en [`format_schema_path`](/es/reference/settings/server-settings/settings#format_schema_path), generados cuando `format_schema_source` se establece en `query`.
+* Files: Elimina los archivos de esquema en caché almacenados localmente en [`format_schema_path`](/es/reference/settings/server-settings/settings/format#format_schema_path), generados cuando `format_schema_source` se establece en `query`.
   Nota: Si no se especifica ningún destino, se limpian ambas cachés.
 
 ```sql
@@ -523,7 +523,7 @@ La información sobre el punto de instrumentación puede recopilarse de la tabla
   ## Gestión de tablas distribuidas
 </div>
 
-ClickHouse puede gestionar tablas [distribuidas](/es/reference/engines/table-engines/special/distributed). Cuando un usuario inserta datos en estas tablas, ClickHouse primero crea una cola con los datos que deben enviarse a los nodos del clúster y luego los envía de forma asíncrona. Puede gestionar el procesamiento de la cola con las consultas [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed) y [`START DISTRIBUTED SENDS`](#start-distributed-sends). También puede insertar datos distribuidos de forma síncrona con la configuración [`distributed_foreground_insert`](/es/reference/settings/session-settings#distributed_foreground_insert).
+ClickHouse puede gestionar tablas [distribuidas](/es/reference/engines/table-engines/special/distributed). Cuando un usuario inserta datos en estas tablas, ClickHouse primero crea una cola con los datos que deben enviarse a los nodos del clúster y luego los envía de forma asíncrona. Puede gestionar el procesamiento de la cola con las consultas [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed) y [`START DISTRIBUTED SENDS`](#start-distributed-sends). También puede insertar datos distribuidos de forma síncrona con la configuración [`distributed_foreground_insert`](/es/reference/settings/session-settings/distributed#distributed_foreground_insert).
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -536,7 +536,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  Si [`prefer_localhost_replica`](/es/reference/settings/session-settings#prefer_localhost_replica) está habilitado (de forma predeterminada), los datos se insertarán igualmente en el segmento local.
+  Si [`prefer_localhost_replica`](/es/reference/settings/session-settings/prefer#prefer_localhost_replica) está habilitado (de forma predeterminada), los datos se insertarán igualmente en el segmento local.
 </Note>
 
 <div id="flush-distributed">

@@ -47,7 +47,7 @@ Les paramètres suivants sont disponibles :
   ## query_log
 </div>
 
-Paramètre permettant de journaliser les requêtes reçues avec le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings).
+Paramètre permettant de journaliser les requêtes reçues avec le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings/log-queries#log_queries).
 
 Les requêtes sont journalisées dans la table [system.query&#95;log](/fr/reference/system-tables/query_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 
@@ -146,7 +146,7 @@ Pour désactiver le paramètre `query_metric_log`, vous devez créer le fichier 
   ## query_thread_log
 </div>
 
-Paramètre de journalisation des threads des requêtes reçues avec le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings#log_query_threads).
+Paramètre de journalisation des threads des requêtes reçues avec le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings/log-query#log_query_threads).
 
 Les requêtes sont journalisées dans la table [system.query&#95;thread&#95;log](/fr/reference/system-tables/query_thread_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 
@@ -173,7 +173,7 @@ Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des 
   ## query_views_log
 </div>
 
-Paramètre de journalisation des vues (live, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings#log_query_views).
+Paramètre de journalisation des vues (live, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings/log-query#log_query_views).
 
 Les requêtes sont journalisées dans la table [system.query&#95;views&#95;log](/fr/reference/system-tables/query_views_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 

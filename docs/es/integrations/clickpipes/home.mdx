@@ -46,6 +46,20 @@ ClickPipes puede implementarse y gestionarse manualmente mediante la UI de Click
 
 Se irán añadiendo más conectores a ClickPipes. Puede obtener más información [poniéndose en contacto con nosotros](https://clickhouse.com/company/contact?loc=clickpipes).
 
+<div id="aws-iam-database-authentication">
+  ## Autenticación de base de datos con AWS IAM
+</div>
+
+ClickPipes admite la autenticación de base de datos con AWS IAM para Amazon RDS y Aurora. La configuración varía según el motor de base de datos y el servicio de AWS, así que elige la guía de configuración de origen que corresponda a tu base de datos:
+
+| Motor de base de datos | Servicio de AWS | Guía de configuración                                                                                      |
+| ---------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL             | Amazon RDS      | [RDS para PostgreSQL](/es/integrations/clickpipes/postgres/source/rds#iam-authentication)                     |
+| PostgreSQL             | Amazon Aurora   | [Aurora PostgreSQL-Compatible Edition](/es/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL                  | Amazon RDS      | [RDS para MySQL](/es/integrations/clickpipes/mysql/source/rds#iam-authentication)                             |
+| MySQL                  | Amazon Aurora   | [Aurora MySQL-Compatible Edition](/es/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB                | Amazon RDS      | [RDS para MariaDB](/es/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                     |
+
 <div id="list-of-static-ips">
   ## Lista de IP estáticas
 </div>
@@ -143,18 +157,18 @@ ClickPipes proporciona valores predeterminados adecuados para la mayoría de los
   ### ClickPipes de almacenamiento de objetos
 </div>
 
-| Configuración                        | Valor predeterminado | Descripción                                                                                                                                             |
-| ------------------------------------ | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10 GB                | Número de bytes que se procesan en un único lote de inserción.                                                                                          |
-| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                |
-| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings#max_threads) para el procesamiento de archivos.                              |
-| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings#max_insert_threads) para el procesamiento de archivos.          |
-| `Min insert block size bytes`        | 1 GB                 | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings#min_insert_block_size_bytes) que puede insertarse en una tabla.                |
-| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings#max_download_threads).                                           |
-| `Object storage polling interval`    | 30 s                 | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                              |
-| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela para SELECT](/es/reference/settings/session-settings#parallel_distributed_insert_select).                 |
-| `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings#parallel_view_processing). |
-| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                |
+| Configuración                        | Valor predeterminado | Descripción                                                                                                                                                      |
+| ------------------------------------ | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB                | Número de bytes que se procesan en un único lote de inserción.                                                                                                   |
+| `Max file count`                     | 100                  | Número máximo de archivos que se procesan en un único lote de inserción.                                                                                         |
+| `Max threads`                        | auto(3)              | [Número máximo de hilos concurrentes](/es/reference/settings/session-settings/max-threads#max_threads) para el procesamiento de archivos.                           |
+| `Max insert threads`                 | 1                    | [Número máximo de hilos de inserción concurrentes](/es/reference/settings/session-settings/max-insert#max_insert_threads) para el procesamiento de archivos.        |
+| `Min insert block size bytes`        | 1 GB                 | [Tamaño mínimo en bytes del bloque](/es/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) que puede insertarse en una tabla.              |
+| `Max download threads`               | 4                    | [Número máximo de hilos de descarga concurrentes](/es/reference/settings/session-settings/max-download#max_download_threads).                                       |
+| `Object storage polling interval`    | 30 s                 | Configura el período máximo de espera antes de insertar datos en el clúster de ClickHouse.                                                                       |
+| `Parallel distributed insert select` | 2                    | [Configuración de inserción distribuida paralela para SELECT](/es/reference/settings/session-settings/parallel#parallel_distributed_insert_select).                 |
+| `Parallel view processing`           | false                | Si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing). |
+| `Use cluster function`               | true                 | Si los archivos se procesan en paralelo en varios nodos.                                                                                                         |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
 

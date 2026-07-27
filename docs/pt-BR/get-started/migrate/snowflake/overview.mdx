@@ -150,9 +150,9 @@ o ClickHouse supera o Snowflake em aplicações de analytics em tempo real nas s
   específico de cada nó e não é [transacionalmente consistente](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
   o que o torna [mais adequado ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
   para analytics em tempo real. Os usuários também têm controle granular sobre seu uso,
-  com a capacidade de controlá-lo [por consulta](/pt-BR/reference/settings/session-settings#use_query_cache),
-  definir seu [tamanho exato](/pt-BR/reference/settings/session-settings#query_cache_max_size_in_bytes),
-  determinar se uma [consulta é armazenada em cache](/pt-BR/reference/settings/session-settings#enable_writes_to_query_cache)
+  com a capacidade de controlá-lo [por consulta](/pt-BR/reference/settings/session-settings/use-query#use_query_cache),
+  definir seu [tamanho exato](/pt-BR/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
+  determinar se uma [consulta é armazenada em cache](/pt-BR/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (com limites de duração ou número mínimo de execuções) e se ele é
   apenas [usado passivamente](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 

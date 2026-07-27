@@ -1,8 +1,8 @@
 ---
 title: 'routage tenant compte des réplicas'
 slug: /manage/replica-aware-routing
-description: 'Acheminez les requêtes associées vers la même réplique ClickHouse Cloud pour les tables temporaires, les sessions et la réutilisation du cache'
-keywords: ['cloud', 'endpoints persistants', 'persistant', 'endpoints', 'routage persistant', 'routage', 'routage tenant compte des réplicas', 'session_id', 'affinité de session', 'tables temporaires']
+description: 'Acheminez les requêtes associées vers la même réplique ClickHouse Cloud pour la cohérence en lecture après écriture, les tables temporaires, les sessions et la réutilisation du cache'
+keywords: ['cloud', 'endpoints persistants', 'persistant', 'endpoints', 'routage persistant', 'routage', 'routage tenant compte des réplicas', 'session_id', 'affinité de session', 'cohérence en lecture après écriture', 'tables temporaires']
 doc_type: 'guide'
 noindex: true
 ---
@@ -11,14 +11,14 @@ import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-routage tenant compte des réplicas (également appelé sticky sessions, routage sticky ou affinité de session) achemine les requêtes associées vers la même réplique ClickHouse. Utilisez-le lorsque vous avez besoin que des [tables temporaires](/sql-reference/statements/create/table#temporary-tables) ou un [état de session nommé](/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) restent accessibles d’une requête à l’autre, ou lorsque vous souhaitez que des requêtes associées réutilisent les caches locaux de la même réplique.
+routage tenant compte des réplicas (également appelé sticky sessions, routage sticky ou affinité de session) achemine les requêtes associées vers la même réplique ClickHouse. Utilisez-le lorsque vous avez besoin d’une cohérence en lecture après écriture, que des [tables temporaires](/fr/sql-reference/statements/create/table#temporary-tables) ou un [état de session nommé](/fr/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) restent accessibles d’une requête à l’autre, ou lorsque vous souhaitez que des requêtes associées réutilisent les caches locaux de la même réplique.
 
 Il s’agit d’un mécanisme au mieux et il ne garantit pas l’isolation. La mise à l’échelle, les mises à niveau et les redémarrages peuvent modifier la réplique sur laquelle aboutit un `session_id` donné.
 
 <Warning>
   **Nécessite l’interface HTTP**
 
-  routage tenant compte des réplicas s’applique au niveau de la couche proxy sur l’[interface HTTP/HTTPS](/interfaces/http), en utilisant le paramètre de requête `session_id` (voir ci-dessous). Il n’est **pas disponible via le protocole natif** (port natif, par exemple le driver [clickhouse-go](/integrations/go) dans son mode natif par défaut). Les clients utilisant le protocole natif doivent basculer vers HTTP et transmettre un `session_id` à chaque requête. Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez `session_id` comme [setting](/fr/integrations/language-clients/go/database-sql-api#sessions). Le driver l’envoie comme paramètre de requête d’URL sur lequel le proxy calcule le hash.
+  routage tenant compte des réplicas s’applique au niveau de la couche proxy sur l’[interface HTTP/HTTPS](/fr/interfaces/http), en utilisant le paramètre de requête `session_id` (voir ci-dessous). Il n’est **pas disponible via le protocole natif** (port natif, par exemple le driver [clickhouse-go](/fr/integrations/go) dans son mode natif par défaut). Les clients utilisant le protocole natif doivent basculer vers HTTP et transmettre un `session_id` à chaque requête. Pour clickhouse-go (v2), définissez `Protocol: clickhouse.HTTP` et transmettez `session_id` comme [setting](/fr/integrations/language-clients/go/database-sql-api#sessions). Le driver l’envoie comme paramètre de requête d’URL sur lequel le proxy calcule le hash.
 </Warning>
 
 <div id="prerequisites">
@@ -28,7 +28,7 @@ Il s’agit d’un mécanisme au mieux et il ne garantit pas l’isolation. La m
 * Votre service doit disposer d’**au moins 2 répliques**. Sur un service à réplique unique, il n’y a rien à épingler.
 * Un service **actif**. Réveiller un service inactif peut modifier la réplique à laquelle un `session_id` est associé.
 * Disponible par défaut sur **Enterprise** lorsque la fonctionnalité est en GA.
-* Pris en charge sur les services ClickHouse Cloud standard. [BYOC](/cloud/reference/byoc/overview) n’est pas encore pris en charge.
+* Pris en charge sur les services ClickHouse Cloud standard. [BYOC](/fr/cloud/reference/byoc/overview) n’est pas encore pris en charge.
 
 <div id="configuring-replica-aware-routing">
   ## Configuration du routage tenant compte des réplicas
@@ -40,7 +40,7 @@ Ouvrez un ticket [d&#39;assistance](https://clickhouse.com/support/program) et d
   ## Routage HTTP (`session_id`)
 </div>
 
-Pour associer une charge de travail à une réplique, définissez le paramètre de requête `session_id` sur l’[interface HTTPS](/interfaces/http). Le proxy utilise un hachage cohérent sur cette valeur pour sélectionner une réplique, afin que toutes les requêtes partageant le même `session_id` soient acheminées vers le même serveur jusqu’à ce que la topologie du cluster change.
+Pour associer une charge de travail à une réplique, définissez le paramètre de requête `session_id` sur l’[interface HTTPS](/fr/interfaces/http). Le proxy utilise un hachage cohérent sur cette valeur pour sélectionner une réplique, afin que toutes les requêtes partageant le même `session_id` soient acheminées vers le même serveur jusqu’à ce que la topologie du cluster change.
 
 Vous utilisez le nom d’hôte existant de votre service. Aucun nom d’hôte sticky spécial ni aucune modification DNS ne sont nécessaires.
 
@@ -55,7 +55,13 @@ Chaque requête contenant `session_id=my-workload-1` aboutit à la même répliq
 
 `session_id` est une chaîne de caractères de votre choix (nom d’application, identifiant utilisateur ou label de charge de travail). Les requêtes sans `session_id` conservent l’équilibrage de charge habituel.
 
-Tout client HTTP capable d’ajouter un paramètre de requête convient, y compris `curl`, [clickhouse-connect](/integrations/python), JDBC/ODBC et d’autres. Pour `clickhouse-go` (v2), utilisez le mode HTTP comme indiqué ci-dessus.
+Tout client HTTP capable d’ajouter un paramètre de requête convient, y compris `curl`, [clickhouse-connect](/fr/integrations/python), JDBC/ODBC et d’autres. Pour `clickhouse-go` (v2), utilisez le mode HTTP comme indiqué ci-dessus.
+
+<div id="read-after-write-consistency">
+  ### Cohérence en lecture après écriture
+</div>
+
+Utilisez le même `session_id` pour une écriture et pour les requêtes de lecture suivantes. Le routage tenant compte des réplicas envoie ces requêtes vers la même réplique, de sorte que les lectures voient la dernière écriture même si les autres répliques ne l&#39;ont pas encore reçue. Cela garantit une cohérence en lecture après écriture tant que le `session_id` continue d&#39;être associé à la même réplique.
 
 <div id="check-which-replica">
   ### Vérifiez quelle réplique est utilisée
@@ -89,13 +95,13 @@ Toute perturbation du service modifie l’anneau de hachage du routage. Cela inc
   ### Le routage tenant compte des réplicas n&#39;est pas une isolation des charges de travail
 </div>
 
-Le routage sticky contrôle uniquement *quelle* réplique traite une requête. Cette réplique peut tout de même servir d&#39;autres requêtes. Pour un compute dédié, utilisez la [séparation compute-compute](/cloud/reference/warehouses).
+Le routage sticky contrôle uniquement *quelle* réplique traite une requête. Cette réplique peut tout de même servir d&#39;autres requêtes. Pour un compute dédié, utilisez la [séparation compute-compute](/fr/cloud/reference/warehouses).
 
 <div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
   ### Private Link et la méthode de sous-domaine obsolète
 </div>
 
-Le routage HTTP `session_id` fonctionne avec la [mise en réseau privée](/cloud/security/connectivity/private-networking) sur le nom d’hôte habituel de votre service. Aucune entrée DNS supplémentaire n’est requise.
+Le routage HTTP `session_id` fonctionne avec la [mise en réseau privée](/fr/cloud/security/connectivity/private-networking) sur le nom d’hôte habituel de votre service. Aucune entrée DNS supplémentaire n’est requise.
 
 Ce n’est pas le cas de la méthode obsolète par sous-domaine : vous devez ajouter des entrées DNS pour le motif de nom d’hôte `*.sticky.*`, et une configuration incorrecte peut déséquilibrer la charge entre les répliques.
 

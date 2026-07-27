@@ -16,7 +16,7 @@ PostgreSQL エンジンでは、リモートの PostgreSQL サーバーに保存
 </Note>
 
 <Tip>
-  [Managed Postgres](/ja/products/managed-postgres/overview) サービスもご利用いただけます。コンピュートと物理的に同一配置された NVMe ストレージを基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックになるワークロードで最大 10 倍高速なパフォーマンスを実現します。さらに、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres データを ClickHouse にレプリケートできます。
+  [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) サービスもご利用いただけます。コンピュートと物理的に同一配置された NVMe ストレージを基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックになるワークロードで最大 10 倍高速なパフォーマンスを実現します。さらに、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres データを ClickHouse にレプリケートできます。
 </Tip>
 
 <div id="creating-a-table">
@@ -45,7 +45,7 @@ SETTINGS
 
 * カラム名は元の PostgreSQL テーブルと同じである必要がありますが、それらのうち一部のカラムのみを、任意の順序で使用できます。
 * カラム型は元の PostgreSQL テーブルのものと異なっていてもかまいません。ClickHouse は値を ClickHouse のデータ型に[キャスト](/ja/reference/engines/database-engines/postgresql#data_types-support)しようとします。
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/ja/reference/settings/session-settings#external_table_functions_use_nulls) 設定は、Nullable カラムの扱いを定義します。デフォルト値は 1 です。0 の場合、テーブル関数は Nullable カラムを作成せず、null の代わりにデフォルト値を挿入します。これは配列内の NULL 値にも適用されます。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/ja/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 設定は、Nullable カラムの扱いを定義します。デフォルト値は 1 です。0 の場合、テーブル関数は Nullable カラムを作成せず、null の代わりにデフォルト値を挿入します。これは配列内の NULL 値にも適用されます。
 
 **エンジンパラメータ**
 
@@ -162,7 +162,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse によって解析され、サーバーに送信される前に PostgreSQL 方言 (PostgreSQL の識別子の引用符付けと文字列リテラルのエスケープ) で再シリアライズされます。したがって、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない PostgreSQL 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式のテキストは、そのまま PostgreSQL に送信されます。
 
-  渡されたクエリに対して、外側の ClickHouse クエリの`WHERE`、`LIMIT`、集計などが**プッシュダウンされることはなく**、完全なクエリ結果が取得された後に ClickHouse で適用されます。PostgreSQL から読み取るデータを制限するには、渡されたクエリの内部にフィルターを置いてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings#external_table_strict_query) を使用すると、プッシュダウンできない外側のフィルターは、ローカルで適用される代わりに例外で拒否されます。
+  渡されたクエリに対して、外側の ClickHouse クエリの`WHERE`、`LIMIT`、集計などが**プッシュダウンされることはなく**、完全なクエリ結果が取得された後に ClickHouse で適用されます。PostgreSQL から読み取るデータを制限するには、渡されたクエリの内部にフィルターを置いてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を使用すると、プッシュダウンできない外側のフィルターは、ローカルで適用される代わりに例外で拒否されます。
 </Note>
 
 PostgreSQL 側の`INSERT`クエリは、PostgreSQL トランザクション内で `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` として実行され、各`INSERT`ステートメントの後に自動コミットされます。

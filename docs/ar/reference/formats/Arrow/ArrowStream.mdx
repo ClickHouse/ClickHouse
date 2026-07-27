@@ -65,7 +65,7 @@ ORDER BY table ASC
 لبث النتيجة، أرسل الاستعلام عبر واجهة HTTP الخاصة بـ ClickHouse باستخدام
 طلب `POST`، واقرأ الاستجابة على أنها دفق Arrow. نعطّل ضغط
 خرج Arrow عبر الإعداد
-[`output_format_arrow_compression_method`](/ar/reference/settings/formats#output_format_arrow_compression_method)
+[`output_format_arrow_compression_method`](/ar/reference/settings/formats/output-format#output_format_arrow_compression_method)
 لكي تتمكن الجهات المستهلكة من فك ترميز الدفعات مباشرةً عند استلامها.
 
 خرج `ArrowStream` هو بيانات ثنائية خام، لذا بدلًا من طباعته في

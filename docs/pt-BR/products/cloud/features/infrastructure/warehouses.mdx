@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<ScalePlanFeatureBadge feature="Compute-compute separation" />
+<ScalePlanFeatureBadge feature="separação compute-compute" />
 
 <div id="what-is-compute-compute-separation">
   ## O que é separação compute-compute?
@@ -103,7 +103,7 @@ No exemplo abaixo, Alice está impedida de acessar o serviço 2 no warehouse:
 
 *Fig. 5 - Alice está impedida de acessar o serviço 2 por causa das configurações de controle de acesso à rede*
 
-As roles e grants do ClickHouse também podem ser usadas para controlar o acesso aos dados quando os usuários se conectam individualmente, em vez de usar o usuário *default*. 
+As roles e grants do ClickHouse também podem ser usadas para controlar o acesso aos dados quando os usuários se conectam individualmente, em vez de usar o usuário *default*.
 
 <div id="read-vs-read-write">
   ### Serviços read-only vs. read-write
@@ -191,7 +191,7 @@ Algumas cargas de trabalho não podem ser isoladas em serviços específicos; h�
 
 * **Versões do ClickHouse**: O [cronograma de upgrades](/pt-BR/products/cloud/features/admin-features/upgrades) é definido pelas configurações do serviço primário. Os serviços secundários não podem ter um cronograma de releases independente do serviço primário.
 
-* **Consultas `CREATE`/`RENAME`/`DROP DATABASE` podem ser bloqueadas por padrão por serviços inativos/parados.** Se essas consultas forem executadas quando o serviço estiver inativo ou parado, elas podem ficar bloqueadas. Para contornar isso, você pode executar consultas de gerenciamento do banco de dados com [`settings distributed_ddl_task_timeout=0`](/pt-BR/reference/settings/session-settings#distributed_ddl_task_timeout) no nível da sessão ou por consulta.
+* **Consultas `CREATE`/`RENAME`/`DROP DATABASE` podem ser bloqueadas por padrão por serviços em modo ocioso/parados.** Se essas consultas forem executadas quando o serviço estiver em modo ocioso ou parado, elas podem ficar bloqueadas. Para contornar isso, você pode executar consultas de gerenciamento do banco de dados com [`settings distributed_ddl_task_timeout=0`](/pt-BR/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) no nível da sessão ou por consulta.
 
 Por exemplo:
 
@@ -204,7 +204,7 @@ Se você parar manualmente um serviço, precisará iniciá-lo novamente para que
 
 * **Serviço primário com uma réplica** Atualmente, o comportamento padrão é que os serviços secundários podem ter uma réplica, mas o serviço primário deve ter pelo menos 2.
   Para habilitar serviços primários com uma única réplica, entre em contato com o suporte. Esse comportamento será habilitado por padrão no 2º trimestre de 2026.
-* **Ociosidade do serviço primário**: a entrada automática do serviço primário em modo ocioso é habilitada por padrão.
+* **Modo ocioso do serviço primário**: a entrada automática do serviço primário em modo ocioso é habilitada por padrão.
 
 <div id="pricing">
   ## Preços

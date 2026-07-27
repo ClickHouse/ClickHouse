@@ -18,9 +18,9 @@ Prewhere — это оптимизация, которая позволяет п
 
 Запрос может одновременно содержать `PREWHERE` и `WHERE`. В этом случае `PREWHERE` выполняется перед `WHERE`.
 
-Если настройка [optimize&#95;move&#95;to&#95;prewhere](/ru/reference/settings/session-settings#optimize_move_to_prewhere) установлена в 0, эвристики, автоматически переносящие части выражений из `WHERE` в `PREWHERE`, отключаются.
+Если настройка [optimize&#95;move&#95;to&#95;prewhere](/ru/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) установлена в 0, эвристики, автоматически переносящие части выражений из `WHERE` в `PREWHERE`, отключаются.
 
-Если запрос имеет модификатор [FINAL](/ru/reference/statements/select/from#final-modifier), оптимизация `PREWHERE` не всегда корректна. Она включается только в том случае, если включены обе настройки: [optimize&#95;move&#95;to&#95;prewhere](/ru/reference/settings/session-settings#optimize_move_to_prewhere) и [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ru/reference/settings/session-settings#optimize_move_to_prewhere_if_final).
+Если запрос имеет модификатор [FINAL](/ru/reference/statements/select/from#final-modifier), оптимизация `PREWHERE` не всегда корректна. Она включается только в том случае, если включены обе настройки: [optimize&#95;move&#95;to&#95;prewhere](/ru/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) и [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ru/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final).
 
 <Note>
   Секция `PREWHERE` выполняется до `FINAL`, поэтому результаты запросов `FROM ... FINAL` могут искажаться, если `PREWHERE` используется с полями, отсутствующими в секции `ORDER BY` таблицы.

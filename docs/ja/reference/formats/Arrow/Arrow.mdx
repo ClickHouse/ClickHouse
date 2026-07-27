@@ -61,7 +61,7 @@ ClickHouse はこれらのフォーマットの読み書きをサポートして
 
 Array はネストでき、引数として `Nullable` 型の値を取ることもできます。`Tuple` 型と `Map` 型もネストできます。
 
-`DICTIONARY` 型は `INSERT` クエリでサポートされています。`SELECT` クエリでは、[`output_format_arrow_low_cardinality_as_dictionary`](/ja/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) 設定により、[LowCardinality](/ja/reference/data-types/lowcardinality) 型を `DICTIONARY` 型として出力できます。`LowCardinality` の Dictionary には未使用の値が含まれる場合があり、その結果、出力される Arrow の `DICTIONARY` にも未使用の値が含まれる可能性がある点に注意してください。
+`DICTIONARY` 型は `INSERT` クエリでサポートされています。`SELECT` クエリでは、[`output_format_arrow_low_cardinality_as_dictionary`](/ja/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) 設定により、[LowCardinality](/ja/reference/data-types/lowcardinality) 型を `DICTIONARY` 型として出力できます。`LowCardinality` の Dictionary には未使用の値が含まれる場合があり、その結果、出力される Arrow の `DICTIONARY` にも未使用の値が含まれる可能性がある点に注意してください。
 
 サポートされていない Arrow データ型:
 

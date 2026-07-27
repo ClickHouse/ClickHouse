@@ -22,8 +22,8 @@ doc_type: 'reference'
 쿼리 결과를 PNG 이미지로 렌더링합니다. 기본 제공 시각화 도구로 유용합니다.
 
 출력 이미지의 크기는 설정
-[`output_format_image_width`](/ko/reference/settings/formats#output_format_image_width) 및
-[`output_format_image_height`](/ko/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/ko/reference/settings/formats/output-format#output_format_image_width) 및
+[`output_format_image_height`](/ko/reference/settings/formats/output-format#output_format_image_height)
 (둘 다 기본값은 1024)로 고정됩니다. 결과가 덮지 않는 픽셀은 검은색으로 채워지며
 (`RGB` 및 그레이스케일 모드), `RGBA` 모드에서는 투명한 검은색으로 채워집니다.
 
@@ -95,7 +95,7 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 </div>
 
 기본적으로 `PNG` 포맷은 원시 이미지 바이트를 출력합니다. 설정
-[`output_format_image_terminal_mode`](/ko/reference/settings/formats#output_format_image_terminal_mode)를 사용하면, 대신 인라인 이미지 프로토콜을 통해 이미지를 터미널에 직접 렌더링합니다:
+[`output_format_image_terminal_mode`](/ko/reference/settings/formats/output-format#output_format_image_terminal_mode)를 사용하면, 대신 인라인 이미지 프로토콜을 통해 이미지를 터미널에 직접 렌더링합니다:
 
 | 값                  | 동작                                                                                                           |
 | ------------------ | ------------------------------------------------------------------------------------------------------------ |

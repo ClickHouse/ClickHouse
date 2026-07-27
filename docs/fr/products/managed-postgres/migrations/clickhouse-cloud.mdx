@@ -12,7 +12,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge />
 
-ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre base de données PostgreSQL externe vers un service Managed Postgres. L’assistant prend en charge la connexion à la source, l’exportation et l’importation du schéma, les paramètres de réplication et la sélection des tables en cinq étapes guidées.
+ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre base de données PostgreSQL externe vers un service ClickHouse Managed Postgres. L’assistant prend en charge la connexion à la source, l’exportation et l’importation du schéma, les paramètres de réplication et la sélection des tables en cinq étapes guidées.
 
 <div id="prerequisites">
   ## Prérequis
@@ -30,13 +30,13 @@ ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre
 
 <Steps>
   <Step title="Connectez-vous à votre base de données source" id="step-1-connect">
-    Ouvrez la [console ClickHouse Cloud](https://clickhouse.cloud) et sélectionnez votre service Managed Postgres.
+    Ouvrez la [console ClickHouse Cloud](https://clickhouse.cloud) et sélectionnez votre service ClickHouse Managed Postgres.
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Carte du service Managed Postgres dans la liste des services ClickHouse Cloud" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Carte du service ClickHouse Managed Postgres dans la liste des services ClickHouse Cloud" size="lg" border />
 
     Dans la barre latérale de gauche, cliquez sur **Data sources**.
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrée Data sources dans la barre latérale du service Managed Postgres" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrée Data sources dans la barre latérale du service ClickHouse Managed Postgres" size="lg" border />
 
     Cliquez sur **Start import**.
 
@@ -75,13 +75,13 @@ ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre
 
     <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="Sortie du terminal après l’exécution de pg_dump" size="lg" border />
 
-    Cliquez sur **Next**.
+    Cliquez sur **Suivant**.
   </Step>
 
-  <Step title="Importez le schéma dans votre service Managed Postgres" id="step-3-import-schema">
+  <Step title="Importez le schéma dans votre service ClickHouse Managed Postgres" id="step-3-import-schema">
     Sélectionnez la base de données de destination dans la liste déroulante, ou cliquez sur **Create a new database** pour en créer une.
 
-    L’assistant affiche une commande `psql` pour appliquer le dump du schéma à votre service Managed Postgres. Exécutez-la dans un terminal :
+    L’assistant affiche une commande `psql` pour appliquer le dump du schéma à votre service ClickHouse Managed Postgres. Exécutez-la dans un terminal :
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Étape 3 : commande psql pour l’import du schéma" size="lg" border />
 
@@ -96,7 +96,7 @@ ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre
 
     <Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="Sortie du terminal après l’exécution de l’import du schéma avec psql" size="lg" border />
 
-    Cliquez sur **Next**.
+    Cliquez sur **Suivant**.
   </Step>
 
   <Step title="Configurez les paramètres d’ingestion" id="step-4-ingestion-settings">
@@ -114,7 +114,7 @@ ClickHouse Cloud comprend un assistant d’importation intégré qui migre votre
 
     <Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Étape 4 : formulaire des paramètres d’ingestion avec options de publication et de réplication avancées" size="lg" border />
 
-    Cliquez sur **Next**.
+    Cliquez sur **Suivant**.
   </Step>
 
   <Step title="Sélectionnez les tables" id="step-5-select-tables">
@@ -193,7 +193,7 @@ BEGIN
 END $$;
 ```
 
-**Basculez le trafic de l’application.** Redirigez les lectures et les écritures vers votre service Managed Postgres et surveillez les erreurs, les violations de contraintes et l’état de la réplication.
+**Basculez le trafic de l’application.** Redirigez les lectures et les écritures vers votre service ClickHouse Managed Postgres et surveillez les erreurs, les violations de contraintes et l’état de la réplication.
 
 **Nettoyage.**  Une fois la bascule effectuée et après avoir confirmé que le nouveau service fonctionne correctement, supprimez la migration de **Data sources**. Si vous avez utilisé CDC, supprimez le slot de réplication de la source afin de libérer des ressources :
 
@@ -205,6 +205,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## Étapes suivantes
 </div>
 
-* [Guide de démarrage rapide de Managed Postgres](/fr/products/managed-postgres/quickstart)
-* [Paramètres de connexion de Managed Postgres](/fr/products/managed-postgres/connection)
+* [Guide de démarrage rapide de ClickHouse Managed Postgres](/fr/products/managed-postgres/quickstart)
+* [Paramètres de connexion de ClickHouse Managed Postgres](/fr/products/managed-postgres/connection)
 * [FAQ de ClickPipes pour Postgres](/fr/integrations/clickpipes/postgres/faq)

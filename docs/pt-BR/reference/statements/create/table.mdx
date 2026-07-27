@@ -10,7 +10,7 @@ doc_type: 'referência'
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-Cria uma nova tabela. Esta consulta pode assumir várias formas sintáticas, dependendo do caso de uso.
+Cria uma nova tabela. Esta consulta pode assumir várias variações de sintaxe, dependendo do caso de uso.
 
 Por padrão, as tabelas são criadas apenas no servidor atual. As consultas DDL distribuídas são implementadas por meio da cláusula `ON CLUSTER`, que é [descrita separadamente](/pt-BR/reference/statements/distributed-ddl).
 
@@ -121,7 +121,7 @@ Os modificadores `NULL` e `NOT NULL`, quando usados após o tipo de dado na defi
 
 Se o tipo não for `Nullable` e `NULL` for especificado, ele será tratado como `Nullable`; se `NOT NULL` for especificado, não será. Por exemplo, `INT NULL` é o mesmo que `Nullable(INT)`. Se o tipo for `Nullable` e os modificadores `NULL` ou `NOT NULL` forem especificados, uma exceção será gerada.
 
-Veja também a configuração [data&#95;type&#95;default&#95;nullable](/pt-BR/reference/settings/session-settings#data_type_default_nullable).
+Veja também a configuração [data&#95;type&#95;default&#95;nullable](/pt-BR/reference/settings/session-settings/other#data_type_default_nullable).
 
 <div id="default_values">
   ## Valores padrão
@@ -378,7 +378,7 @@ Define por quanto tempo os valores são armazenados. Pode ser especificada apena
 
 Por padrão, o ClickHouse aplica compressão `lz4` na versão autogerenciada e `zstd` no ClickHouse Cloud.
 
-Para a família de motores `MergeTree`, você pode alterar o método de compressão padrão na seção [compressão](/pt-BR/reference/settings/server-settings/settings#compression) da configuração do servidor.
+Para a família de motores `MergeTree`, você pode alterar o método de compressão padrão na seção [compressão](/pt-BR/reference/settings/server-settings/settings/other#compression) da configuração do servidor.
 
 Você também pode definir o método de compressão para cada coluna na consulta `CREATE TABLE`.
 
@@ -412,7 +412,7 @@ Os codecs podem ser combinados em um pipeline, por exemplo, `CODEC(Delta, Defaul
 
 A compressão é compatível com os seguintes motores de tabela:
 
-* Família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Oferece suporte a codecs de compressão de colunas e à seleção do método de compressão padrão por meio das configurações de [compression](/pt-BR/reference/settings/server-settings/settings#compression).
+* Família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). Oferece suporte a codecs de compressão de colunas e à seleção do método de compressão padrão por meio das configurações de [compression](/pt-BR/reference/settings/server-settings/settings/other#compression).
 * Família [Log](/pt-BR/reference/engines/table-engines/log-family/index). Usa o método de compressão `lz4` por padrão e oferece suporte a codecs de compressão de colunas.
 * [Set](/pt-BR/reference/engines/table-engines/special/set). Oferece suporte apenas à compressão padrão.
 * [Join](/pt-BR/reference/engines/table-engines/special/join). Oferece suporte apenas à compressão padrão.
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### Codecs de criptografia
 </div>
 
-Esses codecs, na verdade, não comprimem os dados; em vez disso, criptografam os dados em disco. Eles só estão disponíveis quando uma chave de criptografia é especificada nas configurações de [encryption](/pt-BR/reference/settings/server-settings/settings#encryption). Observe que a criptografia só faz sentido no fim dos pipelines de codec, porque dados criptografados normalmente não podem ser comprimidos de forma significativa.
+Esses codecs, na verdade, não comprimem os dados; em vez disso, criptografam os dados em disco. Eles só estão disponíveis quando uma chave de criptografia é especificada nas configurações de [encryption](/pt-BR/reference/settings/server-settings/settings/other#encryption). Observe que a criptografia só faz sentido no fim dos pipelines de codec, porque dados criptografados normalmente não podem ser comprimidos de forma significativa.
 
 Codecs de criptografia:
 

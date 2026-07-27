@@ -130,7 +130,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
 export const IntegrationsBanner = () => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const href = '/pt-BR/integrations/home';
+    const href = '/integrations/home';
     return (
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
@@ -260,25 +260,25 @@ export const PageWrapper = ({ children }) => {
 
 <style>
   {`
-          .ch-goal-icon { color: #374151; }
-          .dark .ch-goal-icon { color: #FAFF69; }
-          /* Banner de integrações: borda em cor de destaque nos dois modos */
-          html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
-          html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
-          .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
-          .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
-          /* Oculta a barra lateral imediatamente na página inicial (evita cintilação) */
-          #sidebar { display: none !important; }
-          /* Faz a barra de navegação ocupar toda a largura, já que a barra lateral está oculta */
-          #navbar-transition-maple {
-            width: 100vw !important;
-            left: 0 !important;
-            margin-left: 0 !important;
-            /* Igualar ao padding direito da própria barra de navegação (3rem) */
-            padding-left: 3rem !important;
-            justify-content: flex-start !important;
-          }
-          `}
+            .ch-goal-icon { color: #374151; }
+            .dark .ch-goal-icon { color: #FAFF69; }
+            /* Banner de integrações: borda em cor de destaque nos dois modos */
+            html:not(.dark) .ch-hero-card.ch-integrations-banner { border-color: rgba(37, 99, 235, 0.4) !important; }
+            html:not(.dark) .ch-hero-card.ch-integrations-banner:hover { border-color: #2563eb !important; }
+            .dark .ch-hero-card.ch-integrations-banner { border-color: rgba(252, 255, 116, 0.45) !important; }
+            .dark .ch-hero-card.ch-integrations-banner:hover { border-color: #FCFF74 !important; }
+            /* Oculta a barra lateral imediatamente na página inicial (evita cintilação) */
+            #sidebar { display: none !important; }
+            /* Faz a barra de navegação ocupar toda a largura, já que a barra lateral está oculta */
+            #navbar-transition-maple {
+              width: 100vw !important;
+              left: 0 !important;
+              margin-left: 0 !important;
+              /* Igualar ao padding direito da própria barra de navegação (3rem) */
+              padding-left: 3rem !important;
+              justify-content: flex-start !important;
+            }
+            `}
 </style>
 
 <PageWrapper>
@@ -325,13 +325,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "O que é ClickHouse?", href: "/pt-BR/get-started/about/intro" },
-        { label: "Instalação", href: "/pt-BR/get-started/setup/cloud" },
-        { label: "guia de início rápido", href: "/pt-BR/get-started/quickstarts/home" },
-        { label: "Conceitos do ClickHouse", href: "/pt-BR/concepts/core-concepts/index" },
-        { label: "Conjuntos de dados de exemplo", href: "/pt-BR/get-started/sample-datasets/index" },
-        { label: "Guias de migração", href: "/pt-BR/get-started/migrate/overview" },
-        { label: "Boas práticas", href: "/pt-BR/concepts/best-practices/index" },
+        { label: "O que é ClickHouse?", href: "/get-started/about/intro" },
+        { label: "Instalação", href: "/get-started/setup/cloud" },
+        { label: "guia de início rápido", href: "/get-started/quickstarts/home" },
+        { label: "Conceitos do ClickHouse", href: "/concepts/core-concepts/index" },
+        { label: "Conjuntos de dados de exemplo", href: "/get-started/sample-datasets/index" },
+        { label: "Guias de migração", href: "/get-started/migrate/overview" },
+        { label: "Boas práticas", href: "/concepts/best-practices/index" },
     ]}
         />
 
@@ -346,10 +346,10 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Modelagem de dados", href: "/pt-BR/guides/clickhouse/data-modelling/schema-design" },
-        { label: "Otimização de desempenho", href: "/pt-BR/guides/clickhouse/performance-and-monitoring/query-optimization" },
-        { label: "ClickHouse Cloud", href: "/pt-BR/products/cloud/guides" },
-        { label: "Casos de uso", href: "/pt-BR/guides/use-cases" }
+        { label: "Modelagem de dados", href: "/guides/clickhouse/data-modelling/schema-design" },
+        { label: "Otimização de desempenho", href: "/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/guides" },
+        { label: "Casos de uso", href: "/guides/use-cases" }
     ]}
         />
 
@@ -364,13 +364,13 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "Referência SQL", href: "/pt-BR/reference/statements" },
-        { label: "Configurações", href: "/pt-BR/reference/settings/index" },
-        { label: "Funções", href: "/pt-BR/reference/functions/regular-functions/overview" },
-        { label: "Motores", href: "/pt-BR/reference/engines/engines" },
-        { label: "Tabelas do sistema", href: "/pt-BR/reference/system-tables" },
-        { label: "Formatos", href: "/pt-BR/reference/formats/index" },
-        { label: "Tipos de dados", href: "/pt-BR/reference/data-types/index" }
+        { label: "Referência SQL", href: "/reference/statements" },
+        { label: "Configurações", href: "/reference/settings/index" },
+        { label: "Funções", href: "/reference/functions/regular-functions/overview" },
+        { label: "Motores", href: "/reference/engines/engines" },
+        { label: "Tabelas do sistema", href: "/reference/system-tables" },
+        { label: "Formatos", href: "/reference/formats/index" },
+        { label: "Tipos de dados", href: "/reference/data-types/index" }
     ]}
         />
 
@@ -385,12 +385,12 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "ClickHouse Cloud", href: "/pt-BR/products/cloud/getting-started/cloud-get-started" },
-        { label: "ClickStack", href: "/pt-BR/clickstack" },
-        { label: "Managed Postgres", href: "/pt-BR/products/managed-postgres/overview" },
+        { label: "ClickHouse Cloud", href: "/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/clickstack" },
+        { label: "ClickHouse Managed Postgres", href: "/products/managed-postgres/overview" },
         { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-        { label: "chDB", href: "/pt-BR/chdb" },
-        { label: "Operator do Kubernetes", href: "/pt-BR/products/kubernetes-operator/overview" },
+        { label: "chDB", href: "/chdb" },
+        { label: "Operator do Kubernetes", href: "/products/kubernetes-operator/overview" },
     ]}
         />
       </div>
@@ -437,10 +437,10 @@ export const PageWrapper = ({ children }) => {
           </>}
               links={[
               { label: "1. Como fazer a ingestão de dados de fontes comuns com o mínimo de esforço", href: "/integrations" },
-              { label: "2. Boas práticas para organizar dados para analytics e crescimento", href: "/pt-BR/guides/clickhouse/data-modelling/schema-design" },
-              { label: "3. Formas de consultar grandes conjuntos de dados em tempo real", href: "/pt-BR/get-started/use-cases/real-time-analytics" },
-              { label: "4. Como criar dashboards, alertas e funcionalidades orientadas a eventos sobre a mesma plataforma", href: "/pt-BR/get-started/use-cases/data-warehousing" },
-              { label: "5. Dicas para manter os custos baixos sem perder desempenho", href: "/pt-BR/concepts/best-practices/index" },
+              { label: "2. Boas práticas para organizar dados para analytics e crescimento", href: "/guides/clickhouse/data-modelling/schema-design" },
+              { label: "3. Formas de consultar grandes conjuntos de dados em tempo real", href: "/get-started/use-cases/real-time-analytics" },
+              { label: "4. Como criar dashboards, alertas e funcionalidades orientadas a eventos sobre a mesma plataforma", href: "/get-started/use-cases/data-warehousing" },
+              { label: "5. Dicas para manter os custos baixos sem perder desempenho", href: "/concepts/best-practices/index" },
           ]}
             />
           </div>
@@ -448,7 +448,7 @@ export const PageWrapper = ({ children }) => {
           <div className="flex flex-col gap-4">
             <HeroCard filename="thumbnail-clickstack-light.webp" title="ClickStack" galaxyEvent="docs.home.clickstack" description="A stack de observabilidade tudo em um com tecnologia ClickHouse, que oferece consultas extremamente rápidas e agregações poderosas em logs, métricas, traces, replays de sessão e erros." href="/pt-BR/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
 
-            <HeroCard filename="thumbnail-postgres-light.webp" title="Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Serviço Postgres rápido, escalável e de nível empresarial, integrado nativamente ao ClickHouse. Combine facilmente o Postgres para transações e o ClickHouse para analytics." href="/pt-BR/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+            <HeroCard filename="thumbnail-postgres-light.webp" title="ClickHouse Managed Postgres" galaxyEvent="docs.home.managed-postgres" description="Serviço Postgres rápido, escalável e de nível empresarial, integrado nativamente ao ClickHouse. Combine facilmente o Postgres para transações e o ClickHouse para analytics." href="/pt-BR/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
           </div>
         </div>
 
@@ -479,26 +479,40 @@ export const PageWrapper = ({ children }) => {
               <p className="mb-2 text-[#9ca3af] text-[13px]">Execute no terminal:</p>
 
               <CodeBlock language="bash">
-                {`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}
+                {`claude mcp add --transport http clickhouse-docs https://clickhouse.com/docs/mcp --scope user`}
               </CodeBlock>
             </Tab>
 
             <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]">Adicione ao <code>claude&#95;desktop&#95;config.json</code>:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
+            </Tab>
+
+            <Tab title="Codex" icon="/images/logo-codex.svg">
+              <p className="mb-2 text-[#9ca3af] text-[13px]">Execute no terminal:</p>
+
+              <CodeBlock language="bash">
+                {`codex mcp add clickhouse-docs --url https://clickhouse.com/docs/mcp`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
               <p className="mb-2 text-[#9ca3af] text-[13px]">Adicione ao <code>.cursor/mcp.json</code>:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
 
             <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
               <p className="mb-2 text-[#9ca3af] text-[13px]">Adicione ao <code>~/.codeium/windsurf/mcp&#95;config.json</code>:</p>
 
-              <CodeBlock language="json">{`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}</CodeBlock>
+              <CodeBlock language="json">
+                {`{\n  "mcpServers": {\n    "clickhouse-docs": {\n      "command": "npx",\n      "args": ["-y", "mcp-remote", "https://clickhouse.com/docs/mcp"]\n    }\n  }\n}`}
+              </CodeBlock>
             </Tab>
           </Tabs>
         </div>

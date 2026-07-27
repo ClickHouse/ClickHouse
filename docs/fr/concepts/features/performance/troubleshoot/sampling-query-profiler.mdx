@@ -68,7 +68,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
   </Step>
 
   <Step title="Vérifier la configuration du serveur" id="server-config">
-    Assurez-vous que la section [`trace_log`](/fr/reference/settings/server-settings/settings#trace_log) de votre [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) est configurée. Elle est activée par défaut :
+    Assurez-vous que la section [`trace_log`](/fr/reference/settings/server-settings/settings/other#trace_log) de votre [fichier de configuration du serveur](/fr/concepts/features/configuration/server-config/configuration-files) est configurée. Elle est activée par défaut :
 
     ```xml
     <!-- Journal des traces. Stocke les traces de pile collectées par les profilers de requêtes.
@@ -94,7 +94,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
   </Step>
 
   <Step title="Configurer les temporisateurs de profilage" id="configure-profile-timers">
-    Configurez les paramètres [`query_profiler_cpu_time_period_ns`](/fr/reference/settings/session-settings#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/fr/reference/settings/session-settings#query_profiler_real_time_period_ns).
+    Configurez les paramètres [`query_profiler_cpu_time_period_ns`](/fr/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) ou [`query_profiler_real_time_period_ns`](/fr/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     Les deux paramètres peuvent être utilisés simultanément.
 
     Ces paramètres vous permettent de configurer les temporisateurs du profiler.
@@ -106,7 +106,7 @@ Dans les déploiements autogérés, pour utiliser le profiler de requêtes, suiv
   </Step>
 
   <Step title={<>Analyser la table système <code>trace_log</code></>} id="analyze-trace-log-system-table">
-    Pour analyser la table système `trace_log`, activez les fonctions d’introspection avec le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings#allow_introspection_functions) :
+    Pour analyser la table système `trace_log`, activez les fonctions d’introspection avec le paramètre [`allow_introspection_functions`](/fr/reference/settings/session-settings/allow#allow_introspection_functions) :
 
     ```sql
     SET allow_introspection_functions=1

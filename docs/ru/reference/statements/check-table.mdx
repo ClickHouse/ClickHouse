@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`: (Необязательно) Если нужно проверить конкретную часть таблицы, можно добавить строковый литерал с именем части.
 * `FORMAT format`: (Необязательно) Позволяет указать формат вывода результата.
 * `SETTINGS`: (Необязательно) Позволяет задать дополнительные настройки.
-  * (Необязательно): [check&#95;query&#95;single&#95;value&#95;result](/ru/reference/settings/session-settings#check_query_single_value_result): Эта настройка определяет, будет ли вывод подробным (`0`) или сводным (`1`).
+  * (Необязательно): [check&#95;query&#95;single&#95;value&#95;result](/ru/reference/settings/session-settings/check#check_query_single_value_result): Эта настройка определяет, будет ли вывод подробным (`0`) или сводным (`1`).
   * Можно также применять и другие настройки. Если детерминированный порядок результатов не требуется, для ускорения запроса можно установить max&#95;threads в значение больше единицы.
 
 Ответ на запрос зависит от значения настройки `check_query_single_value_result`.

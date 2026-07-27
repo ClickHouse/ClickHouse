@@ -11,7 +11,7 @@ description: "使用 Kubernetes Secrets 和 @from_env 指令，安全地配置 C
   ## 何时使用 remote_servers
 </div>
 
-[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) 定义了一个具名集群拓扑，ClickHouse 在通过 [分布式表](https://clickhouse.com/docs/engines/table-engines/special/distributed) 或 [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) 表函数执行分布式查询时会使用它。
+[`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers) 定义了一个具名集群拓扑，ClickHouse 在通过 [分布式表](https://clickhouse.com/docs/engines/table-engines/special/distributed) 或 [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) 表函数执行分布式查询时会使用它。
 
 在单个 ClickHouse 私网集群内，各个副本已通过 ClickHouse Keeper 和 [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) 完成协调——这也是 ClickHouse Cloud 采用的同一种架构——因此，`remote_servers` 并不用于复制。这种架构已经覆盖了绝大多数用例。
 

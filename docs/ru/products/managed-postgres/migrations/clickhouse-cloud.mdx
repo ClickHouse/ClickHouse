@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/clickhouse-cloud
 sidebarTitle: 'ClickHouse Cloud'
-title: Миграция в Managed Postgres с помощью ClickHouse Cloud
+title: Миграция в ClickHouse Managed Postgres с помощью ClickHouse Cloud
 description: 'Узнайте, как перенести базу данных PostgreSQL в ClickHouse Managed Postgres с помощью встроенного мастера импорта в разделе «Источники данных» ClickHouse Cloud.'
 keywords: ['postgres', 'postgresql', 'логическая репликация', 'миграция', 'передача данных', 'managed postgres', 'источники данных', 'импорт']
 doc_type: 'guide'
@@ -12,7 +12,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge />
 
-ClickHouse Cloud включает встроенный мастер импорта, который переносит вашу внешнюю базу данных PostgreSQL в сервис Managed Postgres. Этот мастер выполняет подключение к источнику, экспорт и импорт схемы, настройку репликации и выбор таблиц в рамках пяти пошаговых этапов.
+ClickHouse Cloud включает встроенный мастер импорта, который переносит вашу внешнюю базу данных PostgreSQL в сервис ClickHouse Managed Postgres. Этот мастер выполняет подключение к источнику, экспорт и импорт схемы, настройку репликации и выбор таблиц в рамках пяти пошаговых этапов.
 
 <div id="prerequisites">
   ## Предварительные требования
@@ -30,13 +30,13 @@ ClickHouse Cloud включает встроенный мастер импорт
 
 <Steps>
   <Step title="Подключитесь к исходной базе данных" id="step-1-connect">
-    Откройте [консоль ClickHouse Cloud](https://clickhouse.cloud) и выберите свой сервис Managed Postgres.
+    Откройте [консоль ClickHouse Cloud](https://clickhouse.cloud) и выберите свой сервис ClickHouse Managed Postgres.
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Карточка сервиса Managed Postgres в списке сервисов ClickHouse Cloud" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Карточка сервиса ClickHouse Managed Postgres в списке сервисов ClickHouse Cloud" size="lg" border />
 
     На левой боковой панели нажмите **Источники данных**.
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Пункт &#x22;Источники данных&#x22; на боковой панели сервиса Managed Postgres" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Пункт &#x22;Источники данных&#x22; на боковой панели сервиса ClickHouse Managed Postgres" size="lg" border />
 
     Нажмите **Начать импорт**.
 
@@ -78,10 +78,10 @@ ClickHouse Cloud включает встроенный мастер импорт
     Нажмите **Далее**.
   </Step>
 
-  <Step title="Импортируйте схему в сервис Managed Postgres" id="step-3-import-schema">
+  <Step title="Импортируйте схему в сервис ClickHouse Managed Postgres" id="step-3-import-schema">
     Выберите базу данных назначения в раскрывающемся списке или нажмите **Создать новую базу данных**, чтобы создать её.
 
-    Мастер покажет команду `psql` для применения дампа схемы к вашему сервису Managed Postgres. Выполните её в терминале:
+    Мастер покажет команду `psql` для применения дампа схемы к вашему сервису ClickHouse Managed Postgres. Выполните её в терминале:
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Шаг 3: команда psql для импорта схемы" size="lg" border />
 
@@ -120,7 +120,7 @@ ClickHouse Cloud включает встроенный мастер импорт
   <Step title="Выберите таблицы" id="step-5-select-tables">
     Выберите таблицы, которые нужно реплицировать. Таблицы сгруппированы по схемам. Можно выбрать отдельные таблицы или развернуть схему, чтобы выбрать все таблицы в ней.
 
-    <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Шаг 5: выбор таблиц, сгруппированных по схеме, с кнопкой Create migration" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Шаг 5: выбор таблиц, сгруппированных по схеме, с кнопкой создать миграцию" size="lg" border />
 
     Нажмите **Создать миграцию**.
   </Step>
@@ -159,7 +159,7 @@ ALTER DATABASE <source_db> SET default_transaction_read_only = on;
 **Убедитесь, что репликация синхронизировалась.** Сравните последнюю строку в источнике и целевой базе данных:
 
 ```sql
--- Выполните на источнике и целевой базе данных
+-- Run on both source and target
 SELECT MAX(id), MAX(updated_at) FROM public.orders;
 ```
 
@@ -193,7 +193,7 @@ BEGIN
 END $$;
 ```
 
-**Переведите трафик приложения.** Направьте операции чтения и записи на ваш сервис Managed Postgres и отслеживайте ошибки, нарушения ограничений и состояние репликации.
+**Переведите трафик приложения.** Направьте операции чтения и записи на ваш сервис ClickHouse Managed Postgres и отслеживайте ошибки, нарушения ограничений и состояние репликации.
 
 **Выполните очистку.**  После перевода трафика и подтверждения, что новый сервис работает нормально, удалите миграцию из раздела **Источники данных**. Если вы использовали CDC, удалите слот репликации на источнике, чтобы освободить ресурсы:
 
@@ -205,6 +205,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## Следующие шаги
 </div>
 
-* [Краткое руководство по Managed Postgres](/ru/products/managed-postgres/quickstart)
-* [Сведения о подключении к Managed Postgres](/ru/products/managed-postgres/connection)
+* [Быстрый старт по ClickHouse Managed Postgres](/ru/products/managed-postgres/quickstart)
+* [Сведения о подключении к ClickHouse Managed Postgres](/ru/products/managed-postgres/connection)
 * [FAQ по ClickPipes Postgres](/ru/integrations/clickpipes/postgres/faq)

@@ -68,7 +68,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title="تحقّق من إعدادات الخادم" id="server-config">
-    تأكد من إعداد قسم [`trace_log`](/ar/reference/settings/server-settings/settings#trace_log) في [ملف إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files). وهو مُمكَّن افتراضيًا:
+    تأكد من إعداد قسم [`trace_log`](/ar/reference/settings/server-settings/settings/other#trace_log) في [ملف إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files). وهو مُمكَّن افتراضيًا:
 
     ```xml
     <!-- سجل التتبّع. يخزّن تتبعات المكدس التي تجمعها أدوات تنميط الاستعلامات.
@@ -94,7 +94,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title="اضبط مؤقتات التحليل" id="configure-profile-timers">
-    أعِد الإعدادين [`query_profiler_cpu_time_period_ns`](/ar/reference/settings/session-settings#query_profiler_cpu_time_period_ns) أو [`query_profiler_real_time_period_ns`](/ar/reference/settings/session-settings#query_profiler_real_time_period_ns).
+    أعِد الإعدادين [`query_profiler_cpu_time_period_ns`](/ar/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) أو [`query_profiler_real_time_period_ns`](/ar/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     يمكن استخدام كلا الإعدادين في الوقت نفسه.
 
     تتيح لك هذه الإعدادات ضبط مؤقتات أداة التحليل.
@@ -106,7 +106,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title={<>حلّل الجدول النظامي <code>trace_log</code></>} id="analyze-trace-log-system-table">
-    لتحليل الجدول النظامي `trace_log`، اسمح باستخدام دوال الاستبطان عبر الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings#allow_introspection_functions):
+    لتحليل الجدول النظامي `trace_log`، اسمح باستخدام دوال الاستبطان عبر الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions):
 
     ```sql
     SET allow_introspection_functions=1

@@ -10,7 +10,7 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 <CloudOnlyBadge />
 
-O ClickHouse pode autenticar usuários usando JSON Web Tokens (JWTs). Diferentemente de outros autenticadores externos, como [LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) ou [Kerberos](/pt-BR/concepts/features/security/external-authenticators/kerberos), a autenticação por JWT não verifica a identidade de usuários já existentes. Em vez disso, ela cria dinamicamente **usuários efêmeros** a partir das claims contidas em cada token. Esses usuários existem apenas na memória, recebem permissões de acesso derivadas das claims do token e são removidos automaticamente quando o token expira.
+O ClickHouse pode autenticar usuários usando JSON Web Tokens (JWTs). Diferentemente de outros autenticadores externos, como [LDAP](/pt-BR/concepts/features/security/external-authenticators/ldap) ou [Kerberos](/pt-BR/concepts/features/security/external-authenticators/kerberos), a autenticação por JWT não verifica a identidade de usuários já existentes. Em vez disso, ela cria dinamicamente **usuários efêmeros** a partir das claims contidas em cada token. Esses usuários existem apenas na memória, recebem direitos de acesso derivados das claims do token e são removidos automaticamente quando o token expira.
 
 Isso torna a autenticação por JWT fundamentalmente diferente de métodos baseados em senha ou em certificado: não existe uma instrução `CREATE USER ... IDENTIFIED WITH jwt`, e tentar executá-la gera uma exceção. Os usuários JWT são totalmente gerenciados pelo ciclo de vida do token.
 

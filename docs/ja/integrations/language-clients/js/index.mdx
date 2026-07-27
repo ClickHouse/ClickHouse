@@ -1,5 +1,5 @@
 ---
-sidebarTitle: 'JavaScript'
+sidebarTitle: '概要'
 keywords: ['clickhouse', 'js', 'JavaScript', 'NodeJS', 'web', 'browser', 'Cloudflare', 'workers', 'client', 'connect', 'integrate']
 slug: /integrations/javascript
 description: 'ClickHouse に接続するための公式 JS クライアント。'
@@ -1005,10 +1005,10 @@ await client.query({
 </div>
 
 サーバーはこれらを数値として受け取れますが、これらの型の最大値は `Number.MAX_SAFE_INTEGER` を超えるため、
-整数オーバーフローを避ける目的で、`JSON*` 系の出力フォーマットでは文字列として返されます。
+整数オーバーフローを避ける目的で、`JSON*` ファミリーの出力フォーマットでは文字列として返されます。
 
 ただし、この動作は
-[`output_format_json_quote_64bit_integers` 設定](/ja/reference/settings/formats#output_format_json_quote_64bit_integers)
+[`output_format_json_quote_64bit_integers` 設定](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
 で変更できます。
 
 **例:** 64 ビット整数の JSON 出力フォーマットを調整します。

@@ -1,6 +1,6 @@
 ---
 description: 'توثيق ALTER'
-sidebarTitle: 'ALTER'
+sidebarTitle: 'نظرة عامة'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,11 +73,11 @@ doc_type: 'reference'
 
 بالنسبة إلى الجداول غير المكررة، تُنفَّذ جميع استعلامات `ALTER` بشكل متزامن. أما بالنسبة إلى الجداول المكررة، فلا يضيف الاستعلام سوى تعليمات بالإجراءات المناسبة إلى `ZooKeeper`، بينما تُنفَّذ هذه الإجراءات نفسها في أقرب وقت ممكن. ومع ذلك، يمكن أن ينتظر الاستعلام حتى تكتمل هذه الإجراءات على جميع النسخ المتماثلة.
 
-بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync).
+بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings/mutations#mutations_sync).
 
-أما استعلامات `ALTER` الأخرى التي لا تعدّل سوى البيانات الوصفية، فيمكنك استخدام الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) لضبط الانتظار.
+أما استعلامات `ALTER` الأخرى التي لا تعدّل سوى البيانات الوصفية، فيمكنك استخدام الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) لضبط الانتظار.
 
-يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   بالنسبة إلى جميع استعلامات `ALTER`، إذا كانت قيمة `alter_sync = 2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.

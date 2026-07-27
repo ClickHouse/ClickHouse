@@ -67,8 +67,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `rabbitmq_queue_base` - Укажите префикс для имен очередей. Варианты использования этой настройки описаны ниже.
 * `rabbitmq_persistent` - Если установлено значение 1 (`true`), для запроса вставки режим доставки будет установлен в 2 (сообщения помечаются как `persistent`). По умолчанию: `0`.
 * `rabbitmq_skip_broken_messages` – Допустимое количество несовместимых со схемой RabbitMQ-сообщений на блок, которые может пропустить парсер. Если `rabbitmq_skip_broken_messages = N`, то движок пропускает *N* RabbitMQ-сообщений, которые не удается разобрать (одно сообщение соответствует одной строке данных). По умолчанию: `0`.
-* `rabbitmq_max_block_size` - Количество строк, собираемых перед сбросом данных из RabbitMQ. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size).
-* `rabbitmq_flush_interval_ms` - Тайм-аут для сброса данных из RabbitMQ. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings#stream_flush_interval_ms).
+* `rabbitmq_max_block_size` - Количество строк, собираемых перед сбросом данных из RabbitMQ. По умолчанию: [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `rabbitmq_flush_interval_ms` - Тайм-аут для сброса данных из RabbitMQ. По умолчанию: [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `rabbitmq_queue_settings_list` - позволяет задавать настройки RabbitMQ при создании очереди. Доступные настройки: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. Настройка `durable` автоматически включается для очереди.
 * `rabbitmq_address` - Адрес для подключения. Используйте либо эту настройку, либо `rabbitmq_host_port`.
 * `rabbitmq_vhost` - RabbitMQ vhost. По умолчанию: `'/'`.
@@ -152,10 +152,10 @@ CREATE TABLE queue (
 Настройка `rabbitmq_queue_base` может использоваться в следующих случаях:
 
 * чтобы разные таблицы могли совместно использовать очереди, и для одних и тех же очередей можно было зарегистрировать несколько consumers, что повышает производительность. При использовании настроек `rabbitmq_num_consumers` и/или `rabbitmq_num_queues` точное совпадение очередей достигается, если эти параметры одинаковы.
-* чтобы можно было восстановить чтение из определенных долговечных очередей, если не все сообщения были успешно обработаны. Чтобы возобновить consumption из одной конкретной очереди, задайте ее имя в настройке `rabbitmq_queue_base` и не указывайте `rabbitmq_num_consumers` и `rabbitmq_num_queues` (по умолчанию 1). Чтобы возобновить consumption из всех очередей, объявленных для конкретной таблицы, просто укажите те же настройки: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. По умолчанию имена очередей будут уникальными для таблиц.
+* чтобы можно было восстановить чтение из определенных долговечных очередей, если не все сообщения были успешно обработаны. Чтобы возобновить consumption из одной конкретной очереди - задайте ее имя в настройке `rabbitmq_queue_base` и не указывайте `rabbitmq_num_consumers` и `rabbitmq_num_queues` (по умолчанию 1). Чтобы возобновить consumption из всех очередей, объявленных для конкретной таблицы - просто укажите те же настройки: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. По умолчанию имена очередей будут уникальными для таблиц.
 * чтобы повторно использовать очереди, так как они объявлены как долговечные и не удаляются автоматически. (Их можно удалить с помощью любого из CLI-инструментов RabbitMQ.)
 
-Чтобы повысить производительность, полученные сообщения группируются в блоки размером [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size). Если блок не был сформирован в течение [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/server-settings/settings) миллисекунд, данные будут записаны в таблицу независимо от полноты блока.
+Чтобы повысить производительность, полученные сообщения группируются в блоки размером [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings/max-insert#max_insert_block_size). Если блок не был сформирован в течение [stream&#95;flush&#95;interval&#95;ms](/ru/reference/settings/session-settings/stream#stream_flush_interval_ms) миллисекунд, данные будут записаны в таблицу независимо от полноты блока.
 
 Если настройки `rabbitmq_num_consumers` и/или `rabbitmq_num_queues` указаны вместе с `rabbitmq_exchange_type`, тогда:
 
@@ -220,6 +220,6 @@ SELECT key, value FROM daily ORDER BY key;
 Количество строк в одном сообщении RabbitMQ зависит от того, является формат построчным или блочным:
 
 * Для построчных форматов количество строк в одном сообщении RabbitMQ можно задавать с помощью настройки `rabbitmq_max_rows_per_message`.
-* Для блочных форматов разбить блок на более мелкие части нельзя, но количество строк в одном блоке можно регулировать общей настройкой [max&#95;block&#95;size](/ru/reference/settings/session-settings#max_block_size).
+* Для блочных форматов разбить блок на более мелкие части нельзя, но количество строк в одном блоке можно регулировать общей настройкой [max&#95;block&#95;size](/ru/reference/settings/session-settings/max#max_block_size).
 
 {/*AUTOGENERATED_END*/}

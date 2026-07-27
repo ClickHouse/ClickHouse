@@ -1,8 +1,8 @@
 ---
-sidebarTitle: 'Okta での SCIM プロビジョニング'
+sidebarTitle: 'Okta での SCIM Provisioning'
 slug: /cloud/security/scim-setup
-title: 'Okta での SCIM プロビジョニング'
-description: 'Okta と ClickHouse Cloud 間で SCIM プロビジョニングを設定する方法'
+title: 'Okta での SCIM Provisioning'
+description: 'Okta と ClickHouse Cloud 間で SCIM Provisioning を設定する方法'
 doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SCIM', 'プロビジョニング', 'Okta', 'SSO', 'SAML', 'アイデンティティプロバイダー', 'IdP', 'ユーザー管理']
 ---
@@ -16,7 +16,7 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 ClickHouse Cloud は、ユーザーとグループのライフサイクルを自動管理するための SCIM 2.0 (System for Cross-domain Identity Management) をサポートしています。IDプロバイダーに接続すると、ClickHouse Cloud アプリケーションに割り当てたすべてのユーザーが、適切なロールで組織内に自動的に作成されます。プロファイルの更新も自動的に反映され、IdP からユーザーを削除すると、そのユーザーのアクセス権も削除されます。手動で招待したり、不要なアカウントが残ったりすることはありません。
 
-このガイドでは、**Okta** を使用して SCIMプロビジョニングをエンドツーエンドで設定する手順を説明します。ClickHouse Cloud の SCIM エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証方式としてサポートされているのは Basic Auth のみで、検証済みの IDプロバイダーも Okta のみです。他の SCIM 2.0 IdP でも、Basic Auth で認証できれば動作する可能性はありますが、現時点では正式にはサポートされていません。
+このガイドでは、**Okta** を使用して SCIM Provisioningをエンドツーエンドで設定する手順を説明します。ClickHouse Cloud の SCIM エンドポイントは SCIM 2.0 (RFC 7644) に準拠していますが、認証方式としてサポートされているのは Basic Auth のみで、検証済みの IDプロバイダーも Okta のみです。他の SCIM 2.0 IdP でも、Basic Auth で認証できれば動作する可能性はありますが、現時点では正式にはサポートされていません。
 
 <div id="before-you-begin">
   ## 始める前に

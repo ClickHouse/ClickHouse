@@ -9,7 +9,7 @@ doc_type: 'reference'
 AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入向量，以处理数据、提取信息、对数据进行分类等……
 
 <Note>
-  AI 函数处于 Experimental 阶段。设置 [`allow_experimental_ai_functions`](/zh/reference/settings/session-settings#allow_experimental_ai_functions) 以启用它们。
+  AI 函数处于 Experimental 阶段。设置 [`allow_experimental_ai_functions`](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) 以启用它们。
 </Note>
 
 <Note>
@@ -18,8 +18,8 @@ AI 函数是 ClickHouse 中的内置函数，可用于调用 AI 或生成嵌入�
 
 所有函数共用一套通用基础设施，提供：
 
-* **配额限制**：每次查询的标记数限制 ([`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings#ai_function_max_input_tokens_per_query)、[`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) 以及 API 调用次数限制 ([`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings#ai_function_max_api_calls_per_query)) 。
-* **退避重试**：遇到临时性故障时会自动重试 ([`ai_function_max_retries`](/zh/reference/settings/session-settings#ai_function_max_retries)) ，并采用指数退避 ([`ai_function_retry_initial_delay_ms`](/zh/reference/settings/session-settings#ai_function_retry_initial_delay_ms)) 。
+* **配额限制**：每次查询的标记数限制 ([`ai_function_max_input_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query)、[`ai_function_max_output_tokens_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) 以及 API 调用次数限制 ([`ai_function_max_api_calls_per_query`](/zh/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)) 。
+* **退避重试**：遇到临时性故障时会自动重试 ([`ai_function_max_retries`](/zh/reference/settings/session-settings/ai-function#ai_function_max_retries)) ，并采用指数退避 ([`ai_function_retry_initial_delay_ms`](/zh/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)) 。
 
 <div id="configuration">
   ## 配置
@@ -69,8 +69,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. 参数映射中的 `credentials` 键 (如果存在) ；
 2. 否则，使用适用的默认凭据设置：
-   * 文本函数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) 使用 [`ai_function_text_default_credentials`](/zh/reference/settings/session-settings#ai_function_text_default_credentials)；
-   * `aiEmbed` 使用 [`ai_function_embedding_default_credentials`](/zh/reference/settings/session-settings#ai_function_embedding_default_credentials)。
+   * 文本函数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) 使用 [`ai_function_text_default_credentials`](/zh/reference/settings/session-settings/ai-function#ai_function_text_default_credentials)；
+   * `aiEmbed` 使用 [`ai_function_embedding_default_credentials`](/zh/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials)。
 
 如果两者都未设置，调用就会失败。文本函数和嵌入向量函数分别使用不同的默认设置，因为聊天补全所用的端点与嵌入向量所用的端点不同。
 
@@ -113,7 +113,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
   ### 限制端点主机
 </div>
 
-AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站目标端，并可能 (如果已指定) 在请求头中携带该命名集合的 `api_key`。默认情况下，ClickHouse 允许连接任意主机。要将函数限制为一组特定的提供商，请在服务器配置中设置 [`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings#remote_url_allow_hosts)，例如：
+AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站目标端，并可能 (如果已指定) 在请求头中携带该命名集合的 `api_key`。默认情况下，ClickHouse 允许连接任意主机。要将函数限制为一组特定的提供商，请在服务器配置中设置 [`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts)，例如：
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +133,7 @@ AI 命名集合中的 `endpoint` URL 是服务器以自身身份连接的出站�
 * `https://` — 连接使用 TLS。请求体 (输入文本、提示词) 以及请求头中的 `api_key` 都会在传输过程中加密，并且会验证提供商的证书。对于任何远程提供商，都应使用此方式。
 * `http://` — 连接**不加密**。请求体和 `api_key` 会以明文发送。仅应在私网中的可信提供商上使用此方式 (例如本地的 `vLLM` 或 `Ollama` 实例) 。
 
-AI 函数不会强制使用 HTTPS：`http://` 端点会被接受，并以未加密方式发送数据。目前还没有会拒绝明文 AI 端点的服务端设置——[`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings#remote_url_allow_hosts) 仅限制目标 host，不会检查 URL scheme，因此指向允许 host 的 `http://` 端点仍然可以通过。要确保传输加密，请将 命名集合 配置为使用 `https://` 端点。
+AI 函数不会强制使用 HTTPS：`http://` 端点会被接受，并以未加密方式发送数据。目前还没有会拒绝明文 AI 端点的服务端设置——[`remote_url_allow_hosts`](/zh/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) 仅限制目标 host，不会检查 URL scheme，因此指向允许 host 的 `http://` 端点仍然可以通过。要确保传输加密，请将 命名集合 配置为使用 `https://` 端点。
 
 请注意，无论哪种情况，TLS 终止后提供商都会以明文接收输入数据；TLS 仅保护 服务器 与提供商之间网络路径上的数据。
 
@@ -241,15 +241,15 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 使用已配置的 AI 提供商为给定文本生成嵌入向量。
 
-该函数会将文本发送到已配置的嵌入端点，并以 `Array(Float32)` 形式返回结果向量。
+该函数会将文本发送到已配置的 embedding 端点，并以 `Array(Float32)` 形式返回结果向量。
 在单个数据块内，输入会按批次分组，每个 HTTP 请求最多包含
-[`ai_function_embedding_max_batch_size`](/zh/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/zh/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 个条目，以减少每次调用的额外开销。
 
 凭据 (一个指定提供商、端点以及可选 API key 的命名集合)
 取自参数映射中的 `credentials` 键；如果映射中省略了该键，则使用
 `ai_function_embedding_default_credentials` 设置。请注意，`aiEmbed` 使用的是一个
-独立于文本函数的默认凭据设置，因为嵌入端点与聊天端点不同。
+独立于文本函数的默认凭据设置，因为 embedding 端点与聊天端点不同。
 
 `model` 是必需的位置参数 (一个常量 `String`) 。与文本函数不同，
 `aiEmbed` 不会从命名集合或参数映射中读取 `model`。如果某个命名集合

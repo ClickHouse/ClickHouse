@@ -341,7 +341,7 @@ INSERT INTO default.trips_all
     )
 ```
 
-삽입은 initiator 노드에서 수행됩니다. 즉, 읽기는 각 노드에서 수행되지만, 생성된 결과 행은 분산을 위해 initiator로 전달됩니다. 고처리량 시나리오에서는 이것이 병목이 될 수 있습니다. 이를 해결하려면 `s3cluster` 함수에 대해 [parallel&#95;distributed&#95;insert&#95;select](/ko/reference/settings/session-settings#parallel_distributed_insert_select) 매개변수를 설정하십시오.
+삽입은 initiator 노드에서 수행됩니다. 즉, 읽기는 각 노드에서 수행되지만, 생성된 결과 행은 분산을 위해 initiator로 전달됩니다. 고처리량 시나리오에서는 이것이 병목이 될 수 있습니다. 이를 해결하려면 `s3cluster` 함수에 대해 [parallel&#95;distributed&#95;insert&#95;select](/ko/reference/settings/session-settings/parallel#parallel_distributed_insert_select) 매개변수를 설정하십시오.
 
 <div id="s3-table-engines">
   ## S3 테이블 엔진
@@ -725,7 +725,7 @@ S3 디스크를 사용할 때는 `ReplicatedMergeTree` 테이블 엔진으로 �
 
 다음 참고 사항은 ClickHouse의 S3 상호작용 구현을 설명합니다. 주로 참고용 정보이지만, [성능 최적화](#s3-optimizing-performance) 시 도움이 될 수 있습니다.
 
-* 기본적으로 쿼리 처리 파이프라인의 각 단계에서 사용할 수 있는 최대 쿼리 처리 스레드 수는 코어 수와 같습니다. 일부 단계는 다른 단계보다 병렬화가 더 잘되므로, 이 값은 상한선 역할을 합니다. 데이터가 디스크에서 스트리밍되기 때문에 여러 쿼리 단계가 동시에 실행될 수 있습니다. 따라서 실제 쿼리에 사용되는 스레드 수는 이 값을 초과할 수 있습니다. 이 값은 [max&#95;threads](/ko/reference/settings/session-settings#max_threads) 설정으로 변경할 수 있습니다.
+* 기본적으로 쿼리 처리 파이프라인의 각 단계에서 사용할 수 있는 최대 쿼리 처리 스레드 수는 코어 수와 같습니다. 일부 단계는 다른 단계보다 병렬화가 더 잘되므로, 이 값은 상한선 역할을 합니다. 데이터가 디스크에서 스트리밍되기 때문에 여러 쿼리 단계가 동시에 실행될 수 있습니다. 따라서 실제 쿼리에 사용되는 스레드 수는 이 값을 초과할 수 있습니다. 이 값은 [max&#95;threads](/ko/reference/settings/session-settings/max-threads#max_threads) 설정으로 변경할 수 있습니다.
 * S3 읽기는 기본적으로 비동기 방식으로 수행됩니다. 이 동작은 `remote_filesystem_read_method` 설정으로 결정되며, 기본값은 `threadpool`입니다. 요청을 처리할 때 ClickHouse는 그래뉼을 스트라이프 단위로 읽습니다. 각 스트라이프에는 여러 컬럼이 포함될 수 있습니다. 스레드는 해당 그래뉼의 컬럼을 하나씩 읽습니다. 이를 동기식으로 처리하는 대신, 데이터를 기다리기 전에 모든 컬럼에 대해 프리페치를 수행합니다. 이 방식은 각 컬럼마다 동기적으로 기다리는 것보다 성능이 크게 향상됩니다. 대부분의 경우 이 설정을 변경할 필요는 없습니다. 자세한 내용은 [성능 최적화](#s3-optimizing-performance)를 참조하십시오.
 * 쓰기는 병렬로 수행되며, 동시에 사용할 수 있는 파일 쓰기 스레드는 최대 100개입니다. 기본값이 1000인 `max_insert_delayed_streams_for_parallel_write`는 병렬로 기록되는 S3 blob 수를 제어합니다. 기록 중인 각 파일마다 버퍼(~1MB)가 필요하므로, 이는 사실상 INSERT의 메모리 사용량을 제한합니다. 서버 메모리가 적은 환경에서는 이 값을 낮추는 것이 적절할 수 있습니다.
 
@@ -1259,7 +1259,7 @@ sudo service clickhouse-server start
   ```
 
 <Note>
-  위에 표시된 `'clickhouse/tables/{uuid}/{shard}` ZooKeeper 경로는 `default_replica_path`와 `default_replica_name`을 설정하여 사용자 지정할 수 있습니다. 관련 문서는 [여기](/ko/reference/settings/server-settings/settings#default_replica_path)에서 확인할 수 있습니다.
+  위에 표시된 `'clickhouse/tables/{uuid}/{shard}` ZooKeeper 경로는 `default_replica_path`와 `default_replica_name`을 설정하여 사용자 지정할 수 있습니다. 관련 문서는 [여기](/ko/reference/settings/server-settings/settings/default-replica#default_replica_path)에서 확인할 수 있습니다.
 </Note>
 
 <div id="testing">

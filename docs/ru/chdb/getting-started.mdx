@@ -226,7 +226,7 @@ sess.query("CREATE DATABASE IF NOT EXISTS youtube")
 ```
 
 Теперь мы можем создать таблицу `dislikes` на основе схемы из JSON‑файла, используя приём `CREATE...EMPTY AS`.
-Мы будем использовать настройку [`schema_inference_make_columns_nullable`](/ru/reference/settings/formats#schema_inference_make_columns_nullable), чтобы не все типы столбцов становились `Nullable`.
+Мы будем использовать настройку [`schema_inference_make_columns_nullable`](/ru/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable), чтобы не все типы столбцов становились `Nullable`.
 
 ```python
 sess.query(f"""

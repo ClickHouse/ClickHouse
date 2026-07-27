@@ -6,10 +6,10 @@ title: 'دوال الذكاء الاصطناعي'
 doc_type: 'reference'
 ---
 
-دوال الذكاء الاصطناعي هي دوال مضمّنة في ClickHouse يمكنك استخدامها لاستدعاء الذكاء الاصطناعي أو إنشاء embeddings للعمل مع بياناتك، واستخراج المعلومات، وتصنيف البيانات، وغير ذلك...
+دوال الذكاء الاصطناعي هي دوال مضمّنة في ClickHouse يمكنك استخدامها لاستدعاء الذكاء الاصطناعي أو إنشاء تضمين للعمل مع بياناتك، واستخراج المعلومات، وتصنيف البيانات، وغير ذلك...
 
 <Note>
-  دوال الذكاء الاصطناعي تجريبية. اضبط [`allow_experimental_ai_functions`](/ar/reference/settings/session-settings#allow_experimental_ai_functions) لتمكينها.
+  دوال الذكاء الاصطناعي تجريبية. اضبط [`allow_experimental_ai_functions`](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions) لتمكينها.
 </Note>
 
 <Note>
@@ -18,8 +18,8 @@ doc_type: 'reference'
 
 تشترك جميع الدوال في بنية تحتية موحّدة توفّر ما يلي:
 
-* **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-* **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+* **فرض الحصص**: حدود لكل استعلام على الرموز ([`ai_function_max_input_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) واستدعاءات واجهة برمجة التطبيقات ([`ai_function_max_api_calls_per_query`](/ar/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings/ai-function#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
   ## الإعداد
@@ -69,8 +69,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. مفتاح `credentials` في خريطة المَعلمات الخاصة بها، إن وُجد؛
 2. وإلا، إعداد بيانات الاعتماد الافتراضي المنطبق:
-   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`);
-   * [`ai_function_embedding_default_credentials`](/ar/reference/settings/session-settings#ai_function_embedding_default_credentials) للدالة `aiEmbed`.
+   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`);
+   * [`ai_function_embedding_default_credentials`](/ar/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) للدالة `aiEmbed`.
 
 إذا لم يُضبط أيٌّ منهما، يفشل الاستدعاء. تستخدم دوال النص ودوال التضمين إعدادات افتراضية منفصلة لأن نقطة النهاية الخاصة بإكمالات الدردشة تختلف عن نظيرتها الخاصة بالتضمينات.
 
@@ -113,7 +113,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
   ### تقييد مضيفات نقطة النهاية
 </div>
 
-يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
+يمثل عنوان URL الخاص بـ `endpoint` في مجموعة مسماة للذكاء الاصطناعي وجهةً خارجية يتصل بها الخادم باستخدام هويته الخاصة، وقد يتضمن — إذا جرى تحديده — `api_key` الخاص بالمجموعة المسماة في رؤوس الطلب. افتراضيًا، يسمح ClickHouse بأي مضيف. لحصر الدوال في مجموعة محددة من الموفّرين، اضبط [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) في إعدادات الخادم، على سبيل المثال:
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +133,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
 * `https://` — يستخدم الاتصال TLS. يُشفَّر جسم الطلب (النص المُدخل، والتوجيهات) و`api_key` في headers الطلب أثناء النقل، كما يجري التحقق من certificate الخاصة بالموفّر. استخدم هذا مع أي موفّر بعيد.
 * `http://` — الاتصال **غير مشفَّر**. يُرسَل جسم الطلب و`api_key` بصيغة مكشوفة. استخدم هذا فقط مع موفّر موثوق على private network (مثل instance محلي من `vLLM` أو `Ollama`).
 
-لا تفرض دوال الذكاء الاصطناعي استخدام HTTPS: إذ يُقبل `endpoint` من نوع `http://` وتُرسَل البيانات من دون تشفير. لا يوجد حاليًا إعداد server-side يرفض نقاط نهاية AI ذات النص المكشوف — إذ يقيّد [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings#remote_url_allow_hosts) مضيف الوجهة فقط ولا يفحص scheme الخاص بعنوان URL، لذا فإن `endpoint` من نوع `http://` والموجَّه إلى مضيف مسموح به يمر أيضًا. ولضمان نقل مشفَّر، اضبط مجموعات مُسمّاة باستخدام نقاط نهاية `https://`.
+لا تفرض دوال الذكاء الاصطناعي استخدام HTTPS: إذ يُقبل `endpoint` من نوع `http://` وتُرسَل البيانات من دون تشفير. لا يوجد حاليًا إعداد server-side يرفض نقاط نهاية AI ذات النص المكشوف — إذ يقيّد [`remote_url_allow_hosts`](/ar/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) مضيف الوجهة فقط ولا يفحص scheme الخاص بعنوان URL، لذا فإن `endpoint` من نوع `http://` والموجَّه إلى مضيف مسموح به يمر أيضًا. ولضمان نقل مشفَّر، اضبط مجموعات مُسمّاة باستخدام نقاط نهاية `https://`.
 
 لاحظ أنه في كلتا الحالتين يتلقى الموفّر بيانات الإدخال بصيغة مكشوفة بعد إنهاء TLS؛ إذ لا يحمي TLS البيانات إلا على مسار الشبكة بين الخادم والموفّر.
 
@@ -243,7 +243,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 ترسل الدالة النص إلى نقطة نهاية التضمين المُعَدّة وتُرجع المتجه الناتج بصيغة `Array(Float32)`.
 ضمن كتلة واحدة من الصفوف، تُجمَّع المدخلات في دفعات يصل حجمها إلى
-[`ai_function_embedding_max_batch_size`](/ar/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/ar/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 إدخالًا لكل طلب HTTP لتقليل الأعباء الإضافية لكل استدعاء.
 
 تُؤخذ بيانات الاعتماد (مجموعة مسماة تحدد الموفّر ونقطة النهاية، وبشكل اختياري مفتاح واجهة برمجة تطبيقات)

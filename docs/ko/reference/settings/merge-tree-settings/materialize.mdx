@@ -23,7 +23,7 @@ import VersionHistory from "/snippets/ko/components/VersionHistory/VersionHistor
 
 활성화하면 머지 시 새 파트에 대한 스키핑 인덱스를 생성하여 저장합니다.
 그렇지 않으면 명시적인 [MATERIALIZE INDEX](/ko/reference/statements/alter/skipping-index#materialize-index)
-또는 [INSERT 시](/ko/reference/settings/session-settings#materialize_skip_indexes_on_insert) 생성하여 저장할 수 있습니다.
+또는 [INSERT 시](/ko/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) 생성하여 저장할 수 있습니다.
 
 더 세밀하게 제어하려면 [exclude&#95;materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ko/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge)도 참고하십시오.
 
@@ -37,7 +37,7 @@ import VersionHistory from "/snippets/ko/components/VersionHistory/VersionHistor
 
 활성화하면 머지 시 새 파트에 대한 통계를 생성하여 저장합니다.
 그렇지 않으면 명시적으로 [MATERIALIZE STATISTICS](/ko/reference/statements/alter/statistics)를 실행하거나
-[INSERT 중](/ko/reference/settings/session-settings#materialize_statistics_on_insert)에 생성하여 저장할 수 있습니다.
+[INSERT 중](/ko/reference/settings/session-settings/materialize#materialize_statistics_on_insert)에 생성하여 저장할 수 있습니다.
 
 <div id="materialize_ttl_recalculate_only">
   ## materialize_ttl_recalculate_only

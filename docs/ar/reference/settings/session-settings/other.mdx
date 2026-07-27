@@ -122,7 +122,7 @@ import VersionHistory from "/snippets/ar/components/VersionHistory/VersionHistor
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-لا يكون لهذا الإعداد تأثير إلا في ClickHouse Cloud. عدد الخيوط الخلفية المخصّصة لتنزيل أجزاء البيانات الجديدة استباقيًا إلى ذاكرة التخزين المؤقت لنظام الملفات عند تمكين [cache&#95;populated&#95;by&#95;fetch](/ar/reference/settings/merge-tree-settings#cache_populated_by_fetch). استخدم القيمة صفر للتعطيل.
+لا يكون لهذا الإعداد تأثير إلا في ClickHouse Cloud. عدد الخيوط الخلفية المخصّصة لتنزيل أجزاء البيانات الجديدة استباقيًا إلى ذاكرة التخزين المؤقت لنظام الملفات عند تمكين [cache&#95;populated&#95;by&#95;fetch](/ar/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch). استخدم القيمة صفر للتعطيل.
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -447,7 +447,7 @@ SETTINGS convert_query_to_cnf = true;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "إعداد جديد."}]}]} />
 
-يستثني فهارس التخطي المحددة من بنائها وتخزينها أثناء عمليات INSERT. وستظل فهارس التخطي المستثناة تُبنى وتُخزَّن [أثناء عمليات الدمج](/ar/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) أو من خلال استعلام
+يستثني فهارس التخطي المحددة من بنائها وتخزينها أثناء عمليات INSERT. وستظل فهارس التخطي المستثناة تُبنى وتُخزَّن [أثناء عمليات الدمج](/ar/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) أو من خلال استعلام
 [MATERIALIZE INDEX](/ar/reference/statements/alter/skipping-index#materialize-index) صريح.
 
 لا يكون له أي تأثير إذا كانت [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ar/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) مضبوطة على false.
@@ -1152,7 +1152,7 @@ priority الاستعلام. 1 هي الأعلى، وكلما زادت القي�
 
 الفاصل الزمني، بالمللي ثانية، الذي تُجمع عنده بيانات [query&#95;metric&#95;log](/ar/reference/system-tables/query_metric_log) لكل استعلام على حدة.
 
-إذا ضُبطت هذه القيمة على أي قيمة سالبة، فستأخذ قيمة `collect_interval_milliseconds` من [إعداد query&#95;metric&#95;log](/ar/reference/settings/server-settings/settings#query_metric_log)، أو ستُستخدم القيمة الافتراضية 1000 إذا لم تكن موجودة.
+إذا ضُبطت هذه القيمة على أي قيمة سالبة، فستأخذ قيمة `collect_interval_milliseconds` من [إعداد query&#95;metric&#95;log](/ar/reference/settings/server-settings/settings/query#query_metric_log)، أو ستُستخدم القيمة الافتراضية 1000 إذا لم تكن موجودة.
 
 لتعطيل جمع البيانات لاستعلام واحد، اضبط `query_metric_log_interval` على 0.
 
@@ -1391,7 +1391,7 @@ FORMAT Null;
 يضبط المنطقة الزمنية الضمنية للجلسة الحالية أو للاستعلام الحالي.
 المنطقة الزمنية الضمنية هي المنطقة الزمنية المُطبَّقة على القيم من النوع DateTime/DateTime64 التي لا تكون لها منطقة زمنية محددة صراحةً.
 يتقدّم هذا الإعداد على المنطقة الزمنية الضمنية المضبوطة عمومًا (على مستوى الخادم).
-تعني القيمة &#39;&#39; (سلسلة فارغة) أن المنطقة الزمنية الضمنية للجلسة الحالية أو للاستعلام الحالي تساوي [المنطقة الزمنية للخادم](/ar/reference/settings/server-settings/settings#timezone).
+تعني القيمة &#39;&#39; (سلسلة فارغة) أن المنطقة الزمنية الضمنية للجلسة الحالية أو للاستعلام الحالي تساوي [المنطقة الزمنية للخادم](/ar/reference/settings/server-settings/settings/other#timezone).
 
 يمكنك استخدام الدالتين `timeZone()` و`serverTimeZone()` للحصول على المنطقة الزمنية للجلسة والمنطقة الزمنية للخادم.
 
@@ -1445,7 +1445,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 **انظر أيضًا**
 
-* [timezone](/ar/reference/settings/server-settings/settings#timezone)
+* [timezone](/ar/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

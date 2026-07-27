@@ -228,6 +228,8 @@ import VersionHistory from "/snippets/ar/components/VersionHistory/VersionHistor
 
 إذا ضُبطت هذه القيمة على true، أمكن إلغاء تسلسل الأعمدة المنفصلة المكتوبة بتنسيق CSV إلى عمود Tuple.
 
+ينطبق هذا فقط على `Tuple` العاري. ويُكتب `Nullable(Tuple)` دائمًا كحقل CSV واحد (انظر [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/ar/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns))، وبالمثل يُقرأ مرة أخرى من حقل واحد فقط، وليس من أعمدة منفصلة مطلقًا، بغض النظر عن هذا الإعداد. تحليل الأعمدة المنفصلة غير مدعوم لـ `Nullable(Tuple)` لأن الحقل الأول `\N` ملتبس (فقد يكون NULL الخارجي للـ tuple أو NULL للعنصر الأول فيه).
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>
@@ -386,9 +388,9 @@ import VersionHistory from "/snippets/ar/components/VersionHistory/VersionHistor
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "إعداد جديد يتحكم في كيفية التعامل مع أنواع الأشكال الهندسية في GeoJSON التي لا يمكن تمثيلها بالنوع `Geometry` ‏(`GeometryCollection`، `MultiPoint`)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "إعداد جديد يتحكم في كيفية التعامل مع أنواع الأشكال الهندسية في GeoJSON التي لا يمكن تمثيلها بالنوع `Geometry` ‏(مثل `GeometryCollection`)"}]}]} />
 
-يتحكم هذا الإعداد في ما يحدث عندما يلزم تخزين نوع شكل هندسي صالح من `GeoJSON` لا يمكن تمثيله بالنوع `Geometry` في ClickHouse (مثل `GeometryCollection` أو `MultiPoint`) في العمود `geometry` أثناء قراءة إدخال `GeoJSON`.
+يتحكم هذا الإعداد في ما يحدث عندما يلزم تخزين نوع شكل هندسي صالح من `GeoJSON` لا يمكن تمثيله بالنوع `Geometry` في ClickHouse (مثل `GeometryCollection`) في العمود `geometry` أثناء قراءة إدخال `GeoJSON`.
 
 القيم الممكنة:
 
@@ -1004,7 +1006,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "إعداد جديد لاستخدام الأعمدة الجغرافية في ملف Parquet"}]}]} />
 
-استخدم محلّل الأعمدة الجغرافية لتحويل Array(UInt8) إلى أنواع Point/Linestring/Polygon/MultiLineString/MultiPolygon
+استخدم محلّل الأعمدة الجغرافية لتحويل Array(UInt8) إلى أنواع Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
 
 <div id="input_format_parquet_allow_missing_columns">
   ## input_format_parquet_allow_missing_columns

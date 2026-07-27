@@ -61,7 +61,7 @@ ClickHouse 支持对这些格式进行读写。
 
 Array 可以嵌套，其参数也可以是 `Nullable` 类型的值。`Tuple` 和 `Map` 类型同样可以嵌套。
 
-`DICTIONARY` 类型支持用于 `INSERT` 查询；对于 `SELECT` 查询，则提供了 [`output_format_arrow_low_cardinality_as_dictionary`](/zh/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) 设置，可将 [LowCardinality](/zh/reference/data-types/lowcardinality) 类型输出为 `DICTIONARY` 类型。请注意，`LowCardinality` 字典中可能包含未使用的值，这可能导致输出的 Arrow `DICTIONARY` 中也出现未使用的值。
+`DICTIONARY` 类型支持用于 `INSERT` 查询；对于 `SELECT` 查询，则提供了 [`output_format_arrow_low_cardinality_as_dictionary`](/zh/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) 设置，可将 [LowCardinality](/zh/reference/data-types/lowcardinality) 类型输出为 `DICTIONARY` 类型。请注意，`LowCardinality` 字典中可能包含未使用的值，这可能导致输出的 Arrow `DICTIONARY` 中也出现未使用的值。
 
 不支持的 Arrow 数据类型：
 

@@ -2165,14 +2165,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Introduzido em: v21.7.0
 
 Serializa um valor em sua representação JSON. Há suporte para vários tipos de dados e estruturas aninhadas.
-[inteiros](/pt-BR/reference/data-types/int-uint) de 64 bits ou maiores (como `UInt64` ou `Int128`) são colocados entre aspas por padrão. [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats#output_format_json_quote_64bit_integers) controla esse comportamento.
-Os valores especiais `NaN` e `inf` são substituídos por `null`. Habilite a configuração [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats#output_format_json_quote_denormals) para exibi-los.
+[inteiros](/pt-BR/reference/data-types/int-uint) de 64 bits ou maiores (como `UInt64` ou `Int128`) são colocados entre aspas por padrão. [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) controla esse comportamento.
+Os valores especiais `NaN` e `inf` são substituídos por `null`. Habilite a configuração [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_denormals) para exibi-los.
 Ao serializar um valor [Enum](/pt-BR/reference/data-types/enum), a função retorna seu nome.
 
 Veja também:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/pt-BR/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **Sintaxe**
 

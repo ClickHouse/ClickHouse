@@ -66,8 +66,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_reconnect_wait` – 각 재연결 시도 사이에 대기할 시간(밀리초)입니다. 기본값: `2000`.
 * `nats_server_list` - 연결을 위한 서버 목록입니다. NATS 클러스터에 연결할 때 지정할 수 있습니다.
 * `nats_skip_broken_messages` - 블록당 스키마와 호환되지 않는 메시지에 대한 NATS 메시지 파서 허용치입니다. 기본값: `0`. `nats_skip_broken_messages = N`이면 엔진은 파싱할 수 없는 NATS 메시지 *N*개를 건너뜁니다(메시지 하나는 데이터 한 행과 같습니다).
-* `nats_max_block_size` - NATS에서 데이터를 플러시하기 위해 폴링으로 수집하는 행 수입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - NATS에서 읽은 데이터를 플러시하는 타임아웃입니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings#stream_flush_interval_ms).
+* `nats_max_block_size` - NATS에서 데이터를 플러시하기 위해 폴링으로 수집하는 행 수입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - NATS에서 읽은 데이터를 플러시하는 타임아웃입니다. 기본값: [stream&#95;flush&#95;interval&#95;ms](/ko/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_username` - NATS 사용자 이름입니다.
 * `nats_password` - NATS 비밀번호입니다.
 * `nats_token` - NATS 인증 토큰입니다.
@@ -194,7 +194,7 @@ NATS 엔진은 ClickHouse에서 지원하는 모든 [포맷](/ko/reference/forma
 하나의 NATS 메시지에 포함되는 행 수는 해당 포맷이 행 기반인지 블록 기반인지에 따라 달라집니다.
 
 * 행 기반 포맷에서는 하나의 NATS 메시지에 포함되는 행 수를 `nats_max_rows_per_message` 설정으로 제어할 수 있습니다.
-* 블록 기반 포맷에서는 블록을 더 작은 부분으로 나눌 수는 없지만, 하나의 블록에 포함되는 행 수는 일반 설정인 [max&#95;block&#95;size](/ko/reference/settings/session-settings#max_block_size)로 제어할 수 있습니다.
+* 블록 기반 포맷에서는 블록을 더 작은 부분으로 나눌 수는 없지만, 하나의 블록에 포함되는 행 수는 일반 설정인 [max&#95;block&#95;size](/ko/reference/settings/session-settings/max#max_block_size)로 제어할 수 있습니다.
 
 <div id="using-jetstream">
   ## JetStream 사용

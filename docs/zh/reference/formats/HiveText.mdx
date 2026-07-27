@@ -27,7 +27,7 @@ Hive 默认的 `\x01` (Ctrl-A) 作为分隔符。字段分隔符
 
 `HiveText` 是一种仅用于输入的格式。数据没有表头：值会按位置映射到目标表的各列，因此列名和类型取自该表 (或显式提供的
 结构) ，而不是从数据中自动推断。读取时，ClickHouse 会以尽力而为模式解析
-日期和时间 (参见 [`date_time_input_format`](/zh/reference/settings/formats#date_time_input_format)) ，
+日期和时间 (参见 [`date_time_input_format`](/zh/reference/settings/formats/date-time#date_time_input_format)) ，
 用列默认值填充末尾省略的字段，并跳过无法
 识别的字段。
 

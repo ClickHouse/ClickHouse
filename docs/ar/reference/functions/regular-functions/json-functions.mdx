@@ -2165,14 +2165,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 أُضيف في: v21.7.0
 
 يحوِّل قيمة إلى تمثيلها بتنسيق JSON. وتُدعَم أنواع البيانات المختلفة والبُنى المتداخلة.
-تُحاط [الأعداد الصحيحة](/ar/reference/data-types/int-uint) بطول 64 بت أو أكثر (مثل `UInt64` أو `Int128`) بعلامات اقتباس افتراضيًا. ويحدّد [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats#output_format_json_quote_64bit_integers) هذا السلوك.
-تُستبدل القيم الخاصة `NaN` و `inf` بـ `null`. فعِّل الإعداد [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats#output_format_json_quote_denormals) لإظهارها.
+تُحاط [الأعداد الصحيحة](/ar/reference/data-types/int-uint) بطول 64 بت أو أكثر (مثل `UInt64` أو `Int128`) بعلامات اقتباس افتراضيًا. ويحدّد [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) هذا السلوك.
+تُستبدل القيم الخاصة `NaN` و `inf` بـ `null`. فعِّل الإعداد [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats/output-format#output_format_json_quote_denormals) لإظهارها.
 عند تحويل قيمة [Enum](/ar/reference/data-types/enum)، تُخرج الدالة اسمها.
 
 انظر أيضًا:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ar/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ar/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **البنية**
 

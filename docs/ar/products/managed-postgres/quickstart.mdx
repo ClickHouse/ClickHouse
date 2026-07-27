@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/quickstart
 sidebarTitle: 'الدليل السريع'
-title: 'الدليل السريع لـ Managed Postgres'
+title: 'الدليل السريع لـ ClickHouse Managed Postgres'
 description: 'اختبر أداء Postgres المعزّز بـ NVMe وأضف التحليل في الوقت الفعلي عبر تكامل ClickHouse الأصلي'
 keywords: ['managed postgres', 'الدليل السريع', 'البدء', 'إنشاء قاعدة بيانات', 'nvme', 'الأداء', 'clickhousectl', 'CLI', 'الأتمتة', 'وكلاء الذكاء الاصطناعي']
 doc_type: 'guide'
@@ -32,11 +32,11 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     * **Part 1:** ابدأ باستخدام NVMe Postgres واختبر أداءه
     * **Part 2:** استفِد من التحليلات في الوقت الفعلي عبر التكامل مع ClickHouse
 
-    Managed Postgres متاح حاليًا على AWS في عدة مناطق وهو في مرحلة Public Beta.
+    ClickHouse Managed Postgres متاح حاليًا على AWS في عدة مناطق وهو في مرحلة Public Beta.
 
     **في هذا الدليل التمهيدي، ستتعلم:**
 
-    * أنشئ مثيل Managed Postgres بأداء مدعوم بـ NVMe
+    * أنشئ مثيل ClickHouse Managed Postgres بأداء مدعوم بـ NVMe
     * أدخِل مليون حدث تجريبي وشاهد سرعة NVMe عمليًا
     * شغّل الاستعلامات واختبر أداءً بزمن انتقال منخفض
     * انسخ البيانات إلى ClickHouse لإجراء تحليلات في الوقت الفعلي
@@ -46,21 +46,21 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     ### إنشاء قاعدة بيانات
 
-    لإنشاء خدمة Managed Postgres جديدة، انقر على زر **New service** في قائمة الخدمات في Cloud Console. ستتمكن بعد ذلك من اختيار Postgres نوعًا لقاعدة البيانات.
+    لإنشاء خدمة ClickHouse Managed Postgres جديدة، انقر على زر **New service** في قائمة الخدمات في Cloud Console. ستتمكن بعد ذلك من اختيار Postgres نوعًا لقاعدة البيانات.
 
-    <Image img="/images/managed-postgres/create-service.webp" alt="أنشئ خدمة Postgres مُدارة" size="md" border />
+    <Image img="/images/managed-postgres/create-service.webp" alt="أنشئ خدمة ClickHouse Managed Postgres" size="md" border />
 
     أدخل اسمًا لـ instance قاعدة البيانات الخاصة بك وانقر على **Create service**. سيتم نقلك إلى صفحة Overview.
 
-    <Image img="/images/managed-postgres/overview.webp" alt="نظرة عامة على Managed Postgres" size="md" border />
+    <Image img="/images/managed-postgres/overview.webp" alt="نظرة عامة على ClickHouse Managed Postgres" size="md" border />
 
-    سيتم توفير مثيل Managed Postgres الخاص بك وسيكون جاهزًا للاستخدام في غضون 3-5 دقائق.
+    سيتم توفير مثيل ClickHouse Managed Postgres الخاص بك وسيكون جاهزًا للاستخدام في غضون 3-5 دقائق.
 
     ### الاتصال بقاعدة البيانات
 
     في الشريط الجانبي على اليسار، ستجد [**زر الاتصال**](/ar/products/managed-postgres/connection). انقر عليه لعرض تفاصيل الاتصال وسلاسل الاتصال بتنسيقات متعددة.
 
-    <Image img="/images/managed-postgres/connect-modal.webp" alt="النافذة المنبثقة Connect لـ Managed Postgres" size="md" border />
+    <Image img="/images/managed-postgres/connect-modal.webp" alt="النافذة المنبثقة Connect لـ ClickHouse Managed Postgres" size="md" border />
 
     انسخ سلسلة اتصال `psql` واتصل بقاعدة بياناتك. يمكنك أيضًا استخدام أي عميل متوافق مع Postgres مثل DBeaver، أو أي مكتبة تطبيق.
 
@@ -262,7 +262,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
       تأكد من أن خدمة ClickHouse التي تحددها في حالة Running قبل المتابعة.
     </Info>
 
-    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="نموذج تكامل Managed Postgres" size="md" border />
+    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="نموذج تكامل ClickHouse Managed Postgres" size="md" border />
 
     انقر على **التالي** للانتقال إلى منتقي الجداول. كل ما عليك فعله هنا هو:
 
@@ -270,7 +270,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     * وسّع المخطط **public** وحدد جدولي users وevents اللذين أنشأناهما سابقًا.
     * انقر على **Replicate data to ClickHouse**.
 
-    <Image img="/images/managed-postgres/table-picker.webp" alt="منتقي الجداول في Managed Postgres" size="md" border />
+    <Image img="/images/managed-postgres/table-picker.webp" alt="منتقي الجداول في ClickHouse Managed Postgres" size="md" border />
 
     ستبدأ عملية النسخ المتماثل، وسيُنقل إليك صفحة نظرة عامة على التكامل. بما أن هذا هو التكامل الأول، فقد يستغرق إعداد البنية التحتية الأولية من دقيقتين إلى ثلاث دقائق. في هذه الأثناء، لنستعرض الإضافة الجديدة **pg&#95;clickhouse**.
 
@@ -321,11 +321,11 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     لنعُد إلى صفحة التكامل. ينبغي أن ترى أن النسخ المتماثل الأولي قد اكتمل. انقر على اسم التكامل لعرض التفاصيل.
 
-    <Image img="/images/managed-postgres/analytics-list.webp" alt="قائمة تحليلات Managed Postgres" size="md" border />
+    <Image img="/images/managed-postgres/analytics-list.webp" alt="قائمة تحليلات ClickHouse Managed Postgres" size="md" border />
 
     انقر على اسم الخدمة لفتح وحدة تحكم ClickHouse وعرض الجداول المُنسوخة.
 
-    <Image img="/images/managed-postgres/replicated-tables.webp" alt="جداول Managed Postgres المُكرَّرة في ClickHouse" size="md" border />
+    <Image img="/images/managed-postgres/replicated-tables.webp" alt="الجداول المُكرَّرة لـ ClickHouse Managed Postgres في ClickHouse" size="md" border />
 
     ### مقارنة أداء Postgres مقابل ClickHouse
 
@@ -399,10 +399,10 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     **مقارنة الأداء:**
 
-    | الاستعلام                                | Postgres (NVMe)  | ClickHouse (via pg&#95;clickhouse) | التسارع |
-    | ---------------------------------------- | ---------------- | ---------------------------------- | ------- |
-    | أبرز المستخدمين (5 عمليات تجميع)         | 555 ms           | 164 مللي ثانية                     | 3.4x    |
-    | تفاعل المستخدمين (JOIN + عمليات التجميع) | 1,246 مللي ثانية | 170 مللي ثانية                     | 7.3x    |
+    | الاستعلام                                | Postgres (NVMe) | ClickHouse (via pg&#95;clickhouse) | التسارع |
+    | ---------------------------------------- | --------------- | ---------------------------------- | ------- |
+    | أبرز المستخدمين (5 عمليات تجميع)         | 555 ms          | 164 ms                             | 3.4x    |
+    | تفاعل المستخدمين (JOIN + عمليات التجميع) | 1,246 ms        | 170 ms                             | 7.3x    |
 
     <Tip>
       **متى تستخدم ClickHouse**
@@ -417,6 +417,6 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     لحذف الموارد التي أُنشئت في هذا الدليل التمهيدي:
 
     1. أولًا، احذف تكامل ClickPipe من خدمة ClickHouse
-    2. ثم احذف مثيل Managed Postgres من Cloud Console
+    2. ثم احذف مثيل ClickHouse Managed Postgres من Cloud Console
   </View>
 </Visibility>

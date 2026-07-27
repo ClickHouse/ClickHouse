@@ -47,7 +47,7 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings) 设置时收到的查询。
+用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings/log-queries#log_queries) 设置时收到的查询。
 
 查询会记录到 [system.query&#95;log](/zh/reference/system-tables/query_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
@@ -145,7 +145,7 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
   ## query_thread_log
 </div>
 
-用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings#log_query_threads) 设置时接收到的查询线程的设置。
+用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings/log-query#log_query_threads) 设置时接收到的查询线程的设置。
 
 查询会记录到 [system.query&#95;thread&#95;log](/zh/reference/system-tables/query_thread_log) 表中，而不是单独的文件中。您可以通过 `table` 参数更改该表的名称 (见下文) 。
 
@@ -172,7 +172,7 @@ import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
   ## query_views_log
 </div>
 
-用于记录视图 (如 live、materialized 等) 的设置，具体取决于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings#log_query_views) 设置。
+用于记录视图 (如 live、materialized 等) 的设置，具体取决于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings/log-query#log_query_views) 设置。
 
 查询会记录到 [system.query&#95;views&#95;log](/zh/reference/system-tables/query_views_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 

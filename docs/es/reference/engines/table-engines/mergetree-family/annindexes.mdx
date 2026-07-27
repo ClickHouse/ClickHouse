@@ -36,7 +36,7 @@ Para ello, puede utilizarse cualquiera de las [funciones de distancia](/es/refer
 
 Se puede realizar una búsqueda vectorial exacta usando la consulta SELECT anterior tal cual.
 El tiempo de ejecución de estas consultas suele ser proporcional al número de vectores almacenados y a su dimensión, es decir, al número de elementos del array.
-Además, dado que ClickHouse realiza un escaneo por fuerza bruta de todos los vectores, el tiempo de ejecución también depende del número de hilos que utiliza la consulta (consulta la configuración [max&#95;threads](/es/reference/settings/session-settings#max_threads)).
+Además, dado que ClickHouse realiza un escaneo por fuerza bruta de todos los vectores, el tiempo de ejecución también depende del número de hilos que utiliza la consulta (consulta la configuración [max&#95;threads](/es/reference/settings/session-settings/max-threads#max_threads)).
 
 <div id="exact-nearest-neighbor-search-example">
   ### Ejemplo
@@ -210,7 +210,7 @@ La fórmula anterior no contempla la memoria adicional que necesitan los índice
 </div>
 
 <Note>
-  Para usar índices de similitud vectorial, la configuración [compatibility](/es/reference/settings/session-settings) debe estar establecida en `''` (el valor predeterminado), o en `'25.1'` o una versión posterior.
+  Para usar índices de similitud vectorial, la configuración [compatibility](/es/reference/settings/session-settings/compatibility#compatibility) debe estar establecida en `''` (el valor predeterminado), o en `'25.1'` o una versión posterior.
 </Note>
 
 Los índices de similitud vectorial admiten consultas SELECT con la siguiente forma:
@@ -219,7 +219,7 @@ Los índices de similitud vectorial admiten consultas SELECT con la siguiente fo
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- la cláusula WHERE es opcional
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
@@ -227,12 +227,12 @@ LIMIT <N>
 El optimizador de consultas de ClickHouse intenta hacer coincidir la plantilla de consulta anterior y aprovechar los índices de similitud vectorial disponibles.
 Una consulta solo puede usar un índice de similitud vectorial si la función de distancia en la consulta SELECT coincide con la función de distancia especificada en la definición del índice.
 
-Los usuarios avanzados pueden proporcionar un valor personalizado para el parámetro [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/es/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (también conocido como el hiperparámetro HNSW &quot;ef&#95;search&quot;) para ajustar el tamaño de la lista de candidatos durante la búsqueda (p. ej., `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+Los usuarios avanzados pueden proporcionar un valor personalizado para el parámetro [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/es/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (también conocido como el hiperparámetro HNSW &quot;ef&#95;search&quot;) para ajustar el tamaño de la lista de candidatos durante la búsqueda (p. ej., `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
 El valor predeterminado de 256 para este parámetro funciona bien en la mayoría de los casos de uso.
 Valores más altos implican mayor precisión a costa de un rendimiento más lento.
 
 Si la consulta puede utilizar un índice de similitud vectorial, ClickHouse comprueba que el LIMIT `<N>` proporcionado en las consultas SELECT esté dentro de límites razonables.
-Más concretamente, se devuelve un error si `<N>` es mayor que el valor del parámetro [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/es/reference/settings/session-settings#max_limit_for_vector_search_queries), cuyo valor predeterminado es 100.
+Más concretamente, se devuelve un error si `<N>` es mayor que el valor del parámetro [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/es/reference/settings/session-settings/max#max_limit_for_vector_search_queries), cuyo valor predeterminado es 100.
 Valores de LIMIT demasiado grandes pueden ralentizar las búsquedas y, por lo general, indican un error de uso.
 
 Para comprobar si una consulta SELECT utiliza un índice de similitud vectorial, puede agregar el prefijo `EXPLAIN indexes = 1` a la consulta.
@@ -251,7 +251,7 @@ LIMIT 10;
 puede devolver
 
 ```result
-┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
  1. │ Expression (Project names)                                                                      │
  2. │   Limit (preliminary LIMIT (without OFFSET))                                                    │
  3. │     Sorting (Sorting for ORDER BY)                                                              │
@@ -270,16 +270,16 @@ puede devolver
     └─────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-En este ejemplo, 1 millón de vectores del [dataset dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), cada uno con dimensión 1536, se almacenan en 575 granules, es decir, 1,7k filas por granule.
-La consulta solicita 10 vecinos y el índice de similitud vectorial los encuentra en 10 granules distintos.
-Estos 10 granules se leerán durante la ejecución de la consulta.
+En este ejemplo, 1 millón de vectores del [dataset dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), cada uno con dimensión 1536, se almacenan en 575 gránulos, es decir, 1,7k filas por gránulo.
+La consulta solicita 10 vecinos y el índice de similitud vectorial los encuentra en 10 gránulos distintos.
+Estos 10 gránulos se leerán durante la ejecución de la consulta.
 
 Los índices de similitud vectorial se utilizan si la salida contiene `Skip` y el nombre y tipo del índice vectorial (en el ejemplo, `idx` y `vector_similarity`).
 En este caso, el índice de similitud vectorial descartó dos de cuatro gránulos, es decir, el 50 % de los datos.
 Cuantos más gránulos se puedan descartar, más efectivo será el uso del índice.
 
 <Tip>
-  Para forzar el uso del índice, puedes ejecutar la consulta SELECT con la configuración [force&#95;data&#95;skipping&#95;indexes](/es/reference/settings/session-settings#force_data_skipping_indices) (indica el nombre del índice como valor de la configuración).
+  Para forzar el uso del índice, puedes ejecutar la consulta SELECT con la configuración [force&#95;data&#95;skipping&#95;indices](/es/reference/settings/session-settings/force#force_data_skipping_indices) (indica el nombre del índice como valor de la configuración).
 </Tip>
 
 **Post-filtrado y pre-filtrado**
@@ -289,9 +289,9 @@ ClickHouse evaluará estas condiciones de filtro mediante la estrategia de post-
 En resumen, ambas estrategias determinan el orden en que se evalúan los filtros:
 
 * El posfiltrado significa que primero se evalúa el índice de similitud vectorial y, después, ClickHouse evalúa los filtros adicionales especificados en la cláusula `WHERE`.
-* Con el prefiltrado, el orden de evaluación del filtro es el contrario.
+* El prefiltrado significa que el orden de evaluación de los filtros es el inverso.
 
-Cada estrategia tiene sus propias ventajas y desventajas:
+Las estrategias tienen distintas compensaciones:
 
 * El posfiltrado tiene el problema general de que puede devolver menos filas de las solicitadas en la cláusula `LIMIT <N>`. Esta situación se produce cuando una o más filas de resultado devueltas por el índice de similitud vectorial no cumplen los filtros adicionales.
 * El prefiltrado es, por lo general, un problema no resuelto. Algunas bases de datos vectoriales especializadas proporcionan algoritmos de prefiltrado, pero la mayoría de las bases de datos relacionales (incluido ClickHouse) recurren a la búsqueda exacta de vecinos, es decir, a un escaneo por fuerza bruta sin índice.
@@ -316,7 +316,7 @@ ClickHouse descartará todas las particiones excepto la de 2025.
 
 *Los filtros adicionales no pueden evaluarse mediante índices*
 
-Si las condiciones de filtro adicionales no pueden evaluarse mediante índices (índice de clave primaria, índice de omisión de dato), ClickHouse aplicará postfiltrado.
+Si las condiciones de filtro adicionales no pueden evaluarse mediante índices (índice de clave primaria, índice de omisión de datos), ClickHouse aplicará postfiltrado.
 
 *Los filtros adicionales pueden evaluarse mediante el índice de clave primaria*
 
@@ -327,14 +327,14 @@ Si las condiciones de filtro adicionales pueden evaluarse mediante la [clave pri
 
 En la práctica, este último caso es bastante poco probable.
 
-*Los filtros adicionales pueden evaluarse mediante índices de omisión de dato*
+*Los filtros adicionales pueden evaluarse mediante índices de omisión de datos*
 
-Si las condiciones de filtro adicionales pueden evaluarse mediante [índices de omisión de dato](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (índice minmax, índice Set, etc.), ClickHouse realiza postfiltrado.
-En esos casos, el índice de similitud vectorial se evalúa primero, ya que se espera que descarte más filas que los demás índices de omisión de dato.
+Si las condiciones de filtro adicionales pueden evaluarse mediante [índices de omisión de datos](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (índice minmax, índice Set, etc.), ClickHouse realiza postfiltrado.
+En esos casos, el índice de similitud vectorial se evalúa primero, ya que se espera que descarte más filas que los demás índices de omisión de datos.
 
 Para un control más preciso del postfiltrado frente al prefiltrado, pueden usarse dos configuraciones:
 
-La configuración [vector&#95;search&#95;filter&#95;strategy](/es/reference/settings/session-settings#vector_search_filter_strategy) (valor predeterminado: `auto`, que implementa las heurísticas anteriores) puede establecerse en `prefilter`.
+La configuración [vector&#95;search&#95;filter&#95;strategy](/es/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (valor predeterminado: `auto`, que implementa las heurísticas anteriores) puede establecerse en `prefilter`.
 Esto resulta útil para forzar el prefiltrado en los casos en que las condiciones de filtro adicionales son extremadamente selectivas.
 Como ejemplo, la siguiente consulta puede beneficiarse del prefiltrado:
 
@@ -349,7 +349,7 @@ LIMIT 10
 Suponiendo que solo un número muy pequeño de libros cuesta menos de 2 dólares, el posfiltrado puede devolver cero filas porque las 10 coincidencias principales devueltas por el índice vectorial podrían tener todas un precio superior a 2 dólares.
 Al forzar el prefiltrado (añada `SETTINGS vector_search_filter_strategy = 'prefilter'` a la consulta), ClickHouse primero encuentra todos los libros con un precio inferior a 2 dólares y luego ejecuta una búsqueda vectorial por fuerza bruta sobre los libros encontrados.
 
-Como enfoque alternativo para resolver el problema anterior, [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings#vector_search_index_fetch_multiplier) (valor predeterminado: `1.0`, máximo: `1000.0`) puede configurarse con un valor &gt; `1.0` (por ejemplo, `2.0`).
+Como enfoque alternativo para resolver el problema anterior, [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (valor predeterminado: `1.0`, máximo: `1000.0`) puede configurarse con un valor &gt; `1.0` (por ejemplo, `2.0`).
 La cantidad de vecinos más cercanos obtenidos del índice vectorial se multiplica por el valor de esta configuración y, a continuación, se aplica el filtro adicional sobre esas filas para devolver tantas filas como indique LIMIT.
 Por ejemplo, podemos volver a ejecutar la consulta, pero con un multiplicador de `3.0`:
 
@@ -368,8 +368,8 @@ Cabe señalar que configurar `vector_search_index_fetch_multiplier` puede mitiga
 
 **Reclasificación**
 
-Los índices de omisión de dato en ClickHouse suelen filtrar a nivel de gránulo; es decir, una búsqueda en un índice de omisión de dato (internamente) devuelve una lista de gránulos que podrían coincidir, lo que reduce la cantidad de datos leídos en el escaneo posterior.
-Esto funciona bien para los índices de omisión de dato en general, pero en el caso de los índices de similitud vectorial, crea un &quot;desajuste de granularidad&quot;.
+Los índices de omisión de datos en ClickHouse suelen filtrar a nivel de gránulo; es decir, una búsqueda en un índice de omisión de datos (internamente) devuelve una lista de gránulos que podrían coincidir, lo que reduce la cantidad de datos leídos en el escaneo posterior.
+Esto funciona bien para los índices de omisión de datos en general, pero en el caso de los índices de similitud vectorial, crea un &quot;desajuste de granularidad&quot;.
 En más detalle, el índice de similitud vectorial determina los números de fila de los N vectores más similares para un vector de referencia dado.
 Con la configuración `vector_search_with_rescoring = 1`, ClickHouse lee los vectores originales de precisión completa para las filas candidatas y calcula la distancia final en la canalización SQL habitual.
 Cuando el plan de consulta lo permite, ClickHouse filtra el escaneo a las filas candidatas devueltas por el índice vectorial antes del cálculo final de la distancia.
@@ -377,7 +377,7 @@ Este paso se llama rescoring y puede mejorar la exactitud, especialmente con ín
 Si filtros adicionales eliminan demasiados candidatos o se necesita una mayor exhaustividad, aumente la configuración `vector_search_index_fetch_multiplier` para que el índice vectorial devuelva más filas candidatas para el rescoring.
 
 Por lo tanto, ClickHouse proporciona una optimización que desactiva el rescoring y devuelve los vectores más similares y sus distancias directamente desde el índice.
-La optimización está habilitada de forma predeterminada; consulte la configuración [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings#vector_search_with_rescoring).
+La optimización está habilitada de forma predeterminada; consulte la configuración [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings/vector-search#vector_search_with_rescoring).
 A grandes rasgos, funciona así: ClickHouse pone los vectores más similares y sus distancias a disposición como una columna virtual `_distance`.
 Para verlo, ejecute una consulta de búsqueda vectorial con `EXPLAIN header = 1`:
 
@@ -442,14 +442,14 @@ Lo ideal es usar índices de similitud vectorial solo si los datos son inmutable
 Para acelerar la creación de índices, se pueden utilizar las siguientes técnicas:
 
 En primer lugar, la creación de índices puede paralelizarse.
-El número máximo de hilos para la creación de índices puede configurarse mediante la configuración del servidor [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/es/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size).
+El número máximo de hilos para la creación de índices puede configurarse mediante la configuración del servidor [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/es/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size).
 Para obtener un rendimiento óptimo, el valor de esta configuración debe ajustarse al número de núcleos de CPU.
 
-En segundo lugar, para acelerar las sentencias INSERT, los usuarios pueden desactivar la creación de índices de omisión de dato en las partes recién insertadas mediante la configuración de sesión [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/es/reference/settings/session-settings#materialize_skip_indexes_on_insert).
+En segundo lugar, para acelerar las sentencias INSERT, los usuarios pueden desactivar la creación de índices de omisión de datos en las partes recién insertadas mediante la configuración de sesión [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/es/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert).
 Las consultas SELECT sobre esas partes recurrirán a la búsqueda exacta.
 Dado que las partes insertadas suelen ser pequeñas en comparación con el tamaño total de la tabla, se espera que el impacto en el rendimiento sea insignificante.
 
-En tercer lugar, para acelerar las fusiones, los usuarios pueden desactivar la creación de índices de omisión de dato en las partes fusionadas mediante la configuración de sesión [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/es/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge).
+En tercer lugar, para acelerar las fusiones, los usuarios pueden desactivar la creación de índices de omisión de datos en las partes fusionadas mediante la configuración de sesión [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/es/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge).
 Esto, junto con la sentencia [ALTER TABLE [...] MATERIALIZE INDEX [...]](/es/reference/statements/alter/skipping-index#materialize-index), proporciona un control explícito sobre el ciclo de vida de los índices de similitud vectorial.
 Por ejemplo, la creación de índices puede posponerse hasta que se hayan ingestado todos los datos o hasta un periodo de baja carga del sistema, como el fin de semana.
 
@@ -458,7 +458,7 @@ Por ejemplo, la creación de índices puede posponerse hasta que se hayan ingest
 Las consultas SELECT necesitan cargar los índices de similitud vectorial en la memoria principal para poder utilizarlos.
 Para evitar que el mismo índice de similitud vectorial se cargue repetidamente en la memoria principal, ClickHouse proporciona una caché en memoria específica para estos índices.
 Cuanto mayor sea esta caché, menos cargas innecesarias se producirán.
-El tamaño máximo de la caché puede configurarse mediante la configuración del servidor [vector&#95;similarity&#95;index&#95;cache&#95;size](/es/reference/settings/server-settings/settings#vector_similarity_index_cache_size).
+El tamaño máximo de la caché puede configurarse mediante la configuración del servidor [vector&#95;similarity&#95;index&#95;cache&#95;size](/es/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size).
 De forma predeterminada, la caché puede crecer hasta 5 GB.
 
 Los siguientes mensajes de registro (`system.text_log`) indican que se está cargando el índice de similitud vectorial.
@@ -518,7 +518,7 @@ La cuantización reduce la precisión de las búsquedas vectoriales en comparaci
 Sin embargo, en la mayoría de los conjuntos de datos, la cuantización brain float de precisión media (`bf16`) da como resultado una pérdida de precisión insignificante, por lo que los índices de similitud vectorial usan esta técnica de cuantización de forma predeterminada.
 La cuantización de cuarto de precisión (`i8`) y la cuantización binaria (`b1`) provocan una pérdida de precisión apreciable en las búsquedas vectoriales.
 Recomendamos ambas cuantizaciones solo si el tamaño del índice de similitud vectorial es significativamente mayor que la DRAM disponible.
-En ese caso, también sugerimos habilitar el rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings#vector_search_with_rescoring)) para mejorar la precisión.
+En ese caso, también sugerimos habilitar el rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) para mejorar la precisión.
 La cuantización binaria solo se recomienda para 1) embeddings normalizados (es decir, longitud del vector = 1; los modelos de OpenAI suelen estar normalizados), y 2) si se utiliza la distancia de coseno como función de distancia.
 La cuantización binaria usa internamente la distancia de Hamming para construir el grafo de proximidad y buscar en él.
 El paso de rescoring utiliza los vectores originales de precisión completa almacenados en la tabla para identificar los vecinos más cercanos mediante la distancia de coseno.

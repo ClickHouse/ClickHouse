@@ -292,7 +292,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
 ```
 
 <Note>
-  要高效地从 Compact MergeTree parts 中读取子列，请确保已启用 MergeTree 设置 [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/zh/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts)。
+  要高效地从 Compact MergeTree parts 中读取子列，请确保已启用 MergeTree 设置 [write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/zh/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts)。
 </Note>
 
 <div id="reading-json-sub-objects-as-sub-columns">
@@ -395,16 +395,16 @@ FROM test;
 其工作方式与[从输入数据自动推断 schema](/zh/concepts/features/interfaces/schema-inference)类似，
 并由相同的设置控制：
 
-* [input&#95;format&#95;try&#95;infer&#95;dates](/zh/reference/settings/formats#input_format_try_infer_dates)
-* [input&#95;format&#95;try&#95;infer&#95;datetimes](/zh/reference/settings/formats#input_format_try_infer_datetimes)
-* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/zh/reference/settings/formats#schema_inference_make_columns_nullable)
-* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/zh/reference/settings/formats#input_format_json_try_infer_numbers_from_strings)
-* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/zh/reference/settings/formats#input_format_json_infer_incomplete_types_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/zh/reference/settings/formats#input_format_json_read_numbers_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/zh/reference/settings/formats#input_format_json_read_bools_as_strings)
-* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/zh/reference/settings/formats#input_format_json_read_bools_as_numbers)
-* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/zh/reference/settings/formats#input_format_json_read_arrays_as_strings)
-* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/zh/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
+* [input&#95;format&#95;try&#95;infer&#95;dates](/zh/reference/settings/formats/input-format#input_format_try_infer_dates)
+* [input&#95;format&#95;try&#95;infer&#95;datetimes](/zh/reference/settings/formats/input-format#input_format_try_infer_datetimes)
+* [schema&#95;inference&#95;make&#95;columns&#95;nullable](/zh/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable)
+* [input&#95;format&#95;json&#95;try&#95;infer&#95;numbers&#95;from&#95;strings](/zh/reference/settings/formats/input-format#input_format_json_try_infer_numbers_from_strings)
+* [input&#95;format&#95;json&#95;infer&#95;incomplete&#95;types&#95;as&#95;strings](/zh/reference/settings/formats/input-format#input_format_json_infer_incomplete_types_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;numbers&#95;as&#95;strings](/zh/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;strings](/zh/reference/settings/formats/input-format#input_format_json_read_bools_as_strings)
+* [input&#95;format&#95;json&#95;read&#95;bools&#95;as&#95;numbers](/zh/reference/settings/formats/input-format#input_format_json_read_bools_as_numbers)
+* [input&#95;format&#95;json&#95;read&#95;arrays&#95;as&#95;strings](/zh/reference/settings/formats/input-format#input_format_json_read_arrays_as_strings)
+* [input&#95;format&#95;json&#95;infer&#95;array&#95;of&#95;dynamic&#95;from&#95;array&#95;of&#95;different&#95;types](/zh/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types)
 
 下面来看一些示例：
 
@@ -615,7 +615,7 @@ Code: 117. DB::Exception: Cannot insert data into JSON column: Duplicate path fo
 ```
 
 如果你想保留带点号的键，并避免将其格式化为嵌套对象，可以启用
-设置 [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/zh/reference/settings/formats#json_type_escape_dots_in_keys) (从版本 `25.8` 开始可用) 。在这种情况下，解析期间 JSON 键中的所有点号都会被
+设置 [json&#95;type&#95;escape&#95;dots&#95;in&#95;keys](/zh/reference/settings/formats/other#json_type_escape_dots_in_keys) (从版本 `25.8` 开始可用) 。在这种情况下，解析期间 JSON 键中的所有点号都会被
 转义为 `%2E`，并在格式化期间再还原回来。
 
 ```sql title="Query"
@@ -880,12 +880,12 @@ ORDER BY _part ASC
 和 `advanced`。
 
 序列化版本由 MergeTree
-settings [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings#object_shared_data_serialization_version)
-和 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/zh/reference/settings/merge-tree-settings#object_shared_data_serialization_version_for_zero_level_parts)
+settings [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version)
+和 [object&#95;shared&#95;data&#95;serialization&#95;version&#95;for&#95;zero&#95;level&#95;parts](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_serialization_version_for_zero_level_parts)
 控制 (零级 part 是在向表中插入数据时创建的 part，而在 merge 过程中生成的 parts 会具有更高的级别) 。
 
 注意：仅
-对 `v3` [object serialization version](/zh/reference/settings/merge-tree-settings#object_serialization_version)
+对 `v3` [object serialization version](/zh/reference/settings/merge-tree-settings/other#object_serialization_version)
 支持更改共享数据结构序列化
 
 <div id="shared-data-map">
@@ -909,8 +909,8 @@ settings [object&#95;shared&#95;data&#95;serialization&#95;version](/zh/referenc
 这种序列化在写入数据以及读取整个 `JSON` 列时效率较低，但在读取路径子列时效率更高，
 因为它只会从所需的桶中读取数据。
 
-桶的数量 `N` 由 MergeTree 设置 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/zh/reference/settings/merge-tree-settings#object_shared_data_buckets_for_compact_part) (默认为 8)
-和 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings#object_shared_data_buckets_for_wide_part) (默认为 32) 控制。
+桶的数量 `N` 由 MergeTree 设置 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_compact_part) (默认为 8)
+和 [object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/zh/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (默认为 32) 控制。
 这两个设置允许的最大值均为 256。
 
 <div id="shared-data-advanced">

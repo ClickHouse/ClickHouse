@@ -228,6 +228,8 @@ Lors de la lecture d&#39;un Array à partir de CSV, les éléments sont supposé
 
 Si ce paramètre est défini sur true, des colonnes distinctes écrites au format CSV peuvent être désérialisées en une colonne Tuple.
 
+Cela s’applique uniquement à `Tuple` seul. Un `Nullable(Tuple)` est toujours écrit dans un seul champ CSV (voir [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](/fr/reference/settings/formats/output-format#output_format_csv_serialize_tuple_into_separate_columns)) et est de même relu depuis un seul champ, jamais depuis des colonnes distinctes, quel que soit ce paramètre. L’analyse de colonnes distinctes n’est pas prise en charge pour `Nullable(Tuple)`, car un champ initial `\N` est ambigu (il peut s’agir du NULL externe du tuple ou du NULL de son premier élément).
+
 <div id="input_format_csv_detect_header">
   ## input_format_csv_detect_header
 </div>
@@ -386,9 +388,9 @@ Forcer l&#39;initialisation des champs omis avec des valeurs NULL
 
 <SettingsInfoBlock type="GeoJSONUnsupportedGeometryHandling" default_value="throw" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Nouveau paramètre qui contrôle la gestion des types de géométrie GeoJSON qui ne peuvent pas être représentés par le type `Geometry` (GeometryCollection, MultiPoint)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "throw"},{"label": "Nouveau paramètre qui contrôle la gestion des types de géométrie GeoJSON qui ne peuvent pas être représentés par le type `Geometry` (GeometryCollection)"}]}]} />
 
-Contrôle ce qui se passe lorsqu’un type de géométrie `GeoJSON` valide qui ne peut pas être représenté par le type `Geometry` de ClickHouse (comme `GeometryCollection` ou `MultiPoint`) doit être stocké dans la colonne `geometry` lors de la lecture d’une entrée au format `GeoJSON`.
+Contrôle ce qui se passe lorsqu’un type de géométrie `GeoJSON` valide qui ne peut pas être représenté par le type `Geometry` de ClickHouse (comme `GeometryCollection`) doit être stocké dans la colonne `geometry` lors de la lecture d’une entrée au format `GeoJSON`.
 
 Valeurs possibles :
 
@@ -1004,7 +1006,7 @@ Valeurs possibles :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Nouveau paramètre permettant d'utiliser des colonnes géo dans un fichier Parquet"}]}]} />
 
-Utilise l’analyseur de colonnes géo pour convertir Array(UInt8) en types Point/Linestring/Polygon/MultiLineString/MultiPolygon
+Utilise le parseur de colonnes géo pour convertir Array(UInt8) en types Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon
 
 <div id="input_format_parquet_allow_missing_columns">
   ## input_format_parquet_allow_missing_columns

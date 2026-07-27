@@ -12,7 +12,7 @@ O ClickHouse pode determinar automaticamente a estrutura de dados JSON. Isso per
   ## Quando usar inferência de tipos
 </div>
 
-* **Estrutura consistente** - Os dados com base nos quais você vai inferir os tipos contêm todas as chaves de interesse. A inferência de tipos se baseia na amostragem dos dados até um [número máximo de linhas](/pt-BR/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) ou de [bytes](/pt-BR/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference). Dados além da amostra, com colunas adicionais, serão ignorados e não poderão ser consultados.
+* **Estrutura consistente** - Os dados com base nos quais você vai inferir os tipos contêm todas as chaves de interesse. A inferência de tipos se baseia na amostragem dos dados até um [número máximo de linhas](/pt-BR/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) ou de [bytes](/pt-BR/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference). Dados além da amostra, com colunas adicionais, serão ignorados e não poderão ser consultados.
 * **Tipos consistentes** - Os tipos de dados de chaves específicas precisam ser compatíveis, ou seja, deve ser possível converter automaticamente um tipo em outro.
 
 Se você tiver um JSON mais dinâmico, ao qual novas chaves podem ser adicionadas e no qual vários tipos são possíveis para o mesmo caminho, consulte [&quot;Trabalhando com dados semiestruturados e dinâmicos&quot;](/pt-BR/guides/clickhouse/data-formats/json/inference#working-with-semi-structured-data).
@@ -100,7 +100,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Evite valores nulos**
 
-  Você pode ver que muitas colunas são detectadas como Nullable. [Não recomendamos usar o tipo Nullable](/pt-BR/reference/data-types/nullable#storage-features) quando isso não for absolutamente necessário. Você pode usar [schema&#95;inference&#95;make&#95;columns&#95;nullable](/pt-BR/reference/settings/formats#schema_inference_make_columns_nullable) para controlar quando Nullable será aplicado.
+  Você pode ver que muitas colunas são detectadas como Nullable. [Não recomendamos usar o tipo Nullable](/pt-BR/reference/data-types/nullable#storage-features) quando isso não for absolutamente necessário. Você pode usar [schema&#95;inference&#95;make&#95;columns&#95;nullable](/pt-BR/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable) para controlar quando Nullable será aplicado.
 </Info>
 
 Podemos ver que a maioria das colunas foi detectada automaticamente como `String`, com a coluna `update_date` detectada corretamente como `Date`. A coluna `versions` foi criada como `Array(Tuple(created String, version String))` para armazenar uma lista de objetos, e `authors_parsed` foi definida como `Array(Array(String))` para arrays aninhados.
@@ -108,7 +108,7 @@ Podemos ver que a maioria das colunas foi detectada automaticamente como `String
 <Info>
   **Controle da detecção de tipos**
 
-  A detecção automática de datas e DateTimes pode ser controlada, respectivamente, pelas configurações [`input_format_try_infer_dates`](/pt-BR/reference/settings/formats#input_format_try_infer_dates) e [`input_format_try_infer_datetimes`](/pt-BR/reference/settings/formats#input_format_try_infer_datetimes) (ambas ativadas por padrão). A inferência de objetos como Tuples é controlada pela configuração [`input_format_json_try_infer_named_tuples_from_objects`](/pt-BR/reference/settings/formats#input_format_json_try_infer_named_tuples_from_objects). Outras configurações que controlam a inferência de esquema para JSON, como a detecção automática de números, podem ser encontradas [aqui](/pt-BR/concepts/features/interfaces/schema-inference#text-formats).
+  A detecção automática de datas e DateTimes pode ser controlada, respectivamente, pelas configurações [`input_format_try_infer_dates`](/pt-BR/reference/settings/formats/input-format#input_format_try_infer_dates) e [`input_format_try_infer_datetimes`](/pt-BR/reference/settings/formats/input-format#input_format_try_infer_datetimes) (ambas ativadas por padrão). A inferência de objetos como Tuples é controlada pela configuração [`input_format_json_try_infer_named_tuples_from_objects`](/pt-BR/reference/settings/formats/input-format#input_format_json_try_infer_named_tuples_from_objects). Outras configurações que controlam a inferência de esquema para JSON, como a detecção automática de números, podem ser encontradas [aqui](/pt-BR/concepts/features/interfaces/schema-inference#text-formats).
 </Info>
 
 <div id="querying-json">
@@ -176,7 +176,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.j
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
-Para confirmar a estrutura da tabela, usamos o comando `SHOW CREATE TABLE`:
+Para confirmar o esquema da tabela, usamos o comando `SHOW CREATE TABLE`:
 
 ```sql
 SHOW CREATE TABLE arxiv
@@ -202,7 +202,7 @@ ENGINE = MergeTree
 ORDER BY update_date
 ```
 
-O esquema acima é o esquema correto para esses dados. A inferência de esquema se baseia na amostragem e na leitura dos dados linha por linha. Os valores das colunas são extraídos de acordo com o formato, usando parsers recursivos e heurísticas para determinar o tipo de cada valor. O número máximo de linhas e bytes lidos dos dados durante a inferência de esquema é controlado pelas configurações [`input_format_max_rows_to_read_for_schema_inference`](/pt-BR/reference/settings/formats#input_format_max_rows_to_read_for_schema_inference) (25000 por padrão) e [`input_format_max_bytes_to_read_for_schema_inference`](/pt-BR/reference/settings/formats#input_format_max_bytes_to_read_for_schema_inference) (32MB por padrão). Se a detecção não estiver correta, você pode fornecer dicas conforme descrito [aqui](/pt-BR/reference/settings/formats#schema_inference_make_columns_nullable).
+O esquema acima é o esquema correto para esses dados. A inferência de esquema se baseia na amostragem e na leitura dos dados linha por linha. Os valores das colunas são extraídos de acordo com o formato, usando parsers recursivos e heurísticas para determinar o tipo de cada valor. O número máximo de linhas e bytes lidos dos dados durante a inferência de esquema é controlado pelas configurações [`input_format_max_rows_to_read_for_schema_inference`](/pt-BR/reference/settings/formats/input-format#input_format_max_rows_to_read_for_schema_inference) (25000 por padrão) e [`input_format_max_bytes_to_read_for_schema_inference`](/pt-BR/reference/settings/formats/input-format#input_format_max_bytes_to_read_for_schema_inference) (32MB por padrão). Se a detecção não estiver correta, você pode fornecer dicas conforme descrito [aqui](/pt-BR/reference/settings/formats/schema-inference#schema_inference_make_columns_nullable).
 
 <div id="creating-tables-from-snippets">
   ### Criando tabelas a partir de snippets
@@ -303,7 +303,7 @@ FORMAT PrettyJSONEachRow
   ## Tratando erros
 </div>
 
-Às vezes, você pode ter dados inválidos. Por exemplo, colunas específicas que não têm o tipo correto ou um objeto JSON formatado incorretamente. Para isso, você pode usar as configurações [`input_format_allow_errors_num`](/pt-BR/reference/settings/formats#input_format_allow_errors_num) e [`input_format_allow_errors_ratio`](/pt-BR/reference/settings/formats#input_format_allow_errors_ratio) para permitir que um determinado número de linhas seja ignorado se os dados estiverem causando erros de inserção. Além disso, [dicas](/pt-BR/reference/settings/formats#schema_inference_hints) podem ser fornecidas para ajudar na inferência.
+Às vezes, você pode ter dados inválidos. Por exemplo, colunas específicas que não têm o tipo correto ou um objeto JSON formatado incorretamente. Para isso, você pode usar as configurações [`input_format_allow_errors_num`](/pt-BR/reference/settings/formats/input-format#input_format_allow_errors_num) e [`input_format_allow_errors_ratio`](/pt-BR/reference/settings/formats/input-format#input_format_allow_errors_ratio) para permitir que um determinado número de linhas seja ignorado se os dados estiverem causando erros de inserção. Além disso, [dicas](/pt-BR/reference/settings/formats/schema-inference#schema_inference_hints) podem ser fornecidas para ajudar na inferência.
 
 <div id="working-with-semi-structured-data">
   ## Trabalhando com dados semi-estruturados e dinâmicos
@@ -339,7 +339,7 @@ Uma amostra desses dados está disponível publicamente em formato JSON delimita
 ```sql
 DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
 
--- resultado omitido por brevidade
+-- result omitted for brevity
 ```
 
 ```response
@@ -390,7 +390,7 @@ SETTINGS describe_compact_output = 1
 <Info>
   **Coerção de tipos**
 
-  Essa coerção de tipos pode ser controlada por meio de várias configurações. O exemplo acima depende da configuração [`input_format_json_read_numbers_as_strings`](/pt-BR/reference/settings/formats#input_format_json_read_numbers_as_strings).
+  Essa coerção de tipos pode ser controlada por meio de várias configurações. O exemplo acima depende da configuração [`input_format_json_read_numbers_as_strings`](/pt-BR/reference/settings/formats/input-format#input_format_json_read_numbers_as_strings).
 </Info>
 
 No entanto, alguns tipos são incompatíveis. Considere o exemplo a seguir:

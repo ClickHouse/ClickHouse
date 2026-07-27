@@ -1421,7 +1421,7 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-Paramètre de journalisation des requêtes reçues lorsque le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings) est activé.
+Paramètre de journalisation des requêtes reçues lorsque le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings/log-queries#log_queries) est activé.
 
 Les requêtes sont consignées dans la table [system.query&#95;log](/fr/reference/system-tables/query_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 
@@ -1516,7 +1516,7 @@ Les paramètres suivants sont disponibles :
   ## query_thread_log
 </div>
 
-Paramètre de journalisation des threads des requêtes reçues lorsque le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings#log_query_threads) est activé.
+Paramètre de journalisation des threads des requêtes reçues lorsque le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings/log-query#log_query_threads) est activé.
 
 Les requêtes sont consignées dans la table [system.query&#95;thread&#95;log](/fr/reference/system-tables/query_thread_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
 
@@ -1543,7 +1543,7 @@ Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des 
   ## query_views_log
 </div>
 
-Paramètre de journalisation des vues (en direct, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings#log_query_views).
+Paramètre de journalisation des vues (en direct, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings/log-query#log_query_views).
 
 Les requêtes sont consignées dans la table [system.query&#95;views&#95;log](/fr/reference/system-tables/query_views_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table à l’aide du paramètre `table` (voir ci-dessous).
 
@@ -1806,7 +1806,7 @@ Pour la valeur de l’attribut `incl`, consultez la section &quot;[Fichiers de c
 
 **Voir aussi**
 
-* [skip&#95;unavailable&#95;shards](/fr/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/fr/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [Découverte du cluster](/fr/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Moteur de base de données Replicated](/fr/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ Le fuseau horaire est nécessaire pour les conversions entre les formats String 
 
 **Voir aussi**
 
-* [session&#95;timezone](/fr/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/fr/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,7 +2128,7 @@ Si [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
 </div>
 
 Gère l’exécution des [requêtes DDL distribuées](/fr/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) sur le cluster.
-Fonctionne uniquement si [ZooKeeper](/fr/reference/settings/server-settings/settings#zookeeper) est activé.
+Fonctionne uniquement si [ZooKeeper](/fr/reference/settings/server-settings/settings/zookeeper#zookeeper) est activé.
 
 Les paramètres configurables dans `<distributed_ddl>` comprennent :
 
@@ -2246,7 +2246,7 @@ Section du fichier de configuration contenant les paramètres suivants :
 * chemin d’accès au dossier où sont stockés les utilisateurs créés par des commandes SQL ;
 * chemin du nœud ZooKeeper où sont stockés et répliqués les utilisateurs créés par des commandes SQL.
 
-Si cette section est spécifiée, les chemins de [users&#95;config](/fr/reference/settings/server-settings/settings#users_config) et de [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings#access_control_path) ne seront pas utilisés.
+Si cette section est spécifiée, les chemins de [users&#95;config](/fr/reference/settings/server-settings/settings/users#users_config) et de [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings/access-control#access_control_path) ne seront pas utilisés.
 
 La section `user_directories` peut contenir un nombre quelconque d’éléments ; l’ordre des éléments détermine leur priorité (plus un élément est placé haut, plus sa priorité est élevée).
 

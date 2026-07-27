@@ -11,7 +11,7 @@ Kubernetes 시크릿과 `@from_env` 지시어를 사용하여 여러 ClickHouse 
   ## remote_servers를 사용해야 하는 경우
 </div>
 
-[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers)는 ClickHouse가 [분산 테이블](https://clickhouse.com/docs/engines/table-engines/special/distributed) 또는 [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) 테이블 함수를 통해 분산 쿼리를 실행할 때 사용하는 이름이 지정된 클러스터 토폴로지를 정의합니다.
+[`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers)는 ClickHouse가 [분산 테이블](https://clickhouse.com/docs/engines/table-engines/special/distributed) 또는 [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) 테이블 함수를 통해 분산 쿼리를 실행할 때 사용하는 이름이 지정된 클러스터 토폴로지를 정의합니다.
 
 단일 ClickHouse Private 클러스터 내에서는 레플리카가 이미 ClickHouse Keeper 및 [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree)를 통해 조정되며, 이는 ClickHouse Cloud에서 사용하는 것과 동일한 아키텍처이므로 복제 목적으로는 `remote_servers`가 필요하지 않습니다. 이 구성이 대부분의 사용 사례를 충족합니다.
 

@@ -122,7 +122,7 @@ Quando definido como `false`, cada thread lida com o backoff das solicitações 
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-Só tem efeito no ClickHouse Cloud. Número de threads de segundo plano para baixar especulativamente novas partes de dados para o cache do sistema de arquivos quando [cache&#95;populated&#95;by&#95;fetch](/pt-BR/reference/settings/merge-tree-settings#cache_populated_by_fetch) está habilitado. Zero para desabilitar.
+Só tem efeito no ClickHouse Cloud. Número de threads de segundo plano para baixar especulativamente novas partes de dados para o cache do sistema de arquivos quando [cache&#95;populated&#95;by&#95;fetch](/pt-BR/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) está habilitado. Zero para desabilitar.
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -447,7 +447,7 @@ Define o modo padrão da consulta EXCEPT. Valores possíveis: string vazia, &#39
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "Nova configuração."}]}]} />
 
-Exclui os skip indexes especificados da criação e do armazenamento durante INSERTs. Os skip indexes excluídos ainda serão criados e armazenados [durante merges](/pt-BR/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) ou por uma
+Exclui os skip indexes especificados da criação e do armazenamento durante INSERTs. Os skip indexes excluídos ainda serão criados e armazenados [durante mesclagens](/pt-BR/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) ou por uma
 consulta explícita [MATERIALIZE INDEX](/pt-BR/reference/statements/alter/skipping-index#materialize-index).
 
 Não tem efeito se [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/pt-BR/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) estiver definido como false.
@@ -1153,7 +1153,7 @@ Habilita o envio das roles do usuário do nó de origem para outros nós durante
 
 O intervalo, em milissegundos, em que o [query&#95;metric&#95;log](/pt-BR/reference/system-tables/query_metric_log) é coletado para consultas individuais.
 
-Se for definido com qualquer valor negativo, ele assumirá o valor de `collect_interval_milliseconds` da [configuração query&#95;metric&#95;log](/pt-BR/reference/settings/server-settings/settings#query_metric_log) ou, se ela não estiver presente, o valor padrão de 1000.
+Se for definido com qualquer valor negativo, ele assumirá o valor de `collect_interval_milliseconds` da [configuração query&#95;metric&#95;log](/pt-BR/reference/settings/server-settings/settings/query#query_metric_log) ou, se ela não estiver presente, o valor padrão de 1000.
 
 Para desativar a coleta de uma única consulta, defina `query_metric_log_interval` como 0.
 
@@ -1392,7 +1392,7 @@ Veja também:
 Define o fuso horário implícito da sessão ou da consulta atual.
 O fuso horário implícito é o fuso horário aplicado a valores do tipo DateTime/DateTime64 que não têm um fuso horário explicitamente especificado.
 Essa configuração tem precedência sobre o fuso horário implícito configurado globalmente (no nível do servidor).
-Um valor de &#39;&#39; (string vazia) significa que o fuso horário implícito da sessão ou da consulta atual é igual ao [fuso horário do servidor](/pt-BR/reference/settings/server-settings/settings#timezone).
+Um valor de &#39;&#39; (string vazia) significa que o fuso horário implícito da sessão ou da consulta atual é igual ao [fuso horário do servidor](/pt-BR/reference/settings/server-settings/settings/other#timezone).
 
 Você pode usar as funções `timeZone()` e `serverTimeZone()` para obter o fuso horário da sessão e o fuso horário do servidor.
 
@@ -1446,7 +1446,7 @@ Isso ocorre devido a pipelines de parsing diferentes:
 
 **Veja também**
 
-* [timezone](/pt-BR/reference/settings/server-settings/settings#timezone)
+* [timezone](/pt-BR/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

@@ -66,15 +66,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_reconnect_wait` – مقدار الوقت بالمللي ثانية للانتظار بين كل محاولة إعادة اتصال. القيمة الافتراضية: `2000`.
 * `nats_server_list` - قائمة الخوادم الخاصة بالاتصال. يمكن تحديدها للاتصال بعنقود NATS.
 * `nats_skip_broken_messages` - مدى تحمّل محلل رسائل NATS للرسائل غير المتوافقة مع `schema` لكل `block`. القيمة الافتراضية: `0`. إذا كان `nats_skip_broken_messages = N` فسيتخطى الـ engine عدد *N* من رسائل NATS التي يتعذر تحليلها (الرسالة الواحدة تعادل صفًا واحدًا من البيانات).
-* `nats_max_block_size` - عدد الـ `row` التي تجمعها عملية أو عمليات `poll` لتفريغ البيانات من NATS. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
-* `nats_flush_interval_ms` - مهلة تفريغ البيانات المقروءة من NATS. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms).
+* `nats_max_block_size` - عدد الـ `row` التي تجمعها عملية أو عمليات `poll` لتفريغ البيانات من NATS. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
+* `nats_flush_interval_ms` - مهلة تفريغ البيانات المقروءة من NATS. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `nats_username` - اسم مستخدم NATS.
 * `nats_password` - كلمة مرور NATS.
 * `nats_token` - رمز مصادقة NATS.
 * `nats_credential_file` - مسار ملف بيانات اعتماد NATS.
 * `nats_startup_connect_tries` - عدد محاولات الاتصال عند بدء التشغيل. القيمة الافتراضية: `5`.
 * `nats_max_rows_per_message` — الحد الأقصى لعدد `rows` المكتوبة في رسالة NATS واحدة للتنسيقات المعتمدة على الصفوف. (القيمة الافتراضية: `1`).
-* `nats_handle_error_mode` — كيفية التعامل مع الأخطاء في NATS engine. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشل تحليل رسالة)، stream (ستُحفَظ رسالة الاستثناء والرسالة الخام في `أعمدة افتراضية` `_error` و `_raw_message`).
+* `nats_handle_error_mode` — كيفية التعامل مع الأخطاء في محرك NATS. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشل تحليل رسالة)، stream (ستُحفَظ رسالة الاستثناء والرسالة الخام في `أعمدة افتراضية` `_error` و `_raw_message`).
 
 اتصال SSL:
 
@@ -194,7 +194,7 @@ ATTACH TABLE consumer;
 ويعتمد عدد الصفوف في رسالة NATS الواحدة على ما إذا كان التنسيق يعتمد على الصفوف أم على الكتل:
 
 * بالنسبة إلى التنسيقات المعتمدة على الصفوف، يمكن التحكم في عدد الصفوف في رسالة NATS الواحدة عبر ضبط `nats_max_rows_per_message`.
-* أما بالنسبة إلى التنسيقات المعتمدة على الكتل، فلا يمكن تقسيم الكتلة إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في الكتلة الواحدة من خلال الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
+* أما بالنسبة إلى التنسيقات المعتمدة على الكتل، فلا يمكن تقسيم الكتلة إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في الكتلة الواحدة من خلال الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size).
 
 <div id="using-jetstream">
   ## استخدام JetStream

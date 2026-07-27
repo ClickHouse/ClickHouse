@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Arguments**
 
 * `uuid` — Un UUID version 7. [`String`](/fr/reference/data-types/string)
-* `timezone` — Facultatif. [Nom du fuseau horaire](/fr/reference/settings/server-settings/settings#timezone) de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
+* `timezone` — Facultatif. [Nom du fuseau horaire](/fr/reference/settings/server-settings/settings/other#timezone) de la valeur renvoyée. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -605,7 +605,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/fr/reference/data-types/int-uint)
 * `epoch` — Facultatif. Époque du Snowflake ID, en millisecondes depuis 1970-01-01. La valeur par défaut est 0 (1970-01-01). Pour l&#39;époque de Twitter/X (2015-01-01), indiquez 1288834974657. [`UInt*`](/fr/reference/data-types/int-uint)
-* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
+* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings/other#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
@@ -643,7 +643,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/fr/reference/data-types/int-uint)
 * `epoch` — Facultatif. Époque du Snowflake ID en millisecondes depuis le 1970-01-01. La valeur par défaut est 0 (1970-01-01). Pour l’époque Twitter/X (2015-01-01), indiquez 1288834974657. [`UInt*`](/fr/reference/data-types/int-uint)
-* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
+* `time_zone` — Facultatif. [Fuseau horaire](/fr/reference/settings/server-settings/settings/other#timezone). La fonction interprète `time_string` selon le fuseau horaire. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 

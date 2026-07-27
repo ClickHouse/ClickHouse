@@ -135,8 +135,8 @@ model が `cluster` 設定なしで作成されている場合、dbt-clickhouse 
 
 dbt は、insert 後に読み取り結果の整合性が保たれることを前提としたモデルに依存しています。これは、すべての操作が同じレプリカに送られることを保証できない場合、複数のレプリカを持つ ClickHouse クラスターとは両立しません。通常の dbt 利用では問題に遭遇しないかもしれませんが、この保証を担保するための方法がクラスター構成に応じていくつかあります。
 
-* ClickHouse Cloud クラスターを使用している場合は、プロファイルの `custom_settings` プロパティに `select_sequential_consistency: 1` を設定するだけで十分です。この設定の詳細は、[こちら](/ja/reference/settings/session-settings#select_sequential_consistency)を参照してください。
-* セルフホストのクラスターを使用している場合は、すべての dbt リクエストが同じ ClickHouse レプリカに送信されるようにしてください。前段にロードバランサーがある場合は、常に同じレプリカに到達できるよう、`replica aware routing` / `sticky sessions` の仕組みを利用してください。ClickHouse Cloud 以外のクラスターで `select_sequential_consistency = 1` を追加することは、[推奨されていません](/ja/reference/settings/session-settings#select_sequential_consistency)。
+* ClickHouse Cloud クラスターを使用している場合は、プロファイルの `custom_settings` プロパティに `select_sequential_consistency: 1` を設定するだけで十分です。この設定の詳細は、[こちら](/ja/reference/settings/session-settings/other#select_sequential_consistency)を参照してください。
+* セルフホストのクラスターを使用している場合は、すべての dbt リクエストが同じ ClickHouse レプリカに送信されるようにしてください。前段にロードバランサーがある場合は、常に同じレプリカに到達できるよう、`replica aware routing` / `sticky sessions` の仕組みを利用してください。ClickHouse Cloud 以外のクラスターで `select_sequential_consistency = 1` を追加することは、[推奨されていません](/ja/reference/settings/session-settings/other#select_sequential_consistency)。
 
 <div id="additional-clickhouse-macros">
   ## 追加の ClickHouse マクロ

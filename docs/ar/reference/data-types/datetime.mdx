@@ -39,13 +39,13 @@ DateTime([timezone])
 
 يمكن العثور على قائمة بالمناطق الزمنية المدعومة في [IANA Time Zone Database](https://www.iana.org/time-zones)، كما يمكن الاستعلام عنها باستخدام `SELECT * FROM system.time_zones`. وهذه [القائمة](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) متاحة أيضًا على Wikipedia.
 
-يمكنك تعيين منطقة زمنية صراحةً للأعمدة من النوع `DateTime` عند إنشاء جدول. Example: `DateTime('UTC')`. وإذا لم تُعيَّن منطقة زمنية، يستخدم ClickHouse قيمة المعلمة [timezone](/ar/reference/settings/server-settings/settings#timezone) في إعدادات الخادم أو في إعدادات نظام التشغيل وقت بدء تشغيل ClickHouse server.
+يمكنك تعيين منطقة زمنية صراحةً للأعمدة من النوع `DateTime` عند إنشاء جدول. Example: `DateTime('UTC')`. وإذا لم تُعيَّن منطقة زمنية، يستخدم ClickHouse قيمة المعلمة [timezone](/ar/reference/settings/server-settings/settings/other#timezone) في إعدادات الخادم أو في إعدادات نظام التشغيل وقت بدء تشغيل ClickHouse server.
 
 يستخدم [clickhouse-client](/ar/concepts/features/interfaces/client) المنطقة الزمنية الخاصة بالخادم افتراضيًا إذا لم تُعيَّن منطقة زمنية صراحةً عند تهيئة نوع البيانات. ولاستخدام المنطقة الزمنية الخاصة بالعميل، شغّل `clickhouse-client` باستخدام المعلمة `--use_client_time_zone`.
 
-يعرض ClickHouse القيم وفقًا لقيمة الإعداد [date&#95;time&#95;output&#95;format](/ar/reference/settings/formats#date_time_output_format). ويكون التنسيق النصي الافتراضي هو `YYYY-MM-DD hh:mm:ss`. بالإضافة إلى ذلك، يمكنك تغيير تنسيق الإخراج باستخدام الدالة [formatDateTime](/ar/reference/functions/regular-functions/date-time-functions#formatDateTime).
+يعرض ClickHouse القيم وفقًا لقيمة الإعداد [date&#95;time&#95;output&#95;format](/ar/reference/settings/formats/date-time#date_time_output_format). ويكون التنسيق النصي الافتراضي هو `YYYY-MM-DD hh:mm:ss`. بالإضافة إلى ذلك، يمكنك تغيير تنسيق الإخراج باستخدام الدالة [formatDateTime](/ar/reference/functions/regular-functions/date-time-functions#formatDateTime).
 
-عند insert البيانات إلى ClickHouse، يمكنك استخدام تنسيقات مختلفة لسلاسل التاريخ والوقت، وذلك بحسب قيمة الإعداد [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats#date_time_input_format).
+عند insert البيانات إلى ClickHouse، يمكنك استخدام تنسيقات مختلفة لسلاسل التاريخ والوقت، وذلك بحسب قيمة الإعداد [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats/date-time#date_time_input_format).
 
 <div id="examples">
   ## أمثلة
@@ -157,7 +157,7 @@ FROM dt
 
 قد يُظهر نوع `DateTime` في ClickHouse مع المناطق الزمنية سلوكًا غير متوقع أثناء الانتقال بين التوقيت الصيفي (DST) والتوقيت القياسي، وخصوصًا عندما:
 
-* يكون [`date_time_output_format`](/ar/reference/settings/formats#date_time_output_format) مضبوطًا على `simple`.
+* يكون [`date_time_output_format`](/ar/reference/settings/formats/date-time#date_time_output_format) مضبوطًا على `simple`.
 * تُعاد الساعات إلى الخلف (&quot;Fall Back&quot;)، مما يؤدي إلى تداخل لمدة ساعة واحدة.
 * تُقدَّم الساعات إلى الأمام (&quot;Spring Forward&quot;)، مما يؤدي إلى فجوة لمدة ساعة واحدة.
 
@@ -201,10 +201,10 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 * [دوال تحويل الأنواع](/ar/reference/functions/regular-functions/type-conversion-functions)
 * [دوال للتعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
 * [دوال للتعامل مع المصفوفات](/ar/reference/functions/regular-functions/array-functions)
-* [إعداد `date_time_input_format`](/ar/reference/settings/formats#date_time_input_format)
-* [إعداد `date_time_output_format`](/ar/reference/settings/formats#date_time_output_format)
-* [معلمة `timezone` في إعدادات الخادم](/ar/reference/settings/server-settings/settings#timezone)
-* [إعداد `session_timezone`](/ar/reference/settings/session-settings#session_timezone)
+* [إعداد `date_time_input_format`](/ar/reference/settings/formats/date-time#date_time_input_format)
+* [إعداد `date_time_output_format`](/ar/reference/settings/formats/date-time#date_time_output_format)
+* [معلمة `timezone` في إعدادات الخادم](/ar/reference/settings/server-settings/settings/other#timezone)
+* [إعداد `session_timezone`](/ar/reference/settings/session-settings/other#session_timezone)
 * [عوامل التشغيل للتعامل مع التواريخ والأوقات](/ar/reference/operators/index#operators-for-working-with-dates-and-times)
 * [نوع البيانات `Date`](/ar/reference/data-types/date)
 

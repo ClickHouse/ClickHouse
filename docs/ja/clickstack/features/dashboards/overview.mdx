@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack の可視化とダッシュボード'
-sidebarTitle: 'ダッシュボード'
+sidebarTitle: '概要'
 description: 'ClickStack の可視化とダッシュボード'
 doc_type: 'guide'
 keywords: ['clickstack', 'ダッシュボード', '可視化', '監視', 'オブザーバビリティ']
@@ -212,6 +212,14 @@ Number タイルを選択した状態で **Display Settings** を開き、**Back
 
 Background chart は、query-builder の Number タイルに適用されます。Raw SQL の Number タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
 
+Table タイルでは **Alternate Row Background** を使って行を交互に色分けできるため、列数の多いテーブルでも確認しやすくなります。これは既定ではオフです。
+
+Table タイルを選択した状態で **Display Settings** を開き、**Alternate Row Background** をオンにします。交互の色分けは見た目だけの設定なので、query-builder と raw SQL の両方のテーブルタイルで機能します。
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Alternate Row Background がオンになったテーブルタイルの Display Settings ドロワー" size="lg" />
+
+テーブルタイルでは、スクロールしてもヘッダー行とデータの間の区切り線が維持されるため、カラム見出しを見分けやすくなります。
+
 <div id="dashboard-listing-search">
   ## ダッシュボード - 一覧と検索
 </div>
@@ -306,7 +314,7 @@ HyperDX には、すぐに使えるダッシュボードがあらかじめ用意
 <Info>
   **必要なシステムテーブルへのアクセス権**
 
-  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/index) をクエリします。次の権限が必要です。
+  このダッシュボードでは、主要なメトリクスを表示するために ClickHouse の [システムテーブル](/ja/reference/system-tables/overview) をクエリします。次の権限が必要です。
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

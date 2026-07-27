@@ -191,7 +191,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **ClickHouse 버전**: [업그레이드 일정](/ko/products/cloud/features/admin-features/upgrades)은 기본 서비스의 설정에 따라 결정됩니다. 보조 서비스는 기본 서비스와 별개의 릴리스 일정을 가질 수 없습니다.
 
-* **서비스가 기본적으로 유휴 상태이거나 중지되어 있으면 `CREATE`/`RENAME`/`DROP DATABASE` 쿼리가 차단될 수 있습니다.** 서비스가 유휴 상태이거나 중지된 상태에서 이러한 쿼리를 실행하면 쿼리가 응답 없이 대기할 수 있습니다. 이를 우회하려면 세션 수준 또는 개별 쿼리 수준에서 [`settings distributed_ddl_task_timeout=0`](/ko/reference/settings/session-settings#distributed_ddl_task_timeout)을 사용하여 데이터베이스 관리 쿼리를 실행할 수 있습니다.
+* **서비스가 기본적으로 유휴 상태이거나 중지되어 있으면 `CREATE`/`RENAME`/`DROP DATABASE` 쿼리가 차단될 수 있습니다.** 서비스가 유휴 상태이거나 중지된 상태에서 이러한 쿼리를 실행하면 쿼리가 응답 없이 대기할 수 있습니다. 이를 우회하려면 세션 수준 또는 개별 쿼리 수준에서 [`settings distributed_ddl_task_timeout=0`](/ko/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout)을 사용하여 데이터베이스 관리 쿼리를 실행할 수 있습니다.
 
 예시:
 

@@ -51,25 +51,25 @@ Os tipos adicionais de junção disponíveis no ClickHouse são:
 | `PASTE JOIN`                                        | Executa uma concatenação horizontal de duas tabelas.                                                                                                       |
 
 <Note>
-  Quando [join&#95;algorithm](/pt-BR/reference/settings/session-settings#join_algorithm) está definido como `partial_merge`, `RIGHT JOIN` e `FULL JOIN` são suportados apenas com a strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não são suportados).
+  Quando [join&#95;algorithm](/pt-BR/reference/settings/session-settings/join#join_algorithm) está definido como `partial_merge`, `RIGHT JOIN` e `FULL JOIN` são suportados apenas com a strictness `ALL` (`SEMI`, `ANTI`, `ANY` e `ASOF` não são suportados).
 </Note>
 
 <div id="settings">
   ## Configurações
 </div>
 
-O tipo de junção padrão pode ser substituído usando a configuração [`join_default_strictness`](/pt-BR/reference/settings/session-settings#join_default_strictness).
+O tipo de junção padrão pode ser substituído usando a configuração [`join_default_strictness`](/pt-BR/reference/settings/session-settings/join#join_default_strictness).
 
-O comportamento do servidor do ClickHouse para operações `ANY JOIN` depende da configuração [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings#any_join_distinct_right_table_keys).
+O comportamento do servidor do ClickHouse para operações `ANY JOIN` depende da configuração [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings/other#any_join_distinct_right_table_keys).
 
 **Veja também**
 
-* [`join_algorithm`](/pt-BR/reference/settings/session-settings#join_algorithm)
-* [`join_any_take_last_row`](/pt-BR/reference/settings/session-settings#join_any_take_last_row)
-* [`join_use_nulls`](/pt-BR/reference/settings/session-settings#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/pt-BR/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/pt-BR/reference/settings/session-settings#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm)
+* [`join_any_take_last_row`](/pt-BR/reference/settings/session-settings/join#join_any_take_last_row)
+* [`join_use_nulls`](/pt-BR/reference/settings/session-settings/join#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/pt-BR/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/pt-BR/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/pt-BR/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
 Use a configuração `cross_to_inner_join_rewrite` para definir o comportamento quando o ClickHouse não consegue reescrever um `CROSS JOIN` como um `INNER JOIN`. O valor padrão é `1`, o que permite que a junção continue, mas ela será mais lenta. Defina `cross_to_inner_join_rewrite` como `0` se quiser que um erro seja gerado e como `2` para não executar os `CROSS JOIN`, mas sim forçar a reescrita de todas as junções com vírgula ou `CROSS JOIN`. Se a reescrita falhar quando o valor for `2`, você receberá uma mensagem de erro informando &quot;Please, try to simplify `WHERE` section&quot;.
 
@@ -465,7 +465,7 @@ retorna o conjunto:
   ### Processamento de células vazias ou NULL
 </div>
 
-Ao fazer `JOIN` entre tabelas, podem surgir células vazias. A configuração [join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#join_use_nulls) define como o ClickHouse preenche essas células.
+Ao fazer `JOIN` entre tabelas, podem surgir células vazias. A configuração [join&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/join#join_use_nulls) define como o ClickHouse preenche essas células.
 
 Se as chaves de `JOIN` forem campos [Nullable](/pt-BR/reference/data-types/nullable), as linhas em que pelo menos uma das chaves tem o valor [NULL](/pt-BR/reference/syntax#null) não são unidas.
 
@@ -507,14 +507,14 @@ Se você precisar de um `JOIN` para fazer junção com tabelas de dimensão (tab
   ### Limitações de memória
 </div>
 
-Por padrão, o ClickHouse usa o algoritmo [hash junção](https://en.wikipedia.org/wiki/Hash_join). O ClickHouse usa a `right_table` e cria uma tabela hash para ela na RAM. Se `join_algorithm = 'auto'` estiver habilitado, após determinado limite de consumo de memória, o ClickHouse passa a usar o algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) de junção. Para obter uma descrição dos algoritmos de junção, consulte a configuração [join&#95;algorithm](/pt-BR/reference/settings/session-settings#join_algorithm).
+Por padrão, o ClickHouse usa o algoritmo [hash join](https://en.wikipedia.org/wiki/Hash_join). O ClickHouse usa a `right_table` e cria uma tabela hash para ela na RAM. Se `join_algorithm = 'auto'` estiver habilitado, após determinado limite de consumo de memória, o ClickHouse passa a usar o algoritmo [merge](https://en.wikipedia.org/wiki/Sort-merge_join) de junção. Para obter uma descrição dos algoritmos de junção, consulte a configuração [join&#95;algorithm](/pt-BR/reference/settings/session-settings/join#join_algorithm).
 
 Se você precisar restringir o consumo de memória da operação de junção `JOIN`, use as seguintes configurações:
 
-* [max&#95;rows&#95;in&#95;join](/pt-BR/reference/settings/session-settings#max_rows_in_join) — Limita o número de linhas na tabela hash.
-* [max&#95;bytes&#95;in&#95;join](/pt-BR/reference/settings/session-settings#max_bytes_in_join) — Limita o tamanho da tabela hash.
+* [max&#95;rows&#95;in&#95;join](/pt-BR/reference/settings/session-settings/max-rows#max_rows_in_join) — Limita o número de linhas na tabela hash.
+* [max&#95;bytes&#95;in&#95;join](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limita o tamanho da tabela hash.
 
-Quando qualquer um desses limites é atingido, o ClickHouse age conforme instruído pela configuração [join&#95;overflow&#95;mode](/pt-BR/reference/settings/session-settings#join_overflow_mode).
+Quando qualquer um desses limites é atingido, o ClickHouse age conforme instruído pela configuração [join&#95;overflow&#95;mode](/pt-BR/reference/settings/session-settings/join#join_overflow_mode).
 
 <div id="examples">
   ## Exemplos

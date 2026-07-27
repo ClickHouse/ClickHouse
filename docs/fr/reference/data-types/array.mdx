@@ -52,7 +52,7 @@ SELECT [1, 2] AS x, toTypeName(x)
   ## Travailler avec les types de données
 </div>
 
-Lors de la création d’un tableau à la volée, ClickHouse définit automatiquement le type des arguments comme le type de données le plus étroit capable de stocker tous les arguments listés. S’il y a des valeurs [Nullable](/fr/reference/data-types/nullable) ou des valeurs littérales [NULL](/fr/reference/settings/formats#input_format_null_as_default), le type des éléments du tableau devient lui aussi [Nullable](/fr/reference/data-types/nullable).
+Lors de la création d’un tableau à la volée, ClickHouse définit automatiquement le type des arguments comme le type de données le plus étroit capable de stocker tous les arguments listés. S’il y a des valeurs [Nullable](/fr/reference/data-types/nullable) ou des valeurs littérales [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default), le type des éléments du tableau devient lui aussi [Nullable](/fr/reference/data-types/nullable).
 
 Si ClickHouse ne parvient pas à déterminer le type de données, il génère une exception. C’est par exemple le cas lorsqu’on essaie de créer un tableau contenant à la fois des chaînes de caractères et des nombres (`SELECT array(1, 'a')`).
 

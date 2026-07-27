@@ -10,7 +10,7 @@ doc_type: 'مرجع'
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-ينشئ جدولًا جديدًا. يمكن أن يأتي هذا الاستعلام بصيغ تركيبية مختلفة بحسب حالة الاستخدام.
+ينشئ جدولًا جديدًا. يمكن أن يأتي هذا الاستعلام بصيغ بناء جملة مختلفة بحسب حالة الاستخدام.
 
 افتراضيًا، لا تُنشأ الجداول إلا على الخادم الحالي. وتُنفَّذ استعلامات DDL الموزعة باستخدام عبارة `ON CLUSTER`، وهي [موصوفة بشكل منفصل](/ar/reference/statements/distributed-ddl).
 
@@ -121,7 +121,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 إذا لم يكن النوع `Nullable` وتم تحديد `NULL`، فسيُعامل على أنه `Nullable`؛ أما إذا تم تحديد `NOT NULL`، فلن يُعامل كذلك. على سبيل المثال، `INT NULL` تعادل `Nullable(INT)`. وإذا كان النوع `Nullable` وتم تحديد المعدِّلين `NULL` أو `NOT NULL`، فسيتم طرح استثناء.
 
-انظر أيضًا إلى الإعداد [data&#95;type&#95;default&#95;nullable](/ar/reference/settings/session-settings#data_type_default_nullable).
+انظر أيضًا إلى الإعداد [data&#95;type&#95;default&#95;nullable](/ar/reference/settings/session-settings/other#data_type_default_nullable).
 
 <div id="default_values">
   ## القيم الافتراضية
@@ -373,12 +373,12 @@ ORDER BY (name_len, name);
 يحدّد مدة احتفاظ القيم في التخزين. لا يمكن تحديده إلا للجداول من عائلة MergeTree. للاطلاع على وصف مفصل، راجع [TTL للأعمدة والجداول](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
 <div id="column_compression_codec">
-  ## ترميزات ضغط الأعمدة
+  ## برامج ترميز ضغط الأعمدة
 </div>
 
 بشكل افتراضي، يستخدم ClickHouse ضغط `lz4` في الإصدار المُدار ذاتيًا، و`zstd` في ClickHouse Cloud.
 
-بالنسبة إلى عائلة المحرك `MergeTree`، يمكنك تغيير طريقة الضغط الافتراضية في قسم [compression](/ar/reference/settings/server-settings/settings#compression) من تهيئة الخادم.
+بالنسبة إلى عائلة المحرك `MergeTree`، يمكنك تغيير طريقة الضغط الافتراضية في قسم [compression](/ar/reference/settings/server-settings/settings/other#compression) من تهيئة الخادم.
 
 يمكنك أيضًا تحديد طريقة الضغط لكل عمود على حدة في استعلام `CREATE TABLE`.
 
@@ -404,7 +404,7 @@ ENGINE = <Engine>
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
-يمكن دمج برامج الترميز في مسار معالجة، على سبيل المثال: `CODEC(Delta, Default)`.
+يمكن دمج برامج ترميز في مسار معالجة، على سبيل المثال: `CODEC(Delta, Default)`.
 
 <Tip>
   لا يمكنك فك ضغط ملفات قاعدة بيانات ClickHouse باستخدام أدوات خارجية مثل `lz4`. وبدلًا من ذلك، استخدم الأداة الخاصة [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
@@ -412,7 +412,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 الضغط مدعوم لمحركات الجداول التالية:
 
-* عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). تدعم برامج ترميز ضغط الأعمدة وإمكانية اختيار طريقة الضغط الافتراضية عبر إعدادات [compression](/ar/reference/settings/server-settings/settings#compression).
+* عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). تدعم برامج ترميز ضغط الأعمدة وإمكانية اختيار طريقة الضغط الافتراضية عبر إعدادات [compression](/ar/reference/settings/server-settings/settings/other#compression).
 * عائلة [Log](/ar/reference/engines/table-engines/log-family/index). تستخدم طريقة الضغط `lz4` افتراضيًا، وتدعم برامج ترميز ضغط الأعمدة.
 * [Set](/ar/reference/engines/table-engines/special/set). يدعم الضغط الافتراضي فقط.
 * [Join](/ar/reference/engines/table-engines/special/join). يدعم الضغط الافتراضي فقط.
@@ -553,12 +553,12 @@ ENGINE = MergeTree()
 ```
 
 <div id="encryption-codecs">
-  ### ترميزات التشفير
+  ### برامج ترميز التشفير
 </div>
 
-هذه الترميزات لا تضغط البيانات فعليًا، بل تُشفّر البيانات على القرص. ولا تتوفر إلا عند تحديد مفتاح تشفير عبر إعدادات [التشفير](/ar/reference/settings/server-settings/settings#encryption). لاحظ أن التشفير لا يكون مناسبًا إلا في نهاية سلاسل الترميز، لأن البيانات المشفّرة لا يمكن عادةً ضغطها بأي طريقة مجدية.
+برامج الترميز هذه لا تضغط البيانات فعليًا، بل تُشفّر البيانات على القرص. ولا تتوفر إلا عند تحديد مفتاح تشفير عبر إعدادات [التشفير](/ar/reference/settings/server-settings/settings/other#encryption). لاحظ أن التشفير لا يكون مناسبًا إلا في نهاية سلاسل برامج الترميز، لأن البيانات المشفّرة لا يمكن عادةً ضغطها بأي طريقة مجدية.
 
-ترميزات التشفير:
+برامج ترميز التشفير:
 
 <div id="aes_128_gcm_siv">
   #### AES_128_GCM_SIV

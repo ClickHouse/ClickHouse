@@ -28,8 +28,8 @@ ClickHouse использует два независимых подхода к 
 
 Тип части определяется следующими настройками таблицы:
 
-* [`min_bytes_for_wide_part`](/ru/reference/settings/merge-tree-settings#min_bytes_for_wide_part): Минимальный размер части в байтах для использования формата Wide
-* [`min_rows_for_wide_part`](/ru/reference/settings/merge-tree-settings#min_rows_for_wide_part): Минимальное количество строк в части для использования формата Wide
+* [`min_bytes_for_wide_part`](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): Минимальный размер части в байтах для использования формата Wide
+* [`min_rows_for_wide_part`](/ru/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): Минимальное количество строк в части для использования формата Wide
 
 Если количество байтов или строк в части данных меньше соответствующего значения настройки, часть хранится в формате `Compact`; в противном случае используется формат `Wide`.
 
@@ -96,21 +96,21 @@ ClickHouse использует два независимых подхода к 
 * Более высокая производительность для небольших частей в удалённом хранилилище
 
 <div id="when-packed-storage-is-used">
-  ### Когда используется хранилилище Packed
+  ### Когда используется хранилище Packed
 </div>
 
-Для части используется хранилилище Packed, если выполняется **хотя бы одно** из следующих условий:
+Для части используется хранилище Packed, если выполняется **хотя бы одно** из следующих условий:
 
-* Объём несжатых данных &lt; [`min_bytes_for_full_part_storage`](/ru/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* Число строк &lt; [`min_rows_for_full_part_storage`](/ru/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* Уровень слияния &lt; [`min_level_for_full_part_storage`](/ru/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* Объём несжатых данных &lt; [`min_bytes_for_full_part_storage`](/ru/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* Число строк &lt; [`min_rows_for_full_part_storage`](/ru/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* Уровень слияния &lt; [`min_level_for_full_part_storage`](/ru/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
-Хранилилище Packed включается явно: все три настройки по умолчанию имеют значение `0`, поэтому части используют полное хранилилилище, если вы не увеличите одну из них.
+Хранилище Packed включается явно: все три настройки по умолчанию имеют значение `0`, поэтому части используют полное хранилилилище, если вы не увеличите одну из них.
 
 <Info>
   **Совместимость с понижением версии**
 
-  Как только часть записана в хранилилище Packed, версии ClickHouse, не поддерживающие хранилилище Packed, больше не смогут её читать. Поэтому включение хранилилилища Packed не позволяет понизить версию до такой версии, и включать его следует только тогда, когда вы уверены, что откат не потребуется.
+  Как только часть записана в хранилилище Packed, версии ClickHouse, не поддерживающие хранилилище Packed, больше не смогут её читать. Поэтому включение хранилилища Packed не позволяет понизить версию до такой версии, и включать его следует только тогда, когда вы уверены, что откат не потребуется.
 </Info>
 
 Настройку `min_level_for_full_part_storage` можно использовать для оптимизации производительности и затрат на объектном хранилище, особенно для таблиц с непрерывной ингестией данных.
@@ -127,8 +127,8 @@ ClickHouse использует два независимых подхода к 
 Установите `min_level_for_full_part_storage = 2` для развертываний с объектным хранилищем.
 Это гарантирует, что:
 
-* Части уровня 0 (исходные вставки) используют хранилилище Packed
-* Части уровня 1 также продолжают использовать хранилилище Packed
+* Части уровня 0 (исходные вставки) используют хранилище Packed
+* Части уровня 1 также продолжают использовать хранилище Packed
 * Только части уровня 2 и выше используют полный формат хранения
 
 <Tip>

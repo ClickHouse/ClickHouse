@@ -12,7 +12,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Postgres サービス に移行するための ClickPipes をご利用いただけるようになりました。この組み込みインテグレーションにより、ソースデータベースへの接続、スキーマのエクスポート、Managed Postgres へのインポート、継続的なレプリケーションの設定をスムーズに行えます。
+ClickHouse Cloud では、外部の PostgreSQL データベースを ClickHouse Managed Postgres サービスに移行するための ClickPipes をご利用いただけるようになりました。この組み込みインテグレーションにより、ソースデータベースへの接続、スキーマのエクスポート、ClickHouse Managed Postgres へのインポート、継続的なレプリケーションの設定をスムーズに行えます。
 
 <div id="prerequisites">
   ## 前提条件
@@ -38,18 +38,18 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 * **DDL の伝播**: 継続的レプリケーション (CDC) は、DML 操作と `ADD COLUMN` を取り込みます。`DROP COLUMN` や `ALTER COLUMN` など、その他の DDL 変更は伝播されないため、ターゲット側で手動で適用する必要があります。
 
 <Note>
-  移行中に問題が発生した場合は、よくあるエラーとその解決策について [Managed Postgres 移行のよくある質問](/ja/products/managed-postgres/migrations/faq) を確認してください。
+  移行中に問題が発生した場合は、よくあるエラーとその解決策について [ClickHouse Managed Postgres 移行のよくある質問](/ja/products/managed-postgres/migrations/faq) を確認してください。
 </Note>
 
 <Steps>
   <Step title="ソースデータベースに接続する" id="step-1-connect">
-    [ClickHouse Cloud console](https://clickhouse.cloud) を開き、Managed Postgres サービスを選択します。
+    [ClickHouse Cloud console](https://clickhouse.cloud) を開き、ClickHouse Managed Postgres サービスを選択します。
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧に表示される Managed Postgres のサービスカード" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧に表示される ClickHouse Managed Postgres のサービスカード" size="lg" border />
 
     左側のサイドバーで、**データソース** をクリックします。
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres サービスのサイドバーにある データソース エントリ" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="ClickHouse Managed Postgres サービスのサイドバーにある データソース エントリ" size="lg" border />
 
     **Start import** をクリックします。
 
@@ -91,10 +91,10 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
     **Next** をクリックします。
   </Step>
 
-  <Step title="Managed Postgres サービスにスキーマをインポートする" id="step-3-import-schema">
+  <Step title="ClickHouse Managed Postgres サービスにスキーマをインポートする" id="step-3-import-schema">
     ドロップダウンから宛先データベースを選択するか、**Create a new database** をクリックして新しく作成します。
 
-    ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
+    ウィザードには、スキーマダンプを ClickHouse Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ 3: スキーマのインポート用 `psql` コマンド" size="lg" border />
 
@@ -155,7 +155,7 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
   ## 移行後のタスク
 </div>
 
-初期ロードが完了し、CDC を使用している場合はレプリケーションラグがほぼゼロになったら、次の作業を行います。
+初期ロードが完了し、CDC (変更データキャプチャ)  を使用している場合はレプリケーションラグがほぼゼロになったら、次の作業を行います。
 
 **行数を確認します。** トラフィックを切り替える前に、移行元と移行先の両方で重要なテーブルを抜き取りで確認してください。
 
@@ -172,7 +172,7 @@ ALTER DATABASE <source_db> SET default_transaction_read_only = on;
 **レプリケーションが追いついていることを確認します。** ソース側とターゲット側の最新行を比較します。
 
 ```sql
--- ソースとターゲットの両方で実行
+-- Run on both source and target
 SELECT MAX(id), MAX(updated_at) FROM public.orders;
 ```
 
@@ -206,9 +206,9 @@ BEGIN
 END $$;
 ```
 
-**アプリケーショントラフィックを切り替えます。** 読み取り先と書き込み先を Managed Postgres サービスに切り替え、エラー、制約違反、レプリケーションの健全性を監視します。
+**アプリケーショントラフィックを切り替えます。** 読み取り先と書き込み先を ClickHouse Managed Postgres サービスに切り替え、エラー、制約違反、レプリケーションの健全性を監視します。
 
-**クリーンアップ。**  切り替え後、新しいサービスが正常に稼働していることを確認したら、**データソース** から移行を削除します。CDC を使用した場合は、リソースを解放するために移行元からレプリケーションスロットを削除します:
+**クリーンアップ。**  切り替え後、新しいサービスが正常に稼働していることを確認したら、**データソース** から移行を削除します。CDC (変更データキャプチャ)  を使用した場合は、リソースを解放するために移行元からレプリケーションスロットを削除します:
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
@@ -218,6 +218,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## 次のステップ
 </div>
 
-* [Managed Postgres クイックスタート](/ja/products/managed-postgres/quickstart)
-* [Managed Postgres の接続情報](/ja/products/managed-postgres/connection)
+* [ClickHouse Managed Postgres クイックスタート](/ja/products/managed-postgres/quickstart)
+* [ClickHouse Managed Postgres の接続情報](/ja/products/managed-postgres/connection)
 * [ClickPipes Postgres のよくある質問](/ja/integrations/clickpipes/postgres/faq)

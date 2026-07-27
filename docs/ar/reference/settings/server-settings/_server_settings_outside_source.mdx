@@ -1421,9 +1421,9 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings).
+إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings/log-queries#log_queries).
 
-تُسجَّل الاستعلامات في جدول [system.query&#95;log](/ar/reference/system-tables/query_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول من خلال المعامل `table` (انظر أدناه).
+تُسجَّل الاستعلامات في جدول [system.query&#95;log](/ar/reference/system-tables/query_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول من خلال المعلمة `table` (انظر أدناه).
 
 <SystemLogParameters />
 
@@ -1516,7 +1516,7 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-إعداد لتسجيل خيوط الاستعلامات المستلمة باستخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings#log_query_threads).
+إعداد لتسجيل خيوط الاستعلامات المستلمة باستخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings/log-query#log_query_threads).
 
 تُسجَّل الاستعلامات في جدول [system.query&#95;thread&#95;log](/ar/reference/system-tables/query_thread_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول عبر المعلَمة `table` (انظر أدناه).
 
@@ -1543,7 +1543,7 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-إعداد لتسجيل العروض (الحيّة، والمادية، وغيرها) استنادًا إلى الاستعلامات المستلمة مع الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings#log_query_views).
+إعداد لتسجيل العروض (الحيّة، والمادية، وغيرها) استنادًا إلى الاستعلامات المستلمة مع الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings/log-query#log_query_views).
 
 تُسجَّل الاستعلامات في الجدول [system.query&#95;views&#95;log](/ar/reference/system-tables/query_views_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول في المعلمة `table` (انظر أدناه).
 
@@ -1806,7 +1806,7 @@ curl 127.0.0.1:9363/metrics
 
 **راجع أيضًا**
 
-* [skip&#95;unavailable&#95;shards](/ar/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/ar/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [اكتشاف الكتلة](/ar/guides/oss/deployment-and-scaling/cluster-discovery)
 * [محرك قاعدة البيانات Replicated](/ar/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ curl 127.0.0.1:9363/metrics
 
 **انظر أيضًا**
 
-* [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ar/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,7 +2128,7 @@ curl 127.0.0.1:9363/metrics
 </div>
 
 إدارة تنفيذ [استعلامات DDL الموزعة](/ar/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) على مستوى العنقود.
-يعمل فقط إذا كان [ZooKeeper](/ar/reference/settings/server-settings/settings#zookeeper) مفعّلًا.
+يعمل فقط إذا كان [ZooKeeper](/ar/reference/settings/server-settings/settings/zookeeper#zookeeper) مفعّلًا.
 
 تتضمن الإعدادات القابلة للتهيئة ضمن `<distributed_ddl>` ما يلي:
 
@@ -2246,7 +2246,7 @@ curl 127.0.0.1:9363/metrics
 * مسار المجلد الذي تُخزَّن فيه حسابات المستخدمين التي أُنشِئت بأوامر SQL.
 * مسار عقدة ZooKeeper التي تُخزَّن فيها حسابات المستخدمين التي أُنشِئت بأوامر SQL ويجري نسخها متماثلًا.
 
-إذا جرى تحديد هذا القسم، فلن يُستخدَم المسار من [users&#95;config](/ar/reference/settings/server-settings/settings#users_config) و[access&#95;control&#95;path](/ar/reference/settings/server-settings/settings#access_control_path).
+إذا جرى تحديد هذا القسم، فلن يُستخدَم المسار من [users&#95;config](/ar/reference/settings/server-settings/settings/users#users_config) و[access&#95;control&#95;path](/ar/reference/settings/server-settings/settings/access-control#access_control_path).
 
 يمكن أن يحتوي قسم `user_directories` على أي عدد من العناصر، ويعكس ترتيب العناصر أسبقيتها (كلما ارتفع العنصر، ارتفعت أسبقيته).
 

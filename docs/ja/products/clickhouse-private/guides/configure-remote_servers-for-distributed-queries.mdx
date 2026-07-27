@@ -11,7 +11,7 @@ Kubernetes Secrets と `@from_env` ディレクティブを使用して、複数
   ## remote_servers を使用するタイミング
 </div>
 
-[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) は、ClickHouse が[分散テーブル](https://clickhouse.com/docs/engines/table-engines/special/distributed) または [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) table function を介して分散クエリを実行する際に使用する、名前付きクラスターのトポロジーを定義します。
+[`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers) は、ClickHouse が[分散テーブル](https://clickhouse.com/docs/engines/table-engines/special/distributed) または [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) table function を介して分散クエリを実行する際に使用する、名前付きクラスターのトポロジーを定義します。
 
 単一の ClickHouse Private クラスター内では、レプリカはすでに ClickHouse Keeper と [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) を通じて連携しており、これは ClickHouse Cloud で使用されているものと同じアーキテクチャです。そのため、レプリケーション目的で `remote_servers` は必要ありません。この構成で、ほとんどのユースケースをカバーできます。
 

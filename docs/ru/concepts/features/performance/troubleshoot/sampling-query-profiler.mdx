@@ -68,7 +68,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title="Проверьте конфигурацию сервера" id="server-config">
-    Убедитесь, что раздел [`trace_log`](/ru/reference/settings/server-settings/settings#trace_log) в вашем [файле конфигурации сервера](/ru/concepts/features/configuration/server-config/configuration-files) настроен. По умолчанию он включен:
+    Убедитесь, что раздел [`trace_log`](/ru/reference/settings/server-settings/settings/other#trace_log) в вашем [файле конфигурации сервера](/ru/concepts/features/configuration/server-config/configuration-files) настроен. По умолчанию он включен:
 
     ```xml
     <!-- Журнал трассировки. Хранит трассировки стека, собранные профилировщиками запросов.
@@ -94,7 +94,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title="Настройте таймеры профилирования" id="configure-profile-timers">
-    Настройте параметры [`query_profiler_cpu_time_period_ns`](/ru/reference/settings/session-settings#query_profiler_cpu_time_period_ns) или [`query_profiler_real_time_period_ns`](/ru/reference/settings/session-settings#query_profiler_real_time_period_ns).
+    Настройте параметры [`query_profiler_cpu_time_period_ns`](/ru/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) или [`query_profiler_real_time_period_ns`](/ru/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     Оба параметра можно использовать одновременно.
 
     Эти параметры позволяют настроить таймеры профилировщика.
@@ -106,7 +106,7 @@ doc_type: 'reference'
   </Step>
 
   <Step title={<>Проанализируйте системную таблицу <code>trace_log</code></>} id="analyze-trace-log-system-table">
-    Чтобы анализировать системную таблицу `trace_log`, разрешите функции интроспекции с помощью настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings#allow_introspection_functions):
+    Чтобы анализировать системную таблицу `trace_log`, разрешите функции интроспекции с помощью настройки [`allow_introspection_functions`](/ru/reference/settings/session-settings/allow#allow_introspection_functions):
 
     ```sql
     SET allow_introspection_functions=1

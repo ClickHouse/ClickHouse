@@ -68,7 +68,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
   </Step>
 
   <Step title="서버 구성 확인" id="server-config">
-    [서버 설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)의 [`trace_log`](/ko/reference/settings/server-settings/settings#trace_log) 섹션이 구성되어 있는지 확인하십시오. 기본적으로 활성화되어 있습니다:
+    [서버 설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)의 [`trace_log`](/ko/reference/settings/server-settings/settings/other#trace_log) 섹션이 구성되어 있는지 확인하십시오. 기본적으로 활성화되어 있습니다:
 
     ```xml
     <!-- Trace 로그. 쿼리 프로파일러가 수집한 스택 트레이스를 저장합니다.
@@ -94,7 +94,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
   </Step>
 
   <Step title="프로파일 타이머 구성" id="configure-profile-timers">
-    [`query_profiler_cpu_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 또는 [`query_profiler_real_time_period_ns`](/ko/reference/settings/session-settings#query_profiler_real_time_period_ns) 설정을 구성하십시오.
+    [`query_profiler_cpu_time_period_ns`](/ko/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) 또는 [`query_profiler_real_time_period_ns`](/ko/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns) 설정을 구성하십시오.
     두 설정은 동시에 사용할 수 있습니다.
 
     이 설정을 사용하면 프로파일러 타이머를 구성할 수 있습니다.
@@ -106,7 +106,7 @@ ClickHouse Cloud에서는 쿼리 프로파일러가 자동으로 활성화됩니
   </Step>
 
   <Step title={<>Analyze the <code>trace_log</code> system table</>} id="analyze-trace-log-system-table">
-    `trace_log` 시스템 테이블을 분석하려면 [`allow_introspection_functions`](/ko/reference/settings/session-settings#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
+    `trace_log` 시스템 테이블을 분석하려면 [`allow_introspection_functions`](/ko/reference/settings/session-settings/allow#allow_introspection_functions) 설정으로 인트로스펙션 함수를 허용하십시오:
 
     ```sql
     SET allow_introspection_functions=1

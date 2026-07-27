@@ -26,12 +26,12 @@ ClickHouse では、パーツ内のデータを整理するために、互いに
   ### 各タイプの使い分け
 </div>
 
-パーツのタイプは、次のテーブル設定によって決まります。
+パーツタイプは、次のテーブル設定によって決まります。
 
-* [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_bytes_for_wide_part): パーツがwide パーツを使用するために必要な最小バイト数
-* [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings#min_rows_for_wide_part): パーツがwide パーツを使用するために必要な最小行数
+* [`min_bytes_for_wide_part`](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): パーツがwide パーツを使用するために必要な最小バイト数
+* [`min_rows_for_wide_part`](/ja/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): パーツがwide パーツを使用するために必要な最小行数
 
-データパート内のバイト数または行数のいずれかが対応する設定値を下回る場合、そのパーツは `compact パーツ` 形式で保存されます。そうでない場合は、`wide パーツ` 形式が使用されます。
+データパーツ内のバイト数または行数のいずれかが対応する設定値を下回る場合、そのパーツは `compact パーツ` 形式で保存されます。そうでない場合は、`wide パーツ` 形式が使用されます。
 
 <div id="performance-considerations">
   ### パフォーマンスに関する考慮事項
@@ -101,9 +101,9 @@ Packed ストレージでは、すべてのパーツファイルが 1 つのア�
 
 以下の条件の**いずれか**が true の場合、パーツは Packed ストレージ を使用します。
 
-* 非圧縮バイト数 &lt; [`min_bytes_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* 行数 &lt; [`min_rows_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* マージレベル &lt; [`min_level_for_full_part_storage`](/ja/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* 非圧縮バイト数 &lt; [`min_bytes_for_full_part_storage`](/ja/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* 行数 &lt; [`min_rows_for_full_part_storage`](/ja/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* マージレベル &lt; [`min_level_for_full_part_storage`](/ja/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Packed ストレージ はオプトインです。3 つの設定はすべてデフォルトで `0` のため、いずれかの値を引き上げない限り、パーツは Full storage を使用します。
 

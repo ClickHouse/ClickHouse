@@ -329,7 +329,7 @@ if err := rows.Err(); err != nil {
   ## 非同期 INSERT
 </div>
 
-非同期挿入は、`ExecContext` メソッドで INSERT を実行することで行えます。以下のように、非同期モードを有効にしたコンテキストを渡す必要があります。これにより、クライアントがサーバーでの INSERT 完了まで待機するか、データを受信した時点で応答するかをユーザーが指定できます。これは実質的に、パラメーター [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings#wait_for_async_insert) を制御します。
+非同期挿入は、`ExecContext` メソッドで INSERT を実行することで行えます。以下のように、非同期モードを有効にしたコンテキストを渡す必要があります。これにより、クライアントがサーバーでの INSERT 完了まで待機するか、データを受信した時点で応答するかをユーザーが指定できます。これは実質的に、パラメーター [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert) を制御します。
 
 ```go
 const ddl = `

@@ -191,7 +191,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **Версии ClickHouse**: [График обновлений](/ru/products/cloud/features/admin-features/upgrades) определяется настройками основного сервиса. У вторичных сервисов не может быть собственного графика релизов, независимого от основного сервиса.
 
-* **Запросы `CREATE`/`RENAME`/`DROP DATABASE` по умолчанию могут блокироваться, если сервис переведён в режим простоя или остановлен.** Если выполнять эти запросы, когда сервис находится в режиме простоя или остановлен, они могут зависнуть. Чтобы избежать этого, можно запускать запросы управления базой данных с [`settings distributed_ddl_task_timeout=0`](/ru/reference/settings/session-settings#distributed_ddl_task_timeout) на уровне сеанса или отдельного запроса.
+* **Запросы `CREATE`/`RENAME`/`DROP DATABASE` по умолчанию могут блокироваться сервисами в режиме простоя или остановки.** Если выполнять эти запросы, когда сервис находится в режиме простоя или остановлен, они могут зависнуть. Чтобы избежать этого, можно запускать запросы управления базой данных с [`settings distributed_ddl_task_timeout=0`](/ru/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) на уровне сеанса или отдельного запроса.
 
 Например:
 

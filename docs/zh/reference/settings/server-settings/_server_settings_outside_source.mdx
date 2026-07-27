@@ -1421,7 +1421,7 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings) 设置时接收到的查询的设置。
+用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings/log-queries#log_queries) 设置时接收到的查询的设置。
 
 查询会记录到 [system.query&#95;log](/zh/reference/system-tables/query_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
@@ -1516,13 +1516,13 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings#log_query_threads) 设置时接收到的查询线程的配置。
+用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings/log-query#log_query_threads) 设置时接收到的查询线程的配置。
 
 查询会记录到 [system.query&#95;thread&#95;log](/zh/reference/system-tables/query_thread_log) 表中，而不是单独的文件中。您可以通过 `table` 参数更改表名 (见下文) 。
 
 <SystemLogParameters />
 
-如果该表不存在，ClickHouse 会创建它。如果更新 ClickHouse server 后查询线程日志的结构发生变化，旧结构的表会被重命名，并自动创建新表。
+如果该表不存在，ClickHouse 会创建它。如果更新 ClickHouse 服务器 后查询线程日志的结构发生变化，旧结构的表会被重命名，并自动创建新表。
 
 **示例**
 
@@ -1543,13 +1543,13 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-用于记录视图 (live、materialized 等) 的设置，依赖于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings#log_query_views) 设置。
+用于记录视图 (live、materialized 等) 的设置，依赖于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings/log-query#log_query_views) 设置。
 
 查询会记录到 [system.query&#95;views&#95;log](/zh/reference/system-tables/query_views_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
 <SystemLogParameters />
 
-如果该表不存在，ClickHouse 会创建它。如果在升级 ClickHouse server 后，查询视图日志的结构发生了变化，则旧结构的表会被重命名，并自动创建一个新表。
+如果该表不存在，ClickHouse 会创建它。如果在升级 ClickHouse 服务器 后，查询视图日志的结构发生了变化，则旧结构的表会被重命名，并自动创建一个新表。
 
 **示例**
 
@@ -1806,7 +1806,7 @@ curl 127.0.0.1:9363/metrics
 
 **另请参阅**
 
-* [skip&#95;unavailable&#95;shards](/zh/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/zh/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [集群发现](/zh/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Replicated 数据库引擎](/zh/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ curl 127.0.0.1:9363/metrics
 
 **另请参阅**
 
-* [session&#95;timezone](/zh/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/zh/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,43 +2128,43 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 </div>
 
 管理在集群中执行[分布式 DDL 查询](/zh/reference/statements/distributed-ddl) (`CREATE`、`DROP`、`ALTER`、`RENAME`) 。
-仅在启用 [ZooKeeper](/zh/reference/settings/server-settings/settings#zookeeper) 时有效。
+仅在启用 [ZooKeeper](/zh/reference/settings/server-settings/settings/zookeeper#zookeeper) 时有效。
 
 `<distributed_ddl>` 中可配置的设置包括：
 
-| Setting                | Description                                          | Default Value                  |
-| ---------------------- | ---------------------------------------------------- | ------------------------------ |
-| `cleanup_delay_period` | 如果距离上次清理已超过 `cleanup_delay_period` 秒，则在收到新节点事件后开始清理。 | `60` 秒                         |
-| `max_tasks_in_queue`   | 队列中可包含的任务最大数量。                                       | `1,000`                        |
-| `path`                 | Keeper 中用于 DDL 查询的 `task_queue` 路径                   |                                |
-| `pool_size`            | 可同时运行的 `ON CLUSTER` 查询数量                             |                                |
-| `profile`              | 用于执行 DDL 查询的 profile                                 |                                |
-| `task_max_lifetime`    | 如果节点存活时间超过此值，则删除该节点。                                 | `7 * 24 * 60 * 60` (一周，以秒为单位)  |
+| Setting                | Description                                          | Default Value                 |
+| ---------------------- | ---------------------------------------------------- | ----------------------------- |
+| `cleanup_delay_period` | 如果距离上次清理已超过 `cleanup_delay_period` 秒，则在收到新节点事件后开始清理。 | `60` 秒                        |
+| `max_tasks_in_queue`   | 队列中可包含的任务最大数量。                                       | `1,000`                       |
+| `path`                 | Keeper 中用于 DDL 查询的 `task_queue` 路径                   |                               |
+| `pool_size`            | 可同时运行的 `ON CLUSTER` 查询数量                             |                               |
+| `profile`              | 用于执行 DDL 查询的 profile                                 |                               |
+| `task_max_lifetime`    | 如果节点存活时间超过此值，则删除该节点。                                 | `7 * 24 * 60 * 60` (一周，以秒为单位) |
 
 **示例**
 
 ```xml
 <distributed_ddl>
-    <!-- ZooKeeper 中 DDL 查询队列的路径 -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- 将使用此 profile 中的设置来执行 DDL 查询 -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- 控制可同时运行的 ON CLUSTER 查询数量。 -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         清理设置（活跃任务不会被移除）
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- 控制任务的生存时间 (TTL)（默认 1 周） -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- 控制清理操作的执行频率（单位：秒） -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- 控制队列中可容纳的最大任务数 -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2246,7 +2246,7 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 * 存储通过 SQL 命令创建的用户的文件夹路径。
 * 存储并复制通过 SQL 命令创建的用户的 ZooKeeper 节点路径。
 
-如果指定了此部分，则不会使用 [users&#95;config](/zh/reference/settings/server-settings/settings#users_config) 和 [access&#95;control&#95;path](/zh/reference/settings/server-settings/settings#access_control_path) 中的路径。
+如果指定了此部分，则不会使用 [users&#95;config](/zh/reference/settings/server-settings/settings/users#users_config) 和 [access&#95;control&#95;path](/zh/reference/settings/server-settings/settings/access-control#access_control_path) 中的路径。
 
 `user_directories` 部分可以包含任意数量的条目，条目的顺序表示其优先级 (越靠前的条目，优先级越高) 。
 

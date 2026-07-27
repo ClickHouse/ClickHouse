@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Добавленный в: v21.2.0
 
 Возвращает ключи заданного Map.
-Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Когда настройка включена, функция считывает только подстолбец `keys`, а не весь Map.
 Запрос `SELECT mapKeys(m) FROM table` преобразуется в `SELECT m.keys FROM table`.
 
@@ -801,7 +801,7 @@ mapKeys(map)
 
 **Возвращаемое значение**
 
-Возвращает массив, содержащий все ключи карты. [`Array(T)`](/ru/reference/data-types/array)
+Возвращает массив, содержащий все ключи Map. [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Добавленный в: v21.2.0
 
 Возвращает значения указанного Map.
-Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Эту функцию можно оптимизировать, включив настройку [`optimize_functions_to_subcolumns`](/ru/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Если настройка включена, функция считывает только подстолбец `values`, а не весь Map.
 Запрос `SELECT mapValues(m) FROM table` преобразуется в `SELECT m.values FROM table`.
 

@@ -44,32 +44,32 @@ ClickHouse では、次の追加の JOIN 種類も利用できます。
 
 | Type                                                | Description                                                                            |
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | デカルト積を生成せずに、&quot;結合キー&quot; に対する許可リストとして機能します。                                   |
-| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | デカルト積を生成せずに、&quot;結合キー&quot; に対する拒否リストとして機能します。                                   |
+| `LEFT SEMI JOIN`, `RIGHT SEMI JOIN`                 | デカルト積を生成せずに、&quot;結合キー&quot; に対する許可リストとして機能します。                                        |
+| `LEFT ANTI JOIN`, `RIGHT ANTI JOIN`                 | デカルト積を生成せずに、&quot;結合キー&quot; に対する拒否リストとして機能します。                                        |
 | `LEFT ANY JOIN`, `RIGHT ANY JOIN`, `INNER ANY JOIN` | 標準の `JOIN` 種類に対して、デカルト積を部分的に (`LEFT` と `RIGHT` の反対側) または完全に (`INNER` と `FULL`) 無効にします。 |
 | `ASOF JOIN`, `LEFT ASOF JOIN`                       | 完全一致ではない条件で数列を結合します。`ASOF JOIN` の使い方は以下で説明します。                                         |
 | `PASTE JOIN`                                        | 2 つのテーブルを水平方向に連結します。                                                                   |
 
 <Note>
-  [join&#95;algorithm](/ja/reference/settings/session-settings#join_algorithm) が `partial_merge` に設定されている場合、`RIGHT JOIN` と `FULL JOIN` は `ALL` strictness でのみサポートされます (`SEMI`、`ANTI`、`ANY`、`ASOF` はサポートされません) 。
+  [join&#95;algorithm](/ja/reference/settings/session-settings/join#join_algorithm) が `partial_merge` に設定されている場合、`RIGHT JOIN` と `FULL JOIN` は `ALL` strictness でのみサポートされます (`SEMI`、`ANTI`、`ANY`、`ASOF` はサポートされません) 。
 </Note>
 
 <div id="settings">
   ## 設定
 </div>
 
-デフォルトの JOIN の種類は、[`join_default_strictness`](/ja/reference/settings/session-settings#join_default_strictness) 設定で変更できます。
+デフォルトの JOIN の種類は、[`join_default_strictness`](/ja/reference/settings/session-settings/join#join_default_strictness) 設定で変更できます。
 
-`ANY JOIN` 操作における ClickHouseサーバーの動作は、[`any_join_distinct_right_table_keys`](/ja/reference/settings/session-settings#any_join_distinct_right_table_keys) 設定に依存します。
+`ANY JOIN` 操作における ClickHouseサーバーの動作は、[`any_join_distinct_right_table_keys`](/ja/reference/settings/session-settings/other#any_join_distinct_right_table_keys) 設定に依存します。
 
 **関連項目**
 
-* [`join_algorithm`](/ja/reference/settings/session-settings#join_algorithm)
-* [`join_any_take_last_row`](/ja/reference/settings/session-settings#join_any_take_last_row)
-* [`join_use_nulls`](/ja/reference/settings/session-settings#join_use_nulls)
-* [`partial_merge_join_rows_in_right_blocks`](/ja/reference/settings/session-settings#partial_merge_join_rows_in_right_blocks)
-* [`join_on_disk_max_files_to_merge`](/ja/reference/settings/session-settings#join_on_disk_max_files_to_merge)
-* [`any_join_distinct_right_table_keys`](/ja/reference/settings/session-settings#any_join_distinct_right_table_keys)
+* [`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm)
+* [`join_any_take_last_row`](/ja/reference/settings/session-settings/join#join_any_take_last_row)
+* [`join_use_nulls`](/ja/reference/settings/session-settings/join#join_use_nulls)
+* [`partial_merge_join_rows_in_right_blocks`](/ja/reference/settings/session-settings/partial-merge#partial_merge_join_rows_in_right_blocks)
+* [`join_on_disk_max_files_to_merge`](/ja/reference/settings/session-settings/join#join_on_disk_max_files_to_merge)
+* [`any_join_distinct_right_table_keys`](/ja/reference/settings/session-settings/other#any_join_distinct_right_table_keys)
 
 ClickHouse が `CROSS JOIN` を `INNER JOIN` に書き換えできない場合の動作は、`cross_to_inner_join_rewrite` 設定で定義します。デフォルト値は `1` で、この場合 JOIN は継続されますが、処理は遅くなります。エラーを発生させたい場合は `cross_to_inner_join_rewrite` を `0` に設定し、cross join を実行せず、代わりにすべての comma/cross join の書き換えを強制したい場合は `2` に設定します。値が `2` のときに書き換えに失敗すると、&quot;Please, try to simplify `WHERE` section&quot; というエラーメッセージが表示されます。
 
@@ -465,7 +465,7 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### 空またはNULLのセルの処理
 </div>
 
-テーブルを結合すると、空のセルが生じることがあります。設定 [join&#95;use&#95;nulls](/ja/reference/settings/session-settings#join_use_nulls) では、ClickHouse がこれらのセルをどのように補完するかを定義します。
+テーブルを結合すると、空のセルが生じることがあります。設定 [join&#95;use&#95;nulls](/ja/reference/settings/session-settings/join#join_use_nulls) では、ClickHouse がこれらのセルをどのように補完するかを定義します。
 
 `JOIN` のキーが [Nullable](/ja/reference/data-types/nullable) のフィールドである場合、少なくとも1つのキーの値が [NULL](/ja/reference/syntax#null) である行は結合されません。
 
@@ -507,14 +507,14 @@ SELECT a, b, toTypeName(a), toTypeName(b) FROM t_1 FULL JOIN t_2 USING (a, b);
   ### メモリ制限
 </div>
 
-デフォルトでは、ClickHouse は [ハッシュ結合](https://en.wikipedia.org/wiki/Hash_join) アルゴリズムを使用します。ClickHouse は right&#95;table を受け取り、そのためのハッシュテーブルを RAM 上に作成します。`join_algorithm = 'auto'` が有効な場合、メモリ使用量があるしきい値を超えると、ClickHouse は [merge](https://en.wikipedia.org/wiki/Sort-merge_join) 結合アルゴリズムにフォールバックします。`JOIN` アルゴリズムの説明については、[join&#95;algorithm](/ja/reference/settings/session-settings#join_algorithm) 設定を参照してください。
+デフォルトでは、ClickHouse は [ハッシュ結合](https://en.wikipedia.org/wiki/Hash_join) アルゴリズムを使用します。ClickHouse は right&#95;table を受け取り、そのためのハッシュテーブルを RAM 上に作成します。`join_algorithm = 'auto'` が有効な場合、メモリ使用量があるしきい値を超えると、ClickHouse は [merge](https://en.wikipedia.org/wiki/Sort-merge_join) 結合アルゴリズムにフォールバックします。`JOIN` アルゴリズムの説明については、[join&#95;algorithm](/ja/reference/settings/session-settings/join#join_algorithm) 設定を参照してください。
 
 `JOIN` 操作のメモリ使用量を制限する必要がある場合は、次の設定を使用します。
 
-* [max&#95;rows&#95;in&#95;join](/ja/reference/settings/session-settings#max_rows_in_join) — ハッシュテーブル内の行数を制限します。
-* [max&#95;bytes&#95;in&#95;join](/ja/reference/settings/session-settings#max_bytes_in_join) — ハッシュテーブルのサイズを制限します。
+* [max&#95;rows&#95;in&#95;join](/ja/reference/settings/session-settings/max-rows#max_rows_in_join) — ハッシュテーブル内の行数を制限します。
+* [max&#95;bytes&#95;in&#95;join](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_join) — ハッシュテーブルのサイズを制限します。
 
-これらの制限のいずれかに達すると、ClickHouse は [join&#95;overflow&#95;mode](/ja/reference/settings/session-settings#join_overflow_mode)
+これらの制限のいずれかに達すると、ClickHouse は [join&#95;overflow&#95;mode](/ja/reference/settings/session-settings/join#join_overflow_mode)
 設定で指定されたとおりに動作します。
 
 <div id="examples">

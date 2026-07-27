@@ -174,8 +174,6 @@ Une requête `SELECT` peut contenir `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`.
 
 Si la vue matérialisée utilise la construction `TO [db.]name`, vous pouvez `DETACH` la vue, exécuter `ALTER` sur la table cible, puis `ATTACH` la vue précédemment détachée (`DETACH`).
 
-Notez que la vue matérialisée est influencée par le paramètre [optimize&#95;on&#95;insert](/fr/reference/settings/session-settings#optimize_on_insert). Les données sont fusionnées avant l’insertion dans une vue.
-
 Les vues se présentent comme des tables normales. Par exemple, elles figurent dans le résultat de la requête `SHOW TABLES`.
 
 Pour supprimer une vue, utilisez [DROP VIEW](/fr/reference/statements/drop#drop-view). Bien que `DROP TABLE` fonctionne également pour les VIEWs.
@@ -203,8 +201,8 @@ Notez que, quelle que soit l’option de sécurité SQL, il est dans tous les ca
 
 Si `DEFINER`/`SQL SECURITY` ne sont pas spécifiés, les valeurs par défaut sont utilisées :
 
-* `SQL SECURITY` : `INVOKER` pour les vues normales et `DEFINER` pour les vues matérialisées ([configurable dans les paramètres](/fr/reference/settings/session-settings#default_normal_view_sql_security))
-* `DEFINER` : `CURRENT_USER` ([configurable dans les paramètres](/fr/reference/settings/session-settings#default_view_definer))
+* `SQL SECURITY` : `INVOKER` pour les vues normales et `DEFINER` pour les vues matérialisées ([configurable dans les paramètres](/fr/reference/settings/session-settings/default#default_normal_view_sql_security))
+* `DEFINER` : `CURRENT_USER` ([configurable dans les paramètres](/fr/reference/settings/session-settings/default#default_view_definer))
 
 Si une vue est Attach sans que `DEFINER`/`SQL SECURITY` soient spécifiés, la valeur par défaut est `SQL SECURITY NONE` pour la vue matérialisée et `SQL SECURITY INVOKER` pour la vue normale.
 
@@ -320,7 +318,7 @@ En mode `APPEND`, la coordination peut être désactivée avec `SETTINGS all_rep
 
 En mode non-`APPEND`, seul le rafraîchissement coordonné est pris en charge. Pour un fonctionnement non coordonné, utilisez la base de données `Atomic` et la requête `CREATE ... ON CLUSTER` pour créer des vues matérialisées actualisables sur toutes les répliques.
 
-La coordination s&#39;effectue via Keeper. Le chemin du znode est déterminé par le paramètre serveur [default&#95;replica&#95;path](/fr/reference/settings/server-settings/settings#default_replica_path).
+La coordination s&#39;effectue via Keeper. Le chemin du znode est déterminé par le paramètre serveur [default&#95;replica&#95;path](/fr/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
 <div id="refresh-dependencies">
   ### Dépendances d’actualisation
@@ -503,7 +501,7 @@ Pour attendre la fin d’un rafraîchissement, utilisez [`SYSTEM WAIT VIEW`](/fr
 <CloudNotSupportedBadge />
 
 <Info>
-  Il s&#39;agit d&#39;une fonctionnalité expérimentale qui pourra évoluer de manière non compatible avec les versions antérieures dans les versions ultérieures. Pour utiliser les window views et la requête `WATCH`, activez le paramètre [allow&#95;experimental&#95;window&#95;view](/fr/reference/settings/session-settings#allow_experimental_window_view). Saisissez la commande `set allow_experimental_window_view = 1`.
+  Il s&#39;agit d&#39;une fonctionnalité expérimentale qui pourra évoluer de manière non compatible avec les versions antérieures dans les versions ultérieures. Pour utiliser les window views et la requête `WATCH`, activez le paramètre [allow&#95;experimental&#95;window&#95;view](/fr/reference/settings/session-settings/allow-experimental#allow_experimental_window_view). Saisissez la commande `set allow_experimental_window_view = 1`.
 </Info>
 
 ```sql

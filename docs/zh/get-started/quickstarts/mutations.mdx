@@ -122,7 +122,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 关于轻量级删除，有几点需要说明：
 
 * 此功能仅适用于 `MergeTree` 表引擎家族。
-* 默认情况下，轻量级删除为同步执行，会等待所有副本完成删除处理。其行为由 [`lightweight_deletes_sync` 设置](/zh/reference/settings/session-settings#lightweight_deletes_sync) 控制。
+* 默认情况下，轻量级删除为同步执行，会等待所有副本完成删除处理。其行为由 [`lightweight_deletes_sync` 设置](/zh/reference/settings/session-settings/lightweight#lightweight_deletes_sync) 控制。
 
 <div className="mt-8">
   <BackToQuickstarts />

@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 أُضيفت في: v21.2.0
 
 تعيد مفاتيح قيمة Map معيّنة.
-يمكن تحسين هذه الدالة عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns).
+يمكن تحسين هذه الدالة عبر تمكين الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 عند تمكين هذا الإعداد، لا تقرأ الدالة سوى العمود الفرعي `keys` بدلًا من قيمة Map بالكامل.
 يُحوَّل الاستعلام `SELECT mapKeys(m) FROM table` إلى `SELECT m.keys FROM table`.
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 قُدِّمت في: v21.2.0
 
 تعيد هذه الدالة قيم Map معيّن.
-يمكن تحسين هذه الدالة عبر تفعيل الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings#optimize_functions_to_subcolumns).
+يمكن تحسين هذه الدالة عبر تفعيل الإعداد [`optimize_functions_to_subcolumns`](/ar/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 عند تفعيل هذا الإعداد، لا تقرأ الدالة سوى العمود الفرعي `values` بدلًا من قراءة الـ Map بالكامل.
 يُحوَّل الاستعلام `SELECT mapValues(m) FROM table` إلى `SELECT m.values FROM table`.
 

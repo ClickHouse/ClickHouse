@@ -16,7 +16,7 @@ doc_type: 'guide'
 </Note>
 
 <Tip>
-  اطّلع على خدمة [Managed Postgres](/ar/products/managed-postgres/overview) الخاصة بنا. فهي تعتمد على تخزين NVMe موجود فعليًا إلى جانب موارد الحوسبة، ما يوفّر أداءً أسرع حتى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
+  اطّلع على خدمة [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) الخاصة بنا. فهي تعتمد على تخزين NVMe موجود فعليًا إلى جانب موارد الحوسبة، ما يوفّر أداءً أسرع حتى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم تخزينًا متصلًا بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
 </Tip>
 
 <div id="creating-a-table">
@@ -45,7 +45,7 @@ SETTINGS
 
 * يجب أن تكون أسماء الأعمدة مطابقة لما هي عليه في جدول PostgreSQL الأصلي، ولكن يمكنك استخدام بعض هذه الأعمدة فقط وبأي ترتيب.
 * قد تختلف أنواع الأعمدة عن تلك الموجودة في جدول PostgreSQL الأصلي. يحاول ClickHouse [cast](/ar/reference/engines/database-engines/postgresql#data_types-support) القيم إلى أنواع بيانات ClickHouse.
-* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings#external_table_functions_use_nulls) كيفية التعامل مع الأعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من قيم NULL. وينطبق هذا أيضًا على قيم NULL داخل المصفوفات.
+* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings/external-table#external_table_functions_use_nulls) كيفية التعامل مع الأعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من قيم NULL. وينطبق هذا أيضًا على قيم NULL داخل المصفوفات.
 
 **معلمات المحرك**
 
@@ -162,7 +162,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   تُحلَّل صيغة الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسلها وفق لهجة PostgreSQL ‏(وضع علامات الاقتباس لمعرّفات PostgreSQL وإفلات القيم الحرفية النصية) قبل إرسالها إلى الخادم. لذلك يجب أن تكون صالحة في ClickHouse SQL. ولتمرير صياغة خاصة بـ PostgreSQL لا يحللها ClickHouse، استخدم صيغة `query('...')`، حيث يُرسل نصها إلى PostgreSQL كما هو.
 
-  لا يتم دفع أي `WHERE` أو `LIMIT` خارجي أو aggregation أو غير ذلك من استعلام ClickHouse المحيط إلى الاستعلام المُمرَّر — بل يُطبَّق ذلك في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings#external_table_strict_query)، يُرفَض أي شرط تصفية خارجي لا يمكن دفعه مع Exception بدلًا من تطبيقه محليًا.
+  لا يتم دفع أي `WHERE` أو `LIMIT` خارجي أو aggregation أو غير ذلك من استعلام ClickHouse المحيط إلى الاستعلام المُمرَّر — بل يُطبَّق ذلك في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من PostgreSQL، ضع شرط التصفية داخل الاستعلام المُمرَّر. عند استخدام [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي شرط تصفية خارجي لا يمكن دفعه مع Exception بدلًا من تطبيقه محليًا.
 </Note>
 
 تُنفَّذ استعلامات `INSERT` على جانب PostgreSQL بصيغة `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` داخل معاملة PostgreSQL مع `auto-commit` بعد كل تعليمة `INSERT`.

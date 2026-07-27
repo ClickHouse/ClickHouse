@@ -4243,7 +4243,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 配列に要素が1つも含まれていない場合、その配列は空と見なされます。
 
 <Note>
-  [`optimize_functions_to_subcolumns` 設定](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns)を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ります。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。
+  [`optimize_functions_to_subcolumns` 設定](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns)を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は配列カラム全体を読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムのみを読み取ります。クエリ `SELECT empty(arr) FROM TABLE;` は `SELECT arr.size0 = 0 FROM TABLE;` に変換されます。
 </Note>
 
 この関数は String や UUID に対しても使用できます。
@@ -5330,7 +5330,7 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 Array は、少なくとも 1 つの要素を含んでいれば空ではないと見なされます。
 
 <Note>
-  [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) 設定を有効にすると、この関数を最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は Array 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ります。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。
+  [`optimize_functions_to_subcolumns`](/ja/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns) 設定を有効にすると、この関数を最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数は Array 全体のカラムを読み取って処理する代わりに、[size0](/ja/reference/data-types/array#array-size) サブカラムだけを読み取ります。クエリ `SELECT notEmpty(arr) FROM table` は `SELECT arr.size0 != 0 FROM TABLE` に変換されます。
 </Note>
 
 この関数は String や UUID に対しても使用できます。
@@ -5478,7 +5478,7 @@ SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
 
 * すべての引数 `start`、`end`、`step` は、上記のサポート対象の型のいずれかである必要があります。返される配列の要素型は、引数の共通の上位型になります。
 
-* 関数が、設定 [`function_range_max_elements_in_block`](/ja/reference/settings/session-settings#function_range_max_elements_in_block) で指定された要素数を超える合計長の配列を返す場合、例外が発生します。
+* 関数が、設定 [`function_range_max_elements_in_block`](/ja/reference/settings/session-settings/function#function_range_max_elements_in_block) で指定された要素数を超える合計長の配列を返す場合、例外が発生します。
 
 * いずれかの引数の型が Nullable(nothing) の場合は `NULL` を返します。いずれかの引数の値が `NULL` (Nullable(T) 型) の場合は、例外が発生します。
 

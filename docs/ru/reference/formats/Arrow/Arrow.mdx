@@ -61,7 +61,7 @@ ClickHouse поддерживает чтение и запись в этих ф�
 
 Массивы могут быть вложенными и могут иметь тип `Nullable` в качестве аргумента. Типы `Tuple` и `Map` также могут быть вложенными.
 
-Тип `DICTIONARY` поддерживается в запросах `INSERT`, а для запросов `SELECT` есть настройка [`output_format_arrow_low_cardinality_as_dictionary`](/ru/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary), которая позволяет выводить тип [LowCardinality](/ru/reference/data-types/lowcardinality) как тип `DICTIONARY`. Обратите внимание, что в словаре `LowCardinality` могут быть неиспользуемые значения, из-за чего при выводе в Arrow `DICTIONARY` тоже могут появляться неиспользуемые значения.
+Тип `DICTIONARY` поддерживается в запросах `INSERT`, а для запросов `SELECT` есть настройка [`output_format_arrow_low_cardinality_as_dictionary`](/ru/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary), которая позволяет выводить тип [LowCardinality](/ru/reference/data-types/lowcardinality) как тип `DICTIONARY`. Обратите внимание, что в словаре `LowCardinality` могут быть неиспользуемые значения, из-за чего при выводе в Arrow `DICTIONARY` тоже могут появляться неиспользуемые значения.
 
 Неподдерживаемые типы данных Arrow:
 

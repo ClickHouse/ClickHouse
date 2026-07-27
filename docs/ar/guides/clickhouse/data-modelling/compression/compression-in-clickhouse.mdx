@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="ملاحظة حول الأجزاء compact مقابل wide">
   إذا كنت ترى أن قيم `compressed_size` أو `uncompressed_size` تساوي `0`، فقد يرجع ذلك إلى أن نوع
   الأجزاء هو `compact` وليس `wide` (راجع الوصف الخاص بـ `part_type` في [`system.parts`](/ar/reference/system-tables/parts)).
-  يتحكم الإعدادان [`min_bytes_for_wide_part`](/ar/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
-  و[`min_rows_for_wide_part`](/ar/reference/settings/merge-tree-settings#min_rows_for_wide_part) في تنسيق الجزء؛
+  يتحكم الإعدادان [`min_bytes_for_wide_part`](/ar/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
+  و[`min_rows_for_wide_part`](/ar/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part) في تنسيق الجزء؛
   وهذا يعني أنه إذا نتج عن البيانات المُدرجة جزء لا يتجاوز قيم الإعدادات المذكورة أعلاه، فسيكون الجزء `compact` بدلًا
   من `wide`، ولن تظهر لك قيم `compressed_size` أو `uncompressed_size`.
 
@@ -137,11 +137,11 @@ GROUP BY name
   ```
 </Accordion>
 
-نعرض هنا كلاً من الحجم المضغوط وغير المضغوط، وكلاهما مهم. فالحجم المضغوط يمثّل ما نحتاج إلى قراءته من disk، وهو ما نريد تقليله لتحسين query performance (وتكلفة التخزين). وبعد ذلك يجب فك ضغط هذه البيانات قبل قراءتها. أما الحجم غير المضغوط في هذه الحالة فيعتمد على نوع البيانات المستخدم. ويساعد تقليل هذا الحجم على خفض overhead الذاكرة في queries وتقليل كمية البيانات التي يجب على query معالجتها، مما يحسّن الاستفادة من cache ويؤدي في النهاية إلى تقليل زمن الاستعلام.
+نعرض هنا كلاً من الحجم المضغوط وغير المضغوط، وكلاهما مهم. فالحجم المضغوط يمثّل ما نحتاج إلى قراءته من disk، وهو ما نريد تقليله لتحسين أداء الاستعلامات (وتكلفة التخزين). وبعد ذلك يجب فك ضغط هذه البيانات قبل قراءتها. أما الحجم غير المضغوط في هذه الحالة فيعتمد على نوع البيانات المستخدم. ويساعد تقليل هذا الحجم على خفض overhead الذاكرة في queries وتقليل كمية البيانات التي يجب على query معالجتها، مما يحسّن الاستفادة من cache ويؤدي في النهاية إلى تقليل زمن الاستعلام.
 
-> يعتمد الاستعلام أعلاه على table ‏`columns` في system database. تُدار هذه database بواسطة ClickHouse، وهي كنز من المعلومات المفيدة، بدءًا من metrics الخاصة بـ query performance وصولًا إلى logs الخلفية الخاصة بـ cluster. نوصي بقراءة [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) والمقالات المصاحبة[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse) للقارئ المهتم.
+> يعتمد الاستعلام أعلاه على table ‏`columns` في system database. تُدار هذه database بواسطة ClickHouse، وهي كنز من المعلومات المفيدة، بدءًا من metrics الخاصة بـ أداء الاستعلامات وصولًا إلى logs الخلفية الخاصة بـ cluster. نوصي بقراءة [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) والمقالات المصاحبة[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse) للقارئ المهتم.
 
-لتلخيص الحجم الإجمالي للـ table، يمكننا تبسيط الاستعلام أعلاه:
+لتلخيص الحجم الإجمالي للجدول، يمكن تبسيط الاستعلام أعلاه:
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,

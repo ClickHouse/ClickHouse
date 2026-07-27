@@ -469,7 +469,7 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 
 مخططات Protobuf التالية غير مدعومة في الموصل:
 
-* بُنى union متعددة الرسائل (**قبل الإصدار 26.1 من CH**)
+* بُنى اتحاد متعددة الرسائل (**قبل الإصدار 26.1 من CH**)
 
 ```protobuf
 syntax = "proto3";
@@ -494,7 +494,7 @@ message TwoRecords {
 }
 ```
 
-اعتبارًا من الإصدار 26.1 من CH وما بعده، أصبح هذا المخطط مدعومًا عند ضبط `allow_experimental_nullable_tuple_type=1` (راجع [صفحة التوثيق هذه](/ar/reference/settings/session-settings#allow_experimental_nullable_tuple_type)).
+اعتبارًا من الإصدار 26.1 من CH وما بعده، أصبح هذا المخطط مدعومًا عند ضبط `allow_experimental_nullable_tuple_type=1` (راجع [صفحة التوثيق هذه](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
 
 <div id="json-schema-support">
   ### دعم مخطط JSON

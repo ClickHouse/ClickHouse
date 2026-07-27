@@ -28,7 +28,7 @@ doc_type: 'reference'
 `HiveText` は入力専用のフォーマットです。データにはヘッダー行がありません。値は宛先テーブルのカラムに位置に基づいて
 対応付けられるため、カラム名と型はデータから推論されるのではなく、テーブル (または明示的に指定された
 構造) から取得されます。読み取り時、ClickHouse は
-日付と時刻を best-effort モードでパースし ([`date_time_input_format`](/ja/reference/settings/formats#date_time_input_format) を参照) 、
+日付と時刻を best-effort モードでパースし ([`date_time_input_format`](/ja/reference/settings/formats/date-time#date_time_input_format) を参照) 、
 末尾の省略されたフィールドをカラムのデフォルト値で補完し、認識できないフィールドは
 スキップします。
 

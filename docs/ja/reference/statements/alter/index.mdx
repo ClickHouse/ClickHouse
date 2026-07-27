@@ -1,6 +1,6 @@
 ---
 description: 'ALTER に関するドキュメント'
-sidebarTitle: 'ALTER'
+sidebarTitle: '概要'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,11 +73,11 @@ doc_type: 'reference'
 
 非レプリケートテーブルでは、すべての `ALTER` クエリが同期的に実行されます。レプリケートテーブルでは、クエリは対応する操作の指示を `ZooKeeper` に追加するだけで、操作自体はできるだけ早く実行されます。ただし、クエリはそれらの操作がすべてのレプリカで完了するまで待機できます。
 
-ミューテーションを作成する `ALTER` クエリ (例: `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC` など) については、同期性は [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定によって決まります。
+ミューテーションを作成する `ALTER` クエリ (例: `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC` など) については、同期性は [mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定によって決まります。
 
-メタデータのみを変更するその他の `ALTER` クエリについては、[alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定を使用して待機方法を設定できます。
+メタデータのみを変更するその他の `ALTER` クエリについては、[alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定を使用して待機方法を設定できます。
 
-非アクティブなレプリカがすべての `ALTER` クエリを実行するまで、どれだけ長く (秒単位で) 待機するかは、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
+非アクティブなレプリカがすべての `ALTER` クエリを実行するまで、どれだけ長く (秒単位で) 待機するかは、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
 
 <Note>
   すべての `ALTER` クエリについて、`alter_sync = 2` であり、かつ一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブな場合は、`UNFINISHED` 例外がスローされます。

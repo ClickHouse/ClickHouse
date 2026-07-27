@@ -17,9 +17,9 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
   Se você usa o ClickHouse Cloud, recomendamos usar [ClickPipes](/pt-BR/integrations/clickpipes/home). O ClickPipes oferece suporte nativo a conexões de rede privadas, ao escalonamento independente da ingestão e dos recursos do cluster, além de monitoramento abrangente para streaming de dados do Kafka para o ClickHouse.
 </Tip>
 
-* Publique ou inscreva-se em fluxos de dados.
+* Publique ou assine fluxos de dados.
 * Organize o armazenamento tolerante a falhas.
-* Processe streams à medida que estiverem disponíveis.
+* Processe fluxos à medida que estiverem disponíveis.
 
 <div id="creating-a-table">
   ## Criar uma tabela
@@ -78,17 +78,17 @@ Parâmetros opcionais:
 * `kafka_schema` — Parâmetro que deve ser usado se o formato exigir uma definição de esquema. Por exemplo, [Cap&#39;n Proto](https://capnproto.org/) exige o caminho para o arquivo de esquema e o nome do objeto raiz `schema.capnp:Message`.
 * `kafka_schema_registry_skip_bytes` — O número de bytes a ignorar no início de cada mensagem ao usar schema registry com cabeçalhos de envelope (por exemplo, o AWS Glue Schema Registry, que inclui um envelope de 19 bytes). Intervalo: `[0, 255]`. Padrão: `0`.
 * `kafka_num_consumers` — O número de consumidores por tabela. Especifique mais consumidores se a taxa de transferência de um consumidor for insuficiente. O número total de consumidores não deve exceder o número de partições no tópico, já que apenas um consumidor pode ser atribuído por partição, e não deve ser maior que o número de núcleos físicos no servidor onde o ClickHouse está implantado. Padrão: `1`.
-* `kafka_max_block_size` — O tamanho máximo do lote (em mensagens) na operação de poll. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size).
+* `kafka_max_block_size` — O tamanho máximo do lote (em mensagens) na operação de poll. Padrão: [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `kafka_skip_broken_messages` — tolerância do parser de mensagens do Kafka a mensagens incompatíveis com o schema por bloco. Se `kafka_skip_broken_messages = N`, então o engine ignora *N* mensagens do Kafka que não podem ser analisadas (uma mensagem equivale a uma linha de dados). Padrão: `0`.
 * `kafka_commit_every_batch` — Faz commit de cada lote consumido e processado, em vez de fazer um único commit após gravar um bloco inteiro. Padrão: `0`.
 * `kafka_client_id` — Identificador do cliente. Em branco por padrão.
-* `kafka_poll_timeout_ms` — Tempo limite para uma única operação de poll do Kafka. Padrão: [stream&#95;poll&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings#stream_poll_timeout_ms).
-* `kafka_poll_max_batch_size` — Número máximo de mensagens obtidas em uma única operação de poll do Kafka. Padrão: [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size).
-* `kafka_flush_interval_ms` — Tempo limite para fazer o flush dos dados do Kafka. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_poll_timeout_ms` — Tempo limite para uma única operação de poll do Kafka. Padrão: [stream&#95;poll&#95;timeout&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — Número máximo de mensagens obtidas em uma única operação de poll do Kafka. Padrão: [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
+* `kafka_flush_interval_ms` — Tempo limite para fazer o flush dos dados do Kafka. Padrão: [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `kafka_consumer_reschedule_ms` — Intervalo de reagendamento quando o processamento de streams do Kafka é interrompido (por exemplo, quando não há mensagens disponíveis para consumo). Essa configuração controla o tempo de espera até o consumidor tentar fazer polling novamente. Não deve exceder `kafka_consumers_pool_ttl_ms`. Padrão: `500` milissegundos.
 * `kafka_thread_per_consumer` — Fornece uma thread independente para cada consumidor. Quando habilitado, cada consumidor faz o flush dos dados de forma independente, em paralelo (caso contrário, as linhas de vários consumidores são combinadas para formar um bloco). Padrão: `0`.
 * `kafka_handle_error_mode` — Como lidar com erros no motor Kafka. Valores possíveis: default (uma exceção será gerada se não conseguirmos interpretar uma mensagem), stream (a mensagem da exceção e a mensagem bruta serão salvas nas colunas virtuais `_error` e `_raw_message`), dead&#95;letter&#95;queue (os dados relacionados ao erro serão salvos em system.dead&#95;letter&#95;queue).
-* `kafka_commit_on_select` —  Faz commit das mensagens quando uma consulta SELECT é executada. Padrão: `false`.
+* `kafka_commit_on_select` —  Faz commit das mensagens quando uma consulta `SELECT` é executada. Padrão: `false`.
 * `kafka_consumer_acquire_timeout_ms` — Tempo limite, em milissegundos, para obter um consumidor do Kafka durante consultas `SELECT` diretas em uma tabela `Kafka2` (com armazenamento de offsets baseado em Keeper). Quando várias consultas `SELECT` diretas e concorrentes são executadas na mesma tabela, cada uma precisa esperar até que os consumidores fiquem disponíveis. Esse tempo limite evita deadlocks quando as consultas retêm subconjuntos diferentes de consumidores. Padrão: `30000`.
 * `kafka_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem Kafka para formatos baseados em linhas. Padrão: `1`.
 * `kafka_autodetect_client_rack` — Configura automaticamente o parâmetro `client.rack` do `librdkafka` para dar preferência às réplicas do Kafka mais próximas.
@@ -201,7 +201,7 @@ Exemplo, usando [coleções nomeadas](/pt-BR/concepts/features/configuration/ser
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Para melhorar o desempenho, as mensagens recebidas são agrupadas em blocos com o tamanho de [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_insert_block_size). Se o bloco não for formado dentro de [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings#stream_flush_interval_ms) milissegundos, os dados serão gravados na tabela independentemente de o bloco estar completo.
+Para melhorar o desempenho, as mensagens recebidas são agrupadas em blocos com o tamanho de [max&#95;insert&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size). Se o bloco não for formado dentro de [stream&#95;flush&#95;interval&#95;ms](/pt-BR/reference/settings/session-settings/stream#stream_flush_interval_ms) milissegundos, os dados serão gravados na tabela independentemente de o bloco estar completo.
 
 Para parar de receber dados do tópico ou alterar a lógica de conversão, desanexe a visão materializada:
 
@@ -455,7 +455,7 @@ O motor Kafka oferece suporte a todos os [formatos](/pt-BR/reference/formats/ind
 O número de linhas em uma mensagem do Kafka depende de o formato ser baseado em linhas ou em blocos:
 
 * Para formatos baseados em linhas, o número de linhas em uma mensagem do Kafka pode ser controlado pela configuração `kafka_max_rows_per_message`.
-* Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings#max_block_size).
+* Para formatos baseados em blocos, não é possível dividir um bloco em partes menores, mas o número de linhas em um bloco pode ser controlado pela configuração geral [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size).
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
   ## Motor para armazenar offsets confirmados no ClickHouse Keeper
@@ -493,7 +493,7 @@ Como o novo motor é experimental, ele ainda não está pronto para produção. 
 **Veja também**
 
 * [Colunas virtuais](/pt-BR/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/pt-BR/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/pt-BR/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

@@ -1421,13 +1421,13 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-Configuración para registrar las consultas recibidas con la opción [log&#95;queries=1](/es/reference/settings/session-settings).
+Configuración para registrar las consultas recibidas con la opción [log&#95;queries=1](/es/reference/settings/session-settings/log-queries#log_queries).
 
 Las consultas se registran en la tabla [system.query&#95;log](/es/reference/system-tables/query_log), no en un archivo independiente. Puede cambiar el nombre de la tabla en el parámetro `table` (consulte más abajo).
 
 <SystemLogParameters />
 
-Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de consultas cambió al actualizar el ClickHouse server, la tabla con la estructura anterior se renombra y se crea automáticamente una tabla nueva.
+Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de consultas cambió al actualizar el servidor de ClickHouse, la tabla con la estructura anterior se renombra y se crea automáticamente una tabla nueva.
 
 **Ejemplo**
 
@@ -1516,13 +1516,13 @@ Están disponibles los siguientes ajustes:
   ## query_thread_log
 </div>
 
-Configuración para registrar los hilos de las consultas recibidas con la configuración [log&#95;query&#95;threads=1](/es/reference/settings/session-settings#log_query_threads).
+Configuración para registrar los hilos de las consultas recibidas con la configuración [log&#95;query&#95;threads=1](/es/reference/settings/session-settings/log-query#log_query_threads).
 
 Las consultas se registran en la tabla [system.query&#95;thread&#95;log](/es/reference/system-tables/query_thread_log), no en un archivo separado. Puede cambiar el nombre de la tabla mediante el parámetro `table` (consulte más abajo).
 
 <SystemLogParameters />
 
-Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de hilos de consultas cambió al actualizarse el servidor ClickHouse, la tabla con la estructura anterior se renombra y se crea automáticamente una tabla nueva.
+Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de hilos de consultas cambió al actualizarse el servidor de ClickHouse, la tabla con la estructura anterior se renombra y se crea automáticamente una tabla nueva.
 
 **Ejemplo**
 
@@ -1543,7 +1543,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de h
   ## query_views_log
 </div>
 
-Configuración para registrar vistas (live, materialized, etc.) según las consultas recibidas con la configuración [log&#95;query&#95;views=1](/es/reference/settings/session-settings#log_query_views).
+Configuración para registrar vistas (live, materialized, etc.) según las consultas recibidas con la configuración [log&#95;query&#95;views=1](/es/reference/settings/session-settings/log-query#log_query_views).
 
 Las consultas se registran en la tabla [system.query&#95;views&#95;log](/es/reference/system-tables/query_views_log), no en un archivo separado. Puede cambiar el nombre de la tabla con el parámetro `table` (consulte más abajo).
 
@@ -1806,7 +1806,7 @@ Para el valor del atributo `incl`, consulte la sección &quot;[Archivos de confi
 
 **Véase también**
 
-* [skip&#95;unavailable&#95;shards](/es/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/es/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [Cluster Discovery](/es/guides/oss/deployment-and-scaling/cluster-discovery)
 * [motor de base de datos Replicated](/es/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ La zona horaria es necesaria para las conversiones entre los formatos String y D
 
 **Véase también**
 
-* [session&#95;timezone](/es/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/es/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,7 +2128,7 @@ Si [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
 </div>
 
 Gestiona la ejecución de [consultas DDL distribuidas](/es/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) en el clúster.
-Solo funciona si [ZooKeeper](/es/reference/settings/server-settings/settings#zookeeper) está habilitado.
+Solo funciona si [ZooKeeper](/es/reference/settings/server-settings/settings/zookeeper#zookeeper) está habilitado.
 
 Las opciones configurables dentro de `<distributed_ddl>` incluyen:
 
@@ -2145,26 +2145,26 @@ Las opciones configurables dentro de `<distributed_ddl>` incluyen:
 
 ```xml
 <distributed_ddl>
-    <!-- Ruta en ZooKeeper hacia la cola con consultas DDL -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- La configuración de este perfil se usará para ejecutar consultas DDL -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- Controla cuántas consultas ON CLUSTER pueden ejecutarse simultáneamente. -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         Configuración de limpieza (las tareas activas no serán eliminadas)
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- Controla el TTL de las tareas (por defecto 1 semana) -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- Controla con qué frecuencia se realiza la limpieza (en segundos) -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- Controla cuántas tareas pueden estar en la cola -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2246,7 +2246,7 @@ Sección del archivo de configuración que contiene las siguientes opciones:
 * Ruta a la carpeta donde se almacenan los usuarios creados mediante comandos SQL.
 * Ruta del nodo de ZooKeeper donde se almacenan y se replican los usuarios creados mediante comandos SQL.
 
-Si se especifica esta sección, no se usarán las rutas de [users&#95;config](/es/reference/settings/server-settings/settings#users_config) y [access&#95;control&#95;path](/es/reference/settings/server-settings/settings#access_control_path).
+Si se especifica esta sección, no se usarán las rutas de [users&#95;config](/es/reference/settings/server-settings/settings/users#users_config) y [access&#95;control&#95;path](/es/reference/settings/server-settings/settings/access-control#access_control_path).
 
 La sección `user_directories` puede contener cualquier número de elementos; el orden de estos determina su precedencia (cuanto más arriba esté un elemento, mayor será su precedencia).
 
@@ -2263,7 +2263,7 @@ La sección `user_directories` puede contener cualquier número de elementos; el
 </user_directories>
 ```
 
-Los usuarios, los roles, las políticas de filas, las cuotas y los perfiles también se pueden almacenar en ZooKeeper:
+Los usuarios, los roles, las políticas de fila, las cuotas y los perfiles de configuración también se pueden almacenar en ZooKeeper:
 
 ```xml
 <user_directories>

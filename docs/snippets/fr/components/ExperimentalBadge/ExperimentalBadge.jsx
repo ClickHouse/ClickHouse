@@ -15,5 +15,4 @@ export const ExperimentalBadge = () => {
         </a>
     )
 }
-
 export default ExperimentalBadge;

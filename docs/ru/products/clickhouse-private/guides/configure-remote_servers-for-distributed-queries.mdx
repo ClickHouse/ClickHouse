@@ -11,7 +11,7 @@ description: "Безопасно настройте remote_servers в ClickHouse
   ## Когда использовать remote_servers
 </div>
 
-[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) определяет именованную топологию кластера, которую ClickHouse использует при выполнении распределённых запросов через [таблицы Distributed](https://clickhouse.com/docs/engines/table-engines/special/distributed) или табличную функцию [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster).
+[`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers) определяет именованную топологию кластера, которую ClickHouse использует при выполнении распределённых запросов через [таблицы Distributed](https://clickhouse.com/docs/engines/table-engines/special/distributed) или табличную функцию [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster).
 
 В рамках одного кластера ClickHouse Private реплики уже координируют работу с помощью ClickHouse Keeper и [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) — той же архитектуры, что используется в ClickHouse Cloud, — поэтому `remote_servers` для целей репликации не требуется. Такая конфигурация покрывает подавляющее большинство сценариев использования.
 

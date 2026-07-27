@@ -137,8 +137,8 @@ sin la cláusula `on cluster` para ese modelo.
 
 dbt se basa en un modelo de consistencia de lectura después de la inserción. Esto no es compatible con clústeres de ClickHouse que tienen más de una réplica si no puedes garantizar que todas las operaciones se dirijan a la misma réplica. Puede que no tengas problemas en el uso diario de dbt, pero hay algunas estrategias, según tu clúster, para contar con esa garantía:
 
-* Si usas un clúster de ClickHouse Cloud, solo necesitas establecer `select_sequential_consistency: 1` en la propiedad `custom_settings` de tu perfil. Puedes encontrar más información sobre esta configuración [aquí](/es/reference/settings/session-settings#select_sequential_consistency).
-* Si usas un clúster autohospedado, asegúrate de que todas las solicitudes de dbt se envíen a la misma réplica de ClickHouse. Si tienes un balanceador de carga delante, intenta usar algún mecanismo de `replica aware routing`/`sticky sessions` para poder llegar siempre a la misma réplica. [No se recomienda](/es/reference/settings/session-settings#select_sequential_consistency) añadir la configuración `select_sequential_consistency = 1` en clústeres fuera de ClickHouse Cloud.
+* Si usas un clúster de ClickHouse Cloud, solo necesitas establecer `select_sequential_consistency: 1` en la propiedad `custom_settings` de tu perfil. Puedes encontrar más información sobre esta configuración [aquí](/es/reference/settings/session-settings/other#select_sequential_consistency).
+* Si usas un clúster autohospedado, asegúrate de que todas las solicitudes de dbt se envíen a la misma réplica de ClickHouse. Si tienes un balanceador de carga delante, intenta usar algún mecanismo de `replica aware routing`/`sticky sessions` para poder llegar siempre a la misma réplica. [No se recomienda](/es/reference/settings/session-settings/other#select_sequential_consistency) añadir la configuración `select_sequential_consistency = 1` en clústeres fuera de ClickHouse Cloud.
 
 <div id="additional-clickhouse-macros">
   ## Macros adicionales de ClickHouse

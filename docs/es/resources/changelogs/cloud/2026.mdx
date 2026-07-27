@@ -5,6 +5,7 @@ title: 'Registro de cambios de Cloud - 2026'
 description: 'Registro de cambios de ClickHouse Cloud que describe las novedades de cada versión de ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud']
+rss: true
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
@@ -14,9 +15,9 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 <Update label="13 de julio de 2026">
   Las actualizaciones de esta semana incluyen enrutamiento sticky de réplicas a través de HTTPS estándar, fechas de inicio personalizadas para el período de facturación y nuevos controles de carga inicial para los ClickPipes de object storage.
 
-  ### Enrutamiento sticky de réplicas a través de HTTPS (private preview)
+  ### Enrutamiento sticky de réplicas a través de HTTPS (vista previa privada)
 
-  Ahora puedes fijar las queries a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre queries los objetos con alcance de session, como las tablas temporales, y ayuda a que las queries repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en private preview para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/manage/replica-aware-routing).
+  Ahora puedes fijar las queries a una réplica específica a través de HTTPS estándar añadiendo un parámetro `?session_id=` a la URL habitual del service, sin necesidad de nombres de host especiales ni cambios de DNS. Esto mantiene disponibles entre queries los objetos con alcance de session, como las tablas temporales, y ayuda a que las queries repetidas aprovechen las cachés locales ya precalentadas de la réplica. Se está implementando en vista previa privada para todos los clientes Enterprise y, bajo solicitud, para los clientes Scale. El enrutamiento existente basado en subdominios sigue funcionando, pero con el tiempo migrará a este enfoque. Consulta la documentación de [replica-aware routing](/es/manage/replica-aware-routing).
 
   ### Fechas de inicio personalizadas para el período de facturación
 
@@ -80,9 +81,9 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 
   Obtenga más información en la [documentación de ClickHouse Agents](/es/products/cloud/features/ai-ml/agents/index).
 
-  ### ClickHouse Postgres (beta pública)
+  ### ClickHouse Managed Postgres (beta pública)
 
-  Postgres totalmente gestionado en almacenamiento NVMe local ya está en Public Beta, con un rendimiento superior a 5 veces más TPS que AWS RDS, y unifica OLTP y OLAP en un único stack gestionado. Un pipeline CDC nativo transmite datos directamente a ClickHouse sin infraestructura intermedia, y la extensión open-source `pg_clickhouse` permite consultar tablas de ClickHouse desde sesiones estándar de Postgres.
+  ClickHouse Managed Postgres, Postgres totalmente gestionado en almacenamiento NVMe local, ya está en Public Beta, con un rendimiento superior a 5 veces más TPS que AWS RDS, y unifica OLTP y OLAP en un único stack gestionado. Un pipeline CDC nativo transmite datos directamente a ClickHouse sin infraestructura intermedia, y la extensión open-source `pg_clickhouse` permite consultar tablas de ClickHouse desde sesiones estándar de Postgres.
 
   Más información en [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
@@ -101,7 +102,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
   * [Documentación de AI Notebooks de ClickStack](/es/clickstack/notebooks)
   * [AI Notebooks en beta (blog)](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#ai-notebooks-in-beta)
 
-  ### Autoescalado horizontal (private preview)
+  ### Autoescalado horizontal (vista previa privada)
 
   El escalado automático horizontal ajusta automáticamente el número de réplicas en un clúster de ClickHouse Cloud: escala hacia afuera de forma agresiva cuando la demanda aumenta y reduce gradualmente la capacidad a medida que la carga disminuye, de modo que los equipos con workloads variables y de alta concurrencia ya no necesitan ajustar manualmente el tamaño de los clústeres. En private preview, el escalado se basa en el número de consultas concurrentes; las señales de CPU y memoria están previstas para la public beta. Disponible para clientes de los niveles Enterprise y Scale en ClickHouse 26.2+.
 
@@ -177,7 +178,7 @@ Además de este registro de cambios de ClickHouse Cloud, consulta la página de 
 <Update label="8 de mayo de 2026">
   ### Query insights de Postgres (vista previa privada)
 
-  Ahora está disponible una nueva pestaña de **Query insights** en [ClickHouse Cloud Managed Postgres](/es/products/managed-postgres/overview) (vista previa privada). Clasifica cada patrón de consulta por impacto y muestra por qué cada uno es lento en tres vistas:
+  Ahora está disponible una nueva pestaña de **Query insights** en [ClickHouse Managed Postgres](/es/products/managed-postgres/overview) (vista previa privada). Clasifica cada patrón de consulta por impacto y muestra por qué cada uno es lento en tres vistas:
 
   * **Overview** — estado de la base de datos en una sola pantalla
   * **Patterns** — tabla ordenable por tiempo de ejecución, CPU, errores y P95

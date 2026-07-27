@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'ClickStack을 사용한 시각화 및 대시보드'
-sidebarTitle: '대시보드'
+sidebarTitle: '개요'
 description: 'ClickStack을 사용한 시각화 및 대시보드'
 doc_type: 'guide'
 keywords: ['clickstack', '대시보드', '시각화', '모니터링', '관측성']
@@ -212,6 +212,14 @@ Number 타일을 선택한 상태에서 **Display Settings**를 열고 **Backgro
 
 Background chart는 query-builder Number 타일에 적용됩니다. Raw SQL Number 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
 
+Table 타일에서는 **Alternate Row Background**를 사용해 행에 줄무늬를 적용할 수 있습니다. 한 행씩 번갈아 배경색을 넣어 컬럼 수가 많은 테이블도 더 쉽게 훑어볼 수 있습니다. 기본적으로는 꺼져 있습니다.
+
+Table 타일을 선택한 상태에서 **Display Settings**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 Display Settings 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
+
+Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분선도 유지하므로 컬럼 헤더를 계속 뚜렷하게 구분할 수 있습니다.
+
 <div id="dashboard-listing-search">
   ## 대시보드 - 목록 및 검색
 </div>
@@ -306,7 +314,7 @@ HyperDX는 기본 제공 대시보드와 함께 배포됩니다.
 <Info>
   **필수 시스템 테이블 액세스**
 
-  이 대시보드는 주요 메트릭을 표시하기 위해 ClickHouse [시스템 테이블](/ko/reference/system-tables/index)을 조회합니다. 다음 권한이 필요합니다.
+  이 대시보드는 주요 메트릭을 표시하기 위해 ClickHouse [시스템 테이블](/ko/reference/system-tables/overview)을 조회합니다. 다음 권한이 필요합니다.
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

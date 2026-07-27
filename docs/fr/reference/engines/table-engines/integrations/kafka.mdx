@@ -76,13 +76,13 @@ Paramètres facultatifs :
 * `kafka_schema` — Paramètre à utiliser si le format nécessite une définition de schéma. Par exemple, [Cap&#39;n Proto](https://capnproto.org/) requiert le chemin vers le fichier de schéma ainsi que le nom de l’objet racine `schema.capnp:Message`.
 * `kafka_schema_registry_skip_bytes` — Nombre d’octets à ignorer au début de chaque message lors de l’utilisation du registre de schémas avec des en-têtes d’enveloppe (par ex., AWS Glue Schema Registry, qui inclut une enveloppe de 19 octets). Plage : `[0, 255]`. Valeur par défaut : `0`.
 * `kafka_num_consumers` — Nombre de consumers par table. Indiquez-en davantage si le throughput d’un consumer est insuffisant. Le nombre total de consumers ne doit pas dépasser le nombre de partitions du topic, puisqu’un seul consumer peut être attribué par partition, et ne doit pas non plus être supérieur au nombre de cœurs physiques du server sur lequel ClickHouse est déployé. Valeur par défaut : `1`.
-* `kafka_max_block_size` — Taille maximale du batch (en messages) pour le poll. Valeur par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size).
+* `kafka_max_block_size` — Taille maximale du batch (en messages) pour le poll. Valeur par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `kafka_skip_broken_messages` — Tolérance de l’analyseur de messages Kafka aux messages incompatibles avec le schéma par block. Si `kafka_skip_broken_messages = N`, le moteur ignore *N* messages Kafka qui ne peuvent pas être analysés (un message équivaut à une ligne de données). Valeur par défaut : `0`.
 * `kafka_commit_every_batch` — Effectue un commit pour chaque batch consommé et traité, au lieu d’un seul commit après l’écriture d’un block entier. Valeur par défaut : `0`.
 * `kafka_client_id` — Identifiant du client. Vide par défaut.
-* `kafka_poll_timeout_ms` — Timeout pour un poll Kafka unique. Valeur par défaut : [stream&#95;poll&#95;timeout&#95;ms](/fr/reference/settings/session-settings#stream_poll_timeout_ms).
-* `kafka_poll_max_batch_size` — Nombre maximal de messages pouvant être récupérés en un seul poll Kafka. Valeur par défaut : [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
-* `kafka_flush_interval_ms` — Timeout pour le flush des données depuis Kafka. Valeur par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_poll_timeout_ms` — Timeout pour un poll Kafka unique. Valeur par défaut : [stream&#95;poll&#95;timeout&#95;ms](/fr/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — Nombre maximal de messages pouvant être récupérés en un seul poll Kafka. Valeur par défaut : [max&#95;block&#95;size](/fr/reference/settings/session-settings/max#max_block_size).
+* `kafka_flush_interval_ms` — Timeout pour le flush des données depuis Kafka. Valeur par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `kafka_consumer_reschedule_ms` — Intervalle de replanification lorsque le stream processing Kafka est bloqué (par ex., lorsqu’aucun message n’est disponible à la consommation). Ce paramètre contrôle le délai avant que le consumer ne réessaie de poll. Ne doit pas dépasser `kafka_consumers_pool_ttl_ms`. Valeur par défaut : `500` millisecondes.
 * `kafka_thread_per_consumer` — Fournit un thread indépendant pour chaque consumer. Lorsqu’elle est activée, chaque consumer flush les données indépendamment, en parallèle (sinon, les rows de plusieurs consumers sont squashed pour former un block). Valeur par défaut : `0`.
 * `kafka_handle_error_mode` — Gestion des errors pour le Kafka engine. Valeurs possibles : default (une exception est levée si l’analyse d’un message échoue), stream (le message d’exception et le message brut sont enregistrés dans les virtual columns `_error` et `_raw_message`), dead&#95;letter&#95;queue (les données liées à l’error sont enregistrées dans system.dead&#95;letter&#95;queue).
@@ -199,7 +199,7 @@ Exemple, en utilisant des [collections nommées](/fr/concepts/features/configura
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-Pour améliorer les performances, les messages reçus sont regroupés en blocs de la taille de [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size). Si le bloc n&#39;a pas été constitué dans le délai de [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings#stream_flush_interval_ms) millisecondes, les données seront écrites dans la table, même si le bloc n&#39;est pas complet.
+Pour améliorer les performances, les messages reçus sont regroupés en blocs de la taille de [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings/max-insert#max_insert_block_size). Si le bloc n&#39;a pas été constitué dans le délai de [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings/stream#stream_flush_interval_ms) millisecondes, les données seront écrites dans la table, même si le bloc n&#39;est pas complet.
 
 Pour arrêter de recevoir les données du topic ou modifier la logique de conversion, détachez la vue matérialisée :
 
@@ -453,7 +453,7 @@ Le moteur Kafka prend en charge tous les [formats](/fr/reference/formats/index) 
 Le nombre de lignes dans un message Kafka dépend du fait que le format soit basé sur les lignes ou sur les blocs :
 
 * Pour les formats basés sur les lignes, le nombre de lignes dans un message Kafka peut être contrôlé en définissant `kafka_max_rows_per_message`.
-* Pour les formats basés sur les blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
+* Pour les formats basés sur les blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings/max#max_block_size).
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
   ## Moteur pour stocker les offsets validés dans ClickHouse Keeper
@@ -491,7 +491,7 @@ Comme le nouveau moteur est expérimental, il n’est pas encore prêt pour une 
 **Voir aussi**
 
 * [Colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/fr/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

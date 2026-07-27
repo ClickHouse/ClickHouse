@@ -122,7 +122,7 @@ Cuando se establece en `false`, cada hilo gestiona el backoff de las solicitudes
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-Solo tiene efecto en ClickHouse Cloud. Número de hilos en segundo plano para descargar de forma especulativa nuevas partes de datos a la caché del sistema de archivos cuando [cache&#95;populated&#95;by&#95;fetch](/es/reference/settings/merge-tree-settings#cache_populated_by_fetch) está habilitado. Cero para deshabilitarlo.
+Solo tiene efecto en ClickHouse Cloud. Número de hilos en segundo plano para descargar de forma especulativa nuevas partes de datos a la caché del sistema de archivos cuando [cache&#95;populated&#95;by&#95;fetch](/es/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) está habilitado. Cero para deshabilitarlo.
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -447,7 +447,7 @@ Establece el modo predeterminado en la consulta EXCEPT. Posibles valores: cadena
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "Nueva configuración."}]}]} />
 
-Excluye los índices de omisión especificados para que no se construyan ni se almacenen durante las operaciones INSERT. Los índices de omisión excluidos seguirán construyéndose y almacenándose [durante las fusiones](/es/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) o mediante una
+Excluye los índices de omisión especificados para que no se construyan ni se almacenen durante las operaciones INSERT. Los índices de omisión excluidos seguirán construyéndose y almacenándose [durante las fusiones](/es/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) o mediante una
 consulta [MATERIALIZE INDEX](/es/reference/statements/alter/skipping-index#materialize-index) explícita.
 
 No tiene efecto si [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/es/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) es false.
@@ -1153,7 +1153,7 @@ Permite enviar los roles de usuario desde el nodo de origen a otros nodos al eje
 
 El intervalo, en milisegundos, con el que se recopila el [query&#95;metric&#95;log](/es/reference/system-tables/query_metric_log) de las consultas individuales.
 
-Si se establece en cualquier valor negativo, tomará el valor `collect_interval_milliseconds` de la [configuración query&#95;metric&#95;log](/es/reference/settings/server-settings/settings#query_metric_log) o, si no está presente, usará 1000 de forma predeterminada.
+Si se establece en cualquier valor negativo, tomará el valor `collect_interval_milliseconds` de la [configuración query&#95;metric&#95;log](/es/reference/settings/server-settings/settings/query#query_metric_log) o, si no está presente, usará 1000 de forma predeterminada.
 
 Para deshabilitar la recopilación de una sola consulta, establezca `query_metric_log_interval` en 0.
 
@@ -1392,7 +1392,7 @@ Véase también:
 Establece la zona horaria implícita de la sesión o consulta actual.
 La zona horaria implícita es la zona horaria que se aplica a los valores de tipo DateTime/DateTime64 que no tienen una zona horaria especificada de forma explícita.
 Esta configuración tiene prioridad sobre la zona horaria implícita configurada globalmente (a nivel del servidor).
-Un valor de &#39;&#39; (cadena vacía) significa que la zona horaria implícita de la sesión o consulta actual es igual a la [zona horaria del servidor](/es/reference/settings/server-settings/settings#timezone).
+Un valor de &#39;&#39; (cadena vacía) significa que la zona horaria implícita de la sesión o consulta actual es igual a la [zona horaria del servidor](/es/reference/settings/server-settings/settings/other#timezone).
 
 Puede usar las funciones `timeZone()` y `serverTimeZone()` para obtener la zona horaria de la sesión y la del servidor.
 
@@ -1446,7 +1446,7 @@ Esto sucede debido a distintos flujos de análisis:
 
 **Véase también**
 
-* [timezone](/es/reference/settings/server-settings/settings#timezone)
+* [timezone](/es/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

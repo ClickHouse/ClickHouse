@@ -580,7 +580,7 @@ SELECT
   يمكن تعريف عمود على أنه `LowCardinality(Nullable(T))`، ولكن لا يمكن تعريفه على أنه `Nullable(LowCardinality(T))` - إذ يؤدي ذلك دائمًا إلى ظهور خطأ من الخادم.
 </Note>
 
-أثناء الاختبار، يمكن ضبط [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ar/reference/settings/session-settings#allow_suspicious_low_cardinality_types) على `1` للسماح بمعظم أنواع البيانات داخل `LowCardinality` بهدف تحقيق تغطية أفضل.
+أثناء الاختبار، يمكن ضبط [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/ar/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) على `1` للسماح بمعظم أنواع البيانات داخل `LowCardinality` بهدف تحقيق تغطية أفضل.
 
 <div id="array">
   ### Array
@@ -784,7 +784,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-يمكن استخدام الإعداد [allow&#95;suspicious&#95;variant&#95;types](/ar/reference/settings/session-settings#allow_suspicious_variant_types) لإتاحة اختبار أشمل للنوع `Variant`.
+يمكن استخدام الإعداد [allow&#95;suspicious&#95;variant&#95;types](/ar/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) لإتاحة اختبار أشمل للنوع `Variant`.
 
 <div id="dynamic">
   ### Dynamic

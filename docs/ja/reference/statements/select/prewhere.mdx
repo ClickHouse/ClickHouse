@@ -18,9 +18,9 @@ prewhere 最適化では、まず prewhere 式の実行に必要なカラムだ�
 
 1 つのクエリで `PREWHERE` と `WHERE` を同時に指定できます。この場合、`PREWHERE` は `WHERE` より先に適用されます。
 
-[optimize&#95;move&#95;to&#95;prewhere](/ja/reference/settings/session-settings#optimize_move_to_prewhere) 設定が 0 の場合、式の一部を `WHERE` から `PREWHERE` へ自動的に移動するヒューリスティクスは無効になります。
+[optimize&#95;move&#95;to&#95;prewhere](/ja/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 設定が 0 の場合、式の一部を `WHERE` から `PREWHERE` へ自動的に移動するヒューリスティクスは無効になります。
 
-クエリに [FINAL](/ja/reference/statements/select/from#final-modifier) modifier がある場合、`PREWHERE` の最適化は必ずしも正しいとは限りません。これは、[optimize&#95;move&#95;to&#95;prewhere](/ja/reference/settings/session-settings#optimize_move_to_prewhere) と [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ja/reference/settings/session-settings#optimize_move_to_prewhere_if_final) の両方の設定が有効になっている場合にのみ有効です。
+クエリに [FINAL](/ja/reference/statements/select/from#final-modifier) modifier がある場合、`PREWHERE` の最適化は必ずしも正しいとは限りません。これは、[optimize&#95;move&#95;to&#95;prewhere](/ja/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) と [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/ja/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) の両方の設定が有効になっている場合にのみ有効です。
 
 <Note>
   `PREWHERE` セクションは `FINAL` より前に実行されるため、テーブルの `ORDER BY` セクションに含まれないフィールドに対して `PREWHERE` を使用すると、`FROM ... FINAL` クエリの結果が偏る可能性があります。

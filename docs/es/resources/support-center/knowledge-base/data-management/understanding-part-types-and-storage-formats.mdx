@@ -28,8 +28,8 @@ Los tipos de partes determinan cómo se organizan los datos de las columnas dent
 
 El tipo de parte se controla mediante los siguientes ajustes de tabla:
 
-* [`min_bytes_for_wide_part`](/es/reference/settings/merge-tree-settings#min_bytes_for_wide_part): bytes mínimos para que una parte use el formato `Wide`
-* [`min_rows_for_wide_part`](/es/reference/settings/merge-tree-settings#min_rows_for_wide_part): filas mínimas para que una parte use el formato `Wide`
+* [`min_bytes_for_wide_part`](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part): bytes mínimos para que una parte use el formato `Wide`
+* [`min_rows_for_wide_part`](/es/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part): filas mínimas para que una parte use el formato `Wide`
 
 Si la cantidad de bytes o filas de una parte de datos es menor que el valor del ajuste correspondiente, la parte se almacena en formato `Compact`; de lo contrario, usa el formato `Wide`.
 
@@ -101,9 +101,9 @@ En el almacenamiento Packed, todos los archivos de las partes se agrupan en un �
 
 Una parte utiliza almacenamiento Packed si se cumple **alguna** de estas condiciones:
 
-* Bytes no comprimidos &lt; [`min_bytes_for_full_part_storage`](/es/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* Número de filas &lt; [`min_rows_for_full_part_storage`](/es/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* Nivel de fusión &lt; [`min_level_for_full_part_storage`](/es/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* Bytes no comprimidos &lt; [`min_bytes_for_full_part_storage`](/es/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* Número de filas &lt; [`min_rows_for_full_part_storage`](/es/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* Nivel de fusión &lt; [`min_level_for_full_part_storage`](/es/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 El almacenamiento Packed es de activación opcional: los tres ajustes tienen `0` como valor predeterminado, por lo que las partes usan almacenamiento Full a menos que aumente uno de ellos.
 

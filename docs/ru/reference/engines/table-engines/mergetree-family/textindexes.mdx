@@ -67,7 +67,7 @@ two    : [3]
 Мы настоятельно рекомендуем использовать ClickHouse версии &gt;= 26.2 в продакшне.
 
 <Note>
-  Текстовые индексы можно использовать в любой версии ClickHouse &gt;= 26.2 независимо от настройки [compatibility](/ru/reference/settings/session-settings#compatibility).
+  Текстовые индексы можно использовать в любой версии ClickHouse &gt;= 26.2 независимо от настройки [compatibility](/ru/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
 Чтобы создать текстовый индекс, используйте следующий синтаксис:
@@ -476,12 +476,12 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 Если указать значение `1`, индекс дополнительно сохраняет позиционные данные (в файле `.pos`), что позволяет выполнять точный поиск по фразе с помощью прямого чтения для функции [`hasPhrase`](#functions-example-hasphrase).
 Хранение позиций увеличивает размер индекса на диске и стоимость записи, поэтому эта возможность включается только явно.
 Формат хранения на диске пока не является стабильным, поэтому этот параметр экспериментальный и может измениться в одном из будущих релизов.
-Поэтому для создания индекса с `support_phrase_search = 1` требуется, чтобы была включена настройка MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+Поэтому для создания индекса с `support_phrase_search = 1` требуется, чтобы была включена настройка MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 Установите `support_phrase_search = 0` (значение по умолчанию), чтобы сохранить хранение только списков вхождений; текстовые индексы, созданные без этого аргумента, остаются без позиций.
 
 <Warning>
   Этот аргумент является экспериментальным и должен использоваться только для тестирования.
-  Чтобы включить хранение позиций, установите настройку MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+  Чтобы включить хранение позиций, установите настройку MergeTree [`allow_experimental_text_index_phrase_search`](/ru/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 </Warning>
 
 <details markdown="1">
@@ -501,7 +501,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` — списки вхождений хранятся без дополнительного сжатия.
   * `bitpacking` — применяет [дифференциальное (delta) кодирование](https://en.wikipedia.org/wiki/Delta_encoding), а затем [упаковку битов](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (в обоих случаях в блоках фиксированного размера). Замедляет запросы SELECT, поэтому сейчас не рекомендуется.
 
-  Указанные выше расширенные параметры также можно задавать на уровне таблицы с помощью соответствующих настроек MergeTree: [`text_index_dictionary_block_size`](/ru/reference/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ru/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ru/reference/settings/merge-tree-settings#text_index_posting_list_block_size) и [`text_index_posting_list_codec`](/ru/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+  Указанные выше расширенные параметры также можно задавать на уровне таблицы с помощью соответствующих настроек MergeTree: [`text_index_dictionary_block_size`](/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ru/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) и [`text_index_posting_list_codec`](/ru/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   Они применяются ко всем текстовым индексам таблицы, в которых параметр не задан явно.
 
   Основной сценарий использования настроек уровня таблицы — изменение параметров индекса в существующей таблице без удаления и повторного создания текстового индекса для всех частей таблицы.
@@ -1254,8 +1254,8 @@ WHERE string_search_function(column_with_text_index)
 
 Прямое чтение управляется двумя настройками:
 
-* Настройка [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ru/reference/settings/session-settings#query_plan_direct_read_from_text_index) (по умолчанию true), которая определяет, включено ли прямое чтение в целом.
-* Настройка [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ru/reference/settings/session-settings#use_skip_indexes_on_data_read) была обязательным предварительным условием для прямого чтения в версиях ClickHouse &lt; 26.4.
+* Настройка [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ru/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (по умолчанию true), которая определяет, включено ли прямое чтение в целом.
+* Настройка [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ru/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) была обязательным предварительным условием для прямого чтения в версиях ClickHouse &lt; 26.4.
 
 **Поддерживаемые функции**
 
@@ -1272,7 +1272,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0, -- отключить прямое чтение
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
 возвращает
@@ -1294,7 +1294,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1, -- включить прямое чтение
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
 возвращает
@@ -1324,7 +1324,7 @@ Positions:
 
 Дополнительный фильтр может повысить селективность и в сочетании с другими фильтрами сильнее ограничить результирующий набор, помогая сократить объем данных, считываемых из других столбцов.
 
-Прямое чтение в качестве подсказки управляется настройкой [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ru/reference/settings/session-settings#query_plan_text_index_add_hint) (включена по умолчанию).
+Прямое чтение в качестве подсказки управляется настройкой [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ru/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (включена по умолчанию).
 
 Пример запроса без подсказки:
 
@@ -1378,12 +1378,12 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 Эта оптимизация управляется настройкой:
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ru/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ru/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 Fallback-механизм управляется двумя настройками:
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ru/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ru/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ru/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ru/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 Эта оптимизация поддерживает только функции `like` и `ilike`.
 
@@ -1393,7 +1393,7 @@ Fallback-механизм управляется двумя настройкам
 
 Существуют различные кэши уровня сервера, позволяющие хранить части текстового индекса в памяти (см. раздел [Подробности реализации](#implementation)):
 В настоящее время доступны кэши для десериализованных заголовков, токенов и списков вхождений текстового индекса, чтобы сократить I/O.
-Используйте настройки [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings#use_text_index_postings_cache), чтобы отключить для запросов чтение из отдельных кэшей и запись в них.
+Используйте настройки [use&#95;text&#95;index&#95;header&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_tokens_cache) и [use&#95;text&#95;index&#95;postings&#95;cache](/ru/reference/settings/session-settings/use-text#use_text_index_postings_cache), чтобы отключить для запросов чтение из отдельных кэшей и запись в них.
 
 Чтобы очистить кэши, используйте оператор [SYSTEM CLEAR TEXT INDEX CACHES](/ru/reference/statements/system#drop-text-index-caches)
 
@@ -1403,34 +1403,34 @@ Fallback-механизм управляется двумя настройкам
   #### Настройки кэша токенов
 </div>
 
-| Параметр                                                                                                                                    | Описание                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | Имя политики кэша токенов текстового индекса.                                                 |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | Максимальный размер кэша в байтах.                                                            |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | Максимальное количество десериализованных токенов в кэше.                                     |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | Размер защищённой очереди в кэше токенов текстового индекса относительно общего размера кэша. |
+| Параметр                                                                                                                                               | Описание                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | Имя политики кэша токенов текстового индекса.                                                 |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | Максимальный размер кэша в байтах.                                                            |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | Максимальное количество десериализованных токенов в кэше.                                     |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | Размер защищённой очереди в кэше токенов текстового индекса относительно общего размера кэша. |
 
 <div id="caching-header">
   #### Настройки кэша заголовков
 </div>
 
-| Setting                                                                                                                                     | Description                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings#text_index_header_cache_policy)               | Имя политики кэша заголовков текстового индекса.                                                 |
-| [text&#95;index&#95;header&#95;cache&#95;size](/ru/reference/settings/server-settings/settings#text_index_header_cache_size)                   | Максимальный размер кэша в байтах.                                                               |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | Максимальное количество десериализованных заголовков в кэше.                                     |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | Размер защищённой очереди в кэше заголовков текстового индекса относительно общего размера кэша. |
+| Setting                                                                                                                                                | Description                                                                                      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | Имя политики кэша заголовков текстового индекса.                                                 |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | Максимальный размер кэша в байтах.                                                               |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | Максимальное количество десериализованных заголовков в кэше.                                     |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | Размер защищённой очереди в кэше заголовков текстового индекса относительно общего размера кэша. |
 
 <div id="caching-posting-lists">
   #### Настройки кэша списков вхождений
 </div>
 
-| Настройка                                                                                                                                       | Описание                                                                                                |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | Имя политики кэша списков вхождений текстового индекса.                                                 |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/ru/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | Максимальный размер кэша в байтах.                                                                      |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | Максимальное количество десериализованных списков вхождений в кэше.                                     |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | Размер защищённой очереди в кэше списков вхождений текстового индекса относительно общего размера кэша. |
+| Настройка                                                                                                                                                  | Описание                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | Имя политики кэша списков вхождений текстового индекса.                                                 |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | Максимальный размер кэша в байтах.                                                                      |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | Максимальное количество десериализованных списков вхождений в кэше.                                     |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ru/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | Размер защищённой очереди в кэше списков вхождений текстового индекса относительно общего размера кэша. |
 
 <div id="limitations">
   ## Ограничения

@@ -71,8 +71,8 @@ GROUP BY name
 <Accordion title="关于 compact 和 wide parts 的说明">
   如果你看到 `compressed_size` 或 `uncompressed_size` 的值为 `0`，这可能是因为
   parts 的类型是 `compact` 而不是 `wide` (请参阅 [`system.parts`](/zh/reference/system-tables/parts) 中 `part_type` 的说明) 。
-  part 格式由设置 [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_bytes_for_wide_part)
-  和 [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings#min_rows_for_wide_part) 控制。这意味着，如果插入的
+  part 格式由设置 [`min_bytes_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)
+  和 [`min_rows_for_wide_part`](/zh/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part) 控制。这意味着，如果插入的
   数据生成的 part 没有超过上述设置的阈值，那么该 part 就会是 compact，
   而不是 wide，因此你将看不到 `compressed_size` 或 `uncompressed_size` 的值。
 
@@ -141,7 +141,7 @@ GROUP BY name
 
 > 上述查询依赖系统数据库中的 `columns` 表。该数据库由 ClickHouse 管理，堪称一个信息宝库，其中包含从查询性能指标到后台 cluster 日志等大量实用信息。对于想进一步了解的读者，我们推荐阅读 [&quot;System Tables and a Window into the Internals of ClickHouse&quot;](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables) 及其配套文章[[1]](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)[[2]](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)。
 
-如果要汇总表的总大小，我们可以将上面的查询简化为：
+要汇总这张表的总大小，我们可以将上述查询简化为：
 
 ```sql
 SELECT formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,

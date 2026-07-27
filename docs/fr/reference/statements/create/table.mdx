@@ -121,7 +121,7 @@ Les modificateurs `NULL` et `NOT NULL` placés après le type de données dans u
 
 Si le type n’est pas `Nullable` et que `NULL` est spécifié, il sera traité comme `Nullable` ; si `NOT NULL` est spécifié, ce ne sera pas le cas. Par exemple, `INT NULL` équivaut à `Nullable(INT)`. Si le type est `Nullable` et que les modificateurs `NULL` ou `NOT NULL` sont spécifiés, une exception sera levée.
 
-Voir aussi le paramètre [data&#95;type&#95;default&#95;nullable](/fr/reference/settings/session-settings#data_type_default_nullable).
+Voir aussi le paramètre [data&#95;type&#95;default&#95;nullable](/fr/reference/settings/session-settings/other#data_type_default_nullable).
 
 <div id="default_values">
   ## Valeurs par défaut
@@ -378,7 +378,7 @@ Définit la durée de conservation des valeurs. Ne peut être spécifiée que po
 
 Par défaut, ClickHouse applique la compression `lz4` dans la version autogérée, et `zstd` dans ClickHouse Cloud.
 
-Pour la famille de moteurs `MergeTree`, vous pouvez modifier la méthode de compression par défaut dans la section [compression](/fr/reference/settings/server-settings/settings#compression) de la configuration du serveur.
+Pour la famille de moteurs `MergeTree`, vous pouvez modifier la méthode de compression par défaut dans la section [compression](/fr/reference/settings/server-settings/settings/other#compression) de la configuration du serveur.
 
 Vous pouvez également définir la méthode de compression pour chaque colonne dans la requête `CREATE TABLE`.
 
@@ -412,12 +412,12 @@ Les codecs peuvent être combinés dans une chaîne, par exemple `CODEC(Delta, D
 
 La compression est prise en charge pour les moteurs de table suivants :
 
-* Famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Prend en charge les codecs de compression des colonnes ainsi que la sélection de la méthode de compression par défaut via les paramètres [compression](/fr/reference/settings/server-settings/settings#compression).
+* Famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Prend en charge les codecs de compression des colonnes ainsi que la sélection de la méthode de compression par défaut via les paramètres [compression](/fr/reference/settings/server-settings/settings/other#compression).
 * Famille [Log](/fr/reference/engines/table-engines/log-family/index). Utilise par défaut la méthode de compression `lz4` et prend en charge les codecs de compression des colonnes.
 * [Set](/fr/reference/engines/table-engines/special/set). Prend uniquement en charge la compression par défaut.
 * [Join](/fr/reference/engines/table-engines/special/join). Prend uniquement en charge la compression par défaut.
 
-ClickHouse prend en charge les codecs à usage général et les codecs spécialisés.
+ClickHouse prend en charge les codecs d’usage général et les codecs spécialisés.
 
 <div id="general-purpose-codecs">
   ### Codecs d&#39;usage général
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### Codecs de chiffrement
 </div>
 
-Ces codecs ne compressent pas réellement les données : ils les chiffrent sur disque. Ils ne sont disponibles que si une clé de chiffrement est définie dans les paramètres [encryption](/fr/reference/settings/server-settings/settings#encryption). Notez que le chiffrement n&#39;a de sens qu&#39;en fin de chaîne de codecs, car les données chiffrées ne peuvent généralement plus être compressées de manière utile.
+Ces codecs ne compressent pas réellement les données : ils les chiffrent sur disque. Ils ne sont disponibles que si une clé de chiffrement est définie dans les paramètres [encryption](/fr/reference/settings/server-settings/settings/other#encryption). Notez que le chiffrement n&#39;a de sens qu&#39;en fin de chaîne de codecs, car les données chiffrées ne peuvent généralement plus être compressées de manière utile.
 
 Codecs de chiffrement :
 

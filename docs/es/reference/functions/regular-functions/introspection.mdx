@@ -16,7 +16,7 @@ Para que las funciones de introspección funcionen correctamente:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
 
-* Establezca el ajuste [allow&#95;introspection&#95;functions](/es/reference/settings/session-settings#allow_introspection_functions) en 1.
+* Establezca el ajuste [allow&#95;introspection&#95;functions](/es/reference/settings/session-settings/allow#allow_introspection_functions) en 1.
 
   Por motivos de seguridad, las funciones de introspección están deshabilitadas de forma predeterminada.
 
@@ -45,7 +45,7 @@ Convierte una dirección de memoria virtual dentro del proceso del servidor de C
 Para habilitar esta función de introspección:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
-* Establezca la opción [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions) en `1`.
+* Establezca la opción [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
 
 **Sintaxis**
 
@@ -134,7 +134,7 @@ Por ello, es más lenta que `addressToLine`.
 Para habilitar esta función de introspección:
 
 * Instale el paquete `clickhouse-common-static-dbg`.
-* Establezca el ajuste [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions) en `1`.
+* Establezca el ajuste [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions) en `1`.
 
 **Sintaxis**
 
@@ -170,7 +170,7 @@ SELECT addressToLineWithInlines(531055181::UInt64);
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- La función arrayJoin dividirá el array en filas
+-- The arrayJoin function will split array to rows
 
 SELECT
     ta, addressToLineWithInlines(arrayJoin(trace) AS ta)

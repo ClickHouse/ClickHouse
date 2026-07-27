@@ -9,7 +9,7 @@ doc_type: 'reference'
 Функции ИИ — это встроенные функции ClickHouse, которые можно использовать для вызова ИИ или генерации эмбеддингов при работе с данными, извлечении информации, классификации данных и т. д.
 
 <Note>
-  Функции ИИ являются экспериментальными. Чтобы включить их, установите [`allow_experimental_ai_functions`](/ru/reference/settings/session-settings#allow_experimental_ai_functions).
+  Функции ИИ являются экспериментальными. Чтобы включить их, установите [`allow_experimental_ai_functions`](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_ai_functions).
 </Note>
 
 <Note>
@@ -18,8 +18,8 @@ doc_type: 'reference'
 
 Все функции используют общую инфраструктуру, которая обеспечивает:
 
-* **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
-* **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+* **Контроль квот**: лимиты на количество токенов в рамках одного запроса ([`ai_function_max_input_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_output_tokens_per_query)) и вызовов API ([`ai_function_max_api_calls_per_query`](/ru/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query)).
+* **Повторные попытки с задержкой**: при временных сбоях выполняются повторные попытки ([`ai_function_max_retries`](/ru/reference/settings/session-settings/ai-function#ai_function_max_retries)) с экспоненциально растущей задержкой ([`ai_function_retry_initial_delay_ms`](/ru/reference/settings/session-settings/ai-function#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
   ## Конфигурация
@@ -69,8 +69,8 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 
 1. ключ `credentials` из её карты параметров, если он указан;
 2. в противном случае — соответствующую настройку учетных данных по умолчанию:
-   * [`ai_function_text_default_credentials`](/ru/reference/settings/session-settings#ai_function_text_default_credentials) для текстовых функций (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
-   * [`ai_function_embedding_default_credentials`](/ru/reference/settings/session-settings#ai_function_embedding_default_credentials) для `aiEmbed`.
+   * [`ai_function_text_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_text_default_credentials) для текстовых функций (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
+   * [`ai_function_embedding_default_credentials`](/ru/reference/settings/session-settings/ai-function#ai_function_embedding_default_credentials) для `aiEmbed`.
 
 Если не задано ни то ни другое, вызов завершится ошибкой. Для текстовых функций и функций эмбеддингов используются разные настройки по умолчанию, поскольку конечная точка для chat-completions отличается от конечной точки для эмбеддингов.
 
@@ -113,7 +113,7 @@ SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are ters
   ### Ограничение хостов конечных точек
 </div>
 
-URL `endpoint` в именованной коллекции AI — это исходящий пункт назначения, к которому сервер подключается от своего имени, потенциально передавая (если указан) `api_key` этой именованной коллекции в заголовках запроса. По умолчанию ClickHouse разрешает любой хост. Чтобы ограничить функции определённым набором провайдеров, настройте [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings#remote_url_allow_hosts) в конфигурации сервера, например:
+URL `endpoint` в именованной коллекции AI — это исходящий пункт назначения, к которому сервер подключается от своего имени, потенциально передавая (если указан) `api_key` этой именованной коллекции в заголовках запроса. По умолчанию ClickHouse разрешает любой хост. Чтобы ограничить функции определённым набором провайдеров, настройте [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) в конфигурации сервера, например:
 
 ```xml
 <remote_url_allow_hosts>
@@ -133,7 +133,7 @@ URL `endpoint` в именованной коллекции AI — это исх
 * `https://` — соединение использует TLS. Тело запроса (входной текст, промпты) и `api_key` в заголовках запроса шифруются при передаче, а сертификат провайдера проверяется. Используйте этот вариант для любого удалённого провайдера.
 * `http://` — соединение **не шифруется**. Тело запроса и `api_key` передаются в открытом виде. Используйте этот вариант только для доверенного провайдера в частной сети (например, для локального экземпляра `vLLM` или `Ollama`).
 
-Функция ИИ не требует HTTPS принудительно: конечная точка `http://` принимается, и данные отправляются без шифрования. Сейчас нет настройки на стороне сервера, которая отклоняла бы незашифрованные конечные точки ИИ — [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings#remote_url_allow_hosts) ограничивает только хост пункта назначения и не проверяет схему URL, поэтому конечная точка `http://` на разрешённом хосте всё равно проходит. Чтобы гарантировать шифрование при передаче, настройте именованные коллекции с конечными точками `https://`.
+Функция ИИ не требует HTTPS принудительно: конечная точка `http://` принимается, и данные отправляются без шифрования. Сейчас нет настройки на стороне сервера, которая отклоняла бы незашифрованные конечные точки ИИ — [`remote_url_allow_hosts`](/ru/reference/settings/server-settings/settings/remote#remote_url_allow_hosts) ограничивает только хост пункта назначения и не проверяет схему URL, поэтому конечная точка `http://` на разрешённом хосте всё равно проходит. Чтобы гарантировать шифрование при передаче, настройте именованные коллекции с конечными точками `https://`.
 
 Обратите внимание: в обоих случаях провайдер получает входные данные в открытом виде после завершения TLS; TLS защищает данные только на сетевом участке между сервером и провайдером.
 
@@ -241,7 +241,7 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials',
 
 Функция отправляет текст в настроенную конечную точку эмбеддингов и возвращает полученный вектор как `Array(Float32)`.
 В пределах одного блока строк входные данные группируются в батчи до
-[`ai_function_embedding_max_batch_size`](/ru/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+[`ai_function_embedding_max_batch_size`](/ru/reference/settings/session-settings/ai-function#ai_function_embedding_max_batch_size)
 записей на один HTTP-запрос, чтобы сократить накладные расходы на каждый вызов.
 
 Учетные данные (именованная коллекция, задающая провайдера, конечную точку и, при необходимости, ключ API)

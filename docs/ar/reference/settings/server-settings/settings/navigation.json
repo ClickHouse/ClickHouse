@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "إعدادات الخادم",
   "pages": [
+    "ar/reference/settings/server-settings/settings",
     "ar/reference/settings/server-settings/settings/access-control",
     "ar/reference/settings/server-settings/settings/aggregate-function",
     "ar/reference/settings/server-settings/settings/allow",
@@ -132,6 +133,5 @@
     "ar/reference/settings/server-settings/settings/workload",
     "ar/reference/settings/server-settings/settings/zookeeper",
     "ar/reference/settings/server-settings/settings/other"
-  ],
-  "root": "ar/reference/settings/server-settings/settings"
+  ]
 }

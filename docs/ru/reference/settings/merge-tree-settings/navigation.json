@@ -1,7 +1,8 @@
 {
   "directory": "none",
-  "group": "Настройки таблиц семейства MergeTree",
+  "group": "Настройки таблиц MergeTree",
   "pages": [
+    "ru/reference/settings/merge-tree-settings",
     "ru/reference/settings/merge-tree-settings/add-minmax",
     "ru/reference/settings/merge-tree-settings/allow",
     "ru/reference/settings/merge-tree-settings/allow-experimental",
@@ -84,6 +85,5 @@
     "ru/reference/settings/merge-tree-settings/write-ahead",
     "ru/reference/settings/merge-tree-settings/zero-copy",
     "ru/reference/settings/merge-tree-settings/other"
-  ],
-  "root": "ru/reference/settings/merge-tree-settings"
+  ]
 }

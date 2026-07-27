@@ -1,6 +1,6 @@
 ---
 title: إعداد AWS PrivateLink لإتاحة MSK لـ ClickPipes
-description: خطوات الإعداد لإتاحة MSK خاص عبر MSK اتصال multi-VPC لـ ClickPipes.
+description: خطوات الإعداد لإتاحة MSK خاص عبر اتصال multi-VPC لـ MSK إلى ClickPipes.
 date: 2025-4-15
 tags: ['الأمان والمصادقة', 'إدارة Cloud']
 keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
@@ -10,30 +10,30 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
   ## نظرة عامة
 </div>
 
-سيرشدك هذا الدليل إلى كيفية البدء بإعداد **MSK multi-VPC** لاستخدامه مع [ClickPipes Reverse Private Endpoint](/ar/integrations/clickpipes/aws-privatelink#msk-multi-vpc).
+سيرشدك هذا الدليل إلى كيفية البدء في إعداد **MSK multi-VPC** لاستخدامه مع [نقطة النهاية الخاصة العكسية لـ ClickPipes](/ar/integrations/clickpipes/aws-privatelink#msk-multi-vpc).
 
 <div id="requirements">
   ## المتطلبات
 </div>
 
-يجب أن تكون شبكة VPC الخاصة بـ عنقود MSK لديك في إحدى مناطق ClickPipes لدينا. راجع [مناطق ClickPipes](/ar/integrations/clickpipes/aws-privatelink#aws-privatelink-regions) للاطلاع على قائمة المناطق المدعومة.
+يجب أن تكون شبكة VPC الخاصة بـ عنقود MSK لديك ضمن إحدى مناطق ClickPipes لدينا. راجع [مناطق ClickPipes](/ar/integrations/clickpipes/aws-privatelink#aws-privatelink-regions) للاطلاع على قائمة المناطق المدعومة.
 
 <div id="enabling-multi-vpc-connectivity">
   ## تمكين اتصال multi-VPC
 </div>
 
 1. انتقل إلى عنقود MSK.
-   * اختر &quot;Clusters&quot; من جزء التنقل الأيسر في Console الخاص بـ Amazon MSK.
-   * حدّد عنقود MSK الذي تريد تهيئته لاتصال multi-VPC.
-2. فعّل MSK اتصال multi-VPC
-   * في علامة التبويب **Connectivity**، ابحث عن قسم **اتصال multi-VPC**.
+   * اختر &quot;Clusters&quot; من جزء التنقل الأيسر في وحدة تحكم Amazon MSK.
+   * حدِّد عنقود MSK الذي تريد تهيئته لاتصال multi-VPC.
+2. فعِّل اتصال MSK multi-VPC
+   * في علامة التبويب **Connectivity**، ابحث عن قسم **Multi-VPC connectivity**.
    * انقر على **Edit**.
-   * فعّل خيار **Turn-on MSK اتصال multi-VPC**.
+   * فعِّل خيار **Turn-on MSK multi-VPC connectivity**.
    * اتبع التعليمات
-3. أضف principal الخاص بحساب ClickPipes إلى سياسة العنقود
+3. أضف المعرّف الرئيسي لحساب ClickPipes إلى سياسة العنقود
    * انتقل إلى علامة التبويب **Configuration**.
    * انقر على **Edit** في قسم **Cluster policy**.
-   * أدرج `arn:aws:iam::072088201116:root` في **IAM policy**. مثال:
+   * أدرِج `arn:aws:iam::072088201116:root` في **سياسة IAM**. مثال:
      ```json
      {
          "Version": "2012-10-17",
@@ -57,12 +57,12 @@ keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
      ```
 
 <Tip>
-  تُمكّن سياسة IAM الخاصة بالعنقود ClickPipes من بدء الاتصال من ClickPipes إلى عنقود MSK الخاص بك.
-  إذا كنت تريد تهيئة المصادقة عبر IAM لعنقود MSK الخاص بك، فيُرجى الرجوع إلى [وثائق المصادقة عبر IAM](/ar/integrations/clickpipes/kafka/best-practices#iam).
+  تتيح سياسة IAM الخاصة بالعنقود لـ ClickPipes بدء الاتصال من ClickPipes إلى عنقود MSK لديك.
+  إذا كنت تريد تهيئة IAM authentication لعنقود MSK لديك، فيُرجى الرجوع إلى [وثائق IAM authentication](/ar/integrations/clickpipes/kafka/best-practices#iam).
 </Tip>
 
 <div id="creating-reverse-private-endpoint">
-  ## إنشاء Reverse Private Endpoint
+  ## إنشاء نقطة نهاية خاصة عكسية
 </div>
 
-اتبع خطوات إنشاء Reverse Private Endpoint في [وثائق ClickPipes](/ar/integrations/clickpipes/aws-privatelink#creating-clickpipe).
+اتبع خطوات إنشاء نقطة النهاية الخاصة العكسية الواردة في [وثائق ClickPipes](/ar/integrations/clickpipes/aws-privatelink#creating-clickpipe).

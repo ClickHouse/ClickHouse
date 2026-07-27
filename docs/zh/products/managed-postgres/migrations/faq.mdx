@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: '常见问题'
-title: 'Managed Postgres 迁移常见问题解答'
+title: 'ClickHouse Managed Postgres 迁移常见问题解答'
 description: '有关将数据迁移到 ClickHouse Managed Postgres 的常见问题解答。'
 keywords: ['postgres', '迁移', '常见问题', 'Managed Postgres', '逻辑复制', '枚举', '唯一约束']
 doc_type: 'reference'
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-关于 Postgres 复制工作机制的许多问题——包括 `TOAST` 列、replication slot、publication、schema 变更和数据类型映射——都可在 [ClickPipes for Postgres FAQ](/zh/integrations/clickpipes/postgres/faq) 中找到解答。其中的信息同样适用于 Managed Postgres 迁移。
+关于 Postgres 复制工作机制的许多问题——包括 `TOAST` 列、replication slot、publication、schema 变更和数据类型映射——都可在 [ClickPipes for Postgres FAQ](/zh/integrations/clickpipes/postgres/faq) 中找到解答。其中的信息同样适用于 ClickHouse Managed Postgres 迁移。
 
 <div id="invalid-enum-value">
   ### 复制期间出现“枚举 输入值无效”错误
 </div>
 
-当源 Postgres 中存在目标 Managed Postgres 上没有的 枚举 值时，就会出现此错误。逻辑复制不会自动传播 `ALTER TYPE ... ADD VALUE` 命令，因此，如果在初始 schema 设置完成后，源端新增了 枚举 值，就会导致目标端插入失败。
+当源 Postgres 中存在目标 ClickHouse Managed Postgres 上没有的 枚举 值时，就会出现此错误。逻辑复制不会自动传播 `ALTER TYPE ... ADD VALUE` 命令，因此，如果在初始 schema 设置完成后，源端新增了 枚举 值，就会导致目标端插入失败。
 
 要解决此问题，请在目标 Postgres 上为该 枚举 类型补上缺失的值：
 

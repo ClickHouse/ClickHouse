@@ -76,13 +76,13 @@ SETTINGS
 * `kafka_schema` — フォーマットでスキーマ定義が必要な場合に指定しなければならないパラメータです。たとえば、[Cap&#39;n Proto](https://capnproto.org/) では、スキーマファイルへのパスとルート `schema.capnp:Message` オブジェクト名が必要です。
 * `kafka_schema_registry_skip_bytes` — エンベロープヘッダー付きのスキーマレジストリを使用する際に、各メッセージの先頭からスキップするバイト数です (例: 19 バイトのエンベロープを含む AWS Glue Schema Registry) 。範囲: `[0, 255]`。デフォルト: `0`。
 * `kafka_num_consumers` — テーブルごとのコンシューマー数です。1 つのコンシューマーのスループットでは不十分な場合は、コンシューマー数を増やしてください。各パーティションには割り当てられるコンシューマーが 1 つだけのため、コンシューマーの総数はトピック内のパーティション数を超えてはなりません。また、ClickHouse がデプロイされているサーバーの物理コア数を超えないようにしてください。デフォルト: `1`。
-* `kafka_max_block_size` — poll での最大バッチサイズ (メッセージ数) 。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings#max_insert_block_size)。
+* `kafka_max_block_size` — poll での最大バッチサイズ (メッセージ数) 。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)。
 * `kafka_skip_broken_messages` — Kafka メッセージパーサーが、ブロックごとにスキーマと互換性のないメッセージをどこまで許容するかを指定します。`kafka_skip_broken_messages = N` の場合、エンジンはパースできない Kafka メッセージを *N* 件スキップします (1 件のメッセージはデータの 1 行に相当します) 。既定値: `0`。
 * `kafka_commit_every_batch` — ブロック全体の書き込み後に一度だけコミットするのではなく、消費して処理した各バッチごとにコミットします。デフォルト: `0`。
 * `kafka_client_id` — クライアント識別子。デフォルトでは空です。
-* `kafka_poll_timeout_ms` — Kafka からの単一の poll に対するタイムアウト。デフォルト: [stream&#95;poll&#95;timeout&#95;ms](/ja/reference/settings/session-settings#stream_poll_timeout_ms)。
-* `kafka_poll_max_batch_size` — 1 回の Kafka poll で取得できるメッセージの最大数。デフォルト: [max&#95;block&#95;size](/ja/reference/settings/session-settings#max_block_size)。
-* `kafka_flush_interval_ms` — Kafka からデータをフラッシュする際のタイムアウト。デフォルト値: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings#stream_flush_interval_ms)。
+* `kafka_poll_timeout_ms` — Kafka からの単一の poll に対するタイムアウト。デフォルト: [stream&#95;poll&#95;timeout&#95;ms](/ja/reference/settings/session-settings/stream#stream_poll_timeout_ms)。
+* `kafka_poll_max_batch_size` — 1 回の Kafka poll で取得できるメッセージの最大数。デフォルト: [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size)。
+* `kafka_flush_interval_ms` — Kafka からデータをフラッシュする際のタイムアウト。デフォルト値: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `kafka_consumer_reschedule_ms` — Kafka のストリーム処理が停止している場合 (たとえば、消費できるメッセージがない場合) の再スケジュール間隔です。この設定は、コンシューマーが poll を再試行するまでの待機時間を制御します。`kafka_consumers_pool_ttl_ms` を超えてはなりません。デフォルト: `500` ミリ秒。
 * `kafka_thread_per_consumer` — 各コンシューマーに独立したスレッドを割り当てます。有効にすると、各コンシューマーがデータをそれぞれ独立して並列にフラッシュします (無効の場合は、複数のコンシューマーからの行が1つのブロックになるようにまとめられます) 。デフォルト: `0`。
 * `kafka_handle_error_mode` — Kafka エンジンでのエラー処理方法。設定可能な値: default (メッセージの解析に失敗した場合に例外がスローされます) 、stream (例外メッセージと生のメッセージが仮想カラム `_error` と `_raw_message` に保存されます) 、dead&#95;letter&#95;queue (エラー関連のデータが system.dead&#95;letter&#95;queue に保存されます) 。
@@ -162,11 +162,11 @@ CREATE TABLE queue3 (
 
 メッセージの読み取りに `SELECT` はあまり適していません (デバッグ用途を除く) 。各メッセージは一度しか読み取れないためです。より実用的なのは、materialized view を使ってリアルタイムのストリームを作成することです。これを行うには、次のようにします。
 
-1. engine を使用して Kafka コンシューマを作成し、それをデータストリームとして扱います。
+1. エンジンを使用して Kafka コンシューマを作成し、それをデータストリームとして扱います。
 2. 必要な構造を持つテーブルを作成します。
-3. engine からデータを変換し、あらかじめ作成したテーブルに格納する materialized view を作成します。
+3. エンジンからデータを変換し、あらかじめ作成したテーブルに格納する materialized view を作成します。
 
-`MATERIALIZED VIEW` が engine に接続されると、バックグラウンドでデータの収集を開始します。これにより、Kafka から継続的にメッセージを受信し、`SELECT` を使って必要なフォーマットに変換できます。
+`MATERIALIZED VIEW` がエンジンに接続されると、バックグラウンドでデータの収集を開始します。これにより、Kafka から継続的にメッセージを受信し、`SELECT` を使って必要なフォーマットに変換できます。
 1 つの Kafka テーブルには、必要な数だけ materialized view を持たせることができます。これらは Kafka テーブルから直接データを読み取るのではなく、新しいレコードを (ブロック単位で) 受け取ります。これにより、異なる粒度の複数のテーブル (グループ化あり - aggregation あり、グループ化なし) に書き込むことができます。
 
 接続パラメーターの保存に [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使用する例:
@@ -199,7 +199,7 @@ CREATE TABLE queue3 (
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-パフォーマンスを向上させるため、受信したメッセージは [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings#max_insert_block_size) のサイズでブロックにまとめられます。[stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings#stream_flush_interval_ms) ミリ秒以内にブロックが形成されない場合は、ブロックが完全でなくても、データはテーブルにフラッシュされます。
+パフォーマンスを向上させるため、受信したメッセージは [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) のサイズでブロックにまとめられます。[stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms) ミリ秒以内にブロックが形成されない場合は、ブロックが完全でなくても、データはテーブルにフラッシュされます。
 
 トピック データの受信を停止するか、変換ロジックを変更するには、materialized view をデタッチします:
 
@@ -453,7 +453,7 @@ Kafka エンジンは、ClickHouse でサポートされているすべての[�
 1 つの Kafka メッセージに含まれる行数は、そのフォーマットが行ベースかブロックベースかによって異なります。
 
 * 行ベースのフォーマットでは、1 つの Kafka メッセージに含める行数を `kafka_max_rows_per_message` の設定で制御できます。
-* ブロックベースのフォーマットでは、ブロックをさらに小さな部分に分割することはできませんが、1 つのブロックに含まれる行数は一般設定の [max&#95;block&#95;size](/ja/reference/settings/session-settings#max_block_size) で制御できます。
+* ブロックベースのフォーマットでは、ブロックをさらに小さな部分に分割することはできませんが、1 つのブロックに含まれる行数は一般設定の [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) で制御できます。
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
   ## ClickHouse Keeper にコミット済みオフセットを保存するエンジン
@@ -491,7 +491,7 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 **関連項目**
 
 * [仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/ja/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

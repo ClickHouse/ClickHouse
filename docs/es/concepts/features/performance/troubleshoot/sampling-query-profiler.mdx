@@ -68,7 +68,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
   </Step>
 
   <Step title="Compruebe la configuración del servidor" id="server-config">
-    Asegúrese de que la sección [`trace_log`](/es/reference/settings/server-settings/settings#trace_log) de su [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) esté configurada. Está habilitada de forma predeterminada:
+    Asegúrese de que la sección [`trace_log`](/es/reference/settings/server-settings/settings/other#trace_log) de su [archivo de configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) esté configurada. Está habilitada de forma predeterminada:
 
     ```xml
     <!-- Registro de trazas. Almacena trazas de pila recopiladas por los perfiladores de consultas.
@@ -94,7 +94,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
   </Step>
 
   <Step title="Configure los temporizadores del perfilador" id="configure-profile-timers">
-    Configure las opciones [`query_profiler_cpu_time_period_ns`](/es/reference/settings/session-settings#query_profiler_cpu_time_period_ns) o [`query_profiler_real_time_period_ns`](/es/reference/settings/session-settings#query_profiler_real_time_period_ns).
+    Configure las opciones [`query_profiler_cpu_time_period_ns`](/es/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) o [`query_profiler_real_time_period_ns`](/es/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns).
     Ambas opciones pueden usarse simultáneamente.
 
     Estas opciones le permiten configurar los temporizadores del perfilador.
@@ -106,7 +106,7 @@ En las implementaciones autogestionadas, para usar el perfilador de consultas, s
   </Step>
 
   <Step title={<>Analice la tabla del sistema <code>trace_log</code></>} id="analyze-trace-log-system-table">
-    Para analizar la tabla del sistema `trace_log`, habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings#allow_introspection_functions):
+    Para analizar la tabla del sistema `trace_log`, habilite las funciones de introspección con la opción [`allow_introspection_functions`](/es/reference/settings/session-settings/allow#allow_introspection_functions):
 
     ```sql
     SET allow_introspection_functions=1

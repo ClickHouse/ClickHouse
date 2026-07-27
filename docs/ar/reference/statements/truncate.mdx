@@ -25,9 +25,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 | `ON CLUSTER cluster` | يشغّل الأمر على عنقود محدد.                                                                                                               |
 | `SYNC`               | يجعل عملية الاقتطاع متزامنة عبر النسخ المتماثلة عند استخدام الجداول المتماثلة. وإذا أُغفل، تحدث عملية الاقتطاع بشكل غير متزامن افتراضيًا. |
 
-يمكنك استخدام إعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) لتهيئة الانتظار حتى تُنفَّذ الإجراءات على النسخ المتماثلة.
+يمكنك استخدام إعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) لتهيئة الانتظار حتى تُنفَّذ الإجراءات على النسخ المتماثلة.
 
-يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة استعلامات `TRUNCATE` باستخدام إعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة استعلامات `TRUNCATE` باستخدام إعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد بواسطة إعداد `replication_wait_for_inactive_replica_timeout`، فسيُطرَح الاستثناء `UNFINISHED`.

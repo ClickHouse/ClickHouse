@@ -1421,7 +1421,7 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-[log&#95;queries=1](/ko/reference/settings/session-settings) 설정으로 수신된 쿼리를 로깅하는 설정입니다.
+[log&#95;queries=1](/ko/reference/settings/session-settings/log-queries#log_queries) 설정으로 수신된 쿼리를 로깅하는 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;log](/ko/reference/system-tables/query_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -1516,7 +1516,7 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings#log_query_threads) 설정을 사용해 수신한 쿼리의 스레드를 로깅하는 설정입니다.
+[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings/log-query#log_query_threads) 설정을 사용해 수신한 쿼리의 스레드를 로깅하는 설정입니다.
 
 쿼리는 별도의 파일이 아니라 [system.query&#95;thread&#95;log](/ko/reference/system-tables/query_thread_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -1543,7 +1543,7 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ko/reference/settings/session-settings#log_query_views) 설정으로 수신된 쿼리에 따라 뷰(라이브, 구체화된 뷰 등)를 로깅하기 위한 설정입니다.
+[log&#95;query&#95;views=1](/ko/reference/settings/session-settings/log-query#log_query_views) 설정으로 수신된 쿼리에 따라 뷰(라이브, 구체화된 뷰 등)를 로깅하기 위한 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;views&#95;log](/ko/reference/system-tables/query_views_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -1806,7 +1806,7 @@ async 삽입 로깅을 위한 [asynchronous&#95;insert&#95;log](/ko/reference/sy
 
 **관련 항목**
 
-* [skip&#95;unavailable&#95;shards](/ko/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/ko/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [클러스터 디스커버리](/ko/guides/oss/deployment-and-scaling/cluster-discovery)
 * [복제된 데이터베이스 엔진](/ko/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ UTC 시간대 또는 지리적 위치에 대한 IANA 식별자(예: Africa/Abidj
 
 **관련 항목**
 
-* [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,7 +2128,7 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
 </div>
 
 클러스터에서 [분산 DDL 쿼리](/ko/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`)의 실행을 관리합니다.
-[ZooKeeper](/ko/reference/settings/server-settings/settings#zookeeper)가 활성화된 경우에만 동작합니다.
+[ZooKeeper](/ko/reference/settings/server-settings/settings/zookeeper#zookeeper)가 활성화된 경우에만 동작합니다.
 
 `<distributed_ddl>`에서 구성할 수 있는 설정은 다음과 같습니다:
 
@@ -2145,26 +2145,26 @@ ClickHouse는 서버의 모든 테이블에 이 설정을 사용합니다. 이 �
 
 ```xml
 <distributed_ddl>
-    <!-- DDL 쿼리 큐의 ZooKeeper 경로 -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- 이 프로필의 설정이 DDL 쿼리 실행에 사용됩니다 -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- ON CLUSTER 쿼리의 최대 동시 실행 수를 제어합니다. -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         정리 설정 (활성 작업은 제거되지 않습니다)
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- 작업 TTL을 제어합니다 (기본값: 1주) -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- 정리 작업 수행 주기를 제어합니다 (단위: 초) -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- 큐에 대기할 수 있는 최대 작업 수를 제어합니다 -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2246,7 +2246,7 @@ ClickHouse 서버가 SQL 명령으로 생성된 사용자 및 역할 구성을 �
 * SQL 명령으로 생성된 사용자가 저장되는 폴더의 경로.
 * SQL 명령으로 생성된 사용자가 저장되고 복제되는 ZooKeeper 노드 경로.
 
-이 섹션을 지정하면 [users&#95;config](/ko/reference/settings/server-settings/settings#users_config) 및 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings#access_control_path)의 경로는 사용되지 않습니다.
+이 섹션을 지정하면 [users&#95;config](/ko/reference/settings/server-settings/settings/users#users_config) 및 [access&#95;control&#95;path](/ko/reference/settings/server-settings/settings/access-control#access_control_path)의 경로는 사용되지 않습니다.
 
 `user_directories` 섹션에는 항목을 원하는 만큼 포함할 수 있으며, 항목의 순서는 우선순위를 의미합니다(위에 있을수록 우선순위가 높습니다).
 

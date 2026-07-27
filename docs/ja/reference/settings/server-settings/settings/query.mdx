@@ -47,7 +47,7 @@ import SystemLogParameters from '/snippets/ja/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-[log&#95;queries=1](/ja/reference/settings/session-settings) が設定されている場合に、受信したクエリをログに記録するための設定です。
+[log&#95;queries=1](/ja/reference/settings/session-settings/log-queries#log_queries) が設定されている場合に、受信したクエリをログに記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;log](/ja/reference/system-tables/query_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 
@@ -146,7 +146,7 @@ Regexp ベースのルールです。保存前にクエリとすべてのログ�
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ja/reference/settings/session-settings#log_query_threads) 設定で受信したクエリのスレッドを記録するための設定です。
+[log&#95;query&#95;threads=1](/ja/reference/settings/session-settings/log-query#log_query_threads) 設定で受信したクエリのスレッドを記録するための設定です。
 
 クエリは個別のファイルではなく、[system.query&#95;thread&#95;log](/ja/reference/system-tables/query_thread_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (下記参照) 。
 
@@ -173,7 +173,7 @@ Regexp ベースのルールです。保存前にクエリとすべてのログ�
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ja/reference/settings/session-settings#log_query_views) 設定を指定して受信したクエリに応じて、ビュー (ライブビュー、マテリアライズドビューなど) をログに記録するための設定です。
+[log&#95;query&#95;views=1](/ja/reference/settings/session-settings/log-query#log_query_views) 設定を指定して受信したクエリに応じて、ビュー (ライブビュー、マテリアライズドビューなど) をログに記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;views&#95;log](/ja/reference/system-tables/query_views_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 

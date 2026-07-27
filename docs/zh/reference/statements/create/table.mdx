@@ -1,6 +1,6 @@
 ---
 description: '表相关文档'
-keywords: ['压缩', 'codec', 'schema', 'DDL']
+keywords: ['压缩', '编解码器', 'schema', 'DDL']
 sidebarTitle: '表'
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-创建一个新表。该查询可根据不同的使用场景采用多种语法形式。
+创建一个新表。该查询可根据不同的使用场景采用多种语法格式。
 
 默认情况下，表只会在当前服务器上创建。分布式 DDL 查询通过 `ON CLUSTER` 子句来实现，相关内容[另文说明](/zh/reference/statements/distributed-ddl)。
 
@@ -121,7 +121,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 如果该类型不是 `Nullable`，并且指定了 `NULL`，则会将其视为 `Nullable`；如果指定了 `NOT NULL`，则不会。例如，`INT NULL` 等同于 `Nullable(INT)`。如果该类型本身就是 `Nullable`，再指定 `NULL` 或 `NOT NULL` 修饰符时，则会抛出异常。
 
-另请参见 [data&#95;type&#95;default&#95;nullable](/zh/reference/settings/session-settings#data_type_default_nullable) 设置。
+另请参见 [data&#95;type&#95;default&#95;nullable](/zh/reference/settings/session-settings/other#data_type_default_nullable) 设置。
 
 <div id="default_values">
   ## 默认值
@@ -378,7 +378,7 @@ ORDER BY (name_len, name);
 
 默认情况下，ClickHouse 在自管理版本中使用 `lz4` 压缩，在 ClickHouse Cloud 中使用 `zstd`。
 
-对于 `MergeTree` 引擎家族，你可以在服务器配置的 [compression](/zh/reference/settings/server-settings/settings#compression) 部分修改默认压缩方法。
+对于 `MergeTree` 引擎家族，你可以在服务器配置的 [compression](/zh/reference/settings/server-settings/settings/other#compression) 部分修改默认压缩方法。
 
 你还可以在 `CREATE TABLE` 查询中为每一列单独指定压缩方法。
 
@@ -412,7 +412,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 以下表引擎支持压缩：
 
-* [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族。支持列压缩编解码器，并可通过 [compression](/zh/reference/settings/server-settings/settings#compression) 设置选择默认压缩方法。
+* [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 家族。支持列压缩编解码器，并可通过 [compression](/zh/reference/settings/server-settings/settings/other#compression) 设置选择默认压缩方法。
 * [Log](/zh/reference/engines/table-engines/log-family/index) 家族。默认使用 `lz4` 压缩方法，并支持列压缩编解码器。
 * [Set](/zh/reference/engines/table-engines/special/set)。仅支持默认压缩。
 * [Join](/zh/reference/engines/table-engines/special/join)。仅支持默认压缩。
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### 加密编解码器
 </div>
 
-这些编解码器实际上并不压缩数据，而是对磁盘上的数据进行加密。只有在通过[encryption](/zh/reference/settings/server-settings/settings#encryption)设置指定加密密钥时，这些编解码器才可用。请注意，加密只有放在编解码器管道的末端才有意义，因为加密后的数据通常无法再以任何有意义的方式进行压缩。
+这些编解码器实际上并不压缩数据，而是对磁盘上的数据进行加密。只有在通过[encryption](/zh/reference/settings/server-settings/settings/other#encryption)设置指定加密密钥时，这些编解码器才可用。请注意，加密只有放在编解码器管道的末端才有意义，因为加密后的数据通常无法再以任何有意义的方式进行压缩。
 
 加密编解码器：
 

@@ -1,6 +1,6 @@
 ---
 description: 'テーブルのドキュメント'
-keywords: ['圧縮', 'codec', 'スキーマ', 'DDL']
+keywords: ['圧縮', 'コーデック', 'スキーマ', 'DDL']
 sidebarTitle: 'TABLE'
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
@@ -121,7 +121,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 型が `Nullable` ではない場合、`NULL` を指定すると `Nullable` として扱われ、`NOT NULL` を指定した場合はそのまま `Nullable` にはなりません。たとえば、`INT NULL` は `Nullable(INT)` と同じです。型が `Nullable` であるにもかかわらず `NULL` または `NOT NULL` 修飾子を指定すると、例外がスローされます。
 
-関連項目: [data&#95;type&#95;default&#95;nullable](/ja/reference/settings/session-settings#data_type_default_nullable) 設定。
+関連項目: [data&#95;type&#95;default&#95;nullable](/ja/reference/settings/session-settings/other#data_type_default_nullable) 設定。
 
 <div id="default_values">
   ## デフォルト値
@@ -378,7 +378,7 @@ ORDER BY (name_len, name);
 
 デフォルトでは、ClickHouse はセルフマネージド版では `lz4` 圧縮を使用し、ClickHouse Cloud では `zstd` を使用します。
 
-`MergeTree` エンジンファミリーでは、サーバー設定の [compression](/ja/reference/settings/server-settings/settings#compression) セクションでデフォルトの圧縮方式を変更できます。
+`MergeTree` エンジンファミリーでは、サーバー設定の [compression](/ja/reference/settings/server-settings/settings/other#compression) セクションでデフォルトの圧縮方式を変更できます。
 
 また、`CREATE TABLE` クエリで、個々のカラムごとに圧縮方式を定義することもできます。
 
@@ -412,7 +412,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 圧縮は、次のテーブルエンジンでサポートされています。
 
-* [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー。カラム圧縮コーデックと、[compression](/ja/reference/settings/server-settings/settings#compression) 設定によるデフォルトの圧縮方式の選択をサポートします。
+* [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー。カラム圧縮コーデックと、[compression](/ja/reference/settings/server-settings/settings/other#compression) 設定によるデフォルトの圧縮方式の選択をサポートします。
 * [Log](/ja/reference/engines/table-engines/log-family/index) ファミリー。デフォルトで `lz4` 圧縮方式を使用し、カラム圧縮コーデックをサポートします。
 * [Set](/ja/reference/engines/table-engines/special/set)。デフォルトの圧縮のみをサポートします。
 * [Join](/ja/reference/engines/table-engines/special/join)。デフォルトの圧縮のみをサポートします。
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### 暗号化コーデック
 </div>
 
-これらのコーデックは実際にはデータを圧縮せず、代わりにディスク上のデータを暗号化します。これらを使用できるのは、[encryption](/ja/reference/settings/server-settings/settings#encryption) 設定で暗号化キーが指定されている場合のみです。通常、暗号化されたデータを意味のある形で圧縮することはできないため、暗号化コーデックを使うのはコーデックパイプラインの最後に限られます。
+これらのコーデックは実際にはデータを圧縮せず、代わりにディスク上のデータを暗号化します。これらを使用できるのは、[encryption](/ja/reference/settings/server-settings/settings/other#encryption) 設定で暗号化キーが指定されている場合のみです。通常、暗号化されたデータを意味のある形で圧縮することはできないため、暗号化コーデックを使うのはコーデックパイプラインの最後に限られます。
 
 暗号化コーデック:
 

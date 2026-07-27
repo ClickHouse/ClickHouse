@@ -21,7 +21,7 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
 </div>
 
 `SYSTEM RELOAD DICTIONARIES` 쿼리는 상태가 `LOADED`인 딕셔너리, 즉 이전에 성공적으로 로드된 딕셔너리를 다시 로드합니다([`system.dictionaries`](/ko/reference/system-tables/dictionaries)의 `status` 컬럼 참조).
-기본적으로 딕셔너리는 지연 로드됩니다([dictionaries&#95;lazy&#95;load](/ko/reference/settings/server-settings/settings#dictionaries_lazy_load) 참조). 따라서 시작 시 자동으로 로드되지 않으며, [`dictGet`](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet) 함수를 사용하거나 `ENGINE = Dictionary`인 테이블에서 `SELECT`를 실행해 처음 접근할 때 초기화됩니다.
+기본적으로 딕셔너리는 지연 로드됩니다([dictionaries&#95;lazy&#95;load](/ko/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load) 참조). 따라서 시작 시 자동으로 로드되지 않으며, [`dictGet`](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet) 함수를 사용하거나 `ENGINE = Dictionary`인 테이블에서 `SELECT`를 실행해 처음 접근할 때 초기화됩니다.
 
 **구문**
 
@@ -119,7 +119,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-모든 [비동기 메트릭](/ko/reference/system-tables/asynchronous_metrics)을 다시 계산합니다. 비동기 메트릭은 설정 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ko/reference/settings/server-settings/settings)에 따라 주기적으로 갱신되므로, 일반적으로는 이 구문을 사용해 수동으로 갱신할 필요가 없습니다.
+모든 [비동기 메트릭](/ko/reference/system-tables/asynchronous_metrics)을 다시 계산합니다. 비동기 메트릭은 설정 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ko/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s)에 따라 주기적으로 갱신되므로, 일반적으로는 이 구문을 사용해 수동으로 갱신할 필요가 없습니다.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -144,7 +144,7 @@ ClickHouse의 내부 DNS 캐시를 비웁니다. 경우에 따라(이전 ClickHo
 </div>
 
 메모리에 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 프라이머리 키를 보관하는 프라이머리 인덱스 캐시를 비웁니다.
-크기는 서버 수준 설정인 [`primary_index_cache_size`](/ko/reference/settings/server-settings/settings#primary_index_cache_size)로 지정합니다.
+크기는 서버 수준 설정인 [`primary_index_cache_size`](/ko/reference/settings/server-settings/settings/primary-index#primary_index_cache_size)로 지정합니다.
 
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
@@ -323,15 +323,15 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 비압축 데이터 캐시를 지웁니다.
-비압축 데이터 캐시는 쿼리/사용자/profile 수준 설정인 [`use_uncompressed_cache`](/ko/reference/settings/session-settings#use_uncompressed_cache)로 활성화하거나 비활성화할 수 있습니다.
-크기는 서버 수준 설정인 [`uncompressed_cache_size`](/ko/reference/settings/server-settings/settings#uncompressed_cache_size)로 구성할 수 있습니다.
+비압축 데이터 캐시는 쿼리/사용자/프로필 수준 설정인 [`use_uncompressed_cache`](/ko/reference/settings/session-settings/use#use_uncompressed_cache)로 활성화하거나 비활성화할 수 있습니다.
+크기는 서버 수준 설정인 [`uncompressed_cache_size`](/ko/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size)로 구성할 수 있습니다.
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
 </div>
 
 컴파일된 표현식 캐시를 비웁니다.
-컴파일된 표현식 캐시는 쿼리/사용자/프로필 수준의 설정인 [`compile_expressions`](/ko/reference/settings/session-settings#compile_expressions)로 활성화하거나 비활성화할 수 있습니다.
+컴파일된 표현식 캐시는 쿼리/사용자/프로필 수준의 설정인 [`compile_expressions`](/ko/reference/settings/session-settings/compile#compile_expressions)로 활성화하거나 비활성화할 수 있습니다.
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
@@ -361,12 +361,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-[`format_schema_path`](/ko/reference/settings/server-settings/settings#format_schema_path)에서 로드된 스키마 캐시를 지웁니다.
+[`format_schema_path`](/ko/reference/settings/server-settings/settings/format#format_schema_path)에서 로드된 스키마 캐시를 지웁니다.
 
 지원되는 대상:
 
 * Protobuf: 메모리에서 가져온 Protobuf 메시지 정의를 제거합니다.
-* Files: `format_schema_source`가 `query`로 설정된 경우 [`format_schema_path`](/ko/reference/settings/server-settings/settings#format_schema_path)에 로컬로 저장된 캐시된 스키마 파일을 삭제합니다.
+* Files: `format_schema_source`가 `query`로 설정된 경우 [`format_schema_path`](/ko/reference/settings/server-settings/settings/format#format_schema_path)에 로컬로 저장된 캐시된 스키마 파일을 삭제합니다.
   참고: 대상을 지정하지 않으면 두 캐시가 모두 지워집니다.
 
 ```sql
@@ -523,7 +523,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## 분산 테이블 관리
 </div>
 
-ClickHouse에서는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블을 관리할 수 있습니다. 사용자가 이러한 테이블에 데이터를 삽입하면 ClickHouse는 먼저 클러스터(cluster) 노드로 전송할 데이터 큐를 만든 다음, 이를 비동기적으로 전송합니다. [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), [`START DISTRIBUTED SENDS`](#start-distributed-sends) 쿼리를 사용해 큐 처리를 관리할 수 있습니다. 또한 [`distributed_foreground_insert`](/ko/reference/settings/session-settings#distributed_foreground_insert) 설정을 사용하면 분산 데이터를 동기적으로 삽입할 수도 있습니다.
+ClickHouse에서는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블을 관리할 수 있습니다. 사용자가 이러한 테이블에 데이터를 삽입하면 ClickHouse는 먼저 클러스터(cluster) 노드로 전송할 데이터 큐를 만든 다음, 이를 비동기적으로 전송합니다. [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed), [`START DISTRIBUTED SENDS`](#start-distributed-sends) 쿼리를 사용해 큐 처리를 관리할 수 있습니다. 또한 [`distributed_foreground_insert`](/ko/reference/settings/session-settings/distributed#distributed_foreground_insert) 설정을 사용하면 분산 데이터를 동기적으로 삽입할 수도 있습니다.
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -536,7 +536,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  [`prefer_localhost_replica`](/ko/reference/settings/session-settings#prefer_localhost_replica)가 활성화되어 있으면(기본값) 데이터는 어쨌든 로컬 세그먼트에 삽입됩니다.
+  [`prefer_localhost_replica`](/ko/reference/settings/session-settings/prefer#prefer_localhost_replica)가 활성화되어 있으면(기본값) 데이터는 어쨌든 로컬 세그먼트에 삽입됩니다.
 </Note>
 
 <div id="flush-distributed">

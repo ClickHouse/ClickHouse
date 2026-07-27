@@ -61,7 +61,7 @@ A tabela abaixo mostra os tipos de dados compatíveis e como eles correspondem a
 
 Arrays podem ser aninhados e podem ter um valor do tipo `Nullable` como argumento. Os tipos `Tuple` e `Map` também podem ser aninhados.
 
-O tipo `DICTIONARY` é compatível com consultas `INSERT`, e, para consultas `SELECT`, há uma configuração [`output_format_arrow_low_cardinality_as_dictionary`](/pt-BR/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) que permite retornar o tipo [LowCardinality](/pt-BR/reference/data-types/lowcardinality) como um tipo `DICTIONARY`. Observe que pode haver valores não utilizados no dicionário `LowCardinality`, o que pode resultar em valores não utilizados no `DICTIONARY` do Arrow na saída.
+O tipo `DICTIONARY` é compatível com consultas `INSERT`, e, para consultas `SELECT`, há uma configuração [`output_format_arrow_low_cardinality_as_dictionary`](/pt-BR/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) que permite retornar o tipo [LowCardinality](/pt-BR/reference/data-types/lowcardinality) como um tipo `DICTIONARY`. Observe que pode haver valores não utilizados no dicionário `LowCardinality`, o que pode resultar em valores não utilizados no `DICTIONARY` do Arrow na saída.
 
 Tipos de dados Arrow sem suporte:
 

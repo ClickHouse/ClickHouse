@@ -1421,7 +1421,7 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-Настройка логирования запросов, полученных при параметре [log&#95;queries=1](/ru/reference/settings/session-settings).
+Настройка логирования запросов, полученных при параметре [log&#95;queries=1](/ru/reference/settings/session-settings/log-queries#log_queries).
 
 Запросы записываются в таблицу [system.query&#95;log](/ru/reference/system-tables/query_log), а не в отдельный файл. Имя таблицы можно изменить с помощью параметра `table` (см. ниже).
 
@@ -1516,7 +1516,7 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-Настройка для логирования потоков запросов, полученных при включённой настройке [log&#95;query&#95;threads=1](/ru/reference/settings/session-settings#log_query_threads).
+Настройка для логирования потоков запросов, полученных при включённой настройке [log&#95;query&#95;threads=1](/ru/reference/settings/session-settings/log-query#log_query_threads).
 
 Запросы записываются в таблицу [system.query&#95;thread&#95;log](/ru/reference/system-tables/query_thread_log), а не в отдельный файл. Имя таблицы можно изменить в параметре `table` (см. ниже).
 
@@ -1543,7 +1543,7 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-Настройка для логирования представлений (live, materialized и т. д.) в зависимости от запросов, полученных с включённой настройкой [log&#95;query&#95;views=1](/ru/reference/settings/session-settings#log_query_views).
+Настройка для логирования представлений (live, materialized и т. д.) в зависимости от запросов, полученных с включённой настройкой [log&#95;query&#95;views=1](/ru/reference/settings/session-settings/log-query#log_query_views).
 
 Запросы записываются в таблицу [system.query&#95;views&#95;log](/ru/reference/system-tables/query_views_log), а не в отдельный файл. Имя таблицы можно изменить в параметре `table` (см. ниже).
 
@@ -1806,7 +1806,7 @@ curl 127.0.0.1:9363/metrics
 
 **См. также**
 
-* [skip&#95;unavailable&#95;shards](/ru/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/ru/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [Cluster Discovery](/ru/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Движок базы данных Replicated](/ru/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ curl 127.0.0.1:9363/metrics
 
 **См. также**
 
-* [session&#95;timezone](/ru/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ru/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,7 +2128,7 @@ ClickHouse использует эту настройку для всех таб
 </div>
 
 Управляет выполнением [распределенных DDL-запросов](/ru/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) в кластере.
-Работает, только если [ZooKeeper](/ru/reference/settings/server-settings/settings#zookeeper) включен.
+Работает, только если [ZooKeeper](/ru/reference/settings/server-settings/settings/zookeeper#zookeeper) включен.
 
 В `<distributed_ddl>` можно настроить следующие параметры:
 
@@ -2145,26 +2145,26 @@ ClickHouse использует эту настройку для всех таб
 
 ```xml
 <distributed_ddl>
-    <!-- Путь в ZooKeeper к очереди с DDL-запросами -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- Настройки из этого профиля будут использоваться для выполнения DDL-запросов -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- Определяет, сколько запросов ON CLUSTER может выполняться одновременно. -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         Настройки очистки (активные задачи удалены не будут)
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- Определяет TTL задачи (по умолчанию 1 неделя) -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- Определяет периодичность выполнения очистки (в секундах) -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- Определяет максимальное количество задач в очереди -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2246,7 +2246,7 @@ ClickHouse использует эту настройку для всех таб
 * Путь к папке, в которой хранятся пользователи, созданные SQL-командами.
 * Путь к узлу ZooKeeper, в котором хранятся и реплицируются пользователи, созданные SQL-командами.
 
-Если этот раздел задан, пути из [users&#95;config](/ru/reference/settings/server-settings/settings#users_config) и [access&#95;control&#95;path](/ru/reference/settings/server-settings/settings#access_control_path) не используются.
+Если этот раздел задан, пути из [users&#95;config](/ru/reference/settings/server-settings/settings/users#users_config) и [access&#95;control&#95;path](/ru/reference/settings/server-settings/settings/access-control#access_control_path) не используются.
 
 Раздел `user_directories` может содержать любое количество элементов; порядок элементов определяет их приоритет (чем выше расположен элемент, тем выше его приоритет).
 
@@ -2263,7 +2263,7 @@ ClickHouse использует эту настройку для всех таб
 </user_directories>
 ```
 
-Пользователи, роли, политики доступа на уровне строк, квоты и профили также могут храниться в ZooKeeper:
+Пользователи, роли, политики строк, квоты и профили также могут храниться в ZooKeeper:
 
 ```xml
 <user_directories>

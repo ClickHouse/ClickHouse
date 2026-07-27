@@ -121,7 +121,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 타입이 `Nullable`이 아닌 상태에서 `NULL`이 지정되면 `Nullable`로 처리되며, `NOT NULL`이 지정되면 그렇게 처리되지 않습니다. 예를 들어 `INT NULL`은 `Nullable(INT)`와 같습니다. 타입이 이미 `Nullable`인데 `NULL` 또는 `NOT NULL` 수정자를 지정하면 예외가 발생합니다.
 
-관련 항목: [data&#95;type&#95;default&#95;nullable](/ko/reference/settings/session-settings#data_type_default_nullable) 설정.
+관련 항목: [data&#95;type&#95;default&#95;nullable](/ko/reference/settings/session-settings/other#data_type_default_nullable) 설정.
 
 <div id="default_values">
   ## 기본값
@@ -378,7 +378,7 @@ ORDER BY (name_len, name);
 
 기본적으로 ClickHouse는 자가 관리형 버전에서는 `lz4` 압축을 사용하고, ClickHouse Cloud에서는 `zstd`를 사용합니다.
 
-`MergeTree` 엔진 계열의 경우 서버 구성의 [압축](/ko/reference/settings/server-settings/settings#compression) 섹션에서 기본 압축 방식을 변경할 수 있습니다.
+`MergeTree` 엔진 계열의 경우 서버 구성의 [압축](/ko/reference/settings/server-settings/settings/other#compression) 섹션에서 기본 압축 방식을 변경할 수 있습니다.
 
 또한 `CREATE TABLE` 쿼리에서 각 컬럼별 압축 방식을 정의할 수도 있습니다.
 
@@ -412,7 +412,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 다음 테이블 엔진은 압축을 지원합니다.
 
-* [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열. 컬럼 압축 코덱을 지원하며, [compression](/ko/reference/settings/server-settings/settings#compression) 설정을 통해 기본 압축 방식을 선택할 수 있습니다.
+* [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열. 컬럼 압축 코덱을 지원하며, [압축](/ko/reference/settings/server-settings/settings/other#compression) 설정을 통해 기본 압축 방식을 선택할 수 있습니다.
 * [Log](/ko/reference/engines/table-engines/log-family/index) 계열. 기본적으로 `lz4` 압축 방식을 사용하며 컬럼 압축 코덱을 지원합니다.
 * [Set](/ko/reference/engines/table-engines/special/set). 기본 압축만 지원합니다.
 * [Join](/ko/reference/engines/table-engines/special/join). 기본 압축만 지원합니다.
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### 암호화 코덱
 </div>
 
-이 코덱은 실제로 데이터를 압축하는 것이 아니라, 디스크의 데이터를 암호화합니다. 이러한 코덱은 [encryption](/ko/reference/settings/server-settings/settings#encryption) 설정에서 암호화 키를 지정한 경우에만 사용할 수 있습니다. 또한 암호화된 데이터는 일반적으로 의미 있게 압축할 수 없으므로, 암호화는 코덱 파이프라인의 마지막 단계에서만 사용하는 것이 적절합니다.
+이 코덱은 실제로 데이터를 압축하는 것이 아니라, 디스크의 데이터를 암호화합니다. 이러한 코덱은 [encryption](/ko/reference/settings/server-settings/settings/other#encryption) 설정에서 암호화 키를 지정한 경우에만 사용할 수 있습니다. 또한 암호화된 데이터는 일반적으로 의미 있게 압축할 수 없으므로, 암호화는 코덱 파이프라인의 마지막 단계에서만 사용하는 것이 적절합니다.
 
 암호화 코덱:
 

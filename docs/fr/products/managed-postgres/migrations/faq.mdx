@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'FAQ sur les migrations vers Managed Postgres'
+title: 'FAQ sur les migrations vers ClickHouse Managed Postgres'
 description: 'Questions fréquemment posées sur la migration des données vers ClickHouse Managed Postgres.'
 keywords: ['postgres', 'migration', 'FAQ', 'managed postgres', 'réplication logique', 'enum', 'contrainte d''unicité']
 doc_type: 'référence'
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-De nombreuses questions sur le fonctionnement de la réplication de Postgres — notamment concernant les colonnes `TOAST`, les slots de réplication, les publications, les changements de schéma et les correspondances de types de données — sont abordées dans la [FAQ ClickPipes for Postgres](/fr/integrations/clickpipes/postgres/faq). Les informations qui y figurent s’appliquent également aux migrations vers Managed Postgres.
+De nombreuses questions sur le fonctionnement de la réplication de Postgres — notamment concernant les colonnes `TOAST`, les slots de réplication, les publications, les changements de schéma et les correspondances de types de données — sont abordées dans la [FAQ ClickPipes for Postgres](/fr/integrations/clickpipes/postgres/faq). Les informations qui y figurent s’appliquent également aux migrations vers ClickHouse Managed Postgres.
 
 <div id="invalid-enum-value">
   ### Je rencontre une erreur &quot;invalid input value for enum&quot; pendant la réplication
 </div>
 
-Cette erreur se produit lorsque le Postgres source contient une valeur enum qui n&#39;existe pas dans le Managed Postgres cible. La réplication logique ne propage pas automatiquement les commandes `ALTER TYPE ... ADD VALUE` ; par conséquent, les nouvelles valeurs enum ajoutées à la source après la configuration initiale du schéma entraîneront l&#39;échec des insertions sur la cible.
+Cette erreur se produit lorsque le Postgres source contient une valeur enum qui n&#39;existe pas dans le ClickHouse Managed Postgres cible. La réplication logique ne propage pas automatiquement les commandes `ALTER TYPE ... ADD VALUE` ; par conséquent, les nouvelles valeurs enum ajoutées à la source après la configuration initiale du schéma entraîneront l&#39;échec des insertions sur la cible.
 
 Pour corriger ce problème, ajoutez la valeur manquante au type enum sur le Postgres cible :
 

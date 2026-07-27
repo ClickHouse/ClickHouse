@@ -1,6 +1,6 @@
 ---
 description: 'ALTER 文档'
-sidebarTitle: 'ALTER'
+sidebarTitle: '概述'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,11 +73,11 @@ doc_type: 'reference'
 
 对于非复制表，所有 `ALTER` 查询都会同步执行。对于复制表，查询只会将相应操作的指令添加到 `ZooKeeper` 中，而这些操作本身会尽快执行。不过，查询也可以等待，直到所有副本都完成这些操作。
 
-对于会创建变更的 `ALTER` 查询 (例如但不限于 `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC`) ，其同步方式由 [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置决定。
+对于会创建变更的 `ALTER` 查询 (例如但不限于 `UPDATE`、`DELETE`、`MATERIALIZE INDEX`、`MATERIALIZE PROJECTION`、`MATERIALIZE COLUMN`、`APPLY DELETED MASK`、`APPLY PATCHES`、`CLEAR STATISTIC`、`MATERIALIZE STATISTIC`) ，其同步方式由 [mutations&#95;sync](/zh/reference/settings/session-settings/mutations#mutations_sync) 设置决定。
 
-对于其他仅修改元数据的 `ALTER` 查询，可以使用 [alter&#95;sync](/zh/reference/settings/session-settings#alter_sync) 设置来配置等待行为。
+对于其他仅修改元数据的 `ALTER` 查询，可以使用 [alter&#95;sync](/zh/reference/settings/session-settings/alter#alter_sync) 设置来配置等待行为。
 
-你可以使用 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/zh/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 设置，指定等待非活动副本执行完所有 `ALTER` 查询的时长 (以秒为单位) 。
+你可以使用 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/zh/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 设置，指定等待非活动副本执行完所有 `ALTER` 查询的时长 (以秒为单位) 。
 
 <Note>
   对于所有 `ALTER` 查询，如果 `alter_sync = 2`，且某些副本处于非活动状态的时间超过 `replication_wait_for_inactive_replica_timeout` 设置中指定的时长，则会抛出 `UNFINISHED` 异常。

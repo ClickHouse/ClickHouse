@@ -11,7 +11,7 @@ description: "هيّئ ClickHouse `remote_servers` بأمان لتوزيع ال�
   ## متى تستخدم remote_servers
 </div>
 
-يحدّد [`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) طوبولوجيا cluster مُسمّاة يستخدمها ClickHouse عند تنفيذ الاستعلامات الموزعة عبر [الجداول الموزعة](https://clickhouse.com/docs/engines/table-engines/special/distributed) أو دالة الجدول [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster).
+يحدّد [`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers) طوبولوجيا cluster مُسمّاة يستخدمها ClickHouse عند تنفيذ الاستعلامات الموزعة عبر [الجداول الموزعة](https://clickhouse.com/docs/engines/table-engines/special/distributed) أو دالة الجدول [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster).
 
 داخل cluster واحد من ClickHouse Private، تكون النسخ المتماثلة منسّقة بالفعل عبر ClickHouse Keeper و[SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) -- وهي البنية نفسها المستخدمة في ClickHouse Cloud -- لذلك لا حاجة إلى `remote_servers` لأغراض النسخ المتماثل. ويغطي هذا الإعداد الغالبية العظمى من حالات الاستخدام.
 

@@ -11,7 +11,7 @@ Configura de forma segura `remote_servers` de ClickHouse para fragmentar los dat
   ## Cuándo usar remote_servers
 </div>
 
-[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) define una topología de clúster con nombre que ClickHouse utiliza al ejecutar consultas distribuidas mediante [tablas distribuidas](https://clickhouse.com/docs/engines/table-engines/special/distributed) o la [función de tabla](https://clickhouse.com/docs/sql-reference/table-functions/cluster) [`cluster()`].
+[`remote_servers`](https://clickhouse.com/docs/reference/settings/server-settings/settings/remote#remote_servers) define una topología de clúster con nombre que ClickHouse utiliza al ejecutar consultas distribuidas mediante [tablas distribuidas](https://clickhouse.com/docs/engines/table-engines/special/distributed) o la [función de tabla](https://clickhouse.com/docs/sql-reference/table-functions/cluster) [`cluster()`].
 
 Dentro de un único clúster ClickHouse Private, las réplicas ya se coordinan mediante ClickHouse Keeper y [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) --la misma arquitectura que se utiliza en ClickHouse Cloud--, por lo que `remote_servers` no es necesario con fines de replicación. Esta configuración cubre la gran mayoría de los casos de uso.
 

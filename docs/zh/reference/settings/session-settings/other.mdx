@@ -122,7 +122,7 @@ import VersionHistory from "/snippets/zh/components/VersionHistory/VersionHistor
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-仅在 ClickHouse Cloud 中生效。启用 [cache&#95;populated&#95;by&#95;fetch](/zh/reference/settings/merge-tree-settings#cache_populated_by_fetch) 时，用于将新的数据分区片段预下载到文件系统缓存中的后台线程数。设为 0 可禁用。
+仅在 ClickHouse Cloud 中生效。启用 [cache&#95;populated&#95;by&#95;fetch](/zh/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) 时，用于将新的数据分区片段预下载到文件系统缓存中的后台线程数。设为 0 可禁用。
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -437,7 +437,7 @@ SETTINGS convert_query_to_cnf = true;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "新设置。"}]}]} />
 
-指定在 INSERT 期间不构建和存储某些跳过索引。被排除的跳过索引仍会在[合并期间](/zh/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge)构建并存储，或通过显式执行
+指定在 INSERT 期间不构建和存储某些跳过索引。被排除的跳过索引仍会在[合并期间](/zh/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)构建并存储，或通过显式执行
 [MATERIALIZE INDEX](/zh/reference/statements/alter/skipping-index#materialize-index)查询来构建并存储。
 
 如果 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/zh/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) 为 false，则此设置无效。
@@ -1143,7 +1143,7 @@ a   Tuple(
 
 用于收集单个查询的 [query&#95;metric&#95;log](/zh/reference/system-tables/query_metric_log) 的时间间隔 (以毫秒为单位) 。
 
-如果设置为任意负值，则会采用 [query&#95;metric&#95;log 设置](/zh/reference/settings/server-settings/settings#query_metric_log) 中的 `collect_interval_milliseconds` 值；如果未设置，则默认使用 1000。
+如果设置为任意负值，则会采用 [query&#95;metric&#95;log 设置](/zh/reference/settings/server-settings/settings/query#query_metric_log) 中的 `collect_interval_milliseconds` 值；如果未设置，则默认使用 1000。
 
 要禁用单个查询的收集，请将 `query_metric_log_interval` 设置为 0。
 
@@ -1382,7 +1382,7 @@ See also:
 设置当前 session 或查询的隐式时区。
 隐式时区是应用于未显式指定时区的 DateTime/DateTime64 类型值的时区。
 此设置的优先次序高于全局配置的 (server 级别) 隐式时区。
-值为 &#39;&#39; (空字符串) 表示当前 session 或查询的隐式时区与[server 时区](/zh/reference/settings/server-settings/settings#timezone)相同。
+值为 &#39;&#39; (空字符串) 表示当前 session 或查询的隐式时区与[server 时区](/zh/reference/settings/server-settings/settings/other#timezone)相同。
 
 你可以使用函数 `timeZone()` 和 `serverTimeZone()` 获取会话时区和 server 时区。
 
@@ -1436,7 +1436,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 **另请参见**
 
-* [timezone](/zh/reference/settings/server-settings/settings#timezone)
+* [timezone](/zh/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

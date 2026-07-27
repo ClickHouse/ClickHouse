@@ -22,21 +22,21 @@ doc_type: 'reference'
 クエリの結果を PNG イメージとしてレンダリングします。組み込みの可視化ツールとして利用できます。
 
 出力イメージのサイズは、設定
-[`output_format_image_width`](/ja/reference/settings/formats#output_format_image_width) と
-[`output_format_image_height`](/ja/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/ja/reference/settings/formats/output-format#output_format_image_width) と
+[`output_format_image_height`](/ja/reference/settings/formats/output-format#output_format_image_height)
 で固定されます
 (どちらもデフォルトは 1024) 。結果でカバーされないピクセルは黒で塗りつぶされ
 (`RGB` およびグレースケールモード) 、`RGBA` モードでは透明な黒で塗りつぶされます。
 
 カラーモードは、結果のカラム名と型に基づいて自動的に決まります。
 
-| カラム                | モード                                           |
-| ------------------ | --------------------------------------------- |
-| `r`, `g`, `b`      | 8 ビット RGB                                     |
-| `r`, `g`, `b`, `a` | 8 ビット RGBA                                    |
-| 整数型の `v`           | 8 ビットグレースケール                                  |
-| `Float*` 型の `v`    | 8 ビットグレースケール (値を `[0, 1]` から `[0, 255]` に変換)  |
-| `Bool` 型の `v`      | バイナリ (8 ビットグレースケールとしてレンダリング: `0` または `255`)   |
+| カラム                | モード                                          |
+| ------------------ | -------------------------------------------- |
+| `r`, `g`, `b`      | 8 ビット RGB                                    |
+| `r`, `g`, `b`, `a` | 8 ビット RGBA                                   |
+| 整数型の `v`           | 8 ビットグレースケール                                 |
+| `Float*` 型の `v`    | 8 ビットグレースケール (値を `[0, 1]` から `[0, 255]` に変換) |
+| `Bool` 型の `v`      | バイナリ (8 ビットグレースケールとしてレンダリング: `0` または `255`)  |
 
 カラム名の照合では大文字と小文字は区別されません。カラーモードを一意に
 決定できない場合 (たとえば、不明なカラム名、`v` と `r`/`g`/`b`/`a` の混在、または `r`/`g`/`b` のいずれかが欠けている場合) 、
@@ -92,12 +92,12 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 ```
 
 <div id="terminal-mode">
-  ## ターミナルで画像を表示する
+  ## 端末で画像を表示する
 </div>
 
 デフォルトでは、`PNG` フォーマットは生の画像バイト列を書き出します。設定
-[`output_format_image_terminal_mode`](/ja/reference/settings/formats#output_format_image_terminal_mode)
-を使用すると、代わりにインライン画像プロトコルを使って、このフォーマットで画像をターミナルに直接レンダリングできます。
+[`output_format_image_terminal_mode`](/ja/reference/settings/formats/output-format#output_format_image_terminal_mode)
+を使用すると、代わりにインライン画像プロトコルを使って、このフォーマットで画像を端末に直接レンダリングできます。
 
 | 値              | 動作                                                                                         |
 | -------------- | ------------------------------------------------------------------------------------------ |
@@ -105,7 +105,7 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 | `iterm`        | iTerm2 のインライン画像プロトコルを使用します。                                                                |
 | `kitty`        | Kitty グラフィックスプロトコルを使用します。                                                                  |
 | `sixel`        | Sixel プロトコルを使用します。画像は固定の 6×6×6 パレットに縮小され、アルファチャネルがある場合は黒い背景に合成されます。                        |
-| `auto`         | 出力先がターミナルの場合は、その機能を検出して `iterm`、`kitty`、`sixel` のいずれかを使用し (この順序) 、それ以外の場合は生の画像バイト列を書き出します。 |
+| `auto`         | 出力先が端末の場合は、その機能を検出して `iterm`、`kitty`、`sixel` のいずれかを使用し (この順序) 、それ以外の場合は生の画像バイト列を書き出します。 |
 
 ```sql
 SELECT toUInt8(x * 25) AS r, toUInt8(y * 25) AS g, toUInt8((x + y) * 12) AS b

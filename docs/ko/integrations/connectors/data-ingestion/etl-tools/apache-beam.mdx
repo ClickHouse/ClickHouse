@@ -161,7 +161,7 @@ public class Main {
 커넥터를 사용할 때는 다음 제한 사항을 고려하십시오.
 
 * 현재는 싱크 작업만 지원합니다. 이 커넥터는 소스 작업을 지원하지 않습니다.
-* ClickHouse는 `ReplicatedMergeTree` 또는 그 위에 구축된 `Distributed` 테이블에 삽입할 때 중복 제거를 수행합니다. 복제가 없는 경우 일반 MergeTree에 삽입할 때 삽입이 실패한 후 재시도가 성공하면 중복이 발생할 수 있습니다. 하지만 각 블록은 원자적으로 삽입되며, 블록 크기는 `ClickHouseIO.Write.withMaxInsertBlockSize(long)`를 사용해 설정할 수 있습니다. 중복 제거는 삽입된 블록의 체크섬을 사용해 수행됩니다. 중복 제거에 대한 자세한 내용은 [Deduplication](/ko/concepts/features/operations/insert/deduplication) 및 [Deduplicate insertion config](/ko/reference/settings/session-settings#insert_deduplicate)를 참조하십시오.
+* ClickHouse는 `ReplicatedMergeTree` 또는 그 위에 구축된 `Distributed` 테이블에 삽입할 때 중복 제거를 수행합니다. 복제가 없는 경우 일반 MergeTree에 삽입할 때 삽입이 실패한 후 재시도가 성공하면 중복이 발생할 수 있습니다. 하지만 각 블록은 원자적으로 삽입되며, 블록 크기는 `ClickHouseIO.Write.withMaxInsertBlockSize(long)`를 사용해 설정할 수 있습니다. 중복 제거는 삽입된 블록의 체크섬을 사용해 수행됩니다. 중복 제거에 대한 자세한 내용은 [중복 제거](/ko/concepts/features/operations/insert/deduplication) 및 [Deduplicate insertion config](/ko/reference/settings/session-settings/insert#insert_deduplicate)를 참조하십시오.
 * 이 커넥터는 DDL SQL 문을 수행하지 않으므로, 대상 테이블은 삽입 전에 미리 존재해야 합니다.
 
 <div id="related-content">

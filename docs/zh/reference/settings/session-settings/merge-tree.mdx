@@ -72,7 +72,7 @@ import VersionHistory from "/snippets/zh/components/VersionHistory/VersionHistor
 
 如果 ClickHouse 在一次查询中需要读取超过 `merge_tree_max_bytes_to_use_cache` 字节的数据，则不会使用未压缩块缓存。
 
-未压缩块缓存用于存储为查询提取的数据。ClickHouse 使用此缓存来加快重复的小型查询的响应速度。此设置可防止读取大量数据的查询冲刷缓存。[uncompressed&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#uncompressed_cache_size) 这一服务器设置定义了未压缩块缓存的大小。
+未压缩块缓存用于存储为查询提取的数据。ClickHouse 使用此缓存来加快重复的小型查询的响应速度。此设置可防止读取大量数据的查询污染缓存。[uncompressed&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) 这一服务器设置定义了未压缩块缓存的大小。
 
 可能的值：
 
@@ -86,7 +86,7 @@ import VersionHistory from "/snippets/zh/components/VersionHistory/VersionHistor
 
 如果 ClickHouse 在一次查询中需要读取的行数超过 `merge_tree_max_rows_to_use_cache`，则不会使用未压缩块缓存。
 
-未压缩块缓存用于存储为查询提取出的数据。ClickHouse 使用此缓存来加快重复执行的小型查询的响应速度。此设置可防止读取大量数据的查询污染缓存。[uncompressed&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#uncompressed_cache_size) 服务器设置定义了未压缩块缓存的大小。
+未压缩块缓存用于存储为查询提取出的数据。ClickHouse 使用此缓存来加快重复执行的小型查询的响应速度。此设置可防止读取大量数据的查询污染缓存。[uncompressed&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) 服务器设置定义了未压缩块缓存的大小。
 
 可选值：
 

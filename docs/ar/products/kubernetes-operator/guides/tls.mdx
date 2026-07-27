@@ -291,9 +291,9 @@ spec:
 
 يتم الدمج على مستوى كل مفتاح: لا تُستبدل إلا القيم التي تضبطها، بينما تُحفَظ المفاتيح المُنشأة التي
 لا تذكرها (مسارات الشهادات، إعدادات CA). راجع
-[إعدادات خادم `openSSL`](/ar/reference/settings/server-settings/settings#openssl)
+[إعدادات خادم `openSSL`](/ar/reference/settings/server-settings/settings/other#openssl)
 للاطلاع على الخيارات المتاحة، و
-[التهيئة → التهيئة الإضافية المضمّنة](/ar/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
+[Configuration → التهيئة الإضافية المضمّنة](/ar/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 لمعرفة كيفية دمج `extraConfig`.
 
 <div id="troubleshoot">
@@ -326,7 +326,7 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
   ## انظر أيضًا
 </div>
 
-* [التهيئة → تهيئة TLS/SSL](/ar/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — مرجع الحقول
-* [التهيئة → `additionalPorts`](/ar/products/kubernetes-operator/guides/configuration#additional-ports) — المنافذ المحجوزة
+* [Configuration → تهيئة TLS/SSL](/ar/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — مرجع الحقول
+* [Configuration → `additionalPorts`](/ar/products/kubernetes-operator/guides/configuration#additional-ports) — المنافذ المحجوزة
 * [مرجع واجهة برمجة التطبيقات → ClusterTLSSpec](/ar/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [إعدادات الخادم `openSSL`](/ar/reference/settings/server-settings/settings#openssl) — خيارات TLS التي يمكنك تجاوزها عبر `extraConfig`
+* [إعدادات الخادم `openSSL`](/ar/reference/settings/server-settings/settings/other#openssl) — خيارات TLS التي يمكنك تجاوزها عبر `extraConfig`

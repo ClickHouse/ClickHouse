@@ -47,7 +47,7 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
   ## query_log
 </div>
 
-[log&#95;queries=1](/ko/reference/settings/session-settings) 설정으로 수신된 쿼리를 로깅하기 위한 설정입니다.
+[log&#95;queries=1](/ko/reference/settings/session-settings/log-queries#log_queries) 설정으로 수신된 쿼리를 로깅하기 위한 설정입니다.
 
 쿼리는 별도의 파일이 아니라 [system.query&#95;log](/ko/reference/system-tables/query_log) 테이블에 기록됩니다. 테이블 이름은 `table` 매개변수에서 변경할 수 있습니다(아래 참조).
 
@@ -146,7 +146,7 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings#log_query_threads) 설정으로 수신된 쿼리 스레드를 로깅하기 위한 설정입니다.
+[log&#95;query&#95;threads=1](/ko/reference/settings/session-settings/log-query#log_query_threads) 설정으로 수신된 쿼리 스레드를 로깅하기 위한 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;thread&#95;log](/ko/reference/system-tables/query_thread_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 
@@ -173,7 +173,7 @@ import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ko/reference/settings/session-settings#log_query_views) 설정이 적용된 상태에서 수신된 쿼리와 관련된 뷰(라이브 뷰, 구체화된 뷰(Materialized View) 등)를 로깅하기 위한 설정입니다.
+[log&#95;query&#95;views=1](/ko/reference/settings/session-settings/log-query#log_query_views) 설정이 적용된 상태에서 수신된 쿼리와 관련된 뷰(라이브 뷰, 구체화된 뷰(Materialized View) 등)를 로깅하기 위한 설정입니다.
 
 쿼리는 별도 파일이 아니라 [system.query&#95;views&#95;log](/ko/reference/system-tables/query_views_log) 테이블에 기록됩니다. `table` 매개변수에서 테이블 이름을 변경할 수 있습니다(아래 참조).
 

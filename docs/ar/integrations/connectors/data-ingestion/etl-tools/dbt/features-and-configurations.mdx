@@ -134,8 +134,8 @@ seeds:
 
 يعتمد dbt على نموذج اتساق القراءة بعد الإدراج. وهذا لا يتوافق مع عناقيد ClickHouse التي تضم أكثر من نسخة متماثلة إذا لم تتمكن من ضمان توجيه جميع العمليات إلى النسخة المتماثلة نفسها. قد لا تواجه مشكلات في استخدامك اليومي لـ dbt، لكن توجد بعض الاستراتيجيات التي يمكنك اتباعها، بحسب عنقودك، لضمان ذلك:
 
-* إذا كنت تستخدم عنقود ClickHouse Cloud، فما عليك سوى تعيين `select_sequential_consistency: 1` في خاصية `custom_settings` ضمن ملف التعريف الخاص بك. يمكنك العثور على مزيد من المعلومات حول هذا الإعداد [هنا](/ar/reference/settings/session-settings#select_sequential_consistency).
-* إذا كنت تستخدم عنقودًا ذاتي الاستضافة، فتأكد من إرسال جميع طلبات dbt إلى النسخة المتماثلة نفسها في ClickHouse. وإذا كان لديك موازن تحميل أمامه، فحاول استخدام آلية `replica aware routing`/`sticky sessions` حتى تتمكن دائمًا من الوصول إلى النسخة المتماثلة نفسها. ولا يُنصح بإضافة الإعداد `select_sequential_consistency = 1` في العناقيد خارج ClickHouse Cloud [غير موصى بها](/ar/reference/settings/session-settings#select_sequential_consistency).
+* إذا كنت تستخدم عنقود ClickHouse Cloud، فما عليك سوى تعيين `select_sequential_consistency: 1` في خاصية `custom_settings` ضمن ملف التعريف الخاص بك. يمكنك العثور على مزيد من المعلومات حول هذا الإعداد [هنا](/ar/reference/settings/session-settings/other#select_sequential_consistency).
+* إذا كنت تستخدم عنقودًا ذاتي الاستضافة، فتأكد من إرسال جميع طلبات dbt إلى النسخة المتماثلة نفسها في ClickHouse. وإذا كان لديك موازن تحميل أمامه، فحاول استخدام آلية `replica aware routing`/`sticky sessions` حتى تتمكن دائمًا من الوصول إلى النسخة المتماثلة نفسها. ولا يُنصح بإضافة الإعداد `select_sequential_consistency = 1` في العناقيد خارج ClickHouse Cloud [غير موصى بها](/ar/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## وحدات الماكرو الإضافية لـ ClickHouse

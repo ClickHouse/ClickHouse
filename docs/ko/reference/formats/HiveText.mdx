@@ -29,7 +29,7 @@ Hive 기본 구분자인 `\x01`(Ctrl-A)로 구분됩니다. 필드 구분자는
 대상 테이블의 컬럼에 위치에 따라 매핑되므로, 컬럼 이름과 타입은 데이터에서
 추론하지 않고 테이블(또는 명시적으로 제공된
 구조)에서 가져옵니다. 읽는 동안 ClickHouse는
-날짜와 시간을 best-effort 모드로 파싱하고([`date_time_input_format`](/ko/reference/settings/formats#date_time_input_format) 참조),
+날짜와 시간을 best-effort 모드로 파싱하고([`date_time_input_format`](/ko/reference/settings/formats/date-time#date_time_input_format) 참조),
 생략된 후행 필드는 컬럼 기본값으로 채우며, 인식하지 못하는 필드는
 건너뜁니다.
 

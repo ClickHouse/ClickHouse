@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "إعدادات الجلسة",
   "pages": [
+    "ar/reference/settings/session-settings",
     "ar/reference/settings/session-settings/additional",
     "ar/reference/settings/session-settings/aggregate",
     "ar/reference/settings/session-settings/aggregation",
@@ -255,6 +256,5 @@
     "ar/reference/settings/session-settings/window-view",
     "ar/reference/settings/session-settings/write-through-distributed-cache",
     "ar/reference/settings/session-settings/other"
-  ],
-  "root": "ar/reference/settings/session-settings"
+  ]
 }

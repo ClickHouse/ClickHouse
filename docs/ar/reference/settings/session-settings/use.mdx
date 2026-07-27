@@ -278,7 +278,7 @@ SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b >
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ما إذا كان سيتم استخدام cache of uncompressed blocks. يقبل 0 أو 1. والقيمة الافتراضية هي 0 (معطّل).
-يمكن أن يؤدي استخدام uncompressed cache (فقط للجداول في tables in the MergeTree family) إلى تقليل زمن الاستجابة بشكل كبير وزيادة معدل النقل عند العمل مع عدد كبير من الاستعلامات القصيرة. فعّل هذا الإعداد للمستخدمين الذين يرسلون طلبات قصيرة متكررة. وانتبه أيضًا إلى المعلَمة [uncompressed&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#uncompressed_cache_size) في configuration (يتم ضبطها فقط في config file) — وهي حجم uncompressed cache blocks. وتبلغ قيمتها الافتراضية 8 GiB. ويتم ملء uncompressed cache حسب الحاجة، كما تُحذف البيانات الأقل استخدامًا تلقائيًا.
+يمكن أن يؤدي استخدام uncompressed cache (فقط للجداول في tables in the MergeTree family) إلى تقليل زمن الاستجابة بشكل كبير وزيادة معدل النقل عند العمل مع عدد كبير من الاستعلامات القصيرة. فعّل هذا الإعداد للمستخدمين الذين يرسلون طلبات قصيرة متكررة. وانتبه أيضًا إلى المعلَمة [uncompressed&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size) في configuration (يتم ضبطها فقط في config file) — وهي حجم uncompressed cache blocks. وتبلغ قيمتها الافتراضية 8 GiB. ويتم ملء uncompressed cache حسب الحاجة، كما تُحذف البيانات الأقل استخدامًا تلقائيًا.
 
 بالنسبة إلى الاستعلامات التي تقرأ حجمًا كبيرًا نسبيًا من data (مليون row أو أكثر)، يُعطَّل uncompressed cache تلقائيًا لتوفير المساحة للاستعلامات الصغيرة فعلًا. وهذا يعني أنه يمكنك إبقاء الإعداد &#39;use&#95;uncompressed&#95;cache&#39; مضبوطًا دائمًا على 1.
 

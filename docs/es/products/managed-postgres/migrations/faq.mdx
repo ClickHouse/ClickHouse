@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'FAQ'
-title: 'FAQ sobre migraciones de Managed Postgres'
+title: 'FAQ sobre migraciones de ClickHouse Managed Postgres'
 description: 'Preguntas frecuentes sobre la migración de datos a ClickHouse Managed Postgres.'
 keywords: ['postgres', 'migración', 'faq', 'managed postgres', 'replicación lógica', 'enum', 'restricción de unicidad']
 doc_type: 'reference'
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-Muchas preguntas sobre cómo funciona la replicación de Postgres —incluidas las columnas `TOAST`, los slots de replicación, las publicaciones, los cambios de esquema y los mapeos de tipos— se abordan en las [FAQ de ClickPipes for Postgres](/es/integrations/clickpipes/postgres/faq). La información allí también aplica a las migraciones de Managed Postgres.
+Muchas preguntas sobre cómo funciona la replicación de Postgres —incluidas las columnas `TOAST`, los slots de replicación, las publicaciones, los cambios de esquema y los mapeos de tipos— se abordan en las [FAQ de ClickPipes for Postgres](/es/integrations/clickpipes/postgres/faq). La información allí también aplica a las migraciones de ClickHouse Managed Postgres.
 
 <div id="invalid-enum-value">
   ### Veo un error de &quot;invalid input value for enum&quot; durante la replicación
 </div>
 
-Este error se produce cuando el Postgres de origen tiene un valor enum que no existe en el Managed Postgres de destino. La replicación lógica no propaga automáticamente los comandos `ALTER TYPE ... ADD VALUE`, por lo que los nuevos valores enum añadidos en el origen después de la configuración inicial del esquema harán que las inserciones fallen en el destino.
+Este error se produce cuando el Postgres de origen tiene un valor enum que no existe en el ClickHouse Managed Postgres de destino. La replicación lógica no propaga automáticamente los comandos `ALTER TYPE ... ADD VALUE`, por lo que los nuevos valores enum añadidos en el origen después de la configuración inicial del esquema harán que las inserciones fallen en el destino.
 
 Para solucionarlo, añade el valor que falta al tipo enum en el Postgres de destino:
 

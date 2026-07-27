@@ -47,7 +47,7 @@ SELECT *
 * `CollapsingMergeTree`
 * `VersionedCollapsingMergeTree`
 
-带有 `FINAL` 的 `SELECT` 查询会并行执行。[max&#95;final&#95;threads](/zh/reference/settings/session-settings#max_final_threads) 设置会限制使用的线程数。
+带有 `FINAL` 的 `SELECT` 查询会并行执行。[max&#95;final&#95;threads](/zh/reference/settings/session-settings/max#max_final_threads) 设置会限制使用的线程数。
 
 <div id="drawbacks">
   ### 缺点
@@ -62,7 +62,7 @@ SELECT *
 
 作为 `FINAL` 的替代方案，有时可以改写查询，假设 `MergeTree` 引擎的后台处理尚未完成，并通过聚合来应对这种情况 (例如去重) 。如果你确实需要在查询中使用 `FINAL` 才能获得所需结果，这么做完全可以，但要注意它会带来额外的处理开销。
 
-还可以通过会话或用户 profile，使用 [FINAL](/zh/reference/settings/session-settings#final) 设置将 `FINAL` 自动应用于查询中的所有表。
+还可以通过会话或用户 profile，使用 [FINAL](/zh/reference/settings/session-settings/other#final) 设置将 `FINAL` 自动应用于查询中的所有表。
 
 <div id="example-usage">
   ### 示例用法

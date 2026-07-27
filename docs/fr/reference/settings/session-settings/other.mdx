@@ -122,7 +122,7 @@ Lorsqu&#39;il est défini sur `false`, chaque thread gère le backoff des requê
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-N’a d’effet que dans ClickHouse Cloud. Nombre de threads d’arrière-plan utilisés pour télécharger de manière spéculative de nouvelles parties de données dans le cache du système de fichiers lorsque [cache&#95;populated&#95;by&#95;fetch](/fr/reference/settings/merge-tree-settings#cache_populated_by_fetch) est activé. Zéro pour désactiver.
+N’a d’effet que dans ClickHouse Cloud. Nombre de threads d’arrière-plan utilisés pour télécharger de manière spéculative de nouvelles parts de données dans le cache du système de fichiers lorsque [cache&#95;populated&#95;by&#95;fetch](/fr/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) est activé. Zéro pour désactiver.
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -447,7 +447,7 @@ Définit le mode par défaut de la requête EXCEPT. Valeurs possibles : chaîne
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "Nouveau paramètre."}]}]} />
 
-Exclut les index de saut spécifiés afin qu’ils ne soient ni construits ni stockés lors des INSERT. Les index de saut exclus seront toutefois toujours construits et stockés [lors des fusions](/fr/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) ou par une requête
+Exclut les index de saut spécifiés afin qu’ils ne soient ni construits ni stockés lors des INSERT. Les index de saut exclus seront toutefois toujours construits et stockés [lors des fusions](/fr/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) ou par une requête
 [MATERIALIZE INDEX](/fr/reference/statements/alter/skipping-index#materialize-index) explicite.
 
 N’a aucun effet si [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/fr/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) vaut false.
@@ -1153,7 +1153,7 @@ Active la transmission des rôles utilisateur de l’initiateur aux autres nœud
 
 Intervalle, en millisecondes, de collecte du [query&#95;metric&#95;log](/fr/reference/system-tables/query_metric_log) pour les requêtes individuelles.
 
-S&#39;il est défini sur une valeur négative, il prendra la valeur `collect_interval_milliseconds` du [paramètre query&#95;metric&#95;log](/fr/reference/settings/server-settings/settings#query_metric_log), ou utilisera 1000 par défaut si ce paramètre n&#39;est pas présent.
+S&#39;il est défini sur une valeur négative, il prendra la valeur `collect_interval_milliseconds` du [paramètre query&#95;metric&#95;log](/fr/reference/settings/server-settings/settings/query#query_metric_log) ou utilisera 1000 par défaut si ce paramètre n&#39;est pas présent.
 
 Pour désactiver la collecte pour une requête donnée, définissez `query_metric_log_interval` sur 0.
 
@@ -1392,7 +1392,7 @@ Voir aussi :
 Définit le fuseau horaire implicite de la session ou de la requête actuelle.
 Le fuseau horaire implicite est celui appliqué aux valeurs de type DateTime/DateTime64 pour lesquelles aucun fuseau horaire n’est explicitement spécifié.
 Ce paramètre a préséance sur le fuseau horaire implicite configuré globalement (au niveau du serveur).
-Une valeur de &#39;&#39; (chaîne vide) signifie que le fuseau horaire implicite de la session ou de la requête actuelle est celui du [fuseau horaire du serveur](/fr/reference/settings/server-settings/settings#timezone).
+Une valeur de &#39;&#39; (chaîne vide) signifie que le fuseau horaire implicite de la session ou de la requête actuelle est celui du [fuseau horaire du serveur](/fr/reference/settings/server-settings/settings/other#timezone).
 
 Vous pouvez utiliser les fonctions `timeZone()` et `serverTimeZone()` pour obtenir le fuseau horaire de la session et celui du serveur.
 
@@ -1446,7 +1446,7 @@ Cela s’explique par l’utilisation de chaînes d’analyse différentes :
 
 **Voir aussi**
 
-* [timezone](/fr/reference/settings/server-settings/settings#timezone)
+* [timezone](/fr/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

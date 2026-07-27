@@ -31,7 +31,7 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 يمكن إحاطة الاستعلامات التي تُشكّل أجزاءً من `UNION` بعلامتي `()`. ويُطبَّق [ORDER BY](/ar/reference/statements/select/order-by) و[LIMIT](/ar/reference/statements/select/limit) على كل استعلام على حدة، وليس على النتيجة النهائية. وإذا كنت بحاجة إلى تطبيق تحويل على النتيجة النهائية، فيمكنك وضع جميع الاستعلامات التي تحتوي على `UNION` داخل استعلام فرعي في عبارة [FROM](/ar/reference/statements/select/from).
 
-إذا استخدمت `UNION` من دون تحديد `UNION ALL` أو `UNION DISTINCT` صراحةً، فيمكنك تحديد وضع union باستخدام الإعداد [union&#95;default&#95;mode](/ar/reference/settings/session-settings#union_default_mode). يمكن أن تكون قيم الإعداد `ALL` أو `DISTINCT` أو سلسلة فارغة. ومع ذلك، إذا استخدمت `UNION` مع ضبط `union_default_mode` على سلسلة فارغة، فسيؤدي ذلك إلى طرح استثناء. توضّح الأمثلة التالية نتائج الاستعلامات مع قيم إعداد مختلفة.
+إذا استخدمت `UNION` من دون تحديد `UNION ALL` أو `UNION DISTINCT` صراحةً، فيمكنك تحديد وضع union باستخدام الإعداد [union&#95;default&#95;mode](/ar/reference/settings/session-settings/other#union_default_mode). يمكن أن تكون قيم الإعداد `ALL` أو `DISTINCT` أو سلسلة فارغة. ومع ذلك، إذا استخدمت `UNION` مع ضبط `union_default_mode` على سلسلة فارغة، فسيؤدي ذلك إلى طرح استثناء. توضّح الأمثلة التالية نتائج الاستعلامات مع قيم إعداد مختلفة.
 
 ```sql title="Query"
 SET union_default_mode = 'DISTINCT';
@@ -74,5 +74,5 @@ SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 
 **انظر أيضًا**
 
-* إعداد [insert&#95;null&#95;as&#95;default](/ar/reference/settings/session-settings#insert_null_as_default).
-* إعداد [union&#95;default&#95;mode](/ar/reference/settings/session-settings#union_default_mode).
+* إعداد [insert&#95;null&#95;as&#95;default](/ar/reference/settings/session-settings/insert#insert_null_as_default).
+* إعداد [union&#95;default&#95;mode](/ar/reference/settings/session-settings/other#union_default_mode).

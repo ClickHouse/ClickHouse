@@ -38,13 +38,13 @@ DateTime([timezone])
 
 지원되는 시간대 목록은 [IANA Time Zone Database](https://www.iana.org/time-zones)에서 확인할 수 있으며, `SELECT * FROM system.time_zones`로도 조회할 수 있습니다. [이 목록](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)은 Wikipedia에서도 제공됩니다.
 
-테이블을 생성할 때 `DateTime` 타입 컬럼에 시간대를 명시적으로 설정할 수 있습니다. 예시: `DateTime('UTC')`. 시간대가 설정되지 않으면 ClickHouse는 서버 설정의 [timezone](/ko/reference/settings/server-settings/settings#timezone) 매개변수 값 또는 ClickHouse 서버가 시작될 당시의 운영 체제 설정을 사용합니다.
+테이블을 생성할 때 `DateTime` 타입 컬럼에 시간대를 명시적으로 설정할 수 있습니다. 예시: `DateTime('UTC')`. 시간대가 설정되지 않으면 ClickHouse는 서버 설정의 [timezone](/ko/reference/settings/server-settings/settings/other#timezone) 매개변수 값 또는 ClickHouse 서버가 시작될 당시의 운영 체제 설정을 사용합니다.
 
 [clickhouse-client](/ko/concepts/features/interfaces/client)는 데이터 타입을 초기화할 때 시간대가 명시적으로 설정되지 않으면 기본적으로 서버 시간대를 적용합니다. 클라이언트 시간대를 사용하려면 `--use_client_time_zone` 매개변수와 함께 `clickhouse-client`를 실행하세요.
 
-ClickHouse는 [date&#95;time&#95;output&#95;format](/ko/reference/settings/formats#date_time_output_format) 설정 값에 따라 값을 출력합니다. 기본 텍스트 포맷은 `YYYY-MM-DD hh:mm:ss`입니다. 또한 [formatDateTime](/ko/reference/functions/regular-functions/date-time-functions#formatDateTime) 함수를 사용해 출력 형식을 변경할 수 있습니다.
+ClickHouse는 [date&#95;time&#95;output&#95;format](/ko/reference/settings/formats/date-time#date_time_output_format) 설정 값에 따라 값을 출력합니다. 기본 텍스트 포맷은 `YYYY-MM-DD hh:mm:ss`입니다. 또한 [formatDateTime](/ko/reference/functions/regular-functions/date-time-functions#formatDateTime) 함수를 사용해 출력 형식을 변경할 수 있습니다.
 
-ClickHouse에 데이터를 삽입할 때는 [date&#95;time&#95;input&#95;format](/ko/reference/settings/formats#date_time_input_format) 설정 값에 따라 다양한 날짜 및 시간 문자열 포맷을 사용할 수 있습니다.
+ClickHouse에 데이터를 삽입할 때는 [date&#95;time&#95;input&#95;format](/ko/reference/settings/formats/date-time#date_time_input_format) 설정 값에 따라 다양한 날짜 및 시간 문자열 포맷을 사용할 수 있습니다.
 
 <div id="examples">
   ## 예시
@@ -156,7 +156,7 @@ UTC와의 오프셋이 15분의 배수가 아니면 시와 분 계산이 부정�
 
 시간대가 지정된 ClickHouse의 DateTime 유형은 일광 절약 시간제(DST) 전환 시 예상치 못한 동작을 보일 수 있으며, 특히 다음과 같은 경우에 그렇습니다.
 
-* [`date_time_output_format`](/ko/reference/settings/formats#date_time_output_format)이 `simple`로 설정된 경우
+* [`date_time_output_format`](/ko/reference/settings/formats/date-time#date_time_output_format)이 `simple`로 설정된 경우
 * 시계가 뒤로 이동(&quot;Fall Back&quot;)하여 1시간이 겹치는 경우
 * 시계가 앞으로 이동(&quot;Spring Forward&quot;)하여 1시간의 공백이 생기는 경우
 
@@ -200,10 +200,10 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 * [타입 변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions)
 * [날짜 및 시간을 처리하는 함수](/ko/reference/functions/regular-functions/date-time-functions)
 * [배열을 처리하는 함수](/ko/reference/functions/regular-functions/array-functions)
-* [`date_time_input_format` 설정](/ko/reference/settings/formats#date_time_input_format)
-* [`date_time_output_format` 설정](/ko/reference/settings/formats#date_time_output_format)
-* [`timezone` 서버 구성 매개변수](/ko/reference/settings/server-settings/settings#timezone)
-* [`session_timezone` 설정](/ko/reference/settings/session-settings#session_timezone)
+* [`date_time_input_format` 설정](/ko/reference/settings/formats/date-time#date_time_input_format)
+* [`date_time_output_format` 설정](/ko/reference/settings/formats/date-time#date_time_output_format)
+* [`timezone` 서버 구성 매개변수](/ko/reference/settings/server-settings/settings/other#timezone)
+* [`session_timezone` 설정](/ko/reference/settings/session-settings/other#session_timezone)
 * [날짜 및 시간을 처리하는 연산자](/ko/reference/operators/index#operators-for-working-with-dates-and-times)
 * [`Date` 데이터 타입](/ko/reference/data-types/date)
 

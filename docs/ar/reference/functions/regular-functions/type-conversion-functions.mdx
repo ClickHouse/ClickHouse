@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 يستخدم ClickHouse عمومًا [السلوك نفسه المستخدم في برامج C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-تختلف دوال `to<type>` و[CAST](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [CAST](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings#cast_keep_nullable).
+تختلف دوال `to<type>` و[cast](#CAST) في سلوكهما في بعض الحالات، مثل حالة [LowCardinality](/ar/reference/data-types/lowcardinality): إذ يزيل [cast](#CAST) السمة [LowCardinality](/ar/reference/data-types/lowcardinality)، بينما لا تفعل دوال `to<type>` ذلك. وينطبق الأمر نفسه على [Nullable](/ar/reference/data-types/nullable). هذا السلوك غير متوافق مع معيار SQL، ويمكن تغييره باستخدام الإعداد [cast&#95;keep&#95;nullable](/ar/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   انتبه إلى احتمال فقدان البيانات إذا جرى تحويل قيم من نوع بيانات إلى نوع أصغر (على سبيل المثال من `Int64` إلى `Int32`) أو بين

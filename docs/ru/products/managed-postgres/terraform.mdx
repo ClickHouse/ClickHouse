@@ -1,7 +1,7 @@
 ---
 slug: /cloud/managed-postgres/terraform
 sidebarTitle: 'Terraform'
-title: 'Справочник по Terraform для Managed Postgres'
+title: 'Справочник по Terraform для ClickHouse Managed Postgres'
 description: 'Справочник по управлению сервисами ClickHouse Managed Postgres с помощью Terraform-провайдера ClickHouse.'
 keywords: ['managed postgres', 'terraform', 'инфраструктура как код', 'iac', 'провайдер', 'программное управление']
 doc_type: 'guide'
@@ -20,7 +20,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 <Warning>
   **Обновите провайдер до v3.21.0 до 31 июля 2026 года**
 
-  По состоянию на **31 июля 2026 года** API Managed Postgres больше не возвращает в ответах пароль суперпользователя и строку подключения; учётные данные возвращаются только при создании сервиса или сбросе его пароля. Версии провайдера **v3.21.0 и новее** работают одинаково как до, так и после этого изменения. Более старые версии провайдера полагаются на то, что API повторно возвращает учётные данные: с 31 июля 2026 года они больше не заполняют `connection_string`, а сервис, созданный без явно заданного `password`, создаётся успешно, но сгенерированный пароль при этом нигде не сохраняется.
+  По состоянию на **31 июля 2026 года** API ClickHouse Managed Postgres больше не возвращает в ответах пароль суперпользователя и строку подключения; учётные данные возвращаются только при создании сервиса или сбросе его пароля. Версии провайдера **v3.21.0 и новее** работают одинаково как до, так и после этого изменения. Более старые версии провайдера полагаются на то, что API повторно возвращает учётные данные: с 31 июля 2026 года они больше не заполняют `connection_string`, а сервис, созданный без явно заданного `password`, создаётся успешно, но сгенерированный пароль при этом нигде не сохраняется.
 
   Обновитесь до 31 июля 2026 года. Ваше состояние будет автоматически перенесено при первом `plan` или `apply` с v3.21.0. Если какие-либо из ваших сервисов используют сгенерированный сервером пароль (без `password` в конфигурации), сначала восстановите его с помощью `terraform state pull` и объявите его, поскольку v3.21.0 требует `password` или `password_wo` для стандартного сервиса.
 </Warning>
@@ -167,7 +167,7 @@ data "clickhouse_postgres_service" "example" {
   id = clickhouse_postgres_service.example.id
 }
 
-# All Managed Postgres services in the organization.
+# All ClickHouse Managed Postgres services in the organization.
 data "clickhouse_postgres_services" "all" {}
 
 # The CA certificates for a service, for TLS connections.
@@ -180,7 +180,7 @@ data "clickhouse_postgres_service_ca_certificates" "certs" {
   ## Импорт существующих сервисов
 </div>
 
-Существующие сервисы Managed Postgres можно импортировать в состояние Terraform по идентификатору сервиса:
+Существующие сервисы ClickHouse Managed Postgres можно импортировать в состояние Terraform по идентификатору сервиса:
 
 ```bash
 terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

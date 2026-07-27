@@ -174,8 +174,6 @@ Materialized view 的实现方式如下：当向 `SELECT` 中指定的表插入�
 
 如果 materialized view 使用 `TO [db.]name` 这种写法，你可以先 `DETACH` 该视图，对目标表执行 `ALTER`，然后再 `ATTACH` 之前已 `DETACH` 的视图。
 
-请注意，materialized view 会受到 [optimize&#95;on&#95;insert](/zh/reference/settings/session-settings#optimize_on_insert) 设置的影响。数据会先合并，再插入到视图中。
-
 视图看起来与普通表相同。例如，它们会显示在 `SHOW TABLES` 查询结果中。
 
 要删除视图，请使用 [DROP VIEW](/zh/reference/statements/drop#drop-view)。不过，`DROP TABLE` 对 VIEW 也同样适用。
@@ -203,8 +201,8 @@ Materialized view 的实现方式如下：当向 `SELECT` 中指定的表插入�
 
 如果未指定 `DEFINER`/`SQL SECURITY`，则使用默认值：
 
-* `SQL SECURITY`：普通视图为 `INVOKER`，materialized view 为 `DEFINER` ([可通过设置配置](/zh/reference/settings/session-settings#default_normal_view_sql_security))
-* `DEFINER`：`CURRENT_USER` ([可通过设置配置](/zh/reference/settings/session-settings#default_view_definer))
+* `SQL SECURITY`：普通视图为 `INVOKER`，materialized view 为 `DEFINER` ([可通过设置配置](/zh/reference/settings/session-settings/default#default_normal_view_sql_security))
+* `DEFINER`：`CURRENT_USER` ([可通过设置配置](/zh/reference/settings/session-settings/default#default_view_definer))
 
 如果视图在附加时未指定 `DEFINER`/`SQL SECURITY`，则 materialized view 的默认值为 `SQL SECURITY NONE`，普通视图的默认值为 `SQL SECURITY INVOKER`。
 
@@ -320,7 +318,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 在非 `APPEND` 模式下，仅支持协调刷新。若要使用非协调方式，请使用 `Atomic` database 和 `CREATE ... ON CLUSTER` 查询，在所有副本上创建可刷新 materialized view。
 
-协调通过 Keeper 完成。znode 路径由 [default&#95;replica&#95;path](/zh/reference/settings/server-settings/settings#default_replica_path) 服务器设置决定。
+协调通过 Keeper 完成。znode 路径由 [default&#95;replica&#95;path](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path) 服务器设置决定。
 
 <div id="refresh-dependencies">
   ### 刷新依赖关系
@@ -495,7 +493,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 </Note>
 
 <div id="window-view">
-  ## Window View
+  ## 窗口视图
 </div>
 
 <ExperimentalBadge />
@@ -503,7 +501,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 <CloudNotSupportedBadge />
 
 <Info>
-  这是一项 Experimental 功能，未来的发行版中可能会发生向后不兼容的变更。使用 [allow&#95;experimental&#95;window&#95;view](/zh/reference/settings/session-settings#allow_experimental_window_view) 设置来启用 window view 和 `WATCH` 查询。输入命令 `set allow_experimental_window_view = 1`。
+  这是一项 Experimental 功能，未来的发行版中可能会发生向后不兼容的变更。使用 [allow&#95;experimental&#95;window&#95;view](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_window_view) 设置来启用 窗口视图 和 `WATCH` 查询。输入命令 `set allow_experimental_window_view = 1`。
 </Info>
 
 ```sql

@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualisations et tableaux de bord avec ClickStack'
-sidebarTitle: 'Tableaux de bord'
+sidebarTitle: 'Vue d’ensemble'
 description: 'Visualisations et tableaux de bord avec ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'tableaux de bord', 'visualisation', 'monitoring', 'observabilité']
@@ -212,6 +212,14 @@ Avec une tuile Number sélectionnée, ouvrez **Paramètres d’affichage** et d�
 
 Les graphiques d’arrière-plan s’appliquent aux tuiles Number créées avec le générateur de requêtes. Les tuiles Number en Raw SQL renvoient une valeur unique, sans dimension temporelle à regrouper, donc l’option apparaît mais reste désactivée pour elles.
 
+Les tuiles de tableau peuvent alterner l’arrière-plan de leurs lignes avec **Arrière-plan alterné des lignes**, ce qui teinte une ligne sur deux pour rendre les tables larges plus faciles à parcourir. Cette option est désactivée par défaut.
+
+Avec une tuile de tableau sélectionnée, ouvrez **Paramètres d’affichage** et activez **Arrière-plan alterné des lignes**. Cette alternance est purement visuelle, elle fonctionne donc aussi bien sur les tuiles de tableau du générateur de requêtes que sur celles en Raw SQL.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Volet Paramètres d’affichage pour une tuile de tableau, avec Arrière-plan alterné des lignes activé" size="lg" />
+
+Les tuiles de tableau conservent également un séparateur entre la ligne d’en-tête et les données pendant le défilement, afin que les en-têtes de colonnes restent bien distincts.
+
 <div id="dashboard-listing-search">
   ## Tableaux de bord - liste et recherche
 </div>
@@ -306,7 +314,7 @@ Ce tableau de bord utilise des onglets pour distinguer le suivi de **Selects**, 
 <Info>
   **Accès requis aux tables système**
 
-  Ce tableau de bord interroge les [tables système](/fr/reference/system-tables/index) de ClickHouse pour afficher les principales métriques. Les autorisations suivantes sont requises :
+  Ce tableau de bord interroge les [tables système](/fr/reference/system-tables/overview) de ClickHouse pour afficher les principales métriques. Les autorisations suivantes sont requises :
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

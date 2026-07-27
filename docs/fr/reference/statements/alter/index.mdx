@@ -1,6 +1,6 @@
 ---
 description: 'Documentation d’ALTER'
-sidebarTitle: 'ALTER'
+sidebarTitle: 'Vue d’ensemble'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,11 +73,11 @@ Les entrées des mutations terminées ne sont pas supprimées immédiatement (le
 
 Pour les tables non répliquées, toutes les requêtes `ALTER` sont exécutées de manière synchrone. Pour les tables répliquées, la requête se contente d&#39;ajouter dans `ZooKeeper` les instructions correspondant aux actions appropriées, et ces actions sont ensuite exécutées dès que possible. Toutefois, la requête peut attendre que ces actions soient terminées sur toutes les répliques.
 
-Pour les requêtes `ALTER` qui créent des mutations (par ex. : `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`, entre autres), le caractère synchrone est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings#mutations_sync).
+Pour les requêtes `ALTER` qui créent des mutations (par ex. : `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`, entre autres), le caractère synchrone est défini par le paramètre [mutations&#95;sync](/fr/reference/settings/session-settings/mutations#mutations_sync).
 
-Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vous pouvez utiliser le paramètre [alter&#95;sync](/fr/reference/settings/session-settings#alter_sync) pour définir l&#39;attente.
+Pour les autres requêtes `ALTER` qui modifient uniquement les métadonnées, vous pouvez utiliser le paramètre [alter&#95;sync](/fr/reference/settings/session-settings/alter#alter_sync) pour définir l&#39;attente.
 
-Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
+Vous pouvez spécifier, avec le paramètre [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/fr/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout), combien de temps (en secondes) attendre que les répliques inactives exécutent toutes les requêtes `ALTER`.
 
 <Note>
   Pour toutes les requêtes `ALTER`, si `alter_sync = 2` et que certaines répliques restent inactives au-delà de la durée spécifiée par le paramètre `replication_wait_for_inactive_replica_timeout`, une exception `UNFINISHED` est levée.

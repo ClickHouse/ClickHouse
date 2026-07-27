@@ -103,7 +103,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 *الشكل 5 - مُنعت Alice من الوصول إلى الخدمة 2 بسبب إعدادات التحكم في الوصول إلى الشبكة*
 
-يمكن أيضًا تطبيق أدوار ClickHouse والامتيازات للتحكم في الوصول إلى البيانات عندما يتصل المستخدمون بحساباتهم الفردية بدلًا من المستخدم *default*. 
+يمكن أيضًا تطبيق أدوار ClickHouse والامتيازات للتحكم في الوصول إلى البيانات عندما يتصل المستخدمون بحساباتهم الفردية بدلًا من المستخدم *default*.
 
 <div id="read-vs-read-write">
   ### خدمات للقراءة فقط مقابل خدمات للقراءة والكتابة
@@ -191,7 +191,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 
 * **إصدارات ClickHouse**: يتحدد [جدول الترقية](/ar/products/cloud/features/admin-features/upgrades) وفقًا لإعدادات الخدمة الأساسية. ولا يمكن أن يكون للخدمات الثانوية جدول إصدارات مستقل عن الخدمة الأساسية.
 
-* **قد تُمنع استعلامات `CREATE`/`RENAME`/`DROP DATABASE` افتراضيًا بسبب الخدمات الخاملة/المتوقفة.** إذا نُفِّذت هذه الاستعلامات عندما تكون الخدمة في حالة خمول أو متوقفة، فقد تظل معلّقة. لتجاوز ذلك، يمكنك تشغيل استعلامات إدارة قاعدة البيانات باستخدام [`settings distributed_ddl_task_timeout=0`](/ar/reference/settings/session-settings#distributed_ddl_task_timeout) على مستوى الجلسة أو على مستوى كل استعلام.
+* **قد تُمنع استعلامات `CREATE`/`RENAME`/`DROP DATABASE` افتراضيًا بسبب الخدمات الخاملة/المتوقفة.** إذا نُفِّذت هذه الاستعلامات عندما تكون الخدمة في حالة خمول أو متوقفة، فقد تظل معلّقة. لتجاوز ذلك، يمكنك تشغيل استعلامات إدارة قاعدة البيانات باستخدام [`settings distributed_ddl_task_timeout=0`](/ar/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) على مستوى الجلسة أو على مستوى كل استعلام.
 
 على سبيل المثال:
 

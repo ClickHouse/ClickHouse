@@ -164,7 +164,7 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 <Note>
   نظرًا إلى أن `POPULATE` يعمل مثل `CREATE TABLE ... AS SELECT ...`، فله القيود التالية:
 
-  * غير مدعوم مع Replicated database
+  * غير مدعوم مع قاعدة بيانات Replicated
   * غير مدعوم في ClickHouse Cloud
 
   وبدلًا من ذلك، يمكن استخدام `INSERT ... SELECT` منفصل.
@@ -173,8 +173,6 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 يمكن أن يحتوي استعلام `SELECT` على `DISTINCT` و`GROUP BY` و`ORDER BY` و`LIMIT`. لاحظ أن التحويلات المقابلة تُنفَّذ بشكل مستقل على كل كتلة من البيانات المُدرجة. فعلى سبيل المثال، إذا كان `GROUP BY` مضبوطًا، تُجمَّع البيانات أثناء الإدراج، ولكن فقط ضمن حزمة واحدة من البيانات المُدرجة. ولن تُجمَّع البيانات لاحقًا. والاستثناء هو عند استخدام `ENGINE` ينفذ تجميع البيانات بشكل مستقل، مثل `SummingMergeTree`.
 
 إذا كان العرض المادي يستخدم البنية `TO [db.]name`، فيمكنك `DETACH` العرض، ثم تشغيل `ALTER` على الجدول الهدف، ثم `ATTACH` العرض الذي فُصل (`DETACH`) سابقًا.
-
-لاحظ أن العرض المادي يتأثر بإعداد [optimize&#95;on&#95;insert](/ar/reference/settings/session-settings#optimize_on_insert). إذ تُدمَج البيانات قبل إدراجها في العرض.
 
 تبدو العروض مثل الجداول العادية. فعلى سبيل المثال، تُدرَج في نتيجة استعلام `SHOW TABLES`.
 
@@ -197,14 +195,14 @@ CREATE OR REPLACE MATERIALIZED VIEW mv TO target
 | `NONE`          | -                                                                   | -                                                                                                                 |
 
 <Note>
-  يُعد الخيار `SQL SECURITY NONE` خيارًا Deprecated. سيتمكن أي مستخدم لديه صلاحية إنشاء عروض باستخدام `SQL SECURITY NONE` من تنفيذ أي query عشوائي.
+  يُعد الخيار `SQL SECURITY NONE` خيارًا مُهمَل. سيتمكن أي مستخدم لديه صلاحية إنشاء عروض باستخدام `SQL SECURITY NONE` من تنفيذ أي query عشوائي.
   لذلك، يلزم وجود `GRANT ALLOW SQL SECURITY NONE TO <user>` لإنشاء عرض باستخدام هذا الخيار.
 </Note>
 
 إذا لم يتم تحديد `DEFINER`/`SQL SECURITY`، فستُستخدم القيم الافتراضية:
 
-* `SQL SECURITY`: `INVOKER` للعروض العادية و`DEFINER` للعروض المادية ([قابل للتهيئة عبر الإعدادات](/ar/reference/settings/session-settings#default_normal_view_sql_security))
-* `DEFINER`: `CURRENT_USER` ([قابل للتهيئة عبر الإعدادات](/ar/reference/settings/session-settings#default_view_definer))
+* `SQL SECURITY`: `INVOKER` للعروض العادية و`DEFINER` للعروض المادية ([قابل للتهيئة عبر الإعدادات](/ar/reference/settings/session-settings/default#default_normal_view_sql_security))
+* `DEFINER`: `CURRENT_USER` ([قابل للتهيئة عبر الإعدادات](/ar/reference/settings/session-settings/default#default_view_definer))
 
 إذا جرى Attach لعرض بدون تحديد `DEFINER`/`SQL SECURITY`، فستكون القيمة الافتراضية هي `SQL SECURITY NONE` للعرض المادي و`SQL SECURITY INVOKER` للعرض العادي.
 
@@ -320,7 +318,7 @@ REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random ti
 
 في الوضع غير `APPEND`، لا يُدعَم إلا التحديث المنسَّق. أما إذا أردت تحديثًا غير منسَّق، فاستخدم قاعدة بيانات `Atomic` واستعلام `CREATE ... ON CLUSTER` لإنشاء عروض مادية قابلة للتحديث على جميع النُسخ المتماثلة.
 
-يتم التنسيق عبر Keeper. ويُحدَّد مسار znode بواسطة إعداد الخادم [default&#95;replica&#95;path](/ar/reference/settings/server-settings/settings#default_replica_path).
+يتم التنسيق عبر Keeper. ويُحدَّد مسار znode بواسطة إعداد الخادم [default&#95;replica&#95;path](/ar/reference/settings/server-settings/settings/default-replica#default_replica_path).
 
 <div id="refresh-dependencies">
   ### تبعيات إعادة التحديث
@@ -503,7 +501,7 @@ ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 <CloudNotSupportedBadge />
 
 <Info>
-  هذه ميزة تجريبية وقد تتغير في الإصدارات القادمة على نحوٍ غير متوافق مع الإصدارات السابقة. لتمكين استخدام Window View واستعلام `WATCH`، استخدم الإعداد [allow&#95;experimental&#95;window&#95;view](/ar/reference/settings/session-settings#allow_experimental_window_view). أدخل الأمر `set allow_experimental_window_view = 1`.
+  هذه ميزة تجريبية وقد تتغير في الإصدارات القادمة على نحوٍ غير متوافق مع الإصدارات السابقة. لتمكين استخدام Window View واستعلام `WATCH`، استخدم الإعداد [allow&#95;experimental&#95;window&#95;view](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_window_view). أدخل الأمر `set allow_experimental_window_view = 1`.
 </Info>
 
 ```sql

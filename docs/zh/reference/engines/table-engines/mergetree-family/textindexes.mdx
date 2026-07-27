@@ -67,7 +67,7 @@ two    : [3]
 我们强烈建议在生产环境中使用 ClickHouse &gt;= 26.2 版本。
 
 <Note>
-  无论 [compatibility](/zh/reference/settings/session-settings#compatibility) 设置如何，任何 ClickHouse &gt;= 26.2 版本都可以使用文本索引。
+  无论 [compatibility](/zh/reference/settings/session-settings/compatibility#compatibility) 设置如何，任何 ClickHouse &gt;= 26.2 版本都可以使用文本索引。
 </Note>
 
 要创建文本索引，请使用以下语法：
@@ -475,12 +475,12 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 设置为 `1` 时，索引会额外存储位置数据 (保存在 `.pos` 文件中) ，从而使 [`hasPhrase`](#functions-example-hasphrase) 函数能够通过直接读取实现精确短语匹配。
 存储位置会增加索引的磁盘占用和写入成本，因此该功能默认不启用。
 其磁盘格式目前尚未稳定，因此该参数属于实验性功能，未来版本中可能会发生变化。
-因此，使用 `support_phrase_search = 1` 创建索引时，需要启用 MergeTree 设置 [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search)。
+因此，使用 `support_phrase_search = 1` 创建索引时，需要启用 MergeTree 设置 [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search)。
 将 `support_phrase_search = 0` (默认值) 可保持仅倒排列表存储；未使用此参数创建的文本索引将不包含位置信息。
 
 <Warning>
   此参数为实验性功能，仅应用于测试。
-  设置 MergeTree [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) 以启用位置存储。
+  设置 MergeTree [`allow_experimental_text_index_phrase_search`](/zh/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) 以启用位置存储。
 </Warning>
 
 <details markdown="1">
@@ -500,7 +500,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` - 倒排列表存储时不使用额外压缩。
   * `bitpacking` - 先应用[差分 (delta) 编码](https://en.wikipedia.org/wiki/Delta_encoding)，再进行[位打包](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (二者都在固定大小的块内进行) 。会降低 SELECT 查询速度，目前不建议使用。
 
-  上述高级参数也可以通过对应的 MergeTree 设置在表级别进行设置：[`text_index_dictionary_block_size`](/zh/reference/settings/merge-tree-settings#text_index_dictionary_block_size)、[`text_index_dictionary_block_frontcoding_compression`](/zh/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression)、[`text_index_posting_list_block_size`](/zh/reference/settings/merge-tree-settings#text_index_posting_list_block_size) 和 [`text_index_posting_list_codec`](/zh/reference/settings/merge-tree-settings#text_index_posting_list_codec)。
+  上述高级参数也可以通过对应的 MergeTree 设置在表级别进行设置：[`text_index_dictionary_block_size`](/zh/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size)、[`text_index_dictionary_block_frontcoding_compression`](/zh/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression)、[`text_index_posting_list_block_size`](/zh/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size) 和 [`text_index_posting_list_codec`](/zh/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec)。
   它们适用于该表中所有未显式指定该参数的文本索引。
 
   这些表级设置的主要用例，是在不删除并重新创建所有表分片上的文本索引的情况下，更改现有表的索引参数。
@@ -1253,8 +1253,8 @@ WHERE string_search_function(column_with_text_index)
 
 直接读取由两个设置控制：
 
-* 设置 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/zh/reference/settings/session-settings#query_plan_direct_read_from_text_index) (默认值为 true) ，用于指定是否通常启用直接读取。
-* 在 ClickHouse 版本 &lt; 26.4 中，设置 [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/zh/reference/settings/session-settings#use_skip_indexes_on_data_read) 是直接读取的前置条件。
+* 设置 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/zh/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (默认值为 true) ，用于指定是否通常启用直接读取。
+* 在 ClickHouse 版本 &lt; 26.4 中，设置 [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/zh/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) 是直接读取的前置条件。
 
 **支持的函数**
 
@@ -1271,7 +1271,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0, -- 禁用直接读取
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
 返回
@@ -1293,7 +1293,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1, -- 启用直接读取
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
 返回
@@ -1323,7 +1323,7 @@ Positions:
 
 这个额外的过滤器可以与其他过滤器结合，进一步提高选择性、限制结果集，并帮助减少从其他列读取的数据量。
 
-作为提示的直接读取由设置 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/zh/reference/settings/session-settings#query_plan_text_index_add_hint) 控制 (默认启用) 。
+作为提示的直接读取由设置 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/zh/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) 控制 (默认启用) 。
 
 不使用提示的查询示例：
 
@@ -1377,12 +1377,12 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 该优化由以下设置控制：
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/zh/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/zh/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 该回退机制由以下两个设置控制：
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/zh/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/zh/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/zh/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/zh/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 此优化仅支持 `like` 和 `ilike` 函数。
 
@@ -1392,7 +1392,7 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 
 存在不同的全服务器范围缓存，可将文本索引的部分内容缓存在内存中 (请参见[实现细节](#implementation)一节) ：
 目前提供了针对文本索引中反序列化后的头部信息、标记和倒排列表的缓存，以减少 I/O。
-使用设置 [use&#95;text&#95;index&#95;header&#95;cache](/zh/reference/settings/session-settings#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/zh/reference/settings/session-settings#use_text_index_tokens_cache) 和 [use&#95;text&#95;index&#95;postings&#95;cache](/zh/reference/settings/session-settings#use_text_index_postings_cache)，可按查询禁用各个缓存的读写。
+使用设置 [use&#95;text&#95;index&#95;header&#95;cache](/zh/reference/settings/session-settings/use-text#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/zh/reference/settings/session-settings/use-text#use_text_index_tokens_cache) 和 [use&#95;text&#95;index&#95;postings&#95;cache](/zh/reference/settings/session-settings/use-text#use_text_index_postings_cache)，可按查询禁用各个缓存的读写。
 
 如需清除缓存，请使用语句 [SYSTEM CLEAR TEXT INDEX CACHES](/zh/reference/statements/system#drop-text-index-caches)
 
@@ -1402,34 +1402,34 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   #### 标记缓存设置
 </div>
 
-| 设置                                                                                                                                          | 说明                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | 文本索引标记缓存策略的名称。             |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | 缓存的最大大小 (以字节为单位) 。         |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | 缓存中反序列化后的标记最大数量。           |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | 文本索引标记缓存中受保护队列大小占缓存总大小的比例。 |
+| 设置                                                                                                                                                     | 说明                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | 文本索引标记缓存策略的名称。             |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | 缓存的最大大小 (以字节为单位) 。         |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | 缓存中反序列化后的标记最大数量。           |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | 文本索引标记缓存中受保护队列大小占缓存总大小的比例。 |
 
 <div id="caching-header">
   #### 头部缓存设置
 </div>
 
-| Setting                                                                                                                                     | Description              |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings#text_index_header_cache_policy)               | 文本索引头部缓存策略的名称。           |
-| [text&#95;index&#95;header&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#text_index_header_cache_size)                   | 缓存的最大大小 (以字节为单位) 。       |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | 缓存中已反序列化头部的最大数量。         |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | 文本索引头部缓存中受保护队列占缓存总大小的比例。 |
+| Setting                                                                                                                                                | Description              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | 文本索引头部缓存策略的名称。           |
+| [text&#95;index&#95;header&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | 缓存的最大大小 (以字节为单位) 。       |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | 缓存中已反序列化头部的最大数量。         |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | 文本索引头部缓存中受保护队列占缓存总大小的比例。 |
 
 <div id="caching-posting-lists">
   #### 倒排列表缓存设置
 </div>
 
-| Setting                                                                                                                                         | Description                   |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | 文本索引倒排列表缓存策略的名称。              |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | 缓存的最大大小 (以字节为单位) 。            |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | 缓存中已反序列化倒排列表的最大数量。            |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | 文本索引倒排列表缓存中受保护队列的大小占缓存总大小的比例。 |
+| Setting                                                                                                                                                    | Description                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | 文本索引倒排列表缓存策略的名称。              |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/zh/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | 缓存的最大大小 (以字节为单位) 。            |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | 缓存中已反序列化倒排列表的最大数量。            |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | 文本索引倒排列表缓存中受保护队列的大小占缓存总大小的比例。 |
 
 <div id="limitations">
   ## 局限性

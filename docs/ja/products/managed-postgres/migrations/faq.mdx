@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/migrations/faq
 sidebarTitle: 'よくある質問'
-title: 'Managed Postgres の移行に関するよくある質問'
+title: 'ClickHouse Managed Postgres の移行に関するよくある質問'
 description: 'ClickHouse Managed Postgres へのデータ移行に関するよくある質問。'
-keywords: ['postgres', '移行', 'よくある質問', 'managed postgres', '論理レプリケーション', 'enum', '一意制約']
+keywords: ['postgres', '移行', 'よくある質問', 'managed postgres', 'logical replication', 'enum', '一意制約']
 doc_type: 'reference'
 ---
 
@@ -11,13 +11,13 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
 
-`TOAST` カラム、replication slots、publications、スキーマ変更、型マッピングなど、Postgres のレプリケーションの仕組みに関する多くの疑問は、[ClickPipes for Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq)で扱っています。そこに記載されている情報は、Managed Postgres の移行にも当てはまります。
+`TOAST` カラム、replication slots、publications、スキーマ変更、型マッピングなど、Postgres のレプリケーションの仕組みに関する多くの疑問は、[ClickPipes for Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq)で扱っています。そこに記載されている情報は、ClickHouse Managed Postgres の移行にも当てはまります。
 
 <div id="invalid-enum-value">
   ### レプリケーション中に「enum に対する無効な入力値」エラーが表示される
 </div>
 
-このエラーは、ソース側の Postgres に存在する enum 値が、ターゲットの Managed Postgres には存在しない場合に発生します。logical replication では `ALTER TYPE ... ADD VALUE` コマンドは自動的に伝播されないため、初回のスキーマ設定後にソース側で追加された新しい enum 値があると、ターゲット側で insert が失敗します。
+このエラーは、ソース側の Postgres に存在する enum 値が、ターゲットの ClickHouse Managed Postgres には存在しない場合に発生します。logical replication では `ALTER TYPE ... ADD VALUE` コマンドは自動的に伝播されないため、初回のスキーマ設定後にソース側で追加された新しい enum 値があると、ターゲット側で insert が失敗します。
 
 これを修正するには、ターゲットの Postgres で enum 型に不足している値を追加します。
 

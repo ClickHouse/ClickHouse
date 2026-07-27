@@ -1,6 +1,6 @@
 ---
 description: 'Documentação do ALTER'
-sidebarTitle: 'ALTER'
+sidebarTitle: 'Visão geral'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,11 +73,11 @@ As entradas de mutações concluídas não são excluídas imediatamente (o núm
 
 Para tabelas não replicadas, todas as consultas `ALTER` são executadas de forma síncrona. Para tabelas replicadas, a consulta apenas adiciona instruções para as ações apropriadas ao `ZooKeeper`, e as próprias ações são executadas assim que possível. No entanto, a consulta pode aguardar a conclusão dessas ações em todas as réplicas.
 
-Para consultas `ALTER` que criam mutações (por exemplo, entre elas `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`), a sincronia é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync).
+Para consultas `ALTER` que criam mutações (por exemplo, entre elas `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`), a sincronia é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings/mutations#mutations_sync).
 
-Para outras consultas `ALTER` que apenas modificam os metadados, você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) para configurar a espera.
+Para outras consultas `ALTER` que apenas modificam os metadados, você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) para configurar a espera.
 
-Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem todas as consultas `ALTER` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem todas as consultas `ALTER` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   Para todas as consultas `ALTER`, se `alter_sync = 2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, uma exceção `UNFINISHED` será lançada.

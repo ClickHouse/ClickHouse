@@ -123,7 +123,7 @@ Arrow Flight リクエストで使用するディスクリプタの種類です�
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-ClickHouse Cloudでのみ有効です。[cache&#95;populated&#95;by&#95;fetch](/ja/reference/settings/merge-tree-settings#cache_populated_by_fetch) が有効な場合に、新しいデータパーツをファイルシステムキャッシュへ先読み的にダウンロードするバックグラウンドスレッド数です。無効にするには 0 を指定します。
+ClickHouse Cloudでのみ有効です。[cache&#95;populated&#95;by&#95;fetch](/ja/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch) が有効な場合に、新しいデータパーツをファイルシステムキャッシュへ先読み的にダウンロードするバックグラウンドスレッド数です。無効にするには 0 を指定します。
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -447,7 +447,7 @@ EXCEPTクエリのデフォルトモードを設定します。設定可能な�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "新しい設定"}]}]} />
 
-指定したスキップ索引を、INSERT 時の構築および保存の対象から除外します。除外されたスキップ索引は、[マージ中](/ja/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge)または明示的な
+指定したスキップ索引を、INSERT 時の構築および保存の対象から除外します。除外されたスキップ索引は、[マージ中](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)または明示的な
 [MATERIALIZE INDEX](/ja/reference/statements/alter/skipping-index#materialize-index)クエリによって引き続き構築および保存されます。
 
 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) が false の場合、この設定は効果を持ちません。
@@ -1151,7 +1151,7 @@ a   Tuple(
 
 個々のクエリに対する [query&#95;metric&#95;log](/ja/reference/system-tables/query_metric_log) の収集間隔 (ミリ秒単位) です。
 
-負の値を指定すると、[query&#95;metric&#95;log setting](/ja/reference/settings/server-settings/settings#query_metric_log) の `collect_interval_milliseconds` の値が使用され、存在しない場合はデフォルトで 1000 になります。
+負の値を指定すると、[query&#95;metric&#95;log setting](/ja/reference/settings/server-settings/settings/query#query_metric_log) の `collect_interval_milliseconds` の値が使用され、存在しない場合はデフォルトで 1000 になります。
 
 単一のクエリの収集を無効にするには、`query_metric_log_interval` を 0 に設定します。
 
@@ -1389,7 +1389,7 @@ FORMAT Null;
 現在のセッションまたはクエリの暗黙的なタイムゾーンを設定します。
 暗黙的なタイムゾーンとは、明示的にタイムゾーンが指定されていない DateTime/DateTime64 型の値に適用されるタイムゾーンのことです。
 この設定は、グローバルに設定された (サーバーレベルの) 暗黙的なタイムゾーンよりも優先されます。
-値 `''` (空文字列) は、現在のセッションまたはクエリの暗黙的なタイムゾーンが [server time zone](/ja/reference/settings/server-settings/settings#timezone) と同じであることを意味します。
+値 `&#39;&#39;` (空文字列) は、現在のセッションまたはクエリの暗黙的なタイムゾーンが [server time zone](/ja/reference/settings/server-settings/settings/other#timezone) と同じであることを意味します。
 
 関数 `timeZone()` と `serverTimeZone()` を使用すると、セッションのタイムゾーンとサーバーのタイムゾーンを取得できます。
 
@@ -1443,7 +1443,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 **関連項目**
 
-* [timezone](/ja/reference/settings/server-settings/settings#timezone)
+* [timezone](/ja/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

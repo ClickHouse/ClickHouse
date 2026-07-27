@@ -61,7 +61,7 @@ ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 
 배열은 중첩될 수 있으며, 인수로 `Nullable` 타입을 사용할 수도 있습니다. `Tuple` 및 `Map` 타입도 중첩할 수 있습니다.
 
-`DICTIONARY` 타입은 `INSERT` 쿼리에서 지원됩니다. 또한 `SELECT` 쿼리에서는 [`output_format_arrow_low_cardinality_as_dictionary`](/ko/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) 설정을 사용해 [LowCardinality](/ko/reference/data-types/lowcardinality) 타입을 `DICTIONARY` 타입으로 출력할 수 있습니다. `LowCardinality` 딕셔너리에는 사용되지 않는 값이 포함될 수 있으므로, 출력된 Arrow `DICTIONARY`에도 사용되지 않는 값이 포함될 수 있다는 점에 유의하십시오.
+`DICTIONARY` 타입은 `INSERT` 쿼리에서 지원됩니다. 또한 `SELECT` 쿼리에서는 [`output_format_arrow_low_cardinality_as_dictionary`](/ko/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) 설정을 사용해 [LowCardinality](/ko/reference/data-types/lowcardinality) 타입을 `DICTIONARY` 타입으로 출력할 수 있습니다. `LowCardinality` 딕셔너리에는 사용되지 않는 값이 포함될 수 있으므로, 출력된 Arrow `DICTIONARY`에도 사용되지 않는 값이 포함될 수 있다는 점에 유의하십시오.
 
 지원되지 않는 Arrow 데이터 타입:
 

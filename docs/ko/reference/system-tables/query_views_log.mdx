@@ -15,18 +15,18 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   ## 설명
 </div>
 
-쿼리 실행 시 함께 실행되는 종속 뷰에 관한 정보(예: 뷰 유형, 실행 시간)를 포함합니다.
+쿼리 실행 시 함께 실행되는 종속 조회수에 관한 정보(예: 조회수 유형, 실행 시간)를 포함합니다.
 
 로깅을 시작하려면 다음과 같이 하십시오.
 
-1. [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings#query_views_log) 섹션에서 매개변수를 구성합니다.
-2. [log&#95;query&#95;views](/ko/reference/settings/session-settings#log_query_views)를 1로 설정합니다.
+1. [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings/query#query_views_log) 섹션에서 매개변수를 구성합니다.
+2. [log&#95;query&#95;views](/ko/reference/settings/session-settings/log-query#log_query_views)를 1로 설정합니다.
 
-데이터 플러시 주기는 [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings#query_views_log) server settings 섹션의 `flush_interval_milliseconds` 매개변수에서 설정합니다. 플러시를 강제로 수행하려면 [SYSTEM FLUSH LOGS](/ko/reference/statements/system#flush-logs) 쿼리를 사용하십시오.
+데이터 플러시 주기는 [query&#95;views&#95;log](/ko/reference/settings/server-settings/settings/query#query_views_log) server settings 섹션의 `flush_interval_milliseconds` 매개변수에서 설정합니다. 플러시를 강제로 수행하려면 [SYSTEM FLUSH LOGS](/ko/reference/statements/system#flush-logs) 쿼리를 사용하십시오.
 
 ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 자세한 내용은 [Introduction](/ko/reference/system-tables/overview#system-tables-introduction)을 참조하십시오.
 
-`query_views_log` 테이블에 기록되는 쿼리 수를 줄이려면 [log&#95;queries&#95;probability](/ko/reference/settings/session-settings#log_queries_probability)) 설정을 사용할 수 있습니다.
+`query_views_log` 테이블에 기록되는 쿼리 수를 줄이려면 [log&#95;queries&#95;probability](/ko/reference/settings/session-settings/log-queries#log_queries_probability)) 설정을 사용할 수 있습니다.
 
 <div id="columns">
   ## 컬럼

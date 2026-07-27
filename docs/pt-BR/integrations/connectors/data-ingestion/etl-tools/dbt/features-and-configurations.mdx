@@ -138,8 +138,8 @@ sem a cláusula `on cluster` para esse modelo.
 
 O dbt depende de um modelo de consistência de leitura após inserção. Isso não é compatível com clusters do ClickHouse com mais de uma réplica se você não puder garantir que todas as operações sejam direcionadas à mesma réplica. Você pode até não encontrar problemas no uso diário do dbt, mas, dependendo do seu cluster, há algumas estratégias para garantir isso:
 
-* Se você estiver usando um cluster do ClickHouse Cloud, basta definir `select_sequential_consistency: 1` na propriedade `custom_settings` do seu perfil. Você pode encontrar mais informações sobre essa configuração [aqui](/pt-BR/reference/settings/session-settings#select_sequential_consistency).
-* Se você estiver usando um cluster self-hosted, certifique-se de que todas as solicitações do dbt sejam enviadas para a mesma réplica do ClickHouse. Se houver um balanceador de carga na frente dele, tente usar algum mecanismo de `replica aware routing`/`sticky sessions` para sempre alcançar a mesma réplica. Adicionar a configuração `select_sequential_consistency = 1` em clusters fora do ClickHouse Cloud [não é recomendado](/pt-BR/reference/settings/session-settings#select_sequential_consistency).
+* Se você estiver usando um cluster do ClickHouse Cloud, basta definir `select_sequential_consistency: 1` na propriedade `custom_settings` do seu perfil. Você pode encontrar mais informações sobre essa configuração [aqui](/pt-BR/reference/settings/session-settings/other#select_sequential_consistency).
+* Se você estiver usando um cluster self-hosted, certifique-se de que todas as solicitações do dbt sejam enviadas para a mesma réplica do ClickHouse. Se houver um balanceador de carga na frente dele, tente usar algum mecanismo de `replica aware routing`/`sticky sessions` para sempre alcançar a mesma réplica. Adicionar a configuração `select_sequential_consistency = 1` em clusters fora do ClickHouse Cloud [não é recomendado](/pt-BR/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## Macros adicionais do ClickHouse

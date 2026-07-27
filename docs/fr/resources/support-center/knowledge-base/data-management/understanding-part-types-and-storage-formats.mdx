@@ -28,8 +28,8 @@ Les types de parts déterminent comment les données des colonnes sont organisé
 
 Le type de part dépend des paramètres de table suivants :
 
-* [`min_bytes_for_wide_part`](/fr/reference/settings/merge-tree-settings#min_bytes_for_wide_part) : nombre minimal d’octets pour qu’une part utilise le format Wide
-* [`min_rows_for_wide_part`](/fr/reference/settings/merge-tree-settings#min_rows_for_wide_part) : nombre minimal de lignes pour qu’une part utilise le format Wide
+* [`min_bytes_for_wide_part`](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) : nombre minimal d’octets pour qu’une part utilise le format Wide
+* [`min_rows_for_wide_part`](/fr/reference/settings/merge-tree-settings/min-rows#min_rows_for_wide_part) : nombre minimal de lignes pour qu’une part utilise le format Wide
 
 Si le nombre d’octets ou de lignes d’une part de données est inférieur à la valeur du paramètre correspondant, la part est stockée au format `Compact` ; sinon, elle est stockée au format `Wide`.
 
@@ -101,9 +101,9 @@ Dans le stockage Packed, tous les fichiers d’une part sont regroupés dans une
 
 Une part utilise le stockage Packed si **l’une** de ces conditions est remplie :
 
-* Octets non compressés &lt; [`min_bytes_for_full_part_storage`](/fr/reference/settings/merge-tree-settings#min_bytes_for_full_part_storage)
-* Nombre de lignes &lt; [`min_rows_for_full_part_storage`](/fr/reference/settings/merge-tree-settings#min_rows_for_full_part_storage)
-* Niveau de fusion &lt; [`min_level_for_full_part_storage`](/fr/reference/settings/merge-tree-settings#min_level_for_full_part_storage)
+* Octets non compressés &lt; [`min_bytes_for_full_part_storage`](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_full_part_storage)
+* Nombre de lignes &lt; [`min_rows_for_full_part_storage`](/fr/reference/settings/merge-tree-settings/min-rows#min_rows_for_full_part_storage)
+* Niveau de fusion &lt; [`min_level_for_full_part_storage`](/fr/reference/settings/merge-tree-settings/min-level#min_level_for_full_part_storage)
 
 Le stockage Packed est activé sur demande : les trois paramètres ont `0` comme valeur par défaut, de sorte que les parts utilisent le stockage Full sauf si vous augmentez l’un d’eux.
 

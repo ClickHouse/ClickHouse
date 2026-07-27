@@ -38,7 +38,7 @@ La estructura de la tabla puede diferir de la estructura de la tabla MySQL origi
 
 * Los nombres de las columnas deben ser los mismos que en la tabla MySQL original, pero puedes usar solo algunas de ellas y en cualquier orden.
 * Los tipos de las columnas pueden diferir de los de la tabla MySQL original. ClickHouse intenta [convertir](/es/reference/engines/database-engines/mysql#data_types-support) los valores a los tipos de datos de ClickHouse.
-* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings#external_table_functions_use_nulls) define cómo manejar las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores NULL. Esto también se aplica a los valores NULL dentro de arrays.
+* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings/external-table#external_table_functions_use_nulls) define cómo manejar las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores NULL. Esto también se aplica a los valores NULL dentro de arrays.
 
 **Parámetros del motor**
 
@@ -74,7 +74,7 @@ Esto es útil para hacer pushdown de joins, agregaciones o cualquier otro proces
 <Note>
   La forma de subconsulta `(SELECT ...)` la analiza ClickHouse y la vuelve a serializar en el dialecto de MySQL (identificadores entre acentos graves) antes de enviarla al servidor. Por lo tanto, debe ser válida en ClickHouse SQL. Para pasar sintaxis específica de MySQL que ClickHouse no analiza, use la forma `query('...')`, cuyo texto se envía a MySQL literalmente.
 
-  Cualquier `WHERE`, `LIMIT`, agregación, etc. de la consulta externa de ClickHouse **no** se hace pushdown en la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde MySQL, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings#external_table_strict_query), un filtro externo que no puede hacerse pushdown se rechaza con una excepción en lugar de aplicarse localmente.
+  Cualquier `WHERE`, `LIMIT`, agregación, etc. de la consulta externa de ClickHouse **no** se hace pushdown en la consulta pasada; se aplica en ClickHouse después de recuperar el resultado completo de la consulta. Para restringir los datos leídos desde MySQL, coloque el filtro dentro de la consulta pasada. Con [`external_table_strict_query = 1`](/es/reference/settings/session-settings/external-table#external_table_strict_query), un filtro externo que no puede hacerse pushdown se rechaza con una excepción en lugar de aplicarse localmente.
 </Note>
 
 Admite múltiples réplicas, que deben indicarse con `|`. Por ejemplo:

@@ -136,15 +136,15 @@ LIMIT 10
   #### FINAL 설정
 </div>
 
-쿼리에서 각 table 이름에 FINAL 수정자를 추가하는 대신, [FINAL 설정](/ko/reference/settings/session-settings#final)을 사용하면 쿼리의 모든 table에 자동으로 적용할 수 있습니다.
+쿼리에서 각 테이블 이름에 FINAL 수정자를 추가하는 대신, [FINAL 설정](/ko/reference/settings/session-settings/other#final)을 사용하면 쿼리의 모든 테이블에 자동으로 적용할 수 있습니다.
 
-이 설정은 쿼리별로 또는 전체 session에 적용할 수 있습니다.
+이 설정은 쿌리별로 또는 전체 session에 적용할 수 있습니다.
 
 ```sql
--- 쿼리별 FINAL 설정
+-- Per query FINAL setting
 SELECT count(*) FROM posts SETTINGS FINAL = 1;
 
--- 세션에 FINAL 적용
+-- Set FINAL for the session
 SET final = 1;
 SELECT count(*) FROM posts; 
 ```

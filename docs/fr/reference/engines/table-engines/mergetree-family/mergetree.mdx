@@ -220,7 +220,7 @@ Les index épars permettent de travailler avec un très grand nombre de lignes d
 
 ClickHouse n&#39;exige pas de clé primaire unique. Vous pouvez insérer plusieurs lignes avec la même clé primaire.
 
-Vous pouvez utiliser des expressions de type `Nullable` dans les clauses `PRIMARY KEY` et `ORDER BY`, mais cela est fortement déconseillé. Pour autoriser cette fonctionnalité, activez le paramètre [allow&#95;nullable&#95;key](/fr/reference/settings/merge-tree-settings#allow_nullable_key). Le principe [NULLS&#95;LAST](/fr/reference/statements/select/order-by#sorting-of-special-values) s&#39;applique aux valeurs `NULL` dans la clause `ORDER BY`.
+Vous pouvez utiliser des expressions de type `Nullable` dans les clauses `PRIMARY KEY` et `ORDER BY`, mais cela est fortement déconseillé. Pour autoriser cette fonctionnalité, activez le paramètre [allow&#95;nullable&#95;key](/fr/reference/settings/merge-tree-settings/allow#allow_nullable_key). Le principe [NULLS&#95;LAST](/fr/reference/statements/select/order-by#sorting-of-special-values) s&#39;applique aux valeurs `NULL` dans la clause `ORDER BY`.
 
 <div id="selecting-a-primary-key">
   ### Sélection d’une clé primaire
@@ -245,9 +245,9 @@ Le nombre de colonnes dans la clé primaire n’est pas explicitement limité. S
 
 Une clé primaire longue aura un impact négatif sur les performances d’insertion et la consommation de mémoire, mais les colonnes supplémentaires dans la clé primaire n’affectent pas les performances de ClickHouse lors des requêtes `SELECT`.
 
-Vous pouvez créer une table sans clé primaire en utilisant la syntaxe `ORDER BY tuple()`. Dans ce cas, ClickHouse stocke les données dans l’ordre d’insertion. Si vous souhaitez conserver l’ordre des données lors de l’insertion via des requêtes `INSERT ... SELECT`, définissez [max&#95;insert&#95;threads = 1](/fr/reference/settings/session-settings#max_insert_threads).
+Vous pouvez créer une table sans clé primaire en utilisant la syntaxe `ORDER BY tuple()`. Dans ce cas, ClickHouse stocke les données dans l’ordre d’insertion. Si vous souhaitez conserver l’ordre des données lors de l’insertion via des requêtes `INSERT ... SELECT`, définissez [max&#95;insert&#95;threads = 1](/fr/reference/settings/session-settings/max-insert#max_insert_threads).
 
-Pour sélectionner les données dans leur ordre initial, utilisez des requêtes `SELECT` [mono-thread](/fr/reference/settings/session-settings#max_threads).
+Pour sélectionner les données dans leur ordre initial, utilisez des requêtes `SELECT` [mono-thread](/fr/reference/settings/session-settings/max-threads#max_threads).
 
 <div id="choosing-a-primary-key-that-differs-from-the-sorting-key">
   ### Choisir une clé primaire différente de la clé de tri
@@ -307,7 +307,7 @@ Dans l’exemple ci-dessous, l’index ne peut pas être utilisé.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Pour vérifier si ClickHouse peut utiliser l’index lors de l’exécution d’une requête, utilisez les paramètres [force&#95;index&#95;by&#95;date](/fr/reference/settings/session-settings#force_index_by_date) et [force&#95;primary&#95;key](/fr/reference/settings/session-settings#force_primary_key).
+Pour vérifier si ClickHouse peut utiliser l’index lors de l’exécution d’une requête, utilisez les paramètres [force&#95;index&#95;by&#95;date](/fr/reference/settings/session-settings/force#force_index_by_date) et [force&#95;primary&#95;key](/fr/reference/settings/session-settings/force#force_primary_key).
 
 La clé de partitionnement par mois permet de lire uniquement les blocs de données qui contiennent des dates dans la plage voulue. Dans ce cas, le bloc de données peut contenir des données correspondant à de nombreuses dates (jusqu’à un mois entier). Dans un bloc, les données sont triées par clé primaire, qui peut ne pas contenir la date en première colonne. C’est pourquoi une requête ne comportant qu’une condition sur la date, sans préciser le préfixe de la clé primaire, entraînera la lecture de plus de données que pour une date unique.
 
@@ -690,10 +690,10 @@ Les fonctions avec un argument constant inférieur à la taille du ngram ne peuv
   ## Projections
 </div>
 
-Les projections s&#39;apparentent aux [vues matérialisées](/fr/reference/statements/create/view), mais sont définies au niveau des parts. Elles garantissent la cohérence et sont utilisées automatiquement dans les requêtes.
+Les projections s&#39;apparentent aux [vues matérialisées](/fr/reference/statements/create/view), mais sont définies au niveau des parties de données. Elles garantissent la cohérence et sont utilisées automatiquement dans les requêtes.
 
 <Note>
-  Lorsque vous implémentez des projections, vous devez également prendre en compte le paramètre [force&#95;optimize&#95;projection](/fr/reference/settings/session-settings#force_optimize_projection).
+  Lorsque vous implémentez des projections, vous devez également prendre en compte le paramètre [force&#95;optimize&#95;projection](/fr/reference/settings/session-settings/force-optimize#force_optimize_projection).
 </Note>
 
 Les projections ne sont pas prises en charge dans les instructions `SELECT` utilisant le modificateur [FINAL](/fr/reference/statements/select/from#final-modifier).
@@ -967,15 +967,15 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
   ### Suppression des données expirées
 </div>
 
-Les données dont le `TTL` a expiré sont supprimées lorsque ClickHouse fusionne des parts de données.
+Les données dont le `TTL` a expiré sont supprimées lorsque ClickHouse merge des parts de données.
 
-Lorsque ClickHouse détecte que des données ont expiré, il effectue une fusion non planifiée. Pour contrôler la fréquence de ces fusions, vous pouvez définir `merge_with_ttl_timeout`. Si cette valeur est trop faible, de nombreuses fusions non planifiées pourront être effectuées, ce qui risque de consommer beaucoup de ressources.
+Lorsque ClickHouse détecte que des données ont expiré, il effectue une merge non planifiée. Pour contrôler la fréquence de ces merges, vous pouvez définir `merge_with_ttl_timeout`. Si cette valeur est trop faible, de nombreuses merges non planifiées pourront être effectuées, ce qui risque de consommer beaucoup de ressources.
 
-Si vous exécutez la requête `SELECT` entre deux fusions, il se peut que vous obteniez des données expirées. Pour l’éviter, utilisez la requête [OPTIMIZE](/fr/reference/statements/optimize) avant `SELECT`.
+Si vous exécutez la requête `SELECT` entre deux merges, il se peut que vous obteniez des données expirées. Pour l’éviter, utilisez la requête [OPTIMIZE](/fr/reference/statements/optimize) avant `SELECT`.
 
 **Voir aussi**
 
-* paramètre [ttl&#95;only&#95;drop&#95;parts](/fr/reference/settings/merge-tree-settings#ttl_only_drop_parts)
+* paramètre [ttl&#95;only&#95;drop&#95;parts](/fr/reference/settings/merge-tree-settings/other#ttl_only_drop_parts)
 
 <div id="disk-types">
   ## Types de disque
@@ -1011,7 +1011,7 @@ Une part de données est la plus petite unité déplaçable pour les moteurs de 
 </div>
 
 * Disque — Périphérique de bloc monté sur le système de fichiers.
-* Disque par défaut — Disque qui stocke le chemin spécifié dans le paramètre du serveur [path](/fr/reference/settings/server-settings/settings#path).
+* Disque par défaut — Disque qui stocke le chemin spécifié dans le paramètre du serveur [path](/fr/reference/settings/server-settings/settings/other#path).
 * Volume — Ensemble ordonné de disques équivalents (semblable à [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 * Politique de stockage — Ensemble de volumes et règles de déplacement des données entre eux.
 
@@ -1151,15 +1151,15 @@ Exemples de configuration :
 </storage_configuration>
 ```
 
-Dans l’exemple donné, la policy `hdd_in_order` implémente l’approche [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling). Ainsi, cette policy ne définit qu’un seul volume (`single`) ; les parties de données sont stockées sur tous ses disques selon un ordre circulaire. Une telle policy peut être très utile si plusieurs disques similaires sont montés sur le système, mais que RAID n’est pas configuré. Gardez à l’esprit que chaque disque pris individuellement n’est pas fiable et que vous pouvez compenser cela avec un facteur de réplication de 3 ou plus.
+Dans l’exemple donné, la politique `hdd_in_order` implémente l’approche [round-robin](https://en.wikipedia.org/wiki/Round-robin_scheduling). Ainsi, cette politique ne définit qu’un seul volume (`single`) ; les parts de données sont stockées sur tous ses disques selon un ordre circulaire. Une telle politique peut être très utile si plusieurs disques similaires sont montés sur le système, mais que RAID n’est pas configuré. Gardez à l’esprit que chaque disque pris individuellement n’est pas fiable et que vous pouvez compenser cela avec un facteur de réplication de 3 ou plus.
 
-S’il existe différents types de disques sur le système, la policy `moving_from_ssd_to_hdd` peut être utilisée à la place. Le volume `hot` se compose d’un disque SSD (`fast_ssd`), et la taille maximale d’une part pouvant être stockée sur ce volume est de 1GB. Toutes les parts dont la taille est supérieure à 1GB seront stockées directement sur le volume `cold`, qui contient un disque HDD `disk1`.
+S’il existe différents types de disques sur le système, la politique `moving_from_ssd_to_hdd` peut être utilisée à la place. Le volume `hot` se compose d’un disque SSD (`fast_ssd`), et la taille maximale d’une part pouvant être stockée sur ce volume est de 1GB. Toutes les parts dont la taille est supérieure à 1GB seront stockées directement sur le volume `cold`, qui contient un disque HDD `disk1`.
 De plus, une fois que le disque `fast_ssd` est rempli à plus de 80 %, les données seront transférées vers `disk1` par un processus d’arrière-plan.
 
 L’ordre d’énumération des volumes au sein d’une politique de stockage est important si au moins l’un des volumes listés n’a pas de paramètre `volume_priority` explicite.
 Une fois qu’un volume est trop rempli, les données sont déplacées vers le suivant. L’ordre d’énumération des disques est également important, car les données y sont stockées à tour de rôle.
 
-Lors de la création d’une table, il est possible de lui appliquer l’une des stratégies de stockage configurées :
+Lors de la création d’une table, il est possible de lui appliquer l’une des politiques de stockage configurées :
 
 ```sql
 CREATE TABLE table_with_non_default_policy (
@@ -1176,7 +1176,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 La politique de stockage `default` signifie qu’un seul volume est utilisé, lequel se compose d’un seul disque indiqué dans `<path>`.
 Vous pouvez modifier la politique de stockage après la création de la table avec la requête [ALTER TABLE ... MODIFY SETTING] ; la nouvelle politique doit inclure tous les anciens disques et volumes en conservant les mêmes noms.
 
-Le nombre de threads qui effectuent les déplacements en arrière-plan des parties de données peut être modifié via le paramètre [background&#95;move&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_move_pool_size).
+Le nombre de threads qui effectuent les déplacements en arrière-plan des parts de données peut être modifié via le paramètre [background&#95;move&#95;pool&#95;size](/fr/reference/settings/server-settings/settings/background#background_move_pool_size).
 
 <div id="details">
   ### Détails
@@ -1206,7 +1206,7 @@ Le déplacement des données n’interfère pas avec la réplication des donnée
 Une fois les fusions et mutations en arrière-plan terminées, les anciennes parts ne sont supprimées qu’après un certain délai (`old_parts_lifetime`).
 Pendant cette période, elles ne sont pas déplacées vers d’autres volumes ou disques. Par conséquent, jusqu’à leur suppression définitive, elles sont toujours prises en compte dans l’évaluation de l’espace disque occupé.
 
-L’utilisateur peut répartir de nouvelles parts volumineuses entre différents disques d’un volume [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) de manière équilibrée à l’aide du paramètre [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/fr/reference/settings/merge-tree-settings#min_bytes_to_rebalance_partition_over_jbod).
+L’utilisateur peut répartir de nouvelles parts volumineuses entre différents disques d’un volume [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) de manière équilibrée à l’aide du paramètre [min&#95;bytes&#95;to&#95;rebalance&#95;partition&#95;over&#95;jbod](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_to_rebalance_partition_over_jbod).
 
 <div id="table_engine-mergetree-s3">
   ## Utilisation du stockage externe pour les données

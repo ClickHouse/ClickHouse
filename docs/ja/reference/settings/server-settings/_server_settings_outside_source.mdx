@@ -1420,7 +1420,7 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-[log&#95;queries=1](/ja/reference/settings/session-settings) 設定で受信したクエリをログに記録するための設定です。
+[log&#95;queries=1](/ja/reference/settings/session-settings/log-queries#log_queries) 設定で受信したクエリをログに記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;log](/ja/reference/system-tables/query_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 
@@ -1515,7 +1515,7 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-[log&#95;query&#95;threads=1](/ja/reference/settings/session-settings#log_query_threads) が設定されている場合に、受信したクエリスレッドをログに記録するための設定です。
+[log&#95;query&#95;threads=1](/ja/reference/settings/session-settings/log-query#log_query_threads) が設定されている場合に、受信したクエリスレッドをログに記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;thread&#95;log](/ja/reference/system-tables/query_thread_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 
@@ -1542,7 +1542,7 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-[log&#95;query&#95;views=1](/ja/reference/settings/session-settings#log_query_views) が設定された状態で受信したクエリに応じて、ビュー (ライブビュー、マテリアライズドビューなど) のログを記録するための設定です。
+[log&#95;query&#95;views=1](/ja/reference/settings/session-settings/log-query#log_query_views) が設定された状態で受信したクエリに応じて、ビュー (ライブビュー、マテリアライズドビューなど) のログを記録するための設定です。
 
 クエリは別個のファイルではなく、[system.query&#95;views&#95;log](/ja/reference/system-tables/query_views_log) テーブルに記録されます。テーブル名は `table` パラメータで変更できます (以下を参照) 。
 
@@ -1805,7 +1805,7 @@ curl 127.0.0.1:9363/metrics
 
 **関連項目**
 
-* [skip&#95;unavailable&#95;shards](/ja/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/ja/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [Cluster Discovery](/ja/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Replicatedデータベースエンジン](/ja/reference/engines/database-engines/replicated)
 
@@ -1849,7 +1849,7 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子と�
 
 **関連項目**
 
-* [session&#95;timezone](/ja/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/ja/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2127,43 +2127,43 @@ ClickHouse は、この設定をサーバー上のすべてのテーブルに適
 </div>
 
 クラスター上で [distributed DDLクエリ](/ja/reference/statements/distributed-ddl) (`CREATE`、`DROP`、`ALTER`、`RENAME`) の実行を管理します。
-[ZooKeeper](/ja/reference/settings/server-settings/settings#zookeeper) が有効な場合にのみ機能します。
+[ZooKeeper](/ja/reference/settings/server-settings/settings/zookeeper#zookeeper) が有効な場合にのみ機能します。
 
 `<distributed_ddl>` 内で設定できる項目は次のとおりです。
 
-| Setting                | Description                                                                     | Default Value                  |
-| ---------------------- | ------------------------------------------------------------------------------- | ------------------------------ |
-| `cleanup_delay_period` | 前回のクリーンアップから `cleanup_delay_period` 秒以上経過している場合、新しいノードイベントを受信した後にクリーンアップを開始します。 | `60` 秒                         |
-| `max_tasks_in_queue`   | `queue` に保持できる `tasks` の最大数です。                                                  | `1,000`                        |
-| `path`                 | DDLクエリ用の `task_queue` に対する Keeper 内の `path`                                     |                                |
-| `pool_size`            | 同時に実行できる `ON CLUSTER` クエリの数です。                                                  |                                |
-| `profile`              | DDLクエリの実行に使用する `profile` です。                                                    |                                |
-| `task_max_lifetime`    | ノードの経過時間がこの値を超えた場合、そのノードを削除します。                                                 | `7 * 24 * 60 * 60` (1週間相当の秒数)  |
+| Setting                | Description                                                                     | Default Value                 |
+| ---------------------- | ------------------------------------------------------------------------------- | ----------------------------- |
+| `cleanup_delay_period` | 前回のクリーンアップから `cleanup_delay_period` 秒以上経過している場合、新しいノードイベントを受信した後にクリーンアップを開始します。 | `60` 秒                        |
+| `max_tasks_in_queue`   | `queue` に保持できる `tasks` の最大数です。                                                  | `1,000`                       |
+| `path`                 | DDLクエリ用の `task_queue` に対する Keeper 内の `path`                                     |                               |
+| `pool_size`            | 同時に実行できる `ON CLUSTER` クエリの数です。                                                  |                               |
+| `profile`              | DDLクエリの実行に使用する `profile` です。                                                    |                               |
+| `task_max_lifetime`    | ノードの経過時間がこの値を超えた場合、そのノードを削除します。                                                 | `7 * 24 * 60 * 60` (1週間相当の秒数) |
 
 **例**
 
 ```xml
 <distributed_ddl>
-    <!-- DDLクエリのキューへのZooKeeperパス -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- このプロファイルの設定がDDLクエリの実行に使用されます -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- ON CLUSTERクエリを同時に実行できる数を制御します。 -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         クリーンアップ設定（アクティブなタスクは削除されません）
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- タスクの有効期限 (TTL) を制御します（デフォルト: 1週間） -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- クリーンアップの実行頻度を制御します（秒単位） -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- キューに入れられるタスクの最大数を制御します -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2245,7 +2245,7 @@ ClickHouse サーバー が、SQL コマンドで作成されたユーザーお�
 * SQL コマンドで作成されたユーザーが保存されるフォルダーへのパス。
 * SQL コマンドで作成されたユーザーが保存され、レプリケートされる ZooKeeper ノードのパス。
 
-このセクションが指定されている場合、[users&#95;config](/ja/reference/settings/server-settings/settings#users_config) と [access&#95;control&#95;path](/ja/reference/settings/server-settings/settings#access_control_path) のパスは使用されません。
+このセクションが指定されている場合、[users&#95;config](/ja/reference/settings/server-settings/settings/users#users_config) と [access&#95;control&#95;path](/ja/reference/settings/server-settings/settings/access-control#access_control_path) のパスは使用されません。
 
 `user_directories` セクションには任意の数の項目を含めることができ、項目の順序が優先順位を表します (上にある項目ほど優先順位が高くなります) 。
 

@@ -121,7 +121,7 @@ Los modificadores `NULL` y `NOT NULL` después del tipo de dato en la definició
 
 Si el tipo no es `Nullable` y se especifica `NULL`, se tratará como `Nullable`; si se especifica `NOT NULL`, no. Por ejemplo, `INT NULL` es equivalente a `Nullable(INT)`. Si el tipo es `Nullable` y se especifican los modificadores `NULL` o `NOT NULL`, se generará una excepción.
 
-Véase también la opción de configuración [data&#95;type&#95;default&#95;nullable](/es/reference/settings/session-settings#data_type_default_nullable).
+Véase también la opción de configuración [data&#95;type&#95;default&#95;nullable](/es/reference/settings/session-settings/other#data_type_default_nullable).
 
 <div id="default_values">
   ## Valores predeterminados
@@ -378,7 +378,7 @@ Define el tiempo de almacenamiento de los valores. Solo se puede especificar par
 
 De forma predeterminada, ClickHouse aplica la compresión `lz4` en la versión autogestionada y `zstd` en ClickHouse Cloud.
 
-En la familia de motores `MergeTree`, puede cambiar el método de compresión predeterminado en la sección [compression](/es/reference/settings/server-settings/settings#compression) de la configuración del servidor.
+En la familia de motores `MergeTree`, puede cambiar el método de compresión predeterminado en la sección [compression](/es/reference/settings/server-settings/settings/other#compression) de la configuración del servidor.
 
 También puede definir el método de compresión para cada columna en la consulta `CREATE TABLE`.
 
@@ -404,7 +404,7 @@ También puede quitar el CODEC actual de la columna y usar la compresión predet
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
-Los códecs pueden combinarse en una pipeline; por ejemplo, `CODEC(Delta, Default)`.
+Los códecs pueden combinarse en una canalización; por ejemplo, `CODEC(Delta, Default)`.
 
 <Tip>
   No es posible descomprimir archivos de bases de datos de ClickHouse con utilidades externas como `lz4`. En su lugar, usa la utilidad especial [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
@@ -412,7 +412,7 @@ Los códecs pueden combinarse en una pipeline; por ejemplo, `CODEC(Delta, Defaul
 
 Se admite compresión en los siguientes motores de tabla:
 
-* Familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree). Admite códecs de compresión por columna y la selección del método de compresión predeterminado mediante la configuración de [compression](/es/reference/settings/server-settings/settings#compression).
+* Familia [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree). Admite códecs de compresión por columna y la selección del método de compresión predeterminado mediante la configuración de [compression](/es/reference/settings/server-settings/settings/other#compression).
 * Familia [Log](/es/reference/engines/table-engines/log-family/index). Usa el método de compresión `lz4` de forma predeterminada y admite códecs de compresión por columna.
 * [Set](/es/reference/engines/table-engines/special/set). Solo admite la compresión predeterminada.
 * [Join](/es/reference/engines/table-engines/special/join). Solo admite la compresión predeterminada.
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### Códecs de cifrado
 </div>
 
-En realidad, estos códecs no comprimen los datos, sino que los cifran en disco. Solo están disponibles cuando se especifica una clave de cifrado mediante la configuración de [encryption](/es/reference/settings/server-settings/settings#encryption). Tenga en cuenta que el cifrado solo tiene sentido al final de las canalizaciones de códecs, porque, por lo general, los datos cifrados no pueden comprimirse de forma significativa.
+En realidad, estos códecs no comprimen los datos, sino que los cifran en disco. Solo están disponibles cuando se especifica una clave de cifrado mediante la configuración de [encryption](/es/reference/settings/server-settings/settings/other#encryption). Tenga en cuenta que el cifrado solo tiene sentido al final de las canalizaciones de códecs, porque, por lo general, los datos cifrados no pueden comprimirse de forma significativa.
 
 Códecs de cifrado:
 

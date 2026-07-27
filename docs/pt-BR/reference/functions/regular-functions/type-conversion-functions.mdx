@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 O ClickHouse geralmente usa o [mesmo comportamento dos programas em C++](https://en.cppreference.com/w/cpp/language/implicit_conversion).
 
-As funções `to<type>` e [cast](#CAST) se comportam de maneira diferente em alguns casos, por exemplo com [LowCardinality](/pt-BR/reference/data-types/lowcardinality): [cast](#CAST) remove a propriedade [LowCardinality](/pt-BR/reference/data-types/lowcardinality), enquanto as funções `to<type>` não. O mesmo ocorre com [Nullable](/pt-BR/reference/data-types/nullable); esse comportamento não é compatível com o padrão SQL e pode ser alterado com a configuração [cast&#95;keep&#95;nullable](/pt-BR/reference/settings/session-settings#cast_keep_nullable).
+As funções `to<type>` e [cast](#CAST) se comportam de maneira diferente em alguns casos, por exemplo com [LowCardinality](/pt-BR/reference/data-types/lowcardinality): [cast](#CAST) remove a propriedade [LowCardinality](/pt-BR/reference/data-types/lowcardinality), enquanto as funções `to<type>` não. O mesmo ocorre com [Nullable](/pt-BR/reference/data-types/nullable); esse comportamento não é compatível com o padrão SQL e pode ser alterado com a configuração [cast&#95;keep&#95;nullable](/pt-BR/reference/settings/session-settings/cast#cast_keep_nullable).
 
 <Note>
   Esteja ciente da possível perda de dados ao converter valores de um tipo de dado para um tipo menor (por exemplo, de `Int64` para `Int32`) ou entre

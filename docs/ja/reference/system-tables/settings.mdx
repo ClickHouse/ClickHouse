@@ -60,12 +60,12 @@ Row 1:
 name:        min_insert_block_size_rows
 value:       1048449
 changed:     0
-description: `INSERT` クエリによってテーブルに挿入できるブロック内の最小行数を設定します。サイズの小さいブロックはより大きなブロックにまとめられます。
+description: Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
-設定可能な値:
+Possible values:
 
-- 正の整数。
-- 0 — まとめる処理を無効にします。
+- Positive integer.
+- 0 — Squashing disabled.
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -80,12 +80,12 @@ Row 2:
 name:        min_insert_block_size_bytes
 value:       268402944
 changed:     0
-description: `INSERT` クエリによってテーブルに挿入できるブロック内の最小バイト数を設定します。サイズの小さいブロックはより大きなブロックにまとめられます。
+description: Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
-設定可能な値:
+Possible values:
 
-- 正の整数。
-- 0 — まとめる処理を無効にします。
+- Positive integer.
+- 0 — Squashing disabled.
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -100,18 +100,18 @@ Row 3:
 name:        min_insert_block_size_rows_for_materialized_views
 value:       0
 changed:     0
-description: `INSERT` クエリによってテーブルに挿入できるブロック内の最小行数を設定します。サイズの小さいブロックはより大きなブロックにまとめられます。この設定は [materialized view](/reference/statements/create/view) に挿入されるブロックにのみ適用されます。この設定を調整することで、materialized view へのプッシュ時のブロックをまとめる処理を制御し、メモリの過剰消費を回避できます。
+description: Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](/reference/statements/create/view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
-設定可能な値:
+Possible values:
 
-- 任意の正の整数。
-- 0 — まとめる処理を無効にします。
+- Any positive integer.
+- 0 — Squashing disabled.
 
 <div id="see-also">
   ## 関連項目
 </div>
 
-- [min_insert_block_size_rows](/reference/settings/session-settings#min_insert_block_size_rows)
+- [min_insert_block_size_rows](/reference/settings/session-settings/min-insert#min_insert_block_size_rows)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -126,18 +126,18 @@ Row 4:
 name:        min_insert_block_size_bytes_for_materialized_views
 value:       0
 changed:     0
-description: `INSERT` クエリによってテーブルに挿入できるブロック内の最小バイト数を設定します。サイズの小さいブロックはより大きなブロックにまとめられます。この設定は [materialized view](/reference/statements/create/view) に挿入されるブロックにのみ適用されます。この設定を調整することで、materialized view へのプッシュ時のブロックをまとめる処理を制御し、メモリの過剰消費を回避できます。
+description: Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](/reference/statements/create/view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
-設定可能な値:
+Possible values:
 
-- 任意の正の整数。
-- 0 — まとめる処理を無効にします。
+- Any positive integer.
+- 0 — Squashing disabled.
 
 <div id="see-also">
   ## 関連項目
 </div>
 
-- [min_insert_block_size_bytes](/reference/settings/session-settings#min_insert_block_size_bytes)
+- [min_insert_block_size_bytes](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0

@@ -65,7 +65,7 @@ ORDER BY table ASC
 Чтобы передавать результат потоком, отправьте запрос через HTTP-интерфейс ClickHouse с
 помощью запроса `POST` и считывайте ответ как поток Arrow. Мы отключаем сжатие
 вывода Arrow с помощью настройки
-[`output_format_arrow_compression_method`](/ru/reference/settings/formats#output_format_arrow_compression_method),
+[`output_format_arrow_compression_method`](/ru/reference/settings/formats/output-format#output_format_arrow_compression_method),
 чтобы потребители могли декодировать батчи напрямую по мере получения.
 
 Вывод `ArrowStream` представляет собой необработанные двоичные данные, поэтому вместо вывода в

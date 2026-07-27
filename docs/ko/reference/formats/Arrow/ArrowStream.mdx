@@ -64,11 +64,11 @@ ORDER BY table ASC
 
 결과를 스트리밍하려면 ClickHouse의 HTTP 인터페이스를 통해
 `POST` 요청으로 쿼리를 보내고, 응답을 Arrow 스트림으로 읽으십시오. Arrow 출력의 압축은
-[`output_format_arrow_compression_method`](/ko/reference/settings/formats#output_format_arrow_compression_method)
+[`output_format_arrow_compression_method`](/ko/reference/settings/formats/output-format#output_format_arrow_compression_method)
 설정으로 비활성화하여 consumer가 수신하는 즉시
 batch를 직접 디코딩할 수 있도록 합니다.
 
-`ArrowStream` 출력은 원시 binary이므로
+`ArrowStream` 출력은 원시 바이너리이므로
 터미널에 출력하는 대신 consumer로 파이프합니다. 이 스트림은 self-describing 형식이므로(자체 스키마를 포함함),
 여기서는 이를 바로
 [`clickhouse-local`](/ko/concepts/features/tools-and-utilities/clickhouse-local)로 파이프합니다. 이 도구는

@@ -134,8 +134,8 @@ Replicated 引擎**不会**包含 `ON CLUSTER` 子句，因为它们旨在自行
 
 dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发送到同一个副本，那么它与拥有多个副本的 ClickHouse 集群并不兼容。你在日常使用 dbt 时可能不会遇到问题，但可以根据集群情况采用一些策略来确保这一点：
 
-* 如果你使用的是 ClickHouse Cloud 集群，只需在 profile 的 `custom_settings` 属性中设置 `select_sequential_consistency: 1`。有关此设置的更多信息，请参见[这里](/zh/reference/settings/session-settings#select_sequential_consistency)。
-* 如果你使用的是自托管集群，请确保所有 dbt 请求都发送到同一个 ClickHouse 副本。如果上层有负载均衡器，请尝试使用某种 `replica aware routing`/`sticky sessions` 机制，以确保始终访问同一个副本。在 ClickHouse Cloud 之外的集群中添加设置 `select_sequential_consistency = 1`[不推荐](/zh/reference/settings/session-settings#select_sequential_consistency)。
+* 如果你使用的是 ClickHouse Cloud 集群，只需在 profile 的 `custom_settings` 属性中设置 `select_sequential_consistency: 1`。有关此设置的更多信息，请参见[这里](/zh/reference/settings/session-settings/other#select_sequential_consistency)。
+* 如果你使用的是自托管集群，请确保所有 dbt 请求都发送到同一个 ClickHouse 副本。如果上层有负载均衡器，请尝试使用某种 `replica aware routing`/`sticky sessions` 机制，以确保始终访问同一个副本。在 ClickHouse Cloud 之外的集群中添加设置 `select_sequential_consistency = 1`[不推荐](/zh/reference/settings/session-settings/other#select_sequential_consistency)。
 
 <div id="additional-clickhouse-macros">
   ## 其他 ClickHouse 宏

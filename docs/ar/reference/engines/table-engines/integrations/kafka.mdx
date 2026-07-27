@@ -78,13 +78,13 @@ SETTINGS
 * `kafka_schema` — معلمة يجب استخدامها إذا كانت الصيغة تتطلب تعريف مخطط. على سبيل المثال، يتطلب [Cap&#39;n Proto](https://capnproto.org/) مسار ملف المخطط واسم الكائن الجذر `schema.capnp:Message`.
 * `kafka_schema_registry_skip_bytes` — عدد البايتات التي يجب تخطيها من بداية كل رسالة عند استخدام schema registry مع رؤوس envelope (مثل AWS Glue Schema Registry الذي يتضمن envelope بحجم 19 بايتًا). النطاق: `[0, 255]`. القيمة الافتراضية: `0`.
 * `kafka_num_consumers` — عدد المستهلكين لكل جدول. حدِّد عددًا أكبر من المستهلكين إذا كان معدل النقل لمستهلك واحد غير كافٍ. يجب ألا يتجاوز العدد الإجمالي للمستهلكين عدد partitions في الـ topic، إذ لا يمكن إسناد أكثر من مستهلك واحد لكل partition، كما يجب ألا يزيد على عدد الأنوية الفعلية على الخادم الذي نُشر عليه ClickHouse. القيمة الافتراضية: `1`.
-* `kafka_max_block_size` — الحد الأقصى لحجم الدفعة (بالرسائل) لكل poll. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size).
+* `kafka_max_block_size` — الحد الأقصى لحجم الدفعة (بالرسائل) لكل poll. القيمة الافتراضية: [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size).
 * `kafka_skip_broken_messages` — مقدار سماحية محلل رسائل Kafka تجاه الرسائل غير المتوافقة مع المخطط في كل block. إذا كانت `kafka_skip_broken_messages = N` فإن engine يتخطى *N* من رسائل Kafka التي يتعذر parse لها (الرسالة تعادل row واحدة من البيانات). القيمة الافتراضية: `0`.
 * `kafka_commit_every_batch` — نفِّذ commit لكل batch تم استهلاكها ومعالجتها بدلًا من commit واحد بعد كتابة block كامل. القيمة الافتراضية: `0`.
 * `kafka_client_id` — معرّف Client. يكون فارغًا افتراضيًا.
-* `kafka_poll_timeout_ms` — المهلة الزمنية لعملية poll واحدة من Kafka. القيمة الافتراضية: [stream&#95;poll&#95;timeout&#95;ms](/ar/reference/settings/session-settings#stream_poll_timeout_ms).
-* `kafka_poll_max_batch_size` — الحد الأقصى لعدد الرسائل التي يمكن جلبها في Kafka poll واحدة. القيمة الافتراضية: [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
-* `kafka_flush_interval_ms` — المهلة الزمنية لتفريغ البيانات من Kafka. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_poll_timeout_ms` — المهلة الزمنية لعملية poll واحدة من Kafka. القيمة الافتراضية: [stream&#95;poll&#95;timeout&#95;ms](/ar/reference/settings/session-settings/stream#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — الحد الأقصى لعدد الرسائل التي يمكن جلبها في Kafka poll واحدة. القيمة الافتراضية: [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size).
+* `kafka_flush_interval_ms` — المهلة الزمنية لتفريغ البيانات من Kafka. القيمة الافتراضية: [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms).
 * `kafka_consumer_reschedule_ms` — فترة إعادة الجدولة عند توقف stream processing في Kafka (على سبيل المثال، عندما لا تتوفر رسائل للاستهلاك). يتحكم هذا الإعداد في التأخير قبل أن يعيد consumer محاولة polling. يجب ألا تتجاوز هذه القيمة `kafka_consumers_pool_ttl_ms`. القيمة الافتراضية: `500` ميلي ثانية.
 * `kafka_thread_per_consumer` — يوفّر thread مستقلًا لكل consumer. عند التمكين، يقوم كل consumer بتفريغ البيانات بشكل مستقل، in parallel (وإلا فستُدمج rows من عدة consumers لتشكيل block واحد). القيمة الافتراضية: `0`.
 * `kafka_handle_error_mode` — كيفية التعامل مع errors في Kafka engine. القيم الممكنة: default (سيتم طرح الاستثناء إذا فشلنا في parse رسالة)، stream (سيتم حفظ رسالة الاستثناء والرسالة الخام في virtual columns `_error` و `_raw_message`)، dead&#95;letter&#95;queue (سيتم حفظ البيانات المرتبطة بالخطأ في system.dead&#95;letter&#95;queue).
@@ -201,7 +201,7 @@ CREATE TABLE queue3 (
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-لتحسين الأداء، تُجمَّع الرسائل المستلمة في كتل بحجم [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size). وإذا لم تتكوّن الكتلة خلال [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings#stream_flush_interval_ms) مللي ثانية، فستُكتب البيانات إلى الجدول بغض النظر عن اكتمال الكتلة.
+لتحسين الأداء، تُجمَّع الرسائل المستلمة في كتل بحجم [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings/max-insert#max_insert_block_size). وإذا لم تتكوّن الكتلة خلال [stream&#95;flush&#95;interval&#95;ms](/ar/reference/settings/session-settings/stream#stream_flush_interval_ms) مللي ثانية، فستُكتب البيانات إلى الجدول بغض النظر عن اكتمال الكتلة.
 
 لإيقاف تلقي بيانات الـ موضوع أو لتغيير منطق التحويل، افصل العرض المادي:
 
@@ -455,7 +455,7 @@ INSERT INTO kafka_out VALUES
 يعتمد عدد الصفوف في رسالة Kafka واحدة على ما إذا كان التنسيق يستند إلى الصفوف أو إلى الكتل:
 
 * في التنسيقات المستندة إلى الصفوف، يمكن التحكم في عدد الصفوف في رسالة Kafka واحدة عبر تعيين `kafka_max_rows_per_message`.
-* في التنسيقات المستندة إلى الكتل، لا يمكن تقسيم block إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في block واحد باستخدام الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings#max_block_size).
+* في التنسيقات المستندة إلى الكتل، لا يمكن تقسيم كتلة إلى أجزاء أصغر، لكن يمكن التحكم في عدد الصفوف في كتلة واحدة باستخدام الإعداد العام [max&#95;block&#95;size](/ar/reference/settings/session-settings/max#max_block_size).
 
 <div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
   ## محرك لتخزين الإزاحات المعتمدة في ClickHouse Keeper
@@ -493,7 +493,7 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 **راجع أيضًا**
 
 * [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_message_broker_schedule_pool_size)
 * [system.kafka&#95;consumers](/ar/reference/system-tables/kafka_consumers)
 
 {/*AUTOGENERATED_END*/}

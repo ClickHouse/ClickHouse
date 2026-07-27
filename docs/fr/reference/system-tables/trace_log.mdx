@@ -17,8 +17,8 @@ import SystemTableCloud from '/snippets/fr/_system_table_cloud.mdx';
 
 Contient les traces de pile collectées par le [profileur de requêtes par échantillonnage](/fr/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
-ClickHouse crée cette table lorsque la section de configuration du serveur [trace&#95;log](/fr/reference/settings/server-settings/settings#trace_log) est définie. Voir aussi les paramètres : [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/fr/reference/settings/session-settings#query_profiler_real_time_period_ns), [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/fr/reference/settings/session-settings#query_profiler_cpu_time_period_ns), [memory&#95;profiler&#95;step](/fr/reference/settings/session-settings#memory_profiler_step),
-[memory&#95;profiler&#95;sample&#95;probability](/fr/reference/settings/session-settings#memory_profiler_sample_probability), [trace&#95;profile&#95;events](/fr/reference/settings/session-settings#trace_profile_events).
+ClickHouse crée cette table lorsque la section de configuration du serveur [trace&#95;log](/fr/reference/settings/server-settings/settings/other#trace_log) est définie. Voir aussi les paramètres : [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/fr/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/fr/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory&#95;profiler&#95;step](/fr/reference/settings/session-settings/memory-profiler#memory_profiler_step),
+[memory&#95;profiler&#95;sample&#95;probability](/fr/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace&#95;profile&#95;events](/fr/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
 Pour analyser les journaux, utilisez les fonctions d’introspection `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` et `demangle`.
 

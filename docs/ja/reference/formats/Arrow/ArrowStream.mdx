@@ -60,7 +60,7 @@ ORDER BY table ASC
 結果をストリーミングするには、ClickHouse の HTTPインターフェイス経由でクエリを
 `POST` リクエストとして送信し、レスポンスを Arrow ストリームとして読み取ります。Arrow 出力の
 圧縮は
-[`output_format_arrow_compression_method`](/ja/reference/settings/formats#output_format_arrow_compression_method)
+[`output_format_arrow_compression_method`](/ja/reference/settings/formats/output-format#output_format_arrow_compression_method)
 設定で無効にしています。これにより、コンシューマーは受信した
 バッチを受信しながらそのままデコードできます。
 

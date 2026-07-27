@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Introduit dans : v21.2.0
 
 Renvoie les clés de la map donnée.
-Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Lorsque ce paramètre est activé, la fonction lit uniquement la sous-colonne `keys` au lieu de lire la map entière.
 La requête `SELECT mapKeys(m) FROM table` est transformée en `SELECT m.keys FROM table`.
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Introduit dans : v21.2.0
 
 Renvoie les valeurs de la map donnée.
-Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Lorsque ce paramètre est activé, la fonction lit uniquement la sous-colonne `values` au lieu de lire la map entière.
 La requête `SELECT mapValues(m) FROM table` est transformée en `SELECT m.values FROM table`.
 

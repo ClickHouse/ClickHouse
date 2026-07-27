@@ -51,7 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 パラメータ:
 
 * `nats_url` – host:port (例: `localhost:4222`) ..
-* `nats_subjects` – NATS テーブルが subscribe/publish する subject の一覧。`foo.*.bar` や `baz.>` のようなワイルドカード subject をサポートします
+* `nats_subjects` – NATS table が subscribe/publish する subject の一覧。`foo.*.bar` や `baz.>` のようなワイルドカード subject をサポートします
 * `nats_format` – メッセージのフォーマット。`JSONEachRow` など、SQL の `FORMAT` 関数と同じ記法を使用します。詳細は [フォーマット](/ja/reference/formats/index) セクションを参照してください。
 
 パラメータ:
@@ -65,8 +65,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_reconnect_wait` – 再接続試行のたびに待機する時間 (ミリ秒単位) 。デフォルト: `2000`。
 * `nats_server_list` - 接続先の server 一覧。NATS クラスターに接続するために指定できます。
 * `nats_skip_broken_messages` - ブロックごとに許容する、スキーマ非互換の NATS message の数。デフォルト: `0`。`nats_skip_broken_messages = N` の場合、このエンジンは解析できない *N* 件の NATS message をスキップします (1 message は 1 行のデータに相当します) 。
-* `nats_max_block_size` - NATS からデータを flush するために poll で収集する行数。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings#max_insert_block_size)。
-* `nats_flush_interval_ms` - NATS から読み取ったデータを flush するまでのタイムアウト。デフォルト: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings#stream_flush_interval_ms)。
+* `nats_max_block_size` - NATS からデータを flush するために poll で収集する行数。デフォルト: [max&#95;insert&#95;block&#95;size](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)。
+* `nats_flush_interval_ms` - NATS から読み取ったデータを flush するまでのタイムアウト。デフォルト: [stream&#95;flush&#95;interval&#95;ms](/ja/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `nats_username` - NATS username。
 * `nats_password` - NATS password。
 * `nats_token` - NATS auth token。
@@ -193,7 +193,7 @@ NATS エンジンは、ClickHouse でサポートされているすべての[フ
 1 つの NATS メッセージに含まれる行数は、そのフォーマットが行ベースかブロックベースかによって異なります。
 
 * 行ベースのフォーマットでは、1 つの NATS メッセージに含める行数を `nats_max_rows_per_message` の設定で制御できます。
-* ブロックベースのフォーマットでは、ブロックをより小さなパーツに分割することはできませんが、1 つのブロックに含まれる行数は一般設定の [max&#95;block&#95;size](/ja/reference/settings/session-settings#max_block_size) で制御できます。
+* ブロックベースのフォーマットでは、ブロックをより小さなパーツに分割することはできませんが、1 つのブロックに含まれる行数は一般設定の [max&#95;block&#95;size](/ja/reference/settings/session-settings/max#max_block_size) で制御できます。
 
 <div id="using-jetstream">
   ## JetStream の使用

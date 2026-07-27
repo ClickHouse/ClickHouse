@@ -27,7 +27,7 @@ doc_type: 'reference'
 
 计算两个或多个值的逻辑与。
 
-设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 用于控制是否启用短路求值。
+设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 用于控制是否启用短路求值。
 如果启用，则仅当 `(val_1 AND val_2 AND ... AND val_{i-1})` 为 `true` 时，才会计算 `val_i`。
 
 例如，启用短路求值后，执行查询 `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)` 时不会抛出除零异常。
@@ -122,7 +122,7 @@ SELECT NOT(1);
 
 计算两个或多个值的逻辑“或”。
 
-设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings#short_circuit_function_evaluation) 用于控制是否使用短路求值。
+设置 [`short_circuit_function_evaluation`](/zh/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) 用于控制是否使用短路求值。
 如果启用，只有当 `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` 为 `true` 时，才会计算 `val_i`。
 
 例如，使用短路求值时，执行查询 `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)` 不会抛出除零异常。

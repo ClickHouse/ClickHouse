@@ -20,7 +20,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 限制 [replicated](/zh/reference/engines/table-engines/mergetree-family/replication)
 拉取在网络上进行数据交换时的最大速度，单位为每秒字节。与应用于服务器的
-[`max_replicated_fetches_network_bandwidth_for_server`](/zh/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+[`max_replicated_fetches_network_bandwidth_for_server`](/zh/reference/settings/server-settings/settings/max-replicated#max_replicated_fetches_network_bandwidth_for_server)
 设置不同，此设置适用于特定表。
 
 你可以同时限制服务器网络和特定表的网络，但在这种情况下，
@@ -88,7 +88,7 @@ ReplicatedMergeTree 队列中允许同时进行的
 限制 [replicated](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree)
 发送的数据交换最大速率，单位为每秒字节数。与应用于
 服务器的
-[`max_replicated_sends_network_bandwidth_for_server`](/zh/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)
+[`max_replicated_sends_network_bandwidth_for_server`](/zh/reference/settings/server-settings/settings/max-replicated#max_replicated_sends_network_bandwidth_for_server)
 设置不同，此设置作用于特定表。
 
 你可以同时限制服务器网络和特定表的网络速率，但在这种情况下，表级设置的值必须小于

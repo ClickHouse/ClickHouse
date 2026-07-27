@@ -24,14 +24,14 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 استعلام `OPTIMIZE` مدعوم لعائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك [materialized views](/ar/reference/statements/create/view#materialized-view)) ومحركات [Buffer](/ar/reference/engines/table-engines/special/buffer). أما محركات الجداول الأخرى فلا يدعمها النظام.
 
-عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) مضبوطًا على `2`) أو على النسخة المتماثلة الحالية (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) مضبوطًا على `1`).
+عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `2`) أو على النسخة المتماثلة الحالية (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `1`).
 
-* إذا لم يُجرِ `OPTIMIZE` عملية دمج لأي سبب، فلن يُخطر العميل بذلك. لتمكين الإشعارات، استخدم الإعداد [optimize&#95;throw&#95;if&#95;noop](/ar/reference/settings/session-settings#optimize_throw_if_noop).
+* إذا لم يُجرِ `OPTIMIZE` عملية دمج لأي سبب، فلن يُخطر العميل بذلك. لتمكين الإشعارات، استخدم الإعداد [optimize&#95;throw&#95;if&#95;noop](/ar/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * إذا حددت `PARTITION`، فلن يُحسَّن إلا القسم المحدد. [كيفية تعيين partition expression](/ar/reference/statements/alter/partition#how-to-set-partition-expression).
-* إذا حددت `FINAL` أو `FORCE`، فستُنفَّذ عملية التحسين حتى إذا كانت جميع البيانات موجودة بالفعل في جزء واحد. يمكنك التحكم في هذا السلوك باستخدام [optimize&#95;skip&#95;merged&#95;partitions](/ar/reference/settings/session-settings#optimize_skip_merged_partitions). كذلك، يُفرَض الدمج حتى إذا كانت هناك عمليات دمج متزامنة قيد التنفيذ.
+* إذا حددت `FINAL` أو `FORCE`، فستُنفَّذ عملية التحسين حتى إذا كانت جميع البيانات موجودة بالفعل في جزء واحد. يمكنك التحكم في هذا السلوك باستخدام [optimize&#95;skip&#95;merged&#95;partitions](/ar/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions). كذلك، يُفرَض الدمج حتى إذا كانت هناك عمليات دمج متزامنة قيد التنفيذ.
 * إذا حددت `DEDUPLICATE`، فستُزال الصفوف المتطابقة تمامًا (ما لم تُحدَّد عبارة BY) (تُقارَن جميع الأعمدة)، وهذا مفيد فقط مع محرك MergeTree.
 
-يمكنك تحديد مدة الانتظار (بالثواني) لكي تنفّذ النسخ المتماثلة غير النشطة استعلامات `OPTIMIZE` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+يمكنك تحديد مدة الانتظار (بالثواني) لكي تنفّذ النسخ المتماثلة غير النشطة استعلامات `OPTIMIZE` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
@@ -41,7 +41,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
   ## DRY RUN
 </div>
 
-يحاكي بند `DRY RUN` دمج الأجزاء المحددة من دون تثبيت النتيجة. ويُكتب الجزء المدموج في موقع مؤقت، ثم يُتحقَّق منه ويُتخلَّص منه بعد ذلك. وتبقى الأجزاء الأصلية وبيانات الجدول من دون تغيير.
+يحاكي عبارة `DRY RUN` دمج الأجزاء المحددة من دون تثبيت النتيجة. ويُكتب الجزء المدموج في موقع مؤقت، ثم يُتحقَّق منه ويُتخلَّص منه بعد ذلك. وتبقى الأجزاء الأصلية وبيانات الجدول من دون تغيير.
 
 يفيد ذلك في:
 
@@ -59,7 +59,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 ```
 
-افتراضيًا، يُتحقَّق من الجزء المدموج الناتج بأسلوب مشابه لاستعلام [`CHECK TABLE`](/ar/reference/statements/check-table). ويخضع هذا السلوك للإعداد [optimize&#95;dry&#95;run&#95;check&#95;part](/ar/reference/settings/session-settings#optimize_dry_run_check_part) (مفعّل افتراضيًا). ويؤدي تعطيله إلى تخطي التحقق، ما قد يكون مفيدًا لاختبار أداء عملية الدمج نفسها.
+افتراضيًا، يُتحقَّق من الجزء المدموج الناتج بأسلوب مشابه لاستعلام [`CHECK TABLE`](/ar/reference/statements/check-table). ويخضع هذا السلوك للإعداد [optimize&#95;dry&#95;run&#95;check&#95;part](/ar/reference/settings/session-settings/optimize#optimize_dry_run_check_part) (مفعّل افتراضيًا). ويؤدي تعطيله إلى تخطي التحقق، ما قد يكون مفيدًا لاختبار أداء عملية الدمج نفسها.
 
 **مثال**
 

@@ -1,8 +1,8 @@
 ---
 title: '副本感知路由'
 slug: /manage/replica-aware-routing
-description: '将相关请求路由到同一个 ClickHouse Cloud 副本，以便复用临时表、会话和缓存'
-keywords: ['云', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'session_id', '会话亲和性', '临时表']
+description: '将相关请求路由到同一个 ClickHouse Cloud 副本，以实现写后读一致性，并复用临时表、会话和缓存'
+keywords: ['云', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'session_id', '会话亲和性', '写后读一致性', '临时表']
 doc_type: 'guide'
 noindex: true
 ---
@@ -11,7 +11,7 @@ import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge
 
 <PrivatePreviewBadge />
 
-副本感知路由 (也称为 sticky sessions、粘性路由 或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。如果你需要让[临时表](/zh/sql-reference/statements/create/table#temporary-tables)或[具名会话状态](/zh/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)在多次查询之间持续可用，或者希望相关查询复用同一副本的本地缓存，就可以使用它。
+副本感知路由 (也称为 sticky sessions、粘性路由 或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。如果你需要让写后读一致性、[临时表](/zh/sql-reference/statements/create/table#temporary-tables)或[具名会话状态](/zh/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)在多次查询之间持续可用，或者希望相关查询复用同一副本的本地缓存，就可以使用它。
 
 这是一种尽力而为的机制，不保证隔离性。扩缩容、升级和重启都可能改变给定 `session_id` 最终会落到哪个副本。
 
@@ -56,6 +56,12 @@ echo 'SELECT hostName()' | curl \
 `session_id` 可以是你选择的任意字符串 (应用名称、用户 ID 或工作负载标签) 。没有 `session_id` 的请求会保持正常的负载均衡。
 
 任何能够添加查询参数的 HTTP 客户端都可以，包括 `curl`、[clickhouse-connect](/zh/integrations/python)、JDBC/ODBC 等。对于 `clickhouse-go` (v2) ，请按上文所述使用 HTTP 模式。
+
+<div id="read-after-write-consistency">
+  ### 写后读一致性
+</div>
+
+对一次写入及其后续读取查询使用相同的 `session_id`。副本感知路由会将这些请求发送到同一个副本，因此即使其他副本尚未收到这次写入，读取操作也能看到最新写入的结果。只要 `session_id` 仍映射到同一个副本，就能保证写后读一致性。
 
 <div id="check-which-replica">
   ### 检查你访问的是哪个副本

@@ -15,10 +15,10 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
   ## الوصف
 </div>
 
-يحتوي على تتبع المكدس التي يجمعها [مُحلِّل أداء الاستعلام المعتمد على أخذ العينات](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler).
+يحتوي على تتبعات المكدس التي يجمعها [مُحلِّل أداء الاستعلام المعتمد على أخذ العينات](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler).
 
-ينشئ ClickHouse هذا الجدول عند تعيين قسم إعدادات الخادم [trace&#95;log](/ar/reference/settings/server-settings/settings#trace_log). راجع أيضًا الإعدادات التالية: [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/ar/reference/settings/session-settings#query_profiler_real_time_period_ns)، [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/ar/reference/settings/session-settings#query_profiler_cpu_time_period_ns)، [memory&#95;profiler&#95;step](/ar/reference/settings/session-settings#memory_profiler_step)،
-[memory&#95;profiler&#95;sample&#95;probability](/ar/reference/settings/session-settings#memory_profiler_sample_probability)، [trace&#95;profile&#95;events](/ar/reference/settings/session-settings#trace_profile_events).
+ينشئ ClickHouse هذا الجدول عند تعيين قسم إعدادات الخادم [trace&#95;log](/ar/reference/settings/server-settings/settings/other#trace_log). راجع أيضًا الإعدادات التالية: [query&#95;profiler&#95;real&#95;time&#95;period&#95;ns](/ar/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns)، [query&#95;profiler&#95;cpu&#95;time&#95;period&#95;ns](/ar/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns)، [memory&#95;profiler&#95;step](/ar/reference/settings/session-settings/memory-profiler#memory_profiler_step)،
+[memory&#95;profiler&#95;sample&#95;probability](/ar/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability)، [trace&#95;profile&#95;events](/ar/reference/settings/session-settings/trace-profile-events#trace_profile_events).
 
 لتحليل السجلات، استخدم دوال introspection التالية: `addressToLine` و`addressToLineWithInlines` و`addressToSymbol` و`demangle`.
 

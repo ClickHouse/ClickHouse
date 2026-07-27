@@ -15,7 +15,7 @@ export const ExperimentalBadge = () => {
             href="/docs/beta-and-experimental-features#experimental-features"
             className="experimentalBadge"
         >
-            <Icon />実験的機能です
+            <Icon />実験的機能
         </a>
     )
 }

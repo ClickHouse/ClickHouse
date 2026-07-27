@@ -580,7 +580,7 @@ No formato RowBinary, o marcador de baixa cardinalidade não afeta o wire format
   Uma coluna pode ser definida como `LowCardinality(Nullable(T))`, mas não é possível defini-la como `Nullable(LowCardinality(T))` — isso sempre resultará em um erro do servidor.
 </Note>
 
-Em testes, [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/pt-BR/reference/settings/session-settings#allow_suspicious_low_cardinality_types) pode ser definido como `1` para permitir a maioria dos tipos de dados em `LowCardinality`, para uma cobertura melhor.
+Em testes, [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/pt-BR/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) pode ser definido como `1` para permitir a maioria dos tipos de dados em `LowCardinality`, para uma cobertura melhor.
 
 <div id="array">
   ### Array
@@ -735,8 +735,8 @@ SET allow_experimental_variant_type = 1,
     allow_suspicious_variant_types = 1;
 CREATE OR REPLACE TABLE foo
 (
-  -- A ordem dos tipos na entrada do usuário não importa;
-  -- os tipos são sempre ordenados alfabeticamente no wire format.
+  -- It does not matter what is the order of types in the user input;
+  -- the types are always sorted alphabetically in the wire format.
   `var` Variant(
            Array(Int16),
            Bool,
@@ -755,36 +755,36 @@ SELECT * FROM foo FORMAT RowBinary;
 ```
 
 ```text
-0x01,                               // índice de tipo -> Bool
+0x01,                               // type index -> Bool
  0x01,                               // true
- 0x03,                               // índice de tipo -> FixedString(6)
+ 0x03,                               // type index -> FixedString(6)
  0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
- 0x05,                               // índice de tipo -> Float64
+ 0x05,                               // type index -> Float64
  0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x20, 0x59, 0x40,             // 100.5 como Float64
- 0x06,                               // índice de tipo -> Int128
+ 0x00, 0x20, 0x59, 0x40,             // 100.5 as Float64
+ 0x06,                               // type index -> Int128
  0x64, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
  0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x00, 0x00, 0x00,             // 100 como Int128
- 0x00,                               // índice de tipo -> Array(Int16)
- 0x03,                               // LEB128 - o array tem 3 elementos
- 0x01, 0x00,                         // 1 como Int16
- 0x02, 0x00,                         // 2 como Int16
- 0x03, 0x00,                         // 3 como Int16
+ 0x00, 0x00, 0x00, 0x00,             // 100 as Int128
+ 0x00,                               // type index -> Array(Int16)
+ 0x03,                               // LEB128 - the array has 3 elements
+ 0x01, 0x00,                         // 1 as Int16
+ 0x02, 0x00,                         // 2 as Int16
+ 0x03, 0x00,                         // 3 as Int16
 ```
 
-Um valor `NULL` é codificado com um byte discriminador de `0xFF`:
+Um valor `NULL` é codificado com um byte discriminante de `0xFF`:
 
 ```sql
 SELECT NULL :: Variant(UInt32, String)
 ```
 
 ```text
-0xFF, // discriminante = NULL
+0xFF, // discriminant = NULL
 ```
 
-A configuração [allow&#95;suspicious&#95;variant&#95;types](/pt-BR/reference/settings/session-settings#allow_suspicious_variant_types) pode ser usada para permitir testes mais abrangentes do tipo `Variant`.
+A configuração [allow&#95;suspicious&#95;variant&#95;types](/pt-BR/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) pode ser usada para permitir testes mais abrangentes do tipo `Variant`.
 
 <div id="dynamic">
   ### Dynamic

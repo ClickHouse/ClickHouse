@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Argumentos**
 
 * `uuid` — Um UUID da versão 7. [`String`](/pt-BR/reference/data-types/string)
-* `timezone` — Opcional. [Nome do fuso horário](/pt-BR/reference/settings/server-settings/settings#timezone) do valor retornado. [`String`](/pt-BR/reference/data-types/string)
+* `timezone` — Opcional. [Nome do fuso horário](/pt-BR/reference/settings/server-settings/settings/other#timezone) do valor retornado. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -605,7 +605,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/pt-BR/reference/data-types/int-uint)
 * `epoch` — Opcional. Epoch do Snowflake ID em milissegundos desde 1970-01-01. O padrão é 0 (1970-01-01). Para a epoch do Twitter/X (2015-01-01), informe 1288834974657. [`UInt*`](/pt-BR/reference/data-types/int-uint)
-* `time_zone` — Opcional. [Fuso horário](/pt-BR/reference/settings/server-settings/settings#timezone). A função interpreta `time_string` de acordo com o fuso horário. [`String`](/pt-BR/reference/data-types/string)
+* `time_zone` — Opcional. [Fuso horário](/pt-BR/reference/settings/server-settings/settings/other#timezone). A função interpreta `time_string` de acordo com o fuso horário. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -643,7 +643,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/pt-BR/reference/data-types/int-uint)
 * `epoch` — Opcional. Epoch do Snowflake ID em milissegundos desde 1970-01-01. O padrão é 0 (1970-01-01). Para a epoch do Twitter/X (2015-01-01), informe 1288834974657. [`UInt*`](/pt-BR/reference/data-types/int-uint)
-* `time_zone` — Opcional. [Timezone](/pt-BR/reference/settings/server-settings/settings#timezone). A função interpreta `time_string` de acordo com o fuso horário. [`String`](/pt-BR/reference/data-types/string)
+* `time_zone` — Opcional. [Timezone](/pt-BR/reference/settings/server-settings/settings/other#timezone). A função interpreta `time_string` de acordo com o fuso horário. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 

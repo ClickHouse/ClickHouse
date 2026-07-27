@@ -47,7 +47,7 @@ As configurações a seguir estão disponíveis:
   ## query_log
 </div>
 
-Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings).
+Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings/log-queries#log_queries).
 
 As consultas são registradas na tabela [system.query&#95;log](/pt-BR/reference/system-tables/query_log), e não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -146,7 +146,7 @@ Para desativar a configuração `query_metric_log`, crie o seguinte arquivo `/et
   ## query_thread_log
 </div>
 
-Configuração para registrar threads de consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings#log_query_threads).
+Configuração para registrar threads de consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings/log-query#log_query_threads).
 
 As consultas são registradas na tabela [system.query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log), e não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -173,7 +173,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de threa
   ## query_views_log
 </div>
 
-Configuração para registrar views (live, materializadas etc.) de acordo com as consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings#log_query_views).
+Configuração para registrar views (live, materializadas etc.) de acordo com as consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings/log-query#log_query_views).
 
 As consultas são registradas na tabela [system.query&#95;views&#95;log](/pt-BR/reference/system-tables/query_views_log), não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 

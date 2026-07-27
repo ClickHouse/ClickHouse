@@ -38,7 +38,7 @@ SETTINGS
 
 * 列名应与原始 MySQL 表中的列名一致，但也可以只使用其中部分列，且顺序可以任意。
 * 列类型可以与原始 MySQL 表中的列类型不同。ClickHouse 会尝试将值 [cast](/zh/reference/engines/database-engines/mysql#data_types-support) 为 ClickHouse 数据类型。
-* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会创建 Nullable 列，而是插入默认值来代替 null。这也适用于数组中的 NULL 值。
+* [external&#95;table&#95;functions&#95;use&#95;nulls](/zh/reference/settings/session-settings/external-table#external_table_functions_use_nulls) 设置定义了如何处理 Nullable 列。默认值：1。如果为 0，表函数不会创建 Nullable 列，而是插入默认值来代替 null。这也适用于数组中的 NULL 值。
 
 **引擎参数**
 
@@ -74,7 +74,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到服务器之前按 MySQL 方言 (使用反引号引用标识符) 重新序列化。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 无法解析的 MySQL 特有语法，请使用 `query('...')` 形式，其文本会原样发送到 MySQL。
 
-  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是会在拉取完整查询结果后由 ClickHouse 应用。要限制从 MySQL 读取的数据，请将过滤条件写在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings#external_table_strict_query) 时，无法下推的外层过滤条件会直接被拒绝并抛出异常，而不是在本地应用。
+  外层 ClickHouse 查询中的任何 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中——而是会在拉取完整查询结果后由 ClickHouse 应用。要限制从 MySQL 读取的数据，请将过滤条件写在传入的查询内部。启用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings/external-table#external_table_strict_query) 时，无法下推的外层过滤条件会直接被拒绝并抛出异常，而不是在本地应用。
 </Note>
 
 支持多个副本，必须用 `|` 列出。例如：

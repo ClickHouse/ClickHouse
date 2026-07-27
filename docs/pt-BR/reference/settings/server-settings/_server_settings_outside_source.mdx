@@ -1421,7 +1421,7 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings).
+Configuração para registrar as consultas recebidas com a configuração [log&#95;queries=1](/pt-BR/reference/settings/session-settings/log-queries#log_queries).
 
 As consultas são registradas na tabela [system.query&#95;log](/pt-BR/reference/system-tables/query_log), e não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -1516,7 +1516,7 @@ As seguintes configurações estão disponíveis:
   ## query_thread_log
 </div>
 
-Configuração para registrar as threads das consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings#log_query_threads).
+Configuração para registrar as threads das consultas recebidas com a configuração [log&#95;query&#95;threads=1](/pt-BR/reference/settings/session-settings/log-query#log_query_threads).
 
 As consultas são registradas na tabela [system.query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log), não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -1543,7 +1543,7 @@ Se a tabela não existir, o ClickHouse a criará. Se a estrutura do log de threa
   ## query_views_log
 </div>
 
-Configuração para registrar views (live, materializadas etc.) associadas às consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings#log_query_views).
+Configuração para registrar views (live, materializadas etc.) associadas às consultas recebidas com a configuração [log&#95;query&#95;views=1](/pt-BR/reference/settings/session-settings/log-query#log_query_views).
 
 As consultas são registradas na tabela [system.query&#95;views&#95;log](/pt-BR/reference/system-tables/query_views_log), não em um arquivo separado. Você pode alterar o nome da tabela no parâmetro `table` (veja abaixo).
 
@@ -1806,7 +1806,7 @@ Para o valor do atributo `incl`, consulte a seção &quot;[arquivos de configura
 
 **Veja também**
 
-* [skip&#95;unavailable&#95;shards](/pt-BR/reference/settings/session-settings#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/pt-BR/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
 * [Cluster Discovery](/pt-BR/guides/oss/deployment-and-scaling/cluster-discovery)
 * [motor de banco de dados Replicated](/pt-BR/reference/engines/database-engines/replicated)
 
@@ -1850,7 +1850,7 @@ O fuso horário é necessário para conversões entre os formatos String e DateT
 
 **Veja também**
 
-* [session&#95;timezone](/pt-BR/reference/settings/session-settings#session_timezone)
+* [session&#95;timezone](/pt-BR/reference/settings/session-settings/other#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -2128,7 +2128,7 @@ Se [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_head
 </div>
 
 Gerencia a execução de [consultas de DDL distribuído](/pt-BR/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) no cluster.
-Funciona apenas se o [ZooKeeper](/pt-BR/reference/settings/server-settings/settings#zookeeper) estiver habilitado.
+Funciona apenas se o [ZooKeeper](/pt-BR/reference/settings/server-settings/settings/zookeeper#zookeeper) estiver habilitado.
 
 As configurações de `<distributed_ddl>` incluem:
 
@@ -2145,26 +2145,26 @@ As configurações de `<distributed_ddl>` incluem:
 
 ```xml
 <distributed_ddl>
-    <!-- Caminho no ZooKeeper para a fila com consultas DDL -->
+    <!-- Path in ZooKeeper to queue with DDL queries -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- As configurações deste perfil serão usadas para executar consultas DDL -->
+    <!-- Settings from this profile will be used to execute DDL queries -->
     <profile>default</profile>
 
-    <!-- Controla quantas consultas ON CLUSTER podem ser executadas simultaneamente. -->
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
     <pool_size>1</pool_size>
 
     <!--
-         Configurações de limpeza (tarefas ativas não serão removidas)
+         Cleanup settings (active tasks will not be removed)
     -->
 
-    <!-- Controla o TTL da tarefa (padrão: 1 semana) -->
+    <!-- Controls task TTL (default 1 week) -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- Controla com que frequência a limpeza deve ser realizada (em segundos) -->
+    <!-- Controls how often cleanup should be performed (in seconds) -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- Controla quantas tarefas podem estar na fila -->
+    <!-- Controls how many tasks could be in the queue -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2246,7 +2246,7 @@ Seção do arquivo de configuração que contém as seguintes configurações:
 * Caminho para a pasta onde são armazenados os usuários criados por comandos SQL.
 * Caminho do nó no ZooKeeper onde são armazenados e replicados os usuários criados por comandos SQL.
 
-Se esta seção for especificada, os caminhos de [users&#95;config](/pt-BR/reference/settings/server-settings/settings#users_config) e [access&#95;control&#95;path](/pt-BR/reference/settings/server-settings/settings#access_control_path) não serão usados.
+Se esta seção for especificada, os caminhos de [users&#95;config](/pt-BR/reference/settings/server-settings/settings/users#users_config) e [access&#95;control&#95;path](/pt-BR/reference/settings/server-settings/settings/access-control#access_control_path) não serão usados.
 
 A seção `user_directories` pode conter qualquer número de itens; a ordem deles define sua precedência (quanto mais acima o item, maior a precedência).
 
@@ -2280,10 +2280,10 @@ Você também pode definir as seções `memory` — que significa armazenar info
 
 Para adicionar um servidor LDAP como diretório remoto para usuários que não estão definidos localmente, defina uma única seção `ldap` com as seguintes configurações:
 
-| Configuração | Descrição                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Configuração | Descrição                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `roles`      | seção com uma lista de papéis definidos localmente que serão atribuídos a cada usuário recuperado do servidor LDAP. Se nenhum papel for especificado, o usuário não poderá executar nenhuma ação após a autenticação. Se qualquer um dos papéis listados não estiver definido localmente no momento da autenticação, a tentativa falhará como se a senha fornecida estivesse incorreta. |
-| `server`     | um dos nomes de servidor LDAP definidos na seção de configuração `ldap_servers`. Este parâmetro é obrigatório e não pode ficar vazio.                                                                                                                                                                                                                                                  |
+| `server`     | um dos nomes de servidor LDAP definidos na seção de configuração `ldap_servers`. Este parâmetro é obrigatório e não pode ficar vazio.                                                                                                                                                                                                                                                   |
 
 **Exemplo**
 

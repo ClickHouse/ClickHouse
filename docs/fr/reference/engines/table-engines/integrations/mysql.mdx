@@ -38,7 +38,7 @@ La structure de la table peut différer de celle de la table MySQL d’origine 
 
 * Les noms des colonnes doivent être les mêmes que dans la table MySQL d’origine, mais vous pouvez n’utiliser que certaines de ces colonnes, dans n’importe quel ordre.
 * Les types de colonnes peuvent différer de ceux de la table MySQL d’origine. ClickHouse essaie de [convertir](/fr/reference/engines/database-engines/mysql#data_types-support) les valeurs dans les types de données ClickHouse.
-* Le paramètre [external&#95;table&#95;functions&#95;use&#95;nulls](/fr/reference/settings/session-settings#external_table_functions_use_nulls) définit comment gérer les colonnes Nullable. Valeur par défaut : 1. Si sa valeur est 0, la fonction de table ne crée pas de colonnes Nullable et insère des valeurs par défaut à la place des valeurs NULL. Cela s’applique également aux valeurs NULL à l’intérieur des arrays.
+* Le paramètre [external&#95;table&#95;functions&#95;use&#95;nulls](/fr/reference/settings/session-settings/external-table#external_table_functions_use_nulls) définit comment gérer les colonnes Nullable. Valeur par défaut : 1. Si sa valeur est 0, la fonction de table ne crée pas de colonnes Nullable et insère des valeurs par défaut à la place des valeurs NULL. Cela s’applique également aux valeurs NULL à l’intérieur des arrays.
 
 **Paramètres du moteur**
 
@@ -74,7 +74,7 @@ Cela est utile pour déléguer à MySQL les jointures, les agrégations ou tout 
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse, puis re-sérialisée dans le dialecte MySQL (quotage des identifiants avec des accents graves) avant d’être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe propre à MySQL que ClickHouse n’analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à MySQL.
 
-  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n’est **pas** poussé dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour limiter les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings#external_table_strict_query), un filtre externe qui ne peut pas être poussé est rejeté avec une exception au lieu d’être appliqué localement.
+  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n’est **pas** poussé dans la requête transmise — il est appliqué dans ClickHouse après récupération du résultat complet de la requête. Pour limiter les données lues depuis MySQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être poussé est rejeté avec une exception au lieu d’être appliqué localement.
 </Note>
 
 Prend en charge plusieurs répliques, qui doivent être listées avec `|`. Par exemple :

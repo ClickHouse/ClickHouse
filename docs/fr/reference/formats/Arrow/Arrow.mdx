@@ -61,7 +61,7 @@ Le tableau ci-dessous présente les types de données pris en charge et leur cor
 
 Les `Array` peuvent être imbriqués et accepter comme argument une valeur de type `Nullable`. Les types `Tuple` et `Map` peuvent également être imbriqués.
 
-Le type `DICTIONARY` est pris en charge pour les requêtes `INSERT` et, pour les requêtes `SELECT`, le paramètre [`output_format_arrow_low_cardinality_as_dictionary`](/fr/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) permet de restituer le type [LowCardinality](/fr/reference/data-types/lowcardinality) sous forme de type `DICTIONARY`. Notez qu&#39;il peut y avoir des valeurs inutilisées dans le dictionnaire `LowCardinality`, ce qui peut se traduire par des valeurs inutilisées dans le `DICTIONARY` Arrow en sortie.
+Le type `DICTIONARY` est pris en charge pour les requêtes `INSERT` et, pour les requêtes `SELECT`, le paramètre [`output_format_arrow_low_cardinality_as_dictionary`](/fr/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) permet de restituer le type [LowCardinality](/fr/reference/data-types/lowcardinality) sous forme de type `DICTIONARY`. Notez qu&#39;il peut y avoir des valeurs inutilisées dans le dictionnaire `LowCardinality`, ce qui peut se traduire par des valeurs inutilisées dans le `DICTIONARY` Arrow en sortie.
 
 Types de données Arrow non pris en charge :
 

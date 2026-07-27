@@ -27,11 +27,11 @@ const ReleaseSchedule = ({ releases = [] }) => {
   const ChannelSchedule = ({ startDate, endDate, note, status }) => (
     <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span>
-        <strong>Início do rollout:</strong>{" "}
+        <strong>Início:</strong>{" "}
         <DateCell date={startDate} note={note} status={status} />
       </span>
       <span>
-        <strong>Fim do rollout:</strong>{" "}
+        <strong>Fim:</strong>{" "}
         <DateCell date={endDate} status={status} />
       </span>
     </span>

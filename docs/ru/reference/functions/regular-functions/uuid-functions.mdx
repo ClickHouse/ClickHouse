@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Аргументы**
 
 * `uuid` — UUID версии 7. [`String`](/ru/reference/data-types/string)
-* `timezone` — Необязательный параметр. [Имя часового пояса](/ru/reference/settings/server-settings/settings#timezone) для возвращаемого значения. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательный параметр. [Имя часового пояса](/ru/reference/settings/server-settings/settings/other#timezone) для возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -605,7 +605,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ru/reference/data-types/int-uint)
 * `epoch` — Необязательно. Эпоха Snowflake ID в миллисекундах, отсчитываемых с 1970-01-01. Значение по умолчанию — 0 (1970-01-01). Для эпохи Twitter/X (2015-01-01) укажите 1288834974657. [`UInt*`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
+* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings/other#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -643,7 +643,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ru/reference/data-types/int-uint)
 * `epoch` — Необязательно. Эпоха Snowflake ID в миллисекундах с 1970-01-01. По умолчанию — 0 (1970-01-01). Для эпохи Twitter/X (2015-01-01) укажите 1288834974657. [`UInt*`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция интерпретирует `time_string` в соответствии с часовым поясом. [`String`](/ru/reference/data-types/string)
+* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings/other#timezone). Функция интерпретирует `time_string` в соответствии с часовым поясом. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 

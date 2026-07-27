@@ -121,7 +121,7 @@ Arrow Flight 요청에 사용할 디스크립터 유형입니다. &#39;path&#39;
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-ClickHouse Cloud에서만 적용됩니다. [cache&#95;populated&#95;by&#95;fetch](/ko/reference/settings/merge-tree-settings#cache_populated_by_fetch)가 활성화되면 새 데이터 파트를 파일 시스템 캐시에 사전 다운로드하는 데 사용할 백그라운드 스레드 수입니다. 비활성화하려면 0으로 설정하십시오.
+ClickHouse Cloud에서만 적용됩니다. [cache&#95;populated&#95;by&#95;fetch](/ko/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch)가 활성화되면 새 데이터 파트를 파일 시스템 캐시에 사전 다운로드하는 데 사용할 백그라운드 스레드 수입니다. 비활성화하려면 0으로 설정하십시오.
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -437,7 +437,7 @@ EXCEPT 쿼리의 기본 모드를 설정합니다. 가능한 값: 빈 문자열,
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "새 설정입니다."}]}]} />
 
-지정한 스킵 인덱스가 INSERT 중에 생성되어 저장되지 않도록 제외합니다. 제외된 스킵 인덱스는 [머지 중](/ko/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) 또는 명시적인
+지정한 스킵 인덱스가 INSERT 중에 생성되어 저장되지 않도록 제외합니다. 제외된 스킵 인덱스는 [머지 중](/ko/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) 또는 명시적인
 [MATERIALIZE INDEX](/ko/reference/statements/alter/skipping-index#materialize-index) 쿼리를 통해 계속 생성되어 저장됩니다.
 
 [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ko/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)가 false이면 효과가 없습니다.
@@ -1143,7 +1143,7 @@ a   Tuple(
 
 개별 쿼리에 대해 [query&#95;metric&#95;log](/ko/reference/system-tables/query_metric_log)를 수집하는 밀리초 단위 인터벌입니다.
 
-음수 값으로 설정하면 [query&#95;metric&#95;log 설정](/ko/reference/settings/server-settings/settings#query_metric_log)의 `collect_interval_milliseconds` 값을 사용하고, 해당 값이 없으면 기본값 1000을 사용합니다.
+음수 값으로 설정하면 [query&#95;metric&#95;log 설정](/ko/reference/settings/server-settings/settings/query#query_metric_log)의 `collect_interval_milliseconds` 값을 사용하고, 해당 값이 없으면 기본값 1000을 사용합니다.
 
 단일 쿼리에 대한 수집을 비활성화하려면 `query_metric_log_interval`을 0으로 설정하세요.
 
@@ -1382,7 +1382,7 @@ FORMAT Null;
 현재 세션 또는 쿼리의 암시적 시간대를 설정합니다.
 암시적 시간대는 명시적으로 시간대가 지정되지 않은 DateTime/DateTime64 유형의 값에 적용되는 시간대입니다.
 이 설정은 전역으로 구성된(서버 수준) 암시적 시간대보다 우선합니다.
-값이 &#39;&#39; (빈 문자열)이면 현재 세션 또는 쿼리의 암시적 시간대는 [서버 시간대](/ko/reference/settings/server-settings/settings#timezone)와 같습니다.
+값이 &#39;&#39; (빈 문자열)이면 현재 세션 또는 쿼리의 암시적 시간대는 [서버 시간대](/ko/reference/settings/server-settings/settings/other#timezone)와 같습니다.
 
 함수 `timeZone()` 및 `serverTimeZone()`을 사용하여 세션 시간대와 서버 시간대를 확인할 수 있습니다.
 
@@ -1436,7 +1436,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 **관련 항목**
 
-* [timezone](/ko/reference/settings/server-settings/settings#timezone)
+* [timezone](/ko/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

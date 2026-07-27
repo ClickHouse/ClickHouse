@@ -1,6 +1,6 @@
 ---
 description: 'Документация по ALTER'
-sidebarTitle: 'ALTER'
+sidebarTitle: 'Обзор'
 slug: /sql-reference/statements/alter/
 title: 'ALTER'
 doc_type: 'reference'
@@ -73,11 +73,11 @@ doc_type: 'reference'
 
 Для нереплицируемых таблиц все запросы `ALTER` выполняются синхронно. Для реплицируемых таблиц запрос лишь добавляет в `ZooKeeper` инструкции для соответствующих действий, а сами действия выполняются как можно скорее. Однако запрос может ждать завершения этих действий на всех репликах.
 
-Для запросов `ALTER`, создающих мутации (например, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` и другие), синхронность определяется настройкой [mutations&#95;sync](/ru/reference/settings/session-settings#mutations_sync).
+Для запросов `ALTER`, создающих мутации (например, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC` и другие), синхронность определяется настройкой [mutations&#95;sync](/ru/reference/settings/session-settings/mutations#mutations_sync).
 
-Для других запросов `ALTER`, которые изменяют только метаданные, можно использовать настройку [alter&#95;sync](/ru/reference/settings/session-settings#alter_sync), чтобы настроить ожидание.
+Для других запросов `ALTER`, которые изменяют только метаданные, можно использовать настройку [alter&#95;sync](/ru/reference/settings/session-settings/alter#alter_sync), чтобы настроить ожидание.
 
-С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят все запросы `ALTER`.
+С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят все запросы `ALTER`.
 
 <Note>
   Для всех запросов `ALTER`: если `alter_sync = 2` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.

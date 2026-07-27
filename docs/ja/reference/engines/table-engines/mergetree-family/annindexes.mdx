@@ -36,7 +36,7 @@ LIMIT <N>
 
 厳密ベクトル検索は、上記の SELECT クエリをそのまま実行することで行えます。
 このようなクエリの実行時間は、一般に格納されているベクトルの数とその次元、つまり配列要素数に比例します。
-また、ClickHouse はすべてのベクトルを総当たりでスキャンするため、実行時間はクエリで使用されるスレッド数にも依存します ([max&#95;threads](/ja/reference/settings/session-settings#max_threads) 設定を参照) 。
+また、ClickHouse はすべてのベクトルを総当たりでスキャンするため、実行時間はクエリで使用されるスレッド数にも依存します ([max&#95;threads](/ja/reference/settings/session-settings/max-threads#max_threads) 設定を参照) 。
 
 <div id="exact-nearest-neighbor-search-example">
   ### 例
@@ -210,7 +210,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 </div>
 
 <Note>
-  ベクトル類似度索引を使用するには、設定 [compatibility](/ja/reference/settings/session-settings) を `''` (デフォルト値) にするか、`'25.1'` 以降に設定する必要があります。
+  ベクトル類似度索引を使用するには、設定 [compatibility](/ja/reference/settings/session-settings/compatibility#compatibility) を `''` (デフォルト値) にするか、`'25.1'` 以降に設定する必要があります。
 </Note>
 
 ベクトル類似度索引は、次の形式のSELECTクエリをサポートしています：
@@ -219,7 +219,7 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 WITH [...] AS reference_vector
 SELECT [...]
 FROM table
-WHERE [...] -- WHERE句は省略可能
+WHERE [...] -- a WHERE clause is optional
 ORDER BY <DistanceFunction>(vectors, reference_vector)
 LIMIT <N>
 ```
@@ -227,12 +227,12 @@ LIMIT <N>
 ClickHouseのクエリオプティマイザーは、上記のクエリテンプレートとの照合を試み、利用可能なベクトル類似度索引を活用します。
 クエリがベクトル類似度索引を使用できるのは、SELECTクエリの距離関数と索引定義の距離関数が一致する場合に限ります。
 
-上級ユーザーは、設定 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/ja/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (HNSWハイパーパラメーター &quot;ef&#95;search&quot; とも呼ばれます) にカスタム値を指定することで、検索時の候補リストのサイズを調整できます (例：`SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
+上級ユーザーは、設定 [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/ja/reference/settings/session-settings/other#hnsw_candidate_list_size_for_search) (HNSWハイパーパラメーター &quot;ef&#95;search&quot; とも呼ばれます) にカスタム値を指定することで、検索時の候補リストのサイズを調整できます (例：`SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`) 。
 この設定のデフォルト値は 256 であり、大多数のユースケースで適切に機能します。
 設定値を大きくするほど精度は向上しますが、その分パフォーマンスは低下します。
 
 クエリがベクトル類似度索引を使用できる場合、ClickHouse は SELECT クエリで指定された LIMIT `<N>` が妥当な範囲内にあるかを確認します。
-具体的には、`<N>` が設定 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/ja/reference/settings/session-settings#max_limit_for_vector_search_queries) の値 (デフォルト値は 100) を超えている場合、エラーが返されます。
+具体的には、`<N>` が設定 [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/ja/reference/settings/session-settings/max#max_limit_for_vector_search_queries) の値 (デフォルト値は 100) を超えている場合、エラーが返されます。
 LIMIT の値が大きすぎると検索が遅くなる可能性があり、通常は使用方法の誤りを示しています。
 
 SELECT クエリがベクトル類似度索引を使用しているかどうかを確認するには、クエリの先頭に `EXPLAIN indexes = 1` を追加します。
@@ -251,7 +251,7 @@ LIMIT 10;
 返す可能性があります
 
 ```result
-┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
  1. │ Expression (Project names)                                                                      │
  2. │   Limit (preliminary LIMIT (without OFFSET))                                                    │
  3. │     Sorting (Sorting for ORDER BY)                                                              │
@@ -271,15 +271,15 @@ LIMIT 10;
 ```
 
 この例では、次元数1536の[dbpediaデータセット](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M)のベクトル100万件が575個のグラニュールに格納されており、1グラニュールあたり約1.7k行になります。
-クエリは10個の近傍を求めており、ベクトル類似度インデックスはそれら10個の近傍を10個の別々のグラニュールで見つけます。
+クエリは10個の近傍を求めており、ベクトル類似度索引はそれら10個の近傍を10個の別々のグラニュールで見つけます。
 これら10個のグラニュールはクエリ実行時に読み取られます。
 
 出力に `Skip` およびベクトル索引の名前とタイプ (この例では `idx` と `vector_similarity`) が含まれている場合、ベクトル類似度索引が使用されています。
-この場合、ベクトル類似度索引は4つのgranuleのうち2つ、つまりデータの50%をスキップしました。
-スキップできるgranuleが多いほど、索引の使用効率が向上します。
+この場合、ベクトル類似度索引は4つのグラニュールのうち2つ、つまりデータの50%をスキップしました。
+スキップできるグラニュールが多いほど、索引の使用効率が向上します。
 
 <Tip>
-  索引の使用を強制するには、設定 [force&#95;data&#95;skipping&#95;indexes](/ja/reference/settings/session-settings#force_data_skipping_indices) を指定して SELECT クエリを実行できます (設定値として索引名を指定します) 。
+  索引の使用を強制するには、設定 [force&#95;data&#95;skipping&#95;indices](/ja/reference/settings/session-settings/force#force_data_skipping_indices) を指定して SELECT クエリを実行できます (設定値として索引名を指定します) 。
 </Tip>
 
 **ポストフィルタリングとプレフィルタリング**
@@ -288,10 +288,10 @@ LIMIT 10;
 ClickHouse はこれらのフィルタ条件を、ポストフィルタリングまたはプリフィルタリングの戦略で評価します。
 どちらの戦略も、フィルタが評価される順序を決定するものです。
 
-* ポストフィルタリングでは、まずベクトル類似度索引が評価され、その後 ClickHouse が `WHERE` 句で指定された追加のフィルタを評価します。
-* 事前フィルタリングとは、フィルタの評価順序が通常とは逆になることを意味します。
+* ポストフィルタリングとは、まずベクトル類似度索引を評価し、その後で ClickHouse が `WHERE` 句で指定された追加のフィルタを評価することを意味します。
+* プリフィルタリングとは、フィルタの評価順序がその逆であることを意味します。
 
-これらの戦略にはそれぞれ異なるトレードオフがあります。
+これらの戦略には、それぞれ異なるトレードオフがあります。
 
 * ポストフィルタリングの一般的な問題は、`LIMIT <N>` 句で要求した行数より少ない結果しか返されない可能性があることです。これは、ベクトル類似度索引が返した結果行のうち1行以上が追加のフィルタを満たさない場合に発生します。
 * プリフィルタリングは、一般には未解決の問題です。一部の特化型ベクトルデータベースはプリフィルタリングのアルゴリズムを提供していますが、ほとんどのリレーショナルデータベース (ClickHouse を含む) では、正確な近傍探索、つまり索引を使わない総当たりスキャンにフォールバックします。
@@ -334,7 +334,7 @@ ClickHouse は、2025 年のものを除くすべてのパーティションを�
 
 ポストフィルタリングとプリフィルタリングをより細かく制御するには、2 つの設定を使用できます。
 
-設定 [vector&#95;search&#95;filter&#95;strategy](/ja/reference/settings/session-settings#vector_search_filter_strategy) (デフォルト: 上記のヒューリスティックを実装する `auto`) は `prefilter` に設定できます。
+設定 [vector&#95;search&#95;filter&#95;strategy](/ja/reference/settings/session-settings/vector-search#vector_search_filter_strategy) (デフォルト: 上記のヒューリスティックを実装する `auto`) は `prefilter` に設定できます。
 これは、追加のフィルタ条件の選択性が極めて高い場合に、プリフィルタリングを強制するのに役立ちます。
 たとえば、次のクエリはプリフィルタリングの恩恵を受ける可能性があります。
 
@@ -349,7 +349,7 @@ LIMIT 10
 2ドル未満の本がごくわずかしかないとすると、ポストフィルタリングでは 0 行しか返らない可能性があります。これは、ベクトル索引から返される上位 10 件の一致結果がすべて 2 ドルを超えている可能性があるためです。
 プリフィルタリングを強制すると (クエリに `SETTINGS vector_search_filter_strategy = 'prefilter'` を追加) 、ClickHouse はまず価格が 2 ドル未満の本をすべて見つけ、その後、見つかった本に対して総当たりのベクトル検索を実行します。
 
-上記の問題を解決する別の方法として、[vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings#vector_search_index_fetch_multiplier) (デフォルト: `1.0`、最大: `1000.0`) を `1.0` より大きい値 (たとえば `2.0`) に設定することもできます。
+上記の問題を解決する別の方法として、[vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier) (デフォルト: `1.0`、最大: `1000.0`) を `1.0` より大きい値 (たとえば `2.0`) に設定することもできます。
 ベクトル索引から取得する最近傍の数はこの設定値に応じて増加し、その後、それらの行に追加のフィルタが適用されて LIMIT 件の行が返されます。
 たとえば、乗数を `3.0` にして再度クエリできます。
 
@@ -366,7 +366,7 @@ ClickHouse は各パートのベクトル索引から 3.0 x 10 = 30 件の最近
 返されるのは、そのうち最も近い 10 件の近傍のみです。
 `vector_search_index_fetch_multiplier` を設定することでこの問題を軽減できますが、極端な場合 (WHERE 条件の選択性が非常に高い場合) には、要求した N 行より少ない行しか返されない可能性が依然としてあります。
 
-**再スコアリング**
+**rescoring**
 
 ClickHouse のスキップ索引は通常、グラニュール単位でフィルタリングを行います。つまり、スキップ索引でのルックアップは (内部的には) 一致する可能性のあるグラニュールのリストを返し、後続のスキャンで読み込むデータ量を減らします。
 これはスキップ索引全般では有効に機能しますが、ベクトル類似度索引では &quot;granularity mismatch&quot; を引き起こします。
@@ -377,7 +377,7 @@ ClickHouse のスキップ索引は通常、グラニュール単位でフィル
 追加のフィルタによって候補が削られすぎる場合や、より高い再現率が必要な場合は、設定 `vector_search_index_fetch_multiplier` を増やして、ベクトル索引が rescoring 用により多くの候補行を返すようにしてください。
 
 そこで ClickHouse は、rescoring を無効にして、最も類似するベクトルとその距離を索引から直接返す最適化を提供しています。
-この最適化はデフォルトで有効になっています。設定 [vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings#vector_search_with_rescoring) を参照してください。
+この最適化はデフォルトで有効になっています。設定 [vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings/vector-search#vector_search_with_rescoring) を参照してください。
 大まかな仕組みとしては、ClickHouse は最も類似するベクトルとその距離を仮想カラム `_distance` として利用できるようにします。
 これを確認するには、`EXPLAIN header = 1` を付けてベクトル検索クエリを実行します。
 
@@ -442,14 +442,14 @@ CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE ve
 索引作成を高速化するには、次の手法を使用できます。
 
 まず、索引作成は並列化できます。
-索引作成スレッドの最大数は、サーバー設定[max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size)で設定できます。
+索引作成スレッドの最大数は、サーバー設定[max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/ja/reference/settings/server-settings/settings/max#max_build_vector_similarity_index_thread_pool_size)で設定できます。
 最適な性能を得るには、この設定値を CPU コア数に合わせて設定してください。
 
-次に、INSERT ステートメントを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings#materialize_skip_indexes_on_insert)を使用して、新たに挿入されたパーツでのスキッピング索引の作成を無効にできます。
+次に、INSERT ステートメントを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert)を使用して、新たに挿入されたパーツでのスキッピング索引の作成を無効にできます。
 そのようなパーツに対する SELECT クエリは、厳密検索にフォールバックします。
 挿入されたパーツはテーブル全体のサイズと比べて小さい傾向があるため、性能への影響はごくわずかであると見込まれます。
 
-3 つ目に、マージを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ja/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge)を使用して、マージ後のパーツでのスキッピング索引の作成を無効にできます。
+3 つ目に、マージを高速化するために、ユーザーはセッション設定[materialize&#95;skip&#95;indexes&#95;on&#95;merge](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge)を使用して、マージ後のパーツでのスキッピング索引の作成を無効にできます。
 これにより、ステートメント[ALTER TABLE [...] MATERIALIZE INDEX [...]](/ja/reference/statements/alter/skipping-index#materialize-index)と組み合わせて、ベクトル類似度索引のライフサイクルを明示的に制御できます。
 たとえば、すべてのデータが取り込まれるまで、または週末のようにシステム負荷が低い時間帯まで、索引作成を遅らせることができます。
 
@@ -458,7 +458,7 @@ CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE ve
 SELECT クエリでベクトル類似度索引を使用するには、それをメインメモリに読み込む必要があります。
 同じベクトル類似度索引がメインメモリに繰り返し読み込まれるのを防ぐため、ClickHouse はこの種の索引専用のインメモリ cache を提供しています。
 この cache が大きいほど、不要な読み込みは少なくなります。
-cache の最大サイズは、サーバー設定[vector&#95;similarity&#95;index&#95;cache&#95;size](/ja/reference/settings/server-settings/settings#vector_similarity_index_cache_size)で設定できます。
+cache の最大サイズは、サーバー設定[vector&#95;similarity&#95;index&#95;cache&#95;size](/ja/reference/settings/server-settings/settings/vector-similarity#vector_similarity_index_cache_size)で設定できます。
 デフォルトでは、cache は最大 5 GB まで拡張できます。
 
 次のログメッセージ (`system.text_log`) は、ベクトル類似度索引が読み込まれていることを示します。
@@ -518,7 +518,7 @@ ClickHouse のベクトル索引は、以下の量子化オプションをサポ
 ただし、ほとんどのデータセットでは、半精度の brain float 量子化 (`bf16`) による精度低下はごくわずかであるため、ベクトル類似度索引ではこの量子化手法がデフォルトで使用されます。
 4分の1精度 (`i8`) およびバイナリ (`b1`) の量子化では、ベクトル検索の精度が目に見えて低下します。
 これら 2 つの量子化は、ベクトル類似度索引のサイズが利用可能な DRAM 容量を大幅に上回る場合にのみ推奨します。
-この場合は、精度を向上させるために、rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings#vector_search_index_fetch_multiplier)、[vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings#vector_search_with_rescoring)) も有効にすることを推奨します。
+この場合は、精度を向上させるために、rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/ja/reference/settings/session-settings/vector-search#vector_search_index_fetch_multiplier)、[vector&#95;search&#95;with&#95;rescoring](/ja/reference/settings/session-settings/vector-search#vector_search_with_rescoring)) も有効にすることを推奨します。
 バイナリ量子化を推奨するのは、1) 正規化された埋め込み (つまりベクトル長 = 1。OpenAI のモデルは通常正規化されています) であり、かつ 2) 距離関数としてコサイン距離を使用する場合に限られます。
 バイナリ量子化では、内部的にハミング距離を使用して近接グラフを構築し、検索を行います。
 rescoring のステップでは、テーブルに格納された元のフル精度ベクトルを使用して、コサイン距離により最近傍を特定します。

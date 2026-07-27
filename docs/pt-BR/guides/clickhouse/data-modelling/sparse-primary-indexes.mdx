@@ -355,7 +355,7 @@ As primeiras 8192 linhas (com base na ordem física em disco) (seus valores de c
 
     Portanto, todos os grânulos (exceto o último) da nossa tabela de exemplo têm o mesmo tamanho.
 
-  * Para tabelas com granularidade adaptativa do índice (a granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings#index_granularity_bytes)), o tamanho de alguns grânulos pode ser menor que 8192 linhas, dependendo do tamanho dos dados das linhas.
+  * Para tabelas com granularidade adaptativa do índice (a granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)), o tamanho de alguns grânulos pode ser menor que 8192 linhas, dependendo do tamanho dos dados das linhas.
 
   * Marcamos alguns valores de coluna das nossas colunas de chave primária (`UserID`, `URL`) em laranja.
     Esses valores de coluna marcados em laranja são os valores das colunas de chave primária da primeira linha de cada grânulo.
@@ -392,7 +392,7 @@ No total, o índice tem 1083 entradas para nossa tabela com 8,87 milhões de lin
 <Accordion title="Inspecionando o conteúdo do índice primário">
   Em um cluster ClickHouse autogerenciado, podemos usar a [função de tabela file](/pt-BR/reference/functions/table-functions/file) para inspecionar o conteúdo do índice primário da nossa tabela de exemplo.
 
-  Para isso, primeiro precisamos copiar o arquivo do índice primário para o [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings#user_files_path) de um nó do cluster em execução:
+  Para isso, primeiro precisamos copiar o arquivo do índice primário para o [user&#95;files&#95;path](/pt-BR/reference/settings/server-settings/settings/user#user_files_path) de um nó do cluster em execução:
 
   **Etapa 1: Obter o caminho da part que contém o arquivo do índice primário**
 
@@ -515,7 +515,7 @@ Processed 8.19 thousand rows,
 
 A saída do cliente ClickHouse agora mostra que, em vez de fazer uma varredura completa da tabela, apenas 8,19 mil linhas foram processadas pelo ClickHouse.
 
-Se o <a href="/pt-BR/reference/settings/server-settings/settings#logger" target="_blank">logging de trace</a> estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse estava executando uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> nas 1083 marcas do índice UserID, para identificar grânulos que possivelmente podem conter linhas com o valor `749927693` na coluna UserID. Isso requer 19 passos, com complexidade de tempo média de `O(log2 n)`:
+Se o <a href="/pt-BR/reference/settings/server-settings/settings/other#logger" target="_blank">logging de trace</a> estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse estava executando uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">busca binária</a> nas 1083 marcas do índice UserID, para identificar grânulos que possivelmente podem conter linhas com o valor `749927693` na coluna UserID. Isso requer 19 passos, com complexidade de tempo média de `O(log2 n)`:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -632,13 +632,13 @@ Cada entrada do arquivo de marcação para uma coluna específica armazena duas 
 Todas as 8192 linhas pertencentes ao grânulo descompactado localizado são então transmitidas ao ClickHouse para processamento adicional.
 
 <Note>
-  * Para tabelas com [formato wide](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) e sem [granularidade adaptativa do índice](/pt-BR/resources/changelogs/oss/2019#experimental-features-1), o ClickHouse usa arquivos de marcação `.mrk`, como mostrado acima, que contêm entradas com dois endereços de 8 bytes por entrada. Essas entradas são localizações físicas de grânulos que têm todos o mesmo tamanho.
+  * Para tabelas com [formato wide](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) e sem [adaptive index granularity](/pt-BR/resources/changelogs/oss/2019#experimental-features-1), o ClickHouse usa arquivos de marcação `.mrk`, como mostrado acima, que contêm entradas com dois endereços de 8 bytes por entrada. Essas entradas são localizações físicas de grânulos, todos com o mesmo tamanho.
 
-  A granularidade do índice é adaptativa por [padrão](/pt-BR/reference/settings/merge-tree-settings#index_granularity_bytes), mas, para a nossa tabela de exemplo, desativamos a granularidade adaptativa do índice (para simplificar as discussões neste guia e também para tornar os diagramas e os resultados reproduzíveis). Nossa tabela usa formato wide porque o tamanho dos dados é maior que [min&#95;bytes&#95;for&#95;wide&#95;part](/pt-BR/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (que é 10 MB por padrão para clusters autogerenciados).
+  A granularidade do índice é adaptativa por [default](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes), mas, para a nossa tabela de exemplo, desativamos a granularidade adaptativa do índice (para simplificar as discussões neste guia, bem como tornar os diagramas e os resultados reproduzíveis). Nossa tabela está usando formato wide porque o tamanho dos dados é maior que [min&#95;bytes&#95;for&#95;wide&#95;part](/pt-BR/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (que é 10 MB por padrão para clusters autogerenciados).
 
   * Para tabelas com formato wide e com granularidade adaptativa do índice, o ClickHouse usa arquivos de marcação `.mrk2`, que contêm entradas semelhantes às dos arquivos de marcação `.mrk`, mas com um terceiro valor adicional por entrada: o número de linhas do grânulo ao qual a entrada atual está associada.
 
-  * Para tabelas com [formato compact](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), o ClickHouse usa arquivos de marcação `.mrk3`.
+  * Para tabelas com [compact format](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage), o ClickHouse usa arquivos de marcação `.mrk3`.
 </Note>
 
 <Info>
@@ -739,7 +739,7 @@ Processed 8.81 million rows,
 
 A saída do cliente indica que o ClickHouse quase executou uma varredura completa da tabela, apesar de a [coluna URL fazer parte da chave primária composta](#a-table-with-a-primary-key)! O ClickHouse lê 8,81 milhões de linhas das 8,87 milhões de linhas da tabela.
 
-Se [trace&#95;logging](/pt-BR/reference/settings/server-settings/settings#logger) estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse usou uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">busca por exclusão genérica</a> nas 1083 marcas de índice de URL para identificar os grânulos que possivelmente podem conter linhas com um valor na coluna URL igual a &quot;http://public&#95;search&quot;:
+Se [trace&#95;logging](/pt-BR/reference/settings/server-settings/settings/other#logger) estiver habilitado, o arquivo de log do servidor ClickHouse mostra que o ClickHouse usou uma <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">busca por exclusão genérica</a> nas 1083 marcas de índice de URL para identificar os grânulos que possivelmente podem conter linhas com um valor na coluna URL igual a &quot;http://public&#95;search&quot;:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',

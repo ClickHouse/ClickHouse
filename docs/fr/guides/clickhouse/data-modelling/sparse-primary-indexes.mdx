@@ -344,7 +344,7 @@ Cela signifie qu&#39;au lieu de lire des lignes individuelles, ClickHouse lit to
 Le schéma suivant montre comment les (valeurs de colonnes des) 8,87 millions de lignes de notre table
 sont organisées en 1083 granules, du fait que l&#39;instruction DDL de la table contient le paramètre `index_granularity` (défini sur sa valeur par défaut de 8192).
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="Indices primaires creux 02" />
+<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="index primaire clairsemé 02" />
 
 Les 8192 premières lignes (d&#39;après l&#39;ordre physique sur le disque) — et leurs valeurs de colonnes — appartiennent logiquement au granule 0, puis les 8192 lignes suivantes (et leurs valeurs de colonnes) appartiennent au granule 1, et ainsi de suite.
 
@@ -355,7 +355,7 @@ Les 8192 premières lignes (d&#39;après l&#39;ordre physique sur le disque) —
 
     Par conséquent, tous les granules (sauf le dernier) de notre table d&#39;exemple ont la même taille.
 
-  * Pour les tables avec une granularité d&#39;index adaptative (la granularité d&#39;index est adaptative par [défaut](/fr/reference/settings/merge-tree-settings#index_granularity_bytes)), la taille de certains granules peut être inférieure à 8192 lignes, selon la taille des données de ligne.
+  * Pour les tables avec une granularité d&#39;index adaptative (la granularité d&#39;index est adaptative par [défaut](/fr/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)), la taille de certains granules peut être inférieure à 8192 lignes, selon la taille des données de ligne.
 
   * Nous avons marqué en orange certaines valeurs de colonnes de nos colonnes de clé primaire (`UserID`, `URL`).
     Ces valeurs de colonnes marquées en orange sont les valeurs des colonnes de clé primaire de la première ligne de chaque granule.
@@ -392,7 +392,7 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
 <Accordion title="Inspection du contenu de l’index primaire">
   Sur un cluster ClickHouse autogéré, nous pouvons utiliser la [fonction de table file](/fr/reference/functions/table-functions/file) pour inspecter le contenu de l’index primaire de notre table d’exemple.
 
-  Pour cela, nous devons d’abord copier le fichier d’index primaire dans le [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings#user_files_path) d’un nœud du cluster en cours d’exécution :
+  Pour cela, nous devons d’abord copier le fichier d’index primaire dans le [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings/user#user_files_path) d’un nœud du cluster en cours d’exécution :
 
   **Étape 1 : obtenir le chemin de la part qui contient le fichier d’index primaire**
 
@@ -515,7 +515,7 @@ Processed 8.19 thousand rows,
 
 La sortie du client ClickHouse montre maintenant qu’au lieu d’effectuer un parcours complet de la table, seulement 8 190 lignes ont été acheminées vers ClickHouse.
 
-Si la <a href="/fr/reference/settings/server-settings/settings#logger" target="_blank">journalisation de trace</a> est activée, le fichier journal du serveur ClickHouse montre que ClickHouse effectuait une <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">recherche dichotomique</a> sur les 1 083 index marks de UserID, afin d’identifier les granules susceptibles de contenir des lignes dont la valeur de la colonne UserID est `749927693`. Cela nécessite 19 étapes, avec une complexité temporelle moyenne de `O(log2 n)` :
+Si la <a href="/fr/reference/settings/server-settings/settings/other#logger" target="_blank">journalisation de trace</a> est activée, le fichier journal du serveur ClickHouse montre que ClickHouse effectuait une <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">recherche binaire</a> sur les 1 083 index mark de UserID, afin d’identifier les granules susceptibles de contenir des lignes dont la valeur de la colonne UserID est `749927693`. Cela nécessite 19 étapes, avec une complexité temporelle moyenne de `O(log2 n)` :
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -617,7 +617,7 @@ Le schéma suivant montre les trois fichiers de marks `UserID.mrk`, `URL.mrk` et
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Index primaires clairsemés 05" />
 
-Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des index marks numérotées à partir de 0.
+Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des index mark numérotés à partir de 0.
 
 De la même manière, un fichier de marks est lui aussi un fichier tableau plat non compressé (*.mrk) contenant des marques numérotées à partir de 0.
 
@@ -632,9 +632,9 @@ Chaque entrée du fichier de marks pour une colonne donnée stocke deux emplacem
 Les 8 192 lignes appartenant au granule décompressé ainsi localisé sont ensuite chargées dans ClickHouse pour un traitement ultérieur.
 
 <Note>
-  * Pour les tables au [format wide](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) et sans [granularité d’index adaptative](/fr/resources/changelogs/oss/2019#experimental-features-1), ClickHouse utilise des fichiers de marks `.mrk` comme illustré ci-dessus, qui contiennent des entrées avec deux adresses de 8 octets par entrée. Ces entrées correspondent aux emplacements physiques de granules qui ont tous la même taille.
+  * Pour les tables au [format wide](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) et sans [granularité d’index adaptative](/fr/resources/changelogs/oss/2019#experimental-features-1), ClickHouse utilise des fichiers de marks `.mrk`, comme illustré ci-dessus, qui contiennent des entrées avec deux adresses de 8 octets par entrée. Ces entrées correspondent aux emplacements physiques de granules qui ont tous la même taille.
 
-  La granularité d’index est adaptative par [default](/fr/reference/settings/merge-tree-settings#index_granularity_bytes), mais pour notre table d’exemple, nous avons désactivé la granularité d’index adaptative (afin de simplifier les explications de ce guide et de rendre les schémas ainsi que les résultats reproductibles). Notre table utilise le format wide, car la taille des données est supérieure à [min&#95;bytes&#95;for&#95;wide&#95;part](/fr/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (qui vaut 10 Mo par défaut pour les clusters autogérés).
+  La granularité d’index est adaptative [par défaut](/fr/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes), mais pour notre table d’exemple, nous avons désactivé la granularité d’index adaptative (afin de simplifier les explications dans ce guide, ainsi que de rendre les schémas et les résultats reproductibles). Notre table utilise le format wide parce que la taille des données est supérieure à [min&#95;bytes&#95;for&#95;wide&#95;part](/fr/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (qui est de 10 Mo par défaut pour les clusters autogérés).
 
   * Pour les tables au format wide avec granularité d’index adaptative, ClickHouse utilise des fichiers de marks `.mrk2`, qui contiennent des entrées similaires à celles des fichiers de marks `.mrk`, mais avec une troisième valeur supplémentaire par entrée : le nombre de lignes du granule auquel l’entrée courante est associée.
 
@@ -644,7 +644,7 @@ Les 8 192 lignes appartenant au granule décompressé ainsi localisé sont ens
 <Info>
   **Pourquoi les fichiers de marks**
 
-  Pourquoi l’index primaire ne contient-il pas directement les emplacements physiques des granules correspondant aux index marks ?
+  Pourquoi l’index primaire ne contient-il pas directement les emplacements physiques des granules correspondant aux index mark ?
 
   Parce qu’à l’échelle très importante pour laquelle ClickHouse est conçu, il est essentiel d’être très efficace en termes d’utilisation du disque et de la mémoire.
 
@@ -689,14 +689,14 @@ En parallèle, ClickHouse fait la même chose pour le granule 176 du fichier de 
   ### Les colonnes de clé secondaires peuvent être inefficaces… ou non
 </div>
 
-Lorsqu’une requête filtre sur une colonne qui fait partie d’une clé composée et qu’il s’agit de la première colonne de clé, [ClickHouse exécute alors l’algorithme de recherche binaire sur les index marks de la colonne de clé](#the-primary-index-is-used-for-selecting-granules).
+Lorsqu’une requête filtre sur une colonne qui fait partie d’une clé composée et qu’il s’agit de la première colonne de clé, [ClickHouse exécute alors l’algorithme de recherche binaire sur les marques d’index de la colonne de clé](#the-primary-index-is-used-for-selecting-granules).
 
 Mais que se passe-t-il lorsqu’une requête filtre sur une colonne qui fait partie d’une clé composée, mais qui n’est pas la première colonne de clé ?
 
 <Note>
   Nous examinons un scénario dans lequel une requête ne filtre explicitement pas sur la première colonne de clé, mais sur une colonne de clé secondaire.
 
-  Lorsqu’une requête filtre à la fois sur la première colonne de clé et sur n’importe laquelle des colonnes de clé suivantes, ClickHouse exécute une recherche binaire sur les index marks de la première colonne de clé.
+  Lorsqu’une requête filtre à la fois sur la première colonne de clé et sur n’importe laquelle des colonnes de clé suivantes, ClickHouse exécute une recherche binaire sur les marques d’index de la première colonne de clé.
 </Note>
 
 <br />
@@ -739,7 +739,7 @@ Processed 8.81 million rows,
 
 La sortie du client indique que ClickHouse a pratiquement effectué un parcours complet de la table, bien que la [colonne URL fasse partie de la clé primaire composée](#a-table-with-a-primary-key) ! ClickHouse lit 8,81 millions de lignes sur les 8,87 millions de lignes de la table.
 
-Si [trace&#95;logging](/fr/reference/settings/server-settings/settings#logger) est activé, le fichier journal du serveur ClickHouse montre que ClickHouse a utilisé une <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">recherche générique par exclusion</a> sur les 1083 marques d’index URL afin d’identifier les granules susceptibles de contenir des lignes dont la valeur de la colonne URL est &quot;http://public&#95;search&quot; :
+Si [trace&#95;logging](/fr/reference/settings/server-settings/settings/other#logger) est activé, le fichier journal du serveur ClickHouse montre que ClickHouse a utilisé une <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">recherche générique par exclusion</a> sur les 1083 marques d’index URL afin d’identifier les granules susceptibles de contenir des lignes dont la valeur de la colonne URL est &quot;http://public&#95;search&quot; :
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -757,7 +757,7 @@ Il en résulte que 8,81 millions de lignes sont transmises au moteur ClickHouse
 
 Cependant, comme nous le verrons plus loin, seules 39 des 1 076 granules sélectionnées contiennent effectivement des lignes correspondantes.
 
-Bien que l’index primaire basé sur la clé primaire composite (UserID, URL) ait été très utile pour accélérer les requêtes filtrant les lignes sur une valeur UserID spécifique, il n’apporte pas d’aide significative pour accélérer la requête qui filtre les lignes sur une valeur URL spécifique.
+Bien que l’index primaire basé sur la clé primaire composée (UserID, URL) ait été très utile pour accélérer les requêtes filtrant les lignes sur une valeur UserID spécifique, il n’apporte pas d’aide significative pour accélérer la requête qui filtre les lignes sur une valeur URL spécifique.
 
 La raison en est que la colonne URL n’est pas la première colonne clé et que, par conséquent, ClickHouse utilise un algorithme de recherche par exclusion générique (au lieu d’une recherche binaire) sur les marques d’index de la colonne URL, et **l’efficacité de cet algorithme dépend de la différence de cardinalité** entre la colonne URL et la colonne clé qui la précède, UserID.
 

@@ -89,7 +89,7 @@ Les paramètres peuvent être configurés à différents niveaux : pour un comp
 1. Paramètres du compte utilisateur.
 2. Les paramètres des rôles par défaut du compte utilisateur. Si un paramètre est configuré dans plusieurs rôles, l’ordre d’application du paramètre n’est pas défini.
 3. Les paramètres issus des profils de paramètres attribués à un utilisateur ou à ses rôles par défaut. Si un paramètre est configuré dans plusieurs profils, l’ordre d’application du paramètre n’est pas défini.
-4. Paramètres appliqués par défaut à l’ensemble du serveur ou à partir du [profil par défaut](/fr/reference/settings/server-settings/settings#default_profile).
+4. Paramètres appliqués par défaut à l’ensemble du serveur ou à partir du [profil par défaut](/fr/reference/settings/server-settings/settings/default#default_profile).
 
 <div id="role-management">
   ### Rôle
@@ -165,16 +165,16 @@ Requêtes de gestion :
 * [SHOW QUOTAS](/fr/reference/statements/show#show-quotas)
 
 <div id="enabling-access-control">
-  ### Activation du contrôle d’accès et de la gestion des comptes via SQL
+  ### Activation du contrôle d’accès et de la gestion des comptes pilotés par SQL
 </div>
 
 * Configurez un répertoire pour stocker la configuration.
 
-  ClickHouse stocke les configurations des entités d’accès dans le dossier défini par le paramètre de configuration du serveur [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings#access_control_path).
+  ClickHouse stocke les configurations des entités d’accès dans le dossier défini par le paramètre de configuration du serveur [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings/access-control#access_control_path).
 
-* Activez le contrôle d’accès et la gestion des comptes via SQL pour au moins un compte utilisateur.
+* Activez le contrôle d’accès et la gestion des comptes pilotés par SQL pour au moins un compte utilisateur.
 
-  Par défaut, le contrôle d’accès et la gestion des comptes via SQL sont désactivés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le fichier de configuration `users.xml` et définir à 1 les valeurs des paramètres [`access_management`](/fr/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` et `show_named_collections_secrets`.
+  Par défaut, le contrôle d’accès et la gestion des comptes pilotés par SQL sont désactivés pour tous les utilisateurs. Vous devez configurer au moins un utilisateur dans le fichier de configuration `users.xml` et définir à 1 les valeurs des paramètres [`access_management`](/fr/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` et `show_named_collections_secrets`.
 
 <div id="defining-sql-users-and-roles">
   ## Définir les utilisateurs et les rôles SQL

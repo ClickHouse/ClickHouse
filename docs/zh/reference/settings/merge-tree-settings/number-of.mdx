@@ -20,7 +20,7 @@ import VersionHistory from "/snippets/zh/components/VersionHistory/VersionHistor
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
 当池中的空闲条目数少于指定数量时，不执行
-part mutations。这样可以为常规合并保留空闲线程，
+part 变更。这样可以为常规合并保留空闲线程，
 并避免出现“parts 过多”错误。
 
 可能的值：
@@ -30,9 +30,9 @@ part mutations。这样可以为常规合并保留空闲线程，
 **用法**
 
 `number_of_free_entries_in_pool_to_execute_mutation` 设置的值
-应小于 [background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_pool_size) 的值
+应小于 [background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_pool_size) 的值
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio)。
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio)。
   否则，ClickHouse 将抛出异常。
 
 <div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
@@ -51,9 +51,9 @@ part mutations。这样可以为常规合并保留空闲线程，
 
 `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
 设置的值应小于
-[background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings#background_pool_size)
+[background&#95;pool&#95;size](/zh/reference/settings/server-settings/settings/background#background_pool_size)
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) 的值。
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/zh/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio) 的值。
   否则，ClickHouse 会抛出异常。
 
 <div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">

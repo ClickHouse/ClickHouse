@@ -65,7 +65,7 @@ herramienta de visualización o analítica sin materializar antes el conjunto de
 Para transmitir el resultado, envíe la consulta a través de la interfaz HTTP de ClickHouse con una
 solicitud `POST` y lea la respuesta como un flujo Arrow. Desactivamos la compresión
 de la salida Arrow mediante la opción
-[`output_format_arrow_compression_method`](/es/reference/settings/formats#output_format_arrow_compression_method)
+[`output_format_arrow_compression_method`](/es/reference/settings/formats/output-format#output_format_arrow_compression_method)
 para que los consumidores puedan decodificar los lotes directamente a medida que se reciben.
 
 La salida de `ArrowStream` es binaria sin procesar, así que, en lugar de imprimirla en la

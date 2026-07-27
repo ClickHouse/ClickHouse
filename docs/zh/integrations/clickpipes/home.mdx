@@ -46,6 +46,20 @@ ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以通过
 
 更多连接器将陆续加入 ClickPipes，更多信息请[联系我们](https://clickhouse.com/company/contact?loc=clickpipes)。
 
+<div id="aws-iam-database-authentication">
+  ## AWS IAM 数据库身份验证
+</div>
+
+ClickPipes 支持对 Amazon RDS 和 Aurora 使用 AWS IAM 数据库身份验证。具体配置因数据库引擎和 AWS 服务而异，因此请选择与您的数据库对应的源端设置指南：
+
+| 数据库引擎      | AWS 服务        | 设置指南                                                                                                       |
+| ---------- | ------------- | ---------------------------------------------------------------------------------------------------------- |
+| PostgreSQL | Amazon RDS    | [RDS for PostgreSQL](/zh/integrations/clickpipes/postgres/source/rds#iam-authentication)                      |
+| PostgreSQL | Amazon Aurora | [Aurora PostgreSQL-Compatible Edition](/zh/integrations/clickpipes/postgres/source/aurora#iam-authentication) |
+| MySQL      | Amazon RDS    | [RDS for MySQL](/zh/integrations/clickpipes/mysql/source/rds#iam-authentication)                              |
+| MySQL      | Amazon Aurora | [Aurora MySQL-Compatible Edition](/zh/integrations/clickpipes/mysql/source/aurora#iam-authentication)         |
+| MariaDB    | Amazon RDS    | [RDS for MariaDB](/zh/integrations/clickpipes/mysql/source/rds-maria#iam-authentication)                      |
+
 <div id="list-of-static-ips">
   ## 静态 IP 列表
 </div>
@@ -143,18 +157,18 @@ ClickPipes 提供了适用于大多数场景的合理默认设置。如果你的
   ### 对象存储 ClickPipes
 </div>
 
-| Setting                              | Default value | Description                                                                                                 |
-| ------------------------------------ | ------------- | ----------------------------------------------------------------------------------------------------------- |
-| `Max insert bytes`                   | 10 GB         | 单个插入批次中处理的字节数。                                                                                              |
-| `Max file count`                     | 100           | 单个插入批次中处理的最大文件数。                                                                                            |
-| `Max threads`                        | auto(3)       | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings#max_threads)。                                         |
-| `Max insert threads`                 | 1             | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings#max_insert_threads)。                                |
-| `Min insert block size bytes`        | 1 GB          | 可插入表的[块最小字节数](/zh/reference/settings/session-settings#min_insert_block_size_bytes)。                            |
-| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings#max_download_threads)。                                     |
-| `Object storage polling interval`    | 30 s          | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                              |
-| `Parallel distributed insert select` | 2             | [并行 Distributed insert select 设置](/zh/reference/settings/session-settings#parallel_distributed_insert_select)。 |
-| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings#parallel_view_processing)方式推送到已附加视图。                     |
-| `Use cluster function`               | true          | 是否在多个节点上并行处理文件。                                                                                             |
+| Setting                              | Default value | Description                                                                                                          |
+| ------------------------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10 GB         | 单个插入批次中处理的字节数。                                                                                                       |
+| `Max file count`                     | 100           | 单个插入批次中处理的最大文件数。                                                                                                     |
+| `Max threads`                        | auto(3)       | 用于文件处理的[最大并发线程数](/zh/reference/settings/session-settings/max-threads#max_threads)。                                      |
+| `Max insert threads`                 | 1             | 用于文件处理的[最大并发插入线程数](/zh/reference/settings/session-settings/max-insert#max_insert_threads)。                              |
+| `Min insert block size bytes`        | 1 GB          | 可插入表的[块最小字节数](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)。                          |
+| `Max download threads`               | 4             | [最大并发下载线程数](/zh/reference/settings/session-settings/max-download#max_download_threads)。                                 |
+| `Object storage polling interval`    | 30 s          | 配置将数据插入 ClickHouse 集群前的最长等待时间。                                                                                       |
+| `Parallel distributed insert select` | 2             | [并行 Distributed insert select 设置](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false         | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)方式推送到已附加视图。                     |
+| `Use cluster function`               | true          | 是否在多个节点上并行处理文件。                                                                                                      |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
 

@@ -22,8 +22,8 @@ doc_type: 'reference'
 Affiche le résultat d’une requête sous forme d’image PNG. C’est utile comme outil de visualisation intégré.
 
 La taille de l’image de sortie est définie par les paramètres
-[`output_format_image_width`](/fr/reference/settings/formats#output_format_image_width) et
-[`output_format_image_height`](/fr/reference/settings/formats#output_format_image_height)
+[`output_format_image_width`](/fr/reference/settings/formats/output-format#output_format_image_width) et
+[`output_format_image_height`](/fr/reference/settings/formats/output-format#output_format_image_height)
 (tous deux définis par défaut sur 1024). Les pixels non couverts par le résultat sont remplis de noir
 (en modes `RGB` et en niveaux de gris) ou de noir transparent (en mode `RGBA`).
 
@@ -95,7 +95,7 @@ SETTINGS output_format_image_width = 512, output_format_image_height = 512;
 </div>
 
 Par défaut, le format `PNG` écrit les octets bruts de l’image. Le paramètre
-[`output_format_image_terminal_mode`](/fr/reference/settings/formats#output_format_image_terminal_mode)
+[`output_format_image_terminal_mode`](/fr/reference/settings/formats/output-format#output_format_image_terminal_mode)
 fait plutôt afficher l’image directement dans le terminal au moyen d’un protocole d’image intégré :
 
 | Valeur            | Comportement                                                                                                                                            |

@@ -47,7 +47,7 @@ Están disponibles los siguientes ajustes:
   ## query_log
 </div>
 
-Configuración para registrar las consultas recibidas con la opción [log&#95;queries=1](/es/reference/settings/session-settings).
+Configuración para registrar las consultas recibidas con la opción [log&#95;queries=1](/es/reference/settings/session-settings/log-queries#log_queries).
 
 Las consultas se registran en la tabla [system.query&#95;log](/es/reference/system-tables/query_log), no en un archivo independiente. Puede cambiar el nombre de la tabla en el parámetro `table` (consulte más abajo).
 
@@ -146,7 +146,7 @@ Para desactivar la configuración `query_metric_log`, debe crear el siguiente ar
   ## query_thread_log
 </div>
 
-Configuración para registrar los hilos de las consultas recibidas con la configuración [log&#95;query&#95;threads=1](/es/reference/settings/session-settings#log_query_threads).
+Configuración para registrar los hilos de las consultas recibidas con la configuración [log&#95;query&#95;threads=1](/es/reference/settings/session-settings/log-query#log_query_threads).
 
 Las consultas se registran en la tabla [system.query&#95;thread&#95;log](/es/reference/system-tables/query_thread_log), no en un archivo aparte. Puede cambiar el nombre de la tabla en el parámetro `table` (consulte más abajo).
 
@@ -173,7 +173,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de h
   ## query_views_log
 </div>
 
-Configuración para registrar vistas (live, materialized, etc.) según las consultas recibidas con la configuración [log&#95;query&#95;views=1](/es/reference/settings/session-settings#log_query_views).
+Configuración para registrar vistas (live, materialized, etc.) según las consultas recibidas con la configuración [log&#95;query&#95;views=1](/es/reference/settings/session-settings/log-query#log_query_views).
 
 Las consultas se registran en la tabla [system.query&#95;views&#95;log](/es/reference/system-tables/query_views_log), no en un archivo aparte. Puede cambiar el nombre de la tabla mediante el parámetro `table` (consulte a continuación).
 

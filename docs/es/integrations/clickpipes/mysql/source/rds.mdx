@@ -11,6 +11,7 @@ integration:
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import { IAMAuthentication } from "/snippets/es/clickpipes/_iam_authentication.mdx";
 
 Esta guía paso a paso le muestra cómo configurar Amazon RDS MySQL para replicar datos en ClickHouse Cloud mediante [ClickPipe para MySQL](/es/integrations/clickpipes/mysql/index). Para consultas frecuentes sobre MySQL CDC, consulte la [página de preguntas frecuentes de MySQL](/es/integrations/clickpipes/mysql/faq).
 
@@ -140,13 +141,7 @@ Conéctese a su instancia de MySQL de RDS como usuario administrador y ejecute l
   ### Uso de la autenticación con IAM (opcional)
 </div>
 
-En lugar de una contraseña, puede autenticar al usuario de ClickPipes mediante el control de acceso basado en roles de AWS IAM. Cree el usuario de la siguiente manera y, a continuación, concédale los mismos privilegios de esquema y replicación que se muestran arriba:
-
-```sql
-CREATE USER 'clickpipes_iam_user' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
-```
-
-Consulta [autenticación de base de datos con AWS IAM (RDS/Aurora)](/es/integrations/clickpipes/postgres/auth) para ver todos los pasos necesarios para configurar el rol de IAM y la política que ClickPipes necesita para autenticarse de esta manera.
+<IAMAuthentication engine="mysql" service="rds" />
 
 <div id="configure-network-access">
   ## Configurar el acceso a la red

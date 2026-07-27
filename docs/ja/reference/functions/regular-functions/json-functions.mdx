@@ -2162,14 +2162,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 導入バージョン: v21.7.0
 
 値を JSON 表現にシリアライズします。さまざまなデータ型とネストされた構造をサポートしています。
-64 ビットの [整数](/ja/reference/data-types/int-uint) 以上 (`UInt64` や `Int128` など) は、デフォルトで引用符で囲まれます。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats#output_format_json_quote_64bit_integers) でこの動作を制御します。
-特殊な値 `NaN` と `inf` は `null` に置き換えられます。これらを表示するには、[output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats#output_format_json_quote_denormals) 設定を有効にします。
+64 ビットの [整数](/ja/reference/data-types/int-uint) 以上 (`UInt64` や `Int128` など) は、デフォルトで引用符で囲まれます。[output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers) でこの動作を制御します。
+特殊な値 `NaN` と `inf` は `null` に置き換えられます。これらを表示するには、[output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats/output-format#output_format_json_quote_denormals) 設定を有効にします。
 [Enum](/ja/reference/data-types/enum) 値をシリアライズする場合、この関数はその名前を出力します。
 
 関連項目:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ja/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ja/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **構文**
 

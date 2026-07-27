@@ -2444,7 +2444,7 @@ FORMAT PrettyCompactMonoBlock
 
 Introducido en: v23.6.0
 
-Devuelve la zona horaria del servidor, es decir, el valor de la opción [`timezone`](/es/reference/settings/server-settings/settings#timezone).
+Devuelve la zona horaria del servidor, es decir, el valor de la opción [`timezone`](/es/reference/settings/server-settings/settings/other#timezone).
 Si la función se ejecuta en el contexto de una tabla distribuida, genera una columna normal con valores correspondientes a cada segmento. De lo contrario, produce un valor constante.
 
 <Note>
@@ -3896,7 +3896,7 @@ Introducido en: v1.1.0
 Redondea una fecha o una fecha con hora al último día del mes.
 
 <Note>
-  El tipo de retorno puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -3938,7 +3938,7 @@ Introducido en: v23.5.0
 Redondea una fecha o fecha con hora hacia arriba, hasta el sábado o domingo más cercano.
 
 <Note>
-  El tipo de valor devuelto puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de valor devuelto puede configurarse mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4178,7 +4178,7 @@ Introducido en: v1.1.0
 Redondea una fecha o fecha con hora hacia abajo hasta el lunes de la misma semana. Devuelve la fecha.
 
 <Note>
-  El tipo de dato devuelto se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de dato devuelto se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4710,7 +4710,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha con hora hasta el inicio del día.
 
 <Note>
-  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4750,7 +4750,7 @@ Introducido en: v1.1.0
 Redondea la fecha con hora hacia abajo hasta el inicio del intervalo de quince minutos.
 
 <Note>
-  El tipo de retorno puede configurarse mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno puede configurarse mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4796,7 +4796,7 @@ Introducido en: v22.6.0
 Redondea hacia abajo una fecha con hora al inicio del intervalo de cinco minutos más cercano.
 
 <Note>
-  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4844,7 +4844,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha con hora hasta el inicio de la hora.
 
 <Note>
-  El tipo de retorno se puede configurar con la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar con la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -4885,7 +4885,7 @@ Introducido en: v1.1.0
 Redondea hacia abajo una fecha o fecha con hora hasta el primer día del año ISO, que puede diferir de un año natural normal. Consulte la [fecha de semana ISO](https://en.wikipedia.org/wiki/ISO_week_date).
 
 <Note>
-  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante la opción [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5108,7 +5108,7 @@ Introducido en: v1.1.0
 Redondea hacia abajo una fecha con hora al inicio del minuto.
 
 <Note>
-  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5152,7 +5152,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha o una fecha con hora al primer día del mes.
 
 <Note>
-  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5243,7 +5243,7 @@ Introducido en: v1.1.0
 redondea hacia abajo una fecha o fecha con hora hacia abajo hasta el primer día del trimestre. El primer día del trimestre es el 1 de enero, el 1 de abril, el 1 de julio o el 1 de octubre.
 
 <Note>
-  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5334,7 +5334,7 @@ Introducido en: v20.1.0
 Redondea una fecha con hora hacia abajo hasta el inicio del intervalo de diez minutos más cercano.
 
 <Note>
-  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5364,7 +5364,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
 ──────
 toStartOfTenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:10:00
 toStartOfTenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -5380,7 +5380,7 @@ Introducido en: v20.1.0
 Redondea una fecha o una fecha con hora al domingo o lunes más cercano anterior.
 
 <Note>
-  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante el ajuste [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**
@@ -5413,7 +5413,7 @@ SELECT
 ```
 
 ```response title=Response
-Fila 1:
+Row 1:
     ──────
     toStartOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-17
     toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-17
@@ -5430,7 +5430,7 @@ Introducido en: v1.1.0
 Redondea hacia abajo una fecha o una fecha con hora hasta el primer día del año. Devuelve la fecha como un objeto `Date`.
 
 <Note>
-  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+  El tipo de retorno se puede configurar mediante [`enable_extended_results_for_datetime_functions`](/es/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
 </Note>
 
 **Sintaxis**

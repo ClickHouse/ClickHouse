@@ -29,10 +29,10 @@ Valores posibles:
 
 **Uso**
 
-El valor de la configuración `number_of_free_entries_in_pool_to_execute_mutation`
-debe ser menor que el valor de [background&#95;pool&#95;size](/es/reference/settings/server-settings/settings#background_pool_size)
+El valor de la SETTING `number_of_free_entries_in_pool_to_execute_mutation`
+debe ser menor que el valor de [background&#95;pool&#95;size](/es/reference/settings/server-settings/settings/background#background_pool_size)
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/es/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio).
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
   De lo contrario, ClickHouse lanzará una excepción.
 
 <div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
@@ -51,11 +51,11 @@ Posibles valores:
 
 * Entero positivo.
 
-El valor de la opción `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
+El valor de la SETTING `number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
 debe ser menor que el valor de
-[background&#95;pool&#95;size](/es/reference/settings/server-settings/settings#background_pool_size)
+[background&#95;pool&#95;size](/es/reference/settings/server-settings/settings/background#background_pool_size)
 
-* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/es/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio).
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/es/reference/settings/server-settings/settings/background-merges#background_merges_mutations_concurrency_ratio).
   De lo contrario, ClickHouse lanza una excepción.
 
 <div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">

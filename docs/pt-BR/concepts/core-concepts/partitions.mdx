@@ -44,7 +44,7 @@ Você pode [consultar esta tabela](https://sql.clickhouse.com/?query=U0VMRUNUICo
   ### Estrutura no disco
 </div>
 
-Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (com [pelo menos](/pt-BR/reference/settings/session-settings#max_insert_block_size)) uma única parte de dados contendo todas as linhas inseridas (como descrito [aqui](/pt-BR/concepts/core-concepts/parts)), o ClickHouse cria uma nova parte de dados para cada valor único de chave de partição entre as linhas inseridas:
+Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (com [pelo menos](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size)) uma única parte de dados contendo todas as linhas inseridas (como descrito [aqui](/pt-BR/concepts/core-concepts/parts)), o ClickHouse cria uma nova parte de dados para cada valor único de chave de partição entre as linhas inseridas:
 
 <Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="PROCESSAMENTO DE INSERT" />
 
@@ -53,7 +53,7 @@ Sempre que um conjunto de linhas é inserido na tabela, em vez de criar (com [pe
 O servidor ClickHouse primeiro divide, pelo valor da chave de partição `toStartOfMonth(date)`, as linhas do exemplo de inserção com 4 linhas ilustrado no diagrama acima.
 Em seguida, para cada partição identificada, as linhas são processadas [como de costume](/pt-BR/concepts/core-concepts/parts), executando várias etapas sequenciais (① Ordenação, ② Divisão em colunas, ③ Compressão, ④ Gravação em disco).
 
-Observe que, com o particionamento habilitado, o ClickHouse cria automaticamente [índices MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) para cada parte de dados. Eles são simplesmente arquivos de cada coluna da tabela usada na expressão de chave de partição, contendo os valores mínimo e máximo dessa coluna dentro da parte de dados.
+Observe que, com o particionamento habilitado, o ClickHouse cria automaticamente [índices MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) para cada parte de dados. Eles são simplesmente arquivos para cada coluna da tabela usada na expressão da chave de partição, contendo os valores mínimo e máximo dessa coluna dentro da parte de dados.
 
 <div id="per-partition-merges">
   ### Mesclagens por partição
@@ -217,7 +217,7 @@ A saída acima mostra:
 Peak memory usage: 2.73 MiB.
 ```
 
-Isso significa que o ClickHouse varreu e processou 1 grânulo (bloco de [8192](/pt-BR/reference/settings/merge-tree-settings#index_granularity) linhas) em 6 milissegundos para calcular o resultado da consulta.
+Isso significa que o ClickHouse varreu e processou 1 grânulo (bloco de [8192](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity) linhas) em 6 milissegundos para calcular o resultado da consulta.
 
 <div id="partitioning-is-primarily-a-data-management-feature">
   ### O particionamento é principalmente um recurso de gerenciamento de dados

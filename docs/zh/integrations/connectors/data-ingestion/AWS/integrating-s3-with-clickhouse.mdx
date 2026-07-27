@@ -341,7 +341,7 @@ INSERT INTO default.trips_all
     )
 ```
 
-插入操作会在发起节点上执行。这意味着，虽然读取会在每个节点上进行，但生成的行会被路由到发起节点进行分发。在高吞吐量场景下，这可能会成为瓶颈。为解决此问题，请为 `s3cluster` 函数设置 [parallel&#95;distributed&#95;insert&#95;select](/zh/reference/settings/session-settings#parallel_distributed_insert_select) 参数。
+插入操作会在发起节点上执行。这意味着，虽然读取会在每个节点上进行，但生成的行会被路由到发起节点进行分发。在高吞吐量场景下，这可能会成为瓶颈。为解决此问题，请为 `s3cluster` 函数设置 [parallel&#95;distributed&#95;insert&#95;select](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select) 参数。
 
 <div id="s3-table-engines">
   ## S3 表引擎
@@ -725,7 +725,7 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 
 以下说明介绍了 ClickHouse 与 S3 交互的实现方式。虽然通常只是补充信息，但在[性能优化](#s3-optimizing-performance)时，可能会对读者有所帮助：
 
-* 默认情况下，查询处理管道中任一阶段可使用的最大查询处理线程数等于 CPU 核心数。某些阶段比其他阶段更容易并行化，因此该值只是一个上限。由于数据是从磁盘流式传输的，多个查询阶段可能会同时执行，因此单个查询实际使用的线程数可能会超过该值。可通过设置 [max&#95;threads](/zh/reference/settings/session-settings#max_threads) 进行调整。
+* 默认情况下，查询处理管道中任一阶段可使用的最大查询处理线程数等于 CPU 核心数。某些阶段比其他阶段更容易并行化，因此该值只是一个上限。由于数据是从磁盘流式传输的，多个查询阶段可能会同时执行，因此单个查询实际使用的线程数可能会超过该值。可通过设置 [max&#95;threads](/zh/reference/settings/session-settings/max-threads#max_threads) 进行调整。
 * 默认情况下，从 S3 读取是异步进行的。此行为由设置 `remote_filesystem_read_method` 决定，其默认值为 `threadpool`。处理请求时，ClickHouse 会以 stripe 为单位读取粒度。每个 stripe 可能包含很多列。线程会逐个读取这些粒度中的列。与同步逐列读取不同，系统会先对所有列执行预取，然后再等待数据返回。相比对每一列都进行同步等待，这种方式能显著提升性能。大多数情况下，你无需更改此设置——请参见[性能优化](#s3-optimizing-performance)。
 * 写入会并行执行，最多支持 100 个并发文件写入线程。`max_insert_delayed_streams_for_parallel_write` 的默认值为 1000，用于控制并行写入的 S3 blob 数量。由于每个正在写入的文件都需要一个缓冲区 (约 1MB) ，这实际上限制了 INSERT 的内存占用。在服务器内存较低的场景下，适当调低该值可能更合适。
 
@@ -1259,7 +1259,7 @@ sudo service clickhouse-server start
   ```
 
 <Note>
-  你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings#default_replica_path)。
+  你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path)。
 </Note>
 
 <div id="testing">

@@ -149,7 +149,7 @@ Commencez par tester les modifications de schéma sur des jeux de données plus 
   ### Agrégation externe
 </div>
 
-Activez l’agrégation externe pour les opérations gourmandes en mémoire. Elle est plus lente, mais évite les plantages liés à un manque de mémoire en écrivant les données sur disque. Pour cela, utilisez `max_bytes_before_external_group_by`, ce qui permet d’éviter les plantages dus à un manque de mémoire lors d’opérations `GROUP BY` volumineuses. Vous pouvez en savoir plus sur ce paramètre [ici](/fr/reference/settings/session-settings#max_bytes_before_external_group_by).
+Activez l’agrégation externe pour les opérations gourmandes en mémoire. Elle est plus lente, mais évite les plantages liés à un manque de mémoire en écrivant les données sur disque. Pour cela, utilisez `max_bytes_before_external_group_by`, ce qui permet d’éviter les plantages dus à un manque de mémoire lors d’opérations `GROUP BY` volumineuses. Vous pouvez en savoir plus sur ce paramètre [ici](/fr/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by).
 
 ```sql
 SELECT 

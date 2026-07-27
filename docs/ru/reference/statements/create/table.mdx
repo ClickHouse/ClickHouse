@@ -121,7 +121,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 Если тип не `Nullable` и указан `NULL`, он будет трактоваться как `Nullable`; если указан `NOT NULL`, то нет. Например, `INT NULL` — то же самое, что `Nullable(INT)`. Если тип — `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, будет сгенерировано исключение.
 
-См. также настройку [data&#95;type&#95;default&#95;nullable](/ru/reference/settings/session-settings#data_type_default_nullable).
+См. также настройку [data&#95;type&#95;default&#95;nullable](/ru/reference/settings/session-settings/other#data_type_default_nullable).
 
 <div id="default_values">
   ## Значения по умолчанию
@@ -378,7 +378,7 @@ ORDER BY (name_len, name);
 
 По умолчанию в самоуправляемой версии ClickHouse используется сжатие `lz4`, а в ClickHouse Cloud — `zstd`.
 
-Для семейства движков `MergeTree` метод сжатия по умолчанию можно изменить в разделе [compression](/ru/reference/settings/server-settings/settings#compression) конфигурации сервера.
+Для таблицы семейства *MergeTree метод сжатия по умолчанию можно изменить в разделе [compression](/ru/reference/settings/server-settings/settings/other#compression) конфигурации сервера.
 
 Метод сжатия также можно задать для каждого отдельного столбца в запросе `CREATE TABLE`.
 
@@ -412,7 +412,7 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Сжатие поддерживается для следующих движков таблиц:
 
-* Семейство [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Поддерживает кодеки сжатия для столбцов и выбор метода сжатия по умолчанию через настройки [compression](/ru/reference/settings/server-settings/settings#compression).
+* Таблица семейства *MergeTree [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Поддерживает кодеки сжатия для столбцов и выбор метода сжатия по умолчанию через настройки [compression](/ru/reference/settings/server-settings/settings/other#compression).
 * Семейство [Log](/ru/reference/engines/table-engines/log-family/index). По умолчанию использует метод сжатия `lz4` и поддерживает кодеки сжатия для столбцов.
 * [Set](/ru/reference/engines/table-engines/special/set). Поддерживается только сжатие по умолчанию.
 * [Join](/ru/reference/engines/table-engines/special/join). Поддерживается только сжатие по умолчанию.
@@ -556,7 +556,7 @@ ENGINE = MergeTree()
   ### Кодеки шифрования
 </div>
 
-Эти кодеки фактически не сжимают данные, а шифруют их на диске. Они доступны только в том случае, если в настройках [encryption](/ru/reference/settings/server-settings/settings#encryption) указан ключ шифрования. Обратите внимание, что шифрование имеет смысл применять только в конце конвейеров кодеков, поскольку зашифрованные данные обычно уже нельзя сколько-либо эффективно сжимать.
+Эти кодеки фактически не сжимают данные, а шифруют их на диске. Они доступны только в том случае, если в настройках [encryption](/ru/reference/settings/server-settings/settings/other#encryption) указан ключ шифрования. Обратите внимание, что шифрование имеет смысл применять только в конце конвейеров кодеков, поскольку зашифрованные данные обычно уже нельзя сколько-либо эффективно сжимать.
 
 Кодеки шифрования:
 

@@ -191,7 +191,7 @@ Algunas cargas de trabajo no pueden aislarse en servicios específicos; hay caso
 
 * **Versiones de ClickHouse**: El [calendario de actualizaciones](/es/products/cloud/features/admin-features/upgrades) se rige por la configuración del servicio principal. Los servicios secundarios no pueden tener un calendario de versiones independiente del servicio principal.
 
-* **Las consultas `CREATE`/`RENAME`/`DROP DATABASE` podrían bloquearse de forma predeterminada por servicios inactivos o detenidos.** Si estas consultas se ejecutan cuando el servicio está inactivo o detenido, pueden quedarse colgadas. Para evitarlo, puedes ejecutar consultas de administración de bases de datos con [`settings distributed_ddl_task_timeout=0`](/es/reference/settings/session-settings#distributed_ddl_task_timeout) a nivel de sesión o por consulta.
+* **Las consultas `CREATE`/`RENAME`/`DROP DATABASE` podrían bloquearse de forma predeterminada por servicios inactivos o detenidos.** Si estas consultas se ejecutan cuando el servicio está inactivo o detenido, pueden quedarse colgadas. Para evitarlo, puedes ejecutar consultas de administración de bases de datos con [`settings distributed_ddl_task_timeout=0`](/es/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) a nivel de sesión o por consulta.
 
 Por ejemplo:
 

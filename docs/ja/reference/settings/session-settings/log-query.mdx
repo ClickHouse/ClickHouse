@@ -28,7 +28,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 クエリスレッドのログ記録を設定します。
 
-クエリスレッドは [system.query&#95;thread&#95;log](/ja/reference/system-tables/query_thread_log) テーブルに記録されます。この設定は、[log&#95;queries](/ja/reference/settings/session-settings/log-queries#log_queries) が true の場合にのみ有効です。この設定を有効にすると、ClickHouse が実行するクエリのスレッドが、サーバー設定パラメータ [query&#95;thread&#95;log](/ja/reference/settings/server-settings/settings#query_thread_log) のルールに従って記録されます。
+クエリスレッドは [system.query&#95;thread&#95;log](/ja/reference/system-tables/query_thread_log) テーブルに記録されます。この設定は、[log&#95;queries](/ja/reference/settings/session-settings/log-queries#log_queries) が true の場合にのみ有効です。この設定を有効にすると、ClickHouse が実行するクエリのスレッドが、サーバー設定パラメータ [query&#95;thread&#95;log](/ja/reference/settings/server-settings/settings/query#query_thread_log) のルールに従って記録されます。
 
 設定可能な値:
 
@@ -49,7 +49,7 @@ log_query_threads=1
 
 クエリビューのログ記録を設定します。
 
-この設定を有効にして ClickHouse が実行するクエリに関連するビュー (materialized view または live view) がある場合、それらはサーバー設定パラメータ [query&#95;views&#95;log](/ja/reference/settings/server-settings/settings#query_views_log) に記録されます。
+この設定を有効にして ClickHouse が実行するクエリに関連するビュー (materialized view または live view) がある場合、それらはサーバー設定パラメータ [query&#95;views&#95;log](/ja/reference/settings/server-settings/settings/query#query_views_log) に記録されます。
 
 例:
 

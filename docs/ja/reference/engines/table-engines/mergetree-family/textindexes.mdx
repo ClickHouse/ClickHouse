@@ -67,7 +67,7 @@ two    : [3]
 本番環境で使用する場合は、ClickHouse バージョン &gt;= 26.2 の利用を強く推奨します。
 
 <Note>
-  テキスト索引は、[compatibility](/ja/reference/settings/session-settings#compatibility) 設定に関係なく、ClickHouse バージョン &gt;= 26.2 であれば使用できます。
+  テキスト索引は、[compatibility](/ja/reference/settings/session-settings/compatibility#compatibility) 設定に関係なく、ClickHouse バージョン &gt;= 26.2 であれば使用できます。
 </Note>
 
 テキスト索引を作成するには、次の構文を使用します。
@@ -477,12 +477,12 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 `1` に設定すると、索引は位置データ (`.pos` ファイル内) も追加で保存し、これにより [`hasPhrase`](#functions-example-hasphrase) 関数で direct read を介した完全なフレーズ一致が可能になります。
 位置情報を保存すると、索引のディスク上のサイズと書き込みコストが増加するため、これはオプトインです。
 ディスク上フォーマットはまだ stable ではないため、このパラメータは Experimental であり、将来の release で変更される可能性があります。
-そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) を有効にする必要があります。
+そのため、`support_phrase_search = 1` を指定して索引を作成するには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を有効にする必要があります。
 ポスティングリストのみの保存を維持するには `support_phrase_search = 0` (デフォルト) を設定してください。この引数を指定せずに作成されたテキスト索引には位置情報は含まれません。
 
 <Warning>
   この引数は Experimental であり、テスト用途でのみ使用してください。
-  位置情報の保存を有効にするには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) を設定してください。
+  位置情報の保存を有効にするには、MergeTree setting [`allow_experimental_text_index_phrase_search`](/ja/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) を設定してください。
 </Warning>
 
 <details markdown="1">
@@ -502,7 +502,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` - ポスティングリストは追加の圧縮を行わずに保存されます。
   * `bitpacking` - [差分 (delta) 符号化](https://en.wikipedia.org/wiki/Delta_encoding) を適用した後、[bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) を適用します (いずれも固定サイズのブロック内で実行されます) 。SELECT クエリが遅くなるため、現時点では推奨されません。
 
-  上記の詳細パラメータは、対応する MergeTree settings を通じてテーブルレベルで設定することもできます: [`text_index_dictionary_block_size`](/ja/reference/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ja/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ja/reference/settings/merge-tree-settings#text_index_posting_list_block_size), および [`text_index_posting_list_codec`](/ja/reference/settings/merge-tree-settings#text_index_posting_list_codec)。
+  上記の詳細パラメータは、対応する MergeTree settings を通じてテーブルレベルで設定することもできます: [`text_index_dictionary_block_size`](/ja/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ja/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), および [`text_index_posting_list_codec`](/ja/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec)。
   これらは、パラメータを明示的に指定していない、そのテーブル内のすべてのテキスト索引に適用されます。
 
   テーブルレベル設定の主なユースケースは、すべてのテーブルパーツ上のテキスト索引を削除して再作成することなく、既存テーブルの索引パラメータを変更することです。
@@ -1255,8 +1255,8 @@ direct read 最適化では、基になるテキストカラムにアクセス�
 
 direct read は 2 つの設定で制御されます。
 
-* 設定 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ja/reference/settings/session-settings#query_plan_direct_read_from_text_index) (デフォルトは true) は、direct read を全体として有効にするかどうかを指定します。
-* 設定 [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ja/reference/settings/session-settings#use_skip_indexes_on_data_read) は、ClickHouse バージョン &lt; 26.4 では direct read の前提条件でした。
+* 設定 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ja/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (デフォルトは true) は、direct read を全体として有効にするかどうかを指定します。
+* 設定 [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ja/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) は、ClickHouse バージョン &lt; 26.4 では direct read の前提条件でした。
 
 **サポートされる関数**
 
@@ -1273,7 +1273,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0, -- direct readを無効にする
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
 戻り値
@@ -1295,7 +1295,7 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1, -- direct readを有効にする
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
 戻り値
@@ -1325,7 +1325,7 @@ WHERE フィルタ句にテキスト検索関数しか含まれていない場�
 
 この追加フィルタは、ほかのフィルタと組み合わせることで結果セットをさらに絞り込むための選択性を高め、他のカラムから読み取るデータ量の削減に役立ちます。
 
-ヒントとしての direct read は、設定 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ja/reference/settings/session-settings#query_plan_text_index_add_hint) で制御されます (デフォルトで有効) 。
+ヒントとしての direct read は、設定 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ja/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) で制御されます (デフォルトで有効) 。
 
 ヒントなしのクエリの例:
 
@@ -1373,18 +1373,18 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   ### LIKE/ILIKE クエリ
 </div>
 
-LIKE/ILIKE クエリのパターンが `%<スペースを含まない英数字文字>%` で、テキスト索引のトークナイザーが `splitByNonAlpha` または `array` の場合、ClickHouse は転置索引を利用して LIKE/ILIKE クエリを大幅に高速化します。これを実現するために、ClickHouse は一致するパターンを見つける際、テーブル全体をスキャンする代わりに転置索引の Dictionary をスキャンします。
+LIKE/ILIKE クエリのパターンが `%<スペースを含まない英数字文字>%` で、テキスト索引のトークナイザーが `splitByNonAlpha` または `array` の場合、ClickHouse は転置索引を利用して LIKE/ILIKE クエリを大幅に高速化します。これを実現するために、ClickHouse は一致するパターンを見つける際、フルテーブルスキャンの代わりに転置索引の Dictionary をスキャンします。
 
-この最適化が有効な場合、LIKE/ILIKE クエリはテーブル全体のスキャンより大幅に高速になるはずです。ただし、パターンが Dictionary 内のトークンの大半に一致する場合は、テーブル全体のスキャンと比べて性能が悪化することがあります。幸い、それを防ぐためのフォールバックの仕組みがあります。
+この最適化が有効な場合、LIKE/ILIKE クエリはフルテーブルスキャンより大幅に高速になるはずです。ただし、パターンが Dictionary 内のトークンの大半に一致する場合は、フルテーブルスキャンと比べて性能が悪化することがあります。幸い、それを防ぐためのフォールバックの仕組みがあります。
 
 この最適化は、次の設定で制御されます。
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ja/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 フォールバックの仕組みは、次の 2 つの設定で制御されます。
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ja/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ja/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ja/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 この最適化でサポートされるのは、関数 `like` と `ilike` のみです。
 
@@ -1394,44 +1394,44 @@ LIKE/ILIKE クエリのパターンが `%<スペースを含まない英数字�
 
 テキスト索引の一部をメモリ上に保持するための、サーバー全体で共有されるさまざまな cache があります ([実装の詳細](#implementation) セクションを参照してください) 。
 現在、I/O を削減するために、テキスト索引のデシリアライズ済みヘッダー、トークン、ポスティングリスト用の cache が用意されています。
-設定 [use&#95;text&#95;index&#95;header&#95;cache](/ja/reference/settings/session-settings#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/ja/reference/settings/session-settings#use_text_index_tokens_cache)、および [use&#95;text&#95;index&#95;postings&#95;cache](/ja/reference/settings/session-settings#use_text_index_postings_cache) を使用すると、クエリによる個々の cache への読み取りと書き込みを無効にできます。
+設定 [use&#95;text&#95;index&#95;header&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_header_cache)、[use&#95;text&#95;index&#95;tokens&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_tokens_cache)、および [use&#95;text&#95;index&#95;postings&#95;cache](/ja/reference/settings/session-settings/use-text#use_text_index_postings_cache) を使用すると、クエリによる個々の cache への読み取りと書き込みを無効にできます。
 
 cache をクリアするには、ステートメント [SYSTEM CLEAR TEXT INDEX CACHES](/ja/reference/statements/system#drop-text-index-caches) を使用します。
 
 cache を設定するには、以下のサーバー設定を参照してください。
 
 <div id="caching-tokens">
-  #### テキスト索引トークンキャッシュの設定
+  #### テキスト索引トークンcacheの設定
 </div>
 
-| Setting                                                                                                                                     | Description                                    |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ja/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | テキスト索引トークンキャッシュのキャッシュポリシー名。                    |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/ja/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | キャッシュの最大サイズ (バイト単位) 。                          |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ja/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | キャッシュ内のデシリアライズ済みトークンの最大数。                      |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ja/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | キャッシュ全体のサイズに対する、テキスト索引トークンキャッシュ内の保護キューのサイズの比率。 |
+| Setting                                                                                                                                                | Description                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ja/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | テキスト索引トークンcacheのcacheポリシー名。                    |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/ja/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | cacheの最大サイズ (バイト単位) 。                          |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ja/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | cache内のデシリアライズ済みトークンの最大数。                      |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ja/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | cache全体のサイズに対する、テキスト索引トークンcache内の保護キューのサイズの比率。 |
 
 <div id="caching-header">
-  #### ヘッダーキャッシュの設定
+  #### ヘッダーcacheの設定
 </div>
 
-| Setting                                                                                                                                     | Description                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/ja/reference/settings/server-settings/settings#text_index_header_cache_policy)               | テキスト索引ヘッダーキャッシュのポリシー名。                  |
-| [text&#95;index&#95;header&#95;cache&#95;size](/ja/reference/settings/server-settings/settings#text_index_header_cache_size)                   | キャッシュの最大サイズ (バイト) 。                     |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ja/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | キャッシュ内に保持できるデシリアライズ済みヘッダーの最大数。          |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ja/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | テキスト索引ヘッダーキャッシュ全体のサイズに対する、保護キューのサイズの比率。 |
+| Setting                                                                                                                                                | Description                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | テキスト索引ヘッダーcacheのポリシー名。                  |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | cacheの最大サイズ (バイト) 。                     |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | cache内に保持できるデシリアライズ済みヘッダーの最大数。          |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ja/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | テキスト索引ヘッダーcache全体のサイズに対する、保護キューのサイズの比率。 |
 
 <div id="caching-posting-lists">
   #### ポスティングリスト cache の設定
 </div>
 
-| Setting                                                                                                                                         | Description                                                  |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/ja/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | テキスト索引のポスティング cache ポリシー名。                                   |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/ja/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | cache の最大サイズ (バイト単位) 。                                       |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ja/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | cache 内のデシリアライズ済みポスティングの最大数。                                 |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ja/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | テキスト索引のポスティング cache における保護キューのサイズを、cache 全体のサイズに対する比率で指定します。 |
+| Setting                                                                                                                                                    | Description                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ja/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | テキスト索引のポスティング cache ポリシー名。                                   |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ja/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | cache の最大サイズ (バイト単位) 。                                       |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ja/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | cache 内のデシリアライズ済みポスティングの最大数。                                 |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ja/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | テキスト索引のポスティング cache における保護キューのサイズを、cache 全体のサイズに対する比率で指定します。 |
 
 <div id="limitations">
   ## 制限事項

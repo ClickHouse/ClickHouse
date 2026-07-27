@@ -235,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Argumentos**
 
 * `uuid` — Un UUID de versión 7. [`String`](/es/reference/data-types/string)
-* `timezone` — Opcional. [Nombre de la zona horaria](/es/reference/settings/server-settings/settings#timezone) para el valor devuelto. [`String`](/es/reference/data-types/string)
+* `timezone` — Opcional. [Nombre de la zona horaria](/es/reference/settings/server-settings/settings/other#timezone) para el valor devuelto. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -593,7 +593,7 @@ SELECT generateUUIDv7(1), generateUUIDv7(1);
 
 Introducido en: v24.6.0
 
-Devuelve el componente de marca temporal de un [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) como un valor de tipo [DateTime](/es/reference/data-types/datetime).
+Devuelve el componente de marca temporal de un [ID de Snowflake](https://en.wikipedia.org/wiki/Snowflake_ID) como un valor de tipo [DateTime](/es/reference/data-types/datetime).
 
 **Sintaxis**
 
@@ -603,9 +603,9 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 **Argumentos**
 
-* `value` — Snowflake ID. [`UInt64`](/es/reference/data-types/int-uint)
-* `epoch` — Opcional. Epoch del Snowflake ID en milisegundos desde 1970-01-01. El valor predeterminado es 0 (1970-01-01). Para el epoch de Twitter/X (2015-01-01), proporcione 1288834974657. [`UInt*`](/es/reference/data-types/int-uint)
-* `time_zone` — Opcional. [Zona horaria](/es/reference/settings/server-settings/settings#timezone). La función analiza `time_string` de acuerdo con la zona horaria. [`String`](/es/reference/data-types/string)
+* `value` — ID de Snowflake. [`UInt64`](/es/reference/data-types/int-uint)
+* `epoch` — Opcional. Época del ID de Snowflake en milisegundos desde 1970-01-01. El valor predeterminado es 0 (1970-01-01). Para la época de Twitter/X (2015-01-01), proporcione 1288834974657. [`UInt*`](/es/reference/data-types/int-uint)
+* `time_zone` — Opcional. [Zona horaria](/es/reference/settings/server-settings/settings/other#timezone). La función analiza `time_string` de acuerdo con la zona horaria. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 
@@ -631,7 +631,7 @@ SELECT snowflakeIDToDateTime(7204436857747984384) AS res
 
 Introducido en: v24.6.0
 
-Devuelve el componente de marca temporal de un [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) como un valor del tipo [DateTime64](/es/reference/data-types/datetime64).
+Devuelve el componente de marca temporal de un [ID de Snowflake](https://en.wikipedia.org/wiki/Snowflake_ID) como un valor del tipo [DateTime64](/es/reference/data-types/datetime64).
 
 **Sintaxis**
 
@@ -641,9 +641,9 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 **Argumentos**
 
-* `value` — Snowflake ID. [`UInt64`](/es/reference/data-types/int-uint)
-* `epoch` — Opcional. Epoch del Snowflake ID en milisegundos desde 1970-01-01. El valor predeterminado es 0 (1970-01-01). Para el epoch de Twitter/X (2015-01-01), proporcione 1288834974657. [`UInt*`](/es/reference/data-types/int-uint)
-* `time_zone` — Opcional. [Zona horaria](/es/reference/settings/server-settings/settings#timezone). La función interpreta `time_string` según la zona horaria. [`String`](/es/reference/data-types/string)
+* `value` — ID de Snowflake. [`UInt64`](/es/reference/data-types/int-uint)
+* `epoch` — Opcional. Época del ID de Snowflake en milisegundos desde 1970-01-01. El valor predeterminado es 0 (1970-01-01). Para la época de Twitter/X (2015-01-01), proporcione 1288834974657. [`UInt*`](/es/reference/data-types/int-uint)
+* `time_zone` — Opcional. [Zona horaria](/es/reference/settings/server-settings/settings/other#timezone). La función interpreta `time_string` según la zona horaria. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
 

@@ -580,7 +580,7 @@ Dans le format RowBinary, le marqueur de faible cardinalité n&#39;affecte pas l
   Une colonne peut être définie comme `LowCardinality(Nullable(T))`, mais il n&#39;est pas possible de la définir comme `Nullable(LowCardinality(T))` - cela entraînera toujours une erreur du serveur.
 </Note>
 
-Lors des tests, [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/fr/reference/settings/session-settings#allow_suspicious_low_cardinality_types) peut être défini sur `1` pour autoriser la plupart des types de données dans `LowCardinality` afin d&#39;améliorer la couverture.
+Lors des tests, [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/fr/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) peut être défini sur `1` pour autoriser la plupart des types de données dans `LowCardinality` afin d&#39;améliorer la couverture.
 
 <div id="array">
   ### Array
@@ -784,7 +784,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-Le paramètre [allow&#95;suspicious&#95;variant&#95;types](/fr/reference/settings/session-settings#allow_suspicious_variant_types) peut être utilisé pour autoriser des tests plus exhaustifs du type `Variant`.
+Le paramètre [allow&#95;suspicious&#95;variant&#95;types](/fr/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) peut être utilisé pour autoriser des tests plus exhaustifs du type `Variant`.
 
 <div id="dynamic">
   ### Dynamic

@@ -67,7 +67,7 @@ two    : [3]
 نوصي بشدة باستخدام إصدارات ClickHouse ‏&gt;= 26.2 في بيئات الإنتاج.
 
 <Note>
-  يمكن استخدام الفهارس النصية مع أي إصدار من ClickHouse ‏&gt;= 26.2، بغض النظر عن إعداد [التوافق](/ar/reference/settings/session-settings#compatibility).
+  يمكن استخدام الفهارس النصية مع أي إصدار من ClickHouse ‏&gt;= 26.2، بغض النظر عن إعداد [التوافق](/ar/reference/settings/session-settings/compatibility#compatibility).
 </Note>
 
 لإنشاء فهرس نصي، استخدم الصياغة التالية:
@@ -472,16 +472,16 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 
 **تجريبي: دعم وسيطة البحث عن العبارة (اختيارية)**.
 
-المعلمة التجريبية `support_phrase_search` (الافتراضي: `0`) تتحكم في ما إذا كان الفهرس يخزّن مواضع الـtoken.
+المعلمة التجريبية `support_phrase_search` (الافتراضي: `0`) تتحكم في ما إذا كان الفهرس يخزّن مواضع الرموز.
 عند ضبطها على `1`، يخزّن الفهرس أيضًا بيانات المواضع (في ملف `.pos`)، مما يتيح المطابقة الدقيقة للعبارات عبر القراءات المباشرة للدالة [`hasPhrase`](#functions-example-hasphrase).
 يؤدي تخزين المواضع إلى زيادة حجم الفهرس على القرص ورفع تكلفة الكتابة، لذا فهو خيار اختياري.
 تنسيق التخزين على القرص ليس مستقرًا بعد، لذلك فهذه المعلمة تجريبية وقد تتغير في إصدار مستقبلي.
-لذلك، يتطلب إنشاء فهرس مع `support_phrase_search = 1` تمكين إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search).
+لذلك، يتطلب إنشاء فهرس مع `support_phrase_search = 1` تمكين إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search).
 اضبط `support_phrase_search = 0` (الافتراضي) للاحتفاظ بتخزين يعتمد على قائمة الترحيل فقط؛ وتبقى الفهارس النصية التي أُنشئت دون هذه الوسيطة بلا مواضع.
 
 <Warning>
   هذه الوسيطة تجريبية ويجب استخدامها للاختبار فقط.
-  اضبط إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) لتمكين تخزين المواضع.
+  اضبط إعداد MergeTree [`allow_experimental_text_index_phrase_search`](/ar/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search) لتمكين تخزين المواضع.
 </Warning>
 
 <details markdown="1">
@@ -501,7 +501,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` - تُخزَّن قوائم الترحيل من دون ضغط إضافي.
   * `bitpacking` - يطبّق [الترميز التفاضلي (delta)](https://en.wikipedia.org/wiki/Delta_encoding)، ثم [حزم البتات](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (وذلك داخل كتل ثابتة الحجم). يبطئ استعلامات SELECT، ولا يُنصح به حاليًا.
 
-  يمكن أيضًا ضبط المعلمات المتقدمة المذكورة أعلاه على مستوى الجدول عبر إعدادات MergeTree المقابلة: [`text_index_dictionary_block_size`](/ar/reference/settings/merge-tree-settings#text_index_dictionary_block_size)، و[`text_index_dictionary_block_frontcoding_compression`](/ar/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression)، و[`text_index_posting_list_block_size`](/ar/reference/settings/merge-tree-settings#text_index_posting_list_block_size)، و[`text_index_posting_list_codec`](/ar/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+  يمكن أيضًا ضبط المعلمات المتقدمة المذكورة أعلاه على مستوى الجدول عبر إعدادات MergeTree المقابلة: [`text_index_dictionary_block_size`](/ar/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size)، و[`text_index_dictionary_block_frontcoding_compression`](/ar/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression)، و[`text_index_posting_list_block_size`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size)، و[`text_index_posting_list_codec`](/ar/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   وتُطبَّق هذه الإعدادات على كل فهرس نصي في الجدول لا يحدد المعلمة صراحةً.
 
   تتمثل أبرز حالات استخدام الإعدادات على مستوى الجدول في تغيير معلمات الفهرس لجدول موجود من دون حذف الفهرس النصي وإعادة إنشائه على جميع أجزاء الجدول.
@@ -1249,18 +1249,18 @@ FROM [...]
 WHERE string_search_function(column_with_text_index)
 ```
 
-تُجيب آلية تحسين `direct read` عن الاستعلام بالاعتماد حصريًا على فهرس النص (أي من خلال عمليات lookup في فهرس النص) من دون الوصول إلى عمود النص الأساسي.
-وتقرأ عمليات lookup في فهرس النص قدرًا قليلًا نسبيًا من البيانات، لذا فهي أسرع بكثير من فهارس التخطي المعتادة في ClickHouse (التي تُجري lookup في فهرس التخطي، ثم تحميل الحبيبات المتبقية وتصفيتها).
+تُجيب آلية تحسين `direct read` عن الاستعلام بالاعتماد حصريًا على الفهرس النصي (أي من خلال عمليات lookup في الفهرس النصي) من دون الوصول إلى عمود النص الأساسي.
+وتقرأ عمليات lookup في الفهرس النصي قدرًا قليلًا نسبيًا من البيانات، لذا فهي أسرع بكثير من فهارس التخطي المعتادة في ClickHouse (التي تُجري lookup في فهرس التخطي، ثم تحميل الحبيبات المتبقية وتصفيتها).
 
 يُتحكَّم في `direct read` عبر إعدادين:
 
-* الإعداد [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings#query_plan_direct_read_from_text_index) (وقيمته الافتراضية true) الذي يحدد ما إذا كانت `direct read` مفعّلة بشكل عام.
-* كان الإعداد [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ar/reference/settings/session-settings#use_skip_indexes_on_data_read) شرطًا مسبقًا لـ `direct read` في إصدارات ClickHouse الأقدم من &lt; 26.4.
+* الإعداد [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ar/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (وقيمته الافتراضية true) الذي يحدد ما إذا كانت `direct read` مفعّلة بشكل عام.
+* كان الإعداد [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ar/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read) شرطًا مسبقًا لـ `direct read` في إصدارات ClickHouse الأقدم من &lt; 26.4.
 
 **الدوال المدعومة**
 
 تدعم آلية تحسين `direct read` الدوال `hasToken` و`hasAllTokens` و`hasAnyTokens`.
-إذا كان فهرس النص معرّفًا باستخدام المُجزِّئ `array`، فإن `direct read` تدعم أيضًا الدوال `equals` و`has` و`hasAny` و`hasAll` و`mapContainsKey` و`mapContainsValue`.
+إذا كان الفهرس النصي معرّفًا باستخدام المُجزِّئ `array`، فإن `direct read` تدعم أيضًا الدوال `equals` و`has` و`hasAny` و`hasAll` و`mapContainsKey` و`mapContainsValue`.
 ويمكن أيضًا دمج هذه الدوال باستخدام عوامل التشغيل `AND` و`OR` و`NOT`.
 كما يمكن أن تتضمن عبارتا `WHERE` أو `PREWHERE` عوامل تصفية إضافية لا تتعلق بدوال البحث النصي (لأعمدة النص أو الأعمدة الأخرى) - وفي هذه الحالة ستظل آلية تحسين `direct read` مستخدمة، ولكن بفعالية أقل (إذ إنها تنطبق فقط على دوال البحث النصي المدعومة).
 
@@ -1275,7 +1275,7 @@ WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
-القيمة المُعادة
+القيم المعادة
 
 ```text
 [...]
@@ -1297,7 +1297,7 @@ WHERE hasToken(col, 'some_token')
 SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
-القيمة المعادة
+القيم المعادة
 
 ```text
 [...]
@@ -1317,14 +1317,14 @@ Positions:
 
 **القراءة المباشرة كتلميح**
 
-تعتمد القراءة المباشرة كتلميح على المبادئ نفسها التي تعتمد عليها القراءة المباشرة العادية، لكنها تضيف بدلًا من ذلك عامل تصفية إضافيًا مُنشأً من بيانات فهرس النص، من دون الاستغناء عن العمود النصي الأساسي.
-وتُستخدم مع الدوال التي قد تؤدي فيها القراءة من فهرس النص فقط إلى مطابقات إيجابية كاذبة.
+تعتمد القراءة المباشرة كتلميح على المبادئ نفسها التي تعتمد عليها القراءة المباشرة العادية، لكنها تضيف بدلًا من ذلك عامل تصفية إضافيًا مُنشأً من بيانات الفهرس النصي، من دون الاستغناء عن العمود النصي الأساسي.
+وتُستخدم مع الدوال التي قد تؤدي فيها القراءة من الفهرس النصي فقط إلى مطابقات إيجابية كاذبة.
 
 الدوال المدعومة هي: `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey`, و `mapContainsValue`.
 
 يمكن لعامل التصفية الإضافي أن يوفّر انتقائية إضافية لتقييد مجموعة النتائج بدرجة أكبر عند دمجه مع عوامل تصفية أخرى، مما يساعد على تقليل كمية البيانات المقروءة من الأعمدة الأخرى.
 
-تخضع القراءة المباشرة كتلميح للإعداد [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ar/reference/settings/session-settings#query_plan_text_index_add_hint) (مُمكّن افتراضيًا).
+تخضع القراءة المباشرة كتلميح للإعداد [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ar/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) (مُمكّن افتراضيًا).
 
 مثال على استعلام من دون تلميح:
 
@@ -1372,18 +1372,18 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   ### استعلامات LIKE/ILIKE
 </div>
 
-عندما يكون نمط استعلام LIKE/ILIKE هو `%<alpha-numeric-characters-without-spaces>%` ويكون مُجزِّئ لفهرس النص `text index` هو `splitByNonAlpha` أو `array`، يستفيد ClickHouse من الفهرس المعكوس `inverted index` لتسريع استعلامات LIKE/ILIKE بشكل كبير. ولتحقيق ذلك، يفحص ClickHouse القاموس `Dictionary` الخاص بالفهرس المعكوس بدلًا من إجراء فحص كامل للجدول للعثور على النمط المطابق.
+عندما يكون نمط استعلام LIKE/ILIKE هو `%<alpha-numeric-characters-without-spaces>%` ويكون مُقسِّم الرموز للفهرس النصي `text index` هو `splitByNonAlpha` أو `array`، يستفيد ClickHouse من الفهرس المعكوس `inverted index` لتسريع استعلامات LIKE/ILIKE بشكل كبير. ولتحقيق ذلك، يفحص ClickHouse القاموس `Dictionary` الخاص بالفهرس المعكوس بدلًا من إجراء فحص كامل للجدول للعثور على النمط المطابق.
 
 عند تمكين هذا التحسين، يُفترض أن تصبح استعلامات LIKE/ILIKE أسرع بكثير من الفحص الكامل للجدول. ومع ذلك، إذا كان النمط يطابق معظم الرموز `tokens` في القاموس، فقد يصبح الأداء أسوأ مقارنةً بالفحص الكامل للجدول. ولحسن الحظ، توجد آلية احتياطية `fallback` تمنع ذلك.
 
 يخضع هذا التحسين لإعداد واحد:
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ar/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ar/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 وتخضع الآلية الاحتياطية `fallback` لإعدادين:
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ar/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ar/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ar/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 لا يدعم هذا التحسين إلا الدالتين `like` و `ilike`.
 
@@ -1392,8 +1392,8 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
 </div>
 
 توجد ذاكرات تخزين مؤقت مختلفة على مستوى الخادم للاحتفاظ بأجزاء من الفهرس النصي في الذاكرة (انظر قسم [تفاصيل التنفيذ](#implementation)):
-توجد حالياً ذاكرات تخزين مؤقت للترويسات بعد فك تسلسلها، والرموز، وقوائم الترحيل الخاصة بالفهرس النصي لتقليل عمليات الإدخال/الإخراج.
-استخدم الإعدادات [use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings#use_text_index_header_cache) و[use&#95;text&#95;index&#95;tokens&#95;cache](/ar/reference/settings/session-settings#use_text_index_tokens_cache) و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings#use_text_index_postings_cache) لتعطيل قراءة الاستعلامات من كل ذاكرة تخزين مؤقت على حدة والكتابة إليها.
+توجد حالياً ذاكرات تخزين مؤقت للترويسات بعد فك تسلسلها، والرموز، والترحيلات الخاصة بالفهرس النصي لتقليل عمليات الإدخال/الإخراج.
+استخدم الإعدادات [use&#95;text&#95;index&#95;header&#95;cache](/ar/reference/settings/session-settings/use-text#use_text_index_header_cache)، و[use&#95;text&#95;index&#95;tokens&#95;cache](/ar/reference/settings/session-settings/use-text#use_text_index_tokens_cache)، و[use&#95;text&#95;index&#95;postings&#95;cache](/ar/reference/settings/session-settings/use-text#use_text_index_postings_cache) لتعطيل قراءة الاستعلامات من كل ذاكرة تخزين مؤقت على حدة والكتابة إليها.
 
 لمسح ذاكرات التخزين المؤقت، استخدم العبارة [SYSTEM CLEAR TEXT INDEX CACHES](/ar/reference/statements/system#drop-text-index-caches)
 
@@ -1403,34 +1403,34 @@ Prewhere filter column: and(__text_index_idx_col_like_d306f7c9c95238594618ac23eb
   #### إعدادات ذاكرة التخزين المؤقت لرموز الفهرس النصي
 </div>
 
-| الإعداد                                                                                                                                     | الوصف                                                                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لرموز الفهرس النصي.                                                            |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | الحد الأقصى لعدد الرموز بعد إلغاء تسلسلها في ذاكرة التخزين المؤقت.                                            |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لرموز الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
+| الإعداد                                                                                                                                                | الوصف                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لرموز الفهرس النصي.                                                            |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | الحد الأقصى لعدد الرموز بعد فك التسلسل في ذاكرة التخزين المؤقت.                                               |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لرموز الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
 
 <div id="caching-header">
   #### إعدادات ذاكرة التخزين المؤقت للترويسات
 </div>
 
-| الإعداد                                                                                                                                     | الوصف                                                                                                            |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_header_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لترويسات الفهرس النصي.                                                            |
-| [text&#95;index&#95;header&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_header_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                   |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | الحد الأقصى لعدد الترويسات بعد إلغاء تسلسلها في ذاكرة التخزين المؤقت.                                            |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لترويسات الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
+| الإعداد                                                                                                                                                | الوصف                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لترويسات الفهرس النصي.                                                            |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                   |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | الحد الأقصى لعدد الترويسات بعد فك التسلسل في ذاكرة التخزين المؤقت.                                               |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لترويسات الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
 
 <div id="caching-posting-lists">
   #### إعدادات ذاكرة التخزين المؤقت لقوائم الترحيل
 </div>
 
-| Setting                                                                                                                                         | Description                                                                                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي.                                                            |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/ar/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                            |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | الحد الأقصى لعدد قوائم الترحيل التي فُكّ تسلسلها في ذاكرة التخزين المؤقت.                                                 |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت. |
+| Setting                                                                                                                                                    | Description                                                                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | اسم سياسة ذاكرة التخزين المؤقت للترحيلات في الفهرس النصي.                                                               |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت.                                                                            |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | الحد الأقصى لعدد الترحيلات بعد فك التسلسل في ذاكرة التخزين المؤقت.                                                      |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ar/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | حجم الطابور المحمي في ذاكرة التخزين المؤقت للترحيلات في الفهرس النصي نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.    |
 
 <div id="limitations">
   ## القيود

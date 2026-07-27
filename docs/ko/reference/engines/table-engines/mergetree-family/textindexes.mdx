@@ -67,7 +67,7 @@ two    : [3]
 프로덕션 환경에서 사용할 경우 ClickHouse 버전 &gt;= 26.2를 사용할 것을 강력히 권장합니다.
 
 <Note>
-  텍스트 인덱스는 [compatibility](/ko/reference/settings/session-settings#compatibility) 설정과 관계없이 ClickHouse 버전 &gt;= 26.2 이상에서 사용할 수 있습니다.
+  텍스트 인덱스는 [compatibility](/ko/reference/settings/session-settings/compatibility#compatibility) 설정과 관계없이 ClickHouse 버전 &gt;= 26.2 이상에서 사용할 수 있습니다.
 </Note>
 
 텍스트 인덱스를 생성하려면 다음 구문을 사용하십시오:
@@ -476,12 +476,12 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 `1`로 설정하면 인덱스는 위치 데이터(`.pos` 파일에 저장됨)를 추가로 저장하며, 이를 통해 [`hasPhrase`](#functions-example-hasphrase) 함수에서 직접 읽기를 사용한 정확한 구문 일치가 가능해집니다.
 위치를 저장하면 인덱스의 디스크상 크기와 쓰기 비용이 증가하므로, 이 기능은 명시적으로 선택해야 합니다.
 디스크상 포맷은 아직 안정되지 않았으므로, 이 매개변수는 실험적이며 향후 릴리스에서 변경될 수 있습니다.
-따라서 `support_phrase_search = 1`로 인덱스를 생성하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search)를 활성화해야 합니다.
+따라서 `support_phrase_search = 1`로 인덱스를 생성하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search)를 활성화해야 합니다.
 포스팅 리스트만 저장하는 방식을 유지하려면 `support_phrase_search = 0`(기본값)으로 설정하십시오. 이 인수를 지정하지 않고 생성된 텍스트 인덱스에는 위치 정보가 저장되지 않습니다.
 
 <Warning>
   이 인수는 실험적이며 테스트 용도로만 사용해야 합니다.
-  위치 저장을 활성화하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search)를 설정하십시오.
+  위치 저장을 활성화하려면 MergeTree 설정 [`allow_experimental_text_index_phrase_search`](/ko/reference/settings/merge-tree-settings/allow-experimental#allow_experimental_text_index_phrase_search)를 설정하십시오.
 </Warning>
 
 <details markdown="1">
@@ -501,7 +501,7 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
   * `none` - 포스팅 리스트는 추가 압축 없이 저장됩니다.
   * `bitpacking` - [차분(델타) 코딩](https://en.wikipedia.org/wiki/Delta_encoding)을 적용한 다음 [비트 패킹](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70)을 적용합니다(각 고정 크기 블록 내에서 수행). SELECT 쿼리 속도가 느려지므로 현재로서는 권장하지 않습니다.
 
-  위의 고급 매개변수는 해당 MergeTree 설정을 통해 테이블 수준에서도 설정할 수 있습니다: [`text_index_dictionary_block_size`](/ko/reference/settings/merge-tree-settings#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ko/reference/settings/merge-tree-settings#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ko/reference/settings/merge-tree-settings#text_index_posting_list_block_size), [`text_index_posting_list_codec`](/ko/reference/settings/merge-tree-settings#text_index_posting_list_codec).
+  위의 고급 매개변수는 해당 MergeTree 설정을 통해 테이블 수준에서도 설정할 수 있습니다: [`text_index_dictionary_block_size`](/ko/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/ko/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/ko/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), [`text_index_posting_list_codec`](/ko/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
   이 설정은 매개변수를 명시적으로 지정하지 않은 테이블의 모든 텍스트 인덱스에 적용됩니다.
 
   테이블 수준 설정의 주요 사용 사례는 모든 테이블 파트의 텍스트 인덱스를 삭제 후 다시 생성하지 않고도 기존 테이블의 인덱스 매개변수를 변경하는 것입니다.
@@ -1254,8 +1254,8 @@ WHERE string_search_function(column_with_text_index)
 
 직접 읽기는 두 가지 설정으로 제어됩니다.
 
-* Setting [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ko/reference/settings/session-settings#query_plan_direct_read_from_text_index) (기본값은 true)는 직접 읽기를 전반적으로 활성화할지 지정합니다.
-* Setting [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ko/reference/settings/session-settings#use_skip_indexes_on_data_read)는 ClickHouse 버전 &lt; 26.4에서 직접 읽기를 사용하기 위한 prerequisite였습니다.
+* Setting [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ko/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index) (기본값은 true)는 직접 읽기를 전반적으로 활성화할지 지정합니다.
+* Setting [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/ko/reference/settings/session-settings/use-skip-indexes#use_skip_indexes_on_data_read)는 ClickHouse 버전 &lt; 26.4에서 직접 읽기를 사용하기 위한 prerequisite였습니다.
 
 **지원되는 함수**
 
@@ -1272,10 +1272,10 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 0, -- 직접 읽기 비활성화
+SETTINGS query_plan_direct_read_from_text_index = 0, -- disable direct read
 ```
 
-반환값
+반환
 
 ```text
 [...]
@@ -1294,10 +1294,10 @@ EXPLAIN PLAN actions = 1
 SELECT count()
 FROM table
 WHERE hasToken(col, 'some_token')
-SETTINGS query_plan_direct_read_from_text_index = 1, -- 직접 읽기 활성화
+SETTINGS query_plan_direct_read_from_text_index = 1, -- enable direct read
 ```
 
-반환값
+반환
 
 ```text
 [...]
@@ -1324,7 +1324,7 @@ WHERE 필터 절에 텍스트 검색 함수만 포함되어 있으면 쿼리는 
 
 이 추가 필터는 다른 필터와 함께 사용될 때 결과 집합을 더 좁히는 추가 선택도를 제공할 수 있으며, 다른 컬럼에서 읽는 데이터 양을 줄이는 데 도움이 됩니다.
 
-힌트로 사용하는 직접 읽기는 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ko/reference/settings/session-settings#query_plan_text_index_add_hint) 설정으로 제어됩니다(기본적으로 활성화됨).
+힌트로 사용하는 직접 읽기는 [query&#95;plan&#95;text&#95;index&#95;add&#95;hint](/ko/reference/settings/session-settings/query-plan#query_plan_text_index_add_hint) 설정으로 제어됩니다(기본적으로 활성화됨).
 
 힌트가 없는 쿼리 예시:
 
@@ -1378,12 +1378,12 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 
 
 이 최적화는 다음 설정으로 제어됩니다:
 
-* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ko/reference/settings/session-settings#use_text_index_like_evaluation_by_dictionary_scan)
+* [use&#95;text&#95;index&#95;like&#95;evaluation&#95;by&#95;dictionary&#95;scan](/ko/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
 폴백 메커니즘은 다음 두 가지 설정으로 제어됩니다:
 
-* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ko/reference/settings/session-settings#text_index_like_min_pattern_length)
-* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ko/reference/settings/session-settings#text_index_like_max_postings_to_read)
+* [text&#95;index&#95;like&#95;min&#95;pattern&#95;length](/ko/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
+* [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ko/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 이 최적화는 `like` 및 `ilike` 함수만 지원합니다.
 
@@ -1393,7 +1393,7 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 
 
 메모리에서 텍스트 인덱스의 일부를 버퍼링하기 위한 서버 전역 캐시가 여러 가지 있습니다(섹션 [구현 세부 사항](#implementation) 참조).
 현재는 I/O를 줄이기 위해 텍스트 인덱스의 역직렬화된 헤더, 토큰, 포스팅 리스트에 대한 캐시가 제공됩니다.
-쿼리가 개별 캐시를 읽고 쓰지 않도록 하려면 [use&#95;text&#95;index&#95;header&#95;cache](/ko/reference/settings/session-settings#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ko/reference/settings/session-settings#use_text_index_tokens_cache), [use&#95;text&#95;index&#95;postings&#95;cache](/ko/reference/settings/session-settings#use_text_index_postings_cache) 설정을 사용하십시오.
+쿼리가 개별 캐시를 읽고 쓰지 않도록 하려면 [use&#95;text&#95;index&#95;header&#95;cache](/ko/reference/settings/session-settings/use-text#use_text_index_header_cache), [use&#95;text&#95;index&#95;tokens&#95;cache](/ko/reference/settings/session-settings/use-text#use_text_index_tokens_cache), [use&#95;text&#95;index&#95;postings&#95;cache](/ko/reference/settings/session-settings/use-text#use_text_index_postings_cache) 설정을 사용하십시오.
 
 캐시를 지우려면 [SYSTEM CLEAR TEXT INDEX CACHES](/ko/reference/statements/system#drop-text-index-caches) SQL 문을 사용하십시오.
 
@@ -1403,34 +1403,34 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 
   #### 토큰 캐시 설정
 </div>
 
-| 설정                                                                                                                                          | 설명                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ko/reference/settings/server-settings/settings#text_index_tokens_cache_policy)               | 텍스트 인덱스 토큰 캐시 정책 이름입니다.                |
-| [text&#95;index&#95;tokens&#95;cache&#95;size](/ko/reference/settings/server-settings/settings#text_index_tokens_cache_size)                   | 최대 캐시 크기(바이트)입니다.                      |
-| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings#text_index_tokens_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 토큰의 최대 개수입니다.       |
-| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings#text_index_tokens_cache_size_ratio)   | 전체 캐시 크기 대비 텍스트 인덱스 토큰 캐시의 보호 큐 크기입니다. |
+| 설정                                                                                                                                                     | 설명                                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| [text&#95;index&#95;tokens&#95;cache&#95;policy](/ko/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_policy)               | 텍스트 인덱스 토큰 캐시 정책 이름입니다.                |
+| [text&#95;index&#95;tokens&#95;cache&#95;size](/ko/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size)                   | 최대 캐시 크기(바이트)입니다.                      |
+| [text&#95;index&#95;tokens&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 토큰의 최대 개수입니다.       |
+| [text&#95;index&#95;tokens&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings/text-index#text_index_tokens_cache_size_ratio)   | 전체 캐시 크기 대비 텍스트 인덱스 토큰 캐시의 보호 큐 크기입니다. |
 
 <div id="caching-header">
   #### 헤더 캐시 설정
 </div>
 
-| Setting                                                                                                                                     | Description                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
-| [text&#95;index&#95;header&#95;cache&#95;policy](/ko/reference/settings/server-settings/settings#text_index_header_cache_policy)               | 텍스트 인덱스 헤더 캐시 정책의 이름입니다.                |
-| [text&#95;index&#95;header&#95;cache&#95;size](/ko/reference/settings/server-settings/settings#text_index_header_cache_size)                   | 캐시의 최대 크기(바이트)입니다.                      |
-| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 헤더의 최대 개수입니다.        |
-| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | 텍스트 인덱스 헤더 캐시의 전체 크기 대비 보호 큐 크기의 비율입니다. |
+| Setting                                                                                                                                                | Description                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/ko/reference/settings/server-settings/settings/text-index#text_index_header_cache_policy)               | 텍스트 인덱스 헤더 캐시 정책의 이름입니다.                |
+| [text&#95;index&#95;header&#95;cache&#95;size](/ko/reference/settings/server-settings/settings/text-index#text_index_header_cache_size)                   | 캐시의 최대 크기(바이트)입니다.                      |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings/text-index#text_index_header_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 헤더의 최대 개수입니다.        |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings/text-index#text_index_header_cache_size_ratio)   | 텍스트 인덱스 헤더 캐시의 전체 크기 대비 보호 큐 크기의 비율입니다. |
 
 <div id="caching-posting-lists">
   #### 포스팅 리스트 캐시 설정
 </div>
 
-| 설정                                                                                                                                              | 설명                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| [text&#95;index&#95;postings&#95;cache&#95;policy](/ko/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | 텍스트 인덱스 포스팅 리스트 캐시 정책의 이름입니다.                    |
-| [text&#95;index&#95;postings&#95;cache&#95;size](/ko/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | 캐시의 최대 크기(바이트)입니다.                               |
-| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 포스팅의 최대 개수입니다.                |
-| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | 텍스트 인덱스 포스팅 리스트 캐시에서 전체 캐시 크기 대비 보호 큐의 크기 비율입니다. |
+| 설정                                                                                                                                                         | 설명                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/ko/reference/settings/server-settings/settings/text-index#text_index_postings_cache_policy)               | 텍스트 인덱스 포스팅 리스트 캐시 정책의 이름입니다.                    |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/ko/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size)                   | 캐시의 최대 크기(바이트)입니다.                               |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/ko/reference/settings/server-settings/settings/text-index#text_index_postings_cache_max_entries) | 캐시에 저장할 수 있는 역직렬화된 포스팅의 최대 개수입니다.                |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/ko/reference/settings/server-settings/settings/text-index#text_index_postings_cache_size_ratio)   | 텍스트 인덱스 포스팅 리스트 캐시에서 전체 캐시 크기 대비 보호 큐의 크기 비율입니다. |
 
 <div id="limitations">
   ## 제한 사항

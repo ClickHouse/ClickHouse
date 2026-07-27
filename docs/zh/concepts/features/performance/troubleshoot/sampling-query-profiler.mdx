@@ -68,7 +68,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
   </Step>
 
   <Step title="检查服务器配置" id="server-config">
-    确保 [服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中的 [`trace_log`](/zh/reference/settings/server-settings/settings#trace_log) 部分已配置。默认情况下它处于启用状态：
+    确保 [服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中的 [`trace_log`](/zh/reference/settings/server-settings/settings/other#trace_log) 部分已配置。默认情况下它处于启用状态：
 
     ```xml
     <!-- Trace 日志。存储由查询分析器收集的堆栈跟踪。
@@ -94,7 +94,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
   </Step>
 
   <Step title="配置分析器计时器" id="configure-profile-timers">
-    设置 [`query_profiler_cpu_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 或 [`query_profiler_real_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_real_time_period_ns)。
+    设置 [`query_profiler_cpu_time_period_ns`](/zh/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns) 或 [`query_profiler_real_time_period_ns`](/zh/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns)。
     这两个设置可以同时使用。
 
     这些设置可用于配置分析器计时器。
@@ -106,7 +106,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
   </Step>
 
   <Step title={<>分析 <code>trace_log</code> 系统表</>} id="analyze-trace-log-system-table">
-    要分析 `trace_log` 系统表，请通过 [`allow_introspection_functions`](/zh/reference/settings/session-settings#allow_introspection_functions) 设置启用内部信息函数：
+    要分析 `trace_log` 系统表，请通过 [`allow_introspection_functions`](/zh/reference/settings/session-settings/allow#allow_introspection_functions) 设置启用内部信息函数：
 
     ```sql
     SET allow_introspection_functions=1

@@ -61,12 +61,12 @@ Row 1:
 name:        min_insert_block_size_rows
 value:       1048449
 changed:     0
-description: Establece el número mínimo de filas en el bloque que pueden insertarse en una tabla mediante una consulta `INSERT`. Los bloques de menor tamaño se compactan en bloques más grandes.
+description: Sets the minimum number of rows in the block that can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
 
-- Entero positivo.
-- 0 — Compactación desactivada.
+- Positive integer.
+- 0 — Squashing disabled.
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -81,12 +81,12 @@ Row 2:
 name:        min_insert_block_size_bytes
 value:       268402944
 changed:     0
-description: Establece el número mínimo de bytes en el bloque que pueden insertarse en una tabla mediante una consulta `INSERT`. Los bloques de menor tamaño se compactan en bloques más grandes.
+description: Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
 
-- Entero positivo.
-- 0 — Compactación desactivada.
+- Positive integer.
+- 0 — Squashing disabled.
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -101,16 +101,16 @@ Row 3:
 name:        min_insert_block_size_rows_for_materialized_views
 value:       0
 changed:     0
-description: Establece el número mínimo de filas en el bloque que pueden insertarse en una tabla mediante una consulta `INSERT`. Los bloques de menor tamaño se compactan en bloques más grandes. Esta configuración se aplica únicamente a los bloques insertados en una [vista materializada](/reference/statements/create/view). Al ajustar esta configuración, se controla la compactación de bloques al enviar datos a la vista materializada y se evita un uso excesivo de memoria.
+description: Sets the minimum number of rows in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](/reference/statements/create/view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
-- Cualquier entero positivo.
-- 0 — Compactación desactivada.
+- Any positive integer.
+- 0 — Squashing disabled.
 
-## Ver también            
+## See Also            
 
-- [min_insert_block_size_rows](/reference/settings/session-settings#min_insert_block_size_rows)
+- [min_insert_block_size_rows](/reference/settings/session-settings/min-insert#min_insert_block_size_rows)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0
@@ -125,16 +125,16 @@ Row 4:
 name:        min_insert_block_size_bytes_for_materialized_views
 value:       0
 changed:     0
-description: Establece el número mínimo de bytes en el bloque que pueden insertarse en una tabla mediante una consulta `INSERT`. Los bloques de menor tamaño se compactan en bloques más grandes. Esta configuración se aplica únicamente a los bloques insertados en una [vista materializada](/reference/statements/create/view). Al ajustar esta configuración, se controla la compactación de bloques al enviar datos a la vista materializada y se evita un uso excesivo de memoria.
+description: Sets the minimum number of bytes in the block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. This setting is applied only for blocks inserted into [materialized view](/reference/statements/create/view). By adjusting this setting, you control blocks squashing while pushing to materialized view and avoid excessive memory usage.
 
 Possible values:
 
-- Cualquier entero positivo.
-- 0 — Compactación desactivada.
+- Any positive integer.
+- 0 — Squashing disabled.
 
-## Ver también            
+## See Also            
 
-- [min_insert_block_size_bytes](/reference/settings/session-settings#min_insert_block_size_bytes)
+- [min_insert_block_size_bytes](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)
 min:         ᴺᵁᴸᴸ
 max:         ᴺᵁᴸᴸ
 readonly:    0

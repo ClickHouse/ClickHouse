@@ -15,7 +15,7 @@ doc_type: 'guide'
 
 يقبل ClickHouse ترويسات HTTP الخاصة بسياق التتبع، كما هو موضح في [توصية W3C](https://www.w3.org/TR/trace-context/). كما يقبل سياق التتبع عبر البروتوكول الأصلي المستخدم للتواصل بين خوادم ClickHouse أو بين العميل والخادم. ولأغراض الاختبار اليدوي، يمكن تمرير ترويسات سياق التتبع المتوافقة مع توصية Trace Context إلى `clickhouse-client` باستخدام الخيارين `--opentelemetry-traceparent` و`--opentelemetry-tracestate`.
 
-إذا لم يتم تمرير سياق تتبع أصل، أو كان سياق التتبع الممرَّر غير متوافق مع معيار W3C المذكور أعلاه، يمكن لـ ClickHouse بدء تتبّع جديد باحتمال يتحكم فيه إعداد [opentelemetry&#95;start&#95;trace&#95;probability](/ar/reference/settings/session-settings#opentelemetry_start_trace_probability).
+إذا لم يتم تمرير سياق تتبع أصل، أو كان سياق التتبع الممرَّر غير متوافق مع معيار W3C المذكور أعلاه، يمكن لـ ClickHouse بدء تتبّع جديد باحتمال يتحكم فيه إعداد [opentelemetry&#95;start&#95;trace&#95;probability](/ar/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability).
 
 <div id="propagating-the-trace-context">
   ## نشر سياق التتبع
@@ -102,7 +102,7 @@ doc_type: 'guide'
   ## إعدادات سجل الاستعلام
 </div>
 
-يتيح الإعداد [log&#95;query&#95;settings](/ar/reference/settings/session-settings) تسجيل التغييرات التي تطرأ على إعدادات الاستعلام أثناء تنفيذه. عند تمكينه، تُسجَّل أي تعديلات تُجرى على إعدادات الاستعلام في سجل الـ span ضمن OpenTelemetry. وتُعد هذه الميزة مفيدة بشكل خاص في بيئات production لتتبّع تغييرات الإعدادات التي قد تؤثر في أداء الاستعلام.
+يتيح الإعداد [log&#95;query&#95;settings](/ar/reference/settings/session-settings/log-query#log_query_settings) تسجيل التغييرات التي تطرأ على إعدادات الاستعلام أثناء تنفيذه. عند تمكينه، تُسجَّل أي تعديلات تُجرى على إعدادات الاستعلام في سجل الـ span ضمن OpenTelemetry. وتُعد هذه الميزة مفيدة بشكل خاص في بيئات production لتتبّع تغييرات الإعدادات التي قد تؤثر في أداء الاستعلام.
 
 <div id="integration-with-monitoring-systems">
   ## التكامل مع أنظمة المراقبة

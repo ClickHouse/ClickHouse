@@ -122,7 +122,7 @@ import VersionHistory from "/snippets/ru/components/VersionHistory/VersionHistor
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
-Действует только в ClickHouse Cloud. Количество фоновых потоков для упреждающей загрузки новых частей данных в файловый кэш, если включен параметр [cache&#95;populated&#95;by&#95;fetch](/ru/reference/settings/merge-tree-settings#cache_populated_by_fetch). 0 — отключить.
+Действует только в ClickHouse Cloud. Количество фоновых потоков для упреждающей загрузки новых частей данных в файловый кэш, если включен параметр [cache&#95;populated&#95;by&#95;fetch](/ru/reference/settings/merge-tree-settings/cache-populated-by-fetch#cache_populated_by_fetch). 0 — отключить.
 
 <div id="calculate_text_stack_trace">
   ## calculate_text_stack_trace
@@ -447,7 +447,7 @@ SETTINGS convert_query_to_cnf = true;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "Новая настройка"}]}]} />
 
-Исключает указанные индексы пропуска данных из построения и хранения при операциях INSERT. Исключённые индексы пропуска данных всё равно будут строиться и сохраняться [при слиянии](/ru/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge) или явным
+Исключает указанные индексы пропуска данных из построения и хранения при операциях INSERT. Исключённые индексы пропуска данных всё равно будут строиться и сохраняться [при слиянии](/ru/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) или явным
 запросом [MATERIALIZE INDEX](/ru/reference/statements/alter/skipping-index#materialize-index).
 
 Не имеет эффекта, если [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ru/reference/settings/session-settings/materialize#materialize_skip_indexes_on_insert) равно false.
@@ -1153,7 +1153,7 @@ a   Tuple(
 
 Интервал в миллисекундах, с которым собираются данные [query&#95;metric&#95;log](/ru/reference/system-tables/query_metric_log) для отдельных запросов.
 
-Если задано любое отрицательное значение, используется значение `collect_interval_milliseconds` из [настройки query&#95;metric&#95;log](/ru/reference/settings/server-settings/settings#query_metric_log), а если оно отсутствует — значение 1000 по умолчанию.
+Если задано любое отрицательное значение, используется значение `collect_interval_milliseconds` из [настройки query&#95;metric&#95;log](/ru/reference/settings/server-settings/settings/query#query_metric_log), а если оно отсутствует — значение 1000 по умолчанию.
 
 Чтобы отключить сбор данных для отдельного запроса, установите `query_metric_log_interval` в 0.
 
@@ -1392,7 +1392,7 @@ FORMAT Null;
 Задаёт неявный часовой пояс для текущего сеанса или запроса.
 Неявный часовой пояс применяется к значениям типа DateTime/DateTime64, для которых часовой пояс явно не указан.
 Этот параметр имеет приоритет над неявным часовым поясом, глобально настроенным на уровне сервера.
-Значение &#39;&#39; (пустая строка) означает, что неявный часовой пояс текущего сеанса или запроса совпадает с [часовым поясом сервера](/ru/reference/settings/server-settings/settings#timezone).
+Значение &#39;&#39; (пустая строка) означает, что неявный часовой пояс текущего сеанса или запроса совпадает с [часовым поясом сервера](/ru/reference/settings/server-settings/settings/other#timezone).
 
 Чтобы получить часовой пояс сеанса и часовой пояс сервера, можно использовать функции `timeZone()` и `serverTimeZone()`.
 
@@ -1446,7 +1446,7 @@ SELECT *, timeZone() FROM test_tz WHERE d = '2000-01-01 00:00:00' SETTINGS sessi
 
 **См. также**
 
-* [timezone](/ru/reference/settings/server-settings/settings#timezone)
+* [timezone](/ru/reference/settings/server-settings/settings/other#timezone)
 
 <div id="set_overflow_mode">
   ## set_overflow_mode

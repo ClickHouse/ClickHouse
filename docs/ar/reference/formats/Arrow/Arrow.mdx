@@ -61,7 +61,7 @@ doc_type: 'مرجع'
 
 يمكن أن تكون `Array` متداخلة، ويمكن أن تأخذ قيمة من النوع `Nullable` كوسيطة. كما يمكن أيضًا أن تكون الأنواع `Tuple` و`Map` متداخلة.
 
-النوع `DICTIONARY` مدعوم في استعلامات `INSERT`، وبالنسبة إلى استعلامات `SELECT`، يوجد الإعداد [`output_format_arrow_low_cardinality_as_dictionary`](/ar/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) الذي يتيح إخراج النوع [LowCardinality](/ar/reference/data-types/lowcardinality) على هيئة النوع `DICTIONARY`. لاحظ أنه قد توجد قيم غير مستخدمة في قاموس `LowCardinality`، مما قد يؤدي إلى ظهور قيم غير مستخدمة في `DICTIONARY` الخاص بـ Arrow عند الإخراج.
+النوع `DICTIONARY` مدعوم في استعلامات `INSERT`، وبالنسبة إلى استعلامات `SELECT`، يوجد الإعداد [`output_format_arrow_low_cardinality_as_dictionary`](/ar/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary) الذي يتيح إخراج النوع [LowCardinality](/ar/reference/data-types/lowcardinality) على هيئة النوع `DICTIONARY`. لاحظ أنه قد توجد قيم غير مستخدمة في قاموس `LowCardinality`، مما قد يؤدي إلى ظهور قيم غير مستخدمة في `DICTIONARY` الخاص بـ Arrow عند الإخراج.
 
 أنواع بيانات Arrow غير المدعومة:
 

@@ -12,7 +12,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-이제 ClickHouse Cloud는 외부 PostgreSQL 데이터베이스를 Managed Postgres 서비스로 마이그레이션할 수 있도록 ClickPipes를 제공합니다. 이 기본 제공 통합을 사용하면 원본 데이터베이스에 연결하고, 스키마를 내보내고, 이를 Managed Postgres로 가져오고, 지속적 복제를 설정하는 작업을 간편하게 수행할 수 있습니다.
+이제 ClickHouse Cloud는 외부 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres 서비스로 마이그레이션할 수 있도록 ClickPipes를 제공합니다. 이 기본 제공 통합을 사용하면 원본 데이터베이스에 연결하고, 스키마를 내보내고, 이를 ClickHouse Managed Postgres로 가져오고, 지속적 복제를 설정하는 작업을 간편하게 수행할 수 있습니다.
 
 <div id="prerequisites">
   ## 사전 준비 사항
@@ -35,21 +35,21 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 마이그레이션 전에 고려할 사항
 </div>
 
-* **DDL 전파**: 지속적 복제(CDC)에서는 DML 작업과 `ADD COLUMN`을 포착합니다. `DROP COLUMN` 및 `ALTER COLUMN` 같은 다른 DDL 변경 사항은 전파되지 않으므로 대상에 수동으로 적용해야 합니다.
+* **DDL 전파**: 지속적 복제(CDC)는 DML 작업과 `ADD COLUMN`을 캡처합니다. `DROP COLUMN` 및 `ALTER COLUMN`과 같은 다른 DDL 변경 사항은 전파되지 않으므로 대상에 수동으로 적용해야 합니다.
 
 <Note>
-  마이그레이션 중 문제가 발생하면 일반적인 오류와 해결 방법은 [Managed Postgres Migrations FAQ](/ko/products/managed-postgres/migrations/faq)에서 확인하십시오.
+  마이그레이션 중 문제가 발생하면 일반적인 오류와 해결 방법은 [ClickHouse Managed Postgres Migrations FAQ](/ko/products/managed-postgres/migrations/faq)에서 확인하십시오.
 </Note>
 
 <Steps>
   <Step title="원본 데이터베이스에 연결" id="step-1-connect">
-    [ClickHouse Cloud 콘솔](https://clickhouse.cloud)을 열고 Managed Postgres 서비스를 선택합니다.
+    [ClickHouse Cloud 콘솔](https://clickhouse.cloud)을 열고 ClickHouse Managed Postgres 서비스를 선택합니다.
 
-    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 서비스 목록의 Managed Postgres 서비스 카드" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 서비스 목록의 ClickHouse Managed Postgres 서비스 카드" size="lg" border />
 
     왼쪽 사이드바에서 **데이터 소스**를 클릭합니다.
 
-    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres 서비스 사이드바의 데이터 소스 항목" size="lg" border />
+    <Image img="/images/managed-postgres/pgpg/overview.webp" alt="ClickHouse Managed Postgres 서비스 사이드바의 데이터 소스 항목" size="lg" border />
 
     **Start import**를 클릭합니다.
 
@@ -91,10 +91,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     **다음**을 클릭합니다.
   </Step>
 
-  <Step title="Managed Postgres 서비스로 스키마 가져오기" id="step-3-import-schema">
+  <Step title="ClickHouse Managed Postgres 서비스로 스키마 가져오기" id="step-3-import-schema">
     드롭다운에서 대상 데이터베이스를 선택하거나 **Create a new database**를 클릭해 새 데이터베이스를 프로비저닝합니다.
 
-    마법사에 스키마 덤프를 Managed Postgres 서비스에 적용하는 `psql` 명령이 표시됩니다. 터미널에서 실행합니다:
+    마법사에 스키마 덤프를 ClickHouse Managed Postgres 서비스에 적용하는 `psql` 명령이 표시됩니다. 터미널에서 실행합니다:
 
     <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="3단계: 스키마 가져오기를 위한 psql 명령" size="lg" border />
 
@@ -120,7 +120,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     | 설정                                    | 기본값     | 설명                        |
     | ------------------------------------- | ------- | ------------------------- |
     | Sync interval (seconds)               | 10      | replication slot을 폴링하는 주기 |
-    | Parallel threads for 초기 적재     | 4       | 대량 복사 단계에 사용할 스레드 수       |
+    | Parallel threads for 초기 적재            | 4       | 대량 복사 단계에 사용할 스레드 수       |
     | Pull batch size                       | 100,000 | 복제 batch마다 가져오는 행 수       |
     | Snapshot number of rows per partition | 100000  | 대형 테이블 snapshot의 파티션 크기   |
     | Snapshot number of tables in parallel | 1       | 동시에 snapshot하는 테이블 수      |
@@ -172,7 +172,7 @@ ALTER DATABASE <source_db> SET default_transaction_read_only = on;
 **복제가 모두 반영되었는지 확인합니다.** 소스와 타깃의 최신 행을 비교합니다:
 
 ```sql
--- 소스와 대상 모두에서 실행
+-- Run on both source and target
 SELECT MAX(id), MAX(updated_at) FROM public.orders;
 ```
 
@@ -206,9 +206,9 @@ BEGIN
 END $$;
 ```
 
-**애플리케이션 트래픽을 전환하세요.** 읽기 및 쓰기 트래픽이 Managed Postgres 서비스로 향하도록 전환하고, 오류, 제약 조건 위반, 복제 상태를 모니터링하세요.
+**애플리케이션 트래픽을 전환하세요.** 읽기 및 쓰기 트래픽이 ClickHouse Managed Postgres 서비스로 향하도록 전환하고, 오류, 제약 조건 위반, 복제 상태를 모니터링하세요.
 
-**정리하세요.**  전환을 완료하고 새 서비스가 정상 상태임을 확인했으면 **데이터 소스**에서 migration을 삭제하세요. CDC를 사용했다면 리소스를 확보할 수 있도록 원본에서 replication slot을 삭제하세요:
+**정리하세요.**  전환을 완료하고 새 서비스가 정상 상태임을 확인했으면 **데이터 소스**에서 마이그레이션을 삭제하세요. CDC를 사용했다면 리소스를 확보할 수 있도록 원본에서 replication slot을 삭제하세요:
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
@@ -218,6 +218,6 @@ SELECT pg_drop_replication_slot('<slot_name>');
   ## 다음 단계
 </div>
 
-* [Managed Postgres 빠른 시작](/ko/products/managed-postgres/quickstart)
-* [Managed Postgres 연결 정보](/ko/products/managed-postgres/connection)
+* [ClickHouse Managed Postgres quickstart](/ko/products/managed-postgres/quickstart)
+* [ClickHouse Managed Postgres 연결 정보](/ko/products/managed-postgres/connection)
 * [ClickPipes Postgres FAQ](/ko/integrations/clickpipes/postgres/faq)

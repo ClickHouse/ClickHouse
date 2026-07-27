@@ -18,9 +18,9 @@ La cláusula tiene el mismo significado que la cláusula `WHERE`. La diferencia 
 
 Una consulta puede especificar `PREWHERE` y `WHERE` simultáneamente. En este caso, `PREWHERE` precede a `WHERE`.
 
-Si la configuración [optimize&#95;move&#95;to&#95;prewhere](/es/reference/settings/session-settings#optimize_move_to_prewhere) está establecida en 0, se desactivan las heurísticas que mueven automáticamente partes de las expresiones de `WHERE` a `PREWHERE`.
+Si la configuración [optimize&#95;move&#95;to&#95;prewhere](/es/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) está establecida en 0, se desactivan las heurísticas que mueven automáticamente partes de las expresiones de `WHERE` a `PREWHERE`.
 
-Si la consulta tiene el modificador [FINAL](/es/reference/statements/select/from#final-modifier), la optimización de `PREWHERE` no siempre es correcta. Solo se habilita si ambas configuraciones [optimize&#95;move&#95;to&#95;prewhere](/es/reference/settings/session-settings#optimize_move_to_prewhere) y [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/es/reference/settings/session-settings#optimize_move_to_prewhere_if_final) están activadas.
+Si la consulta tiene el modificador [FINAL](/es/reference/statements/select/from#final-modifier), la optimización de `PREWHERE` no siempre es correcta. Solo se habilita si ambas configuraciones [optimize&#95;move&#95;to&#95;prewhere](/es/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) y [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/es/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) están activadas.
 
 <Note>
   La sección `PREWHERE` se ejecuta antes de `FINAL`, por lo que los resultados de las consultas `FROM ... FINAL` pueden verse sesgados al usar `PREWHERE` con campos que no están en la sección `ORDER BY` de una tabla.

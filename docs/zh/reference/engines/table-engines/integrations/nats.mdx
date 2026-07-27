@@ -65,8 +65,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_reconnect_wait` – 每次重连尝试之间的休眠时间 (毫秒) 。默认值：`2000`。
 * `nats_server_list` - 用于 connection 的 server 列表。可用于连接到 NATS cluster。
 * `nats_skip_broken_messages` - NATS 消息解析器对每个块中与 schema 不兼容消息的容忍数量。默认值：`0`。如果 `nats_skip_broken_messages = N`，则该引擎会跳过 *N* 条无法解析的 NATS 消息 (1 条消息等于 1 行数据) 。
-* `nats_max_block_size` - 为从 NATS flush 数据而通过 poll 收集的行数。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings#max_insert_block_size)。
-* `nats_flush_interval_ms` - flush 从 NATS 读取的数据的 timeout。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings#stream_flush_interval_ms)。
+* `nats_max_block_size` - 为从 NATS flush 数据而通过 poll 收集的行数。默认值：[max&#95;insert&#95;block&#95;size](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)。
+* `nats_flush_interval_ms` - flush 从 NATS 读取的数据的 timeout。默认值：[stream&#95;flush&#95;interval&#95;ms](/zh/reference/settings/session-settings/stream#stream_flush_interval_ms)。
 * `nats_username` - NATS 用户名。
 * `nats_password` - NATS 密码。
 * `nats_token` - NATS 认证标记。
@@ -193,7 +193,7 @@ NATS 引擎 支持 ClickHouse 支持的所有[格式](/zh/reference/formats/inde
 单条 NATS 消息中的行数取决于格式是按行还是按块：
 
 * 对于按行的格式，可通过设置 `nats_max_rows_per_message` 来控制单条 NATS 消息中的行数。
-* 对于按块的格式，无法将块拆分成更小的部分，但一个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings#max_block_size) 控制。
+* 对于按块的格式，无法将块拆分成更小的部分，但一个块中的行数可通过通用设置 [max&#95;block&#95;size](/zh/reference/settings/session-settings/max#max_block_size) 控制。
 
 <div id="using-jetstream">
   ## 使用 JetStream
