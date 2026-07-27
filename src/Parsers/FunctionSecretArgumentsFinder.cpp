@@ -262,9 +262,10 @@ void FunctionSecretArgumentsFinder::findOrdinaryFunctionSecretArguments()
         /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
         findHMACSecretArguments();
     }
-    else if (function->name() == "url")
+    else if (function->name() == "url" || function->name() == "urlCluster")
     {
-        findURLSecretArguments();
+        /// url('url', ...) keeps the url at slot 0; urlCluster('cluster', 'url', ...) at slot 1.
+        findURLSecretArguments(function->name() == "urlCluster" ? 1 : 0);
     }
     else if (function->name() == "redis")
     {
@@ -562,18 +563,28 @@ bool FunctionSecretArgumentsFinder::maskAzureConnectionString(ssize_t url_arg_id
     return false;
 }
 
-void FunctionSecretArgumentsFinder::findURLSecretArguments()
+void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
 {
-    if (isNamedCollectionName(0))
-        return;
-
+    /// `headers(...)` can appear at any position in every url form (function, cluster function, engine,
+    /// and the named-collection variant); mask its values regardless of the url offset or a leading
+    /// collection/cluster argument.
     maskNestedSecretMaps();
 
+    if (isNamedCollectionName(url_offset))
+    {
+        /// url(named_collection, url = 'https://user:password@host/...', headers(...)): a `url` override
+        /// can carry credentials in its userinfo; mask its password (the headers are handled above).
+        String url;
+        if (ssize_t url_arg = findNamedArgument(&url, "url", url_offset + 1); url_arg >= 0 && maskURIPassword(&url))
+            result.replaced_arguments[url_arg] = "url = " + quoteString(url);
+        return;
+    }
+
     String uri;
-    if (tryGetStringFromArgument(0, &uri) && maskURIPassword(&uri))
+    if (tryGetStringFromArgument(url_offset, &uri) && maskURIPassword(&uri))
     {
         chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-        result.start = 0;
+        result.start = url_offset;
         result.count = 1;
         result.replacement = std::move(uri);
     }
