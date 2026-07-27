@@ -48,6 +48,25 @@
             <profile>default</profile>
             <quota>default</quota>
         </proto_pg_user>
+        <!-- Default session users with a password: the empty user name must be resolved
+             to them *before* authentication, so the client still has to supply the
+             password; it must not degenerate into an unauthenticated login. -->
+        <proto_tcp_password_user>
+            <password>tcp_secret</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_tcp_password_user>
+        <proto_pg_password_user>
+            <password>pg_secret</password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+        </proto_pg_password_user>
         <explicit_user>
             <password></password>
             <networks>

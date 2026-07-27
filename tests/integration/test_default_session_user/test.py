@@ -305,6 +305,25 @@ def test_native_default_session_user():
     assert native_hello(9104, "") == exception
 
 
+def test_native_default_session_user_with_password():
+    hello = 0
+    exception = 2
+
+    # The empty user name is resolved to the default session user *before*
+    # authentication, so a password-protected default session user is still
+    # authenticated: a connection without a user name and without the password
+    # is rejected, and it is accepted only with the correct password.
+    assert native_hello(9113, "", "") == exception
+    assert native_hello(9113, "", "wrong_password") == exception
+    with assert_login_success("proto_tcp_password_user", "TCP"):
+        assert native_hello(9113, "", "tcp_secret") == hello
+
+    # The same user name spelled out explicitly behaves the same way.
+    assert native_hello(9113, "proto_tcp_password_user", "") == exception
+    with assert_login_success("proto_tcp_password_user", "TCP"):
+        assert native_hello(9113, "proto_tcp_password_user", "tcp_secret") == hello
+
+
 def mysql_connect_without_user(port):
     """Connect over the MySQL wire protocol with a genuinely empty user name.
     pymysql substitutes the OS user name for an empty user name on the client
@@ -365,6 +384,15 @@ def test_postgres_anonymous_logins_disabled():
     # An explicitly specified user works as usual.
     with assert_login_success("explicit_user", "PostgreSQL"):
         assert postgres_login(9112, "explicit_user")
+
+
+def test_postgres_default_session_user_with_password():
+    # A password-protected default session user on a PostgreSQL listener: the empty
+    # user name is resolved to it before authentication, so the cleartext password
+    # request must still be answered with the correct password.
+    assert not postgres_login(9114, "", "wrong_password")
+    with assert_login_success("proto_pg_password_user", "PostgreSQL"):
+        assert postgres_login(9114, "", "pg_secret")
 
 
 def test_interserver_connections_do_not_use_default_session_user():

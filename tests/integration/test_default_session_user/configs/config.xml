@@ -97,6 +97,13 @@
             <default_session_user></default_session_user>
             <description>native protocol that rejects connections without a user name</description>
         </tcp_no_anonymous>
+        <tcp_password_defuser>
+            <type>tcp</type>
+            <host>0.0.0.0</host>
+            <port>9113</port>
+            <default_session_user>proto_tcp_password_user</default_session_user>
+            <description>native protocol whose default session user has a password</description>
+        </tcp_password_defuser>
         <http_defuser>
             <type>http</type>
             <host>0.0.0.0</host>
@@ -167,6 +174,13 @@
             <default_session_user></default_session_user>
             <description>postgres protocol that rejects connections without a user name</description>
         </postgres_no_anonymous>
+        <postgres_password_defuser>
+            <type>postgres</type>
+            <host>0.0.0.0</host>
+            <port>9114</port>
+            <default_session_user>proto_pg_password_user</default_session_user>
+            <description>postgres protocol whose default session user has a password</description>
+        </postgres_password_defuser>
         <prometheus_defuser>
             <type>prometheus</type>
             <host>0.0.0.0</host>
