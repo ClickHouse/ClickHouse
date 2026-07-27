@@ -15,7 +15,10 @@ SELECT number FROM numbers(30) LIMIT 21; -- { serverError TOO_MANY_ROWS }
 SELECT number FROM numbers(30) LIMIT 1;
 SELECT number FROM numbers(5);
 
-SELECT a FROM t_max_rows_to_read LIMIT 1;
+-- Under parallel replicas this read is split into per-replica mark ranges, so an
+-- ORDER-less LIMIT 1 may legally return any row (CI saw 32, the first row of the
+-- second task). Project a constant: only `max_rows_to_read` is measured here.
+SELECT 0 FROM t_max_rows_to_read LIMIT 1;
 SELECT a FROM t_max_rows_to_read LIMIT 11 offset 11; -- { serverError TOO_MANY_ROWS }
 SELECT a FROM t_max_rows_to_read WHERE a > 50 LIMIT 1; -- { serverError TOO_MANY_ROWS }
 
