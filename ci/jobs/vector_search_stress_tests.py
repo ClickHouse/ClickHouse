@@ -58,6 +58,9 @@ QUANTIZATION = "quantization"
 # When set to a method name (e.g. 'rabitq'), the vector column is created with a
 # CODEC(Quantized(...)) companion stream instead of an HNSW vector_similarity index.
 QUANTIZED_CODEC = "quantized_codec"
+# Extra Quantized(...) codec arguments appended after the method name and dimension,
+# e.g. "8, 128" for product quantization: CODEC(Quantized('product', <dim>, 8, 128)).
+QUANTIZED_CODEC_ARGS = "quantized_codec_args"
 # When set to a QBit element type (e.g. 'Int8'), the vector column is created as
 # QBit(<element>, <dimension>) holding quantizeBFloat16ToInt8 codes instead of an
 # HNSW index or a CODEC(Quantized(...)) stream. Searches rank candidates with the
@@ -368,6 +371,62 @@ test_params_cohere_wiki_20m_turboquant = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
 }
 
+# Product quantization (PQ) at 1 bit per dimension: CODEC(Quantized('product', <dim>, 8,
+# <dim>/8)) uses 8-bit subquantizers over 8-dimensional subvectors, so the code is
+# <dim>/8 bytes = 1 bit per dimension. Same search path as the other quantized codecs (no
+# HNSW index; vector_search_use_quantized_codes = 1); no rescoring (fetch multiplier 1).
+test_params_hackernews_10m_pq_1bit = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: "product",
+    QUANTIZED_CODEC_ARGS: "8, 192",  # nbits=8, m=192 -> 1536 bits = 1 bit/dimension
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # no rescoring (shortlist == LIMIT)
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
+    # Setting max_bytes_to_merge_at_max_space_in_pool skips the OPTIMIZE TABLE FINAL step
+    # (see optimize_table), avoiding a full-table merge that would retrain PQ over all rows.
+    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
+    # Larger initial parts so PQ (which trains per part) trains only a few times, not once
+    # per small part. Without this the 10M-row load lands in ~10 parts at the default block
+    # size; 3M-row blocks cut that to ~4.
+    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    CONCURRENCY_TEST: False,  # concurrency test not needed for quantized codec runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+}
+
+test_params_cohere_wiki_20m_pq_1bit = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: "product",
+    QUANTIZED_CODEC_ARGS: "8, 128",  # nbits=8, m=128 -> 1024 bits = 1 bit/dimension
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # no rescoring (shortlist == LIMIT)
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,  # only check recall for 1000 query vectors
+    RECALL_K: 10,
+    # Let's have more than 1 part for this dataset (7 - 9 parts)
+    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
+    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    CONCURRENCY_TEST: False,  # concurrency test not needed for quantized codec runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
+}
+
 # QBit(Int8) 1-bit search variant: no HNSW index and no CODEC. The vector column is
 # stored as QBit(Int8, <dimension>) holding quantizeBFloat16ToInt8 codes, and every
 # search ranks candidates with cosineDistanceTransposedQuantized(vec, query, 1) - i.e.
@@ -457,6 +516,7 @@ class RunTest:
         self._distance_metric = dataset[DISTANCE_METRIC]
         self._dimension = dataset[DIMENSION]
         self._quantized_codec = test_params.get(QUANTIZED_CODEC)
+        self._quantized_codec_args = test_params.get(QUANTIZED_CODEC_ARGS)
         self._qbit_element = test_params.get(QBIT_ELEMENT_TYPE)
         self._qbit_bits = test_params.get(QBIT_SEARCH_BITS)
         self._qbit_hadamard_seed = test_params.get(QBIT_HADAMARD_SEED)
@@ -484,8 +544,10 @@ class RunTest:
         if self._qbit_element is not None:
             column_def = f"{self._vector_column} QBit({self._qbit_element}, {self._dimension})"
         elif self._quantized_codec is not None:
-            codec_clause = f" CODEC(Quantized('{self._quantized_codec}', {self._dimension}))"
-            column_def = f"{self._vector_column} Array(BFloat16){codec_clause}"
+            codec_args = f"'{self._quantized_codec}', {self._dimension}"
+            if self._quantized_codec_args is not None:
+                codec_args += f", {self._quantized_codec_args}"
+            column_def = f"{self._vector_column} Array(BFloat16) CODEC(Quantized({codec_args}))"
         else:
             return schema
 
@@ -1187,15 +1249,25 @@ TESTS_TO_RUN = [
     #     dataset_hackernews_openai,
     #     test_params_hackernews_10m_qbit_int8_1bit,
     # ),
+    # (
+    #     "Test using the hackernews dataset with turboquant quantized codec",
+    #     dataset_hackernews_openai,
+    #     test_params_hackernews_10m_turboquant,
+    # ),
+    # (
+    #     "Test using the cohere wiki dataset with turboquant quantized codec",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m_turboquant,
+    # ),
     (
-        "Test using the hackernews dataset with turboquant quantized codec",
+        "Test using the hackernews dataset with product quantization (1 bit/dim)",
         dataset_hackernews_openai,
-        test_params_hackernews_10m_turboquant,
+        test_params_hackernews_10m_pq_1bit,
     ),
     (
-        "Test using the cohere wiki dataset with turboquant quantized codec",
+        "Test using the cohere wiki dataset with product quantization (1 bit/dim)",
         dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m_turboquant,
+        test_params_cohere_wiki_20m_pq_1bit,
     ),
 ]
 
