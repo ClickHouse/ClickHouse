@@ -15976,10 +15976,6 @@
     "source": "/jp/whats_new/security_changelog"
   },
   {
-    "destination": "/ja/reference/functions/table-functions/gcs",
-    "source": "/jpgines/table-engines/integrations/google-cloud-storage"
-  },
-  {
     "destination": "/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
     "source": "/knowledgebase/Insert_select_settings_tuning"
   },
@@ -26730,10 +26726,6 @@
   {
     "destination": "/ko/resources/changelogs/security-changelog",
     "source": "/ko/whats_new/security_changelog"
-  },
-  {
-    "destination": "/ko/reference/functions/table-functions/gcs",
-    "source": "/kogines/table-engines/integrations/google-cloud-storage"
   },
   {
     "destination": "/concepts/features/security/access-rights",
@@ -38842,10 +38834,6 @@
   {
     "destination": "/ru/resources/changelogs/security-changelog",
     "source": "/ru/whats_new/security_changelog"
-  },
-  {
-    "destination": "/ru/reference/functions/table-functions/gcs",
-    "source": "/rugines/table-engines/integrations/google-cloud-storage"
   },
   {
     "destination": "/concepts/features/security",
@@ -52402,14 +52390,6 @@
   {
     "destination": "/zh/resources/changelogs/security-changelog",
     "source": "/zh/whats_new/security_changelog"
-  },
-  {
-    "destination": "/zh/reference/functions/table-functions/gcs",
-    "source": "/zhgines/table-engines/integrations/google-cloud-storage"
-  },
-  {
-    "destination": "/reference/functions/table-functions/gcs",
-    "source": "gines/table-engines/integrations/google-cloud-storage"
   },
   {
     "destination": "https://clickhouse.com/company/our-story",
