@@ -35,9 +35,7 @@ Você também precisará de:
 ***
 
 <Steps>
-  <Step>
-    ## Fase 1: Criar função do IAM para acesso ao ECR
-
+  <Step title="Fase 1: Criar função do IAM para acesso ao ECR" id="phase-1-create-iam-role-for-ecr-access">
     Crie uma função do IAM que permita baixar imagens do ECR privado da ClickHouse. Implante este template do CloudFormation na sua conta AWS:
 
     ```yaml expandable
@@ -94,9 +92,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 2: Copiar Imagens de Contêiner
-
+  <Step title="Fase 2: Copiar Imagens de Contêiner" id="phase-2-copy-container-images">
     Crie repositórios ECR na sua conta para cada artefato e, em seguida, use o skopeo para copiar as imagens do ECR do ClickHouse para o seu próprio ECR. A flag `--all` preserva todas as arquiteturas (amd64, arm64).
 
     ```ini
@@ -125,9 +121,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 3: Criar VPC
-
+  <Step title="Fase 3: Criar VPC" id="phase-3-create-vpc">
     Crie uma VPC com pelo menos 3 zonas de disponibilidade para alta disponibilidade. Veja uma configuração de exemplo:
 
     | Configuração     | Valor              |
@@ -157,9 +151,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 4: Criar um cluster EKS
-
+  <Step title="Fase 4: Criar um cluster EKS" id="phase-4-create-eks-cluster">
     Crie um cluster EKS associado à VPC da Fase 3. O cluster exige:
 
     * Um plugin CNI com IPv4 (por exemplo, [Amazon VPC CNI](https://github.com/aws/amazon-vpc-cni-k8s) com IRSA)
@@ -181,9 +173,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 5: Criar Grupos de Nós
-
+  <Step title="Fase 5: Criar Grupos de Nós" id="phase-5-create-node-groups">
     Crie três grupos de nós. **Todos os nós exigem [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) para autenticação.**
 
     Para grupos de nós de Keeper e servidor, crie um grupo de nós por AZ se desejar suportar o cluster autoscaler entre AZs.
@@ -349,9 +339,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 6: Criar bucket do S3 e funções do IAM
-
+  <Step title="Fase 6: Criar bucket do S3 e funções do IAM" id="phase-6-create-s3-bucket-and-iam-roles">
     ### Bucket do S3
 
     Crie um bucket do S3 (classe Standard) com criptografia ativada na mesma região que o cluster do EKS. Você pode usar um bucket por cluster do ClickHouse ou um único bucket com um prefixo exclusivo para cada cluster.
@@ -395,9 +383,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 7: Instalar os pré-requisitos do Kubernetes
-
+  <Step title="Fase 7: Instalar os pré-requisitos do Kubernetes" id="phase-7-install-kubernetes-prerequisites">
     ### Instalar os CRDs de VolumeSnapshot
 
     Esses CRDs são necessários para o ClickHouse Operator.
@@ -443,9 +429,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 8: Instale o Operador
-
+  <Step title="Fase 8: Instale o Operador" id="phase-8-install-the-operator">
     Faça login no ECR pelo helm, se necessário:
 
     ```ini
@@ -489,9 +473,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 9: Implantar um Cluster do ClickHouse
-
+  <Step title="Fase 9: Implantar um Cluster do ClickHouse" id="phase-9-deploy-a-clickhouse-cluster">
     ### Nomeando o Seu Cluster
 
     Cada cluster do ClickHouse precisa de um **nome exclusivo** dentro do cluster EKS. Use a convenção `$DESCRIPTOR-$LETTERS-$ORDINAL`:
@@ -579,9 +561,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 10: Execute as verificações de preflight
-
+  <Step title="Fase 10: Execute as verificações de preflight" id="phase-10-run-preflight-checks">
     Para validar a prontidão do seu cluster, recomendamos executar as verificações de preflight. As verificações de preflight usam o [Troubleshoot](https://troubleshoot.sh/), um plugin do Kubernetes para diagnóstico de cluster.
 
     ### Instale o plugin
@@ -621,9 +601,7 @@ Você também precisará de:
     ***
   </Step>
 
-  <Step>
-    ## Fase 11: Verificar a instalação
-
+  <Step title="Fase 11: Verificar a instalação" id="phase-11-verify-installation">
     ### Fazer o redirecionamento de porta do serviço ClickHouse
 
     ```bash

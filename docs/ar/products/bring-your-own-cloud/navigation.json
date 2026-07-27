@@ -1,0 +1,58 @@
+{
+  "group": "استخدم سحابتك الخاصة",
+  "pages": [
+    {
+      "group": "نظرة عامة",
+      "pages": [
+        "ar/products/bring-your-own-cloud/overview/overview",
+        "ar/products/bring-your-own-cloud/overview/architecture"
+      ]
+    },
+    {
+      "group": "التهيئة",
+      "pages": [
+        "ar/products/bring-your-own-cloud/configuration/configurations",
+        "ar/products/bring-your-own-cloud/configuration/connect",
+        "ar/products/bring-your-own-cloud/configuration/operations"
+      ]
+    },
+    {
+      "group": "الإعداد",
+      "pages": [
+        "ar/products/bring-your-own-cloud/onboarding/aws",
+        "ar/products/bring-your-own-cloud/onboarding/standard",
+        {
+          "group": "التخصيص",
+          "pages": [
+            "ar/products/bring-your-own-cloud/onboarding/customization-aws",
+            "ar/products/bring-your-own-cloud/onboarding/customization-gcp"
+          ]
+        },
+        {
+          "group": "الشبكة",
+          "pages": [
+            "ar/products/bring-your-own-cloud/onboarding/network-aws",
+            "ar/products/bring-your-own-cloud/onboarding/network-gcp"
+          ],
+          "root": "ar/products/bring-your-own-cloud/onboarding/network"
+        },
+        "ar/products/bring-your-own-cloud/onboarding/new-region",
+        "ar/products/bring-your-own-cloud/onboarding/azure-private-preview"
+      ]
+    },
+    {
+      "group": "المرجع",
+      "pages": [
+        "ar/products/bring-your-own-cloud/reference/network-security",
+        "ar/products/bring-your-own-cloud/reference/privilege",
+        "ar/products/bring-your-own-cloud/reference/clickhouse-data-access",
+        "ar/products/bring-your-own-cloud/reference/observability-aws",
+        "ar/products/bring-your-own-cloud/reference/billable-aws-services",
+        "ar/products/bring-your-own-cloud/reference/cost-model-aws",
+        "ar/products/bring-your-own-cloud/reference/aws-service-limits",
+        "ar/products/bring-your-own-cloud/reference/faq",
+        "ar/products/bring-your-own-cloud/reference/faq-aws"
+      ]
+    }
+  ]
+}
