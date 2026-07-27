@@ -1229,7 +1229,7 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
 
 size_t Dictionary::decodedFootprintUpperBound(
     parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
-    size_t num_values, size_t uncompressed_page_size, const IDataType & raw_decoded_type)
+    size_t num_values, size_t page_payload_size, const IDataType & raw_decoded_type)
 {
     /// Mirror the mode selection in decode(). The decompressed page payload (`decompressed_buf`) is
     /// held for a compressed column chunk; on top of it the trivial fast paths add either nothing
@@ -1260,7 +1260,11 @@ size_t Dictionary::decodedFootprintUpperBound(
     /// the prefetched page buffer (`dictionary_page_prefetch`), whose bytes are already charged to the
     /// pruning stage by `Prefetcher::startPrefetch`; counting them here again would double-count the
     /// page against the memory budget and reject dictionaries whose real incremental footprint fits it.
-    size_t logical = codec == parq::CompressionCodec::UNCOMPRESSED ? 0 : uncompressed_page_size;
+    /// The same reasoning applies to the compressed frame of a compressed chunk, which is why the caller
+    /// passes the *decompressed* page size here and never the compressed one: the compressed bytes also
+    /// live in the prefetch buffer, including in the (rare, but perfectly legal) case where the codec
+    /// expands an incompressible page past its own payload.
+    size_t logical = codec == parq::CompressionCodec::UNCOMPRESSED ? 0 : page_payload_size;
 
     if (encoding == parq::Encoding::PLAIN && info.fixed_size_converter && info.fixed_size_converter->isTrivial())
     {
@@ -1286,7 +1290,7 @@ size_t Dictionary::decodedFootprintUpperBound(
             /// only in-spec (PLAIN) dictionary encoding each value is stored as a 4-byte length plus its
             /// raw bytes, so the decoded chars are no larger than the page payload, plus a per-value
             /// UInt64 offset.
-            logical = sat_add(logical, sat_add(sat_mul(num_values, sizeof(UInt64)), uncompressed_page_size));
+            logical = sat_add(logical, sat_add(sat_mul(num_values, sizeof(UInt64)), page_payload_size));
         }
         else
         {

@@ -995,7 +995,18 @@ bool Reader::decodeDictionaryPage(
         if (header.compressed_page_size < 0 || header.uncompressed_page_size < 0
             || header.dictionary_page_header.num_values < 0)
             return false; /// Malformed header sizes; the data-read path (unbounded) surfaces the error.
-        size_t page_bytes = size_t(std::max(header.uncompressed_page_size, header.compressed_page_size));
+        /// The size of the payload `Dictionary::decode` will see, which is what the bound is about:
+        /// `decodeDictionaryPageImpl` decompresses a compressed chunk into a `decompressed_buf` of
+        /// exactly `uncompressed_page_size` bytes, while for an `UNCOMPRESSED` chunk it points the
+        /// dictionary straight at the first `compressed_page_size` prefetched bytes. Never the larger
+        /// of the two: the compressed frame is held by `dictionary_page_prefetch` and is already
+        /// charged to the pruning stage, so charging it here as well would double-count it and make a
+        /// row group whose decoded dictionary fits the budget fall back to a full scan. A codec is
+        /// free to expand an incompressible page (`compressed_page_size > uncompressed_page_size`),
+        /// and our own writer does not fall back to `UNCOMPRESSED` when it does.
+        size_t page_bytes = column.meta->meta_data.codec == parq::CompressionCodec::UNCOMPRESSED
+            ? size_t(header.compressed_page_size)
+            : size_t(header.uncompressed_page_size);
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
             column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
             size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
