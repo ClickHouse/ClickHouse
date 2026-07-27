@@ -44,9 +44,13 @@ SYSTEM FLUSH LOGS query_log;
 SELECT 'remote_version', count() > 0, min(client_version_major) > 0
 FROM system.query_log
 -- The sub-query runs on the shard with its connection's own default database, so it is identified
--- by the tables it reads, not by `current_database`.
+-- by the table it reads, not by `current_database`. With `serialize_query_plan = 1` the shard runs
+-- a deserialized query plan and never analyses the query, so it records no `databases`/`tables`
+-- either - hence the identification by the query text, which is qualified with this test's database
+-- in both cases.
 WHERE type = 'QueryFinish' AND is_initial_query = 0 AND event_date >= yesterday()
-    AND has(databases, currentDatabase()) AND has(tables, concat(currentDatabase(), '.agg_src'));
+    AND (query LIKE concat('%`', currentDatabase(), '`.`agg_src`%')
+        OR has(databases, currentDatabase()));
 
 DROP TABLE buf;
 DROP TABLE buf_mv;
