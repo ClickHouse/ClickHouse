@@ -27,3 +27,9 @@ FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 0', (SELECT encrypt('aes
 -- EXPLAIN QUERY TREE with the passes disabled runs no analysis, so an ordinary secret function must be
 -- masked by the dump itself; both the plaintext and the key literal must show as [HIDDEN].
 EXPLAIN QUERY TREE run_passes = 0 SELECT encrypt('aes-128-ecb', 'SEKRIT_PLAINTEXT', 'SEKRIT_LITERALKEY');
+
+-- A secret key that reaches encrypt as a column aliased in a subquery is folded into the plan as a
+-- fresh constant after the query-tree masking ran, so the planner must flag that constant; the pretty
+-- ActionsDAG dump must not print it.
+SELECT countIf(explain LIKE '%SEKRIT_SUBQKEY16%') AS subquery_dag_leaks
+FROM viewExplain('EXPLAIN PLAN', 'actions = 1, pretty = 1', (SELECT encrypt('aes-128-ecb', toString(number), k) FROM (SELECT 'SEKRIT_SUBQKEY16' AS k, number FROM numbers(1))));
