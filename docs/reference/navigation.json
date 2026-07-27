@@ -14,6 +14,7 @@
           "expanded": false,
           "group": "Statements",
           "pages": [
+            "reference/statements/index",
             {
               "expanded": false,
               "group": "ALTER",
@@ -43,8 +44,7 @@
                 "reference/statements/alter/user",
                 "reference/statements/alter/masking-policy",
                 "reference/statements/alter/view"
-              ],
-              "root": "reference/statements/alter/index"
+              ]
             },
             "reference/statements/attach",
             "reference/statements/check-grant",
@@ -54,11 +54,13 @@
               "expanded": false,
               "group": "CREATE",
               "pages": [
+                "reference/statements/create/index",
                 "reference/statements/create/database",
                 {
                   "expanded": false,
                   "group": "DICTIONARY",
                   "pages": [
+                    "reference/statements/create/dictionary",
                     "reference/statements/create/dictionary/attributes",
                     "reference/statements/create/dictionary/embedded",
                     "reference/statements/create/dictionary/lifetime",
@@ -66,6 +68,7 @@
                       "expanded": false,
                       "group": "Layouts",
                       "pages": [
+                        "reference/statements/create/dictionary/layouts/overview",
                         "reference/statements/create/dictionary/layouts/flat",
                         "reference/statements/create/dictionary/layouts/hashed",
                         "reference/statements/create/dictionary/layouts/hashed-array",
@@ -78,13 +81,13 @@
                         "reference/statements/create/dictionary/layouts/polygon",
                         "reference/statements/create/dictionary/layouts/ip-trie",
                         "reference/statements/create/dictionary/layouts/regexp-tree"
-                      ],
-                      "root": "reference/statements/create/dictionary/layouts/overview"
+                      ]
                     },
                     {
                       "expanded": false,
                       "group": "Sources",
                       "pages": [
+                        "reference/statements/create/dictionary/sources/overview",
                         "reference/statements/create/dictionary/sources/local-file",
                         "reference/statements/create/dictionary/sources/executable-file",
                         "reference/statements/create/dictionary/sources/executable-pool",
@@ -99,11 +102,9 @@
                         "reference/statements/create/dictionary/sources/null",
                         "reference/statements/create/dictionary/sources/yamlregexptree",
                         "reference/statements/create/dictionary/sources/ytsaurus"
-                      ],
-                      "root": "reference/statements/create/dictionary/sources/overview"
+                      ]
                     }
-                  ],
-                  "root": "reference/statements/create/dictionary"
+                  ]
                 },
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
@@ -115,8 +116,7 @@
                 "reference/statements/create/table",
                 "reference/statements/create/user",
                 "reference/statements/create/view"
-              ],
-              "root": "reference/statements/create/index"
+              ]
             },
             "reference/statements/delete",
             "reference/statements/describe-table",
@@ -141,6 +141,7 @@
               "expanded": false,
               "group": "SELECT",
               "pages": [
+                "reference/statements/select/index",
                 "reference/statements/select/all",
                 "reference/statements/select/apply_modifier",
                 "reference/statements/select/array-join",
@@ -165,8 +166,7 @@
                 "reference/statements/select/union",
                 "reference/statements/select/where",
                 "reference/statements/select/with"
-              ],
-              "root": "reference/statements/select/index"
+              ]
             },
             "reference/statements/set-role",
             "reference/statements/set",
@@ -177,18 +177,17 @@
             "reference/statements/update",
             "reference/statements/use",
             "reference/statements/watch"
-          ],
-          "root": "reference/statements/index"
+          ]
         },
         {
           "expandable": true,
           "expanded": false,
           "group": "Operators",
           "pages": [
+            "reference/operators/index",
             "reference/operators/exists",
             "reference/operators/distributed-ddl"
-          ],
-          "root": "reference/operators/index"
+          ]
         }
       ]
     },
@@ -197,6 +196,7 @@
       "expanded": false,
       "group": "Data Types",
       "pages": [
+        "reference/data-types/index",
         {
           "expanded": false,
           "group": "Numeric types",
@@ -285,12 +285,12 @@
           "expanded": false,
           "group": "Special Data Types",
           "pages": [
+            "reference/data-types/special-data-types/index",
             "reference/data-types/special-data-types/expression",
             "reference/data-types/special-data-types/interval",
             "reference/data-types/special-data-types/nothing",
             "reference/data-types/special-data-types/set"
-          ],
-          "root": "reference/data-types/special-data-types/index"
+          ]
         },
         {
           "group": "Binary encoding",
@@ -298,22 +298,24 @@
             "reference/data-types/data-types-binary-encoding"
           ]
         }
-      ],
-      "root": "reference/data-types/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Engines",
       "pages": [
+        "reference/engines/engines",
         {
           "expanded": false,
           "group": "Table Engines",
           "pages": [
+            "reference/engines/table-engines/index",
             {
               "expanded": false,
               "group": "Integrations",
               "pages": [
+                "reference/engines/table-engines/integrations/index",
                 "reference/engines/table-engines/integrations/arrowflight",
                 "reference/engines/table-engines/integrations/azure-queue",
                 "reference/engines/table-engines/integrations/azureBlobStorage",
@@ -340,23 +342,23 @@
                 "reference/engines/table-engines/integrations/sqlite",
                 "reference/engines/table-engines/integrations/time-series",
                 "reference/engines/table-engines/integrations/ytsaurus"
-              ],
-              "root": "reference/engines/table-engines/integrations/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Log Family",
               "pages": [
+                "reference/engines/table-engines/log-family/index",
                 "reference/engines/table-engines/log-family/log",
                 "reference/engines/table-engines/log-family/stripelog",
                 "reference/engines/table-engines/log-family/tinylog"
-              ],
-              "root": "reference/engines/table-engines/log-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "MergeTree Family",
               "pages": [
+                "reference/engines/table-engines/mergetree-family/index",
                 "reference/engines/table-engines/mergetree-family/mergetree",
                 "reference/engines/table-engines/mergetree-family/aggregatingmergetree",
                 "reference/engines/table-engines/mergetree-family/annindexes",
@@ -369,13 +371,13 @@
                 "reference/engines/table-engines/mergetree-family/summingmergetree",
                 "reference/engines/table-engines/mergetree-family/textindexes",
                 "reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
-              ],
-              "root": "reference/engines/table-engines/mergetree-family/index"
+              ]
             },
             {
               "expanded": false,
               "group": "Special",
               "pages": [
+                "reference/engines/table-engines/special/index",
                 "reference/engines/table-engines/special/alias",
                 "reference/engines/table-engines/special/buffer",
                 "reference/engines/table-engines/special/dictionary",
@@ -394,16 +396,15 @@
                 "reference/engines/table-engines/special/set",
                 "reference/engines/table-engines/special/url",
                 "reference/engines/table-engines/special/view"
-              ],
-              "root": "reference/engines/table-engines/special/index"
+              ]
             }
-          ],
-          "root": "reference/engines/table-engines/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Database Engines",
           "pages": [
+            "reference/engines/database-engines/index",
             "reference/engines/database-engines/atomic",
             "reference/engines/database-engines/backup",
             "reference/engines/database-engines/datalake",
@@ -413,21 +414,21 @@
             "reference/engines/database-engines/replicated",
             "reference/engines/database-engines/shared",
             "reference/engines/database-engines/sqlite"
-          ],
-          "root": "reference/engines/database-engines/index"
+          ]
         }
-      ],
-      "root": "reference/engines/engines"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Functions",
       "pages": [
+        "reference/functions/index",
         {
           "expanded": false,
           "group": "Regular functions",
           "pages": [
+            "reference/functions/regular-functions/regular-functions-index",
             "reference/functions/regular-functions/ai-functions",
             "reference/functions/regular-functions/arithmetic-functions",
             "reference/functions/regular-functions/array-functions",
@@ -449,6 +450,7 @@
               "expanded": false,
               "group": "Geo",
               "pages": [
+                "reference/functions/regular-functions/geo/index",
                 "reference/functions/regular-functions/geo/coordinates",
                 "reference/functions/regular-functions/geo/flipCoordinates",
                 "reference/functions/regular-functions/geo/geometry",
@@ -458,8 +460,7 @@
                 "reference/functions/regular-functions/geo/polygon",
                 "reference/functions/regular-functions/geo/s2",
                 "reference/functions/regular-functions/geo/svg"
-              ],
-              "root": "reference/functions/regular-functions/geo/index"
+              ]
             },
             "reference/functions/regular-functions/hash-functions",
             "reference/functions/regular-functions/in-functions",
@@ -488,13 +489,13 @@
             "reference/functions/regular-functions/uniqtheta-functions",
             "reference/functions/regular-functions/url-functions",
             "reference/functions/regular-functions/uuid-functions"
-          ],
-          "root": "reference/functions/regular-functions/regular-functions-index"
+          ]
         },
         {
           "expanded": false,
           "group": "Aggregate Functions",
           "pages": [
+            "reference/functions/aggregate-functions/index",
             "reference/functions/aggregate-functions/combinators",
             "reference/functions/aggregate-functions/grouping_function",
             "reference/functions/aggregate-functions/parametric-functions",
@@ -663,13 +664,13 @@
                 "reference/functions/aggregate-functions/welchTTest"
               ]
             }
-          ],
-          "root": "reference/functions/aggregate-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Table functions",
           "pages": [
+            "reference/functions/table-functions/index",
             "reference/functions/table-functions/arrowflight",
             "reference/functions/table-functions/azureBlobStorage",
             "reference/functions/table-functions/azureBlobStorageCluster",
@@ -728,13 +729,13 @@
             "reference/functions/table-functions/view",
             "reference/functions/table-functions/ytsaurus",
             "reference/functions/table-functions/zeros"
-          ],
-          "root": "reference/functions/table-functions/index"
+          ]
         },
         {
           "expanded": false,
           "group": "Window functions",
           "pages": [
+            "reference/functions/window-functions/index",
             "reference/functions/window-functions/cume_dist",
             "reference/functions/window-functions/dense_rank",
             "reference/functions/window-functions/first_value",
@@ -749,8 +750,7 @@
             "reference/functions/window-functions/percent_rank",
             "reference/functions/window-functions/rank",
             "reference/functions/window-functions/row_number"
-          ],
-          "root": "reference/functions/window-functions/index"
+          ]
         },
         {
           "group": "User Defined Functions",
@@ -759,14 +759,14 @@
             "reference/functions/regular-functions/wasm_udf"
           ]
         }
-      ],
-      "root": "reference/functions/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Formats",
       "pages": [
+        "reference/formats/index",
         {
           "expanded": false,
           "group": "Arrow",
@@ -937,28 +937,35 @@
         "reference/formats/Values",
         "reference/formats/Vertical",
         "reference/formats/XML"
-      ],
-      "root": "reference/formats/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "Settings",
       "pages": [
-        { "$ref": "./settings/server-settings/settings/navigation.json" },
-        { "$ref": "./settings/session-settings/navigation.json" },
-        { "$ref": "./settings/merge-tree-settings/navigation.json" },
-        { "$ref": "./settings/formats/navigation.json" },
+        "reference/settings/index",
+        {
+          "$ref": "./settings/server-settings/settings/navigation.json"
+        },
+        {
+          "$ref": "./settings/session-settings/navigation.json"
+        },
+        {
+          "$ref": "./settings/merge-tree-settings/navigation.json"
+        },
+        {
+          "$ref": "./settings/formats/navigation.json"
+        },
         "reference/settings/beta-and-experimental-features"
-      ],
-      "root": "reference/settings/index"
+      ]
     },
     {
       "expandable": true,
       "expanded": false,
       "group": "System Tables",
       "pages": [
-        "reference/system-tables/index",
+        "reference/system-tables/overview",
         "reference/system-tables/aggregate_function_combinators",
         "reference/system-tables/aggregated_zookeeper_log",
         "reference/system-tables/asynchronous_insert_log",
@@ -1117,13 +1124,13 @@
         "reference/system-tables/zookeeper_connection_log",
         "reference/system-tables/zookeeper_log",
         "reference/system-tables/zookeeper_watches"
-      ],
-      "root": "reference/system-tables/overview"
+      ]
     },
     {
       "group": "Data Lakes",
-      "pages": [],
-      "root": "reference/datalakes"
+      "pages": [
+        "reference/datalakes"
+      ]
     }
   ]
 }
