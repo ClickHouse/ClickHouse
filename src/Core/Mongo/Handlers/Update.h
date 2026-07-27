@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Mongo/Handler.h>
-#include "Core/Mongo/Document.h"
+#include <Core/Mongo/Document.h>
 
 namespace DB::MongoProtocol
 {

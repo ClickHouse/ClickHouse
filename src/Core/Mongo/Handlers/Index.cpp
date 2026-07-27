@@ -2,30 +2,51 @@
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/Index.h>
 
+#include <fmt/format.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 namespace DB::MongoProtocol
 {
 
 std::vector<Document> IndexHandler::handle(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
+    auto collection = getCollectionRef(sections[0].documents[0], "createIndexes");
+
     auto doc = sections[0].documents[0].getRapidJsonRepresentation();
-    const auto & collection = doc["createIndexes"].GetString();
-    const auto & array_index = doc["indexes"].GetArray();
-    for (auto * it = array_index.begin(); it < array_index.end(); ++it)
+    auto indexes_it = doc.FindMember("indexes");
+    if (indexes_it == doc.MemberEnd() || !indexes_it->value.IsArray())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'createIndexes' command does not contain the 'indexes' array");
+
+    for (const auto & index : indexes_it->value.GetArray())
     {
-        const auto & index_info = it->GetObject()["key"].GetObject();
-        for (auto index = index_info.MemberBegin(); index < index_info.MemberEnd(); ++index)
+        auto key_it = index.FindMember("key");
+        if (key_it == index.MemberEnd() || !key_it->value.IsObject())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "An index of the 'createIndexes' command has no 'key'");
+
+        for (auto column = key_it->value.MemberBegin(); column != key_it->value.MemberEnd(); ++column)
         {
-            const auto & column_name = index->name.GetString();
+            String column_name = column->name.GetString();
             auto sql_query = fmt::format(
-                "ALTER TABLE {} ADD INDEX {} ({}) TYPE bloom_filter(0.02) GRANULARITY 8;", collection, column_name, column_name);
+                "ALTER TABLE {} ADD INDEX IF NOT EXISTS {} ({}) TYPE bloom_filter(0.02) GRANULARITY 8",
+                collection.getQualifiedName(),
+                backQuoteIfNeed(column_name),
+                backQuoteIfNeed(column_name));
             executor->execute(sql_query);
         }
     }
+
     bson_t * bson_doc = bson_new();
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document res_doc(bson_doc);
-    return {res_doc};
+    std::vector<Document> result;
+    result.emplace_back(bson_doc);
+    return result;
 }
 
 void registerIndexHandler(HandlerRegitstry * registry)

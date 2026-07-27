@@ -1,11 +1,18 @@
+#include <Core/Mongo/Document.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/Auth.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 
+#include <Common/Base64.h>
+#include <Common/Exception.h>
+
 #include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-#include "Core/Mongo/Document.h"
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
+}
 
 namespace DB::MongoProtocol
 {
@@ -13,63 +20,59 @@ namespace DB::MongoProtocol
 namespace
 {
 
-const std::string BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-std::string base64Decode(const std::string & encoded)
+/// Reads a required string member of a JSON object.
+String getStringMember(const rapidjson::Value & value, const char * name)
 {
-    std::vector<unsigned char> output;
-    std::vector<int> decoding_table(256, -1);
-    for (size_t i = 0; i < BASE64_CHARS.size(); ++i)
-    {
-        decoding_table[static_cast<unsigned char>(BASE64_CHARS[i])] = static_cast<int>(i);
-    }
-
-    int val = 0;
-    int valb = -8;
-    for (unsigned char c : encoded)
-    {
-        if (c == '=')
-            break; // Stop processing padding
-        if (decoding_table[c] == -1)
-            continue;
-        val = (val << 6) + decoding_table[c];
-        valb += 6;
-        if (valb >= 0)
-        {
-            output.push_back(static_cast<unsigned char>((val >> valb) & 0xFF));
-            valb -= 8;
-        }
-    }
-    return std::string(output.begin(), output.end());
+    auto it = value.FindMember(name);
+    if (it == value.MemberEnd() || !it->value.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field '{}' is missing in the 'saslStart' command", name);
+    return it->value.GetString();
 }
-
 
 }
 
 std::vector<Document> AuthHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     const auto & doc = documents[0].documents[0];
-    String user_password_encoded;
-    {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        const auto & json_representation = doc.getRapidJsonRepresentation();
+    auto json = doc.getRapidJsonRepresentation();
 
-        json_representation["payload"].GetObject()["$binary"].Accept(writer);
-        user_password_encoded = buffer.GetString();
-    }
-    String user;
-    {
-        rapidjson::StringBuffer buffer;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-        const auto & json_representation = doc.getRapidJsonRepresentation();
+    /// Only the `PLAIN` SASL mechanism is supported: it is the only one that gives us the
+    /// cleartext password needed to authenticate a ClickHouse user.
+    auto mechanism = getStringMember(json, "mechanism");
+    if (mechanism != "PLAIN")
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "Authentication mechanism '{}' is not supported, use 'PLAIN' instead", mechanism);
 
-        json_representation["$db"].Accept(writer);
-        user = buffer.GetString();
-    }
-    auto user_password = base64Decode(user_password_encoded);
-    auto password = user_password.substr(user.size());
-    executor->authenticate(user.substr(1, user.size() - 2), password);
+    /// In the legacy extended JSON representation of BSON a binary field becomes
+    /// `{"$binary": "<base64>", "$type": "..."}`.
+    auto payload_it = json.FindMember("payload");
+    if (payload_it == json.MemberEnd() || !payload_it->value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Field 'payload' is missing in the 'saslStart' command");
+    auto encoded_payload = getStringMember(payload_it->value, "$binary");
+
+    /// The `PLAIN` message is `authzid \0 authcid \0 password`, where `authcid` is the user
+    /// name sent by the client. It must not be confused with `$db`, which is only the
+    /// database the client authenticates against.
+    auto payload = base64Decode(encoded_payload);
+
+    auto authzid_end = payload.find('\0');
+    if (authzid_end == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed 'PLAIN' authentication payload");
+    auto authcid_end = payload.find('\0', authzid_end + 1);
+    if (authcid_end == String::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Malformed 'PLAIN' authentication payload");
+
+    String authzid = payload.substr(0, authzid_end);
+    String authcid = payload.substr(authzid_end + 1, authcid_end - authzid_end - 1);
+    String password = payload.substr(authcid_end + 1);
+
+    /// `authzid` is the identity to act as. It is empty unless the client asks for
+    /// impersonation, which for us is the same as authenticating that user directly.
+    String user = authcid.empty() ? authzid : authcid;
+    if (user.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty user name in the 'PLAIN' authentication payload");
+
+    executor->authenticate(user, password);
 
     bson_t * bson_doc = bson_new();
 
@@ -77,8 +80,9 @@ std::vector<Document> AuthHandler::handle(const std::vector<OpMessageSection> & 
     BSON_APPEND_INT32(bson_doc, "conversationId", 1);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    auto result_doc = Document(bson_doc);
-    return {result_doc};
+    std::vector<Document> result;
+    result.emplace_back(bson_doc);
+    return result;
 }
 
 void registerAuthHandler(HandlerRegitstry * registry)

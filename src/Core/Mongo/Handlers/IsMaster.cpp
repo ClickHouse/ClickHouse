@@ -12,7 +12,7 @@ std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection
     BSON_APPEND_BOOL(bson_doc, "ismaster", true);
     BSON_APPEND_BOOL(bson_doc, "isWritablePrimary", true);
     BSON_APPEND_INT32(bson_doc, "maxBsonObjectSize", 16777216);
-    BSON_APPEND_INT32(bson_doc, "maxMessageSizeBytes", 48000000);
+    BSON_APPEND_INT32(bson_doc, "maxMessageSizeBytes", static_cast<int32_t>(MAX_MESSAGE_SIZE));
     BSON_APPEND_INT32(bson_doc, "maxWriteBatchSize", 100000);
     BSON_APPEND_INT64(bson_doc, "localTime", static_cast<int64_t>(time(nullptr)) * 1000);
     BSON_APPEND_INT32(bson_doc, "logicalSessionTimeoutMinutes", 30);
@@ -21,8 +21,9 @@ std::vector<Document> IsMasterHandler::handle(const std::vector<OpMessageSection
     BSON_APPEND_BOOL(bson_doc, "readOnly", false);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc);
-    return {doc};
+    std::vector<Document> result;
+    result.emplace_back(bson_doc);
+    return result;
 }
 
 void registerIsMasterHandler(HandlerRegitstry * registry)

@@ -1,73 +1,98 @@
+#include <Core/Mongo/Document.h>
 #include <Core/Mongo/Handler.h>
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/ListCollections.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/executeQuery.h>
-#include <pcg_random.hpp>
-#include <Common/CurrentThread.h>
-#include <Common/randomSeed.h>
-#include "Core/Mongo/Document.h"
+#include <fmt/format.h>
+#include <Common/Exception.h>
+#include <Common/quoteString.h>
 
 #include <bson/bson.h>
 #include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace DB::MongoProtocol
 {
 
-std::vector<Document> ListCollectionsHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> ListCollectionsHandler::handle(
+    const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
-    std::vector<bson_t *> result;
+    /// `listCollections` names no collection, only the database it applies to.
+    String database;
     {
-        String query = "SHOW TABLES;";
+        auto json = documents[0].documents[0].getRapidJsonRepresentation();
+        auto database_it = json.FindMember("$db");
+        if (database_it == json.MemberEnd() || !database_it->value.IsString())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'listCollections' command does not contain the '$db' database name");
+        database = database_it->value.GetString();
+    }
 
-        auto out = executor->execute(query);
-        auto names = splitByNewline(out);
+    /// A database that does not exist has no collections, as in Mongo, where listing them
+    /// returns an empty cursor rather than an error.
+    std::vector<std::string> names;
+    if (objectExists(executor, "DATABASE", backQuoteIfNeed(database)))
+        names = splitByNewline(executor->execute(fmt::format("SHOW TABLES FROM {}", backQuoteIfNeed(database))));
 
+    /// The reply is `{"cursor": {"firstBatch": [...], "id": 0, "ns": "<db>.$cmd.listCollections"}, "ok": 1}`.
+    bson_t cursor;
+    bson_init(&cursor);
+
+    {
+        static constexpr std::string_view key_identifier = "firstBatch";
+        bson_t first_batch;
+        bson_append_array_begin(&cursor, key_identifier.data(), static_cast<int>(key_identifier.size()), &first_batch);
+
+        size_t index = 0;
         for (const auto & name : names)
         {
-            bson_t * collection_doc = bson_new();
-            bson_t * options_doc = bson_new();
-            bson_t * id_index_doc = bson_new();
-            bson_t * info = bson_new();
+            if (name.empty())
+                continue;
 
-            BSON_APPEND_BOOL(info, "readOnly", false);
+            bson_t collection_doc;
+            bson_init(&collection_doc);
 
-            BSON_APPEND_UTF8(collection_doc, "name", name.c_str());
-            BSON_APPEND_UTF8(collection_doc, "type", "collection");
-            BSON_APPEND_DOCUMENT(collection_doc, "options", options_doc);
-            BSON_APPEND_DOCUMENT(collection_doc, "idIndex", id_index_doc);
-            BSON_APPEND_DOCUMENT(collection_doc, "info", info);
+            bson_t options_doc;
+            bson_init(&options_doc);
+            bson_t id_index_doc;
+            bson_init(&id_index_doc);
+            bson_t info;
+            bson_init(&info);
+            BSON_APPEND_BOOL(&info, "readOnly", false);
 
-            result.push_back(collection_doc);
+            BSON_APPEND_UTF8(&collection_doc, "name", name.c_str());
+            BSON_APPEND_UTF8(&collection_doc, "type", "collection");
+            BSON_APPEND_DOCUMENT(&collection_doc, "options", &options_doc);
+            BSON_APPEND_DOCUMENT(&collection_doc, "idIndex", &id_index_doc);
+            BSON_APPEND_DOCUMENT(&collection_doc, "info", &info);
+
+            bson_destroy(&options_doc);
+            bson_destroy(&id_index_doc);
+            bson_destroy(&info);
+
+            auto key_str = std::to_string(index);
+            ++index;
+            bson_append_document(&first_batch, key_str.c_str(), static_cast<int>(key_str.size()), &collection_doc);
+            bson_destroy(&collection_doc);
         }
-    }
 
-    bson_t * cursor_doc = bson_new();
-    bson_t * selected_docs = bson_new();
-
-    {
-        String key_identifier = "firstBatch";
-        bson_append_array_begin(selected_docs, key_identifier.c_str(), static_cast<Int32>(key_identifier.size()), cursor_doc);
-        for (size_t i = 0; i < result.size(); ++i)
-        {
-            auto key_str = std::to_string(i);
-            BSON_APPEND_DOCUMENT(cursor_doc, key_str.c_str(), result[i]);
-        }
-        bson_append_array_end(selected_docs, cursor_doc);
+        bson_append_array_end(&cursor, &first_batch);
     }
-    BSON_APPEND_INT64(selected_docs, "id", 0);
-    String table_id = "db";
-    BSON_APPEND_UTF8(selected_docs, "ns", table_id.c_str());
+    BSON_APPEND_INT64(&cursor, "id", 0);
+    String namespace_name = database + ".$cmd.listCollections";
+    BSON_APPEND_UTF8(&cursor, "ns", namespace_name.c_str());
 
     bson_t * result_doc = bson_new();
-    BSON_APPEND_DOCUMENT(result_doc, "cursor", selected_docs);
+    BSON_APPEND_DOCUMENT(result_doc, "cursor", &cursor);
     BSON_APPEND_DOUBLE(result_doc, "ok", 1.0);
+    bson_destroy(&cursor);
 
-    Document doc(result_doc);
-    return {doc};
+    std::vector<Document> result;
+    result.emplace_back(result_doc);
+    return result;
 }
 
 void registerListCollectionsHandler(HandlerRegitstry * registry)

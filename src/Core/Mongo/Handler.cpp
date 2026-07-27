@@ -1,4 +1,4 @@
-#include "Handler.h"
+#include <Core/Mongo/Handler.h>
 
 #include <memory>
 #include <Core/Mongo/Document.h>
@@ -8,11 +8,14 @@
 #include <Core/Mongo/Wire/OpMessage.h>
 #include <Core/Mongo/Wire/OpQuery.h>
 #include <bson/bson.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 
-#include "rapidjson/document.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/writer.h"
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
 
 namespace DB::ErrorCodes
 {
@@ -120,13 +123,57 @@ String modifyFilter(const String & json)
     return result;
 }
 
-String clearQuery(const String & query)
+String CollectionRef::getQualifiedName() const
 {
-    String cleared_query;
-    for (auto elem : query)
-        if (elem != '`' && elem != 0)
-            cleared_query.push_back(elem);
-    return cleared_query;
+    return backQuoteIfNeed(database) + "." + backQuoteIfNeed(collection);
+}
+
+CollectionRef getCollectionRef(const Document & command, const String & command_name)
+{
+    auto json = command.getRapidJsonRepresentation();
+
+    auto collection_it = json.FindMember(command_name.c_str());
+    if (collection_it == json.MemberEnd() || !collection_it->value.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain a collection name", command_name);
+
+    /// Every command sent over `OP_MSG` carries the database it applies to in `$db`.
+    auto database_it = json.FindMember("$db");
+    if (database_it == json.MemberEnd() || !database_it->value.IsString())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command '{}' does not contain the '$db' database name", command_name);
+
+    CollectionRef result{.database = database_it->value.GetString(), .collection = collection_it->value.GetString()};
+
+    if (result.database.empty() || result.collection.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Empty Mongo database or collection name in the command '{}': '{}.{}'",
+            command_name,
+            result.database,
+            result.collection);
+
+    /// Handlers build a query in the Mongo dialect, where a collection is addressed as
+    /// `<database>.<collection>`. Restricting the names to word characters keeps that text
+    /// unambiguous and makes it impossible for a name to change the meaning of the query.
+    auto validate = [](const String & name)
+    {
+        for (char c : name)
+            if (!isWordCharASCII(c) && c != '-')
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Mongo database and collection names must consist of letters, digits, '_' and '-', got '{}'",
+                    name);
+    };
+    validate(result.database);
+    validate(result.collection);
+
+    return result;
+}
+
+bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object_kind, const String & name)
+{
+    /// `EXISTS TABLE` also answers `0` when the database itself is absent.
+    auto output = executor->execute(fmt::format("EXISTS {} {}", object_kind, name));
+    return !output.empty() && output[0] == '1';
 }
 
 Header makeResponseHeader(Header request_header, Int32 message_size, Int32 response_id)
@@ -141,7 +188,14 @@ Header makeResponseHeader(Header request_header, Int32 message_size, Int32 respo
 
 std::vector<Document> runMessageRequest(const std::vector<OpMessageSection> & sections, std::shared_ptr<QueryExecutor> executor)
 {
-    auto command = sections[0].documents[0].getDocumentKeys()[0];
+    if (sections.empty() || sections[0].kind != 0 || sections[0].documents.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo message does not start with a command document");
+
+    auto keys = sections[0].documents[0].getDocumentKeys();
+    if (keys.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Mongo command document is empty");
+
+    const auto & command = keys[0];
     auto handler = HandlerRegitstry().getHandler(command);
     if (!handler)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command {} is not supported yet.", command);
@@ -156,31 +210,44 @@ std::vector<Document> runQueryRequst(const std::vector<Document> &, std::shared_
 }
 
 
-void handle(Header header, std::shared_ptr<MessageTransport> transport, std::shared_ptr<QueryExecutor> executor)
+namespace
+{
+
+/// Turns the current exception into the `{"errmsg": ..., "ok": 0}` document Mongo clients expect.
+std::vector<Document> makeErrorResponse()
+{
+    bson_t * bson_doc = bson_new();
+
+    BSON_APPEND_UTF8(bson_doc, "errmsg", getCurrentExceptionMessage(false).c_str());
+    BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
+
+    std::vector<Document> result;
+    result.emplace_back(bson_doc);
+    return result;
+}
+
+}
+
+void handle(
+    const Header & header, ReadBuffer & payload, std::shared_ptr<MessageTransport> transport, std::shared_ptr<QueryExecutor> executor)
 {
     auto op_code = static_cast<OperationCode>(header.operation_code);
     switch (op_code)
     {
         case OperationCode::OP_MSG: {
-            auto request = transport->receive<OpMessage>();
+            OpMessage request;
+            request.deserialize(payload);
 
-            std::vector<Document> docs;
             std::vector<Document> response_doc;
             try
             {
-                response_doc = runMessageRequest(request->sections, executor);
+                response_doc = runMessageRequest(request.sections, executor);
             }
-            catch (const Exception & ex)
+            catch (...)
             {
-                bson_t * bson_doc = bson_new();
-
-                BSON_APPEND_UTF8(bson_doc, "errmsg", ex.what());
-                BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
-
-                Document doc(bson_doc);
-                response_doc = std::vector{doc};
+                response_doc = makeErrorResponse();
             }
-            auto response = OpMessage(request->flags, 0, response_doc);
+            auto response = OpMessage(request.flags, 0, response_doc);
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());
             response_header.operation_code = static_cast<Int32>(OperationCode::OP_MSG);
             response.header = response_header;
@@ -189,21 +256,17 @@ void handle(Header header, std::shared_ptr<MessageTransport> transport, std::sha
             break;
         }
         case OperationCode::OP_QUERY: {
-            auto request = transport->receive<OpQuery>();
+            OpQuery request;
+            request.deserialize(payload);
+
             std::vector<Document> response_doc;
             try
             {
-                response_doc = runQueryRequst({request->query}, executor);
+                response_doc = runQueryRequst({request.query}, executor);
             }
-            catch (const Exception & ex)
+            catch (...)
             {
-                bson_t * bson_doc = bson_new();
-
-                BSON_APPEND_UTF8(bson_doc, "errmsg", ex.what());
-                BSON_APPEND_DOUBLE(bson_doc, "ok", 0.0);
-
-                Document doc(bson_doc);
-                response_doc = std::vector{doc};
+                response_doc = makeErrorResponse();
             }
             auto response = OpQuery(std::move(response_doc[0]));
             auto response_header = makeResponseHeader(header, response.size(), transport->getNextResponseId());

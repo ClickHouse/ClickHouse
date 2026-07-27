@@ -2,45 +2,47 @@
 #include <Core/Mongo/Handlers/HandlerRegistry.h>
 #include <Core/Mongo/Handlers/ListDatabases.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/executeQuery.h>
-#include <pcg_random.hpp>
-#include <Common/CurrentThread.h>
-#include <Common/randomSeed.h>
-
 #include <bson/bson.h>
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 namespace DB::MongoProtocol
 {
 
 std::vector<Document> ListDatabasesHandler::handle(const std::vector<OpMessageSection> &, std::shared_ptr<QueryExecutor> executor)
 {
-    std::vector<String> result;
-    {
-        String query = "SHOW DATABASES;";
-
-        auto out = executor->execute(query);
-        result = splitByNewline(out);
-    }
+    auto out = executor->execute("SHOW DATABASES");
+    auto names = splitByNewline(out);
 
     bson_t * bson_doc = bson_new();
-    bson_t * selected_docs = bson_new();
 
-    String key_identifier = "databases";
-    bson_append_array_begin(bson_doc, key_identifier.c_str(), static_cast<Int32>(key_identifier.size()), selected_docs);
-    for (size_t i = 0; i < result.size(); ++i)
     {
-        auto key_str = std::to_string(i);
-        BSON_APPEND_UTF8(selected_docs, key_str.c_str(), result[i].c_str());
+        static constexpr std::string_view key_identifier = "databases";
+        bson_t databases;
+        bson_append_array_begin(bson_doc, key_identifier.data(), static_cast<int>(key_identifier.size()), &databases);
+
+        size_t index = 0;
+        for (const auto & name : names)
+        {
+            if (name.empty())
+                continue;
+
+            bson_t database_doc;
+            bson_init(&database_doc);
+            BSON_APPEND_UTF8(&database_doc, "name", name.c_str());
+            BSON_APPEND_BOOL(&database_doc, "empty", false);
+
+            auto key_str = std::to_string(index);
+            ++index;
+            bson_append_document(&databases, key_str.c_str(), static_cast<int>(key_str.size()), &database_doc);
+            bson_destroy(&database_doc);
+        }
+
+        bson_append_array_end(bson_doc, &databases);
     }
-    bson_append_array_end(bson_doc, selected_docs);
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
-    Document doc(bson_doc);
-    return {doc};
+    std::vector<Document> result;
+    result.emplace_back(bson_doc);
+    return result;
 }
 
 void registerListDatabasesHandler(HandlerRegitstry * registry)
