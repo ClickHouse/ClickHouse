@@ -14,6 +14,11 @@ EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url('https://user:SEKRIT_PW@loca
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM urlCluster('c', 'https://user:SEKRIT_PW@localhost:11111/x', 'CSV', 'c UInt8', headers('Authorization' = 'SEKRIT_HDR'));
 EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04648_missing, url = 'https://user:SEKRIT_PW@localhost:11111/x?token=SEKRIT_TOK', headers('Authorization' = 'SEKRIT_HDR'));
 
+-- A url built from a constant expression is evaluated by the parser but not by the masker, so both a
+-- positional and a named `url` override must fail closed (hidden whole) rather than leak the pieces.
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(concat('https://user:', 'SEKRIT_EXPR@localhost:11111/x'), 'CSV', 'c UInt8');
+EXPLAIN QUERY TREE run_passes = 0 SELECT * FROM url(nc_04648_missing, url = concat('https://user:', 'SEKRIT_NAMEDEXPR@localhost:11111/x'));
+
 -- The URL table engine: SHOW CREATE must hide the userinfo and the headers values.
 DROP TABLE IF EXISTS t_04648_url;
 CREATE TABLE t_04648_url (x UInt8)

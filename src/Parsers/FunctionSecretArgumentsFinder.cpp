@@ -572,21 +572,39 @@ void FunctionSecretArgumentsFinder::findURLSecretArguments(size_t url_offset)
 
     if (isNamedCollectionName(url_offset))
     {
-        /// url(named_collection, url = 'https://user:password@host/...', headers(...)): a `url` override
-        /// can carry credentials in its userinfo; mask its password (the headers are handled above).
-        String url;
-        if (ssize_t url_arg = findNamedArgument(&url, "url", url_offset + 1); url_arg >= 0 && maskURIPassword(&url))
-            result.replaced_arguments[url_arg] = "url = " + quoteString(url);
+        /// url(named_collection, url = 'https://user:password@host/...', headers(...)): mask the
+        /// userinfo password of every `url` override, failing closed when the value is not a readable
+        /// literal (a constant expression the parser evaluates later, e.g. `concat(...)`), like the S3
+        /// url override. The headers are handled above.
+        for (ssize_t url_arg = findNamedArgument(nullptr, "url", url_offset + 1); url_arg >= 0;
+             url_arg = findNamedArgument(nullptr, "url", static_cast<size_t>(url_arg) + 1))
+        {
+            const auto equals_func = function->arguments->at(url_arg)->getFunction();
+            String url;
+            if (equals_func && equals_func->hasArguments() && equals_func->arguments->size() == 2
+                && equals_func->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
+            {
+                if (maskURIPassword(&url))
+                    result.replaced_arguments[url_arg] = "url = " + quoteString(url);
+            }
+            else
+                markSecretArgument(url_arg, /* argument_is_named= */ true);
+        }
         return;
     }
 
     String uri;
-    if (tryGetStringFromArgument(url_offset, &uri) && maskURIPassword(&uri))
+    if (tryGetStringFromArgument(url_offset, &uri, /* allow_identifier= */ false))
     {
-        chassert(result.count == 0); /// We shouldn't use replacement with masking other arguments
-        result.start = url_offset;
-        result.count = 1;
-        result.replacement = std::move(uri);
+        /// A readable url literal: mask only its userinfo password, keeping the host and path visible.
+        if (maskURIPassword(&uri))
+            result.replaced_arguments[url_offset] = quoteString(uri);
+    }
+    else
+    {
+        /// A url built from a constant expression can embed credentials in its pieces, which we cannot
+        /// evaluate here; hide it whole rather than leak (fail closed).
+        markSecretArgument(url_offset);
     }
 }
 
