@@ -148,13 +148,57 @@ Chunk ColumnBinaryInputFormat::read()
     const std::span<const uint8_t> buf{frame};
     MutableColumns result;
     result.reserve(num_cols);
+
+    // Top-level columns occupy disjoint, contiguous byte regions in descriptor order: the
+    // writer advances a single monotone cursor across the whole block (`buildColDescriptor`
+    // takes the cursor and returns the next free offset), and every one of its branches
+    // leaves `data_offset + data_size` equal to that returned cursor. So column `i`'s region
+    // ends exactly where column `i + 1`'s begins, starting right after the header and
+    // descriptor table.
+    //
+    // Derive those regions here and confine each column to its own `[region_start,
+    // region_end)` before decoding. `readColumnFromDesc` only bounds the ranges a descriptor
+    // references against the size of the buffer it is given, so without this a malformed
+    // frame could repoint column `i`'s `null_offset` / `offsets_offset` / `data_offset` into
+    // bytes owned by a sibling column and still pass every check — column `0` would then
+    // decode from column `1`'s payload instead of being rejected as malformed. Passing a
+    // subspan that ends at `region_end` (rather than only checking the start offsets) makes
+    // every internal bounds check inside `readColumnFromDesc` bound against this column's
+    // region automatically, so a range that starts inside the region but extends past it is
+    // rejected too. This mirrors what the nested `COL_VARIANT` / `COL_LOWCARD` descriptor
+    // paths in `readColumnFromDesc` already do for their sub-columns.
+    uint64_t region_start = hdr_desc_size;
     for (uint32_t i = 0; i < num_cols; ++i)
     {
         ColumnarV1::ColDescriptor desc{};
         std::memcpy(&desc,
                     buf.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
                     sizeof(desc));
-        result.push_back(ColumnarV1::readColumnFromDesc(buf, desc, num_rows, header_->getByPosition(i).type));
+
+        // data_offset + data_size cannot overflow here: the loop above already rejected that.
+        const uint64_t region_end = desc.data_offset + desc.data_size;
+        if (desc.data_offset < region_start)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ColumnBinary: column {} data range [{}, {}) starts before its own region (expected start {})",
+                i, desc.data_offset, region_end, region_start);
+        if (region_end > data_end)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ColumnBinary: column {} data range [{}, {}) extends past the frame end {}",
+                i, desc.data_offset, region_end, data_end);
+
+        // 0 is the "absent" sentinel for both (no null map / no offsets array); a nonzero
+        // value must land inside this column's own region. `region_end` is inclusive here
+        // because a zero-length array legitimately starts at the region end.
+        for (uint64_t off : {desc.null_offset, desc.offsets_offset})
+            if (off != 0 && (off < region_start || off > region_end))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ColumnBinary: column {} descriptor offset {} outside its data region [{}, {})",
+                    i, off, region_start, region_end);
+
+        result.push_back(ColumnarV1::readColumnFromDesc(
+            buf.subspan(0, region_end), desc, num_rows, header_->getByPosition(i).type));
+
+        region_start = region_end;
     }
 
     if (in->eof())

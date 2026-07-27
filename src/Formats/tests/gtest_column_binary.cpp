@@ -13,10 +13,12 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -1472,6 +1474,133 @@ TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
     auto col = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
     Block header;
     header.insert(ColumnWithTypeAndName{std::move(col), std::make_shared<DataTypeNullable>(nested_type), "col0"});
+
+    ReadBufferFromString rb{frame};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
+    EXPECT_THROW(input.read(), DB::Exception);
+}
+
+// ── Top-level columns must stay inside their own byte region ──────────────────
+//
+// The writer lays top-level columns out contiguously and in descriptor order, so column
+// `i`'s region ends exactly where column `i + 1`'s begins. A malformed frame that repoints
+// one column's `null_offset` / `offsets_offset` / `data_offset` into a sibling column's bytes
+// must be rejected as malformed rather than decoded from the wrong payload.
+
+TEST(ColumnBinary, FrameValidatorRejectsCrossColumnNullOffset)
+{
+    using namespace ColumnarV1;
+
+    const uint32_t num_rows = 1;
+    const uint32_t num_cols = 2;
+    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + 2 * COLUMNAR_DESC_BYTES;
+
+    // Genuine layout: col0 = [hdr_desc_size, 100), col1 = [100, 108).
+    std::string frame(108, '\0');
+    std::memcpy(frame.data(), &num_rows, 4);
+    std::memcpy(frame.data() + 4, &num_cols, 4);
+
+    ColDescriptor desc0{};
+    desc0.type = COL_FIXED64 | COL_IS_NULLABLE;
+    desc0.null_offset = 104;  // inside col1's region instead of col0's own null map
+    desc0.offsets_offset = 0;
+    desc0.data_offset = hdr_desc_size + 4;
+    desc0.data_size = 8;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc0, COLUMNAR_DESC_BYTES);
+
+    ColDescriptor desc1{};
+    desc1.type = COL_FIXED64;
+    desc1.null_offset = 0;
+    desc1.offsets_offset = 0;
+    desc1.data_offset = 100;
+    desc1.data_size = 8;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, &desc1, COLUMNAR_DESC_BYTES);
+
+    auto uint64_type = std::make_shared<DataTypeUInt64>();
+    Block header;
+    header.insert(ColumnWithTypeAndName{
+        ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create()),
+        std::make_shared<DataTypeNullable>(uint64_type), "col0"});
+    header.insert(ColumnWithTypeAndName{ColumnUInt64::create(), uint64_type, "col1"});
+
+    ReadBufferFromString rb{frame};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
+    EXPECT_THROW(input.read(), DB::Exception);
+}
+
+TEST(ColumnBinary, FrameValidatorRejectsCrossColumnDataOffset)
+{
+    using namespace ColumnarV1;
+
+    const uint32_t num_rows = 1;
+    const uint32_t num_cols = 2;
+    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + 2 * COLUMNAR_DESC_BYTES;
+
+    // Both descriptors point at the *second* column's payload, so col0 would decode col1's
+    // bytes. Rejecting this is the ordered-layout invariant: once col0's region has been
+    // stretched over [96, 104), col1's own range no longer starts at or after that region's
+    // end, which is exactly what the check detects.
+    std::string frame(hdr_desc_size + 16, '\0');
+    std::memcpy(frame.data(), &num_rows, 4);
+    std::memcpy(frame.data() + 4, &num_cols, 4);
+
+    ColDescriptor desc{};
+    desc.type = COL_FIXED64;
+    desc.null_offset = 0;
+    desc.offsets_offset = 0;
+    desc.data_offset = hdr_desc_size + 8;
+    desc.data_size = 8;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto uint64_type = std::make_shared<DataTypeUInt64>();
+    Block header;
+    header.insert(ColumnWithTypeAndName{ColumnUInt64::create(), uint64_type, "col0"});
+    header.insert(ColumnWithTypeAndName{ColumnUInt64::create(), uint64_type, "col1"});
+
+    ReadBufferFromString rb{frame};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
+    EXPECT_THROW(input.read(), DB::Exception);
+}
+
+TEST(ColumnBinary, FrameValidatorRejectsCrossColumnStringOffsets)
+{
+    using namespace ColumnarV1;
+
+    const uint32_t num_rows = 1;
+    const uint32_t num_cols = 2;
+    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + 2 * COLUMNAR_DESC_BYTES;
+
+    // col0 is an empty `String` column: its offsets array must live in its own region, which
+    // here is the empty range [hdr_desc_size + 16, hdr_desc_size + 16). Point the offsets
+    // array at col1's 24-byte payload instead. Every referenced byte stays inside the frame,
+    // so only the per-column region check rejects this: without it, col0 happily decodes its
+    // row count worth of offsets out of col1's bytes.
+    const uint64_t col1_data = hdr_desc_size + 16;
+    std::string frame(col1_data + 24, '\0');
+    std::memcpy(frame.data(), &num_rows, 4);
+    std::memcpy(frame.data() + 4, &num_cols, 4);
+
+    ColDescriptor desc0{};
+    desc0.type = COL_BYTES;
+    desc0.null_offset = 0;
+    desc0.offsets_offset = col1_data + 4;  // inside col1's region, not col0's own
+    desc0.data_offset = col1_data;
+    desc0.data_size = 0;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc0, COLUMNAR_DESC_BYTES);
+
+    ColDescriptor desc1{};
+    desc1.type = COL_FIXEDN;
+    desc1.null_offset = 0;
+    desc1.offsets_offset = 0;
+    desc1.data_offset = col1_data;
+    desc1.data_size = 24;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES, &desc1, COLUMNAR_DESC_BYTES);
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "col0"});
+    header.insert(ColumnWithTypeAndName{
+        ColumnFixedString::create(24), std::make_shared<DataTypeFixedString>(24), "col1"});
 
     ReadBufferFromString rb{frame};
     ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
