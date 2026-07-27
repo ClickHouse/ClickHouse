@@ -90,7 +90,6 @@ struct AggregateFunctionTimeseriesChangesTraits
     struct Aggregator
     {
         AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
 
         /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
         /// not the two-stacks path which combines values out of time order.
@@ -108,7 +107,7 @@ struct AggregateFunctionTimeseriesChangesTraits
                     ++summary.changes;
                 summary.last_value = value;
                 ++summary.count;
-            }, temp_buffer);
+            });
             add(std::move(summary), bucket_end_timestamp);
         }
 

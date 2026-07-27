@@ -20,6 +20,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Parsers/makeASTForLogicalFunction.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
@@ -354,25 +355,49 @@ namespace
                                         DateTime64 max_time,
                                         const DataTypePtr & id_data_type,
                                         const DataTypePtr & timestamp_data_type,
-                                        const DataTypePtr & scalar_data_type)
+                                        const DataTypePtr & scalar_data_type,
+                                        const ColumnsDescription & data_table_columns)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
         /// SELECT id, timestamp, value
+        /// Casts to the expected types are added only when a column's type in the data table differs:
+        /// a same-type CAST would not be a no-op - it would be evaluated for every sample row.
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
             auto & select_list = select_list_exp->children;
 
-            select_list.push_back(makeASTFunction(
-                "CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
-            select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+            if (data_table_columns.get(TimeSeriesColumnNames::ID).type->equals(*id_data_type))
+            {
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+            }
+            else
+            {
+                select_list.push_back(makeASTFunction(
+                    "CAST", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTLiteral>(id_data_type->getName())));
+                select_list.back()->setAlias(TimeSeriesColumnNames::ID);
+            }
 
-            select_list.push_back(
-                timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), timestamp_data_type));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+            if (data_table_columns.get(TimeSeriesColumnNames::Timestamp).type->equals(*timestamp_data_type))
+            {
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
+            }
+            else
+            {
+                select_list.push_back(
+                    timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp), timestamp_data_type));
+                select_list.back()->setAlias(TimeSeriesColumnNames::Timestamp);
+            }
 
-            select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
-            select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+            if (data_table_columns.get(TimeSeriesColumnNames::Value).type->equals(*scalar_data_type))
+            {
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
+            }
+            else
+            {
+                select_list.push_back(timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value), scalar_data_type));
+                select_list.back()->setAlias(TimeSeriesColumnNames::Value);
+            }
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -461,6 +486,10 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
+    auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, context);
+    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
+    const auto & samples_table_columns = samples_table_metadata->columns;
+
     ASTPtr select_query_from_data_table = makeSelectQueryFromDataTable(
         samples_table_id,
         select_query_from_tags_table,
@@ -468,7 +497,8 @@ void StorageTimeSeriesSelector::readImpl(
         config.max_time,
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type);
+        config.scalar_data_type,
+        samples_table_columns);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query_from_data_table->formatForLogging());

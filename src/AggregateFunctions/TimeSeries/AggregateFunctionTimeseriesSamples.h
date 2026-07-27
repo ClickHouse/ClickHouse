@@ -4,8 +4,6 @@
 #include <functional>
 #include <utility>
 
-#include <absl/container/flat_hash_map.h>
-
 #include <base/sort.h>
 
 #include <Common/AllocatorWithMemoryTracking.h>
@@ -23,35 +21,39 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/// Per-bucket storage of timeseries samples keyed by timestamp.
+/// Per-bucket storage of timeseries samples.
 /// When two samples share a timestamp the larger value is kept.
+///
+/// Samples are stored in an append-only vector and canonicalized (sorted by timestamp, duplicates collapsed
+/// to the larger value) lazily, on first ordered access. Inputs arrive as ascending-timestamp runs (the
+/// samples table is sorted by timestamp within each series), so the canonicalization sort runs on
+/// almost-sorted data and is cheap, while appends stay O(1) without any per-sample hashing.
 template <typename TimestampType, typename ValueType>
 class AggregateFunctionTimeseriesSamples
 {
 public:
     /// The bucket map (`HashMap`) relocates cells with `memcpy` and abandons the source, which is safe for
-    /// any type without pointers into itself. `absl::flat_hash_map` qualifies: the address of its inline
-    /// single-element storage (small object optimization) is computed from `this`, the rest is on the heap.
-    /// No standard trait expresses this (weaker than `std::is_trivially_copyable`) property, hence the
-    /// explicit declaration.
+    /// any type without pointers into itself. A vector qualifies: its buffer is on the heap. No standard
+    /// trait expresses this (weaker than `std::is_trivially_copyable`) property, hence the explicit declaration.
     static constexpr bool is_position_independent = true;
 
     void add(TimestampType timestamp, ValueType value)
     {
-        auto [it, inserted] = buffer.emplace(timestamp, value);
-        if (!inserted)
-            it->second = std::max(it->second, value);
+        buffer.emplace_back(timestamp, value);
+        compacted = false;
     }
 
     void merge(const AggregateFunctionTimeseriesSamples & other)
     {
-        buffer.reserve(buffer.size() + other.buffer.size());
-        for (const auto & [timestamp, value] : other.buffer)
-            add(timestamp, value);
+        buffer.insert(buffer.end(), other.buffer.begin(), other.buffer.end());
+        compacted = false;
     }
 
     void serialize(WriteBuffer & buf) const
     {
+        /// Canonicalize first so duplicates don't inflate the serialized state.
+        compact();
+
         writeBinaryLittleEndian(buffer.size(), buf);
         for (const auto & [timestamp, value] : buffer)
         {
@@ -64,6 +66,7 @@ public:
     {
         /// Deserialize replaces any previous contents.
         buffer.clear();
+        compacted = false;
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
@@ -74,7 +77,7 @@ public:
             readBinaryLittleEndian(timestamp, buf);
             ValueType value;
             readBinaryLittleEndian(value, buf);
-            add(timestamp, value);
+            buffer.emplace_back(timestamp, value);
         }
     }
 
@@ -82,47 +85,67 @@ public:
     template <typename RangeType>
     void checkTimestampsInRange(const RangeType & range) const
     {
-        forEachSample([&range](TimestampType timestamp, ValueType)
+        for (const auto & [timestamp, value] : buffer)
         {
             if (!range.contains(timestamp))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Cannot deserialize data: timestamp {} is outside its bucket's range",
                     static_cast<Int64>(timestamp));
-        });
+        }
     }
 
-    /// Invokes `f(timestamp, value)` for every sample, in arbitrary order. Used by the per-function sliding
-    /// aggregators for order-independent aggregates (e.g. linear regression moments).
+    /// Invokes `f(timestamp, value)` for every distinct-timestamp sample, in arbitrary order. Used by the
+    /// per-function sliding aggregators for order-independent aggregates (e.g. linear regression moments).
+    /// Canonicalizes first: duplicate-timestamp semantics (keep the larger value) must hold here too.
     template <typename F>
     void forEachSample(F && f) const
     {
+        compact();
         for (const auto & [timestamp, value] : buffer)
             f(timestamp, value);
     }
 
-    /// Invokes `f(timestamp, value)` for every sample in ascending timestamp order, using `temp_buffer` as a
-    /// reused sort buffer. Used by the order-dependent aggregators (rate reset accounting, counting transitions).
+    /// Invokes `f(timestamp, value)` for every distinct-timestamp sample in ascending timestamp order.
+    /// Used by the order-dependent aggregators (rate reset accounting, counting transitions).
     template <typename F>
-    void forEachSampleSorted(F && f, VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> & temp_buffer) const
+    void forEachSampleSorted(F && f) const
     {
-        temp_buffer.clear();
-        temp_buffer.reserve(buffer.size());
+        compact();
         for (const auto & [timestamp, value] : buffer)
-            temp_buffer.emplace_back(timestamp, value);
-        ::sort(temp_buffer.begin(), temp_buffer.end());
-        for (const auto & [timestamp, value] : temp_buffer)
             f(timestamp, value);
     }
 
 private:
-    /// Samples keyed by timestamp. Uses `AllocatorWithMemoryTracking` so per-bucket sample memory is counted by
-    /// the `MemoryTracker`, like the rest of the aggregate state.
-    absl::flat_hash_map<
-        TimestampType,
-        ValueType,
-        absl::container_internal::hash_default_hash<TimestampType>,
-        std::equal_to<>,
-        AllocatorWithMemoryTracking<std::pair<const TimestampType, ValueType>>> buffer;
+    /// Sorts samples by timestamp and collapses samples sharing a timestamp to the one with the larger value.
+    /// Logically const: canonicalization only changes the representation, not the sample set, and states are
+    /// never accessed concurrently.
+    void compact() const
+    {
+        if (compacted)
+            return;
+
+        /// Sorting by (timestamp, value) makes the last sample of each equal-timestamp run the one with
+        /// the larger value.
+        ::sort(buffer.begin(), buffer.end());
+
+        auto out = buffer.begin();
+        for (auto it = buffer.begin(); it != buffer.end();)
+        {
+            auto run_end = it + 1;
+            while (run_end != buffer.end() && run_end->first == it->first)
+                ++run_end;
+            *out++ = *(run_end - 1);
+            it = run_end;
+        }
+        buffer.erase(out, buffer.end());
+
+        compacted = true;
+    }
+
+    /// Samples in insertion order until `compact` canonicalizes them. Uses `AllocatorWithMemoryTracking` so
+    /// per-bucket sample memory is counted by the `MemoryTracker`, like the rest of the aggregate state.
+    mutable VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> buffer;
+    mutable bool compacted = false;
 };
 
 }

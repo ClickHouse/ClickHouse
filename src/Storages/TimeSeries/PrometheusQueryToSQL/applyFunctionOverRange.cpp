@@ -4,6 +4,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
@@ -121,6 +123,40 @@ namespace
 
         return &it->second;
     }
+
+    /// If `select_query` has the exact shape produced by `fromRangeSelector` - a single
+    /// `SELECT timeSeriesIdToGroup(id) AS group, ...` - rewrites its first result column to the raw `id`
+    /// and returns true. The caller then aggregates with `GROUP BY id` and applies `timeSeriesIdToGroup`
+    /// to the aggregated keys, evaluating it once per series instead of once per sample.
+    /// (`id` and `group` are in bijection: `timeSeriesIdToGroup` is a plain per-`id` mapping.)
+    bool rewriteGroupColumnToRawID(const ASTPtr & select_query)
+    {
+        const auto * select_with_union = select_query->as<ASTSelectWithUnionQuery>();
+        if (!select_with_union || !select_with_union->list_of_selects
+            || (select_with_union->list_of_selects->children.size() != 1))
+            return false;
+
+        auto * select = select_with_union->list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (!select)
+            return false;
+
+        const auto & select_list = select->select();
+        if (!select_list || select_list->children.empty())
+            return false;
+
+        auto & first_column = select_list->children[0];
+        const auto * function = first_column->as<ASTFunction>();
+        if (!function || (function->name != "timeSeriesIdToGroup") || (function->tryGetAlias() != ColumnNames::Group)
+            || !function->arguments || (function->arguments->children.size() != 1))
+            return false;
+
+        const auto * id_identifier = function->arguments->children[0]->as<ASTIdentifier>();
+        if (!id_identifier || (id_identifier->name() != ColumnNames::ID))
+            return false;
+
+        first_column = make_intrusive<ASTIdentifier>(ColumnNames::ID);
+        return true;
+    }
 }
 
 
@@ -164,6 +200,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.type = ResultType::INSTANT_VECTOR;
 
     bool has_group = false;
+    bool group_by_raw_id = false;
     ASTPtr timestamps;
     ASTPtr values;
 
@@ -237,7 +274,15 @@ SQLQueryPiece applyFunctionOverRange(
             ///        <aggregate_function>(timestamp, value) AS values
             /// FROM <raw_data>
             /// GROUP BY group
+            ///
+            /// or, when <raw_data> comes straight from a selector (see rewriteGroupColumnToRawID):
+            ///
+            /// SELECT timeSeriesIdToGroup(id) AS group,
+            ///        <aggregate_function>(timestamp, value) AS values
+            /// FROM <raw_data>
+            /// GROUP BY id
             has_group = true;
+            group_by_raw_id = argument.select_query && rewriteGroupColumnToRawID(argument.select_query);
 
             timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
             values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
@@ -269,7 +314,15 @@ SQLQueryPiece applyFunctionOverRange(
     SelectQueryBuilder builder;
 
     if (has_group)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    {
+        if (group_by_raw_id)
+        {
+            builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
+            builder.select_list.back()->setAlias(ColumnNames::Group);
+        }
+        else
+            builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+    }
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
     builder.select_list.push_back(addParametersToAggregateFunction(
@@ -282,7 +335,7 @@ SQLQueryPiece applyFunctionOverRange(
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)
-        builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.group_by.push_back(make_intrusive<ASTIdentifier>(group_by_raw_id ? ColumnNames::ID : ColumnNames::Group));
 
     if (argument.select_query)
     {

@@ -106,6 +106,9 @@ public:
         , odd_bucket_step(bucketStep(true, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_end_time(firstBucketEndTimestamp(start_timestamp_, step, window_remainder, buckets_per_step, buckets_per_first_window))
         , first_bucket_is_clamped(firstBucketIsClamped(first_bucket_end_time, even_bucket_width))
+        , use_int64_arithmetic(useInt64Arithmetic(start_timestamp, end_timestamp, step, window, buckets_per_window))
+        , min_contributing_timestamp(use_int64_arithmetic
+            ? static_cast<Int64>(start_timestamp) - static_cast<Int64>(window) : 0)
     {
     }
 
@@ -414,6 +417,8 @@ protected:
     const IntervalType odd_bucket_step{};         /// End-to-end spacing of odd-indexed buckets
     const TimestampType first_bucket_end_time{};  /// End timestamp of bucket #0
     const bool first_bucket_is_clamped{};         /// Whether bucket #0's start is below the type minimum (only it can be)
+    const bool use_int64_arithmetic{};            /// Whether the per-sample bucket math provably fits in Int64 (see `useInt64Arithmetic`)
+    const Int64 min_contributing_timestamp{};     /// `start - window`: samples at or below it can't contribute (valid only with `use_int64_arithmetic`)
 
 private:
     /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
@@ -426,6 +431,14 @@ private:
     {
         /// Maps bucket index to the set of all timestamps and values
         TimeSeriesBucketsMap<Bucket> buckets;
+
+        /// Cache of the last resolved timestamp zone (see `bucketIndexAndZoneInt64`): timestamps in
+        /// `(zone_lo, zone_hi]` map to `zone_bucket` (which may be `NO_BUCKET` for a between-windows gap).
+        /// Samples arrive in ascending-timestamp runs, so consecutive samples usually hit the same zone,
+        /// turning the per-sample bucket arithmetic into two comparisons. `zone_lo == zone_hi` means empty.
+        Int64 zone_lo = 0;
+        Int64 zone_hi = 0;
+        size_t zone_bucket = NO_BUCKET;
     };
 
     static DataTypePtr createResultType()
@@ -652,11 +665,111 @@ private:
 
     static constexpr size_t NO_BUCKET = -1;
 
+    /// Whether `bucketIndexForTimestampInt64` may be used: every intermediate value of the per-sample bucket
+    /// math must fit in `Int64`. This is decided once per aggregator; the per-sample hot path then runs in
+    /// 64-bit instead of the overflow-proof but much slower `Int128`. The conditions (checked in `Int128`):
+    /// - `end + step + window` does not overflow upwards, which bounds `ts + window`, `offset + remainder`
+    ///   and `unclamped_grid_index * step` (the latter never exceeds `offset` by more than one `step`);
+    /// - `start - window` does not underflow, making the early-sample cutoff exact in `Int64`;
+    /// - `buckets_per_window` is small enough that bucket indices of in-window samples fit comfortably.
+    static bool useInt64Arithmetic(TimestampType start, TimestampType end, IntervalType step_, IntervalType window_,
+        size_t buckets_per_window_)
+    {
+        constexpr Int128 int64_max = std::numeric_limits<Int64>::max();
+        constexpr Int128 int64_min = std::numeric_limits<Int64>::min();
+
+        const Int128 end_128 = static_cast<Int128>(static_cast<Int64>(end));
+        const Int128 start_128 = static_cast<Int128>(static_cast<Int64>(start));
+        const Int128 step_128 = static_cast<Int128>(static_cast<Int64>(step_));
+        const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window_));
+
+        return end_128 + step_128 + window_128 <= int64_max
+            && start_128 - window_128 >= int64_min
+            && buckets_per_window_ <= (1ull << 40);
+    }
+
+    /// `Int64` twin of the `Int128` arithmetic in `bucketIndexForTimestamp`, taken when `use_int64_arithmetic`
+    /// proved it overflow-free. This runs for every sample, and 128-bit division dominated the profile.
+    /// Besides the bucket index it returns the containing zone `(zone_lo, zone_hi]` - the full preimage of the
+    /// result - so the caller can cache it and resolve subsequent samples of the same zone with two comparisons.
+    size_t ALWAYS_INLINE bucketIndexAndZoneInt64(const TimestampType timestamp, Int64 & zone_lo, Int64 & zone_hi) const
+    {
+        const Int64 ts = static_cast<Int64>(timestamp);
+        if (ts > static_cast<Int64>(end_timestamp))
+        {
+            zone_lo = static_cast<Int64>(end_timestamp);
+            zone_hi = std::numeric_limits<Int64>::max();
+            return NO_BUCKET;
+        }
+        if (ts <= min_contributing_timestamp)
+        {
+            zone_lo = std::numeric_limits<Int64>::min();
+            zone_hi = min_contributing_timestamp;
+            return NO_BUCKET;
+        }
+
+        const Int64 step_64 = static_cast<Int64>(step);
+        const Int64 offset = ts - static_cast<Int64>(start_timestamp);
+
+        Int64 unclamped_grid_index = 0;
+        if (step > 0)
+        {
+            unclamped_grid_index = offset / step_64;
+            unclamped_grid_index += (offset % step_64) > 0;
+        }
+
+        /// Skip a sample that is already out of window (`isSampleOutOfWindow` on the clamped grid point).
+        const Int64 clamped_grid_index = unclamped_grid_index > 0 ? unclamped_grid_index : 0;
+        const Int64 grid_timestamp = static_cast<Int64>(start_timestamp) + clamped_grid_index * step_64;
+        if (ts + static_cast<Int64>(window) <= grid_timestamp)
+        {
+            /// The between-windows gap `(previous grid point, this grid point - window]`. The sample is past
+            /// `min_contributing_timestamp`, so its grid index is at least 1 and the gap's start is in range.
+            zone_lo = grid_timestamp - step_64;
+            zone_hi = grid_timestamp - static_cast<Int64>(window);
+            return NO_BUCKET;
+        }
+
+        const Int64 leading_buckets = static_cast<Int64>(buckets_per_first_window);
+        Int64 bucket_index;
+        if (window_remainder == 0)
+        {
+            /// One bucket per step.
+            bucket_index = unclamped_grid_index + leading_buckets - 1;
+        }
+        else
+        {
+            /// Each step is split at (grid timestamp - window_remainder).
+            const Int64 remainder = static_cast<Int64>(window_remainder);
+            const bool before_split_point = (offset + remainder) <= (unclamped_grid_index * step_64);
+            bucket_index = 2 * unclamped_grid_index + leading_buckets - 1 - (before_split_point ? 1 : 0);
+        }
+
+        chassert(bucket_index >= 0 && bucket_index < static_cast<Int64>(bucket_count));
+
+        /// The bucket's own time range (see `bucketTimeRange`): buckets tile the in-window timeline, so this
+        /// is the exact preimage of `bucket_index`.
+        zone_hi = static_cast<Int64>(bucketEndTimestamp(static_cast<size_t>(bucket_index)));
+        if (bucket_index == 0 && first_bucket_is_clamped)
+            zone_lo = std::numeric_limits<Int64>::min();
+        else
+            zone_lo = zone_hi - static_cast<Int64>((bucket_index % 2 != 0) ? odd_bucket_width : even_bucket_width);
+
+        return static_cast<size_t>(bucket_index);
+    }
+
     /// Returns the index of the bucket a sample at `timestamp` contributes to.
     /// The function returns NO_BUCKET if the specified timestamp can't contribute to any buckets
     /// because it's too early, or too late, or already out of window.
     size_t bucketIndexForTimestamp(const TimestampType timestamp) const
     {
+        if (use_int64_arithmetic)
+        {
+            Int64 ignored_zone_lo;
+            Int64 ignored_zone_hi;
+            return bucketIndexAndZoneInt64(timestamp, ignored_zone_lo, ignored_zone_hi);
+        }
+
         if (timestamp > end_timestamp)
             return NO_BUCKET;
 
@@ -766,11 +879,29 @@ private:
 
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, TimestampType timestamp, ValueType value) const
     {
-        const size_t bucket_index = bucketIndexForTimestamp(timestamp);
+        auto & state = *data(place);
+
+        size_t bucket_index;
+        const Int64 ts = static_cast<Int64>(timestamp);
+        if (ts > state.zone_lo && ts <= state.zone_hi)
+        {
+            /// Samples arrive in ascending-timestamp runs, so most fall into the zone of the previous one.
+            bucket_index = state.zone_bucket;
+        }
+        else if (use_int64_arithmetic)
+        {
+            bucket_index = bucketIndexAndZoneInt64(timestamp, state.zone_lo, state.zone_hi);
+            state.zone_bucket = bucket_index;
+        }
+        else
+        {
+            bucket_index = bucketIndexForTimestamp(timestamp);
+        }
+
         if (bucket_index == NO_BUCKET)
             return;  /// The sample can't contribute to any bucket.
 
-        auto & bucket = data(place)->buckets[bucket_index];
+        auto & bucket = state.buckets[bucket_index];
         bucket.add(timestamp, value);
     }
 
