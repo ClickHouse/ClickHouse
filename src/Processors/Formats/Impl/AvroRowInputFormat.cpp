@@ -1348,7 +1348,16 @@ AvroDeserializer::Action AvroDeserializer::createUnionWithNameAction(
                     auto inner_field_node = resolved_branch->leafAt(f);
                     if (inner_field_node->type() == avro::AVRO_SYMBOLIC)
                         inner_field_node = avro::resolveSymbol(inner_field_node);
-                    if (inner_field_node->type() != avro::AVRO_UNION || inner_field_node->leaves() <= 1)
+                    if (inner_field_node->type() != avro::AVRO_UNION)
+                        continue;
+                    /// Only a union with more than one non-null branch maps to Variant. A
+                    /// [null, X] union maps to Nullable(X), which has no branch discriminators
+                    /// to report — and casting its type to DataTypeVariant below would be UB.
+                    int inner_non_null_branches = 0;
+                    for (int b = 0; b < static_cast<int>(inner_field_node->leaves()); ++b)
+                        if (inner_field_node->leafAt(b)->type() != avro::AVRO_NULL)
+                            ++inner_non_null_branches;
+                    if (inner_non_null_branches <= 1)
                         continue;
 
                     const std::string inner_name_path = branch_path + "." + resolved_branch->nameAt(f) + ".$name";
@@ -1786,7 +1795,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
                                 auto inner_field_node = branch_node->leafAt(f);
                                 if (inner_field_node->type() == avro::AVRO_SYMBOLIC)
                                     inner_field_node = avro::resolveSymbol(inner_field_node);
-                                if (inner_field_node->type() == avro::AVRO_UNION && inner_field_node->leaves() > 1)
+                                int inner_non_null_branches = 0;
+                                if (inner_field_node->type() == avro::AVRO_UNION)
+                                    for (int ib = 0; ib < static_cast<int>(inner_field_node->leaves()); ++ib)
+                                        if (inner_field_node->leafAt(ib)->type() != avro::AVRO_NULL)
+                                            ++inner_non_null_branches;
+                                /// Mirror the fill side: only multi-non-null-branch inner unions
+                                /// (which map to Variant) get a $name sub-column.
+                                if (inner_non_null_branches > 1)
                                 {
                                     names_and_types.emplace_back(
                                         field_name + "." + nodeName(branch) + "." + branch_node->nameAt(f) + ".$name",
