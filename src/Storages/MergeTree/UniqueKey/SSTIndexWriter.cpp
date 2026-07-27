@@ -359,8 +359,8 @@ UInt64 SSTIndexWriter::finalizeToStorage()
             impl->lifetime_watch.elapsedMicroseconds());
     });
 
-    /// Empty input: nothing was ever opened, so no `.sst` is produced.
-    if (entries_added == 0)
+    /// Empty input: the output stream was never opened, so no `.sst` is produced.
+    if (!impl->out_file)
     {
         finalized = true;
         LOG_DEBUG(getWriterLogger(), "Finalized empty SST (no .sst produced)");
