@@ -118,6 +118,4 @@ private:
     UInt32 logEntryNumber(const String & entry_name) const;
 };
 
-using ClusterMetadataDDLWorkerPtr = std::shared_ptr<ClusterMetadataDDLWorker>;
-
 }

@@ -313,7 +313,7 @@ void ClusterMetadataManager::initialize()
         storage->initLayout();
         reloadSnapshotUnlocked();
 
-        ddl_worker = std::make_shared<ClusterMetadataDDLWorker>(
+        ddl_worker = std::make_unique<ClusterMetadataDDLWorker>(
             context,
             storage,
             toString(ServerUUID::get()),
@@ -374,11 +374,18 @@ void ClusterMetadataManager::shutdown()
 {
     ClusterMetadataImporterPtr importer_to_shutdown;
     BackgroundSchedulePool::TaskHolder materialization_task_to_stop;
+    std::unique_ptr<ClusterMetadataDDLWorker> ddl_worker_to_shutdown;
     {
         std::lock_guard lock(mutex);
         importer_to_shutdown = std::move(importer);
         materialization_task_to_stop = std::move(materialization_task);
         materialization_requested = false;
+    }
+    {
+        /// Take ownership away under `ddl_worker_mutex` so in-flight `commitMutation*` finish first,
+        /// then shut the worker down outside both manager locks (its threads callback into this manager).
+        std::lock_guard lock(ddl_worker_mutex);
+        ddl_worker_to_shutdown = std::move(ddl_worker);
     }
     /// Stop background tasks before taking the manager mutex for the rest of shutdown: they can call
     /// back into this manager and take the same mutex.
@@ -386,11 +393,10 @@ void ClusterMetadataManager::shutdown()
         importer_to_shutdown->shutdown();
     if (materialization_task_to_stop)
         materialization_task_to_stop->deactivate();
+    if (ddl_worker_to_shutdown)
+        ddl_worker_to_shutdown->shutdown();
 
     std::lock_guard lock(mutex);
-    if (ddl_worker)
-        ddl_worker->shutdown();
-    ddl_worker.reset();
     if (initialized)
         ClusterFactory::instance().replaceSQLCatalogClusters({});
     storage.reset();
@@ -579,26 +585,25 @@ void ClusterMetadataManager::throwIfDisabled() const
 
 void ClusterMetadataManager::commitMutation(const ClusterMetadataMutation & mutation)
 {
-    ClusterMetadataDDLWorkerPtr worker;
-    {
-        std::lock_guard lock(mutex);
-        worker = ddl_worker;
-    }
+    std::lock_guard lock(ddl_worker_mutex);
+    if (!ddl_worker)
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cluster metadata DDL worker is not initialized");
 
     auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutation");
-    worker->enqueueMutationAndWait(mutation);
+    ddl_worker->enqueueMutationAndWait(mutation);
 }
 
 BlockIO ClusterMetadataManager::commitMutationSync(const ClusterMetadataMutation & mutation, ContextPtr query_context)
 {
-    ClusterMetadataDDLWorkerPtr worker;
+    ClusterMetadataDDLWorker::EnqueuedMutationInfo enqueued;
     {
-        std::lock_guard lock(mutex);
-        worker = ddl_worker;
-    }
+        std::lock_guard lock(ddl_worker_mutex);
+        if (!ddl_worker)
+            throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Cluster metadata DDL worker is not initialized");
 
-    auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutationSync");
-    const auto enqueued = worker->enqueueMutation(mutation);
+        auto component_guard = Coordination::setCurrentComponent("ClusterMetadataManager::commitMutationSync");
+        enqueued = ddl_worker->enqueueMutation(mutation);
+    }
 
     BlockIO io;
     if (!query_context)

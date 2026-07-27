@@ -14,6 +14,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string_view>
@@ -133,6 +134,9 @@ private:
     ClusterMetadataManager() = default;
 
     mutable std::mutex mutex;
+    /// Serializes access to `ddl_worker` ownership against shutdown. Must not be held while taking
+    /// `mutex` from DDL callbacks (`prepareMutation` / `applyMutations` / `reloadSnapshot`).
+    mutable std::mutex ddl_worker_mutex;
     bool initialized = false;
 
     ContextPtr context;
@@ -140,7 +144,7 @@ private:
     ClusterMetadataStorage::Snapshot snapshot;
     UInt64 snapshot_version = 0;
     ClusterMetadataStoragePtr storage;
-    ClusterMetadataDDLWorkerPtr ddl_worker;
+    std::unique_ptr<ClusterMetadataDDLWorker> ddl_worker;
     ClusterMetadataImporterPtr importer;
     BackgroundSchedulePool::TaskHolder materialization_task;
     bool materialization_requested = false;

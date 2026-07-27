@@ -1697,6 +1697,7 @@ For the value of the `incl` attribute, see the section "[Configuration files](/o
 
 - [skip_unavailable_shards](../../operations/settings/settings.md#skip_unavailable_shards)
 - [Cluster Discovery](../../operations/cluster-discovery.md)
+- [SQL clusters](../../operations/sql-clusters.md)
 - [Replicated database engine](../../engines/database-engines/replicated.md)
 
 ## remote_url_allow_hosts {#remote_url_allow_hosts}
