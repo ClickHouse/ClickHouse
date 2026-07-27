@@ -17,16 +17,16 @@ namespace
 /// True when `canonical_name` re-parses the shape of `node`.
 ///
 /// Some names are routed to a dedicated grammar layer (see `getFunctionLayer` in
-/// ExpressionListParsers.cpp) while their aliases take the generic function layer, which
+/// `ExpressionListParsers.cpp`) while their aliases take the generic function layer, which
 /// accepts shapes the dedicated layer rejects. Renaming such an alias turns a parseable AST
 /// into one that does not re-parse; the AST is persisted verbatim (view metadata, SQL UDF
-/// bodies), so every later read of it throws SYNTAX_ERROR. Keep the alias in that case.
+/// bodies), so every later read of it throws `SYNTAX_ERROR`. Keep the alias in that case.
 ///
 /// This is an allowlist of provably re-parseable shapes: an unknown or future shape keeps the
 /// alias, which always re-parses because it takes the generic layer.
 bool canonicalNameCanReparseShape(const String & canonical_name, const ASTFunction & node)
 {
-    /// SubstringLayer accepts `substring(expr, start[, length, ...])` and
+    /// `SubstringLayer` accepts `substring(expr, start[, length, ...])` and
     /// `substring(expr FROM start [FOR length])`, but not fewer than two arguments, nor
     /// parameters, nor a window clause, nor a NULLS modifier. The aliases `substr`, `mid` and
     /// `byteSlice` accept all of those.

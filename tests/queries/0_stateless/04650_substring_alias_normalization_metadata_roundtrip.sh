@@ -8,6 +8,18 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # layer, so they accept shapes `SubstringLayer` rejects. DDL normalization renamed them to
 # `substring`, and the persisted definition then did not re-parse.
 FUNC="f_${CLICKHOUSE_DATABASE}"
+VIEWS="v_arity0 v_arity1 v_arity2 v_arity3 v_arity4 v_arity5 v_params v_window v_respect v_ignore v_filter v_all v_mid4 v_byteslice4 v_canonical4 v_sqlstandard"
+
+# `DROP VIEW` must pin `ignore_drop_queries_probability`: the stress runner injects 0.2, and for a
+# storage whose `storesDataOnDisk` is false (a view) `InterpreterDropQuery` rewrites the DROP to a
+# TRUNCATE, which `StorageView` does not implement, so the statement would fail with
+# `NOT_IMPLEMENTED`. The setting is pinned per statement, not with `SET`, because the runner passes
+# its value as a client option, which beats a session `SET`.
+drop_views() {
+    for v in $VIEWS; do
+        $CLICKHOUSE_CLIENT -q "DROP VIEW IF EXISTS $v SETTINGS ignore_drop_queries_probability = 0"
+    done
+}
 
 $CLICKHOUSE_CLIENT -q "SELECT '-- parser: canonical name accepts the comma form with any argument count'"
 $CLICKHOUSE_CLIENT -q "
@@ -79,6 +91,7 @@ $CLICKHOUSE_CLIENT -q "SELECT substr('abcdef', 2, 3, 4); -- { serverError NUMBER
 $CLICKHOUSE_CLIENT -q "SELECT substr('abcdef'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }"
 $CLICKHOUSE_CLIENT -q "SELECT substr(1)('abcdef', 2); -- { serverError FUNCTION_CANNOT_HAVE_PARAMETERS }"
 
+drop_views
 # `create_table_query` is produced by re-parsing the metadata file, so a non-empty value proves
 # the persisted definition round-trips. It is empty (not an error) when the parse fails.
 $CLICKHOUSE_CLIENT -q "SELECT '-- view metadata: every shape round-trips, and safe shapes still canonicalize'"
@@ -134,3 +147,6 @@ CREATE FUNCTION ${FUNC} AS (a) -> substr(a);
 SELECT count(), formatQuerySingleLine(create_query) FROM system.functions WHERE name = '${FUNC}' GROUP BY create_query;
 DROP FUNCTION ${FUNC};
 "
+
+drop_views
+$CLICKHOUSE_CLIENT -q "DROP FUNCTION IF EXISTS ${FUNC}"
