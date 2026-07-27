@@ -13,9 +13,10 @@ ordinal_of_bad_argument()
 }
 
 # Fixed-arity validator: the bad argument is the 1st, 2nd and 3rd one respectively.
-ordinal_of_bad_argument "SELECT toStartOfInterval([], toIntervalDay(1))"
-ordinal_of_bad_argument "SELECT toStartOfInterval(today(), [])"
-ordinal_of_bad_argument "SELECT toStartOfInterval(today(), toIntervalDay(1), [])"
+# The 3rd one is an optional argument, so it also covers the mandatory-argument offset.
+ordinal_of_bad_argument "SELECT regexpExtract([], 'a')"
+ordinal_of_bad_argument "SELECT regexpExtract('a', [])"
+ordinal_of_bad_argument "SELECT regexpExtract('a', 'a', [])"
 
 # Variadic validator: the ordinal must not be shifted by the number of mandatory arguments.
 ordinal_of_bad_argument "SELECT tupleConcat((1,), 1)"
