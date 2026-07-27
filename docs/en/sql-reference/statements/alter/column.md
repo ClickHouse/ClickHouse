@@ -367,7 +367,7 @@ Changing a column's codec with `ALTER TABLE ... MODIFY COLUMN col CODEC(...)` on
 
 Because the compression codec does not change the serialized representation of the data, for `Wide` parts the recompression is performed by decompressing and re-compressing the raw data blocks, without deserializing the column values. `Compact` parts are re-serialized as a whole. A column that has no explicit `CODEC(...)` and inherits the table's `default_compression_codec` is also re-serialized as a whole, so that a later change of the default codec is applied correctly.
 
-Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations). The codec is taken from the table metadata at the moment the mutation is executed, so a preceding codec change must already be applied -- with the default `alter_sync` it is, but if you change the codec with `alter_sync = 0` and issue `RECOMPRESS COLUMN` immediately, the mutation can run before the replica applies the metadata change and then recompress the data with the previous codec.
 
 `RECOMPRESS COLUMN` is not supported on tables with a `UNIQUE KEY`.
 

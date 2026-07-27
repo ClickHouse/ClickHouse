@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-replicated-database, no-shared-merge-tree
-# The test relies on `SYSTEM STOP MERGES` keeping two mutations of a `ReplicatedMergeTree` table
-# pending at the same time so that they are combined into a single mutate task, and on polling
+# The test uses `SYSTEM STOP MERGES` to keep two mutations of a `ReplicatedMergeTree` table pending
+# at the same time so that they can be combined into a single mutate task, and polls
 # `system.mutations` of the single local replica -- both are specific to a plain replicated table
 # on the local server, so shared MergeTree and the Replicated database (where the ALTERs go
-# through the DDL queue) are excluded.
+# through the DDL queue) are excluded. Whether the two mutations really end up in one mutate task
+# depends on when the merge-selecting task runs, so the column must come out recompressed either
+# way; the single-`ALTER` case at the end of the test covers the combined task deterministically.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -29,8 +31,16 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_recompress_pending_rename SELECT number, repeat('a', 200) FROM numbers(10000)"
 
+# The codec change is applied before merges are stopped, so that the recompression mutation cannot
+# run while the codec change is still queued: it is a metadata-only change, and a metadata change
+# is applied only after the previous one (here the rename) has been fully finished, including its
+# data mutation -- which stopped merges hold back. A recompression mutation executing before the
+# replica applies the codec change would recompress the column with its previous codec, i.e. do
+# nothing. The rename below keeps the data of the column as it is, so it stays uncompressed.
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE t_recompress_pending_rename MODIFY COLUMN a String CODEC(ZSTD(3))"
+
 # Stopping merges also stops mutations, so the rename-materializing mutation and the
-# recompression mutation stay queued together and execute as one combined mutate task.
+# recompression mutation stay queued together and can be combined into one mutate task.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES t_recompress_pending_rename"
 
 ${CLICKHOUSE_CLIENT} --alter_sync 0 --query "ALTER TABLE t_recompress_pending_rename RENAME COLUMN a TO b"
@@ -42,14 +52,16 @@ do
     sleep 0.1
 done
 
-${CLICKHOUSE_CLIENT} --alter_sync 0 --query "ALTER TABLE t_recompress_pending_rename MODIFY COLUMN b String CODEC(ZSTD(3))"
 ${CLICKHOUSE_CLIENT} --alter_sync 0 --query "ALTER TABLE t_recompress_pending_rename RECOMPRESS COLUMN b"
 
 ${CLICKHOUSE_CLIENT} --query "SYSTEM START MERGES t_recompress_pending_rename"
 
+# Both mutations (the rename and the recompression) must be present and finished; a plain
+# `countIf(is_done) = count()` would also be true for an empty `system.mutations`, which the
+# replication queue populates asynchronously.
 for _ in {1..600}
 do
-    [ "$(${CLICKHOUSE_CLIENT} --query "SELECT countIf(is_done) = count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_recompress_pending_rename'")" = "1" ] && break
+    [ "$(${CLICKHOUSE_CLIENT} --query "SELECT count() = 2 AND countIf(is_done) = 2 FROM system.mutations WHERE database = currentDatabase() AND table = 't_recompress_pending_rename'")" = "1" ] && break
     sleep 0.5
 done
 
