@@ -65,8 +65,37 @@ def get_ch_answer(query):
 
 
 class HttpProcessor(BaseHTTPRequestHandler):
+    def do_POST(self):
+        # Selective loads (`loadIds` / `loadKeys`, used by `cache` layouts) send the requested keys in
+        # the body of a `POST` request. A `303 See Other` must be followed with a bodyless `GET`.
+        content_length = int(self.headers.get("Content-Length") or 0)
+        if content_length:
+            self.rfile.read(content_length)
+        elif self.headers.get("Transfer-Encoding") == "chunked":
+            while True:
+                size = int(self.rfile.readline().strip() or "0", 16)
+                self.rfile.read(size + 2)
+                if size == 0:
+                    break
+
+        if self.path.startswith("/lookup_see_other"):
+            self.send_response(303)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/lookup_result")
+            self.end_headers()
+        else:
+            # `/lookup_result` may be requested only with `GET`, like a signed download URL.
+            self.send_response(405)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
     def do_GET(self):
-        if self.path.startswith("/redirect_gz"):
+        if self.path.startswith("/lookup_result"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv")
+            self.send_header("Content-Length", str(len(CSV_DATA.encode())))
+            self.end_headers()
+            self.wfile.write(CSV_DATA.encode())
+        elif self.path.startswith("/redirect_gz"):
             self.send_response(302)
             self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv.gz")
             self.end_headers()
@@ -127,17 +156,21 @@ def start_server():
     return httpd, t
 
 
-def create_dictionary(name, max_redirects, endpoint="/redirect"):
+def create_dictionary(
+    name, max_redirects, endpoint="/redirect", layout="HASHED()", lifetime="0"
+):
     get_ch_answer("DROP DICTIONARY IF EXISTS {}".format(name))
     get_ch_answer(
         """CREATE DICTIONARY {name} (id UInt64, value String)
         PRIMARY KEY id
         SOURCE(HTTP(url '{url}' format 'CSV'))
-        LAYOUT(HASHED())
-        LIFETIME(0)
+        LAYOUT({layout})
+        LIFETIME({lifetime})
         SETTINGS(max_http_get_redirects = {max_redirects})""".format(
             name=name,
             url=HTTP_SERVER_URL_STR + endpoint,
+            layout=layout,
+            lifetime=lifetime,
             max_redirects=max_redirects,
         )
     )
@@ -173,10 +206,27 @@ def main():
     print("gzip source redirected to opaque url:")
     sys.stdout.write(answer)
 
+    # A `cache` layout loads keys selectively with a `POST` request carrying the requested keys in the
+    # body. A `303 See Other` answer must be followed with a bodyless `GET` (the target here rejects
+    # anything but `GET` with `405`, like a signed download URL).
+    create_dictionary(
+        "dict_04498_cache_see_other",
+        5,
+        endpoint="/lookup_see_other",
+        layout="CACHE(SIZE_IN_CELLS 100)",
+        lifetime="MIN 100 MAX 200",
+    )
+    answer = get_ch_answer(
+        "SELECT dictGet('dict_04498_cache_see_other', 'value', toUInt64(2))"
+    )
+    print("cache dictionary with 303 See Other:")
+    sys.stdout.write(answer)
+
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_no_redirects")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_with_redirects")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_redirect_gz")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_gz_to_opaque")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_cache_see_other")
 
     httpd.shutdown()
     t.join()
