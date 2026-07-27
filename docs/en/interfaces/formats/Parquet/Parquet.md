@@ -144,6 +144,17 @@ FROM file('data.parquet', Parquet, 'id UInt64, var JSON')
 ORDER BY id;
 ```
 
+### Known limitation: shredded array paths with mixed-type rows {#parquet-variant-array-shredding-limitation}
+
+A path that is shredded as an array writes its `typed_value` as a Parquet `LIST`. ClickHouse cannot mark
+such a `LIST` as absent for an individual row, so a row of that path holding a non-array value (for
+example the values `{"a":[1]}`, `{"a":[2]}`, `{"a":42}` written into the same column) is encoded with the
+non-array value in the residual `value` field and an empty `typed_value` array. ClickHouse's own Parquet
+reader recognizes that empty array as a filler and returns the residual value, so the round trip through
+ClickHouse is lossless; other Parquet `VARIANT` readers cannot distinguish that filler from a genuinely
+empty array. If full interoperability of such columns matters, write them as Parquet `JSON`
+(`output_format_parquet_json_as_variant = 0`) or as `String`.
+
 ## Geo types (GeoParquet) {#geo-types}
 
 ClickHouse supports reading and writing geometry columns according to the [GeoParquet](https://geoparquet.org/) specification. Geometry columns are stored as `BYTE_ARRAY` payloads encoded in [WKB](https://libgeos.org/specifications/wkb/) (or WKT on read), with a JSON `geo` key in the file-level Parquet metadata describing each geometry column's encoding, geometry type and CRS.
