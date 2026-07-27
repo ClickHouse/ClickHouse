@@ -18,7 +18,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
   ## ¿Qué son los segmentos de una tabla en ClickHouse?
 </div>
 
-En los clústeres tradicionales de ClickHouse con arquitectura [sin recursos compartidos](https://en.wikipedia.org/wiki/Shared-nothing_architecture), la segmentación se utiliza cuando ① los datos son demasiado grandes para un solo servidor o ② un solo servidor es demasiado lento para procesarlos. La siguiente figura ilustra el caso ①, en el que la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) supera la capacidad de una sola máquina:
+En los clústeres tradicionales de ClickHouse con arquitectura [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture), la segmentación se utiliza cuando ① los datos son demasiado grandes para un solo servidor o ② un solo servidor es demasiado lento para procesarlos. La siguiente figura ilustra el caso ①, en el que la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) supera la capacidad de una sola máquina:
 
 <Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
 
