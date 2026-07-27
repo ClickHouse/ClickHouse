@@ -77,6 +77,10 @@ public:
 
     static bool queryHasOrderByAll(const ASTPtr & select);
 
+    /// Adjust the SELECT context's block-size settings to match the INSERT granularity when the
+    /// SELECT is "trivial" (no joins/subqueries). Shared between the sync and async INSERT paths.
+    static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context);
+
 private:
     static Block getSampleBlock(
         const Names & names,

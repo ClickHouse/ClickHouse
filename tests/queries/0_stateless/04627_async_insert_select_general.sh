@@ -254,6 +254,45 @@ ${CLICKHOUSE_CLIENT} --async_insert=1 --wait_for_async_insert=1 -q "
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_nullable"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_nullable"
 
+# Case 12: trivial INSERT ... SELECT with N > max_block_size rows must route through the async
+# queue as a single block. Without the fix, the SELECT uses the default max_block_size (~65k)
+# and 200k rows produce two blocks, causing a spurious sync fallback. With
+# applyTrivialInsertSelectOptimization applied in the async path, max_block_size is raised to
+# min_insert_block_size_rows (~1M), so all 200k rows arrive as one block (~1.6 MB < 10 MiB).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_async_sel_trivial_opt"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE test_async_sel_trivial_opt (n UInt64)
+    ENGINE = MergeTree ORDER BY n
+"
+${CLICKHOUSE_CLIENT} --optimize_trivial_insert_select=1 --async_insert=1 --wait_for_async_insert=1 -q "
+    INSERT INTO test_async_sel_trivial_opt SELECT number AS n FROM numbers(200000)
+"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_trivial_opt"
+
+for _ in $(seq 1 60); do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "
+        SELECT count()
+        FROM system.asynchronous_insert_log
+        WHERE event_date >= yesterday()
+          AND event_time >= now() - 600
+          AND database = currentDatabase()
+          AND table = 'test_async_sel_trivial_opt'
+    ")
+    [ "$count" -ge 1 ] && break
+    sleep 0.5
+done
+# Confirm the insert went through the async queue (not the sync fallback).
+${CLICKHOUSE_CLIENT} -q "
+    SELECT count() >= 1
+    FROM system.asynchronous_insert_log
+    WHERE event_date >= yesterday()
+      AND event_time >= now() - 600
+      AND database = currentDatabase()
+      AND table = 'test_async_sel_trivial_opt'
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_trivial_opt"
+
 # Cleanup.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_fallback"
