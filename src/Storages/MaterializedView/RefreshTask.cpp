@@ -865,6 +865,23 @@ void RefreshTask::doScheduling(bool is_shutdown)
                         /// true, so the multi's remove() gets a genuine ZNONODE back from Keeper.
                         zookeeper->tryRemove(coordination.path + "/running");
                     });
+
+                    /// Only reconcile while this replica still owns the coordination state - the same
+                    /// condition the normal path requires before touching it. A reconnect re-reads the
+                    /// root, so the cached copy can already belong to another replica that took the
+                    /// lock over while our execution was in flight; clearing `refresh_running` or
+                    /// removing '/running' would then cancel THEIR active refresh. Our own result is
+                    /// worthless in that case anyway.
+                    if (!coordination.root_znode.refresh_running
+                        || coordination.root_znode.last_attempt_replica != coordination.replica_name)
+                    {
+                        LOG_INFO(getLogger(), "Replica '{}' owns the refresh coordination state now, discarding the local result while giving up coordination on this Keeper.", coordination.root_znode.last_attempt_replica);
+                        execution.state = ExecutionState::State::None;
+                        markCoordinationUnavailable();
+                        setState(RefreshState::Disabled, lock);
+                        return;
+                    }
+
                     try
                     {
                         if (execution.znode.version == coordination.root_znode.version)
