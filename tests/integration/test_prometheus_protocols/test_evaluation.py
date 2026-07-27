@@ -1066,6 +1066,15 @@ def test_conversion_functions():
         ],
     )
 
+    # A NaN produced by scalar() of an empty vector is a PromQL-valid quantile() parameter,
+    # and quantile(NaN, ...) must return NaN instead of failing the query.
+    do_query_test(
+        "quantile(scalar(clamp(vector(1), 1, -1)), vector(2))",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", "nan"]],
+    )
+
     do_query_test(
         "vector(scalar(vector(time())))[40:10]",
         180,
