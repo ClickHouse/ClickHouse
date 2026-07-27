@@ -27,25 +27,19 @@ doc_type: 'guide'
 * 你需要一个 Anthropic API key，或其他 LLM 提供商的 API key
 
 <Steps>
-  <Step>
-    ## 创建 Slack App
-
+  <Step title="创建 Slack App" id="create-a-slack-app">
     1. 前往 [slack.com/apps](https://slack.com/apps)，然后点击 `Create New App`。
     2. 选择 `From scratch`，并为应用命名。
     3. 选择你的 Slack 工作区。
   </Step>
 
-  <Step>
-    ## 将应用安装到工作区
-
+  <Step title="将应用安装到工作区" id="install-the-app-to-your-workspace">
     接下来，你需要将上一步创建的应用添加到工作区中。
     你可以按照 Slack 文档 [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     中的说明进行操作。
   </Step>
 
-  <Step>
-    ## 配置 Slack 应用设置
-
+  <Step title="配置 Slack 应用设置" id="configure-slack-app-settings">
     * 前往 `App Home`
       * 在 `Show Tabs` → `Messages Tab` 下：启用 `Allow users to send Slash commands and messages from the messages tab`
       * 前往 `Socket Mode`
@@ -70,9 +64,7 @@ doc_type: 'guide'
         * `Save Changes`
   </Step>
 
-  <Step>
-    ## 添加环境变量 (`.env`) 
-
+  <Step title={<>添加环境变量 (<code>.env</code>)</>} id="add-env-vars">
     在项目根目录创建一个 `.env` 文件，并添加以下环境变量，
     这样你的应用就能连接到 [ClickHouse 的 SQL playground](https://sql.clickhouse.com/)。
 
@@ -91,9 +83,7 @@ doc_type: 'guide'
     或 Cloud 实例。
   </Step>
 
-  <Step>
-    ## 使用机器人
-
+  <Step title="使用机器人" id="using-the-bot">
     1. **启动机器人：**
 
        ```sh
