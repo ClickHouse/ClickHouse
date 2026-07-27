@@ -80,3 +80,23 @@ def test_zookeeper_info_file_descriptor_counts(started_cluster):
 
     assert open_fd != "\\N" and 0 < int(open_fd) < 2**31
     assert max_fd != "\\N" and int(max_fd) >= int(open_fd)
+
+
+def test_keeper_asynchronous_metrics_file_descriptor_counts(started_cluster):
+    # The same contract on the sibling surface: `system.asynchronous_metrics` must
+    # report an undetermined file descriptor count as -1, never as 2^64 - 1.
+    keeper.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+    open_fd, max_fd = (
+        keeper.query(
+            "SELECT"
+            " maxIf(value, metric = 'KeeperOpenFileDescriptorCount'),"
+            " maxIf(value, metric = 'KeeperMaxFileDescriptorCount')"
+            " FROM system.asynchronous_metrics"
+            " WHERE metric IN ('KeeperOpenFileDescriptorCount', 'KeeperMaxFileDescriptorCount')"
+        )
+        .strip()
+        .split("\t")
+    )
+
+    assert 0 < float(open_fd) < 2**31
+    assert float(max_fd) == -1 or float(max_fd) >= float(open_fd)
