@@ -3038,7 +3038,12 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
 /// Cloud only
 bool MergeTreeSettings::isSMTReadonlySetting(const String & name)
 {
-    return name == "enable_mixed_granularity_parts";
+    /// `share_nested_offsets` shapes the stream file names inside the parts (`n.size0` vs
+    /// `n.a.size0`) and the read path resolves them from the live table setting, so altering it
+    /// would misread every part written under the previous value.
+    return name == "enable_mixed_granularity_parts"
+        || name == "share_nested_offsets"
+    ;
 }
 
 void MergeTreeSettings::checkCanSet(std::string_view name, const Field & value)

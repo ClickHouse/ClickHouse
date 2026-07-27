@@ -12389,9 +12389,10 @@ size_t MergeTreeData::SharedPartColumnsCacheKeyHash::operator()(const SharedPart
 
 SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const
 {
-    /// The current value of `share_nested_offsets` is part of the key: a bundle built under the
-    /// old value must not be reused after the setting is altered on a live table (stale entries
-    /// die out as their last parts are released or unloaded).
+    /// The value of `share_nested_offsets` is part of the key defensively: the setting is
+    /// read-only (see `isReadonlySetting` and `isSMTReadonlySetting`) because the read path
+    /// resolves the stream file names from its live value, so it never changes on a live table;
+    /// the key just guarantees that a bundle can never be shared across different values of it.
     const SharedPartColumnsCacheKey key{std::cref(columns), (*getSettings())[MergeTreeSetting::share_nested_offsets]};
 
     /// After the first part of each schema every lookup is a hit that does not modify the map,
