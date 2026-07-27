@@ -3,6 +3,8 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnVector.h>
 #include <Core/Block.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -89,21 +91,62 @@ GTEST_TEST(ActionsDAGPartialResultTypeDrift, WrapperOnlyDriftDoesNotAbortHeaderC
     EXPECT_EQ(result.getByName("materialize_result").type->getName(), expected_result_type);
 }
 
-/// A header column whose type did NOT drift must still be constant-folded exactly as before, so
-/// the guard cannot be satisfied by disabling folding altogether. `updateHeader` is on the hot
-/// planning path for every query, so this pins that the fix is scoped to the drifted case.
-GTEST_TEST(ActionsDAGPartialResultTypeDrift, MatchingTypeStillComputesHeader)
+/// An alias between the input and the function must not hide the drift. An alias never changes a
+/// value, so its declared `result_type` is a copy of the type its argument was resolved for; if the
+/// partial evaluator copies a drifted column while keeping that stale declared type, the
+/// argument-type check sees matching declared types and the function is executed on a mismatched
+/// column anyway - the same `LOGICAL_ERROR` abort, just one node further away.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, DriftBehindAliasDoesNotAbortHeaderComputation)
 {
     tryRegisterFunctions();
 
-    auto dag = makeDagOverInput("s", std::make_shared<DataTypeString>(), "materialize");
-    const auto expected_result_type = dag.getOutputs().front()->result_type->getName();
+    ActionsDAG dag;
+    const auto & input = dag.addInput("n", std::make_shared<DataTypeFloat64>());
+    const auto & alias = dag.addAlias(input, "n_alias");
+    auto function = FunctionFactory::instance().get("negate", getContext().context);
+    const auto & function_node = dag.addFunction(function, {&alias}, "negate_result");
+    dag.getOutputs().clear();
+    dag.getOutputs().push_back(&function_node);
 
-    Block matching_header = headerWith("s", std::make_shared<DataTypeString>());
+    const auto expected_result_type = function_node.result_type->getName();
+
+    Block drifted_header = headerWith("n", std::make_shared<DataTypeInt256>());
 
     Block result;
-    ASSERT_NO_THROW(result = dag.updateHeader(matching_header));
+    ASSERT_NO_THROW(result = dag.updateHeader(drifted_header));
 
-    ASSERT_TRUE(result.has("materialize_result"));
-    EXPECT_EQ(result.getByName("materialize_result").type->getName(), expected_result_type);
+    ASSERT_TRUE(result.has("negate_result"));
+    EXPECT_EQ(result.getByName("negate_result").type->getName(), expected_result_type);
+}
+
+/// A header column whose type did NOT drift must still be constant-folded exactly as before, so the
+/// guard cannot be satisfied by disabling folding altogether. `updateHeader` is on the planning path
+/// of every query, so this pins that the fix is scoped to the drifted case.
+///
+/// The oracle is the folded VALUE, not just the result type: a type-only assertion would also hold
+/// if folding were disabled unconditionally, because the guard's fallback produces an empty column
+/// of the same declared type. A constant argument makes the fold observable - it yields a
+/// `ColumnConst` carrying the computed value, which the do-not-fold path never produces.
+GTEST_TEST(ActionsDAGPartialResultTypeDrift, MatchingTypeStillFoldsConstant)
+{
+    tryRegisterFunctions();
+
+    ActionsDAG dag;
+    const auto & constant = dag.addColumn(
+        ColumnConst::create(ColumnVector<Int64>::create(1, 42), 1),
+        std::make_shared<DataTypeInt64>(),
+        "c");
+    auto function = FunctionFactory::instance().get("negate", getContext().context);
+    const auto & function_node = dag.addFunction(function, {&constant}, "negate_result");
+    dag.getOutputs().clear();
+    dag.getOutputs().push_back(&function_node);
+
+    Block result;
+    ASSERT_NO_THROW(result = dag.updateHeader(Block{}));
+
+    ASSERT_TRUE(result.has("negate_result"));
+    const auto & folded = result.getByName("negate_result");
+    ASSERT_NE(folded.column, nullptr) << "a non-drifted constant argument must still be folded";
+    ASSERT_TRUE(isColumnConst(*folded.column)) << "the fold must produce a constant, not an empty column";
+    EXPECT_EQ(folded.column->getInt(0), -42);
 }

@@ -1398,7 +1398,16 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
         case ActionsDAG::ActionType::ALIAS:
         {
+            /// Carry the argument's ACTUAL type, not just its column. An alias never changes a
+            /// value, so its declared `result_type` is a copy of the type its argument was resolved
+            /// for during analysis. Keeping that declared type while copying a drifted column would
+            /// hide the drift from the argument-type check in the `FUNCTION` branch above, which
+            /// compares declared types, so a function behind an alias would still be executed on a
+            /// mismatched column. `ExpressionActions` propagates both for the same reason (see the
+            /// `ALIAS` case in `ExpressionActions::executeAction`).
             res_column.column = arguments.at(0).column;
+            if (arguments.at(0).type)
+                res_column.type = arguments.at(0).type;
             break;
         }
 
