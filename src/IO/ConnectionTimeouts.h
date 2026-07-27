@@ -73,11 +73,20 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(DECLARE_BUILDER_FOR_MEMBER)
     ConnectionTimeouts & withHTTPKeepAliveMaxRequests(size_t requests);
 };
 
+/// `Poco::Timespan`'s `(seconds, microseconds)` constructor takes `long`, which is only 64 bits
+/// wide on LP64 platforms - on LLP64 ones (Windows) it is 32, and a `size_t` count of seconds
+/// would be truncated. Its microsecond constructor takes a 64-bit `TimeDiff`, so go through
+/// that instead; the resulting span is the same.
+inline Poco::Timespan timespanFromSeconds(size_t seconds)
+{
+    return Poco::Timespan(static_cast<Poco::Timespan::TimeDiff>(seconds) * Poco::Timespan::SECONDS);
+}
+
 /// NOLINTBEGIN(bugprone-macro-parentheses)
 #define DEFINE_BUILDER_FOR_MEMBER(member, setter_func) \
     inline ConnectionTimeouts & ConnectionTimeouts::setter_func(size_t seconds) \
     { \
-        return setter_func(Poco::Timespan(seconds, 0)); \
+        return setter_func(timespanFromSeconds(seconds)); \
     } \
     inline ConnectionTimeouts & ConnectionTimeouts::setter_func(Poco::Timespan span) \
     { \
@@ -106,7 +115,7 @@ APPLY_FOR_ALL_CONNECTION_TIMEOUT_MEMBERS(SATURATE_MEMBER);
 
 inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(size_t seconds)
 {
-    return withConnectionTimeout(Poco::Timespan(seconds, 0));
+    return withConnectionTimeout(timespanFromSeconds(seconds));
 }
 
 inline ConnectionTimeouts & ConnectionTimeouts::withConnectionTimeout(Poco::Timespan span)

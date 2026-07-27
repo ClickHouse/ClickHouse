@@ -1,4 +1,5 @@
 #include <Common/FileRenamer.h>
+#include <base/pathToString.h>
 
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
@@ -32,8 +33,8 @@ FileRenamer::FileRenamer(const String & renaming_rule)
 String FileRenamer::generateNewFilename(const String & filename) const
 {
     // Split filename and extension
-    String file_base = fs::path(filename).stem();
-    String file_ext = fs::path(filename).extension();
+    String file_base = pathToString(fs::path(filename).stem());
+    String file_ext = pathToString(fs::path(filename).extension());
 
     // Get current timestamp in microseconds
     String timestamp;

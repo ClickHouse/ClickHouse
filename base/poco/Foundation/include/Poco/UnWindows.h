@@ -137,6 +137,19 @@
 #undef LogonUser
 #undef GetVersion
 #undef GetObject
+
+// ClickHouse: the list above is upstream Poco's, and covers the `*A`/`*W` function macros.
+// The Windows headers also define a number of unprefixed *constant* macros, which collide with
+// ordinary identifiers - `IGNORE` and `DELETE` are `ObjectStorageQueueAction` enumerators,
+// `ERROR` is a log level, `CONST` and `STRICT` appear as parameter and variable names. Nothing
+// in Poco or ClickHouse uses them as the Win32 constants they are, and a macro cannot be
+// avoided by qualifying the name, so drop them here - the one place that is guaranteed to have
+// just included <windows.h>.
+#undef CONST
+#undef DELETE
+#undef ERROR
+#undef IGNORE
+#undef STRICT
 #endif // POCO_NO_UNWINDOWS
 
 #endif // Foundation_UnWindows_INCLUDED

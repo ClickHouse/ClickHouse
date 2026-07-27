@@ -1,4 +1,5 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <base/pathToString.h>
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
@@ -31,7 +32,7 @@ Poco::URI getUriAfterRedirect(const Poco::URI & prev_uri, Poco::Net::HTTPRespons
     /// with path from the original URI and normalize it.
     auto path = std::filesystem::weakly_canonical(std::filesystem::path(prev_uri.getPath()) / location);
     location_uri = prev_uri;
-    location_uri.setPath(path);
+    location_uri.setPath(pathToString(path));
     return location_uri;
 }
 

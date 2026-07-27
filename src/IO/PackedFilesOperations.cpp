@@ -1,4 +1,5 @@
 #include <IO/PackedFilesOperations.h>
+#include <base/pathToString.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/ReadBufferFromFileBase.h>
@@ -82,7 +83,7 @@ ArchiveListing listPacked(const DiskPtr & disk_in, const String & input_file)
     const fs::path archive_path(input_file);
     VectorWithMemoryTracking<PackedFileInfo> files;
     for (const auto & [name, offset] : index)
-        files.push_back({name, archive_path.filename(), offset});
+        files.push_back({name, pathToString(archive_path.filename()), offset});
     /// Sort by offset to make the order as in the archive.
     std::sort(files.begin(), files.end(),
         [](const auto & a, const auto & b) { return a.offset.offset < b.offset.offset; });
@@ -93,11 +94,11 @@ MapWithMemoryTracking<fs::path, ArchiveListing> listPackedRecursive(const DiskPt
 {
     auto sub_dir_path = fs::path(sub_dir);
     auto input_dir = base_input_dir / sub_dir_path;
-    if (!disk_in->existsDirectory(input_dir))
+    if (!disk_in->existsDirectory(pathToString(input_dir)))
         throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST, "Input path {} doesn't exist or is not a directory", input_dir);
 
     MapWithMemoryTracking<fs::path, ArchiveListing> listing;
-    for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
+    for (auto it = disk_in->iterateDirectory(pathToString(input_dir)); it->isValid(); it->next())
     {
         auto in_path = input_dir / it->name();
         if (disk_in->existsDirectory(in_path))
@@ -153,7 +154,7 @@ void extractPacked(const DiskPtr & disk_in, const String & input_file, const Dis
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Packed archive entry escapes the output directory: {}", file_name);
 
         auto in = reader.readFile(disk_in, input_file, file_name, {}, {});
-        auto out = disk_out->writeFile(output_dir / entry_path);
+        auto out = disk_out->writeFile(pathToString(output_dir / entry_path));
         copyData(*in, *out);
         out->finalize();
     }
@@ -169,19 +170,19 @@ void extractPackedRecursive(const DiskPtr & disk_in, const String & input_dir, c
     auto input_dir_path = fs::path(normalizePath(input_dir));
     auto output_dir_path = output_dir / input_dir_path.filename();
 
-    if (!disk_out->existsDirectory(output_dir_path))
-        disk_out->createDirectories(output_dir_path);
+    if (!disk_out->existsDirectory(pathToString(output_dir_path)))
+        disk_out->createDirectories(pathToString(output_dir_path));
 
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {
         auto in_path = input_dir_path / fs::path(it->name());
 
-        if (disk_in->existsDirectory(in_path))
-            extractPackedRecursive(disk_in, in_path, disk_out, output_dir_path);
+        if (disk_in->existsDirectory(pathToString(in_path)))
+            extractPackedRecursive(disk_in, pathToString(in_path), disk_out, pathToString(output_dir_path));
         else if (in_path.extension() == PackedFilesIO::ARCHIVE_EXTENSION)
-            extractPacked(disk_in, in_path, disk_out, output_dir_path);
+            extractPacked(disk_in, pathToString(in_path), disk_out, pathToString(output_dir_path));
         else
-            disk_in->copyFile(in_path, *disk_out, output_dir_path / it->name(), getReadSettings());
+            disk_in->copyFile(pathToString(in_path), *disk_out, pathToString(output_dir_path / it->name()), getReadSettings());
     }
 }
 
@@ -207,10 +208,10 @@ void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskP
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {
         auto in_path = input_dir / fs::path(it->name());
-        if (disk_in->existsDirectory(in_path))
+        if (disk_in->existsDirectory(pathToString(in_path)))
             continue;
 
-        auto in = disk_in->readFile(in_path, read_settings);
+        auto in = disk_in->readFile(pathToString(in_path), read_settings);
         auto out = writer.writeFile(it->name());
         copyData(*in, *out);
         out->finalize();
@@ -236,8 +237,8 @@ void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, co
     auto input_dir_path = fs::path(normalizePath(input_dir));
     auto output_dir_path = output_dir / input_dir_path.filename();
 
-    if (!disk_out->existsDirectory(output_dir_path))
-        disk_out->createDirectories(output_dir_path);
+    if (!disk_out->existsDirectory(pathToString(output_dir_path)))
+        disk_out->createDirectories(pathToString(output_dir_path));
 
     auto output_file = fs::path(output_dir_path) / (String("data") + PackedFilesIO::ARCHIVE_EXTENSION);
     createPacked(disk_in, input_dir, disk_out, output_file, file_order_hint);
@@ -245,7 +246,7 @@ void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, co
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())
     {
         auto in_path = input_dir / fs::path(it->name());
-        if (!disk_in->existsDirectory(in_path))
+        if (!disk_in->existsDirectory(pathToString(in_path)))
             continue;
 
         String sub_dir_prefix = it->name() +"/";
@@ -254,7 +255,7 @@ void createPackedRecursive(const DiskPtr & disk_in, const String & input_dir, co
         for (const auto & file : file_order_hint)
             if (file.starts_with(sub_dir_prefix))
                 files_order_hint_for_subdir.push_back(file.substr(sub_dir_prefix.size()));
-        createPackedRecursive(disk_in, in_path, disk_out, output_dir_path, files_order_hint_for_subdir);
+        createPackedRecursive(disk_in, pathToString(in_path), disk_out, pathToString(output_dir_path), files_order_hint_for_subdir);
     }
 }
 

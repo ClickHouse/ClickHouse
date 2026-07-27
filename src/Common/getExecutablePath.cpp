@@ -1,4 +1,5 @@
 #include <Common/getExecutablePath.h>
+#include <base/pathToString.h>
 #include <filesystem>
 
 
@@ -9,5 +10,5 @@ std::string getExecutablePath()
 
     if (ec)
         return {};
-    return canonical_path;
+    return pathToString(canonical_path);
 }

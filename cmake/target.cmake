@@ -33,6 +33,9 @@ elseif (CMAKE_SYSTEM_NAME MATCHES "Windows")
     # (cctz's WinRT time-zone lookup pulls in a `windows.globalization.h` whose
     # `IReference<BYTE>` specializations do not compile).
     add_definitions(-D WINVER=0x0A00 -D _WIN32_WINNT=0x0A00 -D NTDDI_VERSION=0x0A000000)
+    # mingw-w64's `off_t` is 32 bits unless this is set, which would cap file offsets at 2 GiB.
+    # It also makes `fseeko`/`ftello`/`stat` and friends resolve to their 64-bit variants.
+    add_definitions(-D _FILE_OFFSET_BITS=64)
     # Note: deliberately no `_POSIX_C_SOURCE`/`_GNU_SOURCE` here. mingw-w64 already exposes
     # the POSIX-flavoured CRT names we use (`strdup`, `fileno`, `getpid`, ...) without them,
     # and claiming POSIX conformance on a platform that does not have it makes third-party
