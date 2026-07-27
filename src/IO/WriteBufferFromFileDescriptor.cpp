@@ -140,23 +140,30 @@ void WriteBufferFromFileDescriptor::nextImpl()
         return;
     }
 
+    /// Whether the write has to stay responsive to cancellation: a hook is installed and the sink
+    /// is one that can actually block (see initializeResponsiveWriteState).
+    const bool responsive_writes = cancellation_hook && cancellation_fd_can_block;
+
     /// The operation was cancelled (e.g. the user pressed Ctrl+C in the client) - discard the
-    /// buffered data instead of writing it, so the output stops promptly.
-    if (cancellation_hook && cancellation_hook())
+    /// buffered data instead of writing it, so the output stops promptly. This is done only for a
+    /// sink that can block: a regular file (or a non-tty character device such as /dev/null) never
+    /// makes the client hang, so its buffered data - typically the tail or the format footer of an
+    /// already produced result - is written out as usual instead of being silently lost. Callers
+    /// arming such descriptors (`stdout > file`, a regular-file `INTO OUTFILE`,
+    /// `--server_logs_file=/path`) rely on that: for them the hook is a no-op.
+    if (responsive_writes && cancellation_hook())
         return;
 
     Stopwatch watch;
 
-    /// When a cancellation hook is installed (e.g. the client output during a query) and the
-    /// descriptor can block (a pipe, socket or terminal), keep the write responsive to
-    /// cancellation. Otherwise a Ctrl+C would only set the cancellation flag while we stay stuck
-    /// in the write(), because the interrupting signal can be delivered to another thread and thus
-    /// not interrupt this write() at all. Wait for the descriptor to become writable in small
-    /// steps, checking for cancellation in between, issue writes that cannot sleep indefinitely,
-    /// and discard the rest of the buffer once cancellation is requested. A terminal is written
-    /// through a private non-blocking descriptor of the same sink (see setCancellationHook), so
-    /// the write fails with EAGAIN instead of sleeping when the terminal stops draining.
-    const bool responsive_writes = cancellation_hook && cancellation_fd_can_block;
+    /// While the write has to stay responsive, keep it interruptible by cancellation. Otherwise a
+    /// Ctrl+C would only set the cancellation flag while we stay stuck in the write(), because the
+    /// interrupting signal can be delivered to another thread and thus not interrupt this write()
+    /// at all. Wait for the descriptor to become writable in small steps, checking for cancellation
+    /// in between, issue writes that cannot sleep indefinitely, and discard the rest of the buffer
+    /// once cancellation is requested. A terminal is written through a private non-blocking
+    /// descriptor of the same sink (see setCancellationHook), so the write fails with EAGAIN
+    /// instead of sleeping when the terminal stops draining.
     const int write_fd = (responsive_writes && nonblocking_write_fd >= 0) ? nonblocking_write_fd : fd;
 
     size_t bytes_written = 0;
