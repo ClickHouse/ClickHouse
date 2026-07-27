@@ -43,6 +43,10 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
 
+    /// `total_rows` counts the rows that were parsed completely, so on a parse error the parser has
+    /// reached the row after them (the same number the "at row N" message part is derived from).
+    std::optional<size_t> getRowsReachedOnParseError() const override { return total_rows + 1; }
+
     static bool skipToNextRow(ReadBuffer * buf, size_t min_chunk_bytes, int balance);
 
 private:
