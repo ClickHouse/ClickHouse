@@ -1,0 +1,5 @@
+-- CREATE: cycle through a tuple subcolumn
+-- ALTER: cycle through a tuple subcolumn
+
+-- acyclic subcolumn reads are still accepted
+42	(41)

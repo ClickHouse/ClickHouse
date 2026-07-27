@@ -1362,21 +1362,6 @@ ColumnsDescription clearDefaultExpressions(const ColumnsDescription & columns)
 
 }
 
-void collectAliasDependenciesFromAST(
-    const ASTPtr & node,
-    const NameSet & candidate_names,
-    NameSet & dependencies)
-{
-    if (!node)
-        return;
-
-    RequiredSourceColumnsVisitor::Data columns_context;
-    RequiredSourceColumnsVisitor(columns_context).visit(node);
-    for (const auto & column_name : columns_context.requiredColumns())
-        if (candidate_names.contains(column_name))
-            dependencies.insert(column_name);
-}
-
 void collectColumnDependenciesFromAST(
     const ASTPtr & node,
     const NameSet & candidate_names,
@@ -1508,7 +1493,7 @@ void detectRecursiveDefaultCycles(
         NameSet dependencies;
         if (auto it = alias_to_expression.find(vertex); it != alias_to_expression.end())
         {
-            collectAliasDependenciesFromAST(it->second, alias_names, dependencies);
+            collectColumnDependenciesFromAST(it->second, alias_names, columns, dependencies);
             for (const auto & dependency : dependencies)
                 dfs(dependency);
         }

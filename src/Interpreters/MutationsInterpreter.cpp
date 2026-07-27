@@ -156,10 +156,14 @@ void addColumnsRequiredForDefaultConversions(
     const auto & columns_desc = metadata_snapshot->getColumns();
     auto source_columns = columns_desc.getAllPhysical();
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
-    auto initial_required_columns = required_columns;
 
-    for (const auto & column_name : initial_required_columns)
+    /// A column pulled in as a source of someone else's default conversion may itself need a
+    /// default conversion, so keep walking the list as it grows (mirrors the read path in
+    /// `injectRequiredColumnsForNullableDefaultConversions`).
+    for (size_t i = 0; i < required_columns.size(); ++i)
     {
+        const String column_name = required_columns[i];
+
         auto metadata_column = columns_desc.tryGetPhysical(column_name);
         if (!metadata_column)
             continue;
