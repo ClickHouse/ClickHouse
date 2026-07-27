@@ -153,15 +153,15 @@ static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn 
     return true;
 }
 
-static bool haveCompatibleConstantValues(const Field & actual, const Field & expected);
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected, bool strict_aggregate_states);
 
-static bool haveCompatibleConstantValueVectors(const FieldVector & actual, const FieldVector & expected)
+static bool haveCompatibleConstantValueVectors(const FieldVector & actual, const FieldVector & expected, bool strict_aggregate_states)
 {
     if (actual.size() != expected.size())
         return false;
 
     for (size_t i = 0; i < actual.size(); ++i)
-        if (!haveCompatibleConstantValues(actual[i], expected[i]))
+        if (!haveCompatibleConstantValues(actual[i], expected[i], strict_aggregate_states))
             return false;
 
     return true;
@@ -173,7 +173,12 @@ static bool haveCompatibleConstantValueVectors(const FieldVector & actual, const
 /// have already established at this point). For such leaves compare only the serialized state, so
 /// that genuinely different constants — including a differing non-aggregate element next to a
 /// compatible aggregate state inside the same `Tuple` — are still reported as a mismatch.
-static bool haveCompatibleConstantValues(const Field & actual, const Field & expected)
+///
+/// The relaxation is only sound while the type of a value is fully determined by the column type,
+/// which is not the case under `Variant`, `Dynamic` and `JSON` — see `typeCanHideTheValueType`.
+/// For those, `strict_aggregate_states` also requires the aggregate function names to be equal
+/// (compared field by field, because `Field::operator ==` throws for differing names).
+static bool haveCompatibleConstantValues(const Field & actual, const Field & expected, bool strict_aggregate_states)
 {
     if (actual.getType() != expected.getType())
         return false;
@@ -181,16 +186,43 @@ static bool haveCompatibleConstantValues(const Field & actual, const Field & exp
     switch (actual.getType())
     {
         case Field::Types::AggregateFunctionState:
-            return actual.safeGet<AggregateFunctionStateData>().data == expected.safeGet<AggregateFunctionStateData>().data;
+        {
+            const auto & actual_state = actual.safeGet<AggregateFunctionStateData>();
+            const auto & expected_state = expected.safeGet<AggregateFunctionStateData>();
+            if (strict_aggregate_states && actual_state.name != expected_state.name)
+                return false;
+            return actual_state.data == expected_state.data;
+        }
         case Field::Types::Array:
-            return haveCompatibleConstantValueVectors(actual.safeGet<Array>(), expected.safeGet<Array>());
+            return haveCompatibleConstantValueVectors(actual.safeGet<Array>(), expected.safeGet<Array>(), strict_aggregate_states);
         case Field::Types::Tuple:
-            return haveCompatibleConstantValueVectors(actual.safeGet<Tuple>(), expected.safeGet<Tuple>());
+            return haveCompatibleConstantValueVectors(actual.safeGet<Tuple>(), expected.safeGet<Tuple>(), strict_aggregate_states);
         case Field::Types::Map:
-            return haveCompatibleConstantValueVectors(actual.safeGet<Map>(), expected.safeGet<Map>());
+            return haveCompatibleConstantValueVectors(actual.safeGet<Map>(), expected.safeGet<Map>(), strict_aggregate_states);
         default:
             return actual == expected;
     }
+}
+
+/// Whether a value of this type is converted to a `Field` that no longer tells which type the
+/// value actually has. A `Variant` flattens a row to the `Field` of its active alternative
+/// (`ColumnVariant::operator []`) and `DataTypeVariant::equals` allows several aggregate-state
+/// alternatives that are compatible by state representation; `Dynamic` and `JSON` similarly store
+/// values of types that are not fixed by the column type. Two values on different alternatives can
+/// then produce equal `Field`s although the alternative itself is a part of the value and is
+/// observable (e.g. by `variantType`), so the aggregate-state relaxation must not apply inside them.
+static bool typeCanHideTheValueType(const IDataType & type)
+{
+    if (isVariant(type) || type.hasDynamicSubcolumns())
+        return true;
+
+    bool result = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        result = result || typeCanHideTheValueType(child);
+    });
+
+    return result;
 }
 
 template <typename ReturnType>
@@ -244,7 +276,10 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         Field actual_value = assert_cast<const ColumnConst &>(*actual.column).getField();
         Field expected_value = assert_cast<const ColumnConst &>(*expected.column).getField();
 
-        if (!haveCompatibleConstantValues(actual_value, expected_value))
+        /// The types are already checked to be equal at this point.
+        const bool strict_aggregate_states = actual.type && typeCanHideTheValueType(*actual.type);
+
+        if (!haveCompatibleConstantValues(actual_value, expected_value, strict_aggregate_states))
             return onError<ReturnType>(code,
                     "Block structure mismatch in {} stream: different values of constants in column '{}': actual: {}, expected: {}",
                     context_description,
