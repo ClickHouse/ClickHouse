@@ -46,6 +46,8 @@ private:
     ScanDescription scan;
     FormatSettings format_settings;
     bool is_finished = false;
+    /// Shared with plan/count/next so onCancel interrupts any in-flight Lance work.
+    CancelHandlePtr cancel_handle = std::make_shared<CancelHandle>();
     /// Protects optional engagement of scan_handle for concurrent onCancel vs generate.
     /// nextBatch/requestCancel on the Scan itself are safe without holding this mutex.
     std::mutex scan_mutex;

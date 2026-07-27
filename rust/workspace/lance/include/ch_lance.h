@@ -47,6 +47,8 @@ typedef struct ch_lance_error
 
 typedef struct ch_lance_dataset ch_lance_dataset;
 typedef struct ch_lance_scan ch_lance_scan;
+/// Query-scoped cooperative cancel token. Thread-safe; may be shared across open/plan/count/scan.
+typedef struct ch_lance_cancel_handle ch_lance_cancel_handle;
 
 typedef struct ch_lance_dataset_options
 {
@@ -63,6 +65,8 @@ typedef struct ch_lance_dataset_options
     bool s3_no_sign_request;
     bool s3_allow_http;
     bool s3_virtual_hosted_style_request;
+    /// Optional. When non-null, open can be interrupted by ch_lance_cancel_handle_cancel.
+    ch_lance_cancel_handle * cancel;
 } ch_lance_dataset_options;
 
 typedef struct ch_lance_snapshot_info
@@ -83,6 +87,8 @@ typedef struct ch_lance_scan_options
     const char * predicate;
     bool need_only_count;
     uint64_t max_block_size;
+    /// Optional. When non-null, planScan is interruptible and the resulting scan shares this token.
+    ch_lance_cancel_handle * cancel;
 } ch_lance_scan_options;
 
 typedef struct ch_lance_runtime_config
@@ -104,14 +110,34 @@ typedef struct ch_lance_runtime_stats
 bool ch_lance_runtime_ensure(const ch_lance_runtime_config * config, ch_lance_error * error);
 void ch_lance_get_runtime_stats(ch_lance_runtime_stats * out);
 
+/// Query-scoped cancel handle. Create once per ReadSource / query unit of work.
+ch_lance_cancel_handle * ch_lance_cancel_handle_create(void);
+/// Thread-safe: signal cancellation. Concurrent with any in-flight open/plan/count/next_batch
+/// that was given this handle (or a scan that inherited it).
+void ch_lance_cancel_handle_cancel(ch_lance_cancel_handle * handle);
+void ch_lance_cancel_handle_free(ch_lance_cancel_handle * handle);
+
 ch_lance_dataset * ch_lance_open_dataset(const ch_lance_dataset_options * options, ch_lance_error * error);
 void ch_lance_free_dataset(ch_lance_dataset * dataset);
 
 bool ch_lance_current_snapshot(ch_lance_dataset * dataset, ch_lance_snapshot_info * snapshot, ch_lance_error * error);
 bool ch_lance_export_schema(ch_lance_dataset * dataset, uint64_t version, struct ArrowSchema * schema, ch_lance_error * error);
-bool ch_lance_total_rows(ch_lance_dataset * dataset, uint64_t version, uint64_t * rows, bool * has_value, ch_lance_error * error);
+/// `cancel` may be null (no cooperative cancel for this call).
+bool ch_lance_total_rows(
+    ch_lance_dataset * dataset,
+    uint64_t version,
+    uint64_t * rows,
+    bool * has_value,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
 bool ch_lance_count_rows(
-    ch_lance_dataset * dataset, uint64_t version, const char * predicate, uint64_t * rows, bool * has_value, ch_lance_error * error);
+    ch_lance_dataset * dataset,
+    uint64_t version,
+    const char * predicate,
+    uint64_t * rows,
+    bool * has_value,
+    ch_lance_cancel_handle * cancel,
+    ch_lance_error * error);
 bool ch_lance_total_bytes(ch_lance_dataset * dataset, uint64_t * bytes, bool * has_value, ch_lance_error * error);
 
 ch_lance_scan * ch_lance_plan_scan(ch_lance_dataset * dataset, const ch_lance_scan_options * options, ch_lance_error * error);

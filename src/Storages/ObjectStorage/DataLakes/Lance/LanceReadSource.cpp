@@ -198,8 +198,10 @@ ReadSource::ReadSource(
 
 void ReadSource::onCancel() noexcept
 {
-    /// Thread-safe: only signals the Rust cancel token. Does not free the scan
-    /// (free happens in Scan destructor after generate has returned).
+    /// Thread-safe: signal the query cancel handle (interrupts open/plan/count/next)
+    /// and the scan handle if already planned. Does not free the scan.
+    if (cancel_handle)
+        cancel_handle->requestCancel();
     std::lock_guard lock(scan_mutex);
     if (scan_handle)
         scan_handle->requestCancel();
@@ -215,11 +217,25 @@ Chunk ReadSource::generate()
         if (isCancelled())
             return {};
 
-        const auto rows = scan.predicate ? dataset.countRows(scan.snapshot, scan.predicate) : dataset.totalRows(scan.snapshot);
-        if (rows)
+        try
         {
-            is_finished = true;
-            return Chunk(Columns{}, *rows);
+            const auto rows = scan.predicate
+                ? dataset.countRows(scan.snapshot, scan.predicate, cancel_handle)
+                : dataset.totalRows(scan.snapshot, cancel_handle);
+            if (rows)
+            {
+                is_finished = true;
+                return Chunk(Columns{}, *rows);
+            }
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || isCancelled())
+            {
+                is_finished = true;
+                return {};
+            }
+            throw;
         }
     }
 
@@ -229,20 +245,38 @@ Chunk ReadSource::generate()
             return {};
 
         /// Plan outside the mutex so a concurrent cancel is not blocked on metadata I/O.
-        auto planned = dataset.planScan(scan);
+        /// cancel_handle is shared so onCancel can interrupt planScan mid-wait.
+        try
         {
-            std::lock_guard lock(scan_mutex);
-            if (!scan_handle)
-                scan_handle.emplace(std::move(planned));
-            if (isCancelled())
+            auto planned_scan = dataset.planScan(scan, cancel_handle);
             {
-                scan_handle->requestCancel();
+                std::lock_guard lock(scan_mutex);
+                if (!scan_handle)
+                    scan_handle.emplace(std::move(planned_scan));
+                if (isCancelled())
+                {
+                    if (cancel_handle)
+                        cancel_handle->requestCancel();
+                    if (scan_handle)
+                        scan_handle->requestCancel();
+                    return {};
+                }
+            }
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::QUERY_WAS_CANCELLED || isCancelled())
+            {
+                is_finished = true;
                 return {};
             }
+            throw;
         }
     }
     else if (isCancelled())
     {
+        if (cancel_handle)
+            cancel_handle->requestCancel();
         std::lock_guard lock(scan_mutex);
         if (scan_handle)
             scan_handle->requestCancel();

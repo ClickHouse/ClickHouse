@@ -141,6 +141,7 @@ pub struct ch_lance_dataset_options {
     s3_no_sign_request: bool,
     s3_allow_http: bool,
     s3_virtual_hosted_style_request: bool,
+    cancel: *mut ch_lance_cancel_handle,
 }
 
 #[repr(C)]
@@ -161,6 +162,7 @@ pub struct ch_lance_scan_options {
     predicate: *const c_char,
     need_only_count: bool,
     max_block_size: u64,
+    cancel: *mut ch_lance_cancel_handle,
 }
 
 #[repr(C)]
@@ -182,8 +184,8 @@ pub struct ch_lance_dataset {
     origin: ChLanceErrorOrigin,
 }
 
-/// Cooperative cancel signal for a scan. Thread-safe: cancel may be requested from
-/// any thread while next_batch runs on the pipeline thread.
+/// Cooperative cancel signal. Thread-safe: cancel may be requested from any thread
+/// while open/plan/count/next_batch run on a pipeline thread.
 struct ScanCancel {
     cancelled: AtomicBool,
     notify: Notify,
@@ -198,13 +200,37 @@ impl ScanCancel {
     }
 
     fn cancel(&self) {
-        // Release store so a subsequent Acquire load in next_batch observes the flag.
+        // Release store so a subsequent Acquire load observes the flag.
         self.cancelled.store(true, Ordering::Release);
         self.notify.notify_waiters();
     }
 
     fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::Acquire)
+    }
+}
+
+/// Opaque query-scoped cancel token shared across open/plan/count/scan.
+#[allow(non_camel_case_types)]
+pub struct ch_lance_cancel_handle {
+    inner: Arc<ScanCancel>,
+}
+
+/// Resolve an optional FFI cancel handle into an Arc. Null creates a private token
+/// (scan-only cancel via ch_lance_cancel_scan still works).
+unsafe fn cancel_arc_from_ptr(ptr: *mut ch_lance_cancel_handle) -> Arc<ScanCancel> {
+    if ptr.is_null() {
+        Arc::new(ScanCancel::new())
+    } else {
+        (*ptr).inner.clone()
+    }
+}
+
+unsafe fn optional_cancel_from_ptr(ptr: *mut ch_lance_cancel_handle) -> Option<Arc<ScanCancel>> {
+    if ptr.is_null() {
+        None
+    } else {
+        Some((*ptr).inner.clone())
     }
 }
 
@@ -222,6 +248,42 @@ pub struct ch_lance_scan {
     stream: Mutex<Option<LanceBatchStream>>,
     origin: ChLanceErrorOrigin,
     cancel: Arc<ScanCancel>,
+}
+
+/// Race a one-shot future against cooperative cancellation.
+async fn with_cancel<T, F>(cancel: Option<&ScanCancel>, fut: F) -> Result<T, FfiError>
+where
+    F: Future<Output = Result<T, FfiError>>,
+{
+    let Some(cancel) = cancel else {
+        return fut.await;
+    };
+
+    if cancel.is_cancelled() {
+        return Err(FfiError::cancelled());
+    }
+
+    tokio::pin!(fut);
+    loop {
+        let notified = cancel.notify.notified();
+        tokio::pin!(notified);
+
+        if cancel.is_cancelled() {
+            return Err(FfiError::cancelled());
+        }
+
+        tokio::select! {
+            biased;
+            _ = &mut notified => {
+                if cancel.is_cancelled() {
+                    return Err(FfiError::cancelled());
+                }
+            }
+            result = &mut fut => {
+                return result;
+            }
+        }
+    }
 }
 
 /// Wait for the next stream item or cooperative cancellation.
@@ -963,8 +1025,13 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
         }
     };
 
+    let cancel = unsafe { optional_cancel_from_ptr((*options).cancel) };
+
     LANCE_OPEN_DATASET_CALLS.fetch_add(1, Ordering::Relaxed);
-    match block_on_lance(open_dataset(open_options)) {
+    match block_on_lance(with_cancel(
+        cancel.as_deref(),
+        open_dataset(open_options),
+    )) {
         Ok(Ok(opened)) => Box::into_raw(Box::new(ch_lance_dataset {
             dataset: opened.dataset,
             origin: opened.origin,
@@ -977,6 +1044,28 @@ pub unsafe extern "C" fn ch_lance_open_dataset(
             set_error(error, ffi_error);
             std::ptr::null_mut()
         }
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_create() -> *mut ch_lance_cancel_handle {
+    Box::into_raw(Box::new(ch_lance_cancel_handle {
+        inner: Arc::new(ScanCancel::new()),
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_cancel(handle: *mut ch_lance_cancel_handle) {
+    if handle.is_null() {
+        return;
+    }
+    (*handle).inner.cancel();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn ch_lance_cancel_handle_free(handle: *mut ch_lance_cancel_handle) {
+    if !handle.is_null() {
+        drop(Box::from_raw(handle));
     }
 }
 
@@ -1065,6 +1154,7 @@ pub unsafe extern "C" fn ch_lance_total_rows(
     version: u64,
     rows: *mut u64,
     has_value: *mut bool,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
@@ -1079,13 +1169,15 @@ pub unsafe extern "C" fn ch_lance_total_rows(
 
     let dataset = &mut *dataset;
     let origin = dataset.origin;
-    let count_result = block_on_lance(async {
-        let dataset = checkout_exact_version(&dataset.dataset, version, origin).await?;
+    let source = dataset.dataset.clone();
+    let cancel = optional_cancel_from_ptr(cancel);
+    let count_result = block_on_lance(with_cancel(cancel.as_deref(), async move {
+        let dataset = checkout_exact_version(&source, version, origin).await?;
         dataset
             .count_rows(None)
             .await
             .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
-    });
+    }));
 
     match count_result {
         Ok(Ok(count)) => {
@@ -1107,6 +1199,7 @@ pub unsafe extern "C" fn ch_lance_count_rows(
     predicate: *const c_char,
     rows: *mut u64,
     has_value: *mut bool,
+    cancel: *mut ch_lance_cancel_handle,
     error: *mut ch_lance_error,
 ) -> bool {
     clear_error(error);
@@ -1129,8 +1222,10 @@ pub unsafe extern "C" fn ch_lance_count_rows(
 
     let dataset = &mut *dataset;
     let origin = dataset.origin;
-    let count_result = block_on_lance(async {
-        let dataset = checkout_exact_version(&dataset.dataset, version, origin).await?;
+    let source = dataset.dataset.clone();
+    let cancel = optional_cancel_from_ptr(cancel);
+    let count_result = block_on_lance(with_cancel(cancel.as_deref(), async move {
+        let dataset = checkout_exact_version(&source, version, origin).await?;
         if predicate.is_empty() {
             dataset
                 .count_rows(None)
@@ -1142,7 +1237,7 @@ pub unsafe extern "C" fn ch_lance_count_rows(
                 .await
                 .map_err(|err| FfiError::from_lance(LanceOperation::CountRows, origin, err))
         }
-    });
+    }));
 
     match count_result {
         Ok(Ok(count)) => {
@@ -1212,36 +1307,41 @@ pub unsafe extern "C" fn ch_lance_plan_scan(
     let max_block_size = (*options).max_block_size as usize;
     let source_dataset = (*dataset).dataset.clone();
     let origin = (*dataset).origin;
+    let cancel = cancel_arc_from_ptr((*options).cancel);
 
     LANCE_PLAN_SCAN_CALLS.fetch_add(1, Ordering::Relaxed);
-    let stream_result = block_on_lance(async move {
-        let dataset = checkout_exact_version(&source_dataset, version, origin).await?;
+    let cancel_for_plan = Arc::clone(&cancel);
+    let stream_result = block_on_lance(with_cancel(
+        Some(cancel_for_plan.as_ref()),
+        async move {
+            let dataset = checkout_exact_version(&source_dataset, version, origin).await?;
 
-        let mut scanner = dataset.scan();
-        if !projection.is_empty() {
+            let mut scanner = dataset.scan();
+            if !projection.is_empty() {
+                scanner
+                    .project(&projection)
+                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+            }
+            if !predicate.is_empty() {
+                scanner
+                    .filter(&predicate)
+                    .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
+            }
+            if max_block_size != 0 {
+                scanner.batch_size(max_block_size);
+            }
             scanner
-                .project(&projection)
-                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
-        }
-        if !predicate.is_empty() {
-            scanner
-                .filter(&predicate)
-                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))?;
-        }
-        if max_block_size != 0 {
-            scanner.batch_size(max_block_size);
-        }
-        scanner
-            .try_into_stream()
-            .await
-            .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))
-    });
+                .try_into_stream()
+                .await
+                .map_err(|err| FfiError::from_lance(LanceOperation::PlanScan, origin, err))
+        },
+    ));
 
     match stream_result {
         Ok(Ok(stream)) => Box::into_raw(Box::new(ch_lance_scan {
             stream: Mutex::new(Some(Box::pin(stream))),
             origin,
-            cancel: Arc::new(ScanCancel::new()),
+            cancel,
         })),
         Ok(Err(ffi_error)) | Err(ffi_error) => {
             set_error(error, ffi_error);
@@ -1398,6 +1498,7 @@ mod tests {
             s3_no_sign_request: false,
             s3_allow_http: false,
             s3_virtual_hosted_style_request: false,
+            cancel: ptr::null_mut(),
         }
     }
 
@@ -1514,6 +1615,7 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
@@ -1582,6 +1684,7 @@ mod tests {
             predicate: predicate.as_ptr(),
             need_only_count: false,
             max_block_size: 1024,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());
@@ -1622,6 +1725,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, error) };
         assert!(!scan.is_null());
@@ -1762,6 +1866,161 @@ mod tests {
     }
 
     #[test]
+    fn ffi_cancel_handle_cancels_plan_and_next() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let mut options = dataset_options(&uri);
+        let mut error = empty_error();
+
+        let cancel = unsafe { ch_lance_cancel_handle_create() };
+        assert!(!cancel.is_null());
+        options.cancel = cancel;
+
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        // Cancel before plan: planScan must fail with CANCELLED.
+        unsafe { ch_lance_cancel_handle_cancel(cancel) };
+        let column = CString::new("id").unwrap();
+        let projection_values = [column.as_ptr()];
+        let scan_options = ch_lance_scan_options {
+            version: snapshot.version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1,
+            cancel,
+        };
+        let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
+        assert!(scan.is_null());
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+        unsafe { ch_lance_free_error(addr_of_mut!(error)) };
+
+        // Fresh handle shared with plan + next.
+        let cancel2 = unsafe { ch_lance_cancel_handle_create() };
+        let scan_options2 = ch_lance_scan_options {
+            version: snapshot.version,
+            projection: ch_lance_string_list {
+                values: projection_values.as_ptr(),
+                size: projection_values.len(),
+            },
+            predicate: ptr::null(),
+            need_only_count: false,
+            max_block_size: 1,
+            cancel: cancel2,
+        };
+        let scan2 = unsafe { ch_lance_plan_scan(dataset, &scan_options2, addr_of_mut!(error)) };
+        assert!(!scan2.is_null());
+
+        unsafe { ch_lance_cancel_handle_cancel(cancel2) };
+        let mut array = FFI_ArrowArray::empty();
+        let mut batch_schema = FFI_ArrowSchema::empty();
+        let mut has_batch = false;
+        let ok = unsafe {
+            ch_lance_next_batch(
+                scan2,
+                addr_of_mut!(array),
+                addr_of_mut!(batch_schema),
+                addr_of_mut!(has_batch),
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_free_scan(scan2);
+            ch_lance_cancel_handle_free(cancel2);
+            ch_lance_cancel_handle_free(cancel);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn ffi_cancel_handle_cancels_total_rows() {
+        let dir = write_test_dataset();
+        let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let options = dataset_options(&uri);
+        let mut error = empty_error();
+        let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
+        assert!(!dataset.is_null());
+        let mut snapshot = ch_lance_snapshot_info { version: 0 };
+        assert!(unsafe {
+            ch_lance_current_snapshot(dataset, addr_of_mut!(snapshot), addr_of_mut!(error))
+        });
+
+        let cancel = unsafe { ch_lance_cancel_handle_create() };
+        unsafe { ch_lance_cancel_handle_cancel(cancel) };
+
+        let mut rows = 0;
+        let mut has_value = true;
+        let ok = unsafe {
+            ch_lance_total_rows(
+                dataset,
+                snapshot.version,
+                addr_of_mut!(rows),
+                addr_of_mut!(has_value),
+                cancel,
+                addr_of_mut!(error),
+            )
+        };
+        assert!(!ok);
+        assert!(!has_value);
+        assert_eq!(error.kind, ChLanceErrorKind::Cancelled as u32);
+
+        unsafe {
+            ch_lance_free_error(addr_of_mut!(error));
+            ch_lance_cancel_handle_free(cancel);
+            ch_lance_free_dataset(dataset);
+        }
+    }
+
+    #[test]
+    fn with_cancel_wakes_pending_future() {
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let cancel = Arc::new(ScanCancel::new());
+        let cancel_for_thread = Arc::clone(&cancel);
+        let started = Arc::new(AtomicBool::new(false));
+        let started_flag = Arc::clone(&started);
+
+        let join = thread::spawn(move || {
+            let runtime = ensure_lance_runtime().expect("runtime");
+            runtime.block_on(async move {
+                started_flag.store(true, Ordering::Release);
+                with_cancel(Some(cancel_for_thread.as_ref()), async {
+                    // Pending forever until cancelled.
+                    futures::future::pending::<Result<(), FfiError>>().await
+                })
+                .await
+            })
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !started.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "worker did not start");
+            thread::sleep(Duration::from_millis(1));
+        }
+        thread::sleep(Duration::from_millis(20));
+        let t0 = Instant::now();
+        cancel.cancel();
+        let result = join.join().expect("worker thread");
+        assert!(t0.elapsed() < Duration::from_secs(2));
+        let err = result.expect_err("expected cancel");
+        assert_eq!(err.kind, ChLanceErrorKind::Cancelled);
+    }
+
+    #[test]
     fn ffi_empty_dataset_is_successful() {
         let dir = write_empty_dataset();
         let uri = CString::new(dir.path().to_str().unwrap()).unwrap();
@@ -1785,6 +2044,7 @@ mod tests {
                 snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1861,6 +2121,7 @@ mod tests {
                 snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1883,6 +2144,7 @@ mod tests {
                 snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1909,6 +2171,7 @@ mod tests {
                 snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1923,6 +2186,7 @@ mod tests {
                 latest_snapshot.version,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -1965,6 +2229,7 @@ mod tests {
                 0,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -2003,6 +2268,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 1024,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(scan.is_null());
@@ -2036,6 +2302,7 @@ mod tests {
                 u64::MAX,
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -2118,6 +2385,7 @@ mod tests {
                 predicate.as_ptr(),
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -2164,6 +2432,7 @@ mod tests {
                 predicate.as_ptr(),
                 addr_of_mut!(rows),
                 addr_of_mut!(has_value),
+                ptr::null_mut(),
                 addr_of_mut!(error),
             )
         });
@@ -2512,6 +2781,7 @@ mod tests {
             s3_no_sign_request: false,
             s3_allow_http: true,
             s3_virtual_hosted_style_request: false,
+            cancel: ptr::null_mut(),
         };
         let mut error = empty_error();
         let dataset = unsafe { ch_lance_open_dataset(&options, addr_of_mut!(error)) };
@@ -2539,6 +2809,7 @@ mod tests {
             predicate: ptr::null(),
             need_only_count: false,
             max_block_size: 8192,
+                    cancel: ptr::null_mut(),
         };
         let scan = unsafe { ch_lance_plan_scan(dataset, &scan_options, addr_of_mut!(error)) };
         assert!(!scan.is_null());

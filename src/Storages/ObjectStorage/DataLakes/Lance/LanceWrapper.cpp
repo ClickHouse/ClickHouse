@@ -124,7 +124,7 @@ LanceError takeError(ch_lance_error & error)
     throw Exception(code, "{}", message);
 }
 
-ch_lance_dataset_options toNativeOptions(const DatasetOptions & options)
+ch_lance_dataset_options toNativeOptions(const DatasetOptions & options, ch_lance_cancel_handle * cancel = nullptr)
 {
     return ch_lance_dataset_options
     {
@@ -141,6 +141,7 @@ ch_lance_dataset_options toNativeOptions(const DatasetOptions & options)
         .s3_no_sign_request = options.s3_no_sign_request,
         .s3_allow_http = options.s3_allow_http,
         .s3_virtual_hosted_style_request = options.s3_virtual_hosted_style_request,
+        .cancel = cancel,
     };
 }
 
@@ -198,12 +199,47 @@ DatasetHandle::Impl::~Impl()
         ch_lance_free_dataset(dataset);
 }
 
-DatasetHandle DatasetHandle::open(const DatasetOptions & options)
+CancelHandle::CancelHandle()
+    : handle(ch_lance_cancel_handle_create())
 {
-    return openEphemeral(options);
+    if (!handle)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to create Lance cancel handle");
 }
 
-DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options)
+CancelHandle::~CancelHandle()
+{
+    if (handle)
+        ch_lance_cancel_handle_free(handle);
+}
+
+CancelHandle::CancelHandle(CancelHandle && other) noexcept
+    : handle(std::exchange(other.handle, nullptr))
+{
+}
+
+CancelHandle & CancelHandle::operator=(CancelHandle && other) noexcept
+{
+    if (this != &other)
+    {
+        if (handle)
+            ch_lance_cancel_handle_free(handle);
+        handle = std::exchange(other.handle, nullptr);
+    }
+    return *this;
+}
+
+void CancelHandle::requestCancel() noexcept
+{
+    if (handle)
+        ch_lance_cancel_handle_cancel(handle);
+}
+
+DatasetHandle DatasetHandle::open(const DatasetOptions & options, const CancelHandlePtr & cancel)
+{
+    return openEphemeral(options, cancel);
+}
+
+DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options, const CancelHandlePtr & cancel)
 {
     ensureRuntime();
 
@@ -211,7 +247,7 @@ DatasetHandle DatasetHandle::openEphemeral(const DatasetOptions & options)
 
     Stopwatch open_watch;
     ch_lance_error error{};
-    auto native_options = toNativeOptions(options);
+    auto native_options = toNativeOptions(options, cancel ? cancel->raw() : nullptr);
     auto * dataset = ch_lance_open_dataset(&native_options, &error);
     if (!dataset)
         throwLanceError(error);
@@ -279,24 +315,32 @@ NamesAndTypesList DatasetHandle::tableSchema(const TableStateSnapshot & snapshot
     return header.getNamesAndTypesList();
 }
 
-std::optional<size_t> DatasetHandle::totalRows(const TableStateSnapshot & snapshot) const
+std::optional<size_t> DatasetHandle::totalRows(const TableStateSnapshot & snapshot, const CancelHandlePtr & cancel) const
 {
     uint64_t rows = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_total_rows(raw(), snapshot.version, &rows, &has_value, &error))
+    if (!ch_lance_total_rows(raw(), snapshot.version, &rows, &has_value, cancel ? cancel->raw() : nullptr, &error))
         throwLanceError(error, fmt::format("Cannot count rows in `Lance` dataset version {}", snapshot.version));
     if (!has_value)
         return std::nullopt;
     return rows;
 }
 
-std::optional<size_t> DatasetHandle::countRows(const TableStateSnapshot & snapshot, const std::optional<String> & predicate) const
+std::optional<size_t> DatasetHandle::countRows(
+    const TableStateSnapshot & snapshot, const std::optional<String> & predicate, const CancelHandlePtr & cancel) const
 {
     uint64_t rows = 0;
     bool has_value = false;
     ch_lance_error error{};
-    if (!ch_lance_count_rows(raw(), snapshot.version, predicate ? predicate->c_str() : nullptr, &rows, &has_value, &error))
+    if (!ch_lance_count_rows(
+            raw(),
+            snapshot.version,
+            predicate ? predicate->c_str() : nullptr,
+            &rows,
+            &has_value,
+            cancel ? cancel->raw() : nullptr,
+            &error))
         throwLanceError(error, fmt::format("Cannot count filtered rows in `Lance` dataset version {}", snapshot.version));
     if (!has_value)
         return std::nullopt;
@@ -315,7 +359,7 @@ std::optional<size_t> DatasetHandle::totalBytes() const
     return bytes;
 }
 
-Scan DatasetHandle::planScan(const ScanDescription & scan_description) const
+Scan DatasetHandle::planScan(const ScanDescription & scan_description, const CancelHandlePtr & cancel) const
 {
     std::vector<const char *> projection;
     projection.reserve(scan_description.projection.size());
@@ -333,6 +377,7 @@ Scan DatasetHandle::planScan(const ScanDescription & scan_description) const
         .predicate = scan_description.predicate ? scan_description.predicate->c_str() : nullptr,
         .need_only_count = scan_description.need_only_count,
         .max_block_size = scan_description.max_block_size,
+        .cancel = cancel ? cancel->raw() : nullptr,
     };
 
     Stopwatch plan_watch;
