@@ -3431,6 +3431,43 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     return true;
 }
 
+void ReadFromMergeTree::copyReadInOrderContractFrom(const ReadFromMergeTree & source)
+{
+    has_outer_limit = source.has_outer_limit;
+    prefer_multiple_streams = source.prefer_multiple_streams;
+    enable_vertical_final = source.enable_vertical_final;
+    query_task_size_limit = source.query_task_size_limit;
+    virtual_row_conversion = source.virtual_row_conversion;
+
+    /// Nothing was requested in order — the remaining fields hold their constructor defaults on
+    /// both steps and must stay that way.
+    if (!source.reader_settings.read_in_order || !query_info.input_order_info)
+        return;
+
+    /// Everything below is state `requestReadingInOrder` derives rather than stores, so the
+    /// constructor of the rebuilt step cannot recover it from `query_info` alone.
+    ///
+    /// Without `read_in_order` the rebuilt step reads in order but does not know it: `readsInOrder`
+    /// answers `false`, so the parts are neither kept sorted for the in-order pool nor exempted from
+    /// the trailing `pipeline.resize(requested_num_streams)`.
+    reader_settings.read_in_order = true;
+
+    /// The constructor's asynchronous-read branch re-expands `requested_num_streams` up to
+    /// `max_streams_for_merge_tree_reading`, undoing the in-order stream budget: the source was
+    /// narrowed down to `output_streams_limit` and the rebuilt step must use the same budget.
+    if (output_streams_limit)
+        requested_num_streams = output_streams_limit;
+
+    /// `result_sort_description` is only ever filled by `updateSortDescription`, so a rebuilt step
+    /// would advertise no sort at all and hide its preserved order from later order-aware
+    /// optimizations such as `applyOrder` and redundant-sort removal.
+    updateSortDescription();
+
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->read_type
+            = query_info.input_order_info->direction > 0 ? ReadType::InOrder : ReadType::InReverseOrder;
+}
+
 bool ReadFromMergeTree::setVirtualRowConversions(ActionsDAG virtual_row_conversion_)
 {
     /// Disable virtual row for FINAL.

@@ -347,15 +347,18 @@ public:
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
 
-    /// Copy the full post-`requestReadingInOrder` state that is not carried by `query_info`.
+    /// Restore the full post-`requestReadingInOrder` state that is not carried by `query_info`.
     /// `has_outer_limit`, `prefer_multiple_streams`, `enable_vertical_final`,
     /// `query_task_size_limit` and `virtual_row_conversion` are set by
     /// `requestReadingInOrder`/`setPreferMultipleStreams`/`setVirtualRowConversions`,
-    /// not stored in `SelectQueryInfo`. When a reading step is reconstructed from
+    /// not stored in `SelectQueryInfo`; `reader_settings.read_in_order`,
+    /// `requested_num_streams` and `result_sort_description` are *derived* by
+    /// `requestReadingInOrder` and cannot be re-derived by the constructor either.
+    /// When a reading step is reconstructed from
     /// `getQueryInfo()` (which keeps `input_order_info`, so the step still reads in order) —
     /// e.g. the lazy-FINAL split in `optimizeLazyFinal`, the local parallel-replica fragment in
     /// `createLocalParallelReplicasReadingStep`, or an arbitrary optimized subtree cloned through
-    /// `clone` — this state must be carried over too. Otherwise the per-part
+    /// `clone` — all of this state must be carried over too. Otherwise the per-part
     /// `PrefetchingConcat` contract is silently dropped, the constructor re-derives
     /// `enable_vertical_final` from settings (which can re-enable vertical FINAL on a cloned
     /// in-order FINAL read and violate its sorted-output contract), the limit-aware
@@ -364,14 +367,7 @@ public:
     /// virtual-row optimization — which, with `read_in_order_use_virtual_row_per_block`
     /// enabled, would also flip `can_use_per_part_prefetching` back to `true` and produce a
     /// different pipeline shape than the original step it was rebuilt from.
-    void copyReadInOrderContractFrom(const ReadFromMergeTree & source)
-    {
-        has_outer_limit = source.has_outer_limit;
-        prefer_multiple_streams = source.prefer_multiple_streams;
-        enable_vertical_final = source.enable_vertical_final;
-        query_task_size_limit = source.query_task_size_limit;
-        virtual_row_conversion = source.virtual_row_conversion;
-    }
+    void copyReadInOrderContractFrom(const ReadFromMergeTree & source);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
     void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
