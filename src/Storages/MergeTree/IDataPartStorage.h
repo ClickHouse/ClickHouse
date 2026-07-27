@@ -375,6 +375,19 @@ public:
         DiskTransactionPtr external_transaction = nullptr;
         std::optional<int32_t> metadata_version_to_write = std::nullopt;
         NameSet invalidated_columns_to_write = {};
+
+        /// Params for freezing one projection sub-part of a part frozen with *this: parent-only artifacts
+        /// (metadata version, invalidated system columns) must not materialize inside the projection dir.
+        ClonePartParams forProjection(DiskTransactionPtr projection_transaction, bool copy_instead_of_hardlink_) const
+        {
+            ClonePartParams res = *this;
+            res.external_transaction = std::move(projection_transaction);
+            res.copy_instead_of_hardlink = copy_instead_of_hardlink_;
+            res.metadata_version_to_write.reset();
+            res.keep_metadata_version = true;
+            res.invalidated_columns_to_write.clear();
+            return res;
+        }
     };
 
     /// For packed storage the whole data.packed archive is rewritten (copied) during a clone whenever

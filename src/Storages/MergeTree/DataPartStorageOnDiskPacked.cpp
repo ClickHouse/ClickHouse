@@ -1034,9 +1034,12 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
              /// are the real subdirectories of the part dir; freeze each one recursively into the same
              /// destination transaction.
              auto projection_storage = getProjectionStorage(file);
-             auto params_copy = params;
-             params_copy.external_transaction = dest_storage->transaction;
-             projection_storage->freeze(dest_storage->getRelativePath(), file, dst_disk_, read_settings, write_settings, save_metadata_callback, params_copy);
+             /// The child keeps the parent's archive copy-vs-hardlink decision: blob tracking in cloneAndLoadDataPart keys on it.
+             auto child_params = params.forProjection(
+                 dest_storage->transaction, params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params));
+             projection_storage->freeze(
+                 dest_storage->getRelativePath(), file, dst_disk_, read_settings, write_settings,
+                 /*save_metadata_callback=*/ {}, child_params);
          }
     }
 

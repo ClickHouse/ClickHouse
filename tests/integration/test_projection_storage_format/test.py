@@ -1,3 +1,4 @@
+import os
 import time
 
 import pytest
@@ -166,6 +167,27 @@ def plant_stale_live_sibling(path):
         privileged=True,
         user="root",
     )
+
+
+# Table-level settings clause that forces packed part storage regardless of part size.
+PACKED = "min_bytes_for_full_part_storage = '1G'"
+
+
+def packed_archive_files(part_path, n=node, disk="default"):
+    """Member file names of the data.packed archive of the part (or projection) at part_path."""
+    root = n.query(f"SELECT path FROM system.disks WHERE name = '{disk}'").strip()
+    rel = os.path.relpath(os.path.join(part_path, "data.packed"), root)
+    out = n.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"clickhouse disks --config /etc/clickhouse-server/config.xml --disk {disk}"
+            f" --query \"packed-io list {rel}\" | awk '{{print $1}}'",
+        ],
+        privileged=True,
+        user="root",
+    )
+    return out.split()
 
 
 def minio_keys():
@@ -2600,3 +2622,49 @@ def test_fsync_flat_lifecycle():
     assert broken_projection_parts("t_fsync") == "0"
     assert int(active_projection_parts("t_fsync")) >= 2
     assert check_table("t_fsync") == "1"
+
+
+# ==============================================================================
+# M. Packed part storage
+# ==============================================================================
+# This test checks that REPLACE PARTITION FROM on packed parts does not manufacture parent-only
+# artifacts inside projection sub-parts: the freeze recursion must strip the ClonePartParams fields
+# that describe the parent part (metadata_version_to_write, invalidated_columns_to_write), instead
+# of writing metadata_version.txt and invalidated_system_columns.txt into every projection dir.
+# Scenario:
+# - create packed replicated src and dst tables with a projection
+# - REPLACE PARTITION on dst from src (this flow sets both parent-only params)
+# - assert the dst parent part carries both artifacts (the flow really exercised the override)
+# - assert the dst projection sub-part carries neither
+def test_packed_replace_partition_no_parent_artifacts_in_projection():
+    for t, zk in (("t_pk_rp_src", "src"), ("t_pk_rp_dst", "dst")):
+        node.query(f"DROP TABLE IF EXISTS {t} SYNC")
+        node.query("SYSTEM STOP MERGES")
+        node.query(
+            f"""CREATE TABLE {t} (key UInt64, id UInt64, value String,
+                PROJECTION p (SELECT key, id, value ORDER BY id))
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_pk_rp_{zk}', '1')
+                ORDER BY key
+                SETTINGS min_bytes_for_wide_part = 0, {PACKED}"""
+        )
+    node.query(
+        "INSERT INTO t_pk_rp_src SELECT number, number * 2, toString(number) FROM numbers(1000)"
+    )
+    node.query("ALTER TABLE t_pk_rp_dst REPLACE PARTITION ID 'all' FROM t_pk_rp_src")
+
+    # the cloned part is packed and carries its nested packed projection
+    p = part_dir("t_pk_rp_dst")
+    assert path_exists(f"{p}/data.packed")
+    assert path_exists(f"{p}/p.proj/data.packed")
+
+    # parent-only artifacts exist at the part level...
+    assert "metadata_version.txt" in packed_archive_files(p)
+    assert path_exists(f"{p}/invalidated_system_columns.txt")
+
+    # ...and must not leak into the projection sub-part
+    assert "metadata_version.txt" not in packed_archive_files(f"{p}/p.proj")
+    assert not path_exists(f"{p}/p.proj/invalidated_system_columns.txt")
+
+    # the projection still serves queries and the part passes CHECK TABLE
+    assert proj_query("t_pk_rp_dst") == proj_query("t_pk_rp_src")
+    assert check_table("t_pk_rp_dst") == "1"
