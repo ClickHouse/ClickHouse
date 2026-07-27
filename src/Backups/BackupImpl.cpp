@@ -1215,13 +1215,10 @@ void BackupImpl::finalizeWriting()
             writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
     }
 
-    /// Sync directory entries on every writer, including the internal writers of BACKUP ON
-    /// CLUSTER (they write their own data files), so they are durable before reporting success.
-    ///
-    /// This must happen while the lock file is still there: if it throws, the caller calls
-    /// setIsCorrupted() and tryRemoveAllFiles(), and the latter refuses to remove anything unless
-    /// checkLockFile() proves this backup owns the destination. Removing the lock first would
-    /// leave a corrupted, unremovable backup behind that blocks retries with BACKUP_ALREADY_EXISTS.
+    /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
+    /// CLUSTER, which write their own data files. This must run before the lock file is removed:
+    /// on failure `tryRemoveAllFiles` cleans up only while `checkLockFile` still proves this
+    /// backup owns the destination.
     if (params.fsync_backup_files && writer)
         writer->syncDirectoriesToDisk();
 

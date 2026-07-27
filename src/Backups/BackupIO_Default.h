@@ -19,7 +19,7 @@ enum class WriteMode : uint8_t;
 
 /// Durability helper (issue #111320): fsync the contents of an already-written local file by
 /// re-opening it. Needed because backup files are written either through a WriteBuffer or copied
-/// natively (fs::copy / IDisk::copyFile), and the latter leaves no buffer to call sync() on.
+/// natively (fs::copy / IDisk::copyFile), and the latter leaves no buffer to call `sync` on.
 /// Increments the FileSync ProfileEvent (like WriteBufferFromFileDescriptor::sync).
 void fsyncBackupFileContents(const std::filesystem::path & path);
 

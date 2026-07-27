@@ -39,8 +39,8 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String 
 void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
-    /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
-    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or do appending.
+    /// Use `IDisk::copyFile` as a more optimal way to copy a file if it's possible.
+    /// However `IDisk::copyFile` can't use throttling for reading, and can't copy an encrypted file or do appending.
     bool has_throttling = disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling && (write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
     {
@@ -64,19 +64,16 @@ BackupWriterDisk::BackupWriterDisk(const DiskPtr & disk_, const String & root_pa
     , disk(disk_)
     , root_path(root_path_)
     , data_source_description(disk->getDataSourceDescription())
-    /// Ask for what the fsync path actually needs: the backup kept as plain files in the local
-    /// filesystem, where getBlobPath() maps a path to the file holding it. DiskLocal qualifies,
-    /// also behind DiskEncrypted, which inherits the delegate's type. This cannot be phrased as
-    /// !isRemote(): DiskObjectStorage reports isRemote() == true even over LocalObjectStorage,
-    /// while DiskBackup reports false yet throws from getBlobPath().
+    /// Only a destination that keeps the backup as plain local files can be made durable by
+    /// fsyncing them, and only there does `getBlobPath` map a path to the file holding it.
+    /// Not `isRemote`: DiskObjectStorage reports true even over LocalObjectStorage, and
+    /// DiskBackup reports false yet throws from `getBlobPath`.
     , destination_is_plain_local_files(data_source_description.type == DataSourceType::Local)
 {
     if (data_source_description.object_storage_type == ObjectStorageType::Local)
     {
-        /// Local object storage: the blobs are local files, but the backup is addressed through the
-        /// disk's own metadata, whose durability belongs to the metadata storage rather than to the
-        /// backup. Warn rather than silently ignoring fsync_backup_files. Note this is not reachable
-        /// via isRemote(), which DiskObjectStorage reports as true even over local object storage.
+        /// The blobs are local files, but the backup is reached through the disk's own metadata,
+        /// whose durability belongs to the metadata storage rather than to the backup.
         LOG_WARNING(
             log,
             "Disk {} ({}) stores data locally but not as plain files, so fsync_backup_files cannot make a backup on it durable",
@@ -149,8 +146,8 @@ void BackupWriterDisk::removeEmptyDirectoriesImpl(const fs::path & current_dir)
 void BackupWriterDisk::copyFileFromDisk(
     const String & path_in_backup, DiskPtr src_disk, const String & src_path, bool copy_encrypted, UInt64 start_pos, UInt64 length)
 {
-    /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
-    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or copy a part of the file.
+    /// Use `IDisk::copyFile` as a more optimal way to copy a file if it's possible.
+    /// However `IDisk::copyFile` can't use throttling for reading, and can't copy an encrypted file or copy a part of the file.
     bool has_throttling = src_disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
     if (!has_throttling && !start_pos && !copy_encrypted)
     {
@@ -183,7 +180,7 @@ void BackupWriterDisk::copyFile(const String & destination, const String & sourc
 void BackupWriterDisk::syncFileToDisk(const String & file_name)
 {
     /// A completed upload to object storage is already durable, and only a plain-local destination
-    /// can be made durable by fsyncing files: there getBlobPath() resolves a disk-relative path to
+    /// can be made durable by fsyncing files: there `getBlobPath` resolves a disk-relative path to
     /// the absolute filesystem path of the file holding it.
     if (!destination_is_plain_local_files)
         return;
@@ -194,7 +191,7 @@ void BackupWriterDisk::syncFileToDisk(const String & file_name)
         fsyncBackupFileContents(blob_path[0]);
 
     /// Remember the disk-relative ancestor directories of this file (down to the disk root ""),
-    /// so syncDirectoriesToDisk() can persist their entries.
+    /// so `syncDirectoriesToDisk` can persist their entries.
     std::lock_guard lock{dirs_to_sync_mutex};
     for (auto dir = file_path.parent_path(); ; dir = dir.parent_path())
     {
@@ -219,7 +216,7 @@ void BackupWriterDisk::syncDirectoriesToDisk()
         return;
 
     /// Sync deepest-first: a child directory entry is durable only once its parent is fsynced.
-    /// getBlobPath() resolves the disk-relative path (including the disk root "") to the
+    /// `getBlobPath` resolves the disk-relative path (including the disk root "") to the
     /// absolute filesystem path for a local disk.
     for (auto it = dirs.rbegin(); it != dirs.rend(); ++it)
     {

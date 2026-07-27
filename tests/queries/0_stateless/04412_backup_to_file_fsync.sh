@@ -23,39 +23,39 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
     INSERT INTO t SELECT number, concat('k', toString(number % 7)), number FROM numbers(50000);
 "
 
-# Run a BACKUP with the given destination and settings, then print whether it issued fsyncs.
-# For a plain (non-archive) backup of a table with several files we assert FileSync > 1: the
-# manifest alone would give FileSync = 1, so > 1 proves the individual data files were synced
-# too (not just the manifest). Archives are a single file, so we only require FileSync > 0.
-# $1 = label, $2 = destination expression, $3 = min FileSync (1 => assert >0, 2 => assert >1),
-# $4 = extra SETTINGS (may be empty)
+# Run a BACKUP with the given destination and settings, then print whether it fsynced every file.
+# The oracle is exact rather than a lower bound: a plain backup writes one data file per entry it
+# actually stored plus the .backup manifest, so FileSync must equal num_entries + 1. That fails if
+# any single data file is left unsynced, which a "more than one file was synced" bound would miss.
+# num_entries, not num_files: num_files also counts the entries that were skipped as empty, as
+# already present in the base backup, or as being written by another host, and a file that is
+# never written is never synced. How many entries get skipped depends on the randomized
+# merge-tree settings, so the difference is not constant.
+# An archive is packed into one file, so there FileSync must be exactly 1.
+# $1 = label, $2 = destination expression, $3 = 'archive' for archives, $4 = extra SETTINGS
 check_backup() {
-    local label="$1" dest="$2" min_file_sync="$3" extra="$4"
+    local label="$1" dest="$2" kind="$3" extra="$4"
     local qid="${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}"
+    local expected="num_entries + 1"
+    [ "$kind" = archive ] && expected="1"
     $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid" \
         -q "BACKUP TABLE t TO $dest ${extra:+SETTINGS $extra}"
     $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
         SYSTEM FLUSH LOGS query_log;
-        SELECT '$label file_sync>=$min_file_sync=', ProfileEvents['FileSync'] >= $min_file_sync, ', dir_sync>0=', ProfileEvents['DirectorySync'] > 0
-        FROM system.query_log
-        WHERE type = 'QueryFinish' AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$qid';
+        SELECT '$label every_file_synced=', q.ProfileEvents['FileSync'] = ($expected), ', dir_sync>0=', q.ProfileEvents['DirectorySync'] > 0
+        FROM system.query_log AS q JOIN system.backups AS b ON q.query_id = b.query_id
+        WHERE q.type = 'QueryFinish' AND q.current_database = '$CLICKHOUSE_DATABASE' AND q.query_id = '$qid';
     "
 }
 
-# Every File/Disk destination must fsync files and directories. Plain backups must sync more
-# than one file (data files + manifest); archives are a single synced file.
+# Every File/Disk destination must fsync every written file and the containing directories.
 # The "file_default" case omits the setting to verify the default is fsync-on.
-check_backup "file_default"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file_def')"     2 ""
-check_backup "file"          "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file')"         2 "fsync_backup_files = 1"
-check_backup "file_archive"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file.zip')"     1 "fsync_backup_files = 1"
-check_backup "disk"          "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk')"     2 "fsync_backup_files = 1"
-check_backup "disk_archive"  "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk.zip')" 1 "fsync_backup_files = 1"
+check_backup "file_default"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file_def')"     plain   ""
+check_backup "file"          "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file')"         plain   "fsync_backup_files = 1"
+check_backup "file_archive"  "File('${CLICKHOUSE_TEST_UNIQUE_NAME}_file.zip')"     archive "fsync_backup_files = 1"
+check_backup "disk"          "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk')"     plain   "fsync_backup_files = 1"
+check_backup "disk_archive"  "Disk('backups', '${CLICKHOUSE_TEST_UNIQUE_NAME}_disk.zip')" archive "fsync_backup_files = 1"
 
-# A nested destination such as File('a/b/c') also creates the intermediate directories a and b,
-# whose entries are durable only once their own parent directory is fsynced. Backing up the same
-# table into a destination two levels deeper must therefore fsync exactly two directories more
-# than the flat one: the tree below the backup root is identical, and the extra two are the
-# intermediate 'a' and the allowed_path directory holding it.
 dir_sync_of() {
     $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
         SYSTEM FLUSH LOGS query_log;
@@ -64,10 +64,27 @@ dir_sync_of() {
         WHERE type = 'QueryFinish' AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$1';
     "
 }
+
+# A nested destination such as File('a/b/c') also creates the intermediate directories, whose
+# entries are durable only once their own parent directory is fsynced. Backing up the same table
+# two levels deeper must therefore fsync exactly two directories more than the flat destination:
+# the tree below the backup root is identical and the extra two are those intermediate directories.
 qid_nested="${CLICKHOUSE_TEST_UNIQUE_NAME}_nested"
 $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid_nested" \
     -q "BACKUP TABLE t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}_n/sub/deep') SETTINGS fsync_backup_files = 1"
 echo -e "nested dir_sync - flat dir_sync = 2:\t$(( $(dir_sync_of "$qid_nested") - $(dir_sync_of "${CLICKHOUSE_TEST_UNIQUE_NAME}_file") == 2 ))"
+
+# An ancestor that already exists is not necessarily durable: a concurrent backup may have created
+# it without having fsynced its parent yet. Two backups sharing one intermediate directory must
+# therefore fsync the same number of directories - the second must not stop at the shared ancestor.
+qid_shared1="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared1"
+qid_shared2="${CLICKHOUSE_TEST_UNIQUE_NAME}_shared2"
+for i in 1 2; do
+    eval "qid=\$qid_shared$i"
+    $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid" \
+        -q "BACKUP TABLE t TO File('${CLICKHOUSE_TEST_UNIQUE_NAME}_shared/b$i') SETTINGS fsync_backup_files = 1"
+done
+echo -e "shared ancestor synced by both:\t$(( $(dir_sync_of "$qid_shared2") == $(dir_sync_of "$qid_shared1") ))"
 
 # With fsync_backup_files=0 no fsync is issued (opt-out, matches the pre-fix behavior).
 qid_off="${CLICKHOUSE_TEST_UNIQUE_NAME}_off"

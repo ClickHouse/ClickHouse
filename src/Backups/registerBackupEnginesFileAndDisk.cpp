@@ -64,8 +64,10 @@ namespace
                             quoteString(path.c_str()), quoteString(disk_name));
     }
 
-    /// Checks that a path specified as parameters of File() is valid.
-    void checkPath(fs::path & path, const Poco::Util::AbstractConfiguration & config, const fs::path & data_dir)
+    /// Checks that a path specified as parameters of File() is valid, and returns the
+    /// 'backups.allowed_path' entry it resolved against. Every directory the backup may create is
+    /// below that entry, so it bounds how far up the durability fsyncs have to go.
+    fs::path checkPath(fs::path & path, const Poco::Util::AbstractConfiguration & config, const fs::path & data_dir)
     {
         path = path.lexically_normal();
         if (path.empty())
@@ -94,7 +96,7 @@ namespace
             auto rel = path.lexically_proximate(allowed_path);
             bool path_ok = rel.empty() || (rel.is_relative() && (*rel.begin() != ".."));
             if (path_ok)
-                break;
+                return allowed_path.lexically_normal();
             key = "backups.allowed_path[" + std::to_string(++counter) + "]";
             if (!config.has(key))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -125,6 +127,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 
         DiskPtr disk;
         fs::path path;
+        fs::path allowed_path;
         if (engine_name == "File")
         {
             if (args.size() != 1)
@@ -135,7 +138,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
             path = args[0].safeGet<String>();
             const auto & config = params.context->getConfigRef();
             const auto & data_dir = params.context->getPath();
-            checkPath(path, config, data_dir);
+            allowed_path = checkPath(path, config, data_dir);
         }
         else if (engine_name == "Disk")
         {
@@ -185,7 +188,7 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
 
         std::shared_ptr<IBackupWriter> writer;
         if (engine_name == "File")
-            writer = std::make_shared<BackupWriterFile>(path, params.read_settings, params.write_settings);
+            writer = std::make_shared<BackupWriterFile>(path, allowed_path, params.read_settings, params.write_settings);
         else
             writer = std::make_shared<BackupWriterDisk>(disk, path, params.read_settings, params.write_settings);
         return std::make_unique<BackupImpl>(params, archive_params, writer);

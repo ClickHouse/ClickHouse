@@ -32,7 +32,11 @@ private:
 class BackupWriterFile : public BackupWriterDefault
 {
 public:
-    BackupWriterFile(const String & root_path_, const ReadSettings & read_settings_, const WriteSettings & write_settings_);
+    BackupWriterFile(
+        const String & root_path_,
+        const String & allowed_path_,
+        const ReadSettings & read_settings_,
+        const WriteSettings & write_settings_);
 
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
@@ -57,15 +61,16 @@ private:
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
 
-    /// The deepest directory at or above root_path's parent that already existed when this writer
-    /// was constructed. Every directory below it is created by this backup, so its entry is not
-    /// durable until the containing directory is fsynced; this one is the last that has to be
-    /// fsynced, and the parent walk in syncFileToDisk() stops at (and includes) it. Computed once
-    /// before anything is written, and it bounds the walk so it never runs up to "/".
-    const std::filesystem::path sync_dirs_up_to;
+    /// The `backups.allowed_path` entry containing this backup: the last directory whose entry the
+    /// backup makes durable, and the boundary the parent walk in `syncFileToDisk` stops at. Every
+    /// directory the backup creates is below it, and every `File` backup in the same area fsyncs
+    /// it, so a directory created by a concurrent backup is covered as well. Bounding the walk
+    /// here also keeps it inside the configured area: fsyncing a directory requires opening it
+    /// with `O_DIRECTORY`, which fails on a search-only ancestor that writing does not need.
+    const std::filesystem::path allowed_path;
 
-    /// Directories that received a file synced via syncFileToDisk(), collected so they can be
-    /// fsynced (deepest-first) in syncDirectoriesToDisk(). Written from the concurrent backup
+    /// Directories that received a file synced via `syncFileToDisk`, collected so they can be
+    /// fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent backup
     /// write path, hence guarded.
     std::mutex dirs_to_sync_mutex;
     std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
