@@ -90,19 +90,24 @@ def main():
     mod.SESSION_SETTINGS_MAX_CHARS_PER_PAGE = 100_000
     mod.SESSION_SETTINGS_PREFIX_GROUP_MIN = 2
 
-    migrated, _ = migrate.transform_imports(
-        "import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';\n\n"
-        "<CloudNotSupportedBadge />\n\n"
-        "Content after the badge.\n",
-        migrate.Lookups(),
-        [],
-    )
-    assert migrated == (
-        'import { CloudNotSupportedBadge } from '
-        '"/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";\n\n'
-        "<CloudNotSupportedBadge />\n\n"
-        "Content after the badge.\n"
-    )
+    for badge in (
+        "CloudNotSupportedBadge",
+        "CloudSupportedBadge",
+        "VersionBadge",
+    ):
+        migrated, _ = migrate.transform_imports(
+            f"import {badge} from '@theme/badges/{badge}';\n\n"
+            f"<{badge} />\n\n"
+            "Content after the badge.\n",
+            migrate.Lookups(),
+            [],
+        )
+        assert migrated == (
+            f'import {{ {badge} }} from '
+            f'"/snippets/components/{badge}/{badge}.jsx";\n\n'
+            f"<{badge} />\n\n"
+            "Content after the badge.\n"
+        )
 
     for badge in ("ExperimentalBadge", "BetaBadge", "CloudOnlyBadge"):
         import_line = (
