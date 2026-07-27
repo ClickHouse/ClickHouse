@@ -205,6 +205,10 @@ public:
     /// Get all changed settings as a SettingsChanges struct
     SettingsChanges changes() const;
 
+    /// `SET name` with no value stands for `SET name = true`, which only makes sense for a Bool
+    /// setting. Throws for every other type; a no-op for a Bool one.
+    void checkShorthandIsBool(std::string_view name) const;
+
     /// Apply a single setting change
     void applyChange(const SettingChange & change);
 
@@ -432,15 +436,19 @@ SettingsChanges BaseSettings<TTraits>::changes() const
 }
 
 template <typename TTraits>
+void BaseSettings<TTraits>::checkShorthandIsBool(std::string_view name) const
+{
+    if (std::string_view type = getTypeName(name); type != "Bool")
+        BaseSettingsHelpers::throwValuelessSettingIsNotBool(name, type);
+}
+
+template <typename TTraits>
 void BaseSettings<TTraits>::applyChange(const SettingChange & change)
 {
-    /// `SET name` without a value means `SET name = true`, which only makes sense for a Bool
-    /// setting. This is where the settings schema is known, so this is where it is checked.
+    /// The parser does not know the settings schema, so a value-less `SET name` is checked here,
+    /// where it is known.
     if (change.shorthand)
-    {
-        if (std::string_view type = getTypeName(change.name); type != "Bool")
-            BaseSettingsHelpers::throwValuelessSettingIsNotBool(change.name, type);
-    }
+        checkShorthandIsBool(change.name);
 
     set(change.name, change.value);
 }

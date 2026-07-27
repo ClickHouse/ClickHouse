@@ -3354,6 +3354,9 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
 {
     try
     {
+        /// A value-less `SET name` stands for `SET name = true`, so it must name a Bool setting.
+        if (change.shorthand)
+            settings->checkShorthandIsBool(change.name);
         setSettingWithLock(change.name, change.value, lock);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
     }
@@ -3396,6 +3399,9 @@ void Context::applySettingChange(const SettingChange & change)
 {
     try
     {
+        /// A value-less `SET name` stands for `SET name = true`, so it must name a Bool setting.
+        if (change.shorthand)
+            settings->checkShorthandIsBool(change.name);
         setSetting(change.name, change.value);
     }
     catch (Exception & e)

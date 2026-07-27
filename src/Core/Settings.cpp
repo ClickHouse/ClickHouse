@@ -9121,6 +9121,11 @@ void Settings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
+void Settings::checkShorthandIsBool(std::string_view name) const
+{
+    impl->checkShorthandIsBool(name);
+}
+
 VectorWithMemoryTracking<std::string_view> Settings::getAllRegisteredNames() const
 {
     VectorWithMemoryTracking<std::string_view> setting_names;

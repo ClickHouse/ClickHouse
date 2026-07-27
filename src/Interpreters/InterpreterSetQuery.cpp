@@ -32,6 +32,17 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
 }
 
+/// `SET name` with no value stands for `SET name = true`. The parser accepts it for any name -
+/// it does not know the settings schema - so the type is checked here, before the constraints are
+/// checked: the constraint check casts the value, and would report a confusing `BAD_GET` for a
+/// setting whose type is neither Bool nor something a Bool converts to.
+static void checkValuelessChangesAreBool(const SettingsChanges & changes, const Settings & settings)
+{
+    for (const SettingChange & change : changes)
+        if (change.shorthand)
+            settings.checkShorthandIsBool(change.name);
+}
+
 BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
@@ -43,6 +54,7 @@ BlockIO InterpreterSetQuery::execute()
     /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
+    checkValuelessChangesAreBool(changes, getContext()->getSettingsRef());
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(changes);
@@ -59,6 +71,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    checkValuelessChangesAreBool(changes, getContext()->getSettingsRef());
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);

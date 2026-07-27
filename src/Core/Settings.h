@@ -171,6 +171,7 @@ struct Settings
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
+    void checkShorthandIsBool(std::string_view name) const;
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     VectorWithMemoryTracking<std::string_view> getAllAliasNames() const;
     VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
