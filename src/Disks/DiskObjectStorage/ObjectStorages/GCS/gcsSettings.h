@@ -51,6 +51,7 @@ struct GCSObjectStorageSettings
 
     /// Disk-only knobs.
     bool read_only = false;
+    /// Page size of the object listings (`maxResults`). 0 means "use the backend default".
     UInt64 list_object_keys_size = 1000;
 
     /// Parse the settings from a disk config section (`config_prefix`), resolving the endpoint into
@@ -63,7 +64,9 @@ struct GCSObjectStorageSettings
     /// Whether these settings resolve to the same GCS endpoint and identity as `other`, so that a
     /// single `google::cloud::storage::Client` can serve both. Used to decide when a server-side
     /// `RewriteObject` copy between two GCS storages is valid (it runs through one client only).
-    /// Compares exactly the fields `getGCSClient` reads to build the client.
+    /// Compares exactly the fields `getGCSClient` reads to build the client, except that a
+    /// `service_account_key_file` on either side always answers "no": the file contents, not the
+    /// path, are the credentials, and they can be rotated in place between two client constructions.
     bool describesSameClientAs(const GCSObjectStorageSettings & other) const;
 };
 

@@ -137,6 +137,14 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
 
 bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSettings & other) const
 {
+    /// A service-account key *file* identifies the credentials only indirectly: `getGCSClient` reads
+    /// its contents when it builds the client, so two snapshots naming the same path can still hold
+    /// clients of two different service accounts if the key was rotated in place between the two
+    /// client constructions. Refuse to treat them as interchangeable — the cost is that a
+    /// cross-storage copy falls back to read + write instead of a server-side `RewriteObject`.
+    if (!service_account_key_file.empty() || !other.service_account_key_file.empty())
+        return false;
+
     /// Exactly the fields consumed by `getGCSClient` to choose the endpoint and the credentials.
     /// `bucket` / `key_prefix` are intentionally excluded: two storages sharing a client may point at
     /// different buckets (that is precisely the cross-bucket rewrite case).
