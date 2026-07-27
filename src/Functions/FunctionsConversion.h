@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -2834,57 +2835,63 @@ struct ConvertImplGenericFromString
     {
         column_to.reserve(input_rows_count);
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        try
         {
-            if (null_map && (*null_map)[i])
-            {
-                column_to.insertDefault();
-                continue;
-            }
+            std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+            if constexpr (!throw_on_error)
+                suppress_error_codes.emplace();
 
-            const auto val = column_from.getDataAt(i);
-            ReadBufferFromMemory read_buffer(val);
-            try
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if constexpr (throw_on_error)
-                    serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
-                else
+                if (null_map && (*null_map)[i])
                 {
-                    Exception::SuppressErrorCodesScope suppress_error_codes;
+                    column_to.insertDefault();
+                    continue;
+                }
+
+                const auto val = column_from.getDataAt(i);
+                ReadBufferFromMemory read_buffer(val);
+                try
+                {
                     serialization_from.deserializeWholeText(column_to, read_buffer, settings.format_settings);
                 }
-            }
-            catch (Exception & e)
-            {
-                if constexpr (throw_on_error)
-                    throw;
-                if (!isParseError(e.code()))
-                    e.recordToSystemErrors(/* force */ true);
-                /// Check if exception happened after we inserted the value
-                /// (deserializeWholeText should not do it, but let's check anyway).
-                if (column_to.size() > i)
-                    column_to.popBack(column_to.size() - i);
-                column_to.insertDefault();
-            }
-
-            /// Usually deserializeWholeText checks for eof after parsing, but let's check one more time just in case.
-            if (!read_buffer.eof())
-            {
-                if constexpr (throw_on_error)
+                catch (Exception & e)
                 {
-                    if (result_type)
-                        throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
-                    else
-                        throw Exception(
-                            ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to column {}. Expected eof", column_to.getName());
-                }
-                else
-                {
+                    if constexpr (throw_on_error)
+                        throw;
+                    if (!isParseError(e.code()))
+                        e.recordToSystemErrors(/* force */ true);
+                    /// Check if exception happened after we inserted the value
+                    /// (deserializeWholeText should not do it, but let's check anyway).
                     if (column_to.size() > i)
                         column_to.popBack(column_to.size() - i);
                     column_to.insertDefault();
                 }
+
+                /// Usually deserializeWholeText checks for eof after parsing, but let's check one more time just in case.
+                if (!read_buffer.eof())
+                {
+                    if constexpr (throw_on_error)
+                    {
+                        if (result_type)
+                            throwExceptionForIncompletelyParsedValue(read_buffer, *result_type);
+                        else
+                            throw Exception(
+                                ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to column {}. Expected eof", column_to.getName());
+                    }
+                    else
+                    {
+                        if (column_to.size() > i)
+                            column_to.popBack(column_to.size() - i);
+                        column_to.insertDefault();
+                    }
+                }
             }
+        }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
         }
     }
 };

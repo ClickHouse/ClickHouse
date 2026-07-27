@@ -1,0 +1,18 @@
+<test>
+    <settings>
+        <max_memory_usage>15G</max_memory_usage>
+    </settings>
+
+    <create_query>CREATE TABLE casts_from_string (readable_size String, boolean String) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO casts_from_string
+        SELECT materialize('1 KiB'), materialize('true')
+        FROM numbers_mt(50000000)
+        SETTINGS max_threads = 8
+    </fill_query>
+    <drop_query>DROP TABLE IF EXISTS casts_from_string</drop_query>
+
+    <query>SELECT parseReadableSizeOrZero(readable_size) FROM casts_from_string FORMAT Null</query>
+    <query>SELECT parseReadableSizeOrNull(readable_size) FROM casts_from_string FORMAT Null</query>
+    <query>SELECT accurateCastOrNull(boolean, 'Bool') FROM casts_from_string FORMAT Null</query>
+</test>

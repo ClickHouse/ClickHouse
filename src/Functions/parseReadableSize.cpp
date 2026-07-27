@@ -9,12 +9,14 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Formats/ParseError.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <cmath>
+#include <optional>
 #include <string_view>
 
 namespace DB
@@ -91,37 +93,38 @@ public:
 
         auto & res_data = col_res->getData();
 
-        for (size_t i = 0; i < input_rows_count; ++i)
+        try
         {
-            std::string_view value = col_str->getDataAt(i);
-            try
+            std::optional<Exception::SuppressErrorCodesScope> suppress_error_codes;
+            if (error_handling != ErrorHandling::Exception)
+                suppress_error_codes.emplace();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                if (error_handling == ErrorHandling::Exception)
+                std::string_view value = col_str->getDataAt(i);
+                try
                 {
                     UInt64 num_bytes = parseReadableFormat(value);
                     res_data[i] = num_bytes;
                 }
-                else
+                catch (Exception & e)
                 {
-                    Exception::SuppressErrorCodesScope suppress_error_codes;
-                    UInt64 num_bytes = parseReadableFormat(value);
-                    res_data[i] = num_bytes;
-                }
-            }
-            catch (const Exception &)
-            {
-                if (error_handling == ErrorHandling::Exception)
-                {
-                    throw;
-                }
-                else
-                {
+                    if (error_handling == ErrorHandling::Exception)
+                        throw;
+                    if (!isParseError(e.code()) && e.code() != ErrorCodes::BAD_ARGUMENTS && e.code() != ErrorCodes::CANNOT_PARSE_TEXT)
+                        e.recordToSystemErrors(/* force */ true);
                     res_data[i] = 0;
                     if (error_handling == ErrorHandling::Null)
                         col_null_map->getData()[i] = 1;
                 }
             }
         }
+        catch (Exception & e)
+        {
+            e.recordToSystemErrors();
+            throw;
+        }
+
         if (error_handling == ErrorHandling::Null)
             return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
         else
