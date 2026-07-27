@@ -185,13 +185,13 @@ ClickPipes provides sensible defaults that cover the requirements of most use ca
 |------------------------------------|---------------|---------------------------------------------------------------------------------------|
 | `Max insert bytes`                 | 10GB          | Number of bytes to process in a single insert batch.                                  |
 | `Max file count`                   | 100           | Maximum number of files to process in a single insert batch.                          |
-| `Max threads`                      | auto(3)       | [Maximum number of concurrent threads](/reference/settings/session-settings#max_threads) for file processing. |
-| `Max insert threads`               | 1             | [Maximum number of concurrent insert threads](/reference/settings/session-settings#max_insert_threads) for file processing. |
-| `Min insert block size bytes`      | 1GB           | [Minimum size of bytes in the block](/reference/settings/session-settings#min_insert_block_size_bytes) which can be inserted into a table. |
-| `Max download threads`             | 4             | [Maximum number of concurrent download threads](/reference/settings/session-settings#max_download_threads). |
+| `Max threads`                      | auto(3)       | [Maximum number of concurrent threads](/reference/settings/session-settings/max-threads#max_threads) for file processing. |
+| `Max insert threads`               | 1             | [Maximum number of concurrent insert threads](/reference/settings/session-settings/max-insert#max_insert_threads) for file processing. |
+| `Min insert block size bytes`      | 1GB           | [Minimum size of bytes in the block](/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) which can be inserted into a table. |
+| `Max download threads`             | 4             | [Maximum number of concurrent download threads](/reference/settings/session-settings/max-download#max_download_threads). |
 | `Object storage polling interval`  | 30s           | Configures the maximum wait period before inserting data into the ClickHouse cluster. |
-| `Parallel distributed insert select` | 2           | [Parallel distributed insert select setting](/reference/settings/session-settings#parallel_distributed_insert_select). |
-| `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings#parallel_view_processing). |
+| `Parallel distributed insert select` | 2           | [Parallel distributed insert select setting](/reference/settings/session-settings/parallel#parallel_distributed_insert_select). |
+| `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`             | true          | Whether to process files in parallel across multiple nodes. |
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Advanced settings for ClickPipes" size="lg" border/>
