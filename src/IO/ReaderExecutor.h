@@ -705,11 +705,14 @@ private:
 
     /// One object-piece of a residency observation: the per-tier probed views
     /// (hit readers + miss entries, positional with `caches`) and the fold's
-    /// per-tier geometry.
+    /// per-tier geometry. `covered_end` is where the walk actually stopped -
+    /// the last resolution's true extent may overshoot the requested span, and
+    /// the plan keeps that coverage (`plan_end` derives from it).
     struct PieceObservation
     {
         StoredObject object;
         size_t object_file_offset = 0;
+        size_t covered_end = 0;
         VectorWithMemoryTracking<CacheViewPtr> views;
         VectorWithMemoryTracking<GeometryEntry> folded;
     };

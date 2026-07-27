@@ -46,9 +46,11 @@ using CacheViewPtr = std::unique_ptr<CacheView>;
 /// Chain-level residency resolution at a position: one stride over which every
 /// tier's classification is constant, with the per-tier column (fastest-first,
 /// positional with the chain the iterator was built over). A `Resident` slice
-/// carries the tier's hit run clamped to the probed span; a `MissCell` slice
-/// carries the tier's whole cell (object-end-clamped only, so it may overhang
-/// the span). `Absent` marks the EOF tail where the tier's tiling ends.
+/// carries the tier's hit run head-clamped to the span start (its tail keeps
+/// the true run extent); a `MissCell` slice carries the tier's whole cell
+/// (object-end-clamped only). Either may overhang the span end - the walk's
+/// last stride overshoots rather than cuts. `Absent` marks the EOF tail where
+/// the tier's tiling ends.
 struct ChainResolution
 {
     static constexpr size_t npos = static_cast<size_t>(-1);

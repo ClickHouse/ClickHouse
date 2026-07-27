@@ -2579,6 +2579,7 @@ VectorWithMemoryTracking<ReaderExecutor::PieceObservation> ReaderExecutor::obser
             fold.add(res);
             pos = res.range.end();
         }
+        piece.covered_end = pos;
         piece.folded = fold.finish();
         for (size_t ci = 0; ci < caches_.size(); ++ci)
             piece.views.push_back(iterator.takeView(ci));
@@ -2696,7 +2697,10 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// extents), so one span-sized observation per piece is the whole story.
     auto pieces = observeSpan(caches, offset_map, plan_range);
 
-    geom->plan_end = plan_range.end();
+    /// The covered end, not the requested end: the walk's last resolution may
+    /// overshoot the target, and that coverage is real plan knowledge.
+    chassert(!pieces.empty());
+    geom->plan_end = pieces.back().covered_end;
     ReadPlan plan;
     emitObservation(caches, pieces, *geom, plan.tiers);
 
@@ -2754,6 +2758,9 @@ void ReaderExecutor::extendPlan(size_t position_phys)
     /// absolute-grid cell and must not own it twice - a second `openWriter`
     /// would alias the segment in two buffers. Overlap implies identity: cells
     /// tile on the absolute grid and an existing segment reports its true extent.
+    /// A HIT run straddling `old_end` needs no such dedup: the extension
+    /// re-collects it from `old_end` with a second reader, and aliasing readers
+    /// is benign - they are read-only and each view bumps the LRU once.
     VectorWithMemoryTracking<std::pair<CacheTier, ByteRange>> straddlers;
     for (const auto & e : old_geom->entries)
         for (const auto & c : e.aligned_miss)
@@ -2800,7 +2807,8 @@ void ReaderExecutor::extendPlan(size_t position_phys)
         = position_phys > min_bytes_for_seek ? position_phys - min_bytes_for_seek : 0;
     auto geom = std::make_shared<CoverageMap>();
     geom->plan_start = std::min(std::max(old_geom->plan_start, release_line), position_phys);
-    geom->plan_end = target_end;
+    chassert(!pieces.empty());
+    geom->plan_end = pieces.back().covered_end;
     geom->pressure_level = memoryPressureMonitor().currentLevel();
     for (size_t i = 0; i < old_geom->entries.size(); ++i)
     {
@@ -2873,9 +2881,10 @@ bool ReaderExecutor::planReachesEnd() const
 
 size_t ReaderExecutor::effectivePlanCeiling() const
 {
-    /// A fixed plan window: at least `window_size`, raised to `plan_look_ahead_max_window`
-    /// when configured larger. Not pressure-scaled - the window is small by default, and
-    /// segment folding only ever adds the touched cells within it.
+    /// The plan look-ahead target: at least `window_size`, raised to
+    /// `plan_look_ahead_max_window` when configured larger. Not pressure-scaled.
+    /// Kept wider than the fill-ahead lead by default, so the plan never caps
+    /// the prefetch distance.
     return std::max(window_size, plan_look_ahead_max_window);
 }
 
@@ -2905,8 +2914,9 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         /// to invalidate them.
         want = offset_map.hasUnknownSize() ? window_size : ceiling;
     }
-    /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
-    /// ceiling caps the result; the file end is the only natural bound below it.
+    /// `want` is a COVER TARGET, not a cap: the walk iterates `lookAt` until it
+    /// is covered, and the last resolution's true extent may overshoot it
+    /// (`plan_end` is the covered end). The file end is the only natural bound.
     if (!offset_map.hasUnknownSize())
     {
         const size_t physical_end = offset_map.totalSize();

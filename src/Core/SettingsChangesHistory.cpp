@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
             {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
-            {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
+            {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: plan look-ahead target for the ReaderExecutor (floored at reader_executor_window_size); the default keeps the plan wider than the fill-ahead lead."},
             {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the ReaderExecutor read buffer - consumed bytes kept in memory for cheap backward seeks."},
             {"reader_executor_use_fibers", false, false, "New experimental ReaderExecutor setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},
             {"reader_executor_max_tail_for_drain", 1048576, 524288, "Lowered the drain bound: draining more than 512 KiB to complete a dropped long connection costs more than a reopen."},

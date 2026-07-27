@@ -311,9 +311,17 @@ public:
         return traits;
     }
 
+    struct FoldResult
+    {
+        VectorWithMemoryTracking<GeometryEntry> entries;
+        size_t covered_end = 0;
+    };
+
     /// Walk `span` with the iterator, checking the stride tiling invariants,
-    /// and fold the resolutions into geometry entries.
-    VectorWithMemoryTracking<GeometryEntry> foldOverSpan(
+    /// and fold the resolutions into geometry entries. Strides tile the span
+    /// gaplessly; only the LAST stride may overshoot the span end (a tier's
+    /// true extent), and the walk's covered end is that overshoot.
+    FoldResult foldOverSpan(
         const VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> & chain, ByteRange span)
     {
         ResidencyIterator it(chain, objects.front(), /*object_file_offset=*/0, span);
@@ -324,19 +332,19 @@ public:
             const auto res = it.lookAt(pos);
             EXPECT_EQ(res.range.offset, pos) << "stride must start at the looked-at position";
             EXPECT_GT(res.range.size, 0u) << "stride must advance, pos=" << pos;
-            EXPECT_LE(res.range.end(), span.end()) << "stride must stay within the span, pos=" << pos;
             EXPECT_EQ(res.tiers.size(), chain.size());
             fold.add(res);
             pos = res.range.end();
         }
-        EXPECT_EQ(pos, span.end()) << "strides must tile the span exactly";
+        EXPECT_GE(pos, span.end()) << "strides must cover the span";
 
         auto slots = fold.finish();
-        VectorWithMemoryTracking<GeometryEntry> entries;
+        FoldResult result;
+        result.covered_end = pos;
         for (auto & e : slots)
             if (!e.resident.empty() || !e.aligned_miss.empty())
-                entries.push_back(std::move(e));
-        return entries;
+                result.entries.push_back(std::move(e));
+        return result;
     }
 
     /// The equivalence gate: iterated fold vs the live executor's plan geometry
@@ -350,7 +358,8 @@ public:
         const String & label)
     {
         const ByteRange span = expectedSpan(start);
-        const auto folded = foldOverSpan(iterator_chain, span);
+        const auto fold_result = foldOverSpan(iterator_chain, span);
+        const auto & folded = fold_result.entries;
 
         auto src = std::make_shared<MemBoundedSource>(data);
         ReaderExecutor executor(src, objects, std::move(executor_caches), makeOptions());
@@ -363,7 +372,9 @@ public:
         auto snap = inspect(executor).planGeometry();
         ASSERT_TRUE(snap) << label;
         ASSERT_EQ(snap->plan_start, span.offset) << label;
-        ASSERT_EQ(snap->plan_end, span.end()) << label;
+        /// The covered end, not the requested end: both walks must keep the
+        /// same last-stride overshoot.
+        ASSERT_EQ(snap->plan_end, fold_result.covered_end) << label;
 
         ASSERT_EQ(folded.size(), snap->entries.size()) << label << ": entry count";
         for (size_t i = 0; i < folded.size(); ++i)

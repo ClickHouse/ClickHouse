@@ -3,6 +3,7 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <limits>
 
 namespace DB
 {
@@ -32,7 +33,11 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
     chassert(pos >= probed_span.offset && pos < probed_span.end());
 
     ChainResolution res;
-    size_t stride_end = probed_span.end();
+    /// The stride ends at the nearest tier boundary at its TRUE extent, so the
+    /// walk's LAST stride may overshoot the probed span and the caller keeps
+    /// that coverage. Only an all-Absent column (the EOF tail, no tier
+    /// boundary) falls back to the span end.
+    size_t stride_end = std::numeric_limits<size_t>::max();
     for (auto & t : tiers)
     {
         const bool inside_current = t.current_valid
@@ -52,14 +57,13 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
             {
                 if (t.current.kind == ICacheProvider::Resolution::Kind::Hit)
                 {
-                    /// Store span-clamped: geometry never exceeds the
-                    /// probed span; the reader may serve wider - the executor
-                    /// clamps.
+                    /// Store head-clamped only: territory behind the span start
+                    /// was never asked for (a run may begin below it), while
+                    /// the tail keeps its true extent - overshoot the plan
+                    /// keeps. `pos` is inside the run, so `lo < end` holds.
                     const size_t lo = std::max(t.current.range.offset, probed_span.offset);
-                    const size_t hi = std::min(t.current.range.end(), probed_span.end());
-                    if (lo < hi)
-                        t.view->hit_entries.push_back(
-                            HitEntry{ByteRange{lo, hi - lo}, std::move(t.current.reader)});
+                    t.view->hit_entries.push_back(
+                        HitEntry{ByteRange{lo, t.current.range.end() - lo}, std::move(t.current.reader)});
                     t.collected_until = std::max(t.collected_until, t.current.range.end());
                 }
                 else if (t.current.kind == ICacheProvider::Resolution::Kind::Miss)
@@ -77,8 +81,7 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
             {
                 slice.state = ChainResolution::TierState::Resident;
                 const size_t lo = std::max(t.current.range.offset, probed_span.offset);
-                const size_t hi = std::min(t.current.range.end(), probed_span.end());
-                slice.extent = ByteRange{lo, hi - lo};
+                slice.extent = ByteRange{lo, t.current.range.end() - lo};
                 stride_end = std::min(stride_end, t.current.range.end());
                 break;
             }
@@ -93,6 +96,8 @@ ChainResolution ResidencyIterator::lookAt(size_t pos)
         res.tiers.push_back(slice);
     }
 
+    if (stride_end == std::numeric_limits<size_t>::max())
+        stride_end = probed_span.end();
     chassert(stride_end > pos);
     res.range = ByteRange{pos, stride_end - pos};
     return res;
