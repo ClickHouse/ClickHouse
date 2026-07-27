@@ -1506,6 +1506,11 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context->getSettingsRef()[Setting::query_plan_serialization_version]);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
+        /// A worker only reads the plan, and reading needs no version choice. Sending the setting
+        /// would make a worker that predates it reject the task before reading a plan it can read,
+        /// which is the opposite of what holding the writer back is for.
+        std::erase_if(task_description.settings_changes,
+            [](const SettingChange & change) { return change.name == "query_plan_serialization_version"; });
 
         const String unique_temp_file_path = toString(unique_query_id);
         const auto server_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);

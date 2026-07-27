@@ -249,8 +249,10 @@ void serializeEnvelopeSets(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot serialize FutureSetFromSubquery with no query plan");
 
             /// A complete plan with its own leading version, so the nested envelope is length-prefixed and
-            /// self-describing (unlike the legacy stream, which embeds the nested body inline).
-            plan->serialize(body, flags.version);
+            /// self-describing (unlike the legacy stream, which embeds the nested body inline). It is
+            /// written at the version the outer plan resolved to, not resolved again: a query that asks
+            /// for a version must get it for the whole plan, nested set plans included.
+            plan->serialize(body, flags.version, flags.version);
         }
         else
         {

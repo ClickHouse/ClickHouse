@@ -1387,8 +1387,8 @@ Disabled by default to avoid possible security issues which can be caused by bug
 ```
 )", 0) \
     DECLARE(UInt64, max_query_plan_serialization_version, 0, R"(
-Holds this server's query plan writers at an older serialization version. `0`, the default, writes
-the newest version the server has.
+Holds this server's query plan writers at an older serialization version. `0`, the default, adds no
+ceiling, so writers use the version the server writes by default or the one a query asked for.
 
 Use it while a fleet is being upgraded and a newer version would carry something the not-yet-upgraded
 servers cannot read: with the clamp in place those plans are never written, instead of being written
