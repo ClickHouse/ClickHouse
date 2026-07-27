@@ -10,9 +10,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# async_insert=0 throughout: profile events and query_log entries are checked right after each INSERT;
+# with async_insert=1 the actual write happens in a background thread after the client returns.
 echo "INSERT TO S3"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 -q "
-INSERT INTO TABLE FUNCTION s3('http://localhost:11111/test/profile_events.csv', 'test', 'testtest', 'CSV', 'number UInt64') SELECT number FROM numbers(1000000) SETTINGS s3_max_single_part_upload_size = 10, s3_truncate_on_insert = 1;
+INSERT INTO TABLE FUNCTION s3('http://localhost:11111/test/profile_events.csv', 'test', 'testtest', 'CSV', 'number UInt64') SELECT number FROM numbers(1000000) SETTINGS s3_max_single_part_upload_size = 10, s3_truncate_on_insert = 1, async_insert = 0;
 " 2>&1 | $CLICKHOUSE_LOCAL -q "
 WITH '(\\w+): (\\d+)' AS pattern,
   (SELECT (groupArray(regexpExtract(line, pattern, 1)),
@@ -65,7 +67,7 @@ CREATE TABLE times (t DateTime) ENGINE MergeTree ORDER BY t
 
 echo "INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1 -q "
-INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0;
+INSERT INTO times SELECT now() + INTERVAL 1 day SETTINGS optimize_on_insert = 0, async_insert = 0;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 
 echo "READ"
@@ -75,9 +77,9 @@ SELECT '1', min(t) FROM times SETTINGS optimize_use_projections = 1, optimize_us
 
 echo "INSERT and READ INSERT"
 $CLICKHOUSE_CLIENT --print-profile-events --profile-events-delay-ms=-1  -q "
-INSERT INTO times SELECT now() + INTERVAL 2 day SETTINGS optimize_on_insert = 0;
+INSERT INTO times SELECT now() + INTERVAL 2 day SETTINGS optimize_on_insert = 0, async_insert = 0;
 SELECT '2', min(t) FROM times SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1;
-INSERT INTO times SELECT now() + INTERVAL 3 day SETTINGS optimize_on_insert = 0;
+INSERT INTO times SELECT now() + INTERVAL 3 day SETTINGS optimize_on_insert = 0, async_insert = 0;
 " 2>&1 | grep -o -e ' \[ .* \] FileOpen: .* '
 
 echo "DROP"
