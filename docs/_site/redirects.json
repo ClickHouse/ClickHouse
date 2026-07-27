@@ -1,5 +1,9 @@
 [
   {
+    "source": "/concepts/features/operations/delete/delete-mutations",
+    "destination": "/reference/statements/alter/delete"
+  },
+  {
     "source": "/guides/oss/deployment-and-scaling",
     "destination": "/guides/oss/deployment-and-scaling/terminology"
   },
@@ -26828,7 +26832,7 @@
     "source": "/managing-data/core-concepts"
   },
   {
-    "destination": "/concepts/features/operations/delete/delete-mutations",
+    "destination": "/reference/statements/alter/delete",
     "source": "/managing-data/delete_mutations"
   },
   {
