@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DuckLake/DuckLakeMetadata.h>
+#include <atomic>
 
 #if USE_PARQUET
 
@@ -66,16 +67,18 @@ public:
 
     ObjectInfoPtr next(size_t) override
     {
-        if (index >= infos.size())
+        /// `next` is called concurrently from multiple reader streams.
+        const size_t i = index.fetch_add(1, std::memory_order_relaxed);
+        if (i >= infos.size())
             return nullptr;
-        return infos[index++];
+        return infos[i];
     }
 
     size_t estimatedKeysCount() override { return infos.size(); }
 
 private:
     std::vector<DuckLakeDataObjectInfoPtr> infos;
-    size_t index = 0;
+    std::atomic<size_t> index = 0;
 };
 
 /// Build the per-file ColumnMapper for a name-mapped file (ducklake_add_data_files):
