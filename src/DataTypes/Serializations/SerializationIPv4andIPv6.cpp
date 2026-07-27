@@ -1,7 +1,10 @@
 #include <Common/SipHash.h>
+#include <Common/transformEndianness.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
 #include <IO/WriteHelpers.h>
+
+#include <bit>
 
 namespace DB
 {
@@ -177,7 +180,15 @@ void SerializationIP<IPv>::serializeBinaryBulk(const DB::IColumn & column, DB::W
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    if (limit)
+    if (limit == 0)
+        return;
+
+    /// IPv4 uses the little-endian wire format, the same as the row-wise overloads above
+    /// (IPv6 is serialized as raw bytes in both).
+    if constexpr (std::endian::native == std::endian::big && std::is_same_v<IPv, IPv4>)
+        for (size_t i = offset; i < offset + limit; ++i)
+            writeBinaryLittleEndian(x[i], ostr);
+    else
         ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(IPv) * limit);
 }
 
@@ -190,6 +201,10 @@ void SerializationIP<IPv>::deserializeBinaryBulk(DB::IColumn & column, DB::ReadB
     istr.ignore(sizeof(IPv) * rows_offset);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
     x.resize(initial_size + size / sizeof(IPv));
+
+    if constexpr (std::endian::native == std::endian::big && std::is_same_v<IPv, IPv4>)
+        for (size_t i = initial_size; i < x.size(); ++i)
+            transformEndianness<std::endian::big, std::endian::little>(x[i]);
 }
 
 template <typename IPv>
