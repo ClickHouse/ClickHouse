@@ -37,6 +37,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/atomicRename.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
@@ -241,6 +242,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
     , primary_keys{std::move(primary_keys_)}
+    , implicit_path(rocksdb_dir_.empty())
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
@@ -308,6 +310,55 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
+}
+
+void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+{
+    /// A directory given explicitly in the engine arguments does not belong to the table's
+    /// location, may be shared, and must stay where the user put it.
+    if (implicit_path)
+    {
+        const String new_rocksdb_dir = getContext()->getPath() + new_path_to_table_data;
+        if (new_rocksdb_dir != rocksdb_dir)
+        {
+            std::lock_guard lock(rocksdb_ptr_mx);
+
+            const String old_rocksdb_dir = rocksdb_dir;
+            if (rocksdb_ptr)
+            {
+                rocksdb_ptr->Close();
+                rocksdb_ptr = nullptr;
+            }
+
+            try
+            {
+                fs::create_directories(parentPath(new_rocksdb_dir));
+                renameNoReplace(old_rocksdb_dir, new_rocksdb_dir);
+                rocksdb_dir = new_rocksdb_dir;
+                initDB();
+            }
+            catch (...)
+            {
+                /// The caller re-attaches the table under the old name when we throw, so the
+                /// handle has to be usable again before we rethrow.
+                try
+                {
+                    if (fs::exists(new_rocksdb_dir) && !fs::exists(old_rocksdb_dir))
+                        renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
+                    rocksdb_dir = old_rocksdb_dir;
+                    if (!rocksdb_ptr)
+                        initDB();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to restore RocksDB handle after a failed rename");
+                }
+                throw;
+            }
+        }
+    }
+
+    renameInMemory(new_table_id);
 }
 
 void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
