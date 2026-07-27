@@ -120,11 +120,19 @@ TEST_F(KeeperSaturatedWaitTest, InterruptibleSleepKeepsHugePeriod)
         Stopwatch watch;
         dispatcher.interruptibleSleep(std::chrono::milliseconds(period_ms));
         const auto elapsed_ms = watch.elapsedMilliseconds();
+        /// Read where the wait returned, not after joining the signaller: the signaller sets the
+        /// flag unconditionally, so a reading taken after the join would be true whatever ended the
+        /// wait, and would assert nothing.
+        const bool shutdown_was_signalled_when_the_wait_returned = dispatcher.isShuttingDown();
         shutdown_signaller.join();
 
         /// Without saturation the wrapped deadline is already in the past, so this returns at once
         /// instead of sleeping until shutdown is signalled.
         EXPECT_GE(elapsed_ms, static_cast<UInt64>(notify_after_ms) / 2);
+        /// The elapsed bound alone would also accept a period silently shortened to anything from
+        /// 150 ms upwards, which times out instead of keeping the requested period. This pins why
+        /// the wait ended: the predicate became true, so the saturated period was really kept.
+        EXPECT_TRUE(shutdown_was_signalled_when_the_wait_returned);
     }
 }
 

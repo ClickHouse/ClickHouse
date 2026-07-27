@@ -98,11 +98,11 @@ TEST(SaturatedWaitDuration, NonZeroCountKeepsZeroPolicy)
     EXPECT_EQ(saturatedWaitMillisecondsCountNonZero(MAX_WAIT_MILLISECONDS + 1), static_cast<UInt64>(MAX_WAIT_MILLISECONDS));
     EXPECT_EQ(saturatedWaitMillisecondsCountNonZero(std::numeric_limits<uint64_t>::max()), static_cast<UInt64>(MAX_WAIT_MILLISECONDS));
 
-    /// The row that would catch a regression to the wait helper's negative-to-zero rule.
-    EXPECT_NE(saturatedWaitMillisecondsCountNonZero(Int64{-1}), 0u);
-    EXPECT_LE(saturatedWaitMillisecondsCountNonZero(Int64{-1}), static_cast<UInt64>(MAX_WAIT_MILLISECONDS));
-    EXPECT_NE(saturatedWaitMillisecondsCountNonZero(Int64{-9'223'372'036'854'775}), 0u);
-    EXPECT_LE(saturatedWaitMillisecondsCountNonZero(Int64{-9'223'372'036'854'775}), static_cast<UInt64>(MAX_WAIT_MILLISECONDS));
+    /// The rows that would catch a regression to the wait helper's negative-to-zero rule. The value
+    /// must be the bound exactly: a merely nonzero result such as 1 would satisfy "not disabled"
+    /// and still make the timer fire at once, which is the mirror of the hazard guarded here.
+    EXPECT_EQ(saturatedWaitMillisecondsCountNonZero(Int64{-1}), static_cast<UInt64>(MAX_WAIT_MILLISECONDS));
+    EXPECT_EQ(saturatedWaitMillisecondsCountNonZero(Int64{-9'223'372'036'854'775}), static_cast<UInt64>(MAX_WAIT_MILLISECONDS));
 }
 
 TEST(SaturatedWaitDuration, MicrosecondsGuardKeepsPolicyMagnitude)
