@@ -1,0 +1,11 @@
+string backslash N	1
+string values	0	NULL
+string values	0	abc
+string values	0	null
+string native NULL	1
+number backslash N	1
+number value	0	42
+number native NULL	1
+low cardinality backslash N	1
+low cardinality value	0	abc
+plain value	abc

@@ -233,10 +233,11 @@ void deserializeFromSingleArgumentTextArray(IColumn & column, ReadBuffer & istr,
     createStateFromValues(function, column, arg_columns, tmp_column->size());
 }
 
-/// Backward compatibility for the legacy string-wrapped `value` form of `JSONEachRow` and friends, e.g.
-/// `{"x": "\\N"}` (see the comment in `deserializeTextJSON`). Released parsed the unwrapped content with the
-/// argument type's `deserializeTextCSV`, and for a `Nullable` argument that parse recognizes forms the
-/// whole-text parse of the same content does not: see `deserializeFromSingleNullableArgumentLegacyValue`.
+/// Backward compatibility for the `value` forms that released read as a quoted string and parsed with the
+/// argument type's `deserializeTextCSV`: the string-wrapped JSON form `{"x": "\\N"}` (see the comment in
+/// `deserializeTextJSON`) and the quoted `VALUES` form `('\\N')` (see the comment in `deserializeTextQuoted`).
+/// For a `Nullable` argument that CSV parse recognizes forms the parse of the unwrapped content through the
+/// argument type does not: see `deserializeFromSingleNullableArgumentLegacyValue`.
 bool useLegacyNullableValueParsing(const AggregateFunctionPtr & function, const FormatSettings & settings)
 {
     if (settings.aggregate_function_input_format != FormatSettings::AggregateFunctionInputFormat::Value)
@@ -455,6 +456,21 @@ void SerializationAggregateFunction::deserializeTextQuoted(IColumn & column, Rea
     if (useLegacyTextArrayParsing(function, settings))
     {
         deserializeFromSingleArgumentTextArray(column, istr, settings, function);
+        return;
+    }
+
+    /// Backward compatibility: released read the whole quoted token as a string and parsed its content with
+    /// the argument type's `deserializeTextCSV`, so `INSERT ... VALUES ('\\N')` built a null state for a
+    /// single `Nullable` argument. `SerializationNullable::deserializeTextQuoted` does not recognize the CSV
+    /// null representation: it would store the literal `\\N` for a string-like nested type and throw for a
+    /// numeric one, so route quoted tokens of a single `Nullable` argument through the same helper as the
+    /// string-wrapped JSON form. The native unquoted `NULL` keyword is unaffected: it does not start with a
+    /// quote and stays on the unified path below.
+    if (useLegacyNullableValueParsing(function, settings) && !istr.eof() && *istr.position() == '\'')
+    {
+        String s;
+        readQuotedStringWithSQLStyle(s, istr);
+        deserializeFromSingleNullableArgumentLegacyValue(column, s, settings, function);
         return;
     }
 
