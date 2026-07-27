@@ -198,6 +198,8 @@ public:
     virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
+    virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
+
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
