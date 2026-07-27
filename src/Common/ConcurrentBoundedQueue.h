@@ -7,6 +7,7 @@
 
 #include <base/MoveOrCopyIfThrow.h>
 #include <base/defines.h>
+#include <Common/saturatedWaitDuration.h>
 
 /** A very simple thread-safe queue of limited size.
   * If you try to pop an item from an empty queue, the thread is blocked until the queue becomes nonempty or queue is finished.
@@ -37,7 +38,10 @@ private:
 
             if (timeout_milliseconds.has_value())
             {
-                bool wait_result = push_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                /// Saturate: the predicate overload of wait_for converts to nanoseconds and adds
+                /// steady_clock::now(), both of which overflow for a large enough count.
+                bool wait_result = push_condition.wait_for(
+                    queue_lock, DB::saturatedWaitMilliseconds(timeout_milliseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
@@ -70,7 +74,8 @@ private:
 
             if (timeout_milliseconds.has_value())
             {
-                bool wait_result = pop_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                bool wait_result = pop_condition.wait_for(
+                    queue_lock, DB::saturatedWaitMilliseconds(timeout_milliseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
