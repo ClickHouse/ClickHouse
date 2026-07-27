@@ -496,3 +496,46 @@ ALTER TABLE t_mat_index_subcolumn_unrelated MODIFY COLUMN c2 UInt64 MATERIALIZED
 ALTER TABLE t_mat_index_subcolumn_unrelated MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
 SELECT c2, u.k FROM t_mat_index_subcolumn_unrelated WHERE u.k = 7 SETTINGS force_data_skipping_indices = 'idx_uk';
 DROP TABLE t_mat_index_subcolumn_unrelated;
+
+-- Case 42: Two *directly* affected MATERIALIZED columns where one reads the other
+-- (`m MATERIALIZED c2 + 1, n MATERIALIZED c2 + m`). All expressions of one mutation stage are
+-- resolved against the block as it was before the stage, so recomputing `m` and `n` together would
+-- evaluate `n` over the old stored `m`. The dependent columns are split into dependency layers, so
+-- `n` must see the recomputed `m`.
+DROP TABLE IF EXISTS t_mat_dep_sibling;
+CREATE TABLE t_mat_dep_sibling
+    (a UInt64, c2 UInt64 MATERIALIZED a * 10, m UInt64 MATERIALIZED c2 + 1, n UInt64 MATERIALIZED c2 + m)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_dep_sibling (a) VALUES (5);
+SELECT c2, m, n FROM t_mat_dep_sibling;
+ALTER TABLE t_mat_dep_sibling MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
+ALTER TABLE t_mat_dep_sibling MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT c2, m, n FROM t_mat_dep_sibling;
+DROP TABLE t_mat_dep_sibling;
+
+-- Case 43: A chain of three directly affected MATERIALIZED columns, each reading the previous one
+-- (three dependency layers). Every column must be recomputed from the already-recomputed ones.
+DROP TABLE IF EXISTS t_mat_dep_sibling_chain;
+CREATE TABLE t_mat_dep_sibling_chain
+    (a UInt64, c2 UInt64 MATERIALIZED a * 10, m UInt64 MATERIALIZED c2 + 1,
+     n UInt64 MATERIALIZED c2 + m, o UInt64 MATERIALIZED c2 + n)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_dep_sibling_chain (a) VALUES (5);
+SELECT c2, m, n, o FROM t_mat_dep_sibling_chain;
+ALTER TABLE t_mat_dep_sibling_chain MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
+ALTER TABLE t_mat_dep_sibling_chain MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT c2, m, n, o FROM t_mat_dep_sibling_chain;
+DROP TABLE t_mat_dep_sibling_chain;
+
+-- Case 44: A skip index over the dependent column that reads a recomputed sibling must be rebuilt
+-- from the correct value — with a stale `n` the forced index would prune the granule away.
+DROP TABLE IF EXISTS t_mat_dep_sibling_index;
+CREATE TABLE t_mat_dep_sibling_index
+    (a UInt64, c2 UInt64 MATERIALIZED a * 10, m UInt64 MATERIALIZED c2 + 1, n UInt64 MATERIALIZED c2 + m,
+     INDEX idx_n n TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_dep_sibling_index (a) VALUES (5);
+ALTER TABLE t_mat_dep_sibling_index MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
+ALTER TABLE t_mat_dep_sibling_index MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT n FROM t_mat_dep_sibling_index WHERE n = 2101 SETTINGS force_data_skipping_indices = 'idx_n';
+DROP TABLE t_mat_dep_sibling_index;

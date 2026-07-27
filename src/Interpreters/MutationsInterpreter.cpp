@@ -759,6 +759,10 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// for MATERIALIZE COLUMN: rewriting a column must recompute the stored MATERIALIZED columns
     /// computed from it (or be refused when such a dependent column feeds a key).
     std::unordered_map<String, Names> column_to_affected_materialized;
+    /// The reverse direction of the same relation: for every stored MATERIALIZED column, the source
+    /// columns its default expression reads. MATERIALIZE COLUMN needs it to order the recomputation
+    /// of the dependent MATERIALIZED columns, because one of them may read another one.
+    std::unordered_map<String, Names> materialized_column_dependencies;
     if (!updated_columns.empty() || !materialize_column_targets.empty())
     {
         /// Collect ephemeral columns and include them in the analysis set so
@@ -801,6 +805,8 @@ void MutationsInterpreter::prepare(bool dry_run)
                             column.name);
                     continue;
                 }
+
+                materialized_column_dependencies[column.name] = required_columns;
 
                 for (const auto & dependency : required_columns)
                     if (updated_columns.contains(dependency) || materialize_column_targets.contains(dependency))
@@ -1276,27 +1282,83 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             stages.back().column_to_updated.emplace(column.name, materialized_column);
 
-            /// Recompute the dependent MATERIALIZED columns in a separate stage, so they are
-            /// evaluated over the already-rewritten source column (mirrors the UPDATE path).
+            /// Recompute the dependent MATERIALIZED columns in extra stages, so they are evaluated
+            /// over the already-rewritten source column.
+            ///
+            /// All expressions of a single stage are resolved against the block as it looked
+            /// *before* that stage (`prepareMutationStages` builds one combined `update_expr_list`
+            /// for the whole `column_to_updated` map and only then aliases the results back to the
+            /// target column names), so a dependent column that reads another dependent column must
+            /// not share a stage with it. For `c2 MATERIALIZED a * 10, m MATERIALIZED c2 + 1,
+            /// n MATERIALIZED c2 + m` both `m` and `n` are directly affected by
+            /// `MATERIALIZE COLUMN c2`, but `n` reads `m`, so a single stage would compute `n` from
+            /// the *old* stored `m` and the derived-object rebuild below would then treat that wrong
+            /// value as fresh. Split the dependent columns into dependency layers — a column goes
+            /// into the first layer in which none of the sibling columns it reads is still pending —
+            /// and emit one stage per layer.
             if (!affected_materialized.empty())
             {
-                stages.emplace_back(context);
-                for (const auto & dependent_column : columns_desc)
+                const NameSet affected_materialized_set(affected_materialized.begin(), affected_materialized.end());
+
+                std::vector<Names> recompute_layers;
+                NameSet already_layered;
+                Names pending = affected_materialized;
+
+                while (!pending.empty())
                 {
-                    if (dependent_column.default_desc.kind == ColumnDefaultKind::Materialized
-                        && dependent_column.default_desc.expression
-                        && std::find(affected_materialized.begin(), affected_materialized.end(), dependent_column.name) != affected_materialized.end())
+                    Names layer;
+                    Names still_pending;
+
+                    for (const auto & dependent_name : pending)
                     {
-                        ASTPtr dependent_expr = makeASTFunction("_CAST",
-                            dependent_column.default_desc.expression->clone(),
-                            make_intrusive<ASTLiteral>(dependent_column.type->getName()));
+                        const auto & dependency_columns = materialized_column_dependencies[dependent_name];
+                        const bool reads_pending_sibling = std::ranges::any_of(dependency_columns, [&](const auto & dependency)
+                        {
+                            return dependency != dependent_name
+                                && affected_materialized_set.contains(dependency)
+                                && !already_layered.contains(dependency);
+                        });
 
-                        /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
-                        /// because otherwise subcolumns are extracted before the source column is updated and we get
-                        /// old subcolumns values.
-                        replaceSubcolumnsToGetSubcolumnFunctionInQuery(dependent_expr, all_columns);
+                        if (reads_pending_sibling)
+                            still_pending.push_back(dependent_name);
+                        else
+                            layer.push_back(dependent_name);
+                    }
 
-                        stages.back().column_to_updated.emplace(dependent_column.name, dependent_expr);
+                    /// MATERIALIZED default expressions cannot form a cycle (a column can only
+                    /// reference columns declared before it), so a layer is always non-empty.
+                    if (layer.empty())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Cyclic dependency between the MATERIALIZED columns computed from {}",
+                            backQuote(command.column_name));
+
+                    already_layered.insert(layer.begin(), layer.end());
+                    recompute_layers.push_back(std::move(layer));
+                    pending = std::move(still_pending);
+                }
+
+                for (const auto & layer : recompute_layers)
+                {
+                    const NameSet layer_set(layer.begin(), layer.end());
+                    stages.emplace_back(context);
+
+                    for (const auto & dependent_column : columns_desc)
+                    {
+                        if (dependent_column.default_desc.kind == ColumnDefaultKind::Materialized
+                            && dependent_column.default_desc.expression
+                            && layer_set.contains(dependent_column.name))
+                        {
+                            ASTPtr dependent_expr = makeASTFunction("_CAST",
+                                dependent_column.default_desc.expression->clone(),
+                                make_intrusive<ASTLiteral>(dependent_column.type->getName()));
+
+                            /// We need to replace all subcolumns used in materialized expression to getSubcolumn() function,
+                            /// because otherwise subcolumns are extracted before the source column is updated and we get
+                            /// old subcolumns values.
+                            replaceSubcolumnsToGetSubcolumnFunctionInQuery(dependent_expr, all_columns);
+
+                            stages.back().column_to_updated.emplace(dependent_column.name, dependent_expr);
+                        }
                     }
                 }
             }
