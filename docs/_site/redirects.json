@@ -52584,7 +52584,7 @@
     "source": "/jp/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
   },
   {
-    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "destination": "/ja/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/jp/cloud/manage/api/swagger"
   },
   {
@@ -52996,7 +52996,7 @@
     "source": "/ko/category/changelog"
   },
   {
-    "destination": "/ko/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/ko/chdb/guides/python-udf"
   },
   {
@@ -53012,7 +53012,7 @@
     "source": "/ko/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
   },
   {
-    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "destination": "/ko/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/ko/cloud/manage/api/swagger"
   },
   {
@@ -53400,7 +53400,7 @@
     "source": "/ru/category/changelog"
   },
   {
-    "destination": "/ru/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/ru/chdb/guides/python-udf"
   },
   {
@@ -53416,7 +53416,7 @@
     "source": "/ru/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
   },
   {
-    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "destination": "/ru/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/ru/cloud/manage/api/swagger"
   },
   {
@@ -53804,7 +53804,7 @@
     "source": "/zh/category/changelog"
   },
   {
-    "destination": "/zh/chdb/api/python",
+    "destination": "/chdb/api/python",
     "source": "/zh/chdb/guides/python-udf"
   },
   {
@@ -53820,7 +53820,7 @@
     "source": "/zh/cloud/get-started/cloud/use-cases/AI_ML/agent_facing_analytics"
   },
   {
-    "destination": "/products/cloud/api-reference/organization/get-list-of-available-organizations",
+    "destination": "/zh/products/cloud/api-reference/organization/get-list-of-available-organizations",
     "source": "/zh/cloud/manage/api/swagger"
   },
   {
