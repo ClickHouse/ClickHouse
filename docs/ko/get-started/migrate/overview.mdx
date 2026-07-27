@@ -22,11 +22,14 @@ picture-in-picture"
 
 <br />
 
-현재 데이터가 저장된 위치에 따라 ClickHouse Cloud로 데이터를 마이그레이션하는 방법에는 여러 가지가 있습니다:
+현재 데이터가 저장된 위치에 따라 ClickHouse Cloud로 마이그레이션하는 방법에는 여러 가지가 있습니다:
 
-* [자가 관리형에서 Cloud로](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud): `remoteSecure` 함수를 사용해 데이터를 이전합니다
-* [다른 DBMS](/ko/get-started/migrate/other-methods/clickhouse-local-etl): 현재 사용 중인 DBMS에 맞는 ClickHouse 테이블 함수와 함께 [clickhouse-local] ETL 도구를 사용합니다
-* [어디서든!](/ko/get-started/migrate/other-methods/etl-tool-to-clickhouse): 다양한 데이터 소스에 연결할 수 있는 여러 인기 ETL/ELT 도구 중 하나를 사용합니다
-* [객체 스토리지](/ko/get-started/migrate/other-methods/object-storage-to-clickhouse): S3의 데이터를 ClickHouse로 쉽게 삽입합니다
-
-[Redshift에서 마이그레이션](/ko/get-started/migrate/redshift/migration-guide) 예시에서는 ClickHouse로 데이터를 마이그레이션하는 세 가지 방법을 소개합니다.
+| 마이그레이션 경로                                                             | 설명                                                           |
+| --------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [PostgreSQL](/ko/get-started/migrate/postgres/index)                     | PostgreSQL 데이터와 쿼리를 ClickHouse로 마이그레이션합니다.                   |
+| [BigQuery](/ko/get-started/migrate/bigquery/index)                       | BigQuery의 데이터셋과 워크로드를 ClickHouse Cloud로 마이그레이션합니다.           |
+| [Snowflake](/ko/get-started/migrate/snowflake/overview)                  | Snowflake 데이터와 SQL 워크로드를 ClickHouse Cloud로 마이그레이션합니다.        |
+| [Elasticsearch](/ko/get-started/migrate/elastic/overview)                | Elasticsearch 데이터와 쿼리를 ClickHouse로 마이그레이션합니다.                |
+| [Redshift](/ko/get-started/migrate/redshift/overview)                    | Redshift 데이터와 워크로드를 ClickHouse Cloud로 마이그레이션합니다.             |
+| [OSS to Cloud](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) | 자가 관리형 ClickHouse 배포에서 ClickHouse Cloud로 데이터를 이전합니다.         |
+| [기타 메서드](/ko/get-started/migrate/other-methods/clickhouse-local-etl)     | 다른 마이그레이션 시나리오에는 clickhouse-local, ETL 도구 또는 객체 스토리지를 사용합니다. |

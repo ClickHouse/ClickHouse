@@ -749,7 +749,7 @@ This only applies to RowBinary. In the Native format, `LowCardinality` uses a di
 A column can be defined as `LowCardinality(Nullable(T))`, but it is not possible to define it as `Nullable(LowCardinality(T))` - it will always result in an error from the server.
 </Note>
 
-While testing, [allow_suspicious_low_cardinality_types](/reference/settings/session-settings#allow_suspicious_low_cardinality_types) can be set to `1` to allow most of the data types inside `LowCardinality` for better coverage.
+While testing, [allow_suspicious_low_cardinality_types](/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) can be set to `1` to allow most of the data types inside `LowCardinality` for better coverage.
 
 ### Array {#array}
 
@@ -945,7 +945,7 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-The [allow_suspicious_variant_types](/reference/settings/session-settings#allow_suspicious_variant_types) setting can be used to allow more exhaustive testing of the `Variant` type.
+The [allow_suspicious_variant_types](/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) setting can be used to allow more exhaustive testing of the `Variant` type.
 
 ### Dynamic {#dynamic}
 
@@ -1150,13 +1150,14 @@ With the setting `output_format_binary_write_json_as_string=1`, JSON columns are
 Geo is a category of data types that represent geographical data. It includes:
 
 - `Point` - as `Tuple(Float64, Float64)`.
+- `MultiPoint` - as `Array(Point)`, or `Array(Tuple(Float64, Float64))`.
 - `Ring` - as `Array(Point)`, or `Array(Tuple(Float64, Float64))`.
 - `Polygon` - as `Array(Ring)`, or `Array(Array(Tuple(Float64, Float64)))`.
 - `MultiPolygon` - as `Array(Polygon)`, or `Array(Array(Array(Tuple(Float64, Float64))))`.
 - `LineString` - as `Array(Point)`, or `Array(Tuple(Float64, Float64))`.
 - `MultiLineString` - as `Array(LineString)`, or `Array(Array(Tuple(Float64, Float64)))`.
 
-The wire format of the Geo values is exactly the same as with Tuple and Array. `RowBinaryWithNamesAndTypes` format headers will contain the aliases for these types, e.g., `Point`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, and `MultiLineString`.
+The wire format of the Geo values is exactly the same as with Tuple and Array. `RowBinaryWithNamesAndTypes` format headers will contain the aliases for these types, e.g., `Point`, `MultiPoint`, `Ring`, `Polygon`, `MultiPolygon`, `LineString`, and `MultiLineString`.
 
 ```sql
 SELECT    (1.0, 2.0)                                       :: Point           AS point,
@@ -1243,11 +1244,12 @@ The discriminant indices for Geometry are:
 | 3 | Point |
 | 4 | Polygon |
 | 5 | Ring |
+| 6 | MultiPoint |
 
 Wire format structure:
 
 ```text
-// 1 byte discriminant (0-5)
+// 1 byte discriminant (0-6)
 // followed by the corresponding geo type data
 ```
 
@@ -1525,9 +1527,9 @@ Similar to the [`RowBinary`](/reference/formats/RowBinary/RowBinary) format, but
 <RowBinaryFormatSettings/>
 
 <Note>
-- If setting [`input_format_with_names_use_header`](/reference/settings/formats#input_format_with_names_use_header) is set to `1`,
+- If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped. 
-- If setting [`input_format_skip_unknown_fields`](/reference/settings/formats#input_format_skip_unknown_fields) is set to `1`.
+- If setting [`input_format_skip_unknown_fields`](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
 </Note>
 )DOCS_MD"});
@@ -1555,10 +1557,10 @@ Similar to the [RowBinary](/reference/formats/RowBinary/RowBinary) format, but w
 <RowBinaryFormatSettings/>
 
 <Note>
-If setting [`input_format_with_names_use_header`](/reference/settings/formats#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats#input_format_skip_unknown_fields) is set to 1.
+If setting [`input_format_with_names_use_header`](/reference/settings/formats/input-format#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats/input-format#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
-If setting [`input_format_with_types_use_header`](/reference/settings/formats#input_format_with_types_use_header) is set to `1`,
+If setting [`input_format_with_types_use_header`](/reference/settings/formats/input-format#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 </Note>
 )DOCS_MD"});

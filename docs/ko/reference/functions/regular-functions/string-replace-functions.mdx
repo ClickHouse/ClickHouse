@@ -355,7 +355,7 @@ replaceRegexpAll(haystack, pattern, replacement)
 **모든 문자를 두 번 반복한 값으로 대체**
 
 ```sql title=Query
-SELECT replaceRegexpAll('Hello123', '.', '\\\\0\\\\0') AS res
+SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res
 ```
 
 ```response title=Response
@@ -383,8 +383,8 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 도입 버전: v1.1.0
 
 `haystack`에서 정규식 `pattern`(re2 구문)과 일치하는 부분 문자열이 처음 나타나는 부분을 `replacement` 문자열로 대체합니다.
-`replacement`에는 치환 문자열 `\0-\9`를 포함할 수 있습니다.
-치환 문자열 `\1-\9`는 1번째부터 9번째 캡처 그룹(하위 일치)에 대응하며, 치환 문자열 `\0`은 전체 일치에 대응합니다.
+`replacement`에는 치환값 `\0-\9`를 포함할 수 있습니다.
+치환값 `\1-\9`는 1번째부터 9번째 캡처 그룹(하위 일치)에 대응하며, 치환값 `\0`은 전체 일치에 대응합니다.
 `pattern` 또는 `replacement` 문자열에서 `\` 문자를 있는 그대로 사용하려면 `\`로 이스케이프하십시오.
 또한 문자열 리터럴에는 추가 이스케이프가 필요하다는 점에도 유의하십시오.
 
@@ -409,28 +409,22 @@ replaceRegexpOne(haystack, pattern, replacement)
 **ISO 날짜를 미국식 포맷으로 변환**
 
 ```sql title=Query
-SELECT DISTINCT
-    EventDate,
-    replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
-FROM test.hits
-LIMIT 7
-FORMAT TabSeparated
+SELECT replaceRegexpOne(d, '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
+FROM values('d String', '2014-03-17', '2014-03-18', '2014-03-19')
 ```
 
 ```response title=Response
-2014-03-17      03/17/2014
-2014-03-18      03/18/2014
-2014-03-19      03/19/2014
-2014-03-20      03/20/2014
-2014-03-21      03/21/2014
-2014-03-22      03/22/2014
-2014-03-23      03/23/2014
+┌─res────────┐
+│ 03/17/2014 │
+│ 03/18/2014 │
+│ 03/19/2014 │
+└────────────┘
 ```
 
 **문자열을 열 번 반복하기**
 
 ```sql title=Query
-SELECT replaceRegexpOne('Hello, World!', '.*', '\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0') AS res
+SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
 ```response title=Response

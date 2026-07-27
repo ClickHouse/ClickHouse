@@ -40,7 +40,7 @@ SocketState getSocketState(int fd)
 
 #if USE_SSL
 
-SocketState getSslSocketState(ssl_st * ssl)
+SocketState getSSLSocketState(ssl_st * ssl)
 {
     /// `SSL_peek` decrypts just enough of the pending records to tell real application data and
     /// harmless post-handshake messages (session tickets, `KeyUpdate`) apart from a `close_notify`.
@@ -116,7 +116,7 @@ SocketState getSocketState(const Poco::Net::StreamSocket & socket)
         if (auto * ssl = secure->ssl())
         {
             ScopedNonBlocking non_blocking(secure->sockfd());
-            return getSslSocketState(ssl);
+            return getSSLSocketState(ssl);
         }
     }
 #endif
@@ -135,9 +135,9 @@ bool isSocketPeerClosed(const Poco::Net::StreamSocket & socket)
 
 #if USE_SSL
 
-bool isSslPeerClosed(ssl_st * ssl)
+bool isSSLPeerClosed(ssl_st * ssl)
 {
-    return getSslSocketState(ssl) == SocketState::Closed;
+    return getSSLSocketState(ssl) == SocketState::Closed;
 }
 
 #endif

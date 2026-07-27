@@ -1,0 +1,487 @@
+---
+sidebarTitle: 'C'
+keywords: ['c', '原生协议', '原生格式', '仅头文件', '嵌入', 'tcp', '块解码']
+slug: /integrations/c
+description: '适用于 ClickHouse 原生协议的仅头文件 C 客户端，专为嵌入场景设计。'
+title: 'ClickHouse C 客户端'
+doc_type: 'reference'
+---
+
+`clickhouse-c` 是一个适用于 ClickHouse [原生协议](/zh/concepts/features/interfaces/tcp)的仅头文件 C 客户端。
+源代码以及各头文件的参考文档位于 [GitHub 仓库](https://github.com/ClickHouse/clickhouse-c)。
+
+与更高层的客户端不同，它是刻意只提供最少功能的。核心头文件通过你提供的 I/O 回调，对 [Native](/zh/reference/formats/Native) 格式的块进行解码和编码。套接字、TLS 上下文、内存分配器、重试以及连接池都由你自己负责管理。因此它足够轻量，适合嵌入：仅包含 `clickhouse.h` 不会引入除 libc 之外的任何链接时依赖项。
+
+<Note>
+  该库仍在积极开发中。v1 可解码 ClickHouse 的核心类型。
+  如有局限或缺失的功能，请通过 [issue tracker](https://github.com/ClickHouse/clickhouse-c/issues) 反馈。
+  但也请理解，这个库按设计本就有意不提供某些功能。
+</Note>
+
+<div id="non-goals">
+  ## 该库不负责什么
+</div>
+
+以下这些是刻意不纳入范围的内容。请在你的应用程序中，或借助配套库来处理：
+
+* HTTP 协议。直接封装 libcurl 以使用 [HTTP 接口](/zh/concepts/features/interfaces/http)。
+* DNS 解析、端点故障转移、连接池、重试和退避。
+* TLS 上下文生命周期。OpenSSL 后端使用的是你已经建立连接的 `SSL`。
+* 线程处理。每个 `chc_client` 在设计上都是单线程的。
+* 库内部的 async I/O。阻塞客户端会同步调用 `chc_io.read`。如果你需要
+  自身不执行任何 I/O 的事件循环客户端，请使用 [ioless client](#async-client)。
+
+<div id="headers">
+  ## 库的组织方式
+</div>
+
+`clickhouse-c` 以一组扁平的头文件形式提供。每个头文件同时包含声明和实现，
+并由一个哨兵宏保护。根据构建需要选择相应的头文件。
+
+| Header                                                                                                           | Purpose                                                                   | Link flags       |
+| ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------- |
+| [`clickhouse.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse.md)                         | Core：types、errors、allocator、I/O vtable、type-name parser、块 读取器 和 写入器 | —                |
+| [`clickhouse-client.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-client.md)           | TCP packet loop：Hello、Query、Data、EndOfStream、Exception、Progress、Pong      | —                |
+| [`clickhouse-async.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-async.md)             | Ioless client：同一套 packet loop 由调用方提交字节驱动，不使用 socket                       | —                |
+| [`clickhouse-compression.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-compression.md) | compressed frame 布局、CityHash128、codec dispatch，以及 `LZ4`/`ZSTD` adapters   | `-llz4 -lzstd`   |
+| [`clickhouse-posix-io.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-posix-io.md)       | 基于阻塞式 `read(2)`/`write(2)` 的 I/O 后端实现                                  | —                |
+| [`clickhouse-openssl.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-openssl.md)         | 基于 `SSL_read`/`SSL_write` 的 I/O 后端实现                                   | `-lssl -lcrypto` |
+
+<div id="server-setting">
+  ## 必需的服务器设置
+</div>
+
+解码器从传输数据中读取可打印的类型名称，因此它们必须编码为文本。ClickHouse
+默认会将它们以文本形式写出，但请在查询中显式固定此设置，以免将其设为二进制的 server 或 session profile
+导致解码失败：
+
+```plaintext
+output_format_native_encode_types_in_binary_format = 0
+```
+
+<div id="adding-to-project">
+  ## 将其添加到你的项目中
+</div>
+
+无需安装任何包，因此你应通过 git 子模块或直接复制的方式，将这些头文件纳入你的源码树中。
+恰好只能有一个翻译单元定义 `CHC_IMPLEMENTATION` 并包含其实现；
+其他所有单元都只包含相同的头文件，仅用于声明。
+
+```c
+/* clickhouse_impl.c */
+#define CHC_IMPLEMENTATION
+#include "clickhouse.h"
+#include "clickhouse-posix-io.h"
+#include "clickhouse-client.h"
+#include "clickhouse-compression.h"
+```
+
+```c
+/* every other TU */
+#include "clickhouse.h"
+#include "clickhouse-client.h"
+```
+
+在包含 `clickhouse.h` 之前，定义 `CHC_PROVIDE_STDLIB_ALLOC` 以使用 `chc_alloc_stdlib`。
+为 `clickhouse-compression.h` 定义 `CHC_NO_LZ4` 或 `CHC_NO_ZSTD`，以去除对 lz4/zstd 的依赖项。
+
+<div id="connecting-over-tcp">
+  ## 通过 TCP 连接
+</div>
+
+要与 ClickHouse 服务器通信，你需要自行建立套接字，将其封装到 `chc_io` 中，再将其传给
+`chc_client_init`；它会同步执行 Hello 握手。该库不负责 DNS、
+故障转移、重连或连接池管理——这些都由调用方处理。
+
+```c
+int fd = socket(AF_INET, SOCK_STREAM, 0);
+int one = 1;
+setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+
+struct sockaddr_in sa = {};
+sa.sin_family      = AF_INET;
+sa.sin_port        = htons(9000);
+sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+connect(fd, (struct sockaddr *) &sa, sizeof sa);
+
+chc_alloc al = chc_alloc_stdlib();
+chc_posix_io state;
+chc_io io;
+chc_posix_io_init(&state, &io, fd, NULL, NULL);
+
+chc_client *client = NULL;
+chc_client_opts opts = {
+    .user     = "default",
+    .password = "",
+    .database = "default",
+};
+chc_err err = {};
+if (chc_client_init(&client, &opts, &al, &io, &err) != CHC_OK) {
+    fprintf(stderr, "connect: %s\n", err.msg);
+    chc_client_close(client);   /* safe to call on the NULL-on-failure handle */
+    return 1;
+}
+
+const chc_server_info *info = chc_client_server_info(client);
+printf("connected to %s %llu.%llu.%llu\n", info->display_name,
+       (unsigned long long) info->version_major,
+       (unsigned long long) info->version_minor,
+       (unsigned long long) info->version_patch);
+```
+
+每个 `chc_client` 都是单线程的，只封装一个连接。该库会同步调用 `chc_io`
+回调；这些回调在底层具体执行什么 (`epoll`、`io_uring`、
+`WaitLatchOrSocket`) ，由你决定。
+
+<div id="running-a-query">
+  ## 运行查询
+</div>
+
+发送查询，然后持续读取数据包，直到 `CHC_PKT_END_OF_STREAM`。使用 `chc_client_send_query_ex` 来
+附带[所需的服务器级设置](#server-setting)；而不带扩展参数的 `chc_client_send_query` 会发送一个
+空的 settings 列表，并继承服务器的默认设置。
+
+```c
+chc_query_setting settings[] = {
+    { .name = "output_format_native_encode_types_in_binary_format", .value = "0" },
+};
+chc_query_opts qopts = { .settings = settings, .n_settings = 1 };
+
+const char *sql = "SELECT number, toString(number * number) FROM numbers(5)";
+if (chc_client_send_query_ex(client, sql, strlen(sql), &qopts, &err) != CHC_OK) {
+    fprintf(stderr, "query: %s\n", err.msg);
+    return 1;
+}
+
+for (;;) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        break;
+    }
+
+    if (pkt.kind == CHC_PKT_DATA) {
+        for (size_t r = 0; r < chc_block_n_rows(pkt.block); r++)
+            for (size_t c = 0; c < chc_block_n_columns(pkt.block); c++)
+                print_value(chc_block_column_type(pkt.block, c),
+                            chc_block_column(pkt.block, c), r);
+    } else if (pkt.kind == CHC_PKT_EXCEPTION) {
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    }
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+```
+
+服务器异常会以 `CHC_PKT_EXCEPTION` 数据包的形式到达，而不是作为
+`chc_client_recv_packet` 的非 OK 返回值。只有传输层故障才会返回非 OK。结果中的第一个 `CHC_PKT_DATA`
+数据包是一个头部块，用零行来描述 schema；后面才是数据块。
+`chc_packet_clear` 会释放该数据包中的块或异常——如果要改为自行接管其所有权，请先将数据包上的这些字段设为 NULL。
+
+<div id="reading-column-data">
+  ## 读取列数据
+</div>
+
+块采用列式存储。每一列都有一个由 `chc_column_layout` 返回的物理布局，
+你需要根据它进行分派处理；其声明类型由 `chc_block_column_type` 给出。复合布局可以嵌套，因此
+读取 `Nullable(Array(String))` 意味着要先解包 Nullable，遍历数组偏移量，然后
+切分字符串数据。
+
+| Layout                    | Accessors                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `CHC_COL_FIXED`           | `chc_column_fixed_data(c, &elem_size)` — `n_rows * elem_size` 个小端序字节                                |
+| `CHC_COL_STRING`          | `chc_column_string_data(c)`, `chc_column_string_offsets(c)` — `offsets[i]` 是第 `i` 行的独占结束位置，采用宿主机字节序；第 0 行从 0 开始 |
+| `CHC_COL_NULLABLE`        | `chc_column_null_map(c)` (每行一个字节，1 = `NULL`) ，`chc_column_nullable_inner(c)`                                    |
+| `CHC_COL_ARRAY`           | `chc_column_array_offsets(c)` (累计结束位置) ，`chc_column_array_values(c)`；`Map` 解码为 `Array(Tuple(K, V))`             |
+| `CHC_COL_TUPLE`           | `chc_column_tuple_arity(c)`，`chc_column_tuple_child(c, i)` — 每个子项的行数都相同                                         |
+| `CHC_COL_LOW_CARDINALITY` | `chc_column_lc_key_size(c)` (1/2/4/8) ，`chc_column_lc_keys(c)`，`chc_column_lc_dict(c)`；字典槽位 0 为默认值              |
+
+下面是一个用于普通数值型、字符串和 Nullable 列的读取器：
+
+```c
+void print_value(const chc_type *t, const chc_column *c, size_t row)
+{
+    if (chc_column_layout(c) == CHC_COL_NULLABLE) {
+        if (chc_column_null_map(c)[row]) { fputs("\\N", stdout); return; }
+        print_value(chc_type_child(t, 0), chc_column_nullable_inner(c), row);
+        return;
+    }
+
+    switch (chc_column_layout(c)) {
+    case CHC_COL_FIXED: {
+        /* fixed_data is a raw little-endian byte slab. memcpy into a typed
+           local to avoid unaligned loads and strict-aliasing UB, then
+           byte-swap on big-endian hosts. */
+        size_t es;
+        const uint8_t *p = chc_column_fixed_data(c, &es) + row * es;
+        switch (chc_type_kind(t)) {
+        case CHC_UINT64: { uint64_t v; memcpy(&v, p, sizeof v); printf("%" PRIu64, v); break; }
+        case CHC_INT32:  { int32_t  v; memcpy(&v, p, sizeof v); printf("%" PRId32, v); break; }
+        case CHC_FLOAT64: { double  v; memcpy(&v, p, sizeof v); printf("%g", v); break; }
+        /* ... remaining numeric kinds ... */
+        default: break;
+        }
+        break;
+    }
+    case CHC_COL_STRING: {
+        const uint8_t  *bytes   = chc_column_string_data(c);
+        const uint64_t *offsets = chc_column_string_offsets(c);
+        uint64_t start = row == 0 ? 0 : offsets[row - 1];
+        fwrite(bytes + start, 1, (size_t) (offsets[row] - start), stdout);
+        break;
+    }
+    default: break;
+    }
+}
+```
+
+`CHC_COL_FIXED` 数据在传输格式中采用小端序；在大端序主机上，你需要自行对多字节
+整数进行字节交换。偏移量和 LowCardinality 键在解码时已转换为主机字节序。
+UUIDs 由两个采用小端序的 `UInt64` 半部组成，IPv4 是一个 4 字节的小端序整数，而 IPv6 采用
+网络字节序。`DateTime64` 的 ticks 是 UTC —— 类型中的 timezone 仅作为元数据。
+
+从不受信任的 peer 摄取数据时，请在遍历每一列之前先调用 `chc_column_validate`。
+`chc_block_read` 不会验证跨字段不变量，例如数组偏移量和
+LowCardinality 键；否则，伪造的块可能会读取越过内部列边界的数据。
+
+<div id="inserting-data">
+  ## 插入数据
+</div>
+
+使用 `chc_build_*` 辅助函数构建列，将其追加到 `chc_block_builder`，然后交给
+`chc_client_send_data`。该构建器使用由调用方提供的存储空间，只记录指针而不进行
+复制，因此这些存储空间、列树、类型、名称和 slab 的生命周期都必须长于发送过程。一次 INSERT 会发送
+查询，等待服务器的头部块，发送一个或多个数据块，然后再发送一个空
+块以终止该流。
+
+```c
+const char *sql = "INSERT INTO greetings (id, message) VALUES";
+chc_client_send_query(client, sql, strlen(sql), "", 0, &err);
+
+/* Wait for the server's header block (schema, 0 rows). */
+bool got_header = false;
+while (!got_header) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        return 1;
+    }
+    chc_packet_kind kind = pkt.kind;
+    if (kind == CHC_PKT_DATA) got_header = true;
+    else if (kind == CHC_PKT_EXCEPTION && pkt.exception)
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    chc_packet_clear(client, &pkt);
+    if (kind == CHC_PKT_EXCEPTION || kind == CHC_PKT_END_OF_STREAM) return 1;  /* no header coming */
+}
+
+chc_block_col columns[2];
+chc_block_builder bb;
+chc_block_builder_init(&bb, columns);
+
+uint64_t ids[3] = { 1, 2, 3 };
+chc_type *u64 = NULL;
+chc_type_parse("UInt64", 6, &al, &u64, &err);
+chc_column id = chc_build_fixed(ids, sizeof ids[0], 3);
+chc_block_builder_append(&bb, "id", 2, u64, &id);
+
+/* String columns: cumulative exclusive end offsets + a packed byte slab. */
+uint64_t offsets[3] = { 5, 11, 20 };   /* "hello", "buenas", "goedendag" */
+const uint8_t bytes[] = "hellobuenasgoedendag";
+chc_type *string = NULL;
+chc_type_parse("String", 6, &al, &string, &err);
+chc_column message = chc_build_string(offsets, bytes, 3);
+chc_block_builder_append(&bb, "message", 7, string, &message);
+
+chc_client_send_data(client, &bb, &err);  /* the populated block */
+chc_client_send_data(client, NULL, &err); /* empty block ends the INSERT */
+
+/* Drain to EndOfStream. */
+for (;;) {
+    chc_packet pkt = {};
+    chc_client_recv_packet(client, &pkt, &err);
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+
+chc_type_destroy(u64, &al);
+chc_type_destroy(string, &al);
+```
+
+`chc_build_fixed` 接收 `n_rows * elem_size` 个按小端序排列的字节；`chc_build_string` 接收打包 slab 上按主机字节序排列的累计
+末尾偏移量 (不含结束位置) 。helpers 按值返回列节点。按类型要求嵌套它们：例如，将固定长度或字符串节点传给
+`chc_build_nullable`，再将结果传给 `chc_build_array`，然后追加数组根节点。Tuple、
+LowCardinality、Map 和 Geo 列使用相同的树结构：Map 是 `Array(Tuple(K, V))`。
+
+一个块中的所有列都必须具有相同的顶层行数。写入器会根据
+已解析的 ClickHouse 类型检查这棵树，但调用方必须为每次追加预先分配好 `chc_block_col` 的存储空间。
+你也可以将从 `chc_block_column` 解码出的列直接追加回去以重新编码，或者调用
+`chc_block_write_cols` 并传入 `chc_block_col` 数组来跳过 builder。通过
+`chc_client_send_data` 而不是底层的 `chc_block_write` 传递 builder，可让 client 根据协商好的修订版本设置块
+选项并应用压缩。
+
+<div id="compression">
+  ## 压缩
+</div>
+
+在 `chc_client_opts` 中传入压缩模式和已初始化的 codec。客户端会解压传入的
+Data packets，并压缩传出的数据包。压缩请求头提供了 `LZ4` 和 `ZSTD` 适配器；
+每次初始化只会填充各自的 slots，因此请同时调用两者以支持任一种模式。
+
+```c
+#include "clickhouse-compression.h"
+
+chc_codec codec = {};
+chc_lz4_codec_init(&codec);
+chc_zstd_codec_init(&codec);
+
+chc_client_opts opts = {
+    .user        = "default",
+    .compression = CHC_COMP_LZ4,   /* or CHC_COMP_ZSTD */
+    .codec       = &codec,
+};
+```
+
+要使用项目未提供绑定的压缩库，请自行实现一个 `chc_codec`；
+vtable 在 `clickhouse-compression.h` 中声明。
+
+<div id="tls">
+  ## TLS
+</div>
+
+`clickhouse-openssl.h` 提供了一个基于 `SSL_read`/`SSL_write` 的 `chc_io` 后端实现。OpenSSL 需要由你自行驱动：
+该库不会创建 `SSL_CTX`、验证证书、设置 SNI，也不会调用 `SSL_connect` /
+`SSL_shutdown`。等到 `chc_io.read` 被调用时，握手必须已经完成。
+
+```c
+#include "clickhouse-openssl.h"
+
+SSL *ssl = /* connected, handshake complete */;
+chc_openssl_io state;
+chc_io io;
+chc_openssl_io_init(&state, &io, ssl, NULL, NULL);
+/* hand &io to chc_client_init, same as the POSIX backend */
+```
+
+[ClickHouse Cloud](/zh/products/cloud/getting-started/intro) 和其他启用了 TLS 的部署都在
+9440 端口上使用原生协议。两个后端都支持可选的 `check_cancel` 回调，该回调会在两次读取之间轮询；同时还支持通过 `chc_openssl_io_set_deadline` / `chc_posix_io_set_deadline` 设置
+读取截止时间。
+
+<div id="async-client">
+  ## Ioless (异步) 客户端
+</div>
+
+`clickhouse-async.h` 是面向事件循环的 TCP 客户端的 ioless 变体。它完全不会接触
+套接字：你只需提交已接收的字节，并取出它要发送的字节，自己驱动 `epoll`、
+`io_uring` 或 `WaitLatchOrSocket`。它的选项、数据包类型以及块构建器都与
+阻塞式客户端相同。
+
+`chc_async_client_init` 不执行任何 I/O，也不会阻塞。后续的握手会以可恢复的
+状态机方式运行，每次发送和接收也都是如此。当解析过程超出你已提交的字节时，
+调用会返回 `CHC_WOULD_BLOCK`，而不是阻塞——提交更多入站字节后再次调用，
+解析器会从块的中间继续解析。
+
+```c
+#include "clickhouse-async.h"
+
+chc_async_client *c = NULL;
+chc_client_opts opts = { .user = "default" };
+chc_async_client_init(&c, &opts, &al, &err);
+
+for (;;) {
+    int rc = chc_async_handshake(c, &err);
+    if (rc == CHC_OK) break;
+    if (rc != CHC_WOULD_BLOCK) break;   /* hard error */
+    pump(c);   /* drain pending_out to the socket; feed received bytes to chc_async_submit */
+}
+
+chc_async_send_query(c, sql, strlen(sql), "", 0, &err);
+
+for (;;) {
+    chc_packet pkt = {};
+    int rc = chc_async_recv_packet(c, &pkt, &err);
+    if (rc == CHC_WOULD_BLOCK) { pump(c); continue; }
+    if (rc != CHC_OK) break;
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    if (pkt.kind == CHC_PKT_DATA && pkt.block) { /* read columns as above */ }
+    chc_async_packet_clear(c, &pkt);
+    if (done) break;
+}
+```
+
+你的 `pump` 负责双向传输字节。对于出站方向，`chc_async_pending_out` 会返回一个指针和长度，
+指向队列中待发送的字节；套接字成功发送其中一部分后，调用 `chc_async_consume_out` 并传入该数量，
+支持部分写入。对于入站方向，将从套接字读取的数据交给 `chc_async_submit`。发送操作永不阻塞，也不会产生
+背压，因此要留意待发送数据的长度，并在其增长过大时停止继续发送。
+
+一个可用的 liburing 驱动实现位于
+[`test/test_async_uring.c`](https://github.com/ClickHouse/clickhouse-c/blob/main/test/test_async_uring.c)。
+
+<div id="allocator">
+  ## 内存与分配器
+</div>
+
+每个入口点都会接收一个 `chc_alloc` vtable，因此内存分配遵循宿主环境所采用的机制。
+
+```c
+typedef struct chc_alloc {
+    void *ud;
+    void *(*alloc)  (void *ud, size_t bytes);
+    void *(*realloc)(void *ud, void *p, size_t old_bytes, size_t new_bytes);
+    void  (*free)   (void *ud, void *p, size_t bytes);
+} chc_alloc;
+```
+
+在包含 `clickhouse.h` 之前定义 `CHC_PROVIDE_STDLIB_ALLOC`，并调用 `chc_alloc_stdlib()`，以使用
+由标准 `malloc` 支持的分配器。
+
+<div id="errors">
+  ## 错误和服务器异常
+</div>
+
+函数会返回 `CHC_OK` (0) 或非零的 `CHC_ERR_*` 代码。该代码即返回值；由调用方在栈上分配的 `chc_err` 负责携带人类可读的消息。该库绝不会在堆上分配错误对象。
+
+```c
+typedef struct chc_err {
+    int  server_code;           /* set when the return code is CHC_ERR_SERVER */
+    char msg[CHC_ERR_MSG_LEN];  /* NUL-terminated, default 256 bytes */
+    char server_name[64];       /* ClickHouse exception class, if SERVER */
+} chc_err;
+```
+
+服务器端查询错误并不属于 `chc_err` 故障。它们会以
+`CHC_PKT_EXCEPTION` 的形式通过 packet stream 传来，并携带 server 的 `code`、`display_text` 和 `stack_trace`。请仅将
+`chc_err` 检查用于传输、protocol 和解码故障。
+
+<div id="supported-types">
+  ## 支持的数据类型
+</div>
+
+块读取器可解码以下类型：
+
+* `Int8`–`Int256`, `UInt8`–`UInt256`
+* `Float32`, `Float64`, `BFloat16`
+* `Bool`
+* `Decimal32`, `Decimal64`, `Decimal128`, `Decimal256`
+* `Date`, `Date32`, `DateTime`, `DateTime64`, `Time`, `Time64`
+* `String`, `FixedString(N)`
+* `UUID`, `IPv4`, `IPv6`
+* `Enum8`, `Enum16`
+* `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`
+* `LowCardinality(T)`
+* `Interval`
+* `QBit(...)`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`
+* `SimpleAggregateFunction(f, T)`，解码后为其内部的 `T`
+* `JSON` 和 `Object('json')`，在字符串序列化下作为 `String` 列 (见下文)
+
+`JSON` 和 `Object('json')` 在字符串序列化下解码；请在查询中设置
+`output_format_native_write_json_as_string=1`。每个受支持的行都会以
+`CHC_COL_STRING` 列中的一个 JSON 文档形式传入。使用 `chc_build_string` 构建相同形态；
+写入器会输出已解析类型所需的前缀。
+
+`Variant`、`Dynamic`、`AggregateFunction` 目前尚不支持解码，并会返回 `CHC_ERR_TYPE`；
+可作为回退方案，在服务端将它们强制转换为 `String`。

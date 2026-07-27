@@ -42,15 +42,49 @@ recover_leaked_table()
 }
 trap recover_leaked_table EXIT
 
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${TABLE}"
+# A plain `DROP TABLE IF EXISTS` would silently do nothing on a table leaked in the
+# permanently detached state by a previous run that was killed before its `EXIT` trap ran,
+# while the leftover name would still block the `CREATE TABLE` below — so recover at startup
+# the same way the rollback tests' `cleanup` does.
+recover_leaked_table
 
 # --- Simulate a previous failed attempt that leaked a permanently detached table. ---
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${TABLE} (x UInt32) ENGINE = MergeTree ORDER BY x"
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${TABLE} VALUES (42)"
-DATA_PATH=$($CLICKHOUSE_CLIENT -q "
-    SELECT data_paths[1] FROM system.tables
-    WHERE database = currentDatabase() AND name = '${TABLE}'")
 $CLICKHOUSE_CLIENT -q "DETACH TABLE ${TABLE} PERMANENTLY"
+
+# The detach client call alone is not a sufficient gate: if it fails (e.g. the connection is
+# lost because a stress-test restart lands on it), the script would keep running under plain
+# `bash` and mutate a table directory that may still be attached. Verify the detach
+# postcondition and fail fast before touching anything in the table's data directory, the
+# same way the four rollback tests do.
+DETACHED=$($CLICKHOUSE_CLIENT -q "
+    SELECT (SELECT count() FROM system.tables
+            WHERE database = currentDatabase() AND name = '${TABLE}') = 0
+       AND (SELECT count() FROM system.detached_tables
+            WHERE database = currentDatabase() AND table = '${TABLE}' AND is_permanently) = 1
+")
+if [ "${DETACHED}" != "1" ]; then
+    echo "FAIL: table ${TABLE} is not detached permanently, refusing to modify its data directory"
+    exit 1
+fi
+
+# Derive the data path only after the detach postcondition holds — from the detached table's
+# own `uuid`, the same way `recover_leaked_table` does — and verify the source part exists
+# before the out-of-band copy. The detach gate alone is not enough: if a stress-test restart
+# had landed on the earlier `INSERT` (no part to copy) or on a `SELECT` reading `data_paths`
+# from `system.tables` before the detach (empty path), the `cp`/`printf` below would fail
+# silently under plain `bash` and the test would print the reference output without ever
+# fabricating the corrupted `txn_version.txt` it is supposed to recover from.
+DETACHED_UUID=$($CLICKHOUSE_CLIENT -q "
+    SELECT uuid FROM system.detached_tables
+    WHERE database = currentDatabase() AND table = '${TABLE}'")
+DISK_PATH=$($CLICKHOUSE_CLIENT -q "SELECT path FROM system.disks WHERE name = 'default'")
+DATA_PATH="${DISK_PATH}store/${DETACHED_UUID:0:3}/${DETACHED_UUID}/"
+if [ -z "${DETACHED_UUID}" ] || [ -z "${DISK_PATH}" ] || [ ! -d "${DATA_PATH}all_1_1_0" ]; then
+    echo "FAIL: source part ${DATA_PATH}all_1_1_0 is missing, refusing to fabricate parts"
+    exit 1
+fi
 
 # Leave a fabricated part directory with a corrupted `txn_version.txt` behind, exactly the kind
 # of leftover that could make a plain `ATTACH TABLE` throw.

@@ -19,39 +19,35 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## التحكم في الوصول عبر IP
 </div>
 
-تلتزم Query API endpoints بقائمة السماح لعناوين IP على مستوى مفتاح API. وعلى غرار SQL Console، تمرِّر Query API endpoints الطلبات من داخل البنية التحتية لـ ClickHouse، لذا لا تنطبق إعدادات قائمة السماح لعناوين IP على مستوى الخدمة.
+تلتزم Query واجهة برمجة تطبيقات endpoints بقائمة السماح لعناوين IP على مستوى مفتاح واجهة برمجة تطبيقات. وعلى غرار SQL Console، تمرِّر Query واجهة برمجة تطبيقات endpoints الطلبات من داخل البنية التحتية لـ ClickHouse، لذا لا تنطبق إعدادات قائمة السماح لعناوين IP على مستوى الخدمة.
 
-لتقييد العملاء الذين يمكنهم استدعاء Query API endpoints الخاصة بك:
+لتقييد العملاء الذين يمكنهم استدعاء Query واجهة برمجة تطبيقات endpoints الخاصة بك:
 
 <Steps>
-  <Step>
-    #### افتح إعدادات مفتاح API
+  <Step title="افتح إعدادات مفتاح واجهة برمجة تطبيقات" id="open-settings">
+    1. انتقل إلى ClickHouse Cloud Console → **Organization** → **واجهة برمجة تطبيقات Keys**
 
-    1. انتقل إلى ClickHouse Cloud Console → **Organization** → **API Keys**
+    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="مفاتيح واجهة برمجة تطبيقات" />
 
-    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="مفاتيح API" />
-
-    2. انقر على **Edit** بجوار مفتاح API المستخدم لـ Query API endpoints
+    2. انقر على **Edit** بجوار مفتاح واجهة برمجة تطبيقات المستخدم لـ Query واجهة برمجة تطبيقات endpoints
 
     <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="تحرير" />
   </Step>
 
-  <Step>
-    #### أضف عناوين IP المسموح بها
-
-    1. في قسم **Allow access to this API Key**، حدِّد **Specific locations**
+  <Step title="أضف عناوين IP المسموح بها" id="add-ips">
+    1. في قسم **Allow access to this واجهة برمجة تطبيقات Key**، حدِّد **Specific locations**
     2. أدخل عناوين IP أو نطاقات CIDR (على سبيل المثال، `203.0.113.1` أو `203.0.113.0/24`)
     3. أضف عدة إدخالات حسب الحاجة
 
     <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="مواقع محددة" />
 
-    يتطلب إنشاء Query API endpoints دور Admin في Console ومفتاح API يملك الأذونات المناسبة.
+    يتطلب إنشاء Query واجهة برمجة تطبيقات endpoints دور Admin في Console ومفتاح واجهة برمجة تطبيقات يملك الأذونات المناسبة.
   </Step>
 </Steps>
 
 <Tip>
   **دليل**
 
-  راجع [دليل Query API endpoints](/ar/products/cloud/guides/sql-console/query-endpoints) للحصول على إرشادات حول كيفية إعداد
-  Query API endpoints في بضع خطوات سهلة
+  راجع [دليل Query واجهة برمجة تطبيقات endpoints](/ar/products/cloud/guides/sql-console/query-endpoints) للحصول على إرشادات حول كيفية إعداد
+  Query واجهة برمجة تطبيقات endpoints في بضع خطوات سهلة
 </Tip>
