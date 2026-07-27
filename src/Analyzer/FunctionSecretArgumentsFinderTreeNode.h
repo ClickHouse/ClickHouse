@@ -75,7 +75,6 @@ public:
                 *res = applyVisitor(FieldVisitorToString(), literal->getValue());
             return true;
         }
-        String getText() const override { return argument->toAST()->formatForLogging(); }
     private:
         const IQueryTreeNode * argument = nullptr;
     };

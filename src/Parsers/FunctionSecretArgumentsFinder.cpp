@@ -1000,21 +1000,17 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                     /// A non-string scalar override, e.g. `use_environment_credentials = 1`.
                     replacement += literal_text;
                 }
-                else if (key == "url")
-                {
-                    /// A url built from an expression can embed credentials in its pieces, which we
-                    /// cannot evaluate here; hide it rather than leak. This counts as a secret:
-                    /// otherwise a replacement whose only hidden part is this value would be discarded
-                    /// below and the original expression would be formatted verbatim.
-                    replacement += "'[HIDDEN]'";
-                    has_secret = true;
-                }
                 else
                 {
-                    /// A non-secret named value that is an expression (e.g. `filename = concat(...)`),
-                    /// which the backup named-collection path accepts. It carries no credential, so keep
-                    /// it visible (nested secrets, if any, are hidden by the formatter).
-                    replacement += key_value->arguments->at(1)->getText();
+                    /// Any remaining value is an expression, not a plain literal or identifier: a `url`
+                    /// built from pieces, or a nested `headers(...)` / `extra_credentials(...)` map or
+                    /// other function whose formatted text would carry its secrets verbatim (the parser
+                    /// evaluates it as a constant, so it is not masked as a nested map here). We cannot
+                    /// evaluate it, so hide it rather than leak. This counts as a secret: otherwise a
+                    /// replacement whose only hidden part is this value would be discarded below and the
+                    /// original expression formatted verbatim.
+                    replacement += "'[HIDDEN]'";
+                    has_secret = true;
                 }
             }
             else

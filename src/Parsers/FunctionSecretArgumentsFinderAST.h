@@ -56,7 +56,6 @@ public:
                 *res = applyVisitor(FieldVisitorToString(), literal->value);
             return true;
         }
-        String getText() const override { return argument->formatForLogging(); }
     private:
         const IAST * argument = nullptr;
     };

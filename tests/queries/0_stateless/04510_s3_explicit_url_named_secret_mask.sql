@@ -240,10 +240,13 @@ CREATE DATABASE db_04510_ncorder ENGINE = Backup('', S3(nc_dbord_missing,
 CREATE DATABASE db_04510_ncenv ENGINE = Backup('', S3(nc_dbenv_missing,
                  secret_access_key = 'SEKRIT_DBENVKEY', use_environment_credentials = 1)); -- { serverError BAD_ARGUMENTS }
 
--- A non-secret named value built from a constant expression (e.g. filename) is accepted by the backup
--- named-collection path and carries no credential, so it stays visible; only url would fail closed.
+-- A non-secret named value that is an expression (a computed filename, or a nested headers() /
+-- extra_credentials() map) is accepted by the backup named-collection path, which the parser evaluates
+-- as a constant. The reconstructor cannot classify it and its formatted text would carry any nested
+-- secret verbatim, so it fails closed to [HIDDEN] rather than leak.
 CREATE DATABASE db_04510_ncexpr ENGINE = Backup('', S3(nc_dbexpr_missing,
-                 secret_access_key = 'SEKRIT_DBEXPRKEY', filename = concat('back', 'up'))); -- { serverError BAD_ARGUMENTS }
+                 secret_access_key = 'SEKRIT_DBEXPRKEY',
+                 filename = headers('Authorization' = 'SEKRIT_NESTEDHDR'))); -- { serverError BAD_ARGUMENTS }
 
 -- The reconstructor masks everything after the url on an invalid positional count too.
 CREATE DATABASE db_04510_mixed ENGINE = Backup('', S3('url_dbmixed',

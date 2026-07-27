@@ -28,9 +28,6 @@ public:
         /// The exact literal text of any scalar literal (`1`, `true`, `1.5`), with strings quoted.
         /// Lets a reconstructor keep non-string values like `use_environment_credentials = 1` visible.
         virtual bool tryGetLiteralText(String * res) const = 0;
-        /// The SQL text of the argument, whatever its kind (literal, identifier or expression). Lets a
-        /// reconstructor keep a non-secret named value like `filename = concat('back', 'up')` visible.
-        virtual String getText() const = 0;
     };
     class Arguments
     {
