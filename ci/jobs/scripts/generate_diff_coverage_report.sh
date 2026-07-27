@@ -30,9 +30,6 @@ if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
 FIRST_BASE_COMMIT="${TEST_COMMIT}"
-# Record which commit this baseline came from so line-number remapping
-# in print_newly_covered_code.py can compute git diffs against extras.
-echo "${TEST_COMMIT}" > base_llvm_coverage.sha
 FOUND=1
 break
 fi
@@ -43,11 +40,9 @@ if [ $FOUND -eq 0 ]; then
   exit 1
 fi
 
-# Note: additional older master baselines for cross-validation in the
-# newly-covered analysis are downloaded on demand in llvm_coverage_job.py,
-# only when the newly-covered analysis will actually run (tests-only PR,
-# binary unchanged). Doing it here would fetch ~530 MB per baseline even for
-# PRs where the analysis is suppressed.
+# Note: base_llvm_coverage_{2..6}.info (extra older master baselines) are not
+# downloaded anywhere. The slot loop below is a no-op unless something else
+# populates those files.
 
 export CURRENT_COMMIT
 export BASE_COMMIT
@@ -110,12 +105,11 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --quiet \
   -o baseline.changed.info
 
-# Extract the same changed-file slice from each extra master baseline that was
-# downloaded by llvm_coverage_job.py for LBC cross-validation. These small
-# files (one per changed C/C++ file, same patterns as baseline.changed.info)
-# are passed to print_uncovered_code.py which intersects them to avoid
-# false-positive LBC alerts caused by lines that only occasionally fire in
-# background/async code.
+# If an extra older master baseline exists in slots 2-6, extract the same
+# changed-file slice from it too, for print_uncovered_code.py's LBC
+# cross-validation (intersecting them avoids false-positive LBC alerts from
+# lines that only occasionally fire in background/async code). Nothing
+# currently downloads these files, so this loop is presently a no-op.
 for slot in 2 3 4 5 6; do
   src="base_llvm_coverage_${slot}.info"
   if [ -f "$src" ] && [ -s "$src" ]; then

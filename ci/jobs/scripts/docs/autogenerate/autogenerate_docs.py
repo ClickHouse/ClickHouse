@@ -1046,7 +1046,8 @@ def _component_imports_for_page(preamble, markdown, fallback_imports=()):
     seen_symbols = set()
     candidates = [
         (match.group("symbol"), match.group(0).strip())
-        for match in IMPORT_RE.finditer(preamble)
+        for regex in (IMPORT_RE, NAMED_IMPORT_RE)
+        for match in regex.finditer(preamble)
     ]
     for import_line in fallback_imports:
         match = IMPORT_RE.fullmatch(import_line.strip())

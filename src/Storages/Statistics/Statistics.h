@@ -219,10 +219,5 @@ private:
 void removeImplicitStatistics(ColumnsDescription & columns);
 void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
 
-/// Validates a value of the `auto_statistics_types` MergeTree setting and rejects deprecated types
-/// (currently `minmax`). This must be called only on the setting-change path (CREATE / ALTER ...
-/// MODIFY SETTING), never when loading existing metadata, so that tables which still carry `minmax`
-/// in the setting keep loading and remain alterable.
-void validateAutoStatisticsTypes(const String & statistics_types_str);
 
 }

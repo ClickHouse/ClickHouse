@@ -7769,7 +7769,7 @@ Parts virtually divided into segments to be distributed between replicas for par
 Build local plan for local replica
 )", 0) \
     DECLARE(Bool, parallel_replicas_plan_based, false, R"(
-Express the parallel replicas local/remote boundary as a plan transformation. The planner builds a plain local plan; a split step is then inserted above the reading step and replaced with a `UNION` of a local read and a remote read of the part of the plan below the split step, so that fragment runs on the replicas while the rest runs on the coordinator. Experimental, takes precedence over `parallel_replicas_local_plan`.
+Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
 )", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_prefer_local_replica, true, R"(
 When enabled (default), the local replica is always included in the set of replicas used for parallel reading.
