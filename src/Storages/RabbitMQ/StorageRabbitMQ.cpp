@@ -39,6 +39,8 @@
 
 #include <base/range.h>
 
+#include <utility>
+
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
@@ -1181,7 +1183,12 @@ void StorageRabbitMQ::threadFunc()
             const bool rabbit_connected = connection->isConnected() || connection->reconnect();
             const UInt64 cycle_epoch = stream_control.currentCancelEpoch();
             const bool deps_ready = num_views == 0 || hasDependencies(table_id);
-            const bool run_cycle = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch);
+            /// True only when this cycle is the one out-of-order cycle a `SYSTEM REFRESH` grants to a
+            /// stopped table. Sampled inside `claimCycle` together with the claim itself, so a `STOP`
+            /// racing in right after an ordinary cycle was admitted does not turn it into a refresh cycle.
+            bool claimed_blocked_refresh = false;
+            const bool run_cycle
+                = rabbit_connected && deps_ready && stream_control.claimCycle(last_seen_refresh_epoch, &claimed_blocked_refresh);
 
             if (num_views && run_cycle)
             {
@@ -1195,10 +1202,11 @@ void StorageRabbitMQ::threadFunc()
 
                     LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
 
-                    /// A cycle that runs while blocked is a claimed REFRESH permit: have the source drive
-                    /// the AMQP loop itself so the permit is not wasted (see RabbitMQSource). A normal cycle
-                    /// keeps the fast empty return and lets the looping task deliver.
-                    const bool drive_loop_on_worker = stream_control.isBlocked();
+                    /// The claimed blocked-REFRESH permit is spent on this cycle: have the source drive the
+                    /// AMQP loop itself so the permit is not wasted (see RabbitMQSource). Every following
+                    /// iteration is an ordinary cycle (the loop below breaks while blocked) and keeps the
+                    /// fast empty return, letting the looping task deliver.
+                    const bool drive_loop_on_worker = std::exchange(claimed_blocked_refresh, false);
                     bool continue_reading = streamToViews(cycle_epoch, drive_loop_on_worker);
                     if (!continue_reading)
                         break;
