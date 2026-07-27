@@ -1208,7 +1208,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 /// `encrypt(..., k)` where `k` is `'secret' AS k` in a subquery). Flag such constant argument nodes so
 /// plan dumps render them as `[HIDDEN]`. The finder runs only when secrets are hidden (the caller
 /// gates on the setting).
-static void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
+void markFoldedSecretConstants(const FunctionNode & function_node, const ActionsDAG::NodeRawConstPtrs & children)
 {
     auto secret_arguments = FunctionSecretArgumentsFinderTreeNode(function_node).getResult();
     if (!secret_arguments.hasSecrets())
