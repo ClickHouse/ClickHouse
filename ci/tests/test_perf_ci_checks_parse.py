@@ -129,12 +129,16 @@ def test_header_line_only_is_reported_as_incomplete(tmp_path):
     assert results == []
 
 
-def test_both_headers_no_data_rows_is_complete_and_empty(tmp_path):
-    # A legitimate run that produced no query rows is NOT a truncated file:
-    # the caller must still import the (empty) result set.
+def test_headers_without_any_data_row_is_reported_as_incomplete(tmp_path):
+    # Both header lines were flushed but no data row was. That is not a run that
+    # produced no queries: compare.sh's upload_results unions an unconditional
+    # single-row summary select (`select '' test_name, <report message>, ...`)
+    # into every ci-checks.tsv, so the shortest file a completed run can write is
+    # two header lines plus that summary row. A data-row-less file is therefore a
+    # prefix and must not be imported.
     path = _write(tmp_path, NAMES + "\n" + TYPES + "\n")
     results, malformed, complete = read_ci_checks_results(path)
-    assert complete is True
+    assert complete is False
     assert results == []
     assert malformed == 0
 
@@ -275,8 +279,12 @@ def test_every_truncation_offset_is_survivable(tmp_path):
         assert isinstance(malformed, int)
         assert isinstance(complete, bool)
         got = [(r.name, r.status, r.duration) for r in results]
-        if complete and malformed == 0:
-            assert got == truth[: len(got)], offset
+        # Unconditionally, not only for prefixes reported clean: whatever rows a
+        # prefix yields must be an exact prefix of the truth. Guarding this on
+        # `complete and malformed == 0` would let a wrong VALUE through on any
+        # offset the parser flags, which is the shape a trailing-fragment-
+        # trusting parser produces.
+        assert got == truth[: len(got)], offset
 
 
 def test_every_truncation_offset_of_a_non_ascii_file_is_survivable(tmp_path):

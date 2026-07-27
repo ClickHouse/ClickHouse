@@ -1093,9 +1093,12 @@ def read_ci_checks_results(path):
     Returns `(results, malformed, complete)`:
       - `results`: valid `Result` rows;
       - `malformed`: number of rows skipped because they were cut short;
-      - `complete`: whether both header lines were present, i.e. whether the
-        file is worth importing at all. The caller distinguishes a truncated
-        file from a run that legitimately produced no query rows.
+      - `complete`: whether both header lines AND at least one data row were
+        present, i.e. whether the file is worth importing at all. A file with no
+        data row is necessarily truncated: compare.sh's `upload_results` unions
+        an unconditional single-row summary select into every `ci-checks.tsv`,
+        so a run that legitimately produced only the two header lines does not
+        exist.
 
     Never raises. compare.sh writes this file last, so a failure there (most
     often a full disk) leaves an arbitrary byte prefix. Raising here would kill
@@ -1119,7 +1122,9 @@ def read_ci_checks_results(path):
     # it can be trusted - not even the fields that happen to be present, since a
     # number cut after its first digits still parses.
     cut_line = lines.pop()
-    if len(lines) < 2:  # column names, then column types
+    # Column names, column types, and at least the summary row compare.sh always
+    # emits: anything shorter is a prefix, not a completed run.
+    if len(lines) < 3:
         return results, malformed, False
     if cut_line:
         malformed += 1

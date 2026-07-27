@@ -1846,12 +1846,20 @@ unset IFS
 function upload_results
 {
     # Prepare info for the CI checks table.
-    rm -f ci-checks.tsv
+    # Write to a sibling temporary path and publish by rename below, so the final
+    # path is only ever absent or complete. This is the last thing the job does
+    # and its failure is swallowed by the `||:` on the call, so a torn file left
+    # at the final path would be imported as if complete whenever the cut lands
+    # on a line boundary. A same-directory rename allocates no data blocks.
+    # The rename is chained with `&&` on purpose: `||:` on the call suppresses
+    # errexit for this whole function, so a separate `mv` statement would run
+    # after a failed write and publish the torn file.
+    rm -f ci-checks.tsv ci-checks.tsv.tmp
 
     clickhouse-local --query "
 create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
-create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
+create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv.tmp')
     as select
         $PR_TO_TEST :: UInt32 AS pull_request_number,
         '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
@@ -1897,7 +1905,8 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             array join map('old', left, 'new', right) as test_desc_
     )
 ;
-    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS
+    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
+        && mv ci-checks.tsv.tmp ci-checks.tsv
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
