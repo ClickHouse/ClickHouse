@@ -263,16 +263,18 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 위에서 설명한 서브쿼리 형식 외에도 `SOME` / `ALL`의 오른쪽에는 배열 표현식(배열 리터럴, 배열 타입의 컬럼, 또는 배열을 반환하는 임의의 표현식)이 올 수 있습니다. 이는 PostgreSQL 스타일의 배열 한정자 구문입니다. 이 구문은 구문 분석 시점에 인식되어 배열 함수로 재작성되므로 수동으로 재작성할 필요가 없습니다:
 
-| 구문                                   | 재작성 결과                             |
-| ------------------------------------ | ---------------------------------- |
-| `expr = SOME(arr)`                   | `has(arr, expr)`                   |
-| `expr <> ALL(arr)`                   | `NOT has(arr, expr)`               |
-| `expr OP SOME(arr)` (그 밖의 모든 비교 연산자) | `arrayExists(x -> expr OP x, arr)` |
-| `expr OP ALL(arr)` (그 밖의 모든 비교 연산자)  | `arrayAll(x -> expr OP x, arr)`    |
+| 구문                                     | 재작성 결과                             |
+| -------------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`                     | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                     | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (지원되는 그 밖의 모든 연산자) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (지원되는 그 밖의 모든 연산자)  | `arrayAll(x -> expr OP x, arr)`    |
 
 `SOME`은 존재 한정자입니다(`ANY`의 SQL 동의어). `=` 및 `<>`는 최적화된 구현이 있으므로 예외적으로 `has` / `NOT has`로 재작성됩니다. 일반 형식은 고차 함수인 `arrayExists` / `arrayAll`로 처리됩니다.
 
-배열 형식은 비교 연산자 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`에서만 인식됩니다. 오른쪽에 배열을 받을 수 있는 다른 연산자(예: `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, `IN`)는 배열 한정자로 **재작성되지 않으며** 원래 의미를 유지합니다. 예를 들어 `'abc' LIKE SOME(['a%', 'b%'])`는 배열 한정자 구문이 아닙니다. 이런 경우에는 `arrayExists` / `arrayAll`를 직접 사용하십시오.
+배열 형식은 비교 연산자 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, 키워드 비교 프레디케이트 `IS DISTINCT FROM` 및 `IS NOT DISTINCT FROM`, 그리고 문자열 검색 프레디케이트 `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`에서 인식됩니다. 키워드 비교 프레디케이트와 문자열 검색 프레디케이트는 서브쿼리 형식이 아니라 배열 형식에서만 인식됩니다(서브쿼리 형식은 `IN`/`NOT IN`으로 변환됩니다). 배열 한정자 의미가 없는 연산자(예: `IN` 자체)는 **재작성되지 않으며** 원래 의미를 유지합니다.
+
+문자열 검색 프레디케이트가 작동하는 이유는 `MatchImpl`(`LIKE` / `ILIKE` / `REGEXP`의 기반 구현)이 비상수 needle과 함께 상수 haystack을 지원하기 때문입니다. 예를 들어 `'abc' LIKE SOME(['a%', 'b%'])`는 `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`로 재작성되고, `'abc' NOT LIKE ALL(['x%', 'y%'])`는 `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`로 재작성됩니다. 이는 하나의 문자열을 여러 패턴과 매칭합니다. 단일 결합 패스로 매칭하려면 `multiMatchAny`(정규식) 또는 `multiSearchAny`(substrings)와 같은 다중 패턴 검색 함수를 계속 사용할 수 있습니다.
 
 <Info>
   **배열 형식에서는 `ANY`가 지원되지 않습니다**
@@ -282,15 +284,16 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 
 ```sql title="Query"
 SELECT
-    3 = SOME([1, 2, 3, 4]) AS in_array,
-    5 < SOME([1, 2, 6])    AS less_than_some,
-    5 > ALL([1, 2, 3])     AS greater_than_all;
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
 ```
 
 ```text title="Response"
-┌─in_array─┬─less_than_some─┬─greater_than_all─┐
-│        1 │              1 │                1 │
-└──────────┴────────────────┴──────────────────┘
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
 ```
 
 <Info>
@@ -525,6 +528,63 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+<div id="at-time-zone">
+  ### AT TIME ZONE 및 AT LOCAL
+</div>
+
+후위 연산자 `AT TIME ZONE` 및 `AT LOCAL`은 `DateTime` 또는 `DateTime64` 값을 다른 시간대로 변환합니다. 이는 기존 [`toTimeZone`](/ko/reference/functions/regular-functions/date-time-functions#toTimezone) 함수의 축약 문법입니다:
+
+| 구문                       | 동일한 표현                         |
+| ------------------------ | ------------------------------ |
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)`       |
+| `expr AT LOCAL`          | `toTimeZone(expr, timeZone())` |
+
+`zone`은 유효한 시간대 이름으로 평가되는 임의의 상수 문자열 표현식일 수 있습니다(예: `'America/Denver'`, `'UTC'`, 또는 `concat('America', '/', 'Denver')`). `AT TIME ZONE`은 `toTimeZone`으로 변환되므로 동일한 시간대 인수 규칙이 적용됩니다. 따라서 컬럼 참조와 같은 비상수 표현식을 사용하려면 [`allow_nonconst_timezone_arguments = 1`](/ko/reference/settings/session-settings#allow_nonconst_timezone_arguments)이 필요합니다.
+
+`AT LOCAL`은 현재 [세션 시간대](/ko/reference/settings/session-settings#session_timezone)을 사용합니다(세션 시간대이 설정되지 않은 경우 서버 기본값 사용). `Distributed` 테이블에서는 `session_timezone`을 명시적으로 설정해야 합니다. 비어 있으면 `timeZone()`은 세그먼트 로컬이므로 상수 `toTimeZone` 인수로 사용할 수 없어 `ILLEGAL_COLUMN` 예외가 발생합니다.
+
+<Note>
+  PostgreSQL에서는 `timestamp without time zone AT TIME ZONE zone`이 변환 전에 시계상 값을 지정된 시간대의 값으로 다시 해석하지만, ClickHouse는 항상 동일한 절대 시점을 유지하고 표시할 때 사용하는 시간대 레이블만 변경합니다. 두 형식 모두 `toTimeZone`과 동일하며 기본 timestamp 값은 변경하지 않습니다.
+</Note>
+
+`AT TIME ZONE`의 연산자 precedence는 13입니다(`*`/`/`/`%`의 12보다 높고 `+`/`-`의 11보다 높음). 이는 PostgreSQL과 일치합니다. 즉, `a * ts AT TIME ZONE 'tz'`는 `a * (ts AT TIME ZONE 'tz')`로 묶이고, `ts + interval AT TIME ZONE 'tz'`는 `ts + (interval AT TIME ZONE 'tz')`로 묶입니다. 산술 연산 후에 시간대 변환을 적용하려면 명시적으로 괄호를 사용하십시오:
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+예시:
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**관련 항목**
+
+* [`toTimeZone`](/ko/reference/functions/regular-functions/date-time-functions#toTimezone)
+* [`timeZone`](/ko/reference/functions/regular-functions/date-time-functions#timezone)
 
 <div id="logical-and-operator">
   ## 논리 AND 연산자
