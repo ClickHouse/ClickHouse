@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <optional>
 #include <Backups/BackupDataFileNameGeneratorType.h>
 #include <Backups/BackupInfo.h>
@@ -132,9 +131,6 @@ struct BackupSettings
 
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
-
-    /// Returns the backup-specific settings as a string map for observability (see `system.backups`).
-    std::map<String, String> getSerializedSettings() const;
 
     static bool isAsync(const ASTBackupQuery & query);
 

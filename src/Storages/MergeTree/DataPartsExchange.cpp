@@ -14,7 +14,6 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
-#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -32,7 +31,6 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/randomDelay.h>
 #include <Common/thread_local_rng.h>
-#include <Core/UUID.h>
 
 namespace fs = std::filesystem;
 
@@ -70,7 +68,6 @@ namespace DataPartsExchange
 
 namespace
 {
-
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE = 3;
@@ -80,7 +77,6 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION = 8;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS = 9;
-constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS = 10;
 
 std::string getEndpointId(const std::string & node_id)
 {
@@ -148,7 +144,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
     /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS))});
+    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS))});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -195,7 +191,7 @@ void Service::processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuf
         Strings capabilities;
         const String delimiter(", ");
         size_t pos_start = 0;
-        size_t pos_end = 0;
+        size_t pos_end;
         while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
         {
             const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
@@ -267,10 +263,6 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS
             && name == IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME)
-            continue;
-
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS
-            && name == IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
             continue;
 
         files_to_replicate.insert(name);
@@ -350,7 +342,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
     return data_checksums;
 }
 
-static bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
+bool wait_loop(UInt32 wait_timeout_ms, const std::function<bool()> & pred)
 {
     static const UInt32 loop_delay_ms = 5;
 
@@ -461,7 +453,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
     {
         {"endpoint",                endpoint_id},
         {"part",                    part_name},
-        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_INVALIDATED_SYSTEM_COLUMNS)},
+        {"client_protocol_version", toString(REPLICATION_PROTOCOL_VERSION_WITH_COLUMNS_SUBSTREAMS)},
         {"compress",                "false"}
     });
 
@@ -516,7 +508,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> Fetcher::fetchSelected
 
     ReadSettings read_settings = context->getReadSettings();
     /// Disable retries for fetches, this will be done by the engine itself.
-    read_settings.http_settings.max_tries = 1;
+    read_settings.http_max_tries = 1;
 
     auto in = BuilderRWBufferFromHTTP(uri)
                   .withConnectionGroup(HTTPConnectionGroupType::HTTP)
@@ -707,7 +699,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     ThrottlerPtr throttler,
     bool sync) const
 {
-    size_t files = 0;
+    size_t files;
     readBinary(files, in);
     LOG_DEBUG(log, "Downloading files {}", files);
 
@@ -717,7 +709,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
     for (size_t i = 0; i < files; ++i)
     {
         String file_name;
-        UInt64 file_size = 0;
+        UInt64 file_size;
 
         readStringBinary(file_name, in);
         readBinary(file_size, in);
@@ -760,8 +752,7 @@ void Fetcher::downloadBaseOrProjectionPartToDisk(
             file_name != "columns.txt" &&
             file_name != IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME &&
             file_name != IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME &&
-            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME &&
-            file_name != IMergeTreeDataPart::INVALIDATED_SYSTEM_COLUMNS_FILE_NAME)
+            file_name != IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
             checksums.addFile(file_name, file_size, expected_hash);
     }
 
@@ -947,34 +938,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToDisk(
                     data_checksums.addFile(name, checksum.file_size, checksum.file_hash);
             }
             new_data_part->checksums.checkEqual(data_checksums, false, new_data_part->name);
-        }
-        else
-        {
-            /// A packed part is transferred as a single data.packed archive, so the per-file wire
-            /// hashes above only prove the archive arrived intact, not that its logical contents match
-            /// the checksums it advertises (data_checksums is keyed by data.packed, not by the logical
-            /// files in part->checksums, which is why the checkEqual above is limited to full storage).
-            /// Recompute the checksums from the archive and compare them, so a corrupted packed part is
-            /// rejected on fetch instead of being accepted and propagated to this replica.
-            /// checkDataPart itself tolerates an unknown <name>.proj that the table no longer knows about
-            /// (a projection dropped while the part was detached, then re-attached): it drops such
-            /// entries from the expected checksums when throw_on_broken_projection is false. Genuine
-            /// base-file corruption still fails checkEqual, so it is left to propagate.
-            bool is_broken_projection = false;
-            auto computed_checksums = checkDataPart(new_data_part, /*require_checksums=*/ true, is_broken_projection);
-
-            /// checkDataPart returns an empty result (instead of throwing) when it hits a retryable error
-            /// such as a transient read or memory-limit exception, expecting the check to be retried
-            /// later. On the fetch path there is no later check before the part is published, so an empty
-            /// result means the archive contents were never verified. Fail the fetch so it is retried
-            /// rather than accepting a possibly-corrupted packed part. (A real part always has files, so a
-            /// genuine part never yields empty checksums here.)
-            if (computed_checksums.empty())
-                throw Exception(
-                    ErrorCodes::ABORTED,
-                    "Could not verify packed part {} on fetch (checksum computation was skipped because of a "
-                    "transient error); the fetch will be retried",
-                    part_name);
         }
         LOG_DEBUG(log, "Download of part {} onto disk {} finished.", part_name, disk->getName());
     }

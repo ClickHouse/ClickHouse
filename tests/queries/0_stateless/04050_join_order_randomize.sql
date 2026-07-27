@@ -1,5 +1,4 @@
 -- Tags: no-parallel-replicas
-SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -19,7 +18,7 @@ SET query_plan_join_swap_table = 'auto';
 SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
-SET enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
+SET enable_join_runtime_filters = 1;
 
 -- Determinism: same seed produces same plan twice
 SET query_plan_optimize_join_order_randomize = 42;

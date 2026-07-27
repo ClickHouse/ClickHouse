@@ -53,14 +53,6 @@ void StatisticsUniq::merge(const StatisticsPtr & other_stats)
     collector->merge(data, other->data, arena.get());
 }
 
-bool StatisticsUniq::isCompatibleWith(const IStatistics & other) const
-{
-    const auto * other_uniq = typeid_cast<const StatisticsUniq *>(&other);
-    if (!other_uniq)
-        return false;
-    return StatisticsUtils::isSame(*collector, *other_uniq->collector);
-}
-
 void StatisticsUniq::serialize(WriteBuffer & buf)
 {
     if (collector->getNestedFunction())
@@ -72,13 +64,13 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
 
 void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
-    bool is_null = false;
+    bool is_null;
     readBinary(is_null, buf);
     auto nested_func = collector->getNestedFunction();
     /// when serialize is nullable, but we removed the nullable
     if (is_null && !nested_func)
     {
-        bool serialize_flag = false;
+        bool serialize_flag;
         readBinary(serialize_flag, buf);
         if (!serialize_flag)
             return;
@@ -96,7 +88,7 @@ void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*versi
 
 UInt64 StatisticsUniq::estimateCardinality() const
 {
-    auto column = collector->getResultType()->createColumn();
+    auto column = DataTypeUInt64().createColumn();
     collector->insertResultInto(data, *column, nullptr);
     return column->getUInt(0);
 }

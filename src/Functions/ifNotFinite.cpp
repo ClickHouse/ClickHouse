@@ -11,7 +11,7 @@ namespace
 {
 
 /// ifNotFinite(x, y) is equivalent to isFinite(x) ? x : y.
-class FunctionIfNotFinite final : public IFunction
+class FunctionIfNotFinite : public IFunction
 {
 public:
     static constexpr auto name = "ifNotFinite";

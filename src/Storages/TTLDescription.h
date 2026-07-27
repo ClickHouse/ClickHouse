@@ -49,7 +49,7 @@ struct ExpressionAndSets
 /// Common struct for TTL record in storage
 struct TTLDescription
 {
-    TTLMode mode{};
+    TTLMode mode;
 
     /// Expression part of TTL AST:
     /// TTL d + INTERVAL 1 DAY
@@ -86,7 +86,7 @@ struct TTLDescription
 
     /// Destination type, only valid for table TTLs.
     /// For example DISK or VOLUME
-    DataDestinationType destination_type{};
+    DataDestinationType destination_type;
 
     /// Name of destination disk or volume
     String destination_name;

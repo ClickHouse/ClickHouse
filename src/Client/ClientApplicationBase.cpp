@@ -88,13 +88,10 @@ void ClientApplicationBase::setupSignalHandler()
 {
     ClientApplicationBase::getInstance().stopQuery();
 
-    struct sigaction new_act{};
+    struct sigaction new_act;
     memset(&new_act, 0, sizeof(new_act));
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
     new_act.sa_handler = interruptSignalHandler;
-#pragma clang diagnostic pop
     new_act.sa_flags = 0;
 
 #if defined(OS_DARWIN)
@@ -226,6 +223,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     query_kind = parseQueryKind(options["query_kind"].as<std::string>());
     profile_events.print = options.contains("print-profile-events");
+    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments, hosts_and_ports_arguments);
 
