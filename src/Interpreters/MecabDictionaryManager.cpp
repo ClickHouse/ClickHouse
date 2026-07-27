@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_LOAD_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 #if USE_AWS_S3
@@ -161,15 +162,14 @@ std::unique_ptr<ReadBuffer> openS3Source(const String & location, const ContextP
 }
 #endif
 
-/// Picks the transport by location: s3://|gs://|oss:// or http(s) with S3 auth -> S3 client;
-/// other http(s) -> plain download; otherwise a local file.
+/// Picks the transport from the location scheme: s3://|gs://|oss:// (or http(s) with S3 auth) -> S3
+/// client; other http(s):// -> plain download; file:// -> local file. Anything else is rejected.
 std::unique_ptr<ReadBuffer> openArchiveSource(const String & location, const ContextPtr & context)
 {
     const bool is_http = location.starts_with("http://") || location.starts_with("https://");
     const bool is_s3_scheme = location.starts_with("s3://") || location.starts_with("gs://") || location.starts_with("oss://");
-    const bool use_s3 = is_s3_scheme || (is_http && hasS3Configuration(context));
 
-    if (use_s3)
+    if (is_s3_scheme || (is_http && hasS3Configuration(context)))
     {
 #if USE_AWS_S3
         return openS3Source(location, context);
@@ -193,7 +193,13 @@ std::unique_ptr<ReadBuffer> openArchiveSource(const String & location, const Con
             .create({});
     }
 
-    return std::make_unique<ReadBufferFromFile>(location);
+    static constexpr std::string_view file_scheme = "file://";
+    if (location.starts_with(file_scheme))
+        return std::make_unique<ReadBufferFromFile>(location.substr(file_scheme.size()));
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Unsupported <dictionary_location> '{}': expected an s3://, gs://, oss://, http(s):// or file:// URL", location);
 }
 
 /// Extracts every file from the archive into `destination`, preserving relative paths.
