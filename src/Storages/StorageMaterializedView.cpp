@@ -354,10 +354,9 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getStorageSnapshot(target_metadata, local_context), query_info);
 }
 
-StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const
+StorageMetadataHandle StorageMaterializedView::composeInMemoryMetadata(
+    ContextPtr query_context, const StorageMetadataHandle & base_metadata, bool query_cached) const
 {
-    auto base_metadata = IStorage::getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
-
     auto target = tryGetTargetTable();
     if (!target)
         return base_metadata;
@@ -365,7 +364,9 @@ StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr
     /// Override _table and _database to be materialized at the Plan level
     /// by StorageWithCommonVirtualColumns, not by the target storage's reader.
     VirtualColumnsDescription virtuals_desc;
-    auto target_metadata = target->getInMemoryMetadataPtr(query_context, bypass_metadata_cache);
+    auto target_metadata = query_cached
+        ? target->getInMemoryMetadataQueryCached(query_context)
+        : target->getInMemoryMetadataUncached(query_context);
     for (auto desc : target_metadata->virtuals)
     {
         if (desc.name == "_table" || desc.name == "_database")
@@ -375,6 +376,16 @@ StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataPtr(ContextPtr
     }
 
     return std::make_shared<StorageInMemoryMetadata>(base_metadata->withVirtuals(std::move(virtuals_desc)));
+}
+
+StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataUncached(ContextPtr query_context) const
+{
+    return composeInMemoryMetadata(query_context, IStorage::getInMemoryMetadataUncached(query_context), /*query_cached=*/false);
+}
+
+StorageMetadataHandle StorageMaterializedView::getInMemoryMetadataQueryCached(ContextPtr query_context) const
+{
+    return composeInMemoryMetadata(query_context, IStorage::getInMemoryMetadataQueryCached(query_context), /*query_cached=*/true);
 }
 
 void StorageMaterializedView::readImpl(

@@ -63,7 +63,8 @@ public:
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override;
 
-    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context, bool bypass_metadata_cache) const override;
+    StorageMetadataHandle getInMemoryMetadataUncached(ContextPtr context) const override;
+    StorageMetadataHandle getInMemoryMetadataQueryCached(ContextPtr context) const override;
 
     void read(
         QueryPlan & query_plan,
@@ -106,6 +107,11 @@ public:
         size_t max_tables_to_look);
 
 private:
+    /// Shared body of the two metadata accessors: compose the base metadata with the first source table's
+    /// virtual columns. `query_cached` selects which source-table accessor to use.
+    StorageMetadataHandle composeInMemoryMetadata(
+        ContextPtr query_context, const StorageMetadataHandle & base_metadata, bool query_cached) const;
+
     /// (Database, Table, Lock, TableName)
     using StorageWithLockAndName = std::tuple<String, StoragePtr, TableLockHolder, String>;
     using StorageListWithLocks = std::list<StorageWithLockAndName>;
