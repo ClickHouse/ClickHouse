@@ -22,7 +22,6 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
 
   * Maven Central (веб-страница проекта): https://mvnrepository.com/artifact/com.clickhouse/client-v2
   * Ночные сборки (ссылка на репозиторий): https://central.sonatype.com/repository/maven-snapshots/
-  * Artifactory со старыми ночными сборками (ссылка на репозиторий): https://s01.oss.sonatype.org/content/repositories/snapshots/
 
   <br />
 
@@ -112,7 +111,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     * проверить целостность ключа: `openssl rsa -in [key-file.key] -check -noout`
     * проверить, что сертификат клиента содержит CN, соответствующий пользователю:
       * получить CN из сертификата пользователя — `openssl x509 -noout -subject -in [user.cert]`
-      * убедиться, что в базе данных задано то же значение: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (`запрос` выведет `auth_params` с чем-то вроде ` {"common_names":["some_user"]}`)
+      * убедиться, что в базе данных задано то же значение: `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (запрос выведет `auth_params` с чем-то вроде ` {"common_names":["some_user"]}`)
   </Note>
 
   ## Конфигурация
@@ -211,11 +210,11 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
     </Tab>
 
     <Tab title="Настройки сервера">
-      | Метод                                           | Аргументы                                                 | Описание                                                                                                                                                                                                                     | По умолчанию | Ключ                     |
-      | ----------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | ------------------------ |
-      | `serverSetting(String name, String value)`      | `name` - имя настройки<br />`value` - значение настройки  | Задаёт, какие настройки передавать на сервер с каждым запросом. Настройки отдельных операций могут их переопределять. [Список настроек](/ru/concepts/features/configuration/settings/settings-query-level)                      | `none`       | `none`                   |
-      | `serverSetting(String name, Collection values)` | `name` - имя настройки<br />`values` - значения настройки | Задаёт, какие настройки с несколькими значениями передавать на сервер, например [роли](/ru/concepts/features/interfaces/http#setting-role-with-query-parameters)                                                                | `none`       | `none`                   |
-      | `setOption("custom_settings_prefix", value)`    | `value` - строка префикса                                 | Задаёт префикс для пользовательских настроек, передаваемых на сервер. Он должен соответствовать конфигурации сервера. См. [ClickHouse Docs](/ru/concepts/features/configuration/settings/settings-query-level#custom_settings). | `custom_`    | `custom_settings_prefix` |
+      | Method                                          | Arguments                                                 | Description                                                                                                                                                                                                                  | Default   | Key                      |
+      | ----------------------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------ |
+      | `serverSetting(String name, String value)`      | `name` - имя настройки<br />`value` - значение настройки  | Задаёт, какие настройки передавать на сервер с каждым запросом. Настройки отдельных операций могут их переопределять. [Список настроек](/ru/concepts/features/configuration/settings/settings-query-level)                      | `none`    | `none`                   |
+      | `serverSetting(String name, Collection values)` | `name` - имя настройки<br />`values` - значения настройки | Задаёт, какие настройки с несколькими значениями передавать на сервер, например [роли](/ru/concepts/features/interfaces/http#setting-role-with-query-parameters)                                                                | `none`    | `none`                   |
+      | `setOption("custom_settings_prefix", value)`    | `value` - строка префикса                                 | Задаёт префикс для пользовательских настроек, передаваемых на сервер. Он должен соответствовать конфигурации сервера. См. [ClickHouse Docs](/ru/concepts/features/configuration/settings/settings-query-level#custom_settings). | `custom_` | `custom_settings_prefix` |
     </Tab>
 
     <Tab title="Часовой пояс">
@@ -333,8 +332,8 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   Перечисление [поддерживаемых форматов](/ru/reference/formats/index). Включает все форматы, поддерживаемые ClickHouse.
 
   * `raw` - пользователь должен перекодировать необработанные данные
-  * `full` — клиент может самостоятельно перекодировать данные и принимает сырой поток данных
-  * `-` — операция не поддерживается в ClickHouse для этого формата
+  * `full` - клиент может самостоятельно перекодировать данные и принимает поток необработанных данных
+  * `-` - операция не поддерживается ClickHouse для этого формата
 
   Эта версия клиента поддерживает:
 
@@ -528,7 +527,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | Метод                           | Описание                                                                                       |
   | ------------------------------- | ---------------------------------------------------------------------------------------------- |
   | `OperationMetrics getMetrics()` | Возвращает объект с метриками операции.                                                        |
-  | `String getQueryId()`           | Возвращает Query id, назначенный операции приложением (через настройки операции или сервером). |
+  | `String getQueryId()`           | Возвращает Query id, назначенный операции приложением (через настройки операции) или сервером. |
 
   ## API запросов
 
@@ -684,7 +683,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   | `serverSetting(String name, String value)`        | Устанавливает отдельные настройки сервера для операции.                                                                                              |
   | `serverSetting(String name, Collection values)`   | Устанавливает отдельные настройки сервера с несколькими значениями для операции. Элементы коллекции должны иметь тип `String`.                       |
   | `setDBRoles(Collection dbRoles)`                  | Задает роли БД, которые будут установлены перед выполнением операции. Элементы коллекции должны быть строковыми значениями `String`.                 |
-  | `setOption(String option, Object value)`          | Устанавливает параметр конфигурации в исходном формате. Это не настройка сервера.                                                                    |
+  | `setOption(String option, Object value)`          | Задаёт параметр конфигурации в исходном формате. Это не настройка сервера.                                                                           |
 
   ### QueryResponse
 
@@ -809,7 +808,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
   try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
       ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
       while (reader.next() != null) {
-          
+
           Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
           Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
 
@@ -887,7 +886,7 @@ import WideTableWrapper from "/snippets/ru/components/WideTableWrapper/WideTable
       | `ClickHouseHttpOption#USE_BASIC_AUTHENTICATION`                                  | `Client.Builder#useHTTPBasicAuth`           |                                 |
     </Tab>
 
-    <Tab title="SSL & безопасность">
+    <Tab title="SSL и безопасность">
       | Конфигурация V1                                        | Метод Builder                             | Комментарии                                                          |
       | ------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------- |
       | `ClickHouseDefaults#SSL_CERTIFICATE_TYPE`              | ✗                                         |                                                                      |

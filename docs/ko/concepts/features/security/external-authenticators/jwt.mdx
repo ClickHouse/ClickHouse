@@ -6,7 +6,7 @@ title: 'JWT 인증'
 doc_type: 'reference'
 ---
 
-import CloudOnlyBadge from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { CloudOnlyBadge } from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge />
 
@@ -110,8 +110,10 @@ JWT 사용자는 일반적인 ClickHouse 사용자와 몇 가지 중요한 면�
 하지만 사용자 이름은 **유동적**입니다. 다음과 같이 구성됩니다:
 
 ```text
-JWT::<issuer>::<audience>::<subject>::<claims_hash>
+JWT::<subject>::<claims_hash>
 ```
+
+`<claims_hash>`는 `iss`, `sub`, `aud` 클레임과 `clickhouse:roles`, `clickhouse:grants` 클레임으로부터 함께 파생된 해시입니다. `iss` 및 `aud` 클레임은 **오직** 이 해시를 통해서만 반영되며, 더 이상 표시되는 사용자 이름 접두사에 직접 포함되지 않습니다. 따라서 `iss`/`aud`가 길고 불투명한 IdP URL(예: Microsoft Entra 또는 Okta)인 경우에도 이름을 간결하고 읽기 쉽게 유지하면서, 서로 다른 `(iss, sub, aud)` 튜플과 서로 다른 `clickhouse:roles` / `clickhouse:grants` Set이 각각 서로 다른 안정적인 이름에 매핑되도록 보장합니다. 해시에 반영되지 않는 클레임(예: `iat`, `exp`, `nbf` 또는 관련 없는 사용자 정의 클레임)은 사용자 이름을 변경하지 않습니다.
 
 `<claims_hash>` 부분은 `clickhouse:roles` 또는 `clickhouse:grants` 클레임이 변경될 때마다 달라집니다. 즉, 동일한 아이덴티티라도 역할이나 권한 부여 집합이 다르면 서로 다른 사용자 이름이 생성됩니다.
 
@@ -150,7 +152,7 @@ UUID가 고정되어 있으므로 SQL 문을 사용해 JWT 사용자에게 설�
 현재 사용자 이름으로 사용자를 지정하십시오:
 
 ```sql
-ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::ClickHouse::my-service-id::jane.doe::<claims-hash>';
+ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 ```
 
 <Note>
