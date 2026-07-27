@@ -210,7 +210,12 @@ static Plan getPlan(
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
-    if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
+    /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
+    /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
+    /// from createEmptyMetadataFile, which produces format_version 2, so a v3 table would be
+    /// silently downgraded and lose v3-only state such as row lineage (first_row_id /
+    /// next_row_id).
+    if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) != 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");
 
     auto current_schema_id = initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
@@ -258,18 +263,25 @@ static Plan getPlan(
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
+                /// One DataFilePlan per source *data file*, keyed by the data file's own path.
+                /// Keying by the manifest path made every data file after the first in a
+                /// manifest reuse the first file's plan, so writeDataFiles rewrote only one
+                /// file per manifest and the rest of the manifest's data silently disappeared
+                /// from the compacted table. The map still deduplicates the same data file
+                /// referenced from multiple snapshots' manifest lists.
+                const auto & data_file_path = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
+                if (!plan.path_to_data_file.contains(data_file_path))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
+                    plan.path_to_data_file[data_file_path] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[manifest_file.manifest_file_path];
+                    data_file_ptr = plan.path_to_data_file[data_file_path];
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
