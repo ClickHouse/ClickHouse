@@ -11,13 +11,24 @@
 -- FieldVisitorToString, which does not throw.
 
 DROP NAMED COLLECTION IF EXISTS c_04632;
-CREATE NAMED COLLECTION c_04632 AS url = 'http://localhost:1/x', format = 'TSV';
+CREATE NAMED COLLECTION c_04632 AS url = 'http://localhost:1/bucket/key.tsv', format = 'TSV';
 
 -- Rejected while parsing the table-function arguments, so no request is ever made.
 SELECT * FROM s3(c_04632, format = initializeAggregation('anyState', 'TSV')); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM s3(c_04632, url = initializeAggregation('uniqState', 1)); -- { serverError BAD_ARGUMENTS }
 
 BACKUP TABLE system.one TO S3(c_04632, url = initializeAggregation('anyState', 'v')); -- { serverError BAD_ARGUMENTS }
+
+-- Nested in a container the state is reached through FieldVisitorToString (writeText for Array
+-- delegates to it, and Tuple/Map go through writeFieldText), whose AggregateFunctionStateData
+-- overload returns formatQuoted(data) instead of throwing. So these are stringified rather than
+-- rejected; what matters is that they stay a clean user error and never a LOGICAL_ERROR. The
+-- serialized state is not a format name, so the format check rejects it before any request.
+SELECT * FROM s3(c_04632, format = [initializeAggregation('anyState', 'x')]); -- { serverError UNKNOWN_FORMAT }
+SELECT * FROM s3(c_04632, format = [[initializeAggregation('anyState', 'x')]]); -- { serverError UNKNOWN_FORMAT }
+SELECT * FROM s3(c_04632, format = tuple(initializeAggregation('anyState', 'x'), 1)); -- { serverError UNKNOWN_FORMAT }
+SELECT * FROM s3(c_04632, format = map('k', initializeAggregation('anyState', 'x'))); -- { serverError UNKNOWN_FORMAT }
+SELECT * FROM s3(c_04632, format = map(initializeAggregation('anyState', 'x'), 1)); -- { serverError UNKNOWN_FORMAT }
 
 DROP NAMED COLLECTION c_04632;
 
