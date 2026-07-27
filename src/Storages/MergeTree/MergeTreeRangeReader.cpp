@@ -96,7 +96,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfNeeded();
+    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
@@ -704,12 +704,10 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         setFilterConstTrue();
         return;
     }
-    /// Sparse: per-granule tails come from `sparse_indices` cheaply, so always worth shrinking.
-    /// Dense: guess.
-    const bool worth_shrinking = filter.isSparse()
-        ? total_zero_rows_in_tails > 0
-        : 2 * total_zero_rows_in_tails > filter.size();
-    if (worth_shrinking)
+    /// Shrinking a tail ends the current delayed read and forces a fresh seek
+    /// for the next granule, so it only pays off when enough rows are dropped
+    /// to outweigh the extra seek and misaligned filesystem-cache segment.
+    if (2 * total_zero_rows_in_tails > filter.size())
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;
@@ -1291,7 +1289,12 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
     if (read_sample_block.has("_part_granule_offset"))
         add_offset_column("_part_granule_offset");
 
-    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    /// Rescoring row filtering belongs only to the final reader. Earlier readers may
+    /// share the same read hints but must not shrink the block before later stages.
+    const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
+    bool is_vector_search = read_hints.vector_search_results.has_value()
+        && (read_sample_block.has("_distance") || apply_rescoring_row_filter);
     if (is_vector_search)
     {
         ColumnPtr part_offsets_auto_column = createPartOffsetColumn(result);
@@ -1340,10 +1343,18 @@ void MergeTreeRangeReader::fillVirtualColumns(Columns & columns, ReadResult & re
 
 void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & columns, ReadResult & /*result*/, ColumnPtr & part_offsets_auto_column)
 {
-    /// Populate the "_distance" virtual column from the distances we got from vector index
-    auto distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
-    ColumnFloat32::Container & distance_container = distance_column->getData();
-    Float32 * distances = distance_container.data();
+    /// Populate the `_distance` virtual column from the distances we got from vector index
+    /// only when the query plan requested it. Rescoring queries still use the row filter
+    /// below, while the SQL pipeline computes the exact distance expression.
+    const bool fill_distance = read_sample_block.has("_distance");
+    MutableColumnPtr distance_column;
+    Float32 * distances = nullptr;
+    if (fill_distance)
+    {
+        auto mutable_distance_column = ColumnFloat32::create(part_offsets_auto_column->size(), Float32(999999.99));
+        distances = mutable_distance_column->getData().data();
+        distance_column = std::move(mutable_distance_column);
+    }
 
     /// Populate a filter that is True only for the exact "neighbour" part offsets we got from vector index
     auto filter_data = ColumnUInt8::create(part_offsets_auto_column->size(), UInt8(0));
@@ -1352,14 +1363,25 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
     const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
     const auto & offsets_and_distances = read_hints.vector_search_results.value();
     auto row_offsets_from_index = offsets_and_distances.rows;
-    chassert(offsets_and_distances.distances.has_value());
-    const auto distances_from_index = offsets_and_distances.distances.value();
-    chassert(row_offsets_from_index.size() == distances_from_index.size());
 
     /// Stash the distance for an offset before sorting the offsets
     std::unordered_map<UInt64, Float32> offset_to_distance;
-    for (size_t i = 0; i < distances_from_index.size(); ++i)
-        offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
+    if (fill_distance)
+    {
+        if (!offsets_and_distances.distances.has_value())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints must contain distances");
+
+        const auto & distances_from_index = offsets_and_distances.distances.value();
+        if (row_offsets_from_index.size() != distances_from_index.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Vector search read hints size mismatch: {} row offsets and {} distances",
+                row_offsets_from_index.size(),
+                distances_from_index.size());
+
+        for (size_t i = 0; i < distances_from_index.size(); ++i)
+            offset_to_distance[row_offsets_from_index[i]] = distances_from_index[i];
+    }
 
     std::sort(row_offsets_from_index.begin(), row_offsets_from_index.end());
 
@@ -1376,13 +1398,23 @@ void MergeTreeRangeReader::fillDistanceColumnAndFilterForVectorSearch(Columns & 
         if (offsets[i] == row_offsets_from_index[j])
         {
             filter[i] = true;
-            distances[i] = offset_to_distance[offsets[i]];
+            if (fill_distance)
+            {
+                auto distance_it = offset_to_distance.find(offsets[i]);
+                if (distance_it == offset_to_distance.end())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Vector search read hints do not contain distance for row offset {}", offsets[i]);
+
+                distances[i] = distance_it->second;
+            }
             j++;
         }
     }
 
-    auto distance_column_pos = read_sample_block.getPositionByName("_distance");
-    columns[distance_column_pos] = std::move(distance_column);
+    if (fill_distance)
+    {
+        auto distance_column_pos = read_sample_block.getPositionByName("_distance");
+        columns[distance_column_pos] = std::move(distance_column);
+    }
     part_offsets_filter_for_vector_search = FilterWithCachedCount(std::move(filter_data));
 }
 
@@ -1691,9 +1723,23 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 
     /// The vector index has returned the exact row offsets of the nearest neighbours. We use the saved Filter
     /// to only output those rows from this reader to the next Sorting step.
-    bool is_vector_search = merge_tree_reader->data_part_info_for_read->getReadHints().vector_search_results.has_value();
-    if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.num_rows))
-        result.optimize(part_offsets_filter_for_vector_search, can_read_incomplete_granules, false);
+    const auto & read_hints = merge_tree_reader->data_part_info_for_read->getReadHints();
+    /// Rescoring row filtering belongs only to the final reader. Earlier readers may
+    /// share the same read hints but must not shrink the block before later stages.
+    const bool apply_rescoring_row_filter = main_reader && read_hints.use_vector_search_result_filter;
+    bool is_vector_search = read_hints.vector_search_results.has_value()
+        && (read_sample_block.has("_distance") || apply_rescoring_row_filter);
+    if (is_vector_search && (part_offsets_filter_for_vector_search.size() == result.total_rows_per_granule))
+    {
+        auto current_filter = part_offsets_filter_for_vector_search;
+        if (result.final_filter.present() && result.filterWasApplied() && result.num_rows != result.total_rows_per_granule)
+        {
+            auto filtered_column = part_offsets_filter_for_vector_search.getColumn()->filter(result.final_filter.getData(), result.num_rows);
+            current_filter = FilterWithCachedCount(filtered_column);
+        }
+
+        result.optimize(current_filter, can_read_incomplete_granules, false);
+    }
 
     if (!prewhere_info || prewhere_info->type == PrewhereExprStep::None)
         return;

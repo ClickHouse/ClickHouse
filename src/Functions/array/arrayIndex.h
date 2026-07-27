@@ -6,6 +6,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -862,36 +863,20 @@ private:
 
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
-        auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!right->isNullAt(0))
+        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
+                *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
         {
-            auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
-            right = castColumn({right, right_type, ""}, target_type);
+            col_result->getData().resize_fill(col_array->size());
 
-            if (right->isNullable())
-                right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
+            if (col_array_const)
+                return ColumnConst::create(std::move(col_result), left_size);
 
-            std::string_view elem = right->getDataAt(0);
-            const auto & left_dict = left_lc->getDictionary();
-
-            if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
-            {
-                index = *maybe_index;
-            }
-            else
-            {
-                col_result->getData().resize_fill(col_array->size());
-
-                if (col_array_const)
-                    return ColumnConst::create(std::move(col_result), left_size);
-
-                return col_result;
-            }
+            return col_result;
         }
 
         Impl::Main<ConcreteAction, true>::vector(

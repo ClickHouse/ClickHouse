@@ -81,6 +81,49 @@ FROM ( EXPLAIN actions = 0
              max_bytes_ratio_before_external_join = 0.5
 );
 
+-- partial_merge path: even with both flags on, `partial_merge` builds a
+-- `PartialMergeJoin`, which re-sorts left blocks by the join key and does not
+-- preserve the left stream order (`preservesLeftBlockOrder() == false`). The
+-- second-pass join traversal rejects it, so the deferral must NOT fire -
+-- otherwise both optimizations get silently disabled. `topKThroughJoin` is
+-- expected to inject its own `Sort + Limit`, mirroring the `through_join_off`
+-- and `spilling_on` cases. See issues #110662 and #109216.
+SELECT 'partial_merge' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
+FROM ( EXPLAIN actions = 0
+    SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS optimize_read_in_order = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0,
+             enable_parallel_replicas = 0,
+             join_algorithm = 'partial_merge',
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
+-- full_sorting_merge path: even with both flags on, `full_sorting_merge` builds a
+-- `FullSortingMergeJoin`. It preserves the left stream order, but its physicalization
+-- inserts a `Sort ... before JOIN` on the preserved input (`addSortingForMergeJoin`),
+-- and `optimizeReadInOrder`'s `findReadingStep` does not descend through a `SortingStep`,
+-- so read-in-order is never installed. The deferral must therefore NOT fire - otherwise
+-- both optimizations get silently disabled. `topKThroughJoin` is expected to inject its
+-- own `Sort + Limit`, mirroring the `through_join_off`, `spilling_on` and `partial_merge`
+-- cases. See issues #110662 and #109216.
+SELECT 'full_sorting_merge' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, countIf(explain LIKE '%Limit%') AS limit_count
+FROM ( EXPLAIN actions = 0
+    SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS optimize_read_in_order = 1,
+             query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+             query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
+             enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
+             query_plan_optimize_lazy_materialization = 0,
+             enable_parallel_replicas = 0,
+             join_algorithm = 'full_sorting_merge',
+             max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
+);
+
 -- Result equivalence across flag combinations.
 -- `enable_parallel_replicas = 0`: under parallel replicas, `ORDER BY l.k DESC`
 -- combined with `t_l ORDER BY k` engages read-in-order (`ReverseOrder`), and
@@ -101,6 +144,20 @@ SELECT 'result_through_join_off' AS label, count(*), max(k), min(k) FROM (
     ORDER BY l.k DESC LIMIT 10
     SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 0,
              enable_parallel_replicas = 0
+);
+
+SELECT 'result_partial_merge' AS label, count(*), max(k), min(k) FROM (
+    SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS join_algorithm = 'partial_merge', query_plan_read_in_order = 1,
+             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
+);
+
+SELECT 'result_full_sorting_merge' AS label, count(*), max(k), min(k) FROM (
+    SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
+    ORDER BY l.k DESC LIMIT 10
+    SETTINGS join_algorithm = 'full_sorting_merge', query_plan_read_in_order = 1,
+             query_plan_read_in_order_through_join = 1, enable_parallel_replicas = 0
 );
 
 DROP TABLE t_l;

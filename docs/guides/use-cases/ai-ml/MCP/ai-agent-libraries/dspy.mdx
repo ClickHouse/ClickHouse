@@ -26,8 +26,7 @@ This example can be found as a notebook in the [examples repository](https://git
 </Info>
 
 <Steps>
-<Step>
-## Install libraries {#install-libraries}
+<Step title="Install libraries" id="install-libraries">
 
 Run the following commands using `pip` to install the required libraries:
 
@@ -37,8 +36,7 @@ pip install -q dspy
 pip install -q mcp
 ```
 </Step>
-<Step>
-## Setup credentials {#setup-credentials}
+<Step title="Setup credentials" id="setup-credentials">
 
 Next, you'll need to provide your Anthropic API key:
 
@@ -66,8 +64,7 @@ env = {
 }
 ```
 </Step>
-<Step>
-## Initialize MCP server {#initialize-mcp}
+<Step title="Initialize MCP server" id="initialize-mcp">
 
 Now configure the ClickHouse MCP server to point at the ClickHouse SQL playground.
 
@@ -88,8 +85,7 @@ server_params = StdioServerParameters(
 )
 ```
 </Step>
-<Step>
-## Initialize LLM {#initialize-llm}
+<Step title="Initialize LLM" id="initialize-llm">
 
 Next, initialize the LLM with the following line:
 
@@ -97,8 +93,7 @@ Next, initialize the LLM with the following line:
 dspy.configure(lm=dspy.LM("anthropic/claude-sonnet-4-20250514"))
 ```
 </Step>
-<Step>
-## Run the agent {#run-the-agent}
+<Step title="Run the agent" id="run-the-agent">
 
 Finally, initialize and run the agent:
 

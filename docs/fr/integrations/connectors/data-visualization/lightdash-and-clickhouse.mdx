@@ -12,7 +12,7 @@ integration:
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 import { Image } from "/snippets/fr/components/Image.jsx";
-import PartnerBadge from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
+import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -32,9 +32,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
 <Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Exemple de tableau de bord Lightdash" border />
 
 <Steps>
-  <Step>
-    ### Rassemblez les informations de connexion
-
+  <Step title="Rassemblez les informations de connexion" id="connection-data-required">
     Lorsque vous configurez la connexion entre Lightdash et ClickHouse, vous aurez besoin des informations suivantes :
 
     * **Hôte :** L’adresse à laquelle votre base de données ClickHouse est accessible
@@ -52,9 +50,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     ***
   </Step>
 
-  <Step>
-    ### Configurez votre profil dbt pour ClickHouse
-
+  <Step title="Configurez votre profil dbt pour ClickHouse" id="configuring-your-dbt-profile-for-clickhouse">
     Dans Lightdash, les connexions s’appuient sur votre **projet dbt** existant.
     Pour connecter ClickHouse, assurez-vous que votre fichier local `~/.dbt/profiles.yml` contient une configuration cible ClickHouse valide.
 
@@ -65,9 +61,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     <br />
   </Step>
 
-  <Step>
-    ### Créer un projet Lightdash connecté à ClickHouse
-
+  <Step title="Créer un projet Lightdash connecté à ClickHouse" id="creating-a-lightdash-project-connected-to-clickhouse">
     Une fois votre profil dbt configuré pour ClickHouse, vous devrez également connecter votre **projet dbt** à Lightdash.
 
     Comme ce processus est identique pour tous les entrepôts de données, nous n’entrerons pas dans les détails ici — vous pouvez suivre le guide officiel de Lightdash pour importer un projet dbt :
@@ -79,9 +73,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     ***
   </Step>
 
-  <Step>
-    ### Explorez vos données ClickHouse dans Lightdash
-
+  <Step title="Explorez vos données ClickHouse dans Lightdash" id="exploring-your-clickhouse-data-in-lightdash">
     Une fois connecté, Lightdash synchronise automatiquement vos modèles dbt et met à votre disposition :
 
     * **Dimensions** et **mesures** définies en YAML
@@ -93,9 +85,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     ***
   </Step>
 
-  <Step>
-    ### Définir les métriques et les dimensions dans Lightdash
-
+  <Step title="Définir les métriques et les dimensions dans Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
     Dans Lightdash, toutes les **métriques** et **dimensions** sont définies directement dans les fichiers `.yml` de vos modèles dbt. Votre logique métier est ainsi gérée par version, cohérente et entièrement transparente.
 
     <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt="Exemple de métriques définies dans le fichier .yml" border />
@@ -112,9 +102,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     ***
   </Step>
 
-  <Step>
-    ### Interrogez vos données à partir des tables
-
+  <Step title="Interrogez vos données à partir des tables" id="querying-your-data-from-tables">
     Une fois votre projet dbt connecté et synchronisé avec Lightdash, vous pouvez commencer à explorer les données directement depuis vos **tables** (ou « explores »).
     Chaque table représente un modèle dbt et inclut les métriques et dimensions que vous avez définies dans le YAML.
 
@@ -136,9 +124,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     ***
   </Step>
 
-  <Step>
-    ### Créer des dashboards
-
+  <Step title="Créer des dashboards" id="building-dashboards">
     Une fois que vous avez exploré vos données et enregistré des visualisations, vous pouvez les regrouper dans des **dashboards** à partager avec votre équipe.
 
     Les dashboards dans Lightdash sont entièrement interactifs : vous pouvez appliquer des filtres, ajouter des onglets et afficher des graphiques alimentés par des requêtes ClickHouse en temps réel.
@@ -160,9 +146,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     ***
   </Step>
 
-  <Step>
-    ### Ask AI : analyse en libre-service propulsée par dbt
-
+  <Step title="Ask AI : analyse en libre-service propulsée par dbt" id="ask-ai">
     Les **Agents IA** de Lightdash rendent l’exploration des données véritablement en libre-service.
     Au lieu d’écrire des requêtes, vous pouvez simplement poser des questions en langage naturel — comme *« Quelle a été la croissance mensuelle de notre chiffre d’affaires ? »* — et l’Agent IA génère automatiquement la visualisation appropriée, en s’appuyant sur les métriques et les modèles définis dans dbt pour garantir exactitude et cohérence.
 
