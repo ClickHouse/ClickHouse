@@ -3885,6 +3885,15 @@ scope_guard MergeTreeData::getTemporaryPartDirectoryHolder(const String & part_d
     return [this, part_dir_name]() { temporary_parts.remove(part_dir_name); };
 }
 
+void MergeTreeData::reclaimStaleTemporaryDirectory(const DiskPtr & disk, const std::filesystem::path & relative_part_dir) const
+{
+    if (disk->existsDirectory(relative_part_dir))
+    {
+        LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(disk->getPath()) / relative_part_dir).string());
+        disk->removeRecursive(relative_part_dir);
+    }
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeData::asMutableDeletingPart(const DataPartPtr & part)
 {
     auto state = part->getState();
@@ -10599,22 +10608,6 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
     if (params.copy_instead_of_hardlink)
         with_copy = " (copying data)";
 
-    /// Reclaim a stale leftover destination directory (e.g. tmp_clone_* / tmp_* left by a clone that was
-    /// interrupted or rolled back and then retried with the same deterministic name) before freeze
-    /// constructs the destination storage. Otherwise packed storage seeds its archive reader from the
-    /// leftover data.packed, and finalizeWriter carries stale archive members that the current source
-    /// does not rewrite into the new clone. The temporary-directory lock above guarantees no concurrent
-    /// operation owns this name, so an existing directory can only be such a stale leftover.
-    auto reclaim_stale_destination = [&](const DiskPtr & disk)
-    {
-        auto relative_dst_dir = fs::path(relative_data_path) / tmp_dst_part_name;
-        if (disk->existsDirectory(relative_dst_dir))
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(disk->getPath()) / relative_dst_dir).string());
-            disk->removeRecursive(relative_dst_dir);
-        }
-    };
-
     /// freeze also copies the part's owned FLAT projection siblings. dst_disk == nullptr means the source's own disk.
     DiskPtr dst_disk;
     if (!on_same_disk)
@@ -10627,7 +10620,9 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::cloneAn
         }
         dst_disk = (*reservation_on_dst_or_error)->getDisk();
     }
-    reclaim_stale_destination(on_same_disk ? same_disk : dst_disk);
+    /// The clone tmp dir name repeats across retries; the leftover of a failed same-named attempt must
+    /// go before freeze constructs the destination storage (see reclaimStaleTemporaryDirectory).
+    reclaimStaleTemporaryDirectory(on_same_disk ? same_disk : dst_disk, fs::path(relative_data_path) / tmp_dst_part_name);
     std::shared_ptr<IDataPartStorage> dst_part_storage = src_part_storage->freeze(
         relative_data_path,
         tmp_dst_part_name,

@@ -216,6 +216,10 @@ public:
     virtual std::shared_ptr<IDataPartStorage> getProjectionStorage(const std::string & dir_name, bool use_parent_transaction = true) = 0; // NOLINT
     virtual std::shared_ptr<const IDataPartStorage> getProjectionStorage(const std::string & dir_name) const = 0;
 
+    /// Writable storage for a projection this storage owns; requires the descriptor produced by
+    /// createProjection (throws LOGICAL_ERROR otherwise), so a writer never builds over an unswept dir.
+    std::shared_ptr<IDataPartStorage> getProjectionStorageForWrite(const Projection & placement, bool use_parent_transaction = true); // NOLINT
+
     /// Part directory exists.
     virtual bool exists() const = 0;
 

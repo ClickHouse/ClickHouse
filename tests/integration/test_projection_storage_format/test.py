@@ -2835,3 +2835,30 @@ def test_packed_threshold_crossing_merge_keeps_flat():
         == baseline
     )
     assert check_table("t_pk_cross") == "1"
+
+
+# This test checks that a mutation on a packed part rebuilds the projection sub-part through the
+# createProjection -> writable-storage path (packed storage forbids hardlinks, so every projection is
+# recalculated) and the rebuilt projection reflects the mutated data.
+# Scenario:
+# - create a packed table with a projection
+# - ALTER UPDATE a column read by the projection
+# - assert the projection is healthy, serves the updated data, and the part passes CHECK TABLE
+def test_packed_mutation_rebuilds_projection():
+    setup_table("t_pk_mut", PACKED)
+    assert path_exists(f"{part_dir('t_pk_mut')}/data.packed")
+
+    node.query(
+        "ALTER TABLE t_pk_mut UPDATE key = key + 1000000 WHERE id < 200 SETTINGS mutations_sync = 2"
+    )
+
+    p = part_dir("t_pk_mut")
+    assert path_exists(f"{p}/p.proj/data.packed")
+    assert broken_projection_parts("t_pk_mut") == "0"
+    # 100 rows have id < 200; each key was shifted by 1000000
+    expected = f"100\t{sum(range(100)) + 100 * 1000000}"
+    assert (
+        proj_query("t_pk_mut", extra_settings="force_optimize_projection = 1")
+        == expected
+    )
+    assert check_table("t_pk_mut") == "1"

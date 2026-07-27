@@ -544,8 +544,14 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
+    /// Read/load path (also serves the broken-projection placeholder, whose dir may not exist).
     MergeTreeDataPartBuilder
     getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+
+    /// Write path: requires the descriptor produced by createProjection, so building a projection part
+    /// before creating its directory cannot compile away the residue sweep (see getProjectionStorageForWrite).
+    MergeTreeDataPartBuilder
+    getProjectionPartBuilderForWrite(const IDataPartStorage::Projection & placement, ProjectionDescriptionRawPtr projection);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 

@@ -898,24 +898,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         data_part_volume = createVolumeFromReservation(reservation, volume);
     }
 
-    /// The part directory name can be non-unique because of stale files from previous runs (an insert
-    /// interrupted or rolled back after the directory was created but before it was committed, then
-    /// retried with the same block/part name). Such a leftover must be removed BEFORE the part storage
-    /// is constructed: otherwise packed storage would seed its archive reader and snapshot the mark
-    /// layout (index_granularity_info) from the stale contents at construction, and a retry could
-    /// inherit them even though the directory is later reclaimed. The temporary-directory lock acquired
-    /// above guarantees no concurrent operation owns this name, so an existing directory can only be
-    /// such a stale leftover and is safe to remove.
+    /// The part dir name is non-unique across retries; the leftover of a failed same-named attempt
+    /// must go before the part storage is constructed (see reclaimStaleTemporaryDirectory).
     if (may_exist)
-    {
-        auto data_part_disk = data_part_volume->getDisk();
-        auto relative_part_dir = fs::path(data.getRelativeDataPath()) / part_dir;
-        if (data_part_disk->existsDirectory(relative_part_dir))
-        {
-            LOG_WARNING(log, "Removing old temporary directory {}", (fs::path(data_part_disk->getPath()) / relative_part_dir).string());
-            data_part_disk->removeRecursive(relative_part_dir);
-        }
-    }
+        data.reclaimStaleTemporaryDirectory(data_part_volume->getDisk(), fs::path(data.getRelativeDataPath()) / part_dir);
 
     auto part_format = data.choosePartFormat(expected_size, block.rows(), new_part_level, /*projection =*/nullptr);
     /// UNIQUE KEY parts must use Full part storage: the dense-index sidecar
@@ -1123,13 +1109,11 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     MergeTreeData::reserveSpace(expected_size, parent_part->getDataPartStorage());
     part_type = data.choosePartFormat(expected_size, block.rows(), parent_part->info.level, &projection).part_type;
 
-    /// Creates the dir (sweeping any stale leftover from previous runs, which is possible because the name is not unique) and registers it
-    /// in the parent's owned set. This must happen BEFORE getProjectionPartBuilder constructs the projection storage: for packed storage
-    /// the builder seeds an archive reader from the projection's data.packed, so a stale directory has to be gone first or the write would
-    /// proceed against a stale archive and mark layout. The redesigned createProjection folds in the reclaim that a separate pass did before.
-    parent_part->getDataPartStorage().createProjection(IDataPartStorage::Projection::dirName(part_name, is_temp));
+    /// createProjection sweeps any stale same-named leftover and registers the dir; only its descriptor
+    /// unlocks a writable projection storage, so a packed reader can never seed from stale contents.
+    auto placement = parent_part->getDataPartStorage().createProjection(IDataPartStorage::Projection::dirName(part_name, is_temp));
 
-    auto new_data_part = parent_part->getProjectionPartBuilder(part_name, &projection, is_temp).withPartType(part_type).build();
+    auto new_data_part = parent_part->getProjectionPartBuilderForWrite(placement, &projection).withPartType(part_type).build();
     auto projection_part_storage = new_data_part->getDataPartStoragePtr();
     auto data_settings = data.getSettings(&projection.settings_changes);
 

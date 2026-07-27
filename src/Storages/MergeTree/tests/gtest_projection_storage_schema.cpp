@@ -119,6 +119,21 @@ TEST(ProjectionStorageSchemaDeathTest, RemoveLiveProjectionAborts)
     EXPECT_LOGICAL_ERROR(fixture.storage->removeProjection(fixture.storage->getProjection("p.proj")));
 }
 
+TEST(ProjectionStorageSchemaDeathTest, WriteAccessRequiresOwnedProjection)
+{
+    ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    PartStorageFixture fixture;
+    fixture.storage->setProjectionStorageFormat(IDataPartStorage::ProjectionStorageFormat::FLAT);
+    fixture.storage->setProjections({});
+
+    /// A placement that never went through createProjection does not unlock writable storage.
+    EXPECT_LOGICAL_ERROR(fixture.storage->getProjectionStorageForWrite(fixture.storage->projectionPlacement("p.proj"), true));
+
+    /// The descriptor produced by createProjection does.
+    auto placement = fixture.storage->createProjection("p.proj");
+    EXPECT_NE(fixture.storage->getProjectionStorageForWrite(placement, true), nullptr);
+}
+
 TEST(ProjectionStorageSchema, EmptySchemaIsValid)
 {
     PartStorageFixture fixture;

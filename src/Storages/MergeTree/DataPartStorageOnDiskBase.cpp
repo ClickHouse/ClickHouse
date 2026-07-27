@@ -86,6 +86,15 @@ String IDataPartStorage::Projection::owner(const std::string & root, std::string
     return std::filesystem::path(root_without_slash).filename();
 }
 
+std::shared_ptr<IDataPartStorage> IDataPartStorage::getProjectionStorageForWrite(const Projection & placement, bool use_parent_transaction) // NOLINT
+{
+    if (!hasProjection(placement.dirName()))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot get writable storage for projection {}: it is not owned by part storage {} (create it with createProjection first)",
+            placement.dirName(), getRelativePath());
+    return getProjectionStorage(placement.dirName(), use_parent_transaction);
+}
+
 namespace
 {
 

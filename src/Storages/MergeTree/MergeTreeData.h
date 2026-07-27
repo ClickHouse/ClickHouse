@@ -1483,6 +1483,10 @@ public:
     /// Returns an object that protects temporary directory from cleanup
     scope_guard getTemporaryPartDirectoryHolder(const String & part_dir_name) const;
 
+    /// Remove a leftover dir of a failed same-named attempt BEFORE part storage is constructed over it
+    /// (packed storage seeds its reader at construction). Caller holds the temporary-directory name lock.
+    void reclaimStaleTemporaryDirectory(const DiskPtr & disk, const std::filesystem::path & relative_part_dir) const;
+
     void waitForOutdatedPartsToBeLoaded() const;
     void waitForUnexpectedPartsToBeLoaded() const;
     bool canUsePolymorphicParts() const;

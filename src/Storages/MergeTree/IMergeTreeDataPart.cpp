@@ -1466,6 +1466,19 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
 }
 
+MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilderForWrite(
+    const IDataPartStorage::Projection & placement, ProjectionDescriptionRawPtr projection)
+{
+    /// Same arena rationale as getProjectionPartBuilder; the storage accessor additionally verifies ownership.
+    MutableDataPartStoragePtr projection_storage;
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        projection_storage = getDataPartStorage().getProjectionStorageForWrite(placement, !placement.is_temp);
+    }
+    MergeTreeDataPartBuilder builder(storage, placement.name, projection_storage, getReadSettings());
+    return builder.withPartInfo(MergeListElement::FAKE_RESULT_PART_FOR_PROJECTION).withParentPart(this).withProjection(projection);
+}
+
 void IMergeTreeDataPart::addProjectionPart(
     const String & projection_name,
     std::shared_ptr<IMergeTreeDataPart> && projection_part)

@@ -2301,10 +2301,10 @@ private:
             if (projection.is_temp || !entries_to_hardlink.contains(projection_dir))
                 continue;
 
-            ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
+            auto placement = ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
 
             auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjectionStorage(projection_dir);
-            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjectionStorage(projection_dir);
+            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjectionStorageForWrite(placement);
 
             for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
             {
@@ -2622,10 +2622,10 @@ private:
             if (rename_it != ctx->files_to_rename.end())
                 continue;
 
-            ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
+            auto placement = ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
 
             auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjectionStorage(projection_dir);
-            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjectionStorage(projection_dir);
+            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjectionStorageForWrite(placement);
 
             for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
             {
@@ -3581,19 +3581,9 @@ bool MutateTask::prepare()
     String tmp_part_dir_name = prefix + ctx->future_part->name;
     ctx->temporary_directory_lock = ctx->data->getTemporaryPartDirectoryHolder(tmp_part_dir_name);
 
-    /// Reclaim a stale leftover temporary directory (a mutation interrupted or rolled back and retried
-    /// with the same deterministic name) BEFORE constructing the part storage. Otherwise packed storage
-    /// seeds its archive reader and snapshots the mark layout from the leftover data.packed, and
-    /// finalizeWriter later carries every logical file the new mutation did not rewrite into the new
-    /// part. The temporary-directory lock above guarantees no concurrent operation owns this name.
-    {
-        auto relative_tmp_dir = fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name;
-        if (ctx->disk->existsDirectory(relative_tmp_dir))
-        {
-            LOG_WARNING(ctx->log, "Removing old temporary directory {}", (fs::path(ctx->disk->getPath()) / relative_tmp_dir).string());
-            ctx->disk->removeRecursive(relative_tmp_dir);
-        }
-    }
+    /// The mutation tmp dir name repeats across retries; the leftover of a failed same-named attempt
+    /// must go before the part storage is constructed (see reclaimStaleTemporaryDirectory).
+    ctx->data->reclaimStaleTemporaryDirectory(ctx->disk, fs::path(ctx->data->getRelativeDataPath()) / tmp_part_dir_name);
 
     auto builder = ctx->data->getDataPartBuilder(ctx->future_part->name, single_disk_volume, tmp_part_dir_name, getReadSettings());
     builder.withPartFormat(ctx->future_part->part_format);
