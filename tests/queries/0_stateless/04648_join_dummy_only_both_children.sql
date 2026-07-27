@@ -68,7 +68,8 @@ SETTINGS query_plan_optimize_join_order_limit = 0;
 SELECT count() FROM t1 JOIN t2 ON t1.b = t2.b CROSS JOIN t3 JOIN t4 ON t3.a = t4.a
 SETTINGS query_plan_optimize_join_order_limit = 0;
 
--- Derived tables materialize the counts, so the enclosing join sees distinct column names.
+-- A derived table's output column is renamed to an alias-qualified identifier (`x.c` / `y.c`), so
+-- the enclosing join sees distinct names and each name's queue holds exactly one node.
 SELECT count() FROM (SELECT count() AS c FROM t1, t2 WHERE t1.b = t2.b) AS x,
                     (SELECT count() AS c FROM t3, t4 WHERE t3.a = t4.a) AS y
 SETTINGS query_plan_optimize_join_order_limit = 0;

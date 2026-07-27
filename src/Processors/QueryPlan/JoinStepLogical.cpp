@@ -1326,9 +1326,11 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// If a child step returns duplicate columns, or the SAME column name appears in BOTH
     /// children's headers (e.g. two dummy-only joins each emitting `__join_result_dummy`),
     /// we need to find the corresponding duplicates in dag inputs, which are different nodes.
-    /// The per-name queue is therefore consumed ACROSS children, not rebuilt per child:
-    /// inputs are appended as [left header columns..., right header columns...], so popping
-    /// in order gives each child its own node and preserves left/right source attribution.
+    /// The per-name queue is therefore built once and consumed ACROSS children, not rebuilt per
+    /// child: rebuilding made the second child re-resolve a shared name to the first child's node,
+    /// and the deduplication below then dropped the repeat, leaving that child's side of the join
+    /// with an empty schema. Only distinctness matters here - the left/right split below reads each
+    /// node's own recorded source relation (`fromLeft` / `fromRight`), not the order of this queue.
     const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
     std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
     for (const auto * node : dag_inputs)
