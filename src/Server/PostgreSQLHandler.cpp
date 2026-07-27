@@ -1090,12 +1090,60 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             return stream;
         };
 
+        /// `Array(...)` columns arrive in the PostgreSQL array-literal spelling (`{...}`) - that is what a
+        /// PostgreSQL client sends, and what `COPY ... TO STDOUT` emits on the way out - while the text
+        /// input formats only understand ClickHouse's `[...]`. Read those fields as `String` and translate
+        /// them afterwards, mirroring the pre-rendering the `COPY TO` path does, so that an array column
+        /// round-trips through `COPY`.
+        const Block insert_header = io.pipeline.getHeader();
+        Block parse_header;
+        std::vector<size_t> array_positions;
+        for (size_t col = 0; col < insert_header.columns(); ++col)
+        {
+            const auto & src = insert_header.getByPosition(col);
+            if (isArray(src.type))
+            {
+                array_positions.push_back(col);
+                auto str_type = std::make_shared<DataTypeString>();
+                parse_header.insert({str_type->createColumn(), str_type, src.name});
+            }
+            else
+                parse_header.insert({src.type->createColumn(), src.type, src.name});
+        }
+
+        FormatSettings array_settings;
+        array_settings.bool_true_representation = "t";
+        array_settings.bool_false_representation = "f";
+
+        /// Translate the array columns of a parsed chunk from the PostgreSQL literal back into the target
+        /// `Array(...)` type. A literal that is malformed, or whose element does not fit the target type,
+        /// throws - during the validation pass below this happens before the table is touched.
+        const auto convert_arrays = [&](Chunk chunk)
+        {
+            if (array_positions.empty())
+                return chunk;
+
+            const size_t num_rows = chunk.getNumRows();
+            auto columns = chunk.detachColumns();
+            for (const size_t col : array_positions)
+            {
+                const auto & type = insert_header.getByPosition(col).type;
+                const auto & literals = assert_cast<const ColumnString &>(*columns[col]);
+                auto array_column = type->createColumn();
+                array_column->reserve(num_rows);
+                for (size_t row = 0; row < num_rows; ++row)
+                    readPostgreSQLArrayText(*array_column, *type, std::string_view(literals.getDataAt(row)), array_settings);
+                columns[col] = std::move(array_column);
+            }
+            return Chunk(std::move(columns), num_rows);
+        };
+
         const auto make_input_format = [&](ReadBuffer & stream)
         {
             return FormatFactory::instance().getInput(
                 format,
                 stream,
-                io.pipeline.getHeader(),
+                parse_header,
                 query_context,
                 settings[Setting::max_insert_block_size],
                 std::nullopt,
@@ -1126,8 +1174,14 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         {
             auto validation_stream = make_staged_stream();
             auto validation_format = make_input_format(*validation_stream);
-            while (!validation_format->generate().empty())
+            while (true)
             {
+                auto chunk = validation_format->generate();
+                if (chunk.empty())
+                    break;
+                /// Translating the arrays is part of the validation: a malformed array literal must be
+                /// caught here, while the table is still untouched.
+                convert_arrays(std::move(chunk));
             }
         }
         catch (...)
@@ -1160,7 +1214,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
                 if (chunk.empty())
                     break;
 
-                executor->push(std::move(chunk));
+                executor->push(convert_arrays(std::move(chunk)));
             }
             executor->finish();
         }

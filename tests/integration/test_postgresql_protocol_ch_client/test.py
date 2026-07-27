@@ -866,6 +866,67 @@ def test_copy_from_stdin_compound_table_name(started_cluster):
     node.query("DROP DATABASE copy_ns SYNC")
 
 
+def test_copy_array_column_round_trips(started_cluster):
+    # `COPY ... TO STDOUT` writes arrays in the PostgreSQL literal spelling (`{...}`), because that is what
+    # a PostgreSQL client understands. The `COPY ... FROM STDIN` direction must accept the same spelling,
+    # otherwise the payload a client just read out cannot be written back.
+    node.query("DROP TABLE IF EXISTS copy_arrays SYNC")
+    node.query(
+        "CREATE TABLE copy_arrays (id UInt32, ints Array(Int32), strs Array(String), "
+        "nested Array(Array(Int32)), nulls Array(Nullable(Int32))) ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO copy_arrays VALUES "
+        "(1, [1, 2, 3], ['a', 'b,c'], [[1, 2], [3]], [1, NULL, 3]), "
+        "(2, [], [''], [], [])",
+        settings={"async_insert": 0},
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        out = io.StringIO()
+        cur.copy_expert("COPY copy_arrays TO STDOUT WITH (FORMAT csv)", out)
+        payload = out.getvalue()
+        # The arrays leave in the PostgreSQL spelling.
+        assert "{" in payload and "[" not in payload, payload
+
+        node.query("TRUNCATE TABLE copy_arrays")
+        # ... and the very same bytes are accepted back.
+        cur.copy_expert(
+            "COPY copy_arrays FROM STDIN WITH (FORMAT csv)", io.StringIO(payload)
+        )
+
+        # A malformed array literal is reported without touching the table.
+        node.query("DROP TABLE IF EXISTS copy_bad_arrays SYNC")
+        node.query(
+            "CREATE TABLE copy_bad_arrays (ints Array(Int32)) ENGINE = MergeTree ORDER BY tuple()"
+        )
+        with pytest.raises(py_psql.Error, match="COPY FROM STDIN failed"):
+            cur.copy_expert(
+                "COPY copy_bad_arrays FROM STDIN WITH (FORMAT csv)",
+                io.StringIO('"{1,2"\n'),
+            )
+        conn.rollback()
+        assert node.query("SELECT count() FROM copy_bad_arrays") == "0\n"
+        # The connection survives the rejection.
+        cur.execute("SELECT 42")
+        assert cur.fetchone()[0] == 42
+    finally:
+        conn.close()
+
+    assert node.query(
+        "SELECT id, ints, strs, nested, nulls FROM copy_arrays ORDER BY id"
+    ) == (
+        "1\t[1,2,3]\t['a','b,c']\t[[1,2],[3]]\t[1,NULL,3]\n"
+        "2\t[]\t['']\t[]\t[]\n"
+    )
+    node.query("DROP TABLE copy_arrays SYNC")
+    node.query("DROP TABLE copy_bad_arrays SYNC")
+
+
 class _FailingSource:
     # A file-like object whose read fails partway through, so psycopg2 aborts the COPY FROM by sending
     # a `CopyFail` frontend message instead of `CopyDone`.

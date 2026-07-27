@@ -19,4 +19,12 @@ class WriteBuffer;
 void writePostgreSQLArrayText(
     const IColumn & column, const IDataType & type, size_t row, WriteBuffer & out, const FormatSettings & settings);
 
+/// Parse a PostgreSQL array literal (the spelling produced by `writePostgreSQLArrayText`, and the only one a
+/// PostgreSQL client emits) and append it as one row to an `Array(...)` column. `NULL` (unquoted, in any
+/// case) is a null element, a `"`-quoted element is taken literally after unescaping `\`, and an unquoted
+/// element is parsed by the element type's own text deserializer. Throws `BAD_ARGUMENTS` if `text` is not a
+/// well-formed array literal, or if an element does not parse as its target type.
+void readPostgreSQLArrayText(
+    IColumn & column, const IDataType & type, std::string_view text, const FormatSettings & settings);
+
 }

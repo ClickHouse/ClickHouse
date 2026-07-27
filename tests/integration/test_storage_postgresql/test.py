@@ -1063,7 +1063,7 @@ def test_postgres_timestamp_with_precision(started_cluster):
     # A bare `timestamp` keeps the historical microsecond mapping.
     assert node1.query(
         f"SELECT toTypeName(t0), toTypeName(t3), toTypeName(t) FROM {table} LIMIT 1"
-    ) == "DateTime64(0)\tDateTime64(3)\tDateTime64(6)\n"
+    ) == "Nullable(DateTime64(0))\tNullable(DateTime64(3))\tNullable(DateTime64(6))\n"
 
     assert node1.query(f"SELECT id, t0, t3, t FROM {table} ORDER BY id") == (
         "1\t1900-01-01 00:00:00\t1900-01-01 00:00:00.125\t1900-01-01 00:00:00.123456\n"
