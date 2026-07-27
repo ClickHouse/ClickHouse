@@ -50,177 +50,169 @@ hace falta ninguna conversión. El operador lo monta en cada pod de Kubernetes e
   salvo que `enabled: true`.
 </Note>
 
-<div id="step-1-ca">
-  ## Paso 1 — Crea una CA inicial con cert-manager
-</div>
+<Steps>
+  <Step title="Preparar una CA con cert-manager" id="step-1-ca">
+    La configuración más reproducible es una CA autofirmada que luego firma el certificado del servidor.
+    Así obtienes un `ca.crt` estable en el que los clientes pueden confiar.
 
-La configuración más reproducible es una CA autofirmada que luego firma el
-certificado del servidor. Esto proporciona un `ca.crt` estable en el que los clientes pueden confiar.
-
-```yaml
-# A self-signed issuer used only to mint the CA certificate
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: selfsigned-bootstrap
-  namespace: <namespace>
-spec:
-  selfSigned: {}
----
-# The CA certificate itself
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-ca
-  namespace: <namespace>
-spec:
-  isCA: true
-  commonName: clickhouse-ca
-  secretName: clickhouse-ca
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: selfsigned-bootstrap
+    ```yaml
+    # A self-signed issuer used only to mint the CA certificate
+    apiVersion: cert-manager.io/v1
     kind: Issuer
----
-# A CA issuer that signs leaf certificates from the CA above
-apiVersion: cert-manager.io/v1
-kind: Issuer
-metadata:
-  name: clickhouse-ca-issuer
-  namespace: <namespace>
-spec:
-  ca:
-    secretName: clickhouse-ca
-```
-
-En producción, reemplaza el bootstrap autofirmado por tu emisor real (una
-CA corporativa, Vault, ACME, etc.). Solo cambia el Paso 2 — la configuración del
-clúster es idéntica.
-
-<div id="step-2-cert">
-  ## Paso 2 — Emitir el certificado del servidor
-</div>
-
-Solicita un certificado de entidad final al emisor de la CA. Los `dnsNames` deben cubrir la forma en que
-los clientes acceden a los pods de Kubernetes. El operador crea un único Service **headless** llamado
-`<cluster-name>-clickhouse-headless`, y cada pod de Kubernetes de réplica es accesible en
-`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
-Un comodín para el dominio del servicio headless cubre todas las réplicas:
-
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: clickhouse-server
-  namespace: <namespace>
-spec:
-  secretName: clickhouse-cert        # <-- the Secret the operator will read
-  duration: 8760h                    # 1 year
-  renewBefore: 720h                  # rotate 30 days early
-  issuerRef:
-    name: clickhouse-ca-issuer
+    metadata:
+      name: selfsigned-bootstrap
+      namespace: <namespace>
+    spec:
+      selfSigned: {}
+    ---
+    # The CA certificate itself
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-ca
+      namespace: <namespace>
+    spec:
+      isCA: true
+      commonName: clickhouse-ca
+      secretName: clickhouse-ca
+      privateKey:
+        algorithm: ECDSA
+        size: 256
+      issuerRef:
+        name: selfsigned-bootstrap
+        kind: Issuer
+    ---
+    # A CA issuer that signs leaf certificates from the CA above
+    apiVersion: cert-manager.io/v1
     kind: Issuer
-  dnsNames:
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
-    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
-    - "localhost"
-```
+    metadata:
+      name: clickhouse-ca-issuer
+      namespace: <namespace>
+    spec:
+      ca:
+        secretName: clickhouse-ca
+    ```
 
-<Note>
-  El operador **no** crea un Service para todo el clúster (con balanceo de carga). Si
-  quieres un único endpoint estable al que conectarte, crea tu propio Service de tipo `ClusterIP`
-  que seleccione los pods de Kubernetes del clúster y añade su nombre DNS a `dnsNames` más arriba.
-</Note>
+    En producción, reemplaza el Bootstrap autofirmado por tu emisor real (una
+    CA corporativa, Vault, ACME, etc.). Solo cambia el Paso 2: la configuración del clúster es
+    idéntica.
+  </Step>
 
-cert-manager crea el Secret `clickhouse-cert` con `tls.crt`, `tls.key` y
-`ca.crt`, y lo renueva antes de que caduque. Verifica que exista:
+  <Step title="Emitir el certificado del servidor" id="step-2-cert">
+    Solicita un certificado de entidad final al emisor de la CA. Los `dnsNames` deben cubrir la forma en que
+    los clientes acceden a los pods de Kubernetes. El operador crea un único Service **headless** llamado
+    `<cluster-name>-clickhouse-headless`, y cada pod de Kubernetes de réplica es accesible en
+    `<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`.
+    Un comodín para el dominio del servicio headless cubre todas las réplicas:
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
-# ["ca.crt","tls.crt","tls.key"]
-```
+    ```yaml
+    apiVersion: cert-manager.io/v1
+    kind: Certificate
+    metadata:
+      name: clickhouse-server
+      namespace: <namespace>
+    spec:
+      secretName: clickhouse-cert        # <-- the Secret the operator will read
+      duration: 8760h                    # 1 year
+      renewBefore: 720h                  # rotate 30 days early
+      issuerRef:
+        name: clickhouse-ca-issuer
+        kind: Issuer
+      dnsNames:
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+        - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+        - "localhost"
+    ```
 
-<div id="step-3-enable">
-  ## Paso 3 — Habilitar TLS en el clúster
-</div>
+    <Note>
+      El operador **no** crea un Service para todo el clúster (con balanceo de carga). Si
+      quieres un único endpoint estable al que conectarte, crea tu propio Service de tipo `ClusterIP`
+      que seleccione los pods de Kubernetes del clúster y añade su nombre DNS a `dnsNames` más arriba.
+    </Note>
 
-Configure el clúster para usar el Secret:
+    cert-manager crea el Secret `clickhouse-cert` con `tls.crt`, `tls.key` y
+    `ca.crt`, y lo renueva antes de que caduque. Verifica que exista:
 
-```yaml
-apiVersion: clickhouse.com/v1alpha1
-kind: ClickHouseCluster
-metadata:
-  name: <cluster-name>
-  namespace: <namespace>
-spec:
-  settings:
-    tls:
-      enabled: true
-      required: true            # disable the insecure ports entirely
-      serverCertSecret:
-        name: clickhouse-cert
-```
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+    # ["ca.crt","tls.crt","tls.key"]
+    ```
+  </Step>
 
-<div id="what-the-operator-does">
-  ### Qué hace el operador
-</div>
+  <Step title="Habilitar TLS en el clúster" id="step-3-enable">
+    Configura el clúster para que use el Secret:
 
-Cuando `tls.enabled: true`, el operador:
+    ```yaml
+    apiVersion: clickhouse.com/v1alpha1
+    kind: ClickHouseCluster
+    metadata:
+      name: <cluster-name>
+      namespace: <namespace>
+    spec:
+      settings:
+        tls:
+          enabled: true
+          required: true            # disable the insecure ports entirely
+          serverCertSecret:
+            name: clickhouse-cert
+    ```
 
-* **Abre los puertos seguros** en cada pod de Kubernetes y en el Service headless: `9440`
-  (TLS nativo) y `8443` (HTTPS). Se añaden junto a los puertos ya existentes.
-* **Monta el Secret** en `/etc/clickhouse-server/tls/` y genera el
-  bloque `openSSL` de ClickHouse con `verificationMode: relaxed`,
-  `disableProtocols: sslv2,sslv3` y `preferServerCiphers: true`. Estos son los
-  valores predeterminados; consulta [Personalizar la configuración de TLS](#custom-tls-settings) para sobrescribirlos.
+    ### Lo que hace el operador
 
-Cuando además estableces `required: true`, el operador también:
+    Cuando `tls.enabled: true`, el operador:
 
-* **Elimina los puertos inseguros** `9000` (nativo) y `8123` (HTTP): solo se mantienen las variantes
-  TLS, por lo que los clientes en texto plano ya no pueden conectarse.
-* **Cambia la sonda de actividad del pod de Kubernetes** al puerto nativo seguro `9440`, para que las
-  comprobaciones de estado sigan funcionando sin necesidad de un listener en texto plano.
+    * **Abre los puertos seguros** en cada pod de Kubernetes y en el Service **headless**: `9440`
+      (TLS nativo) y `8443` (HTTPS). Se añaden junto con los puertos existentes.
+    * **Monta el Secret** en `/etc/clickhouse-server/tls/` y genera el bloque
+      `openSSL` de ClickHouse con `verificationMode: relaxed`,
+      `disableProtocols: sslv2,sslv3` y `preferServerCiphers: true`. Estos son los
+      valores predeterminados; consulta [Personalizar la configuración de TLS](#custom-tls-settings) para cambiarlos.
 
-<Note>
-  Los puertos TLS `8443` y `9440` quedan reservados por el webhook **de forma incondicional**,
-  incluso cuando TLS está desactivado, por lo que cambiar `tls.enabled` más adelante nunca entra en conflicto con una
-  entrada de `spec.additionalPorts`. Consulta
-  [Configuración → `additionalPorts`](/es/products/kubernetes-operator/guides/configuration#additional-ports).
-</Note>
+    Cuando también estableces `required: true`, el operador además:
 
-<div id="step-4-connect">
-  ## Paso 4 — Conéctese mediante TLS
-</div>
+    * **Elimina los puertos inseguros** `9000` (nativo) y `8123` (HTTP): solo permanecen las variantes
+      TLS, por lo que los client en texto plano ya no pueden conectarse.
+    * **Cambia la probe de liveness del pod de Kubernetes** al puerto nativo seguro `9440`, para que la comprobación
+      de estado siga funcionando sin un listener en texto plano.
 
-Con `required: true`, los clientes deben usar los puertos seguros y confiar en la CA. Acceda
-a un pod de Kubernetes de una réplica concreta a través del Service headless (o de su propio `ClusterIP`
-Service si creó uno).
+    <Note>
+      Los puertos TLS `8443` y `9440` están reservados por el webhook **incondicionalmente**,
+      incluso cuando TLS está desactivado, por lo que cambiar `tls.enabled` más adelante nunca entra en conflicto con una
+      entrada de `spec.additionalPorts`. Consulta
+      [Configuración → `additionalPorts`](/es/products/kubernetes-operator/guides/configuration#additional-ports).
+    </Note>
+  </Step>
 
-**Protocolo nativo** (`clickhouse-client`, puerto `9440`):
+  <Step title="Conectar mediante TLS" id="step-4-connect">
+    Con `required: true`, los clientes deben usar los puertos seguros y confiar en la CA. Accede
+    a un pod de Kubernetes de réplica específico a través del Service headless (o de tu propio Service de tipo `ClusterIP`
+    si creaste uno).
 
-```bash
-clickhouse-client --secure \
-  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
-  --port 9440 \
-  --ca-certificate /path/to/ca.crt \
-  --query "SELECT 1"
-```
+    **Protocolo nativo** (`clickhouse-client`, puerto `9440`):
 
-**HTTPS** (puerto `8443`):
+    ```bash
+    clickhouse-client --secure \
+      --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+      --port 9440 \
+      --ca-certificate /path/to/ca.crt \
+      --query "SELECT 1"
+    ```
 
-```bash
-curl --cacert /path/to/ca.crt \
-  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
-```
+    **HTTPS** (puerto `8443`):
 
-Obtén `ca.crt` directamente del Secret para hacer pruebas locales:
+    ```bash
+    curl --cacert /path/to/ca.crt \
+      "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+    ```
 
-```bash
-kubectl -n <namespace> get secret clickhouse-cert \
-  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
-```
+    Extrae `ca.crt` directamente del Secret para pruebas locales:
+
+    ```bash
+    kubectl -n <namespace> get secret clickhouse-cert \
+      -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+    ```
+  </Step>
+</Steps>
 
 <div id="keeper-tls">
   ## Cifrado del tráfico de Keeper

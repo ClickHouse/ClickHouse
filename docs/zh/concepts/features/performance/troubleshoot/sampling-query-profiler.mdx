@@ -58,9 +58,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
 在自管理部署中，如需使用查询分析器，请按以下步骤操作：
 
 <Steps>
-  <Step>
-    ### 安装带调试信息的 ClickHouse
-
+  <Step title="安装带调试信息的 ClickHouse" id="debug-info">
     安装 `clickhouse-common-static-dbg` 软件包：
 
     1. 按照步骤 [“设置 Debian 仓库”](/zh/get-started/setup/self-managed/debian-ubuntu#setup-the-debian-repository) 中的说明操作
@@ -69,9 +67,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
     4. 运行 `clickhouse-client`。`clickhouse-common-static-dbg` 中的调试符号会被服务器自动加载，无需执行任何额外操作来启用它们
   </Step>
 
-  <Step>
-    ### 检查服务器配置
-
+  <Step title="检查服务器配置" id="server-config">
     确保 [服务器配置文件](/zh/concepts/features/configuration/server-config/configuration-files)中的 [`trace_log`](/zh/reference/settings/server-settings/settings#trace_log) 部分已配置。默认情况下它处于启用状态：
 
     ```xml
@@ -97,9 +93,7 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
     服务器重启后，ClickHouse 不会清理该表，之前存储的所有虚拟内存地址都可能失效。
   </Step>
 
-  <Step>
-    ### 配置分析器计时器
-
+  <Step title="配置分析器计时器" id="configure-profile-timers">
     设置 [`query_profiler_cpu_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_cpu_time_period_ns) 或 [`query_profiler_real_time_period_ns`](/zh/reference/settings/session-settings#query_profiler_real_time_period_ns)。
     这两个设置可以同时使用。
 
@@ -107,13 +101,11 @@ ClickHouse 运行一个采样分析器，可用于分析查询执行情况。
     由于它们是会话设置，因此你可以为整个服务器、单个用户或用户 profile、当前交互式会话以及每个单独的查询设置不同的采样频率。
 
     默认采样频率为每秒一个样本，并且 CPU 计时器和实时时间计时器均已启用。
-    该频率既能收集关于 ClickHouse cluster 的足够信息，又不会影响服务器性能。
+    该频率既能收集关于 ClickHouse 集群 的足够信息，又不会影响服务器性能。
     如果你需要分析每个单独的查询，请使用更高的采样频率。
   </Step>
 
-  <Step>
-    ### 分析 `trace_log` 系统表
-
+  <Step title={<>分析 <code>trace_log</code> 系统表</>} id="analyze-trace-log-system-table">
     要分析 `trace_log` 系统表，请通过 [`allow_introspection_functions`](/zh/reference/settings/session-settings#allow_introspection_functions) 设置启用内部信息函数：
 
     ```sql

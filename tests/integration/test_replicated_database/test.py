@@ -2141,3 +2141,314 @@ def test_alias_with_dropped_target(started_cluster):
     # Cleanup
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def _drive_comment_alter_race(db, cycles=14, wide_columns=1500, extra_url_settings=""):
+    """Reproduce the issue #110036 race: a comment-only ALTER (executed locally on
+    every replica of a Replicated database) pins its metadata snapshot at
+    access-check time (query-scoped metadata cache), while a concurrent table-level
+    ALTER_METADATA applies ADD COLUMN. If the comment ALTER acquires the alter lock
+    after executeMetadataAlter commits, it overwrites the in-memory metadata and the
+    local .sql with the stale pre-ADD-COLUMN structure - silently dropping the new
+    column while the persisted replica metadata_version stays equal to the ZooKeeper
+    /metadata version.
+
+    Returns the name of the lost column, or None if every synchronized cycle
+    preserved it. Raises if a synchronized cycle's comment ALTER returned an error
+    (the fix promises it succeeds under overlap), or if no cycle ever synchronized
+    (SYNC_FOUND stayed 0), so a run where the race window never opened cannot
+    silently false-pass.
+    """
+    main_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    competing_node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+
+    main_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica1');"
+    )
+    competing_node.query(
+        f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', 'replica2');"
+    )
+
+    # A wide table makes executeMetadataAlter slow (metadata parse/format cost),
+    # widening the race window between the comment ALTER's access check and its
+    # alter-lock acquisition.
+    wide = ", ".join(f"c{j} String" for j in range(wide_columns))
+    main_node.query(
+        f"CREATE TABLE {db}.rmt (n int, v UInt64, {wide}) ENGINE=ReplicatedMergeTree ORDER BY n"
+    )
+    competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+    synced_cycles = 0
+    for i in range(cycles):
+        # Hold back the table-level queue on competing so the ALTER_METADATA of the
+        # next ADD COLUMN executes at a controlled moment.
+        competing_node.query(f"SYSTEM STOP REPLICATION QUEUES {db}.rmt")
+        main_node.query(f"ALTER TABLE {db}.rmt ADD COLUMN m{i} Int32")
+        # Give the (still running) pull task a moment to copy the entry into the queue.
+        for _ in range(30):
+            if (
+                competing_node.query(
+                    f"SELECT count() FROM system.replication_queue "
+                    f"WHERE database='{db}' AND table='rmt' AND type='ALTER_METADATA'"
+                ).strip()
+                != "0"
+            ):
+                break
+            time.sleep(0.1)
+
+        # Release the queue and, the instant the ALTER_METADATA starts applying
+        # locally ("Applying changes locally", logged by setTableStructure right
+        # after executeMetadataAlter takes the alter lock), fire the comment-only
+        # ALTER over HTTP so its access-check metadata pin lands inside the window.
+        # SYNC_FOUND=1 is the positive overlap signal; a cycle without it never
+        # opened the race window and must not count as a pass.
+        script = f"""
+LOG=/var/log/clickhouse-server/clickhouse-server.log
+PAT='{db}\\.rmt.*Applying changes locally'
+BASE=$(grep -cE "$PAT" $LOG || true)
+curl -sS 'http://127.0.0.1:8123/' --data-binary 'SYSTEM START REPLICATION QUEUES {db}.rmt' > /dev/null
+FOUND=0
+for k in $(seq 1 3000); do
+  CUR=$(grep -cE "$PAT" $LOG || true)
+  if [ "$CUR" -gt "$BASE" ]; then FOUND=1; break; fi
+done
+echo "SYNC_FOUND=$FOUND"
+curl -sS --max-time 600 'http://127.0.0.1:8123/?{extra_url_settings}' \\
+  --data-binary "ALTER TABLE {db}.rmt COMMENT COLUMN v 'c{i}'"
+echo "ALTER_DONE"
+"""
+        race_out = competing_node.exec_in_container(["bash", "-c", script])
+        logging.info("comment-alter race cycle %s output: %s", i, race_out)
+
+        competing_node.query(f"SYSTEM START REPLICATION QUEUES {db}.rmt")
+        competing_node.query(f"SYSTEM SYNC REPLICA {db}.rmt")
+
+        # If the ADD COLUMN never started applying locally while the comment ALTER
+        # ran, this cycle did not set up the race - retry rather than let a
+        # non-overlapping run silently false-pass.
+        if "SYNC_FOUND=1" not in race_out:
+            logging.info("comment-alter race cycle %s did not synchronize; retrying", i)
+            continue
+        synced_cycles += 1
+
+        present = competing_node.query(
+            f"SELECT count() FROM system.columns "
+            f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
+        ).strip()
+        if present != "1":
+            # The replica lost the column: the stale comment commit won. Stop here -
+            # any further metadata ALTER would repair the structure and hide the bug.
+            return f"m{i}"
+
+        # A synchronized cycle must complete without a user-visible error: the fix
+        # promises the comment ALTER succeeds even when it overlaps the applied
+        # ALTER_METADATA. Failing here closes the false-pass mode where the race
+        # regresses from "silent clobber" to "always throw under overlap".
+        if "DB::Exception" in race_out or "Code:" in race_out:
+            raise Exception(
+                f"comment-alter race cycle {i} synchronized but the comment-only "
+                f"ALTER returned an error instead of succeeding: {race_out}"
+            )
+
+    if synced_cycles == 0:
+        raise Exception(
+            f"comment-alter race never synchronized in {cycles} cycles "
+            f"(SYNC_FOUND stayed 0): the test could not set up the race window, "
+            f"so a pass here would be meaningless"
+        )
+    return None
+
+
+def test_alter_comment_races_replicated_alter_metadata(started_cluster):
+    # Regression test for the actual mechanism of issue #110036 (no database
+    # recovery involved): the comment-only ALTER must never clobber a concurrently
+    # applied ALTER_METADATA.
+    lost = _drive_comment_alter_race("comment_race")
+    assert lost is None, (
+        f"replica competing lost column {lost} of comment_race.rmt: a comment-only "
+        f"ALTER committed a stale metadata snapshot over a concurrently applied "
+        f"ALTER_METADATA"
+    )
+    main_node.query("DROP DATABASE IF EXISTS comment_race SYNC")
+    competing_node.query("DROP DATABASE IF EXISTS comment_race SYNC")
+
+
+
+def _drive_mixed_alter_race(db, cycles=8, wide_columns=6000, extra_url_settings=""):
+    """Probe the second occurrence of the stale query-scoped metadata-cache read in
+    StorageReplicatedMergeTree::alter (the `current_metadata` read inside the ZK
+    retry loop, src/Storages/StorageReplicatedMergeTree.cpp:6927): a MIXED
+    structural+comment ALTER (which routes to the full replicated-ALTER path and
+    still executes the local comment/settings commit from `*current_metadata`)
+    races a concurrently applied ALTER_METADATA on the same replica.
+
+    Plain ReplicatedMergeTree tables in an Atomic database are used, because
+    Replicated databases reject mixed replicated/non-replicated ALTERs
+    (validateReplicatedDatabaseSegments).
+
+    Interleaving needed for the stale-commit outcome: the mixed ALTER's access
+    check (which pins the query-scoped metadata cache) must run while
+    executeMetadataAlter is already inside its alter-lock critical section, so
+    that the pin reads the pre-ADD-COLUMN structure and lockForAlter is acquired
+    only after the commit. To hit it, an in-container script busy-greps the
+    server log for "Applying changes locally" (logged right after
+    executeMetadataAlter takes the alter lock) and immediately fires the mixed
+    ALTER over HTTP; the wide table keeps executeMetadataAlter under the lock
+    long enough for the pin to land inside the window.
+
+    Returns (lost_column, alter_error, forensics) for the first cycle where the
+    replica lost the concurrently added column, or (None, last_error, None).
+    Raises if a synchronized cycle's mixed ALTER returned an error (the fix
+    promises it succeeds under overlap), or if no cycle ever synchronized.
+    """
+    for node in [main_node, competing_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+        node.query(f"CREATE DATABASE {db}")
+
+    wide = ", ".join(f"c{j} String" for j in range(wide_columns))
+    for node, r in [(main_node, "r1"), (competing_node, "r2")]:
+        node.query(
+            f"CREATE TABLE {db}.rmt (n int, v UInt64, {wide}) "
+            f"ENGINE=ReplicatedMergeTree('/clickhouse/tables/{db}/rmt', '{r}') "
+            f"ORDER BY n"
+        )
+
+    last_error = None
+    synced_cycles = 0
+    for i in range(cycles):
+        # Hold back the table queue on competing so the ALTER_METADATA of the next
+        # ADD COLUMN executes at a controlled moment.
+        competing_node.query(f"SYSTEM STOP REPLICATION QUEUES {db}.rmt")
+        main_node.query(f"ALTER TABLE {db}.rmt ADD COLUMN m{i} Int32")
+        for _ in range(60):
+            if (
+                competing_node.query(
+                    f"SELECT count() FROM system.replication_queue "
+                    f"WHERE database='{db}' AND table='rmt' AND type='ALTER_METADATA'"
+                ).strip()
+                != "0"
+            ):
+                break
+            time.sleep(0.1)
+
+        script = f"""
+LOG=/var/log/clickhouse-server/clickhouse-server.log
+PAT='{db}\\.rmt.*Applying changes locally'
+BASE=$(grep -cE "$PAT" $LOG || true)
+curl -sS 'http://127.0.0.1:8123/' --data-binary 'SYSTEM START REPLICATION QUEUES {db}.rmt' > /dev/null
+FOUND=0
+for k in $(seq 1 3000); do
+  CUR=$(grep -cE "$PAT" $LOG || true)
+  if [ "$CUR" -gt "$BASE" ]; then FOUND=1; break; fi
+done
+echo "SYNC_FOUND=$FOUND"
+curl -sS --max-time 600 'http://127.0.0.1:8123/?{extra_url_settings}' \
+  --data-binary "ALTER TABLE {db}.rmt ADD COLUMN x{i} Int32, MODIFY COMMENT 'mix{i}'"
+echo "ALTER_DONE"
+"""
+        race_out = competing_node.exec_in_container(["bash", "-c", script])
+        alter_error = None
+        if "DB::Exception" in race_out or "Code:" in race_out:
+            alter_error = race_out
+            last_error = alter_error
+        logging.info("mixed-alter race cycle %s output: %s", i, race_out)
+
+        competing_node.query(f"SYSTEM START REPLICATION QUEUES {db}.rmt")
+        competing_node.query(f"SYSTEM SYNC REPLICA {db}.rmt")
+
+        # The mixed ALTER must overlap the concurrent ADD COLUMN to exercise the
+        # stale current_metadata window. "Applying changes locally" (SYNC_FOUND=1)
+        # confirms the ADD COLUMN was applied locally while the mixed ALTER ran. If
+        # the poll missed it, this cycle did not set up the race - retry rather than
+        # let a non-overlapping run silently false-pass.
+        if "SYNC_FOUND=1" not in race_out:
+            logging.info("mixed-alter race cycle %s did not synchronize; retrying", i)
+            continue
+        synced_cycles += 1
+
+        present = competing_node.query(
+            f"SELECT count() FROM system.columns "
+            f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
+        ).strip()
+        if present != "1":
+            # Forensics: persistence of the loss and metadata-version divergence.
+            time.sleep(5)
+            competing_node.query(f"SYSTEM SYNC REPLICA {db}.rmt")
+            still_lost = competing_node.query(
+                f"SELECT count() FROM system.columns "
+                f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
+            ).strip()
+            on_main = main_node.query(
+                f"SELECT count() FROM system.columns "
+                f"WHERE database='{db}' AND table='rmt' AND name='m{i}'"
+            ).strip()
+            zk_path, replica_path = (
+                competing_node.query(
+                    f"SELECT zookeeper_path, replica_path FROM system.replicas "
+                    f"WHERE database='{db}' AND table='rmt' FORMAT TSV"
+                )
+                .strip()
+                .split("\t")
+            )
+            zk_metadata_version = competing_node.query(
+                f"SELECT version FROM system.zookeeper "
+                f"WHERE path='{zk_path}' AND name='metadata'"
+            ).strip()
+            replica_metadata_version = competing_node.query(
+                f"SELECT value FROM system.zookeeper "
+                f"WHERE path='{replica_path}' AND name='metadata_version'"
+            ).strip()
+            comment_now = competing_node.query(
+                f"SELECT comment FROM system.tables "
+                f"WHERE database='{db}' AND name='rmt'"
+            ).strip()
+            create_q = competing_node.query(f"SHOW CREATE TABLE {db}.rmt")
+            forensics = {
+                "cycle": i,
+                "alter_error": alter_error,
+                "still_lost_after_5s_and_sync": still_lost != "1",
+                "column_present_on_main": on_main == "1",
+                "zk_shared_metadata_stat_version": zk_metadata_version,
+                "replica_persisted_metadata_version": replica_metadata_version,
+                "table_comment_on_competing": comment_now,
+                "create_has_lost_column": f"m{i} " in create_q
+                or f"`m{i}`" in create_q,
+            }
+            logging.info("mixed-alter race fired: %s", forensics)
+            return (f"m{i}", alter_error, forensics)
+
+        # A synchronized cycle must complete without a user-visible error: with the
+        # fix, the mixed ALTER re-reads fresh metadata inside the ZK retry loop and
+        # succeeds even when it overlaps the applied ALTER_METADATA. Failing here
+        # closes the false-pass mode where the race regresses from "silent clobber"
+        # to "always throw under overlap".
+        if alter_error is not None:
+            raise Exception(
+                f"mixed-alter race cycle {i} synchronized but the mixed ALTER "
+                f"returned an error instead of succeeding: {alter_error}"
+            )
+
+    if synced_cycles == 0:
+        raise Exception(
+            f"mixed-alter race never synchronized in {cycles} cycles "
+            f"(SYNC_FOUND stayed 0): the test could not set up the race window, "
+            f"so a pass here would be meaningless"
+        )
+    return (None, last_error, None)
+
+
+
+def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
+    # Probe for the still-unfixed stale `current_metadata` read at
+    # StorageReplicatedMergeTree.cpp:6927 (see _drive_mixed_alter_race). A failure
+    # of this assertion means the bug REPRODUCED: the mixed ALTER committed the
+    # stale cached snapshot locally (dropping the concurrently added column) before
+    # failing the versioned ZooKeeper write.
+    lost, alter_error, forensics = _drive_mixed_alter_race("mixed_race")
+    assert lost is None, (
+        f"replica competing lost column {lost} of mixed_race.rmt via the "
+        f"structural-ALTER path (:6927 stale cache). ALTER error: {alter_error!r}. "
+        f"Forensics: {forensics}"
+    )
+    main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+    competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
