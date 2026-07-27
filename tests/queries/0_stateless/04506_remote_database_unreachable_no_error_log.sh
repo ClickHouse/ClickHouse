@@ -64,7 +64,7 @@ ${CLICKHOUSE_CLIENT} -q "
     SELECT 'pg_scan_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name LIKE '%DatabasePostgreSQL::getTablesIterator%' AND level = 'Warning';
     SELECT 'pg_pool_warning_seen', count() >= 1 FROM system.text_log WHERE query_id = '${PG_SCAN_QUERY_ID}' AND logger_name = 'PostgreSQLConnectionPool' AND level = 'Warning';
     SELECT 'pg_cleaner_no_error', count() = 0 FROM system.text_log WHERE event_time >= '${TEST_START}' AND (logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' OR logger_name = 'PostgreSQLConnectionPool') AND level = 'Error';
-    SELECT 'pg_cleaner_warning_seen', count() >= 1 FROM system.text_log WHERE event_time >= '${TEST_START}' AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' AND level = 'Warning';
+    SELECT 'pg_cleaner_warning_seen', count() >= 1 FROM system.text_log WHERE event_time >= '${TEST_START}' AND logger_name LIKE '%DatabasePostgreSQL::removeOutdatedTables%' AND level = 'Warning' AND message LIKE '%127.0.0.1:1%';
 "
 
 ${CLICKHOUSE_CLIENT_QUIET} -q "DROP DATABASE ${PG_DB}"

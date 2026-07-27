@@ -46,6 +46,20 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
+    extern const int POSTGRESQL_CONNECTION_FAILURE;
+}
+
+namespace
+{
+    /// Only a tolerated connection failure to the (unreachable) remote is demoted to Warning; any
+    /// other exception (e.g. a real logic error) stays at Error so it is not hidden. `get()` throws
+    /// POSTGRESQL_CONNECTION_FAILURE once every replica's connection attempt fails.
+    LogsLevel toleratedConnectionFailureLogLevel()
+    {
+        return getCurrentExceptionCode() == ErrorCodes::POSTGRESQL_CONNECTION_FAILURE
+            ? LogsLevel::warning
+            : LogsLevel::error;
+    }
 }
 
 static const auto suffix = ".removed";
@@ -133,7 +147,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", LogsLevel::warning);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -368,7 +382,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", LogsLevel::warning);
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
 
         /** Avoid repeated interrupting other normal routines (they acquire locks!)
           * for the case of unavailable connection, since it is possible to be
