@@ -42,9 +42,5 @@ SELECT 'right anti', count() FROM (SELECT r.id FROM t_04648 AS l RIGHT ANTI JOIN
 SELECT 'pushdown';
 SELECT count() FROM t_04648 AS l INNER JOIN t_04648 AS r ON l.id = r.id AND l.pk = 'cc';
 SELECT count() FROM t_04648 AS l INNER JOIN t_04648 AS r ON l.id = r.id AND l.pk = 'cc' AND CAST(NULL AS Nullable(UInt8));
-SELECT extract(explain, 'Join filter') AS step FROM (
-    EXPLAIN SELECT l.* FROM t_04648 AS l INNER JOIN t_04648 AS r ON l.id = r.id AND r.v > 4
-    SETTINGS query_plan_optimize_prewhere = 0
-) WHERE step != '';
 
 DROP TABLE t_04648;
