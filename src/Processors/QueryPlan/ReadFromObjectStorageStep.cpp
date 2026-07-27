@@ -18,6 +18,7 @@
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -265,6 +266,42 @@ std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnly
     if (info.prewhere_info)
         for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
             columns_to_keep.insert(column.name);
+
+    /// `AddingDefaultsTransform` runs independently inside every branch (see
+    /// `StorageObjectStorageSource::createReader`): for a column that a file does not contain it
+    /// evaluates the column's `DEFAULT` expression over the columns of that branch alone. An input
+    /// of the expression that the branch does not read is not an error - it is substituted with the
+    /// type's default value (see `defaultRequiredExpressions`), so splitting a defaulted column
+    /// away from the inputs of its expression would silently compute it from zeros instead of the
+    /// row's real values, and with the defaulted column in the sort key the `LIMIT` would then pick
+    /// the wrong rows. Keep every column that participates in a default expression - the defaulted
+    /// column itself and the transitive inputs of its expression - on the main branch, so that the
+    /// expression is always evaluated over the real values.
+    const auto & column_defaults = info.columns_description.getDefaults();
+    NameSet names_in_default_expressions;
+    std::vector<String> names_to_visit;
+    for (const auto & [name, _] : column_defaults)
+    {
+        names_in_default_expressions.insert(name);
+        names_to_visit.push_back(name);
+    }
+    while (!names_to_visit.empty())
+    {
+        const String name = names_to_visit.back();
+        names_to_visit.pop_back();
+
+        auto it = column_defaults.find(name);
+        if (it == column_defaults.end())
+            continue;
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        auto expression = it->second.expression->clone();
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+        for (const auto & required_name : columns_context.requiredColumns())
+            if (names_in_default_expressions.insert(required_name).second)
+                names_to_visit.push_back(required_name);
+    }
+    columns_to_keep.insert(names_in_default_expressions.begin(), names_in_default_expressions.end());
 
     /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
     for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
