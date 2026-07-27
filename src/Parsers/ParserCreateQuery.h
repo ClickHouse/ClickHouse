@@ -305,8 +305,10 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             default_function->name = "defaultValueOfTypeName";
             default_function->arguments = make_intrusive<ASTExpressionList>();
             default_function->children.push_back(default_function->arguments);
-            /// Ephemeral columns don't really have secrets but we need to format into a String, hence the strange call
-            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatForLogging()));
+            /// Not `formatForLogging`: that hides secrets, which a data type does not have, and
+            /// runs the server's `query_masking_rules` over the result, which it must not - this
+            /// string is the type, and `defaultValueOfTypeName` has to parse it back.
+            default_function->arguments->children.emplace_back(make_intrusive<ASTLiteral>(type->formatWithSecretsOneLine()));
             default_expression = default_function;
         }
 
