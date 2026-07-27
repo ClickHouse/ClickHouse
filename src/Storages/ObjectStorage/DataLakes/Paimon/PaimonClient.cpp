@@ -190,28 +190,32 @@ std::optional<std::pair<Int64, String>> PaimonTableClient::getLatestTableSnapsho
     Int64 snapshot_version{-1};
     String latest_snapshot_path;
     String latest_hint_path = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / PAIMON_SNAPSHOT_LATEST_HINT;
+    StoredObject latest_hint_object(latest_hint_path);
     try
     {
-        auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/true);
-        read_settings.local_fs_settings.buffer_size
-            = std::max(read_settings.local_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
-        read_settings.remote_fs_settings.buffer_size
-            = std::max(read_settings.remote_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
-
-        auto hint_data
-            = object_storage->readSmallObjectAndGetObjectMetadata(StoredObject(latest_hint_path), read_settings, PAIMON_HINT_FILE_SIZE);
-        const String & hint_version_string = hint_data.data;
+        if (object_storage->exists(latest_hint_object))
         {
-            const auto * end = hint_version_string.data() + hint_version_string.size();
-            auto [ptr, ec] = std::from_chars(hint_version_string.data(), end, snapshot_version);
-            if (ec != std::errc() || ptr != end || snapshot_version <= 0 || snapshot_version == std::numeric_limits<Int64>::max())
+            auto read_settings = getPaimonMetadataReadSettings(/*disable_filesystem_cache=*/true);
+            read_settings.local_fs_settings.buffer_size
+                = std::max(read_settings.local_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
+            read_settings.remote_fs_settings.buffer_size
+                = std::max(read_settings.remote_fs_settings.buffer_size, PAIMON_HINT_FILE_SIZE);
+
+            auto hint_data
+                = object_storage->readSmallObjectAndGetObjectMetadata(latest_hint_object, read_settings, PAIMON_HINT_FILE_SIZE);
+            const String & hint_version_string = hint_data.data;
             {
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
+                const auto * end = hint_version_string.data() + hint_version_string.size();
+                auto [ptr, ec] = std::from_chars(hint_version_string.data(), end, snapshot_version);
+                if (ec != std::errc() || ptr != end || snapshot_version <= 0 || snapshot_version == std::numeric_limits<Int64>::max())
+                {
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_NUMBER, "The Paimon snapshot hint file content: {} is invalid.", hint_version_string);
+                }
             }
+            latest_snapshot_path
+                = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
         }
-        latest_snapshot_path
-            = std::filesystem::path(table_location) / PAIMON_SNAPSHOT_DIR / (PAIMON_SNAPSHOT_PREFIX + std::to_string(snapshot_version));
     }
     catch (...)
     {
