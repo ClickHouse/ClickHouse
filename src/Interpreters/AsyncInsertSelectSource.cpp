@@ -239,16 +239,29 @@ void buildAsyncInsertSelectPipeline(
         context = mutable_context;
     }
 
+    /// Apply trivial INSERT...SELECT optimization: for a trivial SELECT (no joins/subqueries),
+    /// raise max_block_size to match the INSERT block granularity so the SELECT produces a single
+    /// large block instead of many default-sized (~65k rows) blocks, preventing spurious
+    /// multi-block fallback to the synchronous insert path. This also forces max_threads to 1,
+    /// unlike the synchronous path, which uses max_insert_threads: a parallel read would itself
+    /// produce more than one block and defeat the single-block async check below. If the query
+    /// still falls back to the synchronous path afterward, the remaining read stays
+    /// single-threaded too, an accepted tradeoff of using optimize_trivial_insert_select together
+    /// with async_insert (the setting defaults to off, so this does not affect other queries).
+    ContextPtr select_context = context;
+    if (destination)
+        InterpreterInsertQuery::applyTrivialInsertSelectOptimization(insert_query, destination->prefersLargeBlocks(), /* effective_max_insert_threads */ 1, select_context);
+
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
     QueryPipelineBuilder select_pipeline;
     if (settings[Setting::allow_experimental_analyzer])
     {
-        InterpreterSelectQueryAnalyzer interpreter_select(insert_query.select, context, select_query_options);
+        InterpreterSelectQueryAnalyzer interpreter_select(insert_query.select, select_context, select_query_options);
         select_pipeline = interpreter_select.buildQueryPipeline();
     }
     else
     {
-        InterpreterSelectWithUnionQuery interpreter_select(insert_query.select, context, select_query_options);
+        InterpreterSelectWithUnionQuery interpreter_select(insert_query.select, select_context, select_query_options);
         select_pipeline = interpreter_select.buildQueryPipeline();
     }
 
