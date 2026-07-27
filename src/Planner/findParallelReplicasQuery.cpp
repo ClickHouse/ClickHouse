@@ -209,10 +209,7 @@ public:
                 dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
 
             dummy_table_node->setAlias(node->getAlias());
-            if (table_node)
-                replacement_map.emplace(table_node, std::move(dummy_table_node));
-            else
-                replacement_map.emplace(table_function_node, std::move(dummy_table_node));
+            replacement_map.emplace(static_cast<const ITableExpressionNode *>(node.get()), std::move(dummy_table_node));
         }
     }
 

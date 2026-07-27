@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/InjectRandomOrderIfNoOrderByPass.h>
 
 #include <Analyzer/ColumnNode.h>

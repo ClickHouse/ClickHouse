@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/ConvertQueryToCNFPass.h>
 
 #include <Analyzer/InDepthQueryTreeVisitor.h>

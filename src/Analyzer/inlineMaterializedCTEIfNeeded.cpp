@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/inlineMaterializedCTEIfNeeded.h>
 
 #include <unordered_map>

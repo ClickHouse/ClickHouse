@@ -31,7 +31,7 @@ static QueryTreeNodePtr resolveColumn(DataTypePtr type, QueryTreeNodePtr node, s
             /// The column source is left empty: previously the replaced identifier node was
             /// passed here, and its weak pointer expired as soon as the identifier was
             /// replaced by the column in the tree.
-            auto column = std::make_shared<ColumnNode>(NameAndTypePair(col_name, type), std::weak_ptr<ITableExpressionNode>{});
+            auto column = std::make_shared<ColumnNode>(NameAndTypePair(col_name, type), TableExpressionNodeWeakPtr{});
             resolved_map[col_name] = column;
             return column;
         }

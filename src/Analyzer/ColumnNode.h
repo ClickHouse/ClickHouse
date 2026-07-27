@@ -36,10 +36,10 @@ class ColumnNode final : public IQueryTreeNode
 {
 public:
     /// Construct column node with column name, type, column expression and column source weak pointer
-    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, std::weak_ptr<ITableExpressionNode> column_source_);
+    ColumnNode(NameAndTypePair column_, QueryTreeNodePtr expression_node_, TableExpressionNodeWeakPtr column_source_);
 
     /// Construct column node with column name, type and column source weak pointer
-    ColumnNode(NameAndTypePair column_, std::weak_ptr<ITableExpressionNode> column_source_);
+    ColumnNode(NameAndTypePair column_, TableExpressionNodeWeakPtr column_source_);
 
     /// Get column
     const NameAndTypePair & getColumn() const
@@ -142,7 +142,7 @@ protected:
 private:
 
     NameAndTypePair column;
-    std::weak_ptr<ITableExpressionNode> source;
+    TableExpressionNodeWeakPtr source;
 
     static constexpr size_t expression_child_index = 0;
     static constexpr size_t children_size = expression_child_index + 1;

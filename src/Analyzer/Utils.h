@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
-
-#include <Analyzer/IQueryTreeNode.h>
 
 #include <Core/Field.h>
 #include <Core/Names.h>

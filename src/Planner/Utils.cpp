@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Utils.h>
 
 #include <Parsers/ASTSelectWithUnionQuery.h>

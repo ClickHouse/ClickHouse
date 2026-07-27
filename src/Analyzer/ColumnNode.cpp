@@ -19,7 +19,7 @@ namespace ErrorCodes
 ColumnNode::ColumnNode(
     NameAndTypePair column_,
     QueryTreeNodePtr expression_node_,
-    std::weak_ptr<ITableExpressionNode> column_source_
+    TableExpressionNodeWeakPtr column_source_
 )
     : IQueryTreeNode(children_size)
     , column(std::move(column_))
@@ -30,7 +30,7 @@ ColumnNode::ColumnNode(
 
 ColumnNode::ColumnNode(
     NameAndTypePair column_,
-    std::weak_ptr<ITableExpressionNode> column_source_
+    TableExpressionNodeWeakPtr column_source_
 )
     : ColumnNode(std::move(column_), nullptr /*expression_node*/, std::move(column_source_))
 {}

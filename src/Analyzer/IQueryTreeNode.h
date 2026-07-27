@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <span>
 #include <vector>
 
 #include <Parsers/IAST_fwd.h>
@@ -70,6 +69,7 @@ using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
 
 class ITableExpressionNode;
 using TableExpressionNodePtr = std::shared_ptr<ITableExpressionNode>;
+using TableExpressionNodeWeakPtr = std::weak_ptr<ITableExpressionNode>;
 using TableExpressionNodes = std::vector<TableExpressionNodePtr>;
 
 struct ConvertToASTOptions

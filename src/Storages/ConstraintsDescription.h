@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/CNFAtomicFormula.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
 #include <Interpreters/ComparisonGraph.h>

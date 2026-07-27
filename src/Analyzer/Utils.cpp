@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>

@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/AutoFinalOnQueryPass.h>
 
 #include <Storages/IStorage.h>

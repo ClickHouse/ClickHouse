@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 
 #include <unordered_set>

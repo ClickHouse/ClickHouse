@@ -100,18 +100,11 @@ void LambdaNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
 
 bool LambdaNode::isEqualImpl(const IQueryTreeNode &, CompareOptions) const
 {
-    // const auto & rhs_typed = assert_cast<const LambdaNode &>(rhs);
-    return true; //argument_names == rhs_typed.argument_names;
+    return true;
 }
 
 void LambdaNode::updateTreeHashImpl(HashState &, CompareOptions) const
 {
-    // state.update(argument_names.size());
-    // for (const auto & argument_name : argument_names)
-    // {
-    //     state.update(argument_name.size());
-    //     state.update(argument_name);
-    // }
 }
 
 QueryTreeNodePtr LambdaNode::cloneImpl() const

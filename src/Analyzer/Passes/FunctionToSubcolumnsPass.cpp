@@ -1,4 +1,3 @@
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
 #include <DataTypes/DataTypeString.h>
 
