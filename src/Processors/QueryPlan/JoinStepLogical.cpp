@@ -1322,16 +1322,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
     for (const auto * action : required_residual_nodes)
         used_expressions.emplace_back(action, expression_actions);
 
+    /// We expect dag inputs to be a subset of child step header columns.
+    /// If a child step returns duplicate columns, or the SAME column name appears in BOTH
+    /// children's headers (e.g. two dummy-only joins each emitting `__join_result_dummy`),
+    /// we need to find the corresponding duplicates in dag inputs, which are different nodes.
+    /// The per-name queue is therefore consumed ACROSS children, not rebuilt per child:
+    /// inputs are appended as [left header columns..., right header columns...], so popping
+    /// in order gives each child its own node and preserves left/right source attribution.
+    const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
+    std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
+    for (const auto * node : dag_inputs)
+        name_to_nodes[node->result_name].push_back(node);
+
     for (const auto * child : children)
     {
-        /// We expect dag inputs to be a subset of child step header columns.
-        /// If column child step returns duplicate columns
-        /// we need to find corresponding duplicates in dag inputs, which will be different nodes.
-        const auto & dag_inputs = expression_actions.getActionsDAG()->getInputs();
-        std::unordered_map<std::string_view, std::deque<const ActionsDAG::Node *>> name_to_nodes;
-        for (const auto * node : dag_inputs)
-            name_to_nodes[node->result_name].push_back(node);
-
         for (const auto & column : *child->step->getOutputHeader())
         {
             auto input_it = name_to_nodes.find(column.name);
