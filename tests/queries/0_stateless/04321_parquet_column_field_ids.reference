@@ -53,6 +53,12 @@ point	7
 == geo auto-assign (Point as WKB) ==
 -- field_ids --
 point	1
+== geo explicit override (MultiPoint as WKB) ==
+-- field_ids --
+mp	9
+== geo auto-assign (MultiPoint as WKB) ==
+-- field_ids --
+mp	1
 == error: unknown column ==
 BAD_ARGUMENTS
 references unknown column

@@ -171,7 +171,7 @@ using ColumnChunkWriteStates = std::vector<ColumnChunkWriteState>;
 SchemaElements convertSchema(const Block & sample, const WriteOptions & options, const std::optional<std::unordered_map<String, Int64>> & column_field_ids);
 
 /// Mirrors prepareGeoColumn: with GeoParquet output enabled, a recognized top-level geo custom type
-/// (Point, LineString, Polygon, MultiLineString, MultiPolygon, Geometry) collapses into a single WKB
+/// (Point, MultiPoint, LineString, Polygon, MultiLineString, MultiPolygon, Geometry) collapses into a single WKB
 /// String field, so only the top-level field carries a field_id. Shared between the field_id builder
 /// (ParquetBlockOutputFormat) and the Iceberg field_id validator (convertSchema) so they agree on the
 /// shape of the emitted schema.

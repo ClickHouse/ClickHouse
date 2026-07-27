@@ -142,6 +142,30 @@ SETTINGS engine_file_truncate_on_insert = 1,
 echo "-- field_ids --"
 dump_field_ids "$F"
 
+#    `MultiPoint` collapses the same way (a single WKB `String` field), even though its ClickHouse
+#    type is an `Array` of tuples - the field-id builder and the Iceberg validator must agree on that.
+F="$WORKDIR/04321_field_ids_geo_multipoint_override.parquet"
+echo "== geo explicit override (MultiPoint as WKB) =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT [(1.0, 2.0), (3.0, 4.0)]::MultiPoint AS mp
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_column_field_ids = {'mp': '9'};
+"
+echo "-- field_ids --"
+dump_field_ids "$F"
+
+F="$WORKDIR/04321_field_ids_geo_multipoint_auto.parquet"
+echo "== geo auto-assign (MultiPoint as WKB) =="
+${CLICKHOUSE_LOCAL} --query="
+INSERT INTO FUNCTION file('$F', 'Parquet')
+SELECT [(1.0, 2.0), (3.0, 4.0)]::MultiPoint AS mp
+SETTINGS engine_file_truncate_on_insert = 1,
+         output_format_parquet_auto_assign_field_ids = 1;
+"
+echo "-- field_ids --"
+dump_field_ids "$F"
+
 echo "== error: unknown column =="
 ${CLICKHOUSE_LOCAL} --query="
 INSERT INTO FUNCTION file('$WORKDIR/04321_err1.parquet', 'Parquet')

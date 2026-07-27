@@ -802,6 +802,7 @@ bool isGeoColumnWrittenAsWKBScalar(const DataTypePtr & type)
     const auto & name = custom_name->getName();
     return name == "Geometry"
         || name == WKBPointTransform::name
+        || name == WKBMultiPointTransform::name
         || name == WKBLineStringTransform::name
         || name == WKBPolygonTransform::name
         || name == WKBMultiLineStringTransform::name
