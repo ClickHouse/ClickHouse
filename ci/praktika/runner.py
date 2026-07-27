@@ -487,7 +487,7 @@ class Runner:
                 chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir} --workdir={current_dir} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
                 Shell.run(chown_cmd)
 
-            result = Result.from_fs(job.name)
+            result = self._read_job_result_or_running(job)
             if exit_code != 0:
                 if not result.is_completed():
                     if process.timeout_exceeded:
@@ -513,6 +513,37 @@ class Runner:
         Shell.run("df -h")
 
         return exit_code
+
+    @staticmethod
+    def _read_job_result_or_running(job) -> Result:
+        """Read the job result file, degrading to a RUNNING result if it is unreadable.
+
+        An infra event (docker daemon death, a failed from-root chown leaving the file
+        root-owned, ENOSPC) can leave the result file empty, truncated or unopenable.
+        Letting the exception out kills the runner before anything is reported, so the
+        job ends up as a red node with no information at all.
+
+        The fallback status must be RUNNING, not ERROR: is_completed() is
+        "status not in (PENDING, RUNNING)", so an ERROR result is already completed and
+        skips the caller's `if not result.is_completed():` branch - the one that records
+        why the job died and attaches the log tail. RUNNING is also what the process
+        actually was, since _pre_run persisted exactly that before the job started.
+        """
+        try:
+            return Result.from_fs(job.name)
+        except Exception as e:  # json.decoder.JSONDecodeError, OSError
+            print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
+            # Set `info` through the constructor rather than a setter: the setters dump
+            # the result when a file already exists, and the file being unreadable is
+            # exactly the case where writing it may fail too.
+            return Result(
+                name=job.name,
+                status=Result.Status.RUNNING,
+                start_time=Utils.timestamp(),
+                duration=None,
+                info=f"Failed to read Result json, ex: [{e}]",
+            )
 
     def _get_result_object(
         self, job, setup_env_exit_code, prerun_exit_code, run_exit_code,
@@ -1090,7 +1121,11 @@ class Runner:
                 Info().store_traceback()
                 res = False
 
-            result = Result.from_fs(job.name)
+            # Must stay on the unconditional path: this is the only place that converts a
+            # completed OK result into ERROR when the run itself failed
+            # (_get_result_object only promotes results that are not completed, and it runs
+            # under `if run_hooks:` below, so a local run would lose the normalization).
+            result = self._read_job_result_or_running(job)
             if not res and result.is_ok():
                 # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
                 result.set_status(Result.Status.ERROR).set_info(
