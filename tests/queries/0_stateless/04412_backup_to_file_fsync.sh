@@ -33,16 +33,28 @@ $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
 # merge-tree settings, so the difference is not constant.
 # An archive is packed into one file, so there FileSync must be exactly 1.
 # $1 = label, $2 = destination expression, $3 = 'archive' for archives, $4 = extra SETTINGS
+#
+# The directory oracle is exact for an archive: an archive is one file written directly into the
+# backup area, so the only directory whose entry changes is that area itself and DirectorySync must
+# be exactly 1. That is an absolute anchor - it fails both if the configured backup directory is
+# not synced (0) and if the walk runs past it towards the filesystem root (more than 1). The plain
+# destinations keep a "> 0" directory assertion because their exact count follows the part layout,
+# which the randomized merge-tree settings change; the two assertions below pin their counts
+# relative to this one.
 check_backup() {
     local label="$1" dest="$2" kind="$3" extra="$4"
     local qid="${CLICKHOUSE_TEST_UNIQUE_NAME}_${label}"
-    local expected="num_entries + 1"
-    [ "$kind" = archive ] && expected="1"
+    local expected="num_entries + 1" dirs="q.ProfileEvents['DirectorySync'] > 0" dirs_label="dir_sync>0="
+    if [ "$kind" = archive ]; then
+        expected="1"
+        dirs="q.ProfileEvents['DirectorySync'] = 1"
+        dirs_label="dir_sync=1="
+    fi
     $CLICKHOUSE_CLIENT --format Null "${client_opts[@]}" --query_id "$qid" \
         -q "BACKUP TABLE t TO $dest ${extra:+SETTINGS $extra}"
     $CLICKHOUSE_CLIENT "${client_opts[@]}" -m -q "
         SYSTEM FLUSH LOGS query_log;
-        SELECT '$label every_file_synced=', q.ProfileEvents['FileSync'] = ($expected), ', dir_sync>0=', q.ProfileEvents['DirectorySync'] > 0
+        SELECT '$label every_file_synced=', q.ProfileEvents['FileSync'] = ($expected), ', $dirs_label', $dirs
         FROM system.query_log AS q JOIN system.backups AS b ON q.query_id = b.query_id
         WHERE q.type = 'QueryFinish' AND q.current_database = '$CLICKHOUSE_DATABASE' AND q.query_id = '$qid';
     "

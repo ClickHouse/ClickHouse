@@ -61,17 +61,11 @@ private:
     const std::filesystem::path root_path;
     const DataSourceDescription data_source_description;
 
-    /// The `backups.allowed_path` entry containing this backup: the last directory whose entry the
-    /// backup makes durable, and the boundary the parent walk in `syncFileToDisk` stops at. Every
-    /// directory the backup creates is below it, and every `File` backup in the same area fsyncs
-    /// it, so a directory created by a concurrent backup is covered as well. Bounding the walk
-    /// here also keeps it inside the configured area: fsyncing a directory requires opening it
-    /// with `O_DIRECTORY`, which fails on a search-only ancestor that writing does not need.
-    const std::filesystem::path allowed_path;
-
     /// Directories that received a file synced via `syncFileToDisk`, collected so they can be
-    /// fsynced (deepest-first) in `syncDirectoriesToDisk`. Written from the concurrent backup
-    /// write path, hence guarded.
+    /// fsynced (deepest-first) in `syncDirectoriesToDisk`. Seeded by the constructor with the
+    /// `backups.allowed_path` entry containing this backup and the ancestors of it that the backup
+    /// has to create; those bound the walk in `syncFileToDisk`, so it stays inside the configured
+    /// backup area. Written from the concurrent backup write path, hence guarded.
     std::mutex dirs_to_sync_mutex;
     std::set<std::filesystem::path> dirs_to_sync TSA_GUARDED_BY(dirs_to_sync_mutex);
 };

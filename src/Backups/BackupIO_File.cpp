@@ -80,8 +80,32 @@ BackupWriterFile::BackupWriterFile(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterFile"))
     , root_path(root_path_)
     , data_source_description(DiskLocal::getLocalDataSourceDescription(root_path))
-    , allowed_path(fs::path{allowed_path_}.lexically_normal())
 {
+    /// `backups.allowed_path` comes from the configuration, so the backup may have to create it and
+    /// some of its ancestors, whose entries are durable only once the directory holding them is
+    /// fsynced. Record that chain: from the allowed path up to the deepest ancestor that already
+    /// exists. Sampled here, before anything is written, so it describes what this backup creates.
+    /// When the allowed path is already there the chain is just the allowed path itself.
+    ///
+    /// This also bounds the parent walk in `syncFileToDisk`: every backup file is below the allowed
+    /// path, so the walk always reaches an already recorded directory and never leaves the
+    /// configured backup area. That matters because fsyncing a directory has to open it with
+    /// `O_DIRECTORY`, which needs read permission, while writing a backup only needs its ancestors
+    /// to be searchable, so walking further up could fail a backup that works today.
+    auto allowed_path = fs::path{allowed_path_}.lexically_normal();
+
+    std::error_code ec;
+    auto deepest_existing = allowed_path;
+    while (deepest_existing.has_relative_path() && !fs::is_directory(deepest_existing, ec))
+        deepest_existing = deepest_existing.parent_path();
+
+    std::lock_guard lock{dirs_to_sync_mutex};
+    for (auto dir = allowed_path;; dir = dir.parent_path())
+    {
+        dirs_to_sync.emplace(dir);
+        if (dir == deepest_existing || !dir.has_relative_path())
+            break;
+    }
 }
 
 bool BackupWriterFile::fileExists(const String & file_name)
@@ -189,14 +213,13 @@ void BackupWriterFile::syncFileToDisk(const String & file_name)
     fsyncBackupFileContents(file_path);
 
     /// A file entry is durable only once its parent directory is fsynced, and the same holds for
-    /// that directory's own entry, so record every ancestor up to and including `allowed_path`.
+    /// that directory's own entry, so record every ancestor of the file. The constructor recorded
+    /// the backup area itself, which is what stops this walk (see there).
     std::lock_guard lock{dirs_to_sync_mutex};
     for (auto dir = file_path.parent_path(); dir.has_relative_path(); dir = dir.parent_path())
     {
         if (!dirs_to_sync.emplace(dir).second)
             break; /// this dir and all its ancestors are already recorded
-        if (dir == allowed_path)
-            break;
     }
 }
 
