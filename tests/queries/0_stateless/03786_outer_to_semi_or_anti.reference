@@ -9,8 +9,8 @@ Positions: 0
            FUNCTION equals(__table3.c0 :: 0, materialize(1_UInt8) :: 2) -> equals(__table3.c0, materialize(1_UInt8)) UInt8 : 1
   Positions: 1
     JoinLogical
-    Join: tx ⋉ tz
-    ResultRows: unknown
+    Join: tx[1] ⋉ tz[1]
+    ResultRows: 1
     Type: LEFT
     Strictness: SEMI
     Locality: UNSPECIFIED
