@@ -21,8 +21,12 @@ namespace DB
 DetachedQueryHandle detachQuery(String query_text, ContextMutablePtr context)
 {
     /// Drop any progress callback bound to the caller's connection — the background thread
-    /// must not call it after the handler has returned.
+    /// must not call it after the handler has returned. `Context::createCopy` carries over both
+    /// the query-progress and the file-progress callbacks, so both have to go: a file-backed
+    /// detached query would otherwise keep writing into the foreground connection's counters
+    /// (or touch its state while the next query resets it).
     context->setProgressCallback(nullptr);
+    context->setFileProgressCallback({});
 
     auto started_promise = std::make_shared<std::promise<void>>();
     auto started_future = started_promise->get_future();

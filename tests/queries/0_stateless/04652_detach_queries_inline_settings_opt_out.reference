@@ -1,0 +1,6 @@
+=== URL enables detach, inline SETTINGS opts out ===
+42
+=== URL enables detach, no inline opt-out: query is detached ===
+<query_id>
+=== Inline SETTINGS alone still enables detach ===
+<query_id>

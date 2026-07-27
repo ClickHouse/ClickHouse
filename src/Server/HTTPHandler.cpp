@@ -603,9 +603,11 @@ void HTTPHandler::processQuery(
     ///
     /// Skipped (with a one-line WARN) when `async_insert=1`: the async-insert queue owns the
     /// wait semantics for `INSERT`s, and they are mutually exclusive by design.
-    const bool want_detach
-        = settings[Setting::allow_experimental_detach_queries]
-        || params.getParsedLast<bool>("allow_experimental_detach_queries", false);
+    /// `settings` is a reference into `context`, so it already carries the URL/session values
+    /// (applied via `applySettingsChanges` above) and the inline `SETTINGS` clause. Only the
+    /// effective value is consulted, so that `SETTINGS allow_experimental_detach_queries = 0`
+    /// in the query text can opt out of a profile or URL parameter that enables detaching.
+    const bool want_detach = settings[Setting::allow_experimental_detach_queries];
     /// Tracks whether the detach path already ran `customizeContext` on `context`.
     /// `Context::setQueryParameter` throws on duplicate names, so the sync fallback
     /// below must skip its own call when this is set.
