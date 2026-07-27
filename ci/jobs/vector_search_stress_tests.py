@@ -371,18 +371,18 @@ test_params_cohere_wiki_20m_turboquant = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
 }
 
-# Product quantization (PQ) at 1 bit per dimension: CODEC(Quantized('product', <dim>, 8,
-# <dim>/8)) uses 8-bit subquantizers over 8-dimensional subvectors, so the code is
-# <dim>/8 bytes = 1 bit per dimension. Same search path as the other quantized codecs (no
-# HNSW index; vector_search_use_quantized_codes = 1); no rescoring (fetch multiplier 1).
-test_params_hackernews_10m_pq_1bit = {
+# Product quantization (PQ) at 1/2 bit per dimension: CODEC(Quantized('product', <dim>, 8,
+# <dim>/16)) uses 8-bit subquantizers over 16-dimensional subvectors, so the code is
+# <dim>/16 bytes = 1/2 bit per dimension. Same search path as the other quantized codecs
+# (no HNSW index; vector_search_use_quantized_codes = 1); no rescoring (fetch multiplier 1).
+test_params_hackernews_10m_pq_half_bit = {
     LIMIT_N: None,
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
     ],
     QUANTIZATION: None,  # not an HNSW index
     QUANTIZED_CODEC: "product",
-    QUANTIZED_CODEC_ARGS: "8, 192",  # nbits=8, m=192 -> 1536 bits = 1 bit/dimension
+    QUANTIZED_CODEC_ARGS: "8, 96",  # nbits=8, m=96 -> 768 bits = 1/2 bit/dimension
     HNSW_M: None,
     HNSW_EF_CONSTRUCTION: None,
     HNSW_EF_SEARCH: None,
@@ -403,14 +403,14 @@ test_params_hackernews_10m_pq_1bit = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
 }
 
-test_params_cohere_wiki_20m_pq_1bit = {
+test_params_cohere_wiki_20m_pq_half_bit = {
     LIMIT_N: None,
     TRUTH_SET_FILES: [
         "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
     ],
     QUANTIZATION: None,  # not an HNSW index
     QUANTIZED_CODEC: "product",
-    QUANTIZED_CODEC_ARGS: "8, 128",  # nbits=8, m=128 -> 1024 bits = 1 bit/dimension
+    QUANTIZED_CODEC_ARGS: "8, 64",  # nbits=8, m=64 -> 512 bits = 1/2 bit/dimension
     HNSW_M: None,
     HNSW_EF_CONSTRUCTION: None,
     HNSW_EF_SEARCH: None,
@@ -1260,14 +1260,14 @@ TESTS_TO_RUN = [
     #     test_params_cohere_wiki_20m_turboquant,
     # ),
     (
-        "Test using the hackernews dataset with product quantization (1 bit/dim)",
+        "Test using the hackernews dataset with product quantization (1/2 bit/dim)",
         dataset_hackernews_openai,
-        test_params_hackernews_10m_pq_1bit,
+        test_params_hackernews_10m_pq_half_bit,
     ),
     (
-        "Test using the cohere wiki dataset with product quantization (1 bit/dim)",
+        "Test using the cohere wiki dataset with product quantization (1/2 bit/dim)",
         dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m_pq_1bit,
+        test_params_cohere_wiki_20m_pq_half_bit,
     ),
 ]
 
