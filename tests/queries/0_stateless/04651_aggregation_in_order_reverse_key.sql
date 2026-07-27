@@ -23,6 +23,7 @@ DROP TABLE IF EXISTS aio_differ;
 DROP TABLE IF EXISTS aio_merge_asc_1;
 DROP TABLE IF EXISTS aio_merge_asc_2;
 DROP TABLE IF EXISTS aio_merge_asc;
+DROP TABLE IF EXISTS aio_pd;
 
 CREATE TABLE aio_mixed (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b DESC);
 SYSTEM STOP MERGES aio_mixed;
@@ -87,30 +88,44 @@ INSERT INTO aio_merge_asc_1 SELECT number % 4, number FROM numbers(20);
 INSERT INTO aio_merge_asc_2 SELECT number % 4, number + 5 FROM numbers(20);
 CREATE TABLE aio_merge_asc (a UInt32, v UInt32) ENGINE = Merge(currentDatabase(), '^aio_merge_asc_[12]$');
 
+-- Reversed key with enough granules for the LIMIT push-down read_rows oracle of case 11.
+CREATE TABLE aio_pd (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY (k DESC) SETTINGS index_granularity = 16;
+INSERT INTO aio_pd SELECT number % 100 AS k, number AS v FROM numbers(1000) ORDER BY k DESC;
+
 -- 1. The reported case: mixed-direction key (a, b DESC), GROUP BY a, b.
 SELECT
     (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_mixed GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_mixed GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 0);
 
+-- Each carrier below pairs its oracle comparison with an engagement assertion. The oracle alone is
+-- blind to the optimization silently not being applied: both sides would then take the fallback path
+-- and compare equal. The engagement line pins eligibility, so it must hold on a pre-fix binary too.
+
 -- 2. A single reversed column: the defect is not specific to a mixed-direction key.
 SELECT
     (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_desc GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_desc GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, sum(b) FROM aio_desc GROUP BY a SETTINGS optimize_aggregation_in_order = 1);
 
 -- 3. A reversed column inside a longer key prefix.
 SELECT
     (SELECT groupArray((a, b, sc)) FROM (SELECT a, b, sum(c) AS sc FROM aio_three GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, b, sc)) FROM (SELECT a, b, sum(c) AS sc FROM aio_three GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b, sum(c) FROM aio_three GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1);
 
 -- 4. Reversed leading column.
 SELECT
     (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_desc_lead GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_desc_lead GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b, sum(b) FROM aio_desc_lead GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1);
 
 -- 5. Negative monotonic match composed with the reverse flags.
+-- optimize_injective_functions_in_group_by = 0 is load-bearing on both lines: otherwise the analyzer
+-- rewrites the keys and the monotonicity branch of the builder is never taken.
 SELECT
     (SELECT groupArray((ny, nx, c)) FROM (SELECT negate(y) AS ny, negate(x) AS nx, count() AS c FROM aio_mono GROUP BY negate(y), negate(x) ORDER BY ny, nx) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0)
   = (SELECT groupArray((ny, nx, c)) FROM (SELECT negate(y) AS ny, negate(x) AS nx, count() AS c FROM aio_mono GROUP BY negate(y), negate(x) ORDER BY ny, nx) SETTINGS optimize_aggregation_in_order = 0, optimize_injective_functions_in_group_by = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT negate(y), negate(x), count() FROM aio_mono GROUP BY negate(y), negate(x) SETTINGS optimize_aggregation_in_order = 1, optimize_injective_functions_in_group_by = 0);
 
 -- 6a. Merge whose children agree on the direction: fixed, and the optimization is KEPT.
 SELECT
@@ -132,7 +147,10 @@ SELECT
 SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, sum(v) FROM aio_merge_asc GROUP BY a SETTINGS optimize_aggregation_in_order = 1);
 
 -- 6d. DISTINCT and LIMIT BY over the same mixed-direction Merge are correct today and must stay
--- optimized: the decline is scoped to aggregation only.
+-- optimized: the decline is scoped to aggregation only. The LimitBySortedStreamTransform assertion
+-- below is also what keeps 6b honest -- it proves this Merge IS eligible for read-in-order, so 6b's
+-- "= 0" really means "declined by the new guard" and not "never eligible at all". Do not delete it
+-- as redundant sibling coverage.
 SELECT
     (SELECT groupArray(a) FROM (SELECT DISTINCT a FROM aio_differ ORDER BY a) SETTINGS optimize_distinct_in_order = 1)
   = (SELECT groupArray(a) FROM (SELECT DISTINCT a FROM aio_differ ORDER BY a) SETTINGS optimize_distinct_in_order = 0);
@@ -152,20 +170,63 @@ SELECT
   = (SELECT groupArray((a, sb)) FROM (SELECT a, sum(b) AS sb FROM aio_mixed GROUP BY a ORDER BY a) SETTINGS optimize_aggregation_in_order = 0);
 
 -- 9. DISTINCT and LIMIT BY over the reverse key itself: unaffected siblings of the fixed builder.
+-- Result equality alone would hold whether or not they are optimized, so it cannot detect the
+-- over-correction this control exists to detect; the two engagement lines are what make it a control.
 SELECT
     (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM aio_mixed ORDER BY a, b) SETTINGS optimize_distinct_in_order = 1)
   = (SELECT groupArray((a, b)) FROM (SELECT DISTINCT a, b FROM aio_mixed ORDER BY a, b) SETTINGS optimize_distinct_in_order = 0);
+SELECT countIf(explain LIKE '%DistinctSortedStreamTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT DISTINCT a, b FROM aio_mixed SETTINGS optimize_distinct_in_order = 1);
 SELECT
     (SELECT count() FROM (SELECT a, b FROM aio_mixed LIMIT 1 BY a, b) SETTINGS optimize_limit_by_in_order = 1)
   = (SELECT count() FROM (SELECT a, b FROM aio_mixed LIMIT 1 BY a, b) SETTINGS optimize_limit_by_in_order = 0);
+SELECT countIf(explain LIKE '%LimitBySortedStreamTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b FROM aio_mixed LIMIT 1 BY a, b SETTINGS optimize_limit_by_in_order = 1);
 
 -- 10. ReplacingMergeTree with FINAL over a reverse key is a carrier too.
 SELECT
     (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_repl FINAL GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 1)
   = (SELECT groupArray((a, b, sb)) FROM (SELECT a, b, sum(b) AS sb FROM aio_repl FINAL GROUP BY a, b ORDER BY a, b) SETTINGS optimize_aggregation_in_order = 0);
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b, sum(b) FROM aio_repl FINAL GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1);
 
 -- Non-vacuity guard: the optimization is really entered for the single-table carrier.
 SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0 FROM (EXPLAIN PIPELINE SELECT a, b FROM aio_mixed GROUP BY a, b SETTINGS optimize_aggregation_in_order = 1);
+
+-- 11. LIMIT push-down into aggregation in order over a reversed key.
+-- optimizeLimitForAggregationInOrder matches the LimitStep's sort description against the
+-- aggregation's group-by description with SortDescription::hasPrefix, and SortColumnDescription's
+-- operator== compares `direction`. With the pre-fix sign the group-by description read `k ASC` while
+-- the ORDER BY reads `k DESC`, so it did not match and the limit was not pushed into the aggregator;
+-- it now matches, so such queries additionally gain early termination.
+-- NULLS FIRST is load-bearing: operator== also compares `nulls_direction`, the group-by description
+-- leaves it at its default +1, and a bare `ORDER BY k DESC` yields -1 (NULLS FIRST puts it back to
+-- +1), so without it the descriptions would never match regardless of the direction fix.
+-- The small-block settings expose the effect on this 1000-row table; enable_parallel_replicas = 0
+-- because read_rows accounting differs when the reads happen on remote replicas.
+SELECT k, count() FROM aio_pd GROUP BY k ORDER BY k DESC NULLS FIRST LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1,
+         max_threads = 1, max_block_size = 16,
+         merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0, log_comment = '04651_pushdown_on' FORMAT Null;
+
+SELECT k, count() FROM aio_pd GROUP BY k ORDER BY k DESC NULLS FIRST LIMIT 5
+SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0,
+         max_threads = 1, max_block_size = 16,
+         merge_tree_min_rows_for_concurrent_read = 0, merge_tree_min_rows_for_seek = 0,
+         enable_parallel_replicas = 0, log_comment = '04651_pushdown_off' FORMAT Null;
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT on_reads < off_reads
+FROM (
+    SELECT
+        anyIf(read_rows, log_comment = '04651_pushdown_on') AS on_reads,
+        anyIf(read_rows, log_comment = '04651_pushdown_off') AS off_reads
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND log_comment IN ('04651_pushdown_on', '04651_pushdown_off')
+      AND type = 'QueryFinish'
+      AND event_date >= yesterday()
+      AND event_time >= now() - 600
+);
 
 DROP TABLE aio_mixed;
 DROP TABLE aio_desc;
@@ -183,3 +244,4 @@ DROP TABLE aio_differ_2;
 DROP TABLE aio_merge_asc;
 DROP TABLE aio_merge_asc_1;
 DROP TABLE aio_merge_asc_2;
+DROP TABLE aio_pd;
