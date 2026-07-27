@@ -472,26 +472,17 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         apply(result->joins);
 }
 
-/// The shard is selected by the hash of the join key's byte representation
-/// (`ScatterByPartitionTransform` -> `IColumn::computeHashInto`), while `FullSortingMergeJoin` matches keys
-/// with `compareAt`. Some types make the two disagree: keys that `compareAt` treats as equal can hash
-/// differently, so hash sharding would scatter them into different shards and the per-shard merge join would
-/// never see the match, returning fewer rows than the `full_sorting_merge` algorithm this one is documented
-/// to mirror. Three known cases:
-///   - Floating-point: `-0.0` and `+0.0` (and NaNs) compare equal for the merge but their bit patterns hash
-///     differently.
-///   - `Object('json')` / `JSON`: `ColumnObject::compareAt` compares the logical path/value map, but the
-///     hash depends on the physical layout - whether a given path is stored as a typed/dynamic subcolumn or
-///     serialized into `shared_data`. That layout can differ between blocks (e.g. when the set of dynamic
-///     paths differs across parts), so two logically-equal objects can hash into different shards.
-///   - `Dynamic`: same problem as `Object`. `ColumnDynamic::compareAt` compares the logical value, but
-///     `ColumnDynamic::computeHashInto` hashes the raw variant storage, which is explicitly documented as not
-///     equal for logically-equal values stored with different variant layouts (a typed variant on one side
-///     vs the shared variant on the other). A plain `Dynamic` join key is rejected earlier by
-///     `TableJoin::inferJoinKeyCommonType`, but only when `allow_dynamic_type_in_join_keys = 0` (the default);
-///     with that compatibility setting enabled a `Dynamic` key reaches this rewrite.
-/// This detects such a type at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/
-/// `Map`/`Variant`.
+/// The shard is picked by the hash of the key's byte representation (`ScatterByPartitionTransform` ->
+/// `IColumn::computeHashInto`), while `FullSortingMergeJoin` matches keys with `compareAt`. For some types
+/// the two disagree - values that compare equal can hash differently - so hash sharding would scatter them
+/// into different shards and the per-shard merge would lose the match, returning fewer rows than the
+/// `full_sorting_merge` algorithm this one mirrors. Known cases:
+///   - Floating-point: `-0.0` / `+0.0` (and NaNs) compare equal but have different bit patterns.
+///   - `Object('json')` / `JSON` and `Dynamic`: `compareAt` compares the logical value, the hash depends on
+///     the physical layout (typed/dynamic subcolumn vs `shared_data`, typed vs shared variant), and that
+///     layout can differ between blocks. `Dynamic` keys are rejected earlier by
+///     `TableJoin::inferJoinKeyCommonType` unless `allow_dynamic_type_in_join_keys` is enabled.
+/// Detected at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`/`Variant`.
 static bool joinKeyTypeBreaksHashSharding(const IDataType & type)
 {
     auto breaks_sharding = [](const IDataType & t)
@@ -542,19 +533,17 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
             const auto & join = join_step->getJoin();
             const auto & table_join = join->getTableJoin();
 
-            /// Only shard when `parallel_full_sorting_merge` was the algorithm actually selected. Because
-            /// both `full_sorting_merge` and `parallel_full_sorting_merge` build the same
-            /// `FullSortingMergeJoin`, `join_algorithm` membership is not enough: e.g. with
-            /// `full_sorting_merge,parallel_full_sorting_merge` the priority list selects plain
-            /// `full_sorting_merge` first and the parallel variant is only an unreached fallback, so the
-            /// sharded (unordered) rewrite must not fire. `FullSortingMergeJoin::isParallel` carries the
-            /// selected algorithm from `chooseJoinAlgorithm`.
+            /// Only shard when `parallel_full_sorting_merge` was the algorithm actually selected. Both
+            /// algorithms build the same `FullSortingMergeJoin`, so `join_algorithm` membership is not
+            /// enough: with `full_sorting_merge,parallel_full_sorting_merge` the priority list selects plain
+            /// `full_sorting_merge` and the parallel variant is an unreached fallback, so the sharded
+            /// (unordered) rewrite must not fire. `FullSortingMergeJoin::isParallel` carries the selected
+            /// algorithm over from `chooseJoinAlgorithm`.
             ///
-            /// `FullSortingMergeJoin` also serves `ASOF` joins, but they cannot be sharded by the hash of
-            /// the whole key list: the trailing key is the inequality (`ASOF`) key, so rows with the same
-            /// equality keys but different `ASOF` values would hash into different shards and the per-shard
-            /// merge join could miss the closest match. The primary-key-range sharding path
-            /// (`optimizeJoinByShards`) excludes `ASOF` for the same reason.
+            /// `ASOF` joins also use `FullSortingMergeJoin` but cannot be sharded by the hash of the whole
+            /// key list: its trailing key is the inequality key, so rows with equal equality keys but
+            /// different `ASOF` values would land in different shards and the closest match could be missed.
+            /// The primary-key-range path (`optimizeJoinByShards`) excludes `ASOF` for the same reason.
             const auto * full_sorting_merge_join = typeid_cast<const FullSortingMergeJoin *>(join.get());
             if (full_sorting_merge_join
                 && full_sorting_merge_join->isParallel()
@@ -564,34 +553,25 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                 auto * left_sort = typeid_cast<SortingStep *>(node->children[0]->step.get());
                 auto * right_sort = typeid_cast<SortingStep *>(node->children[1]->step.get());
 
-                /// A merge-join pre-sort is scattered only when it is a plain full sort (`Type::Full`):
-                /// the input is unsorted, each shard sorts from scratch (`convertToScatteredFullSort`).
-                /// It is safe to reshuffle (and thus lose the input order) because the sort here exists
-                /// only to feed the merge join - the join result is unordered - so no downstream operator
-                /// observes the order.
+                /// Only a plain full sort (`Type::Full`) is scattered: the input is unsorted, so each shard
+                /// sorts from scratch (`convertToScatteredFullSort`). Losing the input order is safe - this
+                /// sort exists only to feed the merge join, whose result is unordered anyway.
                 ///
-                /// An already-sorted side (a `FinishSorting`: a MergeTree read in order, or any input
-                /// `applyOrder` recognized as pre-sorted) must NOT be scattered, even though an
-                /// order-preserving scatter per shard looks attractive (each shard would only finish the
-                /// sort instead of redoing it). Such a pipeline can deadlock: pipeline ports hold a single
-                /// chunk, a `ScatterByPartitionTransform` does not consume new input until all partition
-                /// chunks of the previous one are pushed, and its consumers - the per-partition
-                /// `MergingSortedTransform`s and the per-shard `MergeJoinTransform`s - consume selectively
-                /// (each waits for a chunk of one specific input, as its merge cursors dictate). Two such
-                /// scatters (the two per-part streams of one in-order side, or the two sides of the join)
-                /// then form a circular wait: scatter A is blocked pushing a chunk for shard `i` whose merge
-                /// waits for a chunk from scatter B, while B is blocked pushing a chunk for shard `j` whose
-                /// merge waits for A (observed as `Logical error: Pipeline stuck` in the AST fuzzer). The
-                /// full-sort path is immune: each shard's `MergeSortingTransform` consumes its whole input
-                /// unconditionally before emitting anything, so the scatters always drain.
+                /// An already-sorted side (`FinishSorting`: a MergeTree read in order, or any input
+                /// recognized as pre-sorted) must NOT be scattered, tempting as an order-preserving scatter
+                /// is. It can deadlock: a `ScatterByPartitionTransform` does not consume new input until all
+                /// partition chunks of the previous one are pushed, while its consumers (per-partition
+                /// `MergingSortedTransform`s, per-shard `MergeJoinTransform`s) wait for a chunk of one
+                /// specific input each. Two such scatters then form a circular wait - A blocked pushing to
+                /// shard `i` whose merge waits on B, B blocked pushing to shard `j` whose merge waits on A
+                /// (seen as `Logical error: Pipeline stuck` in the AST fuzzer). The full-sort path is immune:
+                /// each `MergeSortingTransform` drains its whole input before emitting anything.
                 ///
-                /// A pre-sorted side therefore falls back to a single merge join, exactly like
-                /// `full_sorting_merge` - keeping the low-cost in-order read, its virtual rows
-                /// (`read_in_order_use_virtual_row`) intact, and the streaming memory profile. In-order
-                /// MergeTree sides can still be joined shard-by-shard without a shuffle - and without this
-                /// deadlock topology - by the primary-key-range path (`optimizeJoinByShards`,
-                /// `query_plan_join_shard_by_pk_ranges`), which shards both reads at the source into
-                /// independent per-range streams.
+                /// A pre-sorted side therefore runs as a single merge join, exactly like
+                /// `full_sorting_merge`, keeping the in-order read and its virtual rows
+                /// (`read_in_order_use_virtual_row`) intact. Such sides can still be joined shard-by-shard
+                /// without a shuffle by the primary-key-range path (`optimizeJoinByShards`,
+                /// `query_plan_join_shard_by_pk_ranges`), which splits both reads at the source.
                 auto is_scatterable_merge_join_sort = [](const SortingStep & sort)
                 {
                     return sort.isSortingForMergeJoin() && sort.getType() == SortingStep::Type::Full;

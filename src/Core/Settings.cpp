@@ -3577,7 +3577,12 @@ Specifies which [JOIN](../../sql-reference/statements/select/join.md) algorithm 
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
-Most algorithms affect a query only when they are the one selected for it. `full_sorting_merge` and `parallel_full_sorting_merge` are an exception: because a merge join cannot join keys of different types (for example `String` and `Nullable(String)`), listing either of them — even as a lower-priority fallback that is not ultimately selected — makes join-key type inference stricter. This can change the result types of `USING` columns and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`, even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not include `full_sorting_merge` / `parallel_full_sorting_merge` in `join_algorithm` for the affected queries.
+Most algorithms affect a query only when they are the one selected for it. `full_sorting_merge` and `parallel_full_sorting_merge` are an exception: merely listing either of them — even as a lower-priority fallback that is not ultimately selected — has two effects on planning, because both are decided before the algorithm is picked:
+
+- Join-key type inference becomes stricter (a merge join cannot join keys of different types, for example `String` and `Nullable(String)`). This can change the result types of `USING` columns, and can make a join into a `Join`-engine table fail with `TYPE_MISMATCH`.
+- `ORDER BY ... LIMIT` on the preserved side of a join gets an explicit sort instead of a read in primary-key order, because a merge join would insert its own pre-join sort and break the ordered read. The result is the same, the plan is less efficient.
+
+Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not include `full_sorting_merge` / `parallel_full_sorting_merge` in `join_algorithm` for the affected queries.
 
 Possible values:
 
@@ -3630,7 +3635,13 @@ Possible values:
 
  Same as `full_sorting_merge`, but hash-compatible equality joins are sharded by the hash of the join keys into independent per-shard merge joins that run in parallel (up to `max_threads`), instead of a single merge join. This keeps the low, streaming memory usage of a merge join while using all threads, and the result is not ordered.
 
- Only plain equality joins whose key types hash consistently with the merge-join comparison are sharded by the hash of the keys. This hash-sharding is skipped for `ASOF` joins and for floating-point / `JSON` / `Object` / `Dynamic` key types (whose hashes are not consistent with the merge-join comparison). Skipping it only disables this hash-scatter rewrite, not parallelism in general: an `ASOF` join then runs as a single `full_sorting_merge`, but a read-in-order MergeTree join with such key types can still be sharded at the source by primary-key ranges — which order by the same comparison the join uses, so equal keys stay together and the result stays correct — when `query_plan_join_shard_by_pk_ranges` is enabled; otherwise it too runs as a single `full_sorting_merge`. Sides that are already sorted (a MergeTree read in order, or any pre-sorted input) are not scattered either — an order-preserving scatter into the per-shard merges can deadlock the pipeline — so such a join runs as a single merge join, keeping the low-cost in-order read and its `read_in_order_use_virtual_row` optimization intact; to run an in-order MergeTree join shard-by-shard, enable the source-side sharding by primary-key ranges (`query_plan_join_shard_by_pk_ranges`), which needs no shuffle. Under `make_distributed_plan` this is an initiator-side restriction only: the hash-sharding rewrite is skipped while the initiator builds the distributed plan, because the scattered sort is not serializable for remote execution, but the local single-fragment plan and the per-worker fragments re-optimize with `make_distributed_plan` disabled and can still take the sharded `parallel_full_sorting_merge` path.
+ Hash-sharding by the join keys is applied only to plain equality joins on key types whose hash agrees with the merge-join comparison, and only when neither side is already sorted. It is skipped in these cases:
+
+ - `ASOF` joins, and floating-point / `JSON` / `Object` / `Dynamic` key types: their hashes are not consistent with the merge-join comparison, so equal keys could land in different shards.
+ - Sides that are already sorted (a MergeTree read in order, or any pre-sorted input): an order-preserving scatter into the per-shard merges can deadlock the pipeline. The in-order read and its `read_in_order_use_virtual_row` optimization are kept instead.
+ - While the initiator builds a distributed plan (`make_distributed_plan`), because the scattered sort is not serializable for remote execution. The local single-fragment plan and the per-worker fragments re-optimize with that setting disabled, so they can still be sharded.
+
+ Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
 
 - prefer_partial_merge
 

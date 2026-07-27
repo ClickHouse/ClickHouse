@@ -49,13 +49,11 @@ public:
 
     int getNullDirection() const { return null_direction; }
 
-    /// True when this join was selected as `parallel_full_sorting_merge` (i.e. that algorithm was the first
-    /// supported one in the `join_algorithm` priority list), rather than plain `full_sorting_merge`. Both
-    /// build this same object, so the value cannot be recovered from `join_algorithm` membership alone: a
-    /// setting such as `full_sorting_merge,parallel_full_sorting_merge` selects `full_sorting_merge` first,
-    /// and the parallel variant is merely a lower-priority fallback that is never reached. The query-plan
-    /// optimizer (`optimizeParallelFullSortingMergeJoin`) shards the join into per-shard merge joins only
-    /// when this is set, so listing the parallel variant as a fallback does not silently change behavior.
+    /// True when `parallel_full_sorting_merge` was the algorithm selected from the `join_algorithm` priority
+    /// list, rather than plain `full_sorting_merge`. Both build this same object, so this cannot be recovered
+    /// from list membership alone (`full_sorting_merge,parallel_full_sorting_merge` selects the former and
+    /// never reaches the latter). `optimizeParallelFullSortingMergeJoin` shards the join only when this is
+    /// set, so listing the parallel variant as a fallback does not silently change behavior.
     bool isParallel() const { return is_parallel; }
 
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
