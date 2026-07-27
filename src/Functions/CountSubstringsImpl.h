@@ -58,7 +58,9 @@ struct CountSubstringsImpl
         /// `Impl::countChars` is O(n) for UTF-8 policies, so counting from the row start on every match
         /// would make the loop quadratic in the row size. Instead keep a cursor inside the current row and
         /// count only the bytes newly traversed since the previous match, visiting every byte at most once.
-        /// `counted_row_begin` identifies the row the cursor belongs to; rows never share a start offset.
+        /// `counted_row_begin` identifies the row the cursor belongs to: only a row containing a match sets
+        /// the cursor, and such a row is non-empty (the index scan below leaves
+        /// `haystack_offsets[i - 1] <= pos < haystack_offsets[i]`), so two of them always differ in start offset.
         const UInt8 * counted_row_begin = nullptr;
         const UInt8 * counted_up_to = nullptr;
         size_t chars_before = 0;
