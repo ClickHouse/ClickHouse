@@ -1249,8 +1249,10 @@
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
 
-        <!-- Create `system.user_query_log`, a view over `system.query_log`
-             that shows only rows for `currentUser`. -->
+        <!-- Create `system.user_query_log`, a view over the query log table configured above
+             (`system.query_log` unless `database`/`table` are overridden) that shows only the
+             queries initiated by `currentUser` - the rows whose `initial_user` (or `user`, when
+             `initial_user` is empty) matches the current user. -->
         <enable_user_query_log>true</enable_user_query_log>
 
         <!-- example of using a different storage policy for a system table -->

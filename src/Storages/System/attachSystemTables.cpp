@@ -320,6 +320,15 @@ void attachSystemUserQueryLog(ContextPtr context, IDatabase & system_database)
     if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
         return;
 
+    /// `SystemLog` creates its backing table lazily, on the first flush, while the view is exposed
+    /// as soon as it is attached. Prepare the table upfront, so that reading from
+    /// `system.user_query_log` on a freshly started server returns an empty result instead of
+    /// throwing `UNKNOWN_TABLE`. A system log does not create its database, so this is only
+    /// possible when the configured database has already been loaded - which is always the case
+    /// for the default `system` database, because it is loaded before system tables are attached.
+    if (DatabaseCatalog::instance().tryGetDatabase(query_log->getTableID().database_name))
+        query_log->prepareTable();
+
     attachSystemView(
         context,
         system_database,
