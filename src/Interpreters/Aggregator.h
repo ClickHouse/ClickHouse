@@ -712,6 +712,12 @@ private:
     /// records are the concatenation of the batches' b-slices) and enqueues it.
     void sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const;
 
+    /// The value-staged variant of the seal merge: keys repeating across the batches collapse
+    /// into one record with a summed run length while the records are copied into the chunk.
+    void sealValueStagedChunkDeduplicated(
+        const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & minis,
+        AdaptiveAggregationSharedState::DelayedBlock & chunk) const;
+
     static void enqueueDelayedBlock(
         AdaptiveAggregationSharedState & shared, const AdaptiveAggregationSharedState::DelayedBlockPtr & block);
 

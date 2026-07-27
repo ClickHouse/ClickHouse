@@ -2615,6 +2615,121 @@ void Aggregator::flushAdaptiveStagedBlocks(AdaptiveAggregationThreadContext & ad
         sealPendingStagedBlocks(adaptive);
 }
 
+void Aggregator::sealValueStagedChunkDeduplicated(
+    const std::vector<AdaptiveAggregationSharedState::DelayedBlockPtr> & minis,
+    AdaptiveAggregationSharedState::DelayedBlock & chunk) const
+{
+    constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
+
+    size_t total = 0;
+    UInt64 total_key_bytes = 0;
+    for (const auto & mini : minis)
+    {
+        chassert(mini->value_staged);
+        total += mini->bucket_offsets[num_buckets];
+        total_key_bytes += mini->key_offsets[mini->bucket_offsets[num_buckets]];
+    }
+
+    chunk.routing_hashes.resize(total);
+    chunk.run_lengths.resize(total);
+    chunk.key_offsets.resize(total + 1);
+    chunk.key_bytes.resize(total_key_bytes);
+
+    /// The publish dedup only sees one block; keys repeating across the buffered batches are
+    /// merged here, while the seal copies the records anyway. Same scheme as the publish walk:
+    /// group a bucket's records by a few hash bits so a duplicate can only be one of its
+    /// group's survivors, then compare within the group.
+    struct StagedRef
+    {
+        UInt64 hash;
+        UInt32 mini;
+        UInt32 index;
+    };
+    std::vector<StagedRef> refs;
+    std::vector<UInt32> order;
+
+    size_t out = 0;
+    UInt64 byte_pos = 0;
+    for (size_t b = 0; b < num_buckets; ++b)
+    {
+        chunk.bucket_offsets[b] = static_cast<UInt32>(out);
+
+        refs.clear();
+        for (size_t m = 0; m < minis.size(); ++m)
+        {
+            const auto & mini = *minis[m];
+            for (size_t j = mini.bucket_offsets[b]; j < mini.bucket_offsets[b + 1]; ++j)
+                refs.push_back({mini.routing_hashes[j], static_cast<UInt32>(m), static_cast<UInt32>(j)});
+        }
+        if (refs.empty())
+            continue;
+
+        constexpr size_t num_groups = 256;
+        std::array<UInt32, num_groups + 1> group_offsets{};
+        for (const auto & ref : refs)
+            ++group_offsets[((ref.hash >> 10) & 0xFF) + 1];
+        for (size_t g = 0; g < num_groups; ++g)
+            group_offsets[g + 1] += group_offsets[g];
+        std::array<UInt32, num_groups> group_cursor{};
+        for (size_t g = 0; g < num_groups; ++g)
+            group_cursor[g] = group_offsets[g];
+        order.resize(refs.size());
+        for (size_t i = 0; i < refs.size(); ++i)
+            order[group_cursor[(refs[i].hash >> 10) & 0xFF]++] = static_cast<UInt32>(i);
+
+        for (size_t g = 0; g < num_groups; ++g)
+        {
+            const size_t group_out_begin = out;
+            for (size_t i = group_offsets[g]; i < group_offsets[g + 1]; ++i)
+            {
+                const auto & ref = refs[order[i]];
+                const auto & mini = *minis[ref.mini];
+                const UInt64 src_begin = mini.key_offsets[ref.index];
+                const size_t size = mini.key_offsets[ref.index + 1] - src_begin;
+                const char * key_data = mini.key_bytes.data() + src_begin;
+
+                bool merged = false;
+                for (size_t j = group_out_begin; j < out; ++j)
+                {
+                    if (chunk.routing_hashes[j] != ref.hash)
+                        continue;
+                    const UInt64 j_end = (j + 1 == out) ? byte_pos : chunk.key_offsets[j + 1];
+                    if (j_end - chunk.key_offsets[j] != size)
+                        continue;
+                    const char * survivor = chunk.key_bytes.data() + chunk.key_offsets[j];
+                    const bool equal = size <= 64 ? memequalSmallAllowOverflow15(survivor, size, key_data, size)
+                                                  : memcmp(survivor, key_data, size) == 0;
+                    if (!equal)
+                        continue;
+                    chunk.run_lengths[j] += mini.run_lengths[ref.index];
+                    merged = true;
+                    break;
+                }
+                if (merged)
+                    continue;
+
+                chunk.routing_hashes[out] = ref.hash;
+                chunk.run_lengths[out] = mini.run_lengths[ref.index];
+                chunk.key_offsets[out] = byte_pos;
+                if (size <= 64)
+                    memcpySmallAllowReadWriteOverflow15(chunk.key_bytes.data() + byte_pos, key_data, size);
+                else
+                    memcpy(chunk.key_bytes.data() + byte_pos, key_data, size);
+                byte_pos += size;
+                ++out;
+            }
+        }
+    }
+
+    chunk.bucket_offsets[num_buckets] = static_cast<UInt32>(out);
+    chunk.key_offsets[out] = byte_pos;
+
+    chunk.routing_hashes.resize(out);
+    chunk.run_lengths.resize(out);
+    chunk.key_offsets.resize(out + 1);
+    chunk.key_bytes.resize(byte_pos);
+}
+
 void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adaptive) const
 {
     constexpr size_t num_buckets = AdaptiveAggregationSharedState::NUM_BUCKETS;
@@ -2633,6 +2748,12 @@ void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adap
     auto chunk = std::make_shared<AdaptiveAggregationSharedState::DelayedBlock>();
     chunk->value_staged = minis.front()->value_staged;
 
+    if (chunk->value_staged)
+    {
+        sealValueStagedChunkDeduplicated(minis, *chunk);
+    }
+    else
+    {
     /// Bucket b's records are the concatenation of the batches' b-slices in buffer order. Every
     /// per-array pass below walks the same (bucket, batch) order, so a record keeps one position
     /// across the key, hash, and argument arrays.
@@ -2690,23 +2811,6 @@ void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adap
         chunk->key_offsets[total] = byte_pos;
     }
 
-    if (chunk->value_staged)
-    {
-        chunk->run_lengths.resize(total);
-        size_t pos = 0;
-        for (size_t b = 0; b < num_buckets; ++b)
-            for (const auto & mini : minis)
-            {
-                const size_t begin = mini->bucket_offsets[b];
-                const size_t length = mini->bucket_offsets[b + 1] - begin;
-                if (!length)
-                    continue;
-                memcpy(&chunk->run_lengths[pos], &mini->run_lengths[begin], length * sizeof(UInt32));
-                pos += length;
-            }
-    }
-    else
-    {
         chunk->source_columns.assign(minis.front()->source_columns.size(), nullptr);
         for (const auto & argument_positions : aggregates_positions)
             for (const auto position : argument_positions)
@@ -2753,7 +2857,11 @@ void Aggregator::sealPendingStagedBlocks(AdaptiveAggregationThreadContext & adap
             }
     }
 
-    LOG_TRACE(log, "Adaptive aggregation: sealed {} staged batches into one chunk of {} records", num_minis, total);
+    LOG_TRACE(
+        log,
+        "Adaptive aggregation: sealed {} staged batches into one chunk of {} records",
+        num_minis,
+        chunk->bucket_offsets[num_buckets]);
 
     enqueueDelayedBlock(*adaptive.shared_state, chunk);
     minis.clear();
