@@ -9054,6 +9054,16 @@ window.onpopstate = function(event) {
         /// state is not installed yet (`activeTabId`/`tab.query` are rebound below) and `history.state`
         /// is already the popped entry, so a restamp would corrupt this time-travel target with the
         /// leaving tab's newer state. `onpopstate` restores the entry/URL authoritatively itself.
+        /// The `isTrusted` gate keeps the replay from arming a *new* edit session, but an edit session
+        /// that was already in progress when the navigation happened must not survive it either: the
+        /// user may have typed a password for the connection being left, and the restore just replaced
+        /// the server/user and cleared that password. Committing that session afterwards — on the first
+        /// focus change that leaves the connection surface — would probe the restored server with an
+        /// empty password, the very spurious login this fix avoids. The edit targeted a connection that
+        /// no longer exists in the inputs, so drop both latches; the restored connection is re-checked
+        /// once the user re-enters its password.
+        connection_edited = false;
+        commit_deferred = false;
         restoring_connection_from_history = true;
         try {
             [url_elem, user_elem, password_elem].forEach(el => el.dispatchEvent(new Event('input')));
